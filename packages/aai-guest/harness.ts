@@ -267,6 +267,13 @@ async function mainAgent(port: number, host: string, token: string): Promise<voi
 
   const server = createServer({
     runtime,
+    // The guest is the authority on the agent's public client config: the
+    // platform's `GET /:slug/client-config` broker PROXIES this server's
+    // own `/client-config` for name/greeting, so the bundle's live agent
+    // definition — interpreted by the bundle's own SDK — is what renders,
+    // and the host never reads fields out of the stored config.
+    ...(state.agent?.name !== undefined ? { name: state.agent.name } : {}),
+    ...(state.agent?.greeting !== undefined ? { greeting: state.agent.greeting } : {}),
     request: createManageHandler({
       token,
       activeSessions: () => state.activeSessions,

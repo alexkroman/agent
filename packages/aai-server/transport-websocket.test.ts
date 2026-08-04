@@ -40,11 +40,18 @@ describe("handleAgentClientConfig", () => {
     expect(res.status).toBe(404);
   });
 
-  test("brokers name, greeting, and the sandbox's live sessionUrl", async () => {
+  test("brokers the sandbox's live sessionUrl with name/greeting PROXIED from the guest", async () => {
     // A resident fake sandbox: the broker must reuse it (resolveSandbox fast
-    // path) rather than spawning a real one.
+    // path) rather than spawning a real one. Name/greeting come from the
+    // GUEST'S own /client-config — the bundle's live agent definition — not
+    // from the stored config, which is opaque to the host.
     const slots = createSlotCache();
-    const { fetch, store } = await createTestOrchestrator({ slots });
+    const guestUrls: string[] = [];
+    const guestConfigFetch: typeof globalThis.fetch = async (input) => {
+      guestUrls.push(String(input));
+      return Response.json({ name: "guest-agent", greeting: "hello from the bundle" });
+    };
+    const { fetch, store } = await createTestOrchestrator({ slots, guestConfigFetch });
     await deployAgent(fetch, "my-agent");
     // Seed AFTER deploying (the deploy replaces the slug's slot), at the
     // deploy's version so the resident isn't invalidated as stale.
@@ -56,10 +63,32 @@ describe("handleAgentClientConfig", () => {
     const res = await fetch("/my-agent/client-config");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      name: "test-agent",
-      greeting: "",
+      name: "guest-agent",
+      greeting: "hello from the bundle",
       sessionUrl: "wss://tunnel.test:443/websocket",
     });
+    // The proxy dialed the sandbox's own origin, scheme swapped ws→http
+    // (URL normalization drops the default :443).
+    expect(guestUrls).toEqual(["https://tunnel.test/client-config"]);
+  });
+
+  test("a guest that cannot answer its config degrades to sessionUrl only", async () => {
+    const slots = createSlotCache();
+    const guestConfigFetch: typeof globalThis.fetch = async () => {
+      throw new Error("guest not answering");
+    };
+    const { fetch, store } = await createTestOrchestrator({ slots, guestConfigFetch });
+    await deployAgent(fetch, "my-agent");
+    slots.claim("my-agent", {
+      slug: "my-agent",
+      sandbox: makeFakeSandbox(),
+      version: (await store.getAgentVersion("my-agent")) ?? 1,
+    });
+    const res = await fetch("/my-agent/client-config");
+    // Answered, with the one field a client cannot do without: the session
+    // URL. The default client renders its empty defaults for the rest.
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ sessionUrl: "wss://tunnel.test:443/websocket" });
   });
 
   test("answers 503 when the sandbox VM failed to start", async () => {
@@ -136,7 +165,6 @@ describe("handleClientAsset", () => {
 function makeFakeSandbox(): Sandbox {
   return {
     sessionUrl: vi.fn(() => Promise.resolve("wss://tunnel.test:443/websocket")),
-    activeSessions: vi.fn(() => Promise.resolve(0)),
     drain: vi.fn(() => Promise.resolve()),
     alive: vi.fn(() => true),
     shutdown: vi.fn(() => Promise.resolve()),

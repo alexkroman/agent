@@ -100,6 +100,12 @@ export type OrchestratorOpts = {
   /** Test seam for the studio proxy's outbound fetch. */
   studioProxyFetch?: typeof globalThis.fetch;
   /**
+   * Test seam for the client-config broker's proxy fetch of the guest's own
+   * `/client-config` (name/greeting come from the GUEST, never the stored
+   * config — see client-config-handler.ts).
+   */
+  guestConfigFetch?: typeof globalThis.fetch;
+  /**
    * Extracts an agent config from an uploaded worker bundle. Defaults to
    * sandboxed `describeBundle`; injectable so tests don't need Modal.
    */
@@ -223,10 +229,12 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   agents.delete("/storage", existingOwnerMw, handleStorageDisable);
 
   agents.get("/health", handleAgentHealth);
-  // Session broker: name/greeting plus the live sandbox session URL (boots
-  // the sandbox on first request). Same auth posture as the page and the
-  // session endpoint: none.
-  agents.get("/client-config", (c) => handleAgentClientConfig(c, brokerOpts));
+  // Session broker: the live sandbox session URL (boots the sandbox on first
+  // request) plus name/greeting PROXIED from the guest's own /client-config.
+  // Same auth posture as the page and the session endpoint: none.
+  agents.get("/client-config", (c) =>
+    handleAgentClientConfig(c, brokerOpts, opts.guestConfigFetch),
+  );
   agents.get("/favicon.ico", handleAgentFavicon);
   agents.get("/assets/:path{.+}", handleClientAsset);
   // GET /:slug/ stays on the top-level app — Hono's mergePath("/:slug", "/")

@@ -130,12 +130,24 @@ describe("createPgAgentRows", () => {
   test("a corrupt row throws rather than reading as missing", async () => {
     // "Missing" reaches verifySlugOwner as "unclaimed" — the one state where
     // any API key may claim the slug — so a corrupt row must fail closed.
+    // The config itself is FULLY opaque (no field is asserted — the guest is
+    // the only interpreter), so "corrupt" means not-even-an-object.
     const { sql, rows } = fakeSql();
     const store = createPgAgentRows(sql);
     await store.put(RECORD);
     const row = rows.get("my-agent");
-    if (row) row.config = JSON.stringify({ not: "a config" });
+    if (row) row.config = JSON.stringify("not an object");
     await expect(store.get("my-agent")).rejects.toThrow("Corrupt agent record");
+  });
+
+  test("a config with arbitrary unknown fields reads back untouched", async () => {
+    // No host-side reader is left — even name/greeting come from the guest's
+    // own /client-config — so reads must assert nothing about the shape.
+    const { sql } = fakeSql();
+    const store = createPgAgentRows(sql);
+    const config = { anything: { deeply: ["nested"] }, mode: 42 };
+    await store.put({ ...RECORD, config });
+    expect((await store.get("my-agent"))?.config).toEqual(config);
   });
 
   // Stored configs are validated strictly ONCE, at deploy time. Reads must

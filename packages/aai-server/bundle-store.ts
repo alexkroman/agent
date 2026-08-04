@@ -315,9 +315,5 @@ export function createBundleStore(
     },
 
     invalidate,
-
-    async getAgentConfig(slug) {
-      return (await getAgentCached(slug))?.config ?? null;
-    },
   };
 }

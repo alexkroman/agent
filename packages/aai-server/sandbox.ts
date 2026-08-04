@@ -7,13 +7,12 @@
  * (discovered via the `GET /:slug/client-config` broker), and the host holds
  * NO channel to it — boot artifacts (bundle, hash, env) are delivered at
  * exec time, and the platform's only ongoing surface is the token-gated
- * `/manage/*` pair (session-count probe for idle eviction / retire drains,
- * and the drain request). See `spawnAgentServer` in sandbox-vm.ts.
+ * `/manage/*` pair (a status probe for operators, and the drain request
+ * retirement sends). See `spawnAgentServer` in sandbox-vm.ts.
  */
 
 import { errorMessage } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
-import type { StoredAgentConfig } from "./agent-store.ts";
 import { resolveHarnessPath } from "./constants.ts";
 import { spawnAgentServer } from "./sandbox-vm.ts";
 
@@ -23,11 +22,6 @@ export type SandboxOptions = {
   workerCode: string;
   env: Record<string, string>;
   slug: string;
-  /**
-   * The stored agent config — opaque to the host beyond `name` (used only
-   * for logs here); the bundle interprets its own config in the guest.
-   */
-  agentConfig: StoredAgentConfig;
   /**
    * Harness image the agent was deployed against (per-deploy pinning —
    * see AgentSpawnOptions.imageTag).
@@ -54,12 +48,6 @@ export type Sandbox = {
    */
   sessionUrl(): Promise<string>;
   /**
-   * Live client sessions in the guest (sessions no longer pass through the
-   * host, so it must ask). Never throws: a dead, booting, or unreachable
-   * guest answers 0 — shutdown drains treat "can't ask" as "idle".
-   */
-  activeSessions(): Promise<number>;
-  /**
    * Hand the guest its drain budget (`POST /manage/drain` with
    * `{ deadlineMs }`): refuse new sessions and self-exit when empty or at
    * the deadline — the GUEST enforces the deadline; the host holds no drain
@@ -85,8 +73,6 @@ export type Sandbox = {
 
 export function createSandbox(opts: SandboxOptions): Sandbox {
   const { workerCode, env, slug } = opts;
-
-  const config = opts.agentConfig;
 
   const vmReady = spawnAgentServer({
     slug,
@@ -116,7 +102,7 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
 
   vmReady
     .then((handle) => {
-      debug("Sandbox ready", { slug, agent: config.name });
+      debug("Sandbox ready", { slug });
       handle.onExit(() => {
         console.warn("Sandbox guest exited", { slug });
         markLost();
@@ -127,20 +113,12 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
       markLost(err);
     });
 
-  debug("Sandbox initializing", { slug, agent: config.name });
+  debug("Sandbox initializing", { slug });
 
   return {
     sessionUrl: () => vmReady.then((handle) => handle.sessionUrl),
 
     alive: () => !lost,
-
-    async activeSessions(): Promise<number> {
-      // The handle itself never throws (see AgentServerHandle); the catch
-      // pair below just makes the "never throws" contract structurally true
-      // here regardless of what a handle implementation does.
-      const handle = await vmReady.catch(() => null);
-      return handle ? handle.activeSessions().catch(() => 0) : 0;
-    },
 
     async drain(deadlineMs?: number): Promise<void> {
       // Deliberately NOT swallowed: a rejected drain (VM never started,

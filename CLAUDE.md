@@ -258,10 +258,9 @@ model) is the security boundary.
 
 - `orchestrator.ts` — HTTP + WebSocket routing
 - `sandbox.ts` — agent sandbox lifecycle: `sessionUrl()` (the public tunnel
-  endpoint the broker hands to clients), `activeSessions()` (the
-  idle-eviction/retire probe, over the guest's `/manage/status`),
-  `drain()`, `shutdown()`. DEPLOYED AGENTS RUN AS SERVERS — the host holds
-  NO channel to them (see "Agent guests are servers" below)
+  endpoint the broker hands to clients), `drain(deadlineMs?)` (retirement's
+  one request), `shutdown()`. DEPLOYED AGENTS RUN AS SERVERS — the host
+  holds NO channel to them (see "Agent guests are servers" below)
 - `sandbox-vm.ts` — `spawnAgentServer` (the agent-server dispatch over the
   two backends), `describeBundle` (deploy-time bundle inspection as a
   ONE-SHOT describe-mode exec — no channel), and the studio-side
@@ -863,7 +862,12 @@ only guards raw wire shapes that skipped the fill.
   returns `{ name, greeting }` (`sdk/client-config.ts`, re-exported from
   `/protocol`). **Every server builds the body through one helper**,
   `buildClientConfig`; the platform's handler lives in
-  `aai-server/client-config-handler.ts`. In `aai-ui`, `client()`'s config
+  `aai-server/client-config-handler.ts` — and on the platform name/greeting
+  are PROXIED from the GUEST'S own `/client-config` (the bundle's live
+  agent definition; the harness passes the loaded agent's name/greeting to
+  `createServer`), never read from the stored config, which is fully opaque
+  to the host. A guest that can't answer degrades to `{ sessionUrl }` only.
+  In `aai-ui`, `client()`'s config
   tier renders `DefaultRoot`, which fetches the config (any failure degrades
   to the empty default, so older servers keep working) and mounts the chat
   shell; the shell uses the server-declared `name` unless `client({ name })`
@@ -1195,15 +1199,16 @@ copying fields:
   loosenings, wire defaults, and the wire-only `toolSchemas`; none may drop
   a field. It runs at **deploy time only** (`validateAgentConfig`), on the
   current CLI's freshly extracted config.
-- **Stored configs are OPAQUE on reads** (`StoredAgentConfigSchema` in
-  `aai-server/agent-store.ts`): row reads assert only the fields the host
-  actually consumes — `name` and `greeting` for the client-config broker —
-  and pass everything else through untouched. A stored config is never
-  re-validated against a newer schema, so tightening `IsolateConfigSchema`
-  cannot 404 previously-valid deployed agents; the bundle interprets its own
-  config with the SDK it shipped with, and the server has no other reader.
-  Never add refinements to the stored schema — strictness belongs at the
-  deploy boundary.
+- **Stored configs are FULLY OPAQUE on reads** (`StoredAgentConfigSchema` in
+  `aai-server/agent-store.ts` — a bare record): the host has NO field-level
+  reader left. Even the broker's `name`/`greeting` are PROXIED from the
+  guest's own `/client-config` (the bundle's live agent definition,
+  interpreted by the bundle's own SDK — see client-config-handler.ts), so a
+  platform schema change can never re-interpret a deployed agent. A stored
+  config is never re-validated against a newer schema, so tightening
+  `IsolateConfigSchema` cannot 404 previously-valid deployed agents.
+  Never add fields or refinements to the stored schema — strictness belongs
+  at the deploy boundary.
 - **The server never maps a stored config onto a runtime agent.** The old
   `toRuntimeAgent` boundary (`sandbox-agent-config.ts`) is gone with platform
   host mode — sessions run the bundle's own SDK on the bundle's own agent
@@ -1983,26 +1988,19 @@ service's control work is light — and one container served both badly.
   everything else through Supabase and spawns its own Modal sandboxes for
   `test_agent`/config extraction.
 - **The web service autoscales** (constants block in `modal_deploy.py`),
-  bounded by `MIN_CONTAINERS`/`MAX_CONTAINERS`. Voice sessions don't pass
-  through the service, but that does NOT make scale-in free: a draining
-  replica runs `teardownSandboxes`, which terminates the guest sandboxes it
-  owns — and the calls are inside those guests.
-
-  **So the shutdown drain has to count guest sessions, not sockets**
-  (`liveGuestSessions` in `teardown-sandboxes.ts`, fed to
-  `drainActiveSessions` by both entries). `activeSessionCount` is
-  `wss.clients.size` — connections to THIS process — and browsers dial the
-  sandbox tunnel directly, so it is structurally blind to voice sessions: it
-  logged `Draining active sessions... { active: 0, drainMs: 120000 }` on
-  every scale-in while calls were live, returned instantly, and teardown cut
-  them. The 120s budget could only ever measure connections that no longer
-  take this path. The count now sums each owned sandbox's `activeSessions()`
-  (plus sandboxes still draining from a retirement, which are deliberately
-  off the slot map) and polls at `DRAIN_GUEST_POLL_MS` rather than
-  `DRAIN_POLL_MS`, because each poll is an RPC fan-out. It stays a *bounded*
-  wait inside `scaledown_window` — past `SHUTDOWN_DRAIN_MS` the replica goes
-  down regardless, since a drain longer than the container grace period is a
-  SIGKILL with extra steps.
+  bounded by `MIN_CONTAINERS`/`MAX_CONTAINERS`. Scale-in is FREE for voice
+  sessions: a replica going down RETIRES its agent guests instead of
+  waiting on or terminating them (`teardownSandboxes` — one awaited,
+  deadline-carrying drain per guest, then exit). Sessions dial the sandbox
+  tunnel directly and the guest has no dependency on the replica, so live
+  calls finish in the guests on their own clock after the replica is gone;
+  the next replica's broker spawns fresh sandboxes on demand. The old
+  count-guest-sessions-and-wait shutdown drain (`liveGuestSessions`,
+  `drainActiveSessions`, `SHUTDOWN_DRAIN_MS`) was deleted — it could only
+  ever delay the exit, and past its 120s budget it cut the very calls it
+  existed to protect. Studio guests DO go down with the replica (the
+  broker's `dispose()`): their coding-agent sessions live on the host's
+  control channel, so a dead host makes them useless.
 - **A long-lived connection is ONE Modal input, so the function `timeout`
   bounds CALL DURATION** — not request latency. Both services therefore set it
   explicitly (`FUNCTION_TIMEOUT_SECS` = 4h on the agent app, matching
@@ -2172,8 +2170,8 @@ service's control work is light — and one container served both badly.
   path: Modal delivers stop signals to the container's **Python** runtime,
   never to a bare `subprocess.Popen` child, so `run_node`
   (scripts/modal_image.py) forwards SIGTERM/SIGINT to the node process and
-  waits — that is the only reason `teardownSandboxes` (drain + terminate
-  every guest the replica owns) runs on scale-in/redeploy at all.
+  waits — that is the only reason `teardownSandboxes` (retire agent guests,
+  dispose the studio broker) runs on scale-in/redeploy at all.
   There is NO host-side idle eviction: the guest owns idleness (agent-mode
   self-exit; the studio broker keeps its own per-project idle sweep), and a
   guest exit detaches its slot via `onSandboxLost`.
@@ -2287,11 +2285,13 @@ pin and versioned by `GUEST_CONTRACT_VERSION` (additive changes only):
   polled by the host, raced against guest-process exit so a boot crash
   fails the spawn immediately with the guest's stderr in the host log.
 - **Ongoing surface**: `GET /manage/status` (live session count +
-  draining + contractVersion; the shutdown-drain count) and
+  draining + contractVersion — an operator/debugging probe; nothing
+  host-side gates on it anymore) and
   `POST /manage/drain` (JSON body may carry `deadlineMs` — the retire
   budget the guest enforces itself), both gated by the per-sandbox bearer
   from the exec env. Nothing else — no WebSocket, no RPC, no host
-  connection.
+  connection. The guest's public `/client-config` doubles as the broker's
+  name/greeting source (proxied — see "Pre-connection client config").
 - **Lifecycle is guest-owned — the host runs NO idle machinery**: the agent
   guest self-exits after `AGENT_IDLE_EXIT_MS` (5 min) with zero sessions —
   this IS idle reclamation, not a backstop (the host's per-slot idle timers

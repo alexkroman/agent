@@ -11,15 +11,15 @@
  */
 
 import { resolvePort } from "./_boot.ts";
-import { DEFAULT_PORT, DRAIN_GUEST_POLL_MS } from "./constants.ts";
+import { DEFAULT_PORT } from "./constants.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
-import { drainActiveSessions, startService } from "./serve-lifecycle.ts";
+import { startService } from "./serve-lifecycle.ts";
 import {
   assertSandboxBackendOrWarn,
   buildServiceConfig,
   installProcessSafetyNets,
 } from "./service-config.ts";
-import { liveGuestSessions, teardownSandboxes } from "./teardown-sandboxes.ts";
+import { teardownSandboxes } from "./teardown-sandboxes.ts";
 
 async function main(): Promise<void> {
   installProcessSafetyNets();
@@ -49,26 +49,14 @@ async function main(): Promise<void> {
     port,
     injectWebSocket,
     onShutdown: async () => {
-      // Stop taking work before waiting for it to finish, then let live calls
-      // end on their own. A voice session is a long-lived socket, so closing
-      // them immediately (which this used to do) cut every conversation in
-      // flight on every deploy — both strategies replace all machines, so that
-      // was every active call, mid-sentence.
-      //
-      // The count is the GUESTS' sessions: browser sessions dial the sandbox
-      // tunnel directly and this process terminates no sessions of its own
-      // (host mode, the last in-process session surface, was removed), so a
-      // socket count here would always read 0 while calls were live — the
-      // drain would return at once and teardown would cut them anyway.
+      // Stop taking new work, then RETIRE the guests rather than wait on or
+      // terminate them: sessions dial the sandbox tunnel directly and the
+      // guests have no dependency on this process, so live calls finish in
+      // the guests on their own clock (see teardown-sandboxes.ts). The old
+      // count-and-wait drain here could only ever delay the exit — and past
+      // its budget it cut the very calls it existed to protect.
       draining = true;
-      await drainActiveSessions({
-        activeCount: () => liveGuestSessions(opts.slots),
-        // Each poll is an RPC fan-out across the replica's guests.
-        pollMs: DRAIN_GUEST_POLL_MS,
-        env,
-      });
-
-      console.info("Shutting down...");
+      console.info("Shutting down (retiring guests)...");
       await teardownSandboxes({ slots: opts.slots });
       await config.events.close();
     },

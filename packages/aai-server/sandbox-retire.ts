@@ -35,36 +35,40 @@ export type RetirableSandbox = {
 };
 
 /**
- * Hand `sandbox` its drain budget and forget it. Never throws; deliberately
- * not awaited by callers on a request path (a deploy must not block for the
- * length of someone else's call — and with the guest owning the drain,
- * there is nothing to wait for anyway).
+ * Hand `sandbox` its drain budget. Never rejects. Resolves once the drain
+ * request was DELIVERED (or the fallback terminate finished) — not when the
+ * guest finishes draining; the guest owns that, so there is nothing further
+ * to wait for.
+ *
+ * Callers on a request path (deploy handover) fire-and-forget the returned
+ * promise — a deploy must not block for the length of someone else's call.
+ * Process shutdown AWAITS it (teardown-sandboxes.ts): the process is about
+ * to exit, and an undelivered drain request is a guest that never learns it
+ * was retired.
  */
-export function retireSandbox(
+export async function retireSandbox(
   sandbox: RetirableSandbox,
   opts: { slug: string; reason: string; timeoutMs?: number },
-): void {
+): Promise<void> {
   const timeoutMs = opts.timeoutMs ?? SANDBOX_RETIRE_DRAIN_MS;
-  void (async () => {
-    // No window, or no drain surface: this is just a terminate.
-    if (timeoutMs <= 0 || !sandbox.drain) {
-      await sandbox.shutdown().catch(() => undefined);
-      return;
-    }
-    try {
-      await sandbox.drain(timeoutMs);
-      console.info("Retired sandbox draining in-guest", {
-        slug: opts.slug,
-        reason: opts.reason,
-        timeoutMs,
-      });
-    } catch (err: unknown) {
-      // Unreachable guest — drained by definition; reclaim it now.
-      console.warn("Retired sandbox unreachable for drain; terminating", {
-        slug: opts.slug,
-        error: errorMessage(err),
-      });
-      await sandbox.shutdown().catch(() => undefined);
-    }
-  })();
+  // No window, or no drain surface: this is just a terminate.
+  if (timeoutMs <= 0 || !sandbox.drain) {
+    await sandbox.shutdown().catch(() => undefined);
+    return;
+  }
+  try {
+    await sandbox.drain(timeoutMs);
+    console.info("Retired sandbox draining in-guest", {
+      slug: opts.slug,
+      reason: opts.reason,
+      timeoutMs,
+    });
+  } catch (err: unknown) {
+    // Unreachable guest — drained by definition; reclaim it now.
+    console.warn("Retired sandbox unreachable for drain; terminating", {
+      slug: opts.slug,
+      error: errorMessage(err),
+    });
+    await sandbox.shutdown().catch(() => undefined);
+  }
 }

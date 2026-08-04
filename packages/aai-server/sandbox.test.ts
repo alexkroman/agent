@@ -11,22 +11,19 @@ import { createTestStore } from "./test-utils.ts";
 // vi.mock factory is hoisted, so we cannot reference top-level variables.
 // Instead, use vi.hoisted to create the mock objects.
 
-const { mockActiveSessions, mockDrain, mockShutdown, mockOnExit, mockSpawnAgentServer } =
-  vi.hoisted(() => {
-    const mockActiveSessions = vi.fn().mockResolvedValue(0);
-    const mockDrain = vi.fn().mockResolvedValue(undefined);
-    const mockShutdown = vi.fn().mockResolvedValue(undefined);
-    const mockOnExit = vi.fn();
-    const mockSpawnAgentServer = vi.fn().mockResolvedValue({
-      sessionUrl: "wss://tunnel.test:443/websocket",
-      activeSessions: mockActiveSessions,
-      drain: mockDrain,
-      shutdown: mockShutdown,
-      onExit: mockOnExit,
-      alive: () => true,
-    });
-    return { mockActiveSessions, mockDrain, mockShutdown, mockOnExit, mockSpawnAgentServer };
+const { mockDrain, mockShutdown, mockOnExit, mockSpawnAgentServer } = vi.hoisted(() => {
+  const mockDrain = vi.fn().mockResolvedValue(undefined);
+  const mockShutdown = vi.fn().mockResolvedValue(undefined);
+  const mockOnExit = vi.fn();
+  const mockSpawnAgentServer = vi.fn().mockResolvedValue({
+    sessionUrl: "wss://tunnel.test:443/websocket",
+    drain: mockDrain,
+    shutdown: mockShutdown,
+    onExit: mockOnExit,
+    alive: () => true,
   });
+  return { mockDrain, mockShutdown, mockOnExit, mockSpawnAgentServer };
+});
 
 /** Fire the exit callback `createSandbox` registered on the guest handle. */
 function fireGuestExit(): void {
@@ -59,7 +56,6 @@ function makeSandboxOptions(overrides?: Partial<SandboxOptions>): SandboxOptions
     workerCode: 'export default { name: "test" };',
     env: { AAI_ENV_TEST: "1" },
     slug: "test-agent",
-    agentConfig: TEST_AGENT_CONFIG,
     ...overrides,
   };
 }
@@ -80,7 +76,6 @@ describe("createSandbox", () => {
   it("creates a sandbox with the server-handle shape", async () => {
     const sandbox = createSandbox(makeSandboxOptions());
     expect(typeof sandbox.sessionUrl).toBe("function");
-    expect(typeof sandbox.activeSessions).toBe("function");
     expect(typeof sandbox.drain).toBe("function");
     expect(typeof sandbox.shutdown).toBe("function");
     await sandbox.shutdown();
@@ -122,35 +117,6 @@ describe("createSandbox", () => {
     await sandbox.shutdown();
 
     expect(mockShutdown).toHaveBeenCalledOnce();
-  });
-
-  // ── activeSessions (the idle-eviction probe) ─────────────────────────────
-
-  describe("activeSessions", () => {
-    it("asks the guest over the manage surface", async () => {
-      mockActiveSessions.mockResolvedValueOnce(3);
-      const sandbox = createSandbox(makeSandboxOptions());
-
-      await expect(sandbox.activeSessions()).resolves.toBe(3);
-      expect(mockActiveSessions).toHaveBeenCalledOnce();
-      await sandbox.shutdown();
-    });
-
-    it("reports 0 when the probe fails (dead guest — eviction should proceed)", async () => {
-      mockActiveSessions.mockRejectedValueOnce(new Error("guest gone"));
-      const sandbox = createSandbox(makeSandboxOptions());
-
-      await expect(sandbox.activeSessions()).resolves.toBe(0);
-      await sandbox.shutdown();
-    });
-
-    it("reports 0 when the VM failed to start", async () => {
-      mockSpawnAgentServer.mockReturnValueOnce(Promise.reject(new Error("VM spawn failed")));
-      const sandbox = createSandbox(makeSandboxOptions());
-
-      await expect(sandbox.activeSessions()).resolves.toBe(0);
-      await sandbox.shutdown();
-    });
   });
 
   describe("drain", () => {

@@ -10,7 +10,6 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
-import type { StoredAgentConfig } from "./agent-store.ts";
 import { type AppDatabases, type AppDbMeta, parseAppDbMeta } from "./app-database.ts";
 import type { PlatformEvents, Unwatch } from "./platform-events.ts";
 import { createSandbox, type Sandbox } from "./sandbox.ts";
@@ -54,7 +53,6 @@ export type ResolveSandboxOpts = {
 type BundleParts = {
   workerCode: string;
   env: Record<string, string>;
-  agentConfig: StoredAgentConfig;
   appDbMeta: AppDbMeta | null;
   /** Harness image the agent was deployed against (per-deploy pinning). */
   imageTag: string | null;
@@ -70,8 +68,8 @@ type BundleParts = {
 function loadBundleParts(slug: string, opts: ResolveSandboxOpts): Promise<BundleParts | null> {
   const { store } = opts;
   const workerCodeP = store.getWorkerCode(slug);
-  // The full row (same read-through cache as getAgentConfig) — the config
-  // for the sandbox plus the deploy's pinned harness image tag.
+  // The full row — for the deploy's pinned harness image tag. The stored
+  // config is NOT read: it is opaque to the host (see agent-store.ts).
   const agentP = store.getAgent(slug);
   const envP = store.getEnv(slug).then((e) => e ?? {});
   // Storage ("app db") credentials, when the platform can open them.
@@ -83,7 +81,6 @@ function loadBundleParts(slug: string, opts: ResolveSandboxOpts): Promise<Bundle
         ? {
             workerCode,
             env,
-            agentConfig: agent.config,
             appDbMeta,
             imageTag: agent.harness_image_tag ?? null,
           }
@@ -122,7 +119,6 @@ function buildSandboxFromParts(
     workerCode: parts.workerCode,
     env,
     slug,
-    agentConfig: parts.agentConfig,
     ...(parts.imageTag !== null && { imageTag: parts.imageTag }),
     onSandboxLost: () => onSandboxLost(sandbox),
   });

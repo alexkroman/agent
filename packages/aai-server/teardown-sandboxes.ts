@@ -2,63 +2,42 @@
 /**
  * One shutdown teardown for both services.
  *
- * Every guest a replica owns has to be released when the process goes down:
- * the slug slots' sandboxes, and — in the studio service — the session
- * broker's per-project coding-agent sandboxes.
+ * A replica going down treats its AGENT guests exactly like a redeploy
+ * treats a superseded one: RETIRE, don't terminate. Sessions dial the
+ * sandbox tunnel directly and the guest has zero dependency on this process
+ * after boot, so killing it here would cut live calls to protect nothing —
+ * the drain request hands each guest its budget, the guest finishes its
+ * calls and exits itself (empty → immediate; deadline → bounded; Modal's
+ * sandbox `timeoutMs` is the backstop). The drains ARE awaited, unlike a
+ * deploy's fire-and-forget retirement: the process is about to exit, and an
+ * undelivered drain request is a guest that never learns it was retired.
+ * An idle guest exits within one lifecycle poll of the drain landing, so
+ * the routine scale-in still reclaims promptly.
  *
- * Both entries previously inlined a partial version of this and each missed
- * something:
- *
- * - `StudioSessionBroker.dispose()` is documented for shutdown but had no
- *   production call site at all, so a restart orphaned one guest per active
- *   studio project.
- *
- * A leaked guest is not free. It exits on its own idle/orphan window, and
- * on Modal the sandbox then lingers
- * until `SANDBOX_IDLE_TIMEOUT_SECS` reclaims it — up to ~20 minutes of billed
- * sandbox per orphan, on a service that autoscales and therefore scales in
- * routinely.
+ * STUDIO guests are the opposite case: their coding-agent sessions live on
+ * the host's control channel, so a dead host makes them useless — the
+ * broker's `dispose()` terminates them. It is documented for shutdown but
+ * once had no production call site at all, so a restart orphaned one guest
+ * per active studio project, burning its orphan timeout billed on Modal.
  *
  * Every failure is logged and swallowed: shutdown is best-effort by nature
- * (the sandbox may already be gone), and one rejecting teardown must not stop
- * the others or fail the process exit.
+ * (the sandbox may already be gone), and one rejecting teardown must not
+ * stop the others or fail the process exit.
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import { type SlotCache, terminateSlot } from "./sandbox-slots.ts";
+import { retireSandbox } from "./sandbox-retire.ts";
+import type { AgentSlot, SlotCache } from "./sandbox-slots.ts";
 
-/**
- * Live client sessions across every guest this replica owns — what the
- * shutdown drain actually has to wait for.
- *
- * The orchestrator's own `wss.clients.size` cannot answer this. Browser voice
- * sessions dial the guest sandbox's tunnel DIRECTLY and never touch the
- * server process, so the socket count is structurally blind to them: it
- * reported 0 on every scale-in while calls were in flight, the drain returned
- * immediately, and `teardownSandboxes` below cut all of them. The 120s
- * `SHUTDOWN_DRAIN_MS` budget was dead weight — it could only ever measure
- * connections that no longer exist on this path.
- *
- * Retired-and-draining sandboxes are deliberately NOT counted: the guest
- * owns its drain (sandbox-retire.ts) and exits itself; a replica going down
- * mid-drain leaves the guest to finish on its own clock.
- *
- * Best-effort per sandbox — an unreachable guest counts 0, the same
- * convention idle eviction uses, so one wedged guest cannot stall shutdown
- * past its own bounded RPC timeout.
- */
-export async function liveGuestSessions(slots: SlotCache): Promise<number> {
-  const owned: { activeSessions?: () => Promise<number> }[] = [...slots.values()].flatMap((slot) =>
-    slot.sandbox ? [slot.sandbox] : [],
-  );
-  const counts = await Promise.all(
-    owned.map((sb) => sb.activeSessions?.().catch(() => 0) ?? Promise.resolve(0)),
-  );
-  return counts.reduce((total, n) => total + n, 0);
+/** Detach a slot's sandbox and deliver its retirement (awaited). */
+async function retireSlotDelivered(slot: AgentSlot): Promise<void> {
+  const sb = slot.sandbox;
+  delete slot.sandbox;
+  if (sb) await retireSandbox(sb, { slug: slot.slug, reason: "replica-shutdown" });
 }
 
 export type TeardownTargets = {
-  /** The replica's slug→sandbox map; primaries and replicas both go down. */
+  /** The replica's slug→sandbox map; every resident is retired. */
   slots: SlotCache;
   /**
    * The studio session broker, when this process serves the studio. Absent
@@ -72,12 +51,9 @@ export type TeardownTargets = {
 export async function teardownSandboxes(targets: TeardownTargets): Promise<void> {
   const { slots, broker } = targets;
 
-  const work: Promise<unknown>[] = [...slots.values()].map((slot) => terminateSlot(slot));
-  // A fourth kind: sandboxes retired by a mutation and still draining (see
-  // sandbox-retire.ts). They are deliberately detached from their slot, so
-  // the loop above cannot see them — and their drain deadline is minutes,
-  // far past the container's grace period, so waiting on it would just get
-  // the process SIGKILLed with the guests still up.
+  const work: Promise<unknown>[] = [...slots.values()].map((slot) => retireSlotDelivered(slot));
+  // Sandboxes retired earlier by a mutation are deliberately not chased:
+  // they are off the slot map and already self-governing.
   if (broker) work.push(broker.dispose());
 
   for (const result of await Promise.allSettled(work)) {

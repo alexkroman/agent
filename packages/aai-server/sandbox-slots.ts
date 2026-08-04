@@ -19,12 +19,6 @@ import { retireSandbox } from "./sandbox-retire.ts";
 export type SlotSandbox = {
   shutdown(): Promise<void>;
   /**
-   * Live client sessions in the guest. Sessions connect DIRECTLY to the
-   * sandbox's tunnel, so the host cannot count them — process-shutdown
-   * drains ask the guest (see teardown-sandboxes.ts).
-   */
-  activeSessions?: () => Promise<number>;
-  /**
    * Ask the guest to refuse new sessions and self-exit when empty (see
    * `Sandbox.drain`). Optional so test doubles stay assignable.
    */
@@ -93,7 +87,7 @@ export async function terminateSlot(slot: AgentSlot): Promise<void> {
 export function retireSlot(slot: AgentSlot, reason: string): void {
   const sb = slot.sandbox;
   delete slot.sandbox;
-  if (sb) retireSandbox(sb, { slug: slot.slug, reason });
+  if (sb) void retireSandbox(sb, { slug: slot.slug, reason });
 }
 
 export function setSlot(slots: SlotCache, slot: AgentSlot): void {

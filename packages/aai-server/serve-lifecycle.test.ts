@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createShutdownHandler, drainActiveSessions, startService } from "./serve-lifecycle.ts";
+import { createShutdownHandler, startService } from "./serve-lifecycle.ts";
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -89,33 +89,6 @@ describe("createShutdownHandler", () => {
     } finally {
       vi.useRealTimers();
     }
-  });
-});
-
-describe("drainActiveSessions", () => {
-  it("returns once the live-session count reaches zero", async () => {
-    let live = 2;
-    const drain = drainActiveSessions({
-      activeCount: () => live,
-      env: { SHUTDOWN_DRAIN_MS: "5000" },
-    });
-    live = 0;
-
-    await drain;
-
-    expect(console.warn).not.toHaveBeenCalled();
-  });
-
-  it("warns when the deadline passes with sessions still in flight", async () => {
-    await drainActiveSessions({
-      activeCount: () => 3,
-      env: { SHUTDOWN_DRAIN_MS: "0" },
-    });
-
-    expect(console.warn).toHaveBeenCalledWith(
-      "Drain deadline reached; closing sessions still in flight",
-      { remaining: 3 },
-    );
   });
 });
 

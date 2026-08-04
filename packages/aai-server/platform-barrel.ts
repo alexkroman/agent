@@ -7,8 +7,7 @@
  * Named (not `export *`) so the shared surface stays deliberate.
  */
 
-export { resolveDrainMs, resolvePort } from "./_boot.ts";
-export { waitForIdle } from "./_drain.ts";
+export { resolvePort } from "./_boot.ts";
 export { createKeyedLock, withLock } from "./_keyed-lock.ts";
 export { createCachedDirReader, isPathInside } from "./_static-files.ts";
 export { TtlCache } from "./_ttl-cache.ts";

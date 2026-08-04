@@ -34,12 +34,12 @@ export const DEFAULT_SANDBOX_TIMEOUT_MS = 4 * 60 * 60 * 1000;
  * as ~2-3 MiB `sleep infinity` shells for orphan timeout + idle window
  * (~20 min) before Modal reaps them. That window is the backstop, not the
  * normal path: `run_node` in scripts/modal_image.py forwards container stop
- * signals to the node process so `teardownSandboxes` terminates guests
- * immediately on scale-in/redeploy.
+ * signals to the node process so `teardownSandboxes` runs on
+ * scale-in/redeploy — RETIRING agent guests (they finish their calls and
+ * exit themselves) and terminating studio guests via the broker.
  *
- * A *healthy* resident sandbox always has the harness exec running (and its
- * host pinging), so its idle timer never starts; host-side eviction
- * (`sandbox-slots.ts`) remains the authority on session-aware idleness.
+ * A *healthy* resident sandbox always has the harness exec running, so its
+ * idle timer never starts; the GUEST owns idleness (agent-mode self-exit).
  * Override with `SANDBOX_IDLE_TIMEOUT_SECS`.
  */
 export const DEFAULT_SANDBOX_IDLE_TIMEOUT_MS = 15 * 60 * 1000;

@@ -66,6 +66,12 @@ describe("agent-server contract (real harness, no mocks)", () => {
     const origin = handle.sessionUrl.replace("/websocket", "");
     const statusUrl = guestHttpUrl(origin, GUEST_ROUTES.manageStatus);
 
+    // The guest is the client-config authority (the platform broker
+    // proxies this): the bundle's own name reaches the public surface.
+    const cfg = await fetch(guestHttpUrl(origin, GUEST_ROUTES.clientConfig));
+    expect(cfg.status).toBe(200);
+    expect(await cfg.json()).toMatchObject({ name: "server-mode-agent" });
+
     const noAuth = await fetch(statusUrl);
     expect(noAuth.status).toBe(401);
 

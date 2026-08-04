@@ -17,10 +17,10 @@
  * The agent-only service is the aai-server package's own entry.
  */
 
-import { DEFAULT_PORT, DRAIN_GUEST_POLL_MS } from "aai-server/constants";
+import { DEFAULT_PORT } from "aai-server/constants";
 import { createOrchestrator } from "aai-server/orchestrator";
 import { resolvePort } from "aai-server/platform-barrel";
-import { drainActiveSessions, startService } from "aai-server/serve-lifecycle";
+import { startService } from "aai-server/serve-lifecycle";
 import {
   assertSandboxBackendOrWarn,
   buildServiceConfig,
@@ -28,7 +28,7 @@ import {
   type ServiceConfig,
 } from "aai-server/service-config";
 import { isStudioPath } from "aai-server/studio-proxy";
-import { liveGuestSessions, teardownSandboxes } from "aai-server/teardown-sandboxes";
+import { teardownSandboxes } from "aai-server/teardown-sandboxes";
 import { createStudioApp, type StudioAppOpts } from "./studio-app.ts";
 import {
   CHAT_RATE_LIMIT,
@@ -135,18 +135,13 @@ async function main(): Promise<void> {
     fetch: combinedFetch,
     port,
     injectWebSocket: (server) => orchestrator.injectWebSocket(server),
-    // Same drain posture as the agent service's entry — and now literally the
-    // same code path, so the two can no longer drift.
+    // Same shutdown posture as the agent service's entry — and literally the
+    // same code path, so the two can no longer drift: agent guests are
+    // RETIRED (they finish their calls and exit on their own clock — see
+    // teardown-sandboxes.ts), studio guests go down with the broker.
     onShutdown: async () => {
       draining = true;
-      // The count is the guests' sessions — see the agent entry: sessions
-      // live in the sandboxes, and this process terminates none of its own.
-      await drainActiveSessions({
-        activeCount: () => liveGuestSessions(base.slots),
-        pollMs: DRAIN_GUEST_POLL_MS,
-        env,
-      });
-      console.info("Shutting down...");
+      console.info("Shutting down (retiring guests)...");
       await teardown();
     },
   });

@@ -28,29 +28,24 @@ import { ensureTableOnce } from "./pg-ensure.ts";
 import type { SqlExec } from "./secret-store.ts";
 
 /**
- * The host's read-side view of a STORED agent config — deliberately opaque.
+ * The host's read-side view of a STORED agent config — FULLY opaque.
  *
  * A stored config was validated by the FULL `IsolateConfigSchema` once, at
  * deploy time, against the rules current then. Re-validating it against
  * TODAY'S rules on every row read is a cross-version seam: any tightening of
  * the config schema would make previously-valid deployed agents read as
  * "corrupt … missing" (a 404) without anyone touching them. So reads assert
- * only what the host actually consumes — `name` and `greeting` for the
- * client-config broker (and logs/slug seeds) — and pass everything else
- * through untouched for storage round-trips. The bundle interprets its own
- * config with the SDK it shipped with; the server has no other reader.
+ * nothing beyond "it is an object": the host has NO field-level reader left —
+ * even name/greeting come from the guest's own `/client-config` now (see
+ * client-config-handler.ts) — and the row's copy exists only to round-trip
+ * through storage. The bundle interprets its own config with the SDK it
+ * shipped with.
  *
- * Do not add fields here without a host-side consumer, and never add a
- * refinement: strictness belongs at the deploy boundary
- * (`validateAgentConfig` in deploy.ts), which always runs on the current
- * CLI's freshly extracted config.
+ * Do not add fields here, and never add a refinement: strictness belongs at
+ * the deploy boundary (`validateAgentConfig` in deploy.ts), which always
+ * runs on the current CLI's freshly extracted config.
  */
-export const StoredAgentConfigSchema = z
-  .object({
-    name: z.string(),
-    greeting: z.string().optional(),
-  })
-  .passthrough();
+export const StoredAgentConfigSchema = z.record(z.string(), z.unknown());
 
 export type StoredAgentConfig = z.infer<typeof StoredAgentConfigSchema>;
 

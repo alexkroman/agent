@@ -12,16 +12,15 @@
  *
  * What is shared is the *mechanism* — listen, log, signal handling,
  * re-entrancy, close, fallback exit. What stays per-service is the *policy*,
- * supplied as `onShutdown`: the agent and combined entries drain live voice
- * sessions first, while the standalone studio service does not (its chat turns
- * are bounded HTTP/SSE requests, so there is nothing long-lived to wait for).
+ * supplied as `onShutdown`. There is no session-drain wait anywhere: voice
+ * sessions live in guest sandboxes that this process retires rather than
+ * terminates (see teardown-sandboxes.ts), so live calls finish in the
+ * guests on their own clock after the replica is gone.
  */
 
 import type { Server as NodeHttpServer } from "node:http";
 import { errorMessage } from "@alexkroman1/aai";
 import { serve } from "@hono/node-server";
-import { resolveDrainMs } from "./_boot.ts";
-import { waitForIdle } from "./_drain.ts";
 import { SHUTDOWN_CLOSE_FALLBACK_MS } from "./constants.ts";
 
 /** The slice of a node HTTP server this module drives. Injectable for tests. */
@@ -74,45 +73,6 @@ export function createShutdownHandler(opts: ShutdownHandlerOptions): () => Promi
     }, fallbackMs);
     timer.unref?.();
   };
-}
-
-export type DrainOptions = {
-  /**
-   * Live session count, polled until it reaches zero or the deadline passes.
-   *
-   * May be async, and on this platform must be: most sessions live in guest
-   * sandboxes rather than in this process, so counting them is an RPC fan-out
-   * (`liveGuestSessions`), not a local socket-set size.
-   */
-  activeCount: () => number | Promise<number>;
-  /**
-   * Poll interval. Callers whose count costs a guest RPC round trip should
-   * pass something far coarser than `DRAIN_POLL_MS`'s local-counter default.
-   */
-  pollMs?: number;
-  env?: NodeJS.ProcessEnv;
-};
-
-/**
- * Wait for live voice sessions to end before tearing anything down.
- *
- * The caller must have flipped its draining flag FIRST — otherwise the replica
- * keeps accepting the sessions it is waiting to finish and the drain cannot
- * converge.
- */
-export async function drainActiveSessions(opts: DrainOptions): Promise<void> {
-  const drainMs = resolveDrainMs((opts.env ?? process.env).SHUTDOWN_DRAIN_MS);
-  console.info("Draining active sessions...", { active: await opts.activeCount(), drainMs });
-  const { drained, remaining } = await waitForIdle({
-    activeCount: opts.activeCount,
-    timeoutMs: drainMs,
-    ...(opts.pollMs !== undefined && { pollMs: opts.pollMs }),
-  });
-  if (!drained) {
-    // Deliberately loud: this is a call that got cut, and the deadline is only
-    // correct if it is rarely hit.
-    console.warn("Drain deadline reached; closing sessions still in flight", { remaining });
-  }
 }
 
 export type StartServiceOptions = {

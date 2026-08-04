@@ -24,6 +24,8 @@ export const GUEST_ROUTES = {
   studioChat: "/studio/chat",
   /** PUBLIC readiness probe (the SDK server's own /health). */
   health: "/health",
+  /** PUBLIC pre-connection client config (the SDK server's own route). */
+  clientConfig: "/client-config",
   /** Agent-mode management surface (bearer-gated): session count + drain. */
   manageStatus: "/manage/status",
   manageDrain: "/manage/drain",

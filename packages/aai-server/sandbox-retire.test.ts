@@ -1,10 +1,11 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * Retirement is the difference between "the deploy landed" and "the deploy
- * hung up on everyone who was mid-call". It is FIRE-AND-FORGET host-side:
- * one deadline-carrying drain request, and the GUEST owns finishing the
- * calls and exiting (see aai-guest/harness-agent-mode.test.ts for the
- * guest half — deadline enforcement lives there).
+ * hung up on everyone who was mid-call". The GUEST owns the drain — one
+ * deadline-carrying request and the host forgets (see
+ * aai-guest/harness-agent-mode.test.ts for the guest half). The returned
+ * promise resolves on DELIVERY, never rejects, and is awaited only by
+ * process shutdown; request-path callers void it.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -25,10 +26,8 @@ describe("retireSandbox", () => {
       shutdown: vi.fn().mockResolvedValue(undefined),
       drain: vi.fn().mockResolvedValue(undefined),
     };
-    retireSandbox(sandbox, { slug: "s", reason: "superseded", timeoutMs: 60_000 });
-    await vi.waitFor(() => {
-      expect(sandbox.drain).toHaveBeenCalledWith(60_000);
-    });
+    await retireSandbox(sandbox, { slug: "s", reason: "superseded", timeoutMs: 60_000 });
+    expect(sandbox.drain).toHaveBeenCalledExactlyOnceWith(60_000);
     // The guest exits itself when empty or at the deadline; the host holds
     // no drain state and must not shut the guest down under its callers.
     expect(sandbox.shutdown).not.toHaveBeenCalled();
@@ -39,10 +38,8 @@ describe("retireSandbox", () => {
       shutdown: vi.fn().mockResolvedValue(undefined),
       drain: vi.fn().mockRejectedValue(new Error("guest gone")),
     };
-    retireSandbox(sandbox, { slug: "s", reason: "superseded" });
-    await vi.waitFor(() => {
-      expect(sandbox.shutdown).toHaveBeenCalledOnce();
-    });
+    await retireSandbox(sandbox, { slug: "s", reason: "superseded" });
+    expect(sandbox.shutdown).toHaveBeenCalledOnce();
   });
 
   it("terminates immediately when the drain window is zero", async () => {
@@ -50,29 +47,25 @@ describe("retireSandbox", () => {
       shutdown: vi.fn().mockResolvedValue(undefined),
       drain: vi.fn().mockResolvedValue(undefined),
     };
-    retireSandbox(sandbox, { slug: "s", reason: "superseded", timeoutMs: 0 });
-    await vi.waitFor(() => {
-      expect(sandbox.shutdown).toHaveBeenCalledOnce();
-    });
+    await retireSandbox(sandbox, { slug: "s", reason: "superseded", timeoutMs: 0 });
+    expect(sandbox.shutdown).toHaveBeenCalledOnce();
     expect(sandbox.drain).not.toHaveBeenCalled();
   });
 
   it("terminates a stand-in with no drain surface", async () => {
     const sandbox = { shutdown: vi.fn().mockResolvedValue(undefined) };
-    retireSandbox(sandbox, { slug: "s", reason: "superseded" });
-    await vi.waitFor(() => {
-      expect(sandbox.shutdown).toHaveBeenCalledOnce();
-    });
+    await retireSandbox(sandbox, { slug: "s", reason: "superseded" });
+    expect(sandbox.shutdown).toHaveBeenCalledOnce();
   });
 
-  it("never throws, even when everything rejects", async () => {
+  it("never rejects, even when everything rejects", async () => {
     const sandbox = {
       shutdown: vi.fn().mockRejectedValue(new Error("already gone")),
       drain: vi.fn().mockRejectedValue(new Error("guest gone")),
     };
-    expect(() => retireSandbox(sandbox, { slug: "s", reason: "superseded" })).not.toThrow();
-    await vi.waitFor(() => {
-      expect(sandbox.shutdown).toHaveBeenCalledOnce();
-    });
+    await expect(
+      retireSandbox(sandbox, { slug: "s", reason: "superseded" }),
+    ).resolves.toBeUndefined();
+    expect(sandbox.shutdown).toHaveBeenCalledOnce();
   });
 });

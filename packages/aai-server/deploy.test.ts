@@ -371,8 +371,8 @@ describe("POST /deploy", () => {
     });
     expect(res.status).toBe(200);
 
-    const stored = await store.getAgentConfig("config-test");
-    expect(stored).toEqual(agentConfig);
+    const stored = await store.getAgent("config-test");
+    expect(stored?.config).toEqual(agentConfig);
   });
 
   test("rejects a worker whose bundle does not self-describe", async () => {
