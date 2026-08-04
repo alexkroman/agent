@@ -20,6 +20,7 @@
  * failure the operator would investigate.
  */
 
+import { decodeHTML } from "entities";
 import { z } from "zod";
 import { FETCH_TIMEOUT_MS } from "../sdk/constants.ts";
 import type { ToolDef } from "../sdk/types.ts";
@@ -44,30 +45,15 @@ const DDG_HEADERS = {
 };
 const MAX_SEARCH_RESULTS = 10;
 
-const DDG_NAMED_ENTITIES: Readonly<Record<string, string>> = {
-  "&lt;": "<",
-  "&gt;": ">",
-  "&quot;": '"',
-  "&apos;": "'",
-  "&#39;": "'",
-  "&#x27;": "'",
-  "&#x2f;": "/",
-  "&nbsp;": " ",
-  "&ndash;": "-",
-  "&mdash;": "--",
-  "&hellip;": "...",
-  "&amp;": "&",
-};
-
+/**
+ * Full HTML entity decoding via `entities` (the parser ecosystem's decoder —
+ * every named entity, not a hand-picked table). NBSP is normalized to a plain
+ * space afterwards: DDG uses `&nbsp;` where result text wants an ordinary
+ * space, and U+00A0 survives `stripHtml`'s whitespace collapse (which runs
+ * before decoding, while the entity is still literal text).
+ */
 function decodeHtmlEntities(text: string): string {
-  return text.replace(/&(?:[a-z]+|#\d+|#x[0-9a-f]+);/gi, (entity) => {
-    const named = DDG_NAMED_ENTITIES[entity.toLowerCase()];
-    if (named !== undefined) return named;
-    const numeric = /^&#(x?)([0-9a-f]+);$/i.exec(entity);
-    if (!numeric) return entity;
-    const code = Number.parseInt(numeric[2] ?? "", numeric[1] ? 16 : 10);
-    return Number.isFinite(code) ? String.fromCodePoint(code) : entity;
-  });
+  return decodeHTML(text).replace(/\u00a0/g, " ");
 }
 
 function stripHtml(html: string): string {

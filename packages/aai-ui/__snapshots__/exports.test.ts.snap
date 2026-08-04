@@ -13,6 +13,7 @@ exports[`aai-ui export surface > @alexkroman1/aai-ui main export 1`] = `
   "SidebarLayout",
   "StartScreen",
   "ThemeProvider",
+  "ToolCallRow",
   "ToolConfigContext",
   "UiUrlChip",
   "VOICE_CAPTURE_CONSTRAINTS",

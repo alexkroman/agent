@@ -1,11 +1,11 @@
 // Copyright 2026 the AAI authors. MIT license.
-// Tool-call rendering for the chat transcript: the same console row the
-// deployed agent UI uses (aai-ui's ToolCallBlock), plus the part→block
-// grouping helpers. Split from chat.tsx for file-size discipline.
+// Tool-call rendering for the chat transcript: aai-ui's shared ToolCallRow
+// (the same console row the deployed agent UI uses) fed from AI SDK message
+// parts, plus the part→block grouping helpers. Split from chat.tsx for
+// file-size discipline.
 
+import { ToolCallRow } from "@alexkroman1/aai-ui";
 import type { UIMessage } from "ai";
-import clsx from "clsx";
-import { useState } from "react";
 
 /** Caps on the expanded row's raw JSON — a peek, not a document viewer. */
 const ARGS_PREVIEW_CHARS = 300;
@@ -27,11 +27,10 @@ function isToolPart(part: { type: string }): boolean {
 }
 
 /**
- * One tool invocation, rendered as the same console row the deployed agent UI
- * uses (`aai-ui`'s ToolCallBlock): outlined TOOL chip, tool name in mono, a
- * truncated args preview, and a chevron that rotates to expand the result.
- * The two surfaces show the same thing, so they should read as one component —
- * only the type scale differs, since the studio is a denser surface.
+ * One tool invocation from an AI SDK message, rendered through aai-ui's
+ * `ToolCallRow` (compact variant) so the studio transcript and the deployed
+ * agent UI read as one component. This wrapper owns only the data mapping:
+ * part→name/args, the shimmer condition, and the capped expansion content.
  */
 export function ToolRow({
   part,
@@ -44,7 +43,6 @@ export function ToolRow({
   /** Tool name → friendly label (from the sandbox's GET /studio/tools). */
   labels?: Record<string, string> | undefined;
 }) {
-  const [open, setOpen] = useState(false);
   const rawName = toolPartName(part as { type: string; toolName?: string });
   const name = labels?.[rawName] ?? prettyToolName(rawName);
   const done = part.state === "output-available";
@@ -53,42 +51,15 @@ export function ToolRow({
   const canExpand = part.input != null || (done && output != null);
 
   return (
-    <div className="my-1 overflow-hidden rounded-md border border-line bg-cream">
-      <button
-        type="button"
-        aria-expanded={canExpand ? open : undefined}
-        disabled={!canExpand}
-        className={clsx(
-          "flex w-full appearance-none items-center gap-2 border-none bg-transparent px-3 py-2 text-left select-none",
-          canExpand && "cursor-pointer",
-        )}
-        onClick={() => canExpand && setOpen((v) => !v)}
-      >
-        <span className="shrink-0 rounded-sm border border-line px-1.5 py-[3px] text-[9px] leading-none font-medium tracking-[1.2px] text-subtle uppercase">
-          Tool
-        </span>
-        <span
-          className={clsx(
-            "shrink-0 font-mono text-[11px] font-medium text-fg",
-            !done && active && "tool-shimmer",
-          )}
-        >
-          {name}
-        </span>
-        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-subtle">{args}</span>
-        {canExpand && (
-          <span
-            className={clsx(
-              "shrink-0 text-[9px] text-subtle transition-transform duration-150",
-              open && "rotate-90",
-            )}
-          >
-            ▶
-          </span>
-        )}
-      </button>
-      {open && (
-        <div className="border-t border-line bg-panel px-3 py-2 text-subtle">
+    <ToolCallRow
+      title={name}
+      detail={args}
+      pending={!done && active}
+      variant="compact"
+      className="my-1"
+    >
+      {canExpand ? (
+        <div className="px-3 py-2 text-subtle">
           {part.input != null && (
             <code className="block overflow-x-auto font-mono text-[10px] break-all whitespace-pre-wrap">
               {JSON.stringify(part.input).slice(0, ARGS_PREVIEW_CHARS)}
@@ -103,8 +74,8 @@ export function ToolRow({
             </pre>
           )}
         </div>
-      )}
-    </div>
+      ) : undefined}
+    </ToolCallRow>
   );
 }
 

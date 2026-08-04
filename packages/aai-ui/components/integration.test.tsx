@@ -12,7 +12,7 @@
  */
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Profiler, type ReactNode } from "react";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import { createMockSessionCore } from "../_react-test-utils.ts";
 import { SessionProvider, ThemeProvider } from "../context.ts";
 import type { SessionCore } from "../session-core-types.ts";
@@ -292,62 +292,31 @@ describe("MessageList: messages + tool calls interleaved", () => {
   });
 });
 
-// --- MessageList auto-scroll guard ---
+// --- MessageList scroll container ---
 
-describe("MessageList: auto-scroll guard", () => {
-  test("follows new content at the bottom, but not after the user scrolls up", () => {
-    const scrollSpy = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {
-      /* noop */
-    });
-    // Run the deduped scroll synchronously so assertions can follow updates.
-    const rafSpy = vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
-      cb(0);
-      return 0;
-    });
-    try {
-      const core = createMockSessionCore({ started: true, state: "listening" });
-      renderWithProvider(<MessageList />, core);
+describe("MessageList: stick-to-bottom scroll container", () => {
+  // Auto-scroll itself (pin at the bottom, release on scroll-up, follow
+  // content that grows without a snapshot update) is use-stick-to-bottom's
+  // behavior, driven by real layout + a ResizeObserver — neither of which
+  // jsdom provides — so this asserts the DOM contract the library needs:
+  // wrapper (role="log") -> scroll element -> content element.
+  test("renders the wrapper/scroll/content structure with the list styling", () => {
+    const core = createMockSessionCore({ started: true, state: "listening" });
+    renderWithProvider(<MessageList className="custom-class" />, core);
 
-      // jsdom reports zero scroll metrics — that reads as "at the bottom",
-      // so new content auto-scrolls.
-      act(() => core.update({ messages: [{ id: 1, role: "user", content: "one" }] }));
-      expect(scrollSpy).toHaveBeenCalledTimes(1);
+    const log = screen.getByRole("log");
+    expect(log.className).toContain("flex-1");
+    expect(log.className).toContain("custom-class");
 
-      // The user scrolls up to read history: far from the bottom.
-      const log = screen.getByRole("log");
-      Object.defineProperty(log, "scrollHeight", { value: 1000, configurable: true });
-      Object.defineProperty(log, "clientHeight", { value: 200, configurable: true });
-      Object.defineProperty(log, "scrollTop", { value: 100, configurable: true, writable: true });
-      fireEvent.scroll(log);
+    const scroller = log.firstElementChild as HTMLElement;
+    expect(scroller.className).toContain("overflow-y-auto");
 
-      // Streaming content must not yank them back down.
-      act(() =>
-        core.update({
-          messages: [
-            { id: 1, role: "user", content: "one" },
-            { id: 2, role: "assistant", content: "two" },
-          ],
-        }),
-      );
-      expect(scrollSpy).toHaveBeenCalledTimes(1);
+    const content = scroller.firstElementChild as HTMLElement;
+    expect(content.className).toContain("flex-col");
 
-      // Scrolling back near the bottom re-engages auto-scroll.
-      log.scrollTop = 900;
-      fireEvent.scroll(log);
-      act(() =>
-        core.update({
-          messages: [
-            { id: 1, role: "user", content: "one" },
-            { id: 2, role: "assistant", content: "two" },
-            { id: 3, role: "user", content: "three" },
-          ],
-        }),
-      );
-      expect(scrollSpy).toHaveBeenCalledTimes(2);
-    } finally {
-      scrollSpy.mockRestore();
-      rafSpy.mockRestore();
-    }
+    // New content renders inside the observed content element.
+    act(() => core.update({ messages: [{ id: 1, role: "user", content: "one" }] }));
+    expect(content.textContent).toContain("one");
   });
 });
 
@@ -378,43 +347,6 @@ describe("ChatView: narrow subscriptions", () => {
     act(() => core.update({ state: "thinking" }));
     expect(commits).toBeGreaterThan(before);
     expect(screen.getByText("thinking")).toBeDefined();
-  });
-});
-
-describe("MessageList: auto-scroll behavior", () => {
-  test("jumps instantly while a partial transcript streams, smooth otherwise", () => {
-    const behaviors: (ScrollBehavior | undefined)[] = [];
-    const scrollSpy = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(function (
-      this: Element,
-      arg?: boolean | ScrollIntoViewOptions,
-    ) {
-      behaviors.push(typeof arg === "object" ? arg.behavior : undefined);
-    });
-    // Run the deduped scroll synchronously so assertions can follow updates.
-    const rafSpy = vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
-      cb(0);
-      return 0;
-    });
-    try {
-      const core = createMockSessionCore({ started: true, state: "listening" });
-      renderWithProvider(<MessageList />, core);
-
-      // Streaming: partials arrive faster than a smooth scroll finishes.
-      act(() => core.update({ userTranscript: "hel" }));
-      expect(behaviors.at(-1)).toBe("instant");
-
-      // Committed content keeps the smooth animation.
-      act(() =>
-        core.update({
-          userTranscript: null,
-          messages: [{ id: 1, role: "user", content: "hello" }],
-        }),
-      );
-      expect(behaviors.at(-1)).toBe("smooth");
-    } finally {
-      scrollSpy.mockRestore();
-      rafSpy.mockRestore();
-    }
   });
 });
 

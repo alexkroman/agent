@@ -19,6 +19,7 @@
  */
 
 import { AwsClient } from "aws4fetch";
+import { XMLParser } from "fast-xml-parser";
 import { createStorage, type Storage } from "unstorage";
 import s3Driver from "unstorage/drivers/s3";
 
@@ -41,38 +42,46 @@ function toS3Prefix(base: string | undefined): string {
   return (base ?? "").replace(/:/g, "/");
 }
 
-/** Decode the XML character entities S3 uses in `<Key>` values. */
-function decodeXmlEntities(value: string): string {
-  return (
-    value
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&quot;/g, '"')
-      .replace(/&apos;/g, "'")
-      // Both numeric forms, decoded with fromCodePoint: fromCharCode truncates
-      // astral code points mod 2^16, and these are OBJECT KEYS — a truncated
-      // decode is a different key, so deletes miss and listings show phantoms.
-      .replace(/&#x([0-9a-fA-F]+);/g, (_, code) => String.fromCodePoint(Number.parseInt(code, 16)))
-      .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
-      .replace(/&amp;/g, "&")
-  );
-}
+/**
+ * Values arrive as untrimmed strings, byte-for-byte: these are OBJECT KEYS,
+ * where a trimmed or type-coerced decode is a DIFFERENT key, so deletes miss
+ * and listings show phantoms. `htmlEntities` is what turns on numeric
+ * character references (`&#…;`/`&#x…;`), which the parser decodes with
+ * `fromCodePoint` — `fromCharCode` would truncate astral code points.
+ */
+const listParser = new XMLParser({
+  parseTagValue: false,
+  trimValues: false,
+  htmlEntities: true,
+  // A page with a single object yields a lone <Contents> element, which
+  // would otherwise parse as an object rather than a one-element array.
+  isArray: (_name, jPath) => jPath === "ListBucketResult.Contents",
+});
 
 type ListPage = { keys: string[]; nextToken: string | null };
 
+type ListBucketResult = {
+  Contents?: Array<{ Key?: unknown }>;
+  IsTruncated?: unknown;
+  NextContinuationToken?: unknown;
+};
+
 function parseListPage(xml: string): ListPage {
-  const body = /<ListBucketResult[^>]*>([\s\S]*)<\/ListBucketResult>/.exec(xml)?.[1];
-  if (body == null) throw new Error("S3 list response missing <ListBucketResult>");
-  const keys = [...body.matchAll(/<Contents[^>]*>([\s\S]*?)<\/Contents>/g)]
-    .map((m) => /<Key>([\s\S]+?)<\/Key>/.exec(m[1] ?? "")?.[1])
-    .filter((key): key is string => key != null)
-    .map(decodeXmlEntities);
-  const truncated = /<IsTruncated>\s*true\s*<\/IsTruncated>/.test(body);
-  const nextToken = /<NextContinuationToken>([\s\S]+?)<\/NextContinuationToken>/.exec(body)?.[1];
+  const result: unknown = listParser.parse(xml)?.ListBucketResult;
+  if (result == null || typeof result !== "object") {
+    throw new Error("S3 list response missing <ListBucketResult>");
+  }
+  const page = result as ListBucketResult;
+  const keys = (page.Contents ?? [])
+    .map((contents) => contents?.Key)
+    .filter((key): key is string => typeof key === "string");
+  const truncated = String(page.IsTruncated).trim() === "true";
+  const nextToken =
+    typeof page.NextContinuationToken === "string" ? page.NextContinuationToken : null;
   if (truncated && !nextToken) {
     throw new Error("S3 list response truncated without a continuation token");
   }
-  return { keys, nextToken: truncated ? decodeXmlEntities(nextToken ?? "") : null };
+  return { keys, nextToken: truncated ? nextToken : null };
 }
 
 /** All object keys under `prefix`, following continuation tokens. */

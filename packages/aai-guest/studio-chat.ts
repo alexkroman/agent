@@ -26,7 +26,7 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
-import { formatSchemaIssues } from "@alexkroman1/aai/internal";
+import { createCoalescingRunner, formatSchemaIssues } from "@alexkroman1/aai/internal";
 import { ASSEMBLYAI_LLM_API_KEY_ENV, assemblyAILlm } from "@alexkroman1/aai/llm";
 import { resolveAllBuiltins, resolveLlm } from "@alexkroman1/aai/runtime";
 import {
@@ -262,39 +262,29 @@ export const MUTATING_TOOLS: ReadonlySet<string> = new Set([
  *
  * Snapshots are serialized rather than concurrent: two overlapping walks of
  * the same workspace can interleave into a torn tree, and the host applies
- * whichever lands last. A checkpoint requested while one is running sets a
- * trailing flag instead of queueing without bound, so a long tool chain
- * issues at most one extra sync after the current one, never a backlog.
+ * whichever lands last. Checkpoints requested while one is running coalesce
+ * into ONE trailing sync (`createCoalescingRunner`) instead of queueing
+ * without bound — the snapshot reads the tree as it stands, so a long tool
+ * chain issues at most one extra sync after the current one, never a backlog.
  */
 function createWorkspaceCheckpointer(session: StudioSession): () => void {
-  let inFlight: Promise<void> | null = null;
-  let trailing = false;
-
-  const run = async (): Promise<void> => {
+  const runner = createCoalescingRunner(async () => {
     const { files } = await snapshotWorkspace(session.dir);
     await hostRequest("studio/sync-workspace", { files }, SYNC_RPC_TIMEOUT_MS);
-  };
+  });
+  let reported: Promise<void> | null = null;
 
-  const pump = (): void => {
-    if (inFlight !== null) {
-      trailing = true;
-      return;
-    }
-    inFlight = run()
-      .catch((err: unknown) => {
-        // Never fatal — a lost checkpoint costs recoverable work, while a
-        // thrown one would kill a reply that is otherwise fine.
-        console.error(`studio chat: workspace checkpoint failed: ${errMsg(err)}`);
-      })
-      .finally(() => {
-        inFlight = null;
-        if (!trailing) return;
-        trailing = false;
-        pump();
-      });
+  return () => {
+    const run = runner.trigger();
+    // Coalesced triggers share one run promise — log each run's failure once.
+    if (run === reported) return;
+    reported = run;
+    run.catch((err: unknown) => {
+      // Never fatal — a lost checkpoint costs recoverable work, while a
+      // thrown one would kill a reply that is otherwise fine.
+      console.error(`studio chat: workspace checkpoint failed: ${errMsg(err)}`);
+    });
   };
-
-  return pump;
 }
 
 /** Run one coding-agent turn, streaming the UI message stream to `res`. */

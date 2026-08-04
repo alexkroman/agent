@@ -8,6 +8,7 @@
  * an audio init still parked on getUserMedia (the generation bump) so a
  * stale VoiceIO can never double up mics or `audio_ready` frames.
  */
+import ReconnectingWebSocket from "partysocket/ws";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type AudioMockContext, installAudioMocks } from "./_react-test-utils.ts";
 import { MockWebSocket, makeConfig, resetLastSocket } from "./_session-core-test-utils.ts";
@@ -197,5 +198,30 @@ describe("session-core automatic reconnection (partysocket)", () => {
       expect(tracks[0]?.stopped).toBe(true);
       expect(tracks[1]?.stopped).toBe(false);
     });
+  });
+});
+
+// --- partysocket internals guard ---
+
+describe("partysocket internals used by reconnectPending", () => {
+  // reconnectPending() (session-core-reconnect.ts) reads
+  // `socket.shouldReconnect` and `socket.retryCount` — partysocket
+  // implementation details, not documented API. session-core's close handler
+  // branches on it, so if a partysocket bump renames or retypes either field,
+  // every transient close would silently become a terminal error. This pins
+  // those undocumented internals on a real instance; a rename fails here (and
+  // at typecheck) instead of in production.
+  it("exposes shouldReconnect and retryCount with the expected types", () => {
+    // startClosed keeps the constructor from dialing anything.
+    const socket = new ReconnectingWebSocket("ws://localhost:1", undefined, {
+      startClosed: true,
+    });
+    try {
+      expect(typeof socket.shouldReconnect).toBe("boolean");
+      expect(typeof socket.retryCount).toBe("number");
+      expect(socket.retryCount).toBe(0);
+    } finally {
+      socket.close();
+    }
   });
 });

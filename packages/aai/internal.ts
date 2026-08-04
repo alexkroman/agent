@@ -17,6 +17,10 @@
  * @module internal
  */
 
+export {
+  type CoalescingRunner,
+  createCoalescingRunner,
+} from "./sdk/coalescing-runner.ts";
 export { createEpoch, type Epoch } from "./sdk/epoch.ts";
 export { createOwnedMap, type OwnedMap } from "./sdk/owned-map.ts";
 export { formatSchemaIssues } from "./sdk/schema.ts";

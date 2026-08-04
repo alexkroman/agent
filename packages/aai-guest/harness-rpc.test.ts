@@ -15,7 +15,6 @@ import {
   sendError,
   sendResponse,
   setHostSend,
-  withTimeout,
   writeMessage,
 } from "./harness-rpc.ts";
 import type { JsonRpcMessage } from "./harness-types.ts";
@@ -99,22 +98,5 @@ describe("helpers", () => {
   test("errMsg extracts messages from Errors and stringifies the rest", () => {
     expect(errMsg(new Error("x"))).toBe("x");
     expect(errMsg("raw")).toBe("raw");
-  });
-
-  test("withTimeout rejects a promise that outlives its budget", async () => {
-    vi.useFakeTimers();
-    try {
-      const never = new Promise(() => undefined);
-      const pending = withTimeout(never, 50, "op");
-      const assertion = expect(pending).rejects.toThrow(/op timed out after 50ms/);
-      await vi.advanceTimersByTimeAsync(51);
-      await assertion;
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  test("withTimeout passes through a settling promise and clears its timer", async () => {
-    await expect(withTimeout(Promise.resolve("ok"), 1000, "op")).resolves.toBe("ok");
   });
 });

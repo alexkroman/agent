@@ -25,12 +25,16 @@
  * Concurrent writes coalesce: the tool descriptions tell the agent to issue
  * independent writes in parallel, and a compiler that started before this
  * caller's write landed on disk cannot vouch for it — so callers arriving
- * mid-run share ONE follow-up run started after the current one settles.
- * Worst case a parallel burst costs two checks, never one per file.
+ * mid-run share ONE follow-up run started after the current one settles
+ * (`createCoalescingRunner`). Coalescing beats queueing because the check
+ * reads the whole tree as it stands: N queued checks would repeat the
+ * follow-up's work N times. Worst case a parallel burst costs two checks,
+ * never one per file.
  */
 
 import path from "node:path";
-import { withTimeout } from "./harness-rpc.ts";
+import { createCoalescingRunner } from "@alexkroman1/aai/internal";
+import pTimeout from "p-timeout";
 
 export type TypecheckResult = { ok: true; skipped: boolean } | { ok: false; output: string };
 export type TypecheckFn = () => Promise<TypecheckResult>;
@@ -64,36 +68,18 @@ export function createPostWriteDiagnostics(
   typecheck: TypecheckFn,
   timeoutMs: number = POST_WRITE_TYPECHECK_TIMEOUT_MS,
 ): (rel: string) => Promise<string | undefined> {
-  let inFlight: Promise<TypecheckResult | undefined> | null = null;
-  let queued: Promise<TypecheckResult | undefined> | null = null;
-
-  const start = (): Promise<TypecheckResult | undefined> => {
-    // Degrade to undefined on timeout or a thrown checker — a broken
-    // checker must not break writes (same posture as the syntax gate).
-    const run = withTimeout(typecheck(), timeoutMs, "Post-write typecheck")
-      .catch(() => undefined)
-      .finally(() => {
-        if (inFlight === run) inFlight = null;
-      });
-    inFlight = run;
-    return run;
-  };
-
-  const settle = (): Promise<TypecheckResult | undefined> => {
-    if (inFlight === null) return start();
-    // The in-flight compiler may have read the tree before this caller's
-    // write landed, so its verdict cannot clear this write. Everyone who
-    // arrives mid-run shares one follow-up, started after the current run.
-    queued ??= inFlight.then(() => {
-      queued = null;
-      return settle();
-    });
-    return queued;
-  };
+  // The in-flight compiler may have read the tree before this caller's write
+  // landed, so its verdict cannot clear this write — exactly the runner's
+  // trailing-run semantics. Each run degrades to undefined on timeout or a
+  // thrown checker (never rejects): a broken checker must not break writes
+  // (same posture as the syntax gate).
+  const runner = createCoalescingRunner<TypecheckResult | undefined>(() =>
+    pTimeout(typecheck(), { milliseconds: timeoutMs }).catch(() => undefined),
+  );
 
   return async (rel) => {
     if (!CHECKED.has(path.extname(rel).toLowerCase())) return;
-    const result = await settle();
+    const result = await runner.trigger();
     if (result === undefined || result.ok) return;
     return formatPostWriteDiagnostics(rel, result.output);
   };

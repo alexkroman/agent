@@ -29,6 +29,7 @@
  */
 
 import path from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { errMsg } from "./harness-rpc.ts";
 
 /** Extensions oxc can parse. JSON is skipped — it is not a script. */
@@ -65,15 +66,9 @@ export function resetSyntaxChecker(): void {
   transformer = null;
 }
 
-/**
- * Built with `fromCharCode` rather than written as a literal: a raw ESC in a
- * regex literal is a lint error, and escaping it is too.
- */
-const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
-
 /** oxc renders a boxed, ANSI-coloured diagnostic; keep the useful lines. */
 function tidy(message: string): string {
-  const plain = message.replace(ANSI, "");
+  const plain = stripVTControlCharacters(message);
   const lines = plain
     .split("\n")
     .map((l) => l.trim())

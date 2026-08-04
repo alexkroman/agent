@@ -2,13 +2,12 @@
 
 /** @jsxImportSource react */
 
-import clsx from "clsx";
-import { memo, type ReactNode, useMemo, useState } from "react";
+import { memo, type ReactNode, useMemo } from "react";
 import { truncate, tryParseJSON } from "../_utils.ts";
 import { useTheme } from "../context.ts";
 import type { ToolCallInfo } from "../types.ts";
-import { TEXT_FAINT, TEXT_MUTED } from "./_colors.ts";
-import { Eyebrow } from "./eyebrow.tsx";
+import { TEXT_MUTED } from "./_colors.ts";
+import { ToolCallRow } from "./tool-call-row.tsx";
 import { useToolConfig } from "./tool-config-context.ts";
 
 function formatResult(result: string): string {
@@ -17,10 +16,10 @@ function formatResult(result: string): string {
 }
 
 /**
- * Renders a tool invocation as the design system's console row: a small
- * outlined "TOOL" chip (or the tool's configured icon), the tool name in
- * mono, a truncated args preview, and a rotating chevron that expands the
- * formatted result.
+ * Renders a tool invocation as the design system's console row (see
+ * `ToolCallRow`): a small outlined "TOOL" chip (or the tool's configured
+ * icon), the tool name in mono, a truncated args preview, and a rotating
+ * chevron that expands the formatted result.
  *
  * Tool display is configured via `ToolConfigContext`. If no config is found
  * for a tool name, the raw tool name is shown as the title.
@@ -44,7 +43,6 @@ export const ToolCallBlock = memo(function ToolCallBlock({
   toolCall: ToolCallInfo;
   className?: string;
 }): ReactNode {
-  const [isOpen, setIsOpen] = useState(false);
   const theme = useTheme();
   const toolConfig = useToolConfig();
 
@@ -73,58 +71,15 @@ export const ToolCallBlock = memo(function ToolCallBlock({
   }, [toolCall.name, toolCall.args]);
 
   return (
-    <div
-      className={clsx("flex flex-col rounded-md border overflow-hidden", className)}
-      style={{ borderColor: theme.border, background: theme.bg }}
+    <ToolCallRow
+      title={title}
+      detail={subtitle}
+      pending={isPending}
+      icon={icon}
+      className={className}
     >
-      <button
-        type="button"
-        aria-expanded={canExpand ? isOpen : undefined}
-        disabled={isPending}
-        className={clsx(
-          "flex items-center gap-2.5 px-3.5 py-2.5 select-none text-left w-full appearance-none border-none bg-transparent",
-          canExpand && "cursor-pointer",
-        )}
-        onClick={() => {
-          if (canExpand) setIsOpen(!isOpen);
-        }}
-      >
-        {icon ? (
-          <span className="w-4 h-4 shrink-0 text-center leading-4">{icon}</span>
-        ) : (
-          <Eyebrow className="shrink-0" style={{ color: TEXT_FAINT }}>
-            Tool
-          </Eyebrow>
-        )}
-        <span
-          className={clsx("font-aai-mono text-[13px] font-medium", isPending && "tool-shimmer")}
-          style={{ color: theme.text }}
-        >
-          {title}
-        </span>
-        <span
-          className="font-aai-mono text-[13px] truncate flex-1 min-w-0"
-          style={{ color: TEXT_FAINT }}
-        >
-          {subtitle}
-        </span>
-        {canExpand && (
-          <span
-            className={clsx(
-              "text-[10px] shrink-0 transition-transform duration-150",
-              isOpen && "rotate-90",
-            )}
-            style={{ color: TEXT_FAINT }}
-          >
-            ▶
-          </span>
-        )}
-      </button>
-      {isOpen && (
-        <div
-          className="border-t max-h-64 overflow-auto"
-          style={{ borderColor: theme.border, background: theme.surface }}
-        >
+      {canExpand ? (
+        <>
           {toolCall.name === "run_code" && Boolean(toolCall.args.code) && (
             <pre
               className="font-aai-mono text-xs px-3.5 py-3 m-0 whitespace-pre-wrap wrap-break-word border-b"
@@ -141,8 +96,8 @@ export const ToolCallBlock = memo(function ToolCallBlock({
               {formatted}
             </pre>
           )}
-        </div>
-      )}
-    </div>
+        </>
+      ) : undefined}
+    </ToolCallRow>
   );
 });

@@ -11,48 +11,20 @@
  *
  * The studio API is plain HTTP plus SSE (`POST /studio/chat` streams the AI
  * SDK UI-message stream); it has no WebSockets, so a streaming `fetch`
- * passthrough covers all of it. Two encoding details are load-bearing:
- *
- * - The forwarded request drops `accept-encoding`, so the upstream answers
- *   with an identity body. undici's fetch transparently decompresses
- *   compressed responses but leaves the `content-encoding`/`content-length`
- *   headers in place — re-serving those headers with a decompressed body
- *   corrupts the response. Identity end-to-end sidesteps the whole class.
- * - The response is re-streamed (`res.body` passthrough), never buffered:
- *   chat turns are long-lived SSE streams and the client renders tokens as
- *   they arrive.
+ * passthrough covers all of it. The forwarding mechanics — hop-by-hop
+ * header stripping (RFC 9110 §7.6.1), dropping `accept-encoding` so the
+ * upstream answers identity (undici's fetch transparently decompresses
+ * bodies but leaves `content-encoding`/`content-length` in place, so those
+ * are stripped from an encoded response too), and re-streaming the response
+ * body (never buffered — chat turns are long-lived SSE streams) — are
+ * `hono/proxy`'s job.
  */
 
 import { errorMessage } from "@alexkroman1/aai";
 import type { Context } from "hono";
+import { proxy } from "hono/proxy";
 import type { HonoEnv } from "./context.ts";
 import { publicForwardedHeaders } from "./public-origin.ts";
-
-/**
- * Hop-by-hop headers (RFC 9110 §7.6.1) plus the ones the proxy must own:
- * `host` names the upstream (undici derives it from the target URL), and
- * `accept-encoding` is dropped per the module doc.
- */
-const STRIP_REQUEST_HEADERS = new Set([
-  "host",
-  "connection",
-  "keep-alive",
-  "proxy-authenticate",
-  "proxy-authorization",
-  "te",
-  "trailer",
-  "transfer-encoding",
-  "upgrade",
-  "accept-encoding",
-]);
-
-const STRIP_RESPONSE_HEADERS = new Set([
-  "connection",
-  "keep-alive",
-  "transfer-encoding",
-  "content-encoding",
-  "content-length",
-]);
 
 /**
  * The studio surface, as one predicate. Single source of truth for every
@@ -89,11 +61,6 @@ export function createStudioProxy(
     const url = new URL(c.req.url);
     const target = `${base}${url.pathname}${url.search}`;
 
-    const headers = new Headers();
-    for (const [name, value] of c.req.raw.headers) {
-      // Headers iteration yields lowercased names per the Fetch spec.
-      if (!STRIP_REQUEST_HEADERS.has(name)) headers.set(name, value);
-    }
     // The studio service needs the PUBLIC origin (this service's), not its
     // own upstream address — Publish hands it to the guest's `aai deploy`
     // as the platform to dial (see studio-routes' requestPublicOrigin).
@@ -101,34 +68,27 @@ export function createStudioProxy(
     // over cleartext behind Modal's TLS termination, so forwarding
     // `url.protocol` told the studio the platform was `http://`.
     const forwarded = publicForwardedHeaders(c.req.raw);
+    // The additions ride a wrapper Request rather than proxy()'s `headers`
+    // option, which REPLACES the forwarded header set wholesale (dropping
+    // authorization et al.). `host` is ours to delete — proxy() strips
+    // hop-by-hop headers and `accept-encoding` but not `host`, and undici
+    // derives it from the target URL.
+    const headers = new Headers(c.req.raw.headers);
     headers.set("x-forwarded-host", forwarded.host);
     headers.set("x-forwarded-proto", forwarded.proto);
+    headers.delete("host");
 
-    const method = c.req.method;
-    const hasBody = method !== "GET" && method !== "HEAD";
-    const init: RequestInit = {
-      method,
-      headers,
-      // Pass upstream redirects through to the browser (the studio app
-      // redirects /studio/ → /) instead of following them proxy-side.
-      redirect: "manual",
-      ...(hasBody && { body: c.req.raw.body, duplex: "half" }),
-      // `duplex` is required for streaming request bodies and absent from
-      // the DOM lib's RequestInit type; undici (Node's fetch) honors it.
-    } as RequestInit;
-
-    let res: Response;
     try {
-      res = await fetchFn(target, init);
+      return await proxy(target, {
+        raw: new Request(c.req.raw, { headers }),
+        // Pass upstream redirects through to the browser (the studio app
+        // redirects /studio/ → /) instead of following them proxy-side.
+        redirect: "manual",
+        customFetch: fetchFn,
+      });
     } catch (err) {
       console.error(`Studio proxy request failed: ${errorMessage(err)}`);
       return c.json({ error: "Studio is unavailable — try again shortly" }, 502);
     }
-
-    const responseHeaders = new Headers();
-    for (const [name, value] of res.headers) {
-      if (!STRIP_RESPONSE_HEADERS.has(name)) responseHeaders.set(name, value);
-    }
-    return new Response(res.body, { status: res.status, headers: responseHeaders });
   };
 }

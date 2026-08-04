@@ -175,6 +175,27 @@ describe("createServer static client dir", () => {
     expect(res.status).toBe(404);
   });
 
+  test("serves assets whose names need percent-decoding", async () => {
+    const base = await listenWithClientDir();
+    if (!dir) throw new Error("client dir missing");
+    await fs.writeFile(path.join(dir, "my asset.js"), "console.log(2);");
+    const res = await fetch(`${base}/my%20asset.js`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("console.log(2);");
+  });
+
+  test("fully-encoded traversal (%2e%2e%2f) still 404s after decoding", async () => {
+    const base = await listenWithClientDir();
+    const res = await fetch(`${base}/%2e%2e%2f%2e%2e%2fetc%2fpasswd`);
+    expect(res.status).toBe(404);
+  });
+
+  test("a malformed percent escape yields 404, not a crash", async () => {
+    const base = await listenWithClientDir();
+    const res = await fetch(`${base}/%zz.js`);
+    expect(res.status).toBe(404);
+  });
+
   test("falls through to 404 for missing files", async () => {
     const base = await listenWithClientDir();
     const res = await fetch(`${base}/nope.js`);

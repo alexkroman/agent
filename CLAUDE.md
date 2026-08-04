@@ -1466,7 +1466,7 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/tts` | `sdk/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`, `assemblyAITts`) |
 | `@alexkroman1/aai/s2s` | `sdk/providers/s2s-barrel.ts` | S2S provider factories + types (`openaiRealtime`; `assemblyAIS2s` is on the root export) |
 | `@alexkroman1/aai/tools` | `host/agent-tools.ts` (direct, not a barrel) | Keyless network builtins callable from user tool code: `fetchJson`, `visitWebpage`, `webSearch` |
-| `@alexkroman1/aai/internal` | `internal.ts` → 4 modules | Cross-package infrastructure (`createEpoch`, `createOwnedMap`, `parseWsUpgradeParams`, `formatSchemaIssues`). Not public API, not semver-covered, excluded from the docs |
+| `@alexkroman1/aai/internal` | `internal.ts` → 5 modules | Cross-package infrastructure (`createEpoch`, `createOwnedMap`, `createCoalescingRunner`, `parseWsUpgradeParams`, `formatSchemaIssues`). Not public API, not semver-covered, excluded from the docs |
 
 ### Concurrency primitives (use these, don't hand-roll)
 
@@ -1487,17 +1487,23 @@ primitives — reach for them before re-inventing the pattern at a call site:
   Adopted by the runtime's `sessions`/`sinkMap`, the WS handler, and the
   platform `SlotCache`. Don't write `if (map.get(k) === mine) map.delete(k)`
   by hand.
+- **`createCoalescingRunner()`** (`aai/sdk/coalescing-runner.ts`, exported
+  from `@alexkroman1/aai/internal`) — serialize + coalesce repeatable async
+  work: at most one run in flight, triggers during a run share ONE trailing
+  re-run started after the current settles, rejections never wedge the
+  runner. For work that reads latest state when it runs (workspace sync,
+  post-write typechecks). Don't hand-roll `inFlight`/`trailing` flag pumps.
 - **`createTurnMachine()`** (`aai/host/transports/pipeline-turn-state.ts`) —
   the pipeline transport's turn lifecycle (in-flight reply, spoke flag, TTS
   audio gate) as a discriminated-union machine whose named transitions are
   the only mutation path. New turn-state reads/writes go through it, not new
   closure flags.
-- **Timeouts**: use `p-timeout` (a dependency of aai, aai-cli, and
-  aai-server) — never a hand-rolled `Promise.race` with a timer; the losing
-  branch's late rejection and timer cleanup are exactly what gets re-derived
-  wrong. The one exception is the guest harness's `withTimeout`
-  (`aai-guest/harness-rpc.ts`), which stays local because the bundled harness
-  imports no npm packages.
+- **Timeouts**: use `p-timeout` (a dependency of aai, aai-cli, aai-guest,
+  and aai-server) — never a hand-rolled `Promise.race` with a timer; the
+  losing branch's late rejection and timer cleanup are exactly what gets
+  re-derived wrong. The guest harness is no exception: tsdown bundles its
+  npm dependencies (p-timeout included) into `dist/harness.mjs` — only the
+  vite/rolldown build toolchain stays external to the bundle.
 - **Combining abort signals**: use native `AbortSignal.any([...])` (sources
   held weakly — no unlink bookkeeping); the pipeline transport combines the
   session signal with each turn's controller this way.

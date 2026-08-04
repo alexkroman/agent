@@ -1,8 +1,14 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { createStorage } from "unstorage";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { createMemoryAgentRows } from "./agent-store.ts";
-import { ByteBudgetTtlCache, blobKey, contentHash, createBundleStore } from "./bundle-store.ts";
+import {
+  BLOB_MISS,
+  blobKey,
+  contentHash,
+  createBlobCache,
+  createBundleStore,
+} from "./bundle-store.ts";
 import { MAX_ENV_SIZE } from "./constants.ts";
 import { createMemorySecretStore } from "./secret-store.ts";
 import { TEST_AGENT_CONFIG } from "./test-utils.ts";
@@ -326,81 +332,43 @@ describe("bundle store (agents rows + content-addressed blobs)", () => {
   });
 });
 
-describe("ByteBudgetTtlCache", () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  // Values sized well above the per-entry overhead so budget math dominates.
-  const KB100 = 100_000;
-
-  test("evicts least-recently-used entries once the byte budget is exceeded", () => {
-    const cache = new ByteBudgetTtlCache<string>(60_000, 250_000);
-    cache.set("a", "A", KB100);
-    cache.set("b", "B", KB100);
+describe("createBlobCache", () => {
+  test("evicts by total value bytes, not entry count", () => {
+    // Values sized well above the per-entry overhead so budget math dominates.
+    const cache = createBlobCache(60_000, 250_000);
+    cache.set("a", "A".repeat(100_000));
+    cache.set("b", "B".repeat(100_000));
     expect(cache.size).toBe(2);
 
-    cache.set("c", "C", KB100);
+    cache.set("c", "C".repeat(100_000));
     expect(cache.get("a")).toBeUndefined(); // oldest evicted
-    expect(cache.get("b")).toBe("B");
-    expect(cache.get("c")).toBe("C");
-  });
-
-  test("get refreshes recency — recently read entries survive eviction", () => {
-    const cache = new ByteBudgetTtlCache<string>(60_000, 250_000);
-    cache.set("a", "A", KB100);
-    cache.set("b", "B", KB100);
-    expect(cache.get("a")).toBe("A"); // "b" is now the LRU entry
-
-    cache.set("c", "C", KB100);
-    expect(cache.get("b")).toBeUndefined();
-    expect(cache.get("a")).toBe("A");
-    expect(cache.get("c")).toBe("C");
+    expect(cache.get("b")).toBe("B".repeat(100_000));
+    expect(cache.get("c")).toBe("C".repeat(100_000));
   });
 
   test("a value larger than the whole budget is not cached and evicts nothing", () => {
-    const cache = new ByteBudgetTtlCache<string>(60_000, 250_000);
-    cache.set("a", "A", KB100);
-    cache.set("huge", "H", 300_000);
+    const cache = createBlobCache(60_000, 250_000);
+    cache.set("a", "A".repeat(100_000));
+    cache.set("huge", "H".repeat(300_000));
     expect(cache.get("huge")).toBeUndefined();
-    expect(cache.get("a")).toBe("A");
+    expect(cache.get("a")).toBeDefined();
   });
 
-  test("overwriting a key replaces its byte charge instead of adding to it", () => {
-    const cache = new ByteBudgetTtlCache<string>(60_000, 250_000);
-    cache.set("a", "A1", KB100);
-    const charged = cache.totalBytes;
-    cache.set("a", "A2", KB100);
-    expect(cache.totalBytes).toBe(charged);
-    expect(cache.get("a")).toBe("A2");
-    expect(cache.size).toBe(1);
+  test("entries expire after the TTL", async () => {
+    // Real clock: lru-cache reads `performance.now` through a reference
+    // captured at module load, which fake timers cannot reach.
+    const cache = createBlobCache(20, 250_000);
+    cache.set("a", "A".repeat(100_000));
+    expect(cache.get("a")).toBeDefined();
+
+    await vi.waitFor(() => expect(cache.get("a")).toBeUndefined());
   });
 
-  test("delete releases the entry's byte charge", () => {
-    const cache = new ByteBudgetTtlCache<string>(60_000, 250_000);
-    cache.set("a", "A", KB100);
-    cache.delete("a");
-    expect(cache.totalBytes).toBe(0);
-    expect(cache.get("a")).toBeUndefined();
-  });
-
-  test("entries expire after the TTL", () => {
-    vi.useFakeTimers();
-    const cache = new ByteBudgetTtlCache<string>(10_000, 250_000);
-    cache.set("a", "A", KB100);
-
-    vi.advanceTimersByTime(9999);
-    expect(cache.get("a")).toBe("A");
-
-    vi.advanceTimersByTime(1);
-    expect(cache.get("a")).toBeUndefined();
-    expect(cache.totalBytes).toBe(0);
-  });
-
-  test("null values (confirmed misses) are cacheable", () => {
-    const cache = new ByteBudgetTtlCache<string | null>(60_000, 250_000);
-    cache.set("missing", null, 0);
-    expect(cache.get("missing")).toBeNull();
+  test("the miss sentinel is cacheable and charged the per-entry overhead", () => {
+    const cache = createBlobCache(60_000, 250_000);
+    cache.set("missing", BLOB_MISS);
+    expect(cache.get("missing")).toBe(BLOB_MISS);
+    expect(cache.calculatedSize).toBeGreaterThan(0);
   });
 });
 

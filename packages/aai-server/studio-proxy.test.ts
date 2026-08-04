@@ -48,15 +48,23 @@ describe("createStudioProxy", () => {
         controller.close();
       },
     });
+    // An encoded upstream response: undici's fetch decompresses the body but
+    // leaves content-encoding/content-length in place — re-serving either
+    // header with the decompressed body corrupts the relay.
     const upstream = new Response(upstreamBody, {
-      headers: { "content-type": "text/event-stream", "content-length": "999" },
+      headers: {
+        "content-type": "text/event-stream",
+        "content-encoding": "gzip",
+        "content-length": "999",
+      },
     });
     const proxy = createStudioProxy("http://studio.internal:8080", async () => upstream);
 
     const res = await proxy(makeContext(new Request("https://platform.example/studio/chat")));
     expect(res.body).toBe(upstreamBody); // the same stream, not a copy
     expect(res.headers.get("content-type")).toBe("text/event-stream");
-    // Stale after re-streaming — must not be relayed.
+    // Stale after transparent decompression — must not be relayed.
+    expect(res.headers.get("content-encoding")).toBeNull();
     expect(res.headers.get("content-length")).toBeNull();
   });
 
@@ -104,7 +112,7 @@ describe("orchestrator with studioUpstream", () => {
   test("studio surface goes upstream; agent surface stays local", async () => {
     const forwarded: string[] = [];
     const studioProxyFetch = (async (input: string | URL | Request) => {
-      forwarded.push(String(input));
+      forwarded.push(input instanceof Request ? input.url : String(input));
       return Response.json({ from: "studio-service" });
     }) as typeof globalThis.fetch;
 
