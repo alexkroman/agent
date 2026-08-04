@@ -20,15 +20,19 @@
  * - **default (studio/inspect/pool)** — the control-channel mode below,
  *   platform-versioned (always the current image), serving:
  *
+ * A third one-shot mode, DESCRIBE (`AAI_DESCRIBE_BUNDLE_PATH`), imports a
+ * bundle and prints its self-described config to stdout — deploy-time
+ * config extraction with no server and no channel (see {@link mainDescribe}).
+ *
  * - `/ws` — the host control channel, authenticated by the per-sandbox
  *   bearer token (AAI_GUEST_TOKEN, delivered via the exec env; the tunnel
  *   URL is public, so an upgrade without the token is rejected). JSON-RPC
- *   both ways: host→guest `bundle/load`, `tool/execute` (one-shot trials —
- *   the studio's test_agent), `status`, and the `shutdown` notification;
- *   guest→host requests exist only for studio sessions (workspace sync,
- *   chat persistence). ctx.db is NOT proxied: the app's own DATABASE_URL
- *   rides in the bundle/load env and the bundle's runtime connects
- *   directly.
+ *   both ways: host→guest `studio/session-init`, `workspace/deploy`,
+ *   `status`, and the `shutdown` notification; guest→host requests exist
+ *   only for studio sessions (workspace sync, chat persistence). Bundle
+ *   loading and tool trials are NOT RPC anymore: the studio's test_agent
+ *   drives this harness's own loader/executor in-guest, and deploy-time
+ *   inspection is the one-shot describe mode above.
  * - `/websocket` — PUBLIC client voice sessions, connected DIRECTLY by
  *   browsers (the same path `aai dev` serves). Each upgrade starts a
  *   runtime session: STT/LLM/TTS provider streams, the LLM loop, tool
@@ -55,6 +59,7 @@
  * Run with: node harness.mjs
  */
 
+import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { createServer, type SessionRuntime } from "@alexkroman1/aai/runtime";
 import { type WebSocket, WebSocketServer } from "ws";
@@ -87,42 +92,13 @@ import { withBuildDir } from "./studio-build.ts";
 import { handleStudioRequest, initStudioSession, type StudioSessionParams } from "./studio-chat.ts";
 import { deployWorkspaceDir } from "./studio-publish.ts";
 import { materializeWorkspace } from "./studio-workspace-fs.ts";
-import { executeTool, type ToolCallRequest } from "./trial.ts";
+import { executeTool } from "./trial.ts";
 
 // ---- Control-channel dispatch -----------------------------------------------
 
 /** Resolve and settle a single incoming JSON-RPC request. */
 export async function handleRequest(req: JsonRpcRequest, state: HarnessState): Promise<void> {
   switch (req.method) {
-    case "bundle/load": {
-      if (!req.params || typeof (req.params as Record<string, unknown>).code !== "string") {
-        sendError(req.id, -32_602, "bundle/load requires { code: string, env: {} }");
-        break;
-      }
-      const params = req.params as {
-        code: string;
-        env?: Record<string, string>;
-      };
-      const loaded = await loadBundle(state, {
-        code: params.code,
-        env: params.env ?? {},
-      });
-      sendResponse(req.id, { ok: true, ...loaded });
-      break;
-    }
-
-    case "tool/execute": {
-      if (!state.agent) {
-        sendError(req.id, -32_000, "Agent not loaded");
-        break;
-      }
-      const toolResult = await executeTool(state.agent, req.params as ToolCallRequest, {
-        env: state.env,
-      });
-      sendResponse(req.id, toolResult);
-      break;
-    }
-
     case "status": {
       sendResponse(req.id, { activeSessions: state.activeSessions });
       break;
@@ -302,8 +278,45 @@ async function mainAgent(port: number, host: string, token: string): Promise<voi
   console.error(`agent-mode harness listening on ${host}:${port}`);
 }
 
+/**
+ * DESCRIBE MODE — deploy-time bundle inspection as a ONE-SHOT exec: import
+ * the bundle named by `AAI_DESCRIBE_BUNDLE_PATH` (in the sandbox, never on
+ * the host) and print the config it self-describes (`__aaiConfig`) as a
+ * single JSON line on stdout — `{ ok: true, config }` or
+ * `{ ok: false, error }`. The host parses the LAST stdout line, so a bundle
+ * whose top level writes to stdout cannot corrupt the result. The exit code
+ * mirrors `ok`. No token, no server, no channel: the process is the whole
+ * contract, and the spawner tears the sandbox down when it exits.
+ */
+async function mainDescribe(bundlePath: string): Promise<void> {
+  const state: HarnessState = {
+    agent: null,
+    createRuntime: null,
+    env: Object.freeze({}),
+    runtime: null,
+    activeSessions: 0,
+    studio: null,
+  };
+  try {
+    const code = await readFile(bundlePath, "utf-8");
+    const loaded = await loadBundle(state, { code, env: {} });
+    process.stdout.write(`\n${JSON.stringify({ ok: true, config: loaded.config })}\n`);
+    process.exit(0);
+  } catch (err) {
+    process.stdout.write(`\n${JSON.stringify({ ok: false, error: errMsg(err) })}\n`);
+    process.exit(1);
+  }
+}
+
 function main(): void {
   installCrashGuards();
+  // Describe mode runs before the token requirement: it opens no server and
+  // answers no requests, so there is nothing for a token to gate.
+  const describePath = process.env.AAI_DESCRIBE_BUNDLE_PATH;
+  if (describePath) {
+    void mainDescribe(describePath);
+    return;
+  }
   const token = process.env.AAI_GUEST_TOKEN;
   if (!token) {
     console.error("AAI_GUEST_TOKEN is required");

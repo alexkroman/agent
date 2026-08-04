@@ -1,131 +1,70 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Graceful retirement of a superseded guest sandbox.
+ * Graceful retirement of a superseded guest sandbox — FIRE-AND-FORGET.
  *
- * A deploy (or secret/storage mutation) replaces the code a slug runs, but it
- * says nothing about the conversations already in flight on the old sandbox.
- * Terminating it inline — which is what every mutation path used to do —
- * closes those WebSockets mid-word, so shipping a fix during business hours
- * dropped every call on that agent. That is the same failure `_drain.ts`
- * exists to prevent on scale-in, arriving instead on every redeploy.
+ * A deploy replaces the code a slug runs, but it says nothing about the
+ * conversations already in flight on the old sandbox. Retirement splits the
+ * two things "terminate" would conflate:
  *
- * Retirement splits the two things "terminate" was conflating:
+ * 1. **Stop new traffic — synchronously.** The caller (`retireSlot`)
+ *    detaches the sandbox from its slot before calling this; the broker is
+ *    the only routing point, so no new client can reach it.
+ * 2. **Let the old sessions finish — in the GUEST.** One
+ *    `POST /manage/drain` carrying the drain budget: the guest refuses new
+ *    direct-dial sessions from that moment, exits the instant its last
+ *    session ends, and exits at the deadline regardless (a retired sandbox
+ *    is a billed guest running superseded code — one long call must not pin
+ *    it indefinitely). The host keeps NO drain state and runs no poll loop;
+ *    Modal's sandbox `timeoutMs` is the backstop behind everything.
  *
- * 1. **Stop new traffic — synchronously, before any await.** The caller
- *    detaches the sandbox from its slot. The broker (`resolveSandbox`) is the
- *    only routing point, so a detached sandbox can never be handed to another
- *    client; the deploy is fully live for everyone arriving from here on.
- * 2. **Let the old sessions finish.** Sessions live in the guest and connect
- *    to its tunnel directly, so "are you empty yet" is a `status` RPC, polled
- *    until zero or the deadline.
- *
- * The deadline is what keeps this from being a leak: a retired sandbox is a
- * billed guest still running superseded code, so `SANDBOX_RETIRE_DRAIN_MS`
- * caps how long one long call may pin an old bundle. Past it the deploy wins.
+ * An unreachable guest (drain rejects) is terminated on the spot — nothing
+ * to drain.
  *
  * Retirement is for sandboxes that are *superseded*, not ones that are gone.
- * A failed VM, an exited guest, or a deleted agent has nothing to drain (and
- * in the delete case nothing worth keeping alive) — those stay on
- * `terminateSlot`.
+ * A failed VM, an exited guest, or a deleted agent stays on `terminateSlot`.
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import { waitForIdle } from "./_drain.ts";
-import { RETIRE_POLL_MS, SANDBOX_RETIRE_DRAIN_MS } from "./constants.ts";
+import { SANDBOX_RETIRE_DRAIN_MS } from "./constants.ts";
 
-/** The slice of a sandbox retirement needs: ask it, then close it. */
+/** The slice of a sandbox retirement needs. */
 export type RetirableSandbox = {
   shutdown(): Promise<void>;
-  /** Live guest sessions; absent stand-ins are treated as already empty. */
-  activeSessions?: () => Promise<number>;
-  /**
-   * Ask the guest to refuse new sessions and self-exit when empty (the
-   * agent-server manage surface). Best-effort — the poll + deadline below
-   * are the guarantee; this closes the residual hole where a client holding
-   * the old tunnel URL dials the retired sandbox directly.
-   */
-  drain?: () => Promise<void>;
+  /** Deadline-carrying guest drain; stand-ins without one are terminated. */
+  drain?: (deadlineMs?: number) => Promise<void>;
 };
 
 /**
- * Sandboxes detached from their slot but still serving the calls that were on
- * them. Nothing else can reach them — that is the point — so process teardown
- * consults this to avoid leaking a guest that was mid-drain at SIGTERM.
+ * Hand `sandbox` its drain budget and forget it. Never throws; deliberately
+ * not awaited by callers on a request path (a deploy must not block for the
+ * length of someone else's call — and with the guest owning the drain,
+ * there is nothing to wait for anyway).
  */
-const draining = new Set<RetirableSandbox>();
-
-/** Sandboxes currently draining, for shutdown teardown. */
-export function drainingSandboxes(): RetirableSandbox[] {
-  return [...draining];
-}
-
-/**
- * Drain `sandbox`'s remaining sessions, then shut it down. Resolves when the
- * sandbox is down; callers on a request path should NOT await it (a deploy
- * must not block for the length of someone else's call).
- *
- * Never throws: retirement is best-effort cleanup, and the shutdown runs from
- * a `finally` so a probe that blows up still releases the guest.
- */
-export async function retireSandbox(
+export function retireSandbox(
   sandbox: RetirableSandbox,
-  opts: {
-    slug: string;
-    reason: string;
-    timeoutMs?: number;
-    /**
-     * Probe interval. A seam for tests, like `_drain.ts`'s `sleep`/`now`:
-     * the deadline path is measured with `performance.now()` from
-     * `node:perf_hooks`, which fake timers do not intercept, so exercising
-     * it means real (tiny) durations rather than a faked clock.
-     */
-    pollMs?: number;
-  },
-): Promise<void> {
+  opts: { slug: string; reason: string; timeoutMs?: number },
+): void {
   const timeoutMs = opts.timeoutMs ?? SANDBOX_RETIRE_DRAIN_MS;
-  const probe = sandbox.activeSessions;
-  // No window, or nothing to ask: this is just a terminate.
-  if (timeoutMs <= 0 || !probe) {
-    await shutdownQuietly(sandbox, opts.slug);
-    return;
-  }
-
-  draining.add(sandbox);
-  try {
-    // Tell the guest it is retired before waiting it out: it refuses new
-    // direct-dial sessions from here on and reaps itself when it empties.
-    await sandbox.drain?.().catch(() => undefined);
-    const { drained, remaining } = await waitForIdle({
-      // A dead or unreachable guest answers 0 — same convention as idle
-      // eviction — so the loop exits instead of polling a corpse to deadline.
-      activeCount: () => probe.call(sandbox).catch(() => 0),
-      timeoutMs,
-      pollMs: opts.pollMs ?? RETIRE_POLL_MS,
-    });
-    if (drained) {
-      console.info("Retired sandbox drained", { slug: opts.slug, reason: opts.reason });
-    } else {
-      console.warn("Retired sandbox still had sessions at the drain deadline; closing", {
+  void (async () => {
+    // No window, or no drain surface: this is just a terminate.
+    if (timeoutMs <= 0 || !sandbox.drain) {
+      await sandbox.shutdown().catch(() => undefined);
+      return;
+    }
+    try {
+      await sandbox.drain(timeoutMs);
+      console.info("Retired sandbox draining in-guest", {
         slug: opts.slug,
         reason: opts.reason,
-        remaining,
+        timeoutMs,
       });
+    } catch (err: unknown) {
+      // Unreachable guest — drained by definition; reclaim it now.
+      console.warn("Retired sandbox unreachable for drain; terminating", {
+        slug: opts.slug,
+        error: errorMessage(err),
+      });
+      await sandbox.shutdown().catch(() => undefined);
     }
-  } catch (err: unknown) {
-    console.warn("Retired sandbox drain failed; closing", {
-      slug: opts.slug,
-      error: errorMessage(err),
-    });
-  } finally {
-    draining.delete(sandbox);
-    await shutdownQuietly(sandbox, opts.slug);
-  }
-}
-
-async function shutdownQuietly(sandbox: RetirableSandbox, slug: string): Promise<void> {
-  try {
-    await sandbox.shutdown();
-  } catch (err: unknown) {
-    console.warn("Failed to shut down retired sandbox", { slug, error: errorMessage(err) });
-  }
+  })();
 }

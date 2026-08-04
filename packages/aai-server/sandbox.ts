@@ -54,19 +54,19 @@ export type Sandbox = {
    */
   sessionUrl(): Promise<string>;
   /**
-   * Live client sessions in the guest, for session-aware idle eviction
-   * (sessions no longer pass through the host, so it must ask). A dead or
-   * unreachable guest answers 0 — eviction should proceed.
+   * Live client sessions in the guest (sessions no longer pass through the
+   * host, so it must ask). Never throws: a dead, booting, or unreachable
+   * guest answers 0 — shutdown drains treat "can't ask" as "idle".
    */
   activeSessions(): Promise<number>;
   /**
-   * Ask the guest to stop accepting new sessions and exit when the last one
-   * ends (`POST /manage/drain`). Best-effort: retirement still polls
-   * `activeSessions` and terminates at the deadline either way, but a
-   * drained guest also refuses stragglers dialing its old tunnel URL
-   * directly, and reaps itself the moment it empties.
+   * Hand the guest its drain budget (`POST /manage/drain` with
+   * `{ deadlineMs }`): refuse new sessions and self-exit when empty or at
+   * the deadline — the GUEST enforces the deadline; the host holds no drain
+   * state. REJECTS on an unreachable guest so retirement can terminate
+   * instead (see sandbox-retire.ts).
    */
-  drain(): Promise<void>;
+  drain(deadlineMs?: number): Promise<void>;
   /**
    * False once this sandbox is unusable — the VM failed to start, or the
    * guest process exited. A sandbox still booting reports true: pending is
@@ -135,25 +135,19 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     alive: () => !lost,
 
     async activeSessions(): Promise<number> {
-      try {
-        const handle = await vmReady;
-        // Guest-asserted (validated in agentServerFromGuest); only ever
-        // steers this tenant's own routing and reaping.
-        return await handle.activeSessions();
-      } catch {
-        // Unreachable/dead guest — report idle so eviction can reclaim it.
-        return 0;
-      }
+      // The handle itself never throws (see AgentServerHandle); the catch
+      // pair below just makes the "never throws" contract structurally true
+      // here regardless of what a handle implementation does.
+      const handle = await vmReady.catch(() => null);
+      return handle ? handle.activeSessions().catch(() => 0) : 0;
     },
 
-    async drain(): Promise<void> {
-      try {
-        const handle = await vmReady;
-        await handle.drain();
-      } catch {
-        // Best-effort: an unreachable guest is drained by definition, and
-        // retirement's activeSessions poll + deadline covers the rest.
-      }
+    async drain(deadlineMs?: number): Promise<void> {
+      // Deliberately NOT swallowed: a rejected drain (VM never started,
+      // guest gone) is retirement's signal to terminate rather than trust
+      // the guest to exit itself.
+      const handle = await vmReady;
+      await handle.drain(deadlineMs);
     },
 
     async shutdown(): Promise<void> {

@@ -1,7 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { retireSandbox } from "./sandbox-retire.ts";
 import { createSlotCache, setSlot } from "./sandbox-slots.ts";
 import { liveGuestSessions, teardownSandboxes } from "./teardown-sandboxes.ts";
 
@@ -19,31 +18,12 @@ const countingSandbox = (n: number | (() => number)) => ({
  * reporting a clean drain.
  */
 describe("liveGuestSessions", () => {
-  it("sums primaries and overflow replicas across every slot", async () => {
+  it("sums the resident sandboxes across every slot", async () => {
     const slots = createSlotCache();
     setSlot(slots, { slug: "a", sandbox: countingSandbox(3) });
-    setSlot(slots, {
-      slug: "b",
-      sandbox: countingSandbox(1),
-      replicas: [countingSandbox(2), countingSandbox(4)],
-    });
+    setSlot(slots, { slug: "b", sandbox: countingSandbox(1) });
 
-    await expect(liveGuestSessions(slots)).resolves.toBe(10);
-  });
-
-  it("counts sandboxes that a mutation retired and are still draining", async () => {
-    const slots = createSlotCache();
-    let live = 2;
-    const retired = countingSandbox(() => live);
-    // Off the slot map by design — but its calls are exactly the ones
-    // retirement exists to protect, so shutdown must still wait for them.
-    const done = retireSandbox(retired, { slug: "retired", reason: "deploy", pollMs: 5 });
-
-    await expect(liveGuestSessions(slots)).resolves.toBe(2);
-
-    live = 0;
-    await done;
-    await expect(liveGuestSessions(slots)).resolves.toBe(0);
+    await expect(liveGuestSessions(slots)).resolves.toBe(4);
   });
 
   it("counts an unreachable guest as idle rather than stalling shutdown", async () => {
@@ -81,21 +61,6 @@ describe("teardownSandboxes", () => {
 
     expect(a.shutdown).toHaveBeenCalledOnce();
     expect(b.shutdown).toHaveBeenCalledOnce();
-  });
-
-  // The leak this closes: both entries called `slot.sandbox?.shutdown()`,
-  // which skips overflow replicas entirely — terminateSlot already handles
-  // both, and these paths re-implemented a subset of it.
-  it("shuts down overflow replicas alongside the primary", async () => {
-    const slots = createSlotCache();
-    const primary = fakeSandbox();
-    const replica = fakeSandbox();
-    setSlot(slots, { slug: "scaled", sandbox: primary, replicas: [replica] });
-
-    await teardownSandboxes({ slots });
-
-    expect(primary.shutdown).toHaveBeenCalledOnce();
-    expect(replica.shutdown).toHaveBeenCalledOnce();
   });
 
   // The studio broker's own per-project sandboxes: dispose() existed and was

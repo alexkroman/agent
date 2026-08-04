@@ -10,22 +10,27 @@
  * `/health`, and the host's whole ongoing surface is the token-gated
  * `/manage/*` pair — no control channel exists on an agent sandbox.
  *
- * The control-channel machinery below ({@link spawnWarmHarness},
- * {@link acquireWarmHarness}, {@link describeBundle}) remains for the
- * STUDIO side — coding-agent sessions, Publish, deploy-time bundle
- * inspection — which always runs the CURRENT harness image and may change
- * atomically with the server.
+ * The control-channel machinery below ({@link spawnWarmHarness}) remains for
+ * the STUDIO side — coding-agent sessions and Publish — which always runs
+ * the CURRENT harness image and may change atomically with the server.
+ * Deploy-time bundle inspection ({@link describeBundle}) is a one-shot
+ * describe-mode exec, not a channel.
  */
 
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { keyedMemoAsync } from "./_memo.ts";
+import { describeModalBundle } from "./modal-describe.ts";
 import { harnessImageTag, resolveToolchainSpecs } from "./modal-harness-image.ts";
 import { DEFAULT_SANDBOX_IMAGE, spawnModalAgentServer, spawnModalWarm } from "./modal-sandbox.ts";
-import type { BundleLoadResult, GuestConnection } from "./rpc-schemas.ts";
+import type { GuestConnection } from "./rpc-schemas.ts";
 import { resolveSandboxBackend } from "./sandbox-backend.ts";
 import type { SpawnIdentity } from "./sandbox-role.ts";
-import { spawnSubprocessAgentServer, spawnSubprocessWarm } from "./subprocess-sandbox.ts";
+import {
+  describeSubprocessBundle,
+  spawnSubprocessAgentServer,
+  spawnSubprocessWarm,
+} from "./subprocess-sandbox.ts";
 import type { AgentServerHandle } from "./warm-harness.ts";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -121,36 +126,38 @@ export function currentHarnessImageTag(harnessPath: string): Promise<string | nu
 
 // ── Bundle inspection ────────────────────────────────────────────────────────
 
+/** Injectable backend describers (tests). */
+type BundleDescribers = {
+  modal: typeof describeModalBundle;
+  subprocess: typeof describeSubprocessBundle;
+};
+
 /**
- * Load a worker bundle in a throwaway sandbox and return the agent config the
- * bundle extracted about itself (its `__aaiConfig` export — see the guest
- * harness). The bundle is *evaluated in the sandbox*, never on the host, so
- * this is safe to run on untrusted studio-authored code. The sandbox is torn
- * down before returning.
+ * Load a worker bundle in a throwaway ONE-SHOT sandbox exec (the guest's
+ * describe mode — see the harness's `mainDescribe`) and return the agent
+ * config the bundle extracted about itself (its `__aaiConfig` export). The
+ * bundle is *evaluated in the sandbox*, never on the host, so this is safe
+ * to run on untrusted studio-authored code; there is no control channel, no
+ * token, and no server — the process's last stdout line is the whole
+ * protocol. The result is guest-asserted wire data; the caller validates
+ * `config` with IsolateConfigSchema.
  *
  * Returns `undefined` when the bundle does not self-describe (e.g. a plain
  * CLI-built worker, which ships its config separately).
  */
 export async function describeBundle(
   opts: { harnessPath: string; workerCode: string },
-  spawn: typeof spawnWarmHarness = spawnWarmHarness,
+  describers: BundleDescribers = {
+    modal: describeModalBundle,
+    subprocess: describeSubprocessBundle,
+  },
 ): Promise<unknown> {
-  await using warm = await spawn({
-    harnessPath: opts.harnessPath,
-    slug: "studio-inspect",
-    role: "inspect",
-  });
-  // No handlers registered: a bundle whose top level issues a guest→host
-  // request gets the transport's -32601 error reply instead of wedging the
-  // load until the RPC timeout.
-  warm.conn.listen();
-  // The reply is guest-asserted wire data (see BundleLoadResult); the
-  // caller validates `config` with IsolateConfigSchema.
-  const result = (await warm.conn.sendRequest("bundle/load", {
-    code: opts.workerCode,
-    env: {},
-  })) as BundleLoadResult | undefined;
-  return result?.config;
+  switch (resolveSandboxBackend(process.env)) {
+    case "subprocess":
+      return describers.subprocess(opts);
+    default:
+      return describers.modal(opts);
+  }
 }
 
 // ── Agent-server spawning ─────────────────────────────────────────────────────

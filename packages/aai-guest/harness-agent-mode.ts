@@ -95,9 +95,44 @@ export type ManageDeps = {
   activeSessions: () => number;
   /** True once a drain was requested. */
   isDraining: () => boolean;
-  /** Request a drain: refuse new sessions, exit when the last one ends. */
-  startDrain: () => void;
+  /**
+   * Request a drain: refuse new sessions, exit when the last one ends —
+   * or at `deadlineMs` from now regardless (the host's retire budget; a
+   * drained guest is superseded code, so it must not outlive one long
+   * call indefinitely). Absent deadline: drain until empty.
+   */
+  startDrain: (deadlineMs?: number) => void;
 };
+
+/** Cap on the drain request body (it carries one small JSON object). */
+const MAX_MANAGE_BODY_BYTES = 4096;
+
+/** Read a small JSON request body; resolves {} on absent/invalid bodies. */
+function readJsonBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
+  return new Promise((resolve) => {
+    let body = "";
+    req.on("data", (chunk: Buffer) => {
+      body += chunk.toString("utf-8");
+      if (body.length > MAX_MANAGE_BODY_BYTES) {
+        resolve({});
+        req.destroy();
+      }
+    });
+    req.on("end", () => {
+      try {
+        const parsed: unknown = JSON.parse(body);
+        resolve(
+          parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+            ? (parsed as Record<string, unknown>)
+            : {},
+        );
+      } catch {
+        resolve({});
+      }
+    });
+    req.on("error", () => resolve({}));
+  });
+}
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "Content-Type": "application/json" });
@@ -128,8 +163,13 @@ export function createManageHandler(
       return true;
     }
     if (method === "POST" && url === MANAGE_DRAIN_PATH) {
-      deps.startDrain();
-      sendJson(res, 200, { ok: true, draining: true });
+      void readJsonBody(req).then((body) => {
+        const raw = body.deadlineMs;
+        const deadlineMs =
+          typeof raw === "number" && Number.isFinite(raw) && raw > 0 ? raw : undefined;
+        deps.startDrain(deadlineMs);
+        sendJson(res, 200, { ok: true, draining: true });
+      });
       return true;
     }
     sendJson(res, 404, { error: "not found" });
@@ -141,16 +181,18 @@ export function createManageHandler(
 
 export type IdleController = {
   isDraining: () => boolean;
-  startDrain: () => void;
+  startDrain: (deadlineMs?: number) => void;
   /** Stop the poll timer (tests). */
   stop: () => void;
 };
 
 /**
- * Guest-owned lifecycle: exit 0 once idle past `idleExitMs` (0 disables), or
- * as soon as a requested drain sees zero sessions. This replaces the
- * control-channel orphan timeout — an agent-mode guest has no host socket,
- * so "nobody needs me" is measured by its own session count.
+ * Guest-owned lifecycle: exit 0 once idle past `idleExitMs` (0 disables); a
+ * requested drain exits as soon as the sessions hit zero, or at the drain's
+ * own deadline regardless (retirement is fire-and-forget host-side — the
+ * guest enforces the budget on itself). This replaces the control-channel
+ * orphan timeout — an agent-mode guest has no host socket, so "nobody needs
+ * me" is measured by its own session count.
  */
 export function createIdleController(opts: {
   activeSessions: () => number;
@@ -163,9 +205,15 @@ export function createIdleController(opts: {
   const exit = opts.exit ?? ((code: number) => process.exit(code));
   const now = opts.now ?? Date.now;
   let draining = false;
+  let drainDeadline = Number.POSITIVE_INFINITY;
   let lastBusy = now();
 
   const tick = (): void => {
+    if (draining && now() >= drainDeadline) {
+      console.error("agent guest drain deadline reached; exiting with sessions live");
+      exit(0);
+      return;
+    }
     if (opts.activeSessions() > 0) {
       lastBusy = now();
       return;
@@ -185,8 +233,11 @@ export function createIdleController(opts: {
 
   return {
     isDraining: () => draining,
-    startDrain: () => {
+    startDrain: (deadlineMs?: number) => {
       draining = true;
+      if (deadlineMs !== undefined) {
+        drainDeadline = Math.min(drainDeadline, now() + deadlineMs);
+      }
     },
     stop: () => clearInterval(timer),
   };

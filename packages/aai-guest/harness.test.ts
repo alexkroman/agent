@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { dispatchMessage, handleNotification, handleRequest } from "./harness.ts";
 import { bearerToken } from "./harness-auth.ts";
-import { ensureRuntime, type HarnessState } from "./harness-bundle.ts";
+import { ensureRuntime, type HarnessState, loadBundle } from "./harness-bundle.ts";
 import { rejectAllPendingHostRequests, setHostSend } from "./harness-rpc.ts";
 import type { AgentDef, JsonRpcMessage } from "./harness-types.ts";
 import { executeTool } from "./trial.ts";
@@ -226,7 +226,7 @@ describe("executeTool (one-shot trial)", () => {
   });
 });
 
-describe("bundle/load + dispatch", () => {
+describe("loadBundle", () => {
   test("loads a bundle, reports its self-described config, and executes its tools", async () => {
     const state = makeState();
     const code = `
@@ -241,81 +241,45 @@ describe("bundle/load + dispatch", () => {
         },
       };
     `;
-    await handleRequest(
-      {
-        jsonrpc: "2.0",
-        id: 1,
-        method: "bundle/load",
-        params: { code, env: { WHO: "world" } },
-      },
-      state,
-    );
-    expect(sent.at(-1)).toEqual({
-      jsonrpc: "2.0",
-      id: 1,
-      result: { ok: true, config: { name: "from-bundle" } },
-    });
+    const loaded = await loadBundle(state, { code, env: { WHO: "world" } });
+    expect(loaded).toEqual({ config: { name: "from-bundle" } });
 
-    await handleRequest(
-      {
-        jsonrpc: "2.0",
-        id: 2,
-        method: "tool/execute",
-        params: { name: "greet", args: {}, sessionId: "s1", state: {} },
-      },
-      state,
+    const agent = state.agent;
+    expect(agent).not.toBeNull();
+    const res = await executeTool(
+      agent as AgentDef,
+      { name: "greet", args: {}, sessionId: "s1", state: {} },
+      { env: state.env },
     );
-    expect(sent.at(-1)).toEqual({
-      jsonrpc: "2.0",
-      id: 2,
-      result: { result: "hello world", state: {} },
-    });
+    expect(res).toEqual({ result: "hello world", state: {} });
   });
 
-  test("a repeat bundle/load replaces the loaded agent", async () => {
+  test("a repeat load replaces the loaded agent", async () => {
     const state = makeState();
     const mk = (reply: string) =>
       `${FAKE_RUNTIME_EXPORT}
       export default { name: "x", systemPrompt: "p", greeting: "g",
         tools: { t: { description: "t", execute: () => ${JSON.stringify(reply)} } } };`;
-    await handleRequest(
-      { jsonrpc: "2.0", id: 1, method: "bundle/load", params: { code: mk("v1"), env: {} } },
-      state,
+    await loadBundle(state, { code: mk("v1"), env: {} });
+    await loadBundle(state, { code: mk("v2"), env: {} });
+    const res = await executeTool(
+      state.agent as AgentDef,
+      { name: "t", args: {}, sessionId: "s", state: {} },
+      { env: state.env },
     );
-    await handleRequest(
-      { jsonrpc: "2.0", id: 2, method: "bundle/load", params: { code: mk("v2"), env: {} } },
-      state,
-    );
-    await handleRequest(
-      {
-        jsonrpc: "2.0",
-        id: 3,
-        method: "tool/execute",
-        params: { name: "t", args: {}, sessionId: "s", state: {} },
-      },
-      state,
-    );
-    expect((sent.at(-1) as { result: { result: string } }).result.result).toBe("v2");
+    expect(res.result).toBe("v2");
   });
 
-  test("a repeat bundle/load tears down the old runtime", async () => {
+  test("a repeat load tears down the old runtime", async () => {
     const shutdown = vi.fn().mockResolvedValue(undefined);
     const state = makeState({
       runtime: { shutdown } as unknown as NonNullable<HarnessState["runtime"]>,
     });
-    await handleRequest(
-      {
-        jsonrpc: "2.0",
-        id: 1,
-        method: "bundle/load",
-        params: {
-          code: `${FAKE_RUNTIME_EXPORT}
-            export default { name: 'x', systemPrompt: 'p', greeting: 'g', tools: {} };`,
-          env: {},
-        },
-      },
-      state,
-    );
+    await loadBundle(state, {
+      code: `${FAKE_RUNTIME_EXPORT}
+        export default { name: 'x', systemPrompt: 'p', greeting: 'g', tools: {} };`,
+      env: {},
+    });
     expect(shutdown).toHaveBeenCalledOnce();
     // The next session builds a fresh runtime from the NEW bundle.
     expect(state.runtime).toBeNull();
@@ -323,51 +287,36 @@ describe("bundle/load + dispatch", () => {
 
   test("a bundle without __aaiCreateRuntime is rejected at load", async () => {
     const state = makeState();
-    dispatchMessage(
-      {
-        jsonrpc: "2.0",
-        id: 9,
-        method: "bundle/load",
-        params: {
-          code: "export default { name: 'x', systemPrompt: 'p', greeting: 'g', tools: {} };",
-          env: {},
-        },
-      } as JsonRpcMessage,
-      state,
-    );
-    await vi.waitFor(() => {
-      const last = sent.at(-1) as { id?: number; error?: { message: string } };
-      expect(last?.id).toBe(9);
-      expect(last?.error?.message).toContain("__aaiCreateRuntime");
-    });
+    await expect(
+      loadBundle(state, {
+        code: "export default { name: 'x', systemPrompt: 'p', greeting: 'g', tools: {} };",
+        env: {},
+      }),
+    ).rejects.toThrow("__aaiCreateRuntime");
     // Nothing was installed — the next session cannot run stale state.
     expect(state.agent).toBeNull();
   });
+});
 
-  test("bundle/load without code answers -32602", async () => {
-    const state = makeState();
-    await handleRequest({ jsonrpc: "2.0", id: 4, method: "bundle/load", params: {} }, state);
-    expect((sent.at(-1) as { error: { code: number } }).error.code).toBe(-32_602);
-  });
-
-  test("tool/execute before any bundle answers Agent not loaded", async () => {
-    const state = makeState();
-    await handleRequest(
-      {
-        jsonrpc: "2.0",
-        id: 5,
-        method: "tool/execute",
-        params: { name: "t", args: {}, sessionId: "s", state: {} },
-      },
-      state,
-    );
-    expect((sent.at(-1) as { error: { message: string } }).error.message).toBe("Agent not loaded");
-  });
-
+describe("control-channel dispatch", () => {
   test("status reports the live session count", async () => {
     const state = makeState({ activeSessions: 2 });
     await handleRequest({ jsonrpc: "2.0", id: 8, method: "status" }, state);
     expect(sent.at(-1)).toEqual({ jsonrpc: "2.0", id: 8, result: { activeSessions: 2 } });
+  });
+
+  test("removed methods (bundle/load, tool/execute) answer -32601", async () => {
+    const state = makeState();
+    await handleRequest(
+      { jsonrpc: "2.0", id: 4, method: "bundle/load", params: { code: "x", env: {} } },
+      state,
+    );
+    expect((sent.at(-1) as { error: { code: number } }).error.code).toBe(-32_601);
+    await handleRequest(
+      { jsonrpc: "2.0", id: 5, method: "tool/execute", params: { name: "t" } },
+      state,
+    );
+    expect((sent.at(-1) as { error: { code: number } }).error.code).toBe(-32_601);
   });
 
   test("unknown methods answer -32601", async () => {
@@ -378,13 +327,15 @@ describe("bundle/load + dispatch", () => {
 
   test("dispatchMessage settles a rejecting handler as -32603", async () => {
     const state = makeState();
-    // A bundle whose module fails to import rejects inside handleRequest.
+    // workspace/deploy validates its param shape inline, then rejects on the
+    // path-escape guard in materializeWorkspace — the cheapest real
+    // rejection left on the channel.
     dispatchMessage(
       {
         jsonrpc: "2.0",
         id: 7,
-        method: "bundle/load",
-        params: { code: "throw new Error('top-level boom')", env: {} },
+        method: "workspace/deploy",
+        params: { files: { "../escape": "x" }, serverUrl: "http://s", apiKey: "k" },
       } as JsonRpcMessage,
       state,
     );
@@ -392,7 +343,7 @@ describe("bundle/load + dispatch", () => {
       const last = sent.at(-1) as { id?: number; error?: { code: number; message: string } };
       expect(last?.id).toBe(7);
       expect(last?.error?.code).toBe(-32_603);
-      expect(last?.error?.message).toContain("top-level boom");
+      expect(last?.error?.message).toContain("escapes the workspace");
     });
   });
 

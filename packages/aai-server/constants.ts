@@ -24,27 +24,6 @@ function envMs(raw: string | undefined, fallback: number): number {
 export const DEFAULT_PORT = 8080;
 
 /**
- * Idle time before a resident sandbox is evicted. Sessions connect to the
- * sandbox directly, so the sweep probes the guest's live session count
- * before killing (see sandbox-slots.ts).
- */
-export const IDLE_SANDBOX_MS = 5 * 60 * 1000;
-
-/**
- * Horizontal sandbox scaling (see sandbox-scale.ts): live sessions per guest
- * sandbox before the broker scales the slug out to another sandbox replica.
- * Unset/0 disables scaling — one sandbox per slug, the pre-scaling behavior.
- */
-export const SANDBOX_MAX_SESSIONS = Number(process.env.SANDBOX_MAX_SESSIONS) || 0;
-
-/**
- * Cap on sandboxes per slug on this replica (primary included) when scaling
- * is enabled. Saturation past the cap routes to the least-loaded sandbox
- * rather than spawning without bound.
- */
-export const SANDBOX_MAX_REPLICAS = Number(process.env.SANDBOX_MAX_REPLICAS) || 4;
-
-/**
  * 30 MB. Workers ship their own SDK runtime + provider SDKs (the CLI
  * wrapper's `__aaiCreateRuntime` — see worker-bundler.ts), which is ~8 MB
  * minified before any user code; the cap bounds user code + assets on top.
@@ -93,20 +72,6 @@ export const DRAIN_GUEST_POLL_MS = 1000;
  * Override with `SANDBOX_RETIRE_DRAIN_MS`; 0 restores immediate termination.
  */
 export const SANDBOX_RETIRE_DRAIN_MS = envMs(process.env.SANDBOX_RETIRE_DRAIN_MS, 600_000);
-
-/**
- * How often retirement re-probes a draining guest's session count.
- *
- * This is also the answer to "how long after the last call ends does the old
- * sandbox die": the drain loop only notices at a probe, so the lag is at most
- * one interval. Much coarser than {@link DRAIN_POLL_MS} because each probe is
- * a `status` RPC to the guest rather than a local counter read — but the
- * probe is cheap and the alternative is paying for an empty guest, so this
- * stays seconds, not the tens of seconds the minutes-long window would
- * otherwise invite. Note the FIRST probe happens before any sleep, so a
- * superseded sandbox with nobody on it is terminated immediately.
- */
-export const RETIRE_POLL_MS = 5000;
 
 /**
  * After the drain and sandbox teardown, how long to wait for the HTTP server's

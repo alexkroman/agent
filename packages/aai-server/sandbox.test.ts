@@ -161,10 +161,17 @@ describe("createSandbox", () => {
       await sandbox.shutdown();
     });
 
-    it("is best-effort: an unreachable guest does not throw", async () => {
+    it("forwards the drain deadline to the guest", async () => {
+      const sandbox = createSandbox(makeSandboxOptions());
+      await sandbox.drain(60_000);
+      expect(mockDrain).toHaveBeenCalledWith(60_000);
+      await sandbox.shutdown();
+    });
+
+    it("propagates an unreachable guest — retirement's signal to terminate", async () => {
       mockDrain.mockRejectedValueOnce(new Error("guest gone"));
       const sandbox = createSandbox(makeSandboxOptions());
-      await expect(sandbox.drain()).resolves.toBeUndefined();
+      await expect(sandbox.drain()).rejects.toThrow("guest gone");
       await sandbox.shutdown();
     });
   });

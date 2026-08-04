@@ -103,8 +103,12 @@ export type ModalSandboxLike = {
  * once per harness version, published under a content-addressed tag).
  * `imageTag` pins the spawn to a specific published harness image — the one
  * recorded on the agent's row at deploy time — so a deployed bundle never
- * meets a harness/Node environment it wasn't deployed against; an
- * unresolvable pin falls back to the current image with a warning.
+ * meets a harness/Node environment it wasn't deployed against. An
+ * unresolvable pin FAILS the spawn loudly (silently substituting the current
+ * image would run the bundle on an environment nobody tested it against —
+ * the exact drift pinning exists to prevent); the operator kill switch
+ * `SANDBOX_IGNORE_IMAGE_PINS=1` forces the current image for every spawn
+ * when a registry loss makes that trade explicitly.
  */
 export type ModalSpawnContext = {
   createGuestSandbox(
@@ -177,19 +181,23 @@ async function buildContext(): Promise<ModalSpawnContext> {
     async createGuestSandbox(code, params, imageTag) {
       // A pinned tag (the image the agent was DEPLOYED against) wins over
       // the current harness image, so platform upgrades never change the
-      // environment under an already-deployed bundle. Fall back to current
-      // when the pin can't be resolved (e.g. the registry lost it) — a
-      // running agent beats a perfectly pinned dead one.
+      // environment under an already-deployed bundle. An unresolvable pin
+      // fails LOUDLY rather than silently substituting the current image —
+      // that substitution is exactly the untested-environment drift pinning
+      // exists to prevent, and hiding it behind a warning made a registry
+      // loss invisible until an agent misbehaved.
+      if (imageTag && process.env.SANDBOX_IGNORE_IMAGE_PINS !== "1") {
+        const pinned = await client.images.fromName(imageTag).catch((err: unknown) => {
+          throw new Error(
+            `pinned harness image ${imageTag} is unresolvable — redeploy the agent, ` +
+              `or set SANDBOX_IGNORE_IMAGE_PINS=1 to force the current image: ${errorMessage(err)}`,
+            { cause: err },
+          );
+        });
+        return client.sandboxes.create(app, pinned, params);
+      }
       if (imageTag) {
-        try {
-          const pinned = await client.images.fromName(imageTag);
-          return await client.sandboxes.create(app, pinned, params);
-        } catch (err) {
-          console.warn("Pinned harness image unresolvable; spawning on current image", {
-            imageTag,
-            error: errorMessage(err),
-          });
-        }
+        console.warn("SANDBOX_IGNORE_IMAGE_PINS=1: ignoring pinned harness image", { imageTag });
       }
       const image = await harnessImage(code);
       return client.sandboxes.create(app, image, params);
@@ -202,7 +210,7 @@ async function buildContext(): Promise<ModalSpawnContext> {
  * the next spawn retries (a transient control-plane error must not disable
  * sandboxing for the process lifetime).
  */
-const modalContext = memoAsync(buildContext);
+export const modalContext = memoAsync(buildContext);
 
 /**
  * Fire-and-forget warm-up of the memoized Modal context (app lookup/creation
@@ -220,7 +228,7 @@ export function prewarmModal(): void {
 const harnessCache = keyedMemoAsync<string>();
 
 /** Read (and memoize) the built guest harness — it is stable per process. */
-function harnessCode(harnessPath: string): Promise<string> {
+export function harnessCode(harnessPath: string): Promise<string> {
   return harnessCache(harnessPath, () => readFile(harnessPath, "utf-8"));
 }
 
@@ -351,7 +359,7 @@ export async function spawnModalWarm(
 // ── Agent-server spawning (the HTTP-only contract) ───────────────────────────
 
 /** Where agent-mode boot artifacts land in the sandbox (written pre-exec). */
-const AGENT_BUNDLE_REMOTE_PATH = "/tmp/aai-agent-bundle.mjs";
+export const AGENT_BUNDLE_REMOTE_PATH = "/tmp/aai-agent-bundle.mjs";
 const AGENT_ENV_REMOTE_PATH = "/tmp/aai-agent-env.json";
 
 /**

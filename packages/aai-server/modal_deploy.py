@@ -117,25 +117,11 @@ MAX_INPUTS = 150  # concurrent-request cap per container
 # matched to the same 4h value.
 FUNCTION_TIMEOUT_SECS = 4 * 60 * 60
 
-# ── Guest-sandbox autoscaling ────────────────────────────────────────────────
+# ── Guest-sandbox resources ──────────────────────────────────────────────────
 #
-# Horizontal per-slug sandbox scaling (sandbox-scale.ts): the broker routes
-# each new session to the least-loaded of a slug's sandboxes and spawns an
-# overflow replica when all are at SANDBOX_MAX_SESSIONS. The session cap only
-# makes sense against pinned resources, so the two go together — unset, a
-# guest runs on Modal's sandbox defaults (0.125 core / 128 MiB reserved,
-# burstable), which is not a denominator you can size a cap against.
-#
-# 8 sessions on 1 core budgets ~5% core per session for the audio relay path
-# and leaves ~half the core for tool-call spikes (tool code shares the guest's
-# one event loop with every co-resident session — same-tenant only, since
-# scaling is per slug). Broker counts are sampled, not reserved, so the cap
-# needs that slack: simultaneous brokers can land a session or two past it.
-# 1 GiB covers the ~250 MB harness+bundle baseline plus sessions with ~3×
-# headroom. With SANDBOX_MAX_REPLICAS=4 this is 32 sessions per slug per web
-# replica. If sessions stutter at load, the playback stats (concealedSamples
-# per turn) are the signal to lower the cap; raise it only off those same
-# measurements.
+# One sandbox per slug per replica (per-slug horizontal scaling was deleted
+# for simplicity — see sandbox-resolve.ts). If sessions stutter at load, the
+# playback stats (concealedSamples per turn) are the signal.
 #
 # Reservation and cap are deliberately DIFFERENT numbers, because a guest's
 # load is bimodal. It idles as a voice session (~250 MB, a few % of a core),
@@ -148,12 +134,9 @@ FUNCTION_TIMEOUT_SECS = 4 * 60 * 60
 # OOM, and it hits Publish too: the cap is on the cgroup, so spawning the
 # bundler as a child process does not escape it.
 #
-# So: reserve the idle shape, cap the build shape. The session cap above is
-# sized against the RESERVATION (the resources a guest always has), while the
-# cap only has to clear the bundler's peak with headroom for a co-resident
-# session. 4096 MiB is also the ceiling modal-sandbox-env.ts clamps to.
-SANDBOX_MAX_SESSIONS = 8  # live sessions per guest sandbox before scale-out
-SANDBOX_MAX_REPLICAS = 4  # sandboxes per slug (primary included) per replica
+# So: reserve the idle shape, cap the build shape. The cap only has to clear
+# the bundler's peak with headroom for a co-resident session. 4096 MiB is
+# also the ceiling modal-sandbox-env.ts clamps to.
 SANDBOX_CPU = 1  # per-guest core reservation (Modal cpu)
 SANDBOX_CPU_LIMIT = 4  # hard per-guest core cap, for builds (Modal cpuLimit)
 SANDBOX_MEMORY_MB = 1024  # per-guest memory reservation (Modal memoryMiB)
@@ -168,10 +151,6 @@ image = build_image(
     # Guest sandboxes are pinned to the web server's region (above).
     region=REGION,
     extra_env={
-        # Guest-sandbox autoscaling — see the block above. Values in the
-        # aai-server Secret override these (secrets layer over image env).
-        "SANDBOX_MAX_SESSIONS": str(SANDBOX_MAX_SESSIONS),
-        "SANDBOX_MAX_REPLICAS": str(SANDBOX_MAX_REPLICAS),
         # A cap without its reservation throws at spawn (Modal rejects a bare
         # cap), so these four move together — see modal-sandbox-env.ts.
         "SANDBOX_CPU": str(SANDBOX_CPU),

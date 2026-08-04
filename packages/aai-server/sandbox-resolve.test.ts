@@ -11,12 +11,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { RETIRE_POLL_MS } from "./constants.ts";
 import { createMemoryPlatformEvents } from "./platform-events.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import type { Sandbox } from "./sandbox.ts";
-import { createMemorySandboxRegistry } from "./sandbox-registry.ts";
-import { brokerSessionUrl, resolveSandbox, watchAgentInvalidation } from "./sandbox-resolve.ts";
+import { resolveSandbox, watchAgentInvalidation } from "./sandbox-resolve.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { appDbSecretName, createMemorySecretStore } from "./secret-store.ts";
 import { createTestStore } from "./test-utils.ts";
@@ -259,126 +257,24 @@ describe("agents-row change stream drives sandbox invalidation", () => {
     deps.unwatch();
   });
 
-  it("retirement drains live sessions instead of cutting them", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date", "performance"] });
-    try {
-      const deps = await seedAgent("draining");
-      const sandbox = (await resolveSandbox("draining", deps)) as Sandbox;
-      let live = 4;
-      vi.spyOn(sandbox, "activeSessions").mockImplementation(() => Promise.resolve(live));
-      const shutdown = vi.spyOn(sandbox, "shutdown");
+  it("retirement hands the old sandbox its drain budget instead of cutting it", async () => {
+    const deps = await seedAgent("draining");
+    const sandbox = (await resolveSandbox("draining", deps)) as Sandbox;
+    const drain = vi.spyOn(sandbox, "drain");
+    const shutdown = vi.spyOn(sandbox, "shutdown");
 
-      await deps.redeploy();
+    await deps.redeploy();
 
-      // Handed over: the slot holds the READY replacement (no new session
-      // can reach the old sandbox), but the four calls on it are not hung
-      // up on — it drains in the background.
-      expect(deps.slots.get("draining")?.sandbox).toBeDefined();
-      expect(deps.slots.get("draining")?.sandbox).not.toBe(sandbox);
-      expect(shutdown).not.toHaveBeenCalled();
-
-      live = 0;
-      await vi.advanceTimersByTimeAsync(RETIRE_POLL_MS + 1);
-      expect(shutdown).toHaveBeenCalledOnce();
-      deps.unwatch();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-});
-
-describe("cross-replica sandbox registry", () => {
-  beforeEach(() => {
-    vi.spyOn(console, "info").mockImplementation(() => undefined);
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  async function seedWithRegistry(slug: string) {
-    const deps = await seedAgent(slug);
-    const registry = createMemorySandboxRegistry("this-replica");
-    return { ...deps, registry, opts: { ...deps, registry } };
-  }
-
-  it("a resident sandbox registers itself with its session URL", async () => {
-    const { opts, registry, unwatch } = await seedWithRegistry("registered");
-    const register = vi.spyOn(registry, "register");
-    const sandbox = await resolveSandbox("registered", opts);
-    expect(sandbox).not.toBeNull();
-    // The first heartbeat runs on attach (no timer wait needed).
+    // Handed over: the slot holds the READY replacement (no new session
+    // can reach the old sandbox), and the old one was told to drain — the
+    // GUEST finishes its calls and exits itself; the host never hangs up.
+    expect(deps.slots.get("draining")?.sandbox).toBeDefined();
+    expect(deps.slots.get("draining")?.sandbox).not.toBe(sandbox);
     await vi.waitFor(() => {
-      expect(register).toHaveBeenCalledWith("registered", expect.any(String), expect.any(Number));
+      expect(drain).toHaveBeenCalledWith(expect.any(Number));
     });
-    await sandbox?.shutdown();
-    unwatch();
-  });
-
-  it("the broker routes a cold slug to a live peer sandbox instead of spawning", async () => {
-    const { opts, registry, unwatch } = await seedWithRegistry("shared");
-    registry.registerPeer("shared", "wss://peer.tunnel/session", 1);
-
-    const brokered = await brokerSessionUrl("shared", opts);
-    expect(brokered).toEqual({ ok: true, sessionUrl: "wss://peer.tunnel/session" });
-    // No local sandbox was built.
-    expect(opts.slots.get("shared")?.sandbox).toBeUndefined();
-    unwatch();
-  });
-
-  it("a warm local resident wins over peers", async () => {
-    const { opts, registry, unwatch } = await seedWithRegistry("local-first");
-    const sandbox = await resolveSandbox("local-first", opts);
-    registry.registerPeer("local-first", "wss://peer.tunnel/session", 0);
-
-    const brokered = await brokerSessionUrl("local-first", opts);
-    expect(brokered.ok).toBe(true);
-    if (brokered.ok) expect(brokered.sessionUrl).not.toBe("wss://peer.tunnel/session");
-    await sandbox?.shutdown();
-    unwatch();
-  });
-
-  it("peers at session capacity are passed over for a local spawn", async () => {
-    const { opts, registry, unwatch } = await seedWithRegistry("saturated");
-    registry.registerPeer("saturated", "wss://full.tunnel/session", 2);
-
-    const brokered = await brokerSessionUrl("saturated", {
-      ...opts,
-      scale: { maxSessionsPerSandbox: 2, maxSandboxes: 4 },
-    });
-    expect(brokered.ok).toBe(true);
-    if (brokered.ok) expect(brokered.sessionUrl).not.toBe("wss://full.tunnel/session");
-    // The local spawn happened.
-    expect(opts.slots.get("saturated")?.sandbox).toBeDefined();
-    await (opts.slots.get("saturated")?.sandbox as Sandbox | undefined)?.shutdown();
-    unwatch();
-  });
-
-  it("a deleted agent's lingering registry row cannot resurrect it", async () => {
-    const { opts, registry, unwatch } = await seedWithRegistry("deleted-peer");
-    registry.registerPeer("deleted-peer", "wss://ghost.tunnel/session", 0);
-    await opts.store.deleteAgent("deleted-peer");
-    await settleEvents();
-
-    const brokered = await brokerSessionUrl("deleted-peer", opts);
-    expect(brokered).toEqual({ ok: false, status: 404 });
-    unwatch();
-  });
-
-  it("a broken registry never fails a broker request", async () => {
-    const { opts, unwatch } = await seedWithRegistry("registry-down");
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const broken = {
-      register: () => Promise.reject(new Error("db down")),
-      unregister: () => Promise.reject(new Error("db down")),
-      listPeers: () => Promise.reject(new Error("db down")),
-    };
-    const brokered = await brokerSessionUrl("registry-down", { ...opts, registry: broken });
-    expect(brokered.ok).toBe(true);
-    expect(warn).toHaveBeenCalled();
-    await (opts.slots.get("registry-down")?.sandbox as Sandbox | undefined)?.shutdown();
-    unwatch();
+    expect(shutdown).not.toHaveBeenCalled();
+    deps.unwatch();
   });
 });
 

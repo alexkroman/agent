@@ -41,7 +41,6 @@ import { authMw, existingOwnerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
 import type { PlatformEvents } from "./platform-events.ts";
 import { createMutationLock, localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
-import type { SandboxRegistry } from "./sandbox-registry.ts";
 import { type ResolveSandboxOpts, watchAgentInvalidation } from "./sandbox-resolve.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
 import { currentHarnessImageTag, describeBundle } from "./sandbox-vm.ts";
@@ -90,13 +89,6 @@ export type OrchestratorOpts = {
    * it keeps superseded sandboxes alive until idle eviction.
    */
   events?: PlatformEvents;
-  /**
-   * Cross-replica sandbox registry (see sandbox-registry.ts): residents are
-   * registered/heartbeated, and cold brokers route to live peer sandboxes
-   * before spawning duplicates. Optional for tests; single-replica
-   * compositions lose nothing without it.
-   */
-  registry?: SandboxRegistry;
   /** Allowed CORS origins. Defaults to `["*"]` (any origin). */
   allowedOrigins?: string[];
   /**
@@ -207,7 +199,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     slots: opts.slots,
     store: opts.store,
     secrets,
-    ...(opts.registry && { registry: opts.registry }),
     ...(opts.appDb && { appDb: opts.appDb }),
   };
 
@@ -247,7 +238,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     store: opts.store,
     secrets,
     ...(opts.auth && { auth: opts.auth }),
-    ...(opts.registry && { registry: opts.registry }),
     ...(opts.appDb && { appDb: opts.appDb }),
     // Same default posture as secrets: tests build orchestrators without a
     // platform database, where in-process exclusion is exact. Wrapped so

@@ -229,10 +229,20 @@ export function agentBootEnv(opts: {
 export type AgentServerHandle = {
   /** Public client-session endpoint on the guest's tunnel. */
   sessionUrl: string;
-  /** Live sessions via `GET /manage/status`. Throws on an unreachable guest. */
+  /**
+   * Live sessions via `GET /manage/status`. NEVER throws: an unreachable
+   * guest or a malformed answer reads as 0 — every consumer (shutdown
+   * drains, logs) treats "can't ask" as "idle", so the tolerance lives here
+   * once instead of in a try/catch at each call site.
+   */
   activeSessions(): Promise<number>;
-  /** `POST /manage/drain`: refuse new sessions, exit when the last ends. */
-  drain(): Promise<void>;
+  /**
+   * `POST /manage/drain`: refuse new sessions, exit when empty or at
+   * `deadlineMs` (guest-enforced — see aai-guest/harness-agent-mode.ts).
+   * THROWS on an unreachable guest: retirement uses the rejection to tell
+   * "guest owns its exit now" from "nothing there to drain — terminate".
+   */
+  drain(deadlineMs?: number): Promise<void>;
   /** True while the guest process is alive. */
   alive(): boolean;
   /** One-shot exit listener; fires immediately when already dead. */
@@ -275,10 +285,18 @@ export function agentServerFromGuest(opts: {
   };
   proc.wait().then(notifyExit, notifyExit);
 
-  const manage = (route: (typeof GUEST_ROUTES)["manageStatus" | "manageDrain"], method: string) =>
+  const manage = (
+    route: (typeof GUEST_ROUTES)["manageStatus" | "manageDrain"],
+    method: string,
+    body?: Record<string, unknown>,
+  ) =>
     fetchFn(guestHttpUrl(origin, route), {
       method,
-      headers: { authorization: `Bearer ${token}` },
+      headers: {
+        authorization: `Bearer ${token}`,
+        ...(body ? { "content-type": "application/json" } : {}),
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
       signal: AbortSignal.timeout(MANAGE_REQUEST_TIMEOUT_MS),
     });
 
@@ -288,21 +306,27 @@ export function agentServerFromGuest(opts: {
     sessionUrl: guestWsUrl(origin, GUEST_ROUTES.session),
 
     async activeSessions() {
-      const res = await manage(GUEST_ROUTES.manageStatus, "GET");
-      if (!res.ok) throw new Error(`manage/status answered HTTP ${res.status}`);
-      // Guest-asserted wire data: validate the one field consumed. It may
-      // only ever influence this tenant's own routing/reaping (see
-      // sandbox-scale.ts) — a lying guest harms only itself.
-      const body = (await res.json()) as { activeSessions?: unknown };
-      const count = body.activeSessions;
-      if (typeof count !== "number" || !Number.isFinite(count) || count < 0) {
-        throw new Error("manage/status returned a malformed session count");
+      try {
+        const res = await manage(GUEST_ROUTES.manageStatus, "GET");
+        if (!res.ok) return 0;
+        // Guest-asserted wire data: validate the one field consumed. It may
+        // only ever influence this tenant's own reaping and shutdown-drain
+        // accounting — a lying guest harms only itself.
+        const body = (await res.json()) as { activeSessions?: unknown };
+        const count = body.activeSessions;
+        if (typeof count !== "number" || !Number.isFinite(count) || count < 0) return 0;
+        return count;
+      } catch {
+        return 0; // unreachable guest = idle guest
       }
-      return count;
     },
 
-    async drain() {
-      const res = await manage(GUEST_ROUTES.manageDrain, "POST");
+    async drain(deadlineMs?: number) {
+      const res = await manage(
+        GUEST_ROUTES.manageDrain,
+        "POST",
+        deadlineMs === undefined ? undefined : { deadlineMs },
+      );
       if (!res.ok) throw new Error(`manage/drain answered HTTP ${res.status}`);
     },
 

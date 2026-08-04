@@ -47,12 +47,12 @@ export const GUEST_CONTRACT_VERSION = 1;
  * Agent-mode idle self-exit: with zero live sessions for this long the guest
  * exits 0 so Modal's idle timeout reclaims the sandbox. Agent-mode guests
  * have NO host control connection (the server contract is HTTP-only), so the
- * orphan-timeout mechanism cannot apply — owning idleness is what keeps a
- * sandbox whose host crashed from billing to the 4h lifetime cap. Sized
- * above the host's own idle sweep so the host normally reclaims first.
+ * orphan-timeout mechanism cannot apply — and the guest is the ONLY idle
+ * reclaimer (the host-side idle sweep was deleted; the guest's exit
+ * surfaces host-side as process death → onSandboxLost detaches the slot).
  * Overridable via AAI_GUEST_IDLE_EXIT_MS; 0 disables.
  */
-export const AGENT_IDLE_EXIT_MS = 20 * 60_000;
+export const AGENT_IDLE_EXIT_MS = 5 * 60_000;
 
 /** Poll cadence of the agent-mode idle/drain check. */
 export const AGENT_IDLE_POLL_MS = 5000;

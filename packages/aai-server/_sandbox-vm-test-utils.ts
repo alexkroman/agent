@@ -95,33 +95,6 @@ export function makeWarm(conn: GuestConnection, cleanup: () => Promise<void>): W
   };
 }
 
-/**
- * Attach an auto-responder that replies `{ ok: true }` to every bundle/load
- * the host sends. Returns a no-op detach for call-site symmetry.
- */
-export function autorespondBundleLoad(socket: FakeGuestSocket): () => void {
-  socket.onSend((msg) => {
-    if (msg.method === "bundle/load" && msg.id != null) {
-      socket.receive({ jsonrpc: "2.0", id: msg.id, result: { ok: true } });
-    }
-  });
-  return () => undefined;
-}
-
-/** Reject every bundle/load request with a "Worker code not found" error. */
-export function autorespondBundleLoadError(socket: FakeGuestSocket): () => void {
-  socket.onSend((msg) => {
-    if (msg.method === "bundle/load" && msg.id != null) {
-      socket.receive({
-        jsonrpc: "2.0",
-        id: msg.id,
-        error: { code: -32_603, message: "Worker code not found" },
-      });
-    }
-  });
-  return () => undefined;
-}
-
 export function baseOpts(overrides?: Partial<AgentSpawnOptions>): AgentSpawnOptions {
   return {
     slug: "test-agent",

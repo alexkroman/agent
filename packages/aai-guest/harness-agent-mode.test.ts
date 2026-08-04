@@ -96,8 +96,19 @@ function fakeRes(): FakeRes {
   return out;
 }
 
-function fakeReq(auth?: string): http.IncomingMessage {
-  return { headers: auth ? { authorization: auth } : {} } as http.IncomingMessage;
+function fakeReq(auth?: string, body?: string): http.IncomingMessage {
+  // Minimal readable shape for readJsonBody: emits the body (if any) to the
+  // `data` listener and completes on `end`, synchronously at registration.
+  const req = {
+    headers: auth ? { authorization: auth } : {},
+    destroy: () => undefined,
+    on(event: string, cb: (chunk?: unknown) => void) {
+      if (event === "data" && body) cb(Buffer.from(body));
+      if (event === "end") cb();
+      return req;
+    },
+  };
+  return req as unknown as http.IncomingMessage;
 }
 
 describe("createManageHandler", () => {
@@ -136,12 +147,38 @@ describe("createManageHandler", () => {
     });
   });
 
-  test("drain flips the drain flag", () => {
+  test("drain flips the drain flag (no body → no deadline)", async () => {
     const startDrain = vi.fn();
     const out = fakeRes();
     deps({ startDrain })(fakeReq("Bearer secret-token"), out.res, MANAGE_DRAIN_PATH, "POST");
-    expect(out.statusCode).toBe(200);
-    expect(startDrain).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(out.statusCode).toBe(200));
+    expect(startDrain).toHaveBeenCalledExactlyOnceWith(undefined);
+  });
+
+  test("drain forwards the host's deadline from the JSON body", async () => {
+    const startDrain = vi.fn();
+    const out = fakeRes();
+    deps({ startDrain })(
+      fakeReq("Bearer secret-token", JSON.stringify({ deadlineMs: 60_000 })),
+      out.res,
+      MANAGE_DRAIN_PATH,
+      "POST",
+    );
+    await vi.waitFor(() => expect(out.statusCode).toBe(200));
+    expect(startDrain).toHaveBeenCalledExactlyOnceWith(60_000);
+  });
+
+  test("drain ignores a malformed deadline (drains until empty)", async () => {
+    const startDrain = vi.fn();
+    const out = fakeRes();
+    deps({ startDrain })(
+      fakeReq("Bearer secret-token", '{"deadlineMs":"soon"}'),
+      out.res,
+      MANAGE_DRAIN_PATH,
+      "POST",
+    );
+    await vi.waitFor(() => expect(out.statusCode).toBe(200));
+    expect(startDrain).toHaveBeenCalledExactlyOnceWith(undefined);
   });
 
   test("an unknown manage path is claimed with a 404", () => {
