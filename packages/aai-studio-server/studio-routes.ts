@@ -51,6 +51,7 @@ import { streamSSE } from "hono/streaming";
 import type { StudioHonoEnv } from "./studio-context.ts";
 import { deployStudioProject } from "./studio-deploy.ts";
 import { studioLlmInfo } from "./studio-llm.ts";
+import { wakeProjectPreview } from "./studio-preview.ts";
 import {
   CHAT_RATE_LIMIT,
   createRateLimiter,
@@ -472,6 +473,15 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
       requestPublicOrigin(c),
     );
     if (!session) return c.json({ error: "Project not found" }, 404);
+    // The user just landed on (or re-opened) this project — wake its preview
+    // too (fire-and-forget; gates and rationale live in studio-preview.ts).
+    wakeProjectPreview({
+      workspaces: c.env.workspaces,
+      scope,
+      project,
+      target: { serverUrl: requestPublicOrigin(c), apiKey: c.var.apiKey },
+      schedule: ensureBroker(c).schedulePreview,
+    });
     // `token` is the guest chat surface's per-session bearer — the browser
     // presents it (never a long-lived credential) on the public tunnel URL.
     return c.json({ url: session.url, token: session.token });

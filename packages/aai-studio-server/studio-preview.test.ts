@@ -2,9 +2,19 @@
 
 import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
 import { describe, expect, test, vi } from "vitest";
-import { createPreviewDeployer, previewSlugFor } from "./studio-preview.ts";
+import {
+  createPreviewDeployer,
+  previewSlugFor,
+  wakeProjectPreview,
+  warmPreviewSandbox,
+} from "./studio-preview.ts";
 import type { WorkspaceDeployOutcome, WorkspaceDeployTarget } from "./studio-session-broker.ts";
-import { createWorkspace, getWorkspace, mutateWorkspace } from "./studio-workspace.ts";
+import {
+  createWorkspace,
+  currentFilesHash,
+  getWorkspace,
+  mutateWorkspace,
+} from "./studio-workspace.ts";
 
 const SCOPE = "scope";
 const PROJECT = "contact-form-x7k2mq";
@@ -36,6 +46,145 @@ describe("previewSlugFor", () => {
 
   test("trims trailing separators left by truncation", () => {
     expect(previewSlugFor(`${"x".repeat(55)}-tail`)).toBe(`${"x".repeat(55)}-preview`);
+  });
+});
+
+describe("warmPreviewSandbox", () => {
+  test("hits the platform's client-config broker for the slug, with a deadline", () => {
+    const fetchImpl = vi.fn(async () => new Response("{}"));
+    warmPreviewSandbox("https://platform.example", "proj-preview", fetchImpl as typeof fetch);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchImpl.mock.calls[0] as unknown[] as [URL, RequestInit];
+    expect(url.toString()).toBe("https://platform.example/proj-preview/client-config");
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  test("swallows fetch failures — the warm-up is only an accelerator", async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new Error("cold boot timed out");
+    });
+    expect(() =>
+      warmPreviewSandbox("https://platform.example", "proj-preview", fetchImpl as typeof fetch),
+    ).not.toThrow();
+    // Let the rejected promise settle; an unhandled rejection would fail the run.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  test("an unparsable origin is a no-op, never a throw", () => {
+    const fetchImpl = vi.fn(async () => new Response("{}"));
+    expect(() =>
+      warmPreviewSandbox("not a url", "proj-preview", fetchImpl as typeof fetch),
+    ).not.toThrow();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+describe("wakeProjectPreview", () => {
+  const okFetch = () => vi.fn(async () => new Response("{}"));
+  const scheduleFn = () =>
+    vi.fn<(scope: string, project: string, target: WorkspaceDeployTarget) => void>();
+  const wake = (
+    workspaces: ReturnType<typeof makeStore>,
+    schedule: ReturnType<typeof scheduleFn>,
+    fetchImpl: ReturnType<typeof okFetch>,
+  ) =>
+    wakeProjectPreview({
+      workspaces,
+      scope: SCOPE,
+      project: PROJECT,
+      target: TARGET,
+      schedule,
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+
+  test("a stale preview reschedules its deploy and warms the last-good slug", async () => {
+    const workspaces = makeStore();
+    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    await mutateWorkspace(workspaces, SCOPE, PROJECT, (current) => ({
+      ...current,
+      previewSlug: "p-preview",
+      previewHash: "stale",
+    }));
+    const schedule = scheduleFn();
+    const fetchImpl = okFetch();
+    wake(workspaces, schedule, fetchImpl);
+    await vi.waitFor(() => {
+      expect(schedule).toHaveBeenCalledWith(SCOPE, PROJECT, TARGET);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    });
+    const [url] = fetchImpl.mock.calls[0] as unknown[] as [URL];
+    expect(url.toString()).toBe("https://platform.example/p-preview/client-config");
+  });
+
+  test("a current preview only warms — never redeploys", async () => {
+    const workspaces = makeStore();
+    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    await mutateWorkspace(workspaces, SCOPE, PROJECT, (current) => ({
+      ...current,
+      previewSlug: "p-preview",
+      previewHash: currentFilesHash(current),
+    }));
+    const schedule = scheduleFn();
+    const fetchImpl = okFetch();
+    wake(workspaces, schedule, fetchImpl);
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    expect(schedule).not.toHaveBeenCalled();
+  });
+
+  test("an empty workspace (fresh project) neither deploys nor warms", async () => {
+    const workspaces = makeStore();
+    await createWorkspace(workspaces, SCOPE, PROJECT, { files: {} });
+    const schedule = scheduleFn();
+    const fetchImpl = okFetch();
+    wake(workspaces, schedule, fetchImpl);
+    await settled();
+    // Nothing deployable yet — the first agent turn owns the first preview.
+    expect(schedule).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test("a stamped build failure does not redeploy, but still warms", async () => {
+    const workspaces = makeStore();
+    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// broken" } });
+    await mutateWorkspace(workspaces, SCOPE, PROJECT, (current) => ({
+      ...current,
+      previewSlug: "p-preview",
+      previewError: "Build failed: nope",
+    }));
+    const schedule = scheduleFn();
+    const fetchImpl = okFetch();
+    wake(workspaces, schedule, fetchImpl);
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    // Deterministic failure — the banner already carries the CLI output;
+    // the next edit reschedules.
+    expect(schedule).not.toHaveBeenCalled();
+  });
+
+  test("falls back to warming the production agent for pre-preview projects", async () => {
+    const workspaces = makeStore();
+    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    await mutateWorkspace(workspaces, SCOPE, PROJECT, (current) => ({
+      ...current,
+      deployedSlug: "prod-slug",
+      deployedHash: currentFilesHash(current),
+      previewError: "Build failed: nope",
+    }));
+    const schedule = scheduleFn();
+    const fetchImpl = okFetch();
+    wake(workspaces, schedule, fetchImpl);
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    const [url] = fetchImpl.mock.calls[0] as unknown[] as [URL];
+    expect(url.toString()).toBe("https://platform.example/prod-slug/client-config");
+  });
+
+  test("a missing project is a silent no-op", async () => {
+    const workspaces = makeStore();
+    const schedule = scheduleFn();
+    const fetchImpl = okFetch();
+    expect(() => wake(workspaces, schedule, fetchImpl)).not.toThrow();
+    await settled();
+    expect(schedule).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
 
