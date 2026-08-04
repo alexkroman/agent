@@ -1,7 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 // Entry: sign-in gate (GitHub OAuth) → AssemblyAI key onboarding → the
 // studio app under a QueryClientProvider. Also the `aai login` approval:
-// `?cli-link=<code>` renders a link-the-CLI gate once signed in + onboarded.
+// a `?cli-link=<code>` open stashes the code per-tab and strips the URL
+// (cli-link.ts — it must not ride the OAuth redirect), then renders a
+// link-the-CLI gate once signed in + onboarded.
 //
 // The browser's bearer is a SESSION token (Supabase in production, the dev
 // token locally — see auth.tsx), never an AssemblyAI key. The key is the
@@ -32,27 +34,11 @@ import { ApiError, api, errorText } from "./api.ts";
 import { App } from "./app.tsx";
 import logoUrl from "./assets/assemblyai-logomark.svg";
 import { useStudioAuth } from "./auth.tsx";
+import { clearCliLinkCode, consumeCliLinkCode, linkConfirmationCode } from "./cli-link.ts";
 import { isEnterSubmit } from "./send-button.tsx";
 import "./styles.css";
 
 const queryClient = new QueryClient();
-
-/**
- * The `aai login` handshake code, when this tab was opened by the CLI.
- * Validated to the server's grammar so a mangled link renders the normal
- * studio rather than an approval gate that can only fail.
- */
-function readCliLinkCode(): string | null {
-  const code = new URLSearchParams(window.location.search).get("cli-link");
-  return code && /^[\w-]{32,128}$/.test(code) ? code : null;
-}
-
-/** Drop the `?cli-link` param (handled or dismissed) without a reload. */
-function stripCliLinkParam(): void {
-  const url = new URL(window.location.href);
-  url.searchParams.delete("cli-link");
-  history.replaceState(history.state, "", url);
-}
 
 function GateCard({ children }: { children: React.ReactNode }) {
   return (
@@ -274,8 +260,14 @@ function CliLinkGate({
       </h1>
       <p className="m-0 text-[15px] leading-[21px] text-muted">
         {email ? `Signed in as ${email}. ` : ""}A terminal running <code>aai login</code> opened
-        this page and will receive this account's AssemblyAI API key. Only continue if that was you,
-        just now.
+        this page and will receive this account's AssemblyAI API key.
+      </p>
+      <p className="m-0 rounded border border-line bg-cream px-4 py-2.5 text-center font-mono text-[18px] tracking-[0.15em]">
+        {linkConfirmationCode(code)}
+      </p>
+      <p className="m-0 text-[15px] leading-[21px] text-muted">
+        That terminal shows this same code. Only continue if it matches — if you didn't just run{" "}
+        <code>aai login</code> yourself, close this page.
       </p>
       {error && <p className="m-0 text-[13px] text-err">{error}</p>}
       <div className="flex gap-2.5">
@@ -370,7 +362,7 @@ function AccountGate({
 
 function Root() {
   const auth = useStudioAuth();
-  const [cliLinkCode, setCliLinkCode] = useState(readCliLinkCode);
+  const [cliLinkCode, setCliLinkCode] = useState(consumeCliLinkCode);
   if (auth.phase === "loading") return null;
   if (auth.phase === "unavailable") {
     return (
@@ -387,7 +379,7 @@ function Root() {
       bearer={auth.token}
       cliLinkCode={cliLinkCode}
       onCliLinkDone={() => {
-        stripCliLinkParam();
+        clearCliLinkCode();
         setCliLinkCode(null);
       }}
       onSignOut={auth.signOut}

@@ -23,8 +23,11 @@
  * the whole flow, PKCE state included.
  *
  * `signInWithOAuth` redirects back to `window.location.href`, not the bare
- * origin, so query params like the `?cli-link=<code>` approval survive the
- * round trip.
+ * origin, so ordinary query params survive the round trip. The one
+ * deliberate exception is the `?cli-link=<code>` approval: cli-link.ts
+ * stashes the code in sessionStorage and strips it from the URL at page
+ * load — BEFORE sign-in can run — so the link code never enters the OAuth
+ * redirect chain (Supabase's `redirect_to`, GitHub's `redirect_uri`).
  */
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
