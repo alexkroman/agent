@@ -59,8 +59,21 @@ import { getWorkspace, mutateWorkspace, projectKey } from "./studio-workspace.ts
  * and by the client's Stop button.
  */
 const MAX_CHAT_STEPS = 80;
-/** Idle window before a project's sandbox is evicted. */
-const STUDIO_SESSION_IDLE_MS = 15 * 60_000;
+/**
+ * Idle window before a project's sandbox is evicted.
+ *
+ * Matches the agent guest's own idle self-exit (`AGENT_IDLE_EXIT_MS`, 5 min):
+ * a studio sandbox costs exactly what a deployed agent's does, and there is
+ * no reason for the one that sits idle while someone reads a reply to be
+ * billed three times longer. Losing a live-but-quiet sandbox costs one
+ * re-broker — the client re-brokers on a rejected fetch or a 409, and the
+ * workspace and chat both live in the store, not the guest, so nothing is
+ * lost with it.
+ *
+ * The sweeper below runs on a 60s cadence, so the effective window is this
+ * value plus up to a minute.
+ */
+const STUDIO_SESSION_IDLE_MS = 5 * 60_000;
 /** Deadline for installing a session in the guest (workspace transfer). */
 const SESSION_INIT_TIMEOUT_MS = 60_000;
 /** Deadline for one in-guest Publish (`aai deploy`: cold build + upload). */

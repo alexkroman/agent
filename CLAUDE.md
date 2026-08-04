@@ -478,7 +478,8 @@ voice agents without the CLI:
   (`aai-guest/studio-build.ts` — the toolchain node_modules are baked next
   to the harness) and loads/trials the bundle in place; Publish runs the
   literal CLI via the host→guest `workspace/deploy` RPC. Sandboxes are per
-  (scope, project) with a 15-min idle eviction; a dead one heals on the next
+  (scope, project) with a 5-min idle eviction (matching the agent guest's
+  own idle self-exit); a dead one heals on the next
   broker call, and the client re-brokers on a 409 from the chat surface.
   **`ensureSession` is serialized per (scope, project), and entries are
   disposed by identity, not by key.** Overlapping brokers for one project are
