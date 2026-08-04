@@ -147,6 +147,20 @@ export const EXPECTATIONS = [
     ui: true,
   },
   {
+    label: "A retail support agent that manages real orders",
+    capabilities: [
+      ["find_user", "email", "authenticate", "identify", "lookup_customer"],
+      ["order", "get_order", "list_order"],
+      ["cancel"],
+      ["modify", "change", "update_order"],
+      ["return", "exchange", "refund"],
+      ["address"],
+    ],
+    minTools: 5,
+    // The prompt asks for a live order view outright.
+    ui: true,
+  },
+  {
     label: "A text adventure in the style of Infocom",
     // The prompt reads "inventory (take/drop), location, and puzzle flags" —
     // the parenthetical DEFINES inventory as take/drop, so requiring a
