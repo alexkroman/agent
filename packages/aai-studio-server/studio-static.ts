@@ -44,14 +44,17 @@ const SANDBOX_CONNECT_SRC: Record<SandboxBackend, string> = {
 
 /**
  * `connect-src` source for browser sign-in. supabase-js dials
- * `<supabaseUrl>/auth/v1/*` straight from the page, so the Supabase project
- * is the SECOND cross-origin thing the studio does — and it hit the same wall
- * the comment above describes: `signInWithOtp` was refused before it left the
- * browser, supabase-js surfaced the resulting `TypeError` verbatim, and the
- * login screen showed a bare "Failed to fetch" under the email box with
- * nothing whatsoever on the server. Only the one cross-origin call in the
- * whole sign-in path is blocked, so the page loads and `GET /studio/auth`
- * succeeds — everything looks healthy until the button is clicked.
+ * `<supabaseUrl>/auth/v1/*` straight from the page (the session restore and
+ * the OAuth code/token exchange when the GitHub redirect lands back here),
+ * so the Supabase project is the SECOND cross-origin thing the studio does —
+ * and it hit the same wall the comment above describes: the sign-in fetch
+ * was refused before it left the browser, supabase-js surfaced the
+ * resulting `TypeError` verbatim, and the login screen showed a bare
+ * "Failed to fetch" with nothing whatsoever on the server. Only the one
+ * cross-origin call in the whole sign-in path is blocked, so the page loads
+ * and `GET /studio/auth` succeeds — everything looks healthy until the
+ * button is clicked. (GitHub itself needs no entry: the hop to github.com
+ * is a top-level navigation, which connect-src does not govern.)
  *
  * Derived from the config the server actually hands the client rather than
  * re-read from `SUPABASE_URL`, so the policy cannot come to name a different

@@ -151,6 +151,17 @@ export const AccountKeySchema = z.object({
 });
 
 /**
+ * A CLI link code: minted by `aai login` (32 random bytes, base64url),
+ * approved by a signed-in browser session, exchanged ONCE by the CLI for
+ * the account's stored API key. The grammar only has to admit what the CLI
+ * mints; the length floor keeps a short, guessable code from ever being
+ * approvable.
+ */
+export const CliLinkSchema = z.object({
+  code: z.string().regex(/^[\w-]{32,128}$/, "Invalid link code"),
+});
+
+/**
  * Summed lengths of every string reachable inside `value` — the size that
  * matters in a chat message, counted without re-serializing it. The old
  * per-message `JSON.stringify(...).length` refine re-built megabytes of

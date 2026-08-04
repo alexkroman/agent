@@ -72,25 +72,26 @@ describe("studioCsp", () => {
     }
   });
 
-  // The sign-in leg: supabase-js dials the project origin from the page, so a
-  // connect-src without it fails as the same bare "Failed to fetch" — under
-  // the email box, with nothing on the server, since no request is ever sent.
+  // The sign-in leg: supabase-js dials the project origin from the page (the
+  // OAuth code/token exchange when the GitHub redirect lands), so a
+  // connect-src without it fails as the same bare "Failed to fetch" — with
+  // nothing on the server, since no request is ever sent.
   describe("Supabase sign-in origin", () => {
     const supabaseAuth = {
       mode: "supabase",
       supabaseUrl: "https://abc123.supabase.co",
       supabasePublishableKey: "sb_publishable_test",
     } as const;
-    const otpUrl = `${supabaseAuth.supabaseUrl}/auth/v1/otp`;
+    const tokenUrl = `${supabaseAuth.supabaseUrl}/auth/v1/token`;
 
-    it("permits the configured project's magic-link endpoint", () => {
+    it("permits the configured project's auth endpoints", () => {
       const csp = studioCsp({ SANDBOX_BACKEND: "modal" }, supabaseAuth);
-      expect(allowsOrigin(csp, otpUrl)).toBe(true);
+      expect(allowsOrigin(csp, tokenUrl)).toBe(true);
     });
 
     it("permits only that project, not every Supabase project", () => {
       const csp = studioCsp({ SANDBOX_BACKEND: "modal" }, supabaseAuth);
-      expect(allowsOrigin(csp, "https://someoneelse.supabase.co/auth/v1/otp")).toBe(false);
+      expect(allowsOrigin(csp, "https://someoneelse.supabase.co/auth/v1/token")).toBe(false);
     });
 
     it("tolerates a trailing slash on the configured URL", () => {
@@ -98,7 +99,7 @@ describe("studioCsp", () => {
         { SANDBOX_BACKEND: "modal" },
         { ...supabaseAuth, supabaseUrl: "https://abc123.supabase.co/" },
       );
-      expect(allowsOrigin(csp, otpUrl)).toBe(true);
+      expect(allowsOrigin(csp, tokenUrl)).toBe(true);
     });
 
     it("adds no source for dev auth or an unconfigured login", () => {

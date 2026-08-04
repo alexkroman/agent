@@ -2,10 +2,11 @@
 /**
  * Browser-session auth for the studio client.
  *
- * `GET /studio/auth` names the flow: `supabase` (magic-link email sign-in
- * via supabase-js), `dev` (the local-dev email box that mints a
- * self-describing token — the counterpart of aai-server's `parseDevToken`),
- * or `none` (login unconfigured on the server).
+ * `GET /studio/auth` names the flow: `supabase` (GitHub OAuth via
+ * supabase-js — `signInWithOAuth` round-trips through GitHub and lands back
+ * here), `dev` (the local-dev email box that mints a self-describing
+ * token — the counterpart of aai-server's `parseDevToken`), or `none`
+ * (login unconfigured on the server).
  *
  * Either way the app's bearer is a SESSION token, never an AssemblyAI key:
  * the key is stored server-side per user (`PUT /studio/account/key`, the
@@ -16,9 +17,14 @@
  * Supabase sessions persist in `sessionStorage` for the same reason the old
  * pasted key did (see the threat-model note in main.tsx): deployed tenant
  * agents are served same-origin, so `localStorage` would hand every
- * published agent page the user's refresh token. A magic link opened from
- * the email client lands in a fresh tab, which simply becomes the studio
- * tab — per-tab storage is fine for that flow.
+ * published agent page the user's refresh token. The GitHub OAuth redirect
+ * round-trips in THIS tab (a top-level navigation, not a new tab), and
+ * sessionStorage survives same-tab navigation — so per-tab storage covers
+ * the whole flow, PKCE state included.
+ *
+ * `signInWithOAuth` redirects back to `window.location.href`, not the bare
+ * origin, so query params like the `?cli-link=<code>` approval survive the
+ * round trip.
  */
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -33,9 +39,11 @@ export type StudioAuthState =
   | {
       phase: "signedOut";
       mode: "supabase" | "dev";
-      /** Magic link already sent — show the "check your email" state. */
-      sent: boolean;
-      signIn: (email: string) => Promise<void>;
+      /**
+       * Kick off sign-in. `supabase` mode ignores the email (GitHub OAuth
+       * navigates away and back); `dev` mode requires it.
+       */
+      signIn: (email?: string) => Promise<void>;
     }
   | { phase: "signedIn"; token: string; signOut: () => void };
 
@@ -69,7 +77,6 @@ export function useStudioAuth(): StudioAuthState {
   const [config, setConfig] = useState<AuthConfig | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(null);
-  const [sent, setSent] = useState(false);
   const supabaseRef = useRef<SupabaseClient | null>(null);
 
   useEffect(() => {
@@ -88,9 +95,10 @@ export function useStudioAuth(): StudioAuthState {
   }, []);
 
   // Supabase wiring, once the config resolves: restore any stored session
-  // (including the one `detectSessionInUrl` extracts when a magic link
-  // lands), then follow every auth change — sign-in, the hourly token
-  // refresh, sign-out — so the app always holds a live access token.
+  // (including the one `detectSessionInUrl` extracts when the GitHub OAuth
+  // redirect lands back here), then follow every auth change — sign-in, the
+  // hourly token refresh, sign-out — so the app always holds a live access
+  // token.
   useEffect(() => {
     if (config?.mode !== "supabase") return;
     const client = createClient(config.supabaseUrl, config.supabasePublishableKey, {
@@ -116,8 +124,9 @@ export function useStudioAuth(): StudioAuthState {
 
   const mode = config?.mode;
   const signIn = useCallback(
-    async (email: string) => {
+    async (email?: string) => {
       if (mode === "dev") {
+        if (!email) return;
         const minted = mintDevToken(email);
         writeDevToken(minted);
         setToken(minted);
@@ -125,12 +134,12 @@ export function useStudioAuth(): StudioAuthState {
       }
       const client = supabaseRef.current;
       if (mode !== "supabase" || !client) return;
-      const { error } = await client.auth.signInWithOtp({
-        email,
-        options: { emailRedirectTo: window.location.origin },
+      // Navigates to GitHub; the page unloads unless this errors first.
+      const { error } = await client.auth.signInWithOAuth({
+        provider: "github",
+        options: { redirectTo: window.location.href },
       });
       if (error) throw new Error(error.message);
-      setSent(true);
     },
     [mode],
   );
@@ -139,7 +148,6 @@ export function useStudioAuth(): StudioAuthState {
     if (mode === "supabase") void supabaseRef.current?.auth.signOut();
     if (mode === "dev") writeDevToken(null);
     setToken(null);
-    setSent(false);
   }, [mode]);
 
   if (configError) return { phase: "unavailable", message: configError };
@@ -152,5 +160,5 @@ export function useStudioAuth(): StudioAuthState {
     };
   }
   if (token) return { phase: "signedIn", token, signOut };
-  return { phase: "signedOut", mode: config.mode, sent, signIn };
+  return { phase: "signedOut", mode: config.mode, signIn };
 }
