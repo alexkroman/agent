@@ -29,6 +29,10 @@ Required Modal Secret named ``aai-server`` with (at least):
   Storage (S3-compatible); optional ``SUPABASE_S3_REGION``
 - ``SUPABASE_DB_URL`` — service-role Postgres connection string (Vault
   secrets + per-app databases)
+- ``SUPABASE_URL`` / ``SUPABASE_PUBLISHABLE_KEY`` — Supabase Auth (studio
+  browser/CLI email login; the publishable ``sb_publishable_...`` key from
+  the dashboard's API Keys page). Missing means browser login is disabled
+  (a boot warning says so) — raw API-key bearers still work
 - optional: ``PINECONE_API_KEY`` / ``PINECONE_INDEX``, ``ASSEMBLYAI_API_KEY``,
   ``BRAVE_API_KEY``, ``SANDBOX_POOL_SIZE``
 """
