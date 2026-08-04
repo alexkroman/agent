@@ -29,6 +29,7 @@ vi.mock("./session-core.ts", () => {
       disconnect: vi.fn(),
       start: vi.fn(),
       toggle: vi.fn(),
+      end: vi.fn(),
       [Symbol.dispose]: vi.fn(),
     })),
   };

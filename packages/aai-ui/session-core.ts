@@ -421,6 +421,22 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     }
   }
 
+  function end(): void {
+    teardownConnection();
+    // A later start() must be a NEW session, not a resume: drop the resume id
+    // and the reconnect flag so the next connect carries no `?sessionId=`
+    // (fresh per-session tool state) and the greeting plays again.
+    sessionId = undefined;
+    hasConnected = false;
+    updateState({
+      ...CLEARED_SESSION_STATE,
+      state: "disconnected",
+      started: false,
+      running: false,
+      recording: false,
+    });
+  }
+
   return {
     getSnapshot,
     subscribe,
@@ -431,6 +447,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     disconnect,
     start,
     toggle,
+    end,
     [Symbol.dispose]() {
       disconnect();
     },

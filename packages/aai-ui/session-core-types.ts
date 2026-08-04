@@ -122,6 +122,15 @@ export type SessionCore = {
   start(): void;
   /** Toggle between connected and disconnected states (after `start()`). */
   toggle(): void;
+  /**
+   * End the call: close the connection, clear the conversation, and return
+   * to the not-started state (`started` flips back to false, so a
+   * start-screen UI shows its Start control again). Unlike `reset()` —
+   * which keeps the call live and only clears the conversation — the next
+   * `start()` mints a brand-new session: a new session id, fresh
+   * per-session tool state, greeting included.
+   */
+  end(): void;
   /** Alias for `disconnect` for use with `using`. */
   [Symbol.dispose](): void;
 };
