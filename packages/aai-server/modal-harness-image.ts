@@ -117,6 +117,23 @@ export function resolveToolchainSpecs(): string[] {
   });
 }
 
+/**
+ * The content-addressed tag one (base image, harness code, toolchain) triple
+ * publishes under. Pure — this is also how a deploy records WHICH image an
+ * agent was deployed against (`harness_image_tag` on the agents row), so the
+ * tag computation must stay a function of exactly these inputs.
+ */
+export function harnessImageTag(baseTag: string, code: string, specs: string[]): string {
+  const hash = createHash("sha256")
+    .update(baseTag)
+    .update("\0")
+    .update(code)
+    .update("\0")
+    .update(specs.join(","))
+    .digest("hex");
+  return `${HARNESS_IMAGE_NAME}:${hash.slice(0, 16)}`;
+}
+
 export type HarnessImageResolver = (code: string) => Promise<Image>;
 
 /** Drain a stream into a bounded string (stderr tails for error messages). */
@@ -139,16 +156,7 @@ export function createHarnessImageResolver(deps: {
   const { client, app, baseTag, baseImage } = deps;
   const memo = keyedMemoAsync<Image>();
 
-  function tagFor(code: string, specs: string[]): string {
-    const hash = createHash("sha256")
-      .update(baseTag)
-      .update("\0")
-      .update(code)
-      .update("\0")
-      .update(specs.join(","))
-      .digest("hex");
-    return `${HARNESS_IMAGE_NAME}:${hash.slice(0, 16)}`;
-  }
+  const tagFor = (code: string, specs: string[]): string => harnessImageTag(baseTag, code, specs);
 
   async function build(tag: string, code: string, specs: string[]): Promise<Image> {
     try {

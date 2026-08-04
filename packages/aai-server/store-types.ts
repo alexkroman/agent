@@ -24,6 +24,12 @@ export type BundleStore = {
     credential_hashes: string[];
     /** Pre-extracted agent config from the CLI build. */
     agentConfig: IsolateConfig;
+    /**
+     * The harness snapshot image tag this deploy runs against (see
+     * `currentHarnessImageTag` in sandbox-vm.ts). Null outside the Modal
+     * backend.
+     */
+    harnessImageTag?: string | null | undefined;
   }): Promise<void>;
   /** The deploy record: ownership hashes, config, blob hashes, version. */
   getAgent(slug: string): Promise<AgentRecord | null>;

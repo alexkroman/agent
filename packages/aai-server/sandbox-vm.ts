@@ -14,11 +14,14 @@
  * (`SandboxHandle.sessionUrl`).
  */
 
+import { readFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { errorMessage } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
+import { keyedMemoAsync } from "./_memo.ts";
 import { resolveHarnessPath } from "./constants.ts";
-import { spawnModalWarm } from "./modal-sandbox.ts";
+import { harnessImageTag, resolveToolchainSpecs } from "./modal-harness-image.ts";
+import { DEFAULT_SANDBOX_IMAGE, spawnModalWarm } from "./modal-sandbox.ts";
 import type { BundleLoadResult, GuestConnection } from "./rpc-schemas.ts";
 import { resolveSandboxBackend } from "./sandbox-backend.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
@@ -84,6 +87,14 @@ export type SandboxVmOptions = {
   workerCode: string;
   env: Record<string, string>;
   harnessPath: string;
+  /**
+   * The harness snapshot image the agent was DEPLOYED against
+   * (`harness_image_tag` on its agents row). When set, the Modal backend
+   * spawns from that image instead of the current one, so a platform
+   * upgrade never changes the runtime environment under an
+   * already-deployed bundle. Ignored by the subprocess backend.
+   */
+  imageTag?: string | undefined;
 };
 
 /** Minimal interface the pool exposes to createSandboxVm. */
@@ -162,7 +173,7 @@ async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Prom
  * container.
  */
 export async function spawnWarmHarness(
-  opts: { harnessPath: string } & SpawnIdentity,
+  opts: { harnessPath: string; imageTag?: string | undefined } & SpawnIdentity,
 ): Promise<WarmHarness> {
   switch (resolveSandboxBackend(process.env)) {
     case "subprocess":
@@ -170,6 +181,28 @@ export async function spawnWarmHarness(
     default:
       return spawnModalWarm(opts);
   }
+}
+
+// ── Current harness image tag ────────────────────────────────────────────────
+
+const currentTagMemo = keyedMemoAsync<string | null>();
+
+/**
+ * The content-addressed harness image tag THIS process would spawn new
+ * sandboxes from — what a deploy records on the agents row
+ * (`harness_image_tag`), and what the pool's sandboxes were built from.
+ * Null outside the Modal backend (the subprocess backend has no image and
+ * pins nothing). Pure computation — base tag from env, harness code from
+ * disk, toolchain specs from package.json — so it needs no Modal
+ * credentials and never dials out.
+ */
+export function currentHarnessImageTag(harnessPath: string): Promise<string | null> {
+  return currentTagMemo(harnessPath, async () => {
+    if (resolveSandboxBackend(process.env) !== "modal") return null;
+    const code = await readFile(harnessPath, "utf-8");
+    const baseTag = process.env.MODAL_SANDBOX_IMAGE ?? DEFAULT_SANDBOX_IMAGE;
+    return harnessImageTag(baseTag, code, resolveToolchainSpecs());
+  });
 }
 
 /**
@@ -273,7 +306,12 @@ export async function createSandboxVm(
   pool?: WarmHarnessSource,
   spawn: typeof spawnWarmHarness = spawnWarmHarness,
 ): Promise<SandboxHandle> {
-  if (pool) {
+  // Pooled sandboxes were spawned from the CURRENT harness image, so an
+  // agent pinned to a different image must skip the pool — serving it a
+  // pooled harness would silently un-pin its runtime environment.
+  const poolUsable =
+    !opts.imageTag || opts.imageTag === (await currentHarnessImageTag(opts.harnessPath));
+  if (pool && poolUsable) {
     const warm = await pool.acquire();
     // A ready pooled harness is the only fast path.
     if (warm) {
@@ -299,6 +337,7 @@ export async function createSandboxVm(
   const warm = await spawn({
     harnessPath: opts.harnessPath,
     slug: opts.slug,
+    imageTag: opts.imageTag,
   });
   try {
     return await configureSandbox(warm, opts);

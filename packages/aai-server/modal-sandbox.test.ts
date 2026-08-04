@@ -415,6 +415,29 @@ describe("spawnModalWarm", () => {
     await warm.cleanup();
   });
 
+  it("forwards the deploy's pinned image tag to the spawn context", async () => {
+    const fake = makeFakeProc();
+    const sb = makeFakeSandbox(fake);
+    const tags: (string | undefined)[] = [];
+    const ctx: ModalSpawnContext = {
+      createGuestSandbox: async (_code, _params, imageTag) => {
+        tags.push(imageTag);
+        return sb;
+      },
+    };
+    const harnessPath = await makeHarnessFile();
+    const socket = createFakeGuestSocket();
+    const { dial } = makeFakeDial(socket);
+
+    const warm = await spawnModalWarm(
+      { harnessPath, slug: "pinned-agent", imageTag: "aai-guest-harness:abcd1234" },
+      ctx,
+      dial,
+    );
+    expect(tags).toEqual(["aai-guest-harness:abcd1234"]);
+    await warm.cleanup();
+  });
+
   it("mints a distinct token per sandbox", async () => {
     const harnessPath = await makeHarnessFile();
     const tokens: string[] = [];

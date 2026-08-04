@@ -86,9 +86,17 @@ export type ModalSandboxLike = {
  * `createGuestSandbox` creates a sandbox with the given harness code present
  * at {@link HARNESS_REMOTE_PATH}, served from a baked snapshot image (built
  * once per harness version, published under a content-addressed tag).
+ * `imageTag` pins the spawn to a specific published harness image — the one
+ * recorded on the agent's row at deploy time — so a deployed bundle never
+ * meets a harness/Node environment it wasn't deployed against; an
+ * unresolvable pin falls back to the current image with a warning.
  */
 export type ModalSpawnContext = {
-  createGuestSandbox(code: string, params: SandboxCreateParams): Promise<ModalSandboxLike>;
+  createGuestSandbox(
+    code: string,
+    params: SandboxCreateParams,
+    imageTag?: string,
+  ): Promise<ModalSandboxLike>;
 };
 
 // ── Configuration ────────────────────────────────────────────────────────────
@@ -100,7 +108,7 @@ export type ModalSpawnContext = {
  * `buildContext`). Override with `MODAL_SANDBOX_IMAGE` (pin a version tag in
  * production for reproducible guests).
  */
-const DEFAULT_SANDBOX_IMAGE = "node:24-slim";
+export const DEFAULT_SANDBOX_IMAGE = "node:24-slim";
 
 /** Modal App the sandboxes are created under. Override with `MODAL_APP_NAME`. */
 const DEFAULT_MODAL_APP_NAME = "aai-server";
@@ -151,7 +159,23 @@ async function buildContext(): Promise<ModalSpawnContext> {
   const harnessImage = createHarnessImageResolver({ client, app, baseTag, baseImage });
 
   return {
-    async createGuestSandbox(code, params) {
+    async createGuestSandbox(code, params, imageTag) {
+      // A pinned tag (the image the agent was DEPLOYED against) wins over
+      // the current harness image, so platform upgrades never change the
+      // environment under an already-deployed bundle. Fall back to current
+      // when the pin can't be resolved (e.g. the registry lost it) — a
+      // running agent beats a perfectly pinned dead one.
+      if (imageTag) {
+        try {
+          const pinned = await client.images.fromName(imageTag);
+          return await client.sandboxes.create(app, pinned, params);
+        } catch (err) {
+          console.warn("Pinned harness image unresolvable; spawning on current image", {
+            imageTag,
+            error: errorMessage(err),
+          });
+        }
+      }
       const image = await harnessImage(code);
       return client.sandboxes.create(app, image, params);
     },
@@ -222,7 +246,7 @@ function warmFromModal(
  * + network policy.
  */
 export async function spawnModalWarm(
-  opts: { harnessPath: string } & SpawnIdentity,
+  opts: { harnessPath: string; imageTag?: string | undefined } & SpawnIdentity,
   ctx?: ModalSpawnContext,
   dial: DialGuest = dialGuest,
 ): Promise<WarmHarness> {
@@ -236,27 +260,31 @@ export async function spawnModalWarm(
   const role = resolveSandboxRole(opts);
 
   const t0 = performance.now();
-  const sb = await context.createGuestSandbox(code, {
-    // Explicit idle entrypoint: the exec'd harness is what holds the sandbox
-    // active, so its exit is what starts the idle timer.
-    command: ["sleep", "infinity"],
-    // The host dials in through this tunnel; the harness's bearer-token
-    // check is what keeps the public tunnel URL from being an open door.
-    encryptedPorts: [GUEST_PORT],
-    timeoutMs: limits.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
-    idleTimeoutMs: limits.idleTimeoutMs ?? DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
-    // Reservation and cap are a burst range, not one number: a guest idles
-    // as a voice session and spikes only while the bundler runs. Modal rejects
-    // a reservation above its cap (clamped at parse) and a bare cap
-    // (assertModalResourcePairs above), so pass whichever were configured.
-    ...(limits.memoryMiB !== undefined && { memoryMiB: limits.memoryMiB }),
-    ...(limits.memoryLimitMiB !== undefined && { memoryLimitMiB: limits.memoryLimitMiB }),
-    ...(limits.cpu !== undefined && { cpu: limits.cpu }),
-    ...(limits.cpuLimit !== undefined && { cpuLimit: limits.cpuLimit }),
-    // Co-locate guests with the host — see parseSandboxRegionsFromEnv.
-    ...(regions && { regions }),
-    tags: sandboxTags(role, opts.slug),
-  });
+  const sb = await context.createGuestSandbox(
+    code,
+    {
+      // Explicit idle entrypoint: the exec'd harness is what holds the sandbox
+      // active, so its exit is what starts the idle timer.
+      command: ["sleep", "infinity"],
+      // The host dials in through this tunnel; the harness's bearer-token
+      // check is what keeps the public tunnel URL from being an open door.
+      encryptedPorts: [GUEST_PORT],
+      timeoutMs: limits.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
+      idleTimeoutMs: limits.idleTimeoutMs ?? DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
+      // Reservation and cap are a burst range, not one number: a guest idles
+      // as a voice session and spikes only while the bundler runs. Modal rejects
+      // a reservation above its cap (clamped at parse) and a bare cap
+      // (assertModalResourcePairs above), so pass whichever were configured.
+      ...(limits.memoryMiB !== undefined && { memoryMiB: limits.memoryMiB }),
+      ...(limits.memoryLimitMiB !== undefined && { memoryLimitMiB: limits.memoryLimitMiB }),
+      ...(limits.cpu !== undefined && { cpu: limits.cpu }),
+      ...(limits.cpuLimit !== undefined && { cpuLimit: limits.cpuLimit }),
+      // Co-locate guests with the host — see parseSandboxRegionsFromEnv.
+      ...(regions && { regions }),
+      tags: sandboxTags(role, opts.slug),
+    },
+    opts.imageTag,
+  );
   try {
     // The per-sandbox bearer token rides the EXEC env — never the sandbox
     // env, where it would outlive the process and show in sandbox metadata.

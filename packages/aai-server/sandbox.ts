@@ -30,6 +30,11 @@ export type SandboxOptions = {
    * for logs here); the bundle interprets its own config in the guest.
    */
   agentConfig: StoredAgentConfig;
+  /**
+   * Harness image the agent was deployed against (per-deploy pinning —
+   * see SandboxVmOptions.imageTag).
+   */
+  imageTag?: string | undefined;
   /** Optional pre-warmed harness pool for faster cold starts. */
   pool?: SandboxPool;
   /**
@@ -85,6 +90,7 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
       workerCode,
       env,
       harnessPath: resolveHarnessPath(),
+      imageTag: opts.imageTag,
     },
     opts.pool,
   );

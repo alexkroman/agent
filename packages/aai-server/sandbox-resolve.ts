@@ -72,6 +72,8 @@ type BundleParts = {
   env: Record<string, string>;
   agentConfig: StoredAgentConfig;
   appDbMeta: AppDbMeta | null;
+  /** Harness image the agent was deployed against (per-deploy pinning). */
+  imageTag: string | null;
 };
 
 /**
@@ -84,14 +86,24 @@ type BundleParts = {
 function loadBundleParts(slug: string, opts: ResolveSandboxOpts): Promise<BundleParts | null> {
   const { store } = opts;
   const workerCodeP = store.getWorkerCode(slug);
-  const agentConfigP = store.getAgentConfig(slug);
+  // The full row (same read-through cache as getAgentConfig) — the config
+  // for the sandbox plus the deploy's pinned harness image tag.
+  const agentP = store.getAgent(slug);
   const envP = store.getEnv(slug).then((e) => e ?? {});
   // Storage ("app db") credentials, when the platform can open them.
   const appDbMetaP = readAppDbMeta(slug, opts);
-  for (const p of [workerCodeP, agentConfigP, envP, appDbMetaP]) p.catch(() => undefined);
-  return Promise.all([workerCodeP, agentConfigP, envP, appDbMetaP]).then(
-    ([workerCode, agentConfig, env, appDbMeta]) =>
-      workerCode && agentConfig ? { workerCode, env, agentConfig, appDbMeta } : null,
+  for (const p of [workerCodeP, agentP, envP, appDbMetaP]) p.catch(() => undefined);
+  return Promise.all([workerCodeP, agentP, envP, appDbMetaP]).then(
+    ([workerCode, agent, env, appDbMeta]) =>
+      workerCode && agent
+        ? {
+            workerCode,
+            env,
+            agentConfig: agent.config,
+            appDbMeta,
+            imageTag: agent.harness_image_tag ?? null,
+          }
+        : null,
   );
 }
 
@@ -127,6 +139,7 @@ function buildSandboxFromParts(
     env,
     slug,
     agentConfig: parts.agentConfig,
+    ...(parts.imageTag !== null && { imageTag: parts.imageTag }),
     ...(opts.pool && { pool: opts.pool }),
     onSandboxLost: () => onSandboxLost(sandbox),
   });

@@ -113,8 +113,14 @@ export type ToolExecuteParams = {
  * agent runtime and clients connect directly to its public `/websocket`
  * endpoint on the same tunnel.
  *
- * This map and the guest harness must agree; both sides ship in the same
- * server artifact, so the contract can change atomically.
+ * VERSIONING: agent sandboxes are pinned to the harness image recorded at
+ * deploy time (`harness_image_tag` — see sandbox-vm.ts), so the host may be
+ * newer than a pinned agent's harness. The AGENT-side methods
+ * (`bundle/load`, `tool/execute`, `status`, `shutdown`) must therefore stay
+ * BACKWARD compatible — additive changes only; never rename a method or
+ * repurpose a param an older harness interprets differently. The studio
+ * methods are exempt: studio sandboxes always spawn from the current image,
+ * so that half of the contract still changes atomically with the server.
  */
 /**
  * Params of the host→guest `studio/session-init` request — installs the

@@ -45,7 +45,7 @@ import type { SandboxPool } from "./sandbox-pool.ts";
 import type { SandboxRegistry } from "./sandbox-registry.ts";
 import { type ResolveSandboxOpts, watchAgentInvalidation } from "./sandbox-resolve.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
-import { describeBundle } from "./sandbox-vm.ts";
+import { currentHarnessImageTag, describeBundle } from "./sandbox-vm.ts";
 import {
   DeployBodySchema,
   SecretKeySchema,
@@ -174,13 +174,18 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     ((workerCode) =>
       describeBundle({ harnessPath: resolveHarnessPath(), workerCode, pool: opts.pool }));
 
+  // Deploys record the harness image they ran against (per-deploy image
+  // pinning — see currentHarnessImageTag in sandbox-vm.ts).
+  const harnessImageTag = (): Promise<string | null> =>
+    currentHarnessImageTag(resolveHarnessPath());
+
   app.post(
     "/deploy",
     authMw,
     deployBodyLimit,
     gzipRequestMw,
     zValidator("json", DeployBodySchema),
-    (c) => handleDeployNew(c, inspect),
+    (c) => handleDeployNew(c, inspect, harnessImageTag),
   );
 
   // Bare-slug redirect — registered before sub-router so it takes priority.

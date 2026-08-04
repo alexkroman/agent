@@ -131,6 +131,25 @@ describe("createSandboxVm warm-pool fallback", () => {
     handle.conn.dispose();
   });
 
+  it("skips the pool for an agent pinned to a different harness image", async () => {
+    // Pooled sandboxes run the CURRENT image (here: none — the test env is
+    // on the subprocess backend, whose current tag is null), so a pinned
+    // agent must cold-spawn with its tag instead of silently un-pinning.
+    const opts = baseOpts({ imageTag: "aai-guest-harness:0ld0ld0ld" });
+    const cleanup = vi.fn().mockResolvedValue(undefined);
+    const pool = { acquire: vi.fn(async (): Promise<WarmHarness | null> => null) };
+    autorespondBundleLoad(socket);
+    const spawn = vi.fn(async (): Promise<WarmHarness> => makeWarm(conn, cleanup));
+
+    const handle = await createSandboxVm(opts, pool, spawn);
+
+    expect(pool.acquire).not.toHaveBeenCalled();
+    expect(spawn).toHaveBeenCalledWith(
+      expect.objectContaining({ imageTag: "aai-guest-harness:0ld0ld0ld" }),
+    );
+    handle.conn.dispose();
+  });
+
   it("re-tags a pooled harness with the agent's role and slug", async () => {
     const opts = baseOpts({ slug: "my-agent-preview" });
     const cleanup = vi.fn().mockResolvedValue(undefined);

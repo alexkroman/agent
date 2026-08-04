@@ -66,12 +66,21 @@ const AgentRecordSchema = z.object({
   worker_hash: z.string(),
   /** Client file path → content hash of its blob. */
   client_files: z.record(z.string(), z.string()),
+  /**
+   * The harness snapshot image this deploy ran against (content-addressed
+   * tag — see modal-harness-image.ts), so its sandbox can be re-spawned on
+   * that same image after platform upgrades. Null for deploys made outside
+   * the Modal backend (local dev, tests) and rows predating the column.
+   */
+  harness_image_tag: z.string().nullish().default(null),
   /** Deploy counter — bumped by every put; the invalidation signal. */
   version: z.number().int().positive(),
 });
 
 export type AgentRecord = z.infer<typeof AgentRecordSchema>;
-export type AgentRecordInput = Omit<AgentRecord, "version">;
+export type AgentRecordInput = Omit<AgentRecord, "version" | "harness_image_tag"> & {
+  harness_image_tag?: string | null | undefined;
+};
 
 export type AgentRows = {
   get(slug: string): Promise<AgentRecord | null>;
@@ -90,21 +99,25 @@ export const ENSURE_AGENTS_TABLE_SQL = `create table if not exists ${TABLE} (
   config jsonb not null,
   worker_hash text not null,
   client_files jsonb not null,
+  harness_image_tag text,
   version bigint not null,
   updated_at timestamptz not null default now()
-)`;
+);
+alter table ${TABLE} add column if not exists harness_image_tag text`;
 
-const GET_SQL = `select slug, credential_hashes, config, worker_hash, client_files, version
+const GET_SQL = `select slug, credential_hashes, config, worker_hash, client_files,
+  harness_image_tag, version
 from ${TABLE} where slug = $1`;
 
 const PUT_SQL = `insert into ${TABLE} as a
-  (slug, credential_hashes, config, worker_hash, client_files, version)
-values ($1, $2::jsonb, $3::jsonb, $4, $5::jsonb, 1)
+  (slug, credential_hashes, config, worker_hash, client_files, harness_image_tag, version)
+values ($1, $2::jsonb, $3::jsonb, $4, $5::jsonb, $6, 1)
 on conflict (slug) do update set
   credential_hashes = excluded.credential_hashes,
   config = excluded.config,
   worker_hash = excluded.worker_hash,
   client_files = excluded.client_files,
+  harness_image_tag = excluded.harness_image_tag,
   version = a.version + 1,
   updated_at = now()`;
 
@@ -137,6 +150,7 @@ export function createPgAgentRows(sql: SqlExec): AgentRows {
         config: jsonColumn(row.config),
         worker_hash: row.worker_hash,
         client_files: jsonColumn(row.client_files),
+        harness_image_tag: row.harness_image_tag ?? null,
         version: Number(row.version),
       });
       if (!parsed.success) {
@@ -160,6 +174,7 @@ export function createPgAgentRows(sql: SqlExec): AgentRows {
         JSON.stringify(record.config),
         record.worker_hash,
         JSON.stringify(record.client_files),
+        record.harness_image_tag ?? null,
       ]);
     },
 
@@ -188,7 +203,14 @@ export function createMemoryAgentRows(): AgentRows {
       const version = (rows.get(record.slug)?.version ?? 0) + 1;
       // Structured-clone so callers can't mutate stored state through the
       // input object (parity with the Postgres round trip).
-      rows.set(record.slug, structuredClone({ ...record, version }));
+      rows.set(
+        record.slug,
+        structuredClone({
+          ...record,
+          harness_image_tag: record.harness_image_tag ?? null,
+          version,
+        }),
+      );
       return Promise.resolve();
     },
     delete(slug) {
