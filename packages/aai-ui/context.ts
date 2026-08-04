@@ -44,7 +44,7 @@ export function SessionProvider({ value, children }: { value: SessionCore; child
  * (`state`, `messages`, `toolCalls`, `agentState`, live transcripts, `error`,
  * `apiUrl`, `started`/`running`/`recording`, …) merged with the session's
  * control methods (`start`, `toggle`, `reset`, `resetState`, `disconnect`,
- * `cancel`).
+ * `cancel`, `end`).
  *
  * Note there is no text-send method — sessions are voice-only; the only
  * client→server inputs are audio and the control methods above.
@@ -54,7 +54,7 @@ export function SessionProvider({ value, children }: { value: SessionCore; child
  * @public
  */
 export type Session = SessionSnapshot &
-  Pick<SessionCore, "start" | "cancel" | "resetState" | "reset" | "disconnect" | "toggle">;
+  Pick<SessionCore, "start" | "cancel" | "resetState" | "reset" | "disconnect" | "toggle" | "end">;
 
 /**
  * Return the raw {@link SessionCore} from context without subscribing to
@@ -74,7 +74,7 @@ export function useSessionCore(): SessionCore {
 /**
  * Return the live {@link Session}: the current snapshot fields plus the
  * control methods (`start`, `toggle`, `reset`, `resetState`, `disconnect`,
- * `cancel`).
+ * `cancel`, `end`).
  *
  * Throws if used outside the provider `client()` installs (the error names
  * `<SessionProvider>` — you only mount that yourself when bypassing
@@ -110,6 +110,7 @@ export function useSession(): Session {
       reset: core.reset,
       disconnect: core.disconnect,
       toggle: core.toggle,
+      end: core.end,
     }),
     [snapshot, core],
   );

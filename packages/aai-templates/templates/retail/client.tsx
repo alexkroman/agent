@@ -327,11 +327,15 @@ function App() {
                   >
                     {session.running ? "Hold" : "Resume"}
                   </button>
+                  {/* end() hangs up and flips `started` back, so the UI
+                      returns to "Start call" and the next start is a brand-new
+                      session (fresh store, greeting included). reset() would
+                      keep the call live — the buttons never toggle back. */}
                   <button
                     type="button"
                     className="px-4 py-2 border-none rounded-md text-xs font-semibold cursor-pointer text-white"
                     style={{ background: "#dc2626" }}
-                    onClick={() => session.reset()}
+                    onClick={() => session.end()}
                   >
                     End
                   </button>

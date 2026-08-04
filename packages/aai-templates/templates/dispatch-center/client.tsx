@@ -300,13 +300,18 @@ function App() {
                   >
                     {session.running ? "Pause" : "Resume"}
                   </button>
+                  {/* end() hangs up and flips `started` back, so the UI
+                      returns to "Start Dispatch" and the next start is a
+                      brand-new shift (fresh incident board, greeting
+                      included). reset() would keep the call live — the
+                      buttons never toggle back. */}
                   <button
                     type="button"
                     className="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer text-white"
                     style={{ background: "#dc2626" }}
-                    onClick={() => session.reset()}
+                    onClick={() => session.end()}
                   >
-                    Reset
+                    End Shift
                   </button>
                 </>
               )}

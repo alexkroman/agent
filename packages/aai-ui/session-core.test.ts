@@ -9,6 +9,7 @@ import {
   type ConstructorType,
   lastSocket,
   MockWebSocket,
+  makeConfig,
   resetLastSocket,
 } from "./_session-core-test-utils.ts";
 import { createSessionCore } from "./session-core.ts";
@@ -105,6 +106,40 @@ describe("createSessionCore", () => {
     expect(snap.started).toBe(true);
     expect(snap.running).toBe(true);
     expect(snap.state).toBe("connecting");
+  });
+
+  // ─── End ────────────────────────────────────────────────────────────────
+
+  it("end returns to the not-started state and clears the conversation", () => {
+    core.start();
+    lastSocket?.simulateOpen();
+    lastSocket?.simulateMessage(JSON.stringify({ type: "speech_started" }));
+    const socket = lastSocket;
+
+    core.end();
+
+    const snap = core.getSnapshot();
+    expect(snap.started).toBe(false);
+    expect(snap.running).toBe(false);
+    expect(snap.state).toBe("disconnected");
+    expect(snap.messages).toEqual([]);
+    expect(snap.userTranscript).toBe(null);
+    expect(snap.error).toBe(null);
+    expect(socket?.close).toHaveBeenCalled();
+  });
+
+  it("end drops the resume id so the next start is a fresh session", () => {
+    core.start();
+    lastSocket?.simulateOpen();
+    lastSocket?.simulateMessage(makeConfig());
+
+    core.end();
+    core.start();
+
+    // A brand-new session: no `?sessionId=` resume and no greeting
+    // suppression on the fresh connection.
+    expect(lastSocket?.url).not.toContain("sessionId=");
+    expect(lastSocket?.url).not.toContain("resume=");
   });
 
   it("external AbortSignal triggers disconnect", () => {

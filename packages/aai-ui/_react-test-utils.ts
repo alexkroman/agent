@@ -73,6 +73,10 @@ export function createMockSessionCore(
       snapshot = { ...snapshot, running: !snapshot.running };
       notify();
     },
+    end() {
+      snapshot = { ...snapshot, started: false, running: false, recording: false };
+      notify();
+    },
     update(partial: Partial<SessionSnapshot>) {
       // Mirror the real core: content changes bump contentVersion. An explicit
       // contentVersion in `partial` wins, so tests can pin it for updates the
