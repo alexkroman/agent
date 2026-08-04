@@ -17,6 +17,8 @@ export async function executeDeploy(opts: {
   server?: string | undefined;
   /** See DeployOpts.allowMissingSecrets (`--allow-missing-secrets`). */
   allowMissingSecrets?: boolean | undefined;
+  /** See DeployOpts.allowPreviewSlug (`--allow-preview-slug`; studio-internal). */
+  allowPreviewSlug?: boolean | undefined;
   /** `--skipTypecheck`: deploy without the tsc gate. */
   skipTypecheck?: boolean | undefined;
 }): Promise<CommandResult<DeployData>> {
@@ -40,6 +42,7 @@ export async function executeDeploy(opts: {
     env: { ASSEMBLYAI_API_KEY: apiKey, ...env },
     ...(slug ? { slug } : {}),
     ...(opts.allowMissingSecrets ? { allowMissingSecrets: true } : {}),
+    ...(opts.allowPreviewSlug ? { allowPreviewSlug: true } : {}),
     apiKey,
   });
 

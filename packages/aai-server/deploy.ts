@@ -7,6 +7,7 @@ import type { AgentRecord } from "./agent-store.ts";
 import type { ValidatedAppContext } from "./context.ts";
 import { localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import { type IsolateConfig, IsolateConfigSchema } from "./rpc-schemas.ts";
+import { PREVIEW_SLUG_SUFFIX } from "./sandbox-role.ts";
 import type { DeployBody } from "./schemas.ts";
 import { EnvSchema, RESERVED_SLUGS } from "./schemas.ts";
 import { hashApiKey, matchAnyHash } from "./secrets.ts";
@@ -48,6 +49,17 @@ export type DeployParams = {
    * secrets UI, so a hard failure would leave its user with no path forward.
    */
   credentialPolicy?: "require" | "warn" | undefined;
+  /**
+   * Permit a requested slug ending in {@link PREVIEW_SLUG_SUFFIX}. That suffix
+   * is owned by the studio's auto-preview deploys, and the orphan-preview
+   * pg_cron sweep (pg-cron.ts) reaps any `*-preview` agent no studio workspace
+   * references — dropping its app-database schema, its Vault secrets, and its
+   * agents row, hourly. A CLI caller that lands on the suffix by accident
+   * would therefore lose the agent (and any stored data) on a schedule no
+   * redeploy can undo. So the suffix is rejected unless the caller opts in;
+   * the studio's in-guest `aai deploy` sets this, nothing else should.
+   */
+  allowPreviewSlug?: boolean | undefined;
 };
 
 export type DeployOutcome =
@@ -115,6 +127,21 @@ export function deployAgentBundle(deps: DeployDeps, params: DeployParams): Promi
   // deploy tool) don't pass through DeployBodySchema.
   if (requested && RESERVED_SLUGS.has(requested)) {
     return Promise.resolve({ ok: false as const, status: 400 as const, error: "Reserved slug" });
+  }
+  // The `-preview` suffix is effectively reserved for the studio's auto-preview
+  // deploys (`previewSlugFor`): the orphan-preview sweep reaps any `*-preview`
+  // agent no workspace references, so a CLI caller landing on it loses the
+  // agent — and its app-database data — on an unrecoverable hourly schedule
+  // (see DeployParams.allowPreviewSlug). Only the studio's in-guest deploy,
+  // which passes the opt-in, may claim it. Generated slugs never hit this —
+  // the generator appends a random suffix — so only a *requested* slug is
+  // checked.
+  if (requested?.endsWith(PREVIEW_SLUG_SUFFIX) && !params.allowPreviewSlug) {
+    return Promise.resolve({
+      ok: false as const,
+      status: 400 as const,
+      error: `The "${PREVIEW_SLUG_SUFFIX}" suffix is reserved for studio previews`,
+    });
   }
   // No requested slug: generate one from the agent's own display name (its
   // bundle-described config) plus a random suffix — the same generator the
@@ -286,6 +313,7 @@ export async function handleDeployNew(
     env: body.env,
     agentConfig: extraction.config,
     credentialPolicy: body.credentialPolicy,
+    allowPreviewSlug: body.allowPreviewSlug,
   });
   return outcomeToResponse(c, outcome);
 }

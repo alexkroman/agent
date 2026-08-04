@@ -20,6 +20,13 @@ export type DeployOpts = {
    * panel needs a deployed slug to attach secrets to).
    */
   allowMissingSecrets?: boolean;
+  /**
+   * Ask the server to permit a `-preview`-suffixed slug (`aai deploy
+   * --allow-preview-slug`). That suffix is reserved for the studio's
+   * auto-preview deploys — the server rejects it otherwise — and this is set
+   * by the studio's own in-guest deploy, not by ordinary users.
+   */
+  allowPreviewSlug?: boolean;
   /** Retry delay override for tests (0 = no real sleeps on retry paths). */
   retryDelay?: number;
   /** Optional fetch implementation for testing. Defaults to globalThis.fetch. */
@@ -40,6 +47,7 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
     JSON.stringify({
       ...(opts.slug ? { slug: opts.slug } : {}),
       ...(opts.allowMissingSecrets ? { credentialPolicy: "warn" } : {}),
+      ...(opts.allowPreviewSlug ? { allowPreviewSlug: true } : {}),
       env: opts.env,
       worker: opts.bundle.worker,
       clientFiles: opts.bundle.clientFiles,
