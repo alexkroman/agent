@@ -12,16 +12,18 @@ export default defineConfig({
   // sits inside this package, whose own node_modules provide it). Bundling
   // Vite/Rollup into the harness would be both enormous and broken (native
   // rolldown binaries).
-  deps: { alwaysBundle: [/.*/] },
-  external: [
-    /^@alexkroman1\/aai-cli(\/|$)/,
-    /^@vitejs\/plugin-react(\/|$)/,
-    /^@tailwindcss\/vite(\/|$)/,
-  ],
+  deps: {
+    alwaysBundle: [/.*/],
+    neverBundle: [
+      /^@alexkroman1\/aai-cli(\/|$)/,
+      /^@vitejs\/plugin-react(\/|$)/,
+      /^@tailwindcss\/vite(\/|$)/,
+    ],
+  },
   // ONE artifact: the harness is baked into the guest image as a single
   // file (aai-server's modal-harness-image.ts), so the providers' lazy
   // imports must be inlined rather than emitted as sibling chunks the
   // guest can't load. (External dynamic imports -- the toolchain above --
   // stay external.)
-  outputOptions: { inlineDynamicImports: true },
+  outputOptions: { codeSplitting: false },
 });
