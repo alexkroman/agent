@@ -32,3 +32,16 @@ export const RESERVED_SLUGS: ReadonlySet<string> = new Set([
   "metrics",
   "deploy",
 ]);
+
+/**
+ * Suffix the studio's auto-preview deploys own (`<project>-preview`).
+ *
+ * Part of the slug CONTRACT rather than any one package's detail, because
+ * three independent things key off it and must not drift: the deploy
+ * boundary rejects the suffix for non-preview callers, the hourly
+ * orphan-preview sweep reaps agents carrying it, and the CLI refuses to
+ * derive a project name that ends in it. An agent that claims this suffix
+ * without a workspace referencing it is deleted on a schedule, so a
+ * disagreement between those three is silent data loss.
+ */
+export const PREVIEW_SLUG_SUFFIX = "-preview";

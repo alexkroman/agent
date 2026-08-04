@@ -86,6 +86,7 @@
     "PipelineAgentParams",
     "PipelineOnlyField",
     "PipelineOnlyMisuse",
+    "PREVIEW_SLUG_SUFFIX",
     "ProviderField",
     "RESERVED_SLUGS",
     "S2S_MAX_RESUME_ATTEMPTS",

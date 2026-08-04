@@ -61,6 +61,17 @@ describe("projectNameFromDir", () => {
     expect(projectNameFromDir("/x/voice-agent")).toBe("voice-agent");
     expect(projectNameFromDir("/x/!!!")).toBeNull();
   });
+
+  test("refuses a `-preview` name, which the studio's reaper owns", () => {
+    // Publishing such a project would claim `<name>` as a production slug
+    // ending in `-preview` — swept hourly by the orphan-preview job, taking
+    // the agent's app database and secrets with it. Better to refuse the
+    // name up front than to hand back an agent with an expiry date.
+    expect(projectNameFromDir("/x/demo-preview")).toBeNull();
+    expect(projectNameFromDir("/x/My Demo Preview")).toBeNull();
+    // Only the exact suffix is reserved — a name merely containing it is fine.
+    expect(projectNameFromDir("/x/preview-tool")).toBe("preview-tool");
+  });
 });
 
 describe("collectSourceFiles", () => {

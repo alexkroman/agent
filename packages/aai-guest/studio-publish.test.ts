@@ -43,6 +43,35 @@ async function makeFakeCli(behavior: {
   return entry;
 }
 
+/**
+ * A stub CLI that records the argv it was spawned with. The flags Publish
+ * passes are part of its contract with the platform's deploy boundary, so
+ * they need to be assertable, not just inferred from a success line.
+ */
+async function makeArgvRecordingCli(): Promise<{
+  cliEntry: string;
+  readArgv: () => Promise<string[]>;
+}> {
+  const dir = await makeDir();
+  const entry = path.join(dir, "argv-cli.mjs");
+  const argvFile = path.join(dir, "argv.json");
+  await writeFile(
+    entry,
+    [
+      `import { writeFileSync } from "node:fs";`,
+      `writeFileSync(${JSON.stringify(argvFile)}, JSON.stringify(process.argv.slice(2)));`,
+      `process.stdout.write(${JSON.stringify(
+        `${JSON.stringify({ ok: true, data: { slug: "s", url: "u" } })}\n`,
+      )});`,
+    ].join("\n"),
+    "utf-8",
+  );
+  return {
+    cliEntry: entry,
+    readArgv: async () => JSON.parse(await readFile(argvFile, "utf-8")) as string[],
+  };
+}
+
 afterEach(async () => {
   await Promise.all(dirs.map((d) => rm(d, { recursive: true, force: true })));
   dirs = [];
@@ -110,6 +139,34 @@ describe("deployWorkspaceDir", () => {
     });
     expect(result.ok).toBe(true);
     await expect(readFile(path.join(dir, ".aai", "project.json"), "utf-8")).rejects.toThrow();
+  });
+
+  test("a production Publish does not opt into the reserved -preview suffix", async () => {
+    const dir = await makeDir();
+    const { cliEntry, readArgv } = await makeArgvRecordingCli();
+    await deployWorkspaceDir(dir, {
+      serverUrl: "https://x.test",
+      apiKey: "k",
+      // A project literally named `*-preview` still deploys as a PRODUCTION
+      // slug — the opt-in must come from the caller's intent, not the slug's
+      // shape, or the studio's own reaper would sweep the user's agent.
+      slug: "sneaky-preview",
+      cliEntry,
+    });
+    expect(await readArgv()).not.toContain("--allow-preview-slug");
+  });
+
+  test("an auto-preview deploy opts into the -preview suffix explicitly", async () => {
+    const dir = await makeDir();
+    const { cliEntry, readArgv } = await makeArgvRecordingCli();
+    await deployWorkspaceDir(dir, {
+      serverUrl: "https://x.test",
+      apiKey: "k",
+      slug: "demo-preview",
+      allowPreviewSlug: true,
+      cliEntry,
+    });
+    expect(await readArgv()).toContain("--allow-preview-slug");
   });
 
   test("a CLI error result surfaces its message and hint", async () => {

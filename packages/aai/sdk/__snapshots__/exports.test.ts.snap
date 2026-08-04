@@ -69,6 +69,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "PLAYBACK_DONE_POLL_MS",
   "PLAYBACK_JITTER_MS",
   "PLAYBACK_REFILL_MS",
+  "PREVIEW_SLUG_SUFFIX",
   "RESERVED_SLUGS",
   "S2S_MAX_RESUME_ATTEMPTS",
   "SESSION_KEEPALIVE_INTERVAL_MS",
@@ -274,6 +275,7 @@ exports[`export surface stability > @alexkroman1/aai/tts export 1`] = `
 exports[`export surface stability > @alexkroman1/aai/utils export 1`] = `
 [
   "MAX_SLUG_LENGTH",
+  "PREVIEW_SLUG_SUFFIX",
   "RESERVED_SLUGS",
   "VALID_SLUG_RE",
   "capToolResult",

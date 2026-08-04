@@ -112,6 +112,12 @@ const DeployParamsSchema = z.object({
   serverUrl: z.string(),
   apiKey: z.string(),
   slug: z.string().optional(),
+  /**
+   * Auto-preview deploys only — see `deployWorkspaceDir`. Additive and
+   * optional, so an older host that never sends it still publishes (absent
+   * reads as "production", the safe default).
+   */
+  allowPreviewSlug: z.boolean().optional(),
 });
 
 /** Mirrors `StudioSessionParams` (studio-chat.ts) field for field. */
@@ -144,9 +150,9 @@ export async function handleRequest(req: JsonRpcRequest, state: HarnessState): P
         );
         break;
       }
-      const { files, serverUrl, apiKey, slug } = parsed.data;
+      const { files, serverUrl, apiKey, slug, allowPreviewSlug } = parsed.data;
       const result = await withBuildDir(files, materializeWorkspace, (dir) =>
-        deployWorkspaceDir(dir, { serverUrl, apiKey, slug }),
+        deployWorkspaceDir(dir, { serverUrl, apiKey, slug, allowPreviewSlug }),
       );
       sendResponse(req.id, result);
       break;

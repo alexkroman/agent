@@ -124,6 +124,13 @@ export type WorkspaceDeployParams = {
   apiKey: string;
   /** Existing slug to redeploy; omit and the deploy claims/generates one. */
   slug?: string;
+  /**
+   * Opt into a `-preview`-suffixed slug, which the deploy boundary otherwise
+   * rejects. Sent ONLY by the studio's auto-preview deployer; Publish shares
+   * this request and leaves it unset, so a project named `*-preview` can't
+   * claim a slug the orphan-preview reaper deletes hourly.
+   */
+  allowPreviewSlug?: boolean;
 };
 
 export type GuestRpcSchema = {

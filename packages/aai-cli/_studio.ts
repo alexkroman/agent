@@ -10,7 +10,7 @@
 
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import { VALID_SLUG_RE } from "@alexkroman1/aai/utils";
+import { PREVIEW_SLUG_SUFFIX, VALID_SLUG_RE } from "@alexkroman1/aai/utils";
 import { apiRequest } from "./_api-client.ts";
 
 /**
@@ -87,7 +87,16 @@ export async function collectSourceFiles(
   return { files, warnings };
 }
 
-/** A studio project name derived from a directory name, or null if unusable. */
+/**
+ * A studio project name derived from a directory name, or null if unusable.
+ *
+ * A `-preview` suffix is deliberately unusable. Publishing a project deploys
+ * it under the project's own name, so a `*-preview` project would claim a
+ * slug the studio's orphan-preview sweep reaps hourly — deleting the agent,
+ * its app-database schema, and its secrets on a schedule the user never
+ * asked for. Refusing the name is recoverable (rename the directory); losing
+ * a published agent to the reaper is not.
+ */
 export function projectNameFromDir(dir: string): string | null {
   const name = path
     .basename(dir)
@@ -96,6 +105,7 @@ export function projectNameFromDir(dir: string): string | null {
     .replace(/-{2,}/g, "-")
     .replace(/^[-_]+|[-_]+$/g, "")
     .slice(0, 64);
+  if (name.endsWith(PREVIEW_SLUG_SUFFIX)) return null;
   return VALID_SLUG_RE.test(name) ? name : null;
 }
 
