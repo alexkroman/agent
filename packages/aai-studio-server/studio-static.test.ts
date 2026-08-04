@@ -71,4 +71,46 @@ describe("studioCsp", () => {
       expect(allowsOrigin(csp, "https://evil.example.com/studio/chat")).toBe(false);
     }
   });
+
+  // The sign-in leg: supabase-js dials the project origin from the page, so a
+  // connect-src without it fails as the same bare "Failed to fetch" — under
+  // the email box, with nothing on the server, since no request is ever sent.
+  describe("Supabase sign-in origin", () => {
+    const supabaseAuth = {
+      mode: "supabase",
+      supabaseUrl: "https://abc123.supabase.co",
+      supabasePublishableKey: "sb_publishable_test",
+    } as const;
+    const otpUrl = `${supabaseAuth.supabaseUrl}/auth/v1/otp`;
+
+    it("permits the configured project's magic-link endpoint", () => {
+      const csp = studioCsp({ SANDBOX_BACKEND: "modal" }, supabaseAuth);
+      expect(allowsOrigin(csp, otpUrl)).toBe(true);
+    });
+
+    it("permits only that project, not every Supabase project", () => {
+      const csp = studioCsp({ SANDBOX_BACKEND: "modal" }, supabaseAuth);
+      expect(allowsOrigin(csp, "https://someoneelse.supabase.co/auth/v1/otp")).toBe(false);
+    });
+
+    it("tolerates a trailing slash on the configured URL", () => {
+      const csp = studioCsp(
+        { SANDBOX_BACKEND: "modal" },
+        { ...supabaseAuth, supabaseUrl: "https://abc123.supabase.co/" },
+      );
+      expect(allowsOrigin(csp, otpUrl)).toBe(true);
+    });
+
+    it("adds no source for dev auth or an unconfigured login", () => {
+      const dev = connectSrc(studioCsp({ SANDBOX_BACKEND: "subprocess" }, { mode: "dev" }));
+      expect(dev).toEqual(connectSrc(studioCsp({ SANDBOX_BACKEND: "subprocess" })));
+      expect(dev.some((s) => s.includes("supabase"))).toBe(false);
+    });
+
+    it("throws on an unparsable URL rather than silently omitting it", () => {
+      expect(() =>
+        studioCsp({ SANDBOX_BACKEND: "modal" }, { ...supabaseAuth, supabaseUrl: "abc123" }),
+      ).toThrow(/SUPABASE_URL/);
+    });
+  });
 });
