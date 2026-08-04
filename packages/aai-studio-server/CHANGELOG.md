@@ -1,5 +1,32 @@
 # aai-studio-server
 
+## 0.4.0
+
+### Minor Changes
+
+- 6cca475: Storage redesign: each agent is one Postgres row (aai_platform.agents) — slug, credential hashes, config, content hashes, deploy version — committing content-addressed immutable blobs (blobs/<sha256>) in Storage. The row upsert is the deploy's atomic publish point; manifest.json/config.json and the slug_epochs table are gone (the deploy version is the cross-replica invalidation signal). Secret and storage changes no longer restart sandboxes: they take effect on the next deploy or sandbox rebuild.
+- ae89dd9: Email login via Supabase Auth, for the studio and the CLI. The studio's browser bearer is now a session token (magic-link sign-in) resolved server-side to the user's stored AssemblyAI key (`user-key:<uid>` in Vault); connecting that key is the mandatory onboarding step after sign-in — every AssemblyAI key on the platform is user-provided, and the browser never holds one. `aai login` drives the same flow from the terminal via Supabase email OTP and saves the fetched key in the CLI config. A dev-token auth implementation keeps local dev Supabase-free. The guest chat surface is gated by a broker-minted per-session token instead of the caller's key. Slug-ownership hashes drop argon2id for plain SHA-256 digests (high-entropy machine keys need no slow hash), removing `@node-rs/argon2` and the verify cache. Raw API-key bearers keep working on every route.
+
+### Patch Changes
+
+- b425548: Simplify platform server internals: shared memoized-async helper, one broker dependency set, workspace lock moved inside mutateWorkspace, studio project middleware, cached user-key resolution, and dead-code removal
+- Updated dependencies [a57905b]
+- Updated dependencies [030b55f]
+- Updated dependencies [966aeed]
+- Updated dependencies [6cca475]
+- Updated dependencies [afe0b6d]
+- Updated dependencies [dcb1f99]
+- Updated dependencies [c567faa]
+- Updated dependencies [d303cfb]
+- Updated dependencies [41d53ae]
+- Updated dependencies [6cca475]
+- Updated dependencies [ae89dd9]
+- Updated dependencies [b425548]
+  - @alexkroman1/aai@5.5.0
+  - @alexkroman1/aai-ui@5.5.0
+  - aai-server@3.3.0
+  - aai-studio-client@0.3.3
+
 ## 0.3.4
 
 ### Patch Changes

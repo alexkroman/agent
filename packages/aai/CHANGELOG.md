@@ -1,5 +1,18 @@
 # @alexkroman1/aai
 
+## 5.5.0
+
+### Minor Changes
+
+- a57905b: Pipeline provider stages are now individually optional: declare any subset of stt/llm/tts and unset stages are filled from the default all-AssemblyAI pipeline (agent({ llm: "claude-sonnet-4-6" }) swaps just the model). New top-level voice field on agent() picks the default pipeline's TTS voice (voice: "michael"), desugaring to tts: assemblyAITts({ voice }); it is a compile error alongside an explicit tts descriptor or s2s. The assemblyAIPipeline() spread is no longer needed on the golden path and remains for explicitness and region: "eu".
+
+### Patch Changes
+
+- 030b55f: Voice output rules now forbid contractions, and the default greeting/start-failure phrases spell them out, since TTS renders contractions poorly
+- 6cca475: Remove the unused parseManifest/Manifest layer; toAgentConfig is the single config entry point (ProviderDescriptorSchema now lives in agent-config.ts; the /manifest subpath surface is unchanged).
+- d303cfb: S2S: commit accumulated agent transcript deltas as the reply's final transcript when reply.done arrives without one, so the assistant turn still enters conversation history when the service omits transcript.agent (observed on tool-call follow-up replies).
+- 41d53ae: Accept the S2S transcript.user.delta and transcript.agent.delta events, which were being dropped as unrecognised, and report per-reply audio/transcript accounting on reply.done so an empty reply is diagnosable
+
 ## 5.4.0
 
 ### Minor Changes
