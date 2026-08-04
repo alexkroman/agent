@@ -291,7 +291,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
 
   /** Per-turn TTS drain — see flushTtsAndWait in pipeline-stream.ts. */
   function drainTts(signal: AbortSignal): Promise<void> {
-    return flushTtsAndWait({ tts: providers.tts, signal, log, sid: opts.sid });
+    return flushTtsAndWait({ tts: providers.tts, signal, log, sid: opts.sid, emitError });
   }
 
   /**

@@ -51,6 +51,28 @@ export const MAX_WORKER_SIZE = 30_000_000;
 export const SANDBOX_RETIRE_DRAIN_MS = envMs(process.env.SANDBOX_RETIRE_DRAIN_MS, 600_000);
 
 /**
+ * How long a BROKER call waits for a booting sandbox before answering 503.
+ *
+ * Deliberately far below the boot budget itself (`AGENT_HEALTH_TIMEOUT_MS`,
+ * 120s in warm-harness.ts). Those are two different questions that shared
+ * one number: how long a guest may take to come up, and how long a CLIENT
+ * should be left holding a request while it does. An agent whose top-level
+ * code blocks never becomes ready, so every broker call hung for two full
+ * minutes before returning the 503 — permanently, and for every caller.
+ *
+ * Timing out here does NOT cancel the boot: the sandbox is already attached
+ * to its slot and reports `alive()` while pending, so it keeps booting and
+ * the next call attaches to the SAME readiness promise rather than spawning
+ * a second sandbox. The cost of tripping this on a healthy-but-slow boot is
+ * therefore one client reconnect, not a failure — `session-core.ts`
+ * re-brokers per attempt and only an ANSWERED lookup latches anything.
+ *
+ * Override with `BROKER_READY_TIMEOUT_MS`; 0 disables the cap and restores
+ * waiting for the full boot budget.
+ */
+export const BROKER_READY_TIMEOUT_MS = envMs(process.env.BROKER_READY_TIMEOUT_MS, 20_000);
+
+/**
  * After sandbox teardown, how long to wait for the HTTP server's remaining
  * connections to close before exiting anyway. By the time this timer arms,
  * guests are already retired, and a straggling connection is not a failed

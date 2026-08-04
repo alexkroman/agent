@@ -88,6 +88,32 @@ describe("session-core automatic reconnection (partysocket)", () => {
     expect(["disconnected", "error"]).toContain(core.getSnapshot().state);
   });
 
+  // The server closing an idle session is a RECLAMATION, not a fault. Retried,
+  // the tab would immediately re-open the session the server just retired and
+  // cycle forever — and the guest would never see zero sessions, which is
+  // what its own idle self-exit waits for.
+  it("does not reconnect after the server retires the session for idleness", async () => {
+    core.connect();
+    await vi.advanceTimersByTimeAsync(0);
+    const socket = created[0];
+    socket?.simulateOpen();
+    socket?.simulateMessage(JSON.stringify({ type: "idle_timeout" }));
+    socket?.simulateClose();
+
+    expect(core.getSnapshot().state).toBe("disconnected");
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(created).toHaveLength(1);
+
+    // But the user asking for a session again works normally, and THAT
+    // socket reconnects like any other.
+    core.connect();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(created).toHaveLength(2);
+    created.at(-1)?.simulateClose();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(created.length).toBeGreaterThan(2);
+  });
+
   it("a socket error inside the retry cycle is not reported on a later clean close", async () => {
     core.connect();
     await vi.advanceTimersByTimeAsync(0);

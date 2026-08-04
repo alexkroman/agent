@@ -57,6 +57,7 @@ import {
   dialGuest,
   type GuestFetch,
   pollGuestHealth,
+  startGuestLogging,
   warmFromGuest,
 } from "./warm-harness.ts";
 
@@ -244,7 +245,6 @@ function warmFromModal(
   origin: string,
 ): WarmHarness {
   return warmFromGuest({
-    label: `modal:${sb.sandboxId}`,
     proc,
     terminate: () => sb.terminate(),
     ws,
@@ -318,6 +318,9 @@ export async function spawnModalWarm(
       }),
       sb.tunnels(),
     ]);
+    // Before the dial: a harness that dies during boot must still get its
+    // stderr into the host log (see startGuestLogging).
+    startGuestLogging(proc, `modal:${sb.sandboxId}`);
     const tunnel = tunnels[GUEST_PORT];
     if (!tunnel) {
       throw new Error(`no tunnel for guest port ${GUEST_PORT}`);
@@ -414,6 +417,9 @@ export async function spawnModalAgentServer(
       }),
       sb.tunnels(),
     ]);
+    // Before the readiness poll: a bundle that throws at load exits here, and
+    // its stderr IS the diagnosis (see startGuestLogging).
+    startGuestLogging(proc, `modal:${sb.sandboxId}`);
     const tunnel = tunnels[GUEST_PORT];
     if (!tunnel) {
       throw new Error(`no tunnel for guest port ${GUEST_PORT}`);
@@ -428,7 +434,6 @@ export async function spawnModalAgentServer(
     });
 
     return agentServerFromGuest({
-      label: `modal:${sb.sandboxId}`,
       proc,
       terminate: () => sb.terminate(),
       origin,

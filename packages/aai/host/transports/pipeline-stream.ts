@@ -103,8 +103,9 @@ export async function flushTtsAndWait(args: {
   signal: AbortSignal;
   log: Logger;
   sid: string;
+  emitError: (code: SessionErrorCode, message: string) => void;
 }): Promise<void> {
-  const { tts, signal, log, sid } = args;
+  const { tts, signal, log, sid, emitError } = args;
   if (!tts) return;
   if (signal.aborted) return;
   const { promise, resolve } = Promise.withResolvers<void>();
@@ -113,10 +114,23 @@ export async function flushTtsAndWait(args: {
   try {
     await pTimeout(promise, { milliseconds: PIPELINE_FLUSH_TIMEOUT_MS, signal });
   } catch {
-    // Abort resolves silently (barge-in); only a real drain timeout warns.
-    if (!signal.aborted) {
-      log.warn("TTS flush timeout", { sid, timeoutMs: PIPELINE_FLUSH_TIMEOUT_MS });
-    }
+    // Abort resolves silently (barge-in); only a real drain timeout reports.
+    if (signal.aborted) return;
+    log.warn("TTS flush timeout", { sid, timeoutMs: PIPELINE_FLUSH_TIMEOUT_MS });
+    // The caller hears this: the provider stopped mid-utterance, so the reply
+    // is audibly clipped and then silent for the whole timeout. Reaching the
+    // client (and the error log) as a `tts` error is the only trace — without
+    // it a truncated turn is indistinguishable from a short one, in a session
+    // that otherwise reports itself healthy.
+    emitError("tts", "Speech synthesis did not finish; the reply may be cut short.");
+    // Abandon the turn on the PROVIDER too, not just here. The session's turn
+    // accounting still has this turn in flight with acknowledgements
+    // outstanding, and `onTurnText` deliberately does not reset a turn it
+    // believes is live — so every later turn on this session inherits the
+    // desynchronized count. `cancel()` is the existing resynchronization
+    // path (it clears the turn state and recycles the socket); text sent for
+    // the next turn is queued onto the replacement.
+    tts.cancel();
   } finally {
     off();
   }

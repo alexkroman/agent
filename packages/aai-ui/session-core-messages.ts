@@ -291,9 +291,12 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       case "error":
         handleErrorEvent(e);
         break;
+      case "idle_timeout":
+        // The server closes the socket itself; this only marks the close as
+        // expected so the automatic reconnect doesn't undo the reclamation.
+        deps.conn.retiredByServer = true;
+        break;
       default:
-        // Includes idle_timeout: the server closes the socket itself, and the
-        // close handler is what transitions the session.
         break;
     }
   }

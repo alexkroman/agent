@@ -9,8 +9,10 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import pTimeout from "p-timeout";
 import { debug } from "./_debug-log.ts";
 import { type AppDatabases, type AppDbMeta, parseAppDbMeta } from "./app-database.ts";
+import { BROKER_READY_TIMEOUT_MS } from "./constants.ts";
 import type { PlatformEvents, Unwatch } from "./platform-events.ts";
 import { createSandbox, type Sandbox } from "./sandbox.ts";
 import {
@@ -47,6 +49,12 @@ export type ResolveSandboxOpts = {
   secrets?: SecretStore;
   /** Per-app database opener; absent when SUPABASE_DB_URL is unset. */
   appDb?: AppDatabases;
+  /**
+   * How long a broker call waits on a booting sandbox before answering 503.
+   * Defaults to {@link BROKER_READY_TIMEOUT_MS}; injectable for tests, which
+   * must not spend the real budget to observe the cap.
+   */
+  readyTimeoutMs?: number;
 };
 
 type BundleParts = {
@@ -355,6 +363,11 @@ export type BrokeredSession =
  * for both callers — no bundle/sandbox is a 404; a sandbox VM that failed to
  * start is a retryable 503 (the failure hook detaches it, so the next
  * attempt rebuilds).
+ *
+ * The readiness wait is capped at {@link BROKER_READY_TIMEOUT_MS}, well under
+ * the guest's own boot budget: a still-booting sandbox is a retryable 503
+ * here, not a two-minute held request. Nothing is torn down on that path —
+ * see the constant for why the boot continues and the next call joins it.
  */
 export async function brokerSessionUrl(
   slug: string,
@@ -362,14 +375,31 @@ export async function brokerSessionUrl(
 ): Promise<BrokeredSession> {
   const sandbox = await resolveSandbox(slug, opts);
   if (!sandbox) return { ok: false, status: 404 };
+  // Both resolve off the same readiness promise — no extra wait.
+  const readyTimeoutMs = opts.readyTimeoutMs ?? BROKER_READY_TIMEOUT_MS;
+  const ready = Promise.all([sandbox.sessionUrl(), sandbox.guestOrigin()]);
+  // Contained: on the timeout path nothing is awaiting `ready`, and a boot
+  // that fails afterwards must not surface as an unhandled rejection.
+  ready.catch(() => undefined);
   try {
-    // Both resolve off the same readiness promise — no extra wait.
-    const [sessionUrl, guestOrigin] = await Promise.all([
-      sandbox.sessionUrl(),
-      sandbox.guestOrigin(),
-    ]);
+    const [sessionUrl, guestOrigin] =
+      readyTimeoutMs > 0
+        ? await pTimeout(ready, {
+            milliseconds: readyTimeoutMs,
+            message: `sandbox not ready within ${readyTimeoutMs}ms`,
+          })
+        : await ready;
     return { ok: true, sessionUrl, guestOrigin };
   } catch (err) {
+    // Still booting is not the same as failed to boot, and only the first is
+    // worth a quiet line: the failure path already logs (and detaches) via
+    // `Sandbox VM failed to start`.
+    if (sandbox.alive()) {
+      debug("Sandbox still booting; answering 503 while it continues", {
+        slug,
+        waitedMs: readyTimeoutMs,
+      });
+    }
     return { ok: false, status: 503, cause: err };
   }
 }

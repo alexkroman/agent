@@ -162,6 +162,27 @@ export async function dialGuest(url: string, token: string): Promise<RpcWebSocke
 export type GuestFetch = typeof globalThis.fetch;
 
 /**
+ * Start relaying a guest's stdio to the host log. Call this the moment the
+ * process exists — BEFORE the readiness poll or the control-channel dial.
+ *
+ * Every way a guest can fail to come up (a bundle that throws at load, a
+ * hash mismatch, a bad env file, an OOM during boot) writes its reason to
+ * stderr and exits. Draining only once the guest is *ready* therefore
+ * discarded exactly the output that explains a boot failure — while
+ * `pollGuestHealth`'s error told the operator to "see its stderr in the host
+ * log", where there was nothing to see. Both backends and both modes went
+ * through that path, so a deployed agent that would not start reported an
+ * exit code and no reason at all.
+ *
+ * Safe to call once per process: a `ReadableStream` can only be locked by
+ * one reader, so the constructors below deliberately no longer drain.
+ */
+export function startGuestLogging(proc: GuestProcLike, label: string): void {
+  void drainProcStream(proc.stdout, `[${label}] stdout`);
+  void drainProcStream(proc.stderr, `[${label}] stderr`);
+}
+
+/**
  * Poll the guest's public `/health` until it answers 200 — agent-mode
  * readiness. The endpoint exists before the guest listens (a Modal tunnel is
  * routable immediately), so refused/reset attempts are the normal boot path.
@@ -213,14 +234,29 @@ export async function pollGuestHealth(
  * The exec env selecting agent mode and naming the boot artifacts — one
  * builder so the two backends cannot drift on the key names the guest reads
  * (see aai-guest/harness-agent-mode.ts).
+ *
+ * `AAI_GUEST_IDLE_EXIT_MS` is forwarded from the SERVER's env when set. The
+ * guest documents it as the override for its idle self-exit, but the guest
+ * reads `process.env` and only the Modal backend's guests have an ambient
+ * environment (the image's) to read it from — the subprocess backend builds
+ * a minimal env on purpose, so the knob did nothing there and the one
+ * lifecycle timer an operator might want to tune was untunable exactly where
+ * it is quickest to observe. Forwarding it here is an explicit boot
+ * parameter, not env inheritance, so that rule still holds. The guest owns
+ * the parse (an unusable value falls back to its default).
  */
-export function agentBootEnv(opts: {
-  token: string;
-  port: number;
-  bundlePath: string;
-  bundleSha256: string;
-  envPath: string;
-}): Record<string, string> {
+export function agentBootEnv(
+  opts: {
+    token: string;
+    port: number;
+    bundlePath: string;
+    bundleSha256: string;
+    envPath: string;
+  },
+  /** The server's own environment; injectable for tests. */
+  serverEnv: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const idleExitMs = serverEnv.AAI_GUEST_IDLE_EXIT_MS?.trim();
   return {
     AAI_GUEST_MODE: "agent",
     AAI_GUEST_TOKEN: opts.token,
@@ -228,6 +264,7 @@ export function agentBootEnv(opts: {
     AAI_BUNDLE_PATH: opts.bundlePath,
     AAI_BUNDLE_SHA256: opts.bundleSha256,
     AAI_AGENT_ENV_PATH: opts.envPath,
+    ...(idleExitMs ? { AAI_GUEST_IDLE_EXIT_MS: idleExitMs } : {}),
   };
 }
 
@@ -277,7 +314,6 @@ export type AgentServerHandle = {
  * only death signal (there is no host connection to drop).
  */
 export function agentServerFromGuest(opts: {
-  label: string;
   proc: GuestProcLike;
   terminate: () => Promise<unknown>;
   origin: string;
@@ -285,10 +321,8 @@ export function agentServerFromGuest(opts: {
   token: string;
   fetchFn?: GuestFetch | undefined;
 }): AgentServerHandle {
-  const { label, proc, origin, token } = opts;
+  const { proc, origin, token } = opts;
   const fetchFn = opts.fetchFn ?? fetch;
-  void drainProcStream(proc.stdout, `[${label}] stdout`);
-  void drainProcStream(proc.stderr, `[${label}] stderr`);
 
   const exitListeners: (() => void)[] = [];
   let dead = false;
@@ -380,18 +414,13 @@ export function agentServerFromGuest(opts: {
  * subprocess child kill) — best-effort, awaited by cleanup.
  */
 export function warmFromGuest(opts: {
-  /** Log prefix for guest stdio, e.g. `modal:sb-123`. */
-  label: string;
   proc: GuestProcLike;
   terminate: () => Promise<unknown>;
   ws: RpcWebSocket;
   /** The guest's origin, e.g. `wss://host:port` — routes derive from it. */
   origin: string;
 }): WarmHarness {
-  const { label, proc, ws, origin } = opts;
-  void drainProcStream(proc.stdout, `[${label}] stdout`);
-  void drainProcStream(proc.stderr, `[${label}] stderr`);
-
+  const { proc, ws, origin } = opts;
   const conn = createRpcConnection<GuestRpcSchema>(ws);
 
   const exitListeners: (() => void)[] = [];

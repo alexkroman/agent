@@ -42,6 +42,11 @@ import { studioLlmModelId } from "./studio-llm.ts";
 import { createPreviewDeployer, type PreviewTarget } from "./studio-preview.ts";
 import { studioSystemPrompt } from "./studio-prompt.ts";
 import { MAX_STUDIO_CHAT_MESSAGES, UiMessageSchema } from "./studio-schemas.ts";
+import {
+  createWorkspacePublisher,
+  type WorkspaceDeployOutcome,
+  type WorkspaceDeployTarget,
+} from "./studio-session-publish.ts";
 import { getWorkspace, mutateWorkspace, projectKey } from "./studio-workspace.ts";
 
 /**
@@ -59,12 +64,23 @@ import { getWorkspace, mutateWorkspace, projectKey } from "./studio-workspace.ts
  * and by the client's Stop button.
  */
 const MAX_CHAT_STEPS = 80;
-/** Idle window before a project's sandbox is evicted. */
-const STUDIO_SESSION_IDLE_MS = 15 * 60_000;
+/**
+ * Idle window before a project's sandbox is evicted.
+ *
+ * Matches the agent guest's own idle self-exit (`AGENT_IDLE_EXIT_MS`, 5 min):
+ * a studio sandbox costs exactly what a deployed agent's does, and there is
+ * no reason for the one that sits idle while someone reads a reply to be
+ * billed three times longer. Losing a live-but-quiet sandbox costs one
+ * re-broker — the client re-brokers on a rejected fetch or a 409, and the
+ * workspace and chat both live in the store, not the guest, so nothing is
+ * lost with it.
+ *
+ * The sweeper below runs on a 60s cadence, so the effective window is this
+ * value plus up to a minute.
+ */
+const STUDIO_SESSION_IDLE_MS = 5 * 60_000;
 /** Deadline for installing a session in the guest (workspace transfer). */
 const SESSION_INIT_TIMEOUT_MS = 60_000;
-/** Deadline for one in-guest Publish (`aai deploy`: cold build + upload). */
-const WORKSPACE_DEPLOY_TIMEOUT_MS = 330_000;
 
 /**
  * Guest-supplied workspace files. Wire-shape check only (record of safe
@@ -91,26 +107,9 @@ const GuestChatSchema = z.object({
   messages: z.array(UiMessageSchema).max(MAX_STUDIO_CHAT_MESSAGES),
 });
 
-/**
- * Response of the guest's `workspace/deploy` (guest-asserted wire data):
- * the guest ran the literal `aai deploy` CLI, and `output` is what the
- * chat shows — a success summary or the CLI's failure diagnostics.
- */
-const WorkspaceDeployResponseSchema = z.object({
-  ok: z.boolean(),
-  slug: z.string().optional(),
-  url: z.string().optional(),
-  output: z.string().max(64_000),
-});
-
-export type WorkspaceDeployOutcome = z.infer<typeof WorkspaceDeployResponseSchema>;
-
-/** What Publish hands the guest's CLI: the platform origin + caller key. */
-export type WorkspaceDeployTarget = {
-  serverUrl: string;
-  apiKey: string;
-  slug?: string | undefined;
-};
+// Deploy shapes live with the deploy path (studio-session-publish.ts) and
+// are re-exported here because this module is the broker's public face.
+export type { WorkspaceDeployOutcome, WorkspaceDeployTarget } from "./studio-session-publish.ts";
 
 type BrokerStores = {
   workspaces: import("aai-server/workspace-store").WorkspaceStore;
@@ -167,6 +166,20 @@ type SessionEntry = {
   warm: WarmHarness;
   url: string;
   lastUsed: number;
+  /**
+   * The chat-surface bearer, minted ONCE for this sandbox and handed to every
+   * caller that brokers this project.
+   *
+   * It must not rotate per broker call. The guest holds exactly one token
+   * (`session.chatToken`), so re-minting on a re-init invalidates the token
+   * every earlier caller is still holding — and overlapping brokers for one
+   * project are routine (a second tab, another device, a reload racing an
+   * in-flight one; the same set `sessionLock` exists for). The loser's next
+   * chat turn then 401s on a surface where the only credential IS this token.
+   * Rotating bought nothing for that: the token is already random, scoped to
+   * one sandbox, and dies with it.
+   */
+  chatToken: string;
   /**
    * Where this session's auto preview deploys go — the public origin and
    * caller key captured at broker time. Absent when the session was brokered
@@ -280,8 +293,12 @@ export function createStudioSessionBroker(
    * presents on the guest's public chat surface: browser sessions
    * authenticate to the platform with a Supabase session and never hold the
    * key, and a random per-session token on the public tunnel URL beats a
-   * long-lived credential there anyway. Re-minted on every (re-)init; the
-   * broker response carries it to the client.
+   * long-lived credential there anyway. The broker response carries it to
+   * the client.
+   *
+   * Minted once per SANDBOX: a re-init passes the sandbox's existing token
+   * back, so refreshing the workspace never invalidates a token another tab
+   * is holding (see {@link SessionEntry.chatToken}).
    */
   async function initSession(
     warm: WarmHarness,
@@ -290,10 +307,12 @@ export function createStudioSessionBroker(
     apiKey: string,
     /** Pre-read workspace; the cold path reads it BEFORE spawning a sandbox. */
     known?: Awaited<ReturnType<typeof getWorkspace>>,
+    /** This sandbox's existing token; absent on a cold spawn. */
+    existingToken?: string,
   ): Promise<string | null> {
     const workspace = known ?? (await getWorkspace(options.workspaces, scope, project));
     if (!workspace) return null;
-    const chatToken = randomBytes(32).toString("base64url");
+    const chatToken = existingToken ?? randomBytes(32).toString("base64url");
     await warm.conn.sendRequest(
       "studio/session-init",
       {
@@ -309,32 +328,6 @@ export function createStudioSessionBroker(
       SESSION_INIT_TIMEOUT_MS,
     );
     return chatToken;
-  }
-
-  /** Send one `workspace/deploy` and validate the guest's response. */
-  async function requestDeploy(
-    warm: WarmHarness,
-    files: Record<string, string>,
-    target: WorkspaceDeployTarget,
-  ): Promise<WorkspaceDeployOutcome> {
-    const raw = await warm.conn.sendRequest(
-      "workspace/deploy",
-      {
-        files,
-        serverUrl: target.serverUrl,
-        apiKey: target.apiKey,
-        ...(target.slug ? { slug: target.slug } : {}),
-      },
-      WORKSPACE_DEPLOY_TIMEOUT_MS,
-    );
-    const parsed = WorkspaceDeployResponseSchema.safeParse(raw);
-    if (!parsed.success) {
-      return {
-        ok: false,
-        output: `Malformed deploy response from sandbox: ${parsed.error.message}`,
-      };
-    }
-    return parsed.data;
   }
 
   /**
@@ -353,7 +346,14 @@ export function createStudioSessionBroker(
     const existing = sessions.get(key);
     if (!existing) return null;
     try {
-      const token = await initSession(existing.warm, scope, project, apiKey);
+      const token = await initSession(
+        existing.warm,
+        scope,
+        project,
+        apiKey,
+        undefined,
+        existing.chatToken,
+      );
       if (token === null) return null;
       existing.lastUsed = Date.now();
       if (serverUrl) existing.previewTarget = { serverUrl, apiKey };
@@ -411,6 +411,7 @@ export function createStudioSessionBroker(
       warm,
       url,
       lastUsed: Date.now(),
+      chatToken: token,
       ...(serverUrl ? { previewTarget: { serverUrl, apiKey } } : {}),
       release: () => false,
     };
@@ -418,45 +419,21 @@ export function createStudioSessionBroker(
     return { url, token };
   }
 
-  /** One deploy (publish or preview): live sandbox first, else ephemeral. */
-  async function deployWorkspaceImpl(
-    scope: string,
-    project: string,
-    files: Record<string, string>,
-    target: WorkspaceDeployTarget,
-  ): Promise<WorkspaceDeployOutcome> {
-    const key = projectKey(scope, project);
-    const existing = sessions.get(key);
-    if (existing) {
-      try {
-        const outcome = await requestDeploy(existing.warm, files, target);
-        existing.lastUsed = Date.now();
-        return outcome;
-      } catch (err) {
-        // Dead sandbox — replace it with a fresh one for this publish;
-        // the next chat broker call heals the session itself.
-        console.warn("Studio publish: live sandbox failed; using a fresh one", {
-          project,
-          error: errorMessage(err),
-        });
-        await disposeEntry(existing);
-      }
-    }
-    // No (live) session sandbox — spawn one for the publish and tear it
-    // down after; Publish from the editor shouldn't leave a sandbox
-    // running that no chat session owns.
-    const warm = await spawn({
-      harnessPath: options.harnessPath ?? resolveHarnessPath(),
-      slug: project,
-      role: "studio-publish",
-    });
-    try {
-      warm.conn.listen();
-      return await requestDeploy(warm, files, target);
-    } finally {
-      await warm[Symbol.asyncDispose]().catch(() => undefined);
-    }
-  }
+  const deployWorkspaceImpl = createWorkspacePublisher({
+    spawn,
+    harnessPath: options.harnessPath,
+    liveSession: (scope, project) => {
+      const entry = sessions.get(projectKey(scope, project));
+      if (!entry) return null;
+      return {
+        warm: entry.warm,
+        touch: () => {
+          entry.lastUsed = Date.now();
+        },
+        dispose: () => disposeEntry(entry),
+      };
+    },
+  });
 
   // Auto preview deploys ride the same deploy path Publish uses — a live
   // session sandbox when one exists (the common case: the agent's own

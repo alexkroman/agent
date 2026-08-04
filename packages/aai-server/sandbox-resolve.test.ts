@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryPlatformEvents } from "./platform-events.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import type { Sandbox } from "./sandbox.ts";
-import { resolveSandbox, watchAgentInvalidation } from "./sandbox-resolve.ts";
+import { brokerSessionUrl, resolveSandbox, watchAgentInvalidation } from "./sandbox-resolve.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { appDbSecretName, createMemorySecretStore } from "./secret-store.ts";
 import { createTestStore } from "./test-utils.ts";
@@ -331,5 +331,73 @@ describe("storage (ctx.db) delivery", () => {
     expect(vmOpts.env).toEqual({});
     await sandbox?.shutdown();
     deps.unwatch();
+  });
+});
+
+/**
+ * A boot that never finishes must not hold the CLIENT for the guest's full
+ * boot budget (`AGENT_HEALTH_TIMEOUT_MS`, 120s): an agent whose top-level
+ * code blocks never becomes ready, so every broker call hung two minutes
+ * before its 503 — permanently, for every caller.
+ */
+describe("broker readiness cap", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    mockSpawnAgentServer.mockReset();
+  });
+
+  it("answers 503 while a boot is still running, without spawning a second sandbox", async () => {
+    // A spawn that never resolves — the hung-boot case.
+    let releaseBoot: ((handle: unknown) => void) | undefined;
+    mockSpawnAgentServer.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseBoot = resolve;
+        }),
+    );
+    const seeded = await seedAgent("hung");
+    // Short cap so the test observes it without spending the real budget.
+    const deps = { ...seeded, readyTimeoutMs: 50 };
+    try {
+      const first = await brokerSessionUrl("hung", deps);
+      expect(first).toMatchObject({ ok: false, status: 503 });
+
+      // The sandbox stayed attached and is still booting.
+      expect(deps.slots.get("hung")?.sandbox?.alive?.()).toBe(true);
+
+      // Count from HERE: a cold rebuild may legitimately spawn twice when a
+      // change event lands between slot creation and its version stamp (the
+      // "one extra rebuild" race rebuildSlot documents), and a boot slow
+      // enough to time out widens that window. What this pins is the new
+      // behavior — a broker that stopped waiting must JOIN the running boot,
+      // never start another one.
+      const afterFirst = mockSpawnAgentServer.mock.calls.length;
+      const second = await brokerSessionUrl("hung", deps);
+      expect(second).toMatchObject({ ok: false, status: 503 });
+      expect(mockSpawnAgentServer.mock.calls.length).toBe(afterFirst);
+
+      // And when the boot finally lands, the next call serves it.
+      releaseBoot?.({
+        sessionUrl: "wss://tunnel.test:443/websocket",
+        guestOrigin: "wss://tunnel.test:443",
+        activeSessions: vi.fn().mockResolvedValue(0),
+        drain: vi.fn().mockResolvedValue(undefined),
+        shutdown: vi.fn().mockResolvedValue(undefined),
+        alive: () => true,
+        onExit: vi.fn(),
+      });
+      await expect(brokerSessionUrl("hung", deps)).resolves.toMatchObject({
+        ok: true,
+        sessionUrl: "wss://tunnel.test:443/websocket",
+      });
+      expect(mockSpawnAgentServer.mock.calls.length).toBe(afterFirst);
+    } finally {
+      seeded.unwatch();
+    }
   });
 });

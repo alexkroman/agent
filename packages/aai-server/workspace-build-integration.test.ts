@@ -28,7 +28,7 @@ import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
 import { createTestStore, TEST_AGENT_CONFIG } from "./test-utils.ts";
-import { dialGuest, getFreePort, warmFromGuest } from "./warm-harness.ts";
+import { dialGuest, getFreePort, startGuestLogging, warmFromGuest } from "./warm-harness.ts";
 
 const AGENT_TS = `import { agent } from "@alexkroman1/aai";
 
@@ -72,9 +72,11 @@ async function spawnTestHarness(): Promise<WarmHarness> {
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
   };
   try {
+    // Mirrors the backends: log the guest's stdio from the moment it exists,
+    // so a harness that dies before the dial still explains itself.
+    startGuestLogging(proc, `test-harness:${port}`);
     const ws = await dialGuest(`ws://127.0.0.1:${port}/ws`, token);
     return warmFromGuest({
-      label: `test-harness:${port}`,
       proc,
       terminate,
       ws,

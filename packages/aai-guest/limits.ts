@@ -50,7 +50,10 @@ export const GUEST_CONTRACT_VERSION = 1;
  * orphan-timeout mechanism cannot apply — and the guest is the ONLY idle
  * reclaimer (the host-side idle sweep was deleted; the guest's exit
  * surfaces host-side as process death → onSandboxLost detaches the slot).
- * Overridable via AAI_GUEST_IDLE_EXIT_MS; 0 disables.
+ * Overridable via AAI_GUEST_IDLE_EXIT_MS, which the spawner forwards from
+ * the server's own env (`agentBootEnv` in aai-server/warm-harness.ts) — a
+ * guest reads only what it is handed at exec, so setting it on the platform
+ * process is what reaches every backend. 0 disables.
  */
 export const AGENT_IDLE_EXIT_MS = 5 * 60_000;
 

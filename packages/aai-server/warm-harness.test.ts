@@ -10,7 +10,7 @@
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer } from "ws";
-import { dialGuest, drainProcStream } from "./warm-harness.ts";
+import { agentBootEnv, dialGuest, drainProcStream } from "./warm-harness.ts";
 
 function streamOf(chunks: string[]): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
@@ -90,5 +90,43 @@ describe("dialGuest", () => {
       ws.close();
       await new Promise((resolve) => wss.close(resolve));
     }
+  });
+});
+
+describe("agentBootEnv", () => {
+  const boot = {
+    token: "tok",
+    port: 8080,
+    bundlePath: "/b/bundle.mjs",
+    bundleSha256: "abc",
+    envPath: "/b/env.json",
+  };
+
+  it("names the boot artifacts the guest reads", () => {
+    expect(agentBootEnv(boot, {})).toEqual({
+      AAI_GUEST_MODE: "agent",
+      AAI_GUEST_TOKEN: "tok",
+      AAI_GUEST_PORT: "8080",
+      AAI_BUNDLE_PATH: "/b/bundle.mjs",
+      AAI_BUNDLE_SHA256: "abc",
+      AAI_AGENT_ENV_PATH: "/b/env.json",
+    });
+  });
+
+  // The guest documents AAI_GUEST_IDLE_EXIT_MS as its idle-exit override, but
+  // reads it from `process.env` — and only Modal guests have an ambient
+  // environment to read. The subprocess backend builds a minimal env by
+  // design, so the knob did nothing there until the spawner forwarded it.
+  it("forwards the guest idle-exit override from the server's env", () => {
+    expect(agentBootEnv(boot, { AAI_GUEST_IDLE_EXIT_MS: "15000" })).toMatchObject({
+      AAI_GUEST_IDLE_EXIT_MS: "15000",
+    });
+  });
+
+  it("omits the override when unset or blank, leaving the guest's default", () => {
+    expect(agentBootEnv(boot, {})).not.toHaveProperty("AAI_GUEST_IDLE_EXIT_MS");
+    expect(agentBootEnv(boot, { AAI_GUEST_IDLE_EXIT_MS: "  " })).not.toHaveProperty(
+      "AAI_GUEST_IDLE_EXIT_MS",
+    );
   });
 });

@@ -59,7 +59,6 @@
  * Run with: node harness.mjs
  */
 
-import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { formatSchemaIssues } from "@alexkroman1/aai/internal";
 import { createServer, type SessionRuntime } from "@alexkroman1/aai/runtime";
@@ -74,6 +73,7 @@ import {
   loadBundle,
 } from "./harness-bundle.ts";
 import { installCrashGuards } from "./harness-crash-guards.ts";
+import { mainDescribe, takeDescribeNonce } from "./harness-describe.ts";
 import {
   errMsg,
   handleHostResponse,
@@ -298,36 +298,13 @@ async function mainAgent(port: number, host: string, token: string): Promise<voi
   console.error(`agent-mode harness listening on ${host}:${port}`);
 }
 
-/**
- * DESCRIBE MODE — deploy-time bundle inspection as a ONE-SHOT exec: import
- * the bundle named by `AAI_DESCRIBE_BUNDLE_PATH` (in the sandbox, never on
- * the host) and print the config it self-describes (`__aaiConfig`) as a
- * single JSON line on stdout — `{ ok: true, config }` or
- * `{ ok: false, error }`. The host parses the LAST stdout line, so a bundle
- * whose top level writes to stdout cannot corrupt the result. The exit code
- * mirrors `ok`. No token, no server, no channel: the process is the whole
- * contract, and the spawner tears the sandbox down when it exits.
- */
-async function mainDescribe(bundlePath: string): Promise<void> {
-  const state = emptyHarnessState();
-  try {
-    const code = await readFile(bundlePath, "utf-8");
-    const loaded = await loadBundle(state, { code, env: {} });
-    process.stdout.write(`\n${JSON.stringify({ ok: true, config: loaded.config })}\n`);
-    process.exit(0);
-  } catch (err) {
-    process.stdout.write(`\n${JSON.stringify({ ok: false, error: errMsg(err) })}\n`);
-    process.exit(1);
-  }
-}
-
 function main(): void {
   installCrashGuards();
   // Describe mode runs before the token requirement: it opens no server and
   // answers no requests, so there is nothing for a token to gate.
   const describePath = process.env.AAI_DESCRIBE_BUNDLE_PATH;
   if (describePath) {
-    void mainDescribe(describePath);
+    void mainDescribe(describePath, takeDescribeNonce());
     return;
   }
   const token = process.env.AAI_GUEST_TOKEN;

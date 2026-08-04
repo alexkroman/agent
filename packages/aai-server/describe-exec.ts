@@ -7,8 +7,26 @@
  * starting the process, this module owns the wire format.
  */
 
+import { randomBytes } from "node:crypto";
 import pTimeout from "p-timeout";
 import { consumeProcStream, drainProcStream, type GuestProcLike } from "./warm-harness.ts";
+
+/**
+ * Mint the per-exec marker that identifies the HARNESS's answer.
+ *
+ * The bundle is imported into the describe process, so "the last stdout
+ * line wins" is not by itself a defense: a `process.on("exit")` handler in
+ * the bundle prints after the harness and its line is last. Measured — a
+ * bundle doing exactly that had its own `{ok:true,config}` accepted as the
+ * extracted config, letting a deploy declare a config the SDK never
+ * produced (an empty `requiredEnv` skips the credential preflight).
+ *
+ * The harness deletes this from `process.env` before importing the bundle,
+ * so bundle code cannot read the value it would have to forge.
+ */
+export function mintDescribeNonce(): string {
+  return randomBytes(16).toString("hex");
+}
 
 /**
  * Budget for a one-shot describe exec: the bundle's import (top-level code
@@ -31,15 +49,18 @@ async function collectProcStdout(stream: ReadableStream<Uint8Array>): Promise<st
 }
 
 /**
- * Await a describe-mode guest and parse its result: the LAST non-empty
- * stdout line is `{ ok, config?, error? }` — last, so a bundle whose top
- * level prints to stdout cannot corrupt it. Stderr drains into host logs.
- * Throws on timeout, unparseable output, or a reported load failure; the
- * caller's cleanup terminates the guest.
+ * Await a describe-mode guest and parse its result: the last stdout line
+ * carrying `nonce` is `{ ok, config?, error? }`. Matching on the nonce, not
+ * merely on being last, is what makes the answer the harness's rather than
+ * the bundle's — see {@link mintDescribeNonce}. Stderr drains into host
+ * logs. Throws on timeout, unparseable output, or a reported load failure;
+ * the caller's cleanup terminates the guest.
  */
 export async function readDescribeResult(
   proc: GuestProcLike,
   label: string,
+  /** The marker handed to this exec via `AAI_DESCRIBE_NONCE`. */
+  nonce: string,
   timeoutMs = DESCRIBE_TIMEOUT_MS,
 ): Promise<unknown> {
   void drainProcStream(proc.stderr, `[${label}] stderr`);
@@ -49,17 +70,31 @@ export async function readDescribeResult(
     message: `bundle describe timed out after ${timeoutMs}ms`,
   });
   const text = await collected;
-  const line = text
+  // Scan from the end for the harness's own line. Bundle output — including
+  // anything printed from an exit handler, i.e. AFTER us — simply isn't it.
+  const lines = text
     .split("\n")
     .map((l) => l.trim())
-    .filter(Boolean)
-    .at(-1);
-  if (!line) throw new Error(`bundle describe produced no output (exit ${exit})`);
-  let parsed: { ok?: unknown; config?: unknown; error?: unknown };
-  try {
-    parsed = JSON.parse(line) as typeof parsed;
-  } catch (err) {
-    throw new Error(`bundle describe produced unparseable output (exit ${exit})`, { cause: err });
+    .filter(Boolean);
+  if (lines.length === 0) throw new Error(`bundle describe produced no output (exit ${exit})`);
+  let parsed: { ok?: unknown; config?: unknown; error?: unknown } | undefined;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    let candidate: { nonce?: unknown };
+    try {
+      candidate = JSON.parse(lines[i] as string) as typeof candidate;
+    } catch {
+      continue;
+    }
+    if (candidate.nonce === nonce) {
+      parsed = candidate as typeof parsed;
+      break;
+    }
+  }
+  if (!parsed) {
+    throw new Error(
+      `bundle describe produced no harness result (exit ${exit}) — the guest printed no line ` +
+        `carrying this exec's marker`,
+    );
   }
   if (parsed.ok !== true) {
     const reason = typeof parsed.error === "string" ? parsed.error : `exit ${exit}`;

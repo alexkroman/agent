@@ -440,15 +440,48 @@ describe("createSessionCore — idle timeout", () => {
       vi.useRealTimers();
     }
   });
-  test("onAudio resets the idle timer", async () => {
+  // Idle means "nobody is talking", not "the client stopped sending bytes".
+  // The browser mic streams continuously (barge-in needs it open), so while
+  // raw frames re-armed the timer a tab left open on a silent room pinned the
+  // session — and on the platform its guest, whose own idle self-exit needs
+  // the session count to reach zero.
+  test("inbound audio frames do NOT reset the idle timer", async () => {
     vi.useFakeTimers();
     try {
       const { core, sink } = makeCore({
         agentConfig: makeAgentConfig({ name: "t", idleTimeoutMs: 1000 }),
       });
       await core.start();
-      vi.advanceTimersByTime(500);
-      core.onAudio(new Uint8Array([1]));
+      // A continuously-streaming silent mic: frames the whole way through.
+      for (let t = 0; t < 1100; t += 20) {
+        core.onAudio(new Uint8Array(640));
+        vi.advanceTimersByTime(20);
+      }
+      expect(sink.events.filter((e) => e.type === "idle_timeout")).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // The transport is the one that can tell speech from silence, so it owns
+  // the signal — and a client cannot fake it: to make STT report speech it
+  // has to send audio that really contains some.
+  test.each([
+    ["speech the transport detected", (c: SessionCore) => c.onSpeechStarted()],
+    ["an interim user transcript", (c: SessionCore) => c.onUserTranscriptPartial("hel")],
+    ["a committed user turn", (c: SessionCore) => c.onUserTranscript("hello")],
+    ["the agent replying", (c: SessionCore) => c.onReplyStarted("r1")],
+    ["agent audio", (c: SessionCore) => c.onAudioChunk(new Uint8Array([1]))],
+    ["a tool call", (c: SessionCore) => c.onToolCall("c1", "t", {})],
+  ])("%s resets the idle timer", async (_label, act) => {
+    vi.useFakeTimers();
+    try {
+      const { core, sink } = makeCore({
+        agentConfig: makeAgentConfig({ name: "t", idleTimeoutMs: 1000 }),
+      });
+      await core.start();
+      vi.advanceTimersByTime(800);
+      act(core);
       vi.advanceTimersByTime(800);
       expect(sink.events.filter((e) => e.type === "idle_timeout")).toHaveLength(0);
       vi.advanceTimersByTime(300);
