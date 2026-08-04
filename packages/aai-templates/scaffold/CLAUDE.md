@@ -728,7 +728,7 @@ import "@alexkroman1/aai-ui/styles.css";
 import { client, useSession } from "@alexkroman1/aai-ui";
 
 function MyApp() {
-  const { messages, userTranscript, started, running, start, toggle, reset } =
+  const { messages, userTranscript, started, running, start, toggle, end } =
     useSession();
   return (
     <div>
@@ -739,7 +739,7 @@ function MyApp() {
       ) : (
         <>
           <button onClick={toggle}>{running ? "Stop" : "Resume"}</button>
-          <button onClick={reset}>Reset</button>
+          <button onClick={end}>End</button>
         </>
       )}
     </div>
@@ -781,8 +781,16 @@ to put it in.
 | `started` | `boolean` | Whether session started |
 | `running` | `boolean` | Whether session active |
 
-Methods: `start()`, `toggle()`, `reset()`, `cancel()`, `disconnect()`,
-`resetState()`.
+Methods: `start()`, `toggle()`, `end()`, `reset()`, `cancel()`,
+`disconnect()`, `resetState()`.
+
+- `end()` hangs up: it flips `started` back to `false` (a start-screen UI
+  shows its Start control again) and the next `start()` is a brand-new
+  session — fresh per-session tool state, greeting included. Use it for
+  End/Hang up/New game buttons.
+- `reset()` clears the conversation but keeps the call live (`started`
+  stays `true`) — the control stays on Stop/Resume, and per-session tool
+  state survives. Use it for a "clear chat" control, not for ending.
 
 ## UI hooks
 

@@ -241,15 +241,15 @@ function InfocomAdventure() {
               >
                 {session.running ? "[P]ause" : "[R]esume"}
               </button>
-              {/* Full reload = new WebSocket = fresh sessionId, so the
-                  session-scoped game state starts over too.
-                  (session.reset() keeps the same sessionId and would
-                  resume the old game.) */}
+              {/* end() hangs up and drops the sessionId, so the
+                  session-scoped game state starts over and the title
+                  screen returns. (session.reset() keeps the same
+                  sessionId and would resume the old game.) */}
               <button
                 type="button"
                 className="px-4 py-1 bg-transparent cursor-pointer uppercase tracking-wider font-mono text-[11px]"
                 style={{ color: GREEN_DIM, border: `1px solid ${GREEN_DARK}` }}
-                onClick={() => window.location.reload()}
+                onClick={() => session.end()}
               >
                 [N]ew Game
               </button>
