@@ -420,10 +420,11 @@ describe("S2sTransport reconnect", () => {
     expect(callbacks.onUserTranscriptPartial).toHaveBeenCalledWith("what's the wea");
   });
 
-  // Agent partials follow the same rule as audio, and for the same reason: the
-  // client has already flushed the cancelled reply, so a late frame for it would
-  // re-render text for the very reply the user interrupted.
-  test("cancelReply drops in-flight agent transcript partials until the next reply", async () => {
+  // S2S has no incremental agent transcript to forward — `transcript.agent.delta`
+  // is documented but unimplemented (see `_s2s-reply.ts`), so the only producer
+  // of `onAgentTranscriptPartial` is pipeline mode. Pinned so a reintroduced
+  // forwarder has to come with a real wire event behind it.
+  test("S2S never emits agent transcript partials", async () => {
     const { callbacks, capturedCallbacks } = setupSpiedTransport();
     const t = createS2sTransport(makeTransportOptions({ callbacks }));
     await t.start();
@@ -431,13 +432,9 @@ describe("S2sTransport reconnect", () => {
     const cb = expectAt(capturedCallbacks, 0, "callbacks");
     cb.onSessionReady("sess");
     cb.onReplyStarted("r1");
-    cb.onAgentTranscriptPartial("It's"); // during the reply → forwarded
-    t.cancelReply();
-    cb.onAgentTranscriptPartial("It's sunny"); // after cancel → dropped
-    cb.onReplyStarted("r2");
-    cb.onAgentTranscriptPartial("Sure"); // new reply → forwarded again
+    cb.onAgentTranscript("It's sunny.", false);
 
-    expect(callbacks.onAgentTranscriptPartial).toHaveBeenCalledTimes(2);
-    expect(callbacks.onAgentTranscriptPartial).toHaveBeenLastCalledWith("Sure");
+    expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("It's sunny.", false);
+    expect(callbacks.onAgentTranscriptPartial).not.toHaveBeenCalled();
   });
 });

@@ -777,6 +777,30 @@ present in the `agent()` config:
   the implicit default before the pipeline-by-default flip. There is no way
   to reach S2S by omission — only the `s2s` descriptor selects it.
 
+  **S2S has no agent captions on tool-call turns, and this is not our bug.**
+  Measured against the live service (2026-08-03) with a standalone WebSocket
+  client, no SDK in the path: `transcript.agent` is emitted for every non-tool
+  reply with a matching `reply_id`, and for NEITHER reply of a tool-call turn —
+  not the one carrying `tool.call`, not the one after `tool.result`. Declaring
+  tools changes nothing; calling one does. So a tool-using agent renders blank
+  reply text for exactly the turns that do the work, `reply.done` logs
+  `agentText: "none"`, and `replyAnomaly` warns "delivered audio with no
+  transcript" once per tool turn. There is no client-side remedy —
+  `transcript.agent` is the only event in the protocol carrying agent text.
+  Anything reading reply text (history, evals, a tau2-style harness scoring
+  what the agent *said*) sees silence for a turn the user heard answered.
+
+  Two traps here. The docs contradict each other on whether it is intended:
+  the canonical message-sequence page shows `transcript.agent` inside its
+  `opt tool call` branch and calls it "Per agent reply", while the
+  execution-modes page's `interactive` diagram shows neither tool-turn reply
+  emitting it — the service matches the latter. And
+  `transcript.agent.delta` is documented in the events reference but **is not
+  implemented**: zero frames arrive even for a plain greeting reply that does
+  send `transcript.agent`, and it appears nowhere on the canonical page. An
+  accumulator for it was added (#a42cdbd3) and removed again once measurement
+  showed it could never fire; do not re-add one on the strength of the docs.
+
 The default injection runs at every mode-derivation site — `toAgentConfig`
 (so it is baked into deployed configs at build time) and `createRuntime`'s
 provider resolution — before `assertProviderTriple`.
