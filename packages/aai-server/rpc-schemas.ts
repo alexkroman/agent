@@ -41,7 +41,7 @@ export const IsolateConfigSchema = AgentConfigSchema.extend({
   builtinTools: z.array(z.string()).optional(),
   // The base schema now defaults these too; the wire keeps its own spellings
   // so platform behavior stays put: a stored config without a greeting speaks
-  // none (toRuntimeAgent falls back to ""), never the SDK default phrase.
+  // none, never the SDK default phrase.
   systemPrompt: z.string().default(DEFAULT_SYSTEM_PROMPT),
   greeting: z.string().optional(),
   // Wire-only: the agent's custom tool schemas ride alongside the config.

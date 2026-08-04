@@ -268,9 +268,6 @@ model) is the security boundary.
 - `warm-harness.ts` — backend-independent guest wiring shared by both backends:
   dial-with-retry, stdio draining, free-port allocation, `WarmHarness` exit and
   cleanup semantics
-- `sandbox-agent-config.ts` — the deploy-time `IsolateConfig` → runtime-agent
-  boundary: `toRuntimeAgent` passes the config through unchanged minus the
-  `WIRE_ONLY_CONFIG_FIELDS` deny-list (see "One canonical config schema")
 - `sandbox-guest-rpc.ts` — guest→host `db/query` RPC schema + handler registration
 - `sandbox-pool.ts` — pool of pre-warmed Node harnesses for fast cold starts
 - `sandbox-slots.ts` — per-slug sandbox slots + session-aware idle eviction
@@ -1180,21 +1177,18 @@ copying fields:
   `AgentConfigSchema.extend({...})` — the extensions are wire-tolerance
   loosenings (a stored bundle from an older CLI must keep loading), wire
   defaults, and the wire-only `toolSchemas`; none may drop a field.
-- **`toRuntimeAgent`** (`aai-server/sandbox-agent-config.ts`) passes the
-  whole config through minus `WIRE_ONLY_CONFIG_FIELDS` (`toolSchemas`,
-  `mode`). The provider descriptors ride on the runtime agent itself
-  (`createRuntime` resolves `opts.stt ?? agent.stt`), keyed off the
-  descriptors' own presence — never `config.mode`, which is optional: a
-  config carrying all three providers with no `mode` once hit a
-  `config.mode === "pipeline"` gate and lost every one of them, so
-  `createRuntime` resolved S2S and ran a healthy S2S session on the agent's
-  own key, nothing logged. `superRefine` rejects a `mode` that disagrees
-  with the descriptors. Host mode (`ws-host-mode.ts`) uses the same
-  function, so a pipeline agent driven over `?host=1` stays pipeline.
-  `rpc-schemas.test.ts` asserts both subtractions:
-  `Exclude<keyof AgentConfig, keyof IsolateConfig>` and
-  `Exclude<keyof IsolateConfig, keyof AgentDef | WireOnlyConfigField>` are
-  `never`.
+- **The server never maps a stored config onto a runtime agent.** The old
+  `toRuntimeAgent` boundary (`sandbox-agent-config.ts`) is gone with platform
+  host mode — sessions run the bundle's own SDK on the bundle's own agent
+  definition, so there is no server-side config→agent mapping left to drop
+  fields at. (Historical context, kept because the bug class recurs: provider
+  descriptors must be keyed off their own presence, never the optional
+  `config.mode` — a config carrying all three providers with no `mode` once
+  hit a `config.mode === "pipeline"` gate and lost every one of them, so the
+  runtime resolved S2S and ran a healthy S2S session on the agent's own key,
+  nothing logged. `superRefine` still rejects a `mode` that disagrees with
+  the descriptors.) `rpc-schemas.test.ts` asserts the remaining subtraction:
+  `Exclude<keyof AgentConfig, keyof IsolateConfig>` is `never`.
 
 A new serializable agent field therefore needs exactly two edits — `AgentDef`
 (docs + type) and `AgentConfigSchema` (shape) — and the type guards fail
@@ -1988,20 +1982,19 @@ service's control work is light — and one container served both badly.
   wait inside `scaledown_window` — past `SHUTDOWN_DRAIN_MS` the replica goes
   down regardless, since a drain longer than the container grace period is a
   SIGKILL with extra steps.
-- **A WebSocket is ONE Modal input, so the function `timeout` bounds CALL
-  DURATION** — not request latency. Both services therefore set it explicitly
-  (`FUNCTION_TIMEOUT_SECS` = 4h on the agent app, matching
+- **A long-lived connection is ONE Modal input, so the function `timeout`
+  bounds CALL DURATION** — not request latency. Both services therefore set it
+  explicitly (`FUNCTION_TIMEOUT_SECS` = 4h on the agent app, matching
   `DEFAULT_SANDBOX_TIMEOUT_MS`; 30 min on the studio app, whose longest input
   is a cold-sandbox Publish). Left unset, Modal's default is **300s**, and it
-  severed every host-mode session at exactly five minutes, mid-word — the
-  client saw a bare "not connected" and the server logged nothing, because
-  nothing in our code did it. The caveat that makes this easy to miss:
-  browser voice sessions dial the guest sandbox's tunnel directly and never
-  touch this path, so only `?host=1` sessions (which run IN the server
-  process — see "Host mode on deployed agents") are exposed. The sandbox
+  severed every in-process session (the old `?host=1` host mode, since
+  removed) at exactly five minutes, mid-word — the client saw a bare "not
+  connected" and the server logged nothing, because nothing in our code did
+  it. No session runs in the server process anymore — browser voice sessions
+  dial the guest sandbox's tunnel directly, and `/:slug/websocket` upgrades
+  are handshake redirects — but SSE streams through the studio proxy sit
+  under the same cap, so it stays pinned rather than inherited. The sandbox
   layer hit the same trap first and documents it in `modal-sandbox-env.ts`.
-  This is a backstop, never the idle policy: a wall-clock cap can't tell a
-  busy call from an abandoned one, which is `idleTimeoutMs`'s job below.
 
 ### Modal sandbox notes
 
@@ -2513,41 +2506,20 @@ stored env at sandbox creation time and kept host-side only.
   (`projectBaseFromPrompt`); an unusable base falls back to `human-id`
   words. Clients never generate names — creation always hits the server.
 
-### Host mode on deployed agents (`aai-server/ws-host-mode.ts`)
+### No host mode on deployed agents
 
-A deployed agent's `WS /:slug/websocket` accepts `?host=1`, the same override
-channel the dev server offers: the caller supplies `systemPrompt`, `greeting`,
-and relayed tool schemas, and the session runs on the *deployed agent's*
-credentials and provider pipeline.
-
-The gate differs from the dev server's on purpose. `aai dev` is single-user
-and loopback-bound, so `AAI_ALLOW_HOST` is an adequate control. The platform
-is multi-tenant and an agent's WebSocket is deliberately **unauthenticated** —
-anyone with the URL can talk to it. Allowing prompt/tool overrides on that
-footing would make every deployed agent an open LLM proxy billed to its owner.
-So `?host=1` requires `Authorization: Bearer <api key>` on the upgrade,
-verified against slug ownership (the check `/:slug/secret` and `/:slug/storage`
-already use). `startHostSession` gained an `allowHost` option so the platform
-can gate on ownership instead of the env flag, which would be all-or-nothing
-across tenants.
-
-Details worth keeping:
-
-- **Header, not a query param.** A URL leaks through proxy logs, history, and
-  `Referer`, and this token is the caller's whole platform credential.
-  Browsers can't set WebSocket headers, which is intended — host mode is for
-  programmatic clients.
-- **A refusal answers the handshake** (401/403 + reason) rather than dropping
-  the socket; a bare RST is indistinguishable from a network fault.
-- **Unknown slug and forbidden slug return the same thing**, so a non-owner
-  gets no existence oracle.
-- **Runs in the server process, not the guest sandbox.** Host mode replaces
-  the agent's tools with ones relayed to the caller, so there is no tenant
-  code to isolate. It builds its base agent with the same `toRuntimeAgent`
-  the sandbox path uses, which keeps the provider descriptors on the agent
-  object — otherwise a pipeline agent would silently fall back to S2S when
-  driven over `?host=1`.
-- Plain connections are untouched and stay unauthenticated.
+Host mode (`?host=1` — the caller supplies `systemPrompt`, `greeting`, and
+relayed tool schemas while the session runs on the operator's credentials) is
+an **`aai dev` feature only**. The platform version (`ws-host-mode.ts`,
+owner-authenticated via bearer on the upgrade) was deliberately removed: it
+was the one path where the SERVER'S current SDK interpreted a STORED config
+(`toRuntimeAgent` → the server's `createRuntime`) — a cross-version seam that
+could break already-deployed bundles, and the reason the server carried a
+config→runtime-agent mapping at all. Every platform session now runs the
+bundle's own frozen SDK inside its sandbox; `/:slug/websocket` upgrades are
+pure handshake redirects to the sandbox, and the platform process terminates
+no sessions of any kind. Don't reintroduce an in-process session surface — if
+platform host mode ever returns, run it in the guest on the bundle's runtime.
 
 ### Self-hosted server defaults (`aai/host/server.ts`)
 

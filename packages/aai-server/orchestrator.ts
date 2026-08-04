@@ -19,8 +19,7 @@
  * - `GET/PUT/DELETE /:slug/secret` — owner: manage secrets
  * - `GET/POST/DELETE /:slug/storage` — owner: per-app database storage
  * - `WS   /:slug/websocket`     — the long-living programmatic endpoint:
- *   plain upgrades are redirected (302) to the agent's live sandbox session
- *   URL; host-mode (`?host=1`) upgrades run in-process
+ *   upgrades are redirected (302) to the agent's live sandbox session URL
  *
  * Auth: `authMw` validates API key; `existingOwnerMw` verifies slug ownership.
  * Slugs: `[a-z0-9][a-z0-9_-]*[a-z0-9]` — enforced by regex for multi-tenant isolation.
@@ -116,11 +115,11 @@ export type OrchestratorOpts = {
    * sandboxed `describeBundle`; injectable so tests don't need Modal.
    */
   inspect?: BundleInspector;
-  /** Max concurrent WebSocket connections. Defaults to MAX_CONNECTIONS. */
-  maxConnections?: number;
   /**
-   * True once shutdown has begun. Fails `/health` and refuses new WebSocket
-   * upgrades so the machine stops taking sessions it is about to drop.
+   * True once shutdown has begun. Fails `/health` so the platform's proxy
+   * stops routing here. (Upgrades on `/:slug/websocket` are pure handshake
+   * redirects to the sandbox — nothing long-lived starts here, so there is
+   * nothing to refuse while draining.)
    */
   isDraining?: () => boolean;
 };
@@ -128,14 +127,6 @@ export type OrchestratorOpts = {
 export type Orchestrator = {
   app: Hono<HonoEnv>;
   injectWebSocket: (server: import("node:http").Server) => void;
-  /**
-   * Close every live session WebSocket (1001 "going away"). Graceful
-   * shutdown calls this after the drain deadline — an HTTP server with open
-   * WebSockets never finishes closing on its own.
-   */
-  closeActiveSockets: () => void;
-  /** Live session sockets. Shutdown polls this while draining. */
-  activeSessionCount: () => number;
 };
 
 export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
@@ -267,14 +258,12 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     slugLock: createMutationLock(opts.slugLock ?? localSlugLock, opts.store),
   });
 
-  const { injectWebSocket, closeActiveSockets, activeSessionCount } = createWsUpgrades({
-    // Plain upgrades on /:slug/websocket resolve the live sandbox (the
+  const { injectWebSocket } = createWsUpgrades({
+    // Upgrades on /:slug/websocket resolve the live sandbox (the
     // long-living endpoint redirects to its session URL), which needs the
     // same dependencies the client-config broker uses.
     broker: brokerOpts,
-    ...(opts.maxConnections !== undefined && { maxConnections: opts.maxConnections }),
-    ...(opts.isDraining && { isDraining: opts.isDraining }),
   });
 
-  return { app, injectWebSocket, closeActiveSockets, activeSessionCount };
+  return { app, injectWebSocket };
 }

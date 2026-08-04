@@ -23,9 +23,6 @@ function envMs(raw: string | undefined, fallback: number): number {
 
 export const DEFAULT_PORT = 8080;
 
-/** Max concurrent WebSocket connections before the server rejects new upgrades. */
-export const MAX_CONNECTIONS = Number(process.env.MAX_CONNECTIONS) || 100;
-
 /**
  * Idle time before a resident sandbox is evicted. Sessions connect to the
  * sandbox directly, so the sweep probes the guest's live session count

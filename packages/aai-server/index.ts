@@ -28,9 +28,9 @@ async function main(): Promise<void> {
   const port = resolvePort(env.PORT, DEFAULT_PORT);
 
   // Flipped by `shutdown()` before anything is torn down: it fails /health
-  // so the platform's proxy stops routing here, and refuses new WebSocket
-  // upgrades. Both are needed for the drain below to converge — otherwise the
-  // replica keeps accepting the sessions it is waiting to finish.
+  // so the platform's proxy stops routing here — needed for the drain below
+  // to converge, otherwise the replica keeps brokering new sessions onto the
+  // guests it is waiting to finish.
   let draining = false;
   const config = buildServiceConfig(env);
   const opts: OrchestratorOpts = {
@@ -41,7 +41,7 @@ async function main(): Promise<void> {
 
   assertSandboxBackendOrWarn(env);
 
-  const { app, injectWebSocket, closeActiveSockets, activeSessionCount } = createOrchestrator(opts);
+  const { app, injectWebSocket } = createOrchestrator(opts);
 
   await startService({
     label: "AAI agent service",
@@ -55,25 +55,20 @@ async function main(): Promise<void> {
       // flight on every deploy — both strategies replace all machines, so that
       // was every active call, mid-sentence.
       //
-      // The count must include the GUESTS' sessions, not just this process's
-      // sockets: browser sessions dial the sandbox tunnel directly, so
-      // `activeSessionCount` (wss.clients.size) is blind to them and reported
-      // 0 on every scale-in while calls were live — the drain returned at once
-      // and teardown cut them anyway, which is the exact failure the paragraph
-      // above describes, reintroduced when sessions moved into the guests.
+      // The count is the GUESTS' sessions: browser sessions dial the sandbox
+      // tunnel directly and this process terminates no sessions of its own
+      // (host mode, the last in-process session surface, was removed), so a
+      // socket count here would always read 0 while calls were live — the
+      // drain would return at once and teardown would cut them anyway.
       draining = true;
       await drainActiveSessions({
-        activeCount: async () => activeSessionCount() + (await liveGuestSessions(opts.slots)),
+        activeCount: () => liveGuestSessions(opts.slots),
         // Each poll is an RPC fan-out across the replica's guests.
         pollMs: DRAIN_GUEST_POLL_MS,
         env,
       });
 
       console.info("Shutting down...");
-      // Close client WebSockets: closing the HTTP server only waits for
-      // connections to end, it never ends them, so open sessions would ride
-      // out the whole fallback timeout on every SIGTERM under load.
-      closeActiveSockets();
       await teardownSandboxes({ slots: opts.slots, pool: opts.pool });
       await config.events.close();
     },

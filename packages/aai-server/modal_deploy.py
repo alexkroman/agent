@@ -92,38 +92,33 @@ REGION = "us-east-2"
 # the sandbox tunnel directly), so a replica going down only costs the
 # sandboxes it owns; clients auto-reconnect (?sessionId) and re-broker.
 #
-# Each in-flight HTTP request and each open WebSocket counts as one input, so
-# the numbers below are coupled to the node server's own per-replica
-# WebSocket cap (MAX_CONNECTIONS, exported in the image env — the server
-# rejects upgrade #N+1 itself, as a load-shed backstop):
+# Each in-flight HTTP request counts as one input. Voice sessions never pass
+# through this process (browsers dial the sandbox tunnel directly, and
+# `/:slug/websocket` upgrades are instant handshake redirects), so inputs are
+# short HTTP traffic plus the studio proxy's SSE streams:
 #
 # - TARGET_INPUTS is the autoscaler's set point: Modal adds containers once
-#   per-container concurrency crosses it. Set below MAX_CONNECTIONS so new
-#   capacity is warming BEFORE any replica starts refusing sessions.
-# - MAX_INPUTS caps what one container absorbs while scale-up is in flight:
-#   MAX_CONNECTIONS long-lived sessions plus headroom for short HTTP traffic
-#   (health checks, studio API, deploys).
-MIN_CONTAINERS = 1  # always-warm floor: voice sessions are latency-sensitive
+#   per-container concurrency crosses it.
+# - MAX_INPUTS caps what one container absorbs while scale-up is in flight.
+MIN_CONTAINERS = 1  # always-warm floor: session brokering is latency-sensitive
 MAX_CONTAINERS = 10  # cost guard; raise deliberately, not by incident
 BUFFER_CONTAINERS = 1  # one pre-warmed spare while active, so bursts land warm
-MAX_CONNECTIONS = 100  # per-replica WebSocket cap (node server enforces it)
-TARGET_INPUTS = 75  # scale-out set point (~75% of the session cap)
-MAX_INPUTS = 150  # sessions at cap + short-request headroom
+TARGET_INPUTS = 75  # scale-out set point
+MAX_INPUTS = 150  # concurrent-request cap per container
 
 # ── Input timeout ────────────────────────────────────────────────────────────
 #
 # A WebSocket is ONE Modal input for its whole lifetime, so the function
 # timeout bounds CALL DURATION, not request latency — and Modal's default is
-# 300s. Unset, that silently severed every host-mode voice session at exactly
-# five minutes, mid-word, surfacing to the client as a bare "not connected"
-# with nothing logged server-side. (Browser sessions dial the guest sandbox's
-# tunnel directly and never touch this path; `?host=1` sessions run IN this
-# process, which is what puts them under the cap.) Same trap the sandbox layer
-# already documents in modal-sandbox-env.ts, matched to the same 4h value.
-#
-# This is a backstop, not the idle policy: session-core's own watchdog
-# (`idleTimeoutMs`, 5 min) reaps quiet sessions and closes their sockets, and
-# unlike a wall-clock cap it re-arms on every inbound audio frame.
+# 300s. Unset, that silently severed every in-process voice session (the old
+# `?host=1` host mode, since removed) at exactly five minutes, mid-word,
+# surfacing to the client as a bare "not connected" with nothing logged
+# server-side. Sessions now never run in this process — browsers dial the
+# guest sandbox's tunnel directly, and `/:slug/websocket` upgrades are
+# handshake redirects — but the studio proxy's SSE streams and any future
+# long-lived input sit under the same cap, so it stays pinned rather than
+# inherited. Same trap the sandbox layer documents in modal-sandbox-env.ts,
+# matched to the same 4h value.
 FUNCTION_TIMEOUT_SECS = 4 * 60 * 60
 
 # ── Guest-sandbox autoscaling ────────────────────────────────────────────────
@@ -142,9 +137,9 @@ FUNCTION_TIMEOUT_SECS = 4 * 60 * 60
 # needs that slack: simultaneous brokers can land a session or two past it.
 # 1 GiB covers the ~250 MB harness+bundle baseline plus sessions with ~3×
 # headroom. With SANDBOX_MAX_REPLICAS=4 this is 32 sessions per slug per web
-# replica — saturating well inside MAX_CONNECTIONS above. If sessions stutter
-# at load, the playback stats (concealedSamples per turn) are the signal to
-# lower the cap; raise it only off those same measurements.
+# replica. If sessions stutter at load, the playback stats (concealedSamples
+# per turn) are the signal to lower the cap; raise it only off those same
+# measurements.
 #
 # Reservation and cap are deliberately DIFFERENT numbers, because a guest's
 # load is bimodal. It idles as a voice session (~250 MB, a few % of a core),
@@ -177,10 +172,6 @@ image = build_image(
     # Guest sandboxes are pinned to the web server's region (above).
     region=REGION,
     extra_env={
-        # Per-replica WebSocket cap, kept in lockstep with the autoscaler
-        # numbers above (TARGET_INPUTS / MAX_INPUTS) — the server refuses
-        # upgrades past it, so Modal must scale out before it is reached.
-        "MAX_CONNECTIONS": str(MAX_CONNECTIONS),
         # Guest-sandbox autoscaling — see the block above. Values in the
         # aai-server Secret override these (secrets layer over image env).
         "SANDBOX_MAX_SESSIONS": str(SANDBOX_MAX_SESSIONS),

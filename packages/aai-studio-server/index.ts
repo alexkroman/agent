@@ -141,16 +141,14 @@ async function main(): Promise<void> {
     // same code path, so the two can no longer drift.
     onShutdown: async () => {
       draining = true;
-      // Guests included — see the agent entry: sessions live in the sandboxes,
-      // so the socket count alone always reads 0 and drains instantly.
+      // The count is the guests' sessions — see the agent entry: sessions
+      // live in the sandboxes, and this process terminates none of its own.
       await drainActiveSessions({
-        activeCount: async () =>
-          orchestrator.activeSessionCount() + (await liveGuestSessions(base.slots)),
+        activeCount: () => liveGuestSessions(base.slots),
         pollMs: DRAIN_GUEST_POLL_MS,
         env,
       });
       console.info("Shutting down...");
-      orchestrator.closeActiveSockets();
       await teardown();
     },
   });

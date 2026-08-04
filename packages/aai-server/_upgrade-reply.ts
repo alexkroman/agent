@@ -2,7 +2,7 @@
 /**
  * Answering a WebSocket upgrade handshake with a real HTTP response — the
  * one shape shared by every refusal/redirect site (plain-upgrade redirect,
- * draining 503, catch-all 500, host-mode 401/403). A bare RST is
+ * broker 404/503, catch-all 500). A bare RST is
  * indistinguishable from a network fault to the caller, so every site
  * answers the handshake before destroying the socket.
  */
