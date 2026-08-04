@@ -1,9 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
-// Code view — file navigation plus a CodeMirror editor. Small workspaces get
-// file tabs across the top; past FILE_TAB_LIMIT files the tabs become a
-// vertical sidebar grouped by directory, because a strip of dozens of tabs
-// is unscannable and forces horizontal scrolling. Server refreshes (agent
-// edits) update the buffer unless the user has unsaved changes.
+// Code view — a directory-grouped file sidebar plus a CodeMirror editor.
+// (Files used to be horizontal tabs, which assumed a one-or-two-file
+// workspace; a template-sized project made the strip an endless horizontal
+// scroll.) Server refreshes (agent edits) update the buffer unless the
+// user has unsaved changes.
 
 import { javascript } from "@codemirror/lang-javascript";
 import CodeMirror from "@uiw/react-codemirror";
@@ -128,54 +128,16 @@ function FileBuffer({ path, serverContent, onSave }: FileBufferProps) {
   );
 }
 
-/**
- * Above this many files the tab strip becomes a sidebar list. Tabs are the
- * right shape for a handful of files; a template-sized workspace (20+ tool
- * files) turns them into an endless horizontal scroll.
- */
-export const FILE_TAB_LIMIT = 8;
-
 type FileNavProps = {
   paths: string[];
   currentFile: string | null;
   onSelectFile: (path: string) => void;
 };
 
-/** File navigation: tabs when few files, a directory-grouped sidebar when many. */
+/** File navigation: a directory-grouped sidebar list. */
 export function FileNav({ paths, currentFile, onSelectFile }: FileNavProps) {
-  if (paths.length <= FILE_TAB_LIMIT) {
-    return (
-      <div
-        role="tablist"
-        aria-label="Workspace files"
-        className="flex shrink-0 overflow-x-auto border-b border-line bg-cream"
-      >
-        {paths.map((path) => {
-          const active = path === currentFile;
-          return (
-            <button
-              type="button"
-              role="tab"
-              aria-selected={active}
-              key={path}
-              className={clsx(
-                "shrink-0 cursor-pointer border-x-0 border-t-0 border-b-2 px-3 py-2 font-mono text-[11px]",
-                active
-                  ? "border-indigo bg-panel text-indigo"
-                  : "border-transparent bg-transparent text-subtle hover:text-fg",
-              )}
-              onClick={() => onSelectFile(path)}
-            >
-              {path}
-            </button>
-          );
-        })}
-      </div>
-    );
-  }
-
   // Group by directory, root files first — a flat sorted list interleaves
-  // root files with directories, which reads as disorder at this size.
+  // root files with directories, which reads as disorder.
   const groups = new Map<string, string[]>();
   for (const path of paths) {
     const slash = path.lastIndexOf("/");
@@ -242,11 +204,10 @@ type CodeViewProps = {
 
 export function CodeView({ files, currentFile, onSelectFile, onSave }: CodeViewProps) {
   const paths = Object.keys(files).sort();
-  // min-w-0 matters in both modes: without it the nav's intrinsic width
-  // propagates up the flex tree and stretches the whole page sideways.
-  const sidebar = paths.length > FILE_TAB_LIMIT;
+  // min-w-0 matters: without it the nav's intrinsic width propagates up
+  // the flex tree and stretches the whole page sideways.
   return (
-    <div className={clsx("flex min-h-0 min-w-0 flex-1", sidebar ? "flex-row" : "flex-col")}>
+    <div className="flex min-h-0 min-w-0 flex-1">
       <FileNav paths={paths} currentFile={currentFile} onSelectFile={onSelectFile} />
       <FileBuffer
         key={currentFile ?? ""}

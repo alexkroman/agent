@@ -2,12 +2,12 @@
 // Copyright 2026 the AAI authors. MIT license.
 // useFileDraft is the one place user work can be lost: it decides when an
 // agent's server-side edit replaces the buffer and when it must not.
-// FileNav is the affordance that keeps large workspaces navigable: tabs for
-// a handful of files, a directory-grouped sidebar past FILE_TAB_LIMIT.
+// FileNav is the affordance that keeps large workspaces navigable: a
+// directory-grouped sidebar list.
 
 import { act, cleanup, render, renderHook, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { FILE_TAB_LIMIT, FileNav, useFileDraft } from "./code-view.tsx";
+import { FileNav, useFileDraft } from "./code-view.tsx";
 
 describe("useFileDraft", () => {
   test("adopts server updates while the buffer is clean", () => {
@@ -65,32 +65,15 @@ describe("FileNav", () => {
   // No vitest globals in this package, so testing-library's auto-cleanup
   // never registers — without this each render accumulates in the DOM.
   afterEach(cleanup);
-  test("renders tabs for a small workspace", () => {
-    const onSelectFile = vi.fn();
-    render(
-      <FileNav
-        paths={["agent.ts", "client.tsx"]}
-        currentFile="agent.ts"
-        onSelectFile={onSelectFile}
-      />,
-    );
-    expect(screen.getByRole("tablist", { name: "Workspace files" })).toBeDefined();
-    const active = screen.getByRole("tab", { name: "agent.ts" });
-    expect(active.getAttribute("aria-selected")).toBe("true");
-    screen.getByRole("tab", { name: "client.tsx" }).click();
-    expect(onSelectFile).toHaveBeenCalledWith("client.tsx");
-  });
 
-  test("switches to a directory-grouped sidebar past FILE_TAB_LIMIT", () => {
+  test("groups files by directory and selects by full path", () => {
     const onSelectFile = vi.fn();
     const paths = [
       "agent.ts",
       "seed.json",
-      ...Array.from({ length: FILE_TAB_LIMIT }, (_, i) => `tools/tool_${i}.ts`),
+      ...Array.from({ length: 8 }, (_, i) => `tools/tool_${i}.ts`),
     ];
     render(<FileNav paths={paths} currentFile="tools/tool_3.ts" onSelectFile={onSelectFile} />);
-    // Sidebar, not tabs.
-    expect(screen.queryByRole("tablist")).toBeNull();
     const nav = screen.getByRole("navigation", { name: "Workspace files" });
     // One directory header, entries shown by basename.
     expect(nav.textContent).toContain("tools/");
@@ -101,11 +84,8 @@ describe("FileNav", () => {
     expect(onSelectFile).toHaveBeenCalledWith("tools/tool_1.ts");
   });
 
-  test("sidebar lists root files before directories", () => {
-    const paths = [
-      ...Array.from({ length: FILE_TAB_LIMIT }, (_, i) => `tools/tool_${i}.ts`),
-      "agent.ts",
-    ].sort();
+  test("lists root files before directories", () => {
+    const paths = [...Array.from({ length: 8 }, (_, i) => `tools/tool_${i}.ts`), "agent.ts"].sort();
     render(<FileNav paths={paths} currentFile={null} onSelectFile={vi.fn()} />);
     const buttons = screen.getAllByRole("button");
     expect(buttons[0]?.textContent).toBe("agent.ts");
