@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import type { ModelMessage } from "ai";
+import { MockLanguageModelV3 } from "ai/test";
 import { describe, expect, test } from "vitest";
 import {
   compactMessages,
@@ -54,6 +55,33 @@ describe("compactMessages", () => {
     const out = await compactMessages(fakeModel, input);
     // generateText fails on the stub model, so the safe path returns input.
     expect(out).toEqual(input);
+  });
+
+  test("a successful summary replaces the middle, keeping both ends verbatim", async () => {
+    const summarizer = new MockLanguageModelV3({
+      doGenerate: async () => ({
+        content: [{ type: "text" as const, text: "built the agent; fixing a type error" }],
+        finishReason: { unified: "stop" as const, raw: undefined },
+        usage: {
+          inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+          outputTokens: { total: 1, text: 1, reasoning: undefined },
+        },
+        warnings: [],
+      }),
+    });
+    const input = longSession(100);
+    const out = await compactMessages(summarizer, input);
+
+    expect(out.length).toBe(DEFAULT_COMPACTION.keepLeading + 1 + DEFAULT_COMPACTION.keepRecent);
+    // The original request survives verbatim at the front…
+    expect(out[0]).toEqual(input[0]);
+    // …the most recent work survives verbatim at the back…
+    expect(out.at(-1)).toEqual(input.at(-1));
+    // …and the middle is one summary message the agent can read as context.
+    const summary = out[DEFAULT_COMPACTION.keepLeading] as { role: string; content: string };
+    expect(summary.role).toBe("user");
+    expect(summary.content).toContain("[Earlier in this session, summarized to save context]");
+    expect(summary.content).toContain("built the agent; fixing a type error");
   });
 
   test("a failed summary preserves the conversation rather than dropping it", async () => {

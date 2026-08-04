@@ -13,6 +13,7 @@ import {
   formatBuildFailure,
   scrubDir,
   toolchainModules,
+  typecheckWorkspaceDir,
   withBuildDir,
   workspacesRoot,
 } from "./studio-build.ts";
@@ -133,6 +134,45 @@ describe("withBuildDir", () => {
       ),
     ).rejects.toThrow("build exploded");
     await expect(readdir(seen as string)).rejects.toThrow();
+  });
+});
+
+describe("typecheckWorkspaceDir", () => {
+  test("a workspace without a tsconfig skips rather than failing", async () => {
+    const result = await withBuildDir(
+      { "agent.ts": "export {};\n" },
+      async (dir, files) => {
+        for (const [rel, content] of Object.entries(files)) {
+          await writeFile(path.join(dir, rel), content, "utf-8");
+        }
+      },
+      (dir) => typecheckWorkspaceDir(dir),
+    );
+    expect(result).toEqual({ ok: true, skipped: true });
+  });
+
+  test("type errors come back scrubbed and annotated, like a build's", {
+    timeout: 120_000,
+  }, async () => {
+    const result = await withBuildDir(
+      {
+        "tsconfig.json": JSON.stringify({
+          compilerOptions: { strict: true, noEmit: true, skipLibCheck: true, types: [] },
+        }),
+        "agent.ts": `export const n: number = "nope";\n`,
+      },
+      async (dir, files) => {
+        for (const [rel, content] of Object.entries(files)) {
+          await writeFile(path.join(dir, rel), content, "utf-8");
+        }
+      },
+      (dir) => typecheckWorkspaceDir(dir),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.output).toContain("agent.ts");
+      expect(result.output).not.toContain(workspacesRoot());
+    }
   });
 });
 
