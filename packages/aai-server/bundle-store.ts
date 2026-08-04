@@ -21,6 +21,7 @@
 import { hash } from "node:crypto";
 import { errorMessage } from "@alexkroman1/aai";
 import { createEpoch } from "@alexkroman1/aai/internal";
+import { LRUCache } from "lru-cache";
 import type { Storage } from "unstorage";
 import { createKeyedLock, withLock } from "./_keyed-lock.ts";
 import { retryOnTransient } from "./_retry.ts";
@@ -70,68 +71,33 @@ const BLOB_CACHE_MAX_BYTES = 128 * 1024 * 1024;
 // and accumulate one Map slot per probed hash.
 const BYTE_CACHE_ENTRY_OVERHEAD = 4096;
 
-type ByteCacheEntry<V> = { value: V; bytes: number; expiresAt: number };
+/**
+ * Cached value for a confirmed-missing blob — lru-cache cannot store `null`
+ * (or `undefined`) directly, so misses are cached under this sentinel.
+ */
+export const BLOB_MISS = Symbol("blob-miss");
 
 /**
- * Byte-budgeted expire-on-read LRU cache. Unlike `TtlCache` (entry-counted),
- * eviction is driven by total value bytes, so the same budget serves many
- * small bundles or a few large ones. Exported for direct testing.
+ * Byte-budgeted LRU cache for blob content. Unlike `TtlCache`
+ * (entry-counted), eviction is driven by total value bytes (`maxSize` +
+ * `sizeCalculation`), so the same budget serves many small bundles or a few
+ * large ones; a value larger than the whole budget is simply not cached.
+ * Exported for direct testing — production passes the constants above.
  */
-export class ByteBudgetTtlCache<V> {
-  readonly #entries = new Map<string, ByteCacheEntry<V>>();
-  readonly #ttlMs: number;
-  readonly #maxBytes: number;
-  #totalBytes = 0;
-
-  constructor(ttlMs: number, maxBytes: number) {
-    this.#ttlMs = ttlMs;
-    this.#maxBytes = maxBytes;
-  }
-
-  /** Total bytes currently charged against the budget (incl. per-entry overhead). */
-  get totalBytes(): number {
-    return this.#totalBytes;
-  }
-
-  get size(): number {
-    return this.#entries.size;
-  }
-
-  get(key: string): V | undefined {
-    const entry = this.#entries.get(key);
-    if (!entry) return;
-    if (Date.now() >= entry.expiresAt) {
-      this.delete(key);
-      return;
-    }
-    // Refresh recency — Map iteration order is insertion order, so the
-    // oldest key is always first when evicting.
-    this.#entries.delete(key);
-    this.#entries.set(key, entry);
-    return entry.value;
-  }
-
-  /** `valueBytes` is the value's size; string `length` is a fine approximation. */
-  set(key: string, value: V, valueBytes: number): void {
-    this.delete(key);
-    const bytes = valueBytes + BYTE_CACHE_ENTRY_OVERHEAD;
-    // A value larger than the whole budget can never fit — don't evict
-    // everything else only to fail anyway.
-    if (bytes > this.#maxBytes) return;
-    this.#entries.set(key, { value, bytes, expiresAt: Date.now() + this.#ttlMs });
-    this.#totalBytes += bytes;
-    for (const oldest of this.#entries.keys()) {
-      if (this.#totalBytes <= this.#maxBytes || oldest === key) break;
-      this.delete(oldest);
-    }
-  }
-
-  delete(key: string): void {
-    const entry = this.#entries.get(key);
-    if (!entry) return;
-    this.#entries.delete(key);
-    this.#totalBytes -= entry.bytes;
-  }
+export function createBlobCache(
+  ttlMs: number,
+  maxBytes: number,
+): LRUCache<string, string | typeof BLOB_MISS> {
+  return new LRUCache({
+    ttl: ttlMs,
+    maxSize: maxBytes,
+    // The value's own size (string `length` is a fine approximation) plus a
+    // per-entry overhead, which bounds the entry count for tiny entries —
+    // otherwise "free" under a pure byte budget, accumulating one map slot
+    // per probed hash — and gives miss sentinels their required nonzero size.
+    sizeCalculation: (value) =>
+      (typeof value === "string" ? value.length : 0) + BYTE_CACHE_ENTRY_OVERHEAD,
+  });
 }
 
 export function createBundleStore(
@@ -145,7 +111,7 @@ export function createBundleStore(
   // `null` cache values mean "confirmed miss" — distinct from `undefined` (not cached).
   const rowCache = new TtlCache<AgentRecord | null>(ROW_CACHE_TTL_MS);
   const versionCache = new TtlCache<number | null>(VERSION_CACHE_TTL_MS);
-  const blobCache = new ByteBudgetTtlCache<string | null>(BLOB_CACHE_TTL_MS, BLOB_CACHE_MAX_BYTES);
+  const blobCache = createBlobCache(BLOB_CACHE_TTL_MS, BLOB_CACHE_MAX_BYTES);
 
   /**
    * Staleness guard for row reads already in flight when a mutation lands.
@@ -178,11 +144,11 @@ export function createBundleStore(
 
   async function readBlobCached(contentHashHex: string): Promise<string | null> {
     const cached = blobCache.get(contentHashHex);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined) return cached === BLOB_MISS ? null : cached;
     const value = await readBlob(contentHashHex);
-    // Cache misses too (null): a hash referenced by a row either exists or
-    // the deploy that wrote the row failed mid-blob-write — both stable.
-    blobCache.set(contentHashHex, value, value?.length ?? 0);
+    // Cache misses too (BLOB_MISS): a hash referenced by a row either exists
+    // or the deploy that wrote the row failed mid-blob-write — both stable.
+    blobCache.set(contentHashHex, value ?? BLOB_MISS);
     return value;
   }
 
