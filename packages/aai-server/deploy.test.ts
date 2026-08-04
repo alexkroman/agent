@@ -13,11 +13,11 @@ import {
   VALID_ENV,
 } from "./test-utils.ts";
 
-test("hashApiKey produces argon2 PHC format and verifies", async () => {
-  const hash = await hashApiKey("test-key");
-  expect(hash).toMatch(/^\$argon2id\$/);
-  expect(await verifyApiKeyHash("test-key", hash)).toBe(true);
-  expect(await verifyApiKeyHash("wrong-key", hash)).toBe(false);
+test("hashApiKey produces a sha256 digest and verifies", () => {
+  const hash = hashApiKey("test-key");
+  expect(hash).toMatch(/^sha256:/);
+  expect(verifyApiKeyHash("test-key", hash)).toBe(true);
+  expect(verifyApiKeyHash("wrong-key", hash)).toBe(false);
 });
 
 // ── Deploy body handling (POST /deploy, slug in the body) ────────────────

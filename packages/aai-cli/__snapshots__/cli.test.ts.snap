@@ -2,7 +2,7 @@
 
 exports[`cli usage snapshots > aai --help 1`] = `
 "Voice agent development kit (aai vX.X.X)
-USAGE aai init|dev|test|build|deploy|delete|secret|storage|templates
+USAGE aai init|dev|test|build|deploy|delete|login|secret|storage|templates
 COMMANDS
        init    Scaffold a new agent project
         dev    Start a local development server
@@ -10,6 +10,7 @@ COMMANDS
       build    Bundle agent without deploying
      deploy    Bundle and deploy to production
      delete    Remove a deployed agent
+      login    Sign in with your email and save your API key
      secret    Manage agent secrets
     storage    Manage the agent's app database
   templates    List available project templates

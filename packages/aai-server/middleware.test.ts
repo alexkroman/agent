@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import { requireOwner } from "./middleware.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
+import { createMemorySecretStore } from "./secret-store.ts";
 import { createTestOrchestrator, createTestStore, deployAgent, deployBody } from "./test-utils.ts";
 
 test("orchestrator adds Cross-Origin-Isolation headers", async () => {
@@ -79,7 +80,9 @@ describe("requireOwner unclaimed-slug paths", () => {
 
   test("throws 404 for a nonexistent slug on data routes", async () => {
     const store = createTestStore();
-    await expect(requireOwner(bearerReq(), { slug: "ghost-agent", store })).rejects.toMatchObject({
+    await expect(
+      requireOwner(bearerReq(), { slug: "ghost-agent", store, secrets: createMemorySecretStore() }),
+    ).rejects.toMatchObject({
       status: 404,
     });
   });

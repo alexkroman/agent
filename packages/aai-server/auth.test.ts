@@ -3,25 +3,19 @@ import { describe, expect, test } from "vitest";
 import { hashApiKey, verifyApiKeyHash, verifySlugOwner } from "./secrets.ts";
 import { createTestStore, TEST_AGENT_CONFIG } from "./test-utils.ts";
 
-test("hashApiKey produces argon2 PHC format", async () => {
-  const h = await hashApiKey("key");
-  expect(h).toMatch(/^\$argon2id\$/);
-  // Same key hashes differently each time (random salt)
-  const h2 = await hashApiKey("key");
-  expect(h).not.toBe(h2);
-  // But both verify against the original key
-  expect(await verifyApiKeyHash("key", h)).toBe(true);
-  expect(await verifyApiKeyHash("key", h2)).toBe(true);
+test("hashApiKey produces a deterministic sha256 digest", () => {
+  const h = hashApiKey("key");
+  expect(h).toMatch(/^sha256:[0-9a-f]{64}$/);
+  expect(hashApiKey("key")).toBe(h);
+  expect(verifyApiKeyHash("key", h)).toBe(true);
   // Different key does not verify
-  expect(await verifyApiKeyHash("other", h)).toBe(false);
+  expect(verifyApiKeyHash("other", h)).toBe(false);
 });
 
-test("verifySlugOwner returns unclaimed for missing slug without computing a hash", async () => {
+test("verifySlugOwner returns unclaimed for missing slug", async () => {
   const store = createTestStore();
   const result = await verifySlugOwner("key1", { slug: "my-agent", store });
   expect(result.status).toBe("unclaimed");
-  // No keyHash on the unclaimed result — hashing is deferred to the
-  // deploy-claim path so nonexistent slugs don't burn argon2 time.
   expect("keyHash" in result).toBe(false);
 });
 
@@ -86,18 +80,18 @@ test("verifySlugOwner rejects when credential_hashes is empty", async () => {
 });
 
 describe("auth timing safety", () => {
-  test("argon2 hashes have consistent format", async () => {
-    const shortKey = await hashApiKey("a");
-    const longKey = await hashApiKey("a".repeat(1000));
-    const emptyKey = await hashApiKey("");
+  test("digests have consistent format regardless of key length", () => {
+    const shortKey = hashApiKey("a");
+    const longKey = hashApiKey("a".repeat(1000));
+    const emptyKey = hashApiKey("");
 
-    const pattern = /^\$argon2id\$v=19\$m=19456,t=2,p=1\$[A-Za-z0-9+/]+\$[A-Za-z0-9+/]+$/;
+    const pattern = /^sha256:[0-9a-f]{64}$/;
     expect(shortKey).toMatch(pattern);
     expect(longKey).toMatch(pattern);
     expect(emptyKey).toMatch(pattern);
 
-    expect(await verifyApiKeyHash("a", shortKey)).toBe(true);
-    expect(await verifyApiKeyHash("a".repeat(1000), longKey)).toBe(true);
-    expect(await verifyApiKeyHash("", emptyKey)).toBe(true);
+    expect(verifyApiKeyHash("a", shortKey)).toBe(true);
+    expect(verifyApiKeyHash("a".repeat(1000), longKey)).toBe(true);
+    expect(verifyApiKeyHash("", emptyKey)).toBe(true);
   });
 });

@@ -2,8 +2,8 @@
 /**
  * Bearer-token auth shared by the harness's two authenticated surfaces:
  * the `/ws` control-channel upgrade (per-sandbox token) and the studio
- * chat surface (the caller's API key). One timing-safe comparator, so a
- * fix here cannot miss one of the gates.
+ * chat surface (the broker-minted per-session chat token). One timing-safe
+ * comparator, so a fix here cannot miss one of the gates.
  */
 
 import { timingSafeEqual } from "node:crypto";

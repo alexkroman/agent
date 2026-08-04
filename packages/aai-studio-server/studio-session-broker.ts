@@ -29,6 +29,7 @@
  * (the client re-brokers on a dead chat URL).
  */
 
+import { randomBytes } from "node:crypto";
 import { errorMessage } from "@alexkroman1/aai";
 import { createOwnedMap } from "@alexkroman1/aai/internal";
 import { GUEST_ROUTES, guestHttpUrl } from "aai-server/guest-routes";
@@ -142,7 +143,7 @@ export type StudioSessionBroker = {
     project: string,
     apiKey: string,
     serverUrl?: string,
-  ): Promise<{ url: string } | null>;
+  ): Promise<{ url: string; token: string } | null>;
   /**
    * Fire-and-forget: deploy the workspace's current files to the project's
    * PREVIEW slug (editor saves take this path; agent turns schedule via the
@@ -274,6 +275,17 @@ export function createStudioSessionBroker(
     warm.conn.listen();
   }
 
+  /**
+   * Install (or refresh) the session in the guest. Resolves the freshly
+   * minted chat-surface bearer, or null when the project doesn't exist.
+   *
+   * The token — not the caller's AssemblyAI key — is what the browser
+   * presents on the guest's public chat surface: browser sessions
+   * authenticate to the platform with a Supabase session and never hold the
+   * key, and a random per-session token on the public tunnel URL beats a
+   * long-lived credential there anyway. Re-minted on every (re-)init; the
+   * broker response carries it to the client.
+   */
   async function initSession(
     warm: WarmHarness,
     scope: string,
@@ -281,15 +293,17 @@ export function createStudioSessionBroker(
     apiKey: string,
     /** Pre-read workspace; the cold path reads it BEFORE spawning a sandbox. */
     known?: Awaited<ReturnType<typeof getWorkspace>>,
-  ): Promise<boolean> {
+  ): Promise<string | null> {
     const workspace = known ?? (await getWorkspace(options.workspaces, scope, project));
-    if (!workspace) return false;
+    if (!workspace) return null;
+    const chatToken = randomBytes(32).toString("base64url");
     await warm.conn.sendRequest(
       "studio/session-init",
       {
         project,
         files: workspace.files,
         apiKey,
+        chatToken,
         system: studioSystemPrompt(),
         model: studioLlmModelId(env),
         ...(env.STUDIO_LLM_REGION === "eu" ? { region: "eu" as const } : {}),
@@ -297,7 +311,7 @@ export function createStudioSessionBroker(
       },
       SESSION_INIT_TIMEOUT_MS,
     );
-    return true;
+    return chatToken;
   }
 
   /** Send one `workspace/deploy` and validate the guest's response. */
@@ -338,15 +352,15 @@ export function createStudioSessionBroker(
     project: string,
     apiKey: string,
     serverUrl?: string,
-  ): Promise<{ url: string } | null> {
+  ): Promise<{ url: string; token: string } | null> {
     const existing = sessions.get(key);
     if (!existing) return null;
     try {
-      const ok = await initSession(existing.warm, scope, project, apiKey);
-      if (!ok) return null;
+      const token = await initSession(existing.warm, scope, project, apiKey);
+      if (token === null) return null;
       existing.lastUsed = Date.now();
       if (serverUrl) existing.previewTarget = { serverUrl, apiKey };
-      return { url: existing.url };
+      return { url: existing.url, token };
     } catch (err) {
       // Dead sandbox (idle-killed, crashed) — drop it so the caller respawns.
       console.warn("Studio session: re-init failed; respawning sandbox", {
@@ -365,7 +379,7 @@ export function createStudioSessionBroker(
     project: string,
     apiKey: string,
     serverUrl?: string,
-  ): Promise<{ url: string } | null> {
+  ): Promise<{ url: string; token: string } | null> {
     const reused = await reuseSession(key, scope, project, apiKey, serverUrl);
     if (reused) return reused;
 
@@ -382,13 +396,15 @@ export function createStudioSessionBroker(
       { pool: options.pool, harnessPath: options.harnessPath, slug: project, role: "studio" },
       spawn,
     );
+    let token: string;
     try {
       wire(warm, key, scope, project);
-      const ok = await initSession(warm, scope, project, apiKey, workspace);
-      if (!ok) {
+      const minted = await initSession(warm, scope, project, apiKey, workspace);
+      if (minted === null) {
         await warm[Symbol.asyncDispose]().catch(() => undefined);
         return null;
       }
+      token = minted;
     } catch (err) {
       await warm[Symbol.asyncDispose]().catch(() => undefined);
       throw err;
@@ -402,7 +418,7 @@ export function createStudioSessionBroker(
       release: () => false,
     };
     entry.release = sessions.claim(key, entry);
-    return { url };
+    return { url, token };
   }
 
   /** One deploy (publish or preview): live sandbox first, else ephemeral. */

@@ -29,6 +29,7 @@ import {
   type SecretStore,
   type SqlExec,
 } from "./secret-store.ts";
+import { createStudioAuthFromEnv } from "./supabase-auth.ts";
 import {
   createMemoryWorkspaceStore,
   createPgWorkspaceStore,
@@ -167,6 +168,16 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
   const { secrets, agents, workspaces, chats, appDb, slugLock, sql } = buildPlatformDb(env);
   const slots = createSlotCache();
   const pool = buildPool(env);
+  // Browser-session auth: Supabase when configured, the dev-token
+  // implementation in local dev (same policy as the in-memory stores —
+  // production can never resolve it). Unconfigured production still serves
+  // CLI (raw-key) traffic, so warn rather than fail.
+  const auth = createStudioAuthFromEnv(env, { localDev: isLocalDev(env) });
+  if (!auth) {
+    console.warn(
+      "[auth] SUPABASE_URL/SUPABASE_PUBLISHABLE_KEY not set — studio browser login is disabled",
+    );
+  }
   return {
     slots,
     // Blob storage serves deploy artifacts only (content-addressed worker +
@@ -176,6 +187,7 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
     workspaces,
     chats,
     secrets,
+    ...(auth && { auth }),
     slugLock,
     ...(appDb && { appDb }),
     ...(pool && { pool }),

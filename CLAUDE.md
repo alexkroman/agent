@@ -123,7 +123,7 @@ Eight workspace packages under `packages/`:
 | --- | --- | --- |
 | `packages/aai/` | `@alexkroman1/aai` | Shared core: agent config, types, protocol, S2S, session, Db |
 | `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (React 19): session, audio, UI components |
-| `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, delete, secret, storage, templates |
+| `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, delete, login, secret, storage, templates |
 | `packages/aai-guest/` | `aai-guest` | Guest sandbox harness (private): the Node entrypoint that runs the complete agent inside each Modal Sandbox, built into one self-contained `dist/harness.mjs` |
 | `packages/aai-server/` | `aai-server` | Agent service + shared platform core (private): sandbox, auth, SSRF, stores, locks |
 | `packages/aai-studio-server/` | `aai-studio-server` | Studio service (private): browser coding agent, workspace builds, combined entry |
@@ -178,7 +178,7 @@ Subpath exports consumed by sibling packages and user agents:
 
 #### `aai-cli` (CLI)
 
-Binary: `aai` — subcommands: init, dev, test, build, deploy, delete,
+Binary: `aai` — subcommands: init, dev, test, build, deploy, delete, login,
 secret, storage, templates
 
 ### SDK structure
@@ -289,7 +289,8 @@ model) is the security boundary.
   `/session` (PUBLIC client voice sessions, connected directly by
   browsers — the embedded SDK runtime drives STT/LLM/TTS in-guest), and
   `/studio/chat` + `/studio/tools` (the studio coding agent's PUBLIC chat
-  surface, bearer-gated by the caller's key — see "Browser studio").
+  surface, bearer-gated by the broker-minted per-session chat token — see
+  "Browser studio").
   `harness.ts` (servers + dispatch), `trial.ts` (run_code executor +
   one-shot tool trials), `harness-rpc.ts` (guest→host request proxy),
   `studio-chat.ts`/`studio-tools.ts`/`studio-edit.ts`/`studio-grep.ts`
@@ -384,9 +385,11 @@ voice agents without the CLI:
   `mutateWorkspace` (`studio-workspace.ts`), which retry a conflicted write
   once — the in-process keyed lock (`studio-workspace-lock.ts`) still
   serializes local writers, so a conflict means another replica. `scope` is
-  a *deterministic* SHA-256 of the caller's API key (`studioScope`) — unlike
-  the salted argon2 ownership hashes, it must be stable so a browser session
-  can find its projects again.
+  a *deterministic* SHA-256 (`studioScope`) — stable so a caller can find
+  its projects again. Browser sessions scope by the studio USER id
+  (`user:<uid>` — stable across AssemblyAI key rotation); raw-key callers
+  (evals, programmatic) scope by the key itself (`requestScope` in
+  `studio-routes.ts`).
 - **Projects are created from the chat, not a dialog.** The client has no
   new-project modal: typing the first message (the home hero's prompt box,
   `home.tsx`) posts it as `prompt` to
@@ -435,9 +438,12 @@ voice agents without the CLI:
   replaced the standalone `check_types` tool — evals showed agents
   thrashing on it (sixteen checks, zero builds); `test_agent` is the one
   verification tool. The guest chat
-  surface is bearer-gated by the caller's key (the tunnel URL is public)
-  and CORS-open; `GET /studio/tools` on the same surface serves the
-  user-friendly tool labels (`STUDIO_TOOL_LABELS`) the client renders.
+  surface is bearer-gated by a broker-minted per-session `chatToken` (the
+  tunnel URL is public; the token rides `studio/session-init` to the guest
+  and the broker response to the browser, so no long-lived credential ever
+  crosses the public surface) and CORS-open; `GET /studio/tools` on the
+  same surface serves the user-friendly tool labels (`STUDIO_TOOL_LABELS`)
+  the client renders.
   End of turn, the guest pushes state back over the control channel:
   `studio/sync-workspace` (validated like a client file PUT; only
   workspace source files — never node_modules/dist/.git — sync, under the
@@ -562,8 +568,9 @@ voice agents without the CLI:
   the SDK's `assemblyAILlm` factory); the platform holds no studio LLM
   credential. The *model* (never the key) stays host config: default
   `gpt-5.5`, `STUDIO_LLM_MODEL` overrides,
-  `STUDIO_LLM_REGION=eu` region-filters. The caller's key doubles as the
-  guest chat surface's bearer — same trust, no new secret.
+  `STUDIO_LLM_REGION=eu` region-filters. The guest chat surface's bearer
+  is the broker-minted per-session `chatToken` — the key stays an LLM
+  credential only and never crosses the public surface.
 - **Gateway regions.** `STUDIO_LLM_REGION=eu` selects the EU endpoint,
   which serves only Claude and most Gemini models. The gateway model list
   is therefore region-filtered (`GATEWAY_US_ONLY_MODELS`) and the EU
@@ -2368,9 +2375,39 @@ stored env at sandbox creation time and kept host-side only.
 
 **Auth:**
 
-- API key ownership hashes are argon2id PHC strings (`secrets.ts`), verified
-  constant-time inside `@node-rs/argon2` and cached by SHA-256(apiKey) —
-  slug ownership is verified against stored credential hashes. There are no
+- **Two bearer forms, one resolution point** (`resolveBearer` in
+  `middleware.ts`). Raw API keys (the `aai` CLI, and the in-guest
+  `aai deploy` Publish runs) pass through unchanged. JWT-shaped bearers —
+  browser studio sessions — are verified against the auth backend and
+  mapped to the user's stored AssemblyAI key (`user-key:<uid>` in the
+  SecretStore), so every downstream consumer (ownership hashes, the
+  gateway LLM, deploy env seeding) sees the real key either way. A key
+  never contains dots, so the shape test (`isJwtShaped`) cleanly splits
+  the two; the verification boundary is the backend's answer, never the
+  shape.
+- **Browser sessions are Supabase Auth** (`supabase-auth.ts`): magic-link
+  email sign-in via supabase-js in the studio client; the server verifies
+  access tokens by asking Supabase (`GET /auth/v1/user` — no JWT
+  secret/JWKS handling), TTL-cached by SHA-256(token). Configured by
+  `SUPABASE_URL` + `SUPABASE_PUBLISHABLE_KEY`. Local dev (same `isLocalDev`
+  policy as the in-memory stores — production can never resolve it) falls
+  back to `createDevAuth`: the login screen mints self-describing
+  `dev.<base64url({id,email})>.dev` tokens, so `pnpm dev:aai-server`
+  needs no Supabase project while exercising the same middleware. The
+  studio's account surface (`GET /studio/auth`, `GET /studio/account`,
+  `PUT /studio/account/key`) authenticates the session WITHOUT requiring
+  a stored key — it is how the key gets set, as the mandatory onboarding
+  screen after sign-in.
+- **Every AssemblyAI key on the platform is user-provided** — there is no
+  platform-owned key, and with browser sessions the browser never holds
+  one either: the key lives server-side against the account (Vault) and
+  the browser holds only a revocable ~1h session token.
+- API key ownership hashes are plain SHA-256 digests (`sha256:<hex>` in
+  `secrets.ts`) — slug ownership is verified against stored credential
+  digests, constant-time compared. NOT a password hash on purpose: platform
+  keys are high-entropy machine secrets, so the argon2id stack this
+  replaced (native dependency, TTL verify cache, lazy-hash choreography to
+  dodge ~100ms derivations) was cost without a threat model. There are no
   legacy hash/decrypt fallbacks (nothing predating the current scheme was
   ever deployed).
 - Stored credentials (agent env vars / secrets) live in Supabase Vault,

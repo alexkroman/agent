@@ -131,15 +131,18 @@ export type ToolExecuteParams = {
 /**
  * Params of the host→guest `studio/session-init` request — installs the
  * studio coding-agent session in the guest: workspace files, the CALLER'S
- * OWN AssemblyAI key (the guest's LLM credential and the public chat
- * surface's bearer — never a platform key), the system prompt, and turn
+ * OWN AssemblyAI key (the guest's LLM credential — never a platform key),
+ * the broker-minted per-session chat bearer, the system prompt, and turn
  * config. The browser then talks to the guest's `POST /studio/chat`
- * directly, mirroring how voice sessions connect to a deployed agent.
+ * directly, mirroring how voice sessions connect to a deployed agent,
+ * presenting `chatToken` — never a long-lived credential.
  */
 export type StudioSessionInitParams = {
   project: string;
   files: Record<string, string>;
   apiKey: string;
+  /** Per-session bearer for the guest's public chat surface. */
+  chatToken: string;
   system: string;
   model: string;
   region?: "eu";

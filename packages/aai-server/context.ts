@@ -15,6 +15,7 @@ import type { SlugMutationLock } from "./platform-lock.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
 import type { SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
+import type { StudioAuth } from "./supabase-auth.ts";
 
 /**
  * Bindings every platform route gets. Deliberately holds NOTHING
@@ -38,10 +39,20 @@ export type HonoEnv = {
      * lease in production so replicas exclude each other; in-process in dev.
      */
     slugLock: SlugMutationLock;
+    /**
+     * Browser-session auth (Supabase in production, dev tokens locally).
+     * Absent means raw-API-key bearers only — the CLI's protocol.
+     */
+    auth?: StudioAuth;
   };
   Variables: {
     slug: string;
     apiKey: string;
+    /**
+     * The studio user id when the bearer was a browser session token;
+     * absent for raw-API-key callers (CLI, in-guest deploys).
+     */
+    userId?: string;
   };
 };
 

@@ -158,7 +158,7 @@ export async function ensureApiKey(configDir?: string): Promise<string> {
     throw new CliError(
       "no_api_key",
       "No API key configured and no TTY to prompt for one.",
-      "Set the ASSEMBLYAI_API_KEY environment variable, or run `aai` interactively once to save a key.",
+      "Set the ASSEMBLYAI_API_KEY environment variable, or run `aai login` interactively once to save a key.",
     );
   }
 

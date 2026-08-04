@@ -11,7 +11,7 @@ import { api, errorText, parseSecrets } from "./api.ts";
 import { queryKeys } from "./query-keys.ts";
 
 type SecretsPanelProps = {
-  apiKey: string;
+  bearer: string;
   /** The open project's name — the target of the Delete project button. */
   project: string;
   /** The project's published slug; undefined until the first publish. */
@@ -32,7 +32,7 @@ type SecretsPanelProps = {
 };
 
 export function SecretsPanel({
-  apiKey,
+  bearer,
   project,
   slug,
   previewSlug,
@@ -46,7 +46,7 @@ export function SecretsPanel({
 
   const secrets = useQuery({
     queryKey: queryKeys.secrets(slug),
-    queryFn: () => api.listSecrets(apiKey, slug as string),
+    queryFn: () => api.listSecrets(bearer, slug as string),
     enabled: slug != null,
   });
 
@@ -63,8 +63,8 @@ export function SecretsPanel({
 
   const save = useMutation({
     mutationFn: async (updates: Record<string, string>) => {
-      const result = await api.putSecrets(apiKey, slug as string, updates);
-      await mirrorToPreview((mirror) => api.putSecrets(apiKey, mirror, updates));
+      const result = await api.putSecrets(bearer, slug as string, updates);
+      await mirrorToPreview((mirror) => api.putSecrets(bearer, mirror, updates));
       return result;
     },
     onSuccess: (_data, updates) => {
@@ -81,8 +81,8 @@ export function SecretsPanel({
 
   const remove = useMutation({
     mutationFn: async (name: string) => {
-      const result = await api.deleteSecret(apiKey, slug as string, name);
-      await mirrorToPreview((mirror) => api.deleteSecret(apiKey, mirror, name));
+      const result = await api.deleteSecret(bearer, slug as string, name);
+      await mirrorToPreview((mirror) => api.deleteSecret(bearer, mirror, name));
       return result;
     },
     onSuccess: (_data, name) => {

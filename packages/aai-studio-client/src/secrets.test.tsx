@@ -16,7 +16,7 @@ function renderPanel(slug: string | undefined, onNotifyChat = vi.fn(), onDeleteP
   render(
     <QueryClientProvider client={client}>
       <SecretsPanel
-        apiKey="sk-test"
+        bearer="sk-test"
         project="demo"
         slug={slug}
         onNotifyChat={onNotifyChat}

@@ -59,6 +59,35 @@ describe("api", () => {
     vi.unstubAllGlobals();
   });
 
+  test("authConfig is public (no bearer) and returns the login mode", async () => {
+    const fetchMock = stubFetch(() => jsonResponse({ mode: "dev" }));
+    await expect(api.authConfig()).resolves.toEqual({ mode: "dev" });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit?];
+    expect(url).toBe("/studio/auth");
+    expect(new Headers(init?.headers).get("Authorization")).toBeNull();
+  });
+
+  test("getAccount sends the session bearer", async () => {
+    const fetchMock = stubFetch(() => jsonResponse({ email: "a@b.c", hasKey: false }));
+    await expect(api.getAccount("session.jwt.tok")).resolves.toEqual({
+      email: "a@b.c",
+      hasKey: false,
+    });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/studio/account");
+    expect(new Headers(init.headers).get("Authorization")).toBe("Bearer session.jwt.tok");
+  });
+
+  test("putAccountKey PUTs the key as JSON under the session bearer", async () => {
+    const fetchMock = stubFetch(() => jsonResponse({ ok: true }));
+    await expect(api.putAccountKey("session.jwt.tok", "users-key")).resolves.toEqual({ ok: true });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/studio/account/key");
+    expect(init.method).toBe("PUT");
+    expect(init.body).toBe(JSON.stringify({ apiKey: "users-key" }));
+    expect(new Headers(init.headers).get("Authorization")).toBe("Bearer session.jwt.tok");
+  });
+
   test("sends the bearer key and parses the response", async () => {
     const fetchMock = stubFetch(() => jsonResponse({ projects: ["a", "b"] }));
     await expect(api.listProjects("sk-123")).resolves.toEqual(["a", "b"]);

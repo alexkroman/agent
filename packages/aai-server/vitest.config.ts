@@ -15,14 +15,11 @@ export default defineConfig({
       fileURLToPath(new URL("../../scripts/ensure-guest-harness.mjs", import.meta.url)),
     ],
     include: ["**/*.test.ts"],
-    // This suite is credential-bound: anything that deploys an agent or
-    // authenticates a request runs an argon2id derivation (tens of ms idle,
-    // several times that when the CPUs are contended). A test that deploys
-    // two agents and
-    // then calls authenticated endpoints does that 4-6 times, which lands right
-    // on vitest's 5s default when `pnpm check` runs the whole turbo graph in
-    // parallel — the tests then fail as timeouts with nothing actually wrong.
-    // The headroom keeps that signal honest; it is not covering a slow test.
+    // Headroom over vitest's 5s default for `pnpm check` runs, where the
+    // whole turbo graph contends for the CPUs and sandbox-adjacent tests
+    // (harness spawns, deploy flows) slow several-fold with nothing
+    // actually wrong. (Sized when auth still paid argon2id derivations;
+    // ownership digests are cheap now, but the contention headroom stays.)
     testTimeout: 20_000,
     exclude: [
       "orchestrator-integration.test.ts",

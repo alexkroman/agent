@@ -124,9 +124,7 @@ export function deployAgentBundle(deps: DeployDeps, params: DeployParams): Promi
     // stranger co-ownership. The random suffix makes collisions negligible
     // but not impossible, and the check costs one row read either way.
     const existing = await deps.store.getAgent(slug);
-    const matchedHash = existing
-      ? await matchAnyHash(params.apiKey, existing.credential_hashes)
-      : null;
+    const matchedHash = existing ? matchAnyHash(params.apiKey, existing.credential_hashes) : null;
     if (existing && matchedHash === null) {
       return requested
         ? { ok: false, status: 403, error: "Forbidden: slug already owned by another user" }
@@ -134,13 +132,10 @@ export function deployAgentBundle(deps: DeployDeps, params: DeployParams): Promi
           // confusing — tell them to retry and get a fresh one.
           { ok: false, status: 409, error: "Slug collision on generated name — retry the deploy" };
     }
-    // The matched stored hash doubles as the caller's keyHash. A fresh-salt
-    // hashApiKey (~100ms, uncacheable) only runs when the slug is genuinely
-    // unclaimed and a hash must be stored.
-    const keyHash = matchedHash ?? (await hashApiKey(params.apiKey));
+    const keyHash = matchedHash ?? hashApiKey(params.apiKey);
     // The check above and deployLocked run under the same slug lock, so the
     // record snapshot and match result can be passed through — no TOCTOU,
-    // no second read, no second argon2 sweep.
+    // no second read.
     return deployLocked(deps, params, { slug, existing, matchedHash, keyHash });
   });
 }

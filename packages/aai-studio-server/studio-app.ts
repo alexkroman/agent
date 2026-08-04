@@ -31,6 +31,7 @@ import type { SandboxPool } from "aai-server/sandbox-pool";
 import { createSlotCache } from "aai-server/sandbox-slots";
 import { createMemorySecretStore, type SecretStore } from "aai-server/secret-store";
 import type { BundleStore } from "aai-server/store-types";
+import type { StudioAuth } from "aai-server/supabase-auth";
 import type { WorkspaceStore } from "aai-server/workspace-store";
 import { Hono } from "hono";
 import type { StudioHonoEnv } from "./studio-context.ts";
@@ -45,6 +46,8 @@ export type StudioAppOpts = {
   chats: ChatStore;
   /** Named secret storage; the storage routes read/write app-db credentials. */
   secrets?: SecretStore;
+  /** Browser-session auth; absent means raw-API-key bearers only. */
+  auth?: StudioAuth;
   /** Per-app database provisioning; absent when SUPABASE_DB_URL is unset. */
   appDb?: AppDatabases;
   /** Cross-service slug mutation lock — MUST be the shared Postgres lock in production. */
@@ -94,6 +97,7 @@ export function createStudioApp(opts: StudioAppOpts): {
     workspaces: opts.workspaces,
     chats: opts.chats,
     secrets: opts.secrets ?? createMemorySecretStore(),
+    ...(opts.auth && { auth: opts.auth }),
     ...(opts.appDb && { appDb: opts.appDb }),
     // Wrapped exactly as the agent service wraps it: holding the lock must
     // also drop this replica's cached view of the slug, or a mutation

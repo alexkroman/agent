@@ -22,17 +22,25 @@
  *   sandbox; the browser then streams chat turns DIRECTLY to the sandbox's
  *   public `/studio/chat` (see studio-session-broker.ts)
  *
- * Auth: any bearer API key (the platform's self-sovereign key model — same
- * as `POST /deploy`). Workspaces are namespaced by a deterministic hash of
- * the key (`studioScope`), so a key only ever sees its own projects.
+ * Plus the browser-session surface:
+ * - `GET /studio/auth`         — public: how to sign in (Supabase/dev/none)
+ * - `GET /studio/account`      — session-authed: email + whether a key is stored
+ * - `PUT /studio/account/key`  — session-authed: store the AssemblyAI key
+ *
+ * Auth: the browser sends its Supabase session token, which `authMw`
+ * resolves to the user's stored AssemblyAI key (see aai-server middleware);
+ * raw API-key bearers (CLI, evals) keep working unchanged. Workspaces are
+ * namespaced by `studioScope` over the user id for sessions, over the key
+ * for raw callers — either way a caller only ever sees their own projects.
  */
 
 import { errorMessage } from "@alexkroman1/aai";
 import { zValidator } from "@hono/zod-validator";
-import { authMw } from "aai-server/middleware";
+import { authMw, requireStudioUser } from "aai-server/middleware";
 import { resolvePublicOrigin } from "aai-server/public-origin";
 import type { SandboxPool } from "aai-server/sandbox-pool";
 import { generatedSlug } from "aai-server/slug-generate";
+import { userApiKeySecretName } from "aai-server/supabase-auth";
 import { WorkspaceConflictError } from "aai-server/workspace-store";
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -47,6 +55,7 @@ import {
   type StudioRateLimiters,
 } from "./studio-rate-limit.ts";
 import {
+  AccountKeySchema,
   CreateProjectSchema,
   ProjectNameSchema,
   projectBaseFromPrompt,
@@ -152,19 +161,59 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   // `llm: true` is legacy shape — chat always runs now, on the caller's key.
   studio.get("/status", (c) => c.json({ llm: true, ...studioLlmInfo() }));
 
+  // Public: what the login screen should render — Supabase magic-link config,
+  // the local-dev sign-in, or nothing (browser login unconfigured).
+  studio.get("/auth", (c) => c.json(c.env.auth?.clientConfig ?? { mode: "none" }));
+
+  // Account routes authenticate the browser session WITHOUT requiring a
+  // stored AssemblyAI key — they are how the key gets set. Everything else
+  // under /projects goes through authMw, which resolves the session to the
+  // stored key (and 401s until one exists).
+  studio.get("/account", async (c) => {
+    const user = await requireStudioUser(c.req.raw, c.env);
+    const key = await c.env.secrets.get(userApiKeySecretName(user.id));
+    return c.json({ ...(user.email && { email: user.email }), hasKey: key !== null });
+  });
+
+  studio.put("/account/key", zValidator("json", AccountKeySchema), async (c) => {
+    const user = await requireStudioUser(c.req.raw, c.env);
+    await c.env.secrets.put(userApiKeySecretName(user.id), c.req.valid("json").apiKey);
+    return c.json({ ok: true });
+  });
+
+  // `aai login` ends here: after email sign-in the CLI fetches the stored
+  // key to save in its global config — unlike the browser, the CLI
+  // genuinely needs the RAW key (`aai dev` runs the provider pipeline
+  // in-process on it). Revealing the key to its owner's session adds no
+  // authority the session doesn't already have: every studio surface can
+  // already spend and deploy with it.
+  studio.get("/account/key", async (c) => {
+    const user = await requireStudioUser(c.req.raw, c.env);
+    const key = await c.env.secrets.get(userApiKeySecretName(user.id));
+    if (!key) return c.json({ error: "No API key on file for this account" }, 404);
+    return c.json({ apiKey: key });
+  });
+
   // Bearer auth without slug ownership: workspace scoping needs only the
   // deterministic `studioScope`, and the deploy path derives the ownership
   // hash itself.
   studio.use("/projects", authMw);
   studio.use("/projects/*", authMw);
 
+  // Workspace scope: browser sessions scope by the studio user (stable
+  // across AssemblyAI key rotation), raw-key callers (CLI, evals) by the
+  // key itself — the pre-login behavior. The `user:` prefix keeps the two
+  // hash inputs from ever colliding.
+  const requestScope = (c: Context<StudioHonoEnv>): string =>
+    c.var.userId ? studioScope(`user:${c.var.userId}`) : studioScope(c.var.apiKey);
+
   studio.get("/projects", async (c) => {
-    const scope = studioScope(c.var.apiKey);
+    const scope = requestScope(c);
     return c.json({ projects: await listProjects(c.env.workspaces, scope) });
   });
 
   studio.post("/projects", zValidator("json", CreateProjectSchema), async (c) => {
-    const scope = studioScope(c.var.apiKey);
+    const scope = requestScope(c);
     const limited = await rateLimited(scope, projectCreateLimiter);
     if (limited) return limited;
     const { name, prompt } = c.req.valid("json");
@@ -190,7 +239,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   });
 
   studio.get("/projects/:project", async (c) => {
-    const scope = studioScope(c.var.apiKey);
+    const scope = requestScope(c);
     const project = validateProject(c.req.param("project"));
     const workspace = await getWorkspace(c.env.workspaces, scope, project);
     if (!workspace) return c.json({ error: "Project not found" }, 404);
@@ -213,7 +262,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   // Persisted chat history for the project — written server-side when a chat
   // turn's stream settles, restored by the client on project open.
   studio.get("/projects/:project/chat", async (c) => {
-    const scope = studioScope(c.var.apiKey);
+    const scope = requestScope(c);
     const project = validateProject(c.req.param("project"));
     // Independent reads — the chat fetch doesn't depend on the existence check.
     const [workspace, messages] = await Promise.all([
@@ -225,7 +274,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   });
 
   studio.delete("/projects/:project", async (c) => {
-    const scope = studioScope(c.var.apiKey);
+    const scope = requestScope(c);
     const project = validateProject(c.req.param("project"));
     // No lock needed: a racing versioned write cannot resurrect the project —
     // `mutateWorkspace` only ever replaces an existing row.
@@ -246,7 +295,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   };
 
   studio.put("/projects/:project/file", zValidator("json", StudioFileSchema), async (c) => {
-    const scope = studioScope(c.var.apiKey);
+    const scope = requestScope(c);
     const project = validateProject(c.req.param("project"));
     const { path, content } = c.req.valid("json");
     // Locked read-modify-write: an editor PUT racing a chat turn must not
@@ -268,7 +317,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   });
 
   studio.delete("/projects/:project/file", async (c) => {
-    const scope = studioScope(c.var.apiKey);
+    const scope = requestScope(c);
     const project = validateProject(c.req.param("project"));
     const path = c.req.query("path");
     if (!path) return c.json({ error: "Missing path query parameter" }, 400);
@@ -290,7 +339,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   });
 
   studio.post("/projects/:project/deploy", async (c) => {
-    const scope = studioScope(c.var.apiKey);
+    const scope = requestScope(c);
     const project = validateProject(c.req.param("project"));
     const result = await deploy(
       {
@@ -314,7 +363,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   // on (SSE), mirroring how voice clients connect straight to a deployed
   // agent's /websocket. Rate-limited: each call can spawn a Modal sandbox.
   studio.post("/projects/:project/session", async (c) => {
-    const scope = studioScope(c.var.apiKey);
+    const scope = requestScope(c);
     const limited = await rateLimited(scope, chatLimiter);
     if (limited) return limited;
     const project = validateProject(c.req.param("project"));
@@ -327,7 +376,9 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
       requestPublicOrigin(c),
     );
     if (!session) return c.json({ error: "Project not found" }, 404);
-    return c.json({ url: session.url });
+    // `token` is the guest chat surface's per-session bearer — the browser
+    // presents it (never a long-lived credential) on the public tunnel URL.
+    return c.json({ url: session.url, token: session.token });
   });
 
   return {
