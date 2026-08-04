@@ -92,8 +92,6 @@ export type ModalSandboxLike = {
    * uses, so the ~13 MB harness write is proven headroom for worker bundles.
    */
   filesystem: { writeText(data: string, remotePath: string): Promise<void> };
-  /** Replace the sandbox's tags (observability — see sandbox-role.ts). */
-  setTags(tags: Record<string, string>): Promise<void>;
   terminate(): Promise<unknown>;
 };
 
@@ -245,9 +243,6 @@ function warmFromModal(
     terminate: () => sb.terminate(),
     ws,
     origin,
-    // Lets the acquire layers re-tag a pooled sandbox with its real
-    // role/slug — creation-time tags say "pool" (see sandbox-role.ts).
-    setTags: (tags) => sb.setTags(tags),
   });
 }
 
@@ -341,7 +336,7 @@ export async function spawnModalWarm(
     debug("Modal sandbox spawned", {
       sandboxId: sb.sandboxId,
       role,
-      slug: opts.slug ?? "pool",
+      slug: opts.slug ?? "inspect",
       ms: Math.round(performance.now() - t0),
     });
 

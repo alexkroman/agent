@@ -9,7 +9,7 @@
  *   `/studio-assets/*`) go to the studio app, everything else (including
  *   `/health` and the WebSocket upgrades) to the agent orchestrator. Both
  *   apps share one ServiceConfig, so they also share the slot cache, warm
- *   pool, and stores — exactly the pre-split behavior.
+ *   and stores — exactly the pre-split behavior.
  * - `studio` — the standalone studio service: no voice sessions, no
  *   WebSocket upgrades; chat turns are bounded HTTP/SSE requests, so
  *   shutdown is flip-health-and-close rather than a session drain.
@@ -70,7 +70,6 @@ function studioAppOpts(base: ServiceConfig, isDraining: () => boolean): StudioAp
     ...(base.appDb && { appDb: base.appDb }),
     ...(base.slugLock && { slugLock: base.slugLock }),
     ...(rateLimiters && { studioRateLimiters: rateLimiters }),
-    ...(base.pool && { pool: base.pool }),
     isDraining,
   };
 }
@@ -99,7 +98,6 @@ async function main(): Promise<void> {
   const teardown = async (): Promise<void> => {
     await teardownSandboxes({
       slots: base.slots,
-      pool: base.pool,
       broker: { dispose: disposeStudio },
     });
     await base.events.close();

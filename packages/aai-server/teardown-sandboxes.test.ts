@@ -98,14 +98,6 @@ describe("teardownSandboxes", () => {
     expect(replica.shutdown).toHaveBeenCalledOnce();
   });
 
-  it("shuts down the warm pool", async () => {
-    const pool = { shutdown: vi.fn().mockResolvedValue(undefined) };
-
-    await teardownSandboxes({ slots: createSlotCache(), pool });
-
-    expect(pool.shutdown).toHaveBeenCalledOnce();
-  });
-
   // The studio broker's own per-project sandboxes: dispose() existed and was
   // documented for shutdown, but had no production call site, so every
   // restart orphaned one guest per active project.
@@ -123,13 +115,11 @@ describe("teardownSandboxes", () => {
     const good = fakeSandbox();
     setSlot(slots, { slug: "bad", sandbox: bad });
     setSlot(slots, { slug: "good", sandbox: good });
-    const pool = { shutdown: vi.fn().mockResolvedValue(undefined) };
     const broker = { dispose: vi.fn().mockResolvedValue(undefined) };
 
-    await expect(teardownSandboxes({ slots, pool, broker })).resolves.toBeUndefined();
+    await expect(teardownSandboxes({ slots, broker })).resolves.toBeUndefined();
 
     expect(good.shutdown).toHaveBeenCalledOnce();
-    expect(pool.shutdown).toHaveBeenCalledOnce();
     expect(broker.dispose).toHaveBeenCalledOnce();
   });
 

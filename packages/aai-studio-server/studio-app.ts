@@ -27,7 +27,6 @@ import { addHealthRoute, applyPlatformMiddleware, bindFetchEnv } from "aai-serve
 import type { ChatStore } from "aai-server/chat-store";
 import { createMemoryPlatformEvents, type PlatformEvents } from "aai-server/platform-events";
 import { createMutationLock, localSlugLock, type SlugMutationLock } from "aai-server/platform-lock";
-import type { SandboxPool } from "aai-server/sandbox-pool";
 import { createMemorySecretStore, type SecretStore } from "aai-server/secret-store";
 import type { BundleStore } from "aai-server/store-types";
 import type { StudioAuth } from "aai-server/supabase-auth";
@@ -59,8 +58,6 @@ export type StudioAppOpts = {
   /** Cross-service slug mutation lock — MUST be the shared Postgres lock in production. */
   slugLock?: SlugMutationLock;
   studioRateLimiters?: StudioRateLimiters;
-  /** Warm harness pool for test_agent / deploy config extraction. */
-  pool?: SandboxPool;
   allowedOrigins?: string[];
   isDraining?: () => boolean;
 };
@@ -84,7 +81,6 @@ export function createStudioApp(opts: StudioAppOpts): {
   app.get("/favicon.ico", handleStudioFavicon);
   app.get("/studio-assets/:path{.+}", handleStudioClientAsset);
   const studioRoutes = createStudioRoutes({
-    pool: opts.pool,
     ...(opts.studioRateLimiters && { rateLimiters: opts.studioRateLimiters }),
   });
   app.route("/studio", studioRoutes.routes);

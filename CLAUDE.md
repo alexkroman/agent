@@ -271,7 +271,6 @@ model) is the security boundary.
 - `warm-harness.ts` — backend-independent guest wiring shared by both backends:
   dial-with-retry, stdio draining, free-port allocation, `WarmHarness` exit and
   cleanup semantics
-- `sandbox-pool.ts` — pool of pre-warmed Node harnesses for fast cold starts
 - `sandbox-slots.ts` — per-slug sandbox slots + session-aware idle eviction
   (probes the guest's `status` RPC before killing)
 - `modal-sandbox.ts` — Modal Sandbox backend: creates remote sandboxes from
@@ -376,7 +375,7 @@ model) is the security boundary.
 - `packages/aai-studio-server/` — the browser studio server side, its own
   package/service (see "Browser studio"):
   `studio-routes.ts` (HTTP surface), `studio-session-broker.ts` (per-project
-  coding-agent sandboxes: boot via the shared warm-pool machinery, session
+  coding-agent sandboxes: boot via the shared `spawnWarmHarness` machinery, session
   install, guest RPC handlers, `buildWorkspace` for Publish, idle
   eviction), `studio-llm.ts` (gateway model config; the key is always the
   caller's), `studio-workspace-dir.ts` (materializes a workspace to a
@@ -429,7 +428,7 @@ voice agents without the CLI:
 - **Chat runs IN the project's sandbox, and the browser connects to it
   DIRECTLY** — mirroring the voice path. `POST /studio/projects/:project/
   session` (rate-limited; `studio-session-broker.ts`) boots or reuses a
-  guest sandbox through the same warm-pool/`spawnWarmHarness` machinery
+  guest sandbox through the same `spawnWarmHarness` machinery
   deployed agents use, installs the session over the control channel
   (`studio/session-init`: workspace files, the caller's own key, system
   prompt, model config), and returns the sandbox's public chat URL. The
@@ -622,7 +621,7 @@ voice agents without the CLI:
   host-side.
 - **The coding agent itself runs on production infra**: each project gets
   one sandbox (`studio-session-broker.ts`) through the same
-  warm-pool/`spawnWarmHarness` path deployed agents use (a remote Modal
+  `spawnWarmHarness` shape deployed agents' spawns use (a remote Modal
   Sandbox). The whole agentic loop lives in that guest — LLM calls dial
   the gateway from the guest on the caller's key, tools run on the guest
   filesystem, and `test_agent` loads the built bundle in place and can
@@ -1861,7 +1860,7 @@ coordination lives in the same Postgres over `SUPABASE_DB_URL`:
 
 What deliberately stays in-process, and why it doesn't break statelessness:
 
-- **The slot cache, sandboxes, and warm pool** — a resident sandbox is a
+- **The slot cache and sandboxes** — a resident sandbox is a
   per-replica accelerator; the agents row's change stream (below) keeps
   residents correct across replicas, and losing them costs a rebuild,
   never correctness.
@@ -1986,8 +1985,7 @@ service's control work is light — and one container served both badly.
   mutation cores' local sandbox teardowns are deliberate no-ops there,
   while the deploy's row-version bump does the real work. It shares
   everything else through Supabase and spawns its own Modal sandboxes for
-  `test_agent`/config extraction (its own warm pool via
-  `SANDBOX_POOL_SIZE`).
+  `test_agent`/config extraction.
 - **The web service autoscales** (constants block in `modal_deploy.py`),
   bounded by `MIN_CONTAINERS`/`MAX_CONTAINERS`. Voice sessions don't pass
   through the service, but that does NOT make scale-in free: a draining
@@ -2135,12 +2133,11 @@ service's control work is light — and one container served both badly.
   deliberate; the session-scaling pair (`SANDBOX_MAX_SESSIONS`/
   `SANDBOX_MAX_REPLICAS`) stays agent-only.
 - **Every sandbox is tagged with a `role`** (`sandbox-role.ts`: `agent`,
-  `preview`, `studio`, `studio-publish`, `inspect`, `pool`) plus the `slug`
+  `preview`, `studio`, `studio-publish`, `inspect`) plus the `slug`
   (studio sandboxes carry the project name), so the Modal dashboard can tell
   a production voice agent from a preview deploy, a studio coding-agent
-  session, or a warm-pool spare. Pooled sandboxes start as `pool` and are
-  **re-tagged via `setTags` on acquire** — without the retag every
-  pool-served sandbox would read "pool" forever. Observability only: nothing
+  session, or a bundle inspection. Every spawn knows its identity at
+  creation. Observability only: nothing
   may gate on these tags, and the `preview` role is inferred from the
   `-preview` slug suffix (`PREVIEW_SLUG_SUFFIX`, shared with
   `previewSlugFor` so the two can't drift).
@@ -2302,26 +2299,27 @@ pin and versioned by `GUEST_CONTRACT_VERSION` (additive changes only):
   re-brokers) and exits the moment it empties. Host-side idle eviction
   remains the primary reclaimer; self-exit is the backstop for a crashed
   host.
-- **Agents never take the warm pool**: pooled sandboxes are control-channel
-  harnesses on the CURRENT image; the agent contract is boot-time
-  provisioning on the deploy's PINNED image.
+- **Redeploys hand over BLUE-GREEN** (`handoverSlot` in
+  sandbox-resolve.ts): the agents-row change event boots the NEW deploy's
+  sandbox and waits for its readiness before detaching the old one, so a
+  redeploy never leaves an empty slot — the next caller lands warm while
+  the old sandbox drains its calls in the background. A replacement that
+  fails to boot retires the old resident anyway (an empty slot keeps the
+  failure visible on the next broker call; silently serving superseded
+  code would not).
 
-### Warm sandbox pool (studio/inspect only)
+### No warm pool — every spawn boots from the snapshot image
 
-The server can pre-spawn a pool of "warm" Node harnesses (process running,
-WebSocket dialed, no bundle loaded) so STUDIO sessions and deploy-time
-bundle inspection (`describeBundle`) skip the slow
-`Modal sandbox create → dial` path. Deployed agents never use it (above).
-
-- **Enable**: set `SANDBOX_POOL_SIZE` to a positive integer (max 16).
-  Disabled when unset or `0`. **Production keeps it at ZERO**: both Modal
-  apps pin `SANDBOX_POOL_SIZE=0` in their image env (each `modal_deploy.py`) —
-  warm harnesses are idle billed guests per replica, per service. The
-  `aai-server` Secret overrides image env, so it must NOT set
-  `SANDBOX_POOL_SIZE`; a Secret value silently re-enables the pool.
-- **Files**: `sandbox-pool.ts` (pool), `sandbox-vm.ts:spawnWarmHarness` /
-  `modal-sandbox.ts:spawnModalWarm` (spawn), `acquireWarmHarness`
-  (per-consumer finalization).
+There is NO warm sandbox pool (`sandbox-pool.ts`, `SANDBOX_POOL_SIZE`, the
+`pool` role, and the `setTags` retag plumbing were all deleted). Production
+always ran with the pool disabled, so it was pure complexity: every spawn —
+agent, studio, inspect — now boots directly from the published
+content-addressed harness snapshot image, one code path per backend, and
+every sandbox knows its identity (role/slug tags) at creation. When Modal's
+JS SDK exposes sandbox MEMORY snapshots (today it exposes only
+`snapshotFilesystem`; memory snapshots are Python-SDK experimental),
+restore-from-snapshot slots into this single spawn path — do NOT
+reintroduce a host-managed pool to approximate it.
 
 ### Horizontal sandbox scaling (aai-server/sandbox-scale.ts)
 

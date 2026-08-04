@@ -15,12 +15,7 @@ import {
   createTestConn,
   makeWarm,
 } from "./_sandbox-vm-test-utils.ts";
-import {
-  acquireWarmHarness,
-  describeBundle,
-  spawnAgentServer,
-  type WarmHarness,
-} from "./sandbox-vm.ts";
+import { describeBundle, spawnAgentServer } from "./sandbox-vm.ts";
 import type { AgentServerHandle } from "./warm-harness.ts";
 
 // ── spawnAgentServer dispatch ────────────────────────────────────────────────
@@ -55,35 +50,6 @@ describe("spawnAgentServer", () => {
       workerSha256: createHash("sha256").update(opts.workerCode, "utf-8").digest("hex"),
       agentEnv: opts.env,
     });
-  });
-});
-
-// ── Warm-harness acquisition (studio/inspect) ────────────────────────────────
-
-describe("acquireWarmHarness", () => {
-  it("acquireWarmHarness re-tags a pooled harness with the caller's role", async () => {
-    const { conn } = createTestConn();
-    const cleanup = vi.fn().mockResolvedValue(undefined);
-    const setTags = vi.fn().mockResolvedValue(undefined);
-    const warm = { ...makeWarm(conn, cleanup), setTags };
-    const pool = { acquire: vi.fn(async (): Promise<WarmHarness | null> => warm) };
-    const spawn = vi.fn(async (): Promise<WarmHarness> => {
-      throw new Error("unexpected cold spawn");
-    });
-
-    const acquired = await acquireWarmHarness(
-      { pool, harnessPath: "/tmp/harness.mjs", slug: "my-project", role: "studio" },
-      spawn,
-    );
-
-    expect(acquired).toBe(warm);
-    expect(spawn).not.toHaveBeenCalled();
-    expect(setTags).toHaveBeenCalledWith({
-      service: "aai-guest",
-      role: "studio",
-      slug: "my-project",
-    });
-    acquired.conn.dispose();
   });
 });
 

@@ -41,7 +41,6 @@ import { authMw, existingOwnerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
 import type { PlatformEvents } from "./platform-events.ts";
 import { createMutationLock, localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
-import type { SandboxPool } from "./sandbox-pool.ts";
 import type { SandboxRegistry } from "./sandbox-registry.ts";
 import { type ResolveSandboxOpts, watchAgentInvalidation } from "./sandbox-resolve.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
@@ -109,12 +108,6 @@ export type OrchestratorOpts = {
   /** Test seam for the studio proxy's outbound fetch. */
   studioProxyFetch?: typeof globalThis.fetch;
   /**
-   * Optional pre-warmed harness pool. Agents never pool (they spawn as
-   * servers on their pinned image); this only accelerates deploy-time
-   * bundle inspection (`describeBundle`).
-   */
-  pool?: SandboxPool;
-  /**
    * Extracts an agent config from an uploaded worker bundle. Defaults to
    * sandboxed `describeBundle`; injectable so tests don't need Modal.
    */
@@ -175,8 +168,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // never runs on the host.
   const inspect: BundleInspector =
     opts.inspect ??
-    ((workerCode) =>
-      describeBundle({ harnessPath: resolveHarnessPath(), workerCode, pool: opts.pool }));
+    ((workerCode) => describeBundle({ harnessPath: resolveHarnessPath(), workerCode }));
 
   // Deploys record the harness image they ran against (per-deploy image
   // pinning — see currentHarnessImageTag in sandbox-vm.ts).
@@ -217,7 +209,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     secrets,
     ...(opts.registry && { registry: opts.registry }),
     ...(opts.appDb && { appDb: opts.appDb }),
-    ...(opts.pool && { pool: opts.pool }),
   };
 
   const agents = new Hono<HonoEnv>();

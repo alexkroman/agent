@@ -13,38 +13,28 @@
  * The control-channel machinery below ({@link spawnWarmHarness},
  * {@link acquireWarmHarness}, {@link describeBundle}) remains for the
  * STUDIO side — coding-agent sessions, Publish, deploy-time bundle
- * inspection, and the warm pool — which always runs the CURRENT harness
- * image and may change atomically with the server.
+ * inspection — which always runs the CURRENT harness image and may change
+ * atomically with the server.
  */
 
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { keyedMemoAsync } from "./_memo.ts";
-import { resolveHarnessPath } from "./constants.ts";
 import { harnessImageTag, resolveToolchainSpecs } from "./modal-harness-image.ts";
 import { DEFAULT_SANDBOX_IMAGE, spawnModalAgentServer, spawnModalWarm } from "./modal-sandbox.ts";
 import type { BundleLoadResult, GuestConnection } from "./rpc-schemas.ts";
 import { resolveSandboxBackend } from "./sandbox-backend.ts";
-import type { SandboxPool } from "./sandbox-pool.ts";
-import {
-  resolveSandboxRole,
-  type SandboxRole,
-  type SpawnIdentity,
-  sandboxTags,
-} from "./sandbox-role.ts";
+import type { SpawnIdentity } from "./sandbox-role.ts";
 import { spawnSubprocessAgentServer, spawnSubprocessWarm } from "./subprocess-sandbox.ts";
 import type { AgentServerHandle } from "./warm-harness.ts";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 /**
- * A spawned harness whose guest process is running and whose RPC connection
- * is dialed, but which has NOT yet received a bundle/load. Used by the
- * sandbox pool for warm starts.
- *
- * `listen()` has not been called on the connection yet — the per-agent
- * configuration step (handler registration + bundle/load) will call it
- * after handlers are registered.
+ * A spawned control-channel harness (studio/inspect side) whose guest
+ * process is running and whose RPC connection is dialed, but which has NOT
+ * yet received its session install or bundle/load. `listen()` has not been
+ * called on the connection yet — the consumer registers its handlers first.
  */
 export type WarmHarness = {
   conn: GuestConnection;
@@ -58,14 +48,8 @@ export type WarmHarness = {
   cleanup: () => Promise<void>;
   /** True while the underlying guest process is alive. */
   alive: () => boolean;
-  /** Register a one-shot listener for guest exit (for pool reaping). */
+  /** Register a one-shot listener for guest exit. */
   onExit: (cb: () => void) => void;
-  /**
-   * Replace the backend's observability tags (Modal only — see
-   * sandbox-role.ts). Used to re-tag a pooled sandbox with its real
-   * role/slug on acquire; creation-time tags say "pool".
-   */
-  setTags?: ((tags: Record<string, string>) => Promise<void>) | undefined;
   [Symbol.asyncDispose](): Promise<void>;
 };
 
@@ -91,16 +75,14 @@ export type AgentSpawnOptions = {
  * a running guest process and a dialed RPC channel, but no listeners
  * attached and no bundle loaded.
  *
- * Single dispatch point for the backend policy, used by both the sandbox pool
- * and on-demand sandbox creation. `resolveSandboxBackend` (see
+ * Single dispatch point for the backend policy. `resolveSandboxBackend` (see
  * `sandbox-backend.ts`) picks Modal in production and the isolation-free
  * `subprocess` backend in local dev. Spawning fails loudly when the chosen
  * backend's prerequisites are absent — there is no fallback *between* backends
  * at spawn time, only at selection time, and selection can never reach
  * `subprocess` outside local dev.
  *
- * `slug`/`role` only affect the sandbox's observability tags (pool spawns
- * default to role "pool", agent slugs infer "agent"/"preview" — see
+ * `slug`/`role` only affect the sandbox's observability tags (see
  * sandbox-role.ts); under Modal the security boundary is the sandbox
  * container.
  */
@@ -122,7 +104,7 @@ const currentTagMemo = keyedMemoAsync<string | null>();
 /**
  * The content-addressed harness image tag THIS process would spawn new
  * sandboxes from — what a deploy records on the agents row
- * (`harness_image_tag`), and what the pool's sandboxes were built from.
+ * (`harness_image_tag`).
  * Null outside the Modal backend (the subprocess backend has no image and
  * pins nothing). Pure computation — base tag from env, harness code from
  * disk, toolchain specs from package.json — so it needs no Modal
@@ -134,53 +116,6 @@ export function currentHarnessImageTag(harnessPath: string): Promise<string | nu
     const code = await readFile(harnessPath, "utf-8");
     const baseTag = process.env.MODAL_SANDBOX_IMAGE ?? DEFAULT_SANDBOX_IMAGE;
     return harnessImageTag(baseTag, code, resolveToolchainSpecs());
-  });
-}
-
-/**
- * Best-effort re-tag of a POOLED sandbox with the role/slug it was acquired
- * for. Fire-and-forget: tags are observability only, and a failed retag
- * (sandbox racing its own death, transient control-plane error) must never
- * fail the session that acquired the harness.
- */
-function retagWarm(warm: WarmHarness, identity: SpawnIdentity): void {
-  void warm
-    .setTags?.(sandboxTags(resolveSandboxRole(identity), identity.slug))
-    .catch(() => undefined);
-}
-
-// ── Warm-harness acquisition ─────────────────────────────────────────────────
-
-/**
- * Get a warm harness: a pooled one when the caller holds a pool, else a cold
- * spawn. `acquire()` returns null when the pool is empty or its harnesses are
- * dead.
- *
- * Every guest consumer needs this and each used to write it out, so the
- * `harnessPath ?? resolveHarnessPath()` default was restated per site and the
- * naive form was what a new consumer got by default. Note this covers only
- * *acquisition* — the pooled-harness-died-before-first-use retry stays in
- * `createSandboxVm`, because recovering from it means redoing that caller's
- * whole configure step, which differs per consumer.
- */
-export function acquireWarmHarness(
-  opts: {
-    pool?: { acquire(): Promise<WarmHarness | null> } | undefined;
-    harnessPath?: string | undefined;
-    slug: string;
-    role?: SandboxRole | undefined;
-  },
-  spawn: typeof spawnWarmHarness = spawnWarmHarness,
-): Promise<WarmHarness> {
-  const harnessPath = opts.harnessPath ?? resolveHarnessPath();
-  return Promise.resolve(opts.pool?.acquire() ?? null).then((pooled) => {
-    if (pooled) {
-      // Pooled sandboxes were tagged "pool" at creation; stamp their real
-      // identity now so the Modal dashboard shows what they became.
-      retagWarm(pooled, opts);
-      return pooled;
-    }
-    return spawn({ harnessPath, slug: opts.slug, role: opts.role });
   });
 }
 
@@ -197,13 +132,14 @@ export function acquireWarmHarness(
  * CLI-built worker, which ships its config separately).
  */
 export async function describeBundle(
-  opts: { harnessPath: string; workerCode: string; pool?: SandboxPool | undefined },
+  opts: { harnessPath: string; workerCode: string },
   spawn: typeof spawnWarmHarness = spawnWarmHarness,
 ): Promise<unknown> {
-  await using warm = await acquireWarmHarness(
-    { pool: opts.pool, harnessPath: opts.harnessPath, slug: "studio-inspect", role: "inspect" },
-    spawn,
-  );
+  await using warm = await spawn({
+    harnessPath: opts.harnessPath,
+    slug: "studio-inspect",
+    role: "inspect",
+  });
   // No handlers registered: a bundle whose top level issues a guest→host
   // request gets the transport's -32601 error reply instead of wedging the
   // load until the RPC timeout.
@@ -232,10 +168,10 @@ type AgentSpawners = {
  * time, readiness is the guest's `/health`, and the returned handle exposes
  * only the manage surface plus terminate.
  *
- * Agents never take the warm pool: pooled sandboxes are control-channel
- * harnesses on the CURRENT image, and the agent contract is boot-time
- * provisioning on the deploy's PINNED image — there is nothing a generic
- * pre-booted harness could contribute without reintroducing bundle/load.
+ * Every spawn boots directly from the published harness snapshot image —
+ * there is no warm pool (deleted; production always ran with it disabled).
+ * When Modal's JS SDK exposes sandbox MEMORY snapshots, this single spawn
+ * path is where restore-from-snapshot slots in.
  */
 export async function spawnAgentServer(
   opts: AgentSpawnOptions,

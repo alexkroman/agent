@@ -42,7 +42,6 @@ import { errorMessage } from "@alexkroman1/aai";
 import { zValidator } from "@hono/zod-validator";
 import { authMw, invalidateUserApiKey, requireStudioUser } from "aai-server/middleware";
 import { resolvePublicOrigin } from "aai-server/public-origin";
-import type { SandboxPool } from "aai-server/sandbox-pool";
 import { generatedSlug } from "aai-server/slug-generate";
 import { cliLinkSecretName, userApiKeySecretName } from "aai-server/supabase-auth";
 import { WorkspaceConflictError } from "aai-server/workspace-store";
@@ -80,8 +79,6 @@ import {
 } from "./studio-workspace.ts";
 
 export type StudioRouteOptions = {
-  /** Warm harness pool shared with deployed-agent sandboxes. */
-  pool?: SandboxPool | undefined;
   /**
    * Rate limiters for chat and project creation. Postgres-backed in
    * production so the limits hold across replicas; defaults to per-process
@@ -157,7 +154,6 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     broker ??= (options.broker ?? createStudioSessionBroker)({
       workspaces: c.env.workspaces,
       chats: c.env.chats,
-      ...(options.pool && { pool: options.pool }),
     });
     return broker;
   };

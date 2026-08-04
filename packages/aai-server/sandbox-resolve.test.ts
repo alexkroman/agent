@@ -114,26 +114,44 @@ describe("agents-row change stream drives sandbox invalidation", () => {
     deps.unwatch();
   });
 
-  it("a deploy's change event retires the resident (drops row caches); the next broker rebuilds", async () => {
+  it("a deploy's change event hands over BLUE-GREEN: the replacement is attached before the old resident detaches", async () => {
     const deps = await seedAgent("redeployed");
     const first = await resolveSandbox("redeployed", deps);
     expect(first).not.toBeNull();
 
-    // A deploy elsewhere upserts the agents row → change event.
+    // A deploy elsewhere upserts the agents row → change event. The handler
+    // boots the NEW deploy's sandbox, waits for its readiness, and swaps —
+    // the slot is never empty, so the next caller pays no cold start.
     await deps.redeploy();
 
-    // Detached the moment the event was handled — before any re-broker.
-    expect(deps.slots.get("redeployed")?.sandbox).toBeUndefined();
-    // The rebuild must not read a pre-mutation cached row.
+    const replacement = deps.slots.get("redeployed")?.sandbox;
+    expect(replacement).toBeDefined();
+    expect(replacement).not.toBe(first);
+    // The rebuild read a fresh row, not a pre-mutation cached one.
     expect(deps.invalidate).toHaveBeenCalledWith("redeployed");
 
-    const second = await resolveSandbox("redeployed", deps);
-    expect(second).not.toBeNull();
-    expect(second).not.toBe(first);
-    // The rebuilt sandbox matches the row's version: its own deploy event
-    // (already handled) and further resolves leave it alone.
-    await expect(resolveSandbox("redeployed", deps)).resolves.toBe(second);
-    await second?.shutdown();
+    // The broker serves the ready replacement as-is — no rebuild, and its
+    // own deploy event (already handled) leaves it alone.
+    await expect(resolveSandbox("redeployed", deps)).resolves.toBe(replacement);
+    await (replacement as Sandbox).shutdown();
+    deps.unwatch();
+  });
+
+  it("a replacement that fails to boot retires the old resident — the failure stays visible", async () => {
+    const deps = await seedAgent("bad-redeploy");
+    const first = await resolveSandbox("bad-redeploy", deps);
+    expect(first).not.toBeNull();
+
+    // The NEW deploy crashes on boot. Blue-green must not cut over to a
+    // corpse, and must not keep serving superseded code silently either:
+    // the old resident retires and the slot empties, so the next broker
+    // call rebuilds and surfaces the boot failure.
+    mockSpawnAgentServer.mockReturnValueOnce(Promise.reject(new Error("boot crash")));
+    await deps.redeploy();
+
+    await vi.waitFor(() => {
+      expect(deps.slots.get("bad-redeploy")?.sandbox).toBeUndefined();
+    });
     deps.unwatch();
   });
 
@@ -192,16 +210,16 @@ describe("agents-row change stream drives sandbox invalidation", () => {
     const stale = await resolving;
     expect(stale).not.toBeNull();
 
-    // The queued handler ran after the attach: version mismatch → retired.
+    // The queued handler ran after the attach: version mismatch → blue-green
+    // handover to a replacement at the row's current version.
     await vi.waitFor(() => {
-      expect(deps.slots.get("mid-rebuild")?.sandbox).toBeUndefined();
+      const current = deps.slots.get("mid-rebuild")?.sandbox;
+      expect(current).toBeDefined();
+      expect(current).not.toBe(stale);
     });
-    // The next broker rebuilds at the row's current version and stays put.
-    const fresh = await resolveSandbox("mid-rebuild", deps);
-    expect(fresh).not.toBeNull();
-    expect(fresh).not.toBe(stale);
+    const fresh = deps.slots.get("mid-rebuild")?.sandbox;
     await expect(resolveSandbox("mid-rebuild", deps)).resolves.toBe(fresh);
-    await fresh?.shutdown();
+    await (fresh as Sandbox).shutdown();
     deps.unwatch();
   });
 
@@ -252,9 +270,11 @@ describe("agents-row change stream drives sandbox invalidation", () => {
 
       await deps.redeploy();
 
-      // Off the slot immediately — no new session can reach it — but the
-      // four calls on it are not hung up on.
-      expect(deps.slots.get("draining")?.sandbox).toBeUndefined();
+      // Handed over: the slot holds the READY replacement (no new session
+      // can reach the old sandbox), but the four calls on it are not hung
+      // up on — it drains in the background.
+      expect(deps.slots.get("draining")?.sandbox).toBeDefined();
+      expect(deps.slots.get("draining")?.sandbox).not.toBe(sandbox);
       expect(shutdown).not.toHaveBeenCalled();
 
       live = 0;

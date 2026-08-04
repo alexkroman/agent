@@ -69,7 +69,7 @@ async function main(): Promise<void> {
       });
 
       console.info("Shutting down...");
-      await teardownSandboxes({ slots: opts.slots, pool: opts.pool });
+      await teardownSandboxes({ slots: opts.slots });
       await config.events.close();
     },
   });

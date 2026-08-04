@@ -6,7 +6,6 @@
  */
 
 import { DEFAULT_SHUTDOWN_DRAIN_MS } from "./constants.ts";
-import { POOL_SIZE_MAX } from "./sandbox-pool.ts";
 
 export function requireEnv<const K extends string>(
   env: NodeJS.ProcessEnv,
@@ -21,17 +20,6 @@ export function requireEnv<const K extends string>(
 
 export function isLocalDev(env: NodeJS.ProcessEnv): boolean {
   return env.AAI_LOCAL_DEV === "1" || !env.SUPABASE_S3_ENDPOINT;
-}
-
-/**
- * Parse `SANDBOX_POOL_SIZE`: null (pool disabled) for unset, non-numeric,
- * zero, or negative values; otherwise the integer clamped to POOL_SIZE_MAX.
- */
-export function resolvePoolSize(raw: string | undefined): number | null {
-  if (!raw) return null;
-  const size = Number.parseInt(raw, 10);
-  if (!Number.isFinite(size) || size < 1) return null;
-  return Math.min(size, POOL_SIZE_MAX);
 }
 
 /**

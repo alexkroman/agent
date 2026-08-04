@@ -4,8 +4,8 @@
  * (Modal in `modal-sandbox.ts`, the local child process in
  * `subprocess-sandbox.ts`): dialing the harness WebSocket while its
  * server boots, draining guest stdio into host logs, and wrapping a running
- * guest process + dialed socket into the `WarmHarness` shape the pool and
- * slot layers consume.
+ * guest process + dialed socket into the `WarmHarness` shape the studio
+ * layers consume.
  *
  * The exit/cleanup semantics here are subtle and were previously duplicated
  * per backend candidate: exit listeners fire exactly once (and immediately
@@ -349,11 +349,6 @@ export function warmFromGuest(opts: {
   ws: RpcWebSocket;
   /** The guest's origin, e.g. `wss://host:port` — routes derive from it. */
   origin: string;
-  /**
-   * Backend hook to replace the sandbox's observability tags (Modal's
-   * `setTags`). Absent on backends with nothing to tag (subprocess).
-   */
-  setTags?: ((tags: Record<string, string>) => Promise<void>) | undefined;
 }): WarmHarness {
   const { label, proc, ws, origin } = opts;
   void drainProcStream(proc.stdout, `[${label}] stdout`);
@@ -400,14 +395,13 @@ export function warmFromGuest(opts: {
     conn,
     guestOrigin: origin,
     sessionUrl: guestWsUrl(origin, GUEST_ROUTES.session),
-    ...(opts.setTags ? { setTags: opts.setTags } : {}),
     cleanup,
     alive: () => !dead,
     onExit: (cb) => {
       // A harness can die between spawn resolution and this registration —
       // notifyExit walks the listener list exactly once, so a listener added
-      // afterwards would never fire and (for the pool) a dead harness would
-      // sit in `ready` unevicted until an acquire skipped it. Fire it now.
+      // afterwards would never fire, so its holder would never learn the
+      // harness is unusable. Fire it now.
       if (dead) {
         try {
           cb();

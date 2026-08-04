@@ -4,7 +4,7 @@
  *
  * Every guest a replica owns has to be released when the process goes down,
  * and there are three kinds: the slug slots' sandboxes (primary AND overflow
- * replicas), the warm pool's pre-spawned harnesses, and — in the studio
+ * replicas), and — in the studio
  * service — the session broker's per-project coding-agent sandboxes.
  *
  * Both entries previously inlined a partial version of this and each missed
@@ -68,8 +68,6 @@ export async function liveGuestSessions(slots: SlotCache): Promise<number> {
 export type TeardownTargets = {
   /** The replica's slug→sandbox map; primaries and replicas both go down. */
   slots: SlotCache;
-  /** Pre-warmed harness pool, when one is configured. */
-  pool?: { shutdown(): Promise<void> } | undefined;
   /**
    * The studio session broker, when this process serves the studio. Absent
    * in the agent-only service, and safe to pass when the lazily-created
@@ -80,7 +78,7 @@ export type TeardownTargets = {
 
 /** Release every guest this process owns. Never throws. */
 export async function teardownSandboxes(targets: TeardownTargets): Promise<void> {
-  const { slots, pool, broker } = targets;
+  const { slots, broker } = targets;
 
   const work: Promise<unknown>[] = [...slots.values()].map((slot) => terminateSlot(slot));
   // A fourth kind: sandboxes retired by a mutation and still draining (see
@@ -89,7 +87,6 @@ export async function teardownSandboxes(targets: TeardownTargets): Promise<void>
   // far past the container's grace period, so waiting on it would just get
   // the process SIGKILLed with the guests still up.
   work.push(...drainingSandboxes().map((sb) => sb.shutdown()));
-  if (pool) work.push(pool.shutdown());
   if (broker) work.push(broker.dispose());
 
   for (const result of await Promise.allSettled(work)) {

@@ -37,10 +37,6 @@ Required Modal Secret named ``aai-server`` with (at least):
   Realtime change streams (sandbox invalidation, studio preview push)
 - optional: ``ASSEMBLYAI_API_KEY``
 
-Do NOT set ``SANDBOX_POOL_SIZE`` in the Secret: the warm sandbox pool is
-deliberately disabled in production (``SANDBOX_POOL_SIZE=0`` in the image
-env below), and a Secret value would override the image env and re-enable
-it — two idle billed guests per replica, per service.
 """
 
 import os
@@ -182,12 +178,6 @@ image = build_image(
         "SANDBOX_CPU_LIMIT": str(SANDBOX_CPU_LIMIT),
         "SANDBOX_MEMORY_MB": str(SANDBOX_MEMORY_MB),
         "SANDBOX_MEMORY_LIMIT_MB": str(SANDBOX_MEMORY_LIMIT_MB),
-        # Warm sandbox pool: keep at ZERO. "0" disables the pool (see
-        # resolvePoolSize in _boot.ts) — pre-warmed guests are idle billed
-        # sandboxes per replica, and cold starts go through the warm-pool
-        # fallback path anyway. NOTE: the aai-server Secret overrides image
-        # env, so this only holds while the Secret does not set it.
-        "SANDBOX_POOL_SIZE": "0",
     },
 )
 

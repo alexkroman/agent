@@ -14,7 +14,8 @@ import type { StoredAgentConfig } from "./agent-store.ts";
 import { type AppDatabases, type AppDbMeta, parseAppDbMeta } from "./app-database.ts";
 import type { PlatformEvents, Unwatch } from "./platform-events.ts";
 import { createSandbox, type Sandbox } from "./sandbox.ts";
-import { REGISTRY_HEARTBEAT_MS, type SandboxRegistry } from "./sandbox-registry.ts";
+import { startRegistryHeartbeat } from "./sandbox-heartbeat.ts";
+import type { SandboxRegistry } from "./sandbox-registry.ts";
 import { defaultScaleOptions, routeSession, type ScaleOptions } from "./sandbox-scale.ts";
 import {
   type AgentSlot,
@@ -234,8 +235,11 @@ export function watchAgentInvalidation(events: PlatformEvents, opts: ResolveSand
           await terminateSlot(slot);
           deleteSlot(opts.slots, slug);
         } else if (version !== slot.version) {
-          console.info("Resident sandbox superseded (change event); retiring", { slug });
-          retireSlot(slot, "superseded");
+          console.info("Resident sandbox superseded (change event); booting replacement", {
+            slug,
+            version,
+          });
+          await handoverSlot(slug, slot, version, opts);
         }
       } catch (err) {
         // An unreadable version must never take down a healthy sandbox; the
@@ -244,6 +248,56 @@ export function watchAgentInvalidation(events: PlatformEvents, opts: ResolveSand
       }
     });
   });
+}
+
+/**
+ * BLUE-GREEN handoff on a redeploy: boot the NEW deploy's sandbox and wait
+ * for its readiness (`sessionUrl()` resolves once the guest's `/health`
+ * answered with the bundle loaded) BEFORE detaching the old one, so a
+ * redeploy never leaves the broker with an empty slot — the next caller
+ * lands on a warm replacement instead of paying the cold start. Runs under
+ * the caller's slug lock, which also parks concurrent broker rebuilds until
+ * the swap lands. Sessions already on the old sandbox keep running: it is
+ * retired (drained in the background), exactly as before.
+ *
+ * If the REPLACEMENT fails to boot (the new deploy crashes on start), the
+ * old resident is retired anyway rather than kept: keeping it would
+ * silently serve superseded code forever, while an empty slot makes the
+ * failure visible on the very next broker call (503 + the guest's boot
+ * error in the host log).
+ */
+async function handoverSlot(
+  slug: string,
+  slot: AgentSlot,
+  version: number,
+  opts: ResolveSandboxOpts,
+): Promise<void> {
+  const parts = await loadBundleParts(slug, opts);
+  if (!parts) {
+    // The row vanished between the version read and the artifact read —
+    // a delete raced the deploy event. Same handling as the deleted branch.
+    await terminateSlot(slot);
+    deleteSlot(opts.slots, slug);
+    return;
+  }
+  const replacement = buildSlotSandbox(slug, parts, opts);
+  try {
+    await replacement.sessionUrl();
+  } catch (err) {
+    console.error("Replacement sandbox failed to boot; retiring old resident", {
+      slug,
+      error: errorMessage(err),
+    });
+    await replacement.shutdown().catch(() => undefined);
+    retireSlot(slot, "superseded");
+    return;
+  }
+  // Swap: detach the old sandboxes (background drain) and attach the ready
+  // replacement in the same tick — no window with an empty slot.
+  retireSlot(slot, "superseded");
+  slot.version = version;
+  attachSandbox(opts.slots, slot, replacement);
+  startRegistryHeartbeat(slug, replacement, opts, isLive);
 }
 
 /** Build (and attach) a fresh sandbox for `slot`; null when the slug has no bundle. */
@@ -285,50 +339,12 @@ async function rebuildSlot(
 
     slot.version = record.version;
     attachSandbox(slots, slot, sandbox);
-    startRegistryHeartbeat(slug, sandbox, opts);
+    startRegistryHeartbeat(slug, sandbox, opts, isLive);
     return sandbox;
   } catch (err) {
     if (created) deleteSlot(slots, slug);
     throw err;
   }
-}
-
-/**
- * Register this replica's resident sandbox in the cross-replica registry
- * and heartbeat its lease with a sampled session count, for as long as it
- * remains the slot's live resident. Ownership is re-checked every tick, so
- * EVERY detach path — retire, terminate, idle eviction, a lost guest —
- * converges on an unregister within one heartbeat without any of those
- * paths knowing the registry exists. Best-effort throughout: the registry
- * must never affect the sandbox it describes.
- */
-function startRegistryHeartbeat(slug: string, sandbox: Sandbox, opts: ResolveSandboxOpts): void {
-  const registry = opts.registry;
-  if (!registry) return;
-  let sessionUrl: string | null = null;
-  const stop = (timer: NodeJS.Timeout): void => {
-    clearInterval(timer);
-    if (sessionUrl) {
-      void registry.unregister(slug, sessionUrl).catch(() => undefined);
-    }
-  };
-  const beat = async (): Promise<void> => {
-    if (opts.slots.get(slug)?.sandbox !== sandbox || !isLive(sandbox)) {
-      stop(timer);
-      return;
-    }
-    try {
-      // The tunnel URL settles once the guest is up; earlier ticks retry.
-      sessionUrl ??= await sandbox.sessionUrl();
-      const sessions = await sandbox.activeSessions().catch(() => 0);
-      await registry.register(slug, sessionUrl, sessions);
-    } catch {
-      // Booting guest or transient registry error — the next tick retries.
-    }
-  };
-  const timer = setInterval(() => void beat(), REGISTRY_HEARTBEAT_MS);
-  timer.unref?.();
-  void beat();
 }
 
 /**

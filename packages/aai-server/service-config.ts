@@ -10,12 +10,11 @@
 import { randomUUID } from "node:crypto";
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
 import { createStorage } from "unstorage";
-import { isLocalDev, requireEnv, resolvePoolSize } from "./_boot.ts";
+import { isLocalDev, requireEnv } from "./_boot.ts";
 import { type AgentRows, createMemoryAgentRows, createPgAgentRows } from "./agent-store.ts";
 import { type AppDatabases, type AppDbTarget, createAppDatabases } from "./app-database.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./chat-store.ts";
-import { resolveHarnessPath } from "./constants.ts";
 import { isModalConfigured, modalRequiredError, prewarmModal } from "./modal-sandbox.ts";
 import type { OrchestratorOpts } from "./orchestrator.ts";
 import { schedulePlatformSweeps } from "./pg-cron.ts";
@@ -30,14 +29,12 @@ import { createPgSlugLock, localSlugLock, type SlugMutationLock } from "./platfo
 import { createRealtimePlatformEvents, ensureRealtimeSetup } from "./realtime-events.ts";
 import { createS3Storage } from "./s3-storage.ts";
 import { describeSandboxBackend } from "./sandbox-backend.ts";
-import { createSandboxPool, type SandboxPool } from "./sandbox-pool.ts";
 import {
   createMemorySandboxRegistry,
   createPgSandboxRegistry,
   type SandboxRegistry,
 } from "./sandbox-registry.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import { spawnWarmHarness } from "./sandbox-vm.ts";
 import {
   createMemorySecretStore,
   createVaultSecretStore,
@@ -88,17 +85,6 @@ export type ServiceConfig = OrchestratorOpts & {
    */
   sql?: SqlExec;
 };
-
-export function buildPool(env: NodeJS.ProcessEnv): SandboxPool | null {
-  const size = resolvePoolSize(env.SANDBOX_POOL_SIZE);
-  if (size === null) return null;
-  const harnessPath = resolveHarnessPath(env);
-  console.info(`Sandbox pool: pre-warming ${size} guest harness(es)`, { harnessPath });
-  return createSandboxPool({
-    targetSize: size,
-    spawn: () => spawnWarmHarness({ harnessPath }),
-  });
-}
 
 export function buildStorage(env: NodeJS.ProcessEnv): ReturnType<typeof createStorage> {
   if (isLocalDev(env)) {
@@ -255,7 +241,6 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
   const { secrets, agents, workspaces, chats, events, registry, appDb, slugLock, sql } =
     buildPlatformDb(env);
   const slots = createSlotCache();
-  const pool = buildPool(env);
   // Browser-session auth: Supabase when configured, the dev-token
   // implementation in local dev (same policy as the in-memory stores —
   // production can never resolve it). Unconfigured production still serves
@@ -280,7 +265,6 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
     ...(auth && { auth }),
     slugLock,
     ...(appDb && { appDb }),
-    ...(pool && { pool }),
     ...(sql && { sql }),
   };
 }

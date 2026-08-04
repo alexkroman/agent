@@ -37,7 +37,6 @@ export async function createTestCombined(overrides: CombinedOverrides = {}) {
     ...(overrides.auth && { auth: overrides.auth }),
     ...(overrides.appDb && { appDb: overrides.appDb }),
     ...(overrides.slugLock && { slugLock: overrides.slugLock }),
-    ...(overrides.pool && { pool: overrides.pool }),
   });
   const fetch: TestFetch = async (input, init) => {
     const path = typeof input === "string" ? input : new URL(String(input)).pathname;
