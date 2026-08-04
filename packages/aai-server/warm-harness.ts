@@ -213,14 +213,29 @@ export async function pollGuestHealth(
  * The exec env selecting agent mode and naming the boot artifacts — one
  * builder so the two backends cannot drift on the key names the guest reads
  * (see aai-guest/harness-agent-mode.ts).
+ *
+ * `AAI_GUEST_IDLE_EXIT_MS` is forwarded from the SERVER's env when set. The
+ * guest documents it as the override for its idle self-exit, but the guest
+ * reads `process.env` and only the Modal backend's guests have an ambient
+ * environment (the image's) to read it from — the subprocess backend builds
+ * a minimal env on purpose, so the knob did nothing there and the one
+ * lifecycle timer an operator might want to tune was untunable exactly where
+ * it is quickest to observe. Forwarding it here is an explicit boot
+ * parameter, not env inheritance, so that rule still holds. The guest owns
+ * the parse (an unusable value falls back to its default).
  */
-export function agentBootEnv(opts: {
-  token: string;
-  port: number;
-  bundlePath: string;
-  bundleSha256: string;
-  envPath: string;
-}): Record<string, string> {
+export function agentBootEnv(
+  opts: {
+    token: string;
+    port: number;
+    bundlePath: string;
+    bundleSha256: string;
+    envPath: string;
+  },
+  /** The server's own environment; injectable for tests. */
+  serverEnv: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const idleExitMs = serverEnv.AAI_GUEST_IDLE_EXIT_MS?.trim();
   return {
     AAI_GUEST_MODE: "agent",
     AAI_GUEST_TOKEN: opts.token,
@@ -228,6 +243,7 @@ export function agentBootEnv(opts: {
     AAI_BUNDLE_PATH: opts.bundlePath,
     AAI_BUNDLE_SHA256: opts.bundleSha256,
     AAI_AGENT_ENV_PATH: opts.envPath,
+    ...(idleExitMs ? { AAI_GUEST_IDLE_EXIT_MS: idleExitMs } : {}),
   };
 }
 

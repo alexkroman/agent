@@ -428,7 +428,6 @@ export function App({ bearer, onSignOut }: AppProps) {
             onInitialPromptSent={() => setPendingPrompt(null)}
             onWorkspaceChanged={invalidateWorkspace}
             onBusyChange={setChatBusy}
-            onUnauthorized={onSignOut}
             registerNotify={registerNotify}
           />
           {tab === "preview" ? (

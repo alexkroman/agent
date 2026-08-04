@@ -115,6 +115,48 @@ describe("studio session broker", () => {
     await broker.dispose();
   });
 
+  // The guest holds exactly ONE chatToken, so a token minted per broker call
+  // invalidates the one every earlier caller is holding. Overlapping brokers
+  // are routine (a second tab, another device, a reload racing an in-flight
+  // one), and the loser's next chat turn then 401s on a surface where that
+  // token is the only credential.
+  test("hands every caller the SAME chat token while the sandbox lives", async () => {
+    const guest = fakeGuest();
+    const { broker, spawn } = await makeBroker([guest]);
+
+    const first = await broker.ensureSession(SCOPE, PROJECT, "caller-key");
+    const second = await broker.ensureSession(SCOPE, PROJECT, "caller-key");
+    const third = await broker.ensureSession(SCOPE, PROJECT, "caller-key");
+
+    expect(second?.token).toBe(first?.token);
+    expect(third?.token).toBe(first?.token);
+    // One sandbox, and every re-init installed the token it already had —
+    // so no earlier caller's token was ever revoked.
+    expect(spawn).toHaveBeenCalledTimes(1);
+    const installed = guest.requests
+      .filter((r) => r.method === "studio/session-init")
+      .map((r) => (r.params as { chatToken: string }).chatToken);
+    expect(installed).toEqual([first?.token, first?.token, first?.token]);
+    await broker.dispose();
+  });
+
+  // The token is per-SANDBOX, not forever: a replacement sandbox is a
+  // different process on a different tunnel and must not inherit a bearer
+  // that leaked from the dead one.
+  test("mints a fresh chat token when the sandbox is replaced", async () => {
+    const dead = fakeGuest();
+    const replacement = fakeGuest("wss://tunnel2.example:443");
+    const { broker } = await makeBroker([dead, replacement]);
+
+    const first = await broker.ensureSession(SCOPE, PROJECT, "caller-key");
+    dead.warm.conn.dispose();
+    const second = await broker.ensureSession(SCOPE, PROJECT, "caller-key");
+
+    expect(second?.token).not.toBe(first?.token);
+    expect(second?.url).toBe("https://tunnel2.example/studio/chat");
+    await broker.dispose();
+  });
+
   test("reuses the live sandbox and re-inits with the store's current files", async () => {
     const guest = fakeGuest();
     const { broker, workspaces, spawn } = await makeBroker([guest]);
@@ -374,5 +416,66 @@ describe("chatUrlForGuest", () => {
       "https://h.modal.host:12345/studio/chat",
     );
     expect(chatUrlForGuest("ws://127.0.0.1:8080")).toBe("http://127.0.0.1:8080/studio/chat");
+  });
+});
+
+describe("studio publish (workspace/deploy)", () => {
+  // Publish output is posted into the chat for the coding agent to read, so a
+  // sandbox that dies mid-build (an OOM at the bundler's peak is the
+  // realistic one) has to come back as deploy OUTPUT. Thrown, it reached the
+  // route as a bare 500 with nothing anyone could act on.
+  test("a sandbox that dies mid-publish returns failure output, not a throw", async () => {
+    const guest = fakeGuest();
+    // No live chat session for this project, so Publish spawns its own
+    // sandbox — the path that had no error handling at all.
+    guest.warm.conn.dispose();
+    const { broker } = await makeBroker([guest]);
+
+    const outcome = await broker.deployWorkspace(
+      SCOPE,
+      PROJECT,
+      { "agent.ts": "// v1" },
+      {
+        serverUrl: "https://platform.example",
+        apiKey: "caller-key",
+      },
+    );
+
+    expect(outcome.ok).toBe(false);
+    expect(outcome.output).toMatch(/stopped responding/i);
+    expect(outcome.output).toMatch(/out of memory/i);
+    await broker.dispose();
+  });
+
+  // The other half of the same path: killing the sandbox early enough means
+  // the SPAWN fails (the dial times out) rather than the deploy RPC. Same
+  // user-visible situation, and it took the same unhandled route to a 500.
+  test("a sandbox that never starts returns failure output, not a throw", async () => {
+    const workspaces = createMemoryWorkspaceStore();
+    const chats = createMemoryChatStore();
+    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    const broker = createStudioSessionBroker({
+      workspaces,
+      chats,
+      spawn: (async () => {
+        throw new Error("guest WebSocket not dialable after 30000ms");
+      }) as never,
+      harnessPath: "/fake/harness.mjs",
+    });
+
+    const outcome = await broker.deployWorkspace(
+      SCOPE,
+      PROJECT,
+      { "agent.ts": "// v1" },
+      {
+        serverUrl: "https://platform.example",
+        apiKey: "caller-key",
+      },
+    );
+
+    expect(outcome.ok).toBe(false);
+    expect(outcome.output).toMatch(/could not start a build sandbox/i);
+    expect(outcome.output).toMatch(/nothing was deployed/i);
+    await broker.dispose();
   });
 });

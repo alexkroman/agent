@@ -7,11 +7,12 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   DEAD_AIR_COVER_PHRASES,
   DEFAULT_DEAD_AIR_COVER_MS,
+  PIPELINE_FLUSH_TIMEOUT_MS,
   TTS_COALESCE_MAX_CHARS,
 } from "../../sdk/constants.ts";
 import { createFakeLanguageModel } from "../_pipeline-test-fakes.ts";
 import { makeLogger, silentLogger } from "../_test-utils.ts";
-import { consumeLlmStream, createTtsTextCoalescer } from "./pipeline-stream.ts";
+import { consumeLlmStream, createTtsTextCoalescer, flushTtsAndWait } from "./pipeline-stream.ts";
 import { createStreamPartHandler } from "./pipeline-stream-parts.ts";
 
 describe("createTtsTextCoalescer", () => {
@@ -376,5 +377,99 @@ describe("createStreamPartHandler dead-air cover", () => {
     toolCall("tc-1");
     vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 10);
     expect(spoken).toEqual([]);
+  });
+});
+
+describe("flushTtsAndWait", () => {
+  /** A TTS session whose `done` fires (or never fires) on demand. */
+  function fakeTts(opts: { emitDone: boolean }) {
+    const calls: string[] = [];
+    let doneFn: (() => void) | undefined;
+    const tts = {
+      sendText: () => undefined,
+      flush: () => {
+        calls.push("flush");
+        if (opts.emitDone) doneFn?.();
+      },
+      cancel: () => calls.push("cancel"),
+      on: (event: string, fn: () => void) => {
+        if (event === "done") doneFn = fn;
+        return () => undefined;
+      },
+      close: async () => undefined,
+    };
+    return { tts, calls };
+  }
+
+  test("resolves quietly when the provider acknowledges the drain", async () => {
+    const { tts, calls } = fakeTts({ emitDone: true });
+    const emitError = vi.fn();
+
+    await flushTtsAndWait({
+      tts: tts as never,
+      signal: new AbortController().signal,
+      log: silentLogger,
+      sid: "s1",
+      emitError,
+    });
+
+    expect(calls).toEqual(["flush"]);
+    expect(emitError).not.toHaveBeenCalled();
+  });
+
+  // Measured under concurrent load: the provider stops mid-utterance and the
+  // turn only ends when this timeout fires. The caller hears a clipped reply
+  // then silence, and NOTHING said so — the session went on reporting itself
+  // healthy. It also leaves the provider's turn accounting mid-turn, which
+  // `onTurnText` will not reset, so later turns inherit the desync.
+  test("reports a drain timeout to the client and resynchronizes the session", async () => {
+    vi.useFakeTimers();
+    try {
+      const { tts, calls } = fakeTts({ emitDone: false });
+      const emitError = vi.fn();
+
+      const pending = flushTtsAndWait({
+        tts: tts as never,
+        signal: new AbortController().signal,
+        log: silentLogger,
+        sid: "s1",
+        emitError,
+      });
+      await vi.advanceTimersByTimeAsync(PIPELINE_FLUSH_TIMEOUT_MS + 10);
+      await pending;
+
+      expect(emitError).toHaveBeenCalledWith("tts", expect.stringMatching(/cut short/i));
+      expect(calls).toEqual(["flush", "cancel"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Barge-in aborts the drain. That is a normal interruption, not a provider
+  // fault: reporting it would fire an error on every interrupted reply, and
+  // cancelling is already the interrupt path's own job.
+  test("stays silent when the drain is aborted by barge-in", async () => {
+    vi.useFakeTimers();
+    try {
+      const { tts, calls } = fakeTts({ emitDone: false });
+      const emitError = vi.fn();
+      const controller = new AbortController();
+
+      const pending = flushTtsAndWait({
+        tts: tts as never,
+        signal: controller.signal,
+        log: silentLogger,
+        sid: "s1",
+        emitError,
+      });
+      controller.abort();
+      await vi.advanceTimersByTimeAsync(PIPELINE_FLUSH_TIMEOUT_MS + 10);
+      await pending;
+
+      expect(emitError).not.toHaveBeenCalled();
+      expect(calls).toEqual(["flush"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

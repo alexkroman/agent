@@ -9,39 +9,35 @@ function makeFetch(impl: () => Promise<Response>) {
 
 describe("createResilientFetch", () => {
   it("passes a successful response through untouched", async () => {
-    const onUnauthorized = vi.fn();
     const onStale = vi.fn();
     const body = new Response("ok", { status: 200 });
     const f = createResilientFetch({
-      onUnauthorized,
       onStale,
       fetchImpl: makeFetch(() => Promise.resolve(body)),
     });
 
     await expect(f("http://sandbox.test/studio/chat")).resolves.toBe(body);
-    expect(onUnauthorized).not.toHaveBeenCalled();
     expect(onStale).not.toHaveBeenCalled();
   });
 
-  it("reports a rejected key on 401", async () => {
-    const onUnauthorized = vi.fn();
+  // A 401 from the GUEST is a stale session token, never a bad account: this
+  // surface only ever compares the broker-minted chatToken. Routing it to
+  // "re-authenticate" signed the user out of the studio.
+  it("re-brokers on 401 (a stale session token), rather than signing out", async () => {
     const onStale = vi.fn();
     const f = createResilientFetch({
-      onUnauthorized,
       onStale,
       fetchImpl: makeFetch(() => Promise.resolve(new Response("", { status: 401 }))),
     });
 
     await f("http://sandbox.test/studio/chat");
 
-    expect(onUnauthorized).toHaveBeenCalledOnce();
-    expect(onStale).not.toHaveBeenCalled();
+    expect(onStale).toHaveBeenCalledOnce();
   });
 
   it("re-brokers on 409 (the sandbox was replaced under us)", async () => {
     const onStale = vi.fn();
     const f = createResilientFetch({
-      onUnauthorized: vi.fn(),
       onStale,
       fetchImpl: makeFetch(() => Promise.resolve(new Response("", { status: 409 }))),
     });
@@ -58,7 +54,6 @@ describe("createResilientFetch", () => {
     const onStale = vi.fn();
     const boom = new TypeError("Failed to fetch");
     const f = createResilientFetch({
-      onUnauthorized: vi.fn(),
       onStale,
       fetchImpl: makeFetch(() => Promise.reject(boom)),
     });
@@ -71,7 +66,6 @@ describe("createResilientFetch", () => {
     const onStale = vi.fn();
     const abort = new DOMException("The operation was aborted.", "AbortError");
     const f = createResilientFetch({
-      onUnauthorized: vi.fn(),
       onStale,
       fetchImpl: makeFetch(() => Promise.reject(abort)),
     });
@@ -85,7 +79,6 @@ describe("createResilientFetch", () => {
     const controller = new AbortController();
     controller.abort();
     const f = createResilientFetch({
-      onUnauthorized: vi.fn(),
       onStale,
       fetchImpl: makeFetch(() => Promise.reject(new TypeError("Failed to fetch"))),
     });

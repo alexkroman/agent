@@ -181,6 +181,20 @@ type SessionEntry = {
   url: string;
   lastUsed: number;
   /**
+   * The chat-surface bearer, minted ONCE for this sandbox and handed to every
+   * caller that brokers this project.
+   *
+   * It must not rotate per broker call. The guest holds exactly one token
+   * (`session.chatToken`), so re-minting on a re-init invalidates the token
+   * every earlier caller is still holding — and overlapping brokers for one
+   * project are routine (a second tab, another device, a reload racing an
+   * in-flight one; the same set `sessionLock` exists for). The loser's next
+   * chat turn then 401s on a surface where the only credential IS this token.
+   * Rotating bought nothing for that: the token is already random, scoped to
+   * one sandbox, and dies with it.
+   */
+  chatToken: string;
+  /**
    * Where this session's auto preview deploys go — the public origin and
    * caller key captured at broker time. Absent when the session was brokered
    * without a `serverUrl` (tests, programmatic callers): then agent edits
@@ -293,8 +307,12 @@ export function createStudioSessionBroker(
    * presents on the guest's public chat surface: browser sessions
    * authenticate to the platform with a Supabase session and never hold the
    * key, and a random per-session token on the public tunnel URL beats a
-   * long-lived credential there anyway. Re-minted on every (re-)init; the
-   * broker response carries it to the client.
+   * long-lived credential there anyway. The broker response carries it to
+   * the client.
+   *
+   * Minted once per SANDBOX: a re-init passes the sandbox's existing token
+   * back, so refreshing the workspace never invalidates a token another tab
+   * is holding (see {@link SessionEntry.chatToken}).
    */
   async function initSession(
     warm: WarmHarness,
@@ -303,10 +321,12 @@ export function createStudioSessionBroker(
     apiKey: string,
     /** Pre-read workspace; the cold path reads it BEFORE spawning a sandbox. */
     known?: Awaited<ReturnType<typeof getWorkspace>>,
+    /** This sandbox's existing token; absent on a cold spawn. */
+    existingToken?: string,
   ): Promise<string | null> {
     const workspace = known ?? (await getWorkspace(options.workspaces, scope, project));
     if (!workspace) return null;
-    const chatToken = randomBytes(32).toString("base64url");
+    const chatToken = existingToken ?? randomBytes(32).toString("base64url");
     await warm.conn.sendRequest(
       "studio/session-init",
       {
@@ -366,7 +386,14 @@ export function createStudioSessionBroker(
     const existing = sessions.get(key);
     if (!existing) return null;
     try {
-      const token = await initSession(existing.warm, scope, project, apiKey);
+      const token = await initSession(
+        existing.warm,
+        scope,
+        project,
+        apiKey,
+        undefined,
+        existing.chatToken,
+      );
       if (token === null) return null;
       existing.lastUsed = Date.now();
       if (serverUrl) existing.previewTarget = { serverUrl, apiKey };
@@ -424,6 +451,7 @@ export function createStudioSessionBroker(
       warm,
       url,
       lastUsed: Date.now(),
+      chatToken: token,
       ...(serverUrl ? { previewTarget: { serverUrl, apiKey } } : {}),
       release: () => false,
     };
@@ -458,14 +486,51 @@ export function createStudioSessionBroker(
     // No (live) session sandbox — spawn one for the publish and tear it
     // down after; Publish from the editor shouldn't leave a sandbox
     // running that no chat session owns.
-    const warm = await spawn({
-      harnessPath: options.harnessPath ?? resolveHarnessPath(),
-      slug: project,
-      role: "studio-publish",
-    });
+    //
+    // Both halves below report a failed sandbox as a deploy OUTCOME rather
+    // than throwing. Publish output is posted into the chat for the coding
+    // agent to act on, so an unhandled throw arrives there as a bare 500
+    // with nothing actionable in it — while the `console.warn` keeps the
+    // real diagnosis in the server log where monitoring can see it.
+    // Deliberately not retried: a build that kills its sandbox usually kills
+    // the next one too, and a silent second attempt only doubles the wait
+    // before the user learns that.
+    let warm: WarmHarness;
+    try {
+      warm = await spawn({
+        harnessPath: options.harnessPath ?? resolveHarnessPath(),
+        slug: project,
+        role: "studio-publish",
+      });
+    } catch (err) {
+      console.warn("Studio publish: could not start a sandbox", {
+        project,
+        error: errorMessage(err),
+      });
+      return {
+        ok: false,
+        output:
+          `Could not start a build sandbox for Publish (${errorMessage(err)}). ` +
+          "Nothing was deployed. Try Publish again in a moment.",
+      };
+    }
     try {
       warm.conn.listen();
       return await requestDeploy(warm, files, target);
+    } catch (err) {
+      // Died mid-publish — an OOM at the bundler's memory peak is the
+      // realistic one (see the burst-range notes in aai-server).
+      console.warn("Studio publish: sandbox failed during deploy", {
+        project,
+        error: errorMessage(err),
+      });
+      return {
+        ok: false,
+        output:
+          `The build sandbox stopped responding during Publish (${errorMessage(err)}). ` +
+          "This usually means the build ran out of memory. Try Publish again; if it " +
+          "keeps failing, reduce what the build has to bundle.",
+      };
     } finally {
       await warm[Symbol.asyncDispose]().catch(() => undefined);
     }

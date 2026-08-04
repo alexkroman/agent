@@ -45,8 +45,6 @@ type ChatPanelProps = {
    * deploys the same workspace, so it must wait for the same event.
    */
   onBusyChange?: ((busy: boolean) => void) | undefined;
-  /** The key was rejected — same global handling as the REST queries. */
-  onUnauthorized: () => void;
   /**
    * Hands the app a function that posts a message into the conversation —
    * how publish output and secret changes reach the coding agent. See
@@ -201,7 +199,6 @@ function ProjectChat({
   onInitialPromptSent,
   onWorkspaceChanged,
   onBusyChange,
-  onUnauthorized,
   onSessionStale,
   registerNotify,
 }: Omit<ChatPanelProps, "chatHistory" | "chatSession" | "sessionError"> & {
@@ -209,8 +206,6 @@ function ProjectChat({
   initialMessages: UIMessage[];
 }) {
   // Keep the latest callbacks out of the transport, which is created once.
-  const unauthorizedRef = useRef(onUnauthorized);
-  unauthorizedRef.current = onUnauthorized;
   const staleRef = useRef(onSessionStale);
   staleRef.current = onSessionStale;
 
@@ -223,14 +218,10 @@ function ProjectChat({
         // The broker-minted per-session token — the browser never holds a
         // long-lived credential for the sandbox's public surface.
         headers: { Authorization: `Bearer ${session.token}` },
-        // A rejected key gets the same global handling as the REST queries
-        // (app.tsx) — useChat only surfaces a generic Error otherwise. A 409
-        // (replaced) or an unreachable sandbox (killed/evicted) both mean
-        // re-broker; see resilient-fetch.ts for why the second needs saying.
-        fetch: createResilientFetch({
-          onUnauthorized: () => unauthorizedRef.current(),
-          onStale: () => staleRef.current(),
-        }),
+        // Every way this surface can reject us — 401 (stale token), 409
+        // (no session), or an unreachable sandbox — means the same thing:
+        // re-broker. See resilient-fetch.ts for why each needs saying.
+        fetch: createResilientFetch({ onStale: () => staleRef.current() }),
       }),
   );
 
@@ -368,7 +359,6 @@ export function ChatPanel(props: ChatPanelProps) {
           onInitialPromptSent={props.onInitialPromptSent}
           onWorkspaceChanged={props.onWorkspaceChanged}
           onBusyChange={props.onBusyChange}
-          onUnauthorized={props.onUnauthorized}
           onSessionStale={props.onSessionStale}
           registerNotify={props.registerNotify}
         />

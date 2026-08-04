@@ -480,7 +480,17 @@ voice agents without the CLI:
   literal CLI via the host→guest `workspace/deploy` RPC. Sandboxes are per
   (scope, project) with a 5-min idle eviction (matching the agent guest's
   own idle self-exit); a dead one heals on the next
-  broker call, and the client re-brokers on a 409 from the chat surface.
+  broker call, and the client re-brokers on ANY rejection from the chat
+  surface — a rejected fetch, a 409, or a **401**. That last one matters
+  because the guest's chat surface authenticates ONLY the `chatToken`; it
+  never sees an account credential, so a 401 there means "stale session",
+  not "bad user". Routing it to the app's re-authenticate path signed the
+  user out of the studio outright. **The `chatToken` is minted once per
+  SANDBOX**, not per broker call, for the same reason: the guest holds
+  exactly one, so re-minting on a re-init revoked the token every earlier
+  caller still held — and overlapping brokers (a second tab, another
+  device, a reload racing an in-flight one) are exactly what the session
+  lock below exists for. A replacement sandbox does mint a fresh one.
   **`ensureSession` is serialized per (scope, project), and entries are
   disposed by identity, not by key.** Overlapping brokers for one project are
   routine (a double-click, a StrictMode double effect, a refresh landing on
@@ -2309,7 +2319,11 @@ pin and versioned by `GUEST_CONTRACT_VERSION` (additive changes only):
   connection. The guest's public `/client-config` doubles as the broker's
   name/greeting source (proxied — see "Pre-connection client config").
 - **Lifecycle is guest-owned — the host runs NO idle machinery**: the agent
-  guest self-exits after `AGENT_IDLE_EXIT_MS` (5 min) with zero sessions —
+  guest self-exits after `AGENT_IDLE_EXIT_MS` (5 min; override by setting
+  `AAI_GUEST_IDLE_EXIT_MS` on the SERVER, which `agentBootEnv` forwards into
+  the guest's exec env — a guest reads only what it is handed at exec, so
+  setting it on the platform process is what reaches BOTH backends) with
+  zero sessions —
   this IS idle reclamation, not a backstop (the host's per-slot idle timers
   were deleted); the exit surfaces host-side as `onSandboxLost`, which
   detaches the slot, and the next broker call rebuilds it. A drained guest
