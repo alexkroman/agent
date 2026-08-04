@@ -662,6 +662,23 @@ voice agents without the CLI:
   regenerates the preview — the stamp says "current" and would otherwise
   never redeploy. Only 404 triggers this; a 503 is a sandbox mid-boot and
   stays retry-only.
+
+  **The pane probes before it frames** (`useAgentPageReady` in
+  `preview.tsx`): a stamped `previewSlug` is not proof the platform serves
+  `/:slug/`. The stamp outlives the deploy behind it (the swept-agent case
+  above, which the wake path regenerates) and a first or repeat deploy takes
+  seconds to land, and `GET /:slug/` answers a slug with no agents row with
+  a bare `{"error":"HTML not found"}` — which rendered as the ENTIRE pane,
+  reading as a broken studio rather than a preview on its way. So the pane
+  asks the unauthenticated agent health route (existence only — a booting
+  sandbox is the framed page's own business, its client re-brokers) and
+  keeps its own "Starting your preview" screen up until the page is really
+  there, re-probing every few seconds. Readiness is LATCHED per slug:
+  nothing re-probes a page that answered once, because dropping back to the
+  placeholder would unmount the iframe and kill any voice session inside it
+  — a new deploy still reaches the frame through the `previewVersion` key.
+  The first probe renders as an empty pane rather than the screen, so an
+  already-deployed preview doesn't flash "starting" on every open.
 - **The coding agent cannot publish.** There is deliberately no deploy
   tool: going to production is the user's call, made with the Publish
   button (`POST /studio/projects/:project/deploy`) — the only path that
