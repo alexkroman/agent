@@ -42,6 +42,11 @@ import { studioLlmModelId } from "./studio-llm.ts";
 import { createPreviewDeployer, type PreviewTarget } from "./studio-preview.ts";
 import { studioSystemPrompt } from "./studio-prompt.ts";
 import { MAX_STUDIO_CHAT_MESSAGES, UiMessageSchema } from "./studio-schemas.ts";
+import {
+  createWorkspacePublisher,
+  type WorkspaceDeployOutcome,
+  type WorkspaceDeployTarget,
+} from "./studio-session-publish.ts";
 import { getWorkspace, mutateWorkspace, projectKey } from "./studio-workspace.ts";
 
 /**
@@ -76,8 +81,6 @@ const MAX_CHAT_STEPS = 80;
 const STUDIO_SESSION_IDLE_MS = 5 * 60_000;
 /** Deadline for installing a session in the guest (workspace transfer). */
 const SESSION_INIT_TIMEOUT_MS = 60_000;
-/** Deadline for one in-guest Publish (`aai deploy`: cold build + upload). */
-const WORKSPACE_DEPLOY_TIMEOUT_MS = 330_000;
 
 /**
  * Guest-supplied workspace files. Wire-shape check only (record of safe
@@ -104,26 +107,9 @@ const GuestChatSchema = z.object({
   messages: z.array(UiMessageSchema).max(MAX_STUDIO_CHAT_MESSAGES),
 });
 
-/**
- * Response of the guest's `workspace/deploy` (guest-asserted wire data):
- * the guest ran the literal `aai deploy` CLI, and `output` is what the
- * chat shows — a success summary or the CLI's failure diagnostics.
- */
-const WorkspaceDeployResponseSchema = z.object({
-  ok: z.boolean(),
-  slug: z.string().optional(),
-  url: z.string().optional(),
-  output: z.string().max(64_000),
-});
-
-export type WorkspaceDeployOutcome = z.infer<typeof WorkspaceDeployResponseSchema>;
-
-/** What Publish hands the guest's CLI: the platform origin + caller key. */
-export type WorkspaceDeployTarget = {
-  serverUrl: string;
-  apiKey: string;
-  slug?: string | undefined;
-};
+// Deploy shapes live with the deploy path (studio-session-publish.ts) and
+// are re-exported here because this module is the broker's public face.
+export type { WorkspaceDeployOutcome, WorkspaceDeployTarget } from "./studio-session-publish.ts";
 
 type BrokerStores = {
   workspaces: import("aai-server/workspace-store").WorkspaceStore;
@@ -344,32 +330,6 @@ export function createStudioSessionBroker(
     return chatToken;
   }
 
-  /** Send one `workspace/deploy` and validate the guest's response. */
-  async function requestDeploy(
-    warm: WarmHarness,
-    files: Record<string, string>,
-    target: WorkspaceDeployTarget,
-  ): Promise<WorkspaceDeployOutcome> {
-    const raw = await warm.conn.sendRequest(
-      "workspace/deploy",
-      {
-        files,
-        serverUrl: target.serverUrl,
-        apiKey: target.apiKey,
-        ...(target.slug ? { slug: target.slug } : {}),
-      },
-      WORKSPACE_DEPLOY_TIMEOUT_MS,
-    );
-    const parsed = WorkspaceDeployResponseSchema.safeParse(raw);
-    if (!parsed.success) {
-      return {
-        ok: false,
-        output: `Malformed deploy response from sandbox: ${parsed.error.message}`,
-      };
-    }
-    return parsed.data;
-  }
-
   /**
    * Reuse the project's live sandbox, re-installing the session so a fresh
    * page never sees a stale tree. Resolves `null` when there is no live
@@ -459,82 +419,21 @@ export function createStudioSessionBroker(
     return { url, token };
   }
 
-  /** One deploy (publish or preview): live sandbox first, else ephemeral. */
-  async function deployWorkspaceImpl(
-    scope: string,
-    project: string,
-    files: Record<string, string>,
-    target: WorkspaceDeployTarget,
-  ): Promise<WorkspaceDeployOutcome> {
-    const key = projectKey(scope, project);
-    const existing = sessions.get(key);
-    if (existing) {
-      try {
-        const outcome = await requestDeploy(existing.warm, files, target);
-        existing.lastUsed = Date.now();
-        return outcome;
-      } catch (err) {
-        // Dead sandbox — replace it with a fresh one for this publish;
-        // the next chat broker call heals the session itself.
-        console.warn("Studio publish: live sandbox failed; using a fresh one", {
-          project,
-          error: errorMessage(err),
-        });
-        await disposeEntry(existing);
-      }
-    }
-    // No (live) session sandbox — spawn one for the publish and tear it
-    // down after; Publish from the editor shouldn't leave a sandbox
-    // running that no chat session owns.
-    //
-    // Both halves below report a failed sandbox as a deploy OUTCOME rather
-    // than throwing. Publish output is posted into the chat for the coding
-    // agent to act on, so an unhandled throw arrives there as a bare 500
-    // with nothing actionable in it — while the `console.warn` keeps the
-    // real diagnosis in the server log where monitoring can see it.
-    // Deliberately not retried: a build that kills its sandbox usually kills
-    // the next one too, and a silent second attempt only doubles the wait
-    // before the user learns that.
-    let warm: WarmHarness;
-    try {
-      warm = await spawn({
-        harnessPath: options.harnessPath ?? resolveHarnessPath(),
-        slug: project,
-        role: "studio-publish",
-      });
-    } catch (err) {
-      console.warn("Studio publish: could not start a sandbox", {
-        project,
-        error: errorMessage(err),
-      });
+  const deployWorkspaceImpl = createWorkspacePublisher({
+    spawn,
+    harnessPath: options.harnessPath,
+    liveSession: (scope, project) => {
+      const entry = sessions.get(projectKey(scope, project));
+      if (!entry) return null;
       return {
-        ok: false,
-        output:
-          `Could not start a build sandbox for Publish (${errorMessage(err)}). ` +
-          "Nothing was deployed. Try Publish again in a moment.",
+        warm: entry.warm,
+        touch: () => {
+          entry.lastUsed = Date.now();
+        },
+        dispose: () => disposeEntry(entry),
       };
-    }
-    try {
-      warm.conn.listen();
-      return await requestDeploy(warm, files, target);
-    } catch (err) {
-      // Died mid-publish — an OOM at the bundler's memory peak is the
-      // realistic one (see the burst-range notes in aai-server).
-      console.warn("Studio publish: sandbox failed during deploy", {
-        project,
-        error: errorMessage(err),
-      });
-      return {
-        ok: false,
-        output:
-          `The build sandbox stopped responding during Publish (${errorMessage(err)}). ` +
-          "This usually means the build ran out of memory. Try Publish again; if it " +
-          "keeps failing, reduce what the build has to bundle.",
-      };
-    } finally {
-      await warm[Symbol.asyncDispose]().catch(() => undefined);
-    }
-  }
+    },
+  });
 
   // Auto preview deploys ride the same deploy path Publish uses — a live
   // session sandbox when one exists (the common case: the agent's own
