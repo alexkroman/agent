@@ -147,8 +147,27 @@ function dispatchReplyDone(
   ctx.log.info("S2S << reply.done", { ...sidFields(ctx), status, ...audit });
   const anomaly = replyAnomaly(state.reply, status);
   if (anomaly !== undefined) ctx.log.warn(anomaly, { ...sidFields(ctx), ...audit });
-  if (status === "interrupted") callbacks.onCancelled();
-  else callbacks.onReplyDone();
+  if (status === "interrupted") {
+    callbacks.onCancelled();
+    return;
+  }
+  // The live service can finish a reply without ever sending the final
+  // `transcript.agent` (observed on tool-call follow-up replies, contrary to
+  // the documented sequence). The accumulated deltas already rendered in the
+  // client, but only onAgentTranscript pushes the assistant turn into
+  // history — so commit them as the reply's final text. sawFinal latches so
+  // a duplicate reply.done cannot commit the same reply twice. Interrupted
+  // replies are excluded above: the client flushed that reply on barge-in,
+  // and a post-cancel commit would re-render text the user just cut off.
+  if (!state.reply.sawFinal && state.agentDelta !== "") {
+    state.reply.sawFinal = true;
+    ctx.log.info("S2S committing delta transcript as final", {
+      ...sidFields(ctx),
+      chars: state.agentDelta.length,
+    });
+    callbacks.onAgentTranscript(state.agentDelta, false);
+  }
+  callbacks.onReplyDone();
 }
 
 function dispatchS2sMessage(
