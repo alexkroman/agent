@@ -3,17 +3,8 @@
 /** @jsxImportSource react */
 
 import clsx from "clsx";
-import {
-  type CSSProperties,
-  memo,
-  type ReactNode,
-  type RefObject,
-  type UIEvent,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-} from "react";
+import { type CSSProperties, memo, type ReactNode, useMemo } from "react";
+import { StickToBottom } from "use-stick-to-bottom";
 import { useSessionSelector, useTheme } from "../context.ts";
 import type { ChatMessage, ToolCallInfo } from "../types.ts";
 import { primaryTint, TEXT_FAINT, TEXT_MUTED } from "./_colors.ts";
@@ -118,58 +109,6 @@ const MessageBubble = memo(function MessageBubble({
 });
 
 /**
- * How close to the bottom (px) the container must be for auto-scroll to stay
- * engaged. Generous enough that an in-flight smooth scroll doesn't unpin.
- */
-const NEAR_BOTTOM_PX = 96;
-
-/**
- * Smooth-scroll to the anchor whenever the content version advances — but
- * only while the container is pinned near the bottom. A user who scrolled up
- * to read history isn't yanked back down by streaming updates; scrolling back
- * to the bottom re-engages the auto-scroll.
- *
- * The scroll runs inside `requestAnimationFrame` and is deduped per frame:
- * several snapshot updates in one frame (transcript + message + tool call)
- * trigger a single scroll after layout instead of one forced layout each.
- *
- * While a partial transcript is streaming, updates arrive faster than a
- * smooth scroll finishes — each restart leaves the animation perpetually
- * mid-flight — so `streaming` switches to an instant jump; committed-content
- * updates keep the smooth animation.
- */
-function useAutoScroll(
-  contentVersion: number,
-  streaming: boolean,
-): {
-  anchorRef: RefObject<HTMLDivElement | null>;
-  onScroll: (event: UIEvent<HTMLDivElement>) => void;
-} {
-  const anchorRef = useRef<HTMLDivElement>(null);
-  const pinnedRef = useRef(true);
-  const scheduledRef = useRef(false);
-  const streamingRef = useRef(streaming);
-  streamingRef.current = streaming;
-  const onScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
-    const el = event.currentTarget;
-    pinnedRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - NEAR_BOTTOM_PX;
-  }, []);
-  useEffect(() => {
-    if (contentVersion === 0 || scheduledRef.current || !pinnedRef.current) return;
-    scheduledRef.current = true;
-    requestAnimationFrame(() => {
-      scheduledRef.current = false;
-      if (!pinnedRef.current) return;
-      anchorRef.current?.scrollIntoView({
-        behavior: streamingRef.current ? "instant" : "smooth",
-        block: "end",
-      });
-    });
-  }, [contentVersion]);
-  return { anchorRef, onScroll };
-}
-
-/**
  * Interleave messages and tool calls into render items, ordered by insertion
  * time. Each tool call renders immediately after its anchor message
  * (`afterMessageId`); tool calls whose anchor slid out of the retained window
@@ -219,7 +158,7 @@ function interleave(
  * }
  * ```
  *
- * @param className - Additional CSS class names applied to the scroll container.
+ * @param className - Additional CSS class names applied to the outer list container.
  *
  * @public
  */
@@ -233,7 +172,6 @@ export const MessageList = memo(function MessageList({ className }: { className?
   const toolCalls = useSessionSelector((s) => s.toolCalls);
   const userTranscript = useSessionSelector((s) => s.userTranscript);
   const agentTranscript = useSessionSelector((s) => s.agentTranscript);
-  const contentVersion = useSessionSelector((s) => s.contentVersion);
   const theme = useTheme();
 
   const showThinking = useMemo(() => {
@@ -243,8 +181,6 @@ export const MessageList = memo(function MessageList({ className }: { className?
     const lastMsg = messages.at(-1);
     return !lastMsg || lastMsg.role === "user" || Boolean(last);
   }, [state, toolCalls, messages]);
-
-  const { anchorRef, onScroll } = useAutoScroll(contentVersion, userTranscript !== null);
 
   // Stable object for the streaming bubble: an inline literal would defeat
   // MessageBubble's memo, re-rendering the streaming row on every unrelated
@@ -268,14 +204,23 @@ export const MessageList = memo(function MessageList({ className }: { className?
     [messages, toolCalls, theme],
   );
 
+  // StickToBottom follows streamed output (its ResizeObserver tracks content
+  // height, so a ToolCallBlock expanding or markdown reflowing keeps the pin)
+  // but releases when the user scrolls up to read, re-engaging once they
+  // return to the bottom. `initial="instant"` jumps to the latest content on
+  // mount; `resize="smooth"` animates growth while pinned.
   return (
-    <div
+    <StickToBottom
       role="log"
-      className={clsx("flex-1 overflow-y-auto [scrollbar-width:none]", className)}
+      className={clsx("flex-1 min-h-0", className)}
       style={{ background: theme.surface }}
-      onScroll={onScroll}
+      initial="instant"
+      resize="smooth"
     >
-      <div className="flex flex-col gap-4 p-7">
+      <StickToBottom.Content
+        scrollClassName="overflow-y-auto [scrollbar-width:none]"
+        className="flex flex-col gap-4 p-7"
+      >
         {items}
         {streamingMessage && <MessageBubble message={streamingMessage} theme={theme} />}
         {userTranscript !== null && (
@@ -284,8 +229,7 @@ export const MessageList = memo(function MessageList({ className }: { className?
           </UserBubble>
         )}
         {showThinking && <ThinkingDots />}
-        <div ref={anchorRef} />
-      </div>
-    </div>
+      </StickToBottom.Content>
+    </StickToBottom>
   );
 });

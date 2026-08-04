@@ -17,6 +17,7 @@
  * that rejection degrades to a per-stylesheet error, never a thrown turn.
  */
 
+import { Parser } from "htmlparser2";
 import { z } from "zod";
 import {
   FETCH_TIMEOUT_MS,
@@ -33,43 +34,38 @@ import { errorMessage } from "../sdk/utils.ts";
 const SCRIPT_RE = /<script\b[^>]*>[\s\S]*?<\/script>/gi;
 const STYLE_RE = /<style\b[^>]*>([\s\S]*?)<\/style>/gi;
 const COMMENT_RE = /<!--[\s\S]*?-->/g;
-const LINK_TAG_RE = /<link\b[^>]*>/gi;
-
-/** Match one attribute in a raw tag string (quoted or bare value). */
-function attrRegExp(name: string): RegExp {
-  return new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i");
-}
-
-const REL_ATTR_RE = attrRegExp("rel");
-const HREF_ATTR_RE = attrRegExp("href");
-
-/** Read one attribute out of a raw tag string. */
-function attr(tag: string, re: RegExp): string | undefined {
-  const match = tag.match(re);
-  return match?.[1] ?? match?.[2] ?? match?.[3];
-}
-
 /**
  * Stylesheet URLs from `<link rel="stylesheet" href>` tags, resolved against
  * the page URL, http(s)-only, deduped, in document order.
+ *
+ * Extraction is a real streaming HTML parse (htmlparser2), not a tag regex:
+ * the parser hands over attribute values entity-decoded (`&amp;` in an href
+ * arrives as `&`), copes with `>` inside quoted attribute values, and skips
+ * `<link>` text sitting inside `<script>` rawtext. This is the ONLY parsed
+ * read of the page — the returned markup stays the raw fetched bytes (see
+ * `execute`), never a parse/serialize round-trip.
  */
 export function extractStylesheetUrls(html: string, baseUrl: string): string[] {
   const urls: string[] = [];
-  for (const match of html.matchAll(LINK_TAG_RE)) {
-    const tag = match[0];
-    const rel = attr(tag, REL_ATTR_RE);
-    if (!(rel && /(?:^|\s)stylesheet(?:\s|$)/i.test(rel))) continue;
-    const href = attr(tag, HREF_ATTR_RE);
-    if (!href) continue;
-    let resolved: URL;
-    try {
-      resolved = new URL(href, baseUrl);
-    } catch {
-      continue;
-    }
-    if (resolved.protocol !== "http:" && resolved.protocol !== "https:") continue;
-    if (!urls.includes(resolved.href)) urls.push(resolved.href);
-  }
+  const parser = new Parser({
+    onopentag(tagName, attribs) {
+      if (tagName !== "link") return;
+      const rel = attribs.rel;
+      if (!(rel && /(?:^|\s)stylesheet(?:\s|$)/i.test(rel))) return;
+      const href = attribs.href;
+      if (!href) return;
+      let resolved: URL;
+      try {
+        resolved = new URL(href, baseUrl);
+      } catch {
+        return;
+      }
+      if (resolved.protocol !== "http:" && resolved.protocol !== "https:") return;
+      if (!urls.includes(resolved.href)) urls.push(resolved.href);
+    },
+  });
+  parser.write(html);
+  parser.end();
   return urls;
 }
 

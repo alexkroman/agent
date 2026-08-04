@@ -139,7 +139,19 @@ async function serveStatic(
   logger: Logger,
 ): Promise<boolean> {
   const url = req.url?.split("?")[0] ?? "/";
-  const filePath = path.join(dir, url === "/" ? "index.html" : url);
+  // Percent-decode so assets with spaces or non-ASCII names resolve (browsers
+  // request them encoded). A malformed escape throws URIError — treat it as
+  // not-found rather than crashing the request. Decoding happens BEFORE the
+  // join + containment check below, so an encoded traversal (`%2e%2e%2f`)
+  // decodes to `..`, collapses in `path.join`, and is caught by
+  // `isPathInside` like a literal one.
+  let pathname: string;
+  try {
+    pathname = decodeURIComponent(url);
+  } catch {
+    return false;
+  }
+  const filePath = path.join(dir, pathname === "/" ? "index.html" : pathname);
 
   // Resolve before the containment check to avoid prefix collisions
   // (e.g. dir="/app/static" matching "/app/static-secrets/…").

@@ -106,6 +106,26 @@ describe("web_search fallback", () => {
     expect(result).toEqual({ error: "Search request failed: 500 Internal Server Error" });
   });
 
+  test("decodes named entities beyond the old hand-rolled table", async () => {
+    // &rsquo;, &eacute;, and &copy; were never in the deleted DDG_NAMED_ENTITIES
+    // table — they only decode because the `entities` package knows all of HTML.
+    const page = `
+      <div class="result">
+        <a class="result__a" href="https://example.com/e">Caf&eacute; guide</a>
+        <a class="result__snippet" href="#">It&rsquo;s &copy; 2026 &mdash; really</a>
+      </div>`;
+    const mockFetch = fetchByHost(new Response(page), new Response(liteResults));
+    const tool = createWebSearch(mockFetch as typeof globalThis.fetch);
+    const result = await tool.execute({ query: "q" }, {} as never);
+    expect(result).toEqual([
+      {
+        title: "Café guide",
+        url: "https://example.com/e",
+        description: "It’s © 2026 — really",
+      },
+    ]);
+  });
+
   test("requests carry browser-like headers", async () => {
     const mockFetch = fetchByHost(new Response(htmlResults), new Response(liteResults));
     const tool = createWebSearch(mockFetch as typeof globalThis.fetch);

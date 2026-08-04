@@ -65,6 +65,20 @@ describe("extractStylesheetUrls", () => {
       "https://example.com/bare.css",
     ]);
   });
+
+  test("entity-decodes hrefs and survives '>' inside attribute values", () => {
+    // Both broke the old tag-regex extraction: an entity-encoded query
+    // separator stayed literal (`&amp;` in the fetched URL), and a `>` in a
+    // quoted attribute value ended the "tag" early, losing the href.
+    const html = `
+      <link rel="stylesheet" href="/main.css?family=Inter&amp;display=swap">
+      <link title="a > b" rel="stylesheet" href="/after-gt.css">
+      <script>var s = '<link rel="stylesheet" href="/not-real.css">';</script>`;
+    expect(extractStylesheetUrls(html, PAGE_URL)).toEqual([
+      "https://example.com/main.css?family=Inter&display=swap",
+      "https://example.com/after-gt.css",
+    ]);
+  });
 });
 
 describe("get_page_design", () => {
