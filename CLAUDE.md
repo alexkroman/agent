@@ -724,6 +724,20 @@ voice agents without the CLI:
   it at `/` with hashed assets under `/studio-assets/`. When it hasn't
   been built, `GET /` serves a fallback page with build instructions
   (unit tests don't require it).
+- **Every cross-origin the studio page dials must be in its `connect-src`**
+  (`studioCsp` in `studio-static.ts`). There are exactly two, and both were
+  omitted at some point with the SAME symptom: the browser refuses the
+  request before sending it, so the client shows a bare **"Failed to
+  fetch"** and the server logs NOTHING, because no request was ever made.
+  (1) the project's guest sandbox — chat + tool labels, keyed by sandbox
+  backend so a production policy never trusts loopback; (2) the Supabase
+  project, which supabase-js dials for magic-link sign-in. Both are derived
+  from what the server really hands the client (`chatUrlForGuest`'s shape,
+  the auth binding's own `clientConfig`) rather than hand-copied literals,
+  and both are exact — `https://*.supabase.co` would trust every Supabase
+  project on the internet. The sign-in case is the one that hides best:
+  the page loads and `GET /studio/auth` succeeds (both `'self'`), so
+  everything looks healthy until the button is clicked.
 - **Reserved slugs** (`RESERVED_SLUGS` in `schemas.ts`): `studio` and
   `studio-assets` can never be claimed as agent slugs — they would shadow
   the studio routes. Enforced in `validateSlug`, `DeployBodySchema`, and
