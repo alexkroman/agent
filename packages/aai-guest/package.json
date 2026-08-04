@@ -22,6 +22,7 @@
     "@vitejs/plugin-react": "^6.0.4",
     "ai": "^7.0.41",
     "diff": "^9.0.0",
+    "p-timeout": "^7.0.1",
     "picomatch": "^4.0.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
