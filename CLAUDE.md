@@ -2314,7 +2314,22 @@ pin and versioned by `GUEST_CONTRACT_VERSION` (additive changes only):
   a silently different agent), loads it BEFORE listening, and scrubs the
   env file. Readiness is the guest's public `/health` answering 200 —
   polled by the host, raced against guest-process exit so a boot crash
-  fails the spawn immediately with the guest's stderr in the host log.
+  fails the spawn immediately with the guest's stderr in the host log
+  (relayed from the moment the process exists — see `startGuestLogging`;
+  draining only once the guest was READY discarded exactly the output that
+  explains a boot failure).
+
+  **How long a guest may take to boot and how long a CLIENT waits for it are
+  separate budgets.** They were one number, so an agent whose top-level code
+  blocks — never ready — hung every broker call for the full
+  `AGENT_HEALTH_TIMEOUT_MS` (120s) before its 503, permanently. The broker
+  caps its own wait at `BROKER_READY_TIMEOUT_MS` (20s, env overridable; 0
+  waits for the whole boot budget) and answers 503 while the boot CONTINUES:
+  the sandbox is already attached to its slot and reports `alive()` while
+  pending, so the next call joins the SAME readiness promise instead of
+  spawning a second sandbox. Tripping it on a healthy-but-slow boot costs one
+  client reconnect, not a failure — `session-core.ts` re-brokers per attempt
+  and only an ANSWERED lookup latches anything.
 - **Ongoing surface**: `GET /manage/status` (live session count +
   draining + contractVersion — an operator/debugging probe; nothing
   host-side gates on it anymore) and
