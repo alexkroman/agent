@@ -48,7 +48,17 @@ export type StudioAuthState =
        */
       signIn: (email?: string) => Promise<void>;
     }
-  | { phase: "signedIn"; token: string; signOut: () => void };
+  | {
+      phase: "signedIn";
+      token: string;
+      signOut: () => void;
+      /**
+       * Force a token refresh after the server rejected this bearer. See
+       * {@link useStudioAuth} — `onAuthStateChange` alone cannot cover this,
+       * because it never fires for a token that expired while unattended.
+       */
+      refresh: () => Promise<void>;
+    };
 
 // Storage access throws in some contexts (Safari private mode, storage
 // blocked by policy) — degrade to in-memory state instead of crashing.
@@ -81,6 +91,9 @@ export function useStudioAuth(): StudioAuthState {
   const [configError, setConfigError] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const supabaseRef = useRef<SupabaseClient | null>(null);
+  // One shared refresh for concurrent callers — every open event stream can
+  // report the same dead token within the same tick.
+  const refreshing = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -147,6 +160,52 @@ export function useStudioAuth(): StudioAuthState {
     [mode],
   );
 
+  /**
+   * Mint a fresh access token, called when the server rejects the current one.
+   *
+   * This exists because `onAuthStateChange` cannot cover the case: supabase-js
+   * runs its refresh ticker ONLY on focused tabs ("the refresh token ticker
+   * runs only on focused tabs which prevents race conditions" —
+   * `GoTrueClient._onVisibilityChanged`), so a studio tab left in the
+   * background for an hour holds an expired token, emits no auth event, and
+   * has no way back on its own. `refreshSession` works regardless of
+   * visibility, since the refresh token outlives the access token.
+   *
+   * A refresh that fails is a real sign-out, not something to retry: the
+   * stored session is dropped LOCALLY (no network round trip on a dead
+   * session) so a reload cannot restore the same expired token and resume
+   * the loop, and the app falls back to the sign-in gate. So the contract is
+   * "the server rejected this bearer — recover it or sign out", which is why
+   * dev mode (whose tokens carry no expiry, so a rejection means the token is
+   * malformed and unrecoverable) discards its token rather than no-opping:
+   * a caller left holding a bearer nobody will accept has no way forward.
+   */
+  const refresh = useCallback(async (): Promise<void> => {
+    if (mode === "dev") {
+      writeDevToken(null);
+      setToken(null);
+      return;
+    }
+    const client = supabaseRef.current;
+    if (mode !== "supabase" || !client) return;
+    refreshing.current ??= (async () => {
+      try {
+        const { data, error } = await client.auth.refreshSession();
+        if (!error && data.session) {
+          setToken(data.session.access_token);
+          return;
+        }
+        await client.auth.signOut({ scope: "local" });
+        setToken(null);
+      } catch {
+        setToken(null);
+      } finally {
+        refreshing.current = null;
+      }
+    })();
+    return refreshing.current;
+  }, [mode]);
+
   const signOut = useCallback(() => {
     if (mode === "supabase") void supabaseRef.current?.auth.signOut();
     if (mode === "dev") writeDevToken(null);
@@ -162,6 +221,6 @@ export function useStudioAuth(): StudioAuthState {
         "Sign-in is not configured on this server (SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY are unset).",
     };
   }
-  if (token) return { phase: "signedIn", token, signOut };
+  if (token) return { phase: "signedIn", token, signOut, refresh };
   return { phase: "signedOut", mode: config.mode, signIn };
 }

@@ -23,12 +23,22 @@ import { PreviewPane } from "./preview.tsx";
 import { queryKeys } from "./query-keys.ts";
 import { SecretsPanel } from "./secrets.tsx";
 import { PublishMenu, TopBar } from "./top-bar.tsx";
+import { type StreamHandlers, useEventStream } from "./use-event-stream.ts";
 
 // CodeMirror is the bulk of the bundle and only the Code tab needs it — the
 // default (Preview) path shouldn't pay for it.
 const CodeView = lazy(() => import("./code-view.tsx").then((m) => ({ default: m.CodeView })));
 
-type AppProps = { bearer: string; onSignOut: () => void };
+type AppProps = {
+  bearer: string;
+  onSignOut: () => void;
+  /**
+   * Mint a fresh `bearer` after the server rejected the current one — see
+   * `useStudioAuth().refresh`. Required rather than optional: an event stream
+   * with no way to recover its token retries a dead one forever.
+   */
+  refreshAuth: () => Promise<void>;
+};
 
 // v0-style project URLs: each project lives at /studio/chat/<name>, so a
 // build is linkable/bookmarkable. The server serves the same shell for the
@@ -43,34 +53,6 @@ function projectPath(name: string | null): string {
   return name ? `/studio/chat/${encodeURIComponent(name)}` : "/";
 }
 
-/** Backoff before resubscribing a dropped event stream. */
-const EVENTS_RETRY_MS = 3000;
-
-/**
- * Hold one server event-stream subscription while mounted, resubscribing
- * with a fixed backoff whenever it drops. `subscribe` must be referentially
- * stable (useCallback) — it opens the stream and gets the retry trigger as
- * its `onDown`; subscribing can be skipped by returning a no-op unsubscribe.
- */
-function useEventStream(subscribe: (onDown: () => void) => () => void) {
-  useEffect(() => {
-    let stopped = false;
-    let unsubscribe: (() => void) | undefined;
-    let retry: ReturnType<typeof setTimeout> | undefined;
-    const start = () => {
-      unsubscribe = subscribe(() => {
-        if (!stopped) retry = setTimeout(start, EVENTS_RETRY_MS);
-      });
-    };
-    start();
-    return () => {
-      stopped = true;
-      if (retry !== undefined) clearTimeout(retry);
-      unsubscribe?.();
-    };
-  }, [subscribe]);
-}
-
 /** Stable identity while the workspace loads, so effects keyed on it don't churn. */
 const EMPTY_FILES: Record<string, string> = {};
 
@@ -83,7 +65,7 @@ const EMPTY_FILES: Record<string, string> = {};
  */
 const CHAT_SESSION_MAX_RETRIES = 10;
 
-export function App({ bearer, onSignOut }: AppProps) {
+export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
   const queryClient = useQueryClient();
   // The URL seeds the initial selection (a shared /studio/chat/<name> link
   // opens that project); after that, selection drives the URL.
@@ -127,29 +109,31 @@ export function App({ bearer, onSignOut }: AppProps) {
   // so this is what keeps a second tab's next open current.
   useEventStream(
     useCallback(
-      (onDown: () => void) =>
+      (handlers: StreamHandlers) =>
         project == null
           ? () => undefined
           : api.watchProject(bearer, project, {
               onData: (data) => queryClient.setQueryData(queryKeys.project(project), data),
               onChat: (messages) => queryClient.setQueryData(queryKeys.chat(project), messages),
-              onDown,
+              ...handlers,
             }),
       [bearer, project, queryClient],
     ),
+    refreshAuth,
   );
 
   // Live project LIST for the home sidebar — a project created or deleted
   // on another device shows up without a refresh.
   useEventStream(
     useCallback(
-      (onDown: () => void) =>
+      (handlers: StreamHandlers) =>
         api.watchProjects(bearer, {
           onData: (names) => queryClient.setQueryData(queryKeys.projects, names),
-          onDown,
+          ...handlers,
         }),
       [bearer, queryClient],
     ),
+    refreshAuth,
   );
 
   // Persisted chat history, re-fetched on every project open. `useChat`

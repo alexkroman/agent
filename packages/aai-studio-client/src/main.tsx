@@ -293,11 +293,13 @@ function AccountGate({
   cliLinkCode,
   onCliLinkDone,
   onSignOut,
+  refreshAuth,
 }: {
   bearer: string;
   cliLinkCode: string | null;
   onCliLinkDone: () => void;
   onSignOut: () => void;
+  refreshAuth: () => Promise<void>;
 }) {
   const client = useQueryClient();
   const account = useQuery({
@@ -307,8 +309,13 @@ function AccountGate({
   });
 
   if (account.error instanceof ApiError && account.error.status === 401) {
-    // Expired/revoked session — back to sign-in.
-    onSignOut();
+    // The server rejected this bearer. Refresh rather than sign out: this
+    // query refetches on window focus, and an access token that expired while
+    // the tab sat in the background is REFRESHABLE — signing out here raced
+    // supabase-js's own focus refresh and dropped the user out of a session
+    // that was still good. `refreshAuth` signs out on its own if the refresh
+    // token is dead too, so the sign-in gate is still the end state.
+    void refreshAuth();
     return null;
   }
   if (account.isError) {
@@ -350,6 +357,7 @@ function AccountGate({
   return (
     <App
       bearer={bearer}
+      refreshAuth={refreshAuth}
       onSignOut={() => {
         onSignOut();
         // Query keys don't carry the bearer, so cached projects/files from
@@ -383,6 +391,7 @@ function Root() {
         setCliLinkCode(null);
       }}
       onSignOut={auth.signOut}
+      refreshAuth={auth.refresh}
     />
   );
 }

@@ -138,30 +138,51 @@ async function drainEventStream(
 }
 
 /**
+ * Why an event stream went down. The distinction is load-bearing: a
+ * `transport` failure (server restart, preempted container, flaky network)
+ * is fixed by reconnecting, while `auth` means THIS bearer is dead and
+ * reconnecting with it can only loop. Retrying an expired session token
+ * every few seconds is exactly how one backgrounded tab produced 4,300
+ * `401`s in three hours, each one re-verified against Supabase.
+ */
+export type StreamDownReason = "auth" | "transport";
+
+/**
  * Fetch-streamed SSE subscription against a studio events route — a reader
  * rather than EventSource because the studio authenticates with a bearer
- * header, which EventSource cannot send. Returns an abort function; `onDown`
- * fires when the stream ends or fails (server restart, network) so the
- * caller can resubscribe with backoff — but never on the caller's own abort.
+ * header, which EventSource cannot send. Returns an abort function.
+ * `onOpen` fires once the server accepted the stream (the caller's signal to
+ * reset its backoff); `onDown` fires when the stream ends or fails, with the
+ * reason — but never on the caller's own abort.
  */
 function watchEventStream(
   key: string,
   path: string,
-  handlers: { onFrame: (frame: SseFrame) => void; onDown: () => void },
+  handlers: {
+    onFrame: (frame: SseFrame) => void;
+    onOpen?: () => void;
+    onDown: (reason: StreamDownReason) => void;
+  },
 ): () => void {
   const controller = new AbortController();
   void (async () => {
+    let reason: StreamDownReason = "transport";
     try {
       const res = await fetch(path, {
         headers: { Authorization: `Bearer ${key}`, Accept: "text/event-stream" },
         signal: controller.signal,
       });
+      // A session token expires after ~1h and supabase-js pauses its refresh
+      // ticker on hidden tabs, so a long-open studio tab reconnects with a
+      // token the server rejects. That needs a new token, not another try.
+      if (res.status === 401 || res.status === 403) reason = "auth";
       if (!(res.ok && res.body)) throw new ApiError(res.status, "Event stream unavailable");
+      handlers.onOpen?.();
       await drainEventStream(res.body, handlers.onFrame);
     } catch {
       // Aborted (caller unsubscribed) or failed — the finally decides.
     } finally {
-      if (!controller.signal.aborted) handlers.onDown();
+      if (!controller.signal.aborted) handlers.onDown(reason);
     }
   })();
   return () => controller.abort();
@@ -247,7 +268,8 @@ export const api = {
    * deploy reaches the Preview pane (this replaced the polling loop), and
    * the settled conversation whenever a chat turn persists, so other tabs
    * stay warm. Returns an abort function; `onDown` fires when the stream
-   * ends or fails so the caller can resubscribe with backoff.
+   * ends or fails, carrying the {@link StreamDownReason} so the caller can
+   * resubscribe with backoff — or refresh its bearer first.
    */
   watchProject: (
     key: string,
@@ -255,7 +277,8 @@ export const api = {
     handlers: {
       onData: (data: ProjectData) => void;
       onChat?: (messages: UIMessage[]) => void;
-      onDown: () => void;
+      onOpen?: () => void;
+      onDown: (reason: StreamDownReason) => void;
     },
   ): (() => void) =>
     watchEventStream(key, `/studio/projects/${encodeURIComponent(project)}/events`, {
@@ -263,6 +286,7 @@ export const api = {
         if (frame.event === "project") handlers.onData(JSON.parse(frame.data) as ProjectData);
         if (frame.event === "chat") handlers.onChat?.(JSON.parse(frame.data) as UIMessage[]);
       },
+      ...(handlers.onOpen && { onOpen: handlers.onOpen }),
       onDown: handlers.onDown,
     }),
 
@@ -273,12 +297,17 @@ export const api = {
    */
   watchProjects: (
     key: string,
-    handlers: { onData: (projects: string[]) => void; onDown: () => void },
+    handlers: {
+      onData: (projects: string[]) => void;
+      onOpen?: () => void;
+      onDown: (reason: StreamDownReason) => void;
+    },
   ): (() => void) =>
     watchEventStream(key, "/studio/events", {
       onFrame: (frame) => {
         if (frame.event === "projects") handlers.onData(JSON.parse(frame.data) as string[]);
       },
+      ...(handlers.onOpen && { onOpen: handlers.onOpen }),
       onDown: handlers.onDown,
     }),
 

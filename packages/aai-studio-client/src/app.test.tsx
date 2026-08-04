@@ -23,11 +23,14 @@ class ResizeObserverStub {
   }
 }
 
-function renderApp(onSignOut: () => void) {
+function renderApp(
+  onSignOut: () => void,
+  refreshAuth: () => Promise<void> = () => Promise.resolve(),
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <App bearer="sk-test" onSignOut={onSignOut} />
+      <App bearer="sk-test" onSignOut={onSignOut} refreshAuth={refreshAuth} />
     </QueryClientProvider>,
   );
 }
@@ -62,6 +65,21 @@ describe("App auth handling", () => {
     const onSignOut = vi.fn();
     renderApp(onSignOut);
     await waitFor(() => expect(onSignOut).toHaveBeenCalled());
+  });
+
+  test("a 401 from an event stream refreshes the session rather than retrying the dead token", async () => {
+    // The regression: an access token that expired while the tab sat in the
+    // background is rejected on every resubscribe, and supabase-js does not
+    // refresh a hidden tab — so without this the stream polls a token nobody
+    // will accept, forever, at the floor backoff.
+    stubFetch({
+      "/studio/status": () => jsonResponse({ llm: true }),
+      "/studio/events": () => jsonResponse({ error: "unauthorized" }, 401),
+      "/studio/projects": () => jsonResponse({ projects: [] }),
+    });
+    const refreshAuth = vi.fn(() => Promise.resolve());
+    renderApp(vi.fn(), refreshAuth);
+    await waitFor(() => expect(refreshAuth).toHaveBeenCalled());
   });
 
   test("an authorized empty project list renders the hero prompt box, no sign-out", async () => {
