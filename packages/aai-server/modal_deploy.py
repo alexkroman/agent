@@ -100,7 +100,7 @@ REGION = "us-east-2"
 # - MAX_INPUTS caps what one container absorbs while scale-up is in flight.
 MIN_CONTAINERS = 1  # always-warm floor: session brokering is latency-sensitive
 MAX_CONTAINERS = 10  # cost guard; raise deliberately, not by incident
-BUFFER_CONTAINERS = 1  # one pre-warmed spare while active, so bursts land warm
+BUFFER_CONTAINERS = 0  # no pre-warmed spare; bursts wait on container cold start
 TARGET_INPUTS = 75  # scale-out set point
 MAX_INPUTS = 150  # concurrent-request cap per container
 
