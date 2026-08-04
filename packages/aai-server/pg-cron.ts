@@ -66,35 +66,60 @@ const SWEEP_RATE_LIMITS = guarded(
  * reaper). Matched by the workspace rows' `previewSlug` back-reference, with
  * an age floor so a preview whose workspace stamp hasn't landed yet (the
  * deploy returns before `previewSlug` is written) is never reaped mid-birth.
- * The CTE also removes the slug's Vault secrets (`agent-env:`/`app-db:`);
- * content-addressed blobs are accepted orphans, as everywhere else.
+ *
+ * Each reaped slug is cleaned up the way the delete route would: its app
+ * database is deprovisioned FIRST (schema + role, named by the `role` in the
+ * stored `app-db:` meta — dropping the secret before the schema would strand
+ * an unreachable schema whose credentials are gone), then its Vault secrets
+ * (`agent-env:`/`app-db:`) go. Deprovisioning is best-effort per slug and
+ * primary-cluster only — pg_cron runs here, and an app sharded to an extra
+ * APP_DB_URLS cluster has no local schema/role, so the drops no-op there.
+ * Content-addressed blobs are accepted orphans, as everywhere else.
  *
  * The `-preview` suffix is therefore studio-owned: a CLI deploy that claims
  * a `*-preview` slug with no workspace referencing it will be swept.
  */
 const SWEEP_ORPHAN_PREVIEWS = `do $$
+declare
+  target record;
+  app_id text;
 begin
   if to_regclass('aai_platform.agents') is null
     or to_regclass('aai_platform.studio_workspaces') is null
     or to_regclass('vault.secrets') is null then
     return;
   end if;
-  with deleted as (
-    delete from aai_platform.agents a
-    where a.slug like '%-preview'
-      and a.updated_at < now() - interval '1 hour'
-      and not exists (
-        select 1 from aai_platform.studio_workspaces w
-        where w.doc->>'previewSlug' = a.slug
-      )
-    returning slug
-  )
-  delete from vault.secrets s
-  where s.name in (
-    select 'agent-env:' || slug from deleted
-    union all
-    select 'app-db:' || slug from deleted
-  );
+  for target in
+    with deleted as (
+      delete from aai_platform.agents a
+      where a.slug like '%-preview'
+        and a.updated_at < now() - interval '1 hour'
+        and not exists (
+          select 1 from aai_platform.studio_workspaces w
+          where w.doc->>'previewSlug' = a.slug
+        )
+      returning slug
+    )
+    select d.slug,
+      (select s.decrypted_secret from vault.decrypted_secrets s
+       where s.name = 'app-db:' || d.slug) as app_db_meta
+    from deleted d
+  loop
+    begin
+      app_id := (target.app_db_meta::jsonb)->>'role';
+      -- Same identifier shape assertion as app-database.ts, so a corrupt
+      -- meta can never steer the drops at an arbitrary schema/role.
+      if app_id ~ '^app_[a-f0-9]{16}$' then
+        execute format('drop schema if exists %I cascade', app_id);
+        execute format('drop role if exists %I', app_id);
+      end if;
+    exception when others then
+      raise warning 'orphan-preview sweep: deprovision failed for %: %',
+        target.slug, sqlerrm;
+    end;
+    delete from vault.secrets s
+    where s.name in ('agent-env:' || target.slug, 'app-db:' || target.slug);
+  end loop;
 end $$`;
 
 /**
