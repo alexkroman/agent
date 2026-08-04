@@ -1,5 +1,11 @@
 # @alexkroman1/aai-server
 
+## 3.4.1
+
+### Patch Changes
+
+- fb288d2: Grant service_role SELECT on the Realtime-watched aai_platform tables so filtered postgres_changes subscriptions stop failing with 'invalid column for filter'
+
 ## 3.4.0
 
 ### Minor Changes

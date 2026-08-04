@@ -1,5 +1,15 @@
 # aai-studio-server
 
+## 0.5.1
+
+### Patch Changes
+
+- d0475b5: Regenerate a project's preview when opening it finds the preview agent gone: the wake-up's sandbox warm-up now doubles as an existence check, and a 404 from the client-config broker clears the stale previewHash stamp and schedules a redeploy instead of leaving the pane pointing at a deleted agent forever.
+- Updated dependencies [fb288d2]
+- Updated dependencies [9da9f65]
+  - aai-server@3.4.1
+  - aai-studio-client@0.4.1
+
 ## 0.5.0
 
 ### Minor Changes
