@@ -143,13 +143,9 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
       onUserTranscript: opts.callbacks.onUserTranscript,
       onUserTranscriptPartial: (text) => opts.callbacks.onUserTranscriptPartial?.(text),
       onAgentTranscript: opts.callbacks.onAgentTranscript,
-      onAgentTranscriptPartial: (text) => {
-        // Gated on the same flag as audio, for the same reason: after a
-        // barge-in the client has flushed the cancelled reply, so a late
-        // partial for it would re-render text the user just interrupted.
-        if (suppressAudioUntilReply) return;
-        opts.callbacks.onAgentTranscriptPartial?.(text);
-      },
+      // No agent-partial forwarding: S2S emits no incremental agent transcript
+      // (`transcript.agent.delta` is unimplemented — see `_s2s-reply.ts`), so
+      // `onAgentTranscriptPartial` has a pipeline-mode producer only.
       onToolCall: opts.callbacks.onToolCall,
       onSpeechStarted: opts.callbacks.onSpeechStarted,
       onSpeechStopped: opts.callbacks.onSpeechStopped,

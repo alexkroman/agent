@@ -10,7 +10,6 @@ import { errorMessage, safeJsonParse } from "../sdk/utils.ts";
 import { createAudioSendGate } from "./_audio-gate.ts";
 import { base64ToUint8, uint8ToBase64 } from "./_base64.ts";
 import {
-  appendAgentDelta,
   countReplyAudio,
   createReplyAudit,
   type ReplyAudit,
@@ -63,18 +62,8 @@ const S2sMessageSchema = z.discriminatedUnion("type", [
     })
     .transform((m) => ({ type: m.type, text: m.text ?? m.delta ?? "" })),
   z.object({ type: z.literal("reply.started"), reply_id: z.string() }),
-  // Word-level streaming of the agent's reply, aligned to the audio as it
-  // plays. Unlike the user stream this IS incremental, so dispatch accumulates
-  // it per reply. `start_ms`/`end_ms` are documented but unused here.
-  z
-    .object({
-      type: z.literal("transcript.agent.delta"),
-      reply_id: z.string().optional(),
-      item_id: z.string().optional(),
-      delta: z.string().optional(),
-      text: z.string().optional(),
-    })
-    .transform((m) => ({ type: m.type, delta: m.delta ?? m.text ?? "" })),
+  // `transcript.agent.delta` is deliberately absent: the events reference
+  // documents it, but the live service sends none — see `_s2s-reply.ts`.
   z.object({
     type: z.literal("transcript.agent"),
     text: z.string(),
@@ -114,10 +103,9 @@ function parseS2sMessage(obj: Record<string, unknown>): S2sServerMessage | undef
 /**
  * Per-connection dispatch state. Used to dedup events that the upstream S2S
  * service may emit more than once for a single logical turn (e.g. repeated
- * `input.speech.stopped` after the VAD flips), and to accumulate the
- * word-at-a-time agent transcript stream across one reply.
+ * `input.speech.stopped` after the VAD flips).
  */
-type DispatchState = { speechActive: boolean; agentDelta: string; reply: ReplyAudit };
+type DispatchState = { speechActive: boolean; reply: ReplyAudit };
 
 type DispatchContext = {
   log: Logger;
@@ -147,27 +135,12 @@ function dispatchReplyDone(
   ctx.log.info("S2S << reply.done", { ...sidFields(ctx), status, ...audit });
   const anomaly = replyAnomaly(state.reply, status);
   if (anomaly !== undefined) ctx.log.warn(anomaly, { ...sidFields(ctx), ...audit });
-  if (status === "interrupted") {
-    callbacks.onCancelled();
-    return;
-  }
-  // The live service can finish a reply without ever sending the final
-  // `transcript.agent` (observed on tool-call follow-up replies, contrary to
-  // the documented sequence). The accumulated deltas already rendered in the
-  // client, but only onAgentTranscript pushes the assistant turn into
-  // history — so commit them as the reply's final text. sawFinal latches so
-  // a duplicate reply.done cannot commit the same reply twice. Interrupted
-  // replies are excluded above: the client flushed that reply on barge-in,
-  // and a post-cancel commit would re-render text the user just cut off.
-  if (!state.reply.sawFinal && state.agentDelta !== "") {
-    state.reply.sawFinal = true;
-    ctx.log.info("S2S committing delta transcript as final", {
-      ...sidFields(ctx),
-      chars: state.agentDelta.length,
-    });
-    callbacks.onAgentTranscript(state.agentDelta, false);
-  }
-  callbacks.onReplyDone();
+  // A reply that sent no `transcript.agent` commits nothing to history: there
+  // is no salvage path. Reconstructing the text from `transcript.agent.delta`
+  // was tried and removed — the service sends no deltas either, so the
+  // accumulator was always empty (see `_s2s-reply.ts`).
+  if (status === "interrupted") callbacks.onCancelled();
+  else callbacks.onReplyDone();
 }
 
 function dispatchS2sMessage(
@@ -205,15 +178,9 @@ function dispatchS2sMessage(
       callbacks.onUserTranscriptPartial(msg.text);
       break;
     case "reply.started":
-      // A new reply supersedes the last one's word stream and its tally.
-      state.agentDelta = "";
+      // A new reply supersedes the last one's tally.
       resetReplyAudit(state.reply);
       callbacks.onReplyStarted(msg.reply_id);
-      break;
-    case "transcript.agent.delta":
-      state.reply.sawDelta = true;
-      state.agentDelta = appendAgentDelta(state.agentDelta, msg.delta);
-      callbacks.onAgentTranscriptPartial(state.agentDelta);
       break;
     case "transcript.agent":
       state.reply.sawFinal = true;
@@ -263,11 +230,6 @@ export type S2sCallbacks = {
   /** Live partial of the user's current utterance; replaces, never appends. */
   onUserTranscriptPartial(text: string): void;
   onAgentTranscript(text: string, interrupted: boolean): void;
-  /**
-   * The reply's text so far, accumulated from `transcript.agent.delta`. Fires
-   * during playback, ahead of the final {@link S2sCallbacks.onAgentTranscript}.
-   */
-  onAgentTranscriptPartial(text: string): void;
   onToolCall(callId: string, name: string, args: Record<string, unknown>): void;
   onSpeechStarted(): void;
   onSpeechStopped(): void;
@@ -324,7 +286,6 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
 
   const dispatchState: DispatchState = {
     speechActive: false,
-    agentDelta: "",
     reply: createReplyAudit(),
   };
   const dispatchCtx: DispatchContext = sid !== undefined ? { log, sid } : { log };
