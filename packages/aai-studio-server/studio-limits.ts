@@ -10,11 +10,11 @@
  */
 
 /** Max files per studio project workspace. */
-export const MAX_STUDIO_FILES = 30;
+export const MAX_STUDIO_FILES = 100;
 /** Max bytes for a single workspace file. */
 export const MAX_STUDIO_FILE_BYTES = 256_000;
 /** Max total bytes across a workspace (guards the single-doc storage model). */
-export const MAX_STUDIO_WORKSPACE_BYTES = 1_000_000;
+export const MAX_STUDIO_WORKSPACE_BYTES = 50_000_000;
 /** Max messages accepted per chat turn (client resends full history). */
 export const MAX_STUDIO_CHAT_MESSAGES = 80;
 /**

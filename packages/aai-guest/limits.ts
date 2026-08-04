@@ -48,6 +48,6 @@ export const STORAGE_DISABLED_MESSAGE =
  * guest materializes and syncs workspaces and must enforce the same shape
  * the host store accepts, without importing server code.
  */
-export const MAX_STUDIO_FILES = 30;
+export const MAX_STUDIO_FILES = 100;
 /** Max bytes for a single workspace file. */
 export const MAX_STUDIO_FILE_BYTES = 256_000;

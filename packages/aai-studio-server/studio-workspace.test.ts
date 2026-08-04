@@ -2,7 +2,11 @@
 
 import { createMemoryWorkspaceStore, WorkspaceConflictError } from "aai-server/workspace-store";
 import { describe, expect, test } from "vitest";
-import { MAX_STUDIO_FILES } from "./studio-schemas.ts";
+import {
+  MAX_STUDIO_FILE_BYTES,
+  MAX_STUDIO_FILES,
+  MAX_STUDIO_WORKSPACE_BYTES,
+} from "./studio-schemas.ts";
 import {
   assertWorkspaceLimits,
   createWorkspace,
@@ -197,11 +201,13 @@ describe("assertWorkspaceLimits", () => {
     );
   });
 
-  test("rejects an oversized workspace total", () => {
-    const files = Object.fromEntries(
-      Array.from({ length: 5 }, (_, i) => [`f${i}.ts`, "x".repeat(250_000)]),
+  test("total-size cap is a backstop the file-count and per-file caps already imply", () => {
+    // Every workspace that passes the count and per-file checks fits under the
+    // total cap, so the total-size throw is unreachable today — it only bites
+    // if one of the other caps is raised without revisiting this one.
+    expect(MAX_STUDIO_FILES * MAX_STUDIO_FILE_BYTES).toBeLessThanOrEqual(
+      MAX_STUDIO_WORKSPACE_BYTES,
     );
-    expect(() => assertWorkspaceLimits(files)).toThrow(/Workspace too large/);
   });
 
   test("accepts a normal workspace", () => {
