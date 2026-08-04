@@ -1,5 +1,69 @@
 # @alexkroman1/aai
 
+## 5.6.0
+
+### Minor Changes
+
+- f4ae66f: Redeploys now hand over blue-green: the agents-row change event boots the
+  new deploy's sandbox and waits for its readiness before detaching the old
+  resident, so a redeploy never leaves an empty slot and the next caller pays
+  no cold start; old sessions drain in the background as before. The warm
+  sandbox pool is deleted entirely (production always ran with it disabled):
+  every spawn — agent, studio, inspect — boots directly from the published
+  content-addressed harness snapshot image through one code path, and every
+  sandbox is tagged with its real identity at creation. Modal sandbox memory
+  snapshots slot into this single spawn path once the JS SDK exposes them.
+- f4ae66f: Deployed agents now run as SERVERS — the "guest is a server" contract. The
+  worker bundle (sha-256-verified in the guest) and the agent env arrive as
+  files written into the sandbox before exec; readiness is the guest's public
+  `/health`; and the platform's whole ongoing surface is a token-gated
+  `GET /manage/status` + `POST /manage/drain` pair. No control channel exists
+  on an agent sandbox: lifecycle is guest-owned (idle self-exit replaces the
+  orphan timeout; a drained guest refuses new sessions and exits when empty),
+  and a boot crash fails the spawn immediately with the guest's stderr. The
+  JSON-RPC control channel remains for studio/inspect sandboxes only, which
+  always run the current harness image. Combined with per-deploy image
+  pinning, the platform↔deployed-agent contract is now an exec convention
+  plus five HTTP endpoints, frozen per deploy.
+
+### Patch Changes
+
+- 77b0a80: Drop zero-length audio frames instead of treating them as user activity.
+- 753665a: Remove latent footguns: fail-closed env parsing (PORT, SANDBOX_RETIRE_DRAIN_MS, AAI_GUEST_PORT), contained promise rejections in the host-mode handshake, guest RPC dispatch, harness listen, and studio chat body reads, pipeline provider credentials resolving from providerEnv, corrupt agent rows failing closed instead of reading as unclaimed, dead sandboxes no longer preferred by session routing, scrubbed app-db provisioning errors, refusing no-auth dev tokens alongside production config, and full numeric-entity decoding for S3 keys
+- 77b0a80: Log guest stderr on boot failure, validate the resume sessionId, and stop a bundle spoofing its own deploy-time config.
+- f4ae66f: ctx.db on the platform now connects directly from the guest sandbox: the
+  app's own scoped Postgres credentials (role with pinned search_path,
+  statement_timeout, and connection limit) are delivered as `DATABASE_URL` in
+  the bundle/load env, and the bundle's runtime opens its own connection —
+  exactly as `aai dev` does with a project `.env`. The host-proxied `db/query`
+  RPC is removed, taking the last bundle-facing RPC out of the versioned
+  harness↔bundle contract.
+- f4ae66f: Stored agent configs are now opaque to the platform server. Strict config
+  validation (`IsolateConfigSchema`) runs once, at deploy time, on the freshly
+  extracted config; row reads assert only the fields the host consumes (`name`,
+  `greeting`) and pass everything else through untouched. A future schema
+  tightening can therefore never make previously-deployed agents unreadable.
+- f4ae66f: Deploys are pinned to the harness snapshot image they ran against. The
+  content-addressed image tag is recorded on the agents row at deploy time and
+  the agent's sandboxes spawn from that image ever after, so platform upgrades
+  (new harness, base image, or Node version) never change the runtime
+  environment under an already-deployed bundle. Redeploying re-pins to
+  current; an unresolvable pin falls back with a warning; pinned agents skip
+  the warm pool.
+- 8b622e8: Replace hand-rolled code with established libraries: HTML entity decoding via entities, <link> parsing via htmlparser2 (fixes entity-encoded hrefs and attribute values containing '>'), percent-decoded static asset paths in the dev server, a new internal createCoalescingRunner primitive, and use-stick-to-bottom for message-list auto-scroll (height changes no longer silently unpin the transcript).
+- f4ae66f: Remove platform host mode (`?host=1` on deployed agents). The platform no
+  longer runs any session in the server process: `/:slug/websocket` upgrades
+  are always handshake redirects to the agent's live sandbox. This deletes the
+  one path where the server's current SDK interpreted stored agent configs
+  (`toRuntimeAgent`), a cross-version seam for already-deployed bundles. Host
+  mode remains available under `aai dev`.
+- f4ae66f: Remove the legacy descriptor-less S2S fallback in `buildTransport`. Configs
+  predating the pipeline-by-default flip that reach transport construction with
+  no resolved pipeline providers and no `s2s` descriptor now fail loudly with a
+  clear error instead of silently running an AssemblyAI S2S session.
+- 77b0a80: Fix four sandbox-lifecycle defects found by stress testing: a stale studio chat token signing the user out, a silent TTS drain timeout, an unhandled publish-sandbox failure, and an unreachable guest idle-exit override.
+- 77b0a80: Reset the session idle timer on conversational activity instead of on raw audio frames, and don't auto-reconnect after an idle retirement.
+
 ## 5.5.1
 
 ### Patch Changes

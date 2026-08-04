@@ -1,5 +1,33 @@
 # @alexkroman1/aai-cli
 
+## 5.6.0
+
+### Minor Changes
+
+- dd90edc: Guard the `-preview` slug suffix at the deploy boundary. That suffix is owned by the studio's auto-preview deploys and reaped hourly by the orphan-preview sweep, so a CLI caller that claimed it by accident would lose the agent — and any app-database data — on a schedule no redeploy could undo. `aai deploy` now rejects a requested `*-preview` slug unless the new `--allow-preview-slug` flag is passed (set only by the studio's own in-guest deploy).
+- 5cd6d50: Replace Supabase magic-link email sign-in with GitHub OAuth, and rework `aai login` as a device-link flow: the CLI no longer signs in (or creates accounts) itself — it opens the studio with a one-shot link code that a signed-in browser session approves, then exchanges the code for the account's stored API key. The `GET /studio/account/key` route is removed in favor of the one-shot exchange.
+- 29fa487: The CLI and the studio are now one workflow: new `aai list`, `aai pull`, `aai push`, and `aai publish` commands round-trip a project's source through its studio workspace (fast-forward-checked pushes, scaffold-completed pulls), `aai delete` deletes the studio project with a server-side cascade to its deployed agents, and the user-facing `aai deploy` command is gone — production deploys run exclusively through the studio's Publish path (the hidden `deploy` subcommand remains as the internal mechanism the project sandbox executes). `.env` values now sync as agent secrets during `aai publish`.
+
+### Patch Changes
+
+- e2a473a: Harden the aai login device link: the terminal and the browser approval gate now show a matching confirmation code (a phished approval link has a visible mismatch), and the studio stashes the ?cli-link code in per-tab sessionStorage and strips it from the URL at page load so it never rides the GitHub OAuth redirect chain.
+- Updated dependencies [f4ae66f]
+- Updated dependencies [77b0a80]
+- Updated dependencies [753665a]
+- Updated dependencies [77b0a80]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [8b622e8]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [8b622e8]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [77b0a80]
+- Updated dependencies [77b0a80]
+  - @alexkroman1/aai@5.6.0
+  - @alexkroman1/aai-ui@5.6.0
+
 ## 5.5.1
 
 ### Patch Changes

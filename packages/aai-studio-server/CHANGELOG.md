@@ -1,5 +1,45 @@
 # aai-studio-server
 
+## 0.5.0
+
+### Minor Changes
+
+- 5cd6d50: Replace Supabase magic-link email sign-in with GitHub OAuth, and rework `aai login` as a device-link flow: the CLI no longer signs in (or creates accounts) itself — it opens the studio with a one-shot link code that a signed-in browser session approves, then exchanges the code for the account's stored API key. The `GET /studio/account/key` route is removed in favor of the one-shot exchange.
+- 29fa487: Studio scope unification and workspace source sync: raw API keys stored via the account route reverse-map to the owning studio user (`key-user:<sha256(key)>`), so a linked CLI shares the browser's project scope; new `PUT /studio/projects/:project/source` replaces a workspace's file map atomically with a files-hash fast-forward token (`sourceHash` now returned by project GET/SSE payloads); deleting a studio project cascades to its deployed and preview agents through the shared `deleteAgentResources` core, ownership-gated per slug.
+
+### Patch Changes
+
+- 77b0a80: Evict idle studio coding-agent sandboxes after 5 minutes instead of 15, matching the agent guest's own idle self-exit.
+- 93e7694: Landing on a studio project now wakes its preview: the once-per-open session broker call reschedules a stale preview deploy (one dropped by a replica restart no longer leaves the pane on "Updating preview…" until the next edit) and warms the preview agent's sandbox through the platform's client-config broker, so an idle-evicted preview is booting before the Preview pane's iframe asks for it.
+- 77b0a80: Fix four sandbox-lifecycle defects found by stress testing: a stale studio chat token signing the user out, a silent TTS drain timeout, an unhandled publish-sandbox failure, and an unreachable guest idle-exit override.
+- 1673d91: Allow the Supabase auth origin in the studio page's connect-src, so magic-link sign-in is not blocked by CSP (it failed as a bare "Failed to fetch" with nothing on the server)
+- c3f3c9a: Pin `SANDBOX_POOL_SIZE=0` in both Modal apps' image env: the warm sandbox pool stays disabled in production (no pre-warmed guest sandboxes). The `aai-server` Secret must not set `SANDBOX_POOL_SIZE`, since Secret values override image env and would silently re-enable the pool.
+- Updated dependencies [f4ae66f]
+- Updated dependencies [77b0a80]
+- Updated dependencies [e2a473a]
+- Updated dependencies [753665a]
+- Updated dependencies [77b0a80]
+- Updated dependencies [5cd6d50]
+- Updated dependencies [77b0a80]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [8b622e8]
+- Updated dependencies [29fa487]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [8b622e8]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [77b0a80]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [77b0a80]
+- Updated dependencies [c3f3c9a]
+  - @alexkroman1/aai@5.6.0
+  - aai-studio-client@0.4.0
+  - aai-server@3.4.0
+  - @alexkroman1/aai-ui@5.6.0
+
 ## 0.4.1
 
 ### Patch Changes

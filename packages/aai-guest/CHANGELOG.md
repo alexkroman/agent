@@ -1,5 +1,48 @@
 # aai-guest
 
+## 0.4.2
+
+### Patch Changes
+
+- 77b0a80: Log guest stderr on boot failure, validate the resume sessionId, and stop a bundle spoofing its own deploy-time config.
+- f4ae66f: Two more guest-ownership moves: replica shutdown RETIRES agent guests
+  (one awaited deadline-carrying drain each — live calls finish in the guests
+  after the replica exits) instead of count-poll-terminate, deleting the whole
+  shutdown session-drain machinery; and the client-config broker now PROXIES
+  name/greeting from the guest's own `/client-config` (the bundle's live agent
+  definition), making the stored config fully opaque to the host — no
+  field-level reader remains.
+- f4ae66f: Simplify sandbox management around guest-owned lifecycle: delete per-slug
+  horizontal scaling and the cross-replica sandbox registry (one sandbox per
+  slug per replica), delete host-side idle eviction (agent guests self-exit
+  after 5 idle minutes), make retirement fire-and-forget (one
+  deadline-carrying `POST /manage/drain`; the guest enforces the deadline),
+  replace the control-channel `bundle/load`/`tool/execute` RPCs with a
+  one-shot describe-mode harness exec for deploy-time config extraction, and
+  fail loudly on an unresolvable pinned harness image
+  (`SANDBOX_IGNORE_IMAGE_PINS=1` is the operator kill switch).
+- Updated dependencies [f4ae66f]
+- Updated dependencies [77b0a80]
+- Updated dependencies [e2a473a]
+- Updated dependencies [753665a]
+- Updated dependencies [dd90edc]
+- Updated dependencies [5cd6d50]
+- Updated dependencies [77b0a80]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [8b622e8]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [8b622e8]
+- Updated dependencies [29fa487]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [77b0a80]
+- Updated dependencies [77b0a80]
+  - @alexkroman1/aai@5.6.0
+  - @alexkroman1/aai-cli@5.6.0
+  - @alexkroman1/aai-ui@5.6.0
+
 ## 0.4.1
 
 ### Patch Changes

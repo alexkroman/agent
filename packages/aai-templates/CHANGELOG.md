@@ -1,5 +1,11 @@
 # aai-templates
 
+## 0.3.4
+
+### Patch Changes
+
+- 29fa487: Scaffold: the `deploy` npm script is now `publish:agent` running `aai publish`.
+
 ## 0.3.3
 
 ### Patch Changes
