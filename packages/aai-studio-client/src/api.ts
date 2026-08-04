@@ -206,6 +206,16 @@ export const api = {
       body: JSON.stringify({ apiKey }),
     }),
 
+  /**
+   * Approve an `aai login` link code, granting the terminal that minted it
+   * a one-shot exchange for this account's stored API key.
+   */
+  approveCliLink: (key: string, code: string) =>
+    request<{ ok: true }>(key, "/cli-link/approve", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    }),
+
   listProjects: (key: string) =>
     request<{ projects: string[] }>(key, "/projects").then((r) => r.projects),
 

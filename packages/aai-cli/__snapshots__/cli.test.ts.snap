@@ -10,7 +10,7 @@ COMMANDS
       build    Bundle agent without deploying
      deploy    Bundle and deploy to production
      delete    Remove a deployed agent
-      login    Sign in with your email and save your API key
+      login    Link your signed-in browser account and save your API key
      secret    Manage agent secrets
     storage    Manage the agent's app database
   templates    List available project templates

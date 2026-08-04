@@ -341,7 +341,7 @@ const storage = defineCommand({
 });
 
 const login = defineCommand({
-  meta: { name: "login", description: "Sign in with your email and save your API key" },
+  meta: { name: "login", description: "Link your signed-in browser account and save your API key" },
   args: {
     server: sharedArgs.server,
     json: sharedArgs.json,

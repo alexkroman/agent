@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
-// Entry: sign-in gate (magic link) → AssemblyAI key onboarding → the studio
-// app under a QueryClientProvider.
+// Entry: sign-in gate (GitHub OAuth) → AssemblyAI key onboarding → the
+// studio app under a QueryClientProvider. Also the `aai login` approval:
+// `?cli-link=<code>` renders a link-the-CLI gate once signed in + onboarded.
 //
 // The browser's bearer is a SESSION token (Supabase in production, the dev
 // token locally — see auth.tsx), never an AssemblyAI key. The key is the
@@ -36,6 +37,23 @@ import "./styles.css";
 
 const queryClient = new QueryClient();
 
+/**
+ * The `aai login` handshake code, when this tab was opened by the CLI.
+ * Validated to the server's grammar so a mangled link renders the normal
+ * studio rather than an approval gate that can only fail.
+ */
+function readCliLinkCode(): string | null {
+  const code = new URLSearchParams(window.location.search).get("cli-link");
+  return code && /^[\w-]{32,128}$/.test(code) ? code : null;
+}
+
+/** Drop the `?cli-link` param (handled or dismissed) without a reload. */
+function stripCliLinkParam(): void {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("cli-link");
+  history.replaceState(history.state, "", url);
+}
+
 function GateCard({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-full items-center justify-center bg-cream">
@@ -52,12 +70,10 @@ function GateCard({ children }: { children: React.ReactNode }) {
 
 function SignInGate({
   mode,
-  sent,
   onSignIn,
 }: {
   mode: "supabase" | "dev";
-  sent: boolean;
-  onSignIn: (email: string) => Promise<void>;
+  onSignIn: (email?: string) => Promise<void>;
 }) {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -65,31 +81,20 @@ function SignInGate({
 
   const submit = async () => {
     const email = draft.trim();
-    if (!email || busy) return;
+    if (busy || (mode === "dev" && !email)) return;
     setBusy(true);
     setError(null);
     try {
-      await onSignIn(email);
+      // In supabase mode this navigates to GitHub — the page unloads, so
+      // `busy` only ever resets on failure.
+      await onSignIn(mode === "dev" ? email : undefined);
     } catch (err) {
       setError(errorText(err) ?? "Sign-in failed");
-    } finally {
       setBusy(false);
+      return;
     }
+    if (mode === "dev") setBusy(false);
   };
-
-  if (sent) {
-    return (
-      <GateCard>
-        <h1 className="m-0 font-serif text-[26px] leading-[1.18] font-normal text-balance">
-          Check your email
-        </h1>
-        <p className="m-0 text-[15px] leading-[21px] text-muted">
-          We sent a sign-in link to <strong>{draft.trim()}</strong>. Open it on this device to
-          continue.
-        </p>
-      </GateCard>
-    );
-  }
 
   return (
     <GateCard>
@@ -99,19 +104,21 @@ function SignInGate({
       <p className="m-0 text-[15px] leading-[21px] text-muted">
         {mode === "dev"
           ? "Local dev mode: enter any email to sign in."
-          : "Describe a voice agent and App Builder writes and tests it — you publish when it's ready. Sign in with your email to start."}
+          : "Describe a voice agent and App Builder writes and tests it — you publish when it's ready. Sign in with GitHub to start."}
       </p>
-      <input
-        className="field h-10"
-        type="email"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          if (isEnterSubmit(e)) void submit();
-        }}
-        placeholder="you@example.com"
-        spellCheck={false}
-      />
+      {mode === "dev" && (
+        <input
+          className="field h-10"
+          type="email"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (isEnterSubmit(e)) void submit();
+          }}
+          placeholder="you@example.com"
+          spellCheck={false}
+        />
+      )}
       {error && <p className="m-0 text-[13px] text-err">{error}</p>}
       <button
         type="button"
@@ -126,8 +133,8 @@ function SignInGate({
 }
 
 function signInLabel(busy: boolean, mode: "supabase" | "dev"): string {
-  if (busy) return "Sending…";
-  return mode === "dev" ? "Sign in" : "Email me a sign-in link";
+  if (busy) return "Signing in…";
+  return mode === "dev" ? "Sign in" : "Continue with GitHub";
 }
 
 /**
@@ -205,8 +212,101 @@ function KeyGate({
   );
 }
 
+/**
+ * Approve (or dismiss) an `aai login` handshake: the terminal that opened
+ * this tab minted the code and is polling the server for the grant. Runs
+ * only after sign-in AND key onboarding, so approval always has a key to
+ * grant — the CLI never participates in account setup.
+ */
+function CliLinkGate({
+  bearer,
+  code,
+  email,
+  onDone,
+}: {
+  bearer: string;
+  code: string;
+  email?: string | undefined;
+  onDone: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [linked, setLinked] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const approve = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.approveCliLink(bearer, code);
+      setLinked(true);
+    } catch (err) {
+      setError(errorText(err) ?? "Could not link the CLI");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (linked) {
+    return (
+      <GateCard>
+        <h1 className="m-0 font-serif text-[26px] leading-[1.18] font-normal text-balance">
+          Terminal linked
+        </h1>
+        <p className="m-0 text-[15px] leading-[21px] text-muted">
+          You can return to the terminal — the CLI now uses this account's API key.
+        </p>
+        <button
+          type="button"
+          className="btn btn-primary h-10 self-start px-5"
+          onClick={() => onDone()}
+        >
+          Open App Builder
+        </button>
+      </GateCard>
+    );
+  }
+
+  return (
+    <GateCard>
+      <h1 className="m-0 font-serif text-[26px] leading-[1.18] font-normal text-balance">
+        Link the AAI CLI to this account?
+      </h1>
+      <p className="m-0 text-[15px] leading-[21px] text-muted">
+        {email ? `Signed in as ${email}. ` : ""}A terminal running <code>aai login</code> opened
+        this page and will receive this account's AssemblyAI API key. Only continue if that was you,
+        just now.
+      </p>
+      {error && <p className="m-0 text-[13px] text-err">{error}</p>}
+      <div className="flex gap-2.5">
+        <button
+          type="button"
+          className="btn btn-primary h-10 px-5"
+          disabled={busy}
+          onClick={() => void approve()}
+        >
+          {busy ? "Linking…" : "Link CLI"}
+        </button>
+        <button type="button" className="btn h-10 px-5" disabled={busy} onClick={() => onDone()}>
+          Not now
+        </button>
+      </div>
+    </GateCard>
+  );
+}
+
 /** Signed in: require the stored AssemblyAI key before the app mounts. */
-function AccountGate({ bearer, onSignOut }: { bearer: string; onSignOut: () => void }) {
+function AccountGate({
+  bearer,
+  cliLinkCode,
+  onCliLinkDone,
+  onSignOut,
+}: {
+  bearer: string;
+  cliLinkCode: string | null;
+  onCliLinkDone: () => void;
+  onSignOut: () => void;
+}) {
   const client = useQueryClient();
   const account = useQuery({
     queryKey: ["account", bearer],
@@ -245,6 +345,16 @@ function AccountGate({ bearer, onSignOut }: { bearer: string; onSignOut: () => v
       />
     );
   }
+  if (cliLinkCode) {
+    return (
+      <CliLinkGate
+        bearer={bearer}
+        code={cliLinkCode}
+        email={account.data.email}
+        onDone={onCliLinkDone}
+      />
+    );
+  }
   return (
     <App
       bearer={bearer}
@@ -260,6 +370,7 @@ function AccountGate({ bearer, onSignOut }: { bearer: string; onSignOut: () => v
 
 function Root() {
   const auth = useStudioAuth();
+  const [cliLinkCode, setCliLinkCode] = useState(readCliLinkCode);
   if (auth.phase === "loading") return null;
   if (auth.phase === "unavailable") {
     return (
@@ -269,9 +380,19 @@ function Root() {
     );
   }
   if (auth.phase === "signedOut") {
-    return <SignInGate mode={auth.mode} sent={auth.sent} onSignIn={auth.signIn} />;
+    return <SignInGate mode={auth.mode} onSignIn={auth.signIn} />;
   }
-  return <AccountGate bearer={auth.token} onSignOut={auth.signOut} />;
+  return (
+    <AccountGate
+      bearer={auth.token}
+      cliLinkCode={cliLinkCode}
+      onCliLinkDone={() => {
+        stripCliLinkParam();
+        setCliLinkCode(null);
+      }}
+      onSignOut={auth.signOut}
+    />
+  );
 }
 
 const container = document.getElementById("root");

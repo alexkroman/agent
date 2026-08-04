@@ -26,6 +26,10 @@
  * - `GET /studio/auth`         — public: how to sign in (Supabase/dev/none)
  * - `GET /studio/account`      — session-authed: email + whether a key is stored
  * - `PUT /studio/account/key`  — session-authed: store the AssemblyAI key
+ * - `POST /studio/cli-link/approve`  — session-authed: approve an `aai login`
+ *   link code, granting that one code a one-shot exchange
+ * - `POST /studio/cli-link/exchange` — public: the CLI polls this with its
+ *   code; once approved it returns the account's stored API key (one-shot)
  *
  * Auth: the browser sends its Supabase session token, which `authMw`
  * resolves to the user's stored AssemblyAI key (see aai-server middleware);
@@ -40,7 +44,7 @@ import { authMw, invalidateUserApiKey, requireStudioUser } from "aai-server/midd
 import { resolvePublicOrigin } from "aai-server/public-origin";
 import type { SandboxPool } from "aai-server/sandbox-pool";
 import { generatedSlug } from "aai-server/slug-generate";
-import { userApiKeySecretName } from "aai-server/supabase-auth";
+import { cliLinkSecretName, userApiKeySecretName } from "aai-server/supabase-auth";
 import { WorkspaceConflictError } from "aai-server/workspace-store";
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -57,6 +61,7 @@ import {
 } from "./studio-rate-limit.ts";
 import {
   AccountKeySchema,
+  CliLinkSchema,
   CreateProjectSchema,
   ProjectNameSchema,
   projectBaseFromPrompt,
@@ -111,6 +116,25 @@ function nameFromPrompt(prompt: string | undefined): string {
   return generatedSlug(prompt ? projectBaseFromPrompt(prompt) : undefined);
 }
 
+/**
+ * An approved `aai login` link, stored (JSON) in the SecretStore under the
+ * code's hash until the CLI exchanges it. Short-lived: the CLI polls every
+ * couple of seconds, so an uncollected grant means the CLI died — the
+ * expiry keeps its code from being redeemable later.
+ */
+type CliLinkGrant = { uid: string; email?: string; exp: number };
+const CLI_LINK_TTL_MS = 10 * 60_000;
+
+function parseCliLinkGrant(raw: string): CliLinkGrant | null {
+  try {
+    const grant = JSON.parse(raw) as Partial<CliLinkGrant> | null;
+    if (!grant || typeof grant.uid !== "string" || typeof grant.exp !== "number") return null;
+    return grant as CliLinkGrant;
+  } catch {
+    return null;
+  }
+}
+
 function validateProject(name: string | undefined): string {
   const parsed = ProjectNameSchema.safeParse(name);
   if (!parsed.success) throw new HTTPException(400, { message: "Invalid project name" });
@@ -160,8 +184,8 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   // `llm: true` is legacy shape — chat always runs now, on the caller's key.
   studio.get("/status", (c) => c.json({ llm: true, ...studioLlmInfo() }));
 
-  // Public: what the login screen should render — Supabase magic-link config,
-  // the local-dev sign-in, or nothing (browser login unconfigured).
+  // Public: what the login screen should render — Supabase GitHub-OAuth
+  // config, the local-dev sign-in, or nothing (browser login unconfigured).
   studio.get("/auth", (c) => c.json(c.env.auth?.clientConfig ?? { mode: "none" }));
 
   // Account routes authenticate the browser session WITHOUT requiring a
@@ -183,17 +207,46 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     return c.json({ ok: true });
   });
 
-  // `aai login` ends here: after email sign-in the CLI fetches the stored
-  // key to save in its global config — unlike the browser, the CLI
-  // genuinely needs the RAW key (`aai dev` runs the provider pipeline
-  // in-process on it). Revealing the key to its owner's session adds no
-  // authority the session doesn't already have: every studio surface can
-  // already spend and deploy with it.
-  studio.get("/account/key", async (c) => {
+  // `aai login` device link: the CLI never signs in (and can never create
+  // an account) — it mints an unguessable one-shot code, opens the studio
+  // with `?cli-link=<code>`, and polls the exchange route below. A browser
+  // session that is ALREADY signed in approves the code here, which grants
+  // that code one exchange for the account's stored key. Approval requires
+  // a stored key (the studio's own key gate runs first), so the CLI never
+  // participates in onboarding.
+  studio.post("/cli-link/approve", zValidator("json", CliLinkSchema), async (c) => {
     const user = await requireStudioUser(c.req.raw, c.env);
     const key = await c.env.secrets.get(userApiKeySecretName(user.id));
-    if (!key) return c.json({ error: "No API key on file for this account" }, 404);
-    return c.json({ apiKey: key });
+    if (!key) return c.json({ error: "No API key on file for this account" }, 409);
+    const grant: CliLinkGrant = {
+      uid: user.id,
+      ...(user.email && { email: user.email }),
+      exp: Date.now() + CLI_LINK_TTL_MS,
+    };
+    await c.env.secrets.put(cliLinkSecretName(c.req.valid("json").code), JSON.stringify(grant));
+    return c.json({ ok: true });
+  });
+
+  // Public, but only ever useful to whoever minted the code: 256 bits of
+  // entropy make guessing hopeless, the grant is deleted on first read
+  // (one-shot — a replayed exchange gets a 404), and an approved-but-never-
+  // collected grant expires. Revealing the key to the code's owner adds no
+  // authority the approving session didn't already have: every studio
+  // surface can already spend and deploy with it. Unlike the browser, the
+  // CLI genuinely needs the RAW key (`aai dev` runs the provider pipeline
+  // in-process on it).
+  studio.post("/cli-link/exchange", zValidator("json", CliLinkSchema), async (c) => {
+    const name = cliLinkSecretName(c.req.valid("json").code);
+    const raw = await c.env.secrets.get(name);
+    if (raw === null) return c.json({ pending: true }, 404);
+    await c.env.secrets.delete(name);
+    const grant = parseCliLinkGrant(raw);
+    if (!grant || grant.exp < Date.now()) {
+      return c.json({ error: "Link approval expired — run `aai login` again" }, 410);
+    }
+    const key = await c.env.secrets.get(userApiKeySecretName(grant.uid));
+    if (!key) return c.json({ error: "No API key on file for this account" }, 409);
+    return c.json({ apiKey: key, ...(grant.email && { email: grant.email }) });
   });
 
   // Bearer auth without slug ownership: workspace scoping needs only the

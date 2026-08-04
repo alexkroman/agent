@@ -3,7 +3,8 @@
  * Browser-session auth for the studio: Supabase Auth (GoTrue) in
  * production, a no-dependency dev implementation locally.
  *
- * The studio's browser client signs in with a Supabase magic link and sends
+ * The studio's browser client signs in with GitHub OAuth (Supabase's
+ * `signInWithOAuth`) and sends
  * the resulting access token as its bearer. The platform resolves that token
  * to a Supabase user by asking Supabase itself (`GET /auth/v1/user` — no JWT
  * secret or JWKS handling to maintain, and it works for both HS256 and
@@ -19,8 +20,8 @@
  * picks the in-memory stores — production can never resolve it) accepts
  * self-describing `dev.<base64url({id,email})>.dev` tokens the login screen
  * mints client-side, so `pnpm dev:aai-server` needs no Supabase project, no
- * SMTP, and no Docker while exercising the same middleware, key onboarding,
- * and scoping as real sessions.
+ * GitHub OAuth app, and no Docker while exercising the same middleware, key
+ * onboarding, and scoping as real sessions.
  */
 
 import { hash } from "node:crypto";
@@ -31,11 +32,20 @@ export function userApiKeySecretName(userId: string): string {
   return `user-key:${userId}`;
 }
 
+/**
+ * SecretStore name for an approved `aai login` link grant. Keyed by the
+ * HASH of the CLI-minted code, so a listing of stored names never shows a
+ * code that could still be exchanged.
+ */
+export function cliLinkSecretName(code: string): string {
+  return `cli-link:${hash("sha256", code)}`;
+}
+
 export type StudioAuthUser = { id: string; email?: string };
 
 /**
- * What `GET /studio/auth` tells the login screen to render: a Supabase
- * magic-link flow, or the local-dev email box that mints its own token.
+ * What `GET /studio/auth` tells the login screen to render: the Supabase
+ * GitHub-OAuth flow, or the local-dev email box that mints its own token.
  */
 export type StudioAuthClientConfig =
   | { mode: "supabase"; supabaseUrl: string; supabasePublishableKey: string }

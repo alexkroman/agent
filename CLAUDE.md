@@ -731,7 +731,10 @@ voice agents without the CLI:
   fetch"** and the server logs NOTHING, because no request was ever made.
   (1) the project's guest sandbox — chat + tool labels, keyed by sandbox
   backend so a production policy never trusts loopback; (2) the Supabase
-  project, which supabase-js dials for magic-link sign-in. Both are derived
+  project, which supabase-js dials for GitHub OAuth sign-in (the session
+  restore and the code/token exchange after the redirect — GitHub itself is
+  reached by top-level navigation, which connect-src does not govern). Both
+  are derived
   from what the server really hands the client (`chatUrlForGuest`'s shape,
   the auth binding's own `clientConfig`) rather than hand-copied literals,
   and both are exact — `https://*.supabase.co` would trust every Supabase
@@ -2452,8 +2455,9 @@ stored env at sandbox creation time and kept host-side only.
   never contains dots, so the shape test (`isJwtShaped`) cleanly splits
   the two; the verification boundary is the backend's answer, never the
   shape.
-- **Browser sessions are Supabase Auth** (`supabase-auth.ts`): magic-link
-  email sign-in via supabase-js in the studio client; the server verifies
+- **Browser sessions are Supabase Auth** (`supabase-auth.ts`): GitHub
+  OAuth sign-in via supabase-js (`signInWithOAuth`) in the studio client;
+  the server verifies
   access tokens by asking Supabase (`GET /auth/v1/user` — no JWT
   secret/JWKS handling), TTL-cached by SHA-256(token). Configured by
   `SUPABASE_URL` + `SUPABASE_PUBLISHABLE_KEY`. Local dev (same `isLocalDev`
@@ -2465,6 +2469,18 @@ stored env at sandbox creation time and kept host-side only.
   `PUT /studio/account/key`) authenticates the session WITHOUT requiring
   a stored key — it is how the key gets set, as the mandatory onboarding
   screen after sign-in.
+- **`aai login` never signs in and can never create an account** — it
+  LINKS an account that is already signed in to the browser studio
+  (device-link flow): the CLI mints an unguessable one-shot code, opens
+  `<server>/?cli-link=<code>`, and polls
+  `POST /studio/cli-link/exchange`; the signed-in (and key-onboarded)
+  browser session approves via `POST /studio/cli-link/approve`, which
+  grants that code ONE exchange for the account's stored API key. Grants
+  live in the SecretStore under the code's hash
+  (`cliLinkSecretName`), expire in 10 minutes, and are deleted on first
+  read. There is no `GET /studio/account/key` route anymore — the exchange
+  is the only way a raw key leaves the platform, and only to the terminal
+  that minted the code.
 - **Every AssemblyAI key on the platform is user-provided** — there is no
   platform-owned key, and with browser sessions the browser never holds
   one either: the key lives server-side against the account (Vault) and
