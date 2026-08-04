@@ -3,6 +3,7 @@
 
 import type { UIMessage } from "ai";
 import { parse } from "dotenv";
+import { createParser } from "eventsource-parser";
 
 export type ProjectData = {
   files: Record<string, string>;
@@ -110,28 +111,30 @@ async function handleResponse<T>(res: Response): Promise<T> {
 type SseFrame = { event: string; data: string };
 
 /**
- * Split complete SSE frames off the front of `buffer`, returning them and
- * the unconsumed remainder. Frames are blank-line separated; each carries
- * `event:` and `data:` lines (pings arrive with empty data — callers filter
- * by event name).
+ * Read the stream to its end, delivering each complete named frame.
+ * Parsing is `eventsource-parser` (the incremental parser the AI SDK
+ * ecosystem runs on) rather than hand-rolled line splitting, so spec
+ * corners — comments, CR line endings, multi-line data, fields split
+ * across chunk boundaries by a re-chunking proxy — are its problem, not
+ * ours. Unnamed or empty events (pings) are dropped; callers dispatch on
+ * the event name.
  */
-function parseSseFrames(buffer: string): { frames: SseFrame[]; rest: string } {
-  const frames: SseFrame[] = [];
-  let rest = buffer;
+async function drainEventStream(
+  body: ReadableStream<Uint8Array>,
+  onFrame: (frame: SseFrame) => void,
+): Promise<void> {
+  const parser = createParser({
+    onEvent: (message) => {
+      if (message.event && message.data) onFrame({ event: message.event, data: message.data });
+    },
+  });
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
   for (;;) {
-    const frameEnd = rest.search(/\r?\n\r?\n/);
-    if (frameEnd === -1) break;
-    const raw = rest.slice(0, frameEnd);
-    rest = rest.slice(frameEnd).replace(/^\r?\n\r?\n/, "");
-    const event = /^event: *(\S+)$/m.exec(raw)?.[1] ?? "";
-    const data = raw
-      .split(/\r?\n/)
-      .filter((line) => line.startsWith("data:"))
-      .map((line) => line.slice(5).trimStart())
-      .join("\n");
-    if (event && data) frames.push({ event, data });
+    const { done, value } = await reader.read();
+    if (done) return;
+    parser.feed(decoder.decode(value, { stream: true }));
   }
-  return { frames, rest };
 }
 
 /**
@@ -141,24 +144,6 @@ function parseSseFrames(buffer: string): { frames: SseFrame[]; rest: string } {
  * fires when the stream ends or fails (server restart, network) so the
  * caller can resubscribe with backoff — but never on the caller's own abort.
  */
-/** Read the stream to its end, delivering each complete frame. */
-async function drainEventStream(
-  body: ReadableStream<Uint8Array>,
-  onFrame: (frame: SseFrame) => void,
-): Promise<void> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) return;
-    buffer += decoder.decode(value, { stream: true });
-    const { frames, rest } = parseSseFrames(buffer);
-    buffer = rest;
-    for (const frame of frames) onFrame(frame);
-  }
-}
-
 function watchEventStream(
   key: string,
   path: string,
