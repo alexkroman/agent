@@ -12,7 +12,9 @@
  * 2. Mint an unguessable one-shot code (32 random bytes, base64url) and
  *    open the browser at `<server>/?cli-link=<code>`. The studio — where
  *    the user signs in with GitHub (or the local-dev login) if they aren't
- *    already — shows a "link the CLI to this account?" approval.
+ *    already — shows a "link the CLI to this account?" approval displaying
+ *    the same short confirmation code this terminal printed, so a phished
+ *    approval link has a visible mismatch (no terminal to match against).
  * 3. Poll `POST /studio/cli-link/exchange` with the code. Approval grants
  *    the code ONE exchange for the account's stored API key, which is
  *    saved locally. An account with no stored key can't approve — the
@@ -69,6 +71,19 @@ function openerFor(platform: NodeJS.Platform): [string, string[]] {
   return ["xdg-open", []];
 }
 
+/**
+ * Human-matchable confirmation derived from the link code — printed in the
+ * terminal AND shown on the browser approval gate (aai-studio-client's
+ * cli-link.ts derives the same value; keep the two in lockstep). Not a
+ * secret: both ends already hold the full code. It exists so someone who
+ * lands on an approval page they didn't cause has a concrete mismatch to
+ * notice ("what terminal?") instead of a bare Approve button.
+ */
+export function linkConfirmationCode(code: string): string {
+  const head = code.slice(0, 8).toUpperCase();
+  return `${head.slice(0, 4)}-${head.slice(4)}`;
+}
+
 /** Best-effort: the link URL is always printed, so a failure is fine. */
 function defaultOpenBrowser(url: string): void {
   const [cmd, args] = openerFor(process.platform);
@@ -109,7 +124,10 @@ export async function executeLogin(
   const code = randomBytes(32).toString("base64url");
   const linkUrl = `${serverUrl}/?cli-link=${code}`;
   log.info(`Opening the browser to link your account…\n  ${linkUrl}`);
-  log.info("Approve the link in the browser (sign in there first if you need to).");
+  log.info(`Confirmation code: ${linkConfirmationCode(code)}`);
+  log.info(
+    "Approve the link in the browser (sign in there first if you need to) — the approval page shows the same code.",
+  );
   (deps.openBrowser ?? defaultOpenBrowser)(linkUrl);
 
   const pollInterval = deps.pollIntervalMs ?? LINK_POLL_INTERVAL_MS;
