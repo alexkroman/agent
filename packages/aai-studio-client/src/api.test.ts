@@ -291,12 +291,46 @@ describe("api.watchProject", () => {
     expect(chats).toEqual([[{ id: "m1", role: "user", parts: [] }]]);
   });
 
-  test("a non-OK response reports down", async () => {
+  test("a non-OK response reports down as a transport failure", async () => {
     stubFetch(() => jsonResponse({ error: "nope" }, 503));
     const down = vi.fn();
     api.watchProject("k", "proj", { onData: () => undefined, onDown: down });
     await settle();
-    expect(down).toHaveBeenCalledOnce();
+    expect(down).toHaveBeenCalledExactlyOnceWith("transport");
+  });
+
+  test.for([401, 403])("a %i reports down as an AUTH failure, not transport", async (status) => {
+    // The distinction the caller acts on: retrying a rejected bearer can only
+    // loop. One backgrounded tab whose session token expired (supabase-js
+    // pauses its refresh ticker on hidden tabs) resubscribed every 3s for
+    // three hours — 4,346 401s, each costing a Supabase token verification.
+    stubFetch(() => jsonResponse({ error: "unauthorized" }, status));
+    const down = vi.fn();
+    api.watchProject("k", "proj", { onData: () => undefined, onDown: down });
+    await settle();
+    expect(down).toHaveBeenCalledExactlyOnceWith("auth");
+  });
+
+  test("onOpen fires only when the server accepted the stream", async () => {
+    // It is the caller's backoff reset, so it must not fire for a rejection.
+    stubFetch(() => jsonResponse({ error: "unauthorized" }, 401));
+    const open = vi.fn();
+    api.watchProject("k", "proj", {
+      onData: () => undefined,
+      onOpen: open,
+      onDown: () => undefined,
+    });
+    await settle();
+    expect(open).not.toHaveBeenCalled();
+
+    stubFetch(() => sseResponse(['event: project\ndata: {"files":{}}\n\n']));
+    api.watchProject("k", "proj", {
+      onData: () => undefined,
+      onOpen: open,
+      onDown: () => undefined,
+    });
+    await settle();
+    expect(open).toHaveBeenCalledOnce();
   });
 
   test("aborting via the returned unsubscribe does NOT report down", async () => {
