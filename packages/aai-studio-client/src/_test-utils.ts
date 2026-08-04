@@ -11,6 +11,19 @@ export function jsonResponse(body: unknown, status = 200): Response {
 }
 
 /**
+ * A never-ending SSE stream — what the studio's event routes look like to a
+ * client that subscribes and hears nothing. Tests that assert on pushes
+ * build their own bodies; everything else stubs the events routes with this
+ * so the app's always-on subscriptions don't trip the strict route table.
+ */
+export function sseResponse(): Response {
+  return new Response(new ReadableStream<Uint8Array>(), {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream" },
+  });
+}
+
+/**
  * Stub the global `fetch`. Pass a single factory to answer every request, or
  * a route table keyed `"METHOD /path"` (or just `"/path"` for any method).
  * Factories, not Responses: a Response body is single-use, so each call must

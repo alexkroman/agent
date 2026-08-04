@@ -43,8 +43,33 @@ function projectPath(name: string | null): string {
   return name ? `/studio/chat/${encodeURIComponent(name)}` : "/";
 }
 
-/** Backoff before resubscribing a dropped project event stream. */
-const PROJECT_EVENTS_RETRY_MS = 3000;
+/** Backoff before resubscribing a dropped event stream. */
+const EVENTS_RETRY_MS = 3000;
+
+/**
+ * Hold one server event-stream subscription while mounted, resubscribing
+ * with a fixed backoff whenever it drops. `subscribe` must be referentially
+ * stable (useCallback) — it opens the stream and gets the retry trigger as
+ * its `onDown`; subscribing can be skipped by returning a no-op unsubscribe.
+ */
+function useEventStream(subscribe: (onDown: () => void) => () => void) {
+  useEffect(() => {
+    let stopped = false;
+    let unsubscribe: (() => void) | undefined;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const start = () => {
+      unsubscribe = subscribe(() => {
+        if (!stopped) retry = setTimeout(start, EVENTS_RETRY_MS);
+      });
+    };
+    start();
+    return () => {
+      stopped = true;
+      if (retry !== undefined) clearTimeout(retry);
+      unsubscribe?.();
+    };
+  }, [subscribe]);
+}
 
 /** Stable identity while the workspace loads, so effects keyed on it don't churn. */
 const EMPTY_FILES: Record<string, string> = {};
@@ -91,33 +116,41 @@ export function App({ bearer, onSignOut }: AppProps) {
     enabled: project != null,
   });
 
-  // Live project state, pushed by the server whenever the workspace row
-  // changes (Supabase Realtime behind an SSE relay — see the events route in
-  // studio-routes.ts). This is how a finished auto preview deploy reaches
-  // the pane: `previewVersion` changes and the iframe reloads itself. The
-  // old polling loop (and its edit-activity window) is gone; a dropped
-  // stream resubscribes with a fixed backoff while the project stays open.
-  useEffect(() => {
-    if (project == null) return;
-    let stopped = false;
-    let unsubscribe: (() => void) | undefined;
-    let retry: ReturnType<typeof setTimeout> | undefined;
-    const subscribe = () => {
-      unsubscribe = api.watchProject(apiKey, project, {
-        onData: (data) => queryClient.setQueryData(queryKeys.project(project), data),
-        onDown: () => {
-          if (stopped) return;
-          retry = setTimeout(subscribe, PROJECT_EVENTS_RETRY_MS);
-        },
-      });
-    };
-    subscribe();
-    return () => {
-      stopped = true;
-      if (retry !== undefined) clearTimeout(retry);
-      unsubscribe?.();
-    };
-  }, [apiKey, project, queryClient]);
+  // Live project state, pushed by the server whenever the workspace or chat
+  // row changes (Supabase Realtime behind an SSE relay — see the events
+  // routes in studio-routes.ts). This is how a finished auto preview deploy
+  // reaches the pane: `previewVersion` changes and the iframe reloads
+  // itself. The old polling loop (and its edit-activity window) is gone; a
+  // dropped stream resubscribes with a fixed backoff while the project
+  // stays open. Pushed chat history refreshes the query cache — the panel
+  // in THIS tab owns its live conversation (`useChat` seeds once at mount),
+  // so this is what keeps a second tab's next open current.
+  useEventStream(
+    useCallback(
+      (onDown: () => void) =>
+        project == null
+          ? () => undefined
+          : api.watchProject(bearer, project, {
+              onData: (data) => queryClient.setQueryData(queryKeys.project(project), data),
+              onChat: (messages) => queryClient.setQueryData(queryKeys.chat(project), messages),
+              onDown,
+            }),
+      [bearer, project, queryClient],
+    ),
+  );
+
+  // Live project LIST for the home sidebar — a project created or deleted
+  // on another device shows up without a refresh.
+  useEventStream(
+    useCallback(
+      (onDown: () => void) =>
+        api.watchProjects(bearer, {
+          onData: (names) => queryClient.setQueryData(queryKeys.projects, names),
+          onDown,
+        }),
+      [bearer, queryClient],
+    ),
+  );
 
   // Persisted chat history, re-fetched on every project open. `useChat`
   // owns the live conversation after hydration, but the server rewrites the

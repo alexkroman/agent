@@ -107,35 +107,44 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return parsed as T;
 }
 
+type SseFrame = { event: string; data: string };
+
 /**
- * Split complete SSE frames off the front of `buffer`, returning the parsed
- * `project` payloads and the unconsumed remainder. Frames are blank-line
- * separated; each carries `event:` and `data:` lines. Only `project` frames
- * carry payloads (pings are keepalives).
+ * Split complete SSE frames off the front of `buffer`, returning them and
+ * the unconsumed remainder. Frames are blank-line separated; each carries
+ * `event:` and `data:` lines (pings arrive with empty data — callers filter
+ * by event name).
  */
-export function parseProjectFrames(buffer: string): { frames: ProjectData[]; rest: string } {
-  const frames: ProjectData[] = [];
+function parseSseFrames(buffer: string): { frames: SseFrame[]; rest: string } {
+  const frames: SseFrame[] = [];
   let rest = buffer;
   for (;;) {
     const frameEnd = rest.search(/\r?\n\r?\n/);
     if (frameEnd === -1) break;
-    const frame = rest.slice(0, frameEnd);
+    const raw = rest.slice(0, frameEnd);
     rest = rest.slice(frameEnd).replace(/^\r?\n\r?\n/, "");
-    const isProject = /^event: *project$/m.test(frame);
-    const data = frame
+    const event = /^event: *(\S+)$/m.exec(raw)?.[1] ?? "";
+    const data = raw
       .split(/\r?\n/)
       .filter((line) => line.startsWith("data:"))
       .map((line) => line.slice(5).trimStart())
       .join("\n");
-    if (isProject && data) frames.push(JSON.parse(data) as ProjectData);
+    if (event && data) frames.push({ event, data });
   }
   return { frames, rest };
 }
 
-/** Drain a project event stream, delivering each pushed payload. */
-async function consumeProjectEvents(
+/**
+ * Fetch-streamed SSE subscription against a studio events route — a reader
+ * rather than EventSource because the studio authenticates with a bearer
+ * header, which EventSource cannot send. Returns an abort function; `onDown`
+ * fires when the stream ends or fails (server restart, network) so the
+ * caller can resubscribe with backoff — but never on the caller's own abort.
+ */
+/** Read the stream to its end, delivering each complete frame. */
+async function drainEventStream(
   body: ReadableStream<Uint8Array>,
-  onData: (data: ProjectData) => void,
+  onFrame: (frame: SseFrame) => void,
 ): Promise<void> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -144,10 +153,33 @@ async function consumeProjectEvents(
     const { done, value } = await reader.read();
     if (done) return;
     buffer += decoder.decode(value, { stream: true });
-    const { frames, rest } = parseProjectFrames(buffer);
+    const { frames, rest } = parseSseFrames(buffer);
     buffer = rest;
-    for (const frame of frames) onData(frame);
+    for (const frame of frames) onFrame(frame);
   }
+}
+
+function watchEventStream(
+  key: string,
+  path: string,
+  handlers: { onFrame: (frame: SseFrame) => void; onDown: () => void },
+): () => void {
+  const controller = new AbortController();
+  void (async () => {
+    try {
+      const res = await fetch(path, {
+        headers: { Authorization: `Bearer ${key}`, Accept: "text/event-stream" },
+        signal: controller.signal,
+      });
+      if (!(res.ok && res.body)) throw new ApiError(res.status, "Event stream unavailable");
+      await drainEventStream(res.body, handlers.onFrame);
+    } catch {
+      // Aborted (caller unsubscribed) or failed — the finally decides.
+    } finally {
+      if (!controller.signal.aborted) handlers.onDown();
+    }
+  })();
+  return () => controller.abort();
 }
 
 /**
@@ -217,35 +249,43 @@ export const api = {
    * Subscribe to the project's live state (`GET …/events`, SSE): the server
    * pushes a full {@link ProjectData} whenever the workspace row changes —
    * fed by Supabase Realtime server-side — which is how a finished preview
-   * deploy reaches the Preview pane. This replaced the polling loop.
-   *
-   * A fetch-streamed reader rather than EventSource because the studio
-   * authenticates with a bearer header, which EventSource cannot send.
-   * Returns an abort function; `onDown` fires when the stream ends or fails
-   * (server restart, network) so the caller can resubscribe with backoff.
+   * deploy reaches the Preview pane (this replaced the polling loop), and
+   * the settled conversation whenever a chat turn persists, so other tabs
+   * stay warm. Returns an abort function; `onDown` fires when the stream
+   * ends or fails so the caller can resubscribe with backoff.
    */
   watchProject: (
     key: string,
     project: string,
-    handlers: { onData: (data: ProjectData) => void; onDown: () => void },
-  ): (() => void) => {
-    const controller = new AbortController();
-    void (async () => {
-      try {
-        const res = await fetch(`/studio/projects/${encodeURIComponent(project)}/events`, {
-          headers: { Authorization: `Bearer ${key}`, Accept: "text/event-stream" },
-          signal: controller.signal,
-        });
-        if (!(res.ok && res.body)) throw new ApiError(res.status, "Event stream unavailable");
-        await consumeProjectEvents(res.body, handlers.onData);
-      } catch {
-        // Aborted (caller unsubscribed) or failed — the finally decides.
-      } finally {
-        if (!controller.signal.aborted) handlers.onDown();
-      }
-    })();
-    return () => controller.abort();
-  },
+    handlers: {
+      onData: (data: ProjectData) => void;
+      onChat?: (messages: UIMessage[]) => void;
+      onDown: () => void;
+    },
+  ): (() => void) =>
+    watchEventStream(key, `/studio/projects/${encodeURIComponent(project)}/events`, {
+      onFrame: (frame) => {
+        if (frame.event === "project") handlers.onData(JSON.parse(frame.data) as ProjectData);
+        if (frame.event === "chat") handlers.onChat?.(JSON.parse(frame.data) as UIMessage[]);
+      },
+      onDown: handlers.onDown,
+    }),
+
+  /**
+   * Subscribe to the caller's live project LIST (`GET /studio/events`) —
+   * a project created or deleted on another device updates the home
+   * sidebar without a refresh.
+   */
+  watchProjects: (
+    key: string,
+    handlers: { onData: (projects: string[]) => void; onDown: () => void },
+  ): (() => void) =>
+    watchEventStream(key, "/studio/events", {
+      onFrame: (frame) => {
+        if (frame.event === "projects") handlers.onData(JSON.parse(frame.data) as string[]);
+      },
+      onDown: handlers.onDown,
+    }),
 
   writeFile: (key: string, project: string, path: string, content: string) =>
     request<{ ok: boolean }>(key, `/projects/${encodeURIComponent(project)}/file`, {

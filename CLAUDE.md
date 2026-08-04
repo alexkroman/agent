@@ -319,16 +319,22 @@ model) is the security boundary.
   `watchAgentInvalidation`, the event-driven sandbox invalidation (split
   from sandbox.ts, which owns one sandbox's lifecycle)
 - `platform-events.ts` — `PlatformEvents`: cross-replica change
-  notifications (`watchAgents`, `watchWorkspace`) as SIGNALS (handlers
-  re-read rows, never trust payloads); memory emitter + store decorators
-  for dev/tests
+  notifications (`watchAgents`, `watchWorkspace`, `watchChat`,
+  `watchScopeProjects`) as SIGNALS (handlers re-read rows, never trust
+  payloads); memory emitter + store decorators for dev/tests
 - `realtime-events.ts` — the production `PlatformEvents`: Supabase Realtime
-  `postgres_changes` on `aai_platform.agents` / `studio_workspaces` over
-  `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`, plus the boot-time
-  `supabase_realtime` publication setup
+  `postgres_changes` on `aai_platform.agents` / `studio_workspaces` /
+  `studio_chats` over `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`, plus
+  the boot-time `supabase_realtime` publication setup
+- `sandbox-registry.ts` — cross-replica sandbox registry
+  (`aai_platform.sandbox_registry`, lease rows): owners register/heartbeat
+  their resident sandboxes with sampled session counts; the broker's cold
+  path routes to a live peer sandbox before spawning a duplicate.
+  Deliberately a read at the broker, not a Realtime stream — the registry
+  only matters at the moment a cold broker already reads the database
 - `pg-cron.ts` — janitorial sweeps as pg_cron jobs (expired slug-lock
   leases, dead rate-limit windows, orphaned `-preview` agents + their Vault
-  secrets), installed idempotently at boot
+  secrets, expired sandbox-registry leases), installed idempotently at boot
 - `studio-proxy.ts` / `app-middleware.ts` — the split deployment (see
   "Split services" below): the agent service's reverse proxy to the studio
   service, and the apps' shared base middleware
@@ -557,14 +563,18 @@ voice agents without the CLI:
   no chat turn to carry CLI output). `GET /studio/projects/:project`
   returns `previewSlug`/`previewVersion`/`previewStale`/`previewError`,
   and `GET /studio/projects/:project/events` streams the same payload as
-  SSE, pushed on every workspace-row change (Supabase Realtime
-  `postgres_changes` server-side — see `platform-events.ts`; the events are
-  signals and the route re-reads the row per push). The client subscribes
-  on project open — there is NO polling loop — and keys the iframe by
-  `previewVersion`, so a fresh preview reloads the frame exactly once; a
-  dropped stream resubscribes with a fixed backoff, and the first event is
-  always the current state so nothing is missed between GET and subscribe.
-  `hasUnpublishedChanges` (`studio-workspace.ts`)
+  SSE (`project` frames), pushed on every workspace-row change (Supabase
+  Realtime `postgres_changes` server-side — see `platform-events.ts`; the
+  events are signals and the route re-reads the row per push), plus `chat`
+  frames carrying the settled conversation whenever a turn persists, so
+  other tabs/devices stay current. `GET /studio/events` streams the
+  caller's project LIST the same way (scope-level workspace changes), so
+  the home sidebar updates across devices. The client subscribes on
+  project open / while signed in — there is NO polling loop — and keys the
+  iframe by `previewVersion`, so a fresh preview reloads the frame exactly
+  once; a dropped stream resubscribes with a fixed backoff, and the first
+  event is always the current state so nothing is missed between GET and
+  subscribe. `hasUnpublishedChanges` (`studio-workspace.ts`)
   still compares `filesHash` against `deployedHash` — the PRODUCTION
   staleness — returned as `unpublished` for the pane's Publish nudge. A
   hash rather than a timestamp for two reasons: deploys themselves write
@@ -2229,7 +2239,11 @@ pins, so change them together); Secret values override the image env.
 
 The broker (`GET /:slug/client-config` → `resolveSandbox`) is the only
 routing point: sessions connect directly to a sandbox tunnel, so once a
-client holds a `sessionUrl` the host can never move that session. Each
+client holds a `sessionUrl` the host can never move that session. A COLD
+broker (no local resident) first consults the cross-replica sandbox
+registry (`sandbox-registry.ts`) and routes to a live peer replica's
+sandbox with session headroom instead of spawning a duplicate; a warm
+local resident always wins. Each
 broker request probes the slug's resident sandboxes with the same guest
 `status` RPC idle eviction uses and routes **least-connections**; when the
 least-loaded sandbox is at capacity it spawns an overflow replica

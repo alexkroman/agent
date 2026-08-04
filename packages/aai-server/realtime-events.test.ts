@@ -146,6 +146,42 @@ describe("workspace channels", () => {
     expect(channels).toHaveLength(2);
   });
 
+  test("chat watches stream studio_chats, scope-checked like workspaces", () => {
+    const { client, channels } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    const seen = vi.fn();
+    events.watchChat("scope-a", "proj", seen);
+    const channel = channels[0] as FakeChannel;
+    expect(channel.filters[0]).toEqual({
+      event: "*",
+      schema: "aai_platform",
+      table: "studio_chats",
+      filter: "project=eq.proj",
+    });
+    channel.handlers[0]?.({ new: { scope: "scope-b", project: "proj" } });
+    expect(seen).not.toHaveBeenCalled();
+    channel.handlers[0]?.({ new: { scope: "scope-a", project: "proj" } });
+    expect(seen).toHaveBeenCalledOnce();
+  });
+
+  test("scope watches stream all of the scope's workspace rows", () => {
+    const { client, channels } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    const seen = vi.fn();
+    events.watchScopeProjects("scope-a", seen);
+    const channel = channels[0] as FakeChannel;
+    expect(channel.filters[0]).toEqual({
+      event: "*",
+      schema: "aai_platform",
+      table: "studio_workspaces",
+      filter: "scope=eq.scope-a",
+    });
+    // Deletes only carry the old row; the watcher must still hear them.
+    channel.handlers[0]?.({ new: null, old: { scope: "scope-a", project: "gone" } });
+    channel.handlers[0]?.({ new: { scope: "scope-a", project: "fresh" } });
+    expect(seen).toHaveBeenCalledTimes(2);
+  });
+
   test("close unsubscribes workspace channels and disconnects", async () => {
     const { client, channels } = fakeClient();
     const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
@@ -164,14 +200,15 @@ test("ensureRealtimeSetup creates the tables then the publication", async () => 
   };
   await ensureRealtimeSetup(sql);
 
-  const first = statements.slice(0, 4);
-  expect(first[0]).toContain("create schema if not exists aai_platform");
-  expect(first[1]).toContain("aai_platform.agents");
-  expect(first[2]).toContain("aai_platform.studio_workspaces");
-  expect(first[3]).toContain("supabase_realtime");
-  // Both watched tables are added to the publication.
-  expect(first[3]).toContain("alter publication supabase_realtime add table aai_platform.agents");
-  expect(first[3]).toContain(
-    "alter publication supabase_realtime add table aai_platform.studio_workspaces",
-  );
+  expect(statements[0]).toContain("create schema if not exists aai_platform");
+  expect(statements[1]).toContain("aai_platform.agents");
+  expect(statements[2]).toContain("aai_platform.studio_workspaces");
+  expect(statements[3]).toContain("aai_platform.studio_chats");
+  const publication = statements[4];
+  // Every watched table is added to the publication.
+  for (const table of ["agents", "studio_workspaces", "studio_chats"]) {
+    expect(publication).toContain(
+      `alter publication supabase_realtime add table aai_platform.${table}`,
+    );
+  }
 });

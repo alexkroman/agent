@@ -7,6 +7,7 @@
  * storage, Vault, locks, epochs, or resume-state wiring.
  */
 
+import { randomUUID } from "node:crypto";
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
 import { createStorage } from "unstorage";
 import { isLocalDev, requireEnv, resolvePoolSize } from "./_boot.ts";
@@ -22,6 +23,7 @@ import {
   createMemoryPlatformEvents,
   type PlatformEvents,
   withAgentEvents,
+  withChatEvents,
   withWorkspaceEvents,
 } from "./platform-events.ts";
 import { createPgSlugLock, localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
@@ -29,6 +31,11 @@ import { createRealtimePlatformEvents, ensureRealtimeSetup } from "./realtime-ev
 import { createS3Storage } from "./s3-storage.ts";
 import { describeSandboxBackend } from "./sandbox-backend.ts";
 import { createSandboxPool, type SandboxPool } from "./sandbox-pool.ts";
+import {
+  createMemorySandboxRegistry,
+  createPgSandboxRegistry,
+  type SandboxRegistry,
+} from "./sandbox-registry.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { spawnWarmHarness } from "./sandbox-vm.ts";
 import {
@@ -122,13 +129,18 @@ export function buildStorage(env: NodeJS.ProcessEnv): ReturnType<typeof createSt
 function buildMemoryStores(): {
   agents: AgentRows;
   workspaces: WorkspaceStore;
+  chats: ChatStore;
   events: PlatformEvents;
+  registry: SandboxRegistry;
 } {
   const memory = createMemoryPlatformEvents();
   return {
     agents: withAgentEvents(createMemoryAgentRows(), memory.emitAgent),
     workspaces: withWorkspaceEvents(createMemoryWorkspaceStore(), memory.emitWorkspace),
+    chats: withChatEvents(createMemoryChatStore(), memory.emitChat),
     events: memory.events,
+    // Inert in one process (listPeers excludes own rows); interface parity.
+    registry: createMemorySandboxRegistry(randomUUID()),
   };
 }
 
@@ -165,6 +177,8 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   chats: ChatStore;
   /** Change notifications — see ServiceConfig.events. */
   events: PlatformEvents;
+  /** Cross-replica sandbox registry — see sandbox-registry.ts. */
+  registry: SandboxRegistry;
   appDb?: AppDatabases;
   /** Cross-replica slug mutation lock; in-process without a platform db. */
   slugLock: SlugMutationLock;
@@ -182,7 +196,6 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
     return {
       secrets: createMemorySecretStore(),
       ...buildMemoryStores(),
-      chats: createMemoryChatStore(),
       slugLock: localSlugLock,
     };
   }
@@ -195,7 +208,6 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
     return {
       secrets: createMemorySecretStore(),
       ...buildMemoryStores(),
-      chats: createMemoryChatStore(),
       appDb: createAppDatabases({
         url,
         sql: exec,
@@ -218,6 +230,7 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
       url: realtime.SUPABASE_URL,
       key: realtime.SUPABASE_SERVICE_ROLE_KEY,
     }),
+    registry: createPgSandboxRegistry(exec, { replicaId: randomUUID() }),
     appDb: createAppDatabases({
       url,
       sql: exec,
@@ -229,8 +242,8 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
     // Cross-request coordination lives in Postgres too, so any replica (and
     // either service) can serve any request: per-slug mutation exclusion
     // survives replica restarts and scale-out. (Cross-replica sandbox
-    // invalidation rides the agents row's deploy version — see
-    // agent-store.ts — with the Realtime agents stream as the accelerator.)
+    // invalidation rides the agents row's change stream — see
+    // sandbox-resolve.ts.)
     slugLock: createPgSlugLock(exec),
     sql: exec,
   };
@@ -239,7 +252,8 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
 /** Assemble the shared service bindings from the environment. */
 export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
   const storage = buildStorage(env);
-  const { secrets, agents, workspaces, chats, events, appDb, slugLock, sql } = buildPlatformDb(env);
+  const { secrets, agents, workspaces, chats, events, registry, appDb, slugLock, sql } =
+    buildPlatformDb(env);
   const slots = createSlotCache();
   const pool = buildPool(env);
   // Browser-session auth: Supabase when configured, the dev-token
@@ -261,6 +275,7 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
     workspaces,
     chats,
     events,
+    registry,
     secrets,
     ...(auth && { auth }),
     slugLock,

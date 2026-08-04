@@ -2,9 +2,11 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { createMemoryAgentRows } from "./agent-store.ts";
+import { createMemoryChatStore } from "./chat-store.ts";
 import {
   createMemoryPlatformEvents,
   withAgentEvents,
+  withChatEvents,
   withWorkspaceEvents,
 } from "./platform-events.ts";
 import { createMemoryWorkspaceStore } from "./workspace-store.ts";
@@ -59,6 +61,31 @@ describe("createMemoryPlatformEvents", () => {
     expect(b).toHaveBeenCalledOnce();
   });
 
+  test("chat watchers are scoped to their (scope, project)", async () => {
+    const memory = createMemoryPlatformEvents();
+    const mine = vi.fn();
+    const other = vi.fn();
+    memory.events.watchChat("s1", "p1", mine);
+    memory.events.watchChat("s1", "p2", other);
+    memory.emitChat("s1", "p1");
+    await flush();
+    expect(mine).toHaveBeenCalledOnce();
+    expect(other).not.toHaveBeenCalled();
+  });
+
+  test("a workspace write also fires the scope's project-list watchers", async () => {
+    const memory = createMemoryPlatformEvents();
+    const scopeWatcher = vi.fn();
+    const otherScope = vi.fn();
+    memory.events.watchScopeProjects("s1", scopeWatcher);
+    memory.events.watchScopeProjects("s2", otherScope);
+    memory.emitWorkspace("s1", "p1");
+    memory.emitWorkspace("s1", "p2");
+    await flush();
+    expect(scopeWatcher).toHaveBeenCalledTimes(2);
+    expect(otherScope).not.toHaveBeenCalled();
+  });
+
   test("emission is deferred: a watcher's re-read sees the settled store", async () => {
     const memory = createMemoryPlatformEvents();
     let sawDuringEmit = false;
@@ -97,5 +124,17 @@ describe("store decorators", () => {
     await store.delete("s", "p");
     await flush();
     expect(seen).toHaveBeenCalledTimes(2);
+  });
+
+  test("withChatEvents emits on put and delete", async () => {
+    const memory = createMemoryPlatformEvents();
+    const seen = vi.fn();
+    memory.events.watchChat("s", "p", seen);
+    const store = withChatEvents(createMemoryChatStore(), memory.emitChat);
+    await store.putChat("s", "p", [{ id: "m1" }]);
+    await store.deleteChat("s", "p");
+    await flush();
+    expect(seen).toHaveBeenCalledTimes(2);
+    expect(await store.getChat("s", "p")).toBeNull();
   });
 });

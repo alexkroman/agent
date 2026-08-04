@@ -12,6 +12,7 @@
 import type { Context } from "hono";
 import type { AppDatabases } from "./app-database.ts";
 import type { SlugMutationLock } from "./platform-lock.ts";
+import type { SandboxRegistry } from "./sandbox-registry.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
 import type { SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
@@ -34,6 +35,8 @@ export type HonoEnv = {
     secrets: SecretStore;
     /** Per-app database provisioning. Absent when SUPABASE_DB_URL is unset. */
     appDb?: AppDatabases;
+    /** Cross-replica sandbox registry (see sandbox-registry.ts). */
+    registry?: SandboxRegistry;
     /**
      * Serializes per-slug mutations (deploy/delete/secret/storage). Postgres
      * lease in production so replicas exclude each other; in-process in dev.

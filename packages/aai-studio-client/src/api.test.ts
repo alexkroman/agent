@@ -274,6 +274,23 @@ describe("api.watchProject", () => {
     expect(down).toHaveBeenCalledOnce();
   });
 
+  test("chat frames reach onChat", async () => {
+    stubFetch(() =>
+      sseResponse([
+        'event: project\ndata: {"files":{},"previewStale":true}\n\n',
+        'event: chat\ndata: [{"id":"m1","role":"user","parts":[]}]\n\n',
+      ]),
+    );
+    const chats: unknown[] = [];
+    api.watchProject("k", "proj", {
+      onData: () => undefined,
+      onChat: (m) => chats.push(m),
+      onDown: () => undefined,
+    });
+    await settle();
+    expect(chats).toEqual([[{ id: "m1", role: "user", parts: [] }]]);
+  });
+
   test("a non-OK response reports down", async () => {
     stubFetch(() => jsonResponse({ error: "nope" }, 503));
     const down = vi.fn();
@@ -297,5 +314,32 @@ describe("api.watchProject", () => {
     stop();
     await settle();
     expect(down).not.toHaveBeenCalled();
+  });
+});
+
+describe("api.watchProjects", () => {
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  test("delivers pushed project lists", async () => {
+    stubFetch(
+      () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              const encoder = new TextEncoder();
+              controller.enqueue(encoder.encode('event: projects\ndata: ["a"]\n\n'));
+              controller.enqueue(encoder.encode('event: projects\ndata: ["a","b"]\n\n'));
+              controller.close();
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "text/event-stream" } },
+        ),
+    );
+    const lists: string[][] = [];
+    const down = vi.fn();
+    api.watchProjects("k", { onData: (names) => lists.push(names), onDown: down });
+    await settle();
+    expect(lists).toEqual([["a"], ["a", "b"]]);
+    expect(down).toHaveBeenCalledOnce();
   });
 });

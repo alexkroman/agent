@@ -16,6 +16,7 @@ import type { PlatformEvents, Unwatch } from "./platform-events.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import { createSandbox, type Sandbox } from "./sandbox.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
+import { REGISTRY_HEARTBEAT_MS, type SandboxRegistry } from "./sandbox-registry.ts";
 import { defaultScaleOptions, routeSession, type ScaleOptions } from "./sandbox-scale.ts";
 import {
   type AgentSlot,
@@ -53,6 +54,12 @@ export type ResolveSandboxOpts = {
   /** Per-app database opener; absent when SUPABASE_DB_URL is unset. */
   appDb?: AppDatabases;
   pool?: SandboxPool;
+  /**
+   * Cross-replica sandbox registry (see sandbox-registry.ts): residents
+   * built here are registered and heartbeated, and the broker's cold path
+   * routes to a live peer sandbox before spawning a duplicate.
+   */
+  registry?: SandboxRegistry;
   /**
    * Horizontal scaling policy (see sandbox-scale.ts). Defaults from
    * SANDBOX_MAX_SESSIONS / SANDBOX_MAX_REPLICAS; scaling is off when the
@@ -254,7 +261,73 @@ async function rebuildSlot(
 
   slot.version = record.version;
   attachSandbox(slots, slot, sandbox);
+  startRegistryHeartbeat(slug, sandbox, opts);
   return sandbox;
+}
+
+/**
+ * Register this replica's resident sandbox in the cross-replica registry
+ * and heartbeat its lease with a sampled session count, for as long as it
+ * remains the slot's live resident. Ownership is re-checked every tick, so
+ * EVERY detach path — retire, terminate, idle eviction, a lost guest —
+ * converges on an unregister within one heartbeat without any of those
+ * paths knowing the registry exists. Best-effort throughout: the registry
+ * must never affect the sandbox it describes.
+ */
+function startRegistryHeartbeat(slug: string, sandbox: Sandbox, opts: ResolveSandboxOpts): void {
+  const registry = opts.registry;
+  if (!registry) return;
+  let sessionUrl: string | null = null;
+  const stop = (timer: NodeJS.Timeout): void => {
+    clearInterval(timer);
+    if (sessionUrl) {
+      void registry.unregister(slug, sessionUrl).catch(() => undefined);
+    }
+  };
+  const beat = async (): Promise<void> => {
+    if (opts.slots.get(slug)?.sandbox !== sandbox || !isLive(sandbox)) {
+      stop(timer);
+      return;
+    }
+    try {
+      // The tunnel URL settles once the guest is up; earlier ticks retry.
+      sessionUrl ??= await sandbox.sessionUrl();
+      const sessions = await sandbox.activeSessions().catch(() => 0);
+      await registry.register(slug, sessionUrl, sessions);
+    } catch {
+      // Booting guest or transient registry error — the next tick retries.
+    }
+  };
+  const timer = setInterval(() => void beat(), REGISTRY_HEARTBEAT_MS);
+  timer.unref?.();
+  void beat();
+}
+
+/**
+ * The broker's cross-replica route: a live peer sandbox for `slug`, when
+ * one exists with session headroom. Consulted only on the cold path (no
+ * local resident), where the duplicate spawn it prevents is about to
+ * happen. Never fails a broker request — any registry trouble reads as "no
+ * peer" and the local spawn proceeds.
+ */
+async function pickPeerSessionUrl(slug: string, opts: ResolveSandboxOpts): Promise<string | null> {
+  const registry = opts.registry;
+  if (!registry) return null;
+  try {
+    // Existence gate: a deleted agent's registry rows outlive the row by up
+    // to one heartbeat, and routing to them would resurrect a 404.
+    if ((await opts.store.getAgentVersion(slug)) === null) return null;
+    const peers = await registry.listPeers(slug);
+    const best = peers[0]; // least-loaded (the registry sorts)
+    if (!best) return null;
+    const scale = opts.scale ?? defaultScaleOptions();
+    // Peers at capacity: spawn locally instead of piling on.
+    if (scale && best.sessions >= scale.maxSessionsPerSandbox) return null;
+    return best.sessionUrl;
+  } catch (err) {
+    console.warn(`Sandbox registry lookup failed for ${slug}: ${errorMessage(err)}`);
+    return null;
+  }
 }
 
 /**
@@ -335,6 +408,15 @@ export async function brokerSessionUrl(
   slug: string,
   opts: ResolveSandboxOpts,
 ): Promise<BrokeredSession> {
+  // Cold on this replica: prefer a live peer replica's sandbox over
+  // spawning a duplicate guest (see sandbox-registry.ts). A warm local
+  // resident always wins — it costs nothing and the registry read isn't
+  // free.
+  const resident = opts.slots.get(slug)?.sandbox;
+  if (!(resident && isLive(resident))) {
+    const peerUrl = await pickPeerSessionUrl(slug, opts);
+    if (peerUrl) return { ok: true, sessionUrl: peerUrl };
+  }
   const sandbox = await resolveSandbox(slug, opts);
   if (!sandbox) return { ok: false, status: 404 };
   try {

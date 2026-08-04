@@ -97,6 +97,16 @@ begin
   );
 end $$`;
 
+/**
+ * Expired sandbox-registry leases (see sandbox-registry.ts). Live owners
+ * renew every heartbeat and unregister on detach; expired rows are the
+ * residue of crashed replicas, already invisible to `listPeers`.
+ */
+const SWEEP_SANDBOX_REGISTRY = guarded(
+  "aai_platform.sandbox_registry",
+  "delete from aai_platform.sandbox_registry where expires_at <= now()",
+);
+
 /** The platform core's sweeps. The studio's rate-limit sweep rides along —
  * the table is shared infrastructure in `aai_platform`, and scheduling is
  * idempotent, so both services installing the same job set is correct. */
@@ -104,6 +114,7 @@ export const PLATFORM_CRON_JOBS: readonly CronJob[] = [
   { name: "aai-sweep-slug-locks", schedule: "*/30 * * * *", command: SWEEP_SLUG_LOCKS },
   { name: "aai-sweep-rate-limits", schedule: "7 * * * *", command: SWEEP_RATE_LIMITS },
   { name: "aai-sweep-orphan-previews", schedule: "23 * * * *", command: SWEEP_ORPHAN_PREVIEWS },
+  { name: "aai-sweep-sandbox-registry", schedule: "*/30 * * * *", command: SWEEP_SANDBOX_REGISTRY },
 ];
 
 /**

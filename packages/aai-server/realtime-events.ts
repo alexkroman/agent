@@ -6,7 +6,7 @@
  * WebSocket to the platform Supabase project's Realtime endpoint
  * (`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` — server-side only; the
  * service key never reaches a browser, which is why the studio client gets
- * its pushes relayed over the platform's own SSE route instead of
+ * its pushes relayed over the platform's own SSE routes instead of
  * subscribing here directly).
  *
  * Events are `postgres_changes` streams on the same rows every replica
@@ -18,9 +18,13 @@
  *   deploy version on the agents row in the first place (see
  *   agent-store.ts). This is also why postgres_changes was chosen over a
  *   Realtime broadcast: a broadcast is a second code path per mutation.
- * - `aai_platform.studio_workspaces` (one channel per watched project,
- *   refcounted, filtered `project=eq.<name>`; `scope` — the other half of
- *   the composite key — is checked handler-side).
+ * - `aai_platform.studio_workspaces` — per watched project (filtered
+ *   `project=eq.<name>`) for the project SSE stream, and per watched scope
+ *   (filtered `scope=eq.<hash>`) for the home sidebar's project list. The
+ *   postgres filter carries one column, so the other half of the composite
+ *   key is checked handler-side.
+ * - `aai_platform.studio_chats` — per watched project, for pushing settled
+ *   chat turns to other tabs/devices.
  *
  * Handlers receive SIGNALS, not payloads: watchers re-read the row (see
  * platform-events.ts). That makes delivery semantics forgiving — a
@@ -36,6 +40,7 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { RealtimeClient } from "@supabase/realtime-js";
 import { ENSURE_AGENTS_TABLE_SQL } from "./agent-store.ts";
+import { ENSURE_CHATS_TABLE_SQL } from "./chat-store.ts";
 import { ensureTableOnce } from "./pg-ensure.ts";
 import type { PlatformEvents, Unwatch } from "./platform-events.ts";
 import type { SqlExec } from "./secret-store.ts";
@@ -93,12 +98,60 @@ function defaultClient(opts: RealtimePlatformEventsOptions): RealtimeClientLike 
   }) as unknown as RealtimeClientLike;
 }
 
-/** Log-and-continue subscribe callback: a failed channel is a lost accelerator. */
+/** Log-and-continue subscribe callback: a failed channel is a lost push. */
 function logSubscribeStatus(topic: string): (status: string, err?: Error) => void {
   return (status, err) => {
     if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
       console.warn(`Realtime channel ${topic}: ${status}${err ? ` (${errorMessage(err)})` : ""}`);
     }
+  };
+}
+
+/**
+ * Refcounted keyed channels: one Realtime channel per distinct key, shared
+ * by its watchers and released (unsubscribed) when the last one unwatches.
+ * Entries are dropped by identity so a late unwatch can never tear down a
+ * successor channel for the same key.
+ */
+function createChannelPool(client: RealtimeClientLike) {
+  type Entry = { channel: RealtimeChannelLike; watchers: Set<() => void> };
+  const entries = new Map<string, Entry>();
+
+  return {
+    watch(
+      key: string,
+      topic: string,
+      filter: PostgresChangesFilter,
+      accepts: (row: Record<string, unknown> | null | undefined) => boolean,
+      onChange: () => void,
+    ): Unwatch {
+      let entry = entries.get(key);
+      if (!entry) {
+        const channel = client.channel(topic);
+        const created: Entry = { channel, watchers: new Set() };
+        channel.on("postgres_changes", filter, (payload) => {
+          if (!accepts(payload.new ?? payload.old)) return;
+          for (const watcher of created.watchers) watcher();
+        });
+        channel.subscribe(logSubscribeStatus(topic));
+        entries.set(key, created);
+        entry = created;
+      }
+      const current = entry;
+      current.watchers.add(onChange);
+      return () => {
+        current.watchers.delete(onChange);
+        if (current.watchers.size > 0) return;
+        if (entries.get(key) === current) entries.delete(key);
+        void current.channel.unsubscribe().catch(() => undefined);
+      };
+    },
+    close(): void {
+      for (const entry of entries.values()) {
+        void entry.channel.unsubscribe().catch(() => undefined);
+      }
+      entries.clear();
+    },
   };
 }
 
@@ -125,37 +178,9 @@ export function createRealtimePlatformEvents(opts: RealtimePlatformEventsOptions
     agentsChannel.subscribe(logSubscribeStatus("aai:agents"));
   };
 
-  // One channel per watched project, refcounted across its watchers.
-  type WorkspaceEntry = { channel: RealtimeChannelLike; watchers: Set<() => void> };
-  const workspaceChannels = new Map<string, WorkspaceEntry>();
-
-  const ensureWorkspaceChannel = (scope: string, project: string): WorkspaceEntry => {
-    const key = `${scope} ${project}`;
-    const existing = workspaceChannels.get(key);
-    if (existing) return existing;
-    // Topic is per (scope, project); the postgres filter can only carry one
-    // column, so it narrows to the project and the handler checks the scope.
-    const topic = `aai:workspace:${key}`;
-    const channel = client.channel(topic);
-    const entry: WorkspaceEntry = { channel, watchers: new Set() };
-    channel.on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "aai_platform",
-        table: "studio_workspaces",
-        filter: `project=eq.${project}`,
-      },
-      (payload) => {
-        const row = payload.new ?? payload.old;
-        if (row?.scope !== scope) return;
-        for (const watcher of entry.watchers) watcher();
-      },
-    );
-    channel.subscribe(logSubscribeStatus(topic));
-    workspaceChannels.set(key, entry);
-    return entry;
-  };
+  const pool = createChannelPool(client);
+  const scopeAccepts = (scope: string) => (row: Record<string, unknown> | null | undefined) =>
+    row?.scope === scope;
 
   return {
     watchAgents(onChange): Unwatch {
@@ -165,24 +190,53 @@ export function createRealtimePlatformEvents(opts: RealtimePlatformEventsOptions
     },
 
     watchWorkspace(scope, project, onChange): Unwatch {
-      const entry = ensureWorkspaceChannel(scope, project);
-      entry.watchers.add(onChange);
-      return () => {
-        entry.watchers.delete(onChange);
-        if (entry.watchers.size > 0) return;
-        // Last watcher gone: release the channel. Deleted by identity — a
-        // late unwatch must not tear down a successor entry for the key.
-        const key = `${scope} ${project}`;
-        if (workspaceChannels.get(key) === entry) workspaceChannels.delete(key);
-        void entry.channel.unsubscribe().catch(() => undefined);
-      };
+      return pool.watch(
+        `ws:${scope} ${project}`,
+        `aai:workspace:${scope}:${project}`,
+        {
+          event: "*",
+          schema: "aai_platform",
+          table: "studio_workspaces",
+          filter: `project=eq.${project}`,
+        },
+        scopeAccepts(scope),
+        onChange,
+      );
+    },
+
+    watchChat(scope, project, onChange): Unwatch {
+      return pool.watch(
+        `chat:${scope} ${project}`,
+        `aai:chat:${scope}:${project}`,
+        {
+          event: "*",
+          schema: "aai_platform",
+          table: "studio_chats",
+          filter: `project=eq.${project}`,
+        },
+        scopeAccepts(scope),
+        onChange,
+      );
+    },
+
+    watchScopeProjects(scope, onChange): Unwatch {
+      return pool.watch(
+        `scope:${scope}`,
+        `aai:projects:${scope}`,
+        {
+          event: "*",
+          schema: "aai_platform",
+          table: "studio_workspaces",
+          filter: `scope=eq.${scope}`,
+        },
+        // The filter already narrows to the scope; every row qualifies.
+        () => true,
+        onChange,
+      );
     },
 
     close() {
-      for (const entry of workspaceChannels.values()) {
-        void entry.channel.unsubscribe().catch(() => undefined);
-      }
-      workspaceChannels.clear();
+      pool.close();
       agentWatchers.clear();
       client.disconnect();
       return Promise.resolve();
@@ -196,25 +250,22 @@ export function createRealtimePlatformEvents(opts: RealtimePlatformEventsOptions
  * can be after this runs on a fresh database). Idempotent; the DO block
  * re-checks membership so re-boots are no-ops.
  */
+const PUBLISHED_TABLES = ["agents", "studio_workspaces", "studio_chats"] as const;
+
 const ENSURE_PUBLICATION_SQL = `do $$
 begin
   if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
     create publication supabase_realtime;
   end if;
-  if not exists (
+${PUBLISHED_TABLES.map(
+  (table) => `  if not exists (
     select 1 from pg_publication_tables
     where pubname = 'supabase_realtime'
-      and schemaname = 'aai_platform' and tablename = 'agents'
+      and schemaname = 'aai_platform' and tablename = '${table}'
   ) then
-    alter publication supabase_realtime add table aai_platform.agents;
-  end if;
-  if not exists (
-    select 1 from pg_publication_tables
-    where pubname = 'supabase_realtime'
-      and schemaname = 'aai_platform' and tablename = 'studio_workspaces'
-  ) then
-    alter publication supabase_realtime add table aai_platform.studio_workspaces;
-  end if;
+    alter publication supabase_realtime add table aai_platform.${table};
+  end if;`,
+).join("\n")}
 end $$`;
 
 export function ensureRealtimeSetup(sql: SqlExec): Promise<void> {
@@ -222,6 +273,7 @@ export function ensureRealtimeSetup(sql: SqlExec): Promise<void> {
     sql,
     ENSURE_AGENTS_TABLE_SQL,
     ENSURE_WORKSPACES_TABLE_SQL,
+    ENSURE_CHATS_TABLE_SQL,
     ENSURE_PUBLICATION_SQL,
   )();
 }

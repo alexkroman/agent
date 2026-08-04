@@ -10,6 +10,7 @@ import {
   type MemoryPlatformEvents,
   type PlatformEvents,
   withAgentEvents,
+  withChatEvents,
   withWorkspaceEvents,
 } from "./platform-events.ts";
 import { type AgentSlot, createSlotCache } from "./sandbox-slots.ts";
@@ -87,7 +88,7 @@ export async function createTestOrchestrator(
   const memoryEvents = createMemoryPlatformEvents();
   const store = createTestStore(overrides.secrets, memoryEvents);
   const workspaces = withWorkspaceEvents(createMemoryWorkspaceStore(), memoryEvents.emitWorkspace);
-  const chats = createMemoryChatStore();
+  const chats = withChatEvents(createMemoryChatStore(), memoryEvents.emitChat);
   const { app } = createOrchestrator({
     slots: createSlotCache(),
     store,
