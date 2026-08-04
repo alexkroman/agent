@@ -42,9 +42,31 @@ export async function walkWorkspace(dir: string): Promise<string[]> {
 }
 
 /**
+ * Decode `buf` as UTF-8, or null when it isn't valid UTF-8.
+ *
+ * `fatal` turns an invalid sequence into a throw rather than U+FFFD: the
+ * workspace row is a JSON path→string map, so a lossy read would sync a
+ * mangled copy of a real binary back as the project's own source. `bash`
+ * makes that reachable (a curl'd image, a stray build artifact).
+ * `ignoreBOM` keeps a leading U+FEFF instead of silently dropping it.
+ *
+ * Mirrors `decodeUtf8` in aai-cli/_studio.ts — the two snapshot the same
+ * shape from opposite ends and their skip rules must agree.
+ */
+const UTF8_STRICT = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+function decodeUtf8(buf: Buffer): string | null {
+  try {
+    return UTF8_STRICT.decode(buf);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Snapshot the workspace as a path→content record — the shape builds and
- * the host sync speak. Files over the store's byte cap are skipped with
- * a warning entry so a `bash`-generated artifact can't wedge every sync.
+ * the host sync speak. Files over the store's byte cap, and files that
+ * aren't valid UTF-8, are skipped with a warning entry so a
+ * `bash`-generated artifact can't wedge every sync or corrupt the project.
  */
 export async function snapshotWorkspace(
   dir: string,
@@ -71,7 +93,15 @@ export async function snapshotWorkspace(
           warning: `${rel} is ${st.size} bytes (max ${MAX_STUDIO_FILE_BYTES}) — not synced.`,
         };
       }
-      return { rel, content: await readFile(path.join(dir, rel), "utf-8"), warning: null };
+      const content = decodeUtf8(await readFile(path.join(dir, rel)));
+      if (content === null) {
+        return {
+          rel,
+          content: null,
+          warning: `${rel} is not valid UTF-8 (binary file?) — not synced.`,
+        };
+      }
+      return { rel, content, warning: null };
     }),
   );
   for (const entry of read) {

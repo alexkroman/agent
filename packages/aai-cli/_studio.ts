@@ -58,10 +58,30 @@ async function walkProject(dir: string, current = dir): Promise<string[]> {
 }
 
 /**
+ * Decode `buf` as UTF-8, or null when it isn't valid UTF-8.
+ *
+ * `fatal` makes an invalid sequence throw instead of becoming U+FFFD, which
+ * is the whole point: a workspace is a JSON path→string map and cannot carry
+ * arbitrary bytes, so a lossy read turned a pushed PNG into replacement
+ * characters while reporting success — and a later `aai pull` wrote the
+ * mangled version back over the local original. `ignoreBOM` keeps a leading
+ * U+FEFF in the string; without it the decoder strips the BOM and the check
+ * meant to stop corruption would quietly perform some of its own.
+ */
+const UTF8_STRICT = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+function decodeUtf8(buf: Buffer): string | null {
+  try {
+    return UTF8_STRICT.decode(buf);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Walk a local project into the path→content record a workspace stores —
  * the CLI-side twin of the guest's `snapshotWorkspace`: same ignored
- * directories, same caps, oversized files skipped with a warning rather
- * than failing the whole push.
+ * directories, same caps, oversized and non-text files skipped with a
+ * warning rather than failing the whole push.
  */
 export async function collectSourceFiles(
   dir: string,
@@ -81,8 +101,13 @@ export async function collectSourceFiles(
       warnings.push(`${rel} is ${st.size} bytes (max ${MAX_STUDIO_FILE_BYTES}) — not synced.`);
       continue;
     }
+    const content = decodeUtf8(await readFile(abs));
+    if (content === null) {
+      warnings.push(`${rel} is not valid UTF-8 (binary file?) — not synced.`);
+      continue;
+    }
     // Workspace paths are POSIX; keep pushes from Windows checkouts valid.
-    files[rel.split(path.sep).join("/")] = await readFile(abs, "utf-8");
+    files[rel.split(path.sep).join("/")] = content;
   }
   return { files, warnings };
 }

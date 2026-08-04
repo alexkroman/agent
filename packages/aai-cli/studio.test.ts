@@ -91,6 +91,55 @@ describe("collectSourceFiles", () => {
       expect(warnings.some((w) => w.includes("huge.txt"))).toBe(true);
     });
   });
+
+  test("skips binary files instead of silently mangling them", async () => {
+    await withTempDir(async (dir) => {
+      await fs.writeFile(path.join(dir, "agent.ts"), "export {};");
+      // A real PNG header: 0x89 is not valid UTF-8, so a utf-8 read replaces
+      // it (and every other invalid byte) with U+FFFD. The workspace file map
+      // is JSON — it cannot carry these bytes — so the only honest options are
+      // skip-with-a-warning or encode. Reading them as text produced a push
+      // that reported success while destroying the asset, and a later `aai
+      // pull` wrote the mangled bytes back over the local original.
+      await fs.writeFile(
+        path.join(dir, "logo.png"),
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xfe]),
+      );
+
+      const { files, warnings } = await collectSourceFiles(dir);
+      expect(Object.keys(files)).toEqual(["agent.ts"]);
+      expect(warnings.some((w) => w.includes("logo.png"))).toBe(true);
+    });
+  });
+
+  test("keeps valid UTF-8 exactly, including BOM, CRLF, and NUL", async () => {
+    await withTempDir(async (dir) => {
+      // These all round-tripped correctly already; pin that the binary check
+      // does not start rejecting legitimate text. A NUL byte in particular is
+      // valid UTF-8 and appears in fixtures.
+      await fs.writeFile(path.join(dir, "agent.ts"), "export {};");
+      await fs.writeFile(path.join(dir, "bom.txt"), Buffer.from([0xef, 0xbb, 0xbf, 0x68, 0x69]));
+      await fs.writeFile(path.join(dir, "crlf.txt"), "a\r\nb\r\n");
+      await fs.writeFile(path.join(dir, "nul.txt"), Buffer.from([0x61, 0x00, 0x62]));
+      await fs.writeFile(path.join(dir, "utf8.txt"), "héllo — ünïcødé ✅");
+
+      const { files, warnings } = await collectSourceFiles(dir);
+      expect(Object.keys(files).sort()).toEqual([
+        "agent.ts",
+        "bom.txt",
+        "crlf.txt",
+        "nul.txt",
+        "utf8.txt",
+      ]);
+      expect(files["utf8.txt"]).toBe("héllo — ünïcødé ✅");
+      expect(files["crlf.txt"]).toBe("a\r\nb\r\n");
+      expect(files["nul.txt"]).toBe("a\u0000b");
+      // A BOM must survive: TextDecoder strips it by default, which would
+      // make the UTF-8 check itself a (smaller) corruption bug.
+      expect(files["bom.txt"]).toBe("\ufeffhi");
+      expect(warnings).toEqual([]);
+    });
+  });
 });
 
 describe("executeList", () => {
