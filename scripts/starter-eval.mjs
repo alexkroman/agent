@@ -320,20 +320,26 @@ const allStarters = await starters();
  * for a prompt whose parenthetical DEFINED inventory as take/drop, which
  * failed a perfectly good agent. An expectation is a claim about the ask, so
  * it has to be checkable against the ask.
+ *
+ * A prompt that references a template ("Use the retail template.") makes the
+ * TEMPLATE the ask — its files carry the tools, builtins, and client.tsx the
+ * expectation describes — so the prose-consistency checks don't apply there.
  */
+const referencesTemplate = (prompt) => /\buse the \S+ template\b/i.test(prompt);
 for (const e of EXPECTATIONS) {
   const starter = allStarters.find((s) => s.label === e.label);
   if (!starter) throw new Error(`expectation for unknown starter: ${e.label}`);
-  if (e.ui && !/client\.tsx|custom UI/i.test(starter.prompt)) {
+  const templated = referencesTemplate(starter.prompt);
+  if (e.ui && !templated && !/client\.tsx|custom UI/i.test(starter.prompt)) {
     throw new Error(`expectation requires a UI but the prompt never asks for one: ${e.label}`);
   }
   for (const b of e.builtins ?? []) {
-    if (!starter.prompt.includes(b)) {
+    if (!templated && !starter.prompt.includes(b)) {
       throw new Error(`expectation requires builtin ${b} but the prompt never names it: ${e.label}`);
     }
   }
   for (const b of e.builtinDelegation ?? []) {
-    if (!starter.prompt.includes(b)) {
+    if (!templated && !starter.prompt.includes(b)) {
       throw new Error(`builtinDelegation names ${b}, which the prompt never asks for: ${e.label}`);
     }
   }
