@@ -3,9 +3,9 @@ import { describe, expect, test, vi } from "vitest";
 import {
   appDbConnectionUrl,
   appDbIdentifier,
+  appDbUrlFor,
   createAppDatabases,
   deprovisionAppDatabase,
-  openAppDb,
   parseAppDbMeta,
   provisionAppDatabase,
 } from "./app-database.ts";
@@ -128,16 +128,30 @@ describe("appDbConnectionUrl", () => {
   });
 });
 
-describe("openAppDb", () => {
+describe("appDbUrlFor", () => {
   test("builds a role-credentialed URL on the admin host/port/db", () => {
-    // openAppDb only rewrites credentials; connection is lazy so this never dials.
-    const db = openAppDb(
-      { role: appDbIdentifier("x"), password: "0".repeat(32) },
-      "postgres://postgres:admin-secret@db.example.supabase.co:6543/postgres",
+    const url = new URL(
+      appDbUrlFor(
+        { role: appDbIdentifier("x"), password: "0".repeat(32) },
+        "postgres://postgres:admin-secret@db.example.supabase.co:6543/postgres",
+      ),
     );
-    expect(typeof db.query).toBe("function");
-    expect(typeof db.close).toBe("function");
-    void db.close();
+    expect(decodeURIComponent(url.username)).toBe(appDbIdentifier("x"));
+    expect(url.host).toBe("db.example.supabase.co:6543");
+  });
+
+  test("the stored locator wins over the fallback admin URL", () => {
+    const url = new URL(
+      appDbUrlFor(
+        {
+          role: appDbIdentifier("x"),
+          password: "0".repeat(32),
+          url: "postgres://postgres:s@other-cluster.example:5432/postgres",
+        },
+        "postgres://postgres:admin-secret@db.example.supabase.co:6543/postgres",
+      ),
+    );
+    expect(url.host).toBe("other-cluster.example:5432");
   });
 });
 

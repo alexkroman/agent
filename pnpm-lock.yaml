@@ -356,6 +356,9 @@ importers:
       p-retry:
         specifier: ^8.0.0
         version: 8.0.0
+      p-timeout:
+        specifier: ^7.0.1
+        version: 7.0.1
       quick-lru:
         specifier: ^7.3.0
         version: 7.3.0

@@ -74,7 +74,7 @@ export type RpcSchema = {
 
 export interface RpcConnection<S extends RpcSchema = RpcSchema> {
   // `params` is required exactly when the schema's params type cannot be
-  // undefined — so `sendRequest("bundle/load")` is a missing-argument error
+  // undefined — so `sendRequest("studio/session-init")` with no params is a missing-argument error
   // while an untyped connection (params: unknown) keeps its 1-arg form.
   sendRequest<M extends keyof S["requestsOut"] & string>(
     method: M,

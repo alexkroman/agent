@@ -11,38 +11,29 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { RETIRE_POLL_MS } from "./constants.ts";
 import { createMemoryPlatformEvents } from "./platform-events.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
-import type { RpcConnection } from "./rpc-transport.ts";
 import type { Sandbox } from "./sandbox.ts";
-import { createMemorySandboxRegistry } from "./sandbox-registry.ts";
-import { brokerSessionUrl, resolveSandbox, watchAgentInvalidation } from "./sandbox-resolve.ts";
+import { resolveSandbox, watchAgentInvalidation } from "./sandbox-resolve.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
+import { appDbSecretName, createMemorySecretStore } from "./secret-store.ts";
 import { createTestStore } from "./test-utils.ts";
 
-const { mockCreateSandboxVm } = vi.hoisted(() => {
-  const mockConn: RpcConnection = {
-    sendRequest: vi.fn().mockResolvedValue(undefined),
-    sendNotification: vi.fn(),
-    onRequest: vi.fn(),
-    onNotification: vi.fn(),
-    listen: vi.fn(),
-    dispose: vi.fn(),
-  };
-  const mockCreateSandboxVm = vi.fn().mockResolvedValue({
-    conn: mockConn,
+const { mockSpawnAgentServer } = vi.hoisted(() => {
+  const mockSpawnAgentServer = vi.fn().mockResolvedValue({
     sessionUrl: "wss://tunnel.test:443/websocket",
+    activeSessions: vi.fn().mockResolvedValue(0),
+    drain: vi.fn().mockResolvedValue(undefined),
     shutdown: vi.fn().mockResolvedValue(undefined),
     alive: () => true,
     onExit: vi.fn(),
   });
-  return { mockCreateSandboxVm };
+  return { mockSpawnAgentServer };
 });
 
 vi.mock("./sandbox-vm.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./sandbox-vm.ts")>()),
-  createSandboxVm: mockCreateSandboxVm,
+  spawnAgentServer: mockSpawnAgentServer,
 }));
 
 const TEST_AGENT_CONFIG: IsolateConfig = {
@@ -121,26 +112,44 @@ describe("agents-row change stream drives sandbox invalidation", () => {
     deps.unwatch();
   });
 
-  it("a deploy's change event retires the resident (drops row caches); the next broker rebuilds", async () => {
+  it("a deploy's change event hands over BLUE-GREEN: the replacement is attached before the old resident detaches", async () => {
     const deps = await seedAgent("redeployed");
     const first = await resolveSandbox("redeployed", deps);
     expect(first).not.toBeNull();
 
-    // A deploy elsewhere upserts the agents row → change event.
+    // A deploy elsewhere upserts the agents row → change event. The handler
+    // boots the NEW deploy's sandbox, waits for its readiness, and swaps —
+    // the slot is never empty, so the next caller pays no cold start.
     await deps.redeploy();
 
-    // Detached the moment the event was handled — before any re-broker.
-    expect(deps.slots.get("redeployed")?.sandbox).toBeUndefined();
-    // The rebuild must not read a pre-mutation cached row.
+    const replacement = deps.slots.get("redeployed")?.sandbox;
+    expect(replacement).toBeDefined();
+    expect(replacement).not.toBe(first);
+    // The rebuild read a fresh row, not a pre-mutation cached one.
     expect(deps.invalidate).toHaveBeenCalledWith("redeployed");
 
-    const second = await resolveSandbox("redeployed", deps);
-    expect(second).not.toBeNull();
-    expect(second).not.toBe(first);
-    // The rebuilt sandbox matches the row's version: its own deploy event
-    // (already handled) and further resolves leave it alone.
-    await expect(resolveSandbox("redeployed", deps)).resolves.toBe(second);
-    await second?.shutdown();
+    // The broker serves the ready replacement as-is — no rebuild, and its
+    // own deploy event (already handled) leaves it alone.
+    await expect(resolveSandbox("redeployed", deps)).resolves.toBe(replacement);
+    await (replacement as Sandbox).shutdown();
+    deps.unwatch();
+  });
+
+  it("a replacement that fails to boot retires the old resident — the failure stays visible", async () => {
+    const deps = await seedAgent("bad-redeploy");
+    const first = await resolveSandbox("bad-redeploy", deps);
+    expect(first).not.toBeNull();
+
+    // The NEW deploy crashes on boot. Blue-green must not cut over to a
+    // corpse, and must not keep serving superseded code silently either:
+    // the old resident retires and the slot empties, so the next broker
+    // call rebuilds and surfaces the boot failure.
+    mockSpawnAgentServer.mockReturnValueOnce(Promise.reject(new Error("boot crash")));
+    await deps.redeploy();
+
+    await vi.waitFor(() => {
+      expect(deps.slots.get("bad-redeploy")?.sandbox).toBeUndefined();
+    });
     deps.unwatch();
   });
 
@@ -199,16 +208,16 @@ describe("agents-row change stream drives sandbox invalidation", () => {
     const stale = await resolving;
     expect(stale).not.toBeNull();
 
-    // The queued handler ran after the attach: version mismatch → retired.
+    // The queued handler ran after the attach: version mismatch → blue-green
+    // handover to a replacement at the row's current version.
     await vi.waitFor(() => {
-      expect(deps.slots.get("mid-rebuild")?.sandbox).toBeUndefined();
+      const current = deps.slots.get("mid-rebuild")?.sandbox;
+      expect(current).toBeDefined();
+      expect(current).not.toBe(stale);
     });
-    // The next broker rebuilds at the row's current version and stays put.
-    const fresh = await resolveSandbox("mid-rebuild", deps);
-    expect(fresh).not.toBeNull();
-    expect(fresh).not.toBe(stale);
+    const fresh = deps.slots.get("mid-rebuild")?.sandbox;
     await expect(resolveSandbox("mid-rebuild", deps)).resolves.toBe(fresh);
-    await fresh?.shutdown();
+    await (fresh as Sandbox).shutdown();
     deps.unwatch();
   });
 
@@ -248,123 +257,79 @@ describe("agents-row change stream drives sandbox invalidation", () => {
     deps.unwatch();
   });
 
-  it("retirement drains live sessions instead of cutting them", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date", "performance"] });
-    try {
-      const deps = await seedAgent("draining");
-      const sandbox = (await resolveSandbox("draining", deps)) as Sandbox;
-      let live = 4;
-      vi.spyOn(sandbox, "activeSessions").mockImplementation(() => Promise.resolve(live));
-      const shutdown = vi.spyOn(sandbox, "shutdown");
+  it("retirement hands the old sandbox its drain budget instead of cutting it", async () => {
+    const deps = await seedAgent("draining");
+    const sandbox = (await resolveSandbox("draining", deps)) as Sandbox;
+    const drain = vi.spyOn(sandbox, "drain");
+    const shutdown = vi.spyOn(sandbox, "shutdown");
 
-      await deps.redeploy();
+    await deps.redeploy();
 
-      // Off the slot immediately — no new session can reach it — but the
-      // four calls on it are not hung up on.
-      expect(deps.slots.get("draining")?.sandbox).toBeUndefined();
-      expect(shutdown).not.toHaveBeenCalled();
-
-      live = 0;
-      await vi.advanceTimersByTimeAsync(RETIRE_POLL_MS + 1);
-      expect(shutdown).toHaveBeenCalledOnce();
-      deps.unwatch();
-    } finally {
-      vi.useRealTimers();
-    }
+    // Handed over: the slot holds the READY replacement (no new session
+    // can reach the old sandbox), and the old one was told to drain — the
+    // GUEST finishes its calls and exits itself; the host never hangs up.
+    expect(deps.slots.get("draining")?.sandbox).toBeDefined();
+    expect(deps.slots.get("draining")?.sandbox).not.toBe(sandbox);
+    await vi.waitFor(() => {
+      expect(drain).toHaveBeenCalledWith(expect.any(Number));
+    });
+    expect(shutdown).not.toHaveBeenCalled();
+    deps.unwatch();
   });
 });
 
-describe("cross-replica sandbox registry", () => {
-  beforeEach(() => {
-    vi.spyOn(console, "info").mockImplementation(() => undefined);
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  async function seedWithRegistry(slug: string) {
-    const deps = await seedAgent(slug);
-    const registry = createMemorySandboxRegistry("this-replica");
-    return { ...deps, registry, opts: { ...deps, registry } };
-  }
-
-  it("a resident sandbox registers itself with its session URL", async () => {
-    const { opts, registry, unwatch } = await seedWithRegistry("registered");
-    const register = vi.spyOn(registry, "register");
-    const sandbox = await resolveSandbox("registered", opts);
-    expect(sandbox).not.toBeNull();
-    // The first heartbeat runs on attach (no timer wait needed).
-    await vi.waitFor(() => {
-      expect(register).toHaveBeenCalledWith("registered", expect.any(String), expect.any(Number));
+describe("storage (ctx.db) delivery", () => {
+  it("injects the app's own DATABASE_URL into the bundle/load env when storage is enabled", async () => {
+    const secrets = createMemorySecretStore();
+    await secrets.put(
+      appDbSecretName("stored-app"),
+      JSON.stringify({ role: "app_0123456789abcdef", password: "p".repeat(32) }),
+    );
+    const store = createTestStore(secrets);
+    await store.putAgent({
+      slug: "stored-app",
+      env: { OTHER: "x" },
+      worker: 'export default { name: "t" };',
+      clientFiles: {},
+      credential_hashes: ["hash"],
+      agentConfig: TEST_AGENT_CONFIG,
     });
-    await sandbox?.shutdown();
-    unwatch();
-  });
-
-  it("the broker routes a cold slug to a live peer sandbox instead of spawning", async () => {
-    const { opts, registry, unwatch } = await seedWithRegistry("shared");
-    registry.registerPeer("shared", "wss://peer.tunnel/session", 1);
-
-    const brokered = await brokerSessionUrl("shared", opts);
-    expect(brokered).toEqual({ ok: true, sessionUrl: "wss://peer.tunnel/session" });
-    // No local sandbox was built.
-    expect(opts.slots.get("shared")?.sandbox).toBeUndefined();
-    unwatch();
-  });
-
-  it("a warm local resident wins over peers", async () => {
-    const { opts, registry, unwatch } = await seedWithRegistry("local-first");
-    const sandbox = await resolveSandbox("local-first", opts);
-    registry.registerPeer("local-first", "wss://peer.tunnel/session", 0);
-
-    const brokered = await brokerSessionUrl("local-first", opts);
-    expect(brokered.ok).toBe(true);
-    if (brokered.ok) expect(brokered.sessionUrl).not.toBe("wss://peer.tunnel/session");
-    await sandbox?.shutdown();
-    unwatch();
-  });
-
-  it("peers at session capacity are passed over for a local spawn", async () => {
-    const { opts, registry, unwatch } = await seedWithRegistry("saturated");
-    registry.registerPeer("saturated", "wss://full.tunnel/session", 2);
-
-    const brokered = await brokerSessionUrl("saturated", {
-      ...opts,
-      scale: { maxSessionsPerSandbox: 2, maxSandboxes: 4 },
-    });
-    expect(brokered.ok).toBe(true);
-    if (brokered.ok) expect(brokered.sessionUrl).not.toBe("wss://full.tunnel/session");
-    // The local spawn happened.
-    expect(opts.slots.get("saturated")?.sandbox).toBeDefined();
-    await (opts.slots.get("saturated")?.sandbox as Sandbox | undefined)?.shutdown();
-    unwatch();
-  });
-
-  it("a deleted agent's lingering registry row cannot resurrect it", async () => {
-    const { opts, registry, unwatch } = await seedWithRegistry("deleted-peer");
-    registry.registerPeer("deleted-peer", "wss://ghost.tunnel/session", 0);
-    await opts.store.deleteAgent("deleted-peer");
-    await settleEvents();
-
-    const brokered = await brokerSessionUrl("deleted-peer", opts);
-    expect(brokered).toEqual({ ok: false, status: 404 });
-    unwatch();
-  });
-
-  it("a broken registry never fails a broker request", async () => {
-    const { opts, unwatch } = await seedWithRegistry("registry-down");
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const broken = {
-      register: () => Promise.reject(new Error("db down")),
-      unregister: () => Promise.reject(new Error("db down")),
-      listPeers: () => Promise.reject(new Error("db down")),
+    const appDb = {
+      provision: () => Promise.reject(new Error("not expected")),
+      deprovision: () => Promise.reject(new Error("not expected")),
+      connectionUrl: vi.fn(() => "postgres://app_0123456789abcdef:pw@db.example:6543/postgres"),
     };
-    const brokered = await brokerSessionUrl("registry-down", { ...opts, registry: broken });
-    expect(brokered.ok).toBe(true);
-    expect(warn).toHaveBeenCalled();
-    await (opts.slots.get("registry-down")?.sandbox as Sandbox | undefined)?.shutdown();
-    unwatch();
+    mockSpawnAgentServer.mockClear();
+
+    const sandbox = await resolveSandbox("stored-app", {
+      slots: createSlotCache(),
+      store,
+      secrets,
+      appDb,
+    });
+    expect(sandbox).not.toBeNull();
+
+    // The guest connects to its OWN scoped database directly — the app-db
+    // credential rides in the env, and no db handle stays host-side.
+    const vmOpts = mockSpawnAgentServer.mock.calls[0]?.[0] as {
+      env: Record<string, string>;
+    };
+    expect(vmOpts.env).toEqual({
+      OTHER: "x",
+      DATABASE_URL: "postgres://app_0123456789abcdef:pw@db.example:6543/postgres",
+    });
+    await sandbox?.shutdown();
+  });
+
+  it("leaves the env untouched when storage is not enabled", async () => {
+    const deps = await seedAgent("no-storage");
+    mockSpawnAgentServer.mockClear();
+    const sandbox = await resolveSandbox("no-storage", deps);
+    const vmOpts = mockSpawnAgentServer.mock.calls[0]?.[0] as {
+      env: Record<string, string>;
+    };
+    expect(vmOpts.env).toEqual({});
+    await sandbox?.shutdown();
+    deps.unwatch();
   });
 });

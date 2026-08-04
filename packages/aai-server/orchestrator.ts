@@ -19,8 +19,7 @@
  * - `GET/PUT/DELETE /:slug/secret` — owner: manage secrets
  * - `GET/POST/DELETE /:slug/storage` — owner: per-app database storage
  * - `WS   /:slug/websocket`     — the long-living programmatic endpoint:
- *   plain upgrades are redirected (302) to the agent's live sandbox session
- *   URL; host-mode (`?host=1`) upgrades run in-process
+ *   upgrades are redirected (302) to the agent's live sandbox session URL
  *
  * Auth: `authMw` validates API key; `existingOwnerMw` verifies slug ownership.
  * Slugs: `[a-z0-9][a-z0-9_-]*[a-z0-9]` — enforced by regex for multi-tenant isolation.
@@ -32,7 +31,7 @@ import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import type { AppDatabases } from "./app-database.ts";
 import { addHealthRoute, applyPlatformMiddleware, bindFetchEnv } from "./app-middleware.ts";
-import { handleAgentClientConfig } from "./client-config-handler.ts";
+import { createAgentClientConfigHandler } from "./client-config-handler.ts";
 import { resolveHarnessPath } from "./constants.ts";
 import type { HonoEnv } from "./context.ts";
 import { handleDelete } from "./delete.ts";
@@ -42,11 +41,9 @@ import { authMw, existingOwnerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
 import type { PlatformEvents } from "./platform-events.ts";
 import { createMutationLock, localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
-import type { SandboxPool } from "./sandbox-pool.ts";
-import type { SandboxRegistry } from "./sandbox-registry.ts";
 import { type ResolveSandboxOpts, watchAgentInvalidation } from "./sandbox-resolve.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
-import { describeBundle } from "./sandbox-vm.ts";
+import { currentHarnessImageTag, describeBundle } from "./sandbox-vm.ts";
 import {
   DeployBodySchema,
   SecretKeySchema,
@@ -92,13 +89,6 @@ export type OrchestratorOpts = {
    * it keeps superseded sandboxes alive until idle eviction.
    */
   events?: PlatformEvents;
-  /**
-   * Cross-replica sandbox registry (see sandbox-registry.ts): residents are
-   * registered/heartbeated, and cold brokers route to live peer sandboxes
-   * before spawning duplicates. Optional for tests; single-replica
-   * compositions lose nothing without it.
-   */
-  registry?: SandboxRegistry;
   /** Allowed CORS origins. Defaults to `["*"]` (any origin). */
   allowedOrigins?: string[];
   /**
@@ -109,18 +99,22 @@ export type OrchestratorOpts = {
   studioUpstream?: string;
   /** Test seam for the studio proxy's outbound fetch. */
   studioProxyFetch?: typeof globalThis.fetch;
-  /** Optional pre-warmed Node harness pool for faster cold starts. */
-  pool?: SandboxPool;
+  /**
+   * Test seam for the client-config broker's proxy fetch of the guest's own
+   * `/client-config` (name/greeting come from the GUEST, never the stored
+   * config — see client-config-handler.ts).
+   */
+  guestConfigFetch?: typeof globalThis.fetch;
   /**
    * Extracts an agent config from an uploaded worker bundle. Defaults to
    * sandboxed `describeBundle`; injectable so tests don't need Modal.
    */
   inspect?: BundleInspector;
-  /** Max concurrent WebSocket connections. Defaults to MAX_CONNECTIONS. */
-  maxConnections?: number;
   /**
-   * True once shutdown has begun. Fails `/health` and refuses new WebSocket
-   * upgrades so the machine stops taking sessions it is about to drop.
+   * True once shutdown has begun. Fails `/health` so the platform's proxy
+   * stops routing here. (Upgrades on `/:slug/websocket` are pure handshake
+   * redirects to the sandbox — nothing long-lived starts here, so there is
+   * nothing to refuse while draining.)
    */
   isDraining?: () => boolean;
 };
@@ -128,14 +122,6 @@ export type OrchestratorOpts = {
 export type Orchestrator = {
   app: Hono<HonoEnv>;
   injectWebSocket: (server: import("node:http").Server) => void;
-  /**
-   * Close every live session WebSocket (1001 "going away"). Graceful
-   * shutdown calls this after the drain deadline — an HTTP server with open
-   * WebSockets never finishes closing on its own.
-   */
-  closeActiveSockets: () => void;
-  /** Live session sockets. Shutdown polls this while draining. */
-  activeSessionCount: () => number;
 };
 
 export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
@@ -180,8 +166,12 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // never runs on the host.
   const inspect: BundleInspector =
     opts.inspect ??
-    ((workerCode) =>
-      describeBundle({ harnessPath: resolveHarnessPath(), workerCode, pool: opts.pool }));
+    ((workerCode) => describeBundle({ harnessPath: resolveHarnessPath(), workerCode }));
+
+  // Deploys record the harness image they ran against (per-deploy image
+  // pinning — see currentHarnessImageTag in sandbox-vm.ts).
+  const harnessImageTag = (): Promise<string | null> =>
+    currentHarnessImageTag(resolveHarnessPath());
 
   app.post(
     "/deploy",
@@ -189,7 +179,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     deployBodyLimit,
     gzipRequestMw,
     zValidator("json", DeployBodySchema),
-    (c) => handleDeployNew(c, inspect),
+    (c) => handleDeployNew(c, inspect, harnessImageTag),
   );
 
   // Bare-slug redirect — registered before sub-router so it takes priority.
@@ -215,9 +205,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     slots: opts.slots,
     store: opts.store,
     secrets,
-    ...(opts.registry && { registry: opts.registry }),
     ...(opts.appDb && { appDb: opts.appDb }),
-    ...(opts.pool && { pool: opts.pool }),
   };
 
   const agents = new Hono<HonoEnv>();
@@ -241,9 +229,10 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   agents.delete("/storage", existingOwnerMw, handleStorageDisable);
 
   agents.get("/health", handleAgentHealth);
-  // Session broker: name/greeting plus the live sandbox session URL (boots
-  // the sandbox on first request). Same auth posture as the page and the
-  // session endpoint: none.
+  // Session broker: the live sandbox session URL (boots the sandbox on first
+  // request) plus name/greeting PROXIED from the guest's own /client-config.
+  // Same auth posture as the page and the session endpoint: none.
+  const handleAgentClientConfig = createAgentClientConfigHandler(opts.guestConfigFetch);
   agents.get("/client-config", (c) => handleAgentClientConfig(c, brokerOpts));
   agents.get("/favicon.ico", handleAgentFavicon);
   agents.get("/assets/:path{.+}", handleClientAsset);
@@ -256,7 +245,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     store: opts.store,
     secrets,
     ...(opts.auth && { auth: opts.auth }),
-    ...(opts.registry && { registry: opts.registry }),
     ...(opts.appDb && { appDb: opts.appDb }),
     // Same default posture as secrets: tests build orchestrators without a
     // platform database, where in-process exclusion is exact. Wrapped so
@@ -267,14 +255,12 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     slugLock: createMutationLock(opts.slugLock ?? localSlugLock, opts.store),
   });
 
-  const { injectWebSocket, closeActiveSockets, activeSessionCount } = createWsUpgrades({
-    // Plain upgrades on /:slug/websocket resolve the live sandbox (the
+  const { injectWebSocket } = createWsUpgrades({
+    // Upgrades on /:slug/websocket resolve the live sandbox (the
     // long-living endpoint redirects to its session URL), which needs the
     // same dependencies the client-config broker uses.
     broker: brokerOpts,
-    ...(opts.maxConnections !== undefined && { maxConnections: opts.maxConnections }),
-    ...(opts.isDraining && { isDraining: opts.isDraining }),
   });
 
-  return { app, injectWebSocket, closeActiveSockets, activeSessionCount };
+  return { app, injectWebSocket };
 }

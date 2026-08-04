@@ -198,6 +198,28 @@ describe("deployAgentBundle ownership resolution", () => {
     expect(await verifyApiKeyHash("key1", hashes[0] ?? "")).toBe(true);
   });
 
+  test("records the harness image tag the deploy ran against", async () => {
+    const store = createTestStore();
+    const outcome = await deployAgentBundle(
+      { store, harnessImageTag: async () => "aai-guest-harness:feedbeef" },
+      { ...baseParams, slug: "pinned-agent" },
+    );
+    expect(outcome.ok).toBe(true);
+    expect((await store.getAgent("pinned-agent"))?.harness_image_tag).toBe(
+      "aai-guest-harness:feedbeef",
+    );
+  });
+
+  test("a failed tag computation records no pin and does not fail the deploy", async () => {
+    const store = createTestStore();
+    const outcome = await deployAgentBundle(
+      { store, harnessImageTag: () => Promise.reject(new Error("modal down")) },
+      { ...baseParams, slug: "unpinned-agent" },
+    );
+    expect(outcome.ok).toBe(true);
+    expect((await store.getAgent("unpinned-agent"))?.harness_image_tag).toBeNull();
+  });
+
   test("owned slug: reuses the matched stored hash — nothing appended", async () => {
     const store = createTestStore();
     const keyHash = await hashApiKey("key1");
@@ -349,8 +371,8 @@ describe("POST /deploy", () => {
     });
     expect(res.status).toBe(200);
 
-    const stored = await store.getAgentConfig("config-test");
-    expect(stored).toEqual(agentConfig);
+    const stored = await store.getAgent("config-test");
+    expect(stored?.config).toEqual(agentConfig);
   });
 
   test("rejects a worker whose bundle does not self-describe", async () => {

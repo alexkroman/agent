@@ -24,6 +24,12 @@ export type BundleStore = {
     credential_hashes: string[];
     /** Pre-extracted agent config from the CLI build. */
     agentConfig: IsolateConfig;
+    /**
+     * The harness snapshot image tag this deploy runs against (see
+     * `currentHarnessImageTag` in sandbox-vm.ts). Null outside the Modal
+     * backend.
+     */
+    harnessImageTag?: string | null | undefined;
   }): Promise<void>;
   /** The deploy record: ownership hashes, config, blob hashes, version. */
   getAgent(slug: string): Promise<AgentRecord | null>;
@@ -38,8 +44,6 @@ export type BundleStore = {
   deleteAgent(slug: string): Promise<void>;
   getEnv(slug: string): Promise<Record<string, string> | null>;
   putEnv(slug: string, env: Record<string, string>): Promise<void>;
-  /** Convenience over `getAgent`: the stored config alone. */
-  getAgentConfig(slug: string): Promise<IsolateConfig | null>;
   /**
    * Drop this replica's read-through row caches for `slug`, so the next
    * read sees another replica's mutation. Blob caches are content-addressed

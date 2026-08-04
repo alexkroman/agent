@@ -3,25 +3,18 @@
 // toAgentConfig validations (one source of truth in
 // @alexkroman1/aai/manifest, two enforcement points).
 
-import type { AgentDef } from "@alexkroman1/aai";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
 import { describe, expect, expectTypeOf, test } from "vitest";
 import { type IsolateConfig, IsolateConfigSchema } from "./rpc-schemas.ts";
-import type { WireOnlyConfigField } from "./sandbox-agent-config.ts";
 
-// ── Config pass-through guards ────────────────────────────────────────────
-// The wire schema is derived from the canonical AgentConfigSchema and the
-// runtime agent is the config minus a deny-list, so the only way a field can
-// go missing is one of these two subtractions growing. See
-// sandbox-agent-config.ts for the dropped-field bug family this guards.
+// ── Config pass-through guard ─────────────────────────────────────────────
+// The wire schema is derived from the canonical AgentConfigSchema, so the
+// only way a field can go missing on the wire is this subtraction growing.
+// (The server no longer maps configs onto a runtime agent — the bundle runs
+// its own SDK — so the old toRuntimeAgent deny-list guard is gone with it.)
 
 test("IsolateConfig carries every canonical AgentConfig field", () => {
   expectTypeOf<Exclude<keyof AgentConfig, keyof IsolateConfig>>().toEqualTypeOf<never>();
-});
-
-test("every IsolateConfig field reaches the runtime agent or is wire-only", () => {
-  type Dropped = Exclude<keyof IsolateConfig, keyof AgentDef | WireOnlyConfigField>;
-  expectTypeOf<Dropped>().toEqualTypeOf<never>();
 });
 
 const pipelineFields = {

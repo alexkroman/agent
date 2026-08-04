@@ -9,7 +9,7 @@
  *   `/studio-assets/*`) go to the studio app, everything else (including
  *   `/health` and the WebSocket upgrades) to the agent orchestrator. Both
  *   apps share one ServiceConfig, so they also share the slot cache, warm
- *   pool, and stores — exactly the pre-split behavior.
+ *   and stores — exactly the pre-split behavior.
  * - `studio` — the standalone studio service: no voice sessions, no
  *   WebSocket upgrades; chat turns are bounded HTTP/SSE requests, so
  *   shutdown is flip-health-and-close rather than a session drain.
@@ -17,10 +17,10 @@
  * The agent-only service is the aai-server package's own entry.
  */
 
-import { DEFAULT_PORT, DRAIN_GUEST_POLL_MS } from "aai-server/constants";
+import { DEFAULT_PORT } from "aai-server/constants";
 import { createOrchestrator } from "aai-server/orchestrator";
 import { resolvePort } from "aai-server/platform-barrel";
-import { drainActiveSessions, startService } from "aai-server/serve-lifecycle";
+import { startService } from "aai-server/serve-lifecycle";
 import {
   assertSandboxBackendOrWarn,
   buildServiceConfig,
@@ -28,7 +28,7 @@ import {
   type ServiceConfig,
 } from "aai-server/service-config";
 import { isStudioPath } from "aai-server/studio-proxy";
-import { liveGuestSessions, teardownSandboxes } from "aai-server/teardown-sandboxes";
+import { teardownSandboxes } from "aai-server/teardown-sandboxes";
 import { createStudioApp, type StudioAppOpts } from "./studio-app.ts";
 import {
   CHAT_RATE_LIMIT,
@@ -70,7 +70,6 @@ function studioAppOpts(base: ServiceConfig, isDraining: () => boolean): StudioAp
     ...(base.appDb && { appDb: base.appDb }),
     ...(base.slugLock && { slugLock: base.slugLock }),
     ...(rateLimiters && { studioRateLimiters: rateLimiters }),
-    ...(base.pool && { pool: base.pool }),
     isDraining,
   };
 }
@@ -99,7 +98,6 @@ async function main(): Promise<void> {
   const teardown = async (): Promise<void> => {
     await teardownSandboxes({
       slots: base.slots,
-      pool: base.pool,
       broker: { dispose: disposeStudio },
     });
     await base.events.close();
@@ -137,20 +135,13 @@ async function main(): Promise<void> {
     fetch: combinedFetch,
     port,
     injectWebSocket: (server) => orchestrator.injectWebSocket(server),
-    // Same drain posture as the agent service's entry — and now literally the
-    // same code path, so the two can no longer drift.
+    // Same shutdown posture as the agent service's entry — and literally the
+    // same code path, so the two can no longer drift: agent guests are
+    // RETIRED (they finish their calls and exit on their own clock — see
+    // teardown-sandboxes.ts), studio guests go down with the broker.
     onShutdown: async () => {
       draining = true;
-      // Guests included — see the agent entry: sessions live in the sandboxes,
-      // so the socket count alone always reads 0 and drains instantly.
-      await drainActiveSessions({
-        activeCount: async () =>
-          orchestrator.activeSessionCount() + (await liveGuestSessions(base.slots)),
-        pollMs: DRAIN_GUEST_POLL_MS,
-        env,
-      });
-      console.info("Shutting down...");
-      orchestrator.closeActiveSockets();
+      console.info("Shutting down (retiring guests)...");
       await teardown();
     },
   });

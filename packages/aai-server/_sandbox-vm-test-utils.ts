@@ -1,14 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
  * Shared test helpers for the sandbox test files: a fake guest WebSocket
- * (the seam `rpc-transport.ts` speaks to), a typed connection over it, and
- * auto-responders for the guest side of the RPC contract.
+ * (the seam `rpc-transport.ts` speaks to) and the agent-spawn options base.
  */
 
-import { vi } from "vitest";
-import type { GuestConnection, GuestRpcSchema } from "./rpc-schemas.ts";
-import { createRpcConnection, type RpcWebSocket } from "./rpc-transport.ts";
-import type { SandboxVmOptions, WarmHarness } from "./sandbox-vm.ts";
+import type { RpcWebSocket } from "./rpc-transport.ts";
+import type { AgentSpawnOptions } from "./sandbox-vm.ts";
 
 /** A fake guest endpoint: what the host sent, plus a way to answer. */
 export type FakeGuestSocket = {
@@ -68,61 +65,7 @@ export function createFakeGuestSocket(): FakeGuestSocket {
   };
 }
 
-export function createTestConn(): {
-  conn: GuestConnection;
-  socket: FakeGuestSocket;
-  writtenLines: string[];
-} {
-  const socket = createFakeGuestSocket();
-  const conn = createRpcConnection<GuestRpcSchema>(socket.ws);
-  return { conn, socket, writtenLines: socket.writtenLines };
-}
-
-export function makeWarm(conn: GuestConnection, cleanup: () => Promise<void>): WarmHarness {
-  return {
-    conn,
-    guestOrigin: "wss://guest.test:443",
-    sessionUrl: "wss://tunnel.test:443/websocket",
-    cleanup,
-    alive: () => true,
-    onExit: () => undefined,
-    // Mirrors the real teardown in modal-sandbox.ts:warmFromModal.
-    async [Symbol.asyncDispose]() {
-      void conn.sendNotification("shutdown");
-      conn.dispose();
-      await cleanup().catch(() => undefined);
-    },
-  };
-}
-
-/**
- * Attach an auto-responder that replies `{ ok: true }` to every bundle/load
- * the host sends. Returns a no-op detach for call-site symmetry.
- */
-export function autorespondBundleLoad(socket: FakeGuestSocket): () => void {
-  socket.onSend((msg) => {
-    if (msg.method === "bundle/load" && msg.id != null) {
-      socket.receive({ jsonrpc: "2.0", id: msg.id, result: { ok: true } });
-    }
-  });
-  return () => undefined;
-}
-
-/** Reject every bundle/load request with a "Worker code not found" error. */
-export function autorespondBundleLoadError(socket: FakeGuestSocket): () => void {
-  socket.onSend((msg) => {
-    if (msg.method === "bundle/load" && msg.id != null) {
-      socket.receive({
-        jsonrpc: "2.0",
-        id: msg.id,
-        error: { code: -32_603, message: "Worker code not found" },
-      });
-    }
-  });
-  return () => undefined;
-}
-
-export function baseOpts(overrides?: Partial<SandboxVmOptions>): SandboxVmOptions {
+export function baseOpts(overrides?: Partial<AgentSpawnOptions>): AgentSpawnOptions {
   return {
     slug: "test-agent",
     workerCode: 'export default { name: "test" };',
@@ -130,34 +73,4 @@ export function baseOpts(overrides?: Partial<SandboxVmOptions>): SandboxVmOption
     harnessPath: "/tmp/harness.mjs",
     ...overrides,
   };
-}
-
-/** Wait until a JSON-RPC response with the given id appears in writtenLines. */
-export async function waitForResponseId(writtenLines: string[], id: number): Promise<void> {
-  await vi.waitFor(() => {
-    const found = writtenLines.some((l) => {
-      try {
-        return JSON.parse(l).id === id;
-      } catch {
-        return false;
-      }
-    });
-    if (!found) throw new Error(`Response with id ${id} not found yet`);
-  });
-}
-
-/** Find a parsed JSON-RPC message by id in writtenLines. */
-export function findResponseById(
-  writtenLines: string[],
-  id: number,
-): Record<string, unknown> | undefined {
-  return writtenLines
-    .map((l) => {
-      try {
-        return JSON.parse(l);
-      } catch {
-        return null;
-      }
-    })
-    .find((m: { id?: number } | null) => m?.id === id);
 }

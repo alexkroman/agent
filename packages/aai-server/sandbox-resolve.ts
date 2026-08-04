@@ -9,18 +9,12 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import type { CloseableDb } from "@alexkroman1/aai/runtime";
 import { debug } from "./_debug-log.ts";
 import { type AppDatabases, type AppDbMeta, parseAppDbMeta } from "./app-database.ts";
 import type { PlatformEvents, Unwatch } from "./platform-events.ts";
-import type { IsolateConfig } from "./rpc-schemas.ts";
 import { createSandbox, type Sandbox } from "./sandbox.ts";
-import type { SandboxPool } from "./sandbox-pool.ts";
-import { REGISTRY_HEARTBEAT_MS, type SandboxRegistry } from "./sandbox-registry.ts";
-import { defaultScaleOptions, routeSession, type ScaleOptions } from "./sandbox-scale.ts";
 import {
   type AgentSlot,
-  attachSandbox,
   deleteSlot,
   retireSlot,
   type SlotCache,
@@ -53,26 +47,16 @@ export type ResolveSandboxOpts = {
   secrets?: SecretStore;
   /** Per-app database opener; absent when SUPABASE_DB_URL is unset. */
   appDb?: AppDatabases;
-  pool?: SandboxPool;
-  /**
-   * Cross-replica sandbox registry (see sandbox-registry.ts): residents
-   * built here are registered and heartbeated, and the broker's cold path
-   * routes to a live peer sandbox before spawning a duplicate.
-   */
-  registry?: SandboxRegistry;
-  /**
-   * Horizontal scaling policy (see sandbox-scale.ts). Defaults from
-   * SANDBOX_MAX_SESSIONS / SANDBOX_MAX_REPLICAS; scaling is off when the
-   * env leaves those unset.
-   */
-  scale?: ScaleOptions;
 };
 
 type BundleParts = {
   workerCode: string;
   env: Record<string, string>;
-  agentConfig: IsolateConfig;
   appDbMeta: AppDbMeta | null;
+  /** Harness image the agent was deployed against (per-deploy pinning). */
+  imageTag: string | null;
+  /** Deploy version off the same row read — what the slot is stamped with. */
+  version: number;
 };
 
 /**
@@ -85,14 +69,24 @@ type BundleParts = {
 function loadBundleParts(slug: string, opts: ResolveSandboxOpts): Promise<BundleParts | null> {
   const { store } = opts;
   const workerCodeP = store.getWorkerCode(slug);
-  const agentConfigP = store.getAgentConfig(slug);
+  // The full row — for the pinned harness image tag and the deploy version.
+  // The stored config is NOT read: it is opaque to the host (agent-store.ts).
+  const agentP = store.getAgent(slug);
   const envP = store.getEnv(slug).then((e) => e ?? {});
   // Storage ("app db") credentials, when the platform can open them.
   const appDbMetaP = readAppDbMeta(slug, opts);
-  for (const p of [workerCodeP, agentConfigP, envP, appDbMetaP]) p.catch(() => undefined);
-  return Promise.all([workerCodeP, agentConfigP, envP, appDbMetaP]).then(
-    ([workerCode, agentConfig, env, appDbMeta]) =>
-      workerCode && agentConfig ? { workerCode, env, agentConfig, appDbMeta } : null,
+  for (const p of [workerCodeP, agentP, envP, appDbMetaP]) p.catch(() => undefined);
+  return Promise.all([workerCodeP, agentP, envP, appDbMetaP]).then(
+    ([workerCode, agent, env, appDbMeta]) =>
+      workerCode && agent
+        ? {
+            workerCode,
+            env,
+            appDbMeta,
+            imageTag: agent.harness_image_tag ?? null,
+            version: agent.version,
+          }
+        : null,
   );
 }
 
@@ -113,17 +107,21 @@ function buildSandboxFromParts(
   opts: ResolveSandboxOpts,
   onSandboxLost: (sandbox: Sandbox) => void,
 ): Sandbox {
-  // Open the app db here — cheap, postgres connects on first query; the
-  // sandbox owns the handle and closes it on shutdown.
-  const db: CloseableDb | undefined =
-    parts.appDbMeta && opts.appDb ? opts.appDb.open(parts.appDbMeta) : undefined;
+  // Storage: the app's OWN scoped Postgres credentials (role/search_path
+  // pinned at provisioning — see app-database.ts) ride into the guest as
+  // DATABASE_URL, and the bundle's runtime connects directly, exactly as
+  // `aai dev` does with a project .env. Platform admin credentials never
+  // enter the guest. Injected last so enabling storage deterministically
+  // selects the provisioned database.
+  const env =
+    parts.appDbMeta && opts.appDb
+      ? { ...parts.env, DATABASE_URL: opts.appDb.connectionUrl(parts.appDbMeta) }
+      : parts.env;
   const sandbox: Sandbox = createSandbox({
     workerCode: parts.workerCode,
-    env: parts.env,
+    env,
     slug,
-    agentConfig: parts.agentConfig,
-    ...(db && { db }),
-    ...(opts.pool && { pool: opts.pool }),
+    ...(parts.imageTag !== null && { imageTag: parts.imageTag }),
     onSandboxLost: () => onSandboxLost(sandbox),
   });
   return sandbox;
@@ -140,29 +138,6 @@ function buildSlotSandbox(slug: string, parts: BundleParts, opts: ResolveSandbox
     void withSlugLock(slug, async () => {
       const current = opts.slots.get(slug);
       if (current?.sandbox === sandbox) await terminateSlot(current);
-    });
-  });
-}
-
-/**
- * Build one overflow replica for the broker's scale-out (sandbox-scale.ts).
- * A failed replica VM detaches only itself — the primary and its siblings
- * keep serving.
- */
-async function spawnReplicaSandbox(
-  slug: string,
-  slot: AgentSlot,
-  opts: ResolveSandboxOpts,
-): Promise<Sandbox | null> {
-  const parts = await loadBundleParts(slug, opts);
-  if (!parts) return null;
-  return buildSandboxFromParts(slug, parts, opts, (sandbox) => {
-    void withSlugLock(slug, async () => {
-      if (!opts.slots.owns(slug, slot)) return;
-      const idx = slot.replicas?.indexOf(sandbox) ?? -1;
-      if (idx === -1) return;
-      slot.replicas?.splice(idx, 1);
-      await sandbox.shutdown().catch(() => undefined);
     });
   });
 }
@@ -220,8 +195,11 @@ export function watchAgentInvalidation(events: PlatformEvents, opts: ResolveSand
           await terminateSlot(slot);
           deleteSlot(opts.slots, slug);
         } else if (version !== slot.version) {
-          console.info("Resident sandbox superseded (change event); retiring", { slug });
-          retireSlot(slot, "superseded");
+          console.info("Resident sandbox superseded (change event); booting replacement", {
+            slug,
+            version,
+          });
+          await handoverSlot(slug, slot, version, opts);
         }
       } catch (err) {
         // An unreadable version must never take down a healthy sandbox; the
@@ -230,6 +208,55 @@ export function watchAgentInvalidation(events: PlatformEvents, opts: ResolveSand
       }
     });
   });
+}
+
+/**
+ * BLUE-GREEN handoff on a redeploy: boot the NEW deploy's sandbox and wait
+ * for its readiness (`sessionUrl()` resolves once the guest's `/health`
+ * answered with the bundle loaded) BEFORE detaching the old one, so a
+ * redeploy never leaves the broker with an empty slot — the next caller
+ * lands on a warm replacement instead of paying the cold start. Runs under
+ * the caller's slug lock, which also parks concurrent broker rebuilds until
+ * the swap lands. Sessions already on the old sandbox keep running: it is
+ * retired (drained in the background), exactly as before.
+ *
+ * If the REPLACEMENT fails to boot (the new deploy crashes on start), the
+ * old resident is retired anyway rather than kept: keeping it would
+ * silently serve superseded code forever, while an empty slot makes the
+ * failure visible on the very next broker call (503 + the guest's boot
+ * error in the host log).
+ */
+async function handoverSlot(
+  slug: string,
+  slot: AgentSlot,
+  version: number,
+  opts: ResolveSandboxOpts,
+): Promise<void> {
+  const parts = await loadBundleParts(slug, opts);
+  if (!parts) {
+    // The row vanished between the version read and the artifact read —
+    // a delete raced the deploy event. Same handling as the deleted branch.
+    await terminateSlot(slot);
+    deleteSlot(opts.slots, slug);
+    return;
+  }
+  const replacement = buildSlotSandbox(slug, parts, opts);
+  try {
+    await replacement.sessionUrl();
+  } catch (err) {
+    console.error("Replacement sandbox failed to boot; retiring old resident", {
+      slug,
+      error: errorMessage(err),
+    });
+    await replacement.shutdown().catch(() => undefined);
+    void retireSlot(slot, "superseded");
+    return;
+  }
+  // Swap: detach the old sandbox (background drain) and attach the ready
+  // replacement in the same tick — no window with an empty slot.
+  void retireSlot(slot, "superseded");
+  slot.version = version;
+  slot.sandbox = replacement;
 }
 
 /** Build (and attach) a fresh sandbox for `slot`; null when the slug has no bundle. */
@@ -257,9 +284,8 @@ async function rebuildSlot(
   }
   try {
     store.invalidate?.(slug);
-    const record = await store.getAgent(slug);
-    const parts = record ? await loadBundleParts(slug, opts) : null;
-    if (!(record && parts)) {
+    const parts = await loadBundleParts(slug, opts);
+    if (!parts) {
       // A slug with no bundle must not leave an empty slot behind — the
       // pre-auth upgrade path can't be allowed to grow the map per 404.
       if (created) deleteSlot(slots, slug);
@@ -269,9 +295,8 @@ async function rebuildSlot(
 
     const sandbox = buildSlotSandbox(slug, parts, opts);
 
-    slot.version = record.version;
-    attachSandbox(slots, slot, sandbox);
-    startRegistryHeartbeat(slug, sandbox, opts);
+    slot.version = parts.version;
+    slot.sandbox = sandbox;
     return sandbox;
   } catch (err) {
     if (created) deleteSlot(slots, slug);
@@ -280,83 +305,18 @@ async function rebuildSlot(
 }
 
 /**
- * Register this replica's resident sandbox in the cross-replica registry
- * and heartbeat its lease with a sampled session count, for as long as it
- * remains the slot's live resident. Ownership is re-checked every tick, so
- * EVERY detach path — retire, terminate, idle eviction, a lost guest —
- * converges on an unregister within one heartbeat without any of those
- * paths knowing the registry exists. Best-effort throughout: the registry
- * must never affect the sandbox it describes.
+ * Map a slug to its (possibly freshly built) ONE resident sandbox. A LIVE
+ * resident is served as-is — whether it is still current is not this path's
+ * question: mutations move sandboxes through the agents row's change stream
+ * (`watchAgentInvalidation`), never through per-broker checks. (Horizontal
+ * per-slug scaling — session caps, overflow replicas, least-connections
+ * routing, the cross-replica registry — was deleted for simplicity; see git
+ * history if load ever demands it back.)
  */
-function startRegistryHeartbeat(slug: string, sandbox: Sandbox, opts: ResolveSandboxOpts): void {
-  const registry = opts.registry;
-  if (!registry) return;
-  let sessionUrl: string | null = null;
-  const stop = (timer: NodeJS.Timeout): void => {
-    clearInterval(timer);
-    if (sessionUrl) {
-      void registry.unregister(slug, sessionUrl).catch(() => undefined);
-    }
-  };
-  const beat = async (): Promise<void> => {
-    if (opts.slots.get(slug)?.sandbox !== sandbox || !isLive(sandbox)) {
-      stop(timer);
-      return;
-    }
-    try {
-      // The tunnel URL settles once the guest is up; earlier ticks retry.
-      sessionUrl ??= await sandbox.sessionUrl();
-      const sessions = await sandbox.activeSessions().catch(() => 0);
-      await registry.register(slug, sessionUrl, sessions);
-    } catch {
-      // Booting guest or transient registry error — the next tick retries.
-    }
-  };
-  const timer = setInterval(() => void beat(), REGISTRY_HEARTBEAT_MS);
-  timer.unref?.();
-  void beat();
-}
-
-/**
- * The broker's cross-replica route: a live peer sandbox for `slug`, when
- * one exists with session headroom. Consulted only on the cold path (no
- * local resident), where the duplicate spawn it prevents is about to
- * happen. Never fails a broker request — any registry trouble reads as "no
- * peer" and the local spawn proceeds.
- */
-async function pickPeerSessionUrl(slug: string, opts: ResolveSandboxOpts): Promise<string | null> {
-  const registry = opts.registry;
-  if (!registry) return null;
-  try {
-    // Existence gate: a deleted agent's registry rows outlive the row by up
-    // to one heartbeat, and routing to them would resurrect a 404. The two
-    // reads are independent (the version only gates whether the peer list is
-    // used), so run them concurrently — both are DB round trips on a path
-    // where the caller is waiting.
-    const [version, peers] = await Promise.all([
-      opts.store.getAgentVersion(slug),
-      registry.listPeers(slug),
-    ]);
-    if (version === null) return null;
-    const best = peers[0]; // least-loaded (the registry sorts)
-    if (!best) return null;
-    const scale = opts.scale ?? defaultScaleOptions();
-    // Peers at capacity: spawn locally instead of piling on.
-    if (scale && best.sessions >= scale.maxSessionsPerSandbox) return null;
-    return best.sessionUrl;
-  } catch (err) {
-    console.warn(`Sandbox registry lookup failed for ${slug}: ${errorMessage(err)}`);
-    return null;
-  }
-}
-
-/**
- * Map a slug to its (possibly freshly built) primary resident sandbox. A
- * LIVE resident is served as-is — whether it is still current is not this
- * path's question: mutations move sandboxes through the agents row's change
- * stream (`watchAgentInvalidation`), never through per-broker checks.
- */
-async function resolvePrimary(slug: string, opts: ResolveSandboxOpts): Promise<Sandbox | null> {
+export async function resolveSandbox(
+  slug: string,
+  opts: ResolveSandboxOpts,
+): Promise<Sandbox | null> {
   const { slots } = opts;
 
   // Fast path: a live resident sandbox needs no locking.
@@ -384,36 +344,8 @@ async function resolvePrimary(slug: string, opts: ResolveSandboxOpts): Promise<S
   });
 }
 
-/**
- * Resolve the sandbox this session should connect to. Without a scaling
- * policy that is the slug's one resident sandbox; with one (see
- * sandbox-scale.ts) it is the least-loaded of the slug's replicas, scaling
- * out when all are at session capacity.
- */
-export async function resolveSandbox(
-  slug: string,
-  opts: ResolveSandboxOpts,
-): Promise<Sandbox | null> {
-  const sandbox = await resolvePrimary(slug, opts);
-  if (!sandbox) return null;
-  const scale = opts.scale ?? defaultScaleOptions();
-  if (!scale) return sandbox;
-  const slot = opts.slots.get(slug);
-  // Route only when the resolved sandbox is still the slot's primary — a
-  // mutation racing this resolve heals via the client's next re-broker.
-  if (!slot || slot.sandbox !== sandbox) return sandbox;
-  return routeSession({
-    slug,
-    slots: opts.slots,
-    slot,
-    primary: sandbox,
-    scale,
-    spawnReplica: () => spawnReplicaSandbox(slug, slot, opts),
-  });
-}
-
 export type BrokeredSession =
-  | { ok: true; sessionUrl: string }
+  | { ok: true; sessionUrl: string; guestOrigin: string }
   | { ok: false; status: 404 | 503; cause?: unknown };
 
 /**
@@ -428,19 +360,15 @@ export async function brokerSessionUrl(
   slug: string,
   opts: ResolveSandboxOpts,
 ): Promise<BrokeredSession> {
-  // Cold on this replica: prefer a live peer replica's sandbox over
-  // spawning a duplicate guest (see sandbox-registry.ts). A warm local
-  // resident always wins — it costs nothing and the registry read isn't
-  // free.
-  const resident = opts.slots.get(slug)?.sandbox;
-  if (!(resident && isLive(resident))) {
-    const peerUrl = await pickPeerSessionUrl(slug, opts);
-    if (peerUrl) return { ok: true, sessionUrl: peerUrl };
-  }
   const sandbox = await resolveSandbox(slug, opts);
   if (!sandbox) return { ok: false, status: 404 };
   try {
-    return { ok: true, sessionUrl: await sandbox.sessionUrl() };
+    // Both resolve off the same readiness promise — no extra wait.
+    const [sessionUrl, guestOrigin] = await Promise.all([
+      sandbox.sessionUrl(),
+      sandbox.guestOrigin(),
+    ]);
+    return { ok: true, sessionUrl, guestOrigin };
   } catch (err) {
     return { ok: false, status: 503, cause: err };
   }

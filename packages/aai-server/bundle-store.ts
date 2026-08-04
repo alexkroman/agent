@@ -246,6 +246,7 @@ export function createBundleStore(
         config: bundle.agentConfig,
         worker_hash: workerHash,
         client_files: clientFiles,
+        harness_image_tag: bundle.harnessImageTag ?? null,
       });
 
       // Drop this replica's row caches so the next read sees the new deploy
@@ -314,9 +315,5 @@ export function createBundleStore(
     },
 
     invalidate,
-
-    async getAgentConfig(slug) {
-      return (await getAgentCached(slug))?.config ?? null;
-    },
   };
 }

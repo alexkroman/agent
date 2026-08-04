@@ -57,9 +57,10 @@ BUILD_COMMAND = (
 GUEST_HARNESS_PATH = "/app/packages/aai-guest/dist/harness.mjs"
 
 # How long a container stop waits for the node child to finish its own
-# shutdown before force-killing it. Sized to cover the node server's session
-# drain (SHUTDOWN_DRAIN_MS, default 120s) plus guest-sandbox teardown slack;
-# Modal's SIGKILL backstop still bounds the container's real grace period.
+# shutdown before force-killing it. Shutdown is retire-and-exit (one drain
+# request per agent guest, no session-drain wait), so this is generous
+# headroom rather than a budget the shutdown consumes; Modal's SIGKILL
+# backstop still bounds the container's real grace period.
 NODE_STOP_TIMEOUT_SECS = 150
 
 
@@ -68,10 +69,10 @@ def run_node(entry: str, env: dict[str, str]) -> subprocess.Popen:
 
     Modal stops a container by signaling this Python runtime process — a
     child spawned with a bare ``subprocess.Popen`` receives nothing of its
-    own. That meant the node server's SIGTERM handler — the session drain
-    plus ``teardownSandboxes`` (packages/aai-server/teardown-sandboxes.ts),
-    the only thing that terminates the replica's warm-pool and resident
-    guest sandboxes — never ran on a scale-in or redeploy. Every guest the
+    own. That meant the node server's SIGTERM handler —
+    ``teardownSandboxes`` (packages/aai-server/teardown-sandboxes.ts), the
+    only thing that retires the replica's resident guest sandboxes — never
+    ran on a scale-in or redeploy. Every guest the
     replica owned was orphaned: its harness self-exits after the 5-minute
     orphan timeout, and the sandbox then lingers as a 2-3 MiB
     ``sleep infinity`` shell until Modal's 15-minute idle timer reaps it —

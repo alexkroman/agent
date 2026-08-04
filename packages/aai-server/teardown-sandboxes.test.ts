@@ -1,76 +1,25 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { retireSandbox } from "./sandbox-retire.ts";
 import { createSlotCache, setSlot } from "./sandbox-slots.ts";
-import { liveGuestSessions, teardownSandboxes } from "./teardown-sandboxes.ts";
+import { teardownSandboxes } from "./teardown-sandboxes.ts";
 
-const fakeSandbox = () => ({ shutdown: vi.fn().mockResolvedValue(undefined) });
-
-const countingSandbox = (n: number | (() => number)) => ({
+const fakeSandbox = () => ({
   shutdown: vi.fn().mockResolvedValue(undefined),
-  activeSessions: vi.fn(() => Promise.resolve(typeof n === "function" ? n() : n)),
-});
-
-/**
- * The shutdown drain's input. `wss.clients.size` cannot see a browser voice
- * session — it dials the guest tunnel directly — so this is the only honest
- * count, and getting it wrong means every scale-in cuts live calls while
- * reporting a clean drain.
- */
-describe("liveGuestSessions", () => {
-  it("sums primaries and overflow replicas across every slot", async () => {
-    const slots = createSlotCache();
-    setSlot(slots, { slug: "a", sandbox: countingSandbox(3) });
-    setSlot(slots, {
-      slug: "b",
-      sandbox: countingSandbox(1),
-      replicas: [countingSandbox(2), countingSandbox(4)],
-    });
-
-    await expect(liveGuestSessions(slots)).resolves.toBe(10);
-  });
-
-  it("counts sandboxes that a mutation retired and are still draining", async () => {
-    const slots = createSlotCache();
-    let live = 2;
-    const retired = countingSandbox(() => live);
-    // Off the slot map by design — but its calls are exactly the ones
-    // retirement exists to protect, so shutdown must still wait for them.
-    const done = retireSandbox(retired, { slug: "retired", reason: "deploy", pollMs: 5 });
-
-    await expect(liveGuestSessions(slots)).resolves.toBe(2);
-
-    live = 0;
-    await done;
-    await expect(liveGuestSessions(slots)).resolves.toBe(0);
-  });
-
-  it("counts an unreachable guest as idle rather than stalling shutdown", async () => {
-    const slots = createSlotCache();
-    setSlot(slots, {
-      slug: "dead",
-      sandbox: {
-        shutdown: vi.fn().mockResolvedValue(undefined),
-        activeSessions: () => Promise.reject(new Error("guest gone")),
-      },
-    });
-    setSlot(slots, { slug: "alive", sandbox: countingSandbox(2) });
-
-    await expect(liveGuestSessions(slots)).resolves.toBe(2);
-  });
-
-  it("is zero with no sandboxes", async () => {
-    await expect(liveGuestSessions(createSlotCache())).resolves.toBe(0);
-  });
+  drain: vi.fn().mockResolvedValue(undefined),
 });
 
 describe("teardownSandboxes", () => {
   beforeEach(() => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
   });
 
-  it("shuts down every slot's primary sandbox", async () => {
+  // A replica going down is a redeploy from the guests' point of view: their
+  // sessions dial the tunnel directly and never touch this process, so the
+  // guests are RETIRED (drained, guest owns its own exit), never terminated —
+  // terminating them here is what used to cut live calls on every scale-in.
+  it("retires every slot's sandbox: drains with a budget, never terminates", async () => {
     const slots = createSlotCache();
     const a = fakeSandbox();
     const b = fakeSandbox();
@@ -79,31 +28,26 @@ describe("teardownSandboxes", () => {
 
     await teardownSandboxes({ slots });
 
-    expect(a.shutdown).toHaveBeenCalledOnce();
-    expect(b.shutdown).toHaveBeenCalledOnce();
+    expect(a.drain).toHaveBeenCalledExactlyOnceWith(expect.any(Number));
+    expect(b.drain).toHaveBeenCalledExactlyOnceWith(expect.any(Number));
+    expect(a.shutdown).not.toHaveBeenCalled();
+    expect(b.shutdown).not.toHaveBeenCalled();
+    // Detached, so nothing else can route to or double-release them.
+    expect(slots.get("a")?.sandbox).toBeUndefined();
+    expect(slots.get("b")?.sandbox).toBeUndefined();
   });
 
-  // The leak this closes: both entries called `slot.sandbox?.shutdown()`,
-  // which skips overflow replicas entirely — terminateSlot already handles
-  // both, and these paths re-implemented a subset of it.
-  it("shuts down overflow replicas alongside the primary", async () => {
+  it("terminates a guest that is unreachable for the drain", async () => {
     const slots = createSlotCache();
-    const primary = fakeSandbox();
-    const replica = fakeSandbox();
-    setSlot(slots, { slug: "scaled", sandbox: primary, replicas: [replica] });
+    const dead = {
+      shutdown: vi.fn().mockResolvedValue(undefined),
+      drain: vi.fn().mockRejectedValue(new Error("guest gone")),
+    };
+    setSlot(slots, { slug: "dead", sandbox: dead });
 
     await teardownSandboxes({ slots });
 
-    expect(primary.shutdown).toHaveBeenCalledOnce();
-    expect(replica.shutdown).toHaveBeenCalledOnce();
-  });
-
-  it("shuts down the warm pool", async () => {
-    const pool = { shutdown: vi.fn().mockResolvedValue(undefined) };
-
-    await teardownSandboxes({ slots: createSlotCache(), pool });
-
-    expect(pool.shutdown).toHaveBeenCalledOnce();
+    expect(dead.shutdown).toHaveBeenCalledOnce();
   });
 
   // The studio broker's own per-project sandboxes: dispose() existed and was
@@ -117,19 +61,20 @@ describe("teardownSandboxes", () => {
     expect(broker.dispose).toHaveBeenCalledOnce();
   });
 
-  it("tears everything else down even when one sandbox rejects", async () => {
+  it("releases everything else even when one guest rejects everything", async () => {
     const slots = createSlotCache();
-    const bad = { shutdown: vi.fn().mockRejectedValue(new Error("already gone")) };
+    const bad = {
+      shutdown: vi.fn().mockRejectedValue(new Error("already gone")),
+      drain: vi.fn().mockRejectedValue(new Error("guest gone")),
+    };
     const good = fakeSandbox();
     setSlot(slots, { slug: "bad", sandbox: bad });
     setSlot(slots, { slug: "good", sandbox: good });
-    const pool = { shutdown: vi.fn().mockResolvedValue(undefined) };
     const broker = { dispose: vi.fn().mockResolvedValue(undefined) };
 
-    await expect(teardownSandboxes({ slots, pool, broker })).resolves.toBeUndefined();
+    await expect(teardownSandboxes({ slots, broker })).resolves.toBeUndefined();
 
-    expect(good.shutdown).toHaveBeenCalledOnce();
-    expect(pool.shutdown).toHaveBeenCalledOnce();
+    expect(good.drain).toHaveBeenCalledOnce();
     expect(broker.dispose).toHaveBeenCalledOnce();
   });
 
@@ -141,7 +86,7 @@ describe("teardownSandboxes", () => {
     expect(console.warn).toHaveBeenCalled();
   });
 
-  it("is a no-op with no slots, pool, or broker", async () => {
+  it("is a no-op with no slots or broker", async () => {
     await expect(teardownSandboxes({ slots: createSlotCache() })).resolves.toBeUndefined();
   });
 });

@@ -14,8 +14,10 @@
  * - **The tunnel is public but the harness is not**: the host mints a
  *   per-sandbox bearer token, delivers it via the exec's env (never the
  *   sandbox's), and the harness rejects unauthenticated upgrades.
- * - **No secrets in the guest environment**: agent env is delivered via the
- *   `bundle/load` RPC params, never as sandbox environment variables.
+ * - **No secrets in the SANDBOX environment**: per-sandbox tokens ride the
+ *   EXEC env (they die with the process), and a deployed agent's own env
+ *   arrives as a file written into its sandbox and scrubbed after boot —
+ *   studio sandboxes receive per-session data over the control channel.
  * - **No host filesystem**: the sandbox sees only the baked guest image.
  * - **Resource limits**: memory/CPU caps map onto Modal's per-sandbox
  *   `memoryLimitMiB`/`cpuLimit` options.
@@ -40,16 +42,23 @@ import { keyedMemoAsync, memoAsync } from "./_memo.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
 import { createHarnessImageResolver, HARNESS_REMOTE_PATH } from "./modal-harness-image.ts";
 import {
-  assertModalResourcePairs,
   DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
   DEFAULT_SANDBOX_TIMEOUT_MS,
-  parseSandboxLimitsFromEnv,
-  parseSandboxRegionsFromEnv,
+  guestSandboxResources,
 } from "./modal-sandbox-env.ts";
 import type { RpcWebSocket } from "./rpc-transport.ts";
 import { resolveSandboxRole, type SpawnIdentity, sandboxTags } from "./sandbox-role.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
-import { type DialGuest, dialGuest, warmFromGuest } from "./warm-harness.ts";
+import {
+  type AgentServerHandle,
+  agentBootEnv,
+  agentServerFromGuest,
+  type DialGuest,
+  dialGuest,
+  type GuestFetch,
+  pollGuestHealth,
+  warmFromGuest,
+} from "./warm-harness.ts";
 
 // ── Structural Modal types ───────────────────────────────────────────────────
 // Minimal shapes of the Modal SDK objects we touch. Structural rather than the
@@ -75,8 +84,12 @@ export type ModalSandboxLike = {
     params: { mode: "binary"; stdout: "pipe"; stderr: "pipe"; env?: Record<string, string> },
   ): Promise<ModalProcLike>;
   tunnels(timeoutMs?: number): Promise<Record<number, ModalTunnelLike>>;
-  /** Replace the sandbox's tags (observability — see sandbox-role.ts). */
-  setTags(tags: Record<string, string>): Promise<void>;
+  /**
+   * Sandbox filesystem writes — how agent-mode boot artifacts (bundle + env)
+   * land in the sandbox before exec. The same API the harness-image builder
+   * uses, so the ~13 MB harness write is proven headroom for worker bundles.
+   */
+  filesystem: { writeText(data: string, remotePath: string): Promise<void> };
   terminate(): Promise<unknown>;
 };
 
@@ -86,9 +99,21 @@ export type ModalSandboxLike = {
  * `createGuestSandbox` creates a sandbox with the given harness code present
  * at {@link HARNESS_REMOTE_PATH}, served from a baked snapshot image (built
  * once per harness version, published under a content-addressed tag).
+ * `imageTag` pins the spawn to a specific published harness image — the one
+ * recorded on the agent's row at deploy time — so a deployed bundle never
+ * meets a harness/Node environment it wasn't deployed against. An
+ * unresolvable pin FAILS the spawn loudly (silently substituting the current
+ * image would run the bundle on an environment nobody tested it against —
+ * the exact drift pinning exists to prevent); the operator kill switch
+ * `SANDBOX_IGNORE_IMAGE_PINS=1` forces the current image for every spawn
+ * when a registry loss makes that trade explicitly.
  */
 export type ModalSpawnContext = {
-  createGuestSandbox(code: string, params: SandboxCreateParams): Promise<ModalSandboxLike>;
+  createGuestSandbox(
+    code: string,
+    params: SandboxCreateParams,
+    imageTag?: string,
+  ): Promise<ModalSandboxLike>;
 };
 
 // ── Configuration ────────────────────────────────────────────────────────────
@@ -100,7 +125,7 @@ export type ModalSpawnContext = {
  * `buildContext`). Override with `MODAL_SANDBOX_IMAGE` (pin a version tag in
  * production for reproducible guests).
  */
-const DEFAULT_SANDBOX_IMAGE = "node:24-slim";
+export const DEFAULT_SANDBOX_IMAGE = "node:24-slim";
 
 /** Modal App the sandboxes are created under. Override with `MODAL_APP_NAME`. */
 const DEFAULT_MODAL_APP_NAME = "aai-server";
@@ -151,7 +176,27 @@ async function buildContext(): Promise<ModalSpawnContext> {
   const harnessImage = createHarnessImageResolver({ client, app, baseTag, baseImage });
 
   return {
-    async createGuestSandbox(code, params) {
+    async createGuestSandbox(code, params, imageTag) {
+      // A pinned tag (the image the agent was DEPLOYED against) wins over
+      // the current harness image, so platform upgrades never change the
+      // environment under an already-deployed bundle. An unresolvable pin
+      // fails LOUDLY rather than silently substituting the current image —
+      // that substitution is exactly the untested-environment drift pinning
+      // exists to prevent, and hiding it behind a warning made a registry
+      // loss invisible until an agent misbehaved.
+      if (imageTag && process.env.SANDBOX_IGNORE_IMAGE_PINS !== "1") {
+        const pinned = await client.images.fromName(imageTag).catch((err: unknown) => {
+          throw new Error(
+            `pinned harness image ${imageTag} is unresolvable — redeploy the agent, ` +
+              `or set SANDBOX_IGNORE_IMAGE_PINS=1 to force the current image: ${errorMessage(err)}`,
+            { cause: err },
+          );
+        });
+        return client.sandboxes.create(app, pinned, params);
+      }
+      if (imageTag) {
+        console.warn("SANDBOX_IGNORE_IMAGE_PINS=1: ignoring pinned harness image", { imageTag });
+      }
       const image = await harnessImage(code);
       return client.sandboxes.create(app, image, params);
     },
@@ -163,7 +208,7 @@ async function buildContext(): Promise<ModalSpawnContext> {
  * the next spawn retries (a transient control-plane error must not disable
  * sandboxing for the process lifetime).
  */
-const modalContext = memoAsync(buildContext);
+export const modalContext = memoAsync(buildContext);
 
 /**
  * Fire-and-forget warm-up of the memoized Modal context (app lookup/creation
@@ -181,7 +226,7 @@ export function prewarmModal(): void {
 const harnessCache = keyedMemoAsync<string>();
 
 /** Read (and memoize) the built guest harness — it is stable per process. */
-function harnessCode(harnessPath: string): Promise<string> {
+export function harnessCode(harnessPath: string): Promise<string> {
   return harnessCache(harnessPath, () => readFile(harnessPath, "utf-8"));
 }
 
@@ -204,9 +249,6 @@ function warmFromModal(
     terminate: () => sb.terminate(),
     ws,
     origin,
-    // Lets the acquire layers re-tag a pooled sandbox with its real
-    // role/slug — creation-time tags say "pool" (see sandbox-role.ts).
-    setTags: (tags) => sb.setTags(tags),
   });
 }
 
@@ -222,7 +264,7 @@ function warmFromModal(
  * + network policy.
  */
 export async function spawnModalWarm(
-  opts: { harnessPath: string } & SpawnIdentity,
+  opts: { harnessPath: string; imageTag?: string | undefined } & SpawnIdentity,
   ctx?: ModalSpawnContext,
   dial: DialGuest = dialGuest,
 ): Promise<WarmHarness> {
@@ -230,33 +272,26 @@ export async function spawnModalWarm(
     harnessCode(opts.harnessPath),
     ctx ? Promise.resolve(ctx) : modalContext(),
   ]);
-  const limits = parseSandboxLimitsFromEnv(process.env);
-  assertModalResourcePairs(limits);
-  const regions = parseSandboxRegionsFromEnv(process.env);
+  const { limits, resourceParams } = guestSandboxResources(process.env);
   const role = resolveSandboxRole(opts);
 
   const t0 = performance.now();
-  const sb = await context.createGuestSandbox(code, {
-    // Explicit idle entrypoint: the exec'd harness is what holds the sandbox
-    // active, so its exit is what starts the idle timer.
-    command: ["sleep", "infinity"],
-    // The host dials in through this tunnel; the harness's bearer-token
-    // check is what keeps the public tunnel URL from being an open door.
-    encryptedPorts: [GUEST_PORT],
-    timeoutMs: limits.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
-    idleTimeoutMs: limits.idleTimeoutMs ?? DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
-    // Reservation and cap are a burst range, not one number: a guest idles
-    // as a voice session and spikes only while the bundler runs. Modal rejects
-    // a reservation above its cap (clamped at parse) and a bare cap
-    // (assertModalResourcePairs above), so pass whichever were configured.
-    ...(limits.memoryMiB !== undefined && { memoryMiB: limits.memoryMiB }),
-    ...(limits.memoryLimitMiB !== undefined && { memoryLimitMiB: limits.memoryLimitMiB }),
-    ...(limits.cpu !== undefined && { cpu: limits.cpu }),
-    ...(limits.cpuLimit !== undefined && { cpuLimit: limits.cpuLimit }),
-    // Co-locate guests with the host — see parseSandboxRegionsFromEnv.
-    ...(regions && { regions }),
-    tags: sandboxTags(role, opts.slug),
-  });
+  const sb = await context.createGuestSandbox(
+    code,
+    {
+      // Explicit idle entrypoint: the exec'd harness is what holds the sandbox
+      // active, so its exit is what starts the idle timer.
+      command: ["sleep", "infinity"],
+      // The host dials in through this tunnel; the harness's bearer-token
+      // check is what keeps the public tunnel URL from being an open door.
+      encryptedPorts: [GUEST_PORT],
+      timeoutMs: limits.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
+      idleTimeoutMs: limits.idleTimeoutMs ?? DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
+      ...resourceParams,
+      tags: sandboxTags(role, opts.slug),
+    },
+    opts.imageTag,
+  );
   try {
     // The per-sandbox bearer token rides the EXEC env — never the sandbox
     // env, where it would outlive the process and show in sandbox metadata.
@@ -296,7 +331,7 @@ export async function spawnModalWarm(
     debug("Modal sandbox spawned", {
       sandboxId: sb.sandboxId,
       role,
-      slug: opts.slug ?? "pool",
+      slug: opts.slug ?? "inspect",
       ms: Math.round(performance.now() - t0),
     });
 
@@ -305,6 +340,105 @@ export async function spawnModalWarm(
     // Never leak a sandbox whose harness failed to start.
     await sb.terminate().catch(() => undefined);
     throw new Error(`Modal sandbox spawn failed: ${errorMessage(err)}`, { cause: err });
+  }
+}
+
+// ── Agent-server spawning (the HTTP-only contract) ───────────────────────────
+
+/** Where agent-mode boot artifacts land in the sandbox (written pre-exec). */
+export const AGENT_BUNDLE_REMOTE_PATH = "/tmp/aai-agent-bundle.mjs";
+const AGENT_ENV_REMOTE_PATH = "/tmp/aai-agent-env.json";
+
+/**
+ * Spawn one DEPLOYED AGENT as a server in a fresh Modal sandbox: create from
+ * the deploy's pinned image (falling back to current — see
+ * `createGuestSandbox`), write the bundle and agent env into the sandbox,
+ * exec the harness in agent mode, and wait for its public `/health` — a 200
+ * means the bundle is loaded and sessions can be served. No control channel
+ * is dialed; the returned handle's whole surface is HTTP + terminate.
+ */
+export async function spawnModalAgentServer(
+  opts: {
+    harnessPath: string;
+    slug: string;
+    workerCode: string;
+    workerSha256: string;
+    agentEnv: Record<string, string>;
+    imageTag?: string | undefined;
+  },
+  ctx?: ModalSpawnContext,
+  fetchFn?: GuestFetch,
+): Promise<AgentServerHandle> {
+  const [code, context] = await Promise.all([
+    harnessCode(opts.harnessPath),
+    ctx ? Promise.resolve(ctx) : modalContext(),
+  ]);
+  const { limits, resourceParams } = guestSandboxResources(process.env);
+  const role = resolveSandboxRole({ slug: opts.slug });
+
+  const t0 = performance.now();
+  const sb = await context.createGuestSandbox(
+    code,
+    {
+      command: ["sleep", "infinity"],
+      encryptedPorts: [GUEST_PORT],
+      timeoutMs: limits.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
+      idleTimeoutMs: limits.idleTimeoutMs ?? DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
+      ...resourceParams,
+      tags: sandboxTags(role, opts.slug),
+    },
+    opts.imageTag,
+  );
+  try {
+    // Boot artifacts land on the sandbox filesystem BEFORE exec — the guest
+    // reads (and hash-verifies) them at boot; nothing arrives over a channel.
+    await sb.filesystem.writeText(opts.workerCode, AGENT_BUNDLE_REMOTE_PATH);
+    await sb.filesystem.writeText(JSON.stringify(opts.agentEnv), AGENT_ENV_REMOTE_PATH);
+
+    const token = randomBytes(32).toString("hex");
+    const [proc, tunnels] = await Promise.all([
+      sb.exec(["node", HARNESS_REMOTE_PATH], {
+        mode: "binary",
+        stdout: "pipe",
+        stderr: "pipe",
+        env: {
+          ...agentBootEnv({
+            token,
+            port: GUEST_PORT,
+            bundlePath: AGENT_BUNDLE_REMOTE_PATH,
+            bundleSha256: opts.workerSha256,
+            envPath: AGENT_ENV_REMOTE_PATH,
+          }),
+          [CONTAINED_ENV]: "1",
+        },
+      }),
+      sb.tunnels(),
+    ]);
+    const tunnel = tunnels[GUEST_PORT];
+    if (!tunnel) {
+      throw new Error(`no tunnel for guest port ${GUEST_PORT}`);
+    }
+    const origin = `wss://${tunnel.host}:${tunnel.port}`;
+    await pollGuestHealth(origin, proc, fetchFn);
+
+    debug("Modal agent server spawned", {
+      sandboxId: sb.sandboxId,
+      slug: opts.slug,
+      ms: Math.round(performance.now() - t0),
+    });
+
+    return agentServerFromGuest({
+      label: `modal:${sb.sandboxId}`,
+      proc,
+      terminate: () => sb.terminate(),
+      origin,
+      token,
+      fetchFn,
+    });
+  } catch (err) {
+    // Never leak a sandbox whose agent server failed to come up.
+    await sb.terminate().catch(() => undefined);
+    throw new Error(`Modal agent-server spawn failed: ${errorMessage(err)}`, { cause: err });
   }
 }
 

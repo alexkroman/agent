@@ -5,21 +5,15 @@
  * Every guest sandbox the platform spawns looks identical from the Modal
  * dashboard — same app, same image, same exec — so the tags minted here are
  * the only way to tell a production voice agent from a studio coding-agent
- * session, a preview deploy, a warm-pool spare, or a throwaway bundle
- * inspection. Tags are filterable in Modal's sandbox list
- * (`client.sandboxes.list`) and visible per sandbox in the dashboard.
+ * session, a preview deploy, or a throwaway bundle inspection. Tags are
+ * filterable in Modal's sandbox list (`client.sandboxes.list`) and visible
+ * per sandbox in the dashboard. Every spawn knows its identity at creation
+ * (the warm pool, which spawned identityless spares, is gone).
  *
  * Observability ONLY: nothing security-relevant may key off these tags — the
  * Modal container is the boundary, and `roleForSlug`'s preview inference is a
  * suffix heuristic (a user-deployed agent whose slug happens to end in
  * `-preview` is mislabeled, harmlessly).
- *
- * Pooled sandboxes are created before they have an identity, so they start
- * tagged `role: "pool"` and are RE-tagged via the backend's `setTags` when
- * acquired for a real purpose (see `acquireWarmHarness` / `createSandboxVm`).
- * Without the retag, every warm-pool-served sandbox would read "pool"
- * forever, which is exactly the indistinguishability this module exists to
- * fix.
  */
 
 /** What a guest sandbox was spawned (or acquired) to do. */
@@ -33,9 +27,7 @@ export type SandboxRole =
   /** An ephemeral sandbox spawned for one studio Publish, torn down after. */
   | "studio-publish"
   /** A throwaway bundle-inspection sandbox (`describeBundle`). */
-  | "inspect"
-  /** A warm-pool spare with no identity yet (retagged on acquire). */
-  | "pool";
+  | "inspect";
 
 /**
  * Suffix of studio preview slugs (see `previewSlugFor` in
@@ -57,13 +49,13 @@ export type SpawnIdentity = {
 
 /**
  * Resolve the effective role for a spawn: an explicit role wins, else it is
- * inferred from the slug, else the sandbox is an identityless pool spare.
+ * inferred from the slug (bundle inspection passes no slug).
  */
 export function resolveSandboxRole(opts: SpawnIdentity): SandboxRole {
-  return opts.role ?? (opts.slug ? roleForSlug(opts.slug) : "pool");
+  return opts.role ?? (opts.slug ? roleForSlug(opts.slug) : "inspect");
 }
 
-/** The tag set attached to (and re-applied on) every guest sandbox. */
+/** The tag set attached to every guest sandbox at creation. */
 export function sandboxTags(role: SandboxRole, slug?: string): Record<string, string> {
   return { service: "aai-guest", role, ...(slug ? { slug } : {}) };
 }

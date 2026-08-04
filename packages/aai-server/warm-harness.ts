@@ -4,8 +4,8 @@
  * (Modal in `modal-sandbox.ts`, the local child process in
  * `subprocess-sandbox.ts`): dialing the harness WebSocket while its
  * server boots, draining guest stdio into host logs, and wrapping a running
- * guest process + dialed socket into the `WarmHarness` shape the pool and
- * slot layers consume.
+ * guest process + dialed socket into the `WarmHarness` shape the studio
+ * layers consume.
  *
  * The exit/cleanup semantics here are subtle and were previously duplicated
  * per backend candidate: exit listeners fire exactly once (and immediately
@@ -18,7 +18,7 @@ import { createServer } from "node:net";
 import { errorMessage } from "@alexkroman1/aai";
 import { WebSocket } from "ws";
 import { sleep } from "./_sleep.ts";
-import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
+import { GUEST_ROUTES, guestHttpUrl, guestWsUrl } from "./guest-routes.ts";
 import type { GuestRpcSchema } from "./rpc-schemas.ts";
 import { createRpcConnection, type RpcWebSocket } from "./rpc-transport.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
@@ -28,6 +28,21 @@ const GUEST_DIAL_TIMEOUT_MS = 30_000;
 
 /** Delay between dial attempts while the harness server boots. */
 const GUEST_DIAL_RETRY_MS = 250;
+
+/**
+ * Budget for an agent-mode guest to answer `/health` after exec. Longer than
+ * the dial budget: agent-mode boot LOADS THE BUNDLE before listening (a 200
+ * means "ready to serve sessions"), and a large worker's top-level import is
+ * part of the wait.
+ */
+const AGENT_HEALTH_TIMEOUT_MS = 120_000;
+
+/** Per-attempt cap and retry delay for the health poll. */
+const AGENT_HEALTH_ATTEMPT_MS = 2000;
+const AGENT_HEALTH_RETRY_MS = 250;
+
+/** Per-request cap on the manage-surface probes (status/drain). */
+const MANAGE_REQUEST_TIMEOUT_MS = 5000;
 
 /**
  * Ask the OS for a free loopback port, which the subprocess backend's harness
@@ -69,25 +84,38 @@ export type GuestProcLike = {
  */
 const MAX_STREAM_LOG_BYTES = 64 * 1024;
 
-export async function drainProcStream(
+/**
+ * Consume a guest stream chunk-by-chunk to the end. NEVER stops early — a
+ * guest blocked on a full pipe wedges on its next write — and swallows
+ * mid-read errors (peer death is the exit paths' business). The one loop
+ * both the log drain and the describe-exec collector are built on, so the
+ * keep-consuming invariant lives in one place.
+ */
+export async function consumeProcStream(
   stream: ReadableStream<Uint8Array>,
-  label: string,
+  onChunk: (chunk: Uint8Array) => void,
 ): Promise<void> {
   const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let logged = 0;
   try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) return;
-      if (logged >= MAX_STREAM_LOG_BYTES) continue; // keep draining, stop logging
-      logged += value.byteLength;
-      const text = decoder.decode(value, { stream: true }).trimEnd();
-      if (text) console.warn(`${label}: ${text}`);
+      onChunk(value);
     }
   } catch {
     // Peer died mid-read; process exit handling covers teardown.
   }
+}
+
+export function drainProcStream(stream: ReadableStream<Uint8Array>, label: string): Promise<void> {
+  const decoder = new TextDecoder();
+  let logged = 0;
+  return consumeProcStream(stream, (value) => {
+    if (logged >= MAX_STREAM_LOG_BYTES) return; // keep draining, stop logging
+    logged += value.byteLength;
+    const text = decoder.decode(value, { stream: true }).trimEnd();
+    if (text) console.warn(`${label}: ${text}`);
+  });
 }
 
 // ── Guest WebSocket dial ─────────────────────────────────────────────────────
@@ -128,6 +156,222 @@ export async function dialGuest(url: string, token: string): Promise<RpcWebSocke
   }
 }
 
+// ── Agent-server guests (the HTTP-only contract) ─────────────────────────────
+
+/** Injectable fetch for the health poll and manage surface (tests). */
+export type GuestFetch = typeof globalThis.fetch;
+
+/**
+ * Poll the guest's public `/health` until it answers 200 — agent-mode
+ * readiness. The endpoint exists before the guest listens (a Modal tunnel is
+ * routable immediately), so refused/reset attempts are the normal boot path.
+ *
+ * Races the poll against GUEST PROCESS EXIT: a boot failure (hash mismatch,
+ * bundle top-level throw, bad env file) exits the guest immediately, and
+ * without the race the spawn would burn the whole health deadline blaming
+ * the network for what the guest's stderr already said.
+ */
+export async function pollGuestHealth(
+  origin: string,
+  proc: GuestProcLike,
+  fetchFn: GuestFetch = fetch,
+  timeoutMs = AGENT_HEALTH_TIMEOUT_MS,
+): Promise<void> {
+  const url = guestHttpUrl(origin, GUEST_ROUTES.health);
+  const deadline = Date.now() + timeoutMs;
+  let exit: { code: number } | null = null;
+  void proc.wait().then(
+    (code) => {
+      exit = { code };
+    },
+    () => {
+      exit = { code: -1 };
+    },
+  );
+  let lastError = "no response";
+  for (;;) {
+    if (exit !== null) {
+      throw new Error(
+        `guest exited before ready (exit ${(exit as { code: number }).code}) — see its stderr in the host log`,
+      );
+    }
+    try {
+      const res = await fetchFn(url, { signal: AbortSignal.timeout(AGENT_HEALTH_ATTEMPT_MS) });
+      if (res.ok) return;
+      lastError = `HTTP ${res.status}`;
+    } catch (err) {
+      lastError = errorMessage(err);
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(`guest /health not ready after ${timeoutMs}ms: ${lastError}`);
+    }
+    await sleep(AGENT_HEALTH_RETRY_MS);
+  }
+}
+
+/**
+ * The exec env selecting agent mode and naming the boot artifacts — one
+ * builder so the two backends cannot drift on the key names the guest reads
+ * (see aai-guest/harness-agent-mode.ts).
+ */
+export function agentBootEnv(opts: {
+  token: string;
+  port: number;
+  bundlePath: string;
+  bundleSha256: string;
+  envPath: string;
+}): Record<string, string> {
+  return {
+    AAI_GUEST_MODE: "agent",
+    AAI_GUEST_TOKEN: opts.token,
+    AAI_GUEST_PORT: String(opts.port),
+    AAI_BUNDLE_PATH: opts.bundlePath,
+    AAI_BUNDLE_SHA256: opts.bundleSha256,
+    AAI_AGENT_ENV_PATH: opts.envPath,
+  };
+}
+
+/**
+ * The host's handle on one AGENT-MODE guest — the whole surviving surface of
+ * the platform↔deployed-agent relationship: a session URL to hand to the
+ * broker, two token-gated HTTP probes, process liveness, and terminate.
+ * There is no RPC connection; the exec convention plus these endpoints ARE
+ * the contract (versioned by the guest's reported contractVersion — see
+ * aai-guest/limits.ts), frozen per deploy by the harness image pin.
+ */
+export type AgentServerHandle = {
+  /** Public client-session endpoint on the guest's tunnel. */
+  sessionUrl: string;
+  /**
+   * The guest's origin (`ws(s)://host:port`) — every guest surface derives
+   * from it via GUEST_ROUTES rather than reverse-engineering `sessionUrl`.
+   */
+  guestOrigin: string;
+  /**
+   * Live sessions via `GET /manage/status`. NO production caller — kept as
+   * the platform's tested client of the status contract (an
+   * operator/diagnostic probe; see agent-server-integration.test.ts). Do
+   * not wire lifecycle decisions back onto it: the guest owns its own
+   * lifecycle. NEVER throws — an unreachable guest or malformed answer
+   * reads as 0.
+   */
+  activeSessions(): Promise<number>;
+  /**
+   * `POST /manage/drain`: refuse new sessions, exit when empty or at
+   * `deadlineMs` (guest-enforced — see aai-guest/harness-agent-mode.ts).
+   * THROWS on an unreachable guest: retirement uses the rejection to tell
+   * "guest owns its exit now" from "nothing there to drain — terminate".
+   */
+  drain(deadlineMs?: number): Promise<void>;
+  /** True while the guest process is alive. */
+  alive(): boolean;
+  /** One-shot exit listener; fires immediately when already dead. */
+  onExit(cb: () => void): void;
+  /** Terminate the sandbox (memoized, best-effort). */
+  shutdown(): Promise<void>;
+};
+
+/**
+ * Wrap a running agent-mode guest into its handle. Shares the exit/cleanup
+ * semantics of {@link warmFromGuest} minus the socket: process exit is the
+ * only death signal (there is no host connection to drop).
+ */
+export function agentServerFromGuest(opts: {
+  label: string;
+  proc: GuestProcLike;
+  terminate: () => Promise<unknown>;
+  origin: string;
+  /** The per-sandbox bearer gating the manage surface. */
+  token: string;
+  fetchFn?: GuestFetch | undefined;
+}): AgentServerHandle {
+  const { label, proc, origin, token } = opts;
+  const fetchFn = opts.fetchFn ?? fetch;
+  void drainProcStream(proc.stdout, `[${label}] stdout`);
+  void drainProcStream(proc.stderr, `[${label}] stderr`);
+
+  const exitListeners: (() => void)[] = [];
+  let dead = false;
+  const notifyExit = (): void => {
+    if (dead) return;
+    dead = true;
+    for (const cb of exitListeners) {
+      try {
+        cb();
+      } catch {
+        // Listener errors must not crash the host
+      }
+    }
+  };
+  proc.wait().then(notifyExit, notifyExit);
+
+  const manage = (
+    route: (typeof GUEST_ROUTES)["manageStatus" | "manageDrain"],
+    method: string,
+    query = "",
+  ) =>
+    fetchFn(`${guestHttpUrl(origin, route)}${query}`, {
+      method,
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(MANAGE_REQUEST_TIMEOUT_MS),
+    });
+
+  let cleanupPromise: Promise<void> | null = null;
+
+  return {
+    sessionUrl: guestWsUrl(origin, GUEST_ROUTES.session),
+    guestOrigin: origin,
+
+    async activeSessions() {
+      try {
+        const res = await manage(GUEST_ROUTES.manageStatus, "GET");
+        if (!res.ok) return 0;
+        // Guest-asserted wire data: validate the one field consumed. It may
+        // only ever influence this tenant's own reaping and shutdown-drain
+        // accounting — a lying guest harms only itself.
+        const body = (await res.json()) as { activeSessions?: unknown };
+        const count = body.activeSessions;
+        if (typeof count !== "number" || !Number.isFinite(count) || count < 0) return 0;
+        return count;
+      } catch {
+        return 0; // unreachable guest = idle guest
+      }
+    },
+
+    async drain(deadlineMs?: number) {
+      const query = deadlineMs === undefined ? "" : `?deadlineMs=${deadlineMs}`;
+      const res = await manage(GUEST_ROUTES.manageDrain, "POST", query);
+      if (!res.ok) throw new Error(`manage/drain answered HTTP ${res.status}`);
+    },
+
+    alive: () => !dead,
+
+    onExit: (cb) => {
+      if (dead) {
+        try {
+          cb();
+        } catch {
+          // Listener errors must not crash the host
+        }
+        return;
+      }
+      exitListeners.push(cb);
+    },
+
+    shutdown() {
+      cleanupPromise ??= (async () => {
+        notifyExit();
+        try {
+          await opts.terminate();
+        } catch {
+          // Best-effort — the sandbox may already be gone (timeout, crash).
+        }
+      })();
+      return cleanupPromise;
+    },
+  };
+}
+
 // ── WarmHarness construction ─────────────────────────────────────────────────
 
 /**
@@ -143,11 +387,6 @@ export function warmFromGuest(opts: {
   ws: RpcWebSocket;
   /** The guest's origin, e.g. `wss://host:port` — routes derive from it. */
   origin: string;
-  /**
-   * Backend hook to replace the sandbox's observability tags (Modal's
-   * `setTags`). Absent on backends with nothing to tag (subprocess).
-   */
-  setTags?: ((tags: Record<string, string>) => Promise<void>) | undefined;
 }): WarmHarness {
   const { label, proc, ws, origin } = opts;
   void drainProcStream(proc.stdout, `[${label}] stdout`);
@@ -194,14 +433,13 @@ export function warmFromGuest(opts: {
     conn,
     guestOrigin: origin,
     sessionUrl: guestWsUrl(origin, GUEST_ROUTES.session),
-    ...(opts.setTags ? { setTags: opts.setTags } : {}),
     cleanup,
     alive: () => !dead,
     onExit: (cb) => {
       // A harness can die between spawn resolution and this registration —
       // notifyExit walks the listener list exactly once, so a listener added
-      // afterwards would never fire and (for the pool) a dead harness would
-      // sit in `ready` unevicted until an acquire skipped it. Fire it now.
+      // afterwards would never fire, so its holder would never learn the
+      // harness is unusable. Fire it now.
       if (dead) {
         try {
           cb();

@@ -22,7 +22,7 @@ export type ToolContext = {
   env: Readonly<Record<string, string>>;
   /**
    * Per-call trial state. The trial runner (studio `test_agent`) ships the
-   * state with each `tool/execute` and stores the (possibly mutated) object
+   * state with each one-shot trial and stores the (possibly mutated) object
    * the response carries back — a real session's state lives in the embedded
    * runtime, not here.
    */

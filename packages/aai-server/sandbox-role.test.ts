@@ -18,7 +18,7 @@ describe("resolveSandboxRole", () => {
     expect(resolveSandboxRole({ slug: "foo-preview", role: "studio" })).toBe("studio");
     expect(resolveSandboxRole({ slug: "foo-preview" })).toBe("preview");
     expect(resolveSandboxRole({ slug: "foo" })).toBe("agent");
-    expect(resolveSandboxRole({})).toBe("pool");
+    expect(resolveSandboxRole({})).toBe("inspect");
   });
 });
 
@@ -29,6 +29,6 @@ describe("sandboxTags", () => {
       role: "studio",
       slug: "my-project",
     });
-    expect(sandboxTags("pool")).toEqual({ service: "aai-guest", role: "pool" });
+    expect(sandboxTags("inspect")).toEqual({ service: "aai-guest", role: "inspect" });
   });
 });

@@ -5,16 +5,34 @@
  * The harness embeds NO agent runtime: the worker bundle ships its own
  * (`__aaiCreateRuntime`, the user's installed SDK bundled in by the CLI
  * wrapper), so a deployed agent runs exactly the runtime version it was
- * built against and platform SDK drift cannot break it. The harness serves
- * two WebSocket surfaces on its tunneled port:
+ * built against and platform SDK drift cannot break it.
+ *
+ * TWO MODES, selected by the spawner via `AAI_GUEST_MODE` (behavior
+ * selection only — never a security boundary; a hostile bundle can ignore
+ * it, and gains nothing because capability is what the HOST delivers):
+ *
+ * - **agent** — the "guest is a server" contract: bundle + env arrive as
+ *   files at exec time, no control channel exists, the platform's only
+ *   surfaces are the public session endpoints plus the token-gated
+ *   `/manage/*` pair, and lifecycle is guest-owned (see
+ *   harness-agent-mode.ts). Deployed agents run this mode, on the harness
+ *   image PINNED at deploy time.
+ * - **default (studio/inspect/pool)** — the control-channel mode below,
+ *   platform-versioned (always the current image), serving:
+ *
+ * A third one-shot mode, DESCRIBE (`AAI_DESCRIBE_BUNDLE_PATH`), imports a
+ * bundle and prints its self-described config to stdout — deploy-time
+ * config extraction with no server and no channel (see {@link mainDescribe}).
  *
  * - `/ws` — the host control channel, authenticated by the per-sandbox
  *   bearer token (AAI_GUEST_TOKEN, delivered via the exec env; the tunnel
  *   URL is public, so an upgrade without the token is rejected). JSON-RPC
- *   both ways: host→guest `bundle/load`, `tool/execute` (one-shot trials —
- *   the studio's test_agent), `status`, and the `shutdown` notification;
- *   guest→host `db/query` (ctx.db — platform Postgres credentials never
- *   enter tenant containers).
+ *   both ways: host→guest `studio/session-init`, `workspace/deploy`,
+ *   `status`, and the `shutdown` notification; guest→host requests exist
+ *   only for studio sessions (workspace sync, chat persistence). Bundle
+ *   loading and tool trials are NOT RPC anymore: the studio's test_agent
+ *   drives this harness's own loader/executor in-guest, and deploy-time
+ *   inspection is the one-shot describe mode above.
  * - `/websocket` — PUBLIC client voice sessions, connected DIRECTLY by
  *   browsers (the same path `aai dev` serves). Each upgrade starts a
  *   runtime session: STT/LLM/TTS provider streams, the LLM loop, tool
@@ -29,7 +47,7 @@
  * `createServer` `aai dev` runs (health, client-config, `/websocket`
  * sessions), adding only the `/ws` control channel via the server's
  * `upgrade` hook and a lazy runtime facade (the runtime is built on the
- * first session, never at bundle/load — inspection loads carry an empty
+ * first session, never at load — studio inspection loads carry an empty
  * env that must not fail on missing provider credentials).
  *
  * Network egress is open — the Modal container is the isolation boundary;
@@ -41,11 +59,18 @@
  * Run with: node harness.mjs
  */
 
+import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { createServer, type SessionRuntime } from "@alexkroman1/aai/runtime";
 import { type WebSocket, WebSocketServer } from "ws";
+import { createIdleController, createManageHandler, readAgentBoot } from "./harness-agent-mode.ts";
 import { verifyBearer } from "./harness-auth.ts";
-import { ensureRuntime, type HarnessState, loadBundle } from "./harness-bundle.ts";
+import {
+  emptyHarnessState,
+  ensureRuntime,
+  type HarnessState,
+  loadBundle,
+} from "./harness-bundle.ts";
 import { installCrashGuards } from "./harness-crash-guards.ts";
 import {
   errMsg,
@@ -62,55 +87,23 @@ import type {
   JsonRpcRequest,
   JsonRpcResponse,
 } from "./harness-types.ts";
-import { HARNESS_ORPHAN_POLL_MS, HARNESS_ORPHAN_TIMEOUT_MS } from "./limits.ts";
+import {
+  AGENT_IDLE_EXIT_MS,
+  AGENT_IDLE_POLL_MS,
+  HARNESS_ORPHAN_POLL_MS,
+  HARNESS_ORPHAN_TIMEOUT_MS,
+} from "./limits.ts";
 import { withBuildDir } from "./studio-build.ts";
 import { handleStudioRequest, initStudioSession, type StudioSessionParams } from "./studio-chat.ts";
 import { deployWorkspaceDir } from "./studio-publish.ts";
 import { materializeWorkspace } from "./studio-workspace-fs.ts";
-import { executeTool, type ToolCallRequest } from "./trial.ts";
+import { executeTool } from "./trial.ts";
 
 // ---- Control-channel dispatch -----------------------------------------------
 
 /** Resolve and settle a single incoming JSON-RPC request. */
 export async function handleRequest(req: JsonRpcRequest, state: HarnessState): Promise<void> {
   switch (req.method) {
-    case "bundle/load": {
-      if (!req.params || typeof (req.params as Record<string, unknown>).code !== "string") {
-        sendError(req.id, -32_602, "bundle/load requires { code: string, env: {} }");
-        break;
-      }
-      const params = req.params as {
-        code: string;
-        env?: Record<string, string>;
-        storageEnabled?: boolean;
-      };
-      const loaded = await loadBundle(state, {
-        code: params.code,
-        env: params.env ?? {},
-        storageEnabled: params.storageEnabled === true,
-      });
-      sendResponse(req.id, { ok: true, ...loaded });
-      break;
-    }
-
-    case "tool/execute": {
-      if (!state.agent) {
-        sendError(req.id, -32_000, "Agent not loaded");
-        break;
-      }
-      const toolResult = await executeTool(state.agent, req.params as ToolCallRequest, {
-        storageEnabled: state.storageEnabled,
-        env: state.env,
-      });
-      sendResponse(req.id, toolResult);
-      break;
-    }
-
-    case "status": {
-      sendResponse(req.id, { activeSessions: state.activeSessions });
-      break;
-    }
-
     // Publish: run `aai deploy` IN THIS SANDBOX against a materialized
     // snapshot of the workspace (see studio-publish.ts) — the literal CLI,
     // so studio publishes and laptop deploys are one path, and the CLI's
@@ -175,7 +168,7 @@ export function handleNotification(notif: JsonRpcNotification): void {
 }
 
 export function dispatchMessage(msg: JsonRpcMessage, state: HarnessState): void {
-  // Incoming response to a host RPC request we sent (db/query)
+  // Incoming response to a host RPC request we sent (studio sync/persist)
   if ("id" in msg && !("method" in msg)) {
     handleHostResponse(msg as JsonRpcResponse);
     return;
@@ -200,11 +193,27 @@ export function dispatchMessage(msg: JsonRpcMessage, state: HarnessState): void 
  * the loaded bundle's env), plus the live-session count the host's idle
  * eviction asks for over `status`.
  */
-export function lazyRuntime(state: HarnessState): SessionRuntime {
+export function lazyRuntime(
+  state: HarnessState,
+  hooks: {
+    /**
+     * Pre-session refusal, checked before anything starts: return a close
+     * code + reason to turn the session away (agent mode's drain refusal —
+     * 1013 "try again" makes the client re-broker onto the replacement).
+     * The one refusal path, shared with the runtime-build failure below.
+     */
+    refuse?: () => { code: number; reason: string } | null;
+  } = {},
+): SessionRuntime {
   return {
     startSession(ws, opts) {
-      state.activeSessions++;
       const socket = ws as unknown as WebSocket;
+      const refusal = hooks.refuse?.();
+      if (refusal) {
+        socket.close(refusal.code, refusal.reason);
+        return;
+      }
+      state.activeSessions++;
       socket.on("close", () => {
         state.activeSessions = Math.max(0, state.activeSessions - 1);
       });
@@ -227,8 +236,88 @@ export function lazyRuntime(state: HarnessState): SessionRuntime {
   };
 }
 
+/**
+ * AGENT MODE — the "guest is a server" contract (see harness-agent-mode.ts).
+ * Everything arrives at exec time: the bundle and env are read (and the
+ * bundle hash-verified) from files the spawner wrote into the sandbox, the
+ * bundle is loaded BEFORE listen (so a 200 from /health means "ready"), and
+ * there is NO host control channel — the platform's only surfaces are the
+ * public session endpoints and the token-gated /manage/* pair. Lifecycle is
+ * guest-owned: idle self-exit replaces the orphan timeout, and a drain
+ * refuses new sessions then exits with the last one.
+ */
+async function mainAgent(port: number, host: string, token: string): Promise<void> {
+  const state = emptyHarnessState();
+
+  const rawIdle = Number(process.env.AAI_GUEST_IDLE_EXIT_MS ?? AGENT_IDLE_EXIT_MS);
+  const idle = createIdleController({
+    activeSessions: () => state.activeSessions,
+    idleExitMs: Number.isFinite(rawIdle) && rawIdle >= 0 ? rawIdle : AGENT_IDLE_EXIT_MS,
+    pollMs: AGENT_IDLE_POLL_MS,
+  });
+
+  const boot = await readAgentBoot();
+  await loadBundle(state, { code: boot.code, env: boot.env });
+
+  // A draining guest is detached from the broker, but a client holding its
+  // old sessionUrl can still dial the tunnel directly — refuse with a "try
+  // again" close so the client re-brokers onto the replacement.
+  const runtime = lazyRuntime(state, {
+    refuse: () => (idle.isDraining() ? { code: 1013, reason: "draining" } : null),
+  });
+
+  const server = createServer({
+    runtime,
+    // The guest is the authority on the agent's public client config: the
+    // platform's `GET /:slug/client-config` broker PROXIES this server's
+    // own `/client-config` for name/greeting, so the bundle's live agent
+    // definition — interpreted by the bundle's own SDK — is what renders,
+    // and the host never reads fields out of the stored config.
+    ...(state.agent?.name !== undefined ? { name: state.agent.name } : {}),
+    ...(state.agent?.greeting !== undefined ? { greeting: state.agent.greeting } : {}),
+    request: createManageHandler({
+      token,
+      activeSessions: () => state.activeSessions,
+      isDraining: idle.isDraining,
+      startDrain: idle.startDrain,
+    }),
+  });
+  await server.listen(port, host);
+  console.error(`agent-mode harness listening on ${host}:${port}`);
+}
+
+/**
+ * DESCRIBE MODE — deploy-time bundle inspection as a ONE-SHOT exec: import
+ * the bundle named by `AAI_DESCRIBE_BUNDLE_PATH` (in the sandbox, never on
+ * the host) and print the config it self-describes (`__aaiConfig`) as a
+ * single JSON line on stdout — `{ ok: true, config }` or
+ * `{ ok: false, error }`. The host parses the LAST stdout line, so a bundle
+ * whose top level writes to stdout cannot corrupt the result. The exit code
+ * mirrors `ok`. No token, no server, no channel: the process is the whole
+ * contract, and the spawner tears the sandbox down when it exits.
+ */
+async function mainDescribe(bundlePath: string): Promise<void> {
+  const state = emptyHarnessState();
+  try {
+    const code = await readFile(bundlePath, "utf-8");
+    const loaded = await loadBundle(state, { code, env: {} });
+    process.stdout.write(`\n${JSON.stringify({ ok: true, config: loaded.config })}\n`);
+    process.exit(0);
+  } catch (err) {
+    process.stdout.write(`\n${JSON.stringify({ ok: false, error: errMsg(err) })}\n`);
+    process.exit(1);
+  }
+}
+
 function main(): void {
   installCrashGuards();
+  // Describe mode runs before the token requirement: it opens no server and
+  // answers no requests, so there is nothing for a token to gate.
+  const describePath = process.env.AAI_DESCRIBE_BUNDLE_PATH;
+  if (describePath) {
+    void mainDescribe(describePath);
+    return;
+  }
   const token = process.env.AAI_GUEST_TOKEN;
   if (!token) {
     console.error("AAI_GUEST_TOKEN is required");
@@ -253,15 +342,18 @@ function main(): void {
   // process on the dev machine's own interfaces.
   const host = process.env.AAI_GUEST_HOST ?? "0.0.0.0";
 
-  const state: HarnessState = {
-    agent: null,
-    createRuntime: null,
-    env: Object.freeze({}),
-    storageEnabled: false,
-    runtime: null,
-    activeSessions: 0,
-    studio: null,
-  };
+  // Agent mode: boot-time provisioning, HTTP-only contract, no control
+  // channel. A boot failure (missing/corrupt bundle, bad env file) exits
+  // non-zero — the spawner sees the process die and fails the spawn loudly.
+  if (process.env.AAI_GUEST_MODE === "agent") {
+    mainAgent(port, host, token).catch((err: unknown) => {
+      console.error(`agent-mode boot failed: ${errMsg(err)}`);
+      process.exit(1);
+    });
+    return;
+  }
+
+  const state = emptyHarnessState();
   let hostSocket: WebSocket | null = null;
   let lastConnectedAt = Date.now();
 
@@ -308,13 +400,13 @@ function main(): void {
   // The studio chat surface's view of this harness's own loader + trial
   // executor — test_agent loads and trials bundles in-place.
   const studioDeps = {
-    loadBundle: (code: string) => loadBundle(state, { code, env: {}, storageEnabled: false }),
+    loadBundle: (code: string) => loadBundle(state, { code, env: {} }),
     executeTool: async (name: string, args: Record<string, unknown>) => {
       if (!state.agent) return "Tool error: agent not loaded";
       const response = await executeTool(
         state.agent,
         { name, args, sessionId: "studio-trial", state: null },
-        { storageEnabled: false, env: state.env },
+        { env: state.env },
       );
       if (response.error) return `Tool error: ${response.error}`;
       return response.result ?? "(no result)";

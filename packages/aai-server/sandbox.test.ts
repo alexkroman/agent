@@ -2,7 +2,6 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IsolateConfig } from "./rpc-schemas.ts";
-import type { RpcConnection } from "./rpc-transport.ts";
 import { createSandbox, type SandboxOptions } from "./sandbox.ts";
 import { resolveSandbox } from "./sandbox-resolve.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
@@ -12,25 +11,18 @@ import { createTestStore } from "./test-utils.ts";
 // vi.mock factory is hoisted, so we cannot reference top-level variables.
 // Instead, use vi.hoisted to create the mock objects.
 
-const { mockConn, mockShutdown, mockOnExit, mockCreateSandboxVm } = vi.hoisted(() => {
-  const mockConn: RpcConnection = {
-    sendRequest: vi.fn().mockResolvedValue(undefined),
-    sendNotification: vi.fn(),
-    onRequest: vi.fn(),
-    onNotification: vi.fn(),
-    listen: vi.fn(),
-    dispose: vi.fn(),
-  };
+const { mockDrain, mockShutdown, mockOnExit, mockSpawnAgentServer } = vi.hoisted(() => {
+  const mockDrain = vi.fn().mockResolvedValue(undefined);
   const mockShutdown = vi.fn().mockResolvedValue(undefined);
   const mockOnExit = vi.fn();
-  const mockCreateSandboxVm = vi.fn().mockResolvedValue({
-    conn: mockConn,
+  const mockSpawnAgentServer = vi.fn().mockResolvedValue({
     sessionUrl: "wss://tunnel.test:443/websocket",
+    drain: mockDrain,
     shutdown: mockShutdown,
     onExit: mockOnExit,
     alive: () => true,
   });
-  return { mockConn, mockShutdown, mockOnExit, mockCreateSandboxVm };
+  return { mockDrain, mockShutdown, mockOnExit, mockSpawnAgentServer };
 });
 
 /** Fire the exit callback `createSandbox` registered on the guest handle. */
@@ -44,7 +36,7 @@ vi.mock("./sandbox-vm.ts", async (importOriginal) => {
   const orig = await importOriginal<typeof import("./sandbox-vm.ts")>();
   return {
     ...orig,
-    createSandboxVm: mockCreateSandboxVm,
+    spawnAgentServer: mockSpawnAgentServer,
   };
 });
 
@@ -64,7 +56,6 @@ function makeSandboxOptions(overrides?: Partial<SandboxOptions>): SandboxOptions
     workerCode: 'export default { name: "test" };',
     env: { AAI_ENV_TEST: "1" },
     slug: "test-agent",
-    agentConfig: TEST_AGENT_CONFIG,
     ...overrides,
   };
 }
@@ -82,28 +73,27 @@ describe("createSandbox", () => {
     vi.restoreAllMocks();
   });
 
-  it("creates a sandbox with the control-channel shape", async () => {
+  it("creates a sandbox with the server-handle shape", async () => {
     const sandbox = createSandbox(makeSandboxOptions());
     expect(typeof sandbox.sessionUrl).toBe("function");
-    expect(typeof sandbox.activeSessions).toBe("function");
+    expect(typeof sandbox.drain).toBe("function");
     expect(typeof sandbox.shutdown).toBe("function");
     await sandbox.shutdown();
   });
 
-  it("passes correct options to createSandboxVm", async () => {
-    const { createSandboxVm } = await import("./sandbox-vm.ts");
-    const opts = makeSandboxOptions();
+  it("passes correct options to spawnAgentServer", async () => {
+    const opts = makeSandboxOptions({ imageTag: "aai-guest-harness:abcd1234" });
 
     const sandbox = createSandbox(opts);
 
-    expect(createSandboxVm).toHaveBeenCalledOnce();
-    expect(createSandboxVm).toHaveBeenCalledWith(
+    expect(mockSpawnAgentServer).toHaveBeenCalledOnce();
+    expect(mockSpawnAgentServer).toHaveBeenCalledWith(
       expect.objectContaining({
         slug: "test-agent",
         workerCode: opts.workerCode,
         env: opts.env,
+        imageTag: "aai-guest-harness:abcd1234",
       }),
-      undefined,
     );
     await sandbox.shutdown();
   });
@@ -115,7 +105,7 @@ describe("createSandbox", () => {
   });
 
   it("sessionUrl rejects when the VM failed to start", async () => {
-    mockCreateSandboxVm.mockReturnValueOnce(Promise.reject(new Error("VM spawn failed")));
+    mockSpawnAgentServer.mockReturnValueOnce(Promise.reject(new Error("VM spawn failed")));
     const sandbox = createSandbox(makeSandboxOptions());
     await expect(sandbox.sessionUrl()).rejects.toThrow("VM spawn failed");
     await sandbox.shutdown();
@@ -129,70 +119,40 @@ describe("createSandbox", () => {
     expect(mockShutdown).toHaveBeenCalledOnce();
   });
 
-  it("shutdown closes the app db handle it owns", async () => {
-    const close = vi.fn().mockResolvedValue(undefined);
-    const db = {
-      query: vi.fn(),
-      close,
-    } as unknown as import("@alexkroman1/aai/runtime").CloseableDb;
-    const sandbox = createSandbox(makeSandboxOptions({ db }));
-
-    await sandbox.shutdown();
-
-    expect(close).toHaveBeenCalledOnce();
-  });
-
-  // ── activeSessions (the idle-eviction probe) ─────────────────────────────
-
-  describe("activeSessions", () => {
-    it("asks the guest over the status RPC", async () => {
-      vi.mocked(mockConn.sendRequest).mockResolvedValueOnce({ activeSessions: 3 });
+  describe("drain", () => {
+    it("forwards to the guest's manage surface", async () => {
       const sandbox = createSandbox(makeSandboxOptions());
-
-      await expect(sandbox.activeSessions()).resolves.toBe(3);
-      expect(mockConn.sendRequest).toHaveBeenCalledWith("status");
+      await sandbox.drain();
+      expect(mockDrain).toHaveBeenCalledOnce();
       await sandbox.shutdown();
     });
 
-    it("reports 0 when the RPC fails (dead guest — eviction should proceed)", async () => {
-      vi.mocked(mockConn.sendRequest).mockRejectedValueOnce(new Error("guest gone"));
+    it("forwards the drain deadline to the guest", async () => {
       const sandbox = createSandbox(makeSandboxOptions());
-
-      await expect(sandbox.activeSessions()).resolves.toBe(0);
+      await sandbox.drain(60_000);
+      expect(mockDrain).toHaveBeenCalledWith(60_000);
       await sandbox.shutdown();
     });
 
-    it("reports 0 on a malformed guest response", async () => {
-      vi.mocked(mockConn.sendRequest).mockResolvedValueOnce({ activeSessions: "many" });
+    it("propagates an unreachable guest — retirement's signal to terminate", async () => {
+      mockDrain.mockRejectedValueOnce(new Error("guest gone"));
       const sandbox = createSandbox(makeSandboxOptions());
-
-      await expect(sandbox.activeSessions()).resolves.toBe(0);
-      await sandbox.shutdown();
-    });
-
-    it("reports 0 when the VM failed to start", async () => {
-      mockCreateSandboxVm.mockReturnValueOnce(Promise.reject(new Error("VM spawn failed")));
-      const sandbox = createSandbox(makeSandboxOptions());
-
-      await expect(sandbox.activeSessions()).resolves.toBe(0);
+      await expect(sandbox.drain()).rejects.toThrow("guest gone");
       await sandbox.shutdown();
     });
   });
 
-  it("passes harnessPath from GUEST_HARNESS_PATH env var to createSandboxVm", async () => {
-    const { createSandboxVm } = await import("./sandbox-vm.ts");
-
+  it("passes harnessPath from GUEST_HARNESS_PATH env var to spawnAgentServer", async () => {
     const originalEnv = process.env.GUEST_HARNESS_PATH;
     process.env.GUEST_HARNESS_PATH = "/custom/harness.mjs";
 
     try {
       const sandbox = createSandbox(makeSandboxOptions());
 
-      expect(createSandboxVm).toHaveBeenCalledWith(
+      expect(mockSpawnAgentServer).toHaveBeenCalledWith(
         expect.objectContaining({
           harnessPath: "/custom/harness.mjs",
         }),
-        undefined,
       );
       await sandbox.shutdown();
     } finally {
@@ -208,11 +168,10 @@ describe("createSandbox", () => {
 
   it("returns sandbox immediately before VM is ready", () => {
     const d = Promise.withResolvers<{
-      conn: RpcConnection;
       sessionUrl: string;
       shutdown: () => Promise<void>;
     }>();
-    mockCreateSandboxVm.mockReturnValueOnce(d.promise);
+    mockSpawnAgentServer.mockReturnValueOnce(d.promise);
 
     // createSandbox returns synchronously even though VM is still pending
     const sandbox = createSandbox(makeSandboxOptions());
@@ -221,17 +180,16 @@ describe("createSandbox", () => {
     expect(typeof sandbox.shutdown).toBe("function");
 
     // Resolve the VM to clean up
-    d.resolve({ conn: mockConn, sessionUrl: "wss://t/websocket", shutdown: mockShutdown });
+    d.resolve({ sessionUrl: "wss://t/websocket", shutdown: mockShutdown });
     void sandbox.shutdown();
   });
 
   it("shutdown waits for VM before cleaning up", async () => {
     const d = Promise.withResolvers<{
-      conn: RpcConnection;
       sessionUrl: string;
       shutdown: () => Promise<void>;
     }>();
-    mockCreateSandboxVm.mockReturnValueOnce(d.promise);
+    mockSpawnAgentServer.mockReturnValueOnce(d.promise);
 
     const sandbox = createSandbox(makeSandboxOptions());
 
@@ -242,7 +200,7 @@ describe("createSandbox", () => {
     expect(mockShutdown).not.toHaveBeenCalled();
 
     // Now resolve the VM
-    d.resolve({ conn: mockConn, sessionUrl: "wss://t/websocket", shutdown: mockShutdown });
+    d.resolve({ sessionUrl: "wss://t/websocket", shutdown: mockShutdown });
 
     await shutdownDone;
 
@@ -250,7 +208,7 @@ describe("createSandbox", () => {
   });
 
   it("shutdown succeeds even when VM failed to start", async () => {
-    mockCreateSandboxVm.mockReturnValueOnce(Promise.reject(new Error("VM spawn failed")));
+    mockSpawnAgentServer.mockReturnValueOnce(Promise.reject(new Error("VM spawn failed")));
 
     const sandbox = createSandbox(makeSandboxOptions());
 
@@ -267,7 +225,7 @@ describe("createSandbox", () => {
   });
 
   it("invokes onSandboxLost when the VM fails to start", async () => {
-    mockCreateSandboxVm.mockReturnValueOnce(Promise.reject(new Error("VM spawn failed")));
+    mockSpawnAgentServer.mockReturnValueOnce(Promise.reject(new Error("VM spawn failed")));
     const onSandboxLost = vi.fn();
 
     const sandbox = createSandbox(makeSandboxOptions({ onSandboxLost }));
@@ -306,7 +264,7 @@ describe("createSandbox", () => {
 
     it("reports alive() true while the VM is still booting", () => {
       const d = Promise.withResolvers<never>();
-      mockCreateSandboxVm.mockReturnValueOnce(d.promise);
+      mockSpawnAgentServer.mockReturnValueOnce(d.promise);
 
       // Pending is not dead — a booting sandbox must not be torn down.
       const sandbox = createSandbox(makeSandboxOptions());
@@ -316,7 +274,7 @@ describe("createSandbox", () => {
     });
 
     it("reports alive() false when the VM failed to start", async () => {
-      mockCreateSandboxVm.mockReturnValueOnce(Promise.reject(new Error("VM spawn failed")));
+      mockSpawnAgentServer.mockReturnValueOnce(Promise.reject(new Error("VM spawn failed")));
       const sandbox = createSandbox(makeSandboxOptions());
 
       await vi.waitFor(() => {
@@ -358,7 +316,7 @@ describe("createSandbox", () => {
     }
 
     it("detaches the resident sandbox when its VM fails to start", async () => {
-      mockCreateSandboxVm.mockReturnValueOnce(Promise.reject(new Error("VM spawn failed")));
+      mockSpawnAgentServer.mockReturnValueOnce(Promise.reject(new Error("VM spawn failed")));
       const deps = await seedAgent("broken");
 
       const sandbox = await resolveSandbox("broken", deps);
@@ -377,7 +335,7 @@ describe("createSandbox", () => {
     });
 
     it("does not detach a replacement sandbox installed after the failure", async () => {
-      mockCreateSandboxVm.mockReturnValueOnce(Promise.reject(new Error("VM spawn failed")));
+      mockSpawnAgentServer.mockReturnValueOnce(Promise.reject(new Error("VM spawn failed")));
       const deps = await seedAgent("raced");
 
       await resolveSandbox("raced", deps);
@@ -418,21 +376,5 @@ describe("createSandbox", () => {
       expect(second).not.toBe(first);
       expect(second?.alive()).toBe(true);
     });
-  });
-
-  it("forwards an optional pool to createSandboxVm", async () => {
-    const { createSandboxVm } = await import("./sandbox-vm.ts");
-    const fakePool = {
-      acquire: vi.fn(async () => null),
-      shutdown: vi.fn(async () => undefined),
-      readySize: () => 0,
-      isShutdown: () => false,
-    };
-    const sandbox = createSandbox(
-      makeSandboxOptions({ pool: fakePool as unknown as import("./sandbox-pool.ts").SandboxPool }),
-    );
-
-    expect(createSandboxVm).toHaveBeenCalledWith(expect.any(Object), fakePool);
-    await sandbox.shutdown();
   });
 });

@@ -184,10 +184,10 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   });
 
   // Report the resolved mode once per runtime. A pipeline agent whose providers
-  // fail to reach the runtime does not error — it runs a perfectly healthy S2S
-  // session instead (see aai-server's sandbox-agent-config.ts for how that
-  // happened), so "which transport is this agent on" has to be answerable from
-  // one log line rather than inferred from the shape of the message stream.
+  // fail to reach the runtime does not error — before the pipeline-by-default
+  // flip it ran a perfectly healthy S2S session instead — so "which transport
+  // is this agent on" has to be answerable from one log line rather than
+  // inferred from the shape of the message stream.
   logger.info("Session mode resolved", {
     slug,
     mode: effectiveProviders.mode,

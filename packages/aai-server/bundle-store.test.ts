@@ -172,7 +172,6 @@ describe("bundle store (agents rows + content-addressed blobs)", () => {
     expect(await store.getAgent("test-agent")).toBeNull();
     expect(await store.getWorkerCode("test-agent")).toBeNull();
     expect(await store.getClientFile("test-agent", "index.html")).toBeNull();
-    expect(await store.getAgentConfig("test-agent")).toBeNull();
     expect(await store.getEnv("test-agent")).toBeNull();
   });
 
@@ -296,7 +295,6 @@ describe("bundle store (agents rows + content-addressed blobs)", () => {
     });
     // Prime caches
     await store.getAgent("test-agent");
-    await store.getAgentConfig("test-agent");
     await store.getAgentVersion("test-agent");
 
     await store.putAgent({
@@ -306,27 +304,25 @@ describe("bundle store (agents rows + content-addressed blobs)", () => {
     });
 
     expect(await store.getWorkerCode("test-agent")).toBe("v2");
-    expect((await store.getAgentConfig("test-agent"))?.name).toBe("v2");
+    expect((await store.getAgent("test-agent"))?.config.name).toBe("v2");
     expect(await store.getAgentVersion("test-agent")).toBe(2);
   });
 
-  test("getAgentConfig returns the stored config", async () => {
+  test("the stored config rides the agent row opaquely", async () => {
     const { store } = makeStore();
     await store.putAgent(BASE_BUNDLE);
-    expect((await store.getAgentConfig("test-agent"))?.name).toBe(TEST_AGENT_CONFIG.name);
-    expect(await store.getAgentConfig("missing")).toBeNull();
+    expect((await store.getAgent("test-agent"))?.config).toEqual(TEST_AGENT_CONFIG);
+    expect(await store.getAgent("missing")).toBeNull();
   });
 
   test("deleteAgent invalidates caches — subsequent reads return null", async () => {
     const { store } = makeStore();
     await store.putAgent(BASE_BUNDLE);
     await store.getAgent("test-agent");
-    await store.getAgentConfig("test-agent");
 
     await store.deleteAgent("test-agent");
 
     expect(await store.getAgent("test-agent")).toBeNull();
-    expect(await store.getAgentConfig("test-agent")).toBeNull();
   });
 });
 

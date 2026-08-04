@@ -130,11 +130,52 @@ describe("createPgAgentRows", () => {
   test("a corrupt row throws rather than reading as missing", async () => {
     // "Missing" reaches verifySlugOwner as "unclaimed" — the one state where
     // any API key may claim the slug — so a corrupt row must fail closed.
+    // The config itself is FULLY opaque (no field is asserted — the guest is
+    // the only interpreter), so "corrupt" means not-even-an-object.
     const { sql, rows } = fakeSql();
     const store = createPgAgentRows(sql);
     await store.put(RECORD);
     const row = rows.get("my-agent");
-    if (row) row.config = JSON.stringify({ not: "a config" });
+    if (row) row.config = JSON.stringify("not an object");
     await expect(store.get("my-agent")).rejects.toThrow("Corrupt agent record");
+  });
+
+  test("a config with arbitrary unknown fields reads back untouched", async () => {
+    // No host-side reader is left — even name/greeting come from the guest's
+    // own /client-config — so reads must assert nothing about the shape.
+    const { sql } = fakeSql();
+    const store = createPgAgentRows(sql);
+    const config = { anything: { deeply: ["nested"] }, mode: 42 };
+    await store.put({ ...RECORD, config });
+    expect((await store.get("my-agent"))?.config).toEqual(config);
+  });
+
+  // Stored configs are validated strictly ONCE, at deploy time. Reads must
+  // never re-run the current IsolateConfigSchema: a schema tightening would
+  // silently turn every previously-valid deployed agent into a 404. Only
+  // what the host actually consumes (name, greeting) is asserted; the rest —
+  // including shapes today's rules would reject — passes through untouched.
+  test("a stored config the CURRENT strict schema would reject still loads", async () => {
+    const { sql } = fakeSql();
+    const store = createPgAgentRows(sql);
+    await store.put({
+      ...RECORD,
+      config: {
+        name: "old-agent",
+        greeting: "hi",
+        // An incomplete provider triple — IsolateConfigSchema rejects this
+        // ("stt, llm, and tts must be set together"), but a pre-tightening
+        // deploy could legitimately have stored it.
+        stt: { kind: "assemblyai", options: {} },
+        // A field no current schema knows.
+        someFutureOrRemovedField: { nested: true },
+      },
+    });
+    const record = await store.get("my-agent");
+    expect(record).not.toBeNull();
+    expect(record?.config.name).toBe("old-agent");
+    expect(record?.config.greeting).toBe("hi");
+    // Opaque passthrough: unknown/legacy fields survive the round trip.
+    expect(record?.config.someFutureOrRemovedField).toEqual({ nested: true });
   });
 });

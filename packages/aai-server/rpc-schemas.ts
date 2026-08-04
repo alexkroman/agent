@@ -41,7 +41,7 @@ export const IsolateConfigSchema = AgentConfigSchema.extend({
   builtinTools: z.array(z.string()).optional(),
   // The base schema now defaults these too; the wire keeps its own spellings
   // so platform behavior stays put: a stored config without a greeting speaks
-  // none (toRuntimeAgent falls back to ""), never the SDK default phrase.
+  // none, never the SDK default phrase.
   systemPrompt: z.string().default(DEFAULT_SYSTEM_PROMPT),
   greeting: z.string().optional(),
   // Wire-only: the agent's custom tool schemas ride alongside the config.
@@ -64,69 +64,28 @@ export const IsolateConfigSchema = AgentConfigSchema.extend({
 
 export type IsolateConfig = z.infer<typeof IsolateConfigSchema>;
 
-/**
- * Params for the guest→host `db/query` RPC — one parameterized SQL statement
- * run against the app's provisioned database (ctx.db). Result is the rows
- * array, capped host-side (see sandbox-guest-rpc.ts).
- */
-export const DbQueryParamsSchema = z.object({
-  sql: z.string().min(1),
-  params: z.array(z.unknown()).optional(),
-});
-
-/** Response of the guest `status` request (guest-asserted wire data). */
-export const StatusResponseSchema = z.object({
-  activeSessions: z.number().int().nonnegative(),
-});
-
-/**
- * Response of one one-shot guest tool trial (the studio's test_agent).
- * Exactly one of `result`/`error` is set; `state` rides back so a trial can
- * observe what the call did to a fresh session state.
- */
-export const ToolCallResponseSchema = z.object({
-  result: z.string().optional(),
-  error: z.string().optional(),
-  state: z.record(z.string(), z.unknown()),
-});
-
 // ── Typed method map for the host↔guest RPC link ─────────────────────────────
-
-/** Params of the host→guest `bundle/load` request. */
-export type BundleLoadParams = {
-  code: string;
-  env: Record<string, string>;
-  /**
-   * Whether ctx.db is live (proxied over db/query) or should throw the
-   * storage-not-enabled guidance. The guest schema defaults it to false;
-   * senders that know their intent state it explicitly.
-   */
-  storageEnabled?: boolean;
-};
-
-/** Params of the host→guest `tool/execute` request (one-shot trial). */
-export type ToolExecuteParams = {
-  name: string;
-  args: Readonly<Record<string, unknown>>;
-  sessionId: string;
-  /** Trial state — `null` initializes from the agent's `state()` factory. */
-  state: Record<string, unknown> | null;
-};
 
 /**
  * The host's view of the sandbox control channel (see `RpcSchema` in
  * rpc-transport.ts for why method names and outgoing params are typed
  * while results and incoming params stay `unknown`: the guest is untrusted,
  * so everything it sends is validated with Zod at the receiving site —
- * `ToolCallResponseSchema`, `DbQueryParamsSchema`, and the schemas in
- * sandbox-guest-rpc.ts).
+ * e.g. the studio schemas registered by the session broker).
  *
  * Client voice sessions do NOT ride this link: the guest runs the complete
  * agent runtime and clients connect directly to its public `/websocket`
  * endpoint on the same tunnel.
  *
- * This map and the guest harness must agree; both sides ship in the same
- * server artifact, so the contract can change atomically.
+ * VERSIONING: DEPLOYED AGENTS do not use this link at all — their whole
+ * contract is the exec-env boot convention plus the token-gated `/manage/*`
+ * HTTP surface (see aai-guest/harness-agent-mode.ts and
+ * `agentServerFromGuest`), pinned per deploy via the harness image and
+ * versioned by GUEST_CONTRACT_VERSION. That HTTP surface must stay BACKWARD
+ * compatible (additive changes only): the host may be newer than a pinned
+ * agent's harness. THIS map is the studio/inspect side — those sandboxes
+ * always spawn from the current image, so it changes atomically with the
+ * server.
  */
 /**
  * Params of the host→guest `studio/session-init` request — installs the
@@ -169,15 +128,10 @@ export type WorkspaceDeployParams = {
 
 export type GuestRpcSchema = {
   requestsOut: {
-    "bundle/load": { params: BundleLoadParams; result: unknown };
-    "tool/execute": { params: ToolExecuteParams; result: unknown };
     "studio/session-init": { params: StudioSessionInitParams; result: unknown };
     "workspace/deploy": { params: WorkspaceDeployParams; result: unknown };
-    /** Session-aware idleness: the host's idle eviction asks before killing. */
-    status: { params: undefined; result: unknown };
   };
   requestsIn: {
-    "db/query": { params: unknown; result: unknown };
     /** End-of-turn workspace write-back into the project store. */
     "studio/sync-workspace": { params: unknown; result: unknown };
     /** End-of-turn conversation snapshot into the project's chat row. */
@@ -191,11 +145,3 @@ export type GuestRpcSchema = {
 
 /** An RPC connection to a guest sandbox, typed with the guest method map. */
 export type GuestConnection = RpcConnection<GuestRpcSchema>;
-
-/**
- * Response shape of `bundle/load` when the bundle self-describes its config
- * (its `__aaiConfig` export — see the guest harness). Guest-asserted wire
- * data: callers reading `config` must treat it as unknown and validate
- * (`IsolateConfigSchema`).
- */
-export type BundleLoadResult = { ok: boolean; config?: unknown };

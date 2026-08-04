@@ -21,6 +21,14 @@ export type DeployDeps = {
    * defaults to the in-process lock for tests and single-replica callers.
    */
   slugLock?: SlugMutationLock | undefined;
+  /**
+   * The harness snapshot image tag new sandboxes currently spawn from —
+   * recorded on the agents row so this deploy keeps running on the SAME
+   * guest image across platform upgrades (see `currentHarnessImageTag` in
+   * sandbox-vm.ts). Absent (tests) or resolving null (subprocess backend)
+   * records no pin.
+   */
+  harnessImageTag?: (() => Promise<string | null>) | undefined;
 };
 
 export type DeployParams = {
@@ -205,6 +213,12 @@ async function deployLocked(
   const alreadyStored = matchedHash !== null || existingHashes.includes(keyHash);
   const mergedHashes = alreadyStored ? existingHashes : [...existingHashes, keyHash];
 
+  // Best-effort pin: a failed tag computation must not fail the deploy —
+  // the agent just runs unpinned (the pre-pinning behavior).
+  const harnessImageTag = await (deps.harnessImageTag?.() ?? Promise.resolve(null)).catch(
+    () => null,
+  );
+
   await deps.store.putAgent({
     slug,
     env,
@@ -212,6 +226,7 @@ async function deployLocked(
     clientFiles: params.clientFiles,
     credential_hashes: mergedHashes,
     agentConfig: params.agentConfig,
+    harnessImageTag,
   });
 
   // The row upsert IS the invalidation: it bumps the deploy version, and the
@@ -253,10 +268,12 @@ function outcomeToResponse(c: ValidatedAppContext<DeployBody>, outcome: DeployOu
 export async function handleDeployNew(
   c: ValidatedAppContext<DeployBody>,
   inspect: BundleInspector,
+  harnessImageTag?: () => Promise<string | null>,
 ): Promise<Response> {
   const deps = {
     store: c.env.store,
     slugLock: c.env.slugLock,
+    harnessImageTag,
   };
   const body = c.req.valid("json");
   const extraction = await extractAgentConfig(inspect, body.worker);

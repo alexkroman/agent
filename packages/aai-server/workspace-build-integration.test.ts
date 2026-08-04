@@ -25,7 +25,6 @@ import { type ServerType, serve } from "@hono/node-server";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { resolveHarnessPath } from "./constants.ts";
 import { createOrchestrator } from "./orchestrator.ts";
-import { registerGuestRpcHandlers } from "./sandbox-guest-rpc.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
 import { createTestStore, TEST_AGENT_CONFIG } from "./test-utils.ts";
@@ -116,7 +115,6 @@ describe("guest workspace/deploy (Publish = aai deploy in the sandbox)", () => {
   async function deployInGuest(files: Record<string, string>): Promise<DeployResult> {
     const warm = await spawnTestHarness();
     try {
-      registerGuestRpcHandlers(warm.conn, {});
       warm.conn.listen();
       return (await warm.conn.sendRequest(
         "workspace/deploy",

@@ -1,14 +1,15 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
  * Tests for the guest's host-RPC layer: the outbound send path, the pending
- * host-request proxy behind the db/generate adapters, and teardown.
+ * host-request proxy (studio workspace sync / chat persistence), and
+ * teardown.
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
-  dbAdapter,
   errMsg,
   handleHostResponse,
+  hostRequest,
   pendingHostRequests,
   rejectAllPendingHostRequests,
   sendError,
@@ -64,32 +65,25 @@ describe("outbound send path", () => {
 });
 
 describe("host request proxy", () => {
-  test("dbAdapter.query round-trips through db/query", async () => {
-    const pending = dbAdapter.query("select 1", [7]);
+  test("hostRequest round-trips a request through the host socket", async () => {
+    const pending = hostRequest("studio/sync-workspace", { files: {} });
     const req = sent.at(-1) as { method: string; params: unknown };
-    expect(req.method).toBe("db/query");
-    expect(req.params).toEqual({ sql: "select 1", params: [7] });
-    answerLast([{ one: 1 }]);
-    await expect(pending).resolves.toEqual([{ one: 1 }]);
+    expect(req.method).toBe("studio/sync-workspace");
+    expect(req.params).toEqual({ files: {} });
+    answerLast({ ok: true });
+    await expect(pending).resolves.toEqual({ ok: true });
     expect(pendingHostRequests.size).toBe(0);
   });
 
-  test("dbAdapter.query omits params when none given", async () => {
-    const pending = dbAdapter.query("select 1");
-    expect((sent.at(-1) as { params: unknown }).params).toEqual({ sql: "select 1" });
-    answerLast([]);
-    await pending;
-  });
-
-  test("a host error response rejects the adapter call", async () => {
-    const pending = dbAdapter.query("select boom");
-    answerLast(undefined, { code: -32_603, message: "db down" });
-    await expect(pending).rejects.toThrow(/db down/);
+  test("a host error response rejects the pending call", async () => {
+    const pending = hostRequest("studio/persist-chat", {});
+    answerLast(undefined, { code: -32_603, message: "store down" });
+    await expect(pending).rejects.toThrow(/store down/);
   });
 
   test("rejectAllPendingHostRequests fails every pending call", async () => {
-    const a = dbAdapter.query("select 1");
-    const b = dbAdapter.query("select 2");
+    const a = hostRequest("studio/sync-workspace", {});
+    const b = hostRequest("studio/persist-chat", {});
     rejectAllPendingHostRequests("Connection closed");
     await expect(a).rejects.toThrow(/Connection closed/);
     await expect(b).rejects.toThrow(/Connection closed/);

@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The bundle → runtime lifecycle: the harness's mutable state, `bundle/load`,
+ * The bundle → runtime lifecycle: the harness's mutable state, `loadBundle`,
  * and the lazily-built runtime.
  *
  * Split out of harness.ts, which owns the servers and the control-channel
@@ -10,12 +10,11 @@
 
 import { writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import { dbAdapter } from "./harness-rpc.ts";
 import type { AgentDef, CreateGuestRuntime, GuestRuntime } from "./harness-types.ts";
 import type { StudioSession } from "./studio-chat.ts";
 import { runCode } from "./trial.ts";
 
-// ---- bundle/load ------------------------------------------------------------
+// ---- Bundle loading ----------------------------------------------------------
 
 let bundleSeq = 0;
 
@@ -23,7 +22,7 @@ let bundleSeq = 0;
  * Import raw JS source as an ES module (no Function() evaluation, top-level
  * await supported). The code lands in a uniquely named temp file and is
  * imported by file URL — the unique name matters because Node's module
- * registry caches by URL, and a repeat bundle/load (the studio's build →
+ * registry caches by URL, and a repeat load (the studio's build →
  * load → try loop) must load the NEW code.
  */
 async function importBundleModule(code: string): Promise<Record<string, unknown>> {
@@ -40,15 +39,14 @@ export type HarnessState = {
   /**
    * The bundle's own runtime factory (`__aaiCreateRuntime`) — the SDK
    * runtime SHIPS IN THE BUNDLE, pinned by the user's lockfile; the harness
-   * embeds none. Required at bundle/load: every deployable bundle is built
+   * embeds none. Required at load: every deployable bundle is built
    * by the CLI's wrapper, which always exports it.
    */
   createRuntime: CreateGuestRuntime | null;
   env: Readonly<Record<string, string>>;
-  storageEnabled: boolean;
   /**
    * The live runtime, created lazily on the first `/websocket` session upgrade —
-   * NEVER at bundle/load: runtime construction resolves provider
+   * NEVER at load: runtime construction resolves provider
    * credentials, and inspection loads (describeBundle, the studio) carry an
    * empty env that must not fail the load.
    */
@@ -62,6 +60,18 @@ export type HarnessState = {
    */
   studio: StudioSession | null;
 };
+
+/** A fresh, nothing-loaded harness state — the one shape, built once. */
+export function emptyHarnessState(): HarnessState {
+  return {
+    agent: null,
+    createRuntime: null,
+    env: Object.freeze({}),
+    runtime: null,
+    activeSessions: 0,
+    studio: null,
+  };
+}
 
 /**
  * Load an agent ESM bundle delivered as raw JS source code.
@@ -78,7 +88,7 @@ export type HarnessState = {
  */
 export async function loadBundle(
   state: HarnessState,
-  params: { code: string; env: Record<string, string>; storageEnabled: boolean },
+  params: { code: string; env: Record<string, string> },
 ): Promise<{ config?: unknown }> {
   // A repeat load replaces the loaded agent; any live runtime ran the OLD
   // code — tear it down so the next session runs the new bundle.
@@ -103,7 +113,6 @@ export async function loadBundle(
   state.agent = agent;
   state.createRuntime = createRuntime as CreateGuestRuntime;
   state.env = Object.freeze({ ...params.env });
-  state.storageEnabled = params.storageEnabled;
 
   const config = (mod as { __aaiConfig?: unknown }).__aaiConfig;
   return config === undefined ? {} : { config };
@@ -116,14 +125,14 @@ export async function loadBundle(
  * embeds no runtime. This is the SDK's self-hosted path running INSIDE the
  * sandbox: tools execute in-process, providers and tool-code fetch dial out
  * directly (open egress — the container is the boundary), exactly as
- * `aai dev` does. ctx.db proxies to the host over the control channel;
- * run_code gets this guest's real executor.
+ * `aai dev` does. ctx.db is the runtime's own connection to the env's
+ * DATABASE_URL (the app's scoped credentials, delivered in the
+ * agent's boot env); run_code gets this guest's real executor.
  */
 export function ensureRuntime(state: HarnessState): GuestRuntime {
   if (!(state.agent && state.createRuntime)) throw new Error("Agent not loaded");
   state.runtime ??= state.createRuntime({
     env: { ...state.env },
-    ...(state.storageEnabled ? { db: dbAdapter } : {}),
     runCode,
   });
   return state.runtime;

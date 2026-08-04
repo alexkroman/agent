@@ -34,12 +34,12 @@ export const DEFAULT_SANDBOX_TIMEOUT_MS = 4 * 60 * 60 * 1000;
  * as ~2-3 MiB `sleep infinity` shells for orphan timeout + idle window
  * (~20 min) before Modal reaps them. That window is the backstop, not the
  * normal path: `run_node` in scripts/modal_image.py forwards container stop
- * signals to the node process so `teardownSandboxes` terminates guests
- * immediately on scale-in/redeploy.
+ * signals to the node process so `teardownSandboxes` runs on
+ * scale-in/redeploy — RETIRING agent guests (they finish their calls and
+ * exit themselves) and terminating studio guests via the broker.
  *
- * A *healthy* resident sandbox always has the harness exec running (and its
- * host pinging), so its idle timer never starts; host-side eviction
- * (`sandbox-slots.ts`) remains the authority on session-aware idleness.
+ * A *healthy* resident sandbox always has the harness exec running, so its
+ * idle timer never starts; the GUEST owns idleness (agent-mode self-exit).
  * Override with `SANDBOX_IDLE_TIMEOUT_SECS`.
  */
 export const DEFAULT_SANDBOX_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
@@ -163,7 +163,7 @@ export function parseSandboxLimitsFromEnv(
  * different continent and cloud than the platform server (observed:
  * server in us-east-1/AWS, sandboxes in uk-london-1/OCI). The host↔guest
  * WebSocket link over the Modal tunnel is a network hop, so every
- * `ctx.db` query, guest fetch proxy, and `bundle/load` pays
+ * every host↔guest exchange pays
  * that RTT — serialized inside the LLM loop of a latency-budgeted voice
  * turn. `modal_deploy.py` sets this variable to the same region constant
  * that pins the web server, so production host and guests are co-located
@@ -177,4 +177,39 @@ export function parseSandboxRegionsFromEnv(
     .map((r) => r.trim())
     .filter(Boolean);
   return regions.length > 0 ? regions : undefined;
+}
+
+/**
+ * The guest sandbox's resource create-params, assembled from env in ONE
+ * place: reservation + cap pairs (validated — see
+ * {@link assertModalResourcePairs}: reservation and cap are a burst range,
+ * not one number; a guest idles as a voice session and spikes only while
+ * the bundler runs) plus region pinning. Every Modal sandbox create spreads
+ * this, so a new resource knob is added once, not per spawn path. Returns
+ * the parsed `limits` alongside for the per-path timeout fields.
+ */
+export function guestSandboxResources(env: NodeJS.ProcessEnv): {
+  limits: ModalSandboxLimits;
+  resourceParams: {
+    memoryMiB?: number;
+    memoryLimitMiB?: number;
+    cpu?: number;
+    cpuLimit?: number;
+    regions?: string[];
+  };
+} {
+  const limits = parseSandboxLimitsFromEnv(env);
+  assertModalResourcePairs(limits);
+  const regions = parseSandboxRegionsFromEnv(env);
+  return {
+    limits,
+    resourceParams: {
+      ...(limits.memoryMiB !== undefined && { memoryMiB: limits.memoryMiB }),
+      ...(limits.memoryLimitMiB !== undefined && { memoryLimitMiB: limits.memoryLimitMiB }),
+      ...(limits.cpu !== undefined && { cpu: limits.cpu }),
+      ...(limits.cpuLimit !== undefined && { cpuLimit: limits.cpuLimit }),
+      // Co-locate guests with the host — see parseSandboxRegionsFromEnv.
+      ...(regions && { regions }),
+    },
+  };
 }

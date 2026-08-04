@@ -1,8 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { describe, expect, test } from "vitest";
-import { isLocalDev, requireEnv, resolveDrainMs, resolvePoolSize, resolvePort } from "./_boot.ts";
-import { DEFAULT_SHUTDOWN_DRAIN_MS } from "./constants.ts";
+import { isLocalDev, requireEnv, resolvePort } from "./_boot.ts";
 
 // ── isLocalDev ─────────────────────────────────────────────────────────
 
@@ -41,24 +40,6 @@ describe("requireEnv", () => {
   });
 });
 
-// ── resolvePoolSize ────────────────────────────────────────────────────
-
-describe("resolvePoolSize", () => {
-  test.each([
-    ["unset", undefined, null],
-    ["empty string", "", null],
-    ["zero", "0", null],
-    ["negative", "-1", null],
-    ["non-numeric", "abc", null],
-    ["in range", "4", 4],
-    ["minimum", "1", 1],
-    ["at the cap", "16", 16],
-    ["over the cap clamps to 16", "99", 16],
-  ] as const)("%s → %s", (_label, raw, expected) => {
-    expect(resolvePoolSize(raw)).toBe(expected);
-  });
-});
-
 // ── resolvePort ────────────────────────────────────────────────────────
 
 describe("resolvePort", () => {
@@ -76,26 +57,5 @@ describe("resolvePort", () => {
     for (const raw of ["tcp://0.0.0.0:8080", "abc", "-1", "70000", "80.5"]) {
       expect(() => resolvePort(raw, 8080)).toThrow("Invalid PORT");
     }
-  });
-});
-
-// ── resolveDrainMs ─────────────────────────────────────────────────────
-
-describe("resolveDrainMs", () => {
-  test.each([
-    ["unset", undefined, DEFAULT_SHUTDOWN_DRAIN_MS],
-    ["empty string", "", DEFAULT_SHUTDOWN_DRAIN_MS],
-    ["non-numeric", "abc", DEFAULT_SHUTDOWN_DRAIN_MS],
-    ["negative", "-1", DEFAULT_SHUTDOWN_DRAIN_MS],
-    ["explicit value", "30000", 30_000],
-  ] as const)("%s → %s", (_label, raw, expected) => {
-    expect(resolveDrainMs(raw)).toBe(expected);
-  });
-
-  test("zero means do not wait, not unset", () => {
-    // Unlike resolvePoolSize, 0 is a meaningful setting here: it restores the
-    // old close-immediately shutdown. Substituting the two-minute default
-    // would make a deploy look hung for whoever set it.
-    expect(resolveDrainMs("0")).toBe(0);
   });
 });

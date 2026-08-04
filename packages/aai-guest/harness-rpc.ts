@@ -8,7 +8,7 @@
 // tool contexts and the runtime. Split out of `harness.ts`, which keeps the
 // dispatch loop and the embedded runtime.
 
-import type { DbAdapter, JsonRpcMessage } from "./harness-types.ts";
+import type { JsonRpcMessage } from "./harness-types.ts";
 
 // ---- Shared helpers ----------------------------------------------------------
 
@@ -124,21 +124,6 @@ export function rejectAllPendingHostRequests(reason: string): void {
   }
   pendingHostRequests.clear();
 }
-
-// The adapters are stateless views over hostRequest, so a single module-level
-// instance serves every tool call.
-/**
- * Db adapter handed to tool contexts (when storage is enabled) — proxies
- * `ctx.db.query` to the host's db/query handler, which runs it against the
- * app's provisioned database. The RPC result is the rows array directly.
- */
-export const dbAdapter: DbAdapter = {
-  query: async <T = Record<string, unknown>>(sql: string, params?: unknown[]) =>
-    (await hostRequest("db/query", {
-      sql,
-      ...(params !== undefined ? { params } : {}),
-    })) as T[],
-};
 
 // ---- Host response dispatch -------------------------------------------------
 

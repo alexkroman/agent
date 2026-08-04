@@ -16,8 +16,8 @@ function fakeAppDb(): AppDatabases & {
   return {
     provision: vi.fn(async () => META),
     deprovision: vi.fn(async () => undefined),
-    open: () => {
-      throw new Error("open not expected in these tests");
+    connectionUrl: () => {
+      throw new Error("connectionUrl not expected in these tests");
     },
   };
 }

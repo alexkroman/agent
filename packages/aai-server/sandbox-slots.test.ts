@@ -1,267 +1,77 @@
 // Copyright 2025 the AAI authors. MIT license.
+/**
+ * Slot-cache semantics. Idle reclamation is deliberately NOT here: the
+ * GUEST owns idleness (agent-mode self-exit — see aai-guest's
+ * harness-agent-mode.test.ts), and its exit reaches the slot through
+ * `onSandboxLost` → `terminateSlot` (covered in sandbox.test.ts /
+ * sandbox-resolve.test.ts).
+ */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { IDLE_SANDBOX_MS } from "./constants.ts";
+import { describe, expect, it, vi } from "vitest";
 import {
   type AgentSlot,
-  attachSandbox,
   createSlotCache,
   deleteSlot,
+  retireSlot,
   setSlot,
   terminateSlot,
 } from "./sandbox-slots.ts";
 
-function makeSandbox(activeSessions?: () => Promise<number>) {
+function makeSandbox(overrides: Partial<NonNullable<AgentSlot["sandbox"]>> = {}) {
   return {
     shutdown: vi.fn().mockResolvedValue(undefined),
-    ...(activeSessions && { activeSessions }),
-  };
-}
-
-function makeSlot(slug: string, overrides?: Partial<AgentSlot>): AgentSlot {
-  return {
-    slug,
+    drain: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
 
-describe("createSlotCache", () => {
-  it("creates an empty Map", () => {
+describe("slot cache", () => {
+  it("set/get/delete round-trips slots by slug", () => {
     const cache = createSlotCache();
-    expect(cache.size).toBe(0);
+    const slot: AgentSlot = { slug: "a" };
+    setSlot(cache, slot);
+    expect(cache.get("a")).toBe(slot);
+    expect(deleteSlot(cache, "a")).toBe(true);
+    expect(cache.get("a")).toBeUndefined();
   });
 
-  it("stores and retrieves a slot", () => {
-    const cache = createSlotCache();
-    const slot = makeSlot("my-agent");
-    cache.claim("my-agent", slot);
-    expect(cache.get("my-agent")).toBe(slot);
-  });
-});
-
-describe("terminateSlot", () => {
-  it("calls shutdown on the sandbox and clears it", async () => {
+  it("terminateSlot detaches synchronously and shuts the sandbox down", async () => {
     const sandbox = makeSandbox();
-    const slot = makeSlot("agent-a", { sandbox });
-    await terminateSlot(slot);
-    expect(sandbox.shutdown).toHaveBeenCalledOnce();
+    const slot: AgentSlot = { slug: "t", sandbox };
+    const done = terminateSlot(slot);
+    // Detached before the await settles: no window where the broker could
+    // hand out a sandbox that is being torn down.
     expect(slot.sandbox).toBeUndefined();
+    await done;
+    expect(sandbox.shutdown).toHaveBeenCalledOnce();
   });
 
-  it("is a no-op when slot has no sandbox", async () => {
-    const slot = makeSlot("agent-b");
+  it("terminateSlot swallows shutdown errors", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const slot: AgentSlot = {
+      slug: "boom",
+      sandbox: { shutdown: vi.fn().mockRejectedValue(new Error("boom")) },
+    };
     await expect(terminateSlot(slot)).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 
-  it("swallows shutdown errors and logs a warning", async () => {
-    const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const sandbox = { shutdown: vi.fn().mockRejectedValue(new Error("boom")) };
-    const slot = makeSlot("agent-c", { sandbox });
-    await expect(terminateSlot(slot)).resolves.toBeUndefined();
-    expect(consoleSpy).toHaveBeenCalledWith("Failed to shut down sandbox", expect.any(Object));
-    consoleSpy.mockRestore();
-  });
-});
-
-describe("idle sandbox eviction", () => {
-  beforeEach(() => {
-    // `performance` too — retirement's drain deadline is measured with
-    // performance.now(), which vitest leaves real by default.
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date", "performance"] });
-    vi.spyOn(console, "info").mockImplementation(() => undefined);
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-    vi.restoreAllMocks();
-  });
-
-  it("evicts a sandbox after IDLE_SANDBOX_MS with no touches", async () => {
-    const cache = createSlotCache();
-    const slot = makeSlot("alpha");
-    setSlot(cache, slot);
+  it("retireSlot detaches synchronously and hands the sandbox its drain budget", async () => {
     const sandbox = makeSandbox();
-    attachSandbox(cache, slot, sandbox);
-
-    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
-
-    expect(sandbox.shutdown).toHaveBeenCalledOnce();
-    expect(cache.get("alpha")?.sandbox).toBeUndefined();
-    // Slot itself stays registered — only the sandbox is evicted.
-    expect(cache.has("alpha")).toBe(true);
-  });
-
-  it("probes the guest and rearms instead of evicting while sessions are live", async () => {
-    const cache = createSlotCache();
-    const slot = makeSlot("busy");
-    setSlot(cache, slot);
-    // Sessions connect directly to the sandbox tunnel, so the host asks the
-    // guest: two probe rounds report a live session, the third reports idle.
-    const probe = vi
-      .fn<() => Promise<number>>()
-      .mockResolvedValueOnce(1)
-      .mockResolvedValueOnce(1)
-      .mockResolvedValue(0);
-    const sandbox = makeSandbox(probe);
-    attachSandbox(cache, slot, sandbox);
-
-    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
-    expect(sandbox.shutdown).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
-    expect(sandbox.shutdown).not.toHaveBeenCalled();
-
-    // Third window: the guest reports no live sessions — evict.
-    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
-    expect(sandbox.shutdown).toHaveBeenCalledOnce();
-    expect(probe).toHaveBeenCalledTimes(3);
-  });
-
-  it("evicts when the probe rejects (dead guest)", async () => {
-    const cache = createSlotCache();
-    const slot = makeSlot("dead");
-    setSlot(cache, slot);
-    const sandbox = makeSandbox(() => Promise.reject(new Error("guest gone")));
-    attachSandbox(cache, slot, sandbox);
-
-    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
-
-    expect(sandbox.shutdown).toHaveBeenCalledOnce();
-  });
-
-  it("does not evict a replacement sandbox installed while the probe was in flight", async () => {
-    const cache = createSlotCache();
-    const slot = makeSlot("raced");
-    setSlot(cache, slot);
-    const gate = Promise.withResolvers<number>();
-    const sandbox = makeSandbox(() => gate.promise);
-    attachSandbox(cache, slot, sandbox);
-
-    // Fire the idle timer; the probe is now awaiting the gate.
-    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
-
-    // A redeploy replaces the slot object under the same slug mid-probe.
-    await terminateSlot(slot);
-    const newSlot = makeSlot("raced");
-    setSlot(cache, newSlot);
-    const newSandbox = makeSandbox();
-    attachSandbox(cache, newSlot, newSandbox);
-
-    // The stale probe settles "idle" — but its slot is no longer current.
-    gate.resolve(0);
-    await vi.advanceTimersByTimeAsync(0);
-
-    expect(newSandbox.shutdown).not.toHaveBeenCalled();
-    expect(cache.get("raced")?.sandbox).toBe(newSandbox);
-  });
-
-  it("terminateSlot clears the idle timer to avoid leaks", async () => {
-    const cache = createSlotCache();
-    const slot = makeSlot("delta");
-    setSlot(cache, slot);
-    const sandbox = makeSandbox();
-    attachSandbox(cache, slot, sandbox);
-    expect(slot.idleTimer).toBeDefined();
-
-    await terminateSlot(slot);
-    expect(slot.idleTimer).toBeUndefined();
-    expect(sandbox.shutdown).toHaveBeenCalledOnce();
-
-    // Advancing time must not trigger another shutdown — terminate
-    // already happened and the timer should have been cleared.
-    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
-    expect(sandbox.shutdown).toHaveBeenCalledOnce();
-  });
-
-  it("deleteSlot clears the idle timer to avoid leaks", async () => {
-    const cache = createSlotCache();
-    const slot = makeSlot("epsilon");
-    setSlot(cache, slot);
-    const sandbox = makeSandbox();
-    attachSandbox(cache, slot, sandbox);
-    expect(slot.idleTimer).toBeDefined();
-
-    deleteSlot(cache, "epsilon");
-    expect(slot.idleTimer).toBeUndefined();
-
-    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
-    expect(sandbox.shutdown).not.toHaveBeenCalled();
-  });
-
-  it("scales in idle replicas while the primary stays busy", async () => {
-    const cache = createSlotCache();
-    const slot = makeSlot("scaled");
-    setSlot(cache, slot);
-    const sandbox = makeSandbox(() => Promise.resolve(2));
-    attachSandbox(cache, slot, sandbox);
-    const busyReplica = makeSandbox(() => Promise.resolve(1));
-    const idleReplica = makeSandbox(() => Promise.resolve(0));
-    slot.replicas = [busyReplica, idleReplica];
-
-    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
-
-    // Only the idle replica was reclaimed; the timer re-armed.
-    expect(idleReplica.shutdown).toHaveBeenCalledOnce();
-    expect(busyReplica.shutdown).not.toHaveBeenCalled();
-    expect(sandbox.shutdown).not.toHaveBeenCalled();
-    expect(slot.replicas).toEqual([busyReplica]);
-    expect(slot.idleTimer).toBeDefined();
-  });
-
-  it("keeps an idle primary alive while a replica still has sessions", async () => {
-    const cache = createSlotCache();
-    const slot = makeSlot("tail");
-    setSlot(cache, slot);
-    const sandbox = makeSandbox(() => Promise.resolve(0));
-    attachSandbox(cache, slot, sandbox);
-    const busyReplica = makeSandbox(() => Promise.resolve(1));
-    slot.replicas = [busyReplica];
-
-    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
-
-    // The primary is the slot's routing anchor — evicting it while a
-    // replica holds sessions would force a full rebuild on the next broker
-    // request. Everything is reclaimed once all counts reach zero.
-    expect(sandbox.shutdown).not.toHaveBeenCalled();
-    expect(busyReplica.shutdown).not.toHaveBeenCalled();
-
-    slot.replicas = [makeSandbox(() => Promise.resolve(0))];
-    const lastReplica = slot.replicas[0];
-    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
-    expect(sandbox.shutdown).toHaveBeenCalledOnce();
-    expect(lastReplica?.shutdown).toHaveBeenCalledOnce();
-    expect(slot.replicas).toBeUndefined();
-    expect(cache.get("tail")?.sandbox).toBeUndefined();
-  });
-
-  // Superseded residents are not the idle sweep's job anymore: the agents
-  // row's change stream retires them (watchAgentInvalidation, covered in
-  // sandbox-resolve.test.ts).
-
-  it("terminateSlot shuts down replicas along with the primary", async () => {
-    const sandbox = makeSandbox();
-    const replica = makeSandbox();
-    const slot = makeSlot("multi", { sandbox, replicas: [replica] });
-    await terminateSlot(slot);
-    expect(sandbox.shutdown).toHaveBeenCalledOnce();
-    expect(replica.shutdown).toHaveBeenCalledOnce();
+    const slot: AgentSlot = { slug: "r", sandbox };
+    const delivered = retireSlot(slot, "superseded");
+    // Synchronous detach — the drain delivery runs behind it (awaitable for
+    // shutdown callers, void-ed on request paths).
     expect(slot.sandbox).toBeUndefined();
-    expect(slot.replicas).toBeUndefined();
+    await delivered;
+    expect(sandbox.drain).toHaveBeenCalledWith(expect.any(Number));
+    // The guest owns the drain: no host-side shutdown for a reachable guest.
+    expect(sandbox.shutdown).not.toHaveBeenCalled();
   });
 
-  it("swallows shutdown errors during idle eviction", async () => {
-    const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const cache = createSlotCache();
-    const slot = makeSlot("zeta");
-    setSlot(cache, slot);
-    const sandbox = { shutdown: vi.fn().mockRejectedValue(new Error("boom")) };
-    attachSandbox(cache, slot, sandbox);
-
-    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
-    // Let the rejected shutdown promise settle.
-    await vi.runAllTimersAsync();
-
-    expect(sandbox.shutdown).toHaveBeenCalledOnce();
-    expect(cache.get("zeta")?.sandbox).toBeUndefined();
-    expect(consoleSpy).toHaveBeenCalledWith("Failed to shut down idle sandbox", expect.any(Object));
-    consoleSpy.mockRestore();
+  it("retireSlot on an empty slot is a no-op", async () => {
+    const slot: AgentSlot = { slug: "empty" };
+    await expect(retireSlot(slot, "superseded")).resolves.toBeUndefined();
   });
 });

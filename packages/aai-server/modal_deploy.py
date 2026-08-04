@@ -37,10 +37,6 @@ Required Modal Secret named ``aai-server`` with (at least):
   Realtime change streams (sandbox invalidation, studio preview push)
 - optional: ``ASSEMBLYAI_API_KEY``
 
-Do NOT set ``SANDBOX_POOL_SIZE`` in the Secret: the warm sandbox pool is
-deliberately disabled in production (``SANDBOX_POOL_SIZE=0`` in the image
-env below), and a Secret value would override the image env and re-enable
-it — two idle billed guests per replica, per service.
 """
 
 import os
@@ -87,64 +83,47 @@ REGION = "us-east-2"
 #
 # The server holds no cross-request state (coordination lives in Supabase —
 # see CLAUDE.md "Stateless server"), so replicas are interchangeable:
-# scale-out is safe, and scale-in/redeploys drain via the node process's
-# SIGTERM handler. Voice sessions live in the guest sandboxes (browsers dial
-# the sandbox tunnel directly), so a replica going down only costs the
-# sandboxes it owns; clients auto-reconnect (?sessionId) and re-broker.
+# scale-out is safe, and on scale-in/redeploy the node process's SIGTERM
+# handler RETIRES the replica's agent guests (one drain request each — the
+# guests finish their calls and exit on their own clock) and disposes the
+# studio broker. Voice sessions live in the guest sandboxes (browsers dial
+# the sandbox tunnel directly), so a replica going down cuts nothing;
+# clients auto-reconnect (?sessionId) and re-broker.
 #
-# Each in-flight HTTP request and each open WebSocket counts as one input, so
-# the numbers below are coupled to the node server's own per-replica
-# WebSocket cap (MAX_CONNECTIONS, exported in the image env — the server
-# rejects upgrade #N+1 itself, as a load-shed backstop):
+# Each in-flight HTTP request counts as one input. Voice sessions never pass
+# through this process (browsers dial the sandbox tunnel directly, and
+# `/:slug/websocket` upgrades are instant handshake redirects), so inputs are
+# short HTTP traffic plus the studio proxy's SSE streams:
 #
 # - TARGET_INPUTS is the autoscaler's set point: Modal adds containers once
-#   per-container concurrency crosses it. Set below MAX_CONNECTIONS so new
-#   capacity is warming BEFORE any replica starts refusing sessions.
-# - MAX_INPUTS caps what one container absorbs while scale-up is in flight:
-#   MAX_CONNECTIONS long-lived sessions plus headroom for short HTTP traffic
-#   (health checks, studio API, deploys).
-MIN_CONTAINERS = 1  # always-warm floor: voice sessions are latency-sensitive
+#   per-container concurrency crosses it.
+# - MAX_INPUTS caps what one container absorbs while scale-up is in flight.
+MIN_CONTAINERS = 1  # always-warm floor: session brokering is latency-sensitive
 MAX_CONTAINERS = 10  # cost guard; raise deliberately, not by incident
 BUFFER_CONTAINERS = 1  # one pre-warmed spare while active, so bursts land warm
-MAX_CONNECTIONS = 100  # per-replica WebSocket cap (node server enforces it)
-TARGET_INPUTS = 75  # scale-out set point (~75% of the session cap)
-MAX_INPUTS = 150  # sessions at cap + short-request headroom
+TARGET_INPUTS = 75  # scale-out set point
+MAX_INPUTS = 150  # concurrent-request cap per container
 
 # ── Input timeout ────────────────────────────────────────────────────────────
 #
 # A WebSocket is ONE Modal input for its whole lifetime, so the function
 # timeout bounds CALL DURATION, not request latency — and Modal's default is
-# 300s. Unset, that silently severed every host-mode voice session at exactly
-# five minutes, mid-word, surfacing to the client as a bare "not connected"
-# with nothing logged server-side. (Browser sessions dial the guest sandbox's
-# tunnel directly and never touch this path; `?host=1` sessions run IN this
-# process, which is what puts them under the cap.) Same trap the sandbox layer
-# already documents in modal-sandbox-env.ts, matched to the same 4h value.
-#
-# This is a backstop, not the idle policy: session-core's own watchdog
-# (`idleTimeoutMs`, 5 min) reaps quiet sessions and closes their sockets, and
-# unlike a wall-clock cap it re-arms on every inbound audio frame.
+# 300s. Unset, that silently severed every in-process voice session (the old
+# `?host=1` host mode, since removed) at exactly five minutes, mid-word,
+# surfacing to the client as a bare "not connected" with nothing logged
+# server-side. Sessions now never run in this process — browsers dial the
+# guest sandbox's tunnel directly, and `/:slug/websocket` upgrades are
+# handshake redirects — but the studio proxy's SSE streams and any future
+# long-lived input sit under the same cap, so it stays pinned rather than
+# inherited. Same trap the sandbox layer documents in modal-sandbox-env.ts,
+# matched to the same 4h value.
 FUNCTION_TIMEOUT_SECS = 4 * 60 * 60
 
-# ── Guest-sandbox autoscaling ────────────────────────────────────────────────
+# ── Guest-sandbox resources ──────────────────────────────────────────────────
 #
-# Horizontal per-slug sandbox scaling (sandbox-scale.ts): the broker routes
-# each new session to the least-loaded of a slug's sandboxes and spawns an
-# overflow replica when all are at SANDBOX_MAX_SESSIONS. The session cap only
-# makes sense against pinned resources, so the two go together — unset, a
-# guest runs on Modal's sandbox defaults (0.125 core / 128 MiB reserved,
-# burstable), which is not a denominator you can size a cap against.
-#
-# 8 sessions on 1 core budgets ~5% core per session for the audio relay path
-# and leaves ~half the core for tool-call spikes (tool code shares the guest's
-# one event loop with every co-resident session — same-tenant only, since
-# scaling is per slug). Broker counts are sampled, not reserved, so the cap
-# needs that slack: simultaneous brokers can land a session or two past it.
-# 1 GiB covers the ~250 MB harness+bundle baseline plus sessions with ~3×
-# headroom. With SANDBOX_MAX_REPLICAS=4 this is 32 sessions per slug per web
-# replica — saturating well inside MAX_CONNECTIONS above. If sessions stutter
-# at load, the playback stats (concealedSamples per turn) are the signal to
-# lower the cap; raise it only off those same measurements.
+# One sandbox per slug per replica (per-slug horizontal scaling was deleted
+# for simplicity — see sandbox-resolve.ts). If sessions stutter at load, the
+# playback stats (concealedSamples per turn) are the signal.
 #
 # Reservation and cap are deliberately DIFFERENT numbers, because a guest's
 # load is bimodal. It idles as a voice session (~250 MB, a few % of a core),
@@ -157,12 +136,9 @@ FUNCTION_TIMEOUT_SECS = 4 * 60 * 60
 # OOM, and it hits Publish too: the cap is on the cgroup, so spawning the
 # bundler as a child process does not escape it.
 #
-# So: reserve the idle shape, cap the build shape. The session cap above is
-# sized against the RESERVATION (the resources a guest always has), while the
-# cap only has to clear the bundler's peak with headroom for a co-resident
-# session. 4096 MiB is also the ceiling modal-sandbox-env.ts clamps to.
-SANDBOX_MAX_SESSIONS = 8  # live sessions per guest sandbox before scale-out
-SANDBOX_MAX_REPLICAS = 4  # sandboxes per slug (primary included) per replica
+# So: reserve the idle shape, cap the build shape. The cap only has to clear
+# the bundler's peak with headroom for a co-resident session. 4096 MiB is
+# also the ceiling modal-sandbox-env.ts clamps to.
 SANDBOX_CPU = 1  # per-guest core reservation (Modal cpu)
 SANDBOX_CPU_LIMIT = 4  # hard per-guest core cap, for builds (Modal cpuLimit)
 SANDBOX_MEMORY_MB = 1024  # per-guest memory reservation (Modal memoryMiB)
@@ -177,26 +153,12 @@ image = build_image(
     # Guest sandboxes are pinned to the web server's region (above).
     region=REGION,
     extra_env={
-        # Per-replica WebSocket cap, kept in lockstep with the autoscaler
-        # numbers above (TARGET_INPUTS / MAX_INPUTS) — the server refuses
-        # upgrades past it, so Modal must scale out before it is reached.
-        "MAX_CONNECTIONS": str(MAX_CONNECTIONS),
-        # Guest-sandbox autoscaling — see the block above. Values in the
-        # aai-server Secret override these (secrets layer over image env).
-        "SANDBOX_MAX_SESSIONS": str(SANDBOX_MAX_SESSIONS),
-        "SANDBOX_MAX_REPLICAS": str(SANDBOX_MAX_REPLICAS),
         # A cap without its reservation throws at spawn (Modal rejects a bare
         # cap), so these four move together — see modal-sandbox-env.ts.
         "SANDBOX_CPU": str(SANDBOX_CPU),
         "SANDBOX_CPU_LIMIT": str(SANDBOX_CPU_LIMIT),
         "SANDBOX_MEMORY_MB": str(SANDBOX_MEMORY_MB),
         "SANDBOX_MEMORY_LIMIT_MB": str(SANDBOX_MEMORY_LIMIT_MB),
-        # Warm sandbox pool: keep at ZERO. "0" disables the pool (see
-        # resolvePoolSize in _boot.ts) — pre-warmed guests are idle billed
-        # sandboxes per replica, and cold starts go through the warm-pool
-        # fallback path anyway. NOTE: the aai-server Secret overrides image
-        # env, so this only holds while the Secret does not set it.
-        "SANDBOX_POOL_SIZE": "0",
     },
 )
 
@@ -213,11 +175,12 @@ app = modal.App("aai-server-web")
     min_containers=MIN_CONTAINERS,
     max_containers=MAX_CONTAINERS,
     buffer_containers=BUFFER_CONTAINERS,
-    # SHUTDOWN_DRAIN_MS (120s) + sandbox teardown must fit in the container's
-    # grace period. Modal signals this Python runtime, not the node child —
-    # `run_node` below forwards the stop signal and waits, which is the only
-    # reason the node SIGTERM handler (drain + guest-sandbox teardown) runs
-    # at all on scale-in/redeploy.
+    # Shutdown is retire-and-exit (no session-drain wait): the node SIGTERM
+    # handler delivers one drain request per agent guest, disposes the studio
+    # broker, and exits — seconds, well inside this grace period. Modal
+    # signals this Python runtime, not the node child — `run_node` below
+    # forwards the stop signal and waits, which is the only reason the node
+    # SIGTERM handler runs at all on scale-in/redeploy.
     scaledown_window=300,
     # Bounds one WebSocket's lifetime — see "Input timeout" above.
     timeout=FUNCTION_TIMEOUT_SECS,
@@ -242,6 +205,6 @@ def server() -> None:
         env["AAI_SERVICE"] = "combined"
         entry = "packages/aai-studio-server/dist/index.mjs"
     # run_node (not a bare Popen) so container stop signals reach the node
-    # process — its SIGTERM handler is what drains sessions and terminates
-    # this replica's guest sandboxes (see modal_image.run_node).
+    # process — its SIGTERM handler is what retires this replica's guest
+    # sandboxes (see modal_image.run_node).
     run_node(entry, env)

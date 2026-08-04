@@ -4,9 +4,9 @@
  * mirror of `GET /:slug/client-config` for voice sessions.
  *
  * `POST /studio/projects/:project/session` lands here: the broker boots (or
- * reuses) a guest sandbox through the SAME machinery deployed agents use —
- * the warm pool when available, else `spawnWarmHarness` (a remote Modal
- * Sandbox from the baked harness image) — installs the studio session in it
+ * reuses) a guest sandbox via `spawnWarmHarness` (a remote Modal Sandbox
+ * booted from the published harness snapshot image; there is no warm pool
+ * anymore) — installs the studio session in it
  * (`studio/session-init`: workspace files, the caller's own AssemblyAI key,
  * system prompt, turn config), and returns the sandbox's public chat URL.
  * The browser then talks to the sandbox DIRECTLY (`POST <tunnel>/studio/
@@ -32,11 +32,10 @@
 import { randomBytes } from "node:crypto";
 import { errorMessage } from "@alexkroman1/aai";
 import { createOwnedMap } from "@alexkroman1/aai/internal";
+import { resolveHarnessPath } from "aai-server/constants";
 import { GUEST_ROUTES, guestHttpUrl } from "aai-server/guest-routes";
 import { createKeyedLock, withLock } from "aai-server/platform-barrel";
-import { registerGuestRpcHandlers } from "aai-server/sandbox-guest-rpc";
-import type { SandboxPool } from "aai-server/sandbox-pool";
-import { acquireWarmHarness, spawnWarmHarness, type WarmHarness } from "aai-server/sandbox-vm";
+import { spawnWarmHarness, type WarmHarness } from "aai-server/sandbox-vm";
 import { SafePathSchema } from "aai-server/schemas";
 import { z } from "zod";
 import { studioLlmModelId } from "./studio-llm.ts";
@@ -119,7 +118,6 @@ type BrokerStores = {
 };
 
 export type StudioSessionBrokerOptions = BrokerStores & {
-  pool?: SandboxPool | undefined;
   harnessPath?: string;
   /** Injectable for tests — defaults to the shared warm-harness spawner. */
   spawn?: typeof spawnWarmHarness;
@@ -239,7 +237,6 @@ export function createStudioSessionBroker(
   /** Wire the control channel for one project's sandbox. */
   function wire(warm: WarmHarness, key: string, scope: string, project: string): void {
     // No db — trial tool runs report storage-not-enabled, same as before.
-    registerGuestRpcHandlers(warm.conn, {});
     const touch = (): void => {
       const entry = sessions.get(key);
       if (entry && entry.warm === warm) entry.lastUsed = Date.now();
@@ -385,17 +382,17 @@ export function createStudioSessionBroker(
 
     // Check the project exists BEFORE taking a sandbox. Spawning first and
     // discovering the 404 inside initSession burned a full Modal spawn +
-    // teardown per bogus project id — and each one either drained a warm-pool
-    // slot (making a real session pay a cold start) or billed a create.
+    // teardown per bogus project id.
     const workspace = await getWorkspace(options.workspaces, scope, project);
     if (!workspace) return null;
 
-    const warm = await acquireWarmHarness(
-      // Tagged with the project name so the Modal dashboard shows WHICH
-      // studio session a sandbox serves, not a shared "studio-session" blob.
-      { pool: options.pool, harnessPath: options.harnessPath, slug: project, role: "studio" },
-      spawn,
-    );
+    // Tagged with the project name so the Modal dashboard shows WHICH
+    // studio session a sandbox serves, not a shared "studio-session" blob.
+    const warm = await spawn({
+      harnessPath: options.harnessPath ?? resolveHarnessPath(),
+      slug: project,
+      role: "studio",
+    });
     let token: string;
     try {
       wire(warm, key, scope, project);
@@ -448,17 +445,12 @@ export function createStudioSessionBroker(
     // No (live) session sandbox — spawn one for the publish and tear it
     // down after; Publish from the editor shouldn't leave a sandbox
     // running that no chat session owns.
-    const warm = await acquireWarmHarness(
-      {
-        pool: options.pool,
-        harnessPath: options.harnessPath,
-        slug: project,
-        role: "studio-publish",
-      },
-      spawn,
-    );
+    const warm = await spawn({
+      harnessPath: options.harnessPath ?? resolveHarnessPath(),
+      slug: project,
+      role: "studio-publish",
+    });
     try {
-      registerGuestRpcHandlers(warm.conn, {});
       warm.conn.listen();
       return await requestDeploy(warm, files, target);
     } finally {
