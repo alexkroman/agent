@@ -4,6 +4,25 @@ import { readGlobalConfig } from "./_config.ts";
 import { CliError } from "./_output.ts";
 import { executeLogin } from "./login.ts";
 
+// The default browser opener spawns the platform's opener command; stub it
+// so tests never launch a real browser, and exercise its swallowed-error
+// path (a missing opener must not fail the login — the URL is printed).
+const spawnMock = vi.fn(() => {
+  const child = {
+    on(_event: string, cb: (err: Error) => void) {
+      cb(new Error("opener not installed"));
+      return child;
+    },
+    unref() {
+      // Detached-child bookkeeping — nothing to observe.
+    },
+  };
+  return child;
+});
+vi.mock("node:child_process", () => ({
+  spawn: (...args: unknown[]) => spawnMock(...(args as [])),
+}));
+
 /** Route-keyed fake fetch; records every call. */
 function fakeFetch(
   routes: Record<string, (init?: RequestInit) => { status?: number; body: unknown }>,
@@ -71,6 +90,28 @@ describe("aai login", () => {
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.data.email).toBe("your account");
     expect((await readGlobalConfig()).apiKey).toBe("dev-linked-key");
+  });
+
+  test("opens the system browser by default; a failed opener is not fatal", async () => {
+    const { fetchFn } = fakeFetch({
+      "/studio/auth": () => ({ body: { mode: "supabase" } }),
+      "/studio/cli-link/exchange": () => ({ body: { apiKey: "linked-key" } }),
+    });
+    // No openBrowser seam: the real (spawn-backed) opener runs, its spawn
+    // error is swallowed, and the poll still completes the login.
+    const result = await executeLogin({}, { fetchFn, pollIntervalMs: 1 });
+    expect(result.ok).toBe(true);
+    expect(spawnMock).toHaveBeenCalledOnce();
+  });
+
+  test("fails when the exchange returns no API key", async () => {
+    const { fetchFn } = fakeFetch({
+      "/studio/auth": () => ({ body: { mode: "supabase" } }),
+      "/studio/cli-link/exchange": () => ({ body: { ok: true } }),
+    });
+    await expect(
+      executeLogin({}, { fetchFn, openBrowser: vi.fn(), pollIntervalMs: 1 }),
+    ).rejects.toMatchObject({ code: "login_failed" });
   });
 
   test("times out when the link is never approved", async () => {
