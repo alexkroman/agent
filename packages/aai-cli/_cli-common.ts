@@ -43,21 +43,34 @@ export function findUnknownFlags(rawArgs: string[], argsDef: ArgsDef): string[] 
     // Everything after a bare `--` is positional by convention.
     if (raw === "--") break;
     const token = flagToken(raw);
-    // `--no-force` is citty's negation of the `force` boolean.
-    if (token && !declared.has(token.replace(/^--?/, "").replace(/^no-/, ""))) unknown.push(token);
+    if (token && !declared.has(canonicalFlag(token))) unknown.push(token);
   }
   return unknown;
 }
 
+/**
+ * A flag's comparison key: dashes dropped and lower-cased, with a leading
+ * `no` negation removed.
+ *
+ * citty accepts both `--allowMissingSecrets` and `--allow-missing-secrets` for
+ * an arg declared as `allowMissingSecrets`, and the guest's in-sandbox Publish
+ * spawns the kebab-case spelling. Comparing the literal text rejected
+ * `--allow-missing-secrets` as unknown and broke Publish for every studio
+ * user, so both sides are normalized to one key.
+ */
+function canonicalFlag(flag: string): string {
+  return flag.replace(/^--?/, "").replace(/^no-/, "").replace(/-/g, "").toLowerCase();
+}
+
 /** Every flag name and alias `argsDef` declares, plus citty's built-ins. */
 function declaredFlagNames(argsDef: ArgsDef): Set<string> {
-  const declared = new Set(BUILTIN_FLAGS);
+  const declared = new Set([...BUILTIN_FLAGS].map(canonicalFlag));
   for (const [name, def] of Object.entries(argsDef)) {
     const { type, alias } = def as { type?: string; alias?: string | string[] };
     if (type === "positional") continue;
-    declared.add(name);
-    if (typeof alias === "string") declared.add(alias);
-    else if (Array.isArray(alias)) for (const a of alias) declared.add(a);
+    declared.add(canonicalFlag(name));
+    if (typeof alias === "string") declared.add(canonicalFlag(alias));
+    else if (Array.isArray(alias)) for (const a of alias) declared.add(canonicalFlag(a));
   }
   return declared;
 }

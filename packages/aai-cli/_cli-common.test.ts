@@ -26,8 +26,18 @@ describe("findUnknownFlags", () => {
     server: { type: "string", alias: "s" },
     force: { type: "boolean", alias: "f" },
     json: { type: "boolean" },
+    allowMissingSecrets: { type: "boolean" },
     dir: { type: "positional", required: false },
   } as const;
+
+  test("accepts the kebab-case spelling of a camelCase flag", () => {
+    // citty accepts both, and the guest's in-sandbox Publish spawns
+    // `aai deploy --allow-missing-secrets --allow-preview-slug`. Matching only
+    // the camelCase name broke Publish outright.
+    expect(findUnknownFlags(["--allow-missing-secrets"], argsDef)).toEqual([]);
+    expect(findUnknownFlags(["--allowMissingSecrets"], argsDef)).toEqual([]);
+    expect(findUnknownFlags(["--no-allow-missing-secrets"], argsDef)).toEqual([]);
+  });
 
   test("accepts declared flags, aliases, `=` forms, and negations", () => {
     expect(
@@ -90,6 +100,24 @@ describe("unknownFlagsForArgv", () => {
     expect(await unknownFlagsForArgv(mainCommand, ["push", "--serverr=http://evil.test"])).toEqual([
       "--serverr",
     ]);
+  });
+
+  test("accepts the exact argv the guest's in-sandbox Publish spawns", async () => {
+    // aai-guest/studio-publish.ts runs the real CLI with these flags. Getting
+    // this wrong breaks Publish for every studio user, and no unit test of the
+    // flag matcher alone would have noticed — the spelling is kebab-case while
+    // the args are declared camelCase.
+    const { mainCommand } = await import("./cli.ts");
+    expect(
+      await unknownFlagsForArgv(mainCommand, [
+        "deploy",
+        "--server",
+        "http://x",
+        "--json",
+        "--allow-missing-secrets",
+        "--allow-preview-slug",
+      ]),
+    ).toEqual([]);
   });
 
   test("says nothing about an unknown SUBCOMMAND — citty shows usage for that", async () => {
