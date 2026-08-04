@@ -203,6 +203,8 @@ describe("buildSystemPrompt", () => {
       "- NEVER mention tools, search, APIs, or technical failures to the user. " +
       "If a tool returns no results, just answer naturally without explaining why.\n" +
       "- Write exactly as you would say it out loud to a friend\n" +
+      '- NEVER use contractions. Write every word out in full: "I will" not "I\'ll", ' +
+      '"cannot" not "can\'t", "it is" not "it\'s", "do not" not "don\'t"\n' +
       '- Use short conversational sentences. To list things, say "First," "Next," "Finally,"\n' +
       "- Keep responses concise — 1 to 3 sentences max\n" +
       "- Do NOT read out long lists. When a tool returns several items, say how many there are, name " +
