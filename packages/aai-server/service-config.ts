@@ -9,13 +9,18 @@
 
 import { randomUUID } from "node:crypto";
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
-import { createStorage } from "unstorage";
 import { isLocalDev, requireEnv } from "./_boot.ts";
 import { type AgentRows, createMemoryAgentRows, createPgAgentRows } from "./agent-store.ts";
 import { type AppDatabases, type AppDbTarget, createAppDatabases } from "./app-database.ts";
+import {
+  type BlobStorage,
+  createMemoryBlobStorage,
+  createSupabaseBlobStorage,
+} from "./blob-storage.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./chat-store.ts";
 import { isModalConfigured, modalRequiredError, prewarmModal } from "./modal-sandbox.ts";
+import { createModalSandboxDirectory } from "./modal-sandbox-directory.ts";
 import type { OrchestratorOpts } from "./orchestrator.ts";
 import { schedulePlatformSweeps } from "./pg-cron.ts";
 import {
@@ -25,11 +30,14 @@ import {
   withChatEvents,
   withWorkspaceEvents,
 } from "./platform-events.ts";
-import { createPgSlugLock, localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
-import { createRealtimePlatformEvents, ensureRealtimeSetup } from "./realtime-events.ts";
-import { createS3Storage } from "./s3-storage.ts";
-import { describeSandboxBackend } from "./sandbox-backend.ts";
-import { createPgSandboxRegistry } from "./sandbox-registry.ts";
+import {
+  assertSessionModeUrl,
+  createPgSlugLock,
+  localSlugLock,
+  type SlugMutationLock,
+} from "./platform-lock.ts";
+import { createRealtimePlatformEvents } from "./realtime-events.ts";
+import { describeSandboxBackend, resolveSandboxBackend } from "./sandbox-backend.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import {
   createMemorySecretStore,
@@ -43,6 +51,23 @@ import {
   createPgWorkspaceStore,
   type WorkspaceStore,
 } from "./workspace-store.ts";
+
+/**
+ * Connections the platform admin pool may open per replica. Every statement
+ * on it is a short query (Vault, agents rows, workspaces, chats, the sweeps)
+ * — the one long-held resource, a slug lock's reserved connection, has its
+ * own pool below.
+ */
+const ADMIN_POOL_MAX = 4;
+
+/**
+ * Connections reserved for per-slug mutation locks. Each concurrent
+ * distinct-slug mutation holds one for its whole critical section, so this is
+ * the ceiling on concurrent mutations THIS replica can start — past it,
+ * acquires queue in the pool, which is indistinguishable to the caller from
+ * queueing in Postgres's lock manager.
+ */
+const SLUG_LOCK_POOL_MAX = 4;
 
 /** Comma-separated extra placement clusters (APP_DB_URLS) → pooled targets. */
 function parseExtraAppDbTargets(raw: string | undefined): AppDbTarget[] {
@@ -82,32 +107,32 @@ export type ServiceConfig = OrchestratorOpts & {
   sql?: SqlExec;
   /**
    * This process's identity in the cross-replica registries. Stable for the
-   * life of the container and unique across them — a registry excludes the
-   * caller's OWN rows from its peer lookup, so two replicas sharing an id
-   * would each hide the other's sandbox and the duplicate spawns would come
-   * straight back.
+   * life of the container and unique across them — the studio session
+   * registry excludes the caller's OWN rows from its peer lookup, so two
+   * replicas sharing an id would each hide the other's sandbox and the
+   * duplicate spawns would come straight back. (The AGENT side needs no
+   * identity: a sandbox NAME answers "does this exist", not "who made it".)
    */
   replicaId: string;
 };
 
-export function buildStorage(env: NodeJS.ProcessEnv): ReturnType<typeof createStorage> {
+export function buildStorage(env: NodeJS.ProcessEnv): BlobStorage {
   if (isLocalDev(env)) {
-    console.info("Local dev mode: unstorage memory driver for all storage");
-    return createStorage();
+    console.info("Local dev mode: in-memory blob storage for deploy artifacts");
+    return createMemoryBlobStorage();
   }
+  // Storage authenticates with the SAME service-role key the Realtime socket
+  // uses — no separate S3 credential pair for a project we already hold two
+  // credentials for (see blob-storage.ts).
   const required = requireEnv(env, [
-    "SUPABASE_S3_ENDPOINT",
-    "SUPABASE_S3_ACCESS_KEY_ID",
-    "SUPABASE_S3_SECRET_ACCESS_KEY",
+    "SUPABASE_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
     "SUPABASE_STORAGE_BUCKET",
   ]);
-  return createS3Storage({
+  return createSupabaseBlobStorage({
+    url: required.SUPABASE_URL,
+    serviceRoleKey: required.SUPABASE_SERVICE_ROLE_KEY,
     bucket: required.SUPABASE_STORAGE_BUCKET,
-    endpoint: required.SUPABASE_S3_ENDPOINT,
-    // Supabase's S3-compatible endpoint expects the project's region string.
-    region: env.SUPABASE_S3_REGION ?? "us-east-1",
-    accessKeyId: required.SUPABASE_S3_ACCESS_KEY_ID,
-    secretAccessKey: required.SUPABASE_S3_SECRET_ACCESS_KEY,
   });
 }
 
@@ -132,17 +157,18 @@ function buildMemoryStores(): {
 }
 
 /**
- * Boot-time database housekeeping for production: the Realtime publication
- * the change streams depend on, and the pg_cron janitorial sweeps. Loud on
- * failure, but deliberately not fatal — with no publication, superseded
- * sandboxes last until idle eviction and previews until the next project
- * open; a missing sweep degrades to table growth. Neither is worth
- * refusing to serve traffic over.
+ * Boot-time database housekeeping for production: scheduling the pg_cron
+ * janitorial sweeps. Loud on failure, but deliberately not fatal — a missing
+ * sweep degrades to table growth, which is not worth refusing to serve
+ * traffic over.
+ *
+ * This used to also create the platform tables, the Realtime publication, and
+ * the `service_role` grants. All of that is declared in
+ * `supabase/migrations/*_platform_schema.sql` now and applied before any code
+ * runs; only the SCHEDULING stays here, because the sweep bodies are defined
+ * in TypeScript (pg-cron.ts) and change with the code that owns them.
  */
 function bootstrapPlatformDb(sql: SqlExec): void {
-  ensureRealtimeSetup(sql).catch((err: unknown) => {
-    console.error("Realtime publication setup failed — change streams will not fire:", err);
-  });
   schedulePlatformSweeps(sql).catch((err: unknown) => {
     console.error("pg_cron sweep scheduling failed — janitorial sweeps will not run:", err);
   });
@@ -184,9 +210,15 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
       slugLock: localSlugLock,
     };
   }
-  // The pool lives for the process; connections drain when the process exits
-  // (no explicit close() hook on the shutdown path today).
-  const admin = createPostgresDb({ url, max: 4 });
+  // Session mode, not a transaction-mode pooler: the per-slug mutation lock
+  // is a Postgres advisory lock, which needs connection affinity to mean
+  // anything (see platform-lock.ts). Checked before the pool is built so the
+  // failure names the setting rather than surfacing as lost exclusion later.
+  if (!isLocalDev(env)) assertSessionModeUrl(url);
+  // The pools live for the process; connections drain when the process exits
+  // (no explicit close() hook on the shutdown path today), and postgres.js
+  // opens them lazily, so an idle replica pays for none of this.
+  const admin = createPostgresDb({ url, max: ADMIN_POOL_MAX });
   const exec: SqlExec = (query, params) => admin.query(query, params);
   const localDev = isLocalDev(env);
   if (localDev) {
@@ -228,7 +260,15 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
     // survives replica restarts and scale-out. (Cross-replica sandbox
     // invalidation rides the agents row's change stream — see
     // sandbox-resolve.ts.)
-    slugLock: createPgSlugLock(exec),
+    // Its OWN pool, deliberately: a held slug lock pins its connection for
+    // the whole critical section — a deploy's blob uploads, config
+    // extraction, and sandbox spawn, i.e. seconds — while every other
+    // statement here is a single short query. Sharing one pool let a handful
+    // of concurrent distinct-slug deploys hold every connection and starve
+    // Vault reads, workspace writes, and the agents-row lookups the broker
+    // makes, on a replica that was otherwise healthy. Separated, lock
+    // acquires queue only against each other.
+    slugLock: createPgSlugLock(createPostgresDb({ url, max: SLUG_LOCK_POOL_MAX })),
     sql: exec,
   };
 }
@@ -240,11 +280,14 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
   const slots = createSlotCache();
   // Per-process, not per-host: Modal can run several containers of the same
   // app anywhere, and two of them sharing an identity is exactly the failure
-  // the registries exist to prevent (see ServiceConfig.replicaId).
+  // the studio session registry exists to prevent (see
+  // ServiceConfig.replicaId).
   const replicaId = randomUUID();
-  // Cross-replica sandbox registry — only with a platform database. Without
-  // one there is a single process, so a registry could have no peers to find.
-  const registry = sql ? createPgSandboxRegistry(sql, { replicaId }) : undefined;
+  // The fleet-wide sandbox directory is Modal itself (sandbox-directory.ts):
+  // a sandbox's identity is its NAME, so there is no table to register in and
+  // nothing to heartbeat. Only the Modal backend has a control plane to ask.
+  const directory =
+    resolveSandboxBackend(env) === "modal" ? createModalSandboxDirectory() : undefined;
   // Browser-session auth: Supabase when configured, the dev-token
   // implementation in local dev (same policy as the in-memory stores —
   // production can never resolve it). Unconfigured production still serves
@@ -270,7 +313,7 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
     replicaId,
     ...(appDb && { appDb }),
     ...(sql && { sql }),
-    ...(registry && { registry }),
+    ...(directory && { directory }),
   };
 }
 

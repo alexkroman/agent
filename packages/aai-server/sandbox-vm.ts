@@ -20,11 +20,13 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { keyedMemoAsync } from "./_memo.ts";
+import { spawnModalAgentServer } from "./modal-agent-sandbox.ts";
 import { describeModalBundle } from "./modal-describe.ts";
-import { harnessImageTag, resolveToolchainSpecs } from "./modal-harness-image.ts";
-import { DEFAULT_SANDBOX_IMAGE, spawnModalAgentServer, spawnModalWarm } from "./modal-sandbox.ts";
+import { localHarnessImageTag } from "./modal-harness-image.ts";
+import { DEFAULT_SANDBOX_IMAGE, spawnModalWarm } from "./modal-sandbox.ts";
 import type { GuestConnection } from "./rpc-schemas.ts";
 import { resolveSandboxBackend } from "./sandbox-backend.ts";
+import { agentSandboxName } from "./sandbox-directory.ts";
 import type { SpawnIdentity } from "./sandbox-role.ts";
 import {
   describeSubprocessBundle,
@@ -69,6 +71,8 @@ export type WarmHarness = {
 
 export type AgentSpawnOptions = {
   slug: string;
+  /** Deploy version — half the fleet-wide sandbox name (sandbox-directory.ts). */
+  version: number;
   workerCode: string;
   env: Record<string, string>;
   harnessPath: string;
@@ -129,7 +133,7 @@ export function currentHarnessImageTag(harnessPath: string): Promise<string | nu
     if (resolveSandboxBackend(process.env) !== "modal") return null;
     const code = await readFile(harnessPath, "utf-8");
     const baseTag = process.env.MODAL_SANDBOX_IMAGE ?? DEFAULT_SANDBOX_IMAGE;
-    return harnessImageTag(baseTag, code, resolveToolchainSpecs());
+    return localHarnessImageTag(baseTag, code);
   });
 }
 
@@ -208,8 +212,14 @@ export async function spawnAgentServer(
   };
   switch (resolveSandboxBackend(process.env)) {
     case "subprocess":
+      // No name: a single process has no fleet to be unique within, and the
+      // subprocess backend has no Modal control plane to enforce one.
       return spawners.subprocess(common);
     default:
-      return spawners.modal({ ...common, imageTag: opts.imageTag });
+      return spawners.modal({
+        ...common,
+        imageTag: opts.imageTag,
+        name: agentSandboxName(opts.slug, opts.version),
+      });
   }
 }

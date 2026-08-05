@@ -6,9 +6,8 @@
  * clearing the memo when the build rejects, one transient failure (a Modal
  * control-plane blip, a DDL error) wedges the caller on a rejected promise
  * for the process lifetime. One implementation so new call sites can't
- * re-derive the pattern without the reset — used by the platform stores'
- * DDL bootstrap (`pg-ensure.ts`), the Modal spawn context, and the harness
- * code/image caches.
+ * re-derive the pattern without the reset — used by the Modal spawn context
+ * and the harness code/image caches.
  */
 
 export type MemoizedAsync<T> = (() => Promise<T>) & {

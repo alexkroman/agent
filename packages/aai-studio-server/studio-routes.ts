@@ -49,6 +49,7 @@ import { resolvePublicOrigin } from "aai-server/public-origin";
 import { RESERVED_SLUGS } from "aai-server/schemas";
 import { verifySlugOwner } from "aai-server/secrets";
 import { generatedSlug } from "aai-server/slug-generate";
+import { userApiKeySecretName } from "aai-server/supabase-auth";
 import { WorkspaceConflictError } from "aai-server/workspace-store";
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -58,13 +59,9 @@ import type { StudioHonoEnv } from "./studio-context.ts";
 import { deployStudioProject } from "./studio-deploy.ts";
 import { studioLlmInfo } from "./studio-llm.ts";
 import { wakeProjectPreview } from "./studio-preview.ts";
-import {
-  CHAT_RATE_LIMIT,
-  createRateLimiter,
-  PROJECT_CREATE_RATE_LIMIT,
-  type RateLimiter,
-  type StudioRateLimiters,
-} from "./studio-rate-limit.ts";
+import type { PreviewQueue } from "./studio-preview-queue.ts";
+import type { StudioRateLimiters } from "./studio-rate-limit.ts";
+import { createRouteLimits } from "./studio-route-limits.ts";
 import {
   CreateProjectSchema,
   ProjectNameSchema,
@@ -108,6 +105,11 @@ export type StudioRouteOptions = {
    */
   sessionRegistry?: StudioSessionRegistry;
   replicaId?: string;
+  /**
+   * Durable preview-deploy queue (studio-preview-queue.ts). Injected in
+   * production (pgmq); the broker's in-memory default covers dev and tests.
+   */
+  previewQueue?: PreviewQueue;
 };
 
 /**
@@ -148,33 +150,30 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   // (the stores ride on the request env). Per-replica, like the slot cache.
   let broker: StudioSessionBroker | undefined;
   const ensureBroker = (c: Context<StudioHonoEnv>): StudioSessionBroker => {
+    // Read the store out of the request env rather than closing over `c`: the
+    // broker outlives every request, and a closure over the Context would pin
+    // that whole request — its body, headers, and response — for the life of
+    // the process. The workspace/chat bindings below are read eagerly for the
+    // same reason.
+    const secrets = c.env.secrets;
     broker ??= (options.broker ?? createStudioSessionBroker)({
       workspaces: c.env.workspaces,
       chats: c.env.chats,
       ...(options.sessionRegistry && { registry: options.sessionRegistry }),
       ...(options.replicaId && { replicaId: options.replicaId }),
+      ...(options.previewQueue && { previewQueue: options.previewQueue }),
+      // A preview job redelivered here may have been enqueued by a replica
+      // that is gone, so the drain resolves the user's key from Vault rather
+      // than the job carrying one. Bound to the request env's SecretStore —
+      // the same `user-key:<uid>` record the bearer resolution reads.
+      resolveApiKey: (userId) => secrets.get(userApiKeySecretName(userId)),
     });
     return broker;
   };
 
   const studio = new Hono<StudioHonoEnv>();
 
-  // Per-scope fixed-window limits (see studio-rate-limit.ts). The LLM runs
-  // on the caller's own key, so the limiter is no longer guarding a
-  // platform-billed proxy — it still bounds sandbox spawns and build-worker
-  // work per caller. Injected in production (Postgres-backed, shared across
-  // replicas); the in-memory default covers dev and tests.
-  const chatLimiter = options.rateLimiters?.chat ?? createRateLimiter(CHAT_RATE_LIMIT);
-  const projectCreateLimiter =
-    options.rateLimiters?.projectCreate ?? createRateLimiter(PROJECT_CREATE_RATE_LIMIT);
-  const rateLimited = async (scope: string, limiter: RateLimiter): Promise<Response | null> => {
-    const verdict = await limiter.check(scope);
-    if (verdict.ok) return null;
-    return Response.json(
-      { error: "Rate limit exceeded — try again later" },
-      { status: 429, headers: { "Retry-After": String(verdict.retryAfterSeconds) } },
-    );
-  };
+  const limits = createRouteLimits(options.rateLimiters);
 
   // `llm: true` is legacy shape — chat always runs now, on the caller's key.
   studio.get("/status", (c) => c.json({ llm: true, ...studioLlmInfo() }));
@@ -234,7 +233,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
 
   studio.post("/projects", zValidator("json", CreateProjectSchema), async (c) => {
     const scope = requestScope(c);
-    const limited = await rateLimited(scope, projectCreateLimiter);
+    const limited = await limits.projectCreate(scope);
     if (limited) return limited;
     const { name, prompt } = c.req.valid("json");
     // No explicit name: the server generates one, v0-style — a readable base
@@ -352,6 +351,10 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     ensureBroker(c).schedulePreview(scope, project, {
       serverUrl: requestPublicOrigin(c),
       apiKey: c.var.apiKey,
+      // Present for browser sessions only. It is what lets the queued job
+      // outlive this replica: the row names the user, and the drain resolves
+      // the key from Vault instead of the row carrying a credential.
+      ...(c.var.userId && { userId: c.var.userId }),
     });
   };
 
@@ -421,7 +424,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
       // Creation via push: same guards as POST /projects — reserved names
       // can never go live, and creates are rate-limited per scope.
       if (RESERVED_SLUGS.has(project)) return c.json({ error: "That name is reserved" }, 400);
-      const limited = await rateLimited(scope, projectCreateLimiter);
+      const limited = await limits.projectCreate(scope);
       if (limited) return limited;
     }
     try {
@@ -461,7 +464,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   // agent's /websocket. Rate-limited: each call can spawn a Modal sandbox.
   studio.post("/projects/:project/session", async (c) => {
     const { scope, project } = c.var;
-    const limited = await rateLimited(scope, chatLimiter);
+    const limited = await limits.chat(scope);
     if (limited) return limited;
     // The public origin arms auto preview deploys: the guest's end-of-turn
     // sync makes the broker ship the edited workspace to the preview slug.

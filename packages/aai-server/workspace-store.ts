@@ -20,7 +20,6 @@
  * and platform-internal tables get their own namespace.
  */
 
-import { ensureTableOnce } from "./pg-ensure.ts";
 import type { SqlExec } from "./secret-store.ts";
 
 /** A stored workspace document with its optimistic-concurrency version. */
@@ -61,37 +60,21 @@ export type WorkspaceStore = {
 
 const TABLE = "aai_platform.studio_workspaces";
 
-// Deliberately NOT `public`; platform-internal tables get their own schema
-// (`ensureTableOnce` creates it).
-/** DDL shared with the boot-time Realtime publication setup (realtime-events.ts). */
-export const ENSURE_WORKSPACES_TABLE_SQL = `create table if not exists ${TABLE} (
-  scope text not null,
-  project text not null,
-  doc jsonb not null,
-  version integer not null default 1,
-  updated_at timestamptz not null default now(),
-  primary key (scope, project)
-)`;
-
 /**
  * Postgres-backed workspace store over the platform admin connection.
  *
- * Schema + table are created lazily on first use and memoized; a failed
- * ensure resets the memo so one transient DDL error doesn't wedge the store
- * for the process lifetime. Documents are bound as JSON text with a
- * `::jsonb` cast so the statement shape is driver-agnostic; reads accept
- * either the parsed object (what the `postgres` driver returns for jsonb)
- * or a raw string.
+ * The table is declared in `supabase/migrations` (in `aai_platform`,
+ * deliberately not `public`), so this store issues no DDL. Documents are bound
+ * as JSON text with a `::jsonb` cast so the statement shape is
+ * driver-agnostic; reads accept either the parsed object (what the `postgres`
+ * driver returns for jsonb) or a raw string.
  */
 export function createPgWorkspaceStore(sql: SqlExec): WorkspaceStore {
-  const ensure = ensureTableOnce(sql, ENSURE_WORKSPACES_TABLE_SQL);
-
   const parseDoc = (value: unknown): unknown =>
     typeof value === "string" ? JSON.parse(value) : value;
 
   return {
     async get(scope, project) {
-      await ensure();
       const rows = await sql(
         `select doc, version from ${TABLE} where scope = $1 and project = $2`,
         [scope, project],
@@ -102,7 +85,6 @@ export function createPgWorkspaceStore(sql: SqlExec): WorkspaceStore {
     },
 
     async put(scope, project, doc, expectedVersion) {
-      await ensure();
       const json = JSON.stringify(doc);
       // Create: `on conflict do nothing` (never overwrite a racing creator);
       // no row back means the race was lost, reported as a conflict for the
@@ -125,12 +107,10 @@ export function createPgWorkspaceStore(sql: SqlExec): WorkspaceStore {
     },
 
     async delete(scope, project) {
-      await ensure();
       await sql(`delete from ${TABLE} where scope = $1 and project = $2`, [scope, project]);
     },
 
     async list(scope) {
-      await ensure();
       const rows = await sql(`select project from ${TABLE} where scope = $1 order by project`, [
         scope,
       ]);

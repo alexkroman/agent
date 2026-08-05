@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { createStorage } from "unstorage";
 import { describe, expect, test, vi } from "vitest";
 import { createMemoryAgentRows } from "./agent-store.ts";
+import { createMemoryBlobStorage } from "./blob-storage.ts";
 import {
   BLOB_MISS,
   blobKey,
@@ -14,7 +14,7 @@ import { createMemorySecretStore } from "./secret-store.ts";
 import { TEST_AGENT_CONFIG } from "./test-utils.ts";
 
 function makeStore(secrets = createMemorySecretStore()) {
-  const storage = createStorage();
+  const storage = createMemoryBlobStorage();
   const store = createBundleStore(storage, { secrets, agents: createMemoryAgentRows() });
   return { storage, store, secrets };
 }
@@ -259,7 +259,7 @@ describe("bundle store (agents rows + content-addressed blobs)", () => {
   });
 
   test("getAgent caches the row — second call does not hit the row store", async () => {
-    const storage = createStorage();
+    const storage = createMemoryBlobStorage();
     const agents = createMemoryAgentRows();
     const store = createBundleStore(storage, { secrets: createMemorySecretStore(), agents });
     await store.putAgent(BASE_BUNDLE);
@@ -404,7 +404,7 @@ describe("cache invalidation fences in-flight row reads", () => {
       return value;
     };
 
-    const store = createBundleStore(createStorage(), {
+    const store = createBundleStore(createMemoryBlobStorage(), {
       secrets: createMemorySecretStore(),
       agents,
     });

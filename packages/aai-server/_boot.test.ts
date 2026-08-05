@@ -7,17 +7,15 @@ import { isLocalDev, requireEnv, resolvePort } from "./_boot.ts";
 
 describe("isLocalDev", () => {
   test("true when AAI_LOCAL_DEV=1", () => {
-    expect(isLocalDev({ AAI_LOCAL_DEV: "1", SUPABASE_S3_ENDPOINT: "https://x" })).toBe(true);
+    expect(isLocalDev({ AAI_LOCAL_DEV: "1", SUPABASE_STORAGE_BUCKET: "blobs" })).toBe(true);
   });
 
-  test("true when SUPABASE_S3_ENDPOINT is unset", () => {
+  test("true when SUPABASE_STORAGE_BUCKET is unset", () => {
     expect(isLocalDev({})).toBe(true);
   });
 
-  test("false when SUPABASE_S3_ENDPOINT is set and AAI_LOCAL_DEV is not 1", () => {
-    expect(isLocalDev({ SUPABASE_S3_ENDPOINT: "https://ref.supabase.co/storage/v1/s3" })).toBe(
-      false,
-    );
+  test("false when SUPABASE_STORAGE_BUCKET is set and AAI_LOCAL_DEV is not 1", () => {
+    expect(isLocalDev({ SUPABASE_STORAGE_BUCKET: "aai-blobs" })).toBe(false);
   });
 });
 

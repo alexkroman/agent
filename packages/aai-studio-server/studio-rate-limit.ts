@@ -23,7 +23,6 @@
  *   pg_cron job (aai-server/pg-cron.ts), not in-process.
  */
 
-import { ensureTableOnce } from "aai-server/pg-ensure";
 import { TtlCache } from "aai-server/platform-barrel";
 import type { SqlExec } from "aai-server/secret-store";
 
@@ -74,19 +73,6 @@ export function createRateLimiter(options: { limit: number; windowMs: number }):
 }
 
 const TABLE = "aai_platform.studio_rate_limits";
-const ENSURE_TABLE_SQL = `create table if not exists ${TABLE} (
-  name text not null,
-  key text not null,
-  count integer not null,
-  reset_at timestamptz not null,
-  primary key (name, key)
-)`;
-
-// The pg_cron sweep (aai-server/pg-cron.ts) filters on reset_at; index it
-// or every hourly sweep pays a sequential scan of the table.
-const ENSURE_INDEX_SQL = `create index if not exists studio_rate_limits_reset_at
-on ${TABLE} (reset_at)`;
-
 // One atomic statement: start a fresh window when the stored one has
 // expired, otherwise bump its counter. `returning` reports the verdict
 // inputs, with the remaining window computed database-side so replicas never
@@ -107,11 +93,8 @@ export function createPgRateLimiter(
   sql: SqlExec,
   options: { name: string; limit: number; windowMs: number },
 ): RateLimiter {
-  const ensure = ensureTableOnce(sql, ENSURE_TABLE_SQL, ENSURE_INDEX_SQL);
-
   return {
     async check(key) {
-      await ensure();
       const rows = await sql(CHECK_SQL, [options.name, key, options.windowMs]);
       const row = rows[0];
       if (!row) throw new Error(`Rate-limit upsert returned no row for ${options.name}/${key}`);

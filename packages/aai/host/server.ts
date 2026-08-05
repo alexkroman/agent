@@ -115,6 +115,13 @@ export const DEFAULT_LISTEN_HOST = "127.0.0.1";
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 
 /**
+ * How often shutdown re-drops idle keep-alive connections — see `close()`.
+ * Short enough to be invisible next to a process exit, long enough that the
+ * timer costs nothing on a shutdown that finishes immediately.
+ */
+const IDLE_SWEEP_MS = 25;
+
+/**
  * Separator-safe containment: `target` is `dir` itself or strictly inside it.
  *
  * A bare `target.startsWith(dir)` also admits sibling directories sharing the
@@ -384,9 +391,36 @@ export function createServer(options: ServerOptions): AgentServer {
           wss.close();
         } finally {
           if (listenPort !== undefined) {
-            await new Promise<void>((resolve, reject) => {
-              httpServer.close((err) => (err ? reject(err) : resolve()));
-            });
+            // `close()` stops accepting and then waits for every open
+            // connection to END — IDLE keep-alive sockets included, which is
+            // the HTTP twin of the WebSocket case above. A browser (or undici,
+            // or any HTTP/1.1 client) parks its socket after the last
+            // response, so nothing is in flight and close() still sits there
+            // until somebody's keep-alive timer fires: measured at a flat ~3s
+            // against Node's own fetch, and up to this server's own 5s
+            // `keepAliveTimeout` against a browser. `aai dev` pays that on
+            // Ctrl-C AND on every watch restart, which is the rebuild loop
+            // feeling sluggish for no visible reason.
+            //
+            // Dropping only the IDLE connections is what makes this safe: one
+            // mid-request or awaiting its response is untouched, so no reply
+            // is ever truncated. Sweeping rather than calling once is the
+            // difference between usually and always: a client resolves its
+            // response as soon as the body arrives, which can be before this
+            // server's socket has finished transitioning to idle, so a single
+            // call routinely runs a moment too early and the connection then
+            // waits out its full timer anyway.
+            const sweep = setInterval(() => httpServer.closeIdleConnections(), IDLE_SWEEP_MS);
+            // Never let the sweep itself hold the process open.
+            sweep.unref?.();
+            try {
+              await new Promise<void>((resolve, reject) => {
+                httpServer.close((err) => (err ? reject(err) : resolve()));
+                httpServer.closeIdleConnections();
+              });
+            } finally {
+              clearInterval(sweep);
+            }
           }
           listenPort = undefined;
         }

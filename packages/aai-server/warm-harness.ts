@@ -29,18 +29,6 @@ const GUEST_DIAL_TIMEOUT_MS = 30_000;
 /** Delay between dial attempts while the harness server boots. */
 const GUEST_DIAL_RETRY_MS = 250;
 
-/**
- * Budget for an agent-mode guest to answer `/health` after exec. Longer than
- * the dial budget: agent-mode boot LOADS THE BUNDLE before listening (a 200
- * means "ready to serve sessions"), and a large worker's top-level import is
- * part of the wait.
- */
-const AGENT_HEALTH_TIMEOUT_MS = 120_000;
-
-/** Per-attempt cap and retry delay for the health poll. */
-const AGENT_HEALTH_ATTEMPT_MS = 2000;
-const AGENT_HEALTH_RETRY_MS = 250;
-
 /** Per-request cap on the manage-surface probes (status/drain). */
 const MANAGE_REQUEST_TIMEOUT_MS = 5000;
 
@@ -180,54 +168,6 @@ export type GuestFetch = typeof globalThis.fetch;
 export function startGuestLogging(proc: GuestProcLike, label: string): void {
   void drainProcStream(proc.stdout, `[${label}] stdout`);
   void drainProcStream(proc.stderr, `[${label}] stderr`);
-}
-
-/**
- * Poll the guest's public `/health` until it answers 200 — agent-mode
- * readiness. The endpoint exists before the guest listens (a Modal tunnel is
- * routable immediately), so refused/reset attempts are the normal boot path.
- *
- * Races the poll against GUEST PROCESS EXIT: a boot failure (hash mismatch,
- * bundle top-level throw, bad env file) exits the guest immediately, and
- * without the race the spawn would burn the whole health deadline blaming
- * the network for what the guest's stderr already said.
- */
-export async function pollGuestHealth(
-  origin: string,
-  proc: GuestProcLike,
-  fetchFn: GuestFetch = fetch,
-  timeoutMs = AGENT_HEALTH_TIMEOUT_MS,
-): Promise<void> {
-  const url = guestHttpUrl(origin, GUEST_ROUTES.health);
-  const deadline = Date.now() + timeoutMs;
-  let exit: { code: number } | null = null;
-  void proc.wait().then(
-    (code) => {
-      exit = { code };
-    },
-    () => {
-      exit = { code: -1 };
-    },
-  );
-  let lastError = "no response";
-  for (;;) {
-    if (exit !== null) {
-      throw new Error(
-        `guest exited before ready (exit ${(exit as { code: number }).code}) — see its stderr in the host log`,
-      );
-    }
-    try {
-      const res = await fetchFn(url, { signal: AbortSignal.timeout(AGENT_HEALTH_ATTEMPT_MS) });
-      if (res.ok) return;
-      lastError = `HTTP ${res.status}`;
-    } catch (err) {
-      lastError = errorMessage(err);
-    }
-    if (Date.now() >= deadline) {
-      throw new Error(`guest /health not ready after ${timeoutMs}ms: ${lastError}`);
-    }
-    await sleep(AGENT_HEALTH_RETRY_MS);
-  }
 }
 
 /**

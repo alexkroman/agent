@@ -12,7 +12,7 @@
  * 1. An explicit `SANDBOX_BACKEND` always wins. An unknown value throws —
  *    silently falling back would look exactly like the override not working.
  * 2. Not local dev → `modal`. This is the production path and it is
- *    unconditional: `isLocalDev` is false whenever `SUPABASE_S3_ENDPOINT` is
+ *    unconditional: `isLocalDev` is false whenever `SUPABASE_STORAGE_BUCKET` is
  *    set, so a production replica can never resolve a host-local backend, and
  *    fails loudly without Modal credentials rather than quietly running tenant
  *    code on the host.

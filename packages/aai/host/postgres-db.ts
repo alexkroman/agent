@@ -20,8 +20,32 @@ export type CreatePostgresDbOptions = {
   max?: number;
 };
 
+/**
+ * One connection held out of the pool for the caller's exclusive use, so
+ * SESSION-scoped state — advisory locks, `SET` — survives across statements.
+ *
+ * @public
+ */
+export type ReservedDb = Db & {
+  /** Return the connection to the pool. Idempotent; the handle dies with it. */
+  release(): void;
+};
+
 /** A {@link Db} whose underlying connection pool the caller owns and must close. */
 export type CloseableDb = Db & {
+  /**
+   * Hold one connection out of the pool until `release()`.
+   *
+   * @internal
+   *
+   * The pooled `query` above gives no connection affinity, which makes every
+   * session-scoped Postgres feature unusable through it: a
+   * `pg_advisory_lock` and its `pg_advisory_unlock` can land on different
+   * connections, leaving a lock held by an idle pool member forever. Callers
+   * that need affinity take one of these instead and must release it in a
+   * `finally` — a leaked reservation permanently shrinks the pool.
+   */
+  reserve(): Promise<ReservedDb>;
   /** Drain and close the connection pool. The handle must not be used after. */
   close(): Promise<void>;
 };
@@ -36,12 +60,15 @@ export type CloseableDb = Db & {
  */
 export function createPostgresDb(opts: CreatePostgresDbOptions): CloseableDb {
   const sql = postgres(opts.url, { max: opts.max ?? 4, prepare: false });
-  return {
-    async query<T = Record<string, unknown>>(query: string, params?: unknown[]): Promise<T[]> {
+
+  /** The one query implementation, over the pool or a reserved connection. */
+  const queryOn =
+    (on: Pick<postgres.Sql, "unsafe">) =>
+    async <T = Record<string, unknown>>(query: string, params?: unknown[]): Promise<T[]> => {
       // The driver types parameters as its serializable union; `ctx.db` keeps
       // the caller-facing contract at `unknown[]` and lets the driver reject
       // non-serializable values at runtime.
-      const rows = await sql.unsafe(query, (params ?? []) as postgres.ParameterOrJSON<never>[]);
+      const rows = await on.unsafe(query, (params ?? []) as postgres.ParameterOrJSON<never>[]);
       // Throw rather than truncate: a silently sliced result set is
       // indistinguishable from a complete one. One enforcement point keeps
       // `aai dev` and the platform's `db/query` RPC identical.
@@ -51,6 +78,13 @@ export function createPostgresDb(opts: CreatePostgresDbOptions): CloseableDb {
         );
       }
       return [...rows] as T[];
+    };
+
+  return {
+    query: queryOn(sql),
+    async reserve(): Promise<ReservedDb> {
+      const reserved = await sql.reserve();
+      return { query: queryOn(reserved), release: () => reserved.release() };
     },
     async close(): Promise<void> {
       await sql.end();

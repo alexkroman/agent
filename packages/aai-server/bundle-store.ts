@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 // Bundle store: agents rows (Postgres in production — see agent-store.ts)
-// pointing at content-addressed blobs in unstorage (S3-compatible storage —
-// Supabase Storage in production), plus a SecretStore for agent env records.
+// pointing at content-addressed blobs in a BlobStorage (Supabase Storage in
+// production — see blob-storage.ts), plus a SecretStore for agent env records.
 //
 // Layout per deploy:
 // - `blobs/<sha256>` — the worker bundle and each client file, IMMUTABLE by
@@ -22,11 +22,11 @@ import { hash } from "node:crypto";
 import { errorMessage } from "@alexkroman1/aai";
 import { createEpoch } from "@alexkroman1/aai/internal";
 import { LRUCache } from "lru-cache";
-import type { Storage } from "unstorage";
 import { createKeyedLock, withLock } from "./_keyed-lock.ts";
 import { retryOnTransient } from "./_retry.ts";
 import { TtlCache } from "./_ttl-cache.ts";
 import type { AgentRecord, AgentRows } from "./agent-store.ts";
+import type { BlobStorage } from "./blob-storage.ts";
 import { MAX_ENV_SIZE } from "./constants.ts";
 import { EnvSchema } from "./schemas.ts";
 import { agentEnvSecretName, appDbSecretName, type SecretStore } from "./secret-store.ts";
@@ -101,7 +101,7 @@ export function createBlobCache(
 }
 
 export function createBundleStore(
-  storage: Storage,
+  storage: BlobStorage,
   opts: { secrets: SecretStore; agents: AgentRows },
 ): BundleStore {
   const { secrets, agents } = opts;
@@ -133,7 +133,7 @@ export function createBundleStore(
 
   function readBlob(contentHashHex: string): Promise<string | null> {
     const key = blobKey(contentHashHex);
-    return retryOnTransient(async () => (await storage.getItem<string>(key)) ?? null, {
+    return retryOnTransient(() => storage.getItem(key), {
       onRetry: (attempt, attempts, err) => {
         console.warn(
           `Transient storage error reading ${key} (attempt ${attempt}/${attempts}): ${errorMessage(err)}`,

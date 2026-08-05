@@ -2,11 +2,24 @@
 /**
  * Harness-baked snapshot images (see modal-sandbox.ts for the spawn flow).
  *
- * Built at most once per (base image, harness code, toolchain) triple: a
- * throwaway builder sandbox writes the harness, `npm install`s the build
- * toolchain next to it, its filesystem is snapshotted, and the resulting
- * Image is published under a content-addressed tag so every later spawn
- * (and every other replica, across restarts) resolves it with one
+ * Built at most once per (base image, harness code, toolchain) triple, in two
+ * halves that fail and cache very differently:
+ *
+ * 1. **The toolchain is a native image LAYER** (`toolchainImage`): a
+ *    `dockerfileCommands` `RUN npm install`, built by Modal's own image
+ *    builder and cached by Modal on those commands. So a harness rebuild —
+ *    the common case, since any server code change bumps the harness — reuses
+ *    the installed toolchain instead of reinstalling ~15 packages. This
+ *    replaced an `npm install` exec in the builder sandbox, with its own
+ *    exit-code branch and a bounded stderr tail for the error message.
+ * 2. **The harness file needs a sandbox**, because the JS SDK's
+ *    `dockerfileCommands` takes commands with no build context — there is
+ *    nothing to `COPY` a local ~13 MB bundle from. A throwaway sandbox
+ *    started from the layer writes it, and `snapshotFilesystem` captures the
+ *    result.
+ *
+ * The snapshot is published under a content-addressed tag so every later
+ * spawn (and every other replica, across restarts) resolves it with one
  * `images.fromName` call. A new harness build, a base-image change, or a
  * toolchain version bump mints a new tag.
  *
@@ -36,6 +49,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { gzipSync } from "node:zlib";
 import type { App, Image, ModalClient } from "modal";
 import { debug } from "./_debug-log.ts";
 import { keyedMemoAsync } from "./_memo.ts";
@@ -52,69 +66,110 @@ const HARNESS_IMAGE_NAME = "aai-guest-harness";
 /** Budget for the one-time harness-image build (spawn + install + snapshot). */
 const HARNESS_IMAGE_BUILD_TIMEOUT_MS = 10 * 60_000;
 
-/** Stderr tail attached to a failed toolchain install. */
-const MAX_INSTALL_STDERR = 4000;
-
 /**
- * The packages `npm install`ed into the image — everything guest builds
- * resolve at runtime: the CLI bundlers plus the workspace-facing packages a
- * scaffolded project depends on. Must stay a subset of aai-guest's own
- * `dependencies`/`devDependencies` (where the versions come from —
- * `@types/node` lives in devDependencies because sherif forbids `@types/*`
- * in a private package's dependencies).
+ * The SDK packages installed into the image on top of the locked toolchain.
+ *
+ * These are the ones that CANNOT be locked: their versions change with every
+ * release, and a lockfile entry needs an integrity hash that only exists once
+ * the version is published — which happens after the commit that bumps it. So
+ * they are installed at exact resolved versions, and their own dependencies
+ * (the provider SDKs) resolve at install time. See
+ * `scripts/sync-guest-toolchain.mjs` for the full reasoning and for the
+ * third-party half, which IS locked.
  */
-const TOOLCHAIN_PACKAGES = [
-  "@alexkroman1/aai",
-  "@alexkroman1/aai-cli",
-  "@alexkroman1/aai-ui",
-  "@tailwindcss/vite",
-  "@types/node",
-  // Without these, every workspace with a client.tsx fails its typecheck on
-  // TS7016 ("could not find a declaration file for module 'react'") — the
-  // bundlers don't care, but the typecheck gate in front of them does.
-  "@types/react",
-  "@types/react-dom",
-  "@vitejs/plugin-react",
-  "react",
-  "react-dom",
-  "tailwindcss",
-  "typescript",
-  "vite",
-  // The starter workspace ships an agent.test.ts, so `aai test` has to find
-  // a local vitest — without it the CLI falls back to `npx vitest` and pays
-  // a network fetch inside the sandbox.
-  "vitest",
-  "zod",
-] as const;
+const SDK_PACKAGES = ["@alexkroman1/aai", "@alexkroman1/aai-cli", "@alexkroman1/aai-ui"] as const;
 
-/**
- * Resolve `name@version` install specs for the toolchain from aai-guest's
- * package.json. `workspace:*` versions (the aai packages) are pinned to the
- * version installed in this checkout, so the image tracks the release the
- * server actually runs.
- */
-export function resolveToolchainSpecs(): string[] {
+/** The committed toolchain manifest + lockfile the image installs with `npm ci`. */
+export type ToolchainLock = {
+  /** `toolchain/package.json` contents, verbatim. */
+  manifest: string;
+  /** `toolchain/package-lock.json` contents, verbatim. */
+  lock: string;
+};
+
+/** The aai-guest package root — the anchor for everything read off disk here. */
+function guestPackageDir(): string {
   const require = createRequire(import.meta.url);
-  const guestPkgPath = require.resolve("aai-guest/package.json");
-  const guestDir = path.dirname(guestPkgPath);
+  return path.dirname(require.resolve("aai-guest/package.json"));
+}
+
+/**
+ * Read the committed toolchain lockfile.
+ *
+ * Absence is a hard failure, not a fallback to an unlocked install: silently
+ * resolving the toolchain fresh is exactly the nondeterminism the lockfile
+ * exists to remove, and it would be invisible — the image would build fine
+ * and merely contain a different tree than the one this server was tested
+ * against.
+ */
+export function readToolchainLock(): ToolchainLock {
+  const dir = path.join(guestPackageDir(), "toolchain");
+  const read = (name: string): string => {
+    const file = path.join(dir, name);
+    try {
+      return readFileSync(file, "utf-8");
+    } catch (err) {
+      throw new Error(
+        `guest toolchain ${name} is missing at ${file} — run node scripts/sync-guest-toolchain.mjs`,
+        { cause: err },
+      );
+    }
+  };
+  return { manifest: read("package.json"), lock: read("package-lock.json") };
+}
+
+/**
+ * Resolve `name@version` specs for the SDK packages — EXACT versions, read
+ * from what this checkout installed.
+ *
+ * Not the declared `workspace:*` protocol (npm cannot install it) and not a
+ * range (the image tag and Modal's layer cache both key on these strings, so a
+ * range would let one `harness_image_tag` mean two different trees).
+ */
+export function resolveSdkSpecs(): string[] {
+  const guestDir = guestPackageDir();
+  const guestPkgPath = path.join(guestDir, "package.json");
   const guestPkg = JSON.parse(readFileSync(guestPkgPath, "utf-8")) as {
     dependencies?: Record<string, string>;
     devDependencies?: Record<string, string>;
   };
-  return TOOLCHAIN_PACKAGES.map((name) => {
+  return SDK_PACKAGES.map((name) => {
     const declared = guestPkg.dependencies?.[name] ?? guestPkg.devDependencies?.[name];
     if (!declared) {
-      throw new Error(`aai-guest package.json no longer declares toolchain package ${name}`);
+      throw new Error(`aai-guest package.json no longer declares SDK package ${name}`);
     }
-    if (!declared.startsWith("workspace:")) return `${name}@${declared}`;
     // Read the installed package's own version through aai-guest's
     // node_modules (a plain path through the pnpm symlink — the aai exports
     // map deliberately exposes no ./package.json subpath to require.resolve).
-    const installed = JSON.parse(
-      readFileSync(path.join(guestDir, "node_modules", name, "package.json"), "utf-8"),
-    ) as { version: string };
+    const installedPath = path.join(guestDir, "node_modules", name, "package.json");
+    let installed: { version?: string };
+    try {
+      installed = JSON.parse(readFileSync(installedPath, "utf-8")) as { version?: string };
+    } catch (err) {
+      throw new Error(
+        `SDK package ${name} is declared by aai-guest but not installed at ${installedPath} — ` +
+          "run pnpm install before building a guest image",
+        { cause: err },
+      );
+    }
+    if (typeof installed.version !== "string") {
+      throw new Error(`SDK package ${name} has no version in ${installedPath}`);
+    }
     return `${name}@${installed.version}`;
   });
+}
+
+/**
+ * Everything about the toolchain the image tag must track: the exact SDK
+ * specs, plus the LOCKFILE's content hash.
+ *
+ * Hashing the lockfile rather than the manifest is the point — the manifest
+ * names direct versions, the lockfile names the whole resolved tree, so a
+ * transitive change that leaves every direct version alone still mints a new
+ * tag instead of quietly reusing one.
+ */
+export function toolchainFingerprint(specs: string[], lock: ToolchainLock): string[] {
+  return [...specs, `lock:${createHash("sha256").update(lock.lock).digest("hex")}`];
 }
 
 /**
@@ -123,27 +178,90 @@ export function resolveToolchainSpecs(): string[] {
  * agent was deployed against (`harness_image_tag` on the agents row), so the
  * tag computation must stay a function of exactly these inputs.
  */
-export function harnessImageTag(baseTag: string, code: string, specs: string[]): string {
+export function harnessImageTag(baseTag: string, code: string, toolchain: string[]): string {
   const hash = createHash("sha256")
     .update(baseTag)
     .update("\0")
     .update(code)
     .update("\0")
-    .update(specs.join(","))
+    .update(toolchain.join(","))
     .digest("hex");
   return `${HARNESS_IMAGE_NAME}:${hash.slice(0, 16)}`;
 }
 
+/**
+ * {@link harnessImageTag} against THIS checkout's toolchain — the recipe every
+ * tag site needs, in one place.
+ *
+ * Two callers have to agree exactly: the resolver that PUBLISHES the image,
+ * and `currentHarnessImageTag` (sandbox-vm.ts), which records the tag on the
+ * agents row so a deploy pins its environment. Spelling the three calls out
+ * twice is how a future tag input gets added to one of them only — and the
+ * symptom would be a pin that resolves to nothing, failing every spawn of an
+ * already-deployed agent.
+ */
+export function localHarnessImageTag(baseTag: string, code: string): string {
+  return harnessImageTag(
+    baseTag,
+    code,
+    toolchainFingerprint(resolveSdkSpecs(), readToolchainLock()),
+  );
+}
+
 export type HarnessImageResolver = (code: string) => Promise<Image>;
 
-/** Drain a stream into a bounded string (stderr tails for error messages). */
-async function drainTail(stream: ReadableStream<Uint8Array>, cap: number): Promise<string> {
-  const decoder = new TextDecoder();
-  let out = "";
-  for await (const chunk of stream as unknown as AsyncIterable<Uint8Array>) {
-    out = (out + decoder.decode(chunk, { stream: true })).slice(-cap);
-  }
-  return out;
+/**
+ * The toolchain install as a native image LAYER.
+ *
+ * This used to be an `npm install` exec inside the builder sandbox, with its
+ * own exit-code handling and a bounded stderr tail for the failure message.
+ * `dockerfileCommands` hands the same work to Modal's image builder, which
+ * caches layers by their commands — so the version-stable half of the image is
+ * a cache HIT for every harness rebuild (the common case: a server code change
+ * bumps the harness, not the toolchain).
+ *
+ * The layer installs in two steps, for the reason
+ * `scripts/sync-guest-toolchain.mjs` explains at length:
+ *
+ * 1. `npm ci` against the COMMITTED manifest + lockfile, so the third-party
+ *    tree — where nearly all the transitive surface lives — is byte-identical
+ *    to what this repo tested with, whenever and wherever the layer is built.
+ * 2. `npm install` of the SDK packages at exact resolved versions, which
+ *    cannot be locked here: their versions change every release, and a
+ *    lockfile entry needs an integrity hash that only exists post-publish.
+ *
+ * Both files are written by the RUN itself, gzipped and base64'd (~20 KB), not
+ * COPY'd: the JS SDK's `dockerfileCommands` takes commands with no build
+ * context. That is also why the ~13 MB harness bundle cannot join this layer —
+ * it is written into a sandbox started from the layer and snapshotted on top
+ * (see `build`).
+ */
+export function toolchainImage(
+  baseImage: Image,
+  sdkSpecs: readonly string[],
+  lock: ToolchainLock,
+): Image {
+  const embed = (content: string, name: string): string =>
+    // Piped through gunzip so the command stays ~20 KB rather than ~250 KB;
+    // single-quoted base64 is inert to the shell (the alphabet has no quotes).
+    `RUN echo '${gzipBase64(content)}' | base64 -d | gunzip > ${GUEST_ROOT}/${name}`;
+
+  return baseImage.dockerfileCommands([
+    `RUN mkdir -p ${GUEST_ROOT}`,
+    embed(lock.manifest, "package.json"),
+    embed(lock.lock, "package-lock.json"),
+    // `npm ci` refuses to run when the two disagree, which is the check we
+    // want: a hand-edited manifest fails the BUILD rather than silently
+    // installing something else.
+    `RUN cd ${GUEST_ROOT} && npm ci --no-audit --no-fund`,
+    // The SDK packages go on top, in one RUN so they are one cached layer.
+    `RUN npm install --prefix ${GUEST_ROOT} --no-audit --no-fund ${sdkSpecs.join(" ")}`,
+  ]);
+}
+
+/** gzip + base64 in one step — the shell-safe form of a file in a RUN line. */
+function gzipBase64(content: string): string {
+  return gzipSync(Buffer.from(content, "utf-8"), { level: 9 }).toString("base64");
 }
 
 /** Build the memoizing (code → published snapshot Image) resolver. */
@@ -156,57 +274,48 @@ export function createHarnessImageResolver(deps: {
   const { client, app, baseTag, baseImage } = deps;
   const memo = keyedMemoAsync<Image>();
 
-  const tagFor = (code: string, specs: string[]): string => harnessImageTag(baseTag, code, specs);
-
-  async function build(tag: string, code: string, specs: string[]): Promise<Image> {
+  async function build(tag: string, code: string): Promise<Image> {
     try {
       // Another replica (or a previous run of this one) may have published it.
       return await client.images.fromName(tag);
     } catch {
       // Not published yet — build it below.
     }
-    // Network stays ON: the toolchain install below needs the npm registry.
-    // The builder runs no tenant code — only the harness file write and npm.
-    const builder = await client.sandboxes.create(app, baseImage, {
+    // The toolchain is a cached image layer (see `toolchainImage`); Modal
+    // builds it if these exact commands have never been built, and hands back
+    // the cached layer otherwise. Network stays on for the npm registry; no
+    // tenant code runs in an image build.
+    const base = await toolchainImage(baseImage, resolveSdkSpecs(), readToolchainLock()).build(app);
+    // Only the harness file write needs a sandbox — it is a local ~13 MB
+    // blob, and an image build has no context to COPY it from.
+    const builder = await client.sandboxes.create(app, base, {
       command: ["sleep", "infinity"],
       timeoutMs: HARNESS_IMAGE_BUILD_TIMEOUT_MS,
       tags: { service: "aai-guest-image-build" },
     });
     try {
       await builder.filesystem.writeText(code, HARNESS_REMOTE_PATH);
-      const proc = await builder.exec(
-        ["npm", "install", "--prefix", GUEST_ROOT, "--no-audit", "--no-fund", ...specs],
-        { mode: "binary", stdout: "pipe", stderr: "pipe" },
-      );
-      const [stderr, , exitCode] = await Promise.all([
-        drainTail(proc.stderr, MAX_INSTALL_STDERR),
-        drainTail(proc.stdout, MAX_INSTALL_STDERR),
-        proc.wait(),
-      ]);
-      if (exitCode !== 0) {
-        throw new Error(`Guest toolchain install failed (exit ${exitCode}): ${stderr.trim()}`);
-      }
       const image = await builder.snapshotFilesystem();
       await image.publish(tag);
-      debug("Harness snapshot image published", { tag, toolchain: specs.length });
+      debug("Harness snapshot image published", { tag });
       return image;
     } finally {
       await builder.terminate().catch(() => undefined);
     }
   }
 
-  // Both inputs are invariant per process — the harness code is itself
-  // memoized, and the toolchain specs come from package.json files on disk —
-  // so the tag is the same value every time. Computing it inside the resolver
-  // meant SHA-256 over the ~12.8 MB harness bundle (13-15ms, synchronous, so
-  // it stalls the event loop) plus a handful of readFileSync+JSON.parse on
-  // EVERY spawn: pool replenishment, every cold session, every studio broker
-  // call, every describeBundle. Cache it by harness code instead.
+  // The tag's inputs are invariant per process — the harness code is itself
+  // memoized, and the specs and lockfile come from files on disk — so it is
+  // the same value every time. Computing it per call meant SHA-256 over the
+  // ~12.8 MB harness bundle (13-15ms, synchronous, so it stalls the event
+  // loop) plus a handful of readFileSync+JSON.parse on EVERY spawn: every cold
+  // session, every studio broker call, every describeBundle. Cache it by
+  // harness code instead.
   const tagMemo = new Map<string, string>();
   const tagOnce = (code: string): string => {
     let tag = tagMemo.get(code);
     if (tag === undefined) {
-      tag = tagFor(code, resolveToolchainSpecs());
+      tag = localHarnessImageTag(baseTag, code);
       tagMemo.set(code, tag);
     }
     return tag;
@@ -214,8 +323,6 @@ export function createHarnessImageResolver(deps: {
 
   return (code: string): Promise<Image> => {
     const tag = tagOnce(code);
-    // Re-resolving the specs in the builder costs a few readFileSync calls,
-    // but only on the once-per-tag build path rather than once per spawn.
-    return memo(tag, () => build(tag, code, resolveToolchainSpecs()));
+    return memo(tag, () => build(tag, code));
   };
 }

@@ -83,14 +83,18 @@ jobs:
           pnpm run check:markdown
           pnpm run check:publish-names
           pnpm run check:doc-examples
-      # The two quality ratchets. They lived only in scripts/check.sh, which CI
+      # The quality ratchets. They lived only in scripts/check.sh, which CI
       # never invokes, so they were enforced solely by the pre-push hook — and
-      # `git push --no-verify` skipped them entirely. Both are pure git/fs
+      # `git push --no-verify` skipped them entirely. All are pure git/fs
       # checks needing no build, and check-escape-hatches degrades to a skip
-      # when there is no origin/main to diff against.
+      # when there is no origin/main to diff against. check:guest-toolchain
+      # catches a lockfile that no longer matches the installed toolchain,
+      # which would otherwise bake a different tree into every guest image
+      # than the one this repo tested with.
       - run: |
           pnpm run check:hatches
           pnpm run check:file-length
+          pnpm run check:guest-toolchain
 
   # Unit tests sharded by package — run in parallel
   test:
@@ -150,6 +154,26 @@ jobs:
           key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec turbo run build
+      # Postgres for the platform integration tests: the per-slug advisory lock
+      # and the migration + its stores. Both assert PostgreSQL semantics that
+      # their unit suites can only assert in prose (see
+      # platform-lock.integration.test.ts).
+      #
+      # A step rather than a `services:` container, because those need Docker
+      # and this job's matrix includes macos-latest, where it is unavailable.
+      # The runner image ships the cluster; starting it is enough. The database
+      # behaviour under test is OS-independent, so the ubuntu leg covers it and
+      # the tests skip themselves on macOS, where AAI_TEST_PG_URL is unset.
+      - name: Start Postgres (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          sudo systemctl start postgresql
+          # Fail here rather than let the tests skip: a suite that silently
+          # stops running is the failure mode these tests exist to avoid.
+          pg_isready --host 127.0.0.1 --timeout 30
+          sudo -u postgres psql -c "alter user postgres password 'postgres'"
+          echo "AAI_TEST_PG_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres" >> "$GITHUB_ENV"
       - run: pnpm exec turbo run check:integration
 
   e2e:

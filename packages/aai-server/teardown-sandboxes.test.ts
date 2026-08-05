@@ -2,7 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createSlotCache, setSlot } from "./sandbox-slots.ts";
-import { teardownSandboxes } from "./teardown-sandboxes.ts";
+import { SHUTDOWN_GRACE_MS, shutdownGraceMs, teardownSandboxes } from "./teardown-sandboxes.ts";
 
 const fakeSandbox = () => ({
   shutdown: vi.fn().mockResolvedValue(undefined),
@@ -26,7 +26,7 @@ describe("teardownSandboxes", () => {
     setSlot(slots, { slug: "a", sandbox: a });
     setSlot(slots, { slug: "b", sandbox: b });
 
-    await teardownSandboxes({ slots });
+    await teardownSandboxes({ slots, graceMs: 0 });
 
     expect(a.drain).toHaveBeenCalledExactlyOnceWith(expect.any(Number));
     expect(b.drain).toHaveBeenCalledExactlyOnceWith(expect.any(Number));
@@ -45,7 +45,7 @@ describe("teardownSandboxes", () => {
     };
     setSlot(slots, { slug: "dead", sandbox: dead });
 
-    await teardownSandboxes({ slots });
+    await teardownSandboxes({ slots, graceMs: 0 });
 
     expect(dead.shutdown).toHaveBeenCalledOnce();
   });
@@ -56,7 +56,7 @@ describe("teardownSandboxes", () => {
   it("disposes the studio session broker", async () => {
     const broker = { dispose: vi.fn().mockResolvedValue(undefined) };
 
-    await teardownSandboxes({ slots: createSlotCache(), broker });
+    await teardownSandboxes({ slots: createSlotCache(), broker, graceMs: 0 });
 
     expect(broker.dispose).toHaveBeenCalledOnce();
   });
@@ -72,7 +72,7 @@ describe("teardownSandboxes", () => {
     setSlot(slots, { slug: "good", sandbox: good });
     const broker = { dispose: vi.fn().mockResolvedValue(undefined) };
 
-    await expect(teardownSandboxes({ slots, broker })).resolves.toBeUndefined();
+    await expect(teardownSandboxes({ graceMs: 0, slots, broker })).resolves.toBeUndefined();
 
     expect(good.drain).toHaveBeenCalledOnce();
     expect(broker.dispose).toHaveBeenCalledOnce();
@@ -81,12 +81,52 @@ describe("teardownSandboxes", () => {
   it("warns rather than throwing when the broker dispose rejects", async () => {
     const broker = { dispose: vi.fn().mockRejectedValue(new Error("broker boom")) };
 
-    await expect(teardownSandboxes({ slots: createSlotCache(), broker })).resolves.toBeUndefined();
+    await expect(
+      teardownSandboxes({ slots: createSlotCache(), broker, graceMs: 0 }),
+    ).resolves.toBeUndefined();
 
     expect(console.warn).toHaveBeenCalled();
   });
 
   it("is a no-op with no slots or broker", async () => {
-    await expect(teardownSandboxes({ slots: createSlotCache() })).resolves.toBeUndefined();
+    await expect(
+      teardownSandboxes({ slots: createSlotCache(), graceMs: 0 }),
+    ).resolves.toBeUndefined();
+  });
+
+  /**
+   * Flipping `draining` only makes `/health` fail; the proxy stops routing
+   * here when it NOTICES. Emptying the slots inside that window turns
+   * requests that would have been served into 503s.
+   */
+  it("waits for the proxy to notice before emptying the slots", async () => {
+    const slots = createSlotCache();
+    const sandbox = fakeSandbox();
+    setSlot(slots, { slug: "a", sandbox });
+    const done = teardownSandboxes({ slots, graceMs: 50 });
+    // Still serving: the resident is attached and drains have not started.
+    expect(slots.get("a")?.sandbox).toBe(sandbox);
+    expect(sandbox.drain).not.toHaveBeenCalled();
+    await done;
+    expect(sandbox.drain).toHaveBeenCalledOnce();
+  });
+});
+
+describe("shutdownGraceMs", () => {
+  it("defaults when unset", () => {
+    expect(shutdownGraceMs({})).toBe(SHUTDOWN_GRACE_MS);
+    expect(shutdownGraceMs({ SHUTDOWN_GRACE_MS: "  " })).toBe(SHUTDOWN_GRACE_MS);
+  });
+
+  it("honours an explicit value, zero included", () => {
+    expect(shutdownGraceMs({ SHUTDOWN_GRACE_MS: "250" })).toBe(250);
+    expect(shutdownGraceMs({ SHUTDOWN_GRACE_MS: "0" })).toBe(0);
+  });
+
+  // Falling back beats disabling the wait by accident: an unusable value
+  // should not silently reintroduce the orphan window.
+  it("falls back on an unusable value", () => {
+    expect(shutdownGraceMs({ SHUTDOWN_GRACE_MS: "soon" })).toBe(SHUTDOWN_GRACE_MS);
+    expect(shutdownGraceMs({ SHUTDOWN_GRACE_MS: "-5" })).toBe(SHUTDOWN_GRACE_MS);
   });
 });

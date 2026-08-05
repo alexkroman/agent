@@ -56,6 +56,7 @@ import { Readable } from "node:stream";
 import { errorMessage } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
 import { mintDescribeNonce, readDescribeResult } from "./describe-exec.ts";
+import { pollGuestHealth } from "./guest-readiness.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
 import { parseSandboxLimitsFromEnv } from "./modal-sandbox-env.ts";
 import { resolveSandboxRole, type SpawnIdentity } from "./sandbox-role.ts";
@@ -69,7 +70,6 @@ import {
   type GuestFetch,
   type GuestProcLike,
   getFreePort,
-  pollGuestHealth,
   startGuestLogging,
   warmFromGuest,
 } from "./warm-harness.ts";

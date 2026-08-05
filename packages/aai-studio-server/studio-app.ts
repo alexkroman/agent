@@ -33,6 +33,7 @@ import type { StudioAuth } from "aai-server/supabase-auth";
 import type { WorkspaceStore } from "aai-server/workspace-store";
 import { Hono } from "hono";
 import type { StudioHonoEnv } from "./studio-context.ts";
+import type { PreviewQueue } from "./studio-preview-queue.ts";
 import type { StudioRateLimiters } from "./studio-rate-limit.ts";
 import { createStudioRoutes } from "./studio-routes.ts";
 import type { StudioSessionRegistry } from "./studio-session-registry.ts";
@@ -65,6 +66,12 @@ export type StudioAppOpts = {
    * replica (studio-session-registry.ts). Both or neither.
    */
   studioSessionRegistry?: StudioSessionRegistry;
+  /**
+   * Durable preview-deploy queue (studio-preview-queue.ts). Injected in
+   * production (pgmq over the platform database); without it previews fall
+   * back to an in-memory queue that loses pending deploys on restart.
+   */
+  previewQueue?: PreviewQueue;
   replicaId?: string;
   allowedOrigins?: string[];
   isDraining?: () => boolean;
@@ -91,6 +98,7 @@ export function createStudioApp(opts: StudioAppOpts): {
   const studioRoutes = createStudioRoutes({
     ...(opts.studioRateLimiters && { rateLimiters: opts.studioRateLimiters }),
     ...(opts.studioSessionRegistry && { sessionRegistry: opts.studioSessionRegistry }),
+    ...(opts.previewQueue && { previewQueue: opts.previewQueue }),
     ...(opts.replicaId && { replicaId: opts.replicaId }),
   });
   app.route("/studio", studioRoutes.routes);

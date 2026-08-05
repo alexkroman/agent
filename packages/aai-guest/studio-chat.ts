@@ -56,6 +56,7 @@ import { createToolCallRepair } from "./studio-tool-repair.ts";
 import { createStudioTools, STUDIO_TOOL_LABELS, withToolDeadlines } from "./studio-tools.ts";
 import { createTurnBudget } from "./studio-turn-budget.ts";
 import { materializeWorkspace, snapshotWorkspace } from "./studio-workspace-fs.ts";
+import type { TypecheckFn } from "./studio-write-diagnostics.ts";
 
 /** Matches the host store's whole-conversation byte cap (4 MB). */
 const MAX_CHAT_BODY_BYTES = 4_000_000;
@@ -86,6 +87,14 @@ export type StudioChatDeps = {
   executeTool: (name: string, args: Record<string, unknown>) => Promise<string>;
   /** Test seam. Defaults to the gateway model on the session's caller key. */
   model?: LanguageModel;
+  /**
+   * Test seam for the post-write type check. Defaults to
+   * {@link typecheckWorkspaceDir} — a real `tsc --noEmit` spawn, which is
+   * exactly right in a sandbox and wrong in a unit test: it is by far the
+   * slowest thing a scripted turn does, so a suite running it under parallel
+   * load times out on the compiler rather than on anything under test.
+   */
+  typecheck?: TypecheckFn;
 };
 
 /**
@@ -357,6 +366,9 @@ async function runTurn(
   );
 
   const checkpointWorkspace = createWorkspaceCheckpointer(session);
+  // One checker for both tool families — they share the diagnostics backend,
+  // and building it twice would double the coalescing runner it hangs off.
+  const typecheck: TypecheckFn = deps.typecheck ?? (() => typecheckWorkspaceDir(session.dir));
 
   const result = streamText({
     model,
@@ -372,13 +384,13 @@ async function runTurn(
       ...createTemplateTools({
         dir: session.dir,
         // Same post-copy diagnostics backend the write tools use.
-        typecheck: () => typecheckWorkspaceDir(session.dir),
+        typecheck,
       }),
       ...createStudioTools({
         dir: session.dir,
         // Post-write diagnostics: the same tsc pass builds run, so a type
         // error reaches the agent inside the write result that caused it.
-        typecheck: () => typecheckWorkspaceDir(session.dir),
+        typecheck,
         // Build the live session workspace in place, in THIS sandbox,
         // through the same CLI bundler pass `aai deploy` runs.
         build: () => buildWorkspaceDir(session.dir, { worker: true, client: false }),

@@ -9,14 +9,12 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import pTimeout from "p-timeout";
 import { debug } from "./_debug-log.ts";
 import { type AppDatabases, type AppDbMeta, parseAppDbMeta } from "./app-database.ts";
 import { BROKER_READY_TIMEOUT_MS } from "./constants.ts";
 import type { PlatformEvents, Unwatch } from "./platform-events.ts";
 import { createSandbox, type Sandbox } from "./sandbox.ts";
-import { findPeerSession, startRegistryHeartbeat } from "./sandbox-peers.ts";
-import type { SandboxRegistry } from "./sandbox-registry.ts";
+import type { SandboxDirectory } from "./sandbox-directory.ts";
 import {
   type AgentSlot,
   deleteSlot,
@@ -59,12 +57,32 @@ export type ResolveSandboxOpts = {
    */
   readyTimeoutMs?: number;
   /**
-   * Cross-replica sandbox registry (see sandbox-registry.ts): residents built
-   * here are registered and heartbeated, and the broker's cold path routes to
-   * a live peer's guest instead of spawning a duplicate. Absent (dev/tests,
-   * no platform database) leaves every replica independent, as before.
+   * Fleet-wide sandbox directory (see sandbox-directory.ts): the broker's cold
+   * path asks Modal whether some replica is already serving this deploy, and
+   * routes there instead of spawning a duplicate. Absent (the subprocess
+   * backend, tests) leaves every replica independent — correct for a single
+   * process, which has no peers.
    */
-  registry?: SandboxRegistry;
+  directory?: SandboxDirectory;
+  /**
+   * True once this replica is shutting down. The broker then refuses to boot
+   * a NEW sandbox, answering a retryable 503 instead.
+   *
+   * Without it, a request landing between "draining flipped" and "process
+   * exits" — the window before the platform's proxy has observed the
+   * `/health` 503 and stopped routing here — takes the cold path, finds an
+   * emptied slot, and spawns a sandbox seconds before the process dies. That
+   * guest is then ORPHANED: nothing holds it, no slot references it, and it
+   * bills until Modal's idle timeout reclaims it. Rare at
+   * `MIN_CONTAINERS=1`, where only a redeploy shuts a replica down; routine
+   * at 0, where every quiet stretch does.
+   *
+   * A LIVE resident is still served while draining — handing back a URL for
+   * a guest that already exists orphans nothing, and refusing would break
+   * sessions that are about to be perfectly fine (the guests outlive this
+   * process by design; see teardown-sandboxes.ts).
+   */
+  isDraining?: () => boolean;
 };
 
 type BundleParts = {
@@ -125,6 +143,12 @@ function buildSandboxFromParts(
   opts: ResolveSandboxOpts,
   onSandboxLost: (sandbox: Sandbox) => void,
 ): Sandbox {
+  // Shutting down: a sandbox booted now outlives the process with nothing
+  // holding it (see `isDraining`). The guard lives at CONSTRUCTION rather than
+  // at one request path because there are two — the broker and the change
+  // stream's blue-green `handoverSlot`, whose boot easily outlasts the
+  // shutdown grace window.
+  if (opts.isDraining?.()) throw new DrainingError(slug);
   // Storage: the app's OWN scoped Postgres credentials (role/search_path
   // pinned at provisioning — see app-database.ts) ride into the guest as
   // DATABASE_URL, and the bundle's runtime connects directly, exactly as
@@ -139,6 +163,10 @@ function buildSandboxFromParts(
     workerCode: parts.workerCode,
     env,
     slug,
+    // The deploy version is half the fleet-wide sandbox NAME, which is what
+    // keeps one deploy to one sandbox platform-wide (sandbox-directory.ts) and
+    // still lets a blue-green handover run two versions at once.
+    version: parts.version,
     ...(parts.imageTag !== null && { imageTag: parts.imageTag }),
     onSandboxLost: () => onSandboxLost(sandbox),
   });
@@ -247,7 +275,20 @@ async function handoverSlot(
     deleteSlot(opts.slots, slug);
     return;
   }
-  const replacement = buildSlotSandbox(slug, parts, opts);
+  let replacement: Sandbox;
+  try {
+    replacement = buildSlotSandbox(slug, parts, opts);
+  } catch (err) {
+    // Draining: leave the old resident attached and untouched. Retiring it to
+    // honour a deploy this process will not live to serve would cut its live
+    // calls for nothing — every surviving replica gets the same event and does
+    // the handover properly.
+    if (err instanceof DrainingError) {
+      debug("Draining; leaving the superseded resident to the surviving replicas", { slug });
+      return;
+    }
+    throw err;
+  }
   try {
     await replacement.sessionUrl();
   } catch (err) {
@@ -304,13 +345,14 @@ async function rebuildSlot(
 
     slot.version = parts.version;
     slot.sandbox = sandbox;
-    startRegistryHeartbeat(slug, sandbox, opts);
     return sandbox;
   } catch (err) {
     if (created) deleteSlot(slots, slug);
     throw err;
   }
 }
+
+/** Also stop REACTING to deploys while draining — see `watchAgentInvalidation`. */
 
 /**
  * Map a slug to its (possibly freshly built) ONE resident sandbox. A LIVE
@@ -352,64 +394,16 @@ export async function resolveSandbox(
   });
 }
 
-export type BrokeredSession =
-  | { ok: true; sessionUrl: string; guestOrigin: string }
-  | { ok: false; status: 404 | 503; cause?: unknown };
-
 /**
- * The session-broker sequence shared by `GET /:slug/client-config` and the
- * plain `/:slug/websocket` upgrade: resolve the slug's live sandbox (booting
- * it on demand) and ask it for its public session URL. One failure taxonomy
- * for both callers — no bundle/sandbox is a 404; a sandbox VM that failed to
- * start is a retryable 503 (the failure hook detaches it, so the next
- * attempt rebuilds).
+ * Thrown instead of booting a sandbox while this replica is going away.
  *
- * The readiness wait is capped at {@link BROKER_READY_TIMEOUT_MS}, well under
- * the guest's own boot budget: a still-booting sandbox is a retryable 503
- * here, not a two-minute held request. Nothing is torn down on that path —
- * see the constant for why the boot continues and the next call joins it.
+ * Its own type so the broker can turn it into a retryable 503 while
+ * `handoverSlot` can treat it as "leave the old resident alone" — the two
+ * callers want opposite things from the same refusal.
  */
-export async function brokerSessionUrl(
-  slug: string,
-  opts: ResolveSandboxOpts,
-): Promise<BrokeredSession> {
-  // Cold on this replica: prefer a live peer replica's guest over spawning a
-  // duplicate (see sandbox-registry.ts). Sessions dial the guest directly, so
-  // a peer's URL serves the client exactly as well as a local one. A warm
-  // local resident always wins — it costs nothing and the registry read is a
-  // database round trip on a path where the caller is waiting.
-  const resident = opts.slots.get(slug)?.sandbox;
-  if (!(resident && isLive(resident))) {
-    const peer = await findPeerSession(slug, opts);
-    if (peer) return peer;
-  }
-  const sandbox = await resolveSandbox(slug, opts);
-  if (!sandbox) return { ok: false, status: 404 };
-  // Both resolve off the same readiness promise — no extra wait.
-  const readyTimeoutMs = opts.readyTimeoutMs ?? BROKER_READY_TIMEOUT_MS;
-  const ready = Promise.all([sandbox.sessionUrl(), sandbox.guestOrigin()]);
-  // Contained: on the timeout path nothing is awaiting `ready`, and a boot
-  // that fails afterwards must not surface as an unhandled rejection.
-  ready.catch(() => undefined);
-  try {
-    const [sessionUrl, guestOrigin] =
-      readyTimeoutMs > 0
-        ? await pTimeout(ready, {
-            milliseconds: readyTimeoutMs,
-            message: `sandbox not ready within ${readyTimeoutMs}ms`,
-          })
-        : await ready;
-    return { ok: true, sessionUrl, guestOrigin };
-  } catch (err) {
-    // Still booting is not the same as failed to boot, and only the first is
-    // worth a quiet line: the failure path already logs (and detaches) via
-    // `Sandbox VM failed to start`.
-    if (sandbox.alive()) {
-      debug("Sandbox still booting; answering 503 while it continues", {
-        slug,
-        waitedMs: readyTimeoutMs,
-      });
-    }
-    return { ok: false, status: 503, cause: err };
+export class DrainingError extends Error {
+  constructor(slug: string) {
+    super(`replica is draining; refusing to boot a sandbox for ${slug}`);
+    this.name = "DrainingError";
   }
 }

@@ -10,11 +10,17 @@
  * slug; the Preview pane shows the preview slug, so edits appear there
  * without the user shipping anything.
  *
- * Scheduling is fire-and-forget and coalescing: one deploy runs per project
- * at a time, edits landing mid-deploy set a dirty bit, and the loop re-reads
- * the workspace until it is clean — so a burst of tool-call edits costs one
- * (or two) deploys, not one each. A no-op schedule (workspace already at
- * `previewHash`) never deploys at all.
+ * Scheduling is DURABLE: an edit enqueues a job in the platform's queue
+ * (`studio-preview-queue.ts` — pgmq in production) and the local drain runs
+ * it. A replica restart or a sandbox death mid-deploy therefore no longer
+ * drops the work; the job becomes visible again and any replica picks it up.
+ *
+ * Coalescing falls out of that rather than being managed: the deploy re-reads
+ * the workspace and no-ops when `previewHash` already matches the current
+ * files, and the drain holds a per-project lock, so a burst of tool-call
+ * edits costs one deploy and its duplicates cost a read each. This replaced
+ * an in-process map with a dirty bit, whose whole purpose was to approximate
+ * that with no durability.
  *
  * Outcomes are stamped on the workspace like Publish's metadata: success
  * writes `previewSlug`/`previewHash` (what tells the client a new preview is
@@ -23,16 +29,19 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import { createCoalescingRunner } from "@alexkroman1/aai/internal";
 import { MAX_SLUG_LENGTH, PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/utils";
+import { createKeyedLock, TtlCache, withLock } from "aai-server/platform-barrel";
 import type { WorkspaceStore } from "aai-server/workspace-store";
-import type { StudioSessionBroker } from "./studio-session-broker.ts";
 import {
-  currentFilesHash,
-  getWorkspace,
-  hasPreviewChanges,
-  mutateWorkspace,
-  projectKey,
-} from "./studio-workspace.ts";
+  type ClaimedPreviewJob,
+  PREVIEW_JOB_MAX_ATTEMPTS,
+  PREVIEW_JOB_VISIBILITY_MS,
+  type PreviewJob,
+  type PreviewQueue,
+} from "./studio-preview-queue.ts";
+import type { StudioSessionBroker } from "./studio-session-broker.ts";
+import { currentFilesHash, getWorkspace, mutateWorkspace, projectKey } from "./studio-workspace.ts";
 
 /** Cap on the stored preview failure output (it renders in a banner). */
 const MAX_PREVIEW_ERROR = 16_000;
@@ -82,38 +91,40 @@ export function warmPreviewSandbox(
 /**
  * Landing on a project wakes its preview. Hung off the once-per-open
  * session broker call (`POST /projects/:project/session`) — the "user is
- * looking at this project again" signal. Two halves, both fire-and-forget
- * (the caller's response never waits on either):
+ * looking at this project again" signal. Fire-and-forget: the caller's
+ * response never waits on it.
  *
- * - A STALE preview redeploys via `schedule`. Auto preview deploys are
- *   fire-and-forget with in-process coalescing, so a replica restart (or a
- *   sandbox dying mid-deploy) can drop one — leaving the pane on "Updating
- *   preview…" with nothing actually on the way until the next edit.
- *   Skipped when the last attempt FAILED (`previewError`): that build is
- *   deterministic, the banner already carries its CLI output, and the next
- *   edit reschedules. Also skipped for an EMPTY workspace (a fresh
- *   project): there is nothing deployable, and the first agent turn's
- *   end-of-turn sync owns the first preview.
- * - The sandbox of the agent the pane embeds — the preview, falling back
- *   to the production agent for projects published before previews existed
- *   — is warmed via {@link warmPreviewSandbox}, so a preview idle-evicted
- *   since the last visit is booting before the pane's iframe asks for it.
+ * It does ONE thing now: warm the sandbox of the agent the pane embeds (the
+ * preview, falling back to the production agent for projects published
+ * before previews existed) via {@link warmPreviewSandbox}, so a preview
+ * idle-evicted since the last visit is booting before the pane's iframe
+ * asks for it.
  *
- * The warm-up doubles as an existence check: a 404 from the broker means
- * the platform no longer knows the agent at all — the deploy behind the
- * workspace's preview stamp is GONE (expired/swept/deleted out from under
- * it), so "preview is current" is a lie the stamp can never correct on its
- * own. That clears `previewHash` and regenerates the preview. Only 404
- * triggers this: a 503 means a sandbox mid-boot (the broker keeps booting
- * it and the pane's own fetch retries), and redeploying on it would churn
- * a healthy slow boot.
+ * It used to ALSO redeploy a stale preview, because scheduling was
+ * fire-and-forget in-process state and a replica restart could drop a
+ * deploy — leaving the pane on "Updating preview…" with nothing on the way
+ * until the next edit. The queue (studio-preview-queue.ts) makes that
+ * delivery durable, so a stale preview means a job is still queued and the
+ * drain will run it. Re-scheduling here would be a second mechanism
+ * answering the same question, and the weaker one: it only fires when a
+ * human opens the project.
+ *
+ * The warm-up doubles as an existence check, which the queue does NOT
+ * cover: a 404 from the broker means the platform no longer knows the agent
+ * at all — the deploy behind the workspace's preview stamp is GONE
+ * (expired/swept/deleted out from under it), so "preview is current" is a
+ * lie the stamp can never correct on its own, and no queued job exists
+ * because nothing was edited. That clears `previewHash` and enqueues a
+ * deploy. Only 404 triggers it: a 503 means a sandbox mid-boot (the broker
+ * keeps booting it and the pane's own fetch retries), and redeploying on it
+ * would churn a healthy slow boot.
  */
 export function wakeProjectPreview(options: {
   workspaces: WorkspaceStore;
   scope: string;
   project: string;
   target: PreviewTarget;
-  /** The broker's `schedulePreview` — called when the preview is stale. */
+  /** The broker's `schedulePreview` — called when the stamped agent is gone. */
   schedule: PreviewDeployer["schedule"];
   fetchImpl?: typeof fetch;
 }): void {
@@ -122,17 +133,15 @@ export function wakeProjectPreview(options: {
     .then(async (workspace) => {
       if (!workspace) return;
       const deployable = Object.keys(workspace.files).length > 0;
-      // The same gates for both schedule paths: nothing deployable in a
-      // fresh workspace, and a stamped build failure is deterministic — a
+      // Nothing deployable in a fresh workspace (the first agent turn owns
+      // the first preview), and a stamped build failure is deterministic — a
       // redeploy would only re-fail into the same banner.
       const canRedeploy = deployable && !workspace.previewError;
-      const staleScheduled = canRedeploy && hasPreviewChanges(workspace);
-      if (staleScheduled) options.schedule(scope, project, target);
       const slug = workspace.previewSlug ?? workspace.deployedSlug;
       if (!slug) return;
       const status = await warmPreviewSandbox(target.serverUrl, slug, options.fetchImpl ?? fetch);
-      if (status !== 404 || !canRedeploy || staleScheduled) return;
-      // The agent is gone but the stamp says current — `schedule` would
+      if (status !== 404 || !canRedeploy) return;
+      // The agent is gone but the stamp says current — the deploy would
       // no-op on the matching hash, so drop the stamp first. `previewSlug`
       // stays: the redeploy re-claims the same slug, so the pane's URL
       // never rots.
@@ -165,26 +174,78 @@ export type PreviewTarget = {
   /** Public platform origin the guest's CLI deploys to. */
   serverUrl: string;
   apiKey: string;
+  /**
+   * The studio user the key belongs to, when the caller is a browser session.
+   * This is what makes a job durable: the queue row carries the user id, and
+   * the drain resolves the key from Vault — a credential never becomes a
+   * Postgres row. Absent for raw-key callers (the CLI, evals), whose jobs
+   * therefore only survive as long as this replica does (see `schedule`).
+   */
+  userId?: string;
 };
 
 export type PreviewDeployer = {
   /**
-   * Fire-and-forget: deploy the project's current workspace to its preview
-   * slug, unless the preview is already current. Calls while a deploy is in
-   * flight coalesce into one trailing re-deploy.
+   * Enqueue a deploy of the project's current workspace to its preview slug,
+   * and kick the drain. Fire-and-forget: never throws, never blocks the
+   * caller's response.
    */
   schedule(scope: string, project: string, target: PreviewTarget): void;
+  /** Stop the periodic drain. */
+  dispose(): void;
 };
 
 export type PreviewDeployerOptions = {
   workspaces: WorkspaceStore;
   /** The broker's `deployWorkspace` — the in-sandbox `aai deploy` run. */
   deployWorkspace: StudioSessionBroker["deployWorkspace"];
+  /** Durable job queue: pgmq in production, in-memory in dev/tests. */
+  queue: PreviewQueue;
+  /**
+   * A studio user's stored AssemblyAI key, for jobs this replica did not
+   * enqueue. Without it (dev/tests) only same-replica jobs can deploy.
+   */
+  resolveApiKey?: (userId: string) => Promise<string | null>;
+  /**
+   * How often to look for jobs nobody is working on — a dead replica's
+   * redelivered work. Also the ceiling on how long a dropped deploy stays
+   * dropped. 0 disables the timer (tests drive `drainOnce` directly).
+   */
+  pollMs?: number;
 };
 
-export function createPreviewDeployer(options: PreviewDeployerOptions): PreviewDeployer {
-  type Entry = { dirty: boolean; target: PreviewTarget };
-  const inflight = new Map<string, Entry>();
+/** Default drain cadence. Well under the pane's tolerance for staleness. */
+export const PREVIEW_DRAIN_POLL_MS = 15_000;
+const PREVIEW_DRAIN_BATCH = 5;
+
+/**
+ * How long a raw-key caller's credential stays available to the drain: long
+ * enough to cover every redelivery of a job this replica enqueued, and no
+ * longer. A TTL rather than deletion-on-settle because several jobs for one
+ * project are routine (a turn-complete sync plus two editor PUTs) and they
+ * share the one entry — dropping it when the first settled left the rest with
+ * no credential and archived them.
+ */
+const LOCAL_KEY_TTL_MS = PREVIEW_JOB_VISIBILITY_MS * (PREVIEW_JOB_MAX_ATTEMPTS + 1);
+
+/** Log-and-continue wrapper: queue trouble must never fail a caller's request. */
+function bestEffort(what: string): (err: unknown) => undefined {
+  return (err: unknown) => {
+    console.warn(`Preview queue ${what} failed: ${errorMessage(err)}`);
+  };
+}
+
+export function createPreviewDeployer(
+  options: PreviewDeployerOptions,
+): PreviewDeployer & { drainOnce(): Promise<void> } {
+  const projectLock = createKeyedLock();
+  /**
+   * Keys for jobs enqueued by THIS replica, so a raw-key caller's preview
+   * still deploys without its credential ever becoming a queue row. Bounded
+   * and expiring (see {@link LOCAL_KEY_TTL_MS}); a job redelivered to another
+   * replica finds no entry there and needs `resolveApiKey`.
+   */
+  const localKeys = new TtlCache<string>(LOCAL_KEY_TTL_MS, 1000);
 
   /** One deploy attempt against the workspace's CURRENT files. */
   async function attempt(scope: string, project: string, target: PreviewTarget): Promise<void> {
@@ -207,7 +268,7 @@ export function createPreviewDeployer(options: PreviewDeployerOptions): PreviewD
     // studio-deploy.ts): the deploy takes seconds, and writing the
     // pre-deploy files back would revert anything edited meanwhile. `hash`
     // is of the snapshot that was deployed, so mid-deploy edits still read
-    // as preview-stale — and the dirty bit re-deploys them right after.
+    // as preview-stale — and the job the edit enqueued deploys them next.
     await mutateWorkspace(options.workspaces, scope, project, (current) => {
       const next = { ...current };
       if (outcome.ok) {
@@ -224,34 +285,120 @@ export function createPreviewDeployer(options: PreviewDeployerOptions): PreviewD
     }
   }
 
+  /**
+   * The key one claimed job runs on. Null means the job cannot be run here.
+   *
+   * A job naming a studio user resolves its key from Vault — the durable
+   * path, and the only one a job redelivered to another replica can take, so
+   * it is tried first: it is also the fresher answer if the user rotated
+   * their key since the edit. The in-process map covers raw-key callers (the
+   * CLI, evals), whose credential deliberately never becomes a queue row.
+   */
+  async function keyFor(job: PreviewJob): Promise<string | null> {
+    if (job.userId && options.resolveApiKey) {
+      const resolved = await options.resolveApiKey(job.userId).catch(() => null);
+      if (resolved) return resolved;
+    }
+    return localKeys.get(projectKey(job.scope, job.project)) ?? null;
+  }
+
+  async function runJob(claimed: ClaimedPreviewJob): Promise<void> {
+    const { scope, project, serverUrl } = claimed.job;
+    const apiKey = await keyFor(claimed.job);
+    if (!apiKey) {
+      // Nothing here can deploy it. Archiving beats redelivering forever:
+      // the only jobs that reach this are raw-key callers' whose enqueuing
+      // replica is gone, and no replica will ever hold their credential.
+      console.warn("Archiving preview job with no resolvable credential", { project });
+      await options.queue.archive(claimed.id).catch(bestEffort("archive"));
+      return;
+    }
+    // Per project, so two jobs for one project cannot deploy concurrently —
+    // the second finds `previewHash` current and no-ops.
+    await withLock(projectLock, projectKey(scope, project), () =>
+      attempt(scope, project, { serverUrl, apiKey }),
+    );
+    // Settled (deployed, or stamped with a build failure): the job is done
+    // either way. A build error is deterministic, so retrying it would just
+    // rewrite the same banner.
+    await options.queue.ack(claimed.id).catch(bestEffort("ack"));
+  }
+
+  /**
+   * One drain pass. A job whose run THROWS (transport failure, dead sandbox
+   * mid-deploy) is deliberately left unacked: it becomes visible again after
+   * the visibility timeout, which is the durability this queue exists for.
+   * Past {@link PREVIEW_JOB_MAX_ATTEMPTS} redeliveries it is archived — at
+   * that point it is a crash loop, not a slow deploy.
+   */
+  async function drainOnce(): Promise<void> {
+    const claimed = await options.queue
+      .claim(PREVIEW_DRAIN_BATCH)
+      .catch(() => [] as ClaimedPreviewJob[]);
+    await Promise.all(
+      claimed.map(async (job) => {
+        if (job.attempts > PREVIEW_JOB_MAX_ATTEMPTS) {
+          console.warn("Archiving preview job after repeated failures", {
+            project: job.job.project,
+            attempts: job.attempts,
+          });
+          await options.queue.archive(job.id).catch(bestEffort("archive"));
+          return;
+        }
+        try {
+          await runJob(job);
+        } catch (err) {
+          // Left for redelivery on purpose — see the doc above.
+          console.warn("Studio preview deploy errored", {
+            project: job.job.project,
+            attempts: job.attempts,
+            error: errorMessage(err),
+          });
+        }
+      }),
+    );
+  }
+
+  /**
+   * Both drain triggers — the timer and every `schedule` — go through one
+   * coalescing runner.
+   *
+   * Unserialized, an edit burst (several turn-complete syncs plus editor PUTs)
+   * fired N overlapping drains, each paying its own `pgmq.read`, and jobs
+   * claimed by the losers then sat invisible on the per-project lock burning
+   * their visibility window. The in-process pump this queue replaced DID
+   * coalesce; the primitive is how that property comes back without the
+   * hand-rolled flags (see `createCoalescingRunner`). A drain reads latest
+   * state when it runs, which is exactly what makes collapsing N triggers into
+   * one run plus one trailing run safe.
+   */
+  const drain = createCoalescingRunner(drainOnce);
+  const triggerDrain = (): void => void drain.trigger().catch(bestEffort("drain"));
+
+  const pollMs = options.pollMs ?? PREVIEW_DRAIN_POLL_MS;
+  // Unref'd: a pending preview drain must never hold the process open.
+  const timer = pollMs > 0 ? setInterval(triggerDrain, pollMs) : undefined;
+  timer?.unref?.();
+
   return {
     schedule(scope, project, target) {
       const key = projectKey(scope, project);
-      const existing = inflight.get(key);
-      if (existing) {
-        existing.dirty = true;
-        existing.target = target;
-        return;
-      }
-      const entry: Entry = { dirty: false, target };
-      inflight.set(key, entry);
-      void (async () => {
-        try {
-          do {
-            entry.dirty = false;
-            await attempt(scope, project, entry.target);
-          } while (entry.dirty);
-        } catch (err) {
-          // Transport-level failure (dead sandbox mid-deploy). The next edit
-          // reschedules; auto-deploys must never take down the caller.
-          console.warn("Studio preview deploy errored", {
-            project,
-            error: errorMessage(err),
-          });
-        } finally {
-          inflight.delete(key);
-        }
-      })();
+      // Overwrite rather than keep the first: a rotated key belongs to the
+      // same account, and the latest caller's is the one known to work.
+      localKeys.set(key, target.apiKey);
+      void options.queue
+        .enqueue({
+          scope,
+          project,
+          serverUrl: target.serverUrl,
+          ...(target.userId && { userId: target.userId }),
+        })
+        .then(triggerDrain)
+        .catch(bestEffort("enqueue"));
+    },
+    drainOnce,
+    dispose() {
+      if (timer) clearInterval(timer);
     },
   };
 }

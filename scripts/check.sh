@@ -48,6 +48,11 @@ run_ratchets() {
   local failed=0
   pnpm run check:hatches || failed=1
   pnpm run check:file-length || failed=1
+  # The guest toolchain lockfile must track the versions this checkout
+  # installed: it is baked into every guest image, and a stale one silently
+  # bakes a different tree than the repo tested with. Pure JSON comparison —
+  # no registry — so it belongs with the fast gates.
+  pnpm run check:guest-toolchain || failed=1
   return "$failed"
 }
 

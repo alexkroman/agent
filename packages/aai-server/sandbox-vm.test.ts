@@ -33,7 +33,7 @@ describe("spawnAgentServer", () => {
     const modal = vi.fn(async () => handle);
     const opts = baseOpts({ imageTag: "aai-guest-harness:abcd1234" });
 
-    // Test env resolves the subprocess backend (no SUPABASE_S3_ENDPOINT).
+    // Test env resolves the subprocess backend (no SUPABASE_STORAGE_BUCKET).
     const result = await spawnAgentServer(opts, { modal, subprocess });
 
     expect(result).toBe(handle);
@@ -56,7 +56,7 @@ describe("describeBundle", () => {
     const subprocess = vi.fn(async () => ({ name: "studio-agent" }));
     const modal = vi.fn(async () => undefined);
 
-    // Test env resolves the subprocess backend (no SUPABASE_S3_ENDPOINT).
+    // Test env resolves the subprocess backend (no SUPABASE_STORAGE_BUCKET).
     const config = await describeBundle(opts, { modal, subprocess });
 
     expect(config).toEqual({ name: "studio-agent" });

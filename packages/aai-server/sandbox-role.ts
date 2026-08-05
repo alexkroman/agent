@@ -45,6 +45,13 @@ export function roleForSlug(slug: string): SandboxRole {
 export type SpawnIdentity = {
   slug?: string | undefined;
   role?: SandboxRole | undefined;
+  /**
+   * Fleet-wide Modal sandbox NAME, when this spawn must be unique across
+   * replicas (see sandbox-directory.ts). Modal refuses a duplicate, so two
+   * replicas racing to spawn for the same thing cannot both succeed. Omitted
+   * by spawns that are legitimately per-caller (bundle inspection).
+   */
+  name?: string | undefined;
 };
 
 /**

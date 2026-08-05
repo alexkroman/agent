@@ -18,15 +18,24 @@ studio app must be deployed alongside this one.
 Deploy (from the repo root, with the Python `modal` CLI authed via
 `modal token new`):
 
+    supabase db push          # FIRST — see below
     modal deploy packages/aai-server/modal_deploy.py
     # or: pnpm --filter aai-server deploy:modal (same command via pnpm)
+
+The platform schema (``aai_platform``, the Realtime publication and its
+``service_role`` grants, the pgmq queue) is declared in
+``supabase/migrations`` and must be applied BEFORE the code that queries it.
+It used to be created lazily by each store on first use, which needed no
+ordering but silently papered over a missing table. A skipped migration now
+fails loudly with "relation does not exist" on the first read.
 
 Required Modal Secret named ``aai-server`` with (at least):
 
 - ``MODAL_TOKEN_ID`` / ``MODAL_TOKEN_SECRET`` — for creating guest sandboxes
-- ``SUPABASE_S3_ENDPOINT`` / ``SUPABASE_S3_ACCESS_KEY_ID`` /
-  ``SUPABASE_S3_SECRET_ACCESS_KEY`` / ``SUPABASE_STORAGE_BUCKET`` — Supabase
-  Storage (S3-compatible); optional ``SUPABASE_S3_REGION``
+- ``SUPABASE_STORAGE_BUCKET`` — the Supabase Storage bucket deploy artifacts
+  live in. Authenticated with ``SUPABASE_SERVICE_ROLE_KEY`` below, so Storage
+  needs no credential of its own. Also the sentinel that distinguishes a
+  production boot from local dev (see ``isLocalDev``)
 - ``SUPABASE_DB_URL`` — service-role Postgres connection string (Vault
   secrets + per-app databases)
 - ``SUPABASE_URL`` / ``SUPABASE_PUBLISHABLE_KEY`` — Supabase Auth (studio
@@ -34,7 +43,8 @@ Required Modal Secret named ``aai-server`` with (at least):
   the dashboard's API Keys page). Missing means browser login is disabled
   (a boot warning says so) — raw API-key bearers still work
 - ``SUPABASE_SERVICE_ROLE_KEY`` — with ``SUPABASE_URL``, the Supabase
-  Realtime change streams (sandbox invalidation, studio preview push)
+  Realtime change streams (sandbox invalidation, studio preview push) AND
+  Storage reads/writes of deploy artifacts
 - optional: ``ASSEMBLYAI_API_KEY``
 
 """

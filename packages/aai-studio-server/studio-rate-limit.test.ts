@@ -127,13 +127,15 @@ describe("createPgRateLimiter", () => {
     expect((await a.check("scope")).ok).toBe(false);
   });
 
-  test("ensures schema and table before the first check, once", async () => {
+  // The table is declared in supabase/migrations, applied before any code
+  // runs. Lazy DDL here would hide a missed migration.
+  test("issues no DDL — the table comes from migrations", async () => {
     const clock = { now: 1_000_000 };
     const db = fakeRateLimitDb(clock);
     const limiter = createPgRateLimiter(db.exec, { name: "chat", limit: 5, windowMs: 60_000 });
     await limiter.check("scope");
     await limiter.check("scope");
-    expect(db.statements.filter((s) => s.startsWith("create")).length).toBe(3); // schema + table + index
+    expect(db.statements.filter((s) => /^\s*(create|alter)/i.test(s))).toEqual([]);
   });
 
   test("a database error propagates instead of unmetering the route", async () => {

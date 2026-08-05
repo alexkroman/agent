@@ -172,27 +172,17 @@ describe("trimChatToByteBudget", () => {
 // ── Postgres SQL shapes ─────────────────────────────────────────────────────
 
 describe("createPgChatStore SQL", () => {
-  test("lazily creates the aai_platform schema and table exactly once", async () => {
+  /**
+   * The table is declared in supabase/migrations, applied before any code
+   * runs. A store that issues DDL is the regression: it papers over a missed
+   * migration and creates the table under whatever connection first noticed.
+   */
+  test("issues no DDL — the schema comes from migrations", async () => {
     const { sql, log } = createFakeSql();
     const store = createPgChatStore(sql);
     await store.putChat("s", "p", [msg("m1")]);
     await store.getChat("s", "p");
-    const ddl = log.filter((entry) => entry.query.startsWith("create"));
-    expect(ddl.map((entry) => entry.query)).toEqual([
-      "create schema if not exists aai_platform",
-      expect.stringContaining("create table if not exists aai_platform.studio_chats"),
-    ]);
-    expect(ddl[1]?.query).toContain("messages jsonb not null");
-    // No version column: the row is a full snapshot with one writer surface.
-    expect(ddl[1]?.query).not.toContain("version");
-    expect(ddl[1]?.query).toContain("primary key (scope, project)");
-  });
-
-  test("a failed ensure is retried on the next call, not memoized", async () => {
-    const { sql } = createFakeSql({ failEnsures: 1 });
-    const store = createPgChatStore(sql);
-    await expect(store.getChat("s", "p")).rejects.toThrow("ddl refused");
-    expect(await store.getChat("s", "p")).toBeNull();
+    expect(log.filter((entry) => /^\s*(create|alter)/i.test(entry.query))).toEqual([]);
   });
 
   test("putChat is an upsert with the messages bound as jsonb", async () => {

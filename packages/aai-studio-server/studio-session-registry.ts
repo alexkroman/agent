@@ -43,8 +43,8 @@
  * registry is what dev and tests run on.
  */
 
-import { ensureTableOnce } from "aai-server/pg-ensure";
 import type { SqlExec } from "aai-server/secret-store";
+import { projectKey } from "./studio-workspace.ts";
 
 /**
  * How long a session stays live without activity — the registry lease AND
@@ -99,22 +99,6 @@ export type StudioSessionRegistry = {
 
 const TABLE = "aai_platform.studio_sessions";
 
-const ENSURE_TABLE_SQL = `create table if not exists ${TABLE} (
-  scope text not null,
-  project text not null,
-  chat_url text not null,
-  chat_token text not null,
-  guest_origin text not null,
-  sandbox_token text not null,
-  owner text not null,
-  expires_at timestamptz not null,
-  primary key (scope, project)
-)`;
-
-/** The sweep filters on it; the PK doesn't cover it. */
-const ENSURE_INDEX_SQL = `create index if not exists studio_sessions_expires_at
-  on ${TABLE} (expires_at)`;
-
 const GET_SQL = `select chat_url, chat_token, guest_origin, sandbox_token, owner
 from ${TABLE}
 where scope = $1 and project = $2 and expires_at > now()`;
@@ -144,11 +128,9 @@ export function createPgStudioSessionRegistry(
   opts: PgStudioSessionRegistryOptions = {},
 ): StudioSessionRegistry {
   const leaseMs = opts.leaseMs ?? STUDIO_SESSION_IDLE_MS;
-  const ensure = ensureTableOnce(sql, ENSURE_TABLE_SQL, ENSURE_INDEX_SQL);
 
   return {
     async get(scope, project) {
-      await ensure();
       const rows = await sql(GET_SQL, [scope, project]);
       const row = rows[0];
       if (!row) return null;
@@ -161,7 +143,6 @@ export function createPgStudioSessionRegistry(
       };
     },
     async claim(scope, project, record) {
-      await ensure();
       await sql(CLAIM_SQL, [
         scope,
         project,
@@ -174,11 +155,9 @@ export function createPgStudioSessionRegistry(
       ]);
     },
     async touch(scope, project) {
-      await ensure();
       await sql(TOUCH_SQL, [scope, project, leaseMs]);
     },
     async release(scope, project, owner) {
-      await ensure();
       await sql(RELEASE_SQL, [scope, project, owner]);
     },
   };
@@ -190,30 +169,29 @@ export function createMemoryStudioSessionRegistry(
 ): StudioSessionRegistry {
   const leaseMs = opts.leaseMs ?? STUDIO_SESSION_IDLE_MS;
   const rows = new Map<string, { record: StudioSessionRecord; expiresAt: number }>();
-  const key = (scope: string, project: string): string => `${scope} ${project}`;
 
   return {
     get(scope, project) {
-      const row = rows.get(key(scope, project));
+      const row = rows.get(projectKey(scope, project));
       if (!row) return Promise.resolve(null);
       if (row.expiresAt <= Date.now()) {
-        rows.delete(key(scope, project));
+        rows.delete(projectKey(scope, project));
         return Promise.resolve(null);
       }
       return Promise.resolve(row.record);
     },
     claim(scope, project, record) {
-      rows.set(key(scope, project), { record, expiresAt: Date.now() + leaseMs });
+      rows.set(projectKey(scope, project), { record, expiresAt: Date.now() + leaseMs });
       return Promise.resolve();
     },
     touch(scope, project) {
-      const row = rows.get(key(scope, project));
+      const row = rows.get(projectKey(scope, project));
       if (row) row.expiresAt = Date.now() + leaseMs;
       return Promise.resolve();
     },
     release(scope, project, owner) {
-      const row = rows.get(key(scope, project));
-      if (row?.record.owner === owner) rows.delete(key(scope, project));
+      const row = rows.get(projectKey(scope, project));
+      if (row?.record.owner === owner) rows.delete(projectKey(scope, project));
       return Promise.resolve();
     },
   };

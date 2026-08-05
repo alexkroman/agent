@@ -2,7 +2,7 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { CliError, ok } from "./_output.ts";
 import { withTempDir } from "./_test-utils.ts";
 
@@ -71,9 +71,22 @@ describe("findUnknownFlags", () => {
 
 describe("unknownFlagsForArgv", () => {
   // Resolved against the REAL command tree, so the check can't drift from the
-  // flags the commands actually declare.
+  // flags the commands actually declare — which means importing cli.ts and,
+  // with it, every subcommand module it registers.
+  //
+  // Imported ONCE, in a hook: `await import("./cli.ts")` inside a test looks
+  // free (~30ms once vite-node has the graph cached) and is anything but on
+  // the first call — transforming that graph is charged to whichever test
+  // gets there first, and under a saturated full-repo run that alone timed
+  // out this test at the 5s default while it was doing nothing slow. A hook
+  // makes the cost belong to the suite instead of to an arbitrary test, and
+  // the raised budget below covers the rest.
+  let mainCommand: Awaited<typeof import("./cli.ts")>["mainCommand"];
+  beforeAll(async () => {
+    ({ mainCommand } = await import("./cli.ts"));
+  }, 60_000);
+
   test("accepts every flag a command declares", async () => {
-    const { mainCommand } = await import("./cli.ts");
     expect(
       await unknownFlagsForArgv(mainCommand, ["push", "--server", "http://x", "--force"]),
     ).toEqual([]);
@@ -84,7 +97,6 @@ describe("unknownFlagsForArgv", () => {
   });
 
   test("descends into nested subcommands", async () => {
-    const { mainCommand } = await import("./cli.ts");
     expect(
       await unknownFlagsForArgv(mainCommand, ["secret", "put", "NAME", "-s", "http://x"]),
     ).toEqual([]);
@@ -96,7 +108,6 @@ describe("unknownFlagsForArgv", () => {
   });
 
   test("catches a mistyped --server before the command runs", async () => {
-    const { mainCommand } = await import("./cli.ts");
     expect(await unknownFlagsForArgv(mainCommand, ["push", "--serverr=http://evil.test"])).toEqual([
       "--serverr",
     ]);
@@ -107,7 +118,6 @@ describe("unknownFlagsForArgv", () => {
     // this wrong breaks Publish for every studio user, and no unit test of the
     // flag matcher alone would have noticed — the spelling is kebab-case while
     // the args are declared camelCase.
-    const { mainCommand } = await import("./cli.ts");
     expect(
       await unknownFlagsForArgv(mainCommand, [
         "deploy",
@@ -121,7 +131,6 @@ describe("unknownFlagsForArgv", () => {
   });
 
   test("says nothing about an unknown SUBCOMMAND — citty shows usage for that", async () => {
-    const { mainCommand } = await import("./cli.ts");
     expect(await unknownFlagsForArgv(mainCommand, ["puhs", "--server", "http://x"])).toEqual([]);
   });
 });

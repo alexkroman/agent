@@ -6,88 +6,33 @@
  * parsing is covered in modal-sandbox-env.test.ts.
  */
 
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { writeFile } from "node:fs/promises";
+import { AlreadyExistsError, type Image } from "modal";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createFakeGuestSocket, type FakeGuestSocket } from "./_sandbox-vm-test-utils.ts";
+import {
+  createFakeGuestSocket,
+  type FakeGuestSocket,
+  makeCtx,
+  makeFakeProc,
+  makeFakeSandbox,
+  makeHarnessFile,
+} from "./_sandbox-vm-test-utils.ts";
 import {
   _internals,
   GUEST_PORT,
-  type ModalProcLike,
-  type ModalSandboxLike,
   type ModalSpawnContext,
+  resolveSpawnImage,
   spawnModalWarm,
+  translateCreateError,
 } from "./modal-sandbox.ts";
 import {
   DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
   DEFAULT_SANDBOX_TIMEOUT_MS,
 } from "./modal-sandbox-env.ts";
 import type { RpcConnection } from "./rpc-transport.ts";
+import { SandboxNameTakenError } from "./sandbox-directory.ts";
 
 // ── Fakes ────────────────────────────────────────────────────────────────────
-
-type FakeProc = {
-  proc: ModalProcLike;
-  /** Push bytes onto the guest's stderr. */
-  pushStderr(text: string): void;
-  /** Settle proc.wait(). */
-  exit(code: number): void;
-};
-
-function makeFakeProc(): FakeProc {
-  const encoder = new TextEncoder();
-  let stderrController!: ReadableStreamDefaultController<Uint8Array>;
-  const stderr = new ReadableStream<Uint8Array>({
-    start(c) {
-      stderrController = c;
-    },
-  });
-  const stdout = new ReadableStream<Uint8Array>({
-    start(c) {
-      c.close();
-    },
-  });
-  let resolveWait!: (code: number) => void;
-  const waitPromise = new Promise<number>((resolve) => {
-    resolveWait = resolve;
-  });
-  return {
-    proc: { stdout, stderr, wait: () => waitPromise },
-    pushStderr: (text) => stderrController.enqueue(encoder.encode(text)),
-    exit: (code) => resolveWait(code),
-  };
-}
-
-function makeFakeSandbox(fakeProc: FakeProc): ModalSandboxLike & {
-  execCalls: { command: string[]; params: Record<string, unknown> }[];
-  /** path → content written pre-exec (agent-mode boot artifacts). */
-  files: Map<string, string>;
-  updateNetworkPolicy: ReturnType<typeof vi.fn>;
-  terminate: ReturnType<typeof vi.fn>;
-} {
-  const execCalls: { command: string[]; params: Record<string, unknown> }[] = [];
-  const files = new Map<string, string>();
-  return {
-    sandboxId: "sb-test",
-    execCalls,
-    files,
-    filesystem: {
-      writeText: async (data: string, remotePath: string) => {
-        files.set(remotePath, data);
-      },
-    },
-    exec: async (command, params) => {
-      execCalls.push({ command, params: params as unknown as Record<string, unknown> });
-      return fakeProc.proc;
-    },
-    tunnels: async () => ({
-      [GUEST_PORT]: { host: "tunnel.modal.test", port: 12_345 },
-    }),
-    updateNetworkPolicy: vi.fn().mockResolvedValue(undefined),
-    terminate: vi.fn().mockResolvedValue(undefined),
-  };
-}
 
 /** A dial fn resolving to a fake guest socket, recording its arguments. */
 function makeFakeDial(socket: FakeGuestSocket) {
@@ -97,24 +42,6 @@ function makeFakeDial(socket: FakeGuestSocket) {
     return socket.ws;
   };
   return { dial, calls };
-}
-
-async function makeHarnessFile(content = "// harness"): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "aai-modal-test-"));
-  const path = join(dir, "harness.mjs");
-  await writeFile(path, content, "utf-8");
-  return path;
-}
-
-function makeCtx(sb: ModalSandboxLike): ModalSpawnContext & { codes: string[] } {
-  const codes: string[] = [];
-  return {
-    codes,
-    createGuestSandbox: async (code, _params) => {
-      codes.push(code);
-      return sb;
-    },
-  };
 }
 
 beforeEach(() => {
@@ -247,6 +174,7 @@ describe("spawnModalWarm", () => {
     const sb = makeFakeSandbox(fake);
     const createParams: Record<string, unknown>[] = [];
     const ctx: ModalSpawnContext = {
+      lookupGuestSandbox: () => Promise.resolve(null),
       createGuestSandbox: async (_code, params) => {
         createParams.push(params as unknown as Record<string, unknown>);
         return sb;
@@ -266,6 +194,9 @@ describe("spawnModalWarm", () => {
       idleTimeoutMs: DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
       tags: { service: "aai-guest", role: "agent", slug: "my-agent" },
     });
+    // Readiness is Modal's to evaluate, inside the container, rather than N
+    // HTTP polls from the host across the public tunnel.
+    expect(createParams[0]?.readinessProbe).toBeDefined();
     // Tunnels replaced blockNetwork — they are mutually exclusive in Modal.
     expect(createParams[0]).not.toHaveProperty("blockNetwork");
 
@@ -294,6 +225,7 @@ describe("spawnModalWarm", () => {
     const sb = makeFakeSandbox(fake);
     const tags: (string | undefined)[] = [];
     const ctx: ModalSpawnContext = {
+      lookupGuestSandbox: () => Promise.resolve(null),
       createGuestSandbox: async (_code, _params, imageTag) => {
         tags.push(imageTag);
         return sb;
@@ -345,6 +277,7 @@ describe("spawnModalWarm", () => {
       const warm = await spawnModalWarm(
         { harnessPath, ...identity },
         {
+          lookupGuestSandbox: () => Promise.resolve(null),
           createGuestSandbox: async (_code, params) => {
             createParams.push(params as unknown as Record<string, unknown>);
             return sb;
@@ -383,6 +316,7 @@ describe("spawnModalWarm", () => {
       const warm = await spawnModalWarm(
         { harnessPath },
         {
+          lookupGuestSandbox: () => Promise.resolve(null),
           createGuestSandbox: async (_code, params) => {
             createParams.push(params as unknown as Record<string, unknown>);
             return sb;
@@ -418,6 +352,7 @@ describe("spawnModalWarm", () => {
       const sb = makeFakeSandbox(fake);
       const createParams: Record<string, unknown>[] = [];
       const ctx: ModalSpawnContext = {
+        lookupGuestSandbox: () => Promise.resolve(null),
         createGuestSandbox: async (_code, params) => {
           createParams.push(params as unknown as Record<string, unknown>);
           return sb;
@@ -453,6 +388,7 @@ describe("spawnModalWarm", () => {
       const sb = makeFakeSandbox(fake);
       const createParams: Record<string, unknown>[] = [];
       const ctx: ModalSpawnContext = {
+        lookupGuestSandbox: () => Promise.resolve(null),
         createGuestSandbox: async (_code, params) => {
           createParams.push(params as unknown as Record<string, unknown>);
           return sb;
@@ -480,6 +416,7 @@ describe("spawnModalWarm", () => {
     const sb = makeFakeSandbox(fake);
     const createParams: Record<string, unknown>[] = [];
     const ctx: ModalSpawnContext = {
+      lookupGuestSandbox: () => Promise.resolve(null),
       createGuestSandbox: async (_code, params) => {
         createParams.push(params as unknown as Record<string, unknown>);
         return sb;
@@ -503,6 +440,7 @@ describe("spawnModalWarm", () => {
       const sb = makeFakeSandbox(fake);
       const createParams: Record<string, unknown>[] = [];
       const ctx: ModalSpawnContext = {
+        lookupGuestSandbox: () => Promise.resolve(null),
         createGuestSandbox: async (_code, params) => {
           createParams.push(params as unknown as Record<string, unknown>);
           return sb;
@@ -574,5 +512,91 @@ describe("spawnModalWarm", () => {
     ).rejects.toThrow(/ENOENT/);
     // The harness is read before any sandbox is created — nothing to leak.
     expect(sb.execCalls).toHaveLength(0);
+  });
+});
+
+// ── Modal contract translations ──────────────────────────────────────────────
+
+describe("translateCreateError", () => {
+  it("turns Modal's duplicate-name refusal into a routable race loss", () => {
+    // The whole fleet-wide-uniqueness design rests on this: the name is what
+    // stops two replicas serving one deploy, and the broker turns this error
+    // into "go back to the directory and use the winner". Without the
+    // translation the create just fails, and the peer is never found.
+    const translated = translateCreateError(new AlreadyExistsError("taken"), "agent-abc-v1");
+    expect(translated).toBeInstanceOf(SandboxNameTakenError);
+    expect((translated as SandboxNameTakenError).name).toBe("SandboxNameTakenError");
+    expect((translated as Error).cause).toBeInstanceOf(AlreadyExistsError);
+  });
+
+  it("leaves every other failure exactly as it was", () => {
+    const boom = new Error("modal is down");
+    expect(translateCreateError(boom, "agent-abc-v1")).toBe(boom);
+  });
+
+  it("does not translate an UNNAMED create — it has no race to lose", () => {
+    const dup = new AlreadyExistsError("taken");
+    expect(translateCreateError(dup, undefined)).toBe(dup);
+  });
+});
+
+describe("resolveSpawnImage", () => {
+  const current = { tag: "current" } as unknown as Image;
+  const pinned = { tag: "pinned" } as unknown as Image;
+
+  it("uses the deploy's pin, without building the current image", async () => {
+    // Per-deploy environment pinning: a platform upgrade must not change the
+    // image under an already-deployed bundle.
+    const built = vi.fn(() => Promise.resolve(current));
+    const image = await resolveSpawnImage({
+      imageTag: "aai-guest-harness:abc",
+      fromName: () => Promise.resolve(pinned),
+      current: built,
+      env: {},
+    });
+    expect(image).toBe(pinned);
+    expect(built).not.toHaveBeenCalled();
+  });
+
+  it("builds the current image when there is no pin", async () => {
+    const image = await resolveSpawnImage({
+      imageTag: undefined,
+      fromName: () => Promise.reject(new Error("must not be asked")),
+      current: () => Promise.resolve(current),
+      env: {},
+    });
+    expect(image).toBe(current);
+  });
+
+  it("fails LOUDLY on an unresolvable pin rather than substituting", async () => {
+    // Silently falling back is the untested-environment drift that pinning
+    // exists to prevent — and it would be invisible until the agent
+    // misbehaved. The message has to name the two ways out.
+    const built = vi.fn(() => Promise.resolve(current));
+    await expect(
+      resolveSpawnImage({
+        imageTag: "aai-guest-harness:gone",
+        fromName: () => Promise.reject(new Error("404 no such image")),
+        current: built,
+        env: {},
+      }),
+    ).rejects.toThrow(/pinned harness image aai-guest-harness:gone is unresolvable/);
+    expect(built).not.toHaveBeenCalled();
+  });
+
+  it("honours the operator kill switch for a registry loss", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const image = await resolveSpawnImage({
+      imageTag: "aai-guest-harness:gone",
+      fromName: () => Promise.reject(new Error("404")),
+      current: () => Promise.resolve(current),
+      env: { SANDBOX_IGNORE_IMAGE_PINS: "1" },
+    });
+    // Deliberately loud: the operator has traded environment pinning away.
+    expect(image).toBe(current);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("SANDBOX_IGNORE_IMAGE_PINS"), {
+      imageTag: "aai-guest-harness:gone",
+    });
+    warn.mockRestore();
   });
 });

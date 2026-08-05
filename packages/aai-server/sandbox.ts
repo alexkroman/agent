@@ -23,6 +23,14 @@ export type SandboxOptions = {
   env: Record<string, string>;
   slug: string;
   /**
+   * The deploy version this sandbox runs. Half the fleet-wide sandbox NAME
+   * (see sandbox-directory.ts): Modal refuses a duplicate, so one deploy gets
+   * one sandbox platform-wide with no lease table — and including the version
+   * is what lets a blue-green handover boot the replacement while the old one
+   * still drains.
+   */
+  version: number;
+  /**
    * Harness image the agent was deployed against (per-deploy pinning —
    * see AgentSpawnOptions.imageTag).
    */
@@ -82,6 +90,7 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
 
   const vmReady = spawnAgentServer({
     slug,
+    version: opts.version,
     workerCode,
     env,
     harnessPath: resolveHarnessPath(),

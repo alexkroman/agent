@@ -24,7 +24,6 @@
  */
 
 import { safeJsonParse } from "@alexkroman1/aai";
-import { ensureTableOnce } from "./pg-ensure.ts";
 import type { SqlExec } from "./secret-store.ts";
 
 /**
@@ -82,26 +81,14 @@ function trimChat(messages: unknown[], budget: number): { trimmed: unknown[]; pa
 
 const TABLE = "aai_platform.studio_chats";
 
-/** DDL shared with the boot-time Realtime publication setup (realtime-events.ts). */
-export const ENSURE_CHATS_TABLE_SQL = `create table if not exists ${TABLE} (
-  scope text not null,
-  project text not null,
-  messages jsonb not null,
-  updated_at timestamptz not null default now(),
-  primary key (scope, project)
-)`;
-
 /**
- * Postgres-backed chat store over the platform admin connection. Lazy
- * schema/table ensure with the failed-ensure reset, and the same
- * string-or-object jsonb read tolerance as the workspace store.
+ * Postgres-backed chat store over the platform admin connection. The table is
+ * declared in `supabase/migrations`, so this store issues no DDL; it shares
+ * the workspace store's string-or-object jsonb read tolerance.
  */
 export function createPgChatStore(sql: SqlExec): ChatStore {
-  const ensure = ensureTableOnce(sql, ENSURE_CHATS_TABLE_SQL);
-
   return {
     async getChat(scope, project) {
-      await ensure();
       const rows = await sql(`select messages from ${TABLE} where scope = $1 and project = $2`, [
         scope,
         project,
@@ -114,7 +101,6 @@ export function createPgChatStore(sql: SqlExec): ChatStore {
     },
 
     async putChat(scope, project, messages) {
-      await ensure();
       const json = `[${trimChat(messages, MAX_STUDIO_CHAT_STORE_BYTES).parts.join(",")}]`;
       await sql(
         `insert into ${TABLE} (scope, project, messages) values ($1, $2, $3::jsonb)
@@ -124,7 +110,6 @@ export function createPgChatStore(sql: SqlExec): ChatStore {
     },
 
     async deleteChat(scope, project) {
-      await ensure();
       await sql(`delete from ${TABLE} where scope = $1 and project = $2`, [scope, project]);
     },
   };

@@ -34,11 +34,14 @@ import { errorMessage } from "@alexkroman1/aai";
 import { createOwnedMap } from "@alexkroman1/aai/internal";
 import { resolveHarnessPath } from "aai-server/constants";
 import { createKeyedLock, withLock } from "aai-server/platform-barrel";
+import { SandboxNameTakenError, studioSandboxName } from "aai-server/sandbox-directory";
 import { spawnWarmHarness, type WarmHarness } from "aai-server/sandbox-vm";
 import { studioLlmModelId } from "./studio-llm.ts";
 import { createPreviewDeployer, type PreviewTarget } from "./studio-preview.ts";
+import { createMemoryPreviewQueue, type PreviewQueue } from "./studio-preview-queue.ts";
 import { studioSystemPrompt } from "./studio-prompt.ts";
 import type { adoptPeerSession } from "./studio-session-adopt.ts";
+import type { SessionEntry } from "./studio-session-entry.ts";
 import { createSessionFleet, soloFleet } from "./studio-session-fleet.ts";
 import {
   createWorkspacePublisher,
@@ -98,6 +101,19 @@ export type StudioSessionBrokerOptions = BrokerStores & {
   replicaId?: string;
   /** Test seam for the peer install (studio-session-adopt.ts). */
   adopt?: typeof adoptPeerSession;
+  /**
+   * Durable preview-deploy queue (studio-preview-queue.ts). Defaults to an
+   * in-memory queue, which is correct for dev/tests (one process) and loses
+   * pending previews on restart — exactly what the pgmq implementation exists
+   * to prevent in production.
+   */
+  previewQueue?: PreviewQueue;
+  /**
+   * A studio user's stored AssemblyAI key, so a preview job REDELIVERED to a
+   * replica that did not enqueue it can still deploy. Without it, only
+   * same-replica jobs run (see `createPreviewDeployer`).
+   */
+  resolveApiKey?: (userId: string) => Promise<string | null>;
 };
 
 export type StudioSessionBroker = {
@@ -136,38 +152,6 @@ export type StudioSessionBroker = {
   ): Promise<WorkspaceDeployOutcome>;
   /** Tear down every live sandbox (tests, shutdown). */
   dispose(): Promise<void>;
-};
-
-type SessionEntry = {
-  warm: WarmHarness;
-  url: string;
-  /** This entry's own (scope, project) — its key in the cross-replica registry. */
-  scope: string;
-  project: string;
-  lastUsed: number;
-  /**
-   * The chat-surface bearer, minted ONCE for this sandbox and handed to every
-   * caller that brokers this project.
-   *
-   * It must not rotate per broker call. The guest holds exactly one token
-   * (`session.chatToken`), so re-minting on a re-init invalidates the token
-   * every earlier caller is still holding — and overlapping brokers for one
-   * project are routine (a second tab, another device, a reload racing an
-   * in-flight one; the same set `sessionLock` exists for). The loser's next
-   * chat turn then 401s on a surface where the only credential IS this token.
-   * Rotating bought nothing for that: the token is already random, scoped to
-   * one sandbox, and dies with it.
-   */
-  chatToken: string;
-  /**
-   * Where this session's auto preview deploys go — the public origin and
-   * caller key captured at broker time. Absent when the session was brokered
-   * without a `serverUrl` (tests, programmatic callers): then agent edits
-   * sync without auto-previewing.
-   */
-  previewTarget?: PreviewTarget;
-  /** This claim's release on the `sessions` owned map (see `disposeEntry`). */
-  release: () => boolean;
 };
 
 export function createStudioSessionBroker(
@@ -371,6 +355,31 @@ export function createStudioSessionBroker(
     }
   }
 
+  /**
+   * Spawn this project's guest under its fleet-wide name, or null when a peer
+   * won the name race — Modal refuses a duplicate name, so two replicas
+   * racing the cold path cannot both spawn even if the registry read missed
+   * (see `studioSandboxName`). Null means "adopt the winner": failing the
+   * broker instead would make the mechanism that prevents a duplicate spawn
+   * cost the user a failed call, healed only by the client's re-broker.
+   *
+   * Tagged with the project name so the Modal dashboard shows WHICH studio
+   * session a sandbox serves, not a shared "studio-session" blob.
+   */
+  async function spawnNamed(scope: string, project: string): Promise<WarmHarness | null> {
+    try {
+      return await spawn({
+        harnessPath: options.harnessPath ?? resolveHarnessPath(),
+        slug: project,
+        role: "studio",
+        name: studioSandboxName(scope, project),
+      });
+    } catch (err) {
+      if (err instanceof SandboxNameTakenError) return null;
+      throw err;
+    }
+  }
+
   /** Reuse-or-adopt-or-spawn for one project. Runs under the session lock. */
   async function ensureSessionLocked(
     key: string,
@@ -392,20 +401,16 @@ export function createStudioSessionBroker(
     // running this project's guest. Checked after the workspace read so a
     // bogus project never reaches the registry, and before the spawn because
     // the spawn is exactly the duplicate this prevents.
-    const adopted = await fleet.adopt(
-      scope,
-      project,
-      sessionParams(scope, project, apiKey, workspace.files),
-    );
+    const adopt = (): Promise<{ url: string; token: string } | null> =>
+      fleet.adopt(scope, project, sessionParams(scope, project, apiKey, workspace.files));
+    const adopted = await adopt();
     if (adopted) return adopted;
 
-    // Tagged with the project name so the Modal dashboard shows WHICH
-    // studio session a sandbox serves, not a shared "studio-session" blob.
-    const warm = await spawn({
-      harnessPath: options.harnessPath ?? resolveHarnessPath(),
-      slug: project,
-      role: "studio",
-    });
+    const warm = await spawnNamed(scope, project);
+    // A peer created this project's sandbox between the adopt above and the
+    // create — adopt the winner (see spawnNamed).
+    if (!warm) return await adopt();
+
     let token: string;
     try {
       wire(warm, key, scope, project);
@@ -465,6 +470,8 @@ export function createStudioSessionBroker(
   const previews = createPreviewDeployer({
     workspaces: options.workspaces,
     deployWorkspace: deployWorkspaceImpl,
+    queue: options.previewQueue ?? createMemoryPreviewQueue(),
+    ...(options.resolveApiKey && { resolveApiKey: options.resolveApiKey }),
   });
 
   return {
@@ -485,6 +492,7 @@ export function createStudioSessionBroker(
 
     async dispose() {
       clearInterval(sweeper);
+      previews.dispose();
       await Promise.allSettled([...sessions.values()].map((entry) => disposeEntry(entry)));
     },
   };

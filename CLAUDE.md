@@ -377,7 +377,7 @@ model) is the security boundary.
   (`@modal.web_server` wrapping the node process);
   `pnpm --filter aai-server deploy:modal`
 - `platform-lock.ts` — cross-replica per-slug mutation lock (see "Stateless
-  server" below): Postgres lease rows in `aai_platform.slug_locks` in
+  server" below): a Postgres ADVISORY lock on a reserved connection in
   production, the in-process keyed lock in dev/tests
 - `agent-store.ts` — the agents table (`aai_platform.agents`; memory in
   dev/tests): one row per agent — slug, credential hashes, the bundle's
@@ -387,6 +387,13 @@ model) is the security boundary.
 - `sandbox-resolve.ts` — slot-based slug→sandbox resolution +
   `watchAgentInvalidation`, the event-driven sandbox invalidation (split
   from sandbox.ts, which owns one sandbox's lifecycle)
+- `sandbox-broker.ts` — `brokerSessionUrl`: slug → the public session URL a
+  client dials, with the one failure taxonomy `GET /:slug/client-config` and
+  the `/:slug/websocket` upgrade share. The platform's ONLY routing point
+- `sandbox-directory.ts` / `sandbox-peers.ts` — the fleet-wide answer to "is
+  some replica already serving this deploy?", which is a Modal sandbox NAME
+  (`agent-<hash(slug)>-v<version>`) rather than a lease table — see "No
+  horizontal sandbox scaling" below
 - `platform-events.ts` — `PlatformEvents`: cross-replica change
   notifications (`watchAgents`, `watchWorkspace`, `watchChat`,
   `watchScopeProjects`) as SIGNALS (handlers re-read rows, never trust
@@ -395,9 +402,15 @@ model) is the security boundary.
   `postgres_changes` on `aai_platform.agents` / `studio_workspaces` /
   `studio_chats` over `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`, plus
   the boot-time `supabase_realtime` publication setup
-- `pg-cron.ts` — janitorial sweeps as pg_cron jobs (expired slug-lock
-  leases, dead rate-limit windows, orphaned `-preview` agents + their app
-  database schema/role and Vault secrets), installed idempotently at boot
+- `pg-cron.ts` — janitorial sweeps as pg_cron jobs (dead rate-limit windows,
+  orphaned `-preview` agents + their app database schema/role and Vault
+  secrets), installed idempotently at boot. `cron.schedule` upserts by name,
+  so a job DELETED from `PLATFORM_CRON_JOBS` keeps firing on any database that
+  already has it — and `guarded()` makes that silent. Boot therefore DIFFS:
+  every `aai-sweep-*` job in `cron.job` that the code no longer declares is
+  unscheduled, so `PLATFORM_CRON_JOBS` is the whole truth about what the
+  platform runs and retiring one cannot be forgotten (the hand-maintained
+  retired list this replaced had exactly one failure mode — omission)
 - `studio-proxy.ts` / `app-middleware.ts` — the split deployment (see
   "Split services" below): the agent service's reverse proxy to the studio
   service, and the apps' shared base middleware
@@ -411,9 +424,21 @@ model) is the security boundary.
 - `auth.ts` — authentication/authorization
 - `credentials.ts` — credential derivation
 - `bundle-store.ts` — deploy persistence: content-addressed, immutable
-  blobs (`blobs/<sha256>` — worker + client files, in Supabase Storage via
-  its S3-compatible endpoint in production, memory in dev/tests) committed
+  blobs (`blobs/<sha256>` — worker + client files) committed
   by the agents-row upsert, which is the deploy's ATOMIC publish point.
+- `blob-storage.ts` — where those blobs live: Supabase Storage through
+  `@supabase/storage-js` in production (authenticated with the SAME
+  `SUPABASE_SERVICE_ROLE_KEY` as Realtime — Storage has no credential of its
+  own), memory in dev/tests. The surface is deliberately `getItem`/`setItem`
+  and nothing else. It replaced unstorage's generic S3 driver plus a local
+  override of that driver's `getKeys` (which lists the whole bucket and reads
+  only the first 1000-key page): once workspaces moved to Postgres NOTHING
+  lists keys, so the override guarded a call no longer made, and the
+  `SUPABASE_S3_*` endpoint/region/key set was a third credential for a
+  project already reachable two other ways. A miss (404) MUST resolve `null`
+  while any other failure throws — the bundle store caches misses under a
+  sentinel and retries failures, so conflating them makes a live deploy read
+  as absent.
   Agent env lives in Supabase Vault through the injected `SecretStore`.
   Orphan blobs from superseded/deleted deploys are accepted (content
   dedupes; a shared blob must not die with one referrer).
@@ -634,7 +659,16 @@ voice agents without the CLI:
   manifest — a range would let the workspace materialize a different SDK
   build than the harness resolved, into a workspace-local `node_modules`
   that *shadows* the baked one. Pinned, the local copy is byte-identical and
-  the shadowing is merely redundant. Toolchain-only packages (vite,
+  the shadowing is merely redundant — **but only while the pins still match
+  the toolchain**, which they stop doing the moment the platform ships a new
+  SDK. So an EXISTING manifest is the one exception to "existing files win":
+  `reconcileWorkspacePins` rewrites the declared toolchain pins to the
+  installed versions on every `ensureProjectShape`, leaving agent-added
+  dependencies, scripts, and everything else exactly as found. Absent
+  entries are NOT added back (npm reifies only what is declared, so an
+  absent entry is no shadowing hazard, and re-adding one would override a
+  deliberate removal), and an unparseable manifest is left alone for
+  `npm install` to report. Toolchain-only packages (vite,
   typescript, the `@types/*`) stay undeclared: the agent never imports them,
   and every entry is one more package that install has to reify.
 - **Guest tools carry their own deadlines** (`aai-guest/studio-tools.ts`):
@@ -657,9 +691,24 @@ voice agents without the CLI:
   share the RPC but never carry the flag, so a half-finished tree is never
   deployed) and editor file PUT/DELETEs — schedules a deploy of the
   workspace to the project's preview slug (`<project>-preview`) through
-  the same in-guest `aai deploy` path Publish uses (`studio-preview.ts`:
-  fire-and-forget, coalesced per project, no-op when the preview already
-  matches). Success stamps `previewSlug`/`previewHash` on the workspace;
+  the same in-guest `aai deploy` path Publish uses (`studio-preview.ts`).
+  **Scheduling is DURABLE**: the edit enqueues a job in
+  `studio-preview-queue.ts` (Supabase's `pgmq` in production, in-memory in
+  dev/tests) and a per-replica drain runs it, at-least-once — a claimed job is
+  invisible for a visibility timeout rather than deleted, so a replica restart
+  or a sandbox death mid-deploy no longer drops the work. Past
+  `PREVIEW_JOB_MAX_ATTEMPTS` redeliveries a job is archived (that is a crash
+  loop, not a slow deploy); a pg_cron sweep prunes the archive. Coalescing is
+  not managed: the deploy re-reads the workspace and no-ops when `previewHash`
+  matches, and the drain holds a per-project lock, so N jobs for one project
+  cost one deploy plus a read each — replacing an in-process map with a dirty
+  bit whose whole purpose was to approximate that without durability.
+  **A queue row NEVER carries a credential**: it names the studio `userId`,
+  and the drain resolves the key from Vault (`user-key:<uid>`), so a job
+  redelivered to another replica can still deploy. A raw-key caller's job
+  (CLI, evals) has no `userId`, so it runs only on the replica that enqueued
+  it and is archived if redelivered elsewhere. Success stamps
+  `previewSlug`/`previewHash` on the workspace;
   failure stamps `previewError` for the pane's banner (an auto-deploy has
   no chat turn to carry CLI output). `GET /studio/projects/:project`
   returns `previewSlug`/`previewVersion`/`previewStale`/`previewError`,
@@ -684,14 +733,15 @@ voice agents without the CLI:
   mirrors writes to the preview slug best-effort so previews run with the
   same third-party keys. **Landing on a project wakes its preview**
   (`wakeProjectPreview` in studio-preview.ts, hung off the once-per-open
-  session broker call): a STALE preview reschedules its auto-deploy — the deploys
-  are fire-and-forget with in-process coalescing, so a replica restart can
-  drop one and leave the pane on "Updating preview…" until the next edit —
-  skipping empty workspaces (the first agent turn owns the first preview)
-  and stamped build failures (deterministic; the banner carries the output),
-  and the embedded agent's sandbox is warmed through the platform's public
-  client-config broker (`warmPreviewSandbox`) so a preview idle-evicted
-  since the last visit is booting before the pane's iframe asks for it.
+  session broker call): the embedded agent's sandbox is warmed through the
+  platform's public client-config broker (`warmPreviewSandbox`) so a preview
+  idle-evicted since the last visit is booting before the pane's iframe asks
+  for it. It used to ALSO redeploy a stale preview, because scheduling was
+  fire-and-forget in-process state that a replica restart could drop, leaving
+  the pane on "Updating preview…" until the next edit; the queue owns delivery
+  now, so a stale preview means a job is still queued — re-scheduling here
+  would be a second mechanism answering the same question, and the weaker one,
+  since it only fires when a human opens the project.
   The warm-up doubles as an existence check: a 404 from the broker means
   the agent behind the workspace's preview stamp is GONE (expired, swept,
   or deleted out from under it), so the wake clears `previewHash` and
@@ -1976,25 +2026,53 @@ nothing but live control-channel connections (voice sessions don't pass
 through it at all). Everything durable lives in Supabase (bundles and
 client files in Storage, agent env + app-db credentials in Vault, studio
 workspaces/chats and per-app data in Postgres), and cross-replica
-coordination lives in the same Postgres over `SUPABASE_DB_URL`:
+coordination lives in the same Postgres over `SUPABASE_DB_URL`.
+
+**The schema is DECLARED, in `supabase/migrations`** — not created lazily by
+the store that reads it. Every `aai_platform` store used to call a memoized
+`create schema/table if not exists` on first use (`pg-ensure.ts`), which is
+why pg_cron sweep bodies were wrapped in `to_regclass` guards: on a fresh
+database a job could fire before its table existed. Migrations delete both,
+plus the boot-time publication/grant setup. The trade is deploy ORDERING —
+`supabase db push` before the deploy — and a missed migration now fails
+loudly with "relation does not exist" instead of being papered over by a lazy
+create that runs on whichever connection first noticed.
+`platform-schema.test.ts` is the guard in both directions: every
+`aai_platform.<table>` the source queries must be declared in a migration,
+and the store suites assert that no store issues DDL:
 
 - **Per-slug mutation lock** (`platform-lock.ts`): deploy/delete/secret/
-  storage mutations for a slug run under a lease row in
-  `aai_platform.slug_locks` (`createPgSlugLock`), injected as the `slugLock`
-  binding. A lease table, not a Postgres advisory lock — advisory locks are
-  connection-scoped and `SqlExec` runs over a pool, so acquire and release
-  could land on different connections; a lease survives any connection and
-  expires on its own if the holder crashes. The Postgres lock still takes
-  the in-process `withSlugLock` first (local waiters queue on the mutex
-  instead of polling the database), and it is **not renewed while held** —
-  an operation outrunning `SLUG_LOCK_LEASE_MS` loses exclusivity. Contention
-  past the acquire deadline surfaces as `SlugLockTimeoutError` → 409.
+  storage mutations for a slug run under a **Postgres advisory lock**
+  (`createPgSlugLock`), injected as the `slugLock` binding. This was a lease
+  table, on the reasoning that "advisory locks are connection-scoped and
+  `SqlExec` runs over a pool, so acquire and release could land on different
+  connections" — true, and the answer is to stop using the pool:
+  `AdminDb.reserve()` (postgres.js `sql.reserve()`) holds ONE connection for
+  the critical section. That deleted the table, the 250ms poll loop
+  (`pg_advisory_lock` queues the waiter inside Postgres), the lease sweep,
+  and the "not renewed while held" caveat — an operation now holds the lock
+  until it finishes, however long that takes, and a dropped connection
+  releases it, so a crashed replica frees its slug immediately. The acquire
+  deadline is `lock_timeout` on that connection; Postgres raises `55P03`,
+  which becomes `SlugLockTimeoutError` → 409. The key is
+  `pg_advisory_lock(SLUG_LOCK_NAMESPACE, hashtext(slug))` — two ints so the
+  namespace can never collide with another advisory-lock user in the
+  database. It still takes the in-process `withSlugLock` first, now so a
+  local waiter doesn't hold a reserved connection open while blocked.
   `sandbox-resolve.ts` stays on the in-process lock deliberately: it guards
   this replica's slot cache, a legitimately process-local resource.
 
+  **`SUPABASE_DB_URL` must be the direct, SESSION-mode connection string.** A
+  transaction-mode pooler (Supavisor's port 6543, `pgbouncer=true`) returns
+  the server connection between statements, so an advisory lock taken through
+  one is not held by whoever thinks it holds it — silent loss of mutual
+  exclusion. `assertSessionModeUrl` refuses such a URL at boot rather than
+  letting that be discovered later. Per-app databases are unaffected: they are
+  fronted by the pooler on purpose and take no advisory locks.
+
   **The binding is wrapped in `createMutationLock`, and must stay wrapped:
-  taking the lock also drops this replica's cached view of the slug.** The
-  lease alone is not enough, because every mutation is a read-modify-write
+  taking the lock also drops this replica's cached view of the slug.**
+  Exclusion alone is not enough, because every mutation is a read-modify-write
   over a read-through row cache — `handleSecretSet` merges onto `getEnv`,
   `deployLocked` merges the stored env *and* `credential_hashes` off
   `getAgent`. A row that replica A wrote moments ago can be invisible to
@@ -2109,18 +2187,19 @@ service's control work is light — and one container served both badly.
   `aai_platform.slug_epochs` table); the documented way to apply a secret
   now is to redeploy.
 
-  **Supabase setup this depends on** (all idempotent, run at boot by
-  `bootstrapPlatformDb` in service-config.ts): the watched tables exist,
-  are members of the `supabase_realtime` publication, and are SELECT-granted
-  to `service_role` — Realtime validates channel filter columns (and gates
-  row visibility) against what the subscriber's claimed role can SELECT, and
-  the app-created `aai_platform` schema gets none of Supabase's default
-  `public` grants, so without the grant every filtered subscribe fails with
-  `invalid column for filter <col>` (`ensureRealtimeSetup`) — and the
-  pg_cron sweeps are scheduled
-  (`schedulePlatformSweeps`). The env carries `SUPABASE_URL` +
-  `SUPABASE_SERVICE_ROLE_KEY` for the Realtime socket, required in
-  production alongside `SUPABASE_DB_URL`.
+  **Supabase setup this depends on lives in `supabase/migrations`**, applied
+  with `supabase db push` BEFORE the code that queries it: the `aai_platform`
+  schema and its tables, the watched tables' membership in the
+  `supabase_realtime` publication, the `service_role` SELECT grants, and the
+  `pg_cron`/`pgmq` extensions. Realtime validates channel filter columns (and
+  gates row visibility) against what the subscriber's claimed role can SELECT,
+  and the app-created `aai_platform` schema gets none of Supabase's default
+  `public` grants, so without those grants every filtered subscribe fails with
+  `invalid column for filter <col>`. Only the pg_cron SCHEDULING stays at boot
+  (`schedulePlatformSweeps` via `bootstrapPlatformDb`), because the sweep
+  bodies are defined in TypeScript and change with the code that owns them.
+  The env carries `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` for the
+  Realtime socket, required in production alongside `SUPABASE_DB_URL`.
 - **A superseded sandbox is RETIRED, not terminated** (`sandbox-retire.ts`).
   A mutation replaces the code a slug runs; it says nothing about the calls
   already in flight on the old sandbox, and closing their sockets inline —
@@ -2154,7 +2233,23 @@ service's control work is light — and one container served both badly.
   bounded by `MIN_CONTAINERS`/`MAX_CONTAINERS`. Scale-in is FREE for voice
   sessions: a replica going down RETIRES its agent guests instead of
   waiting on or terminating them (`teardownSandboxes` — one awaited,
-  deadline-carrying drain per guest, then exit). Sessions dial the sandbox
+  deadline-carrying drain per guest, then exit).
+
+  **Shutdown has to stop BOOTING sandboxes before it stops serving.**
+  Flipping `draining` only makes `/health` fail; the proxy stops routing here
+  when it notices, up to a health-check interval later. A request landing in
+  that window used to take the cold broker path, find an emptied slot, and
+  spawn a guest seconds before the process exited — ORPHANED, since no slot
+  referenced it and nothing held it, billing until Modal's idle timeout. Two
+  guards, in order of importance: `brokerSessionUrl` refuses to boot a new
+  sandbox when `isDraining` (503, so the client re-brokers onto a live
+  replica) while still serving a LIVE resident, which orphans nothing; and
+  `teardownSandboxes` waits `SHUTDOWN_GRACE_MS` (3s, env-overridable) before
+  emptying the slots, so requests that would have been served still are. The
+  wait is deliberately short — it spends the same SIGTERM allowance the
+  drains need, and an undelivered drain is the worse failure. The studio-only
+  service passes 0: its slot cache is always empty, so it has no such window.
+  Sessions dial the sandbox
   tunnel directly and the guest has no dependency on the replica, so live
   calls finish in the guests on their own clock after the replica is gone;
   the next replica's broker spawns fresh sandboxes on demand. The old
@@ -2186,7 +2281,7 @@ service's control work is light — and one container served both badly.
   three rules: an explicit `SANDBOX_BACKEND` (`modal` | `subprocess`) always
   wins (unknown values throw — a silent fallback would look like the override
   not working); otherwise not-local-dev → `modal`, unconditionally; otherwise
-  → `subprocess`. `isLocalDev` is false whenever `SUPABASE_S3_ENDPOINT` is
+  → `subprocess`. `isLocalDev` is false whenever `SUPABASE_STORAGE_BUCKET` is
   set, so **production can never resolve the host-local backend**, and fails
   loudly without `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET` (or a `~/.modal.toml`
   profile) rather than degrading. There is **no fallback between backends at
@@ -2229,13 +2324,17 @@ service's control work is light — and one container served both badly.
   `MODAL_SANDBOX_IMAGE` for reproducible guests. `MODAL_APP_NAME` selects the
   Modal App sandboxes are created under (default `aai-server`).
 - **The harness AND the build toolchain are baked into a snapshot image**,
-  not written per spawn: a throwaway builder sandbox writes the harness,
-  `npm install`s the guest build toolchain next to it (`/opt/aai/
-  node_modules` — the aai CLI bundlers plus the workspace-facing packages;
-  versions come from aai-guest's own dependency declarations, `workspace:*`
-  pinned to the installed versions, so dev and baked toolchains share one
-  source of truth), its filesystem is snapshotted (`snapshotFilesystem`),
-  and the image is `publish`ed under a content-addressed tag
+  not written per spawn, in two halves that cache differently. The
+  TOOLCHAIN is a native image LAYER (`toolchainImage`: a
+  `dockerfileCommands` `RUN npm install` into `/opt/aai/node_modules` — the
+  aai CLI bundlers plus the workspace-facing packages), so Modal's own
+  layer cache serves it and a harness rebuild — every
+  server code change — no longer reinstalls ~15 packages. The HARNESS needs a
+  throwaway builder sandbox, because the JS SDK's `dockerfileCommands` takes
+  commands with no build context and there is nothing to `COPY` a ~13 MB local
+  bundle from: a sandbox started from the layer writes it, its filesystem is
+  snapshotted (`snapshotFilesystem`), and the image is `publish`ed under a
+  content-addressed tag
   (`aai-guest-harness:<hash(base image, harness, toolchain)>`), so every
   later spawn — and every other replica, across restarts — resolves it with
   one `images.fromName` call. A new harness build, base-image change, or
@@ -2249,6 +2348,33 @@ service's control work is light — and one container served both badly.
   prevent; the operator kill switch `SANDBOX_IGNORE_IMAGE_PINS=1` forces
   the current image for every spawn when a registry loss makes that trade
   explicitly. Studio/inspect sandboxes always run the current image.
+- **The guest toolchain is LOCKED, and the lock is committed**
+  (`packages/aai-guest/toolchain/{package.json,package-lock.json}`, regenerated
+  by `pnpm sync:guest-toolchain`, gated by `pnpm check:guest-toolchain` in
+  `scripts/check.sh` AND the CI check job). Without it the resolved tree is a
+  function of WHEN the layer was built, while the published tag and Modal's
+  layer cache both key on the install command's TEXT — so one
+  `harness_image_tag` could mean two different trees, the exact opposite of
+  the per-deploy environment pinning the tag exists for. The install is
+  therefore two steps, and the split is forced:
+  - **Third-party packages: `npm ci` against the committed lockfile.** Their
+    versions and integrity hashes are known at commit time, and this is where
+    nearly all the transitive surface lives (vite/rolldown, typescript,
+    vitest, react, tailwind). `npm ci` also refuses to run when the manifest
+    and lockfile disagree, so a hand-edited manifest fails the BUILD.
+  - **`@alexkroman1/*`: `npm install` at exact resolved versions.** These
+    CANNOT be locked here — their versions change every release, and a
+    lockfile entry needs an integrity hash that only exists once the version
+    is PUBLISHED, which happens after the commit that bumps it. Their own
+    dependencies (the provider SDKs) therefore still resolve at install time;
+    closing that residual gap needs a post-publish regeneration step, not a
+    lockfile in this repo.
+
+  Both files are written by the RUN itself, gzipped and base64'd (~20 KB), for
+  the same reason the harness cannot be `COPY`'d: `dockerfileCommands` carries
+  no build context. The image TAG hashes the lockfile's content, not the
+  manifest's — the manifest names direct versions, the lockfile names the whole
+  tree, so a purely transitive change still mints a new tag.
   Only the Modal backend needs this: the subprocess backend's harness runs
   from `packages/aai-guest/dist/` and resolves the toolchain through
   aai-guest's own `node_modules` — the same walk-up shape as `/opt/aai`, with
@@ -2320,12 +2446,27 @@ service's control work is light — and one container served both badly.
   the guard and got an agent the hourly sweep would delete. Inferring the
   opt-in from the slug's shape would NOT have fixed it: a production Publish
   of such a project passes exactly that slug.
+- **Readiness is Modal's readiness PROBE**, not host-side polling
+  (`GUEST_READINESS_PROBE` in modal-sandbox.ts): every guest sandbox is
+  created with `readinessProbe: Probe.withTcp(8080)` and the spawn awaits
+  `sandbox.waitUntilReady()`. A TCP probe is exactly equivalent to the
+  `/health` 200 it replaced, and that equivalence is a property of the
+  harness's boot order rather than a guess: agent mode reads its boot files,
+  hash-verifies and LOADS the bundle, and only then calls `server.listen` — so
+  the port opening means "sessions can be served". A harness that listened
+  first would report ready before it could serve anything. The wait is always
+  raced against guest-process EXIT (`raceGuestExit` in warm-harness.ts): every
+  boot failure exits the process with its reason on stderr, and without the
+  race a readiness wait burns its whole budget and then blames the network.
+  The host-side `pollGuestHealth` remains for the subprocess backend, which
+  has no probes.
 - **Transport**: STUDIO/INSPECT guests get a WebSocket control channel the
   host dials through the sandbox's Modal tunnel (`encryptedPorts: [8080]`;
-  JSON-RPC on `/ws`), retried while the harness boots
-  (`GUEST_DIAL_TIMEOUT_MS`). AGENT guests get NO channel — the host polls
-  their public `/health` for readiness and probes `/manage/*` over plain
-  HTTPS. Both are authenticated by a per-sandbox bearer token minted at
+  JSON-RPC on `/ws`) once the probe reports ready — the dial's retry
+  (`GUEST_DIAL_TIMEOUT_MS`) stays as a backstop rather than the discovery
+  mechanism. AGENT guests get NO channel — readiness is the probe, and the
+  host probes `/manage/*` over plain HTTPS. Both are authenticated by a
+  per-sandbox bearer token minted at
   spawn and delivered via the EXEC's env (never the sandbox's). The tunnel
   URL is public; the token is what keeps the managed surfaces from being an
   open door.
@@ -2422,7 +2563,7 @@ token.
 **none** of the properties described below — the harness is a child process
 of the server, sharing its uid, filesystem, and network — see "Modal sandbox
 notes". Selection (`sandbox-backend.ts`) makes it unreachable outside local
-dev: any environment with `SUPABASE_S3_ENDPOINT` set resolves `modal`
+dev: any environment with `SUPABASE_STORAGE_BUCKET` set resolves `modal`
 unconditionally. When reasoning about the security model, the backend is the
 first thing to establish, and the boot log names it (with a warning when
 there is no boundary at all).
@@ -2532,37 +2673,53 @@ needs to come back — the one constraint that survives any reintroduction:
 sessions dial the sandbox directly, so the guest-reported session count is
 the only honest load signal, and the broker is the only routing point.
 
-**"One" means fleet-wide, not per replica** (`sandbox-registry.ts` +
-`aai_platform.sandbox_registry`). The slot cache is per-replica and the web
-service autoscales, so for a while each replica spawned its own guest for
-the same slug. That is not an edge case — Modal load-balances every request
+**"One" means fleet-wide, not per replica — and MODAL enforces it**
+(`sandbox-directory.ts`). The slot cache is per-replica and the web service
+autoscales, so for a while each replica spawned its own guest for the same
+slug. That is not an edge case — Modal load-balances every request
 independently, so a page load and the project switch a minute later
-routinely land on different replicas. The registry is a lease table: the
-owning replica heartbeats its resident (`startRegistryHeartbeat`), and a
-COLD broker (no local resident) routes to a live peer's guest instead of
-spawning a duplicate. Sessions dial the guest's tunnel directly, so a
-peer's URL serves a client exactly as well as a local one.
+routinely land on different replicas.
+
+A guest sandbox's fleet-wide identity is its Modal **name**
+(`agent-<hash(slug)>-v<version>`): `sandboxes.create` throws
+`AlreadyExistsError` when the name is taken, and `sandboxes.fromName` returns
+only a RUNNING sandbox. So a COLD broker (no local resident) asks Modal
+whether some replica is already serving this deploy and routes to that
+guest's tunnel — sessions dial the guest directly, so a peer's URL serves a
+client exactly as well as a local one.
+
+This replaced `aai_platform.sandbox_registry`, a lease table the owning
+replica heartbeated every 10s. What went with it: the heartbeat timer and its
+per-tick ownership re-check (which existed so every detach path — retire,
+terminate, idle self-exit, lost guest, blue-green handover — converged on an
+unregister without knowing the registry existed), the pg_cron sweep for
+crashed replicas' rows, `replicaId` on the agent path, and the accepted
+**stale-lease window**: the old design could hand out a dead peer URL for up
+to one lease after a crash, and a retired sandbox's URL for up to one
+heartbeat. A name is released when the sandbox stops, so `fromName` cannot
+return something that is not running.
 
 Three properties worth keeping:
 
-- **Ownership is re-checked every heartbeat tick**, so EVERY detach path —
-  retire, terminate, idle self-exit, a lost guest, a blue-green handover —
-  converges on an unregister without any of them knowing the registry
-  exists. Those paths are the delicate ones; none of them gained an
-  obligation.
-- **Peers trust the lease, because a peer's guest is not theirs to probe** —
-  the `/manage/*` bearer is per-sandbox and stays with its owner. So a
-  crashed replica's rows can hand out a dead URL for up to one lease, and a
-  local retire for up to one heartbeat. Both heal on the client's re-broker
-  (`session-core.ts` re-brokers per attempt).
+- **The name carries the deploy VERSION.** A blue-green handover
+  (`handoverSlot`) boots the replacement while the old resident drains, so a
+  slug legitimately has two live sandboxes for minutes and a version-less
+  name would collide. It also makes the peer lookup version-EXACT — the lease
+  table could hand out a guest running superseded code until the owner's
+  heartbeat stopped.
 - **The peer route is gated on the agents row still existing.** A deleted
-  agent's registry rows outlive the row, and routing to them would
-  resurrect a 404.
+  agent's sandbox can still be running (retirement drains it for minutes),
+  and routing to it would resurrect a 404. The same `getAgentVersion` read
+  serves as both that gate and half the name.
+- **Losing the name race routes to the winner** (`awaitBrokeredUrl`). A
+  create that lost is the ONE remaining path to a duplicate; it comes back as
+  `SandboxNameTakenError`, and the broker returns to the directory rather than
+  retrying a spawn that can only lose again.
 
-The registry is read at the broker, NOT subscribed to: it only matters at
-the moment a cold broker runs, and that moment already reads the database.
-A change stream would be a second mechanism answering the same question —
-the duplication rule that shaped `watchAgentInvalidation`.
+The directory is read at the broker, NOT subscribed to: it only matters at
+the moment a cold broker runs. A change stream would be a second mechanism
+answering the same question — the duplication rule that shaped
+`watchAgentInvalidation`.
 
 ### One studio sandbox per project, fleet-wide
 
@@ -2578,6 +2735,22 @@ records the chat URL + chat token the browser gets, plus the guest origin +
 per-sandbox token a PEER needs to reinstall the session. `ensureSession` is
 now a three-step ladder: local map hit → reuse; registry row → **adopt**
 (`studio-session-adopt.ts`); neither → cold spawn + claim.
+
+**The studio lease SURVIVES the move to Modal names, and this is not an
+oversight.** Agent sandboxes dropped their registry entirely — a name answers
+"does this deploy have a live sandbox", which is all the agent broker asks.
+The studio asks a second question the owner's idle sweeper depends on: "has
+any replica used this project recently?" A name cannot express that, and
+nothing else can either — a peer's chat turns go browser→guest DIRECTLY, so
+the owner (whose sweeper decides eviction) observes no activity at all, and
+without the touched lease it would evict a guest another replica is actively
+serving mid-conversation. The studio spawn IS named
+(`studioSandboxName(scope, project)`), which adds what the lease could not
+guarantee: two replicas racing the cold path cannot both spawn even when the
+lease read missed. Closing the rest — deriving `chatToken`/`sandboxToken` from
+the sandbox id and reducing the row to pure activity — needs a guest-side
+last-used signal over the control socket the owner already holds; that is the
+direction, not the current state.
 
 - **Adoption cannot use the control socket** — a harness accepts exactly
   ONE (`/ws` answers 409 to a second authenticated dial), and the owner has
@@ -2607,9 +2780,11 @@ now a three-step ladder: local map hit → reuse; registry row → **adopt**
   replica hands back the same one. Re-minting per broker call would revoke
   the token every other tab is holding.
 
-Both registries carry a `replicaId` (`ServiceConfig.replicaId`, a per-process
-UUID) and both fall back to independent per-replica behaviour when there is
-no platform database — dev and tests are a single process with no peers.
+The studio registry carries a `replicaId` (`ServiceConfig.replicaId`, a
+per-process UUID) and falls back to independent per-replica behaviour when
+there is no platform database — dev and tests are a single process with no
+peers. The agent path needs no such identity: a NAME answers "does this
+exist", never "who made it".
 
 ### Platform sandbox (aai-server)
 

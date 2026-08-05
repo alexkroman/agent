@@ -1,34 +1,23 @@
 // Copyright 2026 the AAI authors. MIT license.
+/**
+ * The "landing on a project" half of preview handling: the preview slug, the
+ * sandbox warm-up, and the wake that hangs off the session broker call.
+ *
+ * The deploy loop and its durable queue live in
+ * `studio-preview-deploy.test.ts` — the two halves share only a workspace, and
+ * splitting them keeps each under the file-length cap.
+ */
 
-import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
 import { describe, expect, test, vi } from "vitest";
-import {
-  createPreviewDeployer,
-  previewSlugFor,
-  wakeProjectPreview,
-  warmPreviewSandbox,
-} from "./studio-preview.ts";
-import type { WorkspaceDeployOutcome, WorkspaceDeployTarget } from "./studio-session-broker.ts";
+import { makeStore, PROJECT, SCOPE, settled, TARGET } from "./_studio-preview-test-utils.ts";
+import { previewSlugFor, wakeProjectPreview, warmPreviewSandbox } from "./studio-preview.ts";
+import type { WorkspaceDeployTarget } from "./studio-session-broker.ts";
 import {
   createWorkspace,
   currentFilesHash,
   getWorkspace,
   mutateWorkspace,
 } from "./studio-workspace.ts";
-
-const SCOPE = "scope";
-const PROJECT = "contact-form-x7k2mq";
-const TARGET = { serverUrl: "https://platform.example", apiKey: "caller-key" };
-
-function makeStore() {
-  return createMemoryWorkspaceStore();
-}
-
-/** Wait for the fire-and-forget deploy loop to drain. */
-async function settled() {
-  await vi.waitFor(() => Promise.resolve());
-  await new Promise((resolve) => setTimeout(resolve, 0));
-}
 
 describe("previewSlugFor", () => {
   test("appends -preview to the project name", () => {
@@ -104,7 +93,13 @@ describe("wakeProjectPreview", () => {
       fetchImpl: fetchImpl as typeof fetch,
     });
 
-  test("a stale preview reschedules its deploy and warms the last-good slug", async () => {
+  /**
+   * The queue owns delivery now, so a stale preview means a job is still
+   * enqueued and the drain will run it. Re-scheduling on project open would
+   * be a second mechanism answering the same question — and the weaker one,
+   * since it only fires when a human happens to look.
+   */
+  test("a stale preview only warms — the queue owns the redeploy", async () => {
     const workspaces = makeStore();
     await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
     await mutateWorkspace(workspaces, SCOPE, PROJECT, (current) => ({
@@ -116,9 +111,10 @@ describe("wakeProjectPreview", () => {
     const fetchImpl = okFetch();
     wake(workspaces, schedule, fetchImpl);
     await vi.waitFor(() => {
-      expect(schedule).toHaveBeenCalledWith(SCOPE, PROJECT, TARGET);
       expect(fetchImpl).toHaveBeenCalledTimes(1);
     });
+    await settled();
+    expect(schedule).not.toHaveBeenCalled();
     const [url] = fetchImpl.mock.calls[0] as unknown[] as [URL];
     expect(url.toString()).toBe("https://platform.example/p-preview/client-config");
   });
@@ -268,202 +264,24 @@ describe("wakeProjectPreview", () => {
   });
 });
 
-describe("createPreviewDeployer", () => {
-  test("deploys the workspace to the preview slug and stamps the metadata", async () => {
+describe("wakeProjectPreview containment", () => {
+  test("a failing workspace read is swallowed — the wake is only an accelerator", async () => {
+    // Hung off the once-per-open session broker call, whose response must not
+    // depend on it. The pane's own iframe fetch remains the functional path.
     const workspaces = makeStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
-    const deploy = vi.fn(
-      async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "Deployed" }),
-    );
-    const deployer = createPreviewDeployer({ workspaces, deployWorkspace: deploy });
-
-    deployer.schedule(SCOPE, PROJECT, TARGET);
-    await vi.waitFor(async () => {
-      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewHash).toBeDefined();
-    });
-
-    expect(deploy).toHaveBeenCalledWith(
-      SCOPE,
-      PROJECT,
-      { "agent.ts": "// v1" },
-      {
-        serverUrl: TARGET.serverUrl,
-        apiKey: TARGET.apiKey,
-        slug: "contact-form-x7k2mq-preview",
-        // The auto-preview deploy is the ONLY caller allowed to claim the
-        // reserved `-preview` suffix, and it says so explicitly — Publish
-        // shares this path and must not inherit the opt-in.
-        allowPreviewSlug: true,
-      },
-    );
-    const workspace = await getWorkspace(workspaces, SCOPE, PROJECT);
-    expect(workspace?.previewSlug).toBe("contact-form-x7k2mq-preview");
-    expect(workspace?.previewError).toBeUndefined();
-    // The stamped hash matches the deployed files — the preview is current.
-    expect(workspace?.previewHash).toBe(workspace?.hash);
-  });
-
-  test("prefers the slug the deploy actually claimed, and reuses it after", async () => {
-    const workspaces = makeStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
-    const deploy = vi.fn(
-      async (
-        _scope: string,
-        _project: string,
-        _files: Record<string, string>,
-        _target: WorkspaceDeployTarget,
-      ): Promise<WorkspaceDeployOutcome> => ({ ok: true, slug: "claimed", output: "ok" }),
-    );
-    const deployer = createPreviewDeployer({ workspaces, deployWorkspace: deploy });
-
-    deployer.schedule(SCOPE, PROJECT, TARGET);
-    await vi.waitFor(async () => {
-      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewSlug).toBe("claimed");
-    });
-
-    // Edit → redeploys to the SAME slug, so the preview URL never rots.
-    await mutateWorkspace(workspaces, SCOPE, PROJECT, (ws) => ({
-      ...ws,
-      files: { "agent.ts": "// v2" },
-    }));
-    deployer.schedule(SCOPE, PROJECT, TARGET);
-    await vi.waitFor(() => expect(deploy).toHaveBeenCalledTimes(2));
-    expect(deploy.mock.calls[1]?.[3]).toMatchObject({ slug: "claimed" });
-  });
-
-  test("a no-op schedule (preview already current) never deploys", async () => {
-    const workspaces = makeStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
-    const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "ok" }));
-    const deployer = createPreviewDeployer({ workspaces, deployWorkspace: deploy });
-
-    deployer.schedule(SCOPE, PROJECT, TARGET);
-    await vi.waitFor(async () => {
-      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewHash).toBeDefined();
-    });
-    // Same files, second schedule: nothing to ship.
-    deployer.schedule(SCOPE, PROJECT, TARGET);
-    await settled();
-    expect(deploy).toHaveBeenCalledTimes(1);
-  });
-
-  test("schedules during a deploy coalesce into one trailing re-deploy", async () => {
-    const workspaces = makeStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const deploy = vi.fn(
-      async (
-        _scope: string,
-        _project: string,
-        _files: Record<string, string>,
-        _target: WorkspaceDeployTarget,
-      ): Promise<WorkspaceDeployOutcome> => {
-        await gate;
-        return { ok: true, output: "ok" };
-      },
-    );
-    const deployer = createPreviewDeployer({ workspaces, deployWorkspace: deploy });
-
-    deployer.schedule(SCOPE, PROJECT, TARGET);
-    await vi.waitFor(() => expect(deploy).toHaveBeenCalledTimes(1));
-    // Three edits land while the first deploy is in flight…
-    for (const version of ["v2", "v3", "v4"]) {
-      await mutateWorkspace(workspaces, SCOPE, PROJECT, (ws) => ({
-        ...ws,
-        files: { "agent.ts": `// ${version}` },
-      }));
-      deployer.schedule(SCOPE, PROJECT, TARGET);
-    }
-    release();
-    // …and cost exactly one trailing deploy, of the FINAL tree.
-    await vi.waitFor(async () => {
-      const workspace = await getWorkspace(workspaces, SCOPE, PROJECT);
-      expect(workspace?.previewHash).toBe(workspace?.hash);
-    });
-    expect(deploy).toHaveBeenCalledTimes(2);
-    expect(deploy.mock.calls[1]?.[2]).toEqual({ "agent.ts": "// v4" });
-  });
-
-  test("a failed deploy stamps previewError and leaves the hash unset", async () => {
-    const workspaces = makeStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// broken" } });
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const deploy = vi.fn(
-      async (): Promise<WorkspaceDeployOutcome> => ({
-        ok: false,
-        output: "Build failed:\nagent.ts:1: oops",
+    workspaces.get = () => Promise.reject(new Error("database unreachable"));
+    const schedule = vi.fn();
+    expect(() =>
+      wakeProjectPreview({
+        workspaces,
+        scope: SCOPE,
+        project: PROJECT,
+        target: TARGET,
+        schedule,
+        fetchImpl: () => Promise.reject(new Error("never asked")),
       }),
-    );
-    const deployer = createPreviewDeployer({ workspaces, deployWorkspace: deploy });
-
-    deployer.schedule(SCOPE, PROJECT, TARGET);
-    await vi.waitFor(async () => {
-      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewError).toContain(
-        "Build failed",
-      );
-    });
-    const workspace = await getWorkspace(workspaces, SCOPE, PROJECT);
-    // Still stale — the next edit retries.
-    expect(workspace?.previewHash).toBeUndefined();
-    expect(workspace?.previewSlug).toBeUndefined();
-    warn.mockRestore();
-  });
-
-  test("a success after a failure clears previewError", async () => {
-    const workspaces = makeStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// broken" } });
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    let ok = false;
-    const deploy = vi.fn(
-      async (): Promise<WorkspaceDeployOutcome> =>
-        ok ? { ok: true, output: "Deployed" } : { ok: false, output: "Build failed" },
-    );
-    const deployer = createPreviewDeployer({ workspaces, deployWorkspace: deploy });
-
-    deployer.schedule(SCOPE, PROJECT, TARGET);
-    await vi.waitFor(async () => {
-      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewError).toBeDefined();
-    });
-
-    ok = true;
-    await mutateWorkspace(workspaces, SCOPE, PROJECT, (ws) => ({
-      ...ws,
-      files: { "agent.ts": "// fixed" },
-    }));
-    deployer.schedule(SCOPE, PROJECT, TARGET);
-    await vi.waitFor(async () => {
-      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewHash).toBeDefined();
-    });
-    expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewError).toBeUndefined();
-    warn.mockRestore();
-  });
-
-  test("a deleted project deploys nothing and never resurrects", async () => {
-    const workspaces = makeStore();
-    const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "ok" }));
-    const deployer = createPreviewDeployer({ workspaces, deployWorkspace: deploy });
-    deployer.schedule(SCOPE, "ghost", TARGET);
+    ).not.toThrow();
     await settled();
-    expect(deploy).not.toHaveBeenCalled();
-    expect(await getWorkspace(workspaces, SCOPE, "ghost")).toBeNull();
-  });
-
-  test("a thrown deploy (dead sandbox) is contained, not fatal", async () => {
-    const workspaces = makeStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => {
-      throw new Error("sandbox gone");
-    });
-    const deployer = createPreviewDeployer({ workspaces, deployWorkspace: deploy });
-    deployer.schedule(SCOPE, PROJECT, TARGET);
-    await vi.waitFor(() => expect(warn).toHaveBeenCalled());
-    // A later schedule runs again — the in-flight entry was cleaned up.
-    deployer.schedule(SCOPE, PROJECT, TARGET);
-    await vi.waitFor(() => expect(deploy).toHaveBeenCalledTimes(2));
-    warn.mockRestore();
+    expect(schedule).not.toHaveBeenCalled();
   });
 });
