@@ -18,7 +18,8 @@ export default defineConfig({
       // main() — the HTTP server + upgrade wiring — is exercised by the
       // smoke path against the built artifact, not by unit tests, which is
       // what keeps these floors below the other packages'.
-      thresholds: { lines: 71, functions: 70, branches: 56, statements: 70 },
+      // Actuals (2026-08): lines ~84, functions ~82, branches ~72, statements ~82.
+      thresholds: { lines: 81, functions: 79, branches: 69, statements: 79 },
     },
   },
 });

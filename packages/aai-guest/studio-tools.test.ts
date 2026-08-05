@@ -26,6 +26,7 @@ async function makeTools(
   files: Record<string, string>,
   config: Record<string, unknown> = { name: "A", toolSchemas: [] },
   typecheck: StudioToolDeps["typecheck"] = async () => ({ ok: true, skipped: false }),
+  overrides: Partial<StudioToolDeps> = {},
 ): Promise<{ tools: ReturnType<typeof createStudioTools>; dir: string }> {
   const dir = await mkdtemp(path.join(os.tmpdir(), "aai-studio-tools-"));
   dirs.push(dir);
@@ -36,6 +37,7 @@ async function makeTools(
     build: async () => ({ worker: "export default {}" }),
     loadBundle: async () => ({ config }),
     executeTool: async (name) => `ran ${name}`,
+    ...overrides,
   };
   // Wrapped exactly as the chat loop wraps the merged set: the deadline
   // wrapper also converts thrown errors (path escapes) to error strings.
@@ -182,6 +184,111 @@ describe("guest workspace tools", () => {
     // A file-touching tool missing here loses its edits on a mid-turn crash
     // (the checkpointer never fires for it).
     for (const name of MUTATING_TOOLS) expect(names).toContain(name);
+  });
+
+  test("delete_file removes the file and names a missing one", async () => {
+    const { tools, dir } = await makeTools({ "old.ts": "x" });
+    expect(String(await tools.delete_file?.execute?.({ path: "old.ts" }, toolOpts()))).toBe(
+      "Deleted old.ts",
+    );
+    await expect(readFile(path.join(dir, "old.ts"))).rejects.toThrow();
+    expect(String(await tools.delete_file?.execute?.({ path: "old.ts" }, toolOpts()))).toBe(
+      "Error: no such file: old.ts",
+    );
+  });
+
+  test("todo_write renders marks and the remaining count", async () => {
+    const { tools } = await makeTools({});
+    const out = String(
+      await tools.todo_write?.execute?.(
+        {
+          todos: [
+            { content: "scaffold the agent", status: "completed" },
+            { content: "wire the tool", status: "in_progress" },
+            { content: "test it", status: "pending" },
+            { content: "gold-plate it", status: "cancelled" },
+          ],
+        },
+        toolOpts(),
+      ),
+    );
+    expect(out).toContain("[x] scaffold the agent");
+    expect(out).toContain("[>] wire the tool");
+    expect(out).toContain("[ ] test it");
+    expect(out).toContain("[-] gold-plate it");
+    expect(out).toContain("2 remaining");
+    expect(String(await tools.todo_write?.execute?.({ todos: [] }, toolOpts()))).toBe(
+      "(empty todo list)",
+    );
+  });
+
+  test("grep searches only what the glob selects and reports bad patterns", async () => {
+    const { tools } = await makeTools({
+      "agent.ts": "const needle = 1;\n",
+      "notes.md": "needle in prose\n",
+    });
+    const scoped = String(
+      await tools.grep?.execute?.({ pattern: "needle", glob: "*.ts" }, toolOpts()),
+    );
+    expect(scoped).toContain("agent.ts");
+    expect(scoped).not.toContain("notes.md");
+    // A broken regex must come back as an error string the agent can fix.
+    const bad = String(await tools.grep?.execute?.({ pattern: "([" }, toolOpts()));
+    expect(bad).toContain("Error:");
+  });
+
+  test("test_agent surfaces a build failure as-is and stops there", async () => {
+    let loads = 0;
+    const { tools } = await makeTools({}, undefined, undefined, {
+      build: async () => ({ buildError: "Build failed:\nagent.ts:1: nope" }),
+      loadBundle: async () => {
+        loads++;
+        return {};
+      },
+    });
+    const out = String(
+      await tools.test_agent?.execute?.({ tool: undefined, args: undefined }, toolOpts()),
+    );
+    expect(out).toBe("Build failed:\nagent.ts:1: nope");
+    expect(loads).toBe(0);
+  });
+
+  test("test_agent reports a build that returned no worker", async () => {
+    const { tools } = await makeTools({}, undefined, undefined, { build: async () => ({}) });
+    const out = String(
+      await tools.test_agent?.execute?.({ tool: undefined, args: undefined }, toolOpts()),
+    );
+    expect(out).toBe("Error: build returned no worker bundle");
+  });
+
+  test("test_agent reports a bundle that failed to load", async () => {
+    const { tools } = await makeTools({}, undefined, undefined, {
+      loadBundle: async () => {
+        throw new Error("import exploded");
+      },
+    });
+    const out = String(
+      await tools.test_agent?.execute?.({ tool: undefined, args: undefined }, toolOpts()),
+    );
+    expect(out).toBe("Bundle failed to load: import exploded");
+  });
+
+  test("test_agent refuses to trial a tool the agent does not declare", async () => {
+    const { tools } = await makeTools(
+      { "agent.ts": "x" },
+      {
+        name: "A",
+        mode: "pipeline",
+        toolSchemas: [{ name: "lookup" }],
+      },
+    );
+    const out = String(await tools.test_agent?.execute?.({ tool: "nope", args: {} }, toolOpts()));
+    expect(out).toContain('Cannot invoke "nope": not one of the agent\'s tools.');
+
+    const trialed = String(
+      await tools.test_agent?.execute?.({ tool: "lookup", args: { q: "x" } }, toolOpts()),
+    );
+    expect(trialed).toContain('lookup({"q":"x"}) → ran lookup');
   });
 
   test("test_agent builds via the host and trials a tool in place", async () => {

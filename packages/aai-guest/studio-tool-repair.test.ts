@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { parsePartialJson } from "ai";
+import { InvalidToolInputError, parsePartialJson } from "ai";
+import { MockLanguageModelV3 } from "ai/test";
 import { describe, expect, test } from "vitest";
 import { createToolCallRepair, salvageJson } from "./studio-tool-repair.ts";
 
@@ -102,6 +103,33 @@ describe("createToolCallRepair", () => {
   const model = {} as Parameters<typeof createToolCallRepair>[0];
   const inputSchema = async () => ({ type: "object" as const });
 
+  const invalidInput = (input: string) =>
+    new InvalidToolInputError({
+      toolName: "write_file",
+      toolInput: input,
+      cause: new Error("parse failed"),
+    });
+
+  /** A tier-2 model that answers with fixed JSON, counting its calls. */
+  function fixerModel(json: string): { model: MockLanguageModelV3; calls: () => number } {
+    let calls = 0;
+    const model = new MockLanguageModelV3({
+      doGenerate: async () => {
+        calls++;
+        return {
+          content: [{ type: "text" as const, text: json }],
+          finishReason: { unified: "stop" as const, raw: undefined },
+          usage: {
+            inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+            outputTokens: { total: 1, text: 1, reasoning: undefined },
+          },
+          warnings: [],
+        };
+      },
+    });
+    return { model, calls: () => calls };
+  }
+
   test("leaves an unknown tool name alone", async () => {
     // Guessing which tool was meant risks turning a delete into a write.
     const repair = createToolCallRepair(model);
@@ -110,6 +138,61 @@ describe("createToolCallRepair", () => {
       error: new Error("No such tool"),
       inputSchema,
     });
+    expect(result).toBeNull();
+  });
+
+  test("tier 1 salvages malformed input without spending any tokens", async () => {
+    const { model: fixer, calls } = fixerModel('{"never":"used"}');
+    const repair = createToolCallRepair(fixer);
+    const broken = '{"path":"a.ts","content":"line one\nline two"}';
+
+    const result = await repair({
+      toolCall: { toolName: "write_file", input: broken },
+      error: invalidInput(broken),
+      inputSchema,
+    });
+
+    expect(result).not.toBeNull();
+    expect(JSON.parse(result?.input as string)).toEqual({
+      path: "a.ts",
+      content: "line one\nline two",
+    });
+    expect(calls()).toBe(0);
+  });
+
+  test("tier 2 asks the model to rewrite input that cannot be salvaged", async () => {
+    const { model: fixer, calls } = fixerModel('{"path":"a.ts","content":"x"}');
+    const repair = createToolCallRepair(fixer);
+    const hopeless = "write a.ts with content x please";
+
+    const result = await repair({
+      toolCall: { toolName: "write_file", input: hopeless },
+      error: invalidInput(hopeless),
+      inputSchema,
+    });
+
+    expect(calls()).toBe(1);
+    expect(result).not.toBeNull();
+    expect(JSON.parse(result?.input as string)).toEqual({ path: "a.ts", content: "x" });
+    // The rest of the call rides through unchanged.
+    expect(result?.toolName).toBe("write_file");
+  });
+
+  test("a failed tier-2 rewrite falls through to null so the original error reports", async () => {
+    const failing = new MockLanguageModelV3({
+      doGenerate: async () => {
+        throw new Error("model unavailable");
+      },
+    });
+    const repair = createToolCallRepair(failing);
+    const hopeless = "not json";
+
+    const result = await repair({
+      toolCall: { toolName: "write_file", input: hopeless },
+      error: invalidInput(hopeless),
+      inputSchema,
+    });
+
     expect(result).toBeNull();
   });
 });

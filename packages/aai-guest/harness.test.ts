@@ -5,7 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { dispatchMessage, handleNotification, handleRequest } from "./harness.ts";
+import { dispatchMessage, handleNotification, handleRequest, lazyRuntime } from "./harness.ts";
 import { bearerToken } from "./harness-auth.ts";
 import {
   emptyHarnessState,
@@ -334,6 +334,131 @@ describe("control-channel dispatch", () => {
 
   test("malformed notifications are ignored", () => {
     expect(() => handleNotification({ jsonrpc: "2.0" } as never)).not.toThrow();
+  });
+});
+
+describe("control-channel param validation", () => {
+  test("workspace/deploy with invalid params answers -32602 naming the method", async () => {
+    const state = makeState();
+    await handleRequest(
+      { jsonrpc: "2.0", id: 8, method: "workspace/deploy", params: { files: "not-a-map" } },
+      state,
+    );
+    const last = sent.at(-1) as { id: number; error: { code: number; message: string } };
+    expect(last.id).toBe(8);
+    expect(last.error.code).toBe(-32_602);
+    expect(last.error.message).toContain("workspace/deploy: invalid params");
+  });
+
+  test("studio/session-init with invalid params answers -32602 without installing a session", async () => {
+    const state = makeState();
+    await handleRequest(
+      {
+        jsonrpc: "2.0",
+        id: 9,
+        method: "studio/session-init",
+        // chatToken must be non-empty and maxSteps a positive integer.
+        params: {
+          project: "p",
+          files: {},
+          apiKey: "k",
+          chatToken: "",
+          system: "s",
+          model: "m",
+          maxSteps: 0,
+        },
+      },
+      state,
+    );
+    const last = sent.at(-1) as { id: number; error: { code: number; message: string } };
+    expect(last.id).toBe(9);
+    expect(last.error.code).toBe(-32_602);
+    expect(last.error.message).toContain("studio/session-init: invalid params");
+    expect(state.studio).toBeNull();
+  });
+});
+
+/** A fake session socket: records closes, replays close events. */
+function fakeSocket() {
+  const listeners = new Map<string, () => void>();
+  return {
+    closes: [] as { code: number; reason: string }[],
+    close(code: number, reason: string) {
+      this.closes.push({ code, reason });
+    },
+    on(event: string, fn: () => void) {
+      listeners.set(event, fn);
+    },
+    emit(event: string) {
+      listeners.get(event)?.();
+    },
+  };
+}
+
+describe("lazyRuntime", () => {
+  test("a refusal closes the socket with the hook's code and starts nothing", () => {
+    const state = makeState();
+    const runtime = lazyRuntime(state, {
+      refuse: () => ({ code: 1013, reason: "draining" }),
+    });
+    const ws = fakeSocket();
+
+    runtime.startSession(ws as never, {} as never);
+
+    expect(ws.closes).toEqual([{ code: 1013, reason: "draining" }]);
+    expect(state.activeSessions).toBe(0);
+  });
+
+  test("with no bundle loaded, the session is answered with a 1011 close naming the cause", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const state = makeState();
+    const ws = fakeSocket();
+
+    lazyRuntime(state).startSession(ws as never, {} as never);
+
+    expect(ws.closes).toEqual([{ code: 1011, reason: "Agent not loaded" }]);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("session refused"));
+  });
+
+  test("builds the runtime on the FIRST session, delegates, and counts live sessions", () => {
+    const started: unknown[] = [];
+    let builds = 0;
+    const state = makeState({
+      agent: makeAgent(),
+      createRuntime: () => {
+        builds++;
+        return {
+          startSession: (ws) => started.push(ws),
+          shutdown: () => Promise.resolve(),
+        };
+      },
+    });
+    const runtime = lazyRuntime(state);
+    const first = fakeSocket();
+    const second = fakeSocket();
+
+    runtime.startSession(first as never, {} as never);
+    runtime.startSession(second as never, {} as never);
+
+    expect(builds).toBe(1); // lazy AND memoized — one runtime for all sessions
+    expect(started).toEqual([first, second]);
+    expect(state.activeSessions).toBe(2);
+
+    first.emit("close");
+    expect(state.activeSessions).toBe(1);
+    second.emit("close");
+    // A second close of the same socket must never push the count negative.
+    second.emit("close");
+    expect(state.activeSessions).toBe(0);
+  });
+
+  test("shutdown forwards to the live runtime and is a no-op before one exists", async () => {
+    const shutdown = vi.fn().mockResolvedValue(undefined);
+    const state = makeState();
+    await lazyRuntime(state).shutdown(); // nothing built yet — must not throw
+    state.runtime = { startSession: () => undefined, shutdown };
+    await lazyRuntime(state).shutdown();
+    expect(shutdown).toHaveBeenCalledOnce();
   });
 });
 
