@@ -57,6 +57,26 @@ export function createShutdownHandler(opts: ShutdownHandlerOptions): () => Promi
   return async () => {
     if (running) return;
     running = true;
+    // FIRST, before any teardown: long-lived responses (SSE) never end on
+    // their own, so `close()` below would wait out the fallback and then have
+    // `process.exit` destroy them MID-CHUNK — a truncated chunked body to
+    // whatever is reading, which in production is Modal's ASGI proxy (see
+    // live-streams.ts). Ending them is both the fix and what lets `close()`
+    // actually complete.
+    //
+    // Ordering is load-bearing. This ran AFTER `onShutdown()`, which spends
+    // `SHUTDOWN_GRACE_MS` asleep and then awaits one drain request per
+    // resident guest — seconds at best, unbounded when a guest is unreachable.
+    // Modal SIGKILLs the container when its stop grace lapses, so anything
+    // that slow in front of this made the graceful end contingent on sandbox
+    // teardown finishing in time, and a SIGKILL truncates every open stream.
+    // Ending a stream needs nothing from the teardown and costs the client one
+    // reconnect, so it belongs at the very top of shutdown; the registry
+    // latches closed, so streams opened during the teardown below end
+    // gracefully too.
+    const ended = endLiveStreams();
+    if (ended > 0) console.info(`Shutdown: ended ${ended} live stream(s)`);
+
     try {
       await opts.onShutdown();
     } catch (err: unknown) {
@@ -66,13 +86,6 @@ export function createShutdownHandler(opts: ShutdownHandlerOptions): () => Promi
       // orphan timeout reclaims it).
       console.warn("Shutdown teardown failed:", errorMessage(err));
     }
-    // Long-lived responses (SSE) never end on their own, so `close()` below
-    // would wait out the fallback and then have `process.exit` destroy them
-    // MID-CHUNK — a truncated chunked body to whatever is reading, which in
-    // production is Modal's ASGI proxy (see live-streams.ts). Ending them
-    // first is both the fix and what lets `close()` actually complete.
-    const ended = endLiveStreams();
-    if (ended > 0) console.info(`Shutdown: ended ${ended} live stream(s)`);
 
     opts.closeServer(() => exit(0));
     const timer = setTimeout(() => {

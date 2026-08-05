@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { endLiveStreams } from "./live-streams.ts";
+import { endLiveStreams, resetLiveStreams } from "./live-streams.ts";
 import { createStudioProxy } from "./studio-proxy.ts";
 import { createTestOrchestrator } from "./test-utils.ts";
 
@@ -15,9 +15,11 @@ function makeContext(req: Request) {
 }
 
 // A relayed SSE body registers itself for shutdown; leaking one across tests
-// would let a later `endLiveStreams()` end a stream it never opened.
+// would let a later `endLiveStreams()` end a stream it never opened. Reset
+// rather than drain — draining latches the registry closed, which would make
+// the next test's relayed body end itself the moment it registers.
 afterEach(() => {
-  endLiveStreams();
+  resetLiveStreams();
 });
 
 describe("createStudioProxy", () => {

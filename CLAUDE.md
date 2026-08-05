@@ -2355,6 +2355,25 @@ service's control work is light — and one container served both badly.
   registration — the wire-level guard is `live-streams.test.ts`, which reads
   raw socket bytes because a handler-level assertion passes with the bug
   present.
+
+  Three properties of the ending itself, each of which was a hole that put the
+  truncation back while the registry looked correct:
+  - **It runs FIRST, before the service teardown.** Ending a stream is
+    synchronous and depends on nothing, while `onShutdown` sleeps
+    `SHUTDOWN_GRACE_MS` and then awaits one drain request per resident guest —
+    seconds at best, unbounded when a guest is unreachable. Modal SIGKILLs the
+    container when its stop grace lapses, so ending them *after* the teardown
+    made the graceful end contingent on sandbox teardown finishing in time.
+  - **The registry LATCHES closed.** Nothing drains it twice, so a stream
+    registered after shutdown began would be held open until the exit destroyed
+    it; `registerLiveStream` therefore ends a late arrival on the spot instead.
+    That is not the rare case — the client's first reconnect backoff is 3s and
+    shutdown deliberately keeps serving for `SHUTDOWN_GRACE_MS`, so a
+    resubscribe landing mid-shutdown is the MODAL case. (`resetLiveStreams` is
+    a test-only seam for the latch.)
+  - **The crash path ends them too** (`installProcessSafetyNets` in
+    `service-config.ts`): `uncaughtException` → `process.exit(1)` destroys
+    sockets exactly as a scale-in does.
 - **A long-lived connection is ONE Modal input, so the function `timeout`
   bounds CALL DURATION** — not request latency. Both services therefore set it
   explicitly (`FUNCTION_TIMEOUT_SECS` = 4h on the agent app, matching
@@ -2368,6 +2387,39 @@ service's control work is light — and one container served both badly.
   are handshake redirects — but SSE streams through the studio proxy sit
   under the same cap, so it stays pinned rather than inherited. The sandbox
   layer hit the same trap first and documents it in `modal-sandbox-env.ts`.
+
+  **`STUDIO_FUNCTION_TIMEOUT_SECS` (30 min) is a latent split-mode hazard, not
+  a live one.** It was reasoned as headroom for a cold-sandbox Publish, on the
+  premise that "nothing here is long-lived by design" — true of WebSockets
+  (chat streams browser→guest directly) and false of the event streams a
+  browser holds open for as long as a project is on screen, which did not exist
+  when the value was set. Both `GET /studio/events` and
+  `GET /studio/projects/:project/events` are open for hours. It does not bite
+  today only because production runs `combined`, so those routes are served by
+  the agent app under its 4h. Deploying split without raising it would start
+  reaping them.
+
+  **Most `TransferEncodingError`s in the log are NOT truncation we caused.**
+  Measured over 6h of production `aai-server-web` logs (2026-08-05): 38 SSE
+  stream completions, 40 of these errors, pairing 1:1 by timestamp — at every
+  duration from 25s to 1375s, and continuing across a redeploy that shipped the
+  registry above. Modal's `_proxy_http_request.send_response()` is still
+  iterating the upstream body when the client goes away, and Modal never awaits
+  that task ("Task exception was never retrieved"), so ONE lands in the log per
+  abandoned stream. The browser is already gone when it fires. Two corollaries
+  before treating a spike as a regression: **join it to Modal's request log
+  first** — the `duration` on the completion line at the same second is the
+  stream's whole lifetime, which is what separates a client abort (any
+  duration, all of them multiples of `SSE_HEARTBEAT_MS`, because nothing in the
+  chain notices a departed client until data flows) from a real deadline (a
+  tight cluster at one value); and a rise in the count usually means a client is
+  churning subscriptions, not that a stream was cut.
+
+  **Capping the streams' own lifetime was considered and rejected.** It cannot
+  reduce the above — a tab close still aborts whatever stream is open — while
+  `projectPayload` carries `files: workspace.files`, so every forced recycle
+  re-sends the whole workspace file map to every open tab. If split mode ever
+  ships, raise the ceiling rather than adding a cap under it.
 
 ### Modal sandbox notes
 

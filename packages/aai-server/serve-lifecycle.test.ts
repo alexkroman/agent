@@ -1,11 +1,13 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { endLiveStreams, registerLiveStream } from "./live-streams.ts";
+import { registerLiveStream, resetLiveStreams } from "./live-streams.ts";
 import { createShutdownHandler, startService } from "./serve-lifecycle.ts";
 
 beforeEach(() => {
-  endLiveStreams();
+  // Reset, not drain: a shutdown latches the registry closed, so draining here
+  // would make every registerLiveStream below end its stream on the spot.
+  resetLiveStreams();
   vi.restoreAllMocks();
   vi.spyOn(console, "info").mockImplementation(() => undefined);
   vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -37,7 +39,12 @@ describe("createShutdownHandler", () => {
   // truncated chunked body to whatever is reading (Modal's ASGI proxy, in
   // production). They have to be ended BEFORE the close, which is also what
   // lets the close complete at all.
-  it("ends live streams before closing the server", async () => {
+  //
+  // And before the TEARDOWN, which sleeps SHUTDOWN_GRACE_MS and then awaits one
+  // drain request per resident guest: Modal SIGKILLs the container when its
+  // stop grace lapses, so anything slow in front of the ending made it
+  // contingent on sandbox teardown finishing in time.
+  it("ends live streams first — before teardown and the close", async () => {
     const order: string[] = [];
     registerLiveStream(() => order.push("end-stream"));
     const shutdown = createShutdownHandler({
@@ -53,7 +60,7 @@ describe("createShutdownHandler", () => {
 
     await shutdown();
 
-    expect(order).toEqual(["teardown", "end-stream", "close"]);
+    expect(order).toEqual(["end-stream", "teardown", "close"]);
   });
 
   // A platform that signals twice, or an impatient operator, must not run
