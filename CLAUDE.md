@@ -1289,6 +1289,46 @@ present in the `agent()` config:
   accumulator for it was added (#a42cdbd3) and removed again once measurement
   showed it could never fire; do not re-add one on the strength of the docs.
 
+  **An in-band service error is NOT the end of the session, and a fatal frame
+  is not a banner.** `SessionCore.onError` defaults to `fatal: true`, and
+  aai-ui answers a fatal frame by calling `cleanupAudio()`, bumping the
+  connection generation, and setting `running: false` — the MICROPHONE IS
+  RELEASED. Both S2S transports used to report every in-band error that way:
+  AssemblyAI's `session.error` with a non-expiry code (a rate limit, a rejected
+  field) and its bare `error` frame, OpenAI Realtime's `error` event. None of
+  those closes the socket, so the conversation demonstrably continued —
+  `tool_call`, `reply_done`, and audio all arrived afterwards on most fuzz
+  seeds — to a client that could no longer hear anyone, and a later event even
+  recovered its state to "listening" (`clearRecoveredError`), leaving a session
+  that looks live and is deaf. They now pass `{ fatal: false }`; the *only*
+  reporter of session death is the close/failed-resume path (`endSession`),
+  which is the one place that knows the link is gone and attaches the close
+  code. A truly terminal error is still covered, because the service closes the
+  socket after it. Note session-core logs a non-fatal error at DEBUG, so
+  `s2s.ts` logs the `error` frame's message itself at warn — demoting the
+  client-facing severity must not also make the service's complaint invisible.
+
+  **Retiring the session must also DROP THE LINK** (`endSession`). Most fatal
+  paths arrive from a close, where the socket is already gone — but not all:
+  when the service rejects a `session.resume` with `session_not_found` it says
+  so IN BAND and leaves the socket OPEN. The transport went on holding a live
+  (billed) provider session and relaying its frames to a client it had just
+  told the call was over. `endSession` closes the socket, drops the handle and
+  the queued tool results, and the inbound callbacks are gated on the session
+  still being live (`whileLive`) — `close()` does not un-deliver what is already
+  buffered.
+
+  **`stop()` must be able to abandon a handshake that has not completed**
+  (`ConnectS2sOptions.signal`, aborted by the transport's `teardown` controller).
+  `handle?.close()` can only reach a socket that OPENED: `connectS2s` returns a
+  handle only on `open`, and `ws` sets no `handshakeTimeout`, so a client that
+  hangs up mid-resume left a half-open (billed) provider connection pinned for
+  the life of the process — nothing anywhere held a reference to close. A connect
+  that loses this race is swallowed rather than reported: we aborted it, and
+  there is no session left to fail. All three of these came out of the S2S
+  property test (see the Testing section), which shrank the last one to two
+  commands: `session.ready`, then a transient drop.
+
 The default injection runs at every mode-derivation site — `toAgentConfig`
 (so it is baked into deployed configs at build time) and `createRuntime`'s
 provider resolution — before `assertProviderTriple`.
@@ -2078,6 +2118,64 @@ you only need to list one package.
   step count carries an unusual `minLength`, because a run spends its first
   steps getting the session past `start()` and shorter scripts finish before a
   reply ever completes.
+- **`aai` has a fast-check PROPERTY TEST over the S2S stack**
+  (`host/integration/s2s-fuzz.integration.test.ts` plus `_s2s-fuzz-model.ts`,
+  `_s2s-fuzz-harness.ts`, `_s2s-fuzz-commands.ts`; same command, also keyless).
+  It differs from the pipeline fuzz twice over — in what it composes, and in how
+  it generates.
+  - **The only fake is the SOCKET.** `connectS2s` (wire parse + dispatch),
+    `createS2sTransport` (resume, tool-result redelivery, audio suppression) and
+    `createSessionCore` (turn lifecycle, tool execution) all run for real, with
+    a recording `ClientSink` at the far end. That is the point: every S2S spec that
+    predates it stubs out a neighbouring layer (the transport specs mock
+    `connectS2s`, the wire specs mock the callbacks), and all three bugs it found
+    live in the seam BETWEEN layers, with every layer's own suite green.
+  - **fast-check model-based commands, not a hand-rolled walk.** Legality lives
+    in each command's `check()` against a model that IS the provider state
+    machine, so an illegal frame is never generated (no audio outside a reply, no
+    `reply.started` while the service awaits a `tool.result`). Findings arrive
+    SHRUNK — the three were two, three, and four commands long, which is what a
+    hand-rolled walk's 40-step trace never gave.
+  - **No timers anywhere.** Socket opening and tool settlement are COMMANDS, so
+    when a tool settles relative to a drop is part of the generated plan rather
+    than a race. That is what makes shrinking and seed replay mean anything: the
+    predecessor awaited real `setTimeout`s, could not re-run its own
+    counterexamples, and intermittently reported a finding that no rerun could
+    reproduce. It also made the suite ~400x faster (50s → ~130ms), because the
+    per-command drain is a `setImmediate` rather than a ~1ms timer.
+  - **Three properties, differentiated by a per-run `faultBudget`** (0 / 2 / 3):
+    turns, reconnects, retirement. One combined property cannot serve both ends
+    — at 2 faults per 40 commands a tool call rarely survived to be answered (the
+    central oracle ran 7 times out of 80 executions), and at 0 there are no
+    resumes to redeliver across.
+  - Oracles: a tool call the service issued gets exactly one `tool.result` (zero
+    leaves the service holding a turn it can never continue — the user hears an
+    agent go silent until the idle timeout); nothing conversational reaches a
+    client that was told the session is over; at most one fatal `connection`
+    error per session, and no socket opened after it; no socket left open after
+    `stop()`; `session.resume` only ever names an id the service issued. The
+    streaming ones live in the harness's sink and THROW, so fast-check shrinks;
+    the end-of-run ones run before `stop()`, which legitimately abandons work.
+  - **A resumed session inherits the dead socket's unanswered tool calls** —
+    that is what `session.resume` MEANS, and it is the premise the tool-answer
+    oracle rests on. Stop modelling it and the oracle stops meaning anything.
+  - **A finding is only reachable if the run does not excuse it first.** The
+    tool-answer exemptions (interrupted turn, client reset, retired session, link
+    not ready, a SIBLING call of the same reply still running — results flush per
+    reply as a BATCH) are broad enough to silence the oracle completely, so each
+    increments a `skip:<why>` counter and the floors are on the CHECKED counts.
+    `toolAnsweredAcrossResume` has been near zero through three separate
+    mistakes; it is the floor that stands between a live oracle and a decorative
+    one. `S2S_FUZZ_COVERAGE=1` prints the table.
+  - **The fakes' fidelity is where the false findings came from**, every time.
+    Three drafts blamed the transport for behaviour their own fake had invented:
+    a `executeTool` that ignored its abort signal (the real one settles promptly
+    via `pTimeout({ signal })`, so `stop()` was reported as hanging forever), one
+    that ignored an ALREADY-aborted signal (which is exactly what a `tool.call`
+    after a client cancel receives, since `onCancel` aborts the reply without
+    replacing it), and one that rejected where the real executor always RESOLVES
+    with a `toolError(...)` string. Check the real collaborator's contract before
+    believing a finding.
 - Slow/integration tests have separate per-package configs
   (`vitest.slow.config.ts`, `vitest.integration.config.ts`) to avoid running
   during `vitest run`.

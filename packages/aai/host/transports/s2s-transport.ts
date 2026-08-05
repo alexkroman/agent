@@ -81,6 +81,9 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
   // stalled the resumed turn until the idle timeout, with the only trace a
   // debug log line.
   let pendingToolResults: { callId: string; result: string }[] = [];
+  // Aborted by stop() to abandon a handshake that has not completed yet — see
+  // stop() and `ConnectS2sOptions.signal`.
+  const teardown = new AbortController();
 
   /**
    * Redeliver tool results the dead socket dropped — the restored provider
@@ -103,12 +106,48 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
   function endSession(detail: string): void {
     if (sessionEnded) return;
     sessionEnded = true;
+    // Retiring the session must also DROP THE LINK. Most paths reach here from a
+    // close, where the socket is already gone — but not all: when the service
+    // rejects our `session.resume` with `session_not_found` it reports that IN
+    // BAND and leaves the socket OPEN. The transport went on holding a live
+    // (billed) provider session and relaying its frames — user transcripts,
+    // replies, audio — to a client it had just told the call was over, i.e. one
+    // that has released its microphone (aai-ui's `handleErrorEvent`). Found by
+    // `integration/s2s-fuzz.integration.test.ts`, which reaches the ordering
+    // only when the rejection lands before the resumed socket reports ready.
+    //
+    // Closing here is idempotent and cannot loop: the resulting close event hits
+    // the `sessionEnded` guard at the top of handleClose. Queued tool results go
+    // too — there is no longer any socket that could carry them.
+    handle?.close();
+    handle = null;
+    pendingToolResults = [];
     opts.callbacks.onError("connection", detail);
+  }
+
+  /**
+   * Gate an inbound provider event on the session still being live.
+   *
+   * Closing the socket in `endSession` is the fix; this is the rest of it.
+   * `close()` asks the peer to hang up — it does not un-deliver what is already
+   * buffered, so `ws` can still emit `message` events between the call and the
+   * socket actually closing. Every one of those would be relayed to a client
+   * that has been told the call is over and has released its microphone
+   * (aai-ui's `handleErrorEvent`), which is the thing being fixed.
+   *
+   * `onClose`, `onError`, and `onSessionExpired` are deliberately NOT gated:
+   * they carry their own latches, and onClose still has logging to do.
+   */
+  function whileLive<A extends unknown[]>(fn: (...args: A) => void): (...args: A) => void {
+    return (...args: A) => {
+      if (sessionEnded || closing) return;
+      fn(...args);
+    };
   }
 
   function buildCallbacks(): S2sCallbacks {
     return {
-      onSessionReady: (id) => {
+      onSessionReady: whileLive((id) => {
         const isFirstReady = providerSessionId === null;
         providerSessionId = id;
         if (reconnecting) {
@@ -119,36 +158,42 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
         }
         flushPendingToolResults();
         opts.callbacks.onSessionReady?.(id);
-      },
-      onReplyStarted: (replyId) => {
+      }),
+      onReplyStarted: whileLive((replyId) => {
         // A reply on the (possibly resumed) socket is real progress — the
         // session is healthy again, so clear the flapping-resume counter.
         resumeAttempts = 0;
         suppressAudioUntilReply = false;
         currentReplyId = replyId;
         opts.callbacks.onReplyStarted(replyId);
-      },
-      onReplyDone: () => {
+      }),
+      onReplyDone: whileLive(() => {
         currentReplyId = null;
         opts.callbacks.onReplyDone();
-      },
-      onCancelled: () => {
+      }),
+      onCancelled: whileLive(() => {
         currentReplyId = null;
         opts.callbacks.onCancelled();
-      },
-      onAudio: (bytes) => {
+      }),
+      onAudio: whileLive((bytes: Uint8Array) => {
         if (suppressAudioUntilReply) return;
         opts.callbacks.onAudioChunk(bytes);
-      },
-      onUserTranscript: opts.callbacks.onUserTranscript,
-      onUserTranscriptPartial: (text) => opts.callbacks.onUserTranscriptPartial?.(text),
-      onAgentTranscript: opts.callbacks.onAgentTranscript,
+      }),
+      onUserTranscript: whileLive((text: string) => opts.callbacks.onUserTranscript(text)),
+      onUserTranscriptPartial: whileLive((text: string) =>
+        opts.callbacks.onUserTranscriptPartial?.(text),
+      ),
+      onAgentTranscript: whileLive((text: string, interrupted: boolean) =>
+        opts.callbacks.onAgentTranscript(text, interrupted),
+      ),
       // No agent-partial forwarding: S2S emits no incremental agent transcript
       // (`transcript.agent.delta` is unimplemented — see `_s2s-reply.ts`), so
       // `onAgentTranscriptPartial` has a pipeline-mode producer only.
-      onToolCall: opts.callbacks.onToolCall,
-      onSpeechStarted: opts.callbacks.onSpeechStarted,
-      onSpeechStopped: opts.callbacks.onSpeechStopped,
+      onToolCall: whileLive((callId: string, name: string, args: Record<string, unknown>) =>
+        opts.callbacks.onToolCall(callId, name, args),
+      ),
+      onSpeechStarted: whileLive(() => opts.callbacks.onSpeechStarted()),
+      onSpeechStopped: whileLive(() => opts.callbacks.onSpeechStopped()),
       onSessionExpired: () => {
         // Server reports session no longer exists (likely session_not_found
         // in response to our resume). Surface as fatal — nothing to resume.
@@ -160,7 +205,28 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
         log.info("S2S session expired", { sid: opts.sid });
         handle?.close();
       },
-      onError: (err) => opts.callbacks.onError("internal", err.message),
+      // An in-band service error is NOT the end of the session, and must not be
+      // reported as one. Neither this path nor `connectS2s` closes the socket:
+      // `session.error` with a non-expiry code (a rate limit, a rejected field)
+      // and a bare `error` frame both leave the link up, and the conversation
+      // demonstrably continues through them — the fuzz
+      // (`integration/s2s-fuzz.integration.test.ts`) reaches `tool_call`,
+      // `reply_done`, and audio afterwards on most seeds.
+      //
+      // `onError` defaults to fatal, and a fatal frame is not a banner: aai-ui's
+      // `handleErrorEvent` calls `cleanupAudio()`, bumps the connection
+      // generation, and sets `running: false` — so the microphone is RELEASED
+      // while this transport goes on relaying replies to a client whose UI says
+      // the call ended. A later event even recovers the state to "listening"
+      // (`clearRecoveredError`), leaving a session that looks live and can never
+      // hear the user again.
+      //
+      // Session death has exactly one reporter: `endSession`, driven by the
+      // close and failed-resume paths, which are the only places that know the
+      // link is gone. An error that really is terminal is followed by the
+      // service closing the socket, so it still surfaces there — with the close
+      // code attached, which is strictly more diagnostic than this frame.
+      onError: (err) => opts.callbacks.onError("internal", err.message, { fatal: false }),
       onClose: (code, reason) => handleClose(code, reason),
     };
   }
@@ -279,19 +345,30 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
   }
 
   async function connect(onReady: (h: S2sHandle) => void): Promise<void> {
-    const newHandle = await _internals.connectS2s({
-      apiKey: opts.apiKey,
-      config: opts.s2sConfig,
-      createWebSocket: createWs,
-      logger: log,
-      sid: opts.sid,
-      callbacks: buildCallbacks(),
-    });
+    let newHandle: S2sHandle;
+    try {
+      newHandle = await _internals.connectS2s({
+        apiKey: opts.apiKey,
+        config: opts.s2sConfig,
+        createWebSocket: createWs,
+        logger: log,
+        sid: opts.sid,
+        callbacks: buildCallbacks(),
+        signal: teardown.signal,
+      });
+    } catch (err) {
+      // We abandoned this handshake ourselves in stop(); the client is gone, so
+      // there is nothing to report and no session left to fail.
+      if (closing) return;
+      throw err;
+    }
     // stop() may have run while the handshake was in flight (client
     // disconnected during connect). At that point `handle` was still null, so
     // stop()'s close() was a no-op — close the resolved socket now or it leaks
-    // a live (billed) provider session.
-    if (closing) {
+    // a live (billed) provider session. `sessionEnded` is the same situation
+    // arrived at differently: the session was retired mid-handshake, so
+    // installing this socket would resume a session already declared dead.
+    if (closing || sessionEnded) {
       newHandle.close();
       return;
     }
@@ -309,6 +386,14 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
 
   async function stop(): Promise<void> {
     closing = true;
+    // Abandons a handshake that has not completed yet. `handle?.close()` below
+    // can only reach a socket that OPENED — a resume still waiting on its `open`
+    // has produced no handle, and `ws` sets no handshakeTimeout, so without this
+    // a client that hangs up mid-resume left a half-open (billed) provider
+    // connection pinned for the life of the process. Found by
+    // `integration/s2s-fuzz.integration.test.ts`, which shrank it to two
+    // commands: session.ready, then a transient drop.
+    teardown.abort();
     pendingToolResults = [];
     handle?.close();
     handle = null;

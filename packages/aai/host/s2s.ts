@@ -206,6 +206,12 @@ function dispatchS2sMessage(
       }
       break;
     case "error":
+      // Logged here with its message because `logIncoming` prints the type
+      // only, and the transport now forwards in-band errors as NON-fatal (see
+      // its `onError` mapping) — which session-core logs at debug. Without this
+      // line, demoting the client-facing severity would also have made the
+      // service's own complaint invisible in a default-logger deployment.
+      ctx.log.warn("S2S << error", { ...sidFields(ctx), message: msg.message });
       callbacks.onError(new Error(msg.message));
       break;
     default:
@@ -264,10 +270,23 @@ export type ConnectS2sOptions = {
    * not provided.
    */
   sid?: string;
+  /**
+   * Abandons a handshake that has not completed yet — the caller's teardown.
+   * Without it a socket stuck between `connect` and `open` can never be closed
+   * by anyone: this function only returns a handle once the socket opens, so
+   * there is nothing for the caller to close, and `ws` sets no
+   * `handshakeTimeout`, so nothing times it out either. A client that hangs up
+   * mid-resume then leaves a half-open (billed) provider connection pinned for
+   * the life of the process.
+   */
+  signal?: AbortSignal;
 };
 
 export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
   const { apiKey, config, createWebSocket, callbacks, logger: log = consoleLogger, sid } = opts;
+
+  // Already abandoned: never open a socket the caller has no use for.
+  opts.signal?.throwIfAborted();
 
   log.info("S2S connecting", { url: config.wssUrl });
 
@@ -292,6 +311,21 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
   // Handlers below stay registered for the socket's whole life; the race routes
   // pre-open failures to the connect and later ones to the session callbacks.
   const connect = createWsOpenRace();
+
+  // Abandon an unfinished handshake (see `signal` above). Once the socket has
+  // opened this is a no-op: the caller holds the handle by then and closes it
+  // through the normal teardown, which is also what keeps this from racing a
+  // session that is already live.
+  opts.signal?.addEventListener(
+    "abort",
+    () => {
+      if (!connect.isOpening()) return;
+      log.info("S2S connect abandoned before open", { url: config.wssUrl });
+      ws.close(WS_NORMAL_CLOSURE);
+      connect.fail(new Error("S2S connect abandoned before open"));
+    },
+    { once: true },
+  );
 
   function send(msg: { type: string; [key: string]: unknown }): boolean {
     if (ws.readyState !== WS_OPEN) {

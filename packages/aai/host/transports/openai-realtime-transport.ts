@@ -146,7 +146,10 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       } catch (err) {
         const msg = errorMessage(err);
         log.error("OpenAI Realtime message dispatch failed", { error: msg, sid: opts.sid });
-        opts.callbacks.onError("internal", msg);
+        // Non-fatal: one frame failed to dispatch, the socket is untouched, and
+        // the next frame will be handled normally. See handleErrorEvent below
+        // for why a fatal frame here would be worse than the dropped frame.
+        opts.callbacks.onError("internal", msg, { fatal: false });
       }
     });
     sock.addEventListener("close", (ev) => {
@@ -168,7 +171,11 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
         log.info("OpenAI Realtime error during close", { error: msg });
         return;
       }
-      opts.callbacks.onError("internal", msg);
+      // The `ws` library always follows a fatal socket error with `close`, and
+      // handleClose reports THAT as fatal with the code attached. Reporting this
+      // one as fatal too tore the client down (mic released) one event early,
+      // for a socket error that may not even be terminal.
+      opts.callbacks.onError("internal", msg, { fatal: false });
     });
     await connect.promise;
   }
@@ -225,7 +232,13 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     const message = typeof err?.message === "string" ? err.message : "OpenAI Realtime error";
     log.warn("OpenAI Realtime error event", { error: obj.error });
     clearTurnBuffers();
-    opts.callbacks.onError("internal", message);
+    // An in-band `error` event leaves the socket open and the session usable —
+    // OpenAI sends them for recoverable conditions (a response requested while
+    // one is active, an unknown field). `onError` defaults to FATAL, and a fatal
+    // frame makes aai-ui release the microphone and end the call, so a
+    // recoverable complaint silently cost the user their mic while this
+    // transport kept relaying replies. Session death is handleClose's to report.
+    opts.callbacks.onError("internal", message, { fatal: false });
   }
 
   function handleOutputItemAdded(obj: Record<string, unknown>): void {
