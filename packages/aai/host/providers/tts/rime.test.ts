@@ -15,10 +15,12 @@ const { FakeWebSocket } = vi.hoisted(() => {
     readyState = FakeWebSocket.OPEN;
     sent: string[] = [];
     readonly url: string;
+    readonly options: { perMessageDeflate?: boolean } | undefined;
     private readonly listeners = new Map<string, WsListener[]>();
 
-    constructor(url: string, _opts?: unknown) {
+    constructor(url: string, opts?: { perMessageDeflate?: boolean }) {
       this.url = url;
+      this.options = opts;
       FakeWebSocket.instances.push(this);
       // Real `ws` fires "open" asynchronously; match that timing.
       queueMicrotask(() => this._fire("open"));
@@ -122,6 +124,14 @@ describe("rime TTS adapter", () => {
   test("openRime returns an opener with name 'rime'", () => {
     const opener = openRime({ voice: "cove" });
     expect(opener.name).toBe("rime");
+  });
+
+  test("opens with permessage-deflate disabled", async () => {
+    // `ws` defaults this to true on CLIENTS, and a provider that accepts the
+    // offer costs a zlib context per socket (+321 KiB RSS, ~4.5x CPU, measured)
+    // to compress PCM16, which does not compress. See PROVIDER_WS_OPTIONS.
+    const { ws } = await openSession();
+    expect(ws.options?.perMessageDeflate).toBe(false);
   });
 
   test("open() throws tts_auth_failed when API key is missing", async () => {

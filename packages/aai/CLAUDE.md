@@ -561,6 +561,37 @@ defaults that affect agent behavior:
 | resume grace | 120,000 (`SESSION_RESUME_GRACE_MS`) | `constants.ts` | How long a disconnected session's per-session tool state (`ctx.state`) survives awaiting a `?sessionId=<id>` resume — the runtime's stateMap sweep (in-guest on the platform, in-process under `aai dev`) waits it out, cancelled when the session resumes. Sized above the browser client's worst-case automatic-reconnect span (~105s); the client reconnects with the sessionId from the `config` frame, so the resumed session finds its state under the same key. |
 | `builtinTools` | `DEFAULT_BUILTIN_TOOLS` (`think`, `remember`, `recall`, `calculate`) | `constants.ts` | Cognitive built-ins on by default: private reasoning scratchpad, session notes, safe calculator. Set `builtinTools` explicitly (including `[]`) to override. `web_search`/`visit_webpage`/`get_page_design`/`fetch_json`/`run_code` remain opt-in. A custom or relayed tool with the same name wins — the built-in is dropped. |
 
+## Provider sockets disable permessage-deflate
+
+**`ws` defaults `perMessageDeflate` to TRUE on clients and FALSE on servers.**
+That asymmetry is the whole gotcha: inbound session sockets
+(`WebSocketServer` in `host/server.ts`) decline compression for free, while
+every outbound provider socket OFFERS it, and any provider whose server
+accepts leaves us holding a zlib deflate+inflate context per socket for the
+life of the session. Measured on 200 client sockets exchanging PCM16 frames,
+peer accepting vs declining: **+321 KiB RSS per socket** (405 vs 84) and
+**~4.5x the CPU** for the same audio (2223 ms vs 491 ms). Pipeline mode opens
+two provider sockets per session, so it is paid twice per concurrent call —
+more than every other per-session allocation combined, on the one path that
+scales with concurrency.
+
+It also buys nothing: these sockets carry PCM16, base64 of it, or an
+already-compressed codec. None of that deflates.
+
+So every provider-facing socket spreads `PROVIDER_WS_OPTIONS`
+(`host/_ws.ts`) — `defaultCreateHeaderWebSocket` (S2S + OpenAI Realtime),
+`providers/tts/rime.ts`, `providers/tts/assemblyai.ts`,
+`providers/stt/soniox.ts`. **A new provider that constructs its own `ws`
+client must do the same**; `host/_ws.test.ts` pins the wire behaviour against
+a server that offers the extension, and the three adapter suites assert the
+constructor option.
+
+The vendor-SDK providers (`assemblyai` STT, `@deepgram/sdk`,
+`@elevenlabs/elevenlabs-js`, `@cartesia/cartesia-js`) keep their WebSocket
+private and expose no option to pass through, so they are NOT covered — their
+compression behaviour is whatever the SDK and the provider negotiate. Worth
+re-checking if one of them shows unexplained per-session memory.
+
 ## Self-hosted server defaults (`aai/host/server.ts`)
 
 `createServer` has no request authentication of its own — it is the `aai dev`

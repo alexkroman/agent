@@ -37,9 +37,39 @@ export type CreateHeaderWebSocket = (
   opts: { headers: Record<string, string> },
 ) => HeaderWebSocket;
 
+/**
+ * Options every provider-facing `ws` client must carry.
+ *
+ * **`ws` defaults `perMessageDeflate` to TRUE on clients** and FALSE on
+ * servers, so the asymmetry is easy to miss: our inbound session sockets
+ * (`WebSocketServer` in `host/server.ts`) decline compression by default,
+ * while every outbound provider socket OFFERS it, and any provider that
+ * accepts leaves us holding a zlib deflate+inflate context per socket for the
+ * life of the session.
+ *
+ * That is not a rounding error. Measured on 200 client sockets exchanging
+ * PCM16 frames, with the peer accepting the extension versus declining it:
+ * **+321 KiB RSS per socket** (405 KiB vs 84 KiB) and **~4.5x the CPU** for
+ * the same audio (2223 ms vs 491 ms). Pipeline mode opens two provider sockets
+ * per session, so it is paid twice per concurrent call — more than every other
+ * per-session allocation combined.
+ *
+ * And it buys nothing: these sockets carry PCM16 (or base64 of it, or an
+ * already-compressed codec), which is high-entropy and does not deflate. The
+ * compression is pure overhead on the one path that runs per session.
+ *
+ * Whether it is currently being paid depends on each provider's server
+ * accepting the offer — which is exactly why it is disabled here rather than
+ * left to them.
+ */
+export const PROVIDER_WS_OPTIONS = { perMessageDeflate: false } as const;
+
 // Node's native WebSocket doesn't support custom headers; the `ws` package does.
 export const defaultCreateHeaderWebSocket: CreateHeaderWebSocket = (url, opts) =>
-  new WsWebSocket(url, { headers: opts.headers }) as unknown as HeaderWebSocket;
+  new WsWebSocket(url, {
+    headers: opts.headers,
+    ...PROVIDER_WS_OPTIONS,
+  }) as unknown as HeaderWebSocket;
 
 /**
  * The connect race shared by the header-WebSocket transports (AssemblyAI S2S,

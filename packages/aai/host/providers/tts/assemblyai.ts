@@ -114,6 +114,7 @@ import {
 import { errorMessage, safeJsonParse } from "../../../sdk/utils.ts";
 import { base64ToUint8 } from "../../_base64.ts";
 import { bytesToPcm16 } from "../../_pcm.ts";
+import { PROVIDER_WS_OPTIONS } from "../../_ws.ts";
 import { hasMinWords } from "../../transports/pipeline-text.ts";
 import {
   assertPcm16Rate,
@@ -273,7 +274,11 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
         // protects against a late socket error with zero listeners crashing
         // the process.
         createGuardedWs(
-          () => new WebSocket(url, { headers: { Authorization: apiKey } }),
+          () =>
+            new WebSocket(url, {
+              headers: { Authorization: apiKey },
+              ...PROVIDER_WS_OPTIONS,
+            }),
           connectError,
           "AssemblyAI TTS",
         );
