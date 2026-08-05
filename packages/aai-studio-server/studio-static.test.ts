@@ -8,9 +8,38 @@
  * backend rather than to a hand-copied hostname literal.
  */
 
-import { describe, expect, it } from "vitest";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import nodePath from "node:path";
+import type { AppContext } from "aai-server/context";
+import { Hono } from "hono";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { chatUrlForGuest } from "./studio-session-broker.ts";
 import { studioCsp } from "./studio-static.ts";
+
+/** The faked `aai-studio-client` package root the handler suite resolves to. */
+const tmp = vi.hoisted(() => ({ dir: "" }));
+
+// Only the module RESOLUTION is faked. The real cached reader still runs, so
+// `clientDir()`'s own `dist` join and its containment check stay under test —
+// faking the reader instead would leave the line that names the build
+// directory unexercised.
+vi.mock("node:module", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:module")>();
+  return {
+    ...actual,
+    createRequire: (url: string | URL) => {
+      const req = actual.createRequire(url);
+      return Object.assign(req.bind(null) as typeof req, req, {
+        resolve: ((id: string, ...rest: unknown[]) =>
+          id === "aai-studio-client/package.json"
+            ? nodePath.join(tmp.dir, "package.json")
+            : // biome-ignore lint/suspicious/noExplicitAny: delegating to the real resolve
+              (req.resolve as any)(id, ...rest)) as typeof req.resolve,
+      });
+    },
+  };
+});
 
 /** The `connect-src` sources from a CSP string. */
 function connectSrc(csp: string): string[] {
@@ -45,6 +74,13 @@ describe("studioCsp", () => {
     expect(csp).toContain("default-src 'none'");
     expect(csp).toContain("script-src 'self'");
     expect(csp).toContain("frame-src 'self'");
+    expect(csp).toContain("font-src 'self'");
+    expect(csp).toContain("img-src 'self' data:");
+    expect(csp).toContain("style-src 'self' 'unsafe-inline'");
+    // The tail directives sit in their own concatenated string, so they are
+    // the part a rewrite drops without touching anything asserted above.
+    expect(csp).toContain("base-uri 'none'");
+    expect(csp).toContain("form-action 'none'");
     expect(connectSrc(csp)).toContain("'self'");
   });
 
@@ -105,13 +141,192 @@ describe("studioCsp", () => {
     it("adds no source for dev auth or an unconfigured login", () => {
       const dev = connectSrc(studioCsp({ SANDBOX_BACKEND: "subprocess" }, { mode: "dev" }));
       expect(dev).toEqual(connectSrc(studioCsp({ SANDBOX_BACKEND: "subprocess" })));
-      expect(dev.some((s) => s.includes("supabase"))).toBe(false);
+      // Exact list, not a substring check: the point is that dev auth
+      // contributes NOTHING, and any extra source would still satisfy a
+      // "does not mention supabase" assertion.
+      expect(dev).toEqual(["'self'", "http://127.0.0.1:*"]);
     });
 
     it("throws on an unparsable URL rather than silently omitting it", () => {
       expect(() =>
         studioCsp({ SANDBOX_BACKEND: "modal" }, { ...supabaseAuth, supabaseUrl: "abc123" }),
       ).toThrow(/SUPABASE_URL/);
+    });
+
+    it("keeps the underlying parse failure as the cause", () => {
+      // The message names the setting; the cause is what says why it failed.
+      let caught: unknown;
+      try {
+        studioCsp({ SANDBOX_BACKEND: "modal" }, { ...supabaseAuth, supabaseUrl: "abc123" });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(Error);
+      expect((caught as Error).cause).toBeInstanceOf(Error);
+    });
+  });
+});
+
+/**
+ * The three handlers themselves, driven over a real Hono app against a real
+ * (temporary) build directory. Only the module resolution is faked, so
+ * `clientDir()`'s own `dist` join, the containment check, and the cached
+ * reader all stay under test — mocking the reader instead would have left the
+ * one line that names the build directory unexercised.
+ */
+describe("studio client handlers", () => {
+  beforeEach(async () => {
+    tmp.dir = await mkdtemp(nodePath.join(tmpdir(), "aai-studio-static-"));
+    await writeFile(nodePath.join(tmp.dir, "package.json"), '{"name":"aai-studio-client"}');
+    // Module-level memos (client dir, CSP headers, decoded shell, read cache)
+    // outlive a single test, so each case gets a fresh module instance.
+    vi.resetModules();
+  });
+
+  afterEach(async () => {
+    await rm(tmp.dir, { recursive: true, force: true });
+  });
+
+  /** Write `rel` into the faked build output. */
+  async function build(rel: string, content: string | Buffer) {
+    const full = nodePath.join(tmp.dir, "dist", rel);
+    await mkdir(nodePath.dirname(full), { recursive: true });
+    await writeFile(full, content);
+  }
+
+  const BINDINGS = { auth: undefined } as unknown as AppContext["env"];
+
+  /** A Hono app wired to the freshly imported handlers. */
+  async function app() {
+    const { handleStudioPage, handleStudioFavicon, handleStudioClientAsset } = await import(
+      "./studio-static.ts"
+    );
+    const hono = new Hono();
+    hono.get("/", (c) => handleStudioPage(c as unknown as AppContext));
+    hono.get("/favicon.ico", (c) => handleStudioFavicon(c as unknown as AppContext));
+    hono.get("/studio-assets/:path{.+}", (c) =>
+      handleStudioClientAsset(c as unknown as AppContext),
+    );
+    // Same handler with no `path` param — the shape a route change could
+    // produce, where the handler must refuse rather than read something.
+    hono.get("/unparameterized", (c) => handleStudioClientAsset(c as unknown as AppContext));
+    return {
+      get: (url: string) => hono.fetch(new Request(`http://studio.test${url}`), BINDINGS),
+    };
+  }
+
+  describe("GET / (app shell)", () => {
+    it("serves the built index.html with the studio CSP", async () => {
+      await build("index.html", "<!doctype html><title>built shell</title>");
+      const res = await (await app()).get("/");
+
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain("built shell");
+      expect(res.headers.get("content-security-policy")).toContain("default-src 'none'");
+    });
+
+    it("serves the same shell on a repeat request", async () => {
+      // The decoded shell is cached by buffer identity; a second request must
+      // still get the page rather than a stale or empty body.
+      await build("index.html", "<!doctype html><title>built shell</title>");
+      const client = await app();
+
+      expect(await (await client.get("/")).text()).toContain("built shell");
+      expect(await (await client.get("/")).text()).toContain("built shell");
+    });
+
+    it("explains how to build when the client is missing", async () => {
+      const res = await (await app()).get("/");
+
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("has not been built");
+      expect(body).toContain("pnpm --filter aai-studio-client build");
+      expect(res.headers.get("content-security-policy")).toContain("default-src 'none'");
+    });
+
+    it("reads the shell from dist, not the package root", async () => {
+      // A build output resolved one directory too high would serve the
+      // package's own files as the app shell.
+      await writeFile(nodePath.join(tmp.dir, "index.html"), "<title>package root</title>");
+      const body = await (await (await app()).get("/")).text();
+
+      expect(body).not.toContain("package root");
+      expect(body).toContain("has not been built");
+    });
+  });
+
+  describe("GET /favicon.ico", () => {
+    it("serves the icon with a day-long cache", async () => {
+      await build("favicon.ico", Buffer.from([0, 0, 1, 0]));
+      const res = await (await app()).get("/favicon.ico");
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe("image/x-icon");
+      expect(res.headers.get("cache-control")).toBe("public, max-age=86400");
+      expect(new Uint8Array(await res.arrayBuffer())).toEqual(new Uint8Array([0, 0, 1, 0]));
+    });
+
+    it("404s when the client has not been built", async () => {
+      const res = await (await app()).get("/favicon.ico");
+
+      expect(res.status).toBe(404);
+      expect(await res.text()).toContain("Favicon not found");
+    });
+  });
+
+  describe("GET /studio-assets/*", () => {
+    it("serves a hashed asset as immutable", async () => {
+      await build("assets/app-a1b2c3.js", "console.log(1)");
+      const res = await (await app()).get("/studio-assets/assets/app-a1b2c3.js");
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+      expect(res.headers.get("content-type")).toContain("javascript");
+      expect(await res.text()).toBe("console.log(1)");
+    });
+
+    it("falls back to a binary content type for an unknown extension", async () => {
+      await build("assets/data.unknownext", "blob");
+      const res = await (await app()).get("/studio-assets/assets/data.unknownext");
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("application/octet-stream");
+    });
+
+    it("rejects a traversing path", async () => {
+      // The separator is percent-encoded, not the dots: the URL parser
+      // resolves real `../` segments away before routing, so an encoded slash
+      // is what carries a traversal all the way to the schema.
+      const res = await (await app()).get("/studio-assets/..%2fpackage.json");
+
+      expect(res.status).toBe(400);
+      expect(await res.text()).toContain("Invalid asset path");
+    });
+
+    it("rejects a backslash path", async () => {
+      const res = await (await app()).get("/studio-assets/..%5cpackage.json");
+
+      expect(res.status).toBe(400);
+      expect(await res.text()).toContain("Invalid asset path");
+    });
+
+    it("refuses a request carrying no path at all", async () => {
+      // Falls back to the empty path, which the schema rejects — the fallback
+      // must not be something the reader would go looking for.
+      await build("index.html", "<title>shell</title>");
+      const res = await (await app()).get("/unparameterized");
+
+      expect(res.status).toBe(400);
+      expect(await res.text()).toContain("Invalid asset path");
+    });
+
+    it("404s an asset that is not in the build", async () => {
+      await build("assets/app.js", "console.log(1)");
+      const res = await (await app()).get("/studio-assets/assets/missing.js");
+
+      expect(res.status).toBe(404);
+      expect(await res.text()).toContain("Asset not found");
     });
   });
 });
