@@ -60,13 +60,8 @@ import { deployStudioProject } from "./studio-deploy.ts";
 import { studioLlmInfo } from "./studio-llm.ts";
 import { wakeProjectPreview } from "./studio-preview.ts";
 import type { PreviewQueue } from "./studio-preview-queue.ts";
-import {
-  CHAT_RATE_LIMIT,
-  createRateLimiter,
-  PROJECT_CREATE_RATE_LIMIT,
-  type RateLimiter,
-  type StudioRateLimiters,
-} from "./studio-rate-limit.ts";
+import type { StudioRateLimiters } from "./studio-rate-limit.ts";
+import { createRouteLimits } from "./studio-route-limits.ts";
 import {
   CreateProjectSchema,
   ProjectNameSchema,
@@ -172,22 +167,9 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
 
   const studio = new Hono<StudioHonoEnv>();
 
-  // Per-scope fixed-window limits (see studio-rate-limit.ts). The LLM runs
-  // on the caller's own key, so the limiter is no longer guarding a
-  // platform-billed proxy — it still bounds sandbox spawns and build-worker
-  // work per caller. Injected in production (Postgres-backed, shared across
-  // replicas); the in-memory default covers dev and tests.
-  const chatLimiter = options.rateLimiters?.chat ?? createRateLimiter(CHAT_RATE_LIMIT);
-  const projectCreateLimiter =
-    options.rateLimiters?.projectCreate ?? createRateLimiter(PROJECT_CREATE_RATE_LIMIT);
-  const rateLimited = async (scope: string, limiter: RateLimiter): Promise<Response | null> => {
-    const verdict = await limiter.check(scope);
-    if (verdict.ok) return null;
-    return Response.json(
-      { error: "Rate limit exceeded — try again later" },
-      { status: 429, headers: { "Retry-After": String(verdict.retryAfterSeconds) } },
-    );
-  };
+  const limits = createRouteLimits(options.rateLimiters);
+  const { chat: chatLimiter, projectCreate: projectCreateLimiter } = limits;
+  const rateLimited = limits.refuse;
 
   // `llm: true` is legacy shape — chat always runs now, on the caller's key.
   studio.get("/status", (c) => c.json({ llm: true, ...studioLlmInfo() }));

@@ -460,7 +460,7 @@ async function awaitBrokeredUrl(
       const peer = await findPeerSession(slug, opts);
       if (peer) return peer;
       // The winner has not published a tunnel yet, or already went away: a
-      // retryable 503, same as any other still-booting sandbox.
+      // retryable 503, exactly like every other still-booting sandbox.
       return { ok: false, status: 503, cause: err };
     }
     // Still booting is not the same as failed to boot, and only the first is

@@ -20,6 +20,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { keyedMemoAsync } from "./_memo.ts";
+import { spawnModalAgentServer } from "./modal-agent-sandbox.ts";
 import { describeModalBundle } from "./modal-describe.ts";
 import {
   harnessImageTag,
@@ -27,7 +28,7 @@ import {
   resolveSdkSpecs,
   toolchainFingerprint,
 } from "./modal-harness-image.ts";
-import { DEFAULT_SANDBOX_IMAGE, spawnModalAgentServer, spawnModalWarm } from "./modal-sandbox.ts";
+import { DEFAULT_SANDBOX_IMAGE, spawnModalWarm } from "./modal-sandbox.ts";
 import type { GuestConnection } from "./rpc-schemas.ts";
 import { resolveSandboxBackend } from "./sandbox-backend.ts";
 import { agentSandboxName } from "./sandbox-directory.ts";

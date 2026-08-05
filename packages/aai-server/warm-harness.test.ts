@@ -10,7 +10,8 @@
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer } from "ws";
-import { agentBootEnv, dialGuest, drainProcStream, raceGuestExit } from "./warm-harness.ts";
+import { raceGuestExit } from "./guest-readiness.ts";
+import { agentBootEnv, dialGuest, drainProcStream } from "./warm-harness.ts";
 
 function streamOf(chunks: string[]): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();

@@ -41,6 +41,7 @@ import { createPreviewDeployer, type PreviewTarget } from "./studio-preview.ts";
 import { createMemoryPreviewQueue, type PreviewQueue } from "./studio-preview-queue.ts";
 import { studioSystemPrompt } from "./studio-prompt.ts";
 import type { adoptPeerSession } from "./studio-session-adopt.ts";
+import type { SessionEntry } from "./studio-session-entry.ts";
 import { createSessionFleet, soloFleet } from "./studio-session-fleet.ts";
 import {
   createWorkspacePublisher,
@@ -151,38 +152,6 @@ export type StudioSessionBroker = {
   ): Promise<WorkspaceDeployOutcome>;
   /** Tear down every live sandbox (tests, shutdown). */
   dispose(): Promise<void>;
-};
-
-type SessionEntry = {
-  warm: WarmHarness;
-  url: string;
-  /** This entry's own (scope, project) — its key in the cross-replica registry. */
-  scope: string;
-  project: string;
-  lastUsed: number;
-  /**
-   * The chat-surface bearer, minted ONCE for this sandbox and handed to every
-   * caller that brokers this project.
-   *
-   * It must not rotate per broker call. The guest holds exactly one token
-   * (`session.chatToken`), so re-minting on a re-init invalidates the token
-   * every earlier caller is still holding — and overlapping brokers for one
-   * project are routine (a second tab, another device, a reload racing an
-   * in-flight one; the same set `sessionLock` exists for). The loser's next
-   * chat turn then 401s on a surface where the only credential IS this token.
-   * Rotating bought nothing for that: the token is already random, scoped to
-   * one sandbox, and dies with it.
-   */
-  chatToken: string;
-  /**
-   * Where this session's auto preview deploys go — the public origin and
-   * caller key captured at broker time. Absent when the session was brokered
-   * without a `serverUrl` (tests, programmatic callers): then agent edits
-   * sync without auto-previewing.
-   */
-  previewTarget?: PreviewTarget;
-  /** This claim's release on the `sessions` owned map (see `disposeEntry`). */
-  release: () => boolean;
 };
 
 export function createStudioSessionBroker(
