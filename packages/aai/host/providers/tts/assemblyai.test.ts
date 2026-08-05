@@ -81,6 +81,14 @@ describe("AssemblyAI TTS adapter", () => {
     expect(ws.options?.headers?.Authorization).toBe("sk-abc123");
   });
 
+  test("opens with permessage-deflate disabled", async () => {
+    // `ws` defaults this to true on CLIENTS, and a provider that accepts the
+    // offer costs a zlib context per socket (+321 KiB RSS, ~4.5x CPU, measured)
+    // to compress PCM16, which does not compress. See PROVIDER_WS_OPTIONS.
+    const { ws } = await openSession({}, "sk-abc123");
+    expect(ws.options?.perMessageDeflate).toBe(false);
+  });
+
   test("open() throws tts_auth_failed when the API key is missing", async () => {
     const opener = openAssemblyAITts({});
     await expect(

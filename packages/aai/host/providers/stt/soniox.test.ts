@@ -7,6 +7,7 @@ import { openSoniox } from "./soniox.ts";
 
 interface FakeWSInstance {
   readyState: number;
+  options?: { perMessageDeflate?: boolean } | undefined;
   bufferedAmount?: number;
   sent: Array<string | Uint8Array>;
   send(data: string | Uint8Array, opts?: unknown): void;
@@ -30,7 +31,9 @@ const { latest, FakeWS } = vi.hoisted(() => {
     readyState = 0;
     sent: Array<string | Uint8Array> = [];
     private listeners = new Map<string, Listener[]>();
-    constructor(_url: string) {
+    options: { perMessageDeflate?: boolean } | undefined;
+    constructor(_url: string, opts?: { perMessageDeflate?: boolean }) {
+      this.options = opts;
       setImmediate(() => {
         this.readyState = 1;
         this.emit("open");
@@ -119,6 +122,14 @@ function frame(payload: unknown): Buffer {
 describe("Soniox real-time STT adapter", () => {
   test("openSoniox() returns an opener with name 'soniox'", () => {
     expect(openSoniox({}).name).toBe("soniox");
+  });
+
+  test("opens with permessage-deflate disabled", async () => {
+    // `ws` defaults this to true on CLIENTS, and a provider that accepts the
+    // offer costs a zlib context per socket (+321 KiB RSS, ~4.5x CPU, measured)
+    // to compress PCM16, which does not compress. See PROVIDER_WS_OPTIONS.
+    const { ws } = await openSession({});
+    expect(ws.options?.perMessageDeflate).toBe(false);
   });
 
   test("throws stt_auth_failed when API key is missing", async () => {

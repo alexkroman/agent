@@ -17,10 +17,13 @@ export class FakeWebSocket {
   readyState = FakeWebSocket.OPEN;
   sent: string[] = [];
   readonly url: string;
-  readonly options: { headers?: Record<string, string> } | undefined;
+  readonly options: { headers?: Record<string, string>; perMessageDeflate?: boolean } | undefined;
   private readonly listeners = new Map<string, WsListener[]>();
 
-  constructor(url: string, opts?: { headers?: Record<string, string> }) {
+  constructor(
+    url: string,
+    opts?: { headers?: Record<string, string>; perMessageDeflate?: boolean },
+  ) {
     this.url = url;
     this.options = opts;
     FakeWebSocket.instances.push(this);

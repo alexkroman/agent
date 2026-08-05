@@ -14,6 +14,7 @@ import { safeJsonParse } from "../../../sdk/utils.ts";
 import { createAudioSendGate } from "../../_audio-gate.ts";
 import { pcm16ToBytes } from "../../_pcm.ts";
 import { createRestartableTimer } from "../../_timer.ts";
+import { PROVIDER_WS_OPTIONS } from "../../_ws.ts";
 import {
   closeOnAbort,
   connectOrThrow,
@@ -125,7 +126,7 @@ export function openSoniox(opts: SonioxOptions = {}): SttOpener {
       );
 
       const ws = createGuardedWs(
-        () => new WebSocket(SONIOX_WS_URL),
+        () => new WebSocket(SONIOX_WS_URL, PROVIDER_WS_OPTIONS),
         (msg) => makeSttError("stt_connect_failed", msg),
         "Soniox STT",
       );

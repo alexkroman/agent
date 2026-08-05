@@ -33,6 +33,7 @@ import { safeJsonParse } from "../../../sdk/utils.ts";
 import { base64ToUint8 } from "../../_base64.ts";
 import { bytesToPcm16 } from "../../_pcm.ts";
 import { createRestartableTimer } from "../../_timer.ts";
+import { PROVIDER_WS_OPTIONS } from "../../_ws.ts";
 import {
   assertPcm16Rate,
   closeOnAbort,
@@ -115,7 +116,11 @@ export function openRime(opts: RimeOptions): TtsOpener {
       // before the socket can emit `open`; the guard listener protects against
       // a late socket error with zero listeners crashing the process.
       const ws = createGuardedWs(
-        () => new WebSocket(url, { headers: { Authorization: `Bearer ${apiKey}` } }),
+        () =>
+          new WebSocket(url, {
+            headers: { Authorization: `Bearer ${apiKey}` },
+            ...PROVIDER_WS_OPTIONS,
+          }),
         connectError,
         "Rime TTS",
       );
