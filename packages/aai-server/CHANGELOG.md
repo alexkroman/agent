@@ -1,5 +1,13 @@
 # @alexkroman1/aai-server
 
+## 3.4.4
+
+### Patch Changes
+
+- aai-guest@0.4.5
+- @alexkroman1/aai@5.8.1
+- @alexkroman1/aai-ui@5.8.1
+
 ## 3.4.3
 
 ### Patch Changes
