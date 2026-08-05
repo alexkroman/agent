@@ -8,7 +8,6 @@
 import {
   DEFAULT_FALSE_INTERRUPTION_PROMPT,
   DEFAULT_SILENCE_PROMPT,
-  DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
   MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES,
 } from "../../sdk/constants.ts";
 import { createRestartableTimer } from "../_timer.ts";
@@ -55,17 +54,31 @@ export interface SpeechEdgeTracker {
  * without bound so the `interruptionMinDurationMs` gate always passes. The
  * watchdog restarts on every partial, so it only fires once the transcript
  * stream has actually gone quiet.
+ *
+ * That makes the watchdog the transport's one signal for "this utterance
+ * produced no final and never will", which is why `onIdle` exists: it is what
+ * releases a deferred false-interruption resume (see pipeline-recovery.ts).
+ * `onIdle` fires ONLY from the watchdog — never from the commit path's
+ * `speechEnded()`, where a turn did commit and a resume must not run.
  */
 export function createSpeechEdgeTracker(
   callbacks: {
     onSpeechStarted(): void;
     onSpeechStopped(): void;
   },
-  opts: { idleTimeoutMs: number },
+  opts: {
+    idleTimeoutMs: number;
+    /** The open edge went quiet without committing a turn. */
+    onIdle?: (() => void) | undefined;
+  },
 ): SpeechEdgeTracker {
   let speaking = false;
   let startedAtMs = 0;
-  const idleWatchdog = createRestartableTimer(() => endSpeech());
+  const idleWatchdog = createRestartableTimer(() => {
+    if (!speaking) return;
+    endSpeech();
+    opts.onIdle?.();
+  });
 
   function endSpeech(): void {
     idleWatchdog.clear();
@@ -343,6 +356,11 @@ export function createUserActivity(deps: {
   silencePrompt: string | undefined;
   /** False-interruption recovery window (ms); 0 disables. */
   falseInterruptionTimeoutMs: number;
+  /**
+   * Speaking-edge idle watchdog (ms). Also the deferred-resume release, so it
+   * bounds false-interruption recovery latency — see DEFAULT_SPEECH_IDLE_TIMEOUT_MS.
+   */
+  speechIdleTimeoutMs: number;
   /** Interim words required to barge in. */
   minBargeInWords: number;
   /** Sustained-speech gate for interim-triggered barge-in; 0 disables. */
@@ -361,16 +379,29 @@ export function createUserActivity(deps: {
   abortInFlightTurn(): void;
   /** Cut-point resume prompt for a playback-tail barge-in — see {@link SttEventHandlers}. */
   tailResumePrompt(): string | undefined;
-  /** Chain `runTurn(text)` behind the active turn, logging crashes as `crashLabel`. */
-  runChainedTurn(text: string, crashLabel: string, kind?: { isResume: boolean }): void;
+  /**
+   * Chain `runTurn(text)` behind the active turn, logging crashes as
+   * `crashLabel`. `synthetic` marks `text` as an injected instruction rather
+   * than something the caller said, so an abort that leaves the turn with
+   * nothing to show for it can drop the prompt from history again.
+   */
+  runChainedTurn(
+    text: string,
+    crashLabel: string,
+    kind?: { isResume?: boolean; synthetic?: boolean },
+  ): void;
 }): UserActivity {
   const { log, sid, callbacks } = deps;
   const isBusy = (): boolean => deps.isTurnInFlight() || deps.isPlaybackPending();
 
   // Pipeline mode has no VAD: speech_started/speech_stopped derive from the
-  // STT transcript stream (see createSpeechEdgeTracker above).
+  // STT transcript stream (see createSpeechEdgeTracker above). `onIdle` — the
+  // utterance going quiet with no final — is what releases a deferred resume;
+  // `recovery` is declared below and bound late, so the reference resolves when
+  // the watchdog fires rather than at construction.
   const speechEdges = createSpeechEdgeTracker(callbacks, {
-    idleTimeoutMs: DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
+    idleTimeoutMs: deps.speechIdleTimeoutMs,
+    onIdle: () => recovery.onUtteranceEnded(),
   });
 
   // Silence nudge: `silencePrompt` becomes a synthetic user message (in LLM
@@ -382,7 +413,7 @@ export function createUserActivity(deps: {
     isTurnInFlight: isBusy,
     onNudge(consecutive) {
       log.info("Pipeline silence nudge", { sid, consecutive });
-      deps.runChainedTurn(silencePrompt, "Pipeline silence nudge crashed");
+      deps.runChainedTurn(silencePrompt, "Pipeline silence nudge crashed", { synthetic: true });
     },
   });
 
@@ -395,11 +426,15 @@ export function createUserActivity(deps: {
     maxConsecutive: MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES,
     isActive: () => !deps.isTerminated(),
     isBusy,
+    // An open speaking edge means STT may still be holding a final back for its
+    // endpointing window; resuming into that races the caller's real turn.
+    isUtteranceInProgress: () => speechEdges.durationMs() > 0,
     onResume: (resumePrompt) => {
       log.info("Pipeline false-interruption resume", { sid });
       speechEdges.speechEnded();
       deps.runChainedTurn(resumePrompt, "Pipeline false-interruption resume crashed", {
         isResume: true,
+        synthetic: true,
       });
     },
   });

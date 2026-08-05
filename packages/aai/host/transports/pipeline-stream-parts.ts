@@ -9,6 +9,7 @@
 
 import { APICallError, RetryError } from "ai";
 import {
+  DEAD_AIR_COVER_MAX_MS,
   DEAD_AIR_COVER_PHRASES,
   DEFAULT_DEAD_AIR_COVER_MS,
   DEFAULT_HOLD_PHRASE,
@@ -154,9 +155,13 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
   // An `error` part arrived — see StreamPartHandler.errored.
   let errored = false;
   let holdEmitted = false;
-  // Dead-air cover: how many fillers this turn has spoken, which sets both the
-  // next phrase and the (exponentially backed-off) wait before it.
+  // Dead-air cover, tracked as two separate counts. `coverCount` is every filler
+  // spoken this turn and drives the backoff; `coverPhraseCount` is only the
+  // DEAD_AIR_COVER_PHRASES ones and picks the next phrase. Sharing one counter
+  // meant the hold phrase consumed a phrase slot, so the caller heard "One
+  // moment." and then skipped straight to "Just a moment longer.".
   let coverCount = 0;
+  let coverPhraseCount = 0;
   const coverEnabled = holdPhrase.length > 0;
 
   /**
@@ -205,7 +210,22 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
       armCover();
       return;
     }
-    const phrase = DEAD_AIR_COVER_PHRASES[coverCount % DEAD_AIR_COVER_PHRASES.length] ?? "";
+    // Nothing has reached the caller yet, so this is the turn's OPENING gap
+    // rather than a gap between things the model said. The hold phrase is the
+    // filler that fits it — "Still working on that." implies work already
+    // narrated, and is what the caller would otherwise hear as the very first
+    // words of the turn. Marks holdEmitted so the `tool-call` branch below
+    // cannot say it a second time.
+    const opening = !(spokeText || holdEmitted);
+    if (opening) holdEmitted = true;
+    let phrase = holdPhrase;
+    if (!opening) {
+      phrase = DEAD_AIR_COVER_PHRASES[coverPhraseCount % DEAD_AIR_COVER_PHRASES.length] ?? "";
+      coverPhraseCount += 1;
+    }
+    // Counted either way: it drives the backoff, so an opening filler must
+    // still push the next one out (a hold phrase followed 2s later by "Still
+    // working on that." is the stuck-loop cadence the backoff exists to avoid).
     coverCount += 1;
     emitText(phrase, false);
     pendingSeparator = true;
@@ -214,19 +234,35 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
   });
 
   /**
-   * Open a cover window. The wait doubles per filler already spoken, so a
-   * chain that runs long enough to need a fourth reminder gets it at a pace
-   * that reads as patience rather than a stuck loop.
+   * Open a cover window. The wait doubles per filler already spoken, so a short
+   * chain does not chatter — then flattens at {@link DEAD_AIR_COVER_MAX_MS} so a
+   * long one keeps a steady heartbeat instead of drifting back into the silence
+   * this exists to cover. See that constant for the measured cadence.
    */
   function armCover(): void {
     if (!coverEnabled || signal?.aborted) return;
-    deadAir.arm(DEFAULT_DEAD_AIR_COVER_MS * 2 ** coverCount);
+    deadAir.arm(Math.min(DEFAULT_DEAD_AIR_COVER_MS * 2 ** coverCount, DEAD_AIR_COVER_MAX_MS));
   }
 
   // Kill the armed cover the moment the turn aborts rather than at dispose(),
   // which a tool execution that ignores its abort signal defers for seconds.
   const onAbort = (): void => deadAir.clear();
   signal?.addEventListener("abort", onAbort, { once: true });
+
+  // Cover the turn's OPENING gap, not just gaps between things the model said.
+  // armCover() used to be reachable only from the `tool-call` part and from the
+  // timer itself, which left the window between the committed user turn and the
+  // model's FIRST stream part uncovered — and unbounded. A slow first token, or
+  // a long reasoning phase (which emits reasoning deltas and no text), is then
+  // pure dead air for however long it lasts, with `holdPhrase` waiting on a
+  // `tool-call` part that has not arrived yet. Measured on tau2-bench retail
+  // with gpt-5.5 through the gateway: 31.4s of silence after a committed user
+  // turn, ended only by the first tool call finally triggering the hold phrase,
+  // while the client kept streaming mic audio into a session that looked
+  // healthy from both ends. This handler is constructed as the turn's stream
+  // opens, and the first `text-delta` clears the timer, so a turn that answers
+  // promptly pays nothing.
+  armCover();
 
   function dispose(): void {
     signal?.removeEventListener("abort", onAbort);
@@ -272,6 +308,11 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
         // the model's later reply so they don't fuse.
         if (!(spokeText || holdEmitted) && holdPhrase.length > 0 && !callerSpeaking()) {
           holdEmitted = true;
+          // Counted like any other filler. Left uncounted, the next cover was
+          // one base window (2s) after this phrase — net of its own ~1.3s of
+          // audio, under a second of silence between two fillers, which reads
+          // as chatter at the very start of the wait.
+          coverCount += 1;
           emitText(holdPhrase, false);
           pendingSeparator = true;
         }

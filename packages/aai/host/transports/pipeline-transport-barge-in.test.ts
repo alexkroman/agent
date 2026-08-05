@@ -397,7 +397,7 @@ describe("PipelineTransport", () => {
 
     test("reset() discards the aborted turn's interrupted-turn persistence", async () => {
       const llm = createFakeLanguageModel({ script: inFlightReplyScript(), delayMs: 20 });
-      const { opts, stt, tts, callbacks } = makeOpts({ llm });
+      const { opts, stt, tts } = makeOpts({ llm });
       const t = createPipelineTransport(opts);
       await t.start();
 
@@ -408,18 +408,26 @@ describe("PipelineTransport", () => {
 
       t.reset?.();
       await new Promise((r) => setTimeout(r, 50));
-      // persistInterruptedTurn runs after the abort settles; post-reset it
-      // must neither emit the interrupted transcript (after the reset ack)
-      // nor push the `[interrupted]` tail into the just-cleared history.
-      expect(callbacks.onAgentTranscript).not.toHaveBeenCalled();
+      // persistInterruptedTurn runs after the abort settles; post-reset it must
+      // not push the `[interrupted]` tail into the just-cleared history. Read
+      // through a follow-up turn's LLM request rather than the transcript
+      // callback — that callback is no longer part of this path at all (see
+      // "no agent_transcript after cancelled" below), so asserting on it would
+      // pass whether or not the reset was honoured.
+      stt.last()?.fireFinal("fresh question");
+      await vi.waitFor(() => {
+        if (llm.calls.length !== 2) throw new Error("follow-up turn not started");
+      });
+      expect(JSON.stringify(llm.calls.at(-1))).not.toContain("[interrupted]");
       await t.stop();
     });
 
     test("cancelReply() still records the interrupted reply", async () => {
       // Contrast with reset(): a client cancel means "stop responding", not
-      // "forget the conversation" — the spoken-so-far text stays in history.
+      // "forget the conversation" — the spoken-so-far text stays in history, so
+      // the next turn's LLM request carries it marked `[interrupted]`.
       const llm = createFakeLanguageModel({ script: inFlightReplyScript(), delayMs: 20 });
-      const { opts, stt, tts, callbacks } = makeOpts({ llm });
+      const { opts, stt, tts } = makeOpts({ llm });
       const t = createPipelineTransport(opts);
       await t.start();
 
@@ -429,9 +437,41 @@ describe("PipelineTransport", () => {
       });
 
       t.cancelReply();
+      stt.last()?.fireFinal("follow up question");
       await vi.waitFor(() => {
-        expect(callbacks.onAgentTranscript).toHaveBeenCalledWith(expect.any(String), true);
+        if (llm.calls.length !== 2) throw new Error("follow-up turn not started");
       });
+      expect(JSON.stringify(llm.calls.at(-1))).toContain("[interrupted]");
+      await t.stop();
+    });
+
+    test("no agent_transcript is emitted after the barge-in's cancelled frame", async () => {
+      // The client ends the reply on `cancelled` — aai-ui commits the live
+      // agent bubble into the conversation there. A transcript arriving after it
+      // (persistInterruptedTurn used to send one when the aborted stream
+      // settled, ~1ms later) does not amend that message: it opens a fresh live
+      // bubble for a reply that is over, which the next reply's close commits a
+      // SECOND time. Measured on tau2-bench retail as 19 duplicated replies in
+      // 73 cancels. Every word is already on the wire as an interim snapshot, so
+      // the frame is redundant as well as harmful.
+      const llm = createFakeLanguageModel({ script: inFlightReplyScript(), delayMs: 20 });
+      const { opts, stt, tts, callbacks } = makeOpts({ llm });
+      const t = createPipelineTransport(opts);
+      await t.start();
+
+      stt.last()?.fireFinal("question");
+      await vi.waitFor(() => {
+        expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
+      });
+      tts.last()?.fireAudio(new Int16Array(2400));
+
+      const transcriptsBefore = vi.mocked(callbacks.onAgentTranscript).mock.calls.length;
+      stt.last()?.firePartial("actually stop");
+      expect(callbacks.onCancelled).toHaveBeenCalled();
+      // Well past the aborted stream settling, which is when the frame used to
+      // arrive; the interim snapshots (onAgentTranscriptPartial) are unaffected.
+      await new Promise((r) => setTimeout(r, 80));
+      expect(vi.mocked(callbacks.onAgentTranscript).mock.calls.length).toBe(transcriptsBefore);
       await t.stop();
     });
   });

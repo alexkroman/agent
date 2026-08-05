@@ -255,3 +255,56 @@ describe("createPipelineHistory — LLM history cap and tool-call pairing", () =
     }
   });
 });
+
+describe("createPipelineHistory — dropTrailingUser", () => {
+  test("drops a matching trailing user message from both views", () => {
+    // A synthetic prompt (false-interruption resume, silence nudge) is pushed
+    // before the LLM stream runs. When the turn is aborted having produced
+    // nothing — a resume mooted by the user's real turn — leaving it behind puts
+    // "the user did not actually say anything" in front of the model directly
+    // ahead of the words the user did say.
+    const h = createPipelineHistory();
+    h.pushConversation({ role: "user", content: "where is my order" });
+    h.pushLlm({ role: "user", content: "where is my order" });
+    h.pushConversation({ role: "user", content: "RESUME_PROMPT" });
+    h.pushLlm({ role: "user", content: "RESUME_PROMPT" });
+
+    h.dropTrailingUser("RESUME_PROMPT");
+
+    expect(h.conversation).toEqual([{ role: "user", content: "where is my order" }]);
+    expect(h.llm).toEqual([{ role: "user", content: "where is my order" }]);
+  });
+
+  test("leaves a trailing message it did not write alone", () => {
+    const h = createPipelineHistory();
+    h.pushConversation({ role: "user", content: "cancel my order" });
+    h.pushLlm({ role: "user", content: "cancel my order" });
+
+    h.dropTrailingUser("RESUME_PROMPT");
+
+    expect(h.conversation).toHaveLength(1);
+    expect(h.llm).toHaveLength(1);
+  });
+
+  test("leaves the prompt in place once something was persisted after it", () => {
+    // The turn produced a reply tail, which is persisted beside the prompt and
+    // answers it — dropping the prompt would orphan that assistant message.
+    const h = createPipelineHistory();
+    h.pushConversation({ role: "user", content: "RESUME_PROMPT" });
+    h.pushLlm({ role: "user", content: "RESUME_PROMPT" });
+    h.pushConversation({ role: "assistant", content: "As I was saying [interrupted]" });
+    h.pushLlm({ role: "assistant", content: "As I was saying [interrupted]" });
+
+    h.dropTrailingUser("RESUME_PROMPT");
+
+    expect(h.conversation).toHaveLength(2);
+    expect(h.llm).toHaveLength(2);
+  });
+
+  test("is a no-op on empty history", () => {
+    const h = createPipelineHistory();
+    h.dropTrailingUser("RESUME_PROMPT");
+    expect(h.conversation).toEqual([]);
+    expect(h.llm).toEqual([]);
+  });
+});

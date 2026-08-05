@@ -20,6 +20,9 @@ describe("createFalseInterruptionRecovery", () => {
       maxConsecutive: 3,
       isActive: () => true,
       isBusy: () => false,
+      // Default to "the utterance is over": these specs drive the window timer
+      // directly. The deferral has its own describe block below.
+      isUtteranceInProgress: () => false,
       onResume,
       ...over,
     });
@@ -175,5 +178,94 @@ describe("buildTailResumePrompt", () => {
   test("clamps an out-of-range fraction", () => {
     expect(() => buildTailResumePrompt(spoken, 1.7)).not.toThrow();
     expect(buildTailResumePrompt(spoken, -0.3)).toContain("Give that reply again");
+  });
+});
+
+describe("createFalseInterruptionRecovery deferral while the caller is speaking", () => {
+  /** Recovery whose "is the utterance still open" answer the spec controls. */
+  function makeDeferrable(over: { maxConsecutive?: number } = {}) {
+    const state = { speaking: true };
+    const onResume = vi.fn();
+    const recovery = createFalseInterruptionRecovery({
+      timeoutMs: 20,
+      maxConsecutive: over.maxConsecutive ?? 3,
+      isActive: () => true,
+      isBusy: () => false,
+      isUtteranceInProgress: () => state.speaking,
+      onResume,
+    });
+    return { recovery, onResume, state };
+  }
+
+  test("an elapsed window does not resume while the utterance is still open", async () => {
+    // The case this exists for: endpointing withholds a genuine barge-in's final
+    // for min_turn_silence (2000ms) after the caller stops, and the window is
+    // 2000ms measured from the last partial — so the timer and the real user
+    // turn arrive together. Resuming here spends a billed turn on a "false"
+    // interruption that was real.
+    const { recovery, onResume } = makeDeferrable();
+    recovery.arm();
+    await sleep(50);
+    expect(onResume).not.toHaveBeenCalled();
+    // Still outstanding, so continued partials keep extending rather than
+    // treating the recovery as resolved.
+    expect(recovery.pending()).toBe(true);
+  });
+
+  test("the utterance ending with no committed turn releases the resume", async () => {
+    const { recovery, onResume, state } = makeDeferrable();
+    recovery.arm();
+    await sleep(50);
+    expect(onResume).not.toHaveBeenCalled();
+
+    // The speaking edge's watchdog closed it: no final is coming.
+    state.speaking = false;
+    recovery.onUtteranceEnded();
+    expect(onResume).toHaveBeenCalledTimes(1);
+    expect(recovery.pending()).toBe(false);
+  });
+
+  test("a committed user turn discards the deferred resume", async () => {
+    // The genuine-barge-in path: the final lands, so the interruption was real
+    // and the reply must not be picked back up.
+    const { recovery, onResume, state } = makeDeferrable();
+    recovery.arm();
+    await sleep(50);
+
+    recovery.onUserTurn();
+    state.speaking = false;
+    recovery.onUtteranceEnded();
+    expect(onResume).not.toHaveBeenCalled();
+  });
+
+  test("clear() discards a deferred resume too", async () => {
+    // A client-initiated cancel is deliberate — never resumed from, whether the
+    // window fired or is still deferred.
+    const { recovery, onResume, state } = makeDeferrable();
+    recovery.arm();
+    await sleep(50);
+
+    recovery.clear();
+    state.speaking = false;
+    recovery.onUtteranceEnded();
+    expect(onResume).not.toHaveBeenCalled();
+  });
+
+  test("a released resume is counted once against the budget", async () => {
+    const { recovery, onResume, state } = makeDeferrable({ maxConsecutive: 1 });
+    recovery.arm();
+    await sleep(50);
+    state.speaking = false;
+    recovery.onUtteranceEnded();
+    // A second release with nothing deferred must not re-fire.
+    recovery.onUtteranceEnded();
+    expect(onResume).toHaveBeenCalledTimes(1);
+  });
+
+  test("onUtteranceEnded is inert when no window ever fired", () => {
+    const { recovery, onResume, state } = makeDeferrable();
+    state.speaking = false;
+    recovery.onUtteranceEnded();
+    expect(onResume).not.toHaveBeenCalled();
   });
 });

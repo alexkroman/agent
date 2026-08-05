@@ -307,6 +307,20 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 2000;
  * with no committed user turn, the transport injects
  * `DEFAULT_FALSE_INTERRUPTION_PROMPT` as a synthetic user turn so the
  * agent picks its reply back up. Set to 0 to disable recovery.
+ *
+ * **This is a floor on the wait, not the whole of it** — elapsing while the
+ * caller is still mid-utterance only defers the resume, which the speaking
+ * edge's idle watchdog (`DEFAULT_SPEECH_IDLE_TIMEOUT_MS`, internal) then
+ * releases. Named rather than `{@link}`ed: it is `@internal`, so the docs build
+ * excludes it and a link would fail to resolve. Note the value equals
+ * {@link DEFAULT_MIN_TURN_SILENCE_MS}: measured from roughly the same instant
+ * (this window restarts on every partial, and the last partial lands at about
+ * the end of speech, while the final is withheld for `min_turn_silence` after
+ * it), so on its own it raced every genuine barge-in's own final. Raising it
+ * past endpointing would ALSO fix that, but only for a provider whose
+ * endpointing is known here — which the transport cannot see, since it receives
+ * an already-resolved `SttOpener`. Hence the deferral, which needs no such
+ * knowledge. See the module doc in `host/transports/pipeline-recovery.ts`.
  */
 export const DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS = 2000;
 
@@ -333,33 +347,6 @@ export const DEFAULT_HOLD_PHRASE = "One moment.";
  */
 export const DEFAULT_ERROR_PHRASE = "Sorry, I had a problem just then. Could you say that again?";
 
-/**
- * How long a pipeline turn may send nothing to TTS while tools run before the
- * transport speaks a {@link DEAD_AIR_COVER_PHRASES} filler.
- *
- * {@link DEFAULT_HOLD_PHRASE} only covers a turn whose *first* action is a
- * tool call: once the model has spoken a word it is suppressed for the rest of
- * the turn. A model that says "Let me look that up" and then chains six tool
- * calls therefore goes silent for as long as the chain takes — measured at
- * 15-24s against the tau2-bench retail tasks, well past the point a caller
- * assumes the line is dead. Cover is time-based instead: any gap this long
- * gets filler, whether or not the model already spoke.
- *
- * @internal
- */
-export const DEFAULT_DEAD_AIR_COVER_MS = 2000;
-
-/**
- * Watchdog for the pipeline speaking edge: how long after the last STT partial
- * to force `speech_stopped` when no non-empty final ever arrives. Genuine
- * utterances close the edge when their final commits, well inside this window
- * (provider endpointing — e.g. {@link DEFAULT_MIN_TURN_SILENCE_MS} — plus
- * final latency); this only bounds the leak for noise partials that never
- * commit.
- *
- * @internal
- */
-export const DEFAULT_SPEECH_IDLE_TIMEOUT_MS = 5000;
 /** @internal */
 export const MAX_WS_PAYLOAD_BYTES = 1 * 1024 * 1024;
 /** @internal */
@@ -389,8 +376,11 @@ export {
 // own module for file-length reasons; re-exported here so `@alexkroman1/aai`
 // stays the one import path for constants.
 export {
+  DEAD_AIR_COVER_MAX_MS,
   DEAD_AIR_COVER_PHRASES,
+  DEFAULT_DEAD_AIR_COVER_MS,
   DEFAULT_FALSE_INTERRUPTION_PROMPT,
+  DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
   MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES,
   STT_CONNECT_MAX_RETRIES,
   STT_CONNECT_RETRY_DELAY_MS,

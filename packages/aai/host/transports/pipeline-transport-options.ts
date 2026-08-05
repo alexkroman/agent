@@ -14,6 +14,7 @@ import {
   DEFAULT_INTERRUPTION_MIN_DURATION_MS,
   DEFAULT_MAX_STEPS,
   DEFAULT_MIN_BARGE_IN_WORDS,
+  DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
   DEFAULT_START_FAILURE_PHRASE,
   DEFAULT_STT_SAMPLE_RATE,
   DEFAULT_TOOL_CHOICE,
@@ -95,6 +96,15 @@ export interface PipelineTransportOptions {
    */
   falseInterruptionTimeoutMs?: number | undefined;
   /**
+   * How long after the last STT partial to force `speech_stopped` when no
+   * non-empty final ever arrives. Also the release for a deferred
+   * false-interruption resume, so it bounds recovery latency — see
+   * {@link DEFAULT_SPEECH_IDLE_TIMEOUT_MS}, which it defaults to. Exposed for
+   * tests, which need a window shorter than the shipped one; 0 disables the
+   * watchdog (and with it deferred-resume release).
+   */
+  speechIdleTimeoutMs?: number | undefined;
+  /**
    * LLM sampling temperature. Omitted when unset (provider default). Some models
    * (e.g. Claude 5) ignore it and warn; set only for temperature-capable models.
    */
@@ -128,6 +138,7 @@ export interface ResolvedPipelineOptions {
   errorPhrase: string;
   startFailurePhrase: string;
   falseInterruptionTimeoutMs: number;
+  speechIdleTimeoutMs: number;
   toolChoice: ToolChoice;
   toolSchemas: readonly ToolSchema[];
   executeTool: ExecuteTool;
@@ -148,6 +159,7 @@ export function resolvePipelineOptions(opts: PipelineTransportOptions): Resolved
     startFailurePhrase: opts.startFailurePhrase ?? DEFAULT_START_FAILURE_PHRASE,
     falseInterruptionTimeoutMs:
       opts.falseInterruptionTimeoutMs ?? DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS,
+    speechIdleTimeoutMs: opts.speechIdleTimeoutMs ?? DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
     toolChoice: opts.toolChoice ?? DEFAULT_TOOL_CHOICE,
     toolSchemas: opts.toolSchemas ?? [],
     executeTool: opts.executeTool,

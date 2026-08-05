@@ -11,6 +11,7 @@ import {
   inFlightReplyScript,
   makeOpts,
   noopToolSchema,
+  partialTranscriptSpy,
 } from "./_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
 
@@ -318,7 +319,7 @@ describe("PipelineTransport — STT → LLM turn", () => {
 });
 
 describe("interrupted-speech persistence", () => {
-  test("barge-in persists spoken-so-far text with an [interrupted] marker and flags the transcript", async () => {
+  test("barge-in persists spoken-so-far text with an [interrupted] marker", async () => {
     const { opts, stt, tts, callbacks } = makeOpts({
       minBargeInWords: 1, // pin so the one-word "stop" barge-in fires (default is now 2)
       llm: createFakeLanguageModel({
@@ -347,13 +348,17 @@ describe("interrupted-speech persistence", () => {
     tts.last()?.fireAudio(new Int16Array(2400)); // speaking → interruptible
     stt.last()?.firePartial("stop");
 
-    // The interrupted transcript is surfaced with interrupted=true.
+    // The caller already has the spoken text: every chunk handed to TTS was
+    // published as an interim snapshot. Nothing is emitted once the aborted
+    // stream settles — that frame would land after `cancelled`, which the client
+    // treats as the end of the reply (see persistInterruptedTurn).
     await vi.waitFor(() => {
-      expect(callbacks.onAgentTranscript).toHaveBeenCalledWith(
-        expect.stringContaining("Your balance"),
-        true,
-      );
+      expect(callbacks.onCancelled).toHaveBeenCalled();
     });
+    // Only what reached TTS is published — the coalescer was still batching the
+    // rest, which the abort discarded, so the caller heard exactly this much.
+    // History below keeps the fuller `accumulated` text on purpose.
+    expect(partialTranscriptSpy(callbacks)).toHaveBeenCalledWith(expect.stringContaining("Your "));
     const callsAfterTurn1 = llm.calls.length;
 
     // Turn 2 — its LLM prompt must contain the persisted interrupted assistant message.
