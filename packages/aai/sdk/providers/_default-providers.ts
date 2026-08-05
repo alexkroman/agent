@@ -35,7 +35,7 @@ type ProviderFields = {
  * Every config layer that derives a session mode applies this first —
  * `toAgentConfig` and the runtime's provider resolution — so "no providers"
  * means the pipeline everywhere, never S2S by fallthrough
- * (see "Never let S2S be a fallback" in CLAUDE.md).
+ * (see "Never let S2S be a fallback" in `packages/aai/CLAUDE.md`).
  */
 export function defaultProviders(config: ProviderFields): {
   stt?: AssemblyAIProvider;

@@ -7,7 +7,7 @@
  * transmitted between worker and host via structured clone. There is exactly
  * one schema (`AgentConfigSchema`); each boundary subtracts an explicit
  * deny-list instead of copying fields (see "One canonical config schema" in
- * CLAUDE.md), so a new serializable field reaches the server, the wire, and
+ * `packages/aai/CLAUDE.md`), so a new serializable field reaches the server, the wire, and
  * the runtime by default. {@link toAgentConfig} is the conversion generated
  * bundle entries call.
  */

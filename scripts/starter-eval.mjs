@@ -41,7 +41,7 @@ const streamDispatcher = new Agent({ bodyTimeout: 0, headersTimeout: 0 });
 /**
  * undici's OWN fetch, not the global. A dispatcher from this undici handed to
  * Node's internal (different-major) fetch fails as a bare
- * `TypeError: fetch failed` — the trap documented in CLAUDE.md's SSRF notes.
+ * `TypeError: fetch failed` — the trap in `packages/aai/CLAUDE.md`'s SSRF notes.
  */
 const streamFetch = undiciFetch;
 // Above the guest's HARD_TURN_MS (12 min) so the SERVER decides when a turn

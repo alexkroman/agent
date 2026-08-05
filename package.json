@@ -30,6 +30,7 @@
     "check:affected": "turbo run build typecheck lint test --affected --continue",
     "check:hatches": "node scripts/check-escape-hatches.mjs",
     "check:file-length": "node scripts/check-file-length.mjs",
+    "check:claude-md": "node scripts/check-claude-md.mjs",
     "check:gateway-models": "node scripts/check-gateway-models.mjs",
     "check:guest-toolchain": "node scripts/sync-guest-toolchain.mjs --check",
     "check:knip": "knip",
