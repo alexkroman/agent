@@ -2276,13 +2276,19 @@ service's control work is light — and one container served both badly.
   `MODAL_SANDBOX_IMAGE` for reproducible guests. `MODAL_APP_NAME` selects the
   Modal App sandboxes are created under (default `aai-server`).
 - **The harness AND the build toolchain are baked into a snapshot image**,
-  not written per spawn: a throwaway builder sandbox writes the harness,
-  `npm install`s the guest build toolchain next to it (`/opt/aai/
-  node_modules` — the aai CLI bundlers plus the workspace-facing packages;
-  versions come from aai-guest's own dependency declarations, `workspace:*`
-  pinned to the installed versions, so dev and baked toolchains share one
-  source of truth), its filesystem is snapshotted (`snapshotFilesystem`),
-  and the image is `publish`ed under a content-addressed tag
+  not written per spawn, in two halves that cache differently. The
+  TOOLCHAIN is a native image LAYER (`toolchainImage`: a
+  `dockerfileCommands` `RUN npm install` into `/opt/aai/node_modules` — the
+  aai CLI bundlers plus the workspace-facing packages; versions come from
+  aai-guest's own dependency declarations, `workspace:*` pinned to the
+  installed versions, so dev and baked toolchains share one source of
+  truth), so Modal's own layer cache serves it and a harness rebuild — every
+  server code change — no longer reinstalls ~15 packages. The HARNESS needs a
+  throwaway builder sandbox, because the JS SDK's `dockerfileCommands` takes
+  commands with no build context and there is nothing to `COPY` a ~13 MB local
+  bundle from: a sandbox started from the layer writes it, its filesystem is
+  snapshotted (`snapshotFilesystem`), and the image is `publish`ed under a
+  content-addressed tag
   (`aai-guest-harness:<hash(base image, harness, toolchain)>`), so every
   later spawn — and every other replica, across restarts — resolves it with
   one `images.fromName` call. A new harness build, base-image change, or
