@@ -2,7 +2,7 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { patchPackageJsonForWorkspace, runInit } from "./_init.ts";
 import { silenced, withTempDir, writeFiles } from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
@@ -45,10 +45,6 @@ async function addDepsTemplate(dir: string): Promise<void> {
     "templates/deps/package.json": JSON.stringify({ dependencies: { zod: "^4.0.0" } }),
   });
 }
-
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
 
 describe("runInit", () => {
   test("copies template and shared files to target", async () => {

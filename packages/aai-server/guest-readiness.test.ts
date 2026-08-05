@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { sleep } from "./_sleep.ts";
 import { raceGuestExit } from "./guest-readiness.ts";
 
 /**
@@ -63,6 +64,6 @@ describe("raceGuestExit", () => {
     const proc = procThat(() => Promise.resolve(1));
     await expect(raceGuestExit(work, proc)).rejects.toThrow(/exit 1/);
     failWork(new Error("late"));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await sleep(0);
   });
 });

@@ -150,7 +150,6 @@ describe("createStudioProxy", () => {
     const res = await proxy(makeContext(new Request("https://platform.example/studio/status")));
     expect(res.status).toBe(502);
     expect(error).toHaveBeenCalled();
-    error.mockRestore();
   });
 });
 

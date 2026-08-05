@@ -60,6 +60,7 @@ import {
   type FakeTtsProvider,
   type ScriptedPart,
 } from "../_pipeline-test-fakes.ts";
+import { sleep } from "../_test-utils.ts";
 import type { Logger } from "../runtime-config.ts";
 import { createPipelineTransport } from "../transports/pipeline-transport.ts";
 import type { TransportCallbacks } from "../transports/types.ts";
@@ -407,7 +408,7 @@ async function runOne(
       }
       const behavior = input.tools[toolCallIndex++ % input.tools.length] as ToolBehavior;
       if (behavior.kind === "throw") throw new Error("tool blew up");
-      if (behavior.kind === "slow") await new Promise((r) => setTimeout(r, behavior.ms));
+      if (behavior.kind === "slow") await sleep(behavior.ms);
       return "tool result";
     } finally {
       mon.toolInFlight--;
@@ -492,7 +493,7 @@ async function runOne(
       // Plain back-to-back turns: the point is to accumulate history, and a
       // random walk spends most steps on events that commit no turn.
       stt.last()?.fireFinal(utterance(step));
-      await new Promise((r) => setTimeout(r, 4));
+      await sleep(4);
       checkSerialization();
       continue;
     }
@@ -503,7 +504,7 @@ async function runOne(
     const fuzzStep = input.steps[step % input.steps.length] as FuzzStep;
     actions[fuzzStep.action](fuzzStep.opener);
     if (fuzzStep.pauseMs !== null) {
-      await new Promise((r) => setTimeout(r, fuzzStep.pauseMs ?? 0));
+      await sleep(fuzzStep.pauseMs ?? 0);
     }
     checkClosedSessionWrites(before);
     checkSerialization();
@@ -515,7 +516,7 @@ async function runOne(
   ]);
   if (outcome === "hung") mon.flag("stop() did not resolve within 5s");
   mon.stopped = true;
-  await new Promise((r) => setTimeout(r, 30));
+  await sleep(30);
 
   if (stt.last()?.closed.value !== true) mon.flag("STT session left open after stop()");
   if (tts.last()?.closed.value !== true) mon.flag("TTS session left open after stop()");

@@ -176,7 +176,6 @@ describe("session-core server events", () => {
       send(socket, { type: "error", code: "llm", message: "provider timeout", fatal: false });
 
       expect(spy).toHaveBeenCalledWith("Agent error:", "provider timeout");
-      spy.mockRestore();
     });
 
     it("clears a lingering non-fatal banner on the next event", () => {
@@ -269,7 +268,6 @@ describe("session-core server events", () => {
       send(socket, { notAType: 1 });
 
       expect(spy).toHaveBeenCalledWith("session-core: malformed server message", expect.anything());
-      spy.mockRestore();
     });
 
     it("silently drops an unrecognised type (rolling-upgrade tolerance)", () => {
@@ -279,7 +277,6 @@ describe("session-core server events", () => {
 
       expect(spy).not.toHaveBeenCalled();
       expect(core.getSnapshot().error).toBeNull();
-      spy.mockRestore();
     });
 
     it("also drops a KNOWN type with an invalid payload, silently", () => {
@@ -295,7 +292,6 @@ describe("session-core server events", () => {
 
       expect(spy).not.toHaveBeenCalled();
       expect(core.getSnapshot().agentTranscript).toBeNull();
-      spy.mockRestore();
     });
 
     it("drops a non-string, non-binary frame with a warning", () => {
@@ -306,7 +302,6 @@ describe("session-core server events", () => {
 
       expect(spy).toHaveBeenCalledWith("session-core: invalid JSON; dropping");
       expect(core.getSnapshot().agentTranscript).toBe("kept");
-      spy.mockRestore();
     });
   });
 

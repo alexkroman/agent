@@ -361,10 +361,34 @@ you only need to list one package.
   deleted files while missing a live integration test; and the templates
   copy skipped two of its four test files.
 - **Shared test options live in `vitest.shared.ts` and must be SPREAD IN.**
-  `sharedConfig.test` holds `restoreMocks` and the CI `reporters`; a package
-  config that writes `test: { … }` without `...sharedConfig.test` REPLACES that
-  object rather than extending it, which is how every package silently lost
-  `reporters` while each re-declared `restoreMocks` by hand.
+  `sharedConfig.test` holds `restoreMocks`, `unstubEnvs`, and the CI
+  `reporters`; a package config that writes `test: { … }` without
+  `...sharedConfig.test` REPLACES that object rather than extending it, which
+  is how every package silently lost `reporters` while each re-declared
+  `restoreMocks` by hand.
+- **Those two options mean tests must NOT hand-roll teardown for spies or env
+  vars.** `restoreMocks` restores every `vi.spyOn` and `unstubEnvs` undoes
+  every `vi.stubEnv`, both BEFORE EACH TEST — so a trailing
+  `spy.mockRestore()` / `vi.unstubAllEnvs()`, or an `afterEach` that only
+  calls one of them, is dead code, and a `try`/`finally` wrapped around a
+  whole test body to run one is dead structure. There were ~85 of each. Reach
+  for `vi.stubEnv(name, undefined)` to UNSET a var rather than
+  `delete process.env.X`, and never save-and-restore by hand: the restore
+  half is what rots (`deepgram.test.ts` wrote back a captured `undefined`,
+  which env coercion turns into the string `"undefined"` for every later
+  test, and three files stubbed env vars with no cleanup at all).
+  The exception is a helper or fast-check harness invoked REPEATEDLY WITHIN
+  one test — `fuzz-voiceio`'s per-run `restore()`, `dev.test.ts`'s
+  `withCapturedHandlers` — which needs a sub-test boundary the config cannot
+  give it.
+- **Prefer the tool's own bookkeeping to a local variable.** `Promise.withResolvers()`
+  instead of `let resolve!: …` + `new Promise` (and instead of a local
+  `gate()`/`deferred()` helper — two files had written one); `vi.fn()` instead
+  of a `let settled = false` flag flipped in a `.then()`, since a spy records
+  its own calls and names itself in the failure; `test.each` instead of a
+  `for (const … of […])` loop over cases, so the reporter names the case that
+  failed. A loop is still right when the cases share expensive setup, or when
+  it already labels them (`expect.soft(value, label)`) — several deliberately do.
 - **The slow tiers use ONE root config, `vitest.slow.config.ts`**, selected by
   `VITEST_PROFILE` (`integration` 30s / `e2e` 300s) with `VITEST_INCLUDE`
   choosing the files. There is no per-package slow config and no

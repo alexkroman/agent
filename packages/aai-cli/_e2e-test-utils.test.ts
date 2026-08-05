@@ -10,7 +10,7 @@
  */
 
 import envPaths from "env-paths";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { aaiEnv } from "./_e2e-test-utils.ts";
 
 describe("aaiEnv", () => {
@@ -20,10 +20,6 @@ describe("aaiEnv", () => {
   // guarantee, which is what the e2e profile (no setup file) relies on.
   beforeEach(() => {
     vi.stubEnv("AAI_CONFIG_DIR", "");
-  });
-
-  afterEach(() => {
-    vi.unstubAllEnvs();
   });
 
   test("points the spawned CLI at a throwaway config dir", () => {

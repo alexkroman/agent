@@ -122,16 +122,13 @@ describe("Soniox real-time STT adapter", () => {
   });
 
   test("throws stt_auth_failed when API key is missing", async () => {
-    const saved = process.env.SONIOX_API_KEY;
-    delete process.env.SONIOX_API_KEY;
+    vi.stubEnv("SONIOX_API_KEY", undefined);
 
     const opener = openSoniox({});
     const controller = new AbortController();
     await expect(
       opener.open({ sampleRate: 16_000, apiKey: "", signal: controller.signal }),
     ).rejects.toMatchObject({ code: "stt_auth_failed" });
-
-    if (saved !== undefined) process.env.SONIOX_API_KEY = saved;
   });
 
   test("first frame sent is the JSON config with api_key, model, audio_format, sample_rate", async () => {

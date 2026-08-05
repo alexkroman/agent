@@ -3,7 +3,7 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { createGuestWebTools } from "./studio-chat.ts";
 import { createDesignInspirationTool, createProjectTools } from "./studio-project-tools.ts";
 import { createTemplateTools } from "./studio-template-tools.ts";
@@ -86,21 +86,17 @@ describe("guest workspace tools", () => {
   });
 
   test("bash runs in the workspace with the guest token scrubbed", async () => {
-    process.env.AAI_GUEST_TOKEN = "secret-token";
-    try {
-      const { tools } = await makeTools({ "f.txt": "hi" });
-      const out = String(
-        await tools.bash?.execute?.(
-          { command: "cat f.txt && echo token=$AAI_GUEST_TOKEN" },
-          toolOpts(),
-        ),
-      );
-      expect(out).toContain("hi");
-      expect(out).toContain("token=");
-      expect(out).not.toContain("secret-token");
-    } finally {
-      delete process.env.AAI_GUEST_TOKEN;
-    }
+    vi.stubEnv("AAI_GUEST_TOKEN", "secret-token");
+    const { tools } = await makeTools({ "f.txt": "hi" });
+    const out = String(
+      await tools.bash?.execute?.(
+        { command: "cat f.txt && echo token=$AAI_GUEST_TOKEN" },
+        toolOpts(),
+      ),
+    );
+    expect(out).toContain("hi");
+    expect(out).toContain("token=");
+    expect(out).not.toContain("secret-token");
   });
 
   test("bash failures report the exit code", async () => {

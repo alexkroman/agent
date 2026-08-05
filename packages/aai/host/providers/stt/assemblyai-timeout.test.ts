@@ -15,6 +15,7 @@
 import { type AddressInfo, createServer, type Server, type Socket } from "node:net";
 import { AssemblyAI } from "assemblyai";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { sleep } from "../../_test-utils.ts";
 import { suppressDiscardedSocketError } from "./assemblyai.ts";
 
 let server: Server;
@@ -58,7 +59,7 @@ describe("assemblyAI STT — connect-timeout socket teardown", () => {
 
       // ws emits the abort error on a later tick than the rejection; give it
       // time to fire before asserting nothing escaped.
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await sleep(50);
     } finally {
       process.off("uncaughtException", onUncaught);
     }

@@ -1,22 +1,18 @@
 // Copyright 2025 the AAI authors. MIT license.
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { withTempDir } from "./_test-utils.ts";
 import { errorCode, errorDetail, fileExists, readJson, resolveCwd, writeJson } from "./_utils.ts";
 
 describe("resolveCwd", () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
   test("returns INIT_CWD when set", () => {
     vi.stubEnv("INIT_CWD", "/custom/path");
     expect(resolveCwd()).toBe("/custom/path");
   });
 
   test("falls back to process.cwd() when INIT_CWD is not set", () => {
-    delete process.env.INIT_CWD;
+    vi.stubEnv("INIT_CWD", undefined);
     expect(resolveCwd()).toBe(process.cwd());
   });
 });
@@ -141,16 +137,14 @@ describe("writeJson", () => {
       expect(String(from)).not.toBe(file);
       expect(path.dirname(String(from))).toBe(dir);
       expect(await readJson(file)).toEqual({ after: true });
-      renameSpy.mockRestore();
     });
   });
 
   test("cleans up the temp file when rename fails", async () => {
     await withTempDir(async (dir) => {
       const file = path.join(dir, "config.json");
-      const renameSpy = vi.spyOn(fs, "rename").mockRejectedValue(new Error("EXDEV"));
+      vi.spyOn(fs, "rename").mockRejectedValue(new Error("EXDEV"));
       await expect(writeJson(file, { a: 1 })).rejects.toThrow("EXDEV");
-      renameSpy.mockRestore();
       expect(await fs.readdir(dir)).toEqual([]);
     });
   });

@@ -27,7 +27,6 @@ beforeEach(() => {
 afterEach(() => {
   rejectAllPendingHostRequests("test teardown");
   setHostSend(null);
-  vi.restoreAllMocks();
 });
 
 function makeAgent(overrides?: Partial<AgentDef>): AgentDef {

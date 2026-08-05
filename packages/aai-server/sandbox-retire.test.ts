@@ -8,17 +8,13 @@
  * process shutdown; request-path callers void it.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { retireSandbox } from "./sandbox-retire.ts";
 
 describe("retireSandbox", () => {
   beforeEach(() => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
   });
 
   it("hands a reachable guest its drain budget and never terminates it", async () => {

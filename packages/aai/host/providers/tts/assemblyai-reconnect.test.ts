@@ -3,9 +3,10 @@
 // for file length. The protocol has no discard/cancel frame, so a mid-turn
 // cancel drops the connection and reconnects; see the adapter's module doc.
 
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { TTS_RECONNECT_TIMEOUT_MS } from "../../../sdk/constants.ts";
 import type { TtsError } from "../../../sdk/providers.ts";
+import { tick } from "../../_test-utils.ts";
 import { FakeWebSocket, pcmBase64 } from "./_assemblyai-fake-ws-test-utils.ts";
 import { openSession } from "./_assemblyai-session-test-utils.ts";
 
@@ -20,24 +21,17 @@ beforeEach(() => {
   FakeWebSocket.reset();
 });
 
-afterEach(() => {
-  vi.restoreAllMocks();
-});
-
 describe("AssemblyAI TTS cancel() reconnect", () => {
   // The protocol has no discard/cancel frame, so a mid-turn cancel must drop
   // the connection (and with it the server-side text buffer + in-flight
   // audio) and reconnect — see the module doc.
-
-  /** Let the replacement socket's queued "open" fire and the queue flush. */
-  const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
   test("cancel mid-turn drops the socket and reconnects", async () => {
     const { session, ws } = await openSession();
     session.sendText("half a reply");
     session.cancel();
     expect(ws.readyState).toBe(FakeWebSocket.CLOSED);
-    await settle();
+    await tick();
     expect(FakeWebSocket.instances).toHaveLength(2);
     expect(session._ws).not.toBe(ws);
   });
@@ -50,7 +44,7 @@ describe("AssemblyAI TTS cancel() reconnect", () => {
     session.sendText("hi");
     session.cancel();
     session.cancel(); // second cancel of the same turn: no second reconnect
-    await settle();
+    await tick();
     expect(FakeWebSocket.instances).toHaveLength(2);
   });
 
@@ -65,7 +59,7 @@ describe("AssemblyAI TTS cancel() reconnect", () => {
     session.cancel(); // synchronous barge-in done; no tts_stream_error from the close
     expect(events).toEqual(["done"]);
 
-    await settle();
+    await tick();
     // Audio/done/error already in flight from the old socket must be dropped.
     ws._msg({ type: "Audio", audio: pcmBase64([1, 2]) });
     ws._msg({ type: "FlushDone" });
@@ -85,7 +79,7 @@ describe("AssemblyAI TTS cancel() reconnect", () => {
     session.sendText("old turn");
     session.cancel();
     expect(done).toBe(1);
-    await settle();
+    await tick();
 
     session.sendText("new turn");
     ws._msg({ type: "Audio", audio: pcmBase64([9]), is_final: true }); // old socket
@@ -105,7 +99,7 @@ describe("AssemblyAI TTS cancel() reconnect", () => {
     // flush to it on open — the old server-side buffer died with its socket.
     session.sendText("fresh turn");
     session.flush();
-    await settle();
+    await tick();
 
     const next = FakeWebSocket.instances.at(-1);
     expect(next).not.toBe(ws);
@@ -123,7 +117,7 @@ describe("AssemblyAI TTS cancel() reconnect", () => {
     session.cancel(); // cancelled before the frames ever left the process
     session.sendText("three");
     session.flush();
-    await settle();
+    await tick();
 
     expect(FakeWebSocket.instances).toHaveLength(2);
     const next = FakeWebSocket.instances.at(-1);
@@ -159,7 +153,7 @@ describe("AssemblyAI TTS cancel() reconnect", () => {
     const { session } = await openSession();
     session.sendText("hi");
     session.cancel();
-    await settle();
+    await tick();
     const next = FakeWebSocket.instances.at(-1);
     await session.close();
     expect(next?.readyState).toBe(FakeWebSocket.CLOSED);

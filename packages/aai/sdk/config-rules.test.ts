@@ -224,16 +224,17 @@ describe("toAgentConfig — AssemblyAI TTS language validation", () => {
     expect(() => config(fields)).toThrow(/unsupported language "spanish".*en, fr, de, it, pt, es/s);
   });
 
-  test("accepts the six supported AssemblyAI TTS language codes", () => {
-    for (const language of ["en", "fr", "de", "it", "pt", "es"]) {
+  test.each(["en", "fr", "de", "it", "pt", "es"])(
+    "accepts the supported AssemblyAI TTS language code %s",
+    (language) => {
       const parsed = config({
         stt: { kind: "assemblyai", options: {} },
         llm: { kind: "anthropic", options: { model: "m" } },
         tts: { kind: "assemblyai", options: { language } },
       });
       expect(parsed.tts?.options.language).toBe(language);
-    }
-  });
+    },
+  );
 });
 
 describe("author conveniences on raw configs (no agent())", () => {

@@ -5,13 +5,9 @@
  * fake socket from _sandbox-vm-test-utils.ts.
  */
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createFakeGuestSocket } from "./_sandbox-vm-test-utils.ts";
 import { createRpcConnection } from "./rpc-transport.ts";
-
-afterEach(() => {
-  vi.restoreAllMocks();
-});
 
 describe("createRpcConnection", () => {
   it("correlates a request with its response", async () => {

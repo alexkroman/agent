@@ -3,16 +3,12 @@
 import { describe, expect, test } from "vitest";
 import { createCoalescingRunner } from "./coalescing-runner.ts";
 
-/** A manually-settled gate so tests control exactly when a run finishes. */
-function gate<T>(): { promise: Promise<T>; resolve: (v: T) => void; reject: (e: Error) => void } {
-  let resolve!: (v: T) => void;
-  let reject!: (e: Error) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
+/**
+ * A manually-settled gate so tests control exactly when a run finishes.
+ * `Promise.withResolvers` already returns `{ promise, resolve, reject }`;
+ * this alias only names the intent at the call sites.
+ */
+const gate = <T>() => Promise.withResolvers<T>();
 
 // A macrotask yield. Named `tick` rather than `flush` because `flush` is an
 // EXPORTED microtask-only helper in host/_test-utils.ts, and two different

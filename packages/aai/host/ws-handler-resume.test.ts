@@ -6,7 +6,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { createOwnedMap } from "../sdk/owned-map.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
-import { makeMockCore, silentLogger } from "./_test-utils.ts";
+import { makeMockCore, silentLogger, sleep } from "./_test-utils.ts";
 import type { SessionCore } from "./session-core.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
@@ -184,7 +184,7 @@ describe("wireSessionSocket resume", () => {
 
     // Let the start timeout fire; its cleanup must not key-delete the
     // resumed session's entry.
-    await new Promise((r) => setTimeout(r, 60));
+    await sleep(60);
     expect(sessions.get("timeout-race-id")).toBe(newCore);
 
     stopGate.resolve();

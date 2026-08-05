@@ -9,6 +9,7 @@ import {
   createFakeTtsProvider,
   type ScriptedPart,
 } from "../_pipeline-test-fakes.ts";
+import { sleep, tick } from "../_test-utils.ts";
 import { firstCallArg, makeCallbacks, makeOpts } from "./_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
 
@@ -119,7 +120,7 @@ describe("PipelineTransport", () => {
       });
       const t = createPipelineTransport(opts);
       await t.start();
-      await new Promise((r) => setTimeout(r, 20));
+      await sleep(20);
       expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
       expect(tts.last()?.textChunks).toHaveLength(0);
       await t.stop();
@@ -210,7 +211,7 @@ describe("PipelineTransport", () => {
       await vi.waitFor(() => {
         expect(llm.calls.length).toBeGreaterThanOrEqual(1);
       });
-      await new Promise((r) => setTimeout(r, 20));
+      await sleep(20);
       expect(llm.calls.length).toBe(1);
       await t.stop();
     });
@@ -240,14 +241,8 @@ describe("PipelineTransport", () => {
       // are still connecting. stop() must not resolve until the open settles,
       // and the session that lands after the abort must be closed (not leaked).
       const closeStt = vi.fn(async () => undefined);
-      let resolveOpen!: (s: SttSession) => void;
-      const slowStt: SttOpener = {
-        name: "slow-stt",
-        open: () =>
-          new Promise<SttSession>((res) => {
-            resolveOpen = res;
-          }),
-      };
+      const open = Promise.withResolvers<SttSession>();
+      const slowStt: SttOpener = { name: "slow-stt", open: () => open.promise };
       const { opts } = makeOpts({ stt: slowStt });
       const t = createPipelineTransport(opts);
 
@@ -257,7 +252,7 @@ describe("PipelineTransport", () => {
         stopResolved = true;
       });
 
-      await new Promise((r) => setTimeout(r, 0));
+      await tick();
       expect(stopResolved).toBe(false); // blocked on the in-flight open
 
       const landed: SttSession = {
@@ -265,7 +260,7 @@ describe("PipelineTransport", () => {
         on: (() => () => undefined) as SttSession["on"],
         close: closeStt,
       };
-      resolveOpen(landed);
+      open.resolve(landed);
       await stopP;
 
       expect(stopResolved).toBe(true);

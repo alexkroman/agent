@@ -39,7 +39,6 @@ beforeEach(() => {
 afterEach(() => {
   mockApiRequest.mockReset();
   resolveDeployTarget.mockReset();
-  vi.unstubAllEnvs();
 });
 
 /** Route apiRequest by URL suffix — the commands compose multiple calls. */

@@ -109,12 +109,14 @@ describe("use_template", () => {
     expect(result).toContain("agent.ts");
   });
 
-  test("rejects an unknown template — a traversal can never match a listing", async () => {
-    for (const template of ["nope", "../pizza", "pizza/.."]) {
+  // A traversal can never match a listing.
+  test.each(["nope", "../pizza", "pizza/.."])(
+    "rejects the unknown template %j",
+    async (template) => {
       const result = await execute(makeTools(), "use_template", { template });
       expect(result).toContain("unknown template");
-    }
-  });
+    },
+  );
 
   test("refuses to overwrite a differing workspace file without overwrite", async () => {
     await writeFile(path.join(dir, "agent.ts"), "// mine\n");

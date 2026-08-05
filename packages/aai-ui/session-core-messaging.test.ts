@@ -122,7 +122,6 @@ describe("createSessionCore", () => {
       lastSocket?.simulateMessage("not valid json {{{");
       expect(warnSpy).toHaveBeenCalledWith("session-core: invalid JSON; dropping");
       expect(core.getSnapshot().state).toBe("ready");
-      warnSpy.mockRestore();
     });
 
     it("unknown server message type is silently dropped", () => {
@@ -131,7 +130,6 @@ describe("createSessionCore", () => {
       lastSocket?.simulateMessage(JSON.stringify({ type: "totally_unknown_type_xyz" }));
       expect(warnSpy).not.toHaveBeenCalled();
       expect(core.getSnapshot().state).toBe("ready");
-      warnSpy.mockRestore();
     });
 
     it("non-string non-binary frame is dropped with a console warning", () => {
@@ -146,7 +144,6 @@ describe("createSessionCore", () => {
         "session-core: non-string, non-binary frame received; dropping",
       );
       expect(core.getSnapshot().state).toBe("ready");
-      warnSpy.mockRestore();
     });
   });
 

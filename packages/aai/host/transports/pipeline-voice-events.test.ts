@@ -8,7 +8,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel, type ScriptedPart } from "../_pipeline-test-fakes.ts";
-import { tick } from "../_test-utils.ts";
+import { sleep, tick } from "../_test-utils.ts";
 import { inFlightReplyScript, makeOpts, noopToolSchema } from "./_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
 
@@ -151,7 +151,7 @@ describe("PipelineTransport", () => {
       });
 
       // Let the (cancelled) recovery window pass — no third reply appears.
-      await new Promise((r) => setTimeout(r, 80));
+      await sleep(80);
       expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(2);
       await t.stop();
     });
@@ -174,7 +174,7 @@ describe("PipelineTransport", () => {
       stt.last()?.firePartial("uh what");
       expect(callbacks.onCancelled).toHaveBeenCalled();
 
-      await new Promise((r) => setTimeout(r, 60));
+      await sleep(60);
       expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(1);
       await t.stop();
     });
@@ -246,7 +246,7 @@ describe("PipelineTransport", () => {
       stt.last()?.firePartial("uh what");
       expect(callbacks.onCancelled).toHaveBeenCalled();
 
-      await new Promise((r) => setTimeout(r, 80));
+      await sleep(80);
       expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(1);
       await t.stop();
     });
@@ -275,7 +275,7 @@ describe("PipelineTransport", () => {
       stt.last()?.firePartial("wait actually");
       expect(callbacks.onCancelled).toHaveBeenCalled();
       for (let i = 0; i < 5; i++) {
-        await new Promise((r) => setTimeout(r, 25));
+        await sleep(25);
         stt.last()?.firePartial(`wait actually hold on ${i}`);
       }
 
@@ -416,7 +416,7 @@ describe("PipelineTransport", () => {
       tts.last()?.fireAudio(new Int16Array(2400));
 
       t.cancelReply();
-      await new Promise((r) => setTimeout(r, 80));
+      await sleep(80);
       expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(1);
       await t.stop();
     });

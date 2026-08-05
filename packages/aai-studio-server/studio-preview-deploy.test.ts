@@ -150,7 +150,7 @@ describe("createPreviewDeployer", () => {
   test("a failed deploy stamps previewError and leaves the hash unset", async () => {
     const workspaces = makeStore();
     await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// broken" } });
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const deploy = vi.fn(
       async (): Promise<WorkspaceDeployOutcome> => ({
         ok: false,
@@ -169,13 +169,12 @@ describe("createPreviewDeployer", () => {
     // Still stale — the next edit retries.
     expect(workspace?.previewHash).toBeUndefined();
     expect(workspace?.previewSlug).toBeUndefined();
-    warn.mockRestore();
   });
 
   test("a success after a failure clears previewError", async () => {
     const workspaces = makeStore();
     await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// broken" } });
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
     let ok = false;
     const deploy = vi.fn(
       async (): Promise<WorkspaceDeployOutcome> =>
@@ -198,7 +197,6 @@ describe("createPreviewDeployer", () => {
       expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewHash).toBeDefined();
     });
     expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewError).toBeUndefined();
-    warn.mockRestore();
   });
 
   test("a deleted project deploys nothing and never resurrects", async () => {
@@ -224,7 +222,6 @@ describe("createPreviewDeployer", () => {
     // A later schedule runs again — nothing wedged.
     deployer.schedule(SCOPE, PROJECT, TARGET);
     await vi.waitFor(() => expect(deploy).toHaveBeenCalledTimes(2));
-    warn.mockRestore();
   });
 
   /**
@@ -261,13 +258,12 @@ describe("createPreviewDeployer", () => {
     await vi.waitFor(async () => {
       expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewHash).toBeDefined();
     });
-    warn.mockRestore();
   });
 
   test("a job redelivered past the attempt cap is archived, not retried forever", async () => {
     const workspaces = makeStore();
     await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => {
       throw new Error("crash loop");
     });
@@ -284,7 +280,6 @@ describe("createPreviewDeployer", () => {
     expect(queue.archived).toHaveLength(1);
     // Capped: the deploy is not attempted once per drain forever.
     expect(deploy.mock.calls.length).toBeLessThanOrEqual(PREVIEW_JOB_MAX_ATTEMPTS);
-    warn.mockRestore();
   });
 
   /**
@@ -328,7 +323,7 @@ describe("createPreviewDeployer", () => {
   test("a redelivered job with no resolvable key is archived", async () => {
     const workspaces = makeStore();
     await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const queue = createMemoryPreviewQueue();
     // No userId: a raw-key caller's job whose enqueuing replica is gone. No
     // replica will ever hold that credential, so retrying is pointless.
@@ -343,7 +338,6 @@ describe("createPreviewDeployer", () => {
     await deployer.drainOnce();
     expect(deploy).not.toHaveBeenCalled();
     expect(queue.archived).toHaveLength(1);
-    warn.mockRestore();
   });
 });
 
@@ -372,7 +366,6 @@ describe("queue failures are contained", () => {
     expect(() => deployer.schedule(SCOPE, PROJECT, TARGET)).not.toThrow();
     await settled();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("Preview queue enqueue failed"));
-    warn.mockRestore();
   });
 
   test("a claim failure yields no jobs rather than throwing", async () => {
@@ -414,6 +407,5 @@ describe("queue failures are contained", () => {
     // reason at-least-once is safe here.
     expect(deploy).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("Preview queue ack failed"));
-    warn.mockRestore();
   });
 });

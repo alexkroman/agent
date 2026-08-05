@@ -13,13 +13,8 @@ const red = async (): Promise<TypecheckResult> => ({
   output: "Type check failed:\nagent.ts(1,1): error TS2322: nope",
 });
 
-function deferred(): { promise: Promise<TypecheckResult>; resolve: (r: TypecheckResult) => void } {
-  let resolve!: (r: TypecheckResult) => void;
-  const promise = new Promise<TypecheckResult>((res) => {
-    resolve = res;
-  });
-  return { promise, resolve };
-}
+/** A run whose verdict the test settles by hand. */
+const deferred = () => Promise.withResolvers<TypecheckResult>();
 
 describe("createPostWriteDiagnostics", () => {
   test("clean workspace appends nothing", async () => {

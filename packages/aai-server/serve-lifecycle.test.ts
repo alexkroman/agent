@@ -8,7 +8,6 @@ beforeEach(() => {
   // Reset, not drain: a shutdown latches the registry closed, so draining here
   // would make every registerLiveStream below end its stream on the spot.
   resetLiveStreams();
-  vi.restoreAllMocks();
   vi.spyOn(console, "info").mockImplementation(() => undefined);
   vi.spyOn(console, "warn").mockImplementation(() => undefined);
   vi.spyOn(console, "error").mockImplementation(() => undefined);

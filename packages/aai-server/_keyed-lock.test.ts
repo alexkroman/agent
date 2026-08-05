@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, it } from "vitest";
 import { createKeyedLock } from "./_keyed-lock.ts";
+import { sleep } from "./_sleep.ts";
 
 /** Yield enough microtasks for the lock's internal cleanup chains to run. */
 async function flushMicrotasks(): Promise<void> {
@@ -14,7 +15,7 @@ describe("createKeyedLock", () => {
 
     const first = lock("k").then(async (release) => {
       events.push("first:start");
-      await new Promise((r) => setTimeout(r, 10));
+      await sleep(10);
       events.push("first:end");
       release();
     });

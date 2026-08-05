@@ -95,14 +95,10 @@ describe("resolveLlm", () => {
       });
 
       it("throws a friendly error when the API key is missing", () => {
-        const restore = stripEnv(tc.envVar);
-        try {
-          expect(() => resolveLlm(tc.provider, {})).toThrowError(
-            new RegExp(`${tc.label} LLM: missing API key\\. Set ${tc.envVar} in the agent env\\.`),
-          );
-        } finally {
-          restore();
-        }
+        vi.stubEnv(tc.envVar, undefined);
+        expect(() => resolveLlm(tc.provider, {})).toThrowError(
+          new RegExp(`${tc.label} LLM: missing API key\\. Set ${tc.envVar} in the agent env\\.`),
+        );
       });
     });
   }
@@ -221,14 +217,6 @@ describe("resolveLlm", () => {
     });
   });
 });
-
-function stripEnv(name: string): () => void {
-  const prev = process.env[name];
-  delete process.env[name];
-  return () => {
-    if (prev !== undefined) process.env[name] = prev;
-  };
-}
 
 describe("requiredProviderEnvVars", () => {
   it("defaults to the AssemblyAI S2S key when no providers are declared", () => {

@@ -144,7 +144,6 @@ describe("audio bring-up failures", () => {
     // The session is untouched: still recording, still no error.
     expect(core.getSnapshot().recording).toBe(true);
     expect(core.getSnapshot().error).toBeNull();
-    debugSpy.mockRestore();
   });
 });
 

@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { S2S_MAX_RESUME_ATTEMPTS } from "../../sdk/constants.ts";
-import { makeMockHandle, silentLogger } from "../_test-utils.ts";
+import { makeMockHandle, silentLogger, sleep } from "../_test-utils.ts";
 import type { ConnectS2sOptions, S2sCallbacks, S2sHandle, S2sWebSocket } from "../s2s.ts";
 import { _internals, createS2sTransport, type S2sTransportOptions } from "./s2s-transport.ts";
 import type { TransportCallbacks } from "./types.ts";
@@ -87,24 +87,15 @@ function expectAt<T>(arr: T[], index: number, label: string): T {
 }
 
 describe("S2sTransport lifecycle races", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
   test("stop() during an in-flight start() closes the resolved handle (no leak)", async () => {
     const handle = makeMockHandle();
-    let resolveConnect: (h: S2sHandle) => void = () => undefined;
-    vi.spyOn(_internals, "connectS2s").mockImplementation(
-      () =>
-        new Promise<S2sHandle>((resolve) => {
-          resolveConnect = resolve;
-        }),
-    );
+    const connect = Promise.withResolvers<S2sHandle>();
+    vi.spyOn(_internals, "connectS2s").mockImplementation(() => connect.promise);
 
     const t = createS2sTransport(makeTransportOptions());
     const startP = t.start(); // handshake in flight
     await t.stop(); // client disconnected before connect resolved
-    resolveConnect(handle); // handshake now completes
+    connect.resolve(handle); // handshake now completes
     await startP;
 
     // The resolved socket must be closed, and no session.update sent on it.
@@ -114,10 +105,6 @@ describe("S2sTransport lifecycle races", () => {
 });
 
 describe("S2sTransport reconnect", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
   test("attempts session.resume on transient close (1005) inside the resume window", async () => {
     const { callbacks, handles, capturedCallbacks } = setupSpiedTransport();
     const t = createS2sTransport(makeTransportOptions({ callbacks }));
@@ -179,7 +166,7 @@ describe("S2sTransport reconnect", () => {
     cb1.onReplyStarted("rep_1");
     cb1.onClose(1008, "unauthorized");
 
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await sleep(5);
     expect(handles.length).toBe(1);
     expect(callbacks.onError).toHaveBeenCalledWith(
       "connection",
@@ -199,7 +186,7 @@ describe("S2sTransport reconnect", () => {
     // Upstream close after stop() must be treated as clean shutdown, not a transient drop.
     cb1.onClose(1005, "");
 
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await sleep(5);
     expect(handles.length).toBe(1);
     expect(callbacks.onError).not.toHaveBeenCalled();
   });
@@ -268,7 +255,7 @@ describe("S2sTransport reconnect", () => {
     cb1.onClose(1005, "");
 
     await vi.waitFor(() => expect(callbacks.onError).toHaveBeenCalled());
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await sleep(5);
     expect(callbacks.onError).toHaveBeenCalledTimes(1);
     // No further resume attempt after the failure (the 1006 close is transient
     // by code, but the retired session must not loop back into resume).
@@ -300,7 +287,7 @@ describe("S2sTransport reconnect", () => {
     // it must neither re-emit the error nor kick off another resume loop.
     const cb2 = expectAt(capturedCallbacks, 1, "resume callbacks");
     cb2.onClose(1006, "");
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await sleep(5);
     expect(callbacks.onError).toHaveBeenCalledTimes(1);
     expect(spy).toHaveBeenCalledTimes(2);
   });
@@ -457,15 +444,13 @@ describe("S2sTransport reconnect", () => {
     const signals: (AbortSignal | undefined)[] = [];
     const capturedCallbacks: S2sCallbacks[] = [];
     const resumeHandle = makeMockHandle();
-    let resolveResume: ((h: S2sHandle) => void) | undefined;
+    // The resume socket never opens, so this promise never settles on its own.
+    const resume = Promise.withResolvers<S2sHandle>();
     vi.spyOn(_internals, "connectS2s").mockImplementation((o: ConnectS2sOptions) => {
       signals.push(o.signal);
       capturedCallbacks.push(o.callbacks);
       if (signals.length === 1) return Promise.resolve(makeMockHandle());
-      // The resume socket never opens, so this promise never settles on its own.
-      return new Promise<S2sHandle>((resolve) => {
-        resolveResume = resolve;
-      });
+      return resume.promise;
     });
 
     const callbacks = makeCallbacks();
@@ -482,8 +467,8 @@ describe("S2sTransport reconnect", () => {
     // If the handshake does settle after all, the socket is closed rather than
     // installed, and the client hears nothing: it hung up, so there is no
     // session left to fail.
-    resolveResume?.(resumeHandle);
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    resume.resolve(resumeHandle);
+    await sleep(5);
     expect(resumeHandle.close).toHaveBeenCalled();
     expect(callbacks.onError).not.toHaveBeenCalled();
   });

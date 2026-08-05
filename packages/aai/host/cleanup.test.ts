@@ -3,7 +3,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { createOwnedMap, type OwnedMap } from "../sdk/owned-map.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
-import { makeMockCore, silentLogger } from "./_test-utils.ts";
+import { makeMockCore, silentLogger, sleep } from "./_test-utils.ts";
 import type { SessionCore } from "./session-core.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
@@ -71,7 +71,7 @@ describe("wireSessionSocket resource cleanup", () => {
 
   test("multiple rapid closes don't double-invoke stop()", async () => {
     const core = makeMockCore({
-      stop: vi.fn(() => new Promise<void>((r) => setTimeout(r, 50))),
+      stop: vi.fn(() => sleep(50)),
     });
     const ws = makeOpenWs();
     wire(ws, core);

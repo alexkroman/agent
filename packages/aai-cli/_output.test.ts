@@ -47,8 +47,6 @@ describe("installStdoutGuard", () => {
 
     expect(exitSpy).toHaveBeenCalledWith(0);
     expect(stderrSpy).not.toHaveBeenCalled();
-    exitSpy.mockRestore();
-    stderrSpy.mockRestore();
   });
 
   it("reports other stream errors on stderr and exits 1", () => {
@@ -61,8 +59,6 @@ describe("installStdoutGuard", () => {
 
     expect(exitSpy).toHaveBeenCalledWith(1);
     expect(stderrSpy).toHaveBeenCalledWith("stdout error: disk full\n");
-    exitSpy.mockRestore();
-    stderrSpy.mockRestore();
   });
 });
 

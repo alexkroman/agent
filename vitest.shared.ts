@@ -11,6 +11,16 @@ export const sharedConfig = {
     // here rather than being re-declared per package. It is also the option
     // the root config's drift list names as one several projects had dropped.
     restoreMocks: true,
+    // The same argument for `vi.stubEnv`, which had no central counterpart:
+    // 17 files stubbed env vars and only some of them unstubbed, so a stub
+    // outlived its test and leaked into every later test in the file. The
+    // hand-rolled `vi.unstubAllEnvs()` calls this replaces were also the
+    // thing being forgotten — `host-env.test.ts`, `integration.test.ts` and
+    // `studio-routes.test.ts` had none at all, and three more unstubbed in
+    // only some of the tests that stubbed. Test-scoped env is the only sane
+    // default; a helper or fast-check harness that needs a SUB-test boundary
+    // still calls `vi.unstubAllEnvs()` itself.
+    unstubEnvs: true,
   },
 };
 

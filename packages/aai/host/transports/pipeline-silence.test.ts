@@ -5,6 +5,7 @@
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel } from "../_pipeline-test-fakes.ts";
+import { sleep } from "../_test-utils.ts";
 import { makeOpts } from "./_pipeline-transport-harness.ts";
 import { createSilenceNudger } from "./pipeline-silence.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
@@ -46,7 +47,7 @@ describe("silence nudge", () => {
     const { opts, callbacks } = makeOpts();
     const t = createPipelineTransport(opts);
     await t.start();
-    await new Promise((r) => setTimeout(r, 60));
+    await sleep(60);
     expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
     await t.stop();
   });
@@ -58,10 +59,10 @@ describe("silence nudge", () => {
     });
     const t = createPipelineTransport(opts);
     await t.start();
-    await new Promise((r) => setTimeout(r, 100));
+    await sleep(100);
     stt.last()?.firePartial("um");
     // 200ms from start has passed, but only ~120ms since the partial.
-    await new Promise((r) => setTimeout(r, 120));
+    await sleep(120);
     expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
     // ~200ms after the partial the re-armed countdown fires.
     await vi.waitFor(() => {
@@ -81,7 +82,7 @@ describe("silence nudge", () => {
     await vi.waitFor(() => {
       expect(callbacks.onReplyDone).toHaveBeenCalledTimes(3);
     });
-    await new Promise((r) => setTimeout(r, 100));
+    await sleep(100);
     expect(callbacks.onReplyDone).toHaveBeenCalledTimes(3);
     // Real user speech resets the budget: one reply for the user turn,
     // then nudging resumes.
@@ -122,7 +123,7 @@ describe("silence nudge", () => {
     const t = createPipelineTransport(opts);
     await t.start();
     await t.stop();
-    await new Promise((r) => setTimeout(r, 60));
+    await sleep(60);
     expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
   });
 });
