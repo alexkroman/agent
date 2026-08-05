@@ -170,6 +170,19 @@ export type ConnState = {
    *  Prevents a stale initAudioCapture from assigning its voiceIO to a newer
    *  connection. */
   generation: Epoch;
+  /**
+   * Turn epoch, bumped at every turn boundary — a committed user turn, a
+   * barge-in, a reset, AND every audio-path teardown (`cleanupAudio`).
+   *
+   * Async playback completions (`settleWhenAudioDrained`) capture it and
+   * discard themselves when it has moved. The teardown bumps are why it lives
+   * here rather than as a closure local in the message handlers: a reply's
+   * drain resolves whenever the AudioContext closes, so a session torn down
+   * mid-speech (hang up, fatal error, reconnect) would otherwise have
+   * `state: "listening"` written over its "disconnected"/"error" a moment
+   * later — a dead session reporting a live mic.
+   */
+  turn: Epoch;
   /** Audio chunks that arrived before `voiceIO` was initialized — drained into
    *  the playback worklet once init completes. Closes the race between the
    *  server starting greeting audio (immediately on S2S connect) and the

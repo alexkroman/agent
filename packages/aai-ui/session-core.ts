@@ -119,6 +119,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     voiceIO: null,
     audioSetupInFlight: false,
     generation: createEpoch(),
+    turn: createEpoch(),
     preInitAudio: [],
     preInitDone: false,
   };
@@ -146,6 +147,11 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
 
   function cleanupAudio(): void {
     conn.audioSetupInFlight = false;
+    // Releasing the audio path ends whatever turn was playing: closing the
+    // AudioContext is what makes a pending `done()` resolve, so without this
+    // bump the drain's continuation lands on a session that has already gone
+    // disconnected/errored and stamps `state: "listening"` over it.
+    conn.turn.bump();
     void conn.voiceIO?.close().catch(() => {
       /* already tearing down — nothing to report the failure to */
     });
@@ -388,12 +394,17 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     // Only meaningful mid-session: called while disconnected/errored it would
     // fake a "listening" state with nobody on the other end.
     if (!conn.ws || conn.ws.readyState !== WS_OPEN) return;
+    // A client-side barge-in is a turn boundary exactly as the server's
+    // `cancelled` frame is: the flush below settles the interrupted turn's
+    // drain, whose continuation must not outlive the turn it belonged to.
+    conn.turn.bump();
     conn.voiceIO?.flush();
     updateState({ state: "listening" });
     sendJson({ type: "cancel" });
   }
 
   function reset(): void {
+    conn.turn.bump();
     conn.voiceIO?.flush();
     if (conn.ws && conn.ws.readyState === WS_OPEN) {
       sendJson({ type: "reset" });

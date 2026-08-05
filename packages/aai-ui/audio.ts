@@ -269,7 +269,48 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
 
   let playNode: AudioWorkletNode | null = null;
   let onPlaybackStop: (() => void) | null = null;
+  /**
+   * Turn ids for the drain handshake. Every `done()` posts a fresh id and the
+   * worklet echoes it on the matching 'stop', so a stop the worklet posted for
+   * an EARLIER turn — already in flight when a barge-in flushed that turn —
+   * cannot settle the current turn's wait. Dropping only `reason: 'interrupt'`
+   * stops was not enough: the stale one is a legitimate drain stop, just for a
+   * turn the host has already moved past, and settling on it reports the live
+   * reply finished while it is still speaking.
+   */
+  let turnSeq = 0;
+  let pendingStopTurn: number | null = null;
   const lifecycle = new AbortController();
+
+  /** Settle whatever drain wait is pending and forget the turn it belonged to. */
+  function settlePendingStop(): void {
+    onPlaybackStop?.();
+    onPlaybackStop = null;
+    pendingStopTurn = null;
+  }
+
+  /** The playback worklet's turn-boundary report (see `stopTurn` there). */
+  type WorkletStopMessage = {
+    reason?: "done" | "interrupt";
+    /** The turn id this turn's 'done' carried, echoed back. */
+    turn?: number | null;
+    stats?: PlaybackStats;
+  };
+
+  function onWorkletStop(msg: WorkletStopMessage): void {
+    // Report before the drops below: concealment that happened before a
+    // barge-in is real playback trouble, and dropping the stop must not drop
+    // the measurement with it.
+    if (msg.stats && msg.stats.concealedSamples > 0) onPlaybackStats?.(msg.stats);
+    // An interrupt's stop belongs to a turn flush() already settled, so it is
+    // dropped outright rather than counted against the next turn.
+    if (msg.reason === "interrupt") return;
+    // A drain stop for a turn the host is no longer waiting on — the flush
+    // that ended that turn already settled its promise. Settling here would
+    // report the CURRENT reply finished while it is still speaking.
+    if (pendingStopTurn !== null && msg.turn !== pendingStopTurn) return;
+    settlePendingStop();
+  }
 
   // One persistent node per session: the worklet's 60s Float32 buffer is
   // multi-MB, so tearing it down per reply would pay a fresh allocation and
@@ -283,28 +324,14 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
     const node = new AudioWorkletNode(ctx, "playback-processor");
     node.connect(ctx.destination);
     node.port.onmessage = (e: MessageEvent) => {
-      if (e.data.event === "stop") {
-        // Report before the interrupt-drop below: concealment that happened
-        // before a barge-in is real playback trouble, and dropping the stop
-        // must not drop the measurement with it.
-        const stats = e.data.stats as PlaybackStats | undefined;
-        if (stats && stats.concealedSamples > 0) onPlaybackStats?.(stats);
-        // An interrupt's stop belongs to a turn flush() already settled —
-        // dropping it here (rather than flagging "the next stop is stale")
-        // means it can never swallow a real drain-stop that was already in
-        // flight when the flush happened, nor settle a later turn early.
-        if (e.data.reason === "interrupt") return;
-        onPlaybackStop?.();
-        onPlaybackStop = null;
-      }
+      if (e.data.event === "stop") onWorkletStop(e.data as WorkletStopMessage);
     };
     // A dead processor never posts 'stop' — settle any pending done() wait so
     // session state can't hang in "speaking", then surface the failure.
     node.onprocessorerror = () => {
       const err = new Error("Audio playback worklet crashed");
       console.error("[aai-ui]", err.message);
-      onPlaybackStop?.();
-      onPlaybackStop = null;
+      settlePendingStop();
       onError?.(err);
     };
     playNode = node;
@@ -325,11 +352,15 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
       // without the 'done' the buffered reply strands (isDone stays false),
       // and on resume the processor conceals forever after the drain, with
       // its per-turn state and stats bleeding into the next reply.
-      playNode.port.postMessage({ event: "done" });
+      const turn = ++turnSeq;
+      playNode.port.postMessage({ event: "done", turn });
       // The worklet reports completion from process(), which only runs while
       // the context is rendering. If it's suspended/closed (e.g. a backgrounded
       // tab), the 'stop' round-trip never happens — resolve now rather than hang.
-      if (ctx.state !== "running") return Promise.resolve();
+      if (ctx.state !== "running") {
+        pendingStopTurn = null;
+        return Promise.resolve();
+      }
       return new Promise<void>((resolve) => {
         // Settle a resolver this call replaces so its promise never strands.
         onPlaybackStop?.();
@@ -342,7 +373,10 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
         const settle = (): void => {
           clearInterval(poll);
           clearTimeout(cap);
-          if (onPlaybackStop === settle) onPlaybackStop = null;
+          if (onPlaybackStop === settle) {
+            onPlaybackStop = null;
+            pendingStopTurn = null;
+          }
           resolve();
         };
         const poll = setInterval(() => {
@@ -350,16 +384,17 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
         }, PLAYBACK_DONE_POLL_MS);
         const cap = setTimeout(settle, PLAYBACK_DONE_MAX_WAIT_MS);
         onPlaybackStop = settle;
+        pendingStopTurn = turn;
       });
     },
 
     flush() {
       if (!playNode) return;
-      // The interrupted turn is over: settle its pending done() now. The
-      // stop the worklet posts for this interrupt carries reason
-      // 'interrupt' and is dropped by the port handler above.
-      onPlaybackStop?.();
-      onPlaybackStop = null;
+      // The interrupted turn is over: settle its pending done() now. The stop
+      // the worklet posts for this interrupt carries reason 'interrupt' and is
+      // dropped by the port handler above; a DRAIN stop for the same turn that
+      // was already in flight is dropped by the turn-id check there.
+      settlePendingStop();
       playNode.port.postMessage({ event: "interrupt" });
     },
 

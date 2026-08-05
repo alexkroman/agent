@@ -1755,6 +1755,26 @@ from one that didn't, and the only honest basis for retuning
 outran what concealment can cover, i.e. a bandwidth problem rather than a
 tuning one.
 
+**A turn's drain completion is guarded twice, because the drain outlives the
+turn.** `done()` resolves when the worklet drains — which also happens the
+moment the AudioContext stops rendering — so a reply's completion can land
+long after the turn, or the whole session, is over. Both guards were added
+after the fuzz harnesses (`aai-ui/fuzz-*.test.ts`) caught the two failures:
+
+- **The turn epoch lives on `ConnState.turn`, not in the message handlers**,
+  and `cleanupAudio()` bumps it alongside every committed user turn /
+  barge-in / reset. Teardown is a turn boundary: hanging up mid-reply,
+  a fatal error, or a reconnect closes the context, the pending
+  `settleWhenAudioDrained` continuation resolves a second later, and without
+  the bump it wrote `state: "listening"` over the session's own
+  "disconnected"/"error" — a dead session claiming a live mic in the header.
+- **The worklet's `stop` carries the turn id its `done` named**
+  (`playback-processor.ts` echoes it; `audio.ts` only settles the wait whose
+  id matches). Dropping `reason: "interrupt"` stops is not enough: a REAL
+  drain-stop already in flight when a barge-in flushes is a legitimate stop
+  for a turn the host has moved past, and settling on it reported the next
+  reply finished while it was still speaking.
+
 **The server paces audio out at a bounded lead** (`aai/host/audio-pacer.ts`,
 wired into `ws-handler.ts`'s `ClientSink`). TTS outruns playback, so relaying
 each provider frame on arrival put a whole reply into the socket buffer at
@@ -2187,6 +2207,32 @@ that are replayed through the real orchestration layer. Key helpers:
 - `makeMockHandle()` — creates mock S2S WebSocket using nanoevents
 - `replayFixtureMessages()` — dispatches fixture JSON as typed events
 - `createFixtureSession()` — wires a real Runtime to mocked S2S
+
+#### Fuzz harnesses (aai-ui)
+
+`packages/aai-ui/fuzz-*.test.ts` drive the browser session's four
+concurrency-bearing layers with seeded-random operation sequences and assert
+INVARIANTS rather than scenarios — `fuzz-session-core` (server frames ×
+client control calls × socket lifecycle: snapshot monotonicity, caps, and
+quiescence after teardown), `fuzz-voiceio` (enqueue/done/flush/close ×
+worklet stops: every `done()` settles, and only for its own turn),
+`fuzz-hooks` (commit batches: exactly-once tool-call/event delivery through
+the watermark cursor), `fuzz-reconnect` (partysocket + a fuzzed
+`client-config`: the broker latch, resume ids, history replay). The
+worklet processors have their own equivalent in
+`worklets/audio-stress.test.ts`.
+
+Three properties they need to keep paying off. Every failure prints its
+**seed and op log**, so a hit reproduces exactly. A harness must be checked
+for **sensitivity** — revert the fix and confirm it fails — because the
+common outcome is a harness that models the system too politely to reach the
+bug: `fuzz-voiceio` silently exercised a DEAD worklet node for many
+iterations (the audio mocks accumulate nodes across a test, so
+`findWorkletNode` returned the first-ever one) and passed with the bug
+present. And the model has to stay **faithful to the protocol** — one
+`config` frame per connection, a drain-stop only after a `done`, timers
+advanced 1ms per op so a lagged message can cross later operations — or the
+"violations" it reports are its own.
 
 ### Changesets
 

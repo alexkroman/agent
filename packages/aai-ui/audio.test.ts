@@ -13,6 +13,26 @@ function noop() {
   /* silence expected console.error output */
 }
 
+/**
+ * The turn id the host most recently posted with a 'done'. The worklet echoes
+ * it on the matching 'stop' (see `stopTurn`), and the host only settles a wait
+ * on a stop carrying the id it is waiting for — so a simulated stop has to
+ * carry one too.
+ */
+function currentTurn(node: import("./_react-test-utils.ts").MockAudioWorkletNode): number {
+  const dones = node.port.posted.filter(
+    (m): m is { event: "done"; turn: number } => (m as { event?: string }).event === "done",
+  );
+  const last = dones.at(-1);
+  if (!last) throw new Error("no 'done' was posted to the playback worklet");
+  return last.turn;
+}
+
+/** A worklet drain-stop for the turn the host is currently waiting on. */
+function drainStop(node: import("./_react-test-utils.ts").MockAudioWorkletNode): void {
+  node.port.simulateMessage({ event: "stop", reason: "done", turn: currentTurn(node) });
+}
+
 describe("createVoiceIO", () => {
   let audio: AudioMockContext & { restore: () => void };
 
@@ -189,7 +209,7 @@ describe("createVoiceIO", () => {
     void io.done().then(() => {
       resolved = true;
     });
-    playNode.port.simulateMessage({ event: "stop" });
+    drainStop(playNode);
     await vi.waitFor(() => expect(resolved).toBe(true));
     await io.close();
   });
@@ -286,34 +306,44 @@ describe("createVoiceIO", () => {
     void io.done().then(() => {
       resolved = true;
     });
-    playNode.port.simulateMessage({ event: "stop", reason: "interrupt" });
+    playNode.port.simulateMessage({ event: "stop", reason: "interrupt", turn: null });
     await Promise.resolve();
     expect(resolved).toBe(false);
 
-    playNode.port.simulateMessage({ event: "stop", reason: "done" });
+    drainStop(playNode);
     await vi.waitFor(() => expect(resolved).toBe(true));
     await io.close();
   });
 
-  test("a real drain-stop already in flight when flush fires is not swallowed", async () => {
+  test("a drain-stop in flight when flush fires cannot settle the next turn", async () => {
     const io = await createVoiceIO(voiceOpts());
     io.enqueue(new Int16Array([1, 2, 3]).buffer);
     const playNode = findWorkletNode(audio.workletNodes(), "playback-processor");
 
-    // Barge-in lands exactly at turn completion: the worklet's drain-stop is
-    // already posted when flush() runs. It must not poison the next turn.
+    // Turn 1 drains and the worklet posts its stop — but a barge-in lands
+    // first, so flush() settles turn 1 before that stop is delivered.
+    let firstResolved = false;
+    void io.done().then(() => {
+      firstResolved = true;
+    });
+    const staleTurn = currentTurn(playNode);
     io.flush();
-    playNode.port.simulateMessage({ event: "stop", reason: "done" }); // in-flight drain-stop: no pending done, no-op
-    playNode.port.simulateMessage({ event: "stop", reason: "interrupt" }); // the interrupt's own stop: dropped
+    await vi.waitFor(() => expect(firstResolved).toBe(true));
 
-    // The next turn's done() must resolve on its own drain-stop.
+    // Turn 2 is already waiting when turn 1's stop finally arrives. Settling
+    // on it would report the live reply finished while it is still speaking.
     let resolved = false;
+    io.enqueue(new Int16Array([4, 5, 6]).buffer);
     void io.done().then(() => {
       resolved = true;
     });
+    playNode.port.simulateMessage({ event: "stop", reason: "done", turn: staleTurn });
+    playNode.port.simulateMessage({ event: "stop", reason: "interrupt", turn: staleTurn });
     await Promise.resolve();
     expect(resolved).toBe(false);
-    playNode.port.simulateMessage({ event: "stop", reason: "done" });
+
+    // Turn 2's own drain-stop settles it.
+    drainStop(playNode);
     await vi.waitFor(() => expect(resolved).toBe(true));
     await io.close();
   });
@@ -347,7 +377,7 @@ describe("createVoiceIO", () => {
     await vi.waitFor(() => expect(firstResolved).toBe(true));
     expect(secondResolved).toBe(false);
 
-    playNode.port.simulateMessage({ event: "stop" });
+    drainStop(playNode);
     await vi.waitFor(() => expect(secondResolved).toBe(true));
     await io.close();
   });
@@ -384,8 +414,8 @@ describe("createVoiceIO", () => {
     io.enqueue(new ArrayBuffer(2));
     const play = findWorkletNode(audio.workletNodes(), "playback-processor");
     const done = io.done();
-    expect(play.port.posted).toContainEqual({ event: "done" });
-    play.port.simulateMessage({ event: "stop" });
+    expect(play.port.posted).toContainEqual({ event: "done", turn: currentTurn(play) });
+    drainStop(play);
     await expect(done).resolves.toBeUndefined();
     await io.close();
   });
