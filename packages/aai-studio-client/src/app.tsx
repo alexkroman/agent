@@ -21,8 +21,8 @@ import { ChatPanel, type NotifyChat } from "./chat.tsx";
 import { HomeHero, HomeSidebar } from "./home.tsx";
 import { PreviewPane } from "./preview.tsx";
 import { queryKeys } from "./query-keys.ts";
-import { SecretsPanel } from "./secrets.tsx";
-import { PublishMenu, TopBar } from "./top-bar.tsx";
+import { SettingsPane } from "./settings.tsx";
+import { PublishMenu, type StudioTab, TopBar } from "./top-bar.tsx";
 import { type StreamHandlers, useEventStream } from "./use-event-stream.ts";
 
 // CodeMirror is the bulk of the bundle and only the Code tab needs it — the
@@ -73,9 +73,8 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
     projectFromPath(window.location.pathname),
   );
   const [currentFile, setCurrentFile] = useState<string | null>(null);
-  const [tab, setTab] = useState<"preview" | "code">("preview");
+  const [tab, setTab] = useState<StudioTab>("preview");
   const [publishOpen, setPublishOpen] = useState(false);
-  const [secretsOpen, setSecretsOpen] = useState(false);
   const [previewNonce, setPreviewNonce] = useState(0);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   // A chat turn is in flight. Publish locks on this: the preview only
@@ -301,7 +300,9 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
   const deleteProject = useMutation({
     mutationFn: () => api.deleteProject(bearer, project as string),
     onSuccess: () => {
-      setSecretsOpen(false);
+      // Back to the default pane — the deleted project's Settings page has
+      // nothing left to show, and the next project opens on Preview.
+      setTab("preview");
       selectProject(null);
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects });
     },
@@ -334,21 +335,13 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
         deployedSlug={deployedSlug}
         hasBuild={hasBuild}
         chatBusy={chatBusy}
-        settingsOpen={secretsOpen}
         onGoHome={() => selectProject(null)}
         onSelectTab={(next) => {
-          setSecretsOpen(false);
+          setPublishOpen(false);
           setTab(next);
         }}
         onLogOut={onSignOut}
-        onTogglePublish={() => {
-          setSecretsOpen(false);
-          setPublishOpen((v) => !v);
-        }}
-        onToggleSettings={() => {
-          setPublishOpen(false);
-          setSecretsOpen((v) => !v);
-        }}
+        onTogglePublish={() => setPublishOpen((v) => !v)}
       />
       <PublishMenu
         open={publishOpen}
@@ -364,18 +357,6 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
         }}
         onClose={() => setPublishOpen(false)}
       />
-      {secretsOpen && project != null && (
-        <SecretsPanel
-          bearer={bearer}
-          project={project}
-          slug={deployedSlug}
-          previewSlug={workspace.data?.previewSlug}
-          onNotifyChat={notifyChat}
-          onClose={() => setSecretsOpen(false)}
-          onDeleteProject={() => deleteProject.mutate()}
-          deleting={deleteProject.isPending}
-        />
-      )}
       {workspaceError && (
         <div className="border-b border-line bg-panel px-5 py-2 text-xs text-err">
           Failed to load project: {workspaceError}
@@ -414,7 +395,7 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
             onBusyChange={setChatBusy}
             registerNotify={registerNotify}
           />
-          {tab === "preview" ? (
+          {tab === "preview" && (
             <PreviewPane
               previewSlug={workspace.data?.previewSlug}
               previewVersion={workspace.data?.previewVersion}
@@ -425,7 +406,8 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
               nonce={previewNonce}
               onPublish={() => setPublishOpen(true)}
             />
-          ) : (
+          )}
+          {tab === "code" && (
             <Suspense
               fallback={<div className="flex flex-1 items-center justify-center text-subtle" />}
             >
@@ -438,6 +420,17 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
                 }}
               />
             </Suspense>
+          )}
+          {tab === "settings" && (
+            <SettingsPane
+              bearer={bearer}
+              project={project}
+              slug={deployedSlug}
+              previewSlug={workspace.data?.previewSlug}
+              onNotifyChat={notifyChat}
+              onDeleteProject={() => deleteProject.mutate()}
+              deleting={deleteProject.isPending}
+            />
           )}
         </main>
       )}

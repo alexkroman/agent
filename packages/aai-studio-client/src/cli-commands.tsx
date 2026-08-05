@@ -11,22 +11,19 @@ const CLI_PACKAGE = "@alexkroman1/aai-cli";
 /**
  * The commands that put this project on a laptop, in order.
  *
- * `--server` is always spelled out rather than left implicit. The CLI targets
- * its own shipped default origin when the flag is absent, and passing the flag
- * is ALSO what approves an origin for credentialed requests (see
- * `resolveServerUrl` in aai-cli/_agent.ts) — so a studio served from anywhere
- * else needs it on both the login and the pull. The client cannot compare
- * against the CLI's default without importing from aai-cli, which would widen
- * the package boundary, so the flag is emitted unconditionally: correct
- * everywhere, at the cost of one long line in the common case. `aai pull`
- * writes the origin into the pulled project's `.aai/project.json`, so `push`
- * and `publish` need no flag afterwards.
+ * No `--server`: the CLI targets its own shipped default origin, which is the
+ * platform these commands are copied from. A studio served from anywhere else
+ * (local dev, a preview deploy) needs the flag added by hand — passing it is
+ * also what approves a non-default origin for credentialed requests (see
+ * `resolveServerUrl` in aai-cli/_agent.ts). `aai pull` writes the origin into
+ * the pulled project's `.aai/project.json`, so `push` and `publish` never
+ * needed the flag afterwards either.
  */
-export function pullCommands(project: string, origin: string): string[] {
+export function pullCommands(project: string): string[] {
   return [
     `npm i -g ${CLI_PACKAGE}`,
-    `aai login --server ${origin}`,
-    `aai pull ${project} --server ${origin}`,
+    "aai login",
+    `aai pull ${project}`,
     `cd ${project} && aai dev`,
   ];
 }
@@ -36,12 +33,10 @@ type CopyState = { text: string; ok: boolean };
 type CliCommandsProps = {
   /** The open project's name — `aai pull`'s argument and the target directory. */
   project: string;
-  /** The studio's own origin. Injected for tests; defaults to this page's. */
-  origin?: string;
 };
 
-export function CliCommands({ project, origin }: CliCommandsProps) {
-  const commands = pullCommands(project, origin ?? window.location.origin);
+export function CliCommands({ project }: CliCommandsProps) {
+  const commands = pullCommands(project);
   const [copied, setCopied] = useState<CopyState | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -74,18 +69,14 @@ export function CliCommands({ project, origin }: CliCommandsProps) {
 
   const all = commands.join("\n");
 
+  // Heading and blurb belong to the Settings page's section card — this
+  // renders the commands themselves and nothing else.
   return (
-    <div className="flex flex-col gap-2 border-t border-line pt-3">
-      <span className="eyebrow">Work locally</span>
-      <p className="m-0 text-[13px] leading-5 text-muted">
-        Pull this project's files with the <code className="font-mono">aai</code> CLI, edit them in
-        your own editor, then <code className="font-mono">aai push</code> to sync them back (or{" "}
-        <code className="font-mono">aai publish</code> to sync and ship to production).
-      </p>
-      <ol className="m-0 flex list-none flex-col gap-1 p-0">
+    <div className="flex flex-col gap-3">
+      <ol className="m-0 flex list-none flex-col gap-1.5 p-0">
         {commands.map((command) => (
           <li key={command} className="flex items-center gap-2">
-            <code className="min-w-0 flex-1 rounded-md border border-line bg-cream px-2 py-1 font-mono text-[11px] break-all">
+            <code className="min-w-0 flex-1 rounded-md border border-line bg-cream px-3 py-2 font-mono text-xs break-all">
               {command}
             </code>
             <button

@@ -86,21 +86,34 @@ export function PublishMenu(props: PublishMenuProps) {
   );
 }
 
+/**
+ * The three project panes, all peers in the segmented control.
+ *
+ * Settings joined them rather than staying a dropdown: it holds secrets, the
+ * CLI round-trip, and Delete project, which is more than a floating panel can
+ * lay out. Nothing here gates on a build or a deploy — Delete project has to
+ * work before anything has ever been published.
+ */
+export type StudioTab = "preview" | "code" | "settings";
+
+const TABS: { id: StudioTab; label: string }[] = [
+  { id: "preview", label: "Preview" },
+  { id: "code", label: "Code" },
+  { id: "settings", label: "Settings" },
+];
+
 type TopBarProps = {
   project: string | null;
-  tab: "preview" | "code";
+  tab: StudioTab;
   deployedSlug?: string | undefined;
   hasBuild: boolean;
   /** A chat turn is streaming — Publish locks until it settles (see PublishMenuProps). */
   chatBusy?: boolean;
-  /** The settings (secrets) panel is open — renders its toggle as active. */
-  settingsOpen: boolean;
   /** Brand click: back to the hero home (deselects the project). */
   onGoHome: () => void;
-  onSelectTab: (tab: "preview" | "code") => void;
+  onSelectTab: (tab: StudioTab) => void;
   onLogOut: () => void;
   onTogglePublish: () => void;
-  onToggleSettings: () => void;
 };
 
 /** Shared 60px top bar (all 1x options): brand, project name, segmented, actions. */
@@ -138,20 +151,17 @@ export function TopBar(props: TopBarProps) {
       {/* The pane switcher is project-scoped — the hero home has no panes. */}
       {props.project && (
         <div className="flex flex-none overflow-hidden rounded-sm border border-line">
-          <button
-            type="button"
-            className={segClass(props.tab === "preview")}
-            onClick={() => props.onSelectTab("preview")}
-          >
-            Preview
-          </button>
-          <button
-            type="button"
-            className={clsx("border-l border-line", segClass(props.tab === "code"))}
-            onClick={() => props.onSelectTab("code")}
-          >
-            Code
-          </button>
+          {TABS.map((entry, i) => (
+            <button
+              key={entry.id}
+              type="button"
+              aria-current={props.tab === entry.id ? "page" : undefined}
+              className={clsx(i > 0 && "border-l border-line", segClass(props.tab === entry.id))}
+              onClick={() => props.onSelectTab(entry.id)}
+            >
+              {entry.label}
+            </button>
+          ))}
         </div>
       )}
       <div className="flex-1" />
@@ -167,18 +177,6 @@ export function TopBar(props: TopBarProps) {
         >
           {agentUrl(props.deployedSlug)} ↗
         </a>
-      )}
-      {/* Settings is project-scoped and always available — the panel houses
-          secrets (which need a publish) AND the Delete project button, which
-          must work before anything has ever been published. */}
-      {props.project && (
-        <button
-          type="button"
-          className={clsx("btn", props.settingsOpen && "bg-fg text-cream")}
-          onClick={props.onToggleSettings}
-        >
-          Settings
-        </button>
       )}
       <button
         type="button"

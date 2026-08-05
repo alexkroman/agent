@@ -450,8 +450,9 @@ model) is the security boundary.
   over HTTP/SSE (no code imports in either direction); aai-server serves
   the built artifact, resolved via `require.resolve` in
   `studio-static.ts` the same way aai-ui's `dist/default-client` is.
-  Panes: `chat.tsx` (chat + composer), `code-view.tsx` / `preview.tsx`
-  (the Code/Preview pane).
+  Panes: `chat.tsx` (chat + composer), and the three the top bar's
+  segmented control switches between — `preview.tsx`, `code-view.tsx`,
+  `settings.tsx`.
 
 ### Browser studio (aai-studio-server)
 
@@ -798,25 +799,36 @@ voice agents without the CLI:
   never the web container's. Covered end-to-end by
   `aai-server/workspace-build-integration.test.ts` (a real harness process
   publishing through the real CLI to a real listening orchestrator).
-- **Secrets have their own panel; storage has none.** Deployed-agent
-  secrets are managed in the studio client's Secrets panel
-  (`secrets.tsx`), which talks to the platform's own `/:slug/secret`
-  routes — the exact ones `aai secret` uses — and posts a note into the
-  chat on every change (key names only, values withheld) so the coding
-  agent knows which keys exist. Storage (`ctx.db`) is CLI-only
-  (`aai storage enable <slug>`): the studio's storage routes and toggle
-  were removed, and the prompt tells the agent to direct users to the CLI.
-- **The Settings panel is also where the CLI round-trip is discoverable**
+- **Settings is a PANE, not a dropdown** (`settings.tsx`): the top bar's
+  segmented control switches Preview / Code / Settings, all three peers
+  rendering full-width beside the chat panel (`StudioTab` in `top-bar.ts`
+  is the one union; `app.tsx`'s `tab` state is the only selection). It was
+  a floating 384px panel that scrolled itself — three unrelated sections
+  (secrets, the CLI round-trip, Delete project) never laid out in that
+  width. Nothing on the pane gates on a build or a deploy: Delete project
+  has to work before anything has ever been published, so Settings is
+  reachable whenever a project is open.
+- **Secrets have their own section; storage has none.** Deployed-agent
+  secrets are managed in the Settings pane's Secrets card, which talks to
+  the platform's own `/:slug/secret` routes — the exact ones `aai secret`
+  uses — and posts a note into the chat on every change (key names only,
+  values withheld) so the coding agent knows which keys exist. Storage
+  (`ctx.db`) is CLI-only (`aai storage enable <slug>`): the studio's
+  storage routes and toggle were removed, and the prompt tells the agent to
+  direct users to the CLI.
+- **The Settings pane is also where the CLI round-trip is discoverable**
   (`cli-commands.tsx`, the "Work locally" section): the install / `aai login`
   / `aai pull <project>` / `aai dev` sequence with the project name filled
   in and one copy button each. It renders whether or not the project has
   ever been published — pulling a workspace needs no deployed slug. The
-  commands carry `--server <studio origin>` unconditionally, because the CLI
-  otherwise targets its own shipped default AND because passing `--server`
-  is what APPROVES an origin for credentialed requests (`resolveServerUrl`
-  in `aai-cli/_agent.ts`); the client can't compare against the CLI's
-  default without importing from aai-cli, which would widen the package
-  boundary.
+  commands carry **no `--server`**: the CLI targets its own shipped default
+  origin (`DEFAULT_SERVER` in `aai-cli/_agent.ts`), which is the platform
+  the commands were copied from. A studio served from anywhere else (local
+  dev, a preview deploy) needs the flag added by hand — passing it is also
+  what APPROVES a non-default origin for credentialed requests
+  (`resolveServerUrl`), and the client cannot compare its own origin
+  against the CLI's default without importing from aai-cli, which would
+  widen the package boundary.
 - **Vite must not be allowed to mutate `process.env`.** Vite's `build()`
   sets `NODE_ENV=production` when it is unset — a permanent, global side
   effect on the calling process. Both CLI bundlers therefore wrap the
