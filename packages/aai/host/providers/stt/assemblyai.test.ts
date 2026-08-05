@@ -385,6 +385,26 @@ describe("assemblyAIStt STT adapter — region (EU data residency)", () => {
     );
     await us.close();
   });
+
+  test("streamingUrl overrides the endpoint, and wins over region", async () => {
+    const sandbox = "wss://streaming.sandbox000.assemblyai-labs.com/v3/ws";
+
+    const session = await openSession({ model: "universal-3-5-pro", streamingUrl: sandbox });
+    expect((session._transcriber as unknown as FakeTranscriber).params.websocketBaseUrl).toBe(
+      sandbox,
+    );
+    await session.close();
+
+    // An explicit endpoint is a deliberate choice; the residency shorthand
+    // must not silently overwrite it.
+    const both = await openSession({
+      model: "universal-3-5-pro",
+      region: "eu",
+      streamingUrl: sandbox,
+    });
+    expect((both._transcriber as unknown as FakeTranscriber).params.websocketBaseUrl).toBe(sandbox);
+    await both.close();
+  });
 });
 
 describe("assemblyAIStt STT adapter — connect budget", () => {

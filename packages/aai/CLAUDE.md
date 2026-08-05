@@ -287,6 +287,16 @@ Reference providers shipped today:
   we own: it runs inside `session.start()`, so a budget exceeding
   `DEFAULT_SESSION_START_TIMEOUT_MS` could only surface as the less specific
   "session.start() timed out". `assemblyai.test.ts` asserts that sum.
+
+  **`assemblyAIStt({ streamingUrl })` overrides the streaming endpoint** — for
+  a staging cluster, or to A/B a pre-release host against the default. It is
+  the same `websocketBaseUrl` mechanism `region: "eu"` already used, so an
+  explicit URL WINS over `region`: naming an endpoint is deliberate and the
+  residency shorthand must not silently overwrite it. The URL must carry the
+  versioned path (`wss://host/v3/ws`); the SDK supplies that only for its own
+  default host, so a bare origin connects to the wrong route and fails at
+  connect. Leave unset in production — the SDK's default already tracks path
+  bumps, which is why the US case pins nothing host-side.
 - **LLM**: one of the typed factories below — each returns a pure
   descriptor; the `@ai-sdk/*` package is only imported by the host-side
   resolver (`host/providers/resolve.ts`), never by the agent bundle:

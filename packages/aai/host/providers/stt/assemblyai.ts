@@ -155,10 +155,15 @@ function buildTranscriberParams(
     // utterance's pauses aggregate service-side. See the constant's doc.
     minTurnSilence: opts.minTurnSilenceMs ?? DEFAULT_MIN_TURN_SILENCE_MS,
   };
-  // EU data residency: point the SDK's streaming socket at the EU host.
-  // The US default is left to the SDK (its default already carries the
-  // versioned path), so only the EU case names an endpoint here.
-  if (opts.region === "eu") params.websocketBaseUrl = ASSEMBLYAI_STREAMING_EU_URL;
+  // Streaming endpoint. An explicit `streamingUrl` wins over `region` — it is
+  // a deliberate choice (staging cluster, A/B against the default host) and
+  // must not be silently overwritten by the residency shorthand. Otherwise EU
+  // data residency points the socket at the EU host; the US default is left to
+  // the SDK, whose own default already carries the versioned path, so only
+  // these two cases name an endpoint here.
+  const streamingUrl =
+    opts.streamingUrl ?? (opts.region === "eu" ? ASSEMBLYAI_STREAMING_EU_URL : undefined);
+  if (streamingUrl) params.websocketBaseUrl = streamingUrl;
   // Contextual biasing is opt-in: DEFAULT_STT_PROMPT is empty, so an agent
   // that sets no sttPrompt sends no `prompt` at all — as does `sttPrompt: ""`.
   // DEFAULT_STT_PROMPT documents what a useful prompt buys and costs.
