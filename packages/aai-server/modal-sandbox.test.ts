@@ -72,6 +72,9 @@ function makeFakeSandbox(fakeProc: FakeProc): ModalSandboxLike & {
     sandboxId: "sb-test",
     execCalls,
     files,
+    // Modal's readiness probe, satisfied immediately: these tests exercise the
+    // spawn sequence, not the boot wait (which raceGuestExit covers).
+    waitUntilReady: () => Promise.resolve(),
     filesystem: {
       writeText: async (data: string, remotePath: string) => {
         files.set(remotePath, data);
@@ -266,6 +269,9 @@ describe("spawnModalWarm", () => {
       idleTimeoutMs: DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
       tags: { service: "aai-guest", role: "agent", slug: "my-agent" },
     });
+    // Readiness is Modal's to evaluate, inside the container, rather than N
+    // HTTP polls from the host across the public tunnel.
+    expect(createParams[0]?.readinessProbe).toBeDefined();
     // Tunnels replaced blockNetwork — they are mutually exclusive in Modal.
     expect(createParams[0]).not.toHaveProperty("blockNetwork");
 

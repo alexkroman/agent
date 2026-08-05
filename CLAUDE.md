@@ -690,7 +690,8 @@ voice agents without the CLI:
   and the drain resolves the key from Vault (`user-key:<uid>`), so a job
   redelivered to another replica can still deploy. A raw-key caller's job
   (CLI, evals) has no `userId`, so it runs only on the replica that enqueued
-  it and is archived if redelivered elsewhere. Success stamps `previewSlug`/`previewHash` on the workspace;
+  it and is archived if redelivered elsewhere. Success stamps
+  `previewSlug`/`previewHash` on the workspace;
   failure stamps `previewError` for the pane's banner (an auto-deploy has
   no chat turn to carry CLI output). `GET /studio/projects/:project`
   returns `previewSlug`/`previewVersion`/`previewStale`/`previewError`,
@@ -2216,7 +2217,8 @@ service's control work is light — and one container served both badly.
   emptying the slots, so requests that would have been served still are. The
   wait is deliberately short — it spends the same SIGTERM allowance the
   drains need, and an undelivered drain is the worse failure. The studio-only
-  service passes 0: its slot cache is always empty, so it has no such window. Sessions dial the sandbox
+  service passes 0: its slot cache is always empty, so it has no such window.
+  Sessions dial the sandbox
   tunnel directly and the guest has no dependency on the replica, so live
   calls finish in the guests on their own clock after the replica is gone;
   the next replica's broker spawns fresh sandboxes on demand. The old
@@ -2294,10 +2296,8 @@ service's control work is light — and one container served both badly.
   not written per spawn, in two halves that cache differently. The
   TOOLCHAIN is a native image LAYER (`toolchainImage`: a
   `dockerfileCommands` `RUN npm install` into `/opt/aai/node_modules` — the
-  aai CLI bundlers plus the workspace-facing packages; versions come from
-  aai-guest's own dependency declarations, `workspace:*` pinned to the
-  installed versions, so dev and baked toolchains share one source of
-  truth), so Modal's own layer cache serves it and a harness rebuild — every
+  aai CLI bundlers plus the workspace-facing packages), so Modal's own
+  layer cache serves it and a harness rebuild — every
   server code change — no longer reinstalls ~15 packages. The HARNESS needs a
   throwaway builder sandbox, because the JS SDK's `dockerfileCommands` takes
   commands with no build context and there is nothing to `COPY` a ~13 MB local
@@ -2317,6 +2317,33 @@ service's control work is light — and one container served both badly.
   prevent; the operator kill switch `SANDBOX_IGNORE_IMAGE_PINS=1` forces
   the current image for every spawn when a registry loss makes that trade
   explicitly. Studio/inspect sandboxes always run the current image.
+- **The guest toolchain is LOCKED, and the lock is committed**
+  (`packages/aai-guest/toolchain/{package.json,package-lock.json}`, regenerated
+  by `pnpm sync:guest-toolchain`, gated by `pnpm check:guest-toolchain` in
+  `scripts/check.sh` AND the CI check job). Without it the resolved tree is a
+  function of WHEN the layer was built, while the published tag and Modal's
+  layer cache both key on the install command's TEXT — so one
+  `harness_image_tag` could mean two different trees, the exact opposite of
+  the per-deploy environment pinning the tag exists for. The install is
+  therefore two steps, and the split is forced:
+  - **Third-party packages: `npm ci` against the committed lockfile.** Their
+    versions and integrity hashes are known at commit time, and this is where
+    nearly all the transitive surface lives (vite/rolldown, typescript,
+    vitest, react, tailwind). `npm ci` also refuses to run when the manifest
+    and lockfile disagree, so a hand-edited manifest fails the BUILD.
+  - **`@alexkroman1/*`: `npm install` at exact resolved versions.** These
+    CANNOT be locked here — their versions change every release, and a
+    lockfile entry needs an integrity hash that only exists once the version
+    is PUBLISHED, which happens after the commit that bumps it. Their own
+    dependencies (the provider SDKs) therefore still resolve at install time;
+    closing that residual gap needs a post-publish regeneration step, not a
+    lockfile in this repo.
+
+  Both files are written by the RUN itself, gzipped and base64'd (~20 KB), for
+  the same reason the harness cannot be `COPY`'d: `dockerfileCommands` carries
+  no build context. The image TAG hashes the lockfile's content, not the
+  manifest's — the manifest names direct versions, the lockfile names the whole
+  tree, so a purely transitive change still mints a new tag.
   Only the Modal backend needs this: the subprocess backend's harness runs
   from `packages/aai-guest/dist/` and resolves the toolchain through
   aai-guest's own `node_modules` — the same walk-up shape as `/opt/aai`, with
@@ -2388,12 +2415,27 @@ service's control work is light — and one container served both badly.
   the guard and got an agent the hourly sweep would delete. Inferring the
   opt-in from the slug's shape would NOT have fixed it: a production Publish
   of such a project passes exactly that slug.
+- **Readiness is Modal's readiness PROBE**, not host-side polling
+  (`GUEST_READINESS_PROBE` in modal-sandbox.ts): every guest sandbox is
+  created with `readinessProbe: Probe.withTcp(8080)` and the spawn awaits
+  `sandbox.waitUntilReady()`. A TCP probe is exactly equivalent to the
+  `/health` 200 it replaced, and that equivalence is a property of the
+  harness's boot order rather than a guess: agent mode reads its boot files,
+  hash-verifies and LOADS the bundle, and only then calls `server.listen` — so
+  the port opening means "sessions can be served". A harness that listened
+  first would report ready before it could serve anything. The wait is always
+  raced against guest-process EXIT (`raceGuestExit` in warm-harness.ts): every
+  boot failure exits the process with its reason on stderr, and without the
+  race a readiness wait burns its whole budget and then blames the network.
+  The host-side `pollGuestHealth` remains for the subprocess backend, which
+  has no probes.
 - **Transport**: STUDIO/INSPECT guests get a WebSocket control channel the
   host dials through the sandbox's Modal tunnel (`encryptedPorts: [8080]`;
-  JSON-RPC on `/ws`), retried while the harness boots
-  (`GUEST_DIAL_TIMEOUT_MS`). AGENT guests get NO channel — the host polls
-  their public `/health` for readiness and probes `/manage/*` over plain
-  HTTPS. Both are authenticated by a per-sandbox bearer token minted at
+  JSON-RPC on `/ws`) once the probe reports ready — the dial's retry
+  (`GUEST_DIAL_TIMEOUT_MS`) stays as a backstop rather than the discovery
+  mechanism. AGENT guests get NO channel — readiness is the probe, and the
+  host probes `/manage/*` over plain HTTPS. Both are authenticated by a
+  per-sandbox bearer token minted at
   spawn and delivered via the EXEC's env (never the sandbox's). The tunnel
   URL is public; the token is what keeps the managed surfaces from being an
   open door.

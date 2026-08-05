@@ -36,7 +36,7 @@ import { readFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { errorMessage } from "@alexkroman1/aai";
 import { CONTAINED_ENV } from "@alexkroman1/aai/runtime";
-import { ModalClient, type SandboxCreateParams } from "modal";
+import { ModalClient, Probe, type SandboxCreateParams } from "modal";
 import { debug } from "./_debug-log.ts";
 import { keyedMemoAsync, memoAsync } from "./_memo.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
@@ -55,8 +55,9 @@ import {
   agentServerFromGuest,
   type DialGuest,
   dialGuest,
+  GUEST_READY_TIMEOUT_MS,
   type GuestFetch,
-  pollGuestHealth,
+  raceGuestExit,
   startGuestLogging,
   warmFromGuest,
 } from "./warm-harness.ts";
@@ -80,6 +81,11 @@ export type ModalTunnelLike = {
 
 export type ModalSandboxLike = {
   sandboxId: string;
+  /**
+   * Resolve once Modal's own readiness probe reports the sandbox ready — for
+   * our guests, "the harness has bound its port" (see `GUEST_READINESS_PROBE`).
+   */
+  waitUntilReady(timeoutMs?: number): Promise<void>;
   exec(
     command: string[],
     params: { mode: "binary"; stdout: "pipe"; stderr: "pipe"; env?: Record<string, string> },
@@ -133,6 +139,33 @@ const DEFAULT_MODAL_APP_NAME = "aai-server";
 
 /** Container port the harness WebSocket server listens on (tunneled). */
 export const GUEST_PORT = 8080;
+
+/** How often Modal evaluates the readiness probe inside the container. */
+const READINESS_PROBE_INTERVAL_MS = 250;
+
+/**
+ * Readiness, as Modal evaluates it: is the harness's port open?
+ *
+ * This replaced the host polling the guest's public `/health` over the tunnel
+ * every 250ms for up to two minutes. A TCP probe is exactly equivalent for
+ * our guests, and that equivalence is a property of the harness's boot order,
+ * not a guess: agent mode reads its boot files, HASH-VERIFIES and LOADS the
+ * bundle, and only then calls `server.listen` — so the port opening means
+ * "the bundle is loaded and sessions can be served", which is precisely what
+ * a `/health` 200 meant. Keep it that way; a harness that listened first
+ * would make this probe report ready before it could serve anything.
+ *
+ * Three things improve by moving the check into Modal:
+ * - The probe runs INSIDE the container, on Modal's interval, instead of N
+ *   HTTP requests crossing the public internet from whichever replica spawned.
+ * - Readiness arrives over the control plane we already hold, so it does not
+ *   depend on the guest being publicly reachable — which is what lets the
+ *   control surfaces move off the public tunnel.
+ * - One deadline, enforced in one place, instead of a poll loop with its own
+ *   per-attempt timeout and last-error bookkeeping.
+ */
+const GUEST_READINESS_PROBE = (): Probe =>
+  Probe.withTcp(GUEST_PORT, { intervalMs: READINESS_PROBE_INTERVAL_MS });
 
 export function modalRequiredError(): Error {
   return new Error(
@@ -287,6 +320,7 @@ export async function spawnModalWarm(
       // The host dials in through this tunnel; the harness's bearer-token
       // check is what keeps the public tunnel URL from being an open door.
       encryptedPorts: [GUEST_PORT],
+      readinessProbe: GUEST_READINESS_PROBE(),
       timeoutMs: limits.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
       idleTimeoutMs: limits.idleTimeoutMs ?? DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
       ...resourceParams,
@@ -331,6 +365,10 @@ export async function spawnModalWarm(
     // PUBLIC auth-free client-session endpoint, the studio chat) derives from
     // it via GUEST_ROUTES.
     const origin = `wss://${tunnel.host}:${tunnel.port}`;
+    // Wait for Modal's probe rather than discovering readiness by failed
+    // dials: the dial's own retry stays as the backstop, but on the happy
+    // path it now connects first try instead of polling the boot.
+    await raceGuestExit(sb.waitUntilReady(GUEST_READY_TIMEOUT_MS), proc);
     const ws = await dial(guestWsUrl(origin, GUEST_ROUTES.control), token);
 
     debug("Modal sandbox spawned", {
@@ -387,6 +425,7 @@ export async function spawnModalAgentServer(
     {
       command: ["sleep", "infinity"],
       encryptedPorts: [GUEST_PORT],
+      readinessProbe: GUEST_READINESS_PROBE(),
       timeoutMs: limits.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
       idleTimeoutMs: limits.idleTimeoutMs ?? DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
       ...resourceParams,
@@ -427,7 +466,9 @@ export async function spawnModalAgentServer(
       throw new Error(`no tunnel for guest port ${GUEST_PORT}`);
     }
     const origin = `wss://${tunnel.host}:${tunnel.port}`;
-    await pollGuestHealth(origin, proc, fetchFn);
+    // Modal's readiness probe, raced against guest-process exit: a bundle
+    // that throws at load exits here, and its stderr IS the diagnosis.
+    await raceGuestExit(sb.waitUntilReady(GUEST_READY_TIMEOUT_MS), proc);
 
     debug("Modal agent server spawned", {
       sandboxId: sb.sandboxId,

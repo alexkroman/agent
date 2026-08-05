@@ -31,6 +31,7 @@
     "check:hatches": "node scripts/check-escape-hatches.mjs",
     "check:file-length": "node scripts/check-file-length.mjs",
     "check:gateway-models": "node scripts/check-gateway-models.mjs",
+    "check:guest-toolchain": "node scripts/sync-guest-toolchain.mjs --check",
     "check:knip": "knip",
     "check:publint": "turbo run check:publint",
     "check:publish-names": "node scripts/check-publish-names.mjs",
@@ -43,6 +44,7 @@
     "changeset": "changeset",
     "changeset:create": "bash scripts/create-changeset.sh",
     "version": "changeset version && node scripts/sync-scaffold-versions.mjs",
+    "sync:guest-toolchain": "node scripts/sync-guest-toolchain.mjs",
     "release": "turbo run build && changeset publish",
     "prepare": "[ \"$(git rev-parse --git-dir 2>/dev/null)\" != \"$(git rev-parse --git-common-dir 2>/dev/null)\" ] || lefthook install --force",
     "test:aai-studio-server": "pnpm --filter aai-studio-server test"

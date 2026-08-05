@@ -83,14 +83,18 @@ jobs:
           pnpm run check:markdown
           pnpm run check:publish-names
           pnpm run check:doc-examples
-      # The two quality ratchets. They lived only in scripts/check.sh, which CI
+      # The quality ratchets. They lived only in scripts/check.sh, which CI
       # never invokes, so they were enforced solely by the pre-push hook — and
-      # `git push --no-verify` skipped them entirely. Both are pure git/fs
+      # `git push --no-verify` skipped them entirely. All are pure git/fs
       # checks needing no build, and check-escape-hatches degrades to a skip
-      # when there is no origin/main to diff against.
+      # when there is no origin/main to diff against. check:guest-toolchain
+      # catches a lockfile that no longer matches the installed toolchain,
+      # which would otherwise bake a different tree into every guest image
+      # than the one this repo tested with.
       - run: |
           pnpm run check:hatches
           pnpm run check:file-length
+          pnpm run check:guest-toolchain
 
   # Unit tests sharded by package — run in parallel
   test:
