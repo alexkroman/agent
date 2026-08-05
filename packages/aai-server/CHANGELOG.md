@@ -1,5 +1,15 @@
 # @alexkroman1/aai-server
 
+## 3.4.2
+
+### Patch Changes
+
+- Updated dependencies [56efab9]
+- Updated dependencies [1c034af]
+  - @alexkroman1/aai@5.7.0
+  - aai-guest@0.4.3
+  - @alexkroman1/aai-ui@5.7.0
+
 ## 3.4.1
 
 ### Patch Changes

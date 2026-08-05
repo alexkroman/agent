@@ -1,5 +1,22 @@
 # @alexkroman1/aai-cli
 
+## 5.7.0
+
+### Minor Changes
+
+- 56efab9: Require `aai login` (or ASSEMBLYAI_API_KEY) instead of prompting for a pasted key, and name the server when login can't reach it
+
+### Patch Changes
+
+- 56efab9: Never resolve the developer's real global config dir under vitest, and isolate the config dir for CLIs the e2e suite spawns
+- 56efab9: Skip non-UTF-8 files on push and workspace sync instead of silently corrupting them
+- 56efab9: Report skipped files in JSON results, clear the studio link on delete, reject unknown flags, and unwrap nested server errors
+- 56efab9: Validate the repo-controlled slug in .aai/project.json for every command, not just the slug-scoped ones
+- Updated dependencies [56efab9]
+- Updated dependencies [1c034af]
+  - @alexkroman1/aai@5.7.0
+  - @alexkroman1/aai-ui@5.7.0
+
 ## 5.6.0
 
 ### Minor Changes
