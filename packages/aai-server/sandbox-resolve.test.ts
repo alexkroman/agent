@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryPlatformEvents } from "./platform-events.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import type { Sandbox } from "./sandbox.ts";
-import { createMemorySandboxRegistry } from "./sandbox-registry.ts";
+import { createMemorySandboxDirectory } from "./sandbox-directory.ts";
 import { brokerSessionUrl, resolveSandbox, watchAgentInvalidation } from "./sandbox-resolve.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { appDbSecretName, createMemorySecretStore } from "./secret-store.ts";
@@ -473,13 +473,14 @@ describe("cross-replica registry keeps one sandbox per slug fleet-wide", () => {
     // because the slot cache is per-replica and Modal load-balances every
     // request independently.
     const seeded = await seedAgent("shared");
-    const registry = createMemorySandboxRegistry("replica-b");
-    registry.registerPeer("shared", {
+    const directory = createMemorySandboxDirectory();
+    const version = await seeded.store.getAgentVersion("shared");
+    directory.setPeer("shared", version ?? 1, {
       sessionUrl: "wss://peer.test:443/websocket",
       guestOrigin: "wss://peer.test:443",
     });
     try {
-      const brokered = await brokerSessionUrl("shared", { ...seeded, registry });
+      const brokered = await brokerSessionUrl("shared", { ...seeded, directory });
       expect(brokered).toEqual({
         ok: true,
         sessionUrl: "wss://peer.test:443/websocket",
@@ -491,18 +492,41 @@ describe("cross-replica registry keeps one sandbox per slug fleet-wide", () => {
     }
   });
 
+  /**
+   * The name carries the deploy version, so a peer's sandbox for an OLD
+   * version is not a match. The lease table it replaced could hand out a guest
+   * running superseded code until the owner's heartbeat stopped.
+   */
+  it("ignores a peer running a superseded version", async () => {
+    const seeded = await seedAgent("versioned");
+    const directory = createMemorySandboxDirectory();
+    const version = (await seeded.store.getAgentVersion("versioned")) ?? 1;
+    directory.setPeer("versioned", version - 1, {
+      sessionUrl: "wss://stale-peer.test:443/websocket",
+      guestOrigin: "wss://stale-peer.test:443",
+    });
+    try {
+      const brokered = await brokerSessionUrl("versioned", { ...seeded, directory });
+      expect(brokered).toMatchObject({ sessionUrl: "wss://tunnel.test:443/websocket" });
+    } finally {
+      seeded.unwatch();
+    }
+  });
+
   it("spawns locally when the peer's agent row is gone", async () => {
-    // A deleted agent's registry rows outlive the row by up to one lease.
-    // Routing to them would resurrect a 404, so the version read gates it.
+    // A deleted agent's sandbox can still be RUNNING — retirement drains it
+    // for minutes — and routing to it would resurrect a 404, so the version
+    // read gates it.
     const seeded = await seedAgent("deleted-soon");
-    const registry = createMemorySandboxRegistry("replica-b");
-    registry.registerPeer("deleted-soon", {
+    const directory = createMemorySandboxDirectory();
+    const version = (await seeded.store.getAgentVersion("deleted-soon")) ?? 1;
+    directory.setPeer("deleted-soon", version, {
       sessionUrl: "wss://peer.test:443/websocket",
       guestOrigin: "wss://peer.test:443",
     });
     try {
       await seeded.deleteAgent();
-      const brokered = await brokerSessionUrl("deleted-soon", { ...seeded, registry });
+      const brokered = await brokerSessionUrl("deleted-soon", { ...seeded, directory });
       expect(brokered).toMatchObject({ ok: false, status: 404 });
       expect(mockSpawnAgentServer).not.toHaveBeenCalled();
     } finally {
@@ -511,35 +535,84 @@ describe("cross-replica registry keeps one sandbox per slug fleet-wide", () => {
   });
 
   it("prefers its own warm resident over a peer", async () => {
-    // A local resident costs nothing; the registry read is a DB round trip
-    // on a path where the caller is waiting.
+    // A local resident costs nothing; the directory lookup is a round trip on
+    // a path where the caller is waiting.
     const seeded = await seedAgent("warm-local");
-    const registry = createMemorySandboxRegistry("replica-b");
+    const directory = createMemorySandboxDirectory();
     try {
-      const first = await brokerSessionUrl("warm-local", { ...seeded, registry });
+      const first = await brokerSessionUrl("warm-local", { ...seeded, directory });
       expect(first).toMatchObject({ ok: true, sessionUrl: "wss://tunnel.test:443/websocket" });
-      registry.registerPeer("warm-local", {
+      const version = (await seeded.store.getAgentVersion("warm-local")) ?? 1;
+      directory.setPeer("warm-local", version, {
         sessionUrl: "wss://peer.test:443/websocket",
         guestOrigin: "wss://peer.test:443",
       });
-      const second = await brokerSessionUrl("warm-local", { ...seeded, registry });
+      const second = await brokerSessionUrl("warm-local", { ...seeded, directory });
       expect(second).toMatchObject({ sessionUrl: "wss://tunnel.test:443/websocket" });
     } finally {
       seeded.unwatch();
     }
   });
 
-  it("spawns locally when a registry read fails, rather than failing the broker", async () => {
-    const seeded = await seedAgent("registry-down");
-    const registry = {
-      register: () => Promise.resolve(),
-      unregister: () => Promise.resolve(),
-      findPeer: () => Promise.reject(new Error("registry unreachable")),
-    };
+  it("spawns locally when a directory lookup fails, rather than failing the broker", async () => {
+    const seeded = await seedAgent("directory-down");
+    const directory = { find: () => Promise.reject(new Error("modal unreachable")) };
     try {
       await expect(
-        brokerSessionUrl("registry-down", { ...seeded, registry }),
+        brokerSessionUrl("directory-down", { ...seeded, directory }),
       ).resolves.toMatchObject({ ok: true, sessionUrl: "wss://tunnel.test:443/websocket" });
+    } finally {
+      seeded.unwatch();
+    }
+  });
+});
+
+/**
+ * The name is what makes one deploy one sandbox fleet-wide, so losing the race
+ * for it is the one remaining path to a duplicate — and it must resolve to the
+ * winner's guest, not to a second spawn.
+ */
+describe("losing the sandbox name race", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  });
+
+  it("routes to the peer that won it", async () => {
+    const seeded = await seedAgent("raced");
+    const directory = createMemorySandboxDirectory();
+    const version = (await seeded.store.getAgentVersion("raced")) ?? 1;
+    mockSpawnAgentServer.mockImplementationOnce(() => {
+      // The winner publishes as our create fails.
+      directory.setPeer("raced", version, {
+        sessionUrl: "wss://winner.test:443/websocket",
+        guestOrigin: "wss://winner.test:443",
+      });
+      const err = new Error("a sandbox named agent-x-v1 is already running");
+      err.name = "SandboxNameTakenError";
+      return Promise.reject(err);
+    });
+    try {
+      const brokered = await brokerSessionUrl("raced", { ...seeded, directory });
+      expect(brokered).toMatchObject({ ok: true, sessionUrl: "wss://winner.test:443/websocket" });
+    } finally {
+      seeded.unwatch();
+    }
+  });
+
+  it("answers a retryable 503 when the winner has not published yet", async () => {
+    const seeded = await seedAgent("raced-early");
+    const directory = createMemorySandboxDirectory();
+    mockSpawnAgentServer.mockImplementationOnce(() => {
+      const err = new Error("a sandbox named agent-y-v1 is already running");
+      err.name = "SandboxNameTakenError";
+      return Promise.reject(err);
+    });
+    try {
+      const brokered = await brokerSessionUrl("raced-early", { ...seeded, directory });
+      // Retryable, never a 404: the agent exists, its sandbox is mid-boot
+      // somewhere else in the fleet.
+      expect(brokered).toMatchObject({ ok: false, status: 503 });
     } finally {
       seeded.unwatch();
     }

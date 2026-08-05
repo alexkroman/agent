@@ -34,6 +34,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import { createOwnedMap } from "@alexkroman1/aai/internal";
 import { resolveHarnessPath } from "aai-server/constants";
 import { createKeyedLock, withLock } from "aai-server/platform-barrel";
+import { studioSandboxName } from "aai-server/sandbox-directory";
 import { spawnWarmHarness, type WarmHarness } from "aai-server/sandbox-vm";
 import { studioLlmModelId } from "./studio-llm.ts";
 import { createPreviewDeployer, type PreviewTarget } from "./studio-preview.ts";
@@ -419,6 +420,10 @@ export function createStudioSessionBroker(
       harnessPath: options.harnessPath ?? resolveHarnessPath(),
       slug: project,
       role: "studio",
+      // Fleet-wide name: Modal refuses a duplicate, so two replicas racing
+      // this cold path cannot both spawn — even if the lease read above
+      // missed (see studioSandboxName).
+      name: studioSandboxName(scope, project),
     });
     let token: string;
     try {

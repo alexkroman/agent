@@ -387,6 +387,10 @@ model) is the security boundary.
 - `sandbox-resolve.ts` — slot-based slug→sandbox resolution +
   `watchAgentInvalidation`, the event-driven sandbox invalidation (split
   from sandbox.ts, which owns one sandbox's lifecycle)
+- `sandbox-directory.ts` / `sandbox-peers.ts` — the fleet-wide answer to "is
+  some replica already serving this deploy?", which is a Modal sandbox NAME
+  (`agent-<hash(slug)>-v<version>`) rather than a lease table — see "No
+  horizontal sandbox scaling" below
 - `platform-events.ts` — `PlatformEvents`: cross-replica change
   notifications (`watchAgents`, `watchWorkspace`, `watchChat`,
   `watchScopeProjects`) as SIGNALS (handlers re-read rows, never trust
@@ -2651,37 +2655,53 @@ needs to come back — the one constraint that survives any reintroduction:
 sessions dial the sandbox directly, so the guest-reported session count is
 the only honest load signal, and the broker is the only routing point.
 
-**"One" means fleet-wide, not per replica** (`sandbox-registry.ts` +
-`aai_platform.sandbox_registry`). The slot cache is per-replica and the web
-service autoscales, so for a while each replica spawned its own guest for
-the same slug. That is not an edge case — Modal load-balances every request
+**"One" means fleet-wide, not per replica — and MODAL enforces it**
+(`sandbox-directory.ts`). The slot cache is per-replica and the web service
+autoscales, so for a while each replica spawned its own guest for the same
+slug. That is not an edge case — Modal load-balances every request
 independently, so a page load and the project switch a minute later
-routinely land on different replicas. The registry is a lease table: the
-owning replica heartbeats its resident (`startRegistryHeartbeat`), and a
-COLD broker (no local resident) routes to a live peer's guest instead of
-spawning a duplicate. Sessions dial the guest's tunnel directly, so a
-peer's URL serves a client exactly as well as a local one.
+routinely land on different replicas.
+
+A guest sandbox's fleet-wide identity is its Modal **name**
+(`agent-<hash(slug)>-v<version>`): `sandboxes.create` throws
+`AlreadyExistsError` when the name is taken, and `sandboxes.fromName` returns
+only a RUNNING sandbox. So a COLD broker (no local resident) asks Modal
+whether some replica is already serving this deploy and routes to that
+guest's tunnel — sessions dial the guest directly, so a peer's URL serves a
+client exactly as well as a local one.
+
+This replaced `aai_platform.sandbox_registry`, a lease table the owning
+replica heartbeated every 10s. What went with it: the heartbeat timer and its
+per-tick ownership re-check (which existed so every detach path — retire,
+terminate, idle self-exit, lost guest, blue-green handover — converged on an
+unregister without knowing the registry existed), the pg_cron sweep for
+crashed replicas' rows, `replicaId` on the agent path, and the accepted
+**stale-lease window**: the old design could hand out a dead peer URL for up
+to one lease after a crash, and a retired sandbox's URL for up to one
+heartbeat. A name is released when the sandbox stops, so `fromName` cannot
+return something that is not running.
 
 Three properties worth keeping:
 
-- **Ownership is re-checked every heartbeat tick**, so EVERY detach path —
-  retire, terminate, idle self-exit, a lost guest, a blue-green handover —
-  converges on an unregister without any of them knowing the registry
-  exists. Those paths are the delicate ones; none of them gained an
-  obligation.
-- **Peers trust the lease, because a peer's guest is not theirs to probe** —
-  the `/manage/*` bearer is per-sandbox and stays with its owner. So a
-  crashed replica's rows can hand out a dead URL for up to one lease, and a
-  local retire for up to one heartbeat. Both heal on the client's re-broker
-  (`session-core.ts` re-brokers per attempt).
+- **The name carries the deploy VERSION.** A blue-green handover
+  (`handoverSlot`) boots the replacement while the old resident drains, so a
+  slug legitimately has two live sandboxes for minutes and a version-less
+  name would collide. It also makes the peer lookup version-EXACT — the lease
+  table could hand out a guest running superseded code until the owner's
+  heartbeat stopped.
 - **The peer route is gated on the agents row still existing.** A deleted
-  agent's registry rows outlive the row, and routing to them would
-  resurrect a 404.
+  agent's sandbox can still be running (retirement drains it for minutes),
+  and routing to it would resurrect a 404. The same `getAgentVersion` read
+  serves as both that gate and half the name.
+- **Losing the name race routes to the winner** (`awaitBrokeredUrl`). A
+  create that lost is the ONE remaining path to a duplicate; it comes back as
+  `SandboxNameTakenError`, and the broker returns to the directory rather than
+  retrying a spawn that can only lose again.
 
-The registry is read at the broker, NOT subscribed to: it only matters at
-the moment a cold broker runs, and that moment already reads the database.
-A change stream would be a second mechanism answering the same question —
-the duplication rule that shaped `watchAgentInvalidation`.
+The directory is read at the broker, NOT subscribed to: it only matters at
+the moment a cold broker runs. A change stream would be a second mechanism
+answering the same question — the duplication rule that shaped
+`watchAgentInvalidation`.
 
 ### One studio sandbox per project, fleet-wide
 
@@ -2697,6 +2717,22 @@ records the chat URL + chat token the browser gets, plus the guest origin +
 per-sandbox token a PEER needs to reinstall the session. `ensureSession` is
 now a three-step ladder: local map hit → reuse; registry row → **adopt**
 (`studio-session-adopt.ts`); neither → cold spawn + claim.
+
+**The studio lease SURVIVES the move to Modal names, and this is not an
+oversight.** Agent sandboxes dropped their registry entirely — a name answers
+"does this deploy have a live sandbox", which is all the agent broker asks.
+The studio asks a second question the owner's idle sweeper depends on: "has
+any replica used this project recently?" A name cannot express that, and
+nothing else can either — a peer's chat turns go browser→guest DIRECTLY, so
+the owner (whose sweeper decides eviction) observes no activity at all, and
+without the touched lease it would evict a guest another replica is actively
+serving mid-conversation. The studio spawn IS named
+(`studioSandboxName(scope, project)`), which adds what the lease could not
+guarantee: two replicas racing the cold path cannot both spawn even when the
+lease read missed. Closing the rest — deriving `chatToken`/`sandboxToken` from
+the sandbox id and reducing the row to pure activity — needs a guest-side
+last-used signal over the control socket the owner already holds; that is the
+direction, not the current state.
 
 - **Adoption cannot use the control socket** — a harness accepts exactly
   ONE (`/ws` answers 409 to a second authenticated dial), and the owner has
@@ -2726,9 +2762,11 @@ now a three-step ladder: local map hit → reuse; registry row → **adopt**
   replica hands back the same one. Re-minting per broker call would revoke
   the token every other tab is holding.
 
-Both registries carry a `replicaId` (`ServiceConfig.replicaId`, a per-process
-UUID) and both fall back to independent per-replica behaviour when there is
-no platform database — dev and tests are a single process with no peers.
+The studio registry carries a `replicaId` (`ServiceConfig.replicaId`, a
+per-process UUID) and falls back to independent per-replica behaviour when
+there is no platform database — dev and tests are a single process with no
+peers. The agent path needs no such identity: a NAME answers "does this
+exist", never "who made it".
 
 ### Platform sandbox (aai-server)
 

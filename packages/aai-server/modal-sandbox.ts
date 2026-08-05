@@ -36,7 +36,7 @@ import { readFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { errorMessage } from "@alexkroman1/aai";
 import { CONTAINED_ENV } from "@alexkroman1/aai/runtime";
-import { ModalClient, Probe, type SandboxCreateParams } from "modal";
+import { AlreadyExistsError, ModalClient, Probe, type SandboxCreateParams } from "modal";
 import { debug } from "./_debug-log.ts";
 import { keyedMemoAsync, memoAsync } from "./_memo.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
@@ -47,6 +47,7 @@ import {
   guestSandboxResources,
 } from "./modal-sandbox-env.ts";
 import type { RpcWebSocket } from "./rpc-transport.ts";
+import { agentSandboxName, type SandboxDirectory } from "./sandbox-directory.ts";
 import { resolveSandboxRole, type SpawnIdentity, sandboxTags } from "./sandbox-role.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
 import {
@@ -121,7 +122,24 @@ export type ModalSpawnContext = {
     params: SandboxCreateParams,
     imageTag?: string,
   ): Promise<ModalSandboxLike>;
+  /**
+   * A RUNNING sandbox by name, or null. This is the fleet-wide sandbox
+   * directory (see sandbox-directory.ts) — Modal's control plane answers
+   * "is some replica already serving this deploy?", which is what replaced a
+   * lease table with a heartbeat.
+   */
+  lookupGuestSandbox(name: string): Promise<ModalSandboxLike | null>;
 };
+
+/** Thrown when a spawn lost the name race — another replica created it first. */
+export class SandboxNameTakenError extends Error {
+  readonly sandboxName: string;
+  constructor(sandboxName: string) {
+    super(`a sandbox named ${sandboxName} is already running`);
+    this.name = "SandboxNameTakenError";
+    this.sandboxName = sandboxName;
+  }
+}
 
 // ── Configuration ────────────────────────────────────────────────────────────
 
@@ -234,6 +252,17 @@ async function buildContext(): Promise<ModalSpawnContext> {
       const image = await harnessImage(code);
       return client.sandboxes.create(app, image, params);
     },
+    async lookupGuestSandbox(name) {
+      // `fromName` throws NotFoundError when no RUNNING sandbox holds the
+      // name — which is the answer, not an error. Any other failure also
+      // reads as "no sandbox": the caller then spawns, and a duplicate is
+      // caught by the name itself at create time.
+      try {
+        return await client.sandboxes.fromName(appName, name);
+      } catch {
+        return null;
+      }
+    },
   };
 }
 
@@ -317,6 +346,7 @@ export async function spawnModalWarm(
       // Explicit idle entrypoint: the exec'd harness is what holds the sandbox
       // active, so its exit is what starts the idle timer.
       command: ["sleep", "infinity"],
+      ...(opts.name && { name: opts.name }),
       // The host dials in through this tunnel; the harness's bearer-token
       // check is what keeps the public tunnel URL from being an open door.
       encryptedPorts: [GUEST_PORT],
@@ -408,6 +438,13 @@ export async function spawnModalAgentServer(
     workerSha256: string;
     agentEnv: Record<string, string>;
     imageTag?: string | undefined;
+    /**
+     * The fleet-wide sandbox NAME for this deploy (see sandbox-directory.ts).
+     * Modal refuses a duplicate, which is what keeps one deploy to one
+     * sandbox platform-wide with no lease table. Omitted by callers that are
+     * deliberately unnamed (nothing today).
+     */
+    name?: string | undefined;
   },
   ctx?: ModalSpawnContext,
   fetchFn?: GuestFetch,
@@ -420,19 +457,32 @@ export async function spawnModalAgentServer(
   const role = resolveSandboxRole({ slug: opts.slug });
 
   const t0 = performance.now();
-  const sb = await context.createGuestSandbox(
-    code,
-    {
-      command: ["sleep", "infinity"],
-      encryptedPorts: [GUEST_PORT],
-      readinessProbe: GUEST_READINESS_PROBE(),
-      timeoutMs: limits.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
-      idleTimeoutMs: limits.idleTimeoutMs ?? DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
-      ...resourceParams,
-      tags: sandboxTags(role, opts.slug),
-    },
-    opts.imageTag,
-  );
+  const sb = await context
+    .createGuestSandbox(
+      code,
+      {
+        command: ["sleep", "infinity"],
+        encryptedPorts: [GUEST_PORT],
+        readinessProbe: GUEST_READINESS_PROBE(),
+        timeoutMs: limits.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
+        idleTimeoutMs: limits.idleTimeoutMs ?? DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
+        ...resourceParams,
+        tags: sandboxTags(role, opts.slug),
+        ...(opts.name && { name: opts.name }),
+      },
+      opts.imageTag,
+    )
+    .catch((err: unknown) => {
+      // Lost the name race: another replica created this deploy's sandbox
+      // between our directory lookup and this create. Distinguished so the
+      // caller can go back to the directory instead of retrying a spawn that
+      // can only lose again — this is the ONE remaining path to a duplicate,
+      // and the name is what closes it.
+      if (opts.name && err instanceof AlreadyExistsError) {
+        throw new SandboxNameTakenError(opts.name);
+      }
+      throw err;
+    });
   try {
     // Boot artifacts land on the sandbox filesystem BEFORE exec — the guest
     // reads (and hash-verifies) them at boot; nothing arrives over a channel.
@@ -488,6 +538,38 @@ export async function spawnModalAgentServer(
     await sb.terminate().catch(() => undefined);
     throw new Error(`Modal agent-server spawn failed: ${errorMessage(err)}`, { cause: err });
   }
+}
+
+// ── Fleet-wide sandbox directory ─────────────────────────────────────────────
+
+/**
+ * The Modal-backed {@link SandboxDirectory}: ask Modal whether a RUNNING
+ * sandbox holds this deploy's name, and if so where its tunnel is.
+ *
+ * Never throws. A lookup that fails for any reason reads as "no sandbox" and
+ * the caller spawns — where the name itself catches a duplicate. That is the
+ * right failure direction: a false miss costs one extra sandbox at worst,
+ * while a thrown lookup would fail a broker call that could have been served.
+ */
+export function createModalSandboxDirectory(ctx?: ModalSpawnContext): SandboxDirectory {
+  return {
+    async find(slug, version) {
+      const name = agentSandboxName(slug, version);
+      try {
+        const context = ctx ?? (await modalContext());
+        const sb = await context.lookupGuestSandbox(name);
+        if (!sb) return null;
+        const tunnels = await sb.tunnels();
+        const tunnel = tunnels[GUEST_PORT];
+        if (!tunnel) return null;
+        const origin = `wss://${tunnel.host}:${tunnel.port}`;
+        return { sessionUrl: guestWsUrl(origin, GUEST_ROUTES.session), guestOrigin: origin };
+      } catch (err) {
+        debug("Sandbox directory lookup failed", { name, error: errorMessage(err) });
+        return null;
+      }
+    },
+  };
 }
 
 // ── Test-only internals ──────────────────────────────────────────────────────

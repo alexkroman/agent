@@ -19,7 +19,12 @@ import {
 } from "./blob-storage.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./chat-store.ts";
-import { isModalConfigured, modalRequiredError, prewarmModal } from "./modal-sandbox.ts";
+import {
+  createModalSandboxDirectory,
+  isModalConfigured,
+  modalRequiredError,
+  prewarmModal,
+} from "./modal-sandbox.ts";
 import type { OrchestratorOpts } from "./orchestrator.ts";
 import { schedulePlatformSweeps } from "./pg-cron.ts";
 import {
@@ -36,8 +41,7 @@ import {
   type SlugMutationLock,
 } from "./platform-lock.ts";
 import { createRealtimePlatformEvents, ensureRealtimeSetup } from "./realtime-events.ts";
-import { describeSandboxBackend } from "./sandbox-backend.ts";
-import { createPgSandboxRegistry } from "./sandbox-registry.ts";
+import { describeSandboxBackend, resolveSandboxBackend } from "./sandbox-backend.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import {
   createMemorySecretStore,
@@ -90,10 +94,11 @@ export type ServiceConfig = OrchestratorOpts & {
   sql?: SqlExec;
   /**
    * This process's identity in the cross-replica registries. Stable for the
-   * life of the container and unique across them — a registry excludes the
-   * caller's OWN rows from its peer lookup, so two replicas sharing an id
-   * would each hide the other's sandbox and the duplicate spawns would come
-   * straight back.
+   * life of the container and unique across them — the studio session
+   * registry excludes the caller's OWN rows from its peer lookup, so two
+   * replicas sharing an id would each hide the other's sandbox and the
+   * duplicate spawns would come straight back. (The AGENT side needs no
+   * identity: a sandbox NAME answers "does this exist", not "who made it".)
    */
   replicaId: string;
 };
@@ -252,11 +257,14 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
   const slots = createSlotCache();
   // Per-process, not per-host: Modal can run several containers of the same
   // app anywhere, and two of them sharing an identity is exactly the failure
-  // the registries exist to prevent (see ServiceConfig.replicaId).
+  // the studio session registry exists to prevent (see
+  // ServiceConfig.replicaId).
   const replicaId = randomUUID();
-  // Cross-replica sandbox registry — only with a platform database. Without
-  // one there is a single process, so a registry could have no peers to find.
-  const registry = sql ? createPgSandboxRegistry(sql, { replicaId }) : undefined;
+  // The fleet-wide sandbox directory is Modal itself (sandbox-directory.ts):
+  // a sandbox's identity is its NAME, so there is no table to register in and
+  // nothing to heartbeat. Only the Modal backend has a control plane to ask.
+  const directory =
+    resolveSandboxBackend(env) === "modal" ? createModalSandboxDirectory() : undefined;
   // Browser-session auth: Supabase when configured, the dev-token
   // implementation in local dev (same policy as the in-memory stores —
   // production can never resolve it). Unconfigured production still serves
@@ -282,7 +290,7 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
     replicaId,
     ...(appDb && { appDb }),
     ...(sql && { sql }),
-    ...(registry && { registry }),
+    ...(directory && { directory }),
   };
 }
 

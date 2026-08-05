@@ -30,6 +30,7 @@ import {
 import { DEFAULT_SANDBOX_IMAGE, spawnModalAgentServer, spawnModalWarm } from "./modal-sandbox.ts";
 import type { GuestConnection } from "./rpc-schemas.ts";
 import { resolveSandboxBackend } from "./sandbox-backend.ts";
+import { agentSandboxName } from "./sandbox-directory.ts";
 import type { SpawnIdentity } from "./sandbox-role.ts";
 import {
   describeSubprocessBundle,
@@ -74,6 +75,8 @@ export type WarmHarness = {
 
 export type AgentSpawnOptions = {
   slug: string;
+  /** Deploy version — half the fleet-wide sandbox name (sandbox-directory.ts). */
+  version: number;
   workerCode: string;
   env: Record<string, string>;
   harnessPath: string;
@@ -217,8 +220,14 @@ export async function spawnAgentServer(
   };
   switch (resolveSandboxBackend(process.env)) {
     case "subprocess":
+      // No name: a single process has no fleet to be unique within, and the
+      // subprocess backend has no Modal control plane to enforce one.
       return spawners.subprocess(common);
     default:
-      return spawners.modal({ ...common, imageTag: opts.imageTag });
+      return spawners.modal({
+        ...common,
+        imageTag: opts.imageTag,
+        name: agentSandboxName(opts.slug, opts.version),
+      });
   }
 }

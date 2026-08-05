@@ -15,8 +15,8 @@ import { type AppDatabases, type AppDbMeta, parseAppDbMeta } from "./app-databas
 import { BROKER_READY_TIMEOUT_MS } from "./constants.ts";
 import type { PlatformEvents, Unwatch } from "./platform-events.ts";
 import { createSandbox, type Sandbox } from "./sandbox.ts";
-import { findPeerSession, startRegistryHeartbeat } from "./sandbox-peers.ts";
-import type { SandboxRegistry } from "./sandbox-registry.ts";
+import type { SandboxDirectory } from "./sandbox-directory.ts";
+import { findPeerSession } from "./sandbox-peers.ts";
 import {
   type AgentSlot,
   deleteSlot,
@@ -59,12 +59,13 @@ export type ResolveSandboxOpts = {
    */
   readyTimeoutMs?: number;
   /**
-   * Cross-replica sandbox registry (see sandbox-registry.ts): residents built
-   * here are registered and heartbeated, and the broker's cold path routes to
-   * a live peer's guest instead of spawning a duplicate. Absent (dev/tests,
-   * no platform database) leaves every replica independent, as before.
+   * Fleet-wide sandbox directory (see sandbox-directory.ts): the broker's cold
+   * path asks Modal whether some replica is already serving this deploy, and
+   * routes there instead of spawning a duplicate. Absent (the subprocess
+   * backend, tests) leaves every replica independent — correct for a single
+   * process, which has no peers.
    */
-  registry?: SandboxRegistry;
+  directory?: SandboxDirectory;
   /**
    * True once this replica is shutting down. The broker then refuses to boot
    * a NEW sandbox, answering a retryable 503 instead.
@@ -158,6 +159,10 @@ function buildSandboxFromParts(
     workerCode: parts.workerCode,
     env,
     slug,
+    // The deploy version is half the fleet-wide sandbox NAME, which is what
+    // keeps one deploy to one sandbox platform-wide (sandbox-directory.ts) and
+    // still lets a blue-green handover run two versions at once.
+    version: parts.version,
     ...(parts.imageTag !== null && { imageTag: parts.imageTag }),
     onSandboxLost: () => onSandboxLost(sandbox),
   });
@@ -323,7 +328,6 @@ async function rebuildSlot(
 
     slot.version = parts.version;
     slot.sandbox = sandbox;
-    startRegistryHeartbeat(slug, sandbox, opts);
     return sandbox;
   } catch (err) {
     if (created) deleteSlot(slots, slug);
@@ -393,10 +397,10 @@ export async function brokerSessionUrl(
   opts: ResolveSandboxOpts,
 ): Promise<BrokeredSession> {
   // Cold on this replica: prefer a live peer replica's guest over spawning a
-  // duplicate (see sandbox-registry.ts). Sessions dial the guest directly, so
+  // duplicate (see sandbox-directory.ts). Sessions dial the guest directly, so
   // a peer's URL serves the client exactly as well as a local one. A warm
-  // local resident always wins — it costs nothing and the registry read is a
-  // database round trip on a path where the caller is waiting.
+  // local resident always wins — it costs nothing, and the lookup is a
+  // round trip on a path where the caller is waiting.
   const resident = opts.slots.get(slug)?.sandbox;
   if (!(resident && isLive(resident))) {
     const peer = await findPeerSession(slug, opts);
@@ -411,6 +415,26 @@ export async function brokerSessionUrl(
   }
   const sandbox = await resolveSandbox(slug, opts);
   if (!sandbox) return { ok: false, status: 404 };
+  return await awaitBrokeredUrl(slug, sandbox, opts);
+}
+
+/** Postgres-free: `SandboxNameTakenError` by name, so this module imports no Modal. */
+function isNameTaken(err: unknown): boolean {
+  return (err as { name?: unknown } | null)?.name === "SandboxNameTakenError";
+}
+
+/**
+ * Wait for a resolved sandbox to publish its URLs, within the broker's cap.
+ *
+ * Split from `brokerSessionUrl` to keep each readable: this half is entirely
+ * about the three ways the wait can end (ready, still booting, lost the name
+ * race), and the other is about which sandbox to wait on.
+ */
+async function awaitBrokeredUrl(
+  slug: string,
+  sandbox: Sandbox,
+  opts: ResolveSandboxOpts,
+): Promise<BrokeredSession> {
   // Both resolve off the same readiness promise — no extra wait.
   const readyTimeoutMs = opts.readyTimeoutMs ?? BROKER_READY_TIMEOUT_MS;
   const ready = Promise.all([sandbox.sessionUrl(), sandbox.guestOrigin()]);
@@ -427,6 +451,18 @@ export async function brokerSessionUrl(
         : await ready;
     return { ok: true, sessionUrl, guestOrigin };
   } catch (err) {
+    // Lost the NAME race: a peer created this deploy's sandbox between our
+    // directory lookup and the create (sandbox-directory.ts). Go back to the
+    // directory rather than retrying a spawn that can only lose again — the
+    // peer's guest serves this client exactly as well as a local one.
+    if (isNameTaken(err)) {
+      debug("Lost the sandbox name race; routing to the peer", { slug });
+      const peer = await findPeerSession(slug, opts);
+      if (peer) return peer;
+      // The winner has not published a tunnel yet, or already went away: a
+      // retryable 503, same as any other still-booting sandbox.
+      return { ok: false, status: 503, cause: err };
+    }
     // Still booting is not the same as failed to boot, and only the first is
     // worth a quiet line: the failure path already logs (and detaches) via
     // `Sandbox VM failed to start`.

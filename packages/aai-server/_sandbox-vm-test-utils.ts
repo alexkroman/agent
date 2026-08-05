@@ -68,6 +68,7 @@ export function createFakeGuestSocket(): FakeGuestSocket {
 export function baseOpts(overrides?: Partial<AgentSpawnOptions>): AgentSpawnOptions {
   return {
     slug: "test-agent",
+    version: 1,
     workerCode: 'export default { name: "test" };',
     env: { FOO: "bar" },
     harnessPath: "/tmp/harness.mjs",

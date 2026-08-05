@@ -56,6 +56,7 @@ function makeSandboxOptions(overrides?: Partial<SandboxOptions>): SandboxOptions
     workerCode: 'export default { name: "test" };',
     env: { AAI_ENV_TEST: "1" },
     slug: "test-agent",
+    version: 1,
     ...overrides,
   };
 }

@@ -64,18 +64,6 @@ const SWEEP_PREVIEW_ARCHIVE = guarded(
 );
 
 /**
- * Expired sandbox registrations. `findPeer` (sandbox-registry.ts) already
- * filters on `expires_at`, so this is dead-row hygiene, not correctness — it
- * keeps the table proportional to live sandboxes rather than to every
- * sandbox the fleet has ever run, including those whose owning replica died
- * without unregistering.
- */
-const SWEEP_SANDBOX_REGISTRY = guarded(
-  "aai_platform.sandbox_registry",
-  "delete from aai_platform.sandbox_registry where expires_at <= now()",
-);
-
-/**
  * Expired studio session registrations — the same hygiene as above for the
  * studio broker's own registry (aai-studio-server/studio-session-registry.ts),
  * whose rows carry guest credentials and so should not linger past their
@@ -154,11 +142,6 @@ end $$`;
  * idempotent, so both services installing the same job set is correct. */
 export const PLATFORM_CRON_JOBS: readonly CronJob[] = [
   { name: "aai-sweep-rate-limits", schedule: "7 * * * *", command: SWEEP_RATE_LIMITS },
-  {
-    name: "aai-sweep-sandbox-registry",
-    schedule: "*/30 * * * *",
-    command: SWEEP_SANDBOX_REGISTRY,
-  },
   { name: "aai-sweep-studio-sessions", schedule: "*/30 * * * *", command: SWEEP_STUDIO_SESSIONS },
   { name: "aai-sweep-orphan-previews", schedule: "23 * * * *", command: SWEEP_ORPHAN_PREVIEWS },
   {
@@ -187,6 +170,10 @@ export const RETIRED_CRON_JOBS: readonly string[] = [
   // a dropped connection releases them, so there is no lease to expire and
   // no aai_platform.slug_locks table to sweep.
   "aai-sweep-slug-locks",
+  // A guest sandbox's fleet-wide identity is its Modal NAME now
+  // (sandbox-directory.ts), released when the sandbox stops — so there is no
+  // aai_platform.sandbox_registry table and nothing to expire.
+  "aai-sweep-sandbox-registry",
 ];
 
 /**
