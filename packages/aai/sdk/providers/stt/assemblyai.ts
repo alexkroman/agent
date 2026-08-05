@@ -57,19 +57,53 @@ export interface AssemblyAIOptions {
    */
   streamingUrl?: string;
   /**
+   * Languages to bias the model toward, sent as the `language_codes` connection
+   * parameter (e.g. `["en"]`, `["en", "es"]`).
+   *
+   * Universal-3.5 Pro **code-switches across 18 languages by default**, so an
+   * unset value is not "English" — it is "detect per turn". That default costs
+   * accuracy on a monolingual line in a way that is easy to misread as an audio
+   * problem: measured against tau2-bench, English utterances came back
+   * transliterated into Devanagari and Hebrew script
+   * (`Hello? Any update?` → `हेलो एनी अपडेट`), including an authentication turn,
+   * so the tool call built from it was garbage. Nothing in the transcript says
+   * "wrong language" — it reads as a mis-hearing.
+   *
+   * A single-element list pins one language and keeps code-switching off; omit
+   * for a genuinely multilingual line.
+   */
+  languages?: string[];
+  /**
    * Voice focus (voice isolation) mode, sent as the `voice_focus` connection
    * parameter. Defaults to `"near-field"` to suppress background noise for
    * close-mic / phone audio. Set to `""` (or `"off"`) to disable.
    */
   voiceFocus?: "near-field" | "far-field" | "off" | string;
   /**
-   * Minimum end-of-turn silence (ms) before the service commits a `final`,
-   * sent as the `min_turn_silence` connection parameter. This is where
-   * endpointing lives: mid-utterance pauses shorter than this aggregate into
-   * one final instead of splitting the request across turns. Defaults to
-   * `DEFAULT_MIN_TURN_SILENCE_MS` (2000).
+   * Silence (ms) before the service runs its end-of-turn check, sent as the
+   * `min_turn_silence` connection parameter. At this point the model asks
+   * whether the turn reads as COMPLETE — if it does the turn ends, if not a
+   * partial is emitted and the turn stays open. So this is the latency floor on
+   * utterances that really did finish. Defaults to
+   * `DEFAULT_MIN_TURN_SILENCE_MS` (1600).
+   *
+   * To tolerate longer mid-utterance pauses, raise {@link maxTurnSilenceMs}
+   * instead — and never above it. This is a minimum and that is a maximum, so a
+   * value above the ceiling means the check can never fire before the
+   * content-blind force-end closes the turn, which is the split this knob is
+   * usually reached for in order to prevent.
    */
   minTurnSilenceMs?: number;
+  /**
+   * Maximum silence (ms) before the service force-ends a turn regardless of
+   * content, sent as the `max_turn_silence` connection parameter. This is the
+   * pause-tolerance knob: it bounds only utterances that never read as
+   * complete, so raising it costs an ordinary finished sentence nothing.
+   * Defaults to `DEFAULT_MAX_TURN_SILENCE_MS` (3500); the service's own default
+   * is 1536. Raise it for callers who dictate confirmation numbers or
+   * addresses, and keep it above {@link minTurnSilenceMs}.
+   */
+  maxTurnSilenceMs?: number;
   /**
    * Deadline for one streaming connect attempt — socket open *and* the
    * server's `Begin` message. Defaults to `STT_CONNECT_TIMEOUT_MS`

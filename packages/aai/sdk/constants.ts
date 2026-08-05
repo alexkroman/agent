@@ -283,22 +283,6 @@ export const DEFAULT_START_FAILURE_PHRASE =
 export const DEFAULT_INTERRUPTION_MIN_DURATION_MS = 500;
 
 /**
- * Minimum end-of-turn silence (ms) the AssemblyAI streaming STT waits before
- * emitting a `final` (`min_turn_silence`). Endpointing lives in the STT
- * provider, not the transport: disfluent speech (mid-utterance pauses, self-
- * corrections, false starts) would otherwise split one intended utterance
- * across several finals, each committing a turn — the agent answering half the
- * request while the rest is still being spoken, then that same breath barging
- * in and cancelling the reply. The cost is latency on a request that really did
- * end at the first sentence; the failure it prevents costs the whole call. 2000
- * rather than 1500 because 1500 still split real speech: on Full-Duplex-Bench
- * v3's human recordings, "I'm looking for, um, for a new [pause] let me think
- * [pause] a desk" committed a final after "for a new" and the real request came
- * as a separate turn — and that benchmark localizes it to silence, not word
- * accuracy (self-corrections 100%, hesitations 33%, pauses 57%). */
-export const DEFAULT_MIN_TURN_SILENCE_MS = 2000;
-
-/**
  * False-interruption recovery window (pipeline mode). A barge-in triggered by
  * an interim STT transcript aborts the agent's in-flight reply — but if no
  * final transcript ever commits (STT noise, a hallucinated partial), the
@@ -312,14 +296,20 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 2000;
  * caller is still mid-utterance only defers the resume, which the speaking
  * edge's idle watchdog (`DEFAULT_SPEECH_IDLE_TIMEOUT_MS`, internal) then
  * releases. Named rather than `{@link}`ed: it is `@internal`, so the docs build
- * excludes it and a link would fail to resolve. Note the value equals
- * {@link DEFAULT_MIN_TURN_SILENCE_MS}: measured from roughly the same instant
- * (this window restarts on every partial, and the last partial lands at about
- * the end of speech, while the final is withheld for `min_turn_silence` after
- * it), so on its own it raced every genuine barge-in's own final. Raising it
- * past endpointing would ALSO fix that, but only for a provider whose
- * endpointing is known here — which the transport cannot see, since it receives
- * an already-resolved `SttOpener`. Hence the deferral, which needs no such
+ * excludes it and a link would fail to resolve. Note how this sits against
+ * endpointing: it is ABOVE {@link DEFAULT_MIN_TURN_SILENCE_MS} (1600) but BELOW
+ * {@link DEFAULT_MAX_TURN_SILENCE_MS} (3500). Both are measured from roughly
+ * the same instant (this window restarts on every partial, and the last partial
+ * lands at about the end of speech, while the final is withheld for endpointing
+ * after it), so a barge-in on an utterance that reads COMPLETE now has its final
+ * arrive first and this window never fires — the healthy case, and the one the
+ * pre-3000 defaults had. An utterance that never reads complete still loses to
+ * the ceiling, so the deferral remains load-bearing for exactly that case, where
+ * the caller is by construction still mid-sentence. The effective semantics are
+ * "this long after the utterance ENDS", not "after the barge-in". Raising it past
+ * endpointing would also work, but only for a provider whose endpointing is
+ * known here — which the transport cannot see, since it receives an
+ * already-resolved `SttOpener`. Hence the deferral, which needs no such
  * knowledge. See the module doc in `host/transports/pipeline-recovery.ts`.
  */
 export const DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS = 2000;
@@ -370,7 +360,10 @@ export {
   PLAYBACK_JITTER_MS,
   PLAYBACK_REFILL_MS,
 } from "./client-audio-constants.ts";
-
+export {
+  DEFAULT_MAX_TURN_SILENCE_MS,
+  DEFAULT_MIN_TURN_SILENCE_MS,
+} from "./endpointing-constants.ts";
 // Pipeline/provider tuning (dead-air cover phrases, false-interruption
 // recovery, TTS batching, STT framing, provider connect budgets) lives in its
 // own module for file-length reasons; re-exported here so `@alexkroman1/aai`

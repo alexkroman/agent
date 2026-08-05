@@ -1,5 +1,4 @@
 import { agent } from "@alexkroman1/aai";
-import { assemblyAIStt } from "@alexkroman1/aai/stt";
 import type { StateSlot } from "./shared.ts";
 import { storeView } from "./shared.ts";
 import { createDefaultState } from "./store.ts";
@@ -41,11 +40,10 @@ export default agent({
   // authenticated one may reach the browser.
   syncState: storeView,
 
-  // Callers read order numbers and ten-digit item numbers in bursts with
-  // pauses inside one utterance, so end-of-turn silence has to be longer than
-  // the default or "W seven six seven … eight oh seven two" splits in two.
-  stt: assemblyAIStt({ minTurnSilenceMs: 2200 }),
-
+  // Callers read order numbers and ten-digit item numbers in bursts with pauses
+  // inside one utterance ("W seven six seven … eight oh seven two"). The default
+  // pipeline's `max_turn_silence` already tolerates that; reach for
+  // `assemblyAIStt({ maxTurnSilenceMs })` only if your callers pause longer.
   systemPrompt,
   greeting:
     "Thanks for calling. Before I can look anything up I'll need to find your account — " +

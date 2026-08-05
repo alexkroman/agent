@@ -14,6 +14,7 @@ import { createRequire } from "node:module";
 import { defineCommand, runMain } from "citty";
 import type { ServerMessage } from "../packages/aai/sdk/protocol.ts";
 import { lenientParse, ServerMessageSchema } from "../packages/aai/sdk/protocol.ts";
+import { loadKokoroTts } from "./_load-test-tts.ts";
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
@@ -818,15 +819,8 @@ async function main(cfg: Config): Promise<void> {
   console.log();
 
   console.log("Generating TTS audio with Kokoro...");
-  const { KokoroTTS } = await import("kokoro-js");
-  const require = createRequire(import.meta.url);
-  const voicesPath = require.resolve("kokoro-js").replace(/dist.*/, "voices/");
-  const tts = await KokoroTTS.from_pretrained(
-    "onnx-community/Kokoro-82M-v1.0-ONNX",
-    // @ts-expect-error voices_path is supported at runtime but missing from types
-    { dtype: "q8", device: "cpu", voices_path: voicesPath },
-  );
-  const chunkFrames = await generateAudioFrames(tts as unknown as TTS, cfg.voice, cfg.chunkMs);
+  const tts = await loadKokoroTts();
+  const chunkFrames = await generateAudioFrames(tts as TTS, cfg.voice, cfg.chunkMs);
   console.log(`Generated ${chunkFrames.length} utterances (pre-encoded frames)\n`);
 
   console.log(

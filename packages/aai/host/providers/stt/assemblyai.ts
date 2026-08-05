@@ -3,6 +3,7 @@
 import { AssemblyAI, type StreamingTranscriber } from "assemblyai";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import {
+  DEFAULT_MAX_TURN_SILENCE_MS,
   DEFAULT_MIN_TURN_SILENCE_MS,
   DEFAULT_STT_PROMPT,
   STT_CONNECT_MAX_RETRIES,
@@ -140,6 +141,43 @@ function normalizeAgentContext(text: string): string | undefined {
  * exactOptionalPropertyTypes, does not accept our widened `string` option
  * types via conditional spreads.
  */
+/**
+ * The streaming endpoint to dial, or `undefined` to leave the SDK's own.
+ *
+ * An explicit `streamingUrl` wins over `region`: it is a deliberate choice (a
+ * staging cluster, an A/B against the default host) and must not be silently
+ * overwritten by the residency shorthand. Otherwise EU data residency points
+ * the socket at the EU host. The US default is left to the SDK, whose own
+ * default already carries the versioned path — a stale copy here would override
+ * an SDK path bump.
+ */
+function resolveStreamingUrl(opts: AssemblyAIOptions): string | undefined {
+  if (opts.streamingUrl) return opts.streamingUrl;
+  return opts.region === "eu" ? ASSEMBLYAI_STREAMING_EU_URL : undefined;
+}
+
+/**
+ * The endpointing pair, resolved together because they are only correct
+ * together.
+ *
+ * BOTH halves are always sent. The service defaults them independently — the
+ * minimum from the `mode` preset, the maximum to 1536 — so sending only the
+ * minimum is how it ends up ABOVE the maximum, at which point the completeness
+ * check can never fire before the content-blind force-end has closed the turn
+ * and every ending comes from the acoustic fallback that splits utterances.
+ * That is exactly the regression this function exists to make un-writable; see
+ * both constants' docs in sdk/constants.ts.
+ */
+function resolveEndpointing(opts: AssemblyAIOptions): {
+  minTurnSilence: number;
+  maxTurnSilence: number;
+} {
+  return {
+    minTurnSilence: opts.minTurnSilenceMs ?? DEFAULT_MIN_TURN_SILENCE_MS,
+    maxTurnSilence: opts.maxTurnSilenceMs ?? DEFAULT_MAX_TURN_SILENCE_MS,
+  };
+}
+
 function buildTranscriberParams(
   opts: AssemblyAIOptions,
   openOpts: SttOpenOptions,
@@ -162,20 +200,18 @@ function buildTranscriberParams(
     connectTimeout: opts.connectTimeoutMs ?? STT_CONNECT_TIMEOUT_MS,
     maxConnectionRetries: opts.maxConnectRetries ?? STT_CONNECT_MAX_RETRIES,
     connectionRetryDelay: STT_CONNECT_RETRY_DELAY_MS,
-    // Endpointing lives here, not in the transport: the service holds its
-    // `final` until this much end-of-turn silence has passed, so a disfluent
-    // utterance's pauses aggregate service-side. See the constant's doc.
-    minTurnSilence: opts.minTurnSilenceMs ?? DEFAULT_MIN_TURN_SILENCE_MS,
+    // Endpointing lives here, not in the transport — see resolveEndpointing.
+    ...resolveEndpointing(opts),
   };
-  // Streaming endpoint. An explicit `streamingUrl` wins over `region` — it is
-  // a deliberate choice (staging cluster, A/B against the default host) and
-  // must not be silently overwritten by the residency shorthand. Otherwise EU
-  // data residency points the socket at the EU host; the US default is left to
-  // the SDK, whose own default already carries the versioned path, so only
-  // these two cases name an endpoint here.
-  const streamingUrl =
-    opts.streamingUrl ?? (opts.region === "eu" ? ASSEMBLYAI_STREAMING_EU_URL : undefined);
+  const streamingUrl = resolveStreamingUrl(opts);
   if (streamingUrl) params.websocketBaseUrl = streamingUrl;
+  // Language biasing. Sent only when the agent asked for it: an absent
+  // `language_codes` keeps the model's native code-switching, which is the
+  // right default for a multilingual line and the wrong one for a monolingual
+  // one (see the option's doc).
+  if (opts.languages !== undefined && opts.languages.length > 0) {
+    params.languageCodes = opts.languages;
+  }
   // Contextual biasing is opt-in: DEFAULT_STT_PROMPT is empty, so an agent
   // that sets no sttPrompt sends no `prompt` at all — as does `sttPrompt: ""`.
   // DEFAULT_STT_PROMPT documents what a useful prompt buys and costs.

@@ -17,12 +17,26 @@
  * is its own kind of broken. The wait between them backs off exponentially, so
  * a long chain thins out rather than chattering.
  *
+ * **Every phrase must be purely declarative — a status report, never a request
+ * for patience.** Filler is spoken into an open microphone, so anything that
+ * asks something of the caller gets ANSWERED, and the answer costs a turn the
+ * conversation then has to unwind. Measured on EVA airline record 1.1.2: the
+ * agent emitted "Still working on that.", the caller replied "All right, I'll
+ * hold" — which barged in, since it clears `DEFAULT_MIN_BARGE_IN_WORDS` — the
+ * resume replayed the interrupted sentence verbatim, and the agent was still
+ * answering "I'll hold" ("There is no need to hold; the change is complete")
+ * two turns later, after the caller had said goodbye. One filler cost a wasted
+ * turn, a redundant repetition, and two turns of desync.
+ *
+ * "Still working on that" and "Just a moment longer" both read as asking the
+ * caller to wait. The replacements state what is happening and stop.
+ *
  * @internal
  */
 export const DEAD_AIR_COVER_PHRASES: readonly string[] = [
-  "Still working on that.",
-  "Just a moment longer.",
-  "Almost there.",
+  "I'm still checking on this.",
+  "This is taking a little longer than usual.",
+  "I'm still on it.",
 ];
 
 /**
@@ -37,9 +51,20 @@ export const DEAD_AIR_COVER_PHRASES: readonly string[] = [
  * assumes the line is dead. Cover is time-based instead: any gap this long
  * gets filler, whether or not the model already spoke.
  *
+ * **Must stay above the MEDIAN tool turn, not below it.** This is cover for the
+ * long-chain outlier; at 2000 it was under the ordinary case and fired on
+ * essentially every tool turn instead. Measured on the EVA airline run: tool
+ * turns averaged 6.24s, so 2000 fired on 93% of them (`pretoolspeech_rate`
+ * 0.933) and twice on the 8.7s and 10.5s turns — turning a latency problem into
+ * a verbosity one (`verbosity_or_filler_rate` 0.38,
+ * `redundant_statements_rate` 0.60) and, once, derailing the call outright (see
+ * {@link DEAD_AIR_COVER_PHRASES}). 5000 sits below the 6.24s mean but above the
+ * turns that complete normally, so a routine single tool call now finishes
+ * unaccompanied and only a genuine chain draws cover.
+ *
  * @internal
  */
-export const DEFAULT_DEAD_AIR_COVER_MS = 2000;
+export const DEFAULT_DEAD_AIR_COVER_MS = 5000;
 
 /**
  * Ceiling on the dead-air cover's exponential backoff, so a long tool chain
