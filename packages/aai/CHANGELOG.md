@@ -1,5 +1,15 @@
 # @alexkroman1/aai
 
+## 5.8.0
+
+### Minor Changes
+
+- d140e9b: Add CloseableDb.reserve() for connection-affine Postgres work (advisory locks, session SET)
+
+### Patch Changes
+
+- d140e9b: createServer().close() drops idle keep-alive connections instead of waiting out their timers, so `aai dev` shuts down and restarts promptly. In-flight requests still finish.
+
 ## 5.7.0
 
 ### Patch Changes
