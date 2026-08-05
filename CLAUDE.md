@@ -1850,7 +1850,7 @@ defaults that affect agent behavior:
 | `errorPhrase` | `"Sorry, I had a problem just then. Could you say that again?"` (`DEFAULT_ERROR_PHRASE`) | `pipeline-turn-outcome.ts` | Pipeline only: spoken when the turn's LLM stream fails, so a provider outage hands the conversation back instead of going silent. A failed turn produces no text, so nothing would otherwise reach TTS and the only trace is a `llm` session error the browser surfaces without a sound. `""` disables. |
 | dead-air cover | 2000 ms (`DEFAULT_DEAD_AIR_COVER_MS`) | `pipeline-stream.ts` | Pipeline only: tool execution that sends nothing to TTS for this long gets a `DEAD_AIR_COVER_PHRASES` filler — unlike `holdPhrase` this is time-based, so it still fires after the model has spoken, and repeats across a tool chain with the wait doubling each time. `holdPhrase: ""` disables both. |
 | `falseInterruptionTimeoutMs` | 2000 (`DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS`) | `constants.ts` | Pipeline only: a partial-triggered barge-in that never commits a user turn (STT noise) resumes the interrupted reply via a synthetic continuation turn after this window. A mid-turn cut resumes from the `[interrupted]` history marker (`DEFAULT_FALSE_INTERRUPTION_PROMPT`); a cut during the client playback tail — the reply finished server-side but was still playing out — resumes with a prompt quoting the estimated last-heard words (`buildTailResumePrompt`), unless less than `TAIL_RESUME_MIN_UNHEARD_MS` of audio was unheard. 0 disables. |
-| `maxHistory` | 200 | `constants.ts:52` | Sliding window of conversation messages retained. |
+| `maxHistory` | 200 | `constants.ts:52` | Sliding window of conversation messages retained. **The LLM view is trimmed by `capLlm`, not `cap`** (`pipeline-history.ts`): that view holds tool-call/result PAIRS, and an index trim can land between an assistant `tool-call` message and the `tool` message answering it. Both providers reject an unmatched tool result outright (OpenAI: "messages with role 'tool' must be a response to a preceding message with 'tool_calls'"), so every remaining turn of the call failed at the provider and the caller heard `errorPhrase` instead of a reply. Turn sizes vary — 2 messages for a text-only turn, 4 for one tool call, more for a chain — so the window drifts out of alignment with turn boundaries on its own; nothing about the conversation has to be unusual. Only the FRONT is trimmed, so dropping leading `tool` messages is sufficient. A uniform turn size hides the whole class: 4 divides 200, so every trim lands on a turn boundary. |
 | resume grace | 120,000 (`SESSION_RESUME_GRACE_MS`) | `constants.ts` | How long a disconnected session's per-session tool state (`ctx.state`) survives awaiting a `?sessionId=<id>` resume — the runtime's stateMap sweep (in-guest on the platform, in-process under `aai dev`) waits it out, cancelled when the session resumes. Sized above the browser client's worst-case automatic-reconnect span (~105s); the client reconnects with the sessionId from the `config` frame, so the resumed session finds its state under the same key. |
 | `builtinTools` | `DEFAULT_BUILTIN_TOOLS` (`think`, `remember`, `recall`, `calculate`) | `constants.ts` | Cognitive built-ins on by default: private reasoning scratchpad, session notes, safe calculator. Set `builtinTools` explicitly (including `[]`) to override. `web_search`/`visit_webpage`/`get_page_design`/`fetch_json`/`run_code` remain opt-in. A custom or relayed tool with the same name wins — the built-in is dropped. |
 
@@ -1896,6 +1896,26 @@ you only need to list one package.
   copies lost their 20s argon2 timeout; the aai-server excludes named two
   deleted files while missing a live integration test; and the templates
   copy skipped two of its four test files.
+- **`aai` has a randomized interleaving fuzz over the pipeline transport**
+  (`host/integration/pipeline-fuzz.integration.test.ts`, run by
+  `pnpm --filter @alexkroman1/aai test:integration`; needs no API keys). The
+  scripted specs in `host/transports/` each assert ONE interleaving; this drives
+  random event orderings and checks GLOBAL invariants — turn serialization, no
+  callback after `stop()`, no write to a closed provider session, reply-text
+  integrity, no audio after a reply's own `replyDone` — plus the strongest
+  oracle, validating every LLM request payload the way Anthropic and OpenAI do
+  (an unmatched `tool` result is a hard 400). That oracle is what surfaced the
+  `capLlm` bug above. Two rules when extending it: **an oracle must be a
+  property a real provider or client enforces**, and **the generator must not
+  itself break a provider contract** — an early draft emitted TTS audio at
+  arbitrary moments, and the truncation oracle fired on the generator rather
+  than the transport. It also asserts COVERAGE FLOORS (barge-in, tool
+  execution, history trimming, reply completion): an all-green fuzz proves
+  nothing if the random walk never entered the state, so a suddenly greener
+  result is usually a broken generator, not a fixed bug. Discovery and
+  regression are separate jobs — findings get a deterministic spec of their own
+  (the `capLlm` one lives in `pipeline-history.test.ts`), because whether a
+  random walk reaches a given alignment is luck.
 - Slow/integration tests have separate per-package configs
   (`vitest.slow.config.ts`, `vitest.integration.config.ts`) to avoid running
   during `vitest run`.

@@ -41,6 +41,31 @@ function cap(arr: unknown[]): void {
 }
 
 /**
+ * Cap the LLM view, then heal a tool-call/result pair the trim split.
+ *
+ * {@link cap} is a pure index trim, and the LLM view — unlike the text-only
+ * `conversation` view — holds PAIRS: an assistant message carrying `tool-call`
+ * parts followed by the `tool` message carrying their results. When the trim
+ * boundary lands between the two, the call is dropped and the result survives
+ * with nothing to answer. Both providers reject that outright — OpenAI with
+ * "messages with role 'tool' must be a response to a preceding message with
+ * 'tool_calls'", Anthropic with an unexpected-`tool_result` error — so every
+ * turn for the rest of the call fails at the provider and the caller hears
+ * `errorPhrase` instead of a reply.
+ *
+ * Turn sizes vary (a text-only turn is 2 messages, a one-tool turn 4, a tool
+ * chain more), so the window drifts out of alignment with turn boundaries on
+ * its own; nothing about the conversation has to be unusual. Only the FRONT of
+ * the window is trimmed, so a leading `tool` message is the only shape this can
+ * produce — dropping those is sufficient, and it costs at most a few messages
+ * below the cap.
+ */
+function capLlm(arr: ModelMessage[]): void {
+  cap(arr);
+  while (arr.length > 0 && arr[0]?.role === "tool") arr.shift();
+}
+
+/**
  * A `reasoning` part is worth replaying only if it carries provider metadata
  * that the originating provider needs to reconstruct the turn:
  * - Anthropic thinking blocks (`anthropic.signature`) or redacted thinking
@@ -135,14 +160,14 @@ export function createPipelineHistory(seed?: readonly Message[]): PipelineHistor
         const cleaned = withoutReasoning(m);
         if (cleaned) llm.push(cleaned);
       }
-      cap(llm);
+      capLlm(llm);
     },
     seed(msgs: readonly Message[]): void {
       if (msgs.length === 0) return;
       conversation.push(...msgs);
       cap(conversation);
       llm.push(...msgs.map(toModelMessage));
-      cap(llm);
+      capLlm(llm);
     },
     reset(): void {
       conversation.length = 0;
