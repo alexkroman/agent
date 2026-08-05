@@ -373,13 +373,18 @@ you only need to list one package.
   Unit configs exclude that glob and `test:integration` selects it, so a new
   integration test lands in the right tier with no config edit. It replaced a
   hand-kept filename list duplicated between each `exclude` array and the
-  `VITEST_INCLUDE` env var — which had drifted in both directions at once:
-  `aai` and `aai-studio-server` excluded five files that no longer existed,
-  while `aai-server`'s `agent-server-integration.test.ts` (it boots a REAL
-  harness subprocess) was in neither list and so ran in the 5s unit tier with
-  no retry. Note `aai-cli`'s `integration.test.ts` /
-  `integration-edge-cases.test.ts` are deliberately UNIT tests despite the
-  name; only the `.integration.` infix means the tier.
+  `VITEST_INCLUDE` env var, which had gone stale: `aai` and
+  `aai-studio-server` between them excluded five files that no longer existed.
+  **Only the `.integration.` infix decides the tier**, so several tests are
+  deliberately UNIT tests despite "integration" in the name — `aai-cli`'s
+  `integration.test.ts` / `integration-edge-cases.test.ts`, and
+  `aai-server`'s `agent-server-integration.test.ts`. That last one really does
+  boot a real harness subprocess (hence that package's 20s timeout) and is a
+  standing judgement call: it is the only test covering
+  `subprocess-sandbox.ts` / `warm-harness.ts` / `sandbox-vm.ts`, so promoting
+  it to the integration tier drops aai-server's measured line coverage ~92% →
+  88.74% and trips its 89% floor. Moving it means restoring that coverage
+  first, not lowering the floor.
 - In tests, use `flush()` from `_test-utils.ts` instead of
   `await new Promise(r => setTimeout(r, 0))` to yield to microtasks — and note
   `flush()` is MICROTASK-only. For a full macrotask yield use `tick()`, and for
