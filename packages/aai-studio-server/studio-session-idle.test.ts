@@ -98,15 +98,21 @@ describe("createSessionReaper", () => {
       expect(warm.disposed).toBe(1);
     });
 
-    test("still disposes the sandbox when the harness teardown rejects", async () => {
-      // A guest that died mid-request rejects on dispose; swallowing it is
-      // what keeps one bad teardown from wedging the sweep.
-      const { reaper, sessions, addEntry } = setup();
-      const { entry, warm, key } = addEntry("alpha", 0);
-      warm[Symbol.asyncDispose] = () => Promise.reject(new Error("guest gone"));
+    test("gives up the claim and the fleet row before awaiting the teardown", async () => {
+      // Ordering is the point: the sandbox teardown is the slow part, and a
+      // client re-brokering during it must find the key free and the fleet row
+      // gone rather than racing a half-disposed entry.
+      const { reaper, sessions, calls, addEntry } = setup();
+      const { entry, key } = addEntry("alpha", 0);
+      let observed: { claimed: boolean; released: string[] } | undefined;
+      entry.warm[Symbol.asyncDispose] = () => {
+        observed = { claimed: sessions.get(key) !== undefined, released: [...calls.release] };
+        return Promise.resolve();
+      };
 
-      await expect(reaper.disposeEntry(entry)).resolves.toBeUndefined();
-      expect(sessions.get(key)).toBeUndefined();
+      await reaper.disposeEntry(entry);
+
+      expect(observed).toEqual({ claimed: false, released: ["scope/alpha"] });
     });
 
     test("does not evict a replacement that already re-claimed the key", async () => {
