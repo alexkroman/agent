@@ -73,7 +73,13 @@ describe("toBlocks", () => {
 const noop = (): void => undefined;
 
 describe("Composer", () => {
-  const composerProps = { disabled: false, placeholder: "p", onSend: noop };
+  const composerProps = {
+    disabled: false,
+    placeholder: "p",
+    value: "",
+    onValueChange: noop,
+    onSend: noop,
+  };
 
   test("idle: shows an enabled Send button and no Stop", () => {
     const html = renderToStaticMarkup(<Composer {...composerProps} />);
@@ -83,19 +89,42 @@ describe("Composer", () => {
 
   test("while a turn streams, the button becomes an enabled Stop", () => {
     // The whole point of the stop button: a hung turn used to leave the
-    // composer fully disabled with nothing to click.
+    // composer with nothing to click.
     const html = renderToStaticMarkup(<Composer {...composerProps} busy={true} onStop={noop} />);
     expect(html).toContain('aria-label="Stop"');
     expect(html).not.toContain('aria-label="Send"');
-    // The input locks, but the Stop button itself stays clickable.
-    expect(html).toMatch(/<input[^>]*\sdisabled=/);
     expect(html).not.toMatch(/<button[^>]*\sdisabled=/);
   });
 
-  test("busy with no stop handler falls back to a disabled Send", () => {
-    const html = renderToStaticMarkup(<Composer {...composerProps} busy={true} />);
-    expect(html).toContain('aria-label="Send"');
+  test("the input stays live while a turn streams, so a follow-up can be queued", () => {
+    // It used to be disabled, which silently swallowed anything typed
+    // mid-turn — the whole reason the queue exists.
+    const html = renderToStaticMarkup(<Composer {...composerProps} busy={true} onStop={noop} />);
+    expect(html).not.toMatch(/<textarea[^>]*\sdisabled=/);
+  });
+
+  test("the LLM being down is what disables the composer", () => {
+    const html = renderToStaticMarkup(<Composer {...composerProps} disabled={true} />);
+    expect(html).toMatch(/<textarea[^>]*\sdisabled=/);
     expect(html).toMatch(/<button[^>]*\sdisabled=/);
+  });
+
+  test("queued follow-ups render with a per-message dismiss", () => {
+    const html = renderToStaticMarkup(
+      <Composer
+        {...composerProps}
+        busy={true}
+        onStop={noop}
+        queued={[
+          { id: "q0", text: "add tests" },
+          { id: "q1", text: "fix lint" },
+        ]}
+      />,
+    );
+    expect(html).toContain("add tests");
+    expect(html).toContain("fix lint");
+    expect(html).toContain('aria-label="Remove queued message 1"');
+    expect(html).toContain('aria-label="Remove queued message 2"');
   });
 });
 

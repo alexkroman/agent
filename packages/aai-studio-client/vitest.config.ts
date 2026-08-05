@@ -31,8 +31,8 @@ export default defineConfig({
       ],
       // Ratchet: floors only move up. Raise to ~2-3 points below actuals
       // whenever a coverage run shows comfortable headroom.
-      // Actuals (2026-08): lines ~95%, functions ~91%, branches ~96%, statements ~96%.
-      thresholds: { lines: 93, functions: 88, branches: 92, statements: 93 },
+      // Actuals (2026-08): lines ~99%, functions ~96%, branches ~95%, statements ~97%.
+      thresholds: { lines: 96, functions: 92, branches: 92, statements: 94 },
     },
   },
 });

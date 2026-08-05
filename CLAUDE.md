@@ -744,6 +744,37 @@ voice agents without the CLI:
   composer's **Stop button** (`chat.tsx`): `useChat().stop()` aborts the
   SSE fetch to the sandbox, whose request-close handler aborts
   `streamText` and in-flight tools in the guest.
+- **The composer QUEUES follow-ups typed mid-turn**
+  (`aai-studio-client/src/chat-queue.ts`), Claude-Code style: the input stays
+  live while the agent works, Enter parks the message in a visible, dismissable
+  row above the composer, and it is sent when the turn settles — one turn at a
+  time, FIFO. It used to be disabled, which silently swallowed anything typed
+  mid-turn.
+
+  **The AI SDK has no queue of its own**, and this is not an oversight to work
+  around at the call site: `sendMessage` goes straight to `makeRequest`, which
+  resets the chat status and overwrites the live `activeResponse` (its
+  `SerialJobExecutor` serializes stream-update jobs, not requests), so a second
+  send while a turn is open runs two turns against one guest session and
+  interleaves their end-of-turn workspace syncs. `sendAutomaticallyWhen` is the
+  nearest native hook but only re-sends the EXISTING message list, and
+  appending a user message mid-stream corrupts the transcript (the SDK's
+  `write` compares its streaming message against `lastMessage`, so a message
+  pushed underneath it gets pushed a second time). Hence a queue held OUTSIDE
+  `messages`, flushed on the settle.
+
+  Three rules the reducer exists to hold, each covering a bug that is invisible
+  without it: the flush is **latched** from dispatch until the turn is observed
+  (`sendMessage` awaits before flipping the status, so a re-render in that
+  window sees `ready` with the next item at the head and would start a
+  concurrent turn — the same window makes a submit queue and keeps Publish
+  locked, which is why `hasPendingWork` is one predicate serving both); a
+  **Stop hands the queue back to the composer** rather than firing or dropping
+  it (`drainText` — an explicit interrupt must not start the next turn behind
+  the user's back, and the composer is a textarea partly so it can hold what
+  comes back); and a **failed turn drains the same way**, because an `error`
+  status never flushes while every submit joins a non-empty queue — parking it
+  there wedges the composer permanently.
 - **Web access**: the SDK's keyless `visit_webpage`, `get_page_design`,
   and `web_search` builtins (DuckDuckGo-backed — no key anywhere), mapped
   into the guest tool set (`createGuestWebTools` in `aai-guest/

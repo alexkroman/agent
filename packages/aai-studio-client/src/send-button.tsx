@@ -8,10 +8,12 @@ import type { KeyboardEvent } from "react";
 
 /**
  * True when Enter should submit. `isComposing` means Enter is confirming an
- * IME candidate, not the message — every text input must honor it.
+ * IME candidate, not the message — every text input must honor it. Shift+Enter
+ * is the newline escape the chat composer (a textarea) needs; on a single-line
+ * field it simply never fires.
  */
 export function isEnterSubmit(e: KeyboardEvent): boolean {
-  return e.key === "Enter" && !e.nativeEvent.isComposing;
+  return e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing;
 }
 
 /** The indigo icon-button shell (size comes from the caller: h-9/h-10). */

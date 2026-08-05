@@ -8,9 +8,17 @@ import { useChat } from "@ai-sdk/react";
 import { Markdown } from "@alexkroman1/aai-ui";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import clsx from "clsx";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { StickToBottom } from "use-stick-to-bottom";
 import type { ChatSession, StudioStatus } from "./api.ts";
+import {
+  drainText,
+  EMPTY_QUEUE,
+  hasPendingWork,
+  nextToFlush,
+  type QueuedMessage,
+  queueReducer,
+} from "./chat-queue.ts";
 import { LlmStatusNote } from "./llm-status-note.tsx";
 import { createResilientFetch } from "./resilient-fetch.ts";
 import { isEnterSubmit, SEND_BUTTON_CLASS, SendIcon, StopIcon } from "./send-button.tsx";
@@ -39,10 +47,13 @@ type ChatPanelProps = {
   /** Called after each finished assistant turn so the workspace refreshes. */
   onWorkspaceChanged: () => void;
   /**
-   * Reports whether a turn is in flight. The app gates Publish on this: the
+   * Reports whether the agent still has work to do — a turn in flight OR
+   * queued follow-ups waiting behind it. The app gates Publish on this: the
    * preview only deploys on the END-OF-TURN workspace sync (mid-turn
    * checkpoints never do — a half-finished tree must not ship), and Publish
-   * deploys the same workspace, so it must wait for the same event.
+   * deploys the same workspace, so it must wait for the same event. Queued
+   * messages count because the gap between two queued turns is a moment when
+   * no turn is in flight and the tree is still mid-edit.
    */
   onBusyChange?: ((busy: boolean) => void) | undefined;
   /**
@@ -123,38 +134,90 @@ const MessageView = memo(function MessageView({
 type ComposerProps = {
   disabled: boolean;
   placeholder: string;
+  /** Controlled input — the parent owns it so a Stop can drain the queue into it. */
+  value: string;
+  onValueChange: (value: string) => void;
   onSend: (text: string) => void;
   /** A turn is in flight: the send button becomes a Stop button. */
   busy?: boolean;
   /** Cancel the in-flight turn. Required whenever `busy` can be true. */
   onStop?: () => void;
+  /** Follow-ups waiting for the current turn to finish, oldest first. */
+  queued?: readonly QueuedMessage[];
+  onRemoveQueued?: (id: string) => void;
 };
 
 /**
  * Composer pinned to the panel bottom (1b spec). Exported for tests.
- * While a turn streams, the send button swaps to a Stop button — the one
- * escape hatch when a tool call is taking forever.
+ *
+ * The input stays live while a turn streams — submitting then QUEUES the
+ * message (the parent decides; see `hasPendingWork`) instead of it being
+ * swallowed, which is what the disabled input used to do to anyone who thought
+ * of a follow-up mid-turn.
+ *
+ * The button still swaps to Stop for the whole time a turn is in flight, even
+ * with text in the input: it is the one escape hatch when a tool call is
+ * taking forever, so it must be unconditionally reachable. Enter is what
+ * queues — the placeholder says so, and the queued rows above make the
+ * mechanism visible once something is in there.
  */
-export function Composer({ disabled, placeholder, onSend, busy = false, onStop }: ComposerProps) {
-  const [input, setInput] = useState("");
+export function Composer({
+  disabled,
+  placeholder,
+  value,
+  onValueChange,
+  onSend,
+  busy = false,
+  onStop,
+  queued = [],
+  onRemoveQueued,
+}: ComposerProps) {
   const submit = () => {
-    const text = input.trim();
-    if (!text || disabled || busy) return;
-    setInput("");
+    const text = value.trim();
+    if (!text || disabled) return;
+    onValueChange("");
     onSend(text);
   };
   const showStop = busy && onStop != null;
   return (
     <div className="flex flex-none flex-col gap-2 border-t border-line px-5 pt-4 pb-5">
-      <div className="flex items-center gap-2">
-        <input
-          className="field h-10 min-w-0 flex-1 border-line-strong"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
+      {queued.length > 0 && (
+        <ul aria-label="Queued messages" className="m-0 flex list-none flex-col gap-1 p-0">
+          {queued.map((item, index) => (
+            <li
+              key={item.id}
+              className="flex items-center gap-2 rounded-md border border-dashed border-line-strong bg-cream px-2.5 py-1.5 text-[12px] text-muted"
+            >
+              <span className="min-w-0 flex-1 truncate">{item.text}</span>
+              <button
+                type="button"
+                aria-label={`Remove queued message ${index + 1}`}
+                className="flex-none cursor-pointer border-none bg-transparent p-0 text-[14px] leading-none text-subtle hover:text-fg"
+                onClick={() => onRemoveQueued?.(item.id)}
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex items-end gap-2">
+        {/* A textarea, not an input: Shift+Enter for a newline is table stakes
+            for prompting, and a Stop that hands several queued messages back
+            (see drainText) needs a field that can hold them — a single-line
+            input silently strips the newlines between them. */}
+        <textarea
+          className="field field-sizing-content max-h-40 min-h-10 min-w-0 flex-1 resize-none border-line-strong py-2.5"
+          rows={1}
+          value={value}
+          onChange={(e) => onValueChange(e.target.value)}
           onKeyDown={(e) => {
-            if (isEnterSubmit(e)) submit();
+            if (isEnterSubmit(e)) {
+              e.preventDefault();
+              submit();
+            }
           }}
-          disabled={disabled || busy}
+          disabled={disabled}
           placeholder={placeholder}
         />
         <button
@@ -162,7 +225,7 @@ export function Composer({ disabled, placeholder, onSend, busy = false, onStop }
           aria-label={showStop ? "Stop" : "Send"}
           className={clsx("h-10 w-10", SEND_BUTTON_CLASS)}
           onClick={showStop ? onStop : submit}
-          disabled={!showStop && (disabled || busy)}
+          disabled={!showStop && disabled}
         >
           {showStop ? <StopIcon /> : <SendIcon />}
         </button>
@@ -234,18 +297,60 @@ function ProjectChat({
   const busy = status === "submitted" || status === "streaming";
   const llmReady = llmStatus?.llm === true;
 
-  // Mirror the in-flight state up to the app. The cleanup clears it on
+  // Follow-ups typed while the agent works. The composer's text lives here
+  // too, so a Stop can hand the queue back to it.
+  const [queue, dispatchQueue] = useReducer(queueReducer, EMPTY_QUEUE);
+  const [input, setInput] = useState("");
+  const pending = hasPendingWork(queue, busy);
+
+  /**
+   * Hand the queue back to the composer: the one answer to "this turn will not
+   * end normally". Used by an explicit Stop and by a failed turn — neither may
+   * fire the follow-ups (a Stop is the user taking control back, and a
+   * follow-up sent over a failed turn buries the error), and neither may eat
+   * text the user typed while waiting.
+   */
+  const drainQueueToComposer = useCallback(() => {
+    if (queue.items.length === 0) return;
+    setInput((current) => drainText(queue, current));
+    dispatchQueue({ type: "clear" });
+  }, [queue]);
+
+  // Send the head of the queue the moment a turn settles — one turn at a
+  // time, FIFO. While a turn runs, `turn-observed` releases the dispatch
+  // latch (see chat-queue.ts for why it exists at all).
+  useEffect(() => {
+    if (busy) {
+      dispatchQueue({ type: "turn-observed" });
+      return;
+    }
+    // A failed turn parks the queue, and `status` stays `error` until some
+    // request starts — but every submit joins the queue while it is non-empty,
+    // so parking it here would wedge the composer permanently.
+    if (status === "error") {
+      drainQueueToComposer();
+      return;
+    }
+    const next = nextToFlush(queue, { status, llmReady });
+    if (next === null) return;
+    dispatchQueue({ type: "dispatch" });
+    void sendMessage({ text: next });
+  }, [busy, status, llmReady, queue, sendMessage, drainQueueToComposer]);
+
+  // Mirror the outstanding-work state up to the app. The cleanup clears it on
   // unmount (project switch, back to home) so a turn left streaming in a
   // previous project can't keep Publish locked in the next one.
   useEffect(() => {
-    onBusyChange?.(busy);
+    onBusyChange?.(pending);
     return () => onBusyChange?.(false);
-  }, [busy, onBusyChange]);
+  }, [pending, onBusyChange]);
 
   // Read through refs so the registration below stays stable: re-registering
   // on every status tick would swap the function the app holds mid-publish.
-  const busyRef = useRef(busy);
-  busyRef.current = busy;
+  // `pending`, not `busy`: a note sent as its own turn while follow-ups are
+  // queued would jump the line, so it appends instead.
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
   const llmReadyRef = useRef(llmReady);
   llmReadyRef.current = llmReady;
 
@@ -256,7 +361,7 @@ function ProjectChat({
     if (!registerNotify) return;
     registerNotify((text, opts) => {
       const mode = notifyDispatch(opts, {
-        busy: busyRef.current,
+        busy: pendingRef.current,
         llmReady: llmReadyRef.current,
       });
       if (mode === "turn") {
@@ -276,6 +381,7 @@ function ProjectChat({
   }, [registerNotify, setMessages, sendMessage]);
 
   const handleStop = () => {
+    drainQueueToComposer();
     // Aborts the SSE fetch; the server sees the request signal fire and
     // cancels the LLM stream, in-flight tool calls, and the session sandbox.
     void stop();
@@ -294,7 +400,11 @@ function ProjectChat({
   }, [initialPrompt, llmReady, sendMessage, onInitialPromptSent]);
 
   const send = (text: string) => {
-    if (busy || !llmReady) return;
+    if (!llmReady) return;
+    if (pending) {
+      dispatchQueue({ type: "queue", text });
+      return;
+    }
     void sendMessage({ text });
   };
 
@@ -316,8 +426,12 @@ function ProjectChat({
         disabled={!llmReady}
         busy={busy}
         onStop={handleStop}
-        placeholder="Describe your agent…"
+        placeholder={busy ? "Queue a follow-up…" : "Describe your agent…"}
+        value={input}
+        onValueChange={setInput}
         onSend={send}
+        queued={queue.items}
+        onRemoveQueued={(id) => dispatchQueue({ type: "remove", id })}
       />
     </>
   );
