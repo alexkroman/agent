@@ -94,10 +94,32 @@ export type PreviewQueue = {
   archive(id: string): Promise<void>;
 };
 
-/** Shape a queue row's `message` must have to be worth running. */
+/** Non-JSON text is a genuinely unreadable payload, not a crash. */
+function tryParseJson(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Shape a queue row's `message` must have to be worth running.
+ *
+ * A jsonb column reaches here as a STRING, not an object, and that is the
+ * normal case rather than a corner: jobs are bound as JSON text with a
+ * `::jsonb` cast (the platform-wide pattern — see `enqueue` below), which
+ * stores a jsonb *string* rather than an object, so the driver hands the
+ * string straight back. Every sibling store carries the same tolerance and
+ * documents it — `parseDoc` in aai-server/workspace-store.ts, and the notes
+ * in agent-store.ts / chat-store.ts. Without it, EVERY job was archived as
+ * unreadable on its first claim and previews stopped deploying platform-wide,
+ * reported only by one `console.warn` per job.
+ */
 function parseJob(raw: unknown): PreviewJob | null {
-  if (typeof raw !== "object" || raw === null) return null;
-  const { scope, project, serverUrl, userId } = raw as Record<string, unknown>;
+  const value = typeof raw === "string" ? tryParseJson(raw) : raw;
+  if (typeof value !== "object" || value === null) return null;
+  const { scope, project, serverUrl, userId } = value as Record<string, unknown>;
   if (typeof scope !== "string" || typeof project !== "string") return null;
   if (typeof serverUrl !== "string") return null;
   return { scope, project, serverUrl, ...(typeof userId === "string" && { userId }) };

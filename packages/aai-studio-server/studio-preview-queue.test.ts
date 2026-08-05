@@ -109,6 +109,39 @@ describe("createPgPreviewQueue", () => {
   });
 
   /**
+   * The shape production actually stores. Binding the job as JSON TEXT with a
+   * `::jsonb` cast — what every platform store does — lands a jsonb *string*
+   * rather than an object (`jsonb_typeof` = `string` for every jsonb column
+   * on the platform), so the driver reads it back as a string. Treating that
+   * as unreadable archived every preview job on its first claim, which reads
+   * as "previews silently stopped deploying".
+   *
+   * Its siblings all carry this tolerance and say so — see `parseDoc` in
+   * aai-server/workspace-store.ts and the notes in agent-store.ts /
+   * chat-store.ts. The memory queue hands back the original object, so this
+   * is the one branch dev and tests never exercise.
+   */
+  test("reads a job back when the driver returns jsonb as a string", async () => {
+    const { sql, setRows } = fakeSql();
+    const queue = createPgPreviewQueue(sql);
+    setRows([{ msg_id: 9n, read_ct: 1, message: JSON.stringify(JOB) }]);
+    expect(await queue.claim(5)).toEqual([{ id: "9", job: JOB, attempts: 1 }]);
+  });
+
+  /** A string that is not JSON at all is still unreadable, not a crash. */
+  test("archives a string payload that is not JSON", async () => {
+    const { sql, calls, setRows } = fakeSql();
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const queue = createPgPreviewQueue(sql);
+    setRows([{ msg_id: 8n, read_ct: 1, message: "not json" }]);
+    expect(await queue.claim(5)).toEqual([]);
+    expect(calls.find((c) => c.query.includes("pgmq.archive"))?.params).toEqual([
+      PREVIEW_QUEUE,
+      "8",
+    ]);
+  });
+
+  /**
    * A payload written by a different shape must not cost a redelivery every
    * visibility timeout forever.
    */
