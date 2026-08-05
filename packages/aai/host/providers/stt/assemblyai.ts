@@ -103,8 +103,20 @@ function transcriberBufferedAmount(transcriber: StreamingTranscriber): number | 
   return typeof buffered === "number" ? buffered : undefined;
 }
 
-/** AssemblyAI's `agent_context` cap. Values longer than this are truncated. */
-const AGENT_CONTEXT_MAX_CHARS = 1750;
+/**
+ * AssemblyAI's documented `agent_context` cap ("your agent's most recent
+ * spoken reply, up to about 1,500 characters"); the service clips anything
+ * longer, in an unspecified direction.
+ *
+ * That direction is the whole reason to trim host-side at exactly this value
+ * rather than above it. This constant was 1750, which left a 250-character
+ * band where our own tail-preserving trim passed the value through and the
+ * SERVICE decided what to drop — and if it clips the tail, it drops the
+ * trailing question, which is the one part worth sending (see
+ * {@link normalizeAgentContext}). Trimming at the documented cap keeps the
+ * decision here.
+ */
+const AGENT_CONTEXT_MAX_CHARS = 1500;
 
 /**
  * Cap `text` at {@link AGENT_CONTEXT_MAX_CHARS}; `undefined` for
