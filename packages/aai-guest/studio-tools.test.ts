@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
@@ -165,6 +165,19 @@ describe("guest workspace tools", () => {
     const { files, warnings } = await snapshotWorkspace(dir);
     expect(Object.keys(files)).toEqual(["a.ts"]);
     expect(warnings.join("\n")).toContain("big.bin");
+  });
+
+  test("snapshotWorkspace skips binary files instead of mangling them", async () => {
+    const { dir } = await makeTools({ "a.ts": "x" });
+    // The coding agent's `bash` can produce real binaries (a curl'd image, a
+    // build artifact). The workspace row is a JSON path→string map, so a
+    // utf-8 read replaces every invalid byte with U+FFFD and the end-of-turn
+    // sync silently writes the mangled version back as the project's source.
+    await writeFile(path.join(dir, "logo.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff]));
+
+    const { files, warnings } = await snapshotWorkspace(dir);
+    expect(Object.keys(files)).toEqual(["a.ts"]);
+    expect(warnings.join("\n")).toContain("logo.png");
   });
 
   test("tool labels and the mutating set track the merged tool set", async () => {

@@ -1,10 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
-import * as p from "@clack/prompts";
 import envPaths from "env-paths";
 import { z } from "zod";
 import { CliError } from "./_output.ts";
-import { log, unwrapCancel } from "./_ui.ts";
+import { log } from "./_ui.ts";
 import { errorMessage, readJson, writeJson } from "./_utils.ts";
 
 /**
@@ -44,7 +45,34 @@ const ProjectConfigSchema = z.object({
 export function getConfigDir(): string {
   const override = process.env.AAI_CONFIG_DIR?.trim();
   if (override) return override;
+  // Fail-closed under vitest: never hand back the developer's real config
+  // dir. Any test reaching approveServer/ensureApiKey without an explicit
+  // AAI_CONFIG_DIR would otherwise write there, and that file is the trust
+  // anchor for `serverUrl` in `.aai/project.json` — an approved origin
+  // leaked into it lets a cloned repo receive the developer's API key and
+  // `aai secret` values with no prompt (see `resolveServerUrl`).
+  //
+  // This guard is in the code path rather than a vitest setup file because
+  // setup files are per-config and any config can omit one:
+  // `vitest.slow.config.ts` (the integration/e2e config) declared none, so
+  // `_test-setup.ts` never ran for those suites and real configs
+  // accumulated ~100 approved loopback origins plus `https://override.com`.
+  // Spawned CLI children run with VITEST cleared, so the e2e harness sets
+  // AAI_CONFIG_DIR itself (`aaiEnv` in _e2e-test-utils.ts) — both halves are
+  // needed.
+  if (process.env.VITEST) return testConfigDir();
   return envPaths("aai", { suffix: "" }).config;
+}
+
+/**
+ * Per-process throwaway config dir used only under vitest. Memoized: callers
+ * read-modify-write the same config across calls, so a fresh dir per call
+ * would silently drop what the previous one wrote.
+ */
+let _testConfigDir: string | undefined;
+function testConfigDir(): string {
+  _testConfigDir ??= mkdtempSync(path.join(tmpdir(), "aai-vitest-config-"));
+  return _testConfigDir;
 }
 
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
@@ -169,34 +197,35 @@ async function trySaveApiKey(dir: string, config: GlobalConfig, apiKey: string):
   }
 }
 
+/**
+ * The credential every platform command runs on.
+ *
+ * Two sources, in order: the key `aai login` saved, then
+ * `ASSEMBLYAI_API_KEY` for non-interactive callers (CI, scripts, the eval
+ * harnesses).
+ *
+ * There is deliberately NO "paste a key" prompt. Pasting one produced a
+ * half-configured CLI — able to push and publish while linked to no account
+ * the user could see in the studio — and it made `aai login`, which is the
+ * real onboarding path, optional in practice. It was also the riskier code
+ * path: a hidden password prompt reads stdin, so a piped invocation could
+ * have its input eaten and persisted as the API key.
+ */
 export async function ensureApiKey(configDir?: string): Promise<string> {
   const dir = configDir ?? getConfigDir();
   const config = await readGlobalConfig(dir);
   if (config.apiKey) return config.apiKey;
 
-  // Allow non-interactive usage (CI, Claude Code) via env var
+  // Non-interactive usage (CI, scripts) still authenticates by env var.
   const envKey = process.env.ASSEMBLYAI_API_KEY;
   if (envKey) {
     await trySaveApiKey(dir, config, envKey);
     return envKey;
   }
 
-  // Without a TTY there is nobody to answer the prompt — and worse, the
-  // hidden password prompt would consume piped stdin as keystrokes (e.g.
-  // eating the secret value in `echo "$SECRET" | aai secret put NAME --json`)
-  // and hang, or persist that stray input as the API key. Fail fast instead.
-  if (!process.stdin.isTTY) {
-    throw new CliError(
-      "no_api_key",
-      "No API key configured and no TTY to prompt for one.",
-      "Set the ASSEMBLYAI_API_KEY environment variable, or run `aai login` interactively once to save a key.",
-    );
-  }
-
-  const apiKey = unwrapCancel(
-    await p.password({ message: "Enter your AssemblyAI API key" }),
-    "Setup cancelled",
+  throw new CliError(
+    "not_logged_in",
+    "You're not logged in.",
+    "Run `aai login` to link your account, or set ASSEMBLYAI_API_KEY for non-interactive use.",
   );
-  await trySaveApiKey(dir, config, apiKey);
-  return apiKey;
 }

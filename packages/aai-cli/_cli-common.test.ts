@@ -17,7 +17,114 @@ const logMock = vi.hoisted(() => ({
 const silenceOutput = vi.hoisted(() => vi.fn());
 vi.mock("./_ui.ts", () => ({ log: logMock, silenceOutput }));
 
-const { runCommand, setup, sharedArgs } = await import("./_cli-common.ts");
+const { findUnknownFlags, runCommand, setup, sharedArgs, unknownFlagsForArgv } = await import(
+  "./_cli-common.ts"
+);
+
+describe("findUnknownFlags", () => {
+  const argsDef = {
+    server: { type: "string", alias: "s" },
+    force: { type: "boolean", alias: "f" },
+    json: { type: "boolean" },
+    allowMissingSecrets: { type: "boolean" },
+    dir: { type: "positional", required: false },
+  } as const;
+
+  test("accepts the kebab-case spelling of a camelCase flag", () => {
+    // citty accepts both, and the guest's in-sandbox Publish spawns
+    // `aai deploy --allow-missing-secrets --allow-preview-slug`. Matching only
+    // the camelCase name broke Publish outright.
+    expect(findUnknownFlags(["--allow-missing-secrets"], argsDef)).toEqual([]);
+    expect(findUnknownFlags(["--allowMissingSecrets"], argsDef)).toEqual([]);
+    expect(findUnknownFlags(["--no-allow-missing-secrets"], argsDef)).toEqual([]);
+  });
+
+  test("accepts declared flags, aliases, `=` forms, and negations", () => {
+    expect(
+      findUnknownFlags(
+        ["--server", "https://x.test", "-f", "--json=false", "--no-force", "somedir"],
+        argsDef,
+      ),
+    ).toEqual([]);
+  });
+
+  test("accepts the built-in help and version flags", () => {
+    expect(findUnknownFlags(["--help", "-h", "--version", "-v"], argsDef)).toEqual([]);
+  });
+
+  test("reports a mistyped flag", () => {
+    // The motivating case: `--serverr` was silently dropped and the command
+    // then ran against the DEFAULT server — production, for an installed CLI —
+    // while exiting 0 as though the flag had been honoured.
+    expect(findUnknownFlags(["--serverr=http://evil.test"], argsDef)).toEqual(["--serverr"]);
+    expect(findUnknownFlags(["--bogus"], argsDef)).toEqual(["--bogus"]);
+  });
+
+  test("stops interpreting flags after a bare `--`", () => {
+    expect(findUnknownFlags(["--", "--not-a-flag"], argsDef)).toEqual([]);
+  });
+
+  test("leaves negative numbers and lone dashes alone", () => {
+    expect(findUnknownFlags(["-", "-42"], argsDef)).toEqual([]);
+  });
+});
+
+describe("unknownFlagsForArgv", () => {
+  // Resolved against the REAL command tree, so the check can't drift from the
+  // flags the commands actually declare.
+  test("accepts every flag a command declares", async () => {
+    const { mainCommand } = await import("./cli.ts");
+    expect(
+      await unknownFlagsForArgv(mainCommand, ["push", "--server", "http://x", "--force"]),
+    ).toEqual([]);
+    expect(
+      await unknownFlagsForArgv(mainCommand, ["publish", "--skipTypecheck", "--json"]),
+    ).toEqual([]);
+    expect(await unknownFlagsForArgv(mainCommand, ["init", "-t", "simple", "-y"])).toEqual([]);
+  });
+
+  test("descends into nested subcommands", async () => {
+    const { mainCommand } = await import("./cli.ts");
+    expect(
+      await unknownFlagsForArgv(mainCommand, ["secret", "put", "NAME", "-s", "http://x"]),
+    ).toEqual([]);
+    // `--force` belongs to `storage disable`, not to `secret put`.
+    expect(await unknownFlagsForArgv(mainCommand, ["storage", "disable", "--force"])).toEqual([]);
+    expect(await unknownFlagsForArgv(mainCommand, ["secret", "put", "NAME", "--force"])).toEqual([
+      "--force",
+    ]);
+  });
+
+  test("catches a mistyped --server before the command runs", async () => {
+    const { mainCommand } = await import("./cli.ts");
+    expect(await unknownFlagsForArgv(mainCommand, ["push", "--serverr=http://evil.test"])).toEqual([
+      "--serverr",
+    ]);
+  });
+
+  test("accepts the exact argv the guest's in-sandbox Publish spawns", async () => {
+    // aai-guest/studio-publish.ts runs the real CLI with these flags. Getting
+    // this wrong breaks Publish for every studio user, and no unit test of the
+    // flag matcher alone would have noticed — the spelling is kebab-case while
+    // the args are declared camelCase.
+    const { mainCommand } = await import("./cli.ts");
+    expect(
+      await unknownFlagsForArgv(mainCommand, [
+        "deploy",
+        "--server",
+        "http://x",
+        "--json",
+        "--allow-missing-secrets",
+        "--allow-preview-slug",
+      ]),
+    ).toEqual([]);
+  });
+
+  test("says nothing about an unknown SUBCOMMAND — citty shows usage for that", async () => {
+    const { mainCommand } = await import("./cli.ts");
+    expect(await unknownFlagsForArgv(mainCommand, ["puhs", "--server", "http://x"])).toEqual([]);
+  });
+});
 
 describe("setup", () => {
   test("resolves the cwd; requires agent.ts only when asked", async () => {

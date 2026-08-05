@@ -23,8 +23,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import { MAX_SLUG_LENGTH } from "@alexkroman1/aai/utils";
-import { PREVIEW_SLUG_SUFFIX } from "aai-server/sandbox-role";
+import { MAX_SLUG_LENGTH, PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/utils";
 import type { WorkspaceStore } from "aai-server/workspace-store";
 import type { StudioSessionBroker } from "./studio-session-broker.ts";
 import {
@@ -198,6 +197,11 @@ export function createPreviewDeployer(options: PreviewDeployerOptions): PreviewD
       serverUrl: target.serverUrl,
       apiKey: target.apiKey,
       slug,
+      // The reserved-suffix opt-in belongs to THIS caller alone: the slug
+      // above is deliberately `<project>-preview`, and the deploy boundary
+      // rejects that suffix for everyone else — including Publish, which
+      // shares the deploy path below.
+      allowPreviewSlug: true,
     });
     // Stamp only the preview metadata (mirrors the Publish stamp in
     // studio-deploy.ts): the deploy takes seconds, and writing the

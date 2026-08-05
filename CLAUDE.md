@@ -194,10 +194,33 @@ deploy when the slug already exists, after it on a first publish), and
 scaffold underneath (never overwriting workspace files) so the result runs
 under `aai dev`. `aai delete` in a linked directory deletes the STUDIO
 PROJECT (`DELETE /studio/projects/:project`), which cascades server-side to
-the workspace, chat, and the project's deployed + preview agents. The
+the workspace, chat, and the project's deployed + preview agents — and
+CLEARS the link fields from `.aai/project.json`, keeping `serverUrl`. Left
+behind, they sent the next push a `baseHash` for a project that no longer
+existed: a 409 whose hint said to run `aai pull`, which then failed with
+"No studio project named …", so only `--force` recovered. The
 hidden `deploy` subcommand remains only because the guest's Publish
 (`aai-guest/studio-publish.ts`) executes it; a bare `aai` in a project
 offers to publish, and `aai init` publishes after scaffolding.
+
+**A workspace carries UTF-8 text only.** Both snapshots — the CLI's
+`collectSourceFiles` and the guest's `snapshotWorkspace` — decode with
+`TextDecoder({ fatal: true, ignoreBOM: true })` and SKIP a file that isn't
+valid UTF-8, warning by name, exactly as the byte cap does. The file map is
+JSON, so a lossy `"utf-8"` read turned a pushed PNG into U+FFFD while
+reporting success, and a later `aai pull` wrote the mangled bytes back over
+the local original. `ignoreBOM` is load-bearing: the decoder strips a leading
+BOM by default, so the check meant to stop corruption would introduce a
+smaller version of it. Skipped files also ride the JSON result as `warnings`,
+because `log.warn` is silenced in JSON mode and JSON mode is auto-detected on
+a pipe — a scripted push otherwise reported plain success while having
+replaced the workspace with a truncated tree.
+
+**A `*-preview` project name is refused** (`projectNameFromDir` returns
+null). Publishing deploys under the project's own name, so such a project
+would claim a slug the orphan-preview sweep reaps hourly — taking the agent,
+its app-database schema, and its secrets with it. See the `-preview` note in
+the Modal sandbox section for the matching deploy-boundary rule.
 
 ### SDK structure
 
@@ -2251,8 +2274,25 @@ service's control work is light — and one container served both badly.
   session, or a bundle inspection. Every spawn knows its identity at
   creation. Observability only: nothing
   may gate on these tags, and the `preview` role is inferred from the
-  `-preview` slug suffix (`PREVIEW_SLUG_SUFFIX`, shared with
-  `previewSlugFor` so the two can't drift).
+  `-preview` slug suffix (`PREVIEW_SLUG_SUFFIX`, defined once in the SDK's
+  slug contract — `aai/sdk/slug.ts`, reachable as `@alexkroman1/aai/utils` —
+  because three independent things key off it and a disagreement is silent
+  data loss: the deploy boundary rejects the suffix, the reaper deletes
+  agents carrying it, and the CLI refuses to derive a project name ending in
+  it. It lives in the SDK rather than aai-server because the CLI needs it and
+  cannot import a private package).
+- **The `-preview` opt-in is DECLARED by the caller, never inferred from the
+  slug.** `deployAgentBundle` rejects a requested `*-preview` slug unless
+  `allowPreviewSlug` is set, and only the studio's auto-preview deployer sets
+  it — it targets `<project>-preview` on purpose. Publish shares the very same
+  in-guest `aai deploy` invocation and must leave it unset. It used to ride on
+  that shared invocation unconditionally, reasoned as "harmless for a
+  production Publish, whose slug has no such suffix" — true only for
+  server-minted project names. A CLI push derives the project name from the
+  DIRECTORY, so a directory named `demo-preview` published straight through
+  the guard and got an agent the hourly sweep would delete. Inferring the
+  opt-in from the slug's shape would NOT have fixed it: a production Publish
+  of such a project passes exactly that slug.
 - **Transport**: STUDIO/INSPECT guests get a WebSocket control channel the
   host dials through the sandbox's Modal tunnel (`encryptedPorts: [8080]`;
   JSON-RPC on `/ws`), retried while the harness boots
@@ -2738,10 +2778,36 @@ The `slug` from the same file is validated against the platform's slug shape
 `sdk/slug.ts` is the single definition) before it is ever
 interpolated into a URL path, so a hostile `"slug": "x/../admin"` cannot steer
 a credentialed request; `aai secret delete` also URL-encodes the secret name.
+**That check lives in `resolveDeployTarget`** — the one point where
+repo-controlled config becomes a credentialed target — so every command
+inherits it. It used to live in `getServerInfo` only, which covered
+secret/storage/delete but NOT `publish`, whose `syncEnvSecrets` PUTs the whole
+`.env` to `${serverUrl}/${slug}/secret`; one guard in two places, with the
+copy missing from the command users actually run.
+
 The API key itself is stored 0600 in the global `config.json`
-(`AAI_CONFIG_DIR` overrides the config dir location), and `ensureApiKey`
-refuses to prompt without a TTY — the hidden prompt would otherwise consume
-piped stdin as keystrokes.
+(`AAI_CONFIG_DIR` overrides the config dir location).
+**`ensureApiKey` has exactly two sources: the key `aai login` saved, then
+`ASSEMBLYAI_API_KEY` for non-interactive callers.** There is no "paste a key"
+prompt — it produced a CLI that could push and publish while linked to no
+account the user could see in the studio, and it made `aai login` optional in
+practice. It was also the riskier path: a hidden password prompt reads stdin,
+so a piped invocation could have its input eaten and persisted as the API key.
+Unauthenticated commands fail with `not_logged_in` pointing at `aai login`.
+
+**Tests must never resolve the real config dir.** `getConfigDir()` returns a
+per-process temp dir whenever `VITEST` is set (unless `AAI_CONFIG_DIR` says
+otherwise), and `aaiEnv()` sets `AAI_CONFIG_DIR` for the CLIs the e2e suite
+spawns. The guard is in the code path, not a vitest setup file, because
+setup files are per-config and any config can omit one — `vitest.slow.config.ts`
+(integration + e2e) declared none, so `_test-setup.ts` never ran for those
+suites and real configs accumulated ~100 approved loopback origins plus
+`https://override.com`. That matters because `approvedServers` is the trust
+anchor for a repo-supplied `serverUrl`: a pre-approved loopback origin lets a
+cloned repo's `.aai/project.json` collect the developer's API key and secret
+values with no prompt, which is exactly what the loopback tightening above
+removed. Spawned CLI children run with `VITEST` cleared (or the CLI skips
+`main()`), so both halves are needed.
 
 Note also that `aai build` and `aai dev` evaluate the repository's bundled
 `agent.ts` in the host process (`evalWorkerBundle`, via a `data:` URL

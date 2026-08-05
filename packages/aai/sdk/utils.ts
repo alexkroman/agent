@@ -13,7 +13,7 @@
 
 import { MAX_TOOL_RESULT_CHARS, TOOL_RESULT_TRUNCATION_MARKER } from "./constants.ts";
 
-export { MAX_SLUG_LENGTH, RESERVED_SLUGS, VALID_SLUG_RE } from "./slug.ts";
+export { MAX_SLUG_LENGTH, PREVIEW_SLUG_SUFFIX, RESERVED_SLUGS, VALID_SLUG_RE } from "./slug.ts";
 
 /** Extract an error message from an unknown thrown value. */
 export function errorMessage(err: unknown): string {

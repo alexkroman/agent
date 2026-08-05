@@ -3,7 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { readProjectConfig } from "./_config.ts";
+import { readProjectConfig, writeProjectConfig } from "./_config.ts";
 import { withTempDir } from "./_test-utils.ts";
 
 // resolveDeployTarget is the single auth/target resolver; each test shapes
@@ -61,6 +61,17 @@ describe("projectNameFromDir", () => {
     expect(projectNameFromDir("/x/voice-agent")).toBe("voice-agent");
     expect(projectNameFromDir("/x/!!!")).toBeNull();
   });
+
+  test("refuses a `-preview` name, which the studio's reaper owns", () => {
+    // Publishing such a project would claim `<name>` as a production slug
+    // ending in `-preview` — swept hourly by the orphan-preview job, taking
+    // the agent's app database and secrets with it. Better to refuse the
+    // name up front than to hand back an agent with an expiry date.
+    expect(projectNameFromDir("/x/demo-preview")).toBeNull();
+    expect(projectNameFromDir("/x/My Demo Preview")).toBeNull();
+    // Only the exact suffix is reserved — a name merely containing it is fine.
+    expect(projectNameFromDir("/x/preview-tool")).toBe("preview-tool");
+  });
 });
 
 describe("collectSourceFiles", () => {
@@ -78,6 +89,55 @@ describe("collectSourceFiles", () => {
       const { files, warnings } = await collectSourceFiles(dir);
       expect(Object.keys(files).sort()).toEqual(["agent.ts", "src/client.tsx"]);
       expect(warnings.some((w) => w.includes("huge.txt"))).toBe(true);
+    });
+  });
+
+  test("skips binary files instead of silently mangling them", async () => {
+    await withTempDir(async (dir) => {
+      await fs.writeFile(path.join(dir, "agent.ts"), "export {};");
+      // A real PNG header: 0x89 is not valid UTF-8, so a utf-8 read replaces
+      // it (and every other invalid byte) with U+FFFD. The workspace file map
+      // is JSON — it cannot carry these bytes — so the only honest options are
+      // skip-with-a-warning or encode. Reading them as text produced a push
+      // that reported success while destroying the asset, and a later `aai
+      // pull` wrote the mangled bytes back over the local original.
+      await fs.writeFile(
+        path.join(dir, "logo.png"),
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xfe]),
+      );
+
+      const { files, warnings } = await collectSourceFiles(dir);
+      expect(Object.keys(files)).toEqual(["agent.ts"]);
+      expect(warnings.some((w) => w.includes("logo.png"))).toBe(true);
+    });
+  });
+
+  test("keeps valid UTF-8 exactly, including BOM, CRLF, and NUL", async () => {
+    await withTempDir(async (dir) => {
+      // These all round-tripped correctly already; pin that the binary check
+      // does not start rejecting legitimate text. A NUL byte in particular is
+      // valid UTF-8 and appears in fixtures.
+      await fs.writeFile(path.join(dir, "agent.ts"), "export {};");
+      await fs.writeFile(path.join(dir, "bom.txt"), Buffer.from([0xef, 0xbb, 0xbf, 0x68, 0x69]));
+      await fs.writeFile(path.join(dir, "crlf.txt"), "a\r\nb\r\n");
+      await fs.writeFile(path.join(dir, "nul.txt"), Buffer.from([0x61, 0x00, 0x62]));
+      await fs.writeFile(path.join(dir, "utf8.txt"), "héllo — ünïcødé ✅");
+
+      const { files, warnings } = await collectSourceFiles(dir);
+      expect(Object.keys(files).sort()).toEqual([
+        "agent.ts",
+        "bom.txt",
+        "crlf.txt",
+        "nul.txt",
+        "utf8.txt",
+      ]);
+      expect(files["utf8.txt"]).toBe("héllo — ünïcødé ✅");
+      expect(files["crlf.txt"]).toBe("a\r\nb\r\n");
+      expect(files["nul.txt"]).toBe("a\u0000b");
+      // A BOM must survive: TextDecoder strips it by default, which would
+      // make the UTF-8 check itself a (smaller) corruption bug.
+      expect(files["bom.txt"]).toBe("\ufeffhi");
+      expect(warnings).toEqual([]);
     });
   });
 });
@@ -176,6 +236,51 @@ describe("executePush", () => {
         serverUrl: "https://api.test",
         studioProject: "voice-agent",
         studioSourceHash: "hash-2",
+      });
+    });
+  });
+
+  test("reports skipped files in the result, not only as a TTY warning", async () => {
+    await withTempDir(async (dir) => {
+      const cwd = path.join(dir, "voice-agent");
+      await fs.mkdir(cwd);
+      await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
+      await fs.writeFile(path.join(cwd, "huge.txt"), "x".repeat(256_001));
+      routeApi({
+        "GET /studio/projects/voice-agent": null,
+        "PUT /studio/projects/voice-agent/source": { sourceHash: "h", created: true },
+      });
+
+      // `log.warn` is silenced in JSON mode and JSON mode is auto-detected on
+      // a pipe, so a CI or scripted push saw `ok: true` with no indication
+      // that files were dropped. Since a push REPLACES the whole workspace
+      // file map, a silently truncated push can delete `agent.ts` from an
+      // existing project.
+      const result = await executePush({ cwd });
+      expect(result.ok).toBe(true);
+      const data = (result as { data: { warnings?: string[] } }).data;
+      expect(data.warnings?.some((w) => w.includes("huge.txt"))).toBe(true);
+    });
+  });
+
+  test("omits the warnings key entirely when nothing was skipped", async () => {
+    await withTempDir(async (dir) => {
+      const cwd = path.join(dir, "voice-agent");
+      await fs.mkdir(cwd);
+      await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
+      routeApi({
+        "GET /studio/projects/voice-agent": null,
+        "PUT /studio/projects/voice-agent/source": { sourceHash: "h", created: true },
+      });
+
+      const result = await executePush({ cwd });
+      expect(result).toEqual({
+        ok: true,
+        data: {
+          project: "voice-agent",
+          created: true,
+          url: "https://api.test/studio/chat/voice-agent",
+        },
       });
     });
   });
@@ -283,6 +388,60 @@ describe("executePublish", () => {
     });
   });
 
+  test("a publish response missing fields fails cleanly, not with a TypeError", async () => {
+    await withTempDir(async (cwd) => {
+      await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
+      resolveDeployTarget.mockResolvedValue({
+        ...TARGET,
+        config: { serverUrl: "https://api.test", studioProject: "proj", studioSourceHash: "h1" },
+      });
+      routeApi({
+        "PUT /studio/projects/proj/source": { sourceHash: "h2", created: false },
+        // A proxy, an older server, or anything that isn't the deploy route
+        // can answer 200 with a body that lacks `slug`/`output`. Reading
+        // `result.output.trim()` blind surfaced as
+        // "Cannot read properties of undefined (reading 'trim')" — a raw
+        // TypeError with nothing actionable in it.
+        "POST /studio/projects/proj/deploy": {},
+      });
+
+      // Thrown as a CliError; `runCommand` turns it into the one JSON result
+      // line with its code and hint.
+      await expect(executePublish({ cwd, skipTypecheck: true })).rejects.toThrow(
+        /Unexpected response from the publish route/,
+      );
+      await expect(executePublish({ cwd, skipTypecheck: true })).rejects.not.toThrow(/'trim'/);
+    });
+  });
+
+  test("reports skipped files in the result, like push does", async () => {
+    await withTempDir(async (cwd) => {
+      await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
+      await fs.writeFile(path.join(cwd, "huge.txt"), "x".repeat(256_001));
+      resolveDeployTarget.mockResolvedValue({
+        ...TARGET,
+        config: { serverUrl: "https://api.test", studioProject: "proj", studioSourceHash: "h1" },
+      });
+      routeApi({
+        "PUT /studio/projects/proj/source": { sourceHash: "h2", created: false },
+        "POST /studio/projects/proj/deploy": {
+          ok: true,
+          slug: "proj",
+          url: "/proj/",
+          output: "Deployed",
+        },
+        "PUT /proj/secret": { ok: true },
+      });
+
+      // Publish is the command that ships to production, so a silently
+      // truncated tree matters even more here than on a bare push.
+      const result = await executePublish({ cwd, skipTypecheck: true });
+      expect(result.ok).toBe(true);
+      const data = (result as { data: { warnings?: string[] } }).data;
+      expect(data.warnings?.some((w) => w.includes("huge.txt"))).toBe(true);
+    });
+  });
+
   test("first publish syncs .env after the slug exists", async () => {
     await withTempDir(async (dir) => {
       const cwd = path.join(dir, "fresh-agent");
@@ -319,5 +478,30 @@ describe("executeDelete", () => {
     routeApi({ "DELETE /studio/projects/proj": { ok: true } });
     const result = await executeDelete({ cwd: "/tmp" });
     expect(result).toEqual({ ok: true, data: { project: "proj", slug: "proj" } });
+  });
+
+  test("clears the now-dangling studio link so the next publish can recreate", async () => {
+    await withTempDir(async (cwd) => {
+      await writeProjectConfig(cwd, {
+        serverUrl: "https://api.test",
+        studioProject: "proj",
+        studioSourceHash: "h1",
+        slug: "proj",
+      });
+      resolveDeployTarget.mockResolvedValue({
+        ...TARGET,
+        config: await readProjectConfig(cwd),
+      });
+      routeApi({ "DELETE /studio/projects/proj": { ok: true } });
+
+      await executeDelete({ cwd });
+
+      // Leaving the link behind sent the next push a stale `baseHash` for a
+      // project that no longer exists, which the server answers 409 —
+      // advising `aai pull`, which then fails with "No studio project named
+      // proj". Only `--force` recovered, so the guidance was actively wrong.
+      // `serverUrl` stays: it's where the next publish should go.
+      expect(await readProjectConfig(cwd)).toEqual({ serverUrl: "https://api.test" });
+    });
   });
 });

@@ -290,6 +290,10 @@ describe("createPreviewDeployer", () => {
         serverUrl: TARGET.serverUrl,
         apiKey: TARGET.apiKey,
         slug: "contact-form-x7k2mq-preview",
+        // The auto-preview deploy is the ONLY caller allowed to claim the
+        // reserved `-preview` suffix, and it says so explicitly — Publish
+        // shares this path and must not inherit the opt-in.
+        allowPreviewSlug: true,
       },
     );
     const workspace = await getWorkspace(workspaces, SCOPE, PROJECT);

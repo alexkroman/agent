@@ -16,6 +16,8 @@
  * `-preview` is mislabeled, harmlessly).
  */
 
+import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/utils";
+
 /** What a guest sandbox was spawned (or acquired) to do. */
 export type SandboxRole =
   /** A deployed agent's production sandbox (voice sessions). */
@@ -29,12 +31,10 @@ export type SandboxRole =
   /** A throwaway bundle-inspection sandbox (`describeBundle`). */
   | "inspect";
 
-/**
- * Suffix of studio preview slugs (see `previewSlugFor` in
- * aai-studio-server/studio-preview.ts, which imports this so the deploy path
- * and the tag inference can't drift).
- */
-export const PREVIEW_SLUG_SUFFIX = "-preview";
+// `PREVIEW_SLUG_SUFFIX` lives in the SDK's slug contract
+// (`@alexkroman1/aai/utils`) rather than here: the CLI needs it too — to
+// refuse `*-preview` project names — and cannot import this private package.
+// Import it from there directly; this module no longer re-exports it.
 
 /** Infer an agent sandbox's role from its slug (preview slugs by suffix). */
 export function roleForSlug(slug: string): SandboxRole {

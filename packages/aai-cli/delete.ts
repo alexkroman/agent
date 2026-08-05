@@ -2,6 +2,7 @@
 
 import { getServerInfo, resolveDeployTarget } from "./_agent.ts";
 import { apiRequest, HINT_NOT_DEPLOYED } from "./_api-client.ts";
+import { writeProjectConfig } from "./_config.ts";
 import { type CommandResult, ok } from "./_output.ts";
 import { log } from "./_ui.ts";
 
@@ -49,6 +50,15 @@ export async function executeDelete(opts: {
       hints: { 404: "Run `aai list` to see your projects." },
     });
     log.success(`Deleted ${project}`);
+    // Drop the link fields: they now point at a project that no longer
+    // exists. Left in place, the next `aai push`/`publish` took the
+    // "already linked" branch and sent a `baseHash` for a missing project,
+    // which the server answers 409 — hinting `aai pull`, which then fails
+    // with "No studio project named <project>". Only `--force` recovered,
+    // so the recovery advice was actively wrong. Cleared, the next publish
+    // takes the first-push path and recreates the project. `serverUrl` is
+    // kept deliberately: it is still where this directory should publish.
+    await writeProjectConfig(cwd, { serverUrl });
     return ok({ project, ...(config.slug ? { slug: config.slug } : {}) });
   }
 

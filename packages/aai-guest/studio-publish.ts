@@ -99,6 +99,11 @@ export async function deployWorkspaceDir(
     serverUrl: string;
     apiKey: string;
     slug?: string | undefined;
+    /**
+     * Opt into a `-preview`-suffixed slug. Set ONLY by the studio's
+     * auto-preview deployer — never by Publish. See the flag's note below.
+     */
+    allowPreviewSlug?: boolean | undefined;
     /** Test seam: entry script spawned instead of the resolved CLI. */
     cliEntry?: string | undefined;
   },
@@ -136,10 +141,18 @@ export async function deployWorkspaceDir(
   try {
     result = await runCapped(
       process.execPath,
-      // `--allow-preview-slug`: the studio's auto-preview deploys target
-      // `<project>-preview`, a suffix the server otherwise rejects (it's owned
-      // by the preview reaper). Harmless for a production Publish, whose slug
-      // has no such suffix — so it rides on the one shared deploy invocation.
+      // `--allow-preview-slug` rides ONLY on the auto-preview deploy, which
+      // deliberately targets `<project>-preview` — a suffix the deploy
+      // boundary otherwise rejects because the orphan-preview reaper owns it.
+      //
+      // It must NOT ride on the shared invocation. Publish's slug comes from
+      // the studio PROJECT name, and a CLI push derives that from the
+      // directory (`projectNameFromDir`), so a project named `*-preview`
+      // would claim a reserved slug through the one path users actually
+      // take — and the hourly sweep would then delete the agent, its app
+      // database, and its secrets. That is exactly the loss the guard exists
+      // to prevent, so the opt-in is the CALLER's declaration of intent and
+      // is never inferred from the slug's shape.
       [
         cliEntry,
         "deploy",
@@ -147,7 +160,7 @@ export async function deployWorkspaceDir(
         opts.serverUrl,
         "--json",
         "--allow-missing-secrets",
-        "--allow-preview-slug",
+        ...(opts.allowPreviewSlug ? ["--allow-preview-slug"] : []),
       ],
       {
         cwd: dir,

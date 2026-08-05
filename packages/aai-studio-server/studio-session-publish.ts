@@ -47,6 +47,14 @@ export type WorkspaceDeployTarget = {
   serverUrl: string;
   apiKey: string;
   slug?: string | undefined;
+  /**
+   * Opt into a `-preview`-suffixed slug at the deploy boundary. Set ONLY by
+   * the auto-preview deployer (studio-preview.ts), which targets
+   * `<project>-preview` on purpose. Publish shares this path and must leave
+   * it unset, or a project named `*-preview` would claim a slug the
+   * orphan-preview reaper deletes hourly.
+   */
+  allowPreviewSlug?: boolean | undefined;
 };
 
 /**
@@ -83,6 +91,7 @@ async function requestDeploy(
       serverUrl: target.serverUrl,
       apiKey: target.apiKey,
       ...(target.slug ? { slug: target.slug } : {}),
+      ...(target.allowPreviewSlug ? { allowPreviewSlug: true } : {}),
     },
     WORKSPACE_DEPLOY_TIMEOUT_MS,
   );

@@ -2,12 +2,12 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { requiredProviderEnvVars } from "@alexkroman1/aai/runtime";
+import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/utils";
 import { debug } from "./_debug-log.ts";
 import type { AgentRecord } from "./agent-store.ts";
 import type { ValidatedAppContext } from "./context.ts";
 import { localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import { type IsolateConfig, IsolateConfigSchema } from "./rpc-schemas.ts";
-import { PREVIEW_SLUG_SUFFIX } from "./sandbox-role.ts";
 import type { DeployBody } from "./schemas.ts";
 import { EnvSchema, RESERVED_SLUGS } from "./schemas.ts";
 import { hashApiKey, matchAnyHash } from "./secrets.ts";
