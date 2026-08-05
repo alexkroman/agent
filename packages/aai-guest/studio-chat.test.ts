@@ -123,6 +123,7 @@ const chatBody = (text: string) => ({
 
 async function makeSession(files: Record<string, string>): Promise<StudioSession> {
   return await initStudioSession({
+    scope: "test-scope",
     project: "proj",
     files,
     apiKey: API_KEY,

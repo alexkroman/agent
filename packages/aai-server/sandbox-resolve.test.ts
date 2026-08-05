@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryPlatformEvents } from "./platform-events.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import type { Sandbox } from "./sandbox.ts";
+import { createMemorySandboxRegistry } from "./sandbox-registry.ts";
 import { brokerSessionUrl, resolveSandbox, watchAgentInvalidation } from "./sandbox-resolve.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { appDbSecretName, createMemorySecretStore } from "./secret-store.ts";
@@ -396,6 +397,104 @@ describe("broker readiness cap", () => {
         sessionUrl: "wss://tunnel.test:443/websocket",
       });
       expect(mockSpawnAgentServer.mock.calls.length).toBe(afterFirst);
+    } finally {
+      seeded.unwatch();
+    }
+  });
+});
+
+describe("cross-replica registry keeps one sandbox per slug fleet-wide", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    // Earlier suites `restoreAllMocks`, which strips the hoisted default.
+    mockSpawnAgentServer.mockReset().mockResolvedValue({
+      sessionUrl: "wss://tunnel.test:443/websocket",
+      guestOrigin: "wss://tunnel.test:443",
+      activeSessions: vi.fn().mockResolvedValue(0),
+      drain: vi.fn().mockResolvedValue(undefined),
+      shutdown: vi.fn().mockResolvedValue(undefined),
+      alive: () => true,
+      onExit: vi.fn(),
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("routes a cold broker to a live peer instead of spawning a duplicate", async () => {
+    // The reported bug: two replicas serving one slug each spawned a guest,
+    // because the slot cache is per-replica and Modal load-balances every
+    // request independently.
+    const seeded = await seedAgent("shared");
+    const registry = createMemorySandboxRegistry("replica-b");
+    registry.registerPeer("shared", {
+      sessionUrl: "wss://peer.test:443/websocket",
+      guestOrigin: "wss://peer.test:443",
+    });
+    try {
+      const brokered = await brokerSessionUrl("shared", { ...seeded, registry });
+      expect(brokered).toEqual({
+        ok: true,
+        sessionUrl: "wss://peer.test:443/websocket",
+        guestOrigin: "wss://peer.test:443",
+      });
+      expect(mockSpawnAgentServer).not.toHaveBeenCalled();
+    } finally {
+      seeded.unwatch();
+    }
+  });
+
+  it("spawns locally when the peer's agent row is gone", async () => {
+    // A deleted agent's registry rows outlive the row by up to one lease.
+    // Routing to them would resurrect a 404, so the version read gates it.
+    const seeded = await seedAgent("deleted-soon");
+    const registry = createMemorySandboxRegistry("replica-b");
+    registry.registerPeer("deleted-soon", {
+      sessionUrl: "wss://peer.test:443/websocket",
+      guestOrigin: "wss://peer.test:443",
+    });
+    try {
+      await seeded.deleteAgent();
+      const brokered = await brokerSessionUrl("deleted-soon", { ...seeded, registry });
+      expect(brokered).toMatchObject({ ok: false, status: 404 });
+      expect(mockSpawnAgentServer).not.toHaveBeenCalled();
+    } finally {
+      seeded.unwatch();
+    }
+  });
+
+  it("prefers its own warm resident over a peer", async () => {
+    // A local resident costs nothing; the registry read is a DB round trip
+    // on a path where the caller is waiting.
+    const seeded = await seedAgent("warm-local");
+    const registry = createMemorySandboxRegistry("replica-b");
+    try {
+      const first = await brokerSessionUrl("warm-local", { ...seeded, registry });
+      expect(first).toMatchObject({ ok: true, sessionUrl: "wss://tunnel.test:443/websocket" });
+      registry.registerPeer("warm-local", {
+        sessionUrl: "wss://peer.test:443/websocket",
+        guestOrigin: "wss://peer.test:443",
+      });
+      const second = await brokerSessionUrl("warm-local", { ...seeded, registry });
+      expect(second).toMatchObject({ sessionUrl: "wss://tunnel.test:443/websocket" });
+    } finally {
+      seeded.unwatch();
+    }
+  });
+
+  it("spawns locally when a registry read fails, rather than failing the broker", async () => {
+    const seeded = await seedAgent("registry-down");
+    const registry = {
+      register: () => Promise.resolve(),
+      unregister: () => Promise.resolve(),
+      findPeer: () => Promise.reject(new Error("registry unreachable")),
+    };
+    try {
+      await expect(
+        brokerSessionUrl("registry-down", { ...seeded, registry }),
+      ).resolves.toMatchObject({ ok: true, sessionUrl: "wss://tunnel.test:443/websocket" });
     } finally {
       seeded.unwatch();
     }

@@ -1,0 +1,118 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * The guest→host half of a studio sandbox's control channel: what the coding
+ * agent's guest may ask this replica to do at the end of a turn, and the
+ * validation every one of those requests goes through.
+ *
+ * Split from the broker, which owns the sandbox LIFECYCLE (spawn, adopt,
+ * evict). This owns the traffic that flows over a wired sandbox — a
+ * different concern with a different failure mode: a rejected RPC here
+ * costs a workspace sync, never a sandbox.
+ *
+ * Only the replica holding the control socket receives these. A peer that
+ * adopted the session over HTTP (studio-session-fleet.ts) does not, which is
+ * fine: both handlers write shared Postgres, so the owner doing the writing
+ * is not a limitation — it is why adoption needs no ownership transfer.
+ */
+
+import { GUEST_ROUTES, guestHttpUrl } from "aai-server/guest-routes";
+import type { WarmHarness } from "aai-server/sandbox-vm";
+import { SafePathSchema } from "aai-server/schemas";
+import { z } from "zod";
+import type { PreviewTarget } from "./studio-preview.ts";
+import { MAX_STUDIO_CHAT_MESSAGES, UiMessageSchema } from "./studio-schemas.ts";
+import { mutateWorkspace } from "./studio-workspace.ts";
+
+/**
+ * Guest-supplied workspace files. Wire-shape check only (record of safe
+ * paths to strings): the size/count/total-byte limits are enforced by the
+ * single authority a client file PUT also goes through —
+ * `stampWorkspace`'s `assertWorkspaceLimits`, inside the `mutateWorkspace`
+ * call below, whose throw rejects the RPC just the same.
+ */
+const GuestFilesSchema = z.object({
+  files: z.record(SafePathSchema, z.string()),
+  /**
+   * True only on the TURN-COMPLETE sync (the guest's `settleTurn`, its
+   * analog of opencode's `session.idle` / codex's `agent-turn-complete`).
+   * Mid-turn checkpoints omit it, so preview deploys are keyed
+   * deterministically to settled turns — never to a half-finished tree.
+   */
+  done: z.boolean().optional(),
+});
+
+// Guest-sent wire data: the settled conversation is validated per message
+// (structure + content-size cap) before it lands in the chat store, not
+// accepted as a blob of unknowns.
+const GuestChatSchema = z.object({
+  messages: z.array(UiMessageSchema).max(MAX_STUDIO_CHAT_MESSAGES),
+});
+
+export type GuestWiringDeps = {
+  workspaces: import("aai-server/workspace-store").WorkspaceStore;
+  chats: import("aai-server/chat-store").ChatStore;
+  /**
+   * Mark this sandbox used — locally AND across the fleet. Called on every
+   * guest RPC because an agent turn longer than the idle window is activity
+   * no other replica can see, and an expired lease invites a peer to
+   * cold-spawn a duplicate in the middle of it.
+   */
+  touch: (warm: WarmHarness, scope: string, project: string) => void;
+  /**
+   * The preview target for this sandbox, or null when it should not
+   * auto-deploy (brokered without a `serverUrl`, or the sandbox is no longer
+   * the project's — checked at RPC time, not at wire time).
+   */
+  previewTarget: (warm: WarmHarness, key: string) => PreviewTarget | null;
+  schedulePreview: (scope: string, project: string, target: PreviewTarget) => void;
+};
+
+/** Wire the control channel for one project's sandbox. */
+export function wireGuest(
+  deps: GuestWiringDeps,
+  warm: WarmHarness,
+  key: string,
+  scope: string,
+  project: string,
+): void {
+  // No db — trial tool runs report storage-not-enabled, same as before.
+  warm.conn.onRequest("studio/sync-workspace", async (params) => {
+    deps.touch(warm, scope, project);
+    const parsed = GuestFilesSchema.safeParse(params);
+    // Throwing rejects the RPC — the guest logs it; the turn still streams.
+    if (!parsed.success) throw new Error(`Invalid workspace sync: ${parsed.error.message}`);
+    const doc = await mutateWorkspace(deps.workspaces, scope, project, (workspace) => ({
+      ...workspace,
+      files: parsed.data.files,
+    }));
+    if (!doc) throw new Error(`Project ${project} not found`);
+    // The turn settled with edits — ship the workspace to the preview slug so
+    // the Preview pane picks it up without a Publish. Only on the `done`
+    // sync: mid-turn checkpoints would preview half-finished trees.
+    // Fire-and-forget: the sync must settle now; the deploy stamps its
+    // outcome later.
+    const target = parsed.data.done ? deps.previewTarget(warm, key) : null;
+    if (target) deps.schedulePreview(scope, project, target);
+    return { ok: true };
+  });
+  warm.conn.onRequest("studio/persist-chat", async (params) => {
+    deps.touch(warm, scope, project);
+    const parsed = GuestChatSchema.safeParse(params);
+    if (!parsed.success) throw new Error(`Invalid chat snapshot: ${parsed.error.message}`);
+    await deps.chats.putChat(scope, project, parsed.data.messages);
+    return { ok: true };
+  });
+  warm.conn.listen();
+}
+
+/**
+ * The guest's chat URL, derived from the origin the backend reported.
+ *
+ * This used to reverse-engineer `sessionUrl` — swap the scheme, overwrite the
+ * pathname — to reach a surface this package was never handed. Deriving from
+ * the origin means a guest route rename is one edit in `guest-routes.ts`
+ * rather than two backends plus URL surgery in another package.
+ */
+export function chatUrlForGuest(guestOrigin: string): string {
+  return guestHttpUrl(guestOrigin, GUEST_ROUTES.studioChat);
+}

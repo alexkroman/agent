@@ -523,6 +523,9 @@ importers:
       mime-types:
         specifier: ^3.0.2
         version: 3.0.2
+      p-timeout:
+        specifier: ^7.0.1
+        version: 7.0.1
       react:
         specifier: ^19.2.8
         version: 19.2.8

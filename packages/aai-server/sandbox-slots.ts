@@ -93,3 +93,14 @@ export function setSlot(slots: SlotCache, slot: AgentSlot): void {
 export function deleteSlot(slots: SlotCache, slug: string): boolean {
   return slots.delete(slug);
 }
+
+/**
+ * Is this sandbox still usable? A sandbox whose guest exited keeps a
+ * `sessionUrl` pointing at a dead endpoint, so serving it would hand every
+ * new client a corpse. `onSandboxLost` detaches it too, but asynchronously
+ * and under the slug lock — this is the synchronous guard that makes the
+ * window unobservable. A stand-in without `alive` reads as live.
+ */
+export function isLive(sandbox: NonNullable<AgentSlot["sandbox"]>): boolean {
+  return sandbox.alive?.() !== false;
+}

@@ -81,6 +81,7 @@ async function spawnTestHarness(): Promise<WarmHarness> {
       terminate,
       ws,
       origin: `ws://127.0.0.1:${port}`,
+      token,
     });
   } catch (err) {
     await terminate();

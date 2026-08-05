@@ -48,6 +48,7 @@ import {
   workspacesRoot,
 } from "./studio-build.ts";
 import { compactMessages, needsCompaction } from "./studio-compaction.ts";
+import { CORS_HEADERS, readBody, sendJson } from "./studio-http.ts";
 import { ensureProjectShape } from "./studio-project-shape.ts";
 import { createDesignInspirationTool, createProjectTools } from "./studio-project-tools.ts";
 import { createTemplateTools } from "./studio-template-tools.ts";
@@ -62,6 +63,8 @@ const MAX_CHAT_BODY_BYTES = 4_000_000;
 const SYNC_RPC_TIMEOUT_MS = 30_000;
 
 export type StudioSessionParams = {
+  /** Workspace scope (`user:<uid>` or a key digest) — half of this guest's identity. */
+  scope: string;
   project: string;
   files: Record<string, string>;
   /** The caller's AssemblyAI key — the LLM credential (never the bearer). */
@@ -130,7 +133,51 @@ glob, and grep cannot see them. They are ground truth, ahead of memory:
   per-component props in \`${at("@alexkroman1/aai-ui/dist/components")}\``;
 }
 
+/**
+ * The (scope, project) this harness was FIRST installed for. A studio sandbox
+ * serves exactly one project for its whole life, so this is process identity.
+ */
+let installedFor: { scope: string; project: string } | null = null;
+
+/**
+ * A guest pins its own identity rather than trusting the caller's key.
+ *
+ * Every host caller is supposed to route (scope, project) correctly — the
+ * broker keys its map and its registry row on it — but "supposed to" is the
+ * part that fails. Now that ANY replica can install a session over HTTP (see
+ * studio-session-init.ts), a mis-keyed registry row or a stale cross-replica
+ * lookup would materialize one tenant's workspace into another tenant's
+ * sandbox, where the coding agent would edit it and sync it back. Refusing
+ * here makes that a 409 instead of a data-crossing bug, on the same
+ * reasoning agent mode hash-verifies its bundle instead of trusting the
+ * spawner to have written the right one.
+ *
+ * Re-installs for the SAME project are the normal path (every broker call
+ * refreshes the tree), so only a CHANGE of identity is refused.
+ */
+export class SessionIdentityError extends Error {
+  constructor(want: { scope: string; project: string }, got: { scope: string; project: string }) {
+    super(
+      `This sandbox serves ${want.scope}/${want.project}; refusing session-init for ` +
+        `${got.scope}/${got.project}`,
+    );
+    this.name = "SessionIdentityError";
+  }
+}
+
+/** Test seam: forget the pinned identity (one harness per test process). */
+export function resetSessionIdentity(): void {
+  installedFor = null;
+}
+
 export async function initStudioSession(params: StudioSessionParams): Promise<StudioSession> {
+  const identity = { scope: params.scope, project: params.project };
+  if (
+    installedFor &&
+    (installedFor.scope !== identity.scope || installedFor.project !== identity.project)
+  ) {
+    throw new SessionIdentityError(installedFor, identity);
+  }
   // Under the workspaces root, NOT os.tmpdir(): builds run in-guest through
   // the aai CLI bundlers, and only this root has the toolchain's
   // node_modules above it for the workspace's bare imports to resolve.
@@ -140,42 +187,10 @@ export async function initStudioSession(params: StudioSessionParams): Promise<St
   // …) — same shape `aai init` scaffolds; the files sync back to the
   // store at end of turn like everything else in the workspace.
   await ensureProjectShape(dir);
+  // Pinned only once the install actually succeeded: a rejected first install
+  // must not brand the sandbox with an identity it never served.
+  installedFor = identity;
   return { ...params, system: params.system + toolchainPromptSection(), dir };
-}
-
-const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "authorization, content-type",
-};
-
-function sendJson(res: ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, { "Content-Type": "application/json", ...CORS_HEADERS });
-  res.end(JSON.stringify(body));
-}
-
-/** Read the request body with a hard byte cap. */
-function readBody(req: IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let size = 0;
-    const chunks: Buffer[] = [];
-    req.on("data", (chunk: Buffer) => {
-      size += chunk.length;
-      if (size > MAX_CHAT_BODY_BYTES) {
-        reject(new Error("Conversation too large"));
-        req.destroy();
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
-    req.on("error", reject);
-    // `close` without `end` — client went away mid-upload. Node does not
-    // reliably emit `error` for an aborted request, so without this the
-    // promise parks forever and the accumulated chunks are retained for the
-    // life of the guest (settling twice is harmless: first wins).
-    req.on("close", () => reject(new Error("Request closed before body completed")));
-  });
 }
 
 /**
@@ -296,7 +311,7 @@ async function runTurn(
 ): Promise<void> {
   let body: string;
   try {
-    body = await readBody(req);
+    body = await readBody(req, MAX_CHAT_BODY_BYTES);
   } catch (err) {
     sendJson(res, 400, { error: err instanceof Error ? err.message : "Bad request" });
     return;

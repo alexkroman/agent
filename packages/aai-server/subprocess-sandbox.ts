@@ -237,6 +237,7 @@ export async function spawnSubprocessWarm(
         terminate,
         ws,
         origin,
+        token,
       });
     } catch (err) {
       // Never leak a harness whose control channel failed to come up.

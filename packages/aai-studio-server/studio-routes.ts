@@ -73,6 +73,7 @@ import {
   SyncSourceSchema,
 } from "./studio-schemas.ts";
 import { createStudioSessionBroker, type StudioSessionBroker } from "./studio-session-broker.ts";
+import type { StudioSessionRegistry } from "./studio-session-registry.ts";
 import { createSsePusher, projectPayload } from "./studio-sse.ts";
 import { starterFiles } from "./studio-template.ts";
 import {
@@ -99,6 +100,14 @@ export type StudioRouteOptions = {
     workspaces: StudioHonoEnv["Bindings"]["workspaces"];
     chats: StudioHonoEnv["Bindings"]["chats"];
   }) => StudioSessionBroker;
+  /**
+   * Cross-replica studio session registry + this replica's identity. Both or
+   * neither: the registry's `owner` checks are meaningless without a distinct
+   * id. Absent (dev/tests, no platform database) leaves each replica with its
+   * own sandbox per project, which is the behaviour this pair replaces.
+   */
+  sessionRegistry?: StudioSessionRegistry;
+  replicaId?: string;
 };
 
 /**
@@ -142,6 +151,8 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     broker ??= (options.broker ?? createStudioSessionBroker)({
       workspaces: c.env.workspaces,
       chats: c.env.chats,
+      ...(options.sessionRegistry && { registry: options.sessionRegistry }),
+      ...(options.replicaId && { replicaId: options.replicaId }),
     });
     return broker;
   };

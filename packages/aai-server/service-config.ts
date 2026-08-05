@@ -7,6 +7,7 @@
  * storage, Vault, locks, or change-stream wiring.
  */
 
+import { randomUUID } from "node:crypto";
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
 import { createStorage } from "unstorage";
 import { isLocalDev, requireEnv } from "./_boot.ts";
@@ -28,6 +29,7 @@ import { createPgSlugLock, localSlugLock, type SlugMutationLock } from "./platfo
 import { createRealtimePlatformEvents, ensureRealtimeSetup } from "./realtime-events.ts";
 import { createS3Storage } from "./s3-storage.ts";
 import { describeSandboxBackend } from "./sandbox-backend.ts";
+import { createPgSandboxRegistry } from "./sandbox-registry.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import {
   createMemorySecretStore,
@@ -78,6 +80,14 @@ export type ServiceConfig = OrchestratorOpts & {
    * limiters on it. Absent means "use in-memory equivalents".
    */
   sql?: SqlExec;
+  /**
+   * This process's identity in the cross-replica registries. Stable for the
+   * life of the container and unique across them — a registry excludes the
+   * caller's OWN rows from its peer lookup, so two replicas sharing an id
+   * would each hide the other's sandbox and the duplicate spawns would come
+   * straight back.
+   */
+  replicaId: string;
 };
 
 export function buildStorage(env: NodeJS.ProcessEnv): ReturnType<typeof createStorage> {
@@ -118,7 +128,6 @@ function buildMemoryStores(): {
     workspaces: withWorkspaceEvents(createMemoryWorkspaceStore(), memory.emitWorkspace),
     chats: withChatEvents(createMemoryChatStore(), memory.emitChat),
     events: memory.events,
-    // Inert in one process (listPeers excludes own rows); interface parity.
   };
 }
 
@@ -229,6 +238,13 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
   const storage = buildStorage(env);
   const { secrets, agents, workspaces, chats, events, appDb, slugLock, sql } = buildPlatformDb(env);
   const slots = createSlotCache();
+  // Per-process, not per-host: Modal can run several containers of the same
+  // app anywhere, and two of them sharing an identity is exactly the failure
+  // the registries exist to prevent (see ServiceConfig.replicaId).
+  const replicaId = randomUUID();
+  // Cross-replica sandbox registry — only with a platform database. Without
+  // one there is a single process, so a registry could have no peers to find.
+  const registry = sql ? createPgSandboxRegistry(sql, { replicaId }) : undefined;
   // Browser-session auth: Supabase when configured, the dev-token
   // implementation in local dev (same policy as the in-memory stores —
   // production can never resolve it). Unconfigured production still serves
@@ -251,8 +267,10 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
     secrets,
     ...(auth && { auth }),
     slugLock,
+    replicaId,
     ...(appDb && { appDb }),
     ...(sql && { sql }),
+    ...(registry && { registry }),
   };
 }
 

@@ -419,8 +419,10 @@ export function warmFromGuest(opts: {
   ws: RpcWebSocket;
   /** The guest's origin, e.g. `wss://host:port` — routes derive from it. */
   origin: string;
+  /** The per-sandbox bearer this guest was execed with. */
+  token: string;
 }): WarmHarness {
-  const { proc, ws, origin } = opts;
+  const { proc, ws, origin, token } = opts;
   const conn = createRpcConnection<GuestRpcSchema>(ws);
 
   const exitListeners: (() => void)[] = [];
@@ -462,6 +464,7 @@ export function warmFromGuest(opts: {
     conn,
     guestOrigin: origin,
     sessionUrl: guestWsUrl(origin, GUEST_ROUTES.session),
+    token,
     cleanup,
     alive: () => !dead,
     onExit: (cb) => {

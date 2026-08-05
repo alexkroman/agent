@@ -15,9 +15,12 @@ import { type AppDatabases, type AppDbMeta, parseAppDbMeta } from "./app-databas
 import { BROKER_READY_TIMEOUT_MS } from "./constants.ts";
 import type { PlatformEvents, Unwatch } from "./platform-events.ts";
 import { createSandbox, type Sandbox } from "./sandbox.ts";
+import { findPeerSession, startRegistryHeartbeat } from "./sandbox-peers.ts";
+import type { SandboxRegistry } from "./sandbox-registry.ts";
 import {
   type AgentSlot,
   deleteSlot,
+  isLive,
   retireSlot,
   type SlotCache,
   setSlot,
@@ -55,6 +58,13 @@ export type ResolveSandboxOpts = {
    * must not spend the real budget to observe the cap.
    */
   readyTimeoutMs?: number;
+  /**
+   * Cross-replica sandbox registry (see sandbox-registry.ts): residents built
+   * here are registered and heartbeated, and the broker's cold path routes to
+   * a live peer's guest instead of spawning a duplicate. Absent (dev/tests,
+   * no platform database) leaves every replica independent, as before.
+   */
+  registry?: SandboxRegistry;
 };
 
 type BundleParts = {
@@ -148,17 +158,6 @@ function buildSlotSandbox(slug: string, parts: BundleParts, opts: ResolveSandbox
       if (current?.sandbox === sandbox) await terminateSlot(current);
     });
   });
-}
-
-/**
- * Is this sandbox still usable? A sandbox whose guest exited keeps a
- * `sessionUrl` pointing at a dead endpoint, so serving it would hand every
- * new client a corpse. `onSandboxLost` detaches it too, but asynchronously
- * and under the slug lock — this is the synchronous guard that makes the
- * window unobservable. A stand-in without `alive` reads as live.
- */
-function isLive(sandbox: NonNullable<AgentSlot["sandbox"]>): boolean {
-  return sandbox.alive?.() !== false;
 }
 
 /**
@@ -305,6 +304,7 @@ async function rebuildSlot(
 
     slot.version = parts.version;
     slot.sandbox = sandbox;
+    startRegistryHeartbeat(slug, sandbox, opts);
     return sandbox;
   } catch (err) {
     if (created) deleteSlot(slots, slug);
@@ -373,6 +373,16 @@ export async function brokerSessionUrl(
   slug: string,
   opts: ResolveSandboxOpts,
 ): Promise<BrokeredSession> {
+  // Cold on this replica: prefer a live peer replica's guest over spawning a
+  // duplicate (see sandbox-registry.ts). Sessions dial the guest directly, so
+  // a peer's URL serves the client exactly as well as a local one. A warm
+  // local resident always wins — it costs nothing and the registry read is a
+  // database round trip on a path where the caller is waiting.
+  const resident = opts.slots.get(slug)?.sandbox;
+  if (!(resident && isLive(resident))) {
+    const peer = await findPeerSession(slug, opts);
+    if (peer) return peer;
+  }
   const sandbox = await resolveSandbox(slug, opts);
   if (!sandbox) return { ok: false, status: 404 };
   // Both resolve off the same readiness promise — no extra wait.
