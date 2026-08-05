@@ -45,12 +45,15 @@
  * control-plane error must not disable sandboxing for the process lifetime).
  */
 
-import { createHash } from "node:crypto";
+import { createHash, hash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
-import type { App, Image, ModalClient } from "modal";
+import { CONTAINED_ENV } from "@alexkroman1/aai/runtime";
+import { errorMessage } from "@alexkroman1/aai/utils";
+import type { App, Image, ModalClient, Sandbox } from "modal";
+import pTimeout from "p-timeout";
 import { debug } from "./_debug-log.ts";
 import { keyedMemoAsync } from "./_memo.ts";
 
@@ -60,11 +63,49 @@ export const GUEST_ROOT = "/opt/aai";
 /** Where the guest harness lives inside the baked image. */
 export const HARNESS_REMOTE_PATH = `${GUEST_ROOT}/harness.mjs`;
 
+/** Where the harness's baked V8 compile cache lives inside the image. */
+export const HARNESS_COMPILE_CACHE_PATH = `${GUEST_ROOT}/.compile-cache`;
+
+/**
+ * The exec env EVERY Modal guest gets, whatever its mode — one builder so the
+ * three exec sites (agent, studio, describe) cannot drift on it.
+ *
+ * `NODE_COMPILE_CACHE` points at the V8 compile cache baked into the image.
+ * The harness is a single ~13 MB bundle and every sandbox boots it cold, so
+ * V8 spends the same parse+compile on every spawn; populating the cache once
+ * during the image build and snapshotting it (see `warmCompileCache`) turns
+ * that into a cache read. Measured on the real bundle: **~545ms without,
+ * ~343ms with** — ~200ms off every cold voice session, every studio broker
+ * call, and every `describeBundle`, for ~1.5 MB in the image. A missing or
+ * stale entry is a silent MISS, never an error (a cache written by a different
+ * Node version, or for different file content, is simply ignored), which is
+ * what makes it safe to bake in. Modal-only on purpose: the cache is a
+ * property of the baked image, and the subprocess backend has no image to bake
+ * one into.
+ *
+ * CONTAINED declares that a real container surrounds this guest, so the SDK's
+ * network builtins drop their SSRF screen — it guards nothing a tenant cannot
+ * bypass with a raw fetch from their own tool code, and the container holds no
+ * platform credentials. Declared by the SPAWNER rather than sniffed by the
+ * guest, and deliberately absent from the subprocess backend, whose "guest" is
+ * a child process on the developer's own machine (see aai/host/ssrf.ts).
+ */
+export function guestExecBaseEnv(): Record<string, string> {
+  return { NODE_COMPILE_CACHE: HARNESS_COMPILE_CACHE_PATH, [CONTAINED_ENV]: "1" };
+}
+
 /** Name the harness-baked snapshot images are published under. */
 const HARNESS_IMAGE_NAME = "aai-guest-harness";
 
 /** Budget for the one-time harness-image build (spawn + install + snapshot). */
 const HARNESS_IMAGE_BUILD_TIMEOUT_MS = 10 * 60_000;
+
+/**
+ * Budget for the compile-cache warm-up run. Generous against the ~0.5s the
+ * uncached harness takes to evaluate and exit, because overrunning it only
+ * costs the cache — never the build.
+ */
+const HARNESS_WARMUP_TIMEOUT_MS = 60_000;
 
 /**
  * The SDK packages installed into the image on top of the locked toolchain.
@@ -169,7 +210,7 @@ export function resolveSdkSpecs(): string[] {
  * tag instead of quietly reusing one.
  */
 export function toolchainFingerprint(specs: string[], lock: ToolchainLock): string[] {
-  return [...specs, `lock:${createHash("sha256").update(lock.lock).digest("hex")}`];
+  return [...specs, `lock:${hash("sha256", lock.lock)}`];
 }
 
 /**
@@ -177,16 +218,25 @@ export function toolchainFingerprint(specs: string[], lock: ToolchainLock): stri
  * publishes under. Pure — this is also how a deploy records WHICH image an
  * agent was deployed against (`harness_image_tag` on the agents row), so the
  * tag computation must stay a function of exactly these inputs.
+ *
+ * Deliberately the STREAMING `createHash` rather than the one-shot
+ * `crypto.hash` every other digest here uses: the one-shot form takes a single
+ * input, so feeding it these three parts would mean joining them into one
+ * string — a second ~13 MB allocation for no gain, since at this size the
+ * digest itself dominates. The separator bytes must stay exactly as they are;
+ * this tag is recorded on agents rows as a per-deploy environment pin, so any
+ * change to the hashed byte stream makes every existing pin resolve to
+ * nothing and fails the spawn of every already-deployed agent.
  */
 export function harnessImageTag(baseTag: string, code: string, toolchain: string[]): string {
-  const hash = createHash("sha256")
+  const digest = createHash("sha256")
     .update(baseTag)
     .update("\0")
     .update(code)
     .update("\0")
     .update(toolchain.join(","))
     .digest("hex");
-  return `${HARNESS_IMAGE_NAME}:${hash.slice(0, 16)}`;
+  return `${HARNESS_IMAGE_NAME}:${digest.slice(0, 16)}`;
 }
 
 /**
@@ -264,6 +314,38 @@ function gzipBase64(content: string): string {
   return gzipSync(Buffer.from(content, "utf-8"), { level: 9 }).toString("base64");
 }
 
+/**
+ * Populate the harness's V8 compile cache inside the builder sandbox, so the
+ * snapshot carries it (see {@link HARNESS_COMPILE_CACHE_ENV} for the measured
+ * saving).
+ *
+ * Runs the harness in warm-up mode — it evaluates the module and exits 0,
+ * opening no server and reading no bundle. BEST-EFFORT: a failed or slow
+ * warm-up must not fail the image build, because the cache is an optimization
+ * and the image without it is exactly today's working image. A non-zero exit
+ * is logged rather than swallowed silently, since the failure is otherwise
+ * invisible — the image builds, boots, and is merely 200ms slower forever.
+ */
+async function warmCompileCache(builder: Sandbox): Promise<void> {
+  try {
+    const proc = await builder.exec(["node", HARNESS_REMOTE_PATH], {
+      mode: "binary",
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { ...guestExecBaseEnv(), AAI_GUEST_WARMUP: "1" },
+    });
+    const exit = await pTimeout(proc.wait(), {
+      milliseconds: HARNESS_WARMUP_TIMEOUT_MS,
+      message: `harness warm-up exceeded ${HARNESS_WARMUP_TIMEOUT_MS}ms`,
+    });
+    if (exit !== 0) debug("Harness compile-cache warm-up exited non-zero", { exit });
+  } catch (err) {
+    debug("Harness compile-cache warm-up failed; image will boot uncached", {
+      error: errorMessage(err),
+    });
+  }
+}
+
 /** Build the memoizing (code → published snapshot Image) resolver. */
 export function createHarnessImageResolver(deps: {
   client: ModalClient;
@@ -295,6 +377,7 @@ export function createHarnessImageResolver(deps: {
     });
     try {
       await builder.filesystem.writeText(code, HARNESS_REMOTE_PATH);
+      await warmCompileCache(builder);
       const image = await builder.snapshotFilesystem();
       await image.publish(tag);
       debug("Harness snapshot image published", { tag });

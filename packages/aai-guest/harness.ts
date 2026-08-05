@@ -24,6 +24,16 @@
  * bundle and prints its self-described config to stdout — deploy-time
  * config extraction with no server and no channel (see {@link mainDescribe}).
  *
+ * A fourth, WARM-UP (`AAI_GUEST_WARMUP`), exists only for the image build: it
+ * evaluates this module and exits 0 immediately, so a `NODE_COMPILE_CACHE`
+ * populated by that run can be snapshotted INTO the harness image (see
+ * aai-server/modal-harness-image.ts). It opens nothing, reads no bundle, and
+ * needs no token — so it is checked before every other mode. It exists as a
+ * declared mode rather than relying on the token check below to exit for us:
+ * that worked by accident, and a warm-up that silently stopped compiling the
+ * module would leave a cache that is merely empty, costing ~200ms on every
+ * guest boot with nothing anywhere reporting it.
+ *
  * - `/ws` — the host control channel, authenticated by the per-sandbox
  *   bearer token (AAI_GUEST_TOKEN, delivered via the exec env; the tunnel
  *   URL is public, so an upgrade without the token is rejected). JSON-RPC
@@ -294,6 +304,13 @@ async function mainAgent(port: number, host: string, token: string): Promise<voi
 
 function main(): void {
   installCrashGuards();
+  // Warm-up mode: reaching here means this module has been compiled and
+  // evaluated, which is the entire point (see the header). Exit 0 so the image
+  // build can tell a populated cache from a broken warm-up.
+  if (process.env.AAI_GUEST_WARMUP) {
+    console.error("harness warm-up complete");
+    process.exit(0);
+  }
   // Describe mode runs before the token requirement: it opens no server and
   // answers no requests, so there is nothing for a token to gate.
   const describePath = process.env.AAI_DESCRIBE_BUNDLE_PATH;

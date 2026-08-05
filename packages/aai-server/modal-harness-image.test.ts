@@ -1,11 +1,19 @@
 // Copyright 2026 the AAI authors. MIT license.
 
+import { execFile } from "node:child_process";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
 import { gunzipSync } from "node:zlib";
 import type { App, Image, ModalClient } from "modal";
 import { describe, expect, test, vi } from "vitest";
+import { resolveHarnessPath } from "./constants.ts";
 import {
   createHarnessImageResolver,
   GUEST_ROOT,
+  guestExecBaseEnv,
+  HARNESS_COMPILE_CACHE_PATH,
   HARNESS_REMOTE_PATH,
   harnessImageTag,
   localHarnessImageTag,
@@ -180,7 +188,15 @@ describe("createHarnessImageResolver", () => {
    * A Modal double recording what the build path did — one mutable state
    * object, so assertions observe the resolver's effects.
    */
-  function make(opts: { publishedTags?: Set<string>; failSnapshot?: boolean } = {}) {
+  function make(
+    opts: {
+      publishedTags?: Set<string>;
+      failSnapshot?: boolean;
+      /** Warm-up outcome: a non-zero exit, or a rejecting exec. */
+      warmupExit?: number;
+      failWarmup?: boolean;
+    } = {},
+  ) {
     const publishedTags = opts.publishedTags ?? new Set<string>();
     const state = {
       published: [] as string[],
@@ -189,6 +205,10 @@ describe("createHarnessImageResolver", () => {
       terminated: 0,
       fromNameCalls: [] as string[],
       builds: 0,
+      /** Every exec the build ran, in order, with its env. */
+      execs: [] as { command: string[]; env: Record<string, string> }[],
+      /** Ordering probe: was the snapshot taken after the warm-up exec? */
+      snapshotAfterExecs: -1,
     };
     const snapshot = {
       publish: (tag: string) => {
@@ -223,10 +243,18 @@ describe("createHarnessImageResolver", () => {
                 return Promise.resolve();
               },
             },
-            snapshotFilesystem: () =>
-              opts.failSnapshot
+            exec: (command: string[], params: { env?: Record<string, string> }) => {
+              state.execs.push({ command, env: params.env ?? {} });
+              return opts.failWarmup
+                ? Promise.reject(new Error("exec failed"))
+                : Promise.resolve({ wait: () => Promise.resolve(opts.warmupExit ?? 0) });
+            },
+            snapshotFilesystem: () => {
+              state.snapshotAfterExecs = state.execs.length;
+              return opts.failSnapshot
                 ? Promise.reject(new Error("snapshot failed"))
-                : Promise.resolve(snapshot),
+                : Promise.resolve(snapshot);
+            },
             terminate: () => {
               state.terminated++;
               return Promise.resolve();
@@ -280,6 +308,39 @@ describe("createHarnessImageResolver", () => {
     expect(state.published).toHaveLength(1);
   });
 
+  test("warms the compile cache into the snapshot, before taking it", async () => {
+    const { state, resolve } = make();
+    await resolve("harness code");
+    // One exec: the harness in warm-up mode, pointed at the cache path the
+    // guest exec env will name. Without this the image snapshots an EMPTY
+    // cache and every guest boot pays ~200ms of parse+compile forever — and
+    // nothing would report it, which is why the ordering is asserted too.
+    expect(state.execs).toEqual([
+      {
+        command: ["node", HARNESS_REMOTE_PATH],
+        env: { ...guestExecBaseEnv(), AAI_GUEST_WARMUP: "1" },
+      },
+    ]);
+    expect(state.execs[0]?.env.NODE_COMPILE_CACHE).toBe(HARNESS_COMPILE_CACHE_PATH);
+    // The cache has to be populated BEFORE the filesystem is captured.
+    expect(state.snapshotAfterExecs).toBe(1);
+  });
+
+  test("still publishes when the warm-up exec rejects", async () => {
+    const { state, resolve } = make({ failWarmup: true });
+    await resolve("harness code");
+    // Best-effort: the cache is an optimization, and an image without it is
+    // exactly today's working image. Failing the build here would take the
+    // whole platform's spawning down for a performance tweak.
+    expect(state.published).toEqual([tagFor("harness code")]);
+  });
+
+  test("still publishes when the warm-up exits non-zero", async () => {
+    const { state, resolve } = make({ warmupExit: 1 });
+    await resolve("harness code");
+    expect(state.published).toEqual([tagFor("harness code")]);
+  });
+
   test("computes the tag once per distinct code, not once per spawn", async () => {
     const { resolve } = make();
     await resolve("harness code");
@@ -290,4 +351,35 @@ describe("createHarnessImageResolver", () => {
     expect(spy.mock.calls).toHaveLength(0);
     spy.mockRestore();
   });
+});
+
+// The host half above proves the build ASKS for a warm-up. This proves the
+// guest HONOURS it, against the real built harness — the half a fake cannot
+// check, and the half that silently rots: warm-up mode has to be reached
+// before the `AAI_GUEST_TOKEN` requirement (it is handed no token), so moving
+// that check earlier would leave the image snapshotting an empty cache with
+// every test still green.
+describe("harness warm-up mode (real spawn)", () => {
+  const run = promisify(execFile);
+
+  test("exits 0 with no token and populates the compile cache", async () => {
+    const cacheDir = await mkdtemp(path.join(tmpdir(), "harness-warmup-"));
+    try {
+      const { stderr } = await run(process.execPath, [resolveHarnessPath()], {
+        env: {
+          PATH: process.env.PATH ?? "",
+          AAI_GUEST_WARMUP: "1",
+          NODE_COMPILE_CACHE: cacheDir,
+        },
+        timeout: 60_000,
+      });
+      // A zero exit is execFile resolving rather than rejecting. The message
+      // is what an image build greps for when the cache comes out empty.
+      expect(stderr).toContain("harness warm-up complete");
+      // The point of the whole exercise: bytecode on disk for the snapshot.
+      expect(await readdir(cacheDir)).not.toHaveLength(0);
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+    }
+  }, 90_000);
 });

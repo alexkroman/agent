@@ -24,8 +24,15 @@
  *
  * The parser is oxc, reached through vite's `transformWithOxc` — the same one
  * the real build runs, already in the guest toolchain, so there is no new
- * dependency and no second notion of "valid". (TypeScript's own API is not an
- * option: TS 7 is the Go port and no longer exposes `createSourceFile`.)
+ * dependency and no second notion of "valid".
+ *
+ * TypeScript's own parser is now reachable again — TS 7.0 ships `typescript/
+ * unstable/ast` (scanner, parser, factory, visitor) alongside `unstable/sync`
+ * and `unstable/async`, so the note that used to sit here ("TS 7 is the Go
+ * port and no longer exposes `createSourceFile`") is out of date. oxc stays
+ * anyway, on the stronger of the two original reasons: it is the parser the
+ * real build uses, so "parses here" and "builds there" cannot disagree, and
+ * those subpaths are explicitly unstable.
  */
 
 import path from "node:path";

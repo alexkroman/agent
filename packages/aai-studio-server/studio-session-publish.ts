@@ -197,9 +197,16 @@ async function runDeploy(
         "Nothing was deployed. Try Publish again in a moment.",
     };
   }
+  // `await using` rather than a `finally`: this sandbox is spawned for this
+  // one publish and must be torn down on every exit path. Safe to let the
+  // declaration own it because `WarmHarness[Symbol.asyncDispose]` cannot
+  // reject (warm-harness.ts swallows its own teardown failures — a sandbox
+  // that already died is the expected case here), so disposal can never
+  // replace this function's return value or suppress the error below.
+  await using sandbox = warm;
   try {
-    warm.conn.listen();
-    return await requestDeploy(warm, files, target);
+    sandbox.conn.listen();
+    return await requestDeploy(sandbox, files, target);
   } catch (err) {
     // Died mid-publish — an OOM at the bundler's memory peak is the
     // realistic one (see the burst-range notes in aai-server).
@@ -214,7 +221,5 @@ async function runDeploy(
         "This usually means the build ran out of memory. Try Publish again; if it " +
         "keeps failing, reduce what the build has to bundle.",
     };
-  } finally {
-    await warm[Symbol.asyncDispose]().catch(() => undefined);
   }
 }

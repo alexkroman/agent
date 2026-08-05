@@ -19,7 +19,7 @@
   "scripts": {
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "build": "tsdown && tsc -p tsconfig.build.json && tsx build-default-client.ts",
+    "build": "tsdown && tsc -p tsconfig.build.json && node build-default-client.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "check:publint": "publint",
@@ -57,7 +57,6 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tsdown": "^0.22.13",
-    "tsx": "^4.23.1",
     "vite": "^8.1.5",
     "vitest": "^4.1.10"
   },

@@ -181,6 +181,25 @@ Subpath exports consumed by sibling packages and user agents:
 Binary: `aai` — subcommands: init, dev, test, build, list, pull, push,
 publish, delete, login, secret, storage, templates.
 
+**`bin.mjs` is the bin in BOTH layouts** — the source checkout (where it loads
+`cli.ts`) and the published tarball (where only `dist/` ships, so it loads
+`dist/cli.mjs`); there is no `publishConfig.bin` override any more. One wrapper
+for both is what makes `module.enableCompileCache()` reachable: the cache only
+covers modules compiled AFTER the call, and every CLI dependency is external
+(`deps.neverBundle`), so `dist/cli.mjs` carries hoisted imports for citty,
+execa and the rest — all evaluated before any statement inside it. A banner, or
+a first line in `cli.ts`, would cache nothing that costs anything; loading the
+entry through a DYNAMIC import from a wrapper is the only ordering that puts
+the enable genuinely first. Source wins when both are present, so a built
+checkout under `pnpm link --global` still runs the working tree.
+
+**`aai test` sets no `NODE_OPTIONS`.** It used to force
+`--experimental-strip-types`, which is redundant on every Node the CLI supports
+(`>=24`; stripping is default-on since 23.6, and in Node 26 the flag survives
+only as an alias for `--strip-types`). Not free, either: `NODE_OPTIONS`
+propagates into every vitest worker, so a value that ever stopped being
+accepted would fail the whole run rather than degrade.
+
 **There is no user-facing deploy.** Source always flows through the studio
 workspace and production always comes from Publish: `aai push` replaces the
 linked project's workspace file map atomically
@@ -1161,6 +1180,19 @@ voice agents without the CLI:
   runtime-working-but-wrong bugs shipped. Type errors reach the studio's
   coding agent as build/deploy output it can act on. The dev watch loop
   deliberately does NOT typecheck (editor/CI feedback is faster there).
+
+  **It passes `--singleThreaded`, which is a SPEEDUP, not a throttle.** TS 7
+  parallelizes parse/check/emit by default — worth it on a repo-sized program,
+  a net cost on the single agent project this function always checks. Measured
+  on the templates project (the closest in-repo analogue of a studio
+  workspace): **pinned to 1 core, 2.4–2.9s parallel vs 1.2–1.4s single**; on 4
+  cores, 1.21s vs 1.01s. The 1-core figure is the one that matters, because a
+  guest RESERVES one CPU and this same check runs after every settled write
+  burst in the studio, where the design rests on it finishing in well under a
+  second — parallelism inside a one-core reservation is oversubscription.
+  Gated on the resolved compiler's major >= 7: an unknown compiler option is a
+  HARD error (TS5023), so a project pinning an older TypeScript must degrade,
+  not fail on a flag it never asked for.
 - **`buildClient` runs with no `client.tsx` → `{}`** → the agent gets the
   default UI.
 - **`buildClient` dedupes React** (`resolve.dedupe`), because `aai-ui`
@@ -2100,6 +2132,22 @@ you only need to list one package.
   in its `inputs`: excluding them (as it once did) meant a type error in a
   test could not invalidate the cache, and `turbo run typecheck` replayed a
   green FULL TURBO while `tsc --noEmit` failed.
+- **`build` and `typecheck` are NOT checking the same thing twice, and
+  `--noCheck` on the declaration emit is therefore wrong.** It looks like free
+  speed — `build` is `tsdown && tsc -p tsconfig.build.json`, `typecheck` is a
+  separate turbo task, and `--noCheck` emits BYTE-IDENTICAL declarations in
+  roughly half the time (measured: aai 1.09s→0.58s, aai-ui 1.76s→0.40s, aai-cli
+  2.25s→0.64s, all three diff-clean across 126/36/36 files). But the two
+  configs check different programs: `tsconfig.build.json` excludes tests and
+  turns on `rootDir` + `rewriteRelativeImportExtensions`, so it is the only
+  thing that rejects a cross-package relative import (`TS6059`) — the
+  compiler-level backstop under Biome's `noRestrictedImports`. Verified by
+  injecting one: the build config reports it, `tsc --noEmit` on
+  `tsconfig.json` does NOT, and `--noCheck` suppresses it. So the flag trades a
+  real check class for build time, and restoring the check elsewhere costs the
+  same time it saved. `isolatedDeclarations` — its usual companion — is
+  separately unusable here: the Zod-heavy modules (`protocol.ts`,
+  `type-schemas.ts`) would need hand-written types for inferred schema shapes.
 - **Coverage**: `pnpm test:coverage` (root or per package) runs vitest with
   v8 coverage and enforces the per-package threshold ratchet (see
   "Quality ratchets" above). CI runs it for every package in the test
@@ -2380,10 +2428,17 @@ string (```` ```ts no-check ````). The
 `.github/workflows/docs.yml` workflow publishes the site to GitHub Pages
 (`https://alexkroman.github.io/agent/`) on every push to `main`. The
 docs tooling lives in its own `docs/` workspace package
-because TypeDoc needs the JS TypeScript compiler API, which TS 7 (the
-native compiler the repo builds with) no longer ships — so `docs/` pins
+because TypeDoc needs the JS TypeScript compiler API — the one TS 5/6
+shipped, which the TS 7 native compiler does not — so `docs/` pins
 its own `typescript@6`, and `check:sherif` ignores the `aai-docs` package
 to allow that one deliberate version split.
+
+Precisely: TS 7.0 is not API-less, it is DIFFERENTLY-API'd. It ships
+`typescript/unstable/{sync,async,fs,proto}` and `typescript/unstable/ast`
+(scanner, parser, factory, visitor) — enough that the old "TS 7 exposes no
+`createSourceFile`" line, which `aai-guest/studio-syntax.ts` also carried,
+was wrong. The pin stays until TypeDoc itself migrates; nothing here can be
+fixed by reaching for those subpaths.
 
 ### Related docs
 
@@ -2823,6 +2878,26 @@ service's control work is light — and one container served both badly.
   Note the ceiling is a RANGE, not a pin: published `engines.node` stays
   `>=24` so SDK consumers on the previous LTS are not broken by a platform
   deploy, which is why bumping this image is not a package-visible change.
+
+  **That split floor is what decides which Node 26 features may be used
+  where, and `tsc` cannot enforce it.** The root tsconfig sets
+  `lib: ["ESNext"]`, so every V8 14.6 addition — `Map.prototype.getOrInsert`
+  / `getOrInsertComputed`, `Iterator.concat`, `Temporal` — type-checks in
+  every package. In `aai-server` / `aai-guest` / `aai-studio-*` (`>=26`) that
+  is accurate; in `aai`, `aai-ui`, `aai-cli` (`>=24`) it ships a
+  `TypeError: … is not a function` to the consumer, having passed lint,
+  typecheck, and a CI whose own Node is 26. `runtime-tools.ts` carries the
+  worked example: `getOrInsertComputed` fits its state map exactly and is
+  deliberately not used. Anything reachable from a published package needs a
+  Node-24 floor check, not a type check. (`Iterator.concat` is doubly
+  unavailable — TS 7.0.2's lib does not declare it yet.)
+
+  Safe in every package, because they predate the 24 floor: `crypto.hash()`
+  (21.7), `module.enableCompileCache()` (22.1, stable in 25.4),
+  `await using` + `Symbol.asyncDispose` (20.4). `DisposableStack` /
+  `AsyncDisposableStack` are NOT in that set — they are V8 globals Node does
+  not document, so their availability on the floor is unverified; see the
+  note in `studio-session-broker.ts`.
 - **The harness AND the build toolchain are baked into a snapshot image**,
   not written per spawn, in two halves that cache differently. The
   TOOLCHAIN is a native image LAYER (`toolchainImage`: a
@@ -2848,6 +2923,34 @@ service's control work is light — and one container served both badly.
   prevent; the operator kill switch `SANDBOX_IGNORE_IMAGE_PINS=1` forces
   the current image for every spawn when a registry loss makes that trade
   explicitly. Studio/inspect sandboxes always run the current image.
+- **The harness's V8 COMPILE CACHE is baked into the same snapshot.** The
+  harness is one ~13 MB bundle and every sandbox boots it cold, so V8 paid the
+  same parse+compile on every spawn. The builder sandbox now runs the harness
+  once in **warm-up mode** (`AAI_GUEST_WARMUP=1` — evaluates the module, opens
+  nothing, exits 0) under `NODE_COMPILE_CACHE`, before `snapshotFilesystem()`,
+  and `guestExecBaseEnv()` points every guest exec at the resulting
+  `/opt/aai/.compile-cache`. Measured on the real bundle: **~570ms → ~345ms**,
+  i.e. ~200ms off every cold voice session, studio broker call, and
+  `describeBundle`, for ~1.5 MB in the image. Three things make it safe: a
+  missing or stale entry is a silent MISS (the cache keys on Node version +
+  file content, so a bumped base image simply misses), the warm-up is
+  best-effort (a failure logs and still publishes — the cache is an
+  optimization, and failing the build would take all spawning down for a
+  perf tweak), and it is Modal-only, since the cache is a property of the
+  baked image and the subprocess backend has no image.
+
+  **Warm-up is a DECLARED mode, and both halves are tested, because the
+  failure is invisible.** A warm-up that stops compiling the harness leaves a
+  cache that is merely empty: the image builds, every guest boots, and the
+  200ms comes back forever with nothing reporting it. It relied on the
+  `AAI_GUEST_TOKEN` check to exit for us at first — true by accident, and it
+  would silently rot the moment that check moved. So the mode is checked
+  before every other mode in `main()`, and `modal-harness-image.test.ts`
+  pins BOTH sides: the host asks for the warm-up before snapshotting (fake
+  Modal), and the real built harness honours it with no token (real spawn).
+  Note the fake sandbox had no `exec` at all when this landed, so the
+  host-side assertion had to be added with it — without `exec` the warm-up
+  threw into its own best-effort catch and every test stayed green.
 - **The guest toolchain is LOCKED, and the lock is committed**
   (`packages/aai-guest/toolchain/{package.json,package-lock.json}`, regenerated
   by `pnpm sync:guest-toolchain`, gated by `pnpm check:guest-toolchain` in

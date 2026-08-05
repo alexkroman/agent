@@ -48,7 +48,11 @@ export function createSessionReaper(deps: {
     // Owner-checked inside the fleet: a replacement sandbox that already
     // re-claimed this project must not lose its row to our teardown.
     await fleet.release(entry.scope, entry.project);
-    await entry.warm[Symbol.asyncDispose]().catch(() => undefined);
+    // No `.catch()`: disposal here is the function's purpose rather than a
+    // scope guard, and `WarmHarness[Symbol.asyncDispose]` already swallows its
+    // own teardown failures (warm-harness.ts) — a second guard only implied it
+    // could reject.
+    await entry.warm[Symbol.asyncDispose]();
   }
 
   /**

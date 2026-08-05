@@ -24,7 +24,7 @@
  * only, zero workspace imports.
  */
 
-import { createHash } from "node:crypto";
+import { hash } from "node:crypto";
 import { readFile, rm } from "node:fs/promises";
 import type http from "node:http";
 import { verifyBearer } from "./harness-auth.ts";
@@ -57,7 +57,7 @@ export async function readAgentBoot(
     throw new Error("agent mode requires AAI_BUNDLE_PATH and AAI_BUNDLE_SHA256");
   }
   const code = await readFile(bundlePath, "utf-8");
-  const actual = createHash("sha256").update(code, "utf-8").digest("hex");
+  const actual = hash("sha256", code);
   if (actual !== expected.toLowerCase()) {
     throw new Error(
       `bundle hash mismatch: expected sha256 ${expected}, got ${actual} — refusing to load`,
