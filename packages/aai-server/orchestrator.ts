@@ -41,6 +41,7 @@ import { authMw, existingOwnerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
 import type { PlatformEvents } from "./platform-events.ts";
 import { createMutationLock, localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
+import type { SandboxRegistry } from "./sandbox-registry.ts";
 import { type ResolveSandboxOpts, watchAgentInvalidation } from "./sandbox-resolve.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
 import { currentHarnessImageTag, describeBundle } from "./sandbox-vm.ts";
@@ -89,6 +90,13 @@ export type OrchestratorOpts = {
    * it keeps superseded sandboxes alive until idle eviction.
    */
   events?: PlatformEvents;
+  /**
+   * Cross-replica sandbox registry (sandbox-registry.ts). The slot cache is
+   * per-replica and the web service autoscales, so without this each replica
+   * spawns its own guest for the same slug. Absent (dev/tests, no platform
+   * database) leaves every replica independent.
+   */
+  registry?: SandboxRegistry;
   /** Allowed CORS origins. Defaults to `["*"]` (any origin). */
   allowedOrigins?: string[];
   /**
@@ -206,6 +214,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     store: opts.store,
     secrets,
     ...(opts.appDb && { appDb: opts.appDb }),
+    ...(opts.registry && { registry: opts.registry }),
   };
 
   const agents = new Hono<HonoEnv>();

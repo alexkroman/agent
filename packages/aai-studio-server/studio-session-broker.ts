@@ -33,21 +33,21 @@ import { randomBytes } from "node:crypto";
 import { errorMessage } from "@alexkroman1/aai";
 import { createOwnedMap } from "@alexkroman1/aai/internal";
 import { resolveHarnessPath } from "aai-server/constants";
-import { GUEST_ROUTES, guestHttpUrl } from "aai-server/guest-routes";
 import { createKeyedLock, withLock } from "aai-server/platform-barrel";
 import { spawnWarmHarness, type WarmHarness } from "aai-server/sandbox-vm";
-import { SafePathSchema } from "aai-server/schemas";
-import { z } from "zod";
 import { studioLlmModelId } from "./studio-llm.ts";
 import { createPreviewDeployer, type PreviewTarget } from "./studio-preview.ts";
 import { studioSystemPrompt } from "./studio-prompt.ts";
-import { MAX_STUDIO_CHAT_MESSAGES, UiMessageSchema } from "./studio-schemas.ts";
+import type { adoptPeerSession } from "./studio-session-adopt.ts";
+import { createSessionFleet, soloFleet } from "./studio-session-fleet.ts";
 import {
   createWorkspacePublisher,
   type WorkspaceDeployOutcome,
   type WorkspaceDeployTarget,
 } from "./studio-session-publish.ts";
-import { getWorkspace, mutateWorkspace, projectKey } from "./studio-workspace.ts";
+import { STUDIO_SESSION_IDLE_MS, type StudioSessionRegistry } from "./studio-session-registry.ts";
+import { chatUrlForGuest, wireGuest } from "./studio-session-wire.ts";
+import { getWorkspace, projectKey } from "./studio-workspace.ts";
 
 /**
  * Steps one chat turn may take.
@@ -64,52 +64,13 @@ import { getWorkspace, mutateWorkspace, projectKey } from "./studio-workspace.ts
  * and by the client's Stop button.
  */
 const MAX_CHAT_STEPS = 80;
-/**
- * Idle window before a project's sandbox is evicted.
- *
- * Matches the agent guest's own idle self-exit (`AGENT_IDLE_EXIT_MS`, 5 min):
- * a studio sandbox costs exactly what a deployed agent's does, and there is
- * no reason for the one that sits idle while someone reads a reply to be
- * billed three times longer. Losing a live-but-quiet sandbox costs one
- * re-broker — the client re-brokers on a rejected fetch or a 409, and the
- * workspace and chat both live in the store, not the guest, so nothing is
- * lost with it.
- *
- * The sweeper below runs on a 60s cadence, so the effective window is this
- * value plus up to a minute.
- */
-const STUDIO_SESSION_IDLE_MS = 5 * 60_000;
 /** Deadline for installing a session in the guest (workspace transfer). */
 const SESSION_INIT_TIMEOUT_MS = 60_000;
-
-/**
- * Guest-supplied workspace files. Wire-shape check only (record of safe
- * paths to strings): the size/count/total-byte limits are enforced by the
- * single authority a client file PUT also goes through —
- * `stampWorkspace`'s `assertWorkspaceLimits`, inside the `mutateWorkspace`
- * call below, whose throw rejects the RPC just the same.
- */
-const GuestFilesSchema = z.object({
-  files: z.record(SafePathSchema, z.string()),
-  /**
-   * True only on the TURN-COMPLETE sync (the guest's `settleTurn`, its
-   * analog of opencode's `session.idle` / codex's `agent-turn-complete`).
-   * Mid-turn checkpoints omit it, so preview deploys are keyed
-   * deterministically to settled turns — never to a half-finished tree.
-   */
-  done: z.boolean().optional(),
-});
-
-// Guest-sent wire data: the settled conversation is validated per message
-// (structure + content-size cap) before it lands in the chat store, not
-// accepted as a blob of unknowns.
-const GuestChatSchema = z.object({
-  messages: z.array(UiMessageSchema).max(MAX_STUDIO_CHAT_MESSAGES),
-});
 
 // Deploy shapes live with the deploy path (studio-session-publish.ts) and
 // are re-exported here because this module is the broker's public face.
 export type { WorkspaceDeployOutcome, WorkspaceDeployTarget } from "./studio-session-publish.ts";
+export { chatUrlForGuest } from "./studio-session-wire.ts";
 
 type BrokerStores = {
   workspaces: import("aai-server/workspace-store").WorkspaceStore;
@@ -122,6 +83,21 @@ export type StudioSessionBrokerOptions = BrokerStores & {
   spawn?: typeof spawnWarmHarness;
   env?: NodeJS.ProcessEnv;
   idleMs?: number;
+  /**
+   * Cross-replica session registry (studio-session-registry.ts). Without it
+   * every replica is independent and a project gets one sandbox PER REPLICA;
+   * with it, the fleet holds one. Absent in dev/tests, where there is a
+   * single process and so no peer to find.
+   */
+  registry?: StudioSessionRegistry;
+  /**
+   * This replica's identity — the registry's `owner`. Required alongside
+   * `registry`: without a stable, distinct id a replica cannot tell its own
+   * rows from a peer's, and `release` could evict a live peer's sandbox.
+   */
+  replicaId?: string;
+  /** Test seam for the peer install (studio-session-adopt.ts). */
+  adopt?: typeof adoptPeerSession;
 };
 
 export type StudioSessionBroker = {
@@ -165,6 +141,9 @@ export type StudioSessionBroker = {
 type SessionEntry = {
   warm: WarmHarness;
   url: string;
+  /** This entry's own (scope, project) — its key in the cross-replica registry. */
+  scope: string;
+  project: string;
   lastUsed: number;
   /**
    * The chat-surface bearer, minted ONCE for this sandbox and handed to every
@@ -191,18 +170,6 @@ type SessionEntry = {
   release: () => boolean;
 };
 
-/**
- * The guest's chat URL, derived from the origin the backend reported.
- *
- * This used to reverse-engineer `sessionUrl` — swap the scheme, overwrite the
- * pathname — to reach a surface this package was never handed. Deriving from
- * the origin means a guest route rename is one edit in `guest-routes.ts`
- * rather than two backends plus URL surgery in another package.
- */
-export function chatUrlForGuest(guestOrigin: string): string {
-  return guestHttpUrl(guestOrigin, GUEST_ROUTES.studioChat);
-}
-
 export function createStudioSessionBroker(
   options: StudioSessionBrokerOptions,
 ): StudioSessionBroker {
@@ -210,6 +177,17 @@ export function createStudioSessionBroker(
   const env = options.env ?? process.env;
   const idleMs = options.idleMs ?? STUDIO_SESSION_IDLE_MS;
   const sessions = createOwnedMap<string, SessionEntry>();
+  // The registry is useless — and `release` becomes dangerous — without a
+  // distinct owner id, so the two travel together or not at all. Absent, the
+  // solo fleet makes every call below a no-op instead of a branch.
+  const fleet =
+    options.registry && options.replicaId
+      ? createSessionFleet({
+          registry: options.registry,
+          replicaId: options.replicaId,
+          ...(options.adopt && { adopt: options.adopt }),
+        })
+      : soloFleet;
   /**
    * Serializes a project's session installs. Two `POST …/session` calls for
    * one project overlap routinely — a double-click, a StrictMode double
@@ -233,6 +211,9 @@ export function createStudioSessionBroker(
    */
   async function disposeEntry(entry: SessionEntry): Promise<void> {
     entry.release();
+    // Owner-checked inside the fleet: a replacement sandbox that already
+    // re-claimed this project must not lose its row to our teardown.
+    await fleet.release(entry.scope, entry.project);
     await entry.warm[Symbol.asyncDispose]().catch(() => undefined);
   }
 
@@ -242,47 +223,49 @@ export function createStudioSessionBroker(
   const sweeper = setInterval(() => {
     const now = Date.now();
     for (const entry of sessions.values()) {
-      if (now - entry.lastUsed > idleMs) void disposeEntry(entry);
+      if (now - entry.lastUsed > idleMs) void sweepIfIdle(entry);
     }
   }, 60_000);
+
+  /**
+   * Evict `entry` unless someone in the fleet has been brokering it — see
+   * `SessionFleet.heldByUs`. The lease and the idle window are the same
+   * number for exactly this comparison (see STUDIO_SESSION_IDLE_MS).
+   */
+  async function sweepIfIdle(entry: SessionEntry): Promise<void> {
+    if (await fleet.heldByUs(entry.scope, entry.project)) return;
+    await disposeEntry(entry);
+  }
   sweeper.unref?.();
 
-  /** Wire the control channel for one project's sandbox. */
+  /**
+   * Wire one sandbox's guest→host RPCs (studio-session-wire.ts). Everything
+   * the handlers need about THIS replica's state — is this still the
+   * project's sandbox, where do its previews go — is resolved at RPC time,
+   * not captured at wire time: a sandbox can be replaced between the two.
+   */
   function wire(warm: WarmHarness, key: string, scope: string, project: string): void {
-    // No db — trial tool runs report storage-not-enabled, same as before.
-    const touch = (): void => {
-      const entry = sessions.get(key);
-      if (entry && entry.warm === warm) entry.lastUsed = Date.now();
-    };
-    warm.conn.onRequest("studio/sync-workspace", async (params) => {
-      touch();
-      const parsed = GuestFilesSchema.safeParse(params);
-      // Throwing rejects the RPC — the guest logs it; the turn still streams.
-      if (!parsed.success) throw new Error(`Invalid workspace sync: ${parsed.error.message}`);
-      const doc = await mutateWorkspace(options.workspaces, scope, project, (workspace) => ({
-        ...workspace,
-        files: parsed.data.files,
-      }));
-      if (!doc) throw new Error(`Project ${project} not found`);
-      // The turn settled with edits — ship the workspace to the preview slug
-      // so the Preview pane picks it up without a Publish. Only on the
-      // `done` sync: mid-turn checkpoints would preview half-finished trees.
-      // Fire-and-forget: the sync must settle now; the deploy stamps its
-      // outcome later.
-      const entry = sessions.get(key);
-      if (parsed.data.done && entry && entry.warm === warm && entry.previewTarget) {
-        previews.schedule(scope, project, entry.previewTarget);
-      }
-      return { ok: true };
-    });
-    warm.conn.onRequest("studio/persist-chat", async (params) => {
-      touch();
-      const parsed = GuestChatSchema.safeParse(params);
-      if (!parsed.success) throw new Error(`Invalid chat snapshot: ${parsed.error.message}`);
-      await options.chats.putChat(scope, project, parsed.data.messages);
-      return { ok: true };
-    });
-    warm.conn.listen();
+    wireGuest(
+      {
+        workspaces: options.workspaces,
+        chats: options.chats,
+        touch: () => {
+          const entry = sessions.get(key);
+          if (!entry || entry.warm !== warm) return;
+          entry.lastUsed = Date.now();
+          fleet.touch(scope, project);
+        },
+        previewTarget: () => {
+          const entry = sessions.get(key);
+          return entry?.warm === warm ? (entry.previewTarget ?? null) : null;
+        },
+        schedulePreview: (s, p, target) => previews.schedule(s, p, target),
+      },
+      warm,
+      key,
+      scope,
+      project,
+    );
   }
 
   /**
@@ -300,6 +283,34 @@ export function createStudioSessionBroker(
    * back, so refreshing the workspace never invalidates a token another tab
    * is holding (see {@link SessionEntry.chatToken}).
    */
+  /**
+   * The install payload minus the chat token, spelled once: the owner sends
+   * it over the control channel, a peer POSTs it to the guest. Two copies
+   * would be two definitions of what a session IS — and the drift would show
+   * up as a coding agent running on a different model or prompt depending on
+   * which replica the browser happened to hit.
+   */
+  function sessionParams(
+    scope: string,
+    project: string,
+    apiKey: string,
+    files: Record<string, string>,
+  ) {
+    return {
+      // The guest pins (scope, project) on its first install and refuses any
+      // later one naming a different pair — so a mis-keyed registry row is a
+      // 409, not one tenant's workspace in another tenant's sandbox.
+      scope,
+      project,
+      files,
+      apiKey,
+      system: studioSystemPrompt(),
+      model: studioLlmModelId(env),
+      ...(env.STUDIO_LLM_REGION === "eu" ? { region: "eu" as const } : {}),
+      maxSteps: MAX_CHAT_STEPS,
+    };
+  }
+
   async function initSession(
     warm: WarmHarness,
     scope: string,
@@ -315,16 +326,7 @@ export function createStudioSessionBroker(
     const chatToken = existingToken ?? randomBytes(32).toString("base64url");
     await warm.conn.sendRequest(
       "studio/session-init",
-      {
-        project,
-        files: workspace.files,
-        apiKey,
-        chatToken,
-        system: studioSystemPrompt(),
-        model: studioLlmModelId(env),
-        ...(env.STUDIO_LLM_REGION === "eu" ? { region: "eu" as const } : {}),
-        maxSteps: MAX_CHAT_STEPS,
-      },
+      { ...sessionParams(scope, project, apiKey, workspace.files), chatToken },
       SESSION_INIT_TIMEOUT_MS,
     );
     return chatToken;
@@ -369,7 +371,7 @@ export function createStudioSessionBroker(
     }
   }
 
-  /** Reuse-or-spawn for one project. Runs under that project's session lock. */
+  /** Reuse-or-adopt-or-spawn for one project. Runs under the session lock. */
   async function ensureSessionLocked(
     key: string,
     scope: string,
@@ -385,6 +387,17 @@ export function createStudioSessionBroker(
     // teardown per bogus project id.
     const workspace = await getWorkspace(options.workspaces, scope, project);
     if (!workspace) return null;
+
+    // Cold HERE is not cold everywhere: another replica may already be
+    // running this project's guest. Checked after the workspace read so a
+    // bogus project never reaches the registry, and before the spawn because
+    // the spawn is exactly the duplicate this prevents.
+    const adopted = await fleet.adopt(
+      scope,
+      project,
+      sessionParams(scope, project, apiKey, workspace.files),
+    );
+    if (adopted) return adopted;
 
     // Tagged with the project name so the Modal dashboard shows WHICH
     // studio session a sandbox serves, not a shared "studio-session" blob.
@@ -410,12 +423,23 @@ export function createStudioSessionBroker(
     const entry: SessionEntry = {
       warm,
       url,
+      scope,
+      project,
       lastUsed: Date.now(),
       chatToken: token,
       ...(serverUrl ? { previewTarget: { serverUrl, apiKey } } : {}),
       release: () => false,
     };
     entry.release = sessions.claim(key, entry);
+    // Announce it to the fleet. Best-effort inside, and deliberately AFTER
+    // the local claim so a concurrent local dispose cannot release a row
+    // that does not exist yet.
+    await fleet.claim(scope, project, {
+      chatUrl: url,
+      chatToken: token,
+      guestOrigin: warm.guestOrigin,
+      sandboxToken: warm.token,
+    });
     return { url, token };
   }
 

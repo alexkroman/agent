@@ -243,12 +243,14 @@ function warmFromModal(
   proc: ModalProcLike,
   ws: RpcWebSocket,
   origin: string,
+  token: string,
 ): WarmHarness {
   return warmFromGuest({
     proc,
     terminate: () => sb.terminate(),
     ws,
     origin,
+    token,
   });
 }
 
@@ -338,7 +340,7 @@ export async function spawnModalWarm(
       ms: Math.round(performance.now() - t0),
     });
 
-    return warmFromModal(sb, proc, ws, origin);
+    return warmFromModal(sb, proc, ws, origin, token);
   } catch (err) {
     // Never leak a sandbox whose harness failed to start.
     await sb.terminate().catch(() => undefined);

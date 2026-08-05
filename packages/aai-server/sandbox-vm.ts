@@ -50,6 +50,15 @@ export type WarmHarness = {
   guestOrigin: string;
   /** Public client-session endpoint on the sandbox's tunnel. */
   sessionUrl: string;
+  /**
+   * The per-sandbox bearer minted at spawn, gating this guest's `/ws`,
+   * `/manage/*`, and `/studio/session-init`. Exposed so the studio broker can
+   * hand it to a PEER replica through the session registry — the peer holds
+   * no socket to this guest but must still be able to install a session over
+   * HTTP (see aai-studio-server/studio-session-registry.ts). It is a platform
+   * secret, never handed to a browser: the browser gets the `chatToken`.
+   */
+  token: string;
   cleanup: () => Promise<void>;
   /** True while the underlying guest process is alive. */
   alive: () => boolean;

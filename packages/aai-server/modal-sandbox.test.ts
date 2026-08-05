@@ -133,6 +133,7 @@ describe("warmFromModal", () => {
       fake.proc,
       socket.ws,
       "wss://tunnel.test:443/websocket",
+      "test-token",
     );
     warm.conn.listen();
 
@@ -157,6 +158,7 @@ describe("warmFromModal", () => {
       fake.proc,
       socket.ws,
       "wss://tunnel.test:443/websocket",
+      "test-token",
     );
     const exits: string[] = [];
     warm.onExit(() => exits.push("exit"));
@@ -177,6 +179,7 @@ describe("warmFromModal", () => {
       fake.proc,
       socket.ws,
       "wss://tunnel.test:443/websocket",
+      "test-token",
     );
     expect(warm.alive()).toBe(true);
     socket.close();
@@ -192,6 +195,7 @@ describe("warmFromModal", () => {
       fake.proc,
       socket.ws,
       "wss://tunnel.test:443/websocket",
+      "test-token",
     );
 
     const p1 = warm.cleanup();
@@ -213,6 +217,7 @@ describe("warmFromModal", () => {
       fake.proc,
       socket.ws,
       "wss://tunnel.test:443/websocket",
+      "test-token",
     );
     await expect(warm.cleanup()).resolves.toBeUndefined();
   });
@@ -225,6 +230,7 @@ describe("warmFromModal", () => {
       fake.proc,
       socket.ws,
       "wss://tunnel.test:443/websocket",
+      "test-token",
     );
     warm.conn.listen();
     const pending = (warm.conn as RpcConnection).sendRequest("probe");

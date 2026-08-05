@@ -60,6 +60,29 @@ const SWEEP_RATE_LIMITS = guarded(
 );
 
 /**
+ * Expired sandbox registrations. `findPeer` (sandbox-registry.ts) already
+ * filters on `expires_at`, so this is dead-row hygiene, not correctness — it
+ * keeps the table proportional to live sandboxes rather than to every
+ * sandbox the fleet has ever run, including those whose owning replica died
+ * without unregistering.
+ */
+const SWEEP_SANDBOX_REGISTRY = guarded(
+  "aai_platform.sandbox_registry",
+  "delete from aai_platform.sandbox_registry where expires_at <= now()",
+);
+
+/**
+ * Expired studio session registrations — the same hygiene as above for the
+ * studio broker's own registry (aai-studio-server/studio-session-registry.ts),
+ * whose rows carry guest credentials and so should not linger past their
+ * lease any longer than the sweep interval.
+ */
+const SWEEP_STUDIO_SESSIONS = guarded(
+  "aai_platform.studio_sessions",
+  "delete from aai_platform.studio_sessions where expires_at <= now()",
+);
+
+/**
  * Orphaned preview agents: `<project>-preview` deploys whose studio project
  * was deleted (project deletion removes the workspace and chat rows but the
  * preview agent — deployed through the standard deploy path — has no other
@@ -128,6 +151,12 @@ end $$`;
 export const PLATFORM_CRON_JOBS: readonly CronJob[] = [
   { name: "aai-sweep-slug-locks", schedule: "*/30 * * * *", command: SWEEP_SLUG_LOCKS },
   { name: "aai-sweep-rate-limits", schedule: "7 * * * *", command: SWEEP_RATE_LIMITS },
+  {
+    name: "aai-sweep-sandbox-registry",
+    schedule: "*/30 * * * *",
+    command: SWEEP_SANDBOX_REGISTRY,
+  },
+  { name: "aai-sweep-studio-sessions", schedule: "*/30 * * * *", command: SWEEP_STUDIO_SESSIONS },
   { name: "aai-sweep-orphan-previews", schedule: "23 * * * *", command: SWEEP_ORPHAN_PREVIEWS },
 ];
 

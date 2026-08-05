@@ -36,6 +36,7 @@ import {
   PROJECT_CREATE_RATE_LIMIT,
   type StudioRateLimiters,
 } from "./studio-rate-limit.ts";
+import { createPgStudioSessionRegistry } from "./studio-session-registry.ts";
 
 function resolveServiceMode(env: NodeJS.ProcessEnv): "combined" | "studio" {
   const raw = env.AAI_SERVICE ?? "combined";
@@ -60,6 +61,9 @@ function buildRateLimiters(base: ServiceConfig): StudioRateLimiters | undefined 
 
 function studioAppOpts(base: ServiceConfig, isDraining: () => boolean): StudioAppOpts {
   const rateLimiters = buildRateLimiters(base);
+  // Cross-replica studio session registry — only with a platform database.
+  // Without one there is a single process, so there are no peers to find.
+  const sessionRegistry = base.sql ? createPgStudioSessionRegistry(base.sql) : undefined;
   return {
     store: base.store,
     workspaces: base.workspaces,
@@ -70,6 +74,8 @@ function studioAppOpts(base: ServiceConfig, isDraining: () => boolean): StudioAp
     ...(base.appDb && { appDb: base.appDb }),
     ...(base.slugLock && { slugLock: base.slugLock }),
     ...(rateLimiters && { studioRateLimiters: rateLimiters }),
+    ...(sessionRegistry && { studioSessionRegistry: sessionRegistry }),
+    replicaId: base.replicaId,
     isDraining,
   };
 }

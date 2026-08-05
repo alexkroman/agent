@@ -329,11 +329,16 @@ model) is the security boundary.
   browsers — the embedded SDK runtime drives STT/LLM/TTS in-guest), and
   `/studio/chat` + `/studio/tools` (the studio coding agent's PUBLIC chat
   surface, bearer-gated by the broker-minted per-session chat token — see
-  "Browser studio").
+  "Browser studio"), plus `POST /studio/session-init`, the HTTP twin of the
+  `studio/session-init` RPC gated by the per-sandbox HOST token, for the
+  replica that does not hold this guest's single control socket (see "One
+  studio sandbox per project, fleet-wide").
   `harness.ts` (servers + dispatch), `harness-agent-mode.ts` (agent-server
   boot, manage surface, idle/drain lifecycle), `trial.ts` (run_code
   executor + one-shot tool trials), `harness-rpc.ts` (guest→host request
-  proxy),
+  proxy), `studio-session-init.ts` (the HTTP install route + the guest's own
+  (scope, project) identity pin), `studio-http.ts` (shared CORS + bounded
+  body read for both `/studio/*` surfaces),
   `studio-chat.ts`/`studio-tools.ts`/`studio-edit.ts`/`studio-grep.ts`
   (the in-guest coding agent), `studio-build.ts` (in-guest workspace
   builds through the aai CLI bundlers), `studio-publish.ts` (Publish =
@@ -405,7 +410,10 @@ model) is the security boundary.
   `studio-routes.ts` (HTTP surface), `studio-session-broker.ts` (per-project
   coding-agent sandboxes: boot via the shared `spawnWarmHarness` machinery, session
   install, guest RPC handlers, `buildWorkspace` for Publish, idle
-  eviction), `studio-llm.ts` (gateway model config; the key is always the
+  eviction), `studio-session-registry.ts` (the cross-replica row that makes
+  a project's sandbox one fleet-wide, not one per replica),
+  `studio-session-adopt.ts` (installing a session into a PEER's guest over
+  HTTP), `studio-llm.ts` (gateway model config; the key is always the
   caller's), `studio-workspace-dir.ts` (materializes a workspace to a
   scratch dir — eval-suite only now), `studio-errors.ts`
   (`StudioBuildError`), `studio-deploy.ts` (guest build → validate config →
@@ -526,7 +534,11 @@ voice agents without the CLI:
   (`aai-guest/studio-build.ts` — the toolchain node_modules are baked next
   to the harness) and loads/trials the bundle in place; Publish runs the
   literal CLI via the host→guest `workspace/deploy` RPC. Sandboxes are per
-  (scope, project) with a 5-min idle eviction (matching the agent guest's
+  (scope, project) FLEET-WIDE — the in-process map is backed by
+  `aai_platform.studio_sessions`, so a broker call landing on another
+  replica adopts the live guest instead of spawning a second one (see "One
+  studio sandbox per project, fleet-wide") — with a 5-min idle eviction
+  (matching the agent guest's
   own idle self-exit); a dead one heals on the next
   broker call, and the client re-brokers on ANY rejection from the chat
   surface — a rejected fetch, a 409, or a **401**. That last one matters
@@ -1977,7 +1989,10 @@ What deliberately stays in-process, and why it doesn't break statelessness:
 - **The slot cache and sandboxes** — a resident sandbox is a
   per-replica accelerator; the agents row's change stream (below) keeps
   residents correct across replicas, and losing them costs a rebuild,
-  never correctness.
+  never correctness. WHICH sandbox a slug runs is not per-replica state,
+  though: that lives in `aai_platform.sandbox_registry`, so a cold broker
+  routes to a live peer's guest rather than spawning the fleet's Nth copy
+  (see "No horizontal sandbox scaling" below).
 - **Caches** (bundle-store row/version caches, hash-keyed immutable blob
   caches, the auth hash cache, the studio build cache) — TTL-bounded or
   content-hash-keyed read-through caches whose staleness windows are
@@ -2453,22 +2468,96 @@ JS SDK exposes sandbox MEMORY snapshots (today it exposes only
 restore-from-snapshot slots into this single spawn path — do NOT
 reintroduce a host-managed pool to approximate it.
 
-### No horizontal sandbox scaling — one sandbox per slug per replica
+### No horizontal sandbox scaling — one sandbox per slug, FLEET-WIDE
 
 Per-slug horizontal scaling (`sandbox-scale.ts`: session caps, overflow
-replicas, least-connections routing over guest-reported counts) and the
-cross-replica sandbox registry (`sandbox-registry.ts` +
-`aai_platform.sandbox_registry` + its pg_cron sweep and heartbeats) were
-DELETED for simplicity: a slug has exactly one resident sandbox per
-web-service replica, and the broker (`GET /:slug/client-config` →
-`resolveSandbox`) either serves the live resident or rebuilds it. The
-web-service replicas themselves still autoscale, so a hot slug's load
-spreads across replicas (each with its own sandbox); a single guest
-handles many concurrent voice sessions before that matters. Git history
-has the full design if per-slug scaling ever needs to come back — the one
-constraint that survives any reintroduction: sessions dial the sandbox
-directly, so the guest-reported session count is the only honest load
-signal, and the broker is the only routing point.
+replicas, least-connections routing over guest-reported counts) stays
+DELETED: a slug has ONE resident sandbox, and the broker
+(`GET /:slug/client-config` → `resolveSandbox`) either serves it or
+rebuilds it. A single guest handles many concurrent voice sessions before
+that matters. Git history has the full design if per-slug scaling ever
+needs to come back — the one constraint that survives any reintroduction:
+sessions dial the sandbox directly, so the guest-reported session count is
+the only honest load signal, and the broker is the only routing point.
+
+**"One" means fleet-wide, not per replica** (`sandbox-registry.ts` +
+`aai_platform.sandbox_registry`). The slot cache is per-replica and the web
+service autoscales, so for a while each replica spawned its own guest for
+the same slug. That is not an edge case — Modal load-balances every request
+independently, so a page load and the project switch a minute later
+routinely land on different replicas. The registry is a lease table: the
+owning replica heartbeats its resident (`startRegistryHeartbeat`), and a
+COLD broker (no local resident) routes to a live peer's guest instead of
+spawning a duplicate. Sessions dial the guest's tunnel directly, so a
+peer's URL serves a client exactly as well as a local one.
+
+Three properties worth keeping:
+
+- **Ownership is re-checked every heartbeat tick**, so EVERY detach path —
+  retire, terminate, idle self-exit, a lost guest, a blue-green handover —
+  converges on an unregister without any of them knowing the registry
+  exists. Those paths are the delicate ones; none of them gained an
+  obligation.
+- **Peers trust the lease, because a peer's guest is not theirs to probe** —
+  the `/manage/*` bearer is per-sandbox and stays with its owner. So a
+  crashed replica's rows can hand out a dead URL for up to one lease, and a
+  local retire for up to one heartbeat. Both heal on the client's re-broker
+  (`session-core.ts` re-brokers per attempt).
+- **The peer route is gated on the agents row still existing.** A deleted
+  agent's registry rows outlive the row, and routing to them would
+  resurrect a 404.
+
+The registry is read at the broker, NOT subscribed to: it only matters at
+the moment a cold broker runs, and that moment already reads the database.
+A change stream would be a second mechanism answering the same question —
+the duplication rule that shaped `watchAgentInvalidation`.
+
+### One studio sandbox per project, fleet-wide
+
+The same problem hit the studio harder, and the fix is shaped differently
+because a studio guest is STATEFUL to the host: it holds an installed
+session (materialized workspace, caller's key, system prompt) that a broker
+call must be able to refresh, or the coding agent edits a stale tree. Two
+live guests for one project also meant two `studio/sync-workspace` writers
+racing on the same workspace row.
+
+`aai-studio-server/studio-session-registry.ts` (`aai_platform.studio_sessions`)
+records the chat URL + chat token the browser gets, plus the guest origin +
+per-sandbox token a PEER needs to reinstall the session. `ensureSession` is
+now a three-step ladder: local map hit → reuse; registry row → **adopt**
+(`studio-session-adopt.ts`); neither → cold spawn + claim.
+
+- **Adoption cannot use the control socket** — a harness accepts exactly
+  ONE (`/ws` answers 409 to a second authenticated dial), and the owner has
+  it. So the guest serves an HTTP twin, `POST /studio/session-init`
+  (`aai-guest/studio-session-init.ts`), gated by the per-sandbox HOST token
+  rather than the `chatToken` it mints. The SOCKET stays the owner's,
+  carrying lifecycle and the guest→host RPCs; HTTP lets any replica install
+  a session. Ownership never moves, so there is no second socket and no
+  cross-replica termination.
+- **The install IS the liveness probe.** Anything but a clean 2xx drops the
+  row and falls through to a cold spawn, so a stale row costs one failed
+  HTTP round trip rather than a dead URL in a browser.
+- **The guest pins its own identity.** `initStudioSession` records the
+  (scope, project) of its first successful install and refuses any later
+  one naming a different pair (409). Now that any replica can install over
+  HTTP, a mis-keyed row would otherwise materialize one tenant's workspace
+  inside another tenant's guest — the same reasoning as agent mode
+  hash-verifying its bundle instead of trusting the spawner.
+- **The lease and the local idle window are ONE number**
+  (`STUDIO_SESSION_IDLE_MS`). They have to be: a peer's broker call is
+  activity the owner cannot see, and all it leaves behind is a touched
+  lease, so the owner's sweeper consults the row before evicting. Guest RPC
+  activity touches the lease too — an agent turn longer than the window
+  would otherwise let the row expire and invite a peer to cold-spawn
+  mid-turn.
+- **`chatToken` is minted once per SANDBOX and stored in the row**, so every
+  replica hands back the same one. Re-minting per broker call would revoke
+  the token every other tab is holding.
+
+Both registries carry a `replicaId` (`ServiceConfig.replicaId`, a per-process
+UUID) and both fall back to independent per-replica behaviour when there is
+no platform database — dev and tests are a single process with no peers.
 
 ### Platform sandbox (aai-server)
 

@@ -35,6 +35,7 @@ import { Hono } from "hono";
 import type { StudioHonoEnv } from "./studio-context.ts";
 import type { StudioRateLimiters } from "./studio-rate-limit.ts";
 import { createStudioRoutes } from "./studio-routes.ts";
+import type { StudioSessionRegistry } from "./studio-session-registry.ts";
 import { handleStudioClientAsset, handleStudioFavicon, handleStudioPage } from "./studio-static.ts";
 
 export type StudioAppOpts = {
@@ -58,6 +59,13 @@ export type StudioAppOpts = {
   /** Cross-service slug mutation lock — MUST be the shared Postgres lock in production. */
   slugLock?: SlugMutationLock;
   studioRateLimiters?: StudioRateLimiters;
+  /**
+   * Cross-replica studio session registry + this replica's identity, so one
+   * project gets ONE coding-agent sandbox fleet-wide rather than one per
+   * replica (studio-session-registry.ts). Both or neither.
+   */
+  studioSessionRegistry?: StudioSessionRegistry;
+  replicaId?: string;
   allowedOrigins?: string[];
   isDraining?: () => boolean;
 };
@@ -82,6 +90,8 @@ export function createStudioApp(opts: StudioAppOpts): {
   app.get("/studio-assets/:path{.+}", handleStudioClientAsset);
   const studioRoutes = createStudioRoutes({
     ...(opts.studioRateLimiters && { rateLimiters: opts.studioRateLimiters }),
+    ...(opts.studioSessionRegistry && { sessionRegistry: opts.studioSessionRegistry }),
+    ...(opts.replicaId && { replicaId: opts.replicaId }),
   });
   app.route("/studio", studioRoutes.routes);
   // Bare `/studio` and `/studio/` — send the browser to the studio page.

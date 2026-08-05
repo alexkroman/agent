@@ -6,6 +6,7 @@ import type { WarmHarness } from "aai-server/sandbox-vm";
 import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
 import { describe, expect, test, vi } from "vitest";
 import { chatUrlForGuest, createStudioSessionBroker } from "./studio-session-broker.ts";
+import { createMemoryStudioSessionRegistry } from "./studio-session-registry.ts";
 import { createWorkspace, getWorkspace } from "./studio-workspace.ts";
 
 const SCOPE = "scope";
@@ -49,6 +50,7 @@ function fakeGuest(guestOrigin = "wss://tunnel.example:443"): FakeGuest {
   const warm = {
     conn,
     guestOrigin,
+    token: "sandbox-token",
     sessionUrl: `${guestOrigin}/websocket`,
     [Symbol.asyncDispose]: async () => {
       disposed = true;
@@ -477,5 +479,125 @@ describe("studio publish (workspace/deploy)", () => {
     expect(outcome.output).toMatch(/could not start a build sandbox/i);
     expect(outcome.output).toMatch(/nothing was deployed/i);
     await broker.dispose();
+  });
+});
+
+describe("cross-replica studio sessions", () => {
+  /** A broker wired as one replica of a fleet sharing `registry`. */
+  async function makeReplica(
+    replicaId: string,
+    guests: FakeGuest[],
+    shared: {
+      workspaces: ReturnType<typeof createMemoryWorkspaceStore>;
+      chats: ReturnType<typeof createMemoryChatStore>;
+      registry: ReturnType<typeof createMemoryStudioSessionRegistry>;
+    },
+    adopt?: unknown,
+  ) {
+    let spawned = 0;
+    const spawn = vi.fn(async () => {
+      const guest = guests[spawned];
+      spawned += 1;
+      if (!guest) throw new Error("no more fake guests");
+      return guest.warm;
+    });
+    const broker = createStudioSessionBroker({
+      workspaces: shared.workspaces,
+      chats: shared.chats,
+      registry: shared.registry,
+      replicaId,
+      spawn: spawn as never,
+      harnessPath: "/fake/harness.mjs",
+      ...(adopt ? { adopt: adopt as never } : {}),
+    });
+    return { broker, spawn };
+  }
+
+  async function sharedFleet() {
+    const workspaces = createMemoryWorkspaceStore();
+    const chats = createMemoryChatStore();
+    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    return { workspaces, chats, registry: createMemoryStudioSessionRegistry() };
+  }
+
+  test("a second replica adopts the first's sandbox instead of spawning", async () => {
+    // The reported bug, at the studio layer: replica B's `sessions` map is
+    // empty, so before the registry it took the cold path and spawned a
+    // duplicate guest for a project already running on replica A.
+    const shared = await sharedFleet();
+    const guestA = fakeGuest("wss://guest-a.example:443");
+    const a = await makeReplica("replica-a", [guestA], shared);
+    const first = await a.broker.ensureSession(SCOPE, PROJECT, "caller-key");
+
+    const adopt = vi.fn(async () => ({
+      url: "https://guest-a.example/studio/chat",
+      token: first?.token as string,
+    }));
+    const b = await makeReplica(
+      "replica-b",
+      [fakeGuest("wss://guest-b.example:443")],
+      shared,
+      adopt,
+    );
+    const second = await b.broker.ensureSession(SCOPE, PROJECT, "caller-key");
+
+    expect(b.spawn).not.toHaveBeenCalled();
+    // Same URL and the SAME chat token — a tab brokered by either replica
+    // must be able to keep using the token it already holds.
+    expect(second).toEqual(first);
+    // And the peer got the workspace, so it never edits a stale tree.
+    const call = adopt.mock.calls[0] as unknown as [unknown, { files: Record<string, string> }];
+    expect(call[1].files).toEqual({ "agent.ts": "// v1" });
+  });
+
+  test("a peer whose guest is unreachable falls back to a local spawn", async () => {
+    const shared = await sharedFleet();
+    const guestA = fakeGuest("wss://guest-a.example:443");
+    const a = await makeReplica("replica-a", [guestA], shared);
+    await a.broker.ensureSession(SCOPE, PROJECT, "caller-key");
+
+    const adopt = vi.fn(async () => null);
+    const guestB = fakeGuest("wss://guest-b.example:443");
+    const b = await makeReplica("replica-b", [guestB], shared, adopt);
+    const session = await b.broker.ensureSession(SCOPE, PROJECT, "caller-key");
+
+    expect(adopt).toHaveBeenCalled();
+    expect(b.spawn).toHaveBeenCalledTimes(1);
+    expect(session?.url).toBe("https://guest-b.example/studio/chat");
+    // The dead row was dropped and replaced by the new owner's.
+    expect(await shared.registry.get(SCOPE, PROJECT)).toMatchObject({ owner: "replica-b" });
+  });
+
+  test("the owning replica reuses its own sandbox rather than adopting", async () => {
+    const shared = await sharedFleet();
+    const guest = fakeGuest();
+    const adopt = vi.fn(async () => null);
+    const a = await makeReplica("replica-a", [guest], shared, adopt);
+    await a.broker.ensureSession(SCOPE, PROJECT, "caller-key");
+    await a.broker.ensureSession(SCOPE, PROJECT, "caller-key");
+    expect(a.spawn).toHaveBeenCalledTimes(1);
+    expect(adopt).not.toHaveBeenCalled();
+  });
+
+  test("a cold spawn claims the registry row with the guest's own credentials", async () => {
+    const shared = await sharedFleet();
+    const guest = fakeGuest("wss://guest-a.example:443");
+    const a = await makeReplica("replica-a", [guest], shared);
+    const session = await a.broker.ensureSession(SCOPE, PROJECT, "caller-key");
+    expect(await shared.registry.get(SCOPE, PROJECT)).toEqual({
+      chatUrl: session?.url,
+      chatToken: session?.token,
+      guestOrigin: "wss://guest-a.example:443",
+      sandboxToken: "sandbox-token",
+      owner: "replica-a",
+    });
+  });
+
+  test("disposing releases the row so the next broker call spawns fresh", async () => {
+    const shared = await sharedFleet();
+    const a = await makeReplica("replica-a", [fakeGuest()], shared);
+    await a.broker.ensureSession(SCOPE, PROJECT, "caller-key");
+    await a.broker.dispose();
+    expect(await shared.registry.get(SCOPE, PROJECT)).toBeNull();
   });
 });

@@ -98,6 +98,7 @@ import {
 import { withBuildDir } from "./studio-build.ts";
 import { handleStudioRequest, initStudioSession } from "./studio-chat.ts";
 import { deployWorkspaceDir } from "./studio-publish.ts";
+import { handleSessionInitRequest, SessionInitParamsSchema } from "./studio-session-init.ts";
 import { materializeWorkspace } from "./studio-workspace-fs.ts";
 import { executeTool } from "./trial.ts";
 
@@ -112,19 +113,6 @@ const DeployParamsSchema = z.object({
   serverUrl: z.string(),
   apiKey: z.string(),
   slug: z.string().optional(),
-});
-
-/** Mirrors `StudioSessionParams` (studio-chat.ts) field for field. */
-const SessionInitParamsSchema = z.object({
-  project: z.string(),
-  files: z.record(z.string(), z.string()),
-  apiKey: z.string(),
-  chatToken: z.string().min(1),
-  system: z.string(),
-  model: z.string(),
-  region: z.literal("eu").optional(),
-  // Reaches `stepCountIs()` in studio-chat.ts — must be a positive integer.
-  maxSteps: z.number().int().positive(),
 });
 
 /** Resolve and settle a single incoming JSON-RPC request. */
@@ -408,6 +396,10 @@ function main(): void {
   const server = createServer({
     runtime: lazyRuntime(state),
     request: (req, res, url, method) =>
+      // Ahead of the chat surface: the install route is gated by the HOST
+      // token and MINTS the chat token the chat surface checks, so it cannot
+      // sit behind a session that may not exist yet (see studio-session-init.ts).
+      handleSessionInitRequest(state, token, req, res, url, method) ||
       handleStudioRequest(state.studio, studioDeps, req, res, url, method),
     upgrade: (req, socket, head) => {
       const pathname = (req.url ?? "/").split("?")[0];
