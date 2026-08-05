@@ -13,7 +13,7 @@
  */
 
 import type { Context, Hono } from "hono";
-import { requestPublicOrigin, type StudioHonoEnv } from "./studio-context.ts";
+import type { StudioHonoEnv } from "./studio-context.ts";
 import {
   type ProjectDatabaseEnv,
   projectDatabaseState,
@@ -66,8 +66,7 @@ export function registerDatabaseRoutes(
       project,
       apiKey: c.var.apiKey,
       enabled,
-      schedulePreview: () =>
-        schedulePreviewFor(ensureBroker(c), c, scope, project, requestPublicOrigin(c)),
+      schedulePreview: () => schedulePreviewFor(ensureBroker(c), c, scope, project),
     });
     if (!result) return c.json({ error: "Project not found" }, 404);
     return c.json(result);

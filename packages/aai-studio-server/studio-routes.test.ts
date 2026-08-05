@@ -2,6 +2,7 @@
 // Studio HTTP surface, exercised through the full orchestrator (routing
 // order vs the /:slug routes matters and is covered here).
 
+import { createDevAuth } from "aai-server/supabase-auth";
 import { authFetch, deployAgent, type TestFetch } from "aai-server/test-utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { createTestCombined } from "./_test-combined.ts";
@@ -29,8 +30,8 @@ vi.mock("./studio-deploy.ts", async (importOriginal) => {
 // Session broker: replace sandbox provisioning with an observable fake so
 // the route's gating/wiring is exercised without Modal.
 const ensureSessionMock = vi.fn(
-  async (_scope: string, project: string, _apiKey: string, _serverUrl?: string) =>
-    project === "ghost"
+  async (...args: Parameters<StudioSessionBroker["ensureSession"]>) =>
+    args[1] === "ghost"
       ? null
       : { url: "https://tunnel.example/studio/chat", token: "chat-token-1" },
 );
@@ -79,6 +80,12 @@ vi.mock("./studio-preview.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("./studio-preview.ts")>();
   return { ...original, wakeProjectPreview: (...args: unknown[]) => wakePreviewMock(...args) };
 });
+
+/** A dev-auth browser session token, the way the login screen mints one. */
+const devToken = (email: string) =>
+  `dev.${Buffer.from(JSON.stringify({ id: `dev:${email}`, email }))
+    .toString("base64url")
+    .replace(/=+$/, "")}.dev`;
 
 function createProject(fetch: TestFetch, name = "proj", key = "key1"): Promise<Response> {
   return authFetch(fetch, "/studio/projects", { body: { name }, key });
@@ -563,6 +570,38 @@ describe("deploy + chat endpoints", () => {
     expect(call[0]).toBe(studioScope("key1"));
     expect(call[1]).toBe("proj");
     expect(call[2]).toBe("key1");
+  });
+
+  /**
+   * Both preview triggers this route arms — the sandbox's own end-of-turn sync
+   * (via the broker's `preview` origin) and the project-open wake — must carry
+   * the SAME origin, built once. A queued preview job that omits the caller's
+   * `userId` cannot be run by any replica but this one: the drain resolves a
+   * user's key from Vault, and a job with nobody to resolve is archived, so the
+   * preview silently never lands. Two of the three schedule paths had drifted
+   * into building their own origin and losing the field.
+   */
+  test("session arms both preview triggers with one origin, naming the caller", async () => {
+    const { fetch: authed } = await createTestCombined({ auth: createDevAuth() });
+    const bearer = devToken("a@b.c");
+    await authFetch(authed, "/studio/account/key", {
+      method: "PUT",
+      key: bearer,
+      body: { apiKey: "users-own-key" },
+    });
+    await createProject(authed, "proj", bearer);
+    wakePreviewMock.mockClear();
+    ensureSessionMock.mockClear();
+
+    expect(
+      (await authFetch(authed, "/studio/projects/proj/session", { body: {}, key: bearer })).status,
+    ).toBe(200);
+
+    const brokered = ensureSessionMock.mock.calls.at(-1)?.[3];
+    expect(brokered).toEqual({ serverUrl: expect.any(String), userId: "dev:a@b.c" });
+    // The wake's target is that same origin plus the credential.
+    const waked = wakePreviewMock.mock.calls.at(-1)?.[0] as { target: unknown };
+    expect(waked.target).toEqual({ ...brokered, apiKey: "users-own-key" });
   });
 
   test("session requires a bearer key", async () => {

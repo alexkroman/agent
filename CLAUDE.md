@@ -856,7 +856,21 @@ voice agents without the CLI:
   and the drain resolves the key from Vault (`user-key:<uid>`), so a job
   redelivered to another replica can still deploy. A raw-key caller's job
   (CLI, evals) has no `userId`, so it runs only on the replica that enqueued
-  it and is archived if redelivered elsewhere. Success stamps
+  it and is archived if redelivered elsewhere.
+
+  **`userId` is therefore load-bearing for a browser session, and ONE builder
+  supplies it** — `previewOrigin` in `studio-settled-edit.ts`, used by the
+  settled edits, the database switch, the project-open wake, AND the session
+  broker (whose `ensureSession` takes a `PreviewOrigin` object rather than a
+  bare `serverUrl`, so the guest's own end-of-turn sync inherits it). Omitting
+  it is silent: the job still enqueues and still deploys HERE, and only a
+  redelivery elsewhere — a restart, a scale-in, a sandbox death mid-deploy —
+  turns it into an archived job and a preview that never lands. Two of the
+  three schedule paths had drifted into building their own origin and losing
+  the field, the agent-turn path (the primary one) structurally unable to
+  supply it at all. `PreviewOrigin` is `Omit<PreviewTarget, "apiKey">` so a
+  field added to the target is a compile error at every builder rather than
+  one the row quietly drops. Success stamps
   `previewSlug`/`previewHash` on the workspace;
   failure stamps `previewError` for the pane's banner (an auto-deploy has
   no chat turn to carry CLI output). `GET /studio/projects/:project`
@@ -871,9 +885,37 @@ voice agents without the CLI:
   the home sidebar updates across devices. The client subscribes on
   project open / while signed in — there is NO polling loop — and keys the
   iframe by `previewVersion`, so a fresh preview reloads the frame exactly
-  once; a dropped stream resubscribes with a fixed backoff, and the first
-  event is always the current state so nothing is missed between GET and
-  subscribe. `hasUnpublishedChanges` (`studio-workspace.ts`)
+  once; a dropped stream resubscribes with a fixed backoff.
+
+  **Both routes SUBSCRIBE BEFORE READING, and send their initial frame
+  THROUGH the push chain** (`studio-events-routes.ts`). With no polling loop
+  left, a change these streams don't cover is lost for good rather than late,
+  and read-then-subscribe leaves exactly that gap. It is not
+  microtask-sized in production: it spans a real socket write, plus — on the
+  subscribe side — a Supabase Realtime channel JOIN, because `subscribe()`
+  only SENDS the join and nothing is delivered until the server acks it.
+  Opening a project as its preview deploy stamps the workspace is the
+  collision, and it strands the pane on "Updating preview…" with a finished
+  preview behind it. Routing the initial frame through `sse.push` is what
+  makes the reorder safe: every frame is then a fresh read on one serialized
+  chain, so a watcher firing before the initial read cannot deliver newer
+  state ahead of older. The route's own pre-stream read is an existence check
+  for the 404 only.
+
+  The other half of that gap is closed in `createChannelPool`
+  (`realtime-events.ts`): **a successful (re)join fires the channel's
+  watchers.** It covers the join round trip and, more importantly, every
+  socket reconnect — realtime-js rejoins after a drop, and these are pure
+  signal streams with no sequence number to resume from, so changes during
+  the outage reach nobody and nothing downstream would ever notice. Firing on
+  the ack makes both windows cost a redundant re-read. Watchers are therefore
+  registered BEFORE `subscribe()` is called (a synchronous ack is legal, and
+  the watcher that triggered the join is the one that most needs the signal),
+  and dispatch iterates a snapshot so a watcher may unwatch from inside its
+  own callback. `watchAgents` gets no join signal — its handlers are keyed by
+  slug and a join names none.
+
+  `hasUnpublishedChanges` (`studio-workspace.ts`)
   still compares `filesHash` against `deployedHash` — the PRODUCTION
   staleness — returned as `unpublished` for the pane's Publish nudge. A
   hash rather than a timestamp for two reasons: deploys themselves write
@@ -2115,6 +2157,25 @@ AAI_TEST_PM=npm pnpm test:e2e
 ```
 
 Treat those two branches as a debugging tool, not covered ground.
+
+#### Randomized interleaving tests (aai-studio-server)
+
+`studio-concurrency-fuzz.test.ts` is a property suite over the studio's two
+async pipelines — the durable preview queue and the SSE event streams. Each
+seed builds a different interleaving of edits, drains, deploy failures,
+disconnects, and shutdown drains, then asserts invariants that must hold for
+all of them: preview convergence, one deploy per project at a time, archive
+only past the attempt cap, no write into an ended stream, frame order, and no
+live-stream registry leak. It found the two races the routes and the Realtime
+pool now guard against.
+
+Two rules if you extend it. **Seed the PRNG** (never `Math.random`) — a
+failure that cannot be replayed reports a mystery instead of a bug, and the
+suite prints the seed. And **assert the invariant, not the mechanism**: two
+early false positives came from over-strict invariants — a project no edit
+selected was never scheduled, and a build failure stamps `previewError` and
+counts as SETTLED rather than converged. Both readings would have been "fixed"
+by weakening the mechanism instead.
 
 #### Fixture replay testing (aai/host)
 

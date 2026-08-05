@@ -12,7 +12,7 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import type { Context } from "hono";
-import type { StudioHonoEnv } from "./studio-context.ts";
+import { requestPublicOrigin, type StudioHonoEnv } from "./studio-context.ts";
 import type { StudioSessionBroker } from "./studio-session-broker.ts";
 
 /**
@@ -30,36 +30,50 @@ export function onSettledEdit(
   c: Context<StudioHonoEnv>,
   scope: string,
   project: string,
-  /** Public platform origin the queued preview job's `aai deploy` dials back to.
-   *  Passed in rather than resolved here: `requestPublicOrigin` lives in
-   *  studio-routes.ts, which imports this module. */
-  serverUrl: string,
 ): void {
   broker.refreshSession(scope, project, c.var.apiKey).catch((err: unknown) => {
     console.warn("Studio: live session refresh failed", { project, error: errorMessage(err) });
   });
-  schedulePreviewFor(broker, c, scope, project, serverUrl);
+  schedulePreviewFor(broker, c, scope, project);
+}
+
+/**
+ * Where a preview deploy scheduled for THIS request goes, and on whose
+ * behalf — everything a queued job needs except the credential.
+ *
+ * The one builder for every path that arms a preview: the settled edits
+ * below, the database switch, the session broker (so the guest's own
+ * end-of-turn sync inherits it), and the project-open wake. It exists because
+ * the `userId` is the field a second copy loses, and losing it is silent: the
+ * job still enqueues and still deploys HERE, and only a redelivery to another
+ * replica — a restart, a scale-in, a sandbox death mid-deploy — turns it into
+ * an archived job and a preview that never lands. Two of the three call sites
+ * had lost it exactly that way.
+ *
+ * `userId` is present for browser sessions only. A raw-key caller (the CLI,
+ * evals) has none, and its job is deliberately replica-local: the drain
+ * resolves a user's key from Vault, and a raw key must never become a row.
+ */
+export function previewOrigin(c: Context<StudioHonoEnv>): {
+  serverUrl: string;
+  userId?: string;
+} {
+  return {
+    serverUrl: requestPublicOrigin(c),
+    ...(c.var.userId && { userId: c.var.userId }),
+  };
 }
 
 /**
  * Enqueue a preview deploy on the caller's behalf. Shared with the database
  * switch, which redeploys the preview so the running agent picks up its new
- * `DATABASE_URL` — the `userId` nuance below is exactly the kind of detail a
- * second copy would lose.
+ * `DATABASE_URL`.
  */
 export function schedulePreviewFor(
   broker: StudioSessionBroker,
   c: Context<StudioHonoEnv>,
   scope: string,
   project: string,
-  serverUrl: string,
 ): void {
-  broker.schedulePreview(scope, project, {
-    serverUrl,
-    apiKey: c.var.apiKey,
-    // Present for browser sessions only. It is what lets the queued job
-    // outlive this replica: the row names the user, and the drain resolves
-    // the key from Vault instead of the row carrying a credential.
-    ...(c.var.userId && { userId: c.var.userId }),
-  });
+  broker.schedulePreview(scope, project, { ...previewOrigin(c), apiKey: c.var.apiKey });
 }

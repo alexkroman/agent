@@ -24,12 +24,20 @@ type FakeChannel = RealtimeChannelLike & {
   handlers: ChangeHandler[];
   subscribed: boolean;
   unsubscribed: boolean;
+  /**
+   * Deliver a subscribe status the way the real join does — ASYNCHRONOUSLY,
+   * from the server's ack. Kept a separate step rather than fired inside
+   * `subscribe()` because the gap between sending a join and it being live is
+   * exactly what a watcher has to survive (see `createChannelPool`).
+   */
+  ack(status: string, err?: Error): void;
 };
 
 function fakeClient() {
   const channels: FakeChannel[] = [];
   const client: RealtimeClientLike = {
     channel(topic) {
+      let status: ((value: string, err?: Error) => void) | undefined;
       const channel: FakeChannel = {
         topic,
         filters: [],
@@ -43,8 +51,11 @@ function fakeClient() {
         },
         subscribe(callback) {
           channel.subscribed = true;
-          callback?.("SUBSCRIBED");
+          status = callback;
           return channel;
+        },
+        ack(value, err) {
+          status?.(value, err);
         },
         unsubscribe() {
           channel.unsubscribed = true;
@@ -178,6 +189,72 @@ describe("workspace channels", () => {
     channel.handlers[0]?.({ new: null, old: { scope: "scope-a", project: "gone" } });
     channel.handlers[0]?.({ new: { scope: "scope-a", project: "fresh" } });
     expect(seen).toHaveBeenCalledTimes(2);
+  });
+
+  /**
+   * A (re)join is a signal in its own right. `subscribe()` only SENDS the
+   * join — the server-side postgres_changes binding does not exist until the
+   * ack — and realtime-js rejoins after any socket drop, so changes in either
+   * window reach nobody and there is no sequence number to resume from. Since
+   * the studio client's polling loop was removed, nothing else would ever
+   * notice: the pane just holds a stale snapshot indefinitely. Firing watchers
+   * on the ack turns both windows into a redundant re-read.
+   */
+  test("a join fires watchers, so changes missed before it are re-read", () => {
+    const { client, channels } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    const seen = vi.fn();
+    events.watchWorkspace("s", "p", seen);
+    const channel = channels[0] as FakeChannel;
+
+    // Nothing yet — the join is still in flight, which is the whole gap.
+    expect(seen).not.toHaveBeenCalled();
+    channel.ack("SUBSCRIBED");
+    expect(seen).toHaveBeenCalledOnce();
+
+    // Every REjoin too: a socket drop loses every change during the outage.
+    channel.ack("SUBSCRIBED");
+    expect(seen).toHaveBeenCalledTimes(2);
+    // A failed join is not a delivery point, so it must not fire.
+    channel.ack("CHANNEL_ERROR", new Error("nope"));
+    expect(seen).toHaveBeenCalledTimes(2);
+  });
+
+  test("the join fires the watcher that triggered it, not just later ones", () => {
+    const { client, channels } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    // A synchronous ack is legal (a fake, a same-tick reconnect), so the
+    // first watcher must already be registered when subscribe() is called —
+    // it is the one whose subscription the join is making real.
+    const seen = vi.fn();
+    events.watchWorkspace("s", "p", seen);
+    (channels[0] as FakeChannel).ack("SUBSCRIBED");
+    expect(seen).toHaveBeenCalledOnce();
+
+    // A watcher joining an ALREADY-subscribed channel shares its signals.
+    const late = vi.fn();
+    events.watchWorkspace("s", "p", late);
+    expect(channels).toHaveLength(1);
+    (channels[0] as FakeChannel).ack("SUBSCRIBED");
+    expect(late).toHaveBeenCalledOnce();
+    expect(seen).toHaveBeenCalledTimes(2);
+  });
+
+  test("a watcher may unwatch from inside its own callback", () => {
+    const { client, channels } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    const other = vi.fn();
+    let unwatch = (): void => undefined;
+    const selfRemoving = vi.fn(() => unwatch());
+    unwatch = events.watchWorkspace("s", "p", selfRemoving);
+    events.watchWorkspace("s", "p", other);
+
+    // Dispatch iterates a snapshot, so mutating the set mid-fire cannot
+    // decide who runs by insertion order.
+    (channels[0] as FakeChannel).handlers[0]?.({ new: { scope: "s", project: "p" } });
+    expect(selfRemoving).toHaveBeenCalledOnce();
+    expect(other).toHaveBeenCalledOnce();
+    expect(channels[0]?.unsubscribed).toBe(false);
   });
 
   test("close unsubscribes workspace channels and disconnects", async () => {

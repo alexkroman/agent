@@ -207,6 +207,20 @@ export type PreviewTarget = {
   userId?: string;
 };
 
+/**
+ * A {@link PreviewTarget} minus the credential — what a caller hands the
+ * session broker so the sandbox it installs can schedule its own previews
+ * later (the guest's end-of-turn sync); the broker pairs it with the session's
+ * `apiKey`.
+ *
+ * DERIVED from `PreviewTarget` rather than spelled out, so a field added
+ * there is a compile error at every point that builds one of these instead of
+ * a field the queue row silently loses. `userId` was exactly that loss: the
+ * broker took a bare `serverUrl` string, so agent-turn previews could not name
+ * their user and were archived on any cross-replica redelivery.
+ */
+export type PreviewOrigin = Omit<PreviewTarget, "apiKey">;
+
 export type PreviewDeployer = {
   /**
    * Enqueue a deploy of the project's current workspace to its preview slug,
