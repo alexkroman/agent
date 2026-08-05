@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { createGuestWebTools, MUTATING_TOOLS } from "./studio-chat.ts";
+import { createGuestWebTools } from "./studio-chat.ts";
 import { createDesignInspirationTool, createProjectTools } from "./studio-project-tools.ts";
 import { createTemplateTools } from "./studio-template-tools.ts";
 import {
@@ -13,6 +13,7 @@ import {
   type StudioToolDeps,
   withToolDeadlines,
 } from "./studio-tools.ts";
+import { MUTATING_TOOLS } from "./studio-turn-settle.ts";
 import { materializeWorkspace, snapshotWorkspace } from "./studio-workspace-fs.ts";
 
 const toolOpts = () => ({ toolCallId: "t1", messages: [] }) as never;

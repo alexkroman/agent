@@ -744,6 +744,89 @@ voice agents without the CLI:
   composer's **Stop button** (`chat.tsx`): `useChat().stop()` aborts the
   SSE fetch to the sandbox, whose request-close handler aborts
   `streamText` and in-flight tools in the guest.
+- **A turn's delivery has three rules, all in `aai-guest/studio-turn-stream.ts`**,
+  each for a failure measured by driving the real studio against a controllable
+  model:
+  - **A broken model stream must reach the client as an `error` frame.**
+    `pipeUIMessageStreamToResponse` rejects on a stream error and its `finally`
+    ends the response anyway, so a mid-stream failure closed the body CLEANLY
+    after the last delta — no `error`, no `finish`, no `[DONE]`. The browser
+    read that as a completed turn: a half-sentence reply, no error shown,
+    `useChat` in `ready`, the truncated turn persisted, and the composer's
+    queued follow-up fired over it. The only trace was the guest's
+    `unhandled rejection: terminated` — the rejection the caller's `void`
+    dropped. Nothing can be written after the fact (the response is already
+    closed by the time the rejection is observable), so `withStreamErrorChunk`
+    reads the UI message stream itself and emits a final `error` chunk on a
+    source error. Never go back to `void result.pipe…`.
+  - **Assistant messages need `generateMessageId`.**
+    `handleUIMessageStreamFinish` falls back to `messageId: ""`, and that blank
+    id is what the `onFinish` reconstruction — the object the guest PERSISTS —
+    carries. Invisible live (the browser's own copy has a client-side id) and
+    cumulative in the store: the client hydrates the blank, sends it back, and
+    each turn adds another. Measured: 1 blank id, then 2, 3, 4 over three
+    reload-and-send rounds — four messages sharing the React key `""`.
+  - **One turn at a time per guest** (`createTurnGate`), refused with **423 +
+    `code: "turn_in_flight"`**, not queued. Two tabs on one project streamed
+    into the same sandbox at once: overlapping model requests, two agents
+    editing one workspace, and racing `studio/persist-chat` writes that left
+    the loser's turn absent from the stored conversation. Queueing server-side
+    would not help — a waiting request carries a conversation snapshot from
+    before the turn it waited for, so it clobbers that turn on settle anyway;
+    the queue that works is the tab's, which re-reads messages at dispatch.
+    Two details are load-bearing: the gate is **per PROCESS**, because
+    `studio/session-init` runs on every page open and a session-scoped gate is
+    reset by the very event that creates the race (a second tab opening the
+    project mid-turn); and it is released on the response CLOSING as well as on
+    the turn settling, because the turn promise only resolves once the body has
+    drained — a client that opens a turn and stops reading would otherwise lock
+    the project out for the life of the sandbox. Releasing on close is also
+    what keeps the composer's queue working: the client dispatches its next
+    follow-up strictly after this response closed, so back-to-back queued turns
+    are never mistaken for concurrent ones.
+
+  The status is a distinct one because the client's chat-surface failure
+  taxonomy (`resilient-fetch.ts`) reads 401/409 as "stale session, re-broker" —
+  a BUSY guest is healthy, and re-brokering would reset the session the other
+  tab is streaming through. 423 is translated to a human sentence there too,
+  since the AI SDK surfaces a non-2xx as `Error(await response.text())` and the
+  panel would otherwise render the raw JSON body.
+
+  **Remaining gap, deliberately not closed:** a live tab does not catch up with
+  another tab's turn. The pushed `chat` SSE frame updates the query cache, but
+  `ProjectChat` reads `initialMessages` once at mount, so the refused tab keeps
+  its own view until the project is reopened.
+- **The composer QUEUES follow-ups typed mid-turn**
+  (`aai-studio-client/src/chat-queue.ts`), Claude-Code style: the input stays
+  live while the agent works, Enter parks the message in a visible, dismissable
+  row above the composer, and it is sent when the turn settles — one turn at a
+  time, FIFO. It used to be disabled, which silently swallowed anything typed
+  mid-turn.
+
+  **The AI SDK has no queue of its own**, and this is not an oversight to work
+  around at the call site: `sendMessage` goes straight to `makeRequest`, which
+  resets the chat status and overwrites the live `activeResponse` (its
+  `SerialJobExecutor` serializes stream-update jobs, not requests), so a second
+  send while a turn is open runs two turns against one guest session and
+  interleaves their end-of-turn workspace syncs. `sendAutomaticallyWhen` is the
+  nearest native hook but only re-sends the EXISTING message list, and
+  appending a user message mid-stream corrupts the transcript (the SDK's
+  `write` compares its streaming message against `lastMessage`, so a message
+  pushed underneath it gets pushed a second time). Hence a queue held OUTSIDE
+  `messages`, flushed on the settle.
+
+  Three rules the reducer exists to hold, each covering a bug that is invisible
+  without it: the flush is **latched** from dispatch until the turn is observed
+  (`sendMessage` awaits before flipping the status, so a re-render in that
+  window sees `ready` with the next item at the head and would start a
+  concurrent turn — the same window makes a submit queue and keeps Publish
+  locked, which is why `hasPendingWork` is one predicate serving both); a
+  **Stop hands the queue back to the composer** rather than firing or dropping
+  it (`drainText` — an explicit interrupt must not start the next turn behind
+  the user's back, and the composer is a textarea partly so it can hold what
+  comes back); and a **failed turn drains the same way**, because an `error`
+  status never flushes while every submit joins a non-empty queue — parking it
+  there wedges the composer permanently.
 - **Web access**: the SDK's keyless `visit_webpage`, `get_page_design`,
   and `web_search` builtins (DuckDuckGo-backed — no key anywhere), mapped
   into the guest tool set (`createGuestWebTools` in `aai-guest/

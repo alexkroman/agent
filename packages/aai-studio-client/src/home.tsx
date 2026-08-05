@@ -87,8 +87,8 @@ export function HomeHero({ status, creating, onStart }: HomeHeroProps) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
-            // Enter sends, Shift+Enter makes a newline.
-            if (isEnterSubmit(e) && !e.shiftKey) {
+            // Enter sends, Shift+Enter makes a newline (isEnterSubmit's rule).
+            if (isEnterSubmit(e)) {
               e.preventDefault();
               submit();
             }

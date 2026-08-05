@@ -13,6 +13,7 @@ import type { JsonRpcMessage } from "./harness-types.ts";
 import {
   handleStudioRequest,
   initStudioSession,
+  resetTurnGate,
   type StudioChatDeps,
   type StudioSession,
 } from "./studio-chat.ts";
@@ -57,6 +58,59 @@ const textStep = (text: string): ScriptedPart[] => [
     finishReason: "stop",
   },
 ];
+
+/**
+ * A model whose stream stays open until the test ends it — the only way to
+ * observe a turn while it is genuinely in flight (a concurrent post, a stream
+ * that breaks mid-reply).
+ */
+function pendingModel(): {
+  model: LanguageModel;
+  started: Promise<void>;
+  finish: () => void;
+  fail: (error: Error) => void;
+} {
+  let controller: ReadableStreamDefaultController<ScriptedPart> | undefined;
+  let markStarted: () => void = () => undefined;
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  const model = {
+    specificationVersion: "v3",
+    provider: "fake",
+    modelId: "fake-pending",
+    supportedUrls: {},
+    async doGenerate() {
+      throw new Error("not implemented");
+    },
+    async doStream() {
+      const stream = new ReadableStream<ScriptedPart>({
+        start(c) {
+          controller = c;
+          c.enqueue({ type: "stream-start", warnings: [] });
+          c.enqueue({ type: "text-start", id: "t1" });
+          c.enqueue({ type: "text-delta", id: "t1", delta: "working" });
+          markStarted();
+        },
+      });
+      return { stream };
+    },
+  } as unknown as LanguageModel;
+  return {
+    model,
+    started,
+    finish: () => {
+      controller?.enqueue({ type: "text-end", id: "t1" });
+      controller?.enqueue({
+        type: "finish",
+        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        finishReason: "stop",
+      });
+      controller?.close();
+    },
+    fail: (error: Error) => controller?.error(error),
+  };
+}
 
 const toolStep = (toolName: string, input: Record<string, unknown>): ScriptedPart[] => [
   { type: "tool-call", toolCallId: "call1", toolName, input: JSON.stringify(input) },
@@ -141,7 +195,12 @@ async function makeSession(files: Record<string, string>): Promise<StudioSession
   });
 }
 
-afterEach(() => setHostSend(null));
+afterEach(() => {
+  setHostSend(null);
+  // Process-scoped, like the session identity pin — a turn left in flight by
+  // one test would refuse the next one's.
+  resetTurnGate();
+});
 
 describe("guest studio chat surface", () => {
   test("rejects a missing or wrong bearer — the tunnel URL is public", async () => {
@@ -289,6 +348,89 @@ describe("guest studio chat surface", () => {
       const sse = await (await post(url, chatBody("count lines"))).text();
       expect(sse).toContain("done");
       expect(sse).toContain("Counted.");
+    } finally {
+      await close();
+    }
+  });
+
+  // Two tabs on one project used to stream turns into the same sandbox at
+  // once: their model requests overlapped, two agents edited one workspace,
+  // and the settles raced — each request carries its own whole-conversation
+  // view, so the last writer erased the other tab's turn.
+  test("refuses a second concurrent turn instead of interleaving it", async () => {
+    fakeHost();
+    const session = await makeSession({ "agent.ts": "x" });
+    const pending = pendingModel();
+    const { url, close } = await serve(session, deps(pending.model));
+    try {
+      const first = post(url, chatBody("the turn that got here first"));
+      await pending.started;
+      const firstRes = await first;
+
+      const second = await post(url, chatBody("from another tab"));
+      expect(second.status).toBe(423);
+      expect(await second.json()).toMatchObject({ code: "turn_in_flight" });
+
+      // The gate reopens once the first turn's response closes. (The follow-up
+      // turn's own stream is left open — only its status matters here, so it is
+      // aborted rather than read.)
+      pending.finish();
+      await firstRes.text();
+      const abort = new AbortController();
+      const after = await fetch(`${url}/studio/chat`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${CHAT_TOKEN}` },
+        body: JSON.stringify(chatBody("after it finished")),
+        signal: abort.signal,
+      });
+      expect(after.status).toBe(200);
+      abort.abort();
+    } finally {
+      await close();
+    }
+  });
+
+  // The measured failure: `pipeUIMessageStreamToResponse` rejects on a broken
+  // model stream and its `finally` ends the response anyway, so the browser
+  // saw a CLEAN end after the last delta — a half-sentence reply, no error,
+  // `useChat` in `ready`, and the truncated turn persisted as the conversation.
+  test("a stream that breaks mid-reply ends with an error frame, not silently", async () => {
+    fakeHost();
+    const session = await makeSession({ "agent.ts": "x" });
+    const pending = pendingModel();
+    const { url, close } = await serve(session, deps(pending.model));
+    try {
+      const res = await post(url, chatBody("break halfway"));
+      await pending.started;
+      pending.fail(new Error("gateway dropped the body"));
+      const sse = await res.text();
+      expect(sse).toContain("working");
+      expect(sse).toContain('"type":"error"');
+      expect(sse).toContain("gateway dropped the body");
+    } finally {
+      await close();
+    }
+  });
+
+  // A blank id is what `handleUIMessageStreamFinish` falls back to without a
+  // `generateMessageId`, and the blanks accumulate: the client hydrates one,
+  // sends it back, and every later turn adds another — four assistant messages
+  // sharing the React key "" after three reloads.
+  test("persists assistant messages with a real id", async () => {
+    const host = fakeHost();
+    const session = await makeSession({ "agent.ts": "x" });
+    const { url, close } = await serve(session, deps(scriptedModel([textStep("Hello.")])));
+    try {
+      await (await post(url, chatBody("say hi"))).text();
+      await vi.waitFor(() => {
+        const settled = host.calls.filter((c) => c.method === "studio/persist-chat").at(-1);
+        const { messages } = (settled?.params ?? {}) as {
+          messages?: { id: string; role: string }[];
+        };
+        const assistant = messages?.filter((m) => m.role === "assistant") ?? [];
+        expect(assistant.length).toBeGreaterThan(0);
+        for (const message of assistant) expect(message.id).not.toBe("");
+      });
     } finally {
       await close();
     }

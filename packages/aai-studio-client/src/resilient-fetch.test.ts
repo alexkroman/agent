@@ -1,7 +1,11 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { describe, expect, it, vi } from "vitest";
-import { createResilientFetch } from "./resilient-fetch.ts";
+import {
+  createResilientFetch,
+  TURN_IN_FLIGHT_MESSAGE,
+  TURN_IN_FLIGHT_STATUS,
+} from "./resilient-fetch.ts";
 
 function makeFetch(impl: () => Promise<Response>) {
   return vi.fn(impl) as unknown as typeof fetch;
@@ -33,6 +37,26 @@ describe("createResilientFetch", () => {
     await f("http://sandbox.test/studio/chat");
 
     expect(onStale).toHaveBeenCalledOnce();
+  });
+
+  // A busy guest is healthy. Re-brokering would reset the session the OTHER
+  // tab is streaming through, and the raw JSON body would be what the panel
+  // showed the user (the AI SDK surfaces a non-2xx as `Error(body text)`).
+  it("reports a turn already running elsewhere without re-brokering", async () => {
+    const onStale = vi.fn();
+    const f = createResilientFetch({
+      onStale,
+      fetchImpl: makeFetch(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ error: "busy", code: "turn_in_flight" }), {
+            status: TURN_IN_FLIGHT_STATUS,
+          }),
+        ),
+      ),
+    });
+
+    await expect(f("http://sandbox.test/studio/chat")).rejects.toThrow(TURN_IN_FLIGHT_MESSAGE);
+    expect(onStale).not.toHaveBeenCalled();
   });
 
   it("re-brokers on 409 (the sandbox was replaced under us)", async () => {
