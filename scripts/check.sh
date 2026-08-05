@@ -48,6 +48,10 @@ run_ratchets() {
   local failed=0
   pnpm run check:hatches || failed=1
   pnpm run check:file-length || failed=1
+  # A CLAUDE.md past ~150k characters is silently truncated in an agent's
+  # context, so the guide is half-absent with nothing saying so. Cheap
+  # read-and-count, hence up here with the other fs gates.
+  pnpm run check:claude-md || failed=1
   # The guest toolchain lockfile must track the versions this checkout
   # installed: it is baked into every guest image, and a stale one silently
   # bakes a different tree than the repo tested with. Pure JSON comparison —

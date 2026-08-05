@@ -94,6 +94,7 @@ jobs:
       - run: |
           pnpm run check:hatches
           pnpm run check:file-length
+          pnpm run check:claude-md
           pnpm run check:guest-toolchain
 
   # Unit tests sharded by package — run in parallel

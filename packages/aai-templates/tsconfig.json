@@ -13,6 +13,7 @@
   "include": [
     "scaffold/global.d.ts",
     "templates.test.ts",
+    "claude-md-limit.test.ts",
     // Deliberately generic: tsc's `include` only sets *root* files, and a
     // test file is imported by nothing, so anything not listed here is
     // never typechecked at all (unlike source modules, which get pulled in

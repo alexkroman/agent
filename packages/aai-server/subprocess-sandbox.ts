@@ -27,7 +27,7 @@
  *   becomes V8's `--max-old-space-size`, which bounds the JS heap only (not
  *   buffers, native memory, or child processes) and `SANDBOX_CPU_LIMIT` has no
  *   analog at all. So the "memory/CPU limits" row of the dev/prod divergence
- *   table in CLAUDE.md narrows here but does not close.
+ *   table in `packages/aai-guest/CLAUDE.md` narrows here but does not close.
  *
  * ## Deliberate parity choices
  *

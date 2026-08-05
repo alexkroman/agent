@@ -1,0 +1,159 @@
+# packages/aai-ui — browser client guide
+
+The browser client (`@alexkroman1/aai-ui`): session, audio, React UI. Repo-wide
+conventions and testing rules live in the root `CLAUDE.md`.
+
+## Package exports
+
+- `.` — default React UI component + session + client helpers
+- `./styles.css` — default styles
+- `./default-client/*` — prebuilt default client assets (`dist/default-client/`)
+
+## Key files
+
+- `index.ts` — main exports, React UI component
+- `session-core.ts` — WebSocket session management + reactive snapshot
+  (`createSessionCore`); split across `session-core-messages.ts`
+  (message/history handling) and `session-core-types.ts`
+- `context.ts` — SessionProvider, useSession, useSessionCore,
+  useSessionSelector, ThemeProvider, useTheme
+- `hooks.ts` — useToolResult, useToolCallStart, useEvent
+- `audio.ts` — PCM encoding/decoding, AudioWorklet management
+- `define-client.tsx` — client mount helper
+- `default-client.tsx` / `build-default-client.ts` — the default UI shipped
+  to agents with no `client.tsx`, and its build step
+- `types.ts` — UI type definitions
+- `components/` — UI components (console-shell, chat-view, controls,
+  message-list, start-screen, sidebar-layout, tool-call-block, button,
+  aai-logo, tool-config-context)
+
+## Client audio path (browser ⇄ server)
+
+Both legs carry **raw PCM16 over the session WebSocket** — 384 kbps down at
+24 kHz, 256 kbps up at 16 kHz, uncompressed, with the mic streaming
+continuously (barge-in needs it open). That budget is the backdrop for
+everything below: a jitter buffer absorbs *jitter*, and no size of buffer
+fixes a link that cannot carry the bitrate in real time.
+
+**Playback is a jitter buffer with hysteresis, not a startup delay**
+(`aai-ui/worklets/playback-processor.ts`). It fills to `PLAYBACK_JITTER_MS`
+before a turn speaks, and on an underrun it returns to filling — to the
+shorter `PLAYBACK_REFILL_MS`, because mid-reply a long wait is itself a hole
+in the speech. The re-arm is the whole point: while the gate only guarded the
+*start* of a turn, one stall left `readPos` chasing `writePos` and every later
+quantum emitted a few real samples padded with silence, so a single network
+hiccup turned the rest of the reply into ~5ms fragments — stutter through
+every word rather than one pause. A starved quantum never advances `readPos`,
+so buffered audio survives intact.
+
+Gaps are **concealed**, not zero-filled: the worklet loops the retained tail
+of played audio under a decay to silence (`PLAYBACK_CONCEAL_FADE_MS`). A hard
+zero-fill is a discontinuity mid-word, which is what makes a brief stall sound
+like breakage rather than a pause.
+
+**Underruns are reported, in WebRTC's counter shape.** Each turn's `stop`
+message carries `concealedSamples`, `silentConcealedSamples` (a subset, as in
+`getStats()`), `concealmentEvents`, and `silentConcealmentEvents`, surfaced as
+`VoiceIOOptions.onPlaybackStats` (the default session leaves it unwired). Nothing
+else marks an underrun — the session still reports `"speaking"` and `done()`
+still settles — so this is the only way to tell a turn that needed its cushion
+from one that didn't, and the only honest basis for retuning
+`PLAYBACK_JITTER_MS`. A high `silentConcealedSamples` share means the stall
+outran what concealment can cover, i.e. a bandwidth problem rather than a
+tuning one.
+
+**A turn's drain completion is guarded twice, because the drain outlives the
+turn.** `done()` resolves when the worklet drains — which also happens the
+moment the AudioContext stops rendering — so a reply's completion can land
+long after the turn, or the whole session, is over. Both guards were added
+after the fuzz harnesses (`aai-ui/fuzz-*.test.ts`) caught the two failures:
+
+- **The turn epoch lives on `ConnState.turn`, not in the message handlers**,
+  and `cleanupAudio()` bumps it alongside every committed user turn /
+  barge-in / reset. Teardown is a turn boundary: hanging up mid-reply,
+  a fatal error, or a reconnect closes the context, the pending
+  `settleWhenAudioDrained` continuation resolves a second later, and without
+  the bump it wrote `state: "listening"` over the session's own
+  "disconnected"/"error" — a dead session claiming a live mic in the header.
+- **The worklet's `stop` carries the turn id its `done` named**
+  (`playback-processor.ts` echoes it; `audio.ts` only settles the wait whose
+  id matches). Dropping `reason: "interrupt"` stops is not enough: a REAL
+  drain-stop already in flight when a barge-in flushes is a legitimate stop
+  for a turn the host has moved past, and settling on it reported the next
+  reply finished while it was still speaking.
+
+**The server paces audio out at a bounded lead** (`aai/host/audio-pacer.ts`,
+wired into `ws-handler.ts`'s `ClientSink`). TTS outruns playback, so relaying
+each provider frame on arrival put a whole reply into the socket buffer at
+once; on a slow link that is seconds of queue the server cannot see into,
+bounded only by the `MAX_CLIENT_WS_BUFFERED_BYTES` disconnect.
+`CLIENT_AUDIO_LEAD_MS` **must stay above `PLAYBACK_JITTER_MS`** — the lead is
+the client's only source of cushion, so pacing at exactly real time would
+leave the playback buffer unable to fill. Holding audio back makes two
+orderings load-bearing, both enforced by the pacer:
+
+- `audio_done` is queued **behind** pending audio. It is a turn boundary; the
+  worklet takes it as "this is all there is", so an early one truncates the
+  reply.
+- A `cancelled`/`reset` event **discards** held audio. The client flushes its
+  own buffer on those events, so anything still held would arrive afterwards
+  and play as an orphan fragment.
+
+**Capture runs on its own AudioContext at the STT rate**, and the worklet
+converts no rates (`aai-ui/worklets/capture-processor.ts`). The browser's
+resampler is band-limited; the linear interpolation this replaced folded
+everything above the new Nyquist back into the band as aliasing. Playback
+keeps a separate context at the TTS rate, and the two collapse into one when
+the rates match. There is deliberately **no fallback resampler**: `audio.ts`
+asserts the browser honored both requested rates and fails init otherwise,
+because a context at another rate either ships audio to a socket that declared
+a different rate or plays PCM at the wrong speed — a loud failure beats
+either.
+
+**Capture is raw voice, echo cancellation aside.** Both `getUserMedia`
+call sites (the WebSocket mic and `createPttRecorder`) share one exported
+`VOICE_CAPTURE_CONSTRAINTS`, because copies of the object drifted apart
+trivially. `autoGainControl`, `noiseSuppression`, and `voiceIsolation` are all
+**off**: each rewrites the signal before STT sees
+it — AGC continuously retargets level, so it rides the noise floor up through
+silence, while
+suppression and isolation discard signal and can gate a quiet room to *exact*
+zeros, which is also what a dead mic looks like. `echoCancellation` stays on:
+the mic is open while the agent speaks (barge-in needs it), so without AEC the
+agent hears itself and interrupts its own reply.
+
+**A dead microphone is detected once per session.** An OS-muted or wrong input
+device delivers digital silence, which from every other vantage point is
+identical to a user who has not spoken: socket up, session listening, no turn
+ever committed. The capture worklet watches the first `MIC_SILENCE_PROBE_MS`
+for any nonzero sample (a live mic in a quiet room still carries a noise
+floor) and reports once via `VoiceIOOptions.onMicSilent`. It disarms on the
+first real sample, so it costs nothing after the window and cannot fire
+mid-session.
+
+## Fuzz harnesses
+
+`packages/aai-ui/fuzz-*.test.ts` drive the browser session's four
+concurrency-bearing layers with generated operation sequences and assert
+INVARIANTS rather than scenarios — `fuzz-session-core` (server frames ×
+client control calls × socket lifecycle: snapshot monotonicity, caps, and
+quiescence after teardown), `fuzz-voiceio` (enqueue/done/flush/close ×
+worklet stops: every `done()` settles, and only for its own turn),
+`fuzz-hooks` (commit batches: exactly-once tool-call/event delivery through
+the watermark cursor), `fuzz-reconnect` (partysocket + a fuzzed
+`client-config`: the broker latch, resume ids, history replay). The
+worklet processors have their own equivalent in
+`worklets/audio-stress.test.ts`.
+
+Two properties they need to keep paying off, beyond what fast-check gives
+every harness (see "Property tests run on fast-check" in the root
+`CLAUDE.md`). A harness must be
+checked for **sensitivity** — revert the fix and confirm it fails — because
+the common outcome is a harness that models the system too politely to reach
+the bug: `fuzz-voiceio` silently exercised a DEAD worklet node for many
+iterations (the audio mocks accumulate nodes across a test, so
+`findWorkletNode` returned the first-ever one) and passed with the bug
+present. And the model has to stay **faithful to the protocol** — one
+`config` frame per connection, a drain-stop only after a `done`, timers
+advanced 1ms per op so a lagged message can cross later operations — or the
+"violations" it reports are its own.
