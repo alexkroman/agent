@@ -9,10 +9,14 @@
 
 import { randomUUID } from "node:crypto";
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
-import { createStorage } from "unstorage";
 import { isLocalDev, requireEnv } from "./_boot.ts";
 import { type AgentRows, createMemoryAgentRows, createPgAgentRows } from "./agent-store.ts";
 import { type AppDatabases, type AppDbTarget, createAppDatabases } from "./app-database.ts";
+import {
+  type BlobStorage,
+  createMemoryBlobStorage,
+  createSupabaseBlobStorage,
+} from "./blob-storage.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./chat-store.ts";
 import { isModalConfigured, modalRequiredError, prewarmModal } from "./modal-sandbox.ts";
@@ -27,7 +31,6 @@ import {
 } from "./platform-events.ts";
 import { createPgSlugLock, localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import { createRealtimePlatformEvents, ensureRealtimeSetup } from "./realtime-events.ts";
-import { createS3Storage } from "./s3-storage.ts";
 import { describeSandboxBackend } from "./sandbox-backend.ts";
 import { createPgSandboxRegistry } from "./sandbox-registry.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
@@ -90,24 +93,23 @@ export type ServiceConfig = OrchestratorOpts & {
   replicaId: string;
 };
 
-export function buildStorage(env: NodeJS.ProcessEnv): ReturnType<typeof createStorage> {
+export function buildStorage(env: NodeJS.ProcessEnv): BlobStorage {
   if (isLocalDev(env)) {
-    console.info("Local dev mode: unstorage memory driver for all storage");
-    return createStorage();
+    console.info("Local dev mode: in-memory blob storage for deploy artifacts");
+    return createMemoryBlobStorage();
   }
+  // Storage authenticates with the SAME service-role key the Realtime socket
+  // uses — no separate S3 credential pair for a project we already hold two
+  // credentials for (see blob-storage.ts).
   const required = requireEnv(env, [
-    "SUPABASE_S3_ENDPOINT",
-    "SUPABASE_S3_ACCESS_KEY_ID",
-    "SUPABASE_S3_SECRET_ACCESS_KEY",
+    "SUPABASE_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
     "SUPABASE_STORAGE_BUCKET",
   ]);
-  return createS3Storage({
+  return createSupabaseBlobStorage({
+    url: required.SUPABASE_URL,
+    serviceRoleKey: required.SUPABASE_SERVICE_ROLE_KEY,
     bucket: required.SUPABASE_STORAGE_BUCKET,
-    endpoint: required.SUPABASE_S3_ENDPOINT,
-    // Supabase's S3-compatible endpoint expects the project's region string.
-    region: env.SUPABASE_S3_REGION ?? "us-east-1",
-    accessKeyId: required.SUPABASE_S3_ACCESS_KEY_ID,
-    secretAccessKey: required.SUPABASE_S3_SECRET_ACCESS_KEY,
   });
 }
 

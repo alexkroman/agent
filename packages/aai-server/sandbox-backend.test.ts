@@ -7,9 +7,9 @@
 import { describe, expect, it } from "vitest";
 import { describeSandboxBackend, resolveSandboxBackend } from "./sandbox-backend.ts";
 
-/** Env shape where local dev is on (no SUPABASE_S3_ENDPOINT). */
+/** Env shape where local dev is on (no SUPABASE_STORAGE_BUCKET). */
 const DEV_ENV: NodeJS.ProcessEnv = {};
-const PROD_ENV: NodeJS.ProcessEnv = { SUPABASE_S3_ENDPOINT: "https://s3.example" };
+const PROD_ENV: NodeJS.ProcessEnv = { SUPABASE_STORAGE_BUCKET: "aai-blobs" };
 
 describe("resolveSandboxBackend", () => {
   it("honors an explicit SANDBOX_BACKEND override for every backend", () => {

@@ -199,7 +199,7 @@ export function createStudioAuthFromEnv(
   if (opts.localDev) {
     // Dev auth is NO auth — any caller can mint `dev.<base64url({id})>.dev`
     // for any user id. `isLocalDev` keys off a *storage* variable
-    // (SUPABASE_S3_ENDPOINT), so a deploy that configures other platform
+    // (SUPABASE_STORAGE_BUCKET), so a deploy that configures other platform
     // backing but forgets that one var would otherwise serve dev auth
     // against real stores, letting any internet caller read any user's
     // stored key. A production marker alongside "local dev" is a

@@ -2,7 +2,7 @@
 /**
  * Integration tests for the orchestrator HTTP layer.
  *
- * Uses real `createBundleStore` + unstorage memory driver (not the mock)
+ * Uses real `createBundleStore` + the in-memory blob storage (not the mock)
  * to verify that deployed agent bundles are correctly served by the
  * orchestrator. No sandbox / VM required.
  */
@@ -11,13 +11,13 @@ import { describe, expect, test } from "vitest";
 import { TEST_AGENT_CONFIG } from "./test-utils.ts";
 
 async function createRealOrchestrator() {
-  const { createStorage } = await import("unstorage");
+  const { createMemoryBlobStorage } = await import("./blob-storage.ts");
   const { createMemoryAgentRows } = await import("./agent-store.ts");
   const { createBundleStore } = await import("./bundle-store.ts");
   const { createMemorySecretStore } = await import("./secret-store.ts");
   const { createOrchestrator } = await import("./orchestrator.ts");
 
-  const storage = createStorage();
+  const storage = createMemoryBlobStorage();
   const store = createBundleStore(storage, {
     secrets: createMemorySecretStore(),
     agents: createMemoryAgentRows(),

@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { createStorage } from "unstorage";
 import { createMemoryAgentRows } from "./agent-store.ts";
+import { createMemoryBlobStorage } from "./blob-storage.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore } from "./chat-store.ts";
 import { createOrchestrator } from "./orchestrator.ts";
@@ -24,8 +24,8 @@ import { createMemoryWorkspaceStore, type WorkspaceStore } from "./workspace-sto
 export const VALID_ENV: Record<string, string> = { ASSEMBLYAI_API_KEY: "test-key" };
 
 /**
- * In-memory BundleStore for tests: the REAL bundle store over unstorage's
- * memory driver, in-memory agent rows, and an in-memory SecretStore — so
+ * In-memory BundleStore for tests: the REAL bundle store over the in-memory
+ * blob storage, in-memory agent rows, and an in-memory SecretStore — so
  * tests exercise the same content-addressed blob + row-commit code paths
  * production runs. When a SecretStore is passed, `deleteAgent` sweeps the
  * agent's secret names like production does (the delete route relies on
@@ -33,7 +33,7 @@ export const VALID_ENV: Record<string, string> = { ASSEMBLYAI_API_KEY: "test-key
  */
 export function createTestStore(secrets?: SecretStore, events?: MemoryPlatformEvents): BundleStore {
   const agents = createMemoryAgentRows();
-  return createBundleStore(createStorage(), {
+  return createBundleStore(createMemoryBlobStorage(), {
     secrets: secrets ?? createMemorySecretStore(),
     // Paired with a memory event bus when given, so agents-row writes notify
     // watchers exactly like production's postgres_changes stream.

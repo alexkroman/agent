@@ -24,9 +24,10 @@ Deploy (from the repo root, with the Python `modal` CLI authed via
 Required Modal Secret named ``aai-server`` with (at least):
 
 - ``MODAL_TOKEN_ID`` / ``MODAL_TOKEN_SECRET`` — for creating guest sandboxes
-- ``SUPABASE_S3_ENDPOINT`` / ``SUPABASE_S3_ACCESS_KEY_ID`` /
-  ``SUPABASE_S3_SECRET_ACCESS_KEY`` / ``SUPABASE_STORAGE_BUCKET`` — Supabase
-  Storage (S3-compatible); optional ``SUPABASE_S3_REGION``
+- ``SUPABASE_STORAGE_BUCKET`` — the Supabase Storage bucket deploy artifacts
+  live in. Authenticated with ``SUPABASE_SERVICE_ROLE_KEY`` below, so Storage
+  needs no credential of its own. Also the sentinel that distinguishes a
+  production boot from local dev (see ``isLocalDev``)
 - ``SUPABASE_DB_URL`` — service-role Postgres connection string (Vault
   secrets + per-app databases)
 - ``SUPABASE_URL`` / ``SUPABASE_PUBLISHABLE_KEY`` — Supabase Auth (studio
@@ -34,7 +35,8 @@ Required Modal Secret named ``aai-server`` with (at least):
   the dashboard's API Keys page). Missing means browser login is disabled
   (a boot warning says so) — raw API-key bearers still work
 - ``SUPABASE_SERVICE_ROLE_KEY`` — with ``SUPABASE_URL``, the Supabase
-  Realtime change streams (sandbox invalidation, studio preview push)
+  Realtime change streams (sandbox invalidation, studio preview push) AND
+  Storage reads/writes of deploy artifacts
 - optional: ``ASSEMBLYAI_API_KEY``
 
 """

@@ -16,8 +16,21 @@ export function requireEnv<const K extends string>(
   return Object.fromEntries(keys.map((k) => [k, env[k]])) as { [P in K]: string };
 }
 
+/**
+ * Whether this process is a local-dev run: in-memory stores, and the one
+ * environment where the isolation-free `subprocess` sandbox backend can be
+ * selected (see sandbox-backend.ts).
+ *
+ * The sentinel is the deploy artifact BUCKET — the one setting that is
+ * meaningless without real object storage behind it, so production always has
+ * it and a laptop never does. Deliberately not `SUPABASE_URL` or
+ * `SUPABASE_DB_URL`: both are legitimately set in local dev (against a
+ * scratch project, or to exercise per-app databases), and either one as the
+ * sentinel would silently promote such a run to "production" — memory stores
+ * off, and Modal credentials suddenly mandatory.
+ */
 export function isLocalDev(env: NodeJS.ProcessEnv): boolean {
-  return env.AAI_LOCAL_DEV === "1" || !env.SUPABASE_S3_ENDPOINT;
+  return env.AAI_LOCAL_DEV === "1" || !env.SUPABASE_STORAGE_BUCKET;
 }
 
 /**

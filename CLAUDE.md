@@ -411,9 +411,21 @@ model) is the security boundary.
 - `auth.ts` — authentication/authorization
 - `credentials.ts` — credential derivation
 - `bundle-store.ts` — deploy persistence: content-addressed, immutable
-  blobs (`blobs/<sha256>` — worker + client files, in Supabase Storage via
-  its S3-compatible endpoint in production, memory in dev/tests) committed
+  blobs (`blobs/<sha256>` — worker + client files) committed
   by the agents-row upsert, which is the deploy's ATOMIC publish point.
+- `blob-storage.ts` — where those blobs live: Supabase Storage through
+  `@supabase/storage-js` in production (authenticated with the SAME
+  `SUPABASE_SERVICE_ROLE_KEY` as Realtime — Storage has no credential of its
+  own), memory in dev/tests. The surface is deliberately `getItem`/`setItem`
+  and nothing else. It replaced unstorage's generic S3 driver plus a local
+  override of that driver's `getKeys` (which lists the whole bucket and reads
+  only the first 1000-key page): once workspaces moved to Postgres NOTHING
+  lists keys, so the override guarded a call no longer made, and the
+  `SUPABASE_S3_*` endpoint/region/key set was a third credential for a
+  project already reachable two other ways. A miss (404) MUST resolve `null`
+  while any other failure throws — the bundle store caches misses under a
+  sentinel and retries failures, so conflating them makes a live deploy read
+  as absent.
   Agent env lives in Supabase Vault through the injected `SecretStore`.
   Orphan blobs from superseded/deleted deploys are accepted (content
   dedupes; a shared blob must not die with one referrer).
@@ -2186,7 +2198,7 @@ service's control work is light — and one container served both badly.
   three rules: an explicit `SANDBOX_BACKEND` (`modal` | `subprocess`) always
   wins (unknown values throw — a silent fallback would look like the override
   not working); otherwise not-local-dev → `modal`, unconditionally; otherwise
-  → `subprocess`. `isLocalDev` is false whenever `SUPABASE_S3_ENDPOINT` is
+  → `subprocess`. `isLocalDev` is false whenever `SUPABASE_STORAGE_BUCKET` is
   set, so **production can never resolve the host-local backend**, and fails
   loudly without `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET` (or a `~/.modal.toml`
   profile) rather than degrading. There is **no fallback between backends at
@@ -2422,7 +2434,7 @@ token.
 **none** of the properties described below — the harness is a child process
 of the server, sharing its uid, filesystem, and network — see "Modal sandbox
 notes". Selection (`sandbox-backend.ts`) makes it unreachable outside local
-dev: any environment with `SUPABASE_S3_ENDPOINT` set resolves `modal`
+dev: any environment with `SUPABASE_STORAGE_BUCKET` set resolves `modal`
 unconditionally. When reasoning about the security model, the backend is the
 first thing to establish, and the boot log names it (with a warning when
 there is no boundary at all).

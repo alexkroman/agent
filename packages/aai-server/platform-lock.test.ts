@@ -1,8 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { createStorage } from "unstorage";
 import { describe, expect, test } from "vitest";
 import { createMemoryAgentRows } from "./agent-store.ts";
+import { createMemoryBlobStorage } from "./blob-storage.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import {
   createMutationLock,
@@ -176,7 +176,7 @@ describe("createMutationLock", () => {
    * of the two values.
    */
   test("a mutation reads durable state, not this replica's cached view", async () => {
-    const storage = createStorage();
+    const storage = createMemoryBlobStorage();
     const secrets = createMemorySecretStore();
     const agents = createMemoryAgentRows();
     // Two replicas over one shared backend, plus a cold reader for the truth.
