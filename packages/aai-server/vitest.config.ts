@@ -25,6 +25,9 @@ export default defineConfig({
       "orchestrator-integration.test.ts",
       "ws-integration.test.ts",
       "workspace-build-integration.test.ts",
+      // Need a real Postgres (AAI_TEST_PG_URL) — integration tier only.
+      "platform-lock.integration.test.ts",
+      "platform-schema.integration.test.ts",
       "node_modules",
       "dist",
     ],

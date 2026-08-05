@@ -154,6 +154,26 @@ jobs:
           key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec turbo run build
+      # Postgres for the platform integration tests: the per-slug advisory lock
+      # and the migration + its stores. Both assert PostgreSQL semantics that
+      # their unit suites can only assert in prose (see
+      # platform-lock.integration.test.ts).
+      #
+      # A step rather than a `services:` container, because those need Docker
+      # and this job's matrix includes macos-latest, where it is unavailable.
+      # The runner image ships the cluster; starting it is enough. The database
+      # behaviour under test is OS-independent, so the ubuntu leg covers it and
+      # the tests skip themselves on macOS, where AAI_TEST_PG_URL is unset.
+      - name: Start Postgres (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          sudo systemctl start postgresql
+          # Fail here rather than let the tests skip: a suite that silently
+          # stops running is the failure mode these tests exist to avoid.
+          pg_isready --host 127.0.0.1 --timeout 30
+          sudo -u postgres psql -c "alter user postgres password 'postgres'"
+          echo "AAI_TEST_PG_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres" >> "$GITHUB_ENV"
       - run: pnpm exec turbo run check:integration
 
   e2e:

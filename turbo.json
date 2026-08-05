@@ -107,6 +107,9 @@
       "dependsOn": [
         "build"
       ],
+      "env": [
+        "AAI_TEST_PG_URL"
+      ],
       "inputs": [
         "**/*.ts",
         "vitest.integration.config.ts",

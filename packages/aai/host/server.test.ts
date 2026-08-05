@@ -59,14 +59,28 @@ describe("createServer", () => {
   });
 
   /**
-   * `close()` drops idle keep-alive connections so shutdown doesn't wait out
-   * a parked socket's timer. This is the other half of that bargain, and the
-   * half that would be a real bug: a request still being served must finish.
-   * `closeIdleConnections()` guarantees it where `closeAllConnections()` would
-   * truncate the reply mid-body, so this test is what stops the two being
-   * swapped.
+   * Both halves of what `close()` has to do at once, in the scenario that
+   * forced the design: a request is mid-response when close() lands, and the
+   * socket goes IDLE a moment later.
+   *
+   * - The reply must arrive complete. `closeIdleConnections()` guarantees that
+   *   where `closeAllConnections()` would truncate it mid-body, so the first
+   *   assertion is what stops those two being swapped.
+   * - Shutdown must not then wait out the newly-idle socket's keep-alive
+   *   timer. That is why the drop SWEEPS: a single call fires while the
+   *   request is still active, finds nothing to do, and the connection parks
+   *   for a flat ~3s (Node's fetch: undici's 4s keep-alive minus its 1s
+   *   threshold) or up to 5s (a browser). `aai dev` pays it on every watch
+   *   restart, and no assertion about BEHAVIOUR can see it — the server shuts
+   *   down correctly either way, just slowly.
+   *
+   * The two pull against each other, which is the point: passing both is only
+   * possible by dropping idle connections repeatedly, and each assertion fails
+   * on a different way of getting it wrong (verified by mutation). The bound is
+   * deliberately loose — ~100ms passing, ~3s regressed — so it discriminates
+   * the mechanism, not the machine.
    */
-  test("close lets an in-flight request finish rather than truncating it", async () => {
+  test("close finishes an in-flight request, then exits without waiting on it", async () => {
     const { runtime } = makeRuntime();
     let began: (() => void) | undefined;
     const started = new Promise<void>((resolve) => {
@@ -89,9 +103,13 @@ describe("createServer", () => {
 
     const inFlight = get(`http://localhost:${server.port}/slow`);
     await started;
+    const closeBegan = Date.now();
     await server.close();
+    const closeMs = Date.now() - closeBegan;
     server = null;
+
     expect((await inFlight).body).toBe("first-half-second-half");
+    expect(closeMs).toBeLessThan(1500);
   });
 
   test("/health returns ok JSON", async () => {
