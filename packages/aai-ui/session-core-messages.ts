@@ -11,7 +11,6 @@
  */
 
 import { DEFAULT_MAX_HISTORY, safeJsonParse, toArgsRecord } from "@alexkroman1/aai";
-import { createEpoch } from "@alexkroman1/aai/internal";
 import {
   type ClientEvent,
   lenientParse,
@@ -94,15 +93,14 @@ type MessageHandlers = {
 /**
  * Create the server→client message handlers for one session core.
  *
- * Encapsulates the two turn-boundary counters (`turnEpoch` for
- * discarding stale async audio completions, `customEventSeq` for event
- * dedup) that previously lived as closure locals in `createSessionCore`.
+ * Encapsulates the per-session dedup counters (`customEventSeq`,
+ * `messageSeq`, `toolCallSeq`) that previously lived as closure locals in
+ * `createSessionCore`. The turn-boundary epoch is NOT one of them: it lives
+ * on `conn` because the session core bumps it on teardown too (see
+ * `ConnState.turn`).
  */
 export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers {
   const { getSnapshot, updateState, conn, cleanupAudio } = deps;
-
-  /** Bumped on each turn boundary -- stale async callbacks check against this. */
-  const turnEpoch = createEpoch();
 
   /** Monotonically increasing counter for custom events -- used by useEvent to deduplicate. */
   let customEventSeq = 0;
@@ -126,7 +124,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
   }
 
   function handleUserTranscriptEvent(text: string): void {
-    turnEpoch.bump();
+    conn.turn.bump();
     updateState({
       userTranscript: null,
       messages: appendCapped(
@@ -266,7 +264,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
         updateState({ state: "listening" });
         break;
       case "cancelled":
-        turnEpoch.bump();
+        conn.turn.bump();
         conn.voiceIO?.flush();
         commitAgentTranscript();
         updateState({
@@ -275,7 +273,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
         });
         break;
       case "reset": {
-        turnEpoch.bump();
+        conn.turn.bump();
         conn.voiceIO?.flush();
         updateState({ ...CLEARED_SESSION_STATE, state: "listening" });
         break;
@@ -318,14 +316,15 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
   }
 
   /** See {@link MessageHandlers.settleWhenAudioDrained}. Captures
-   *  `turnEpoch` so a completion (or failure) that lands after a turn
-   *  boundary is discarded instead of overwriting the newer turn's state. */
+   *  `conn.turn` so a completion (or failure) that lands after a turn
+   *  boundary — including an audio-path teardown — is discarded instead of
+   *  overwriting the newer turn's (or the dead session's) state. */
   function settleWhenAudioDrained(io: NonNullable<ConnState["voiceIO"]>): void {
-    const gen = turnEpoch.current();
+    const gen = conn.turn.current();
     void io
       .done()
       .then(() => {
-        if (!turnEpoch.isCurrent(gen)) return;
+        if (!conn.turn.isCurrent(gen)) return;
         updateState({ state: "listening" });
       })
       .catch((err: unknown) => {
@@ -336,7 +335,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
   /**
    * Signal that the server has finished sending audio for this turn.
    * Waits for the audio queue to drain, then transitions state to `"listening"`.
-   * Uses the `turnEpoch` epoch to discard stale completions from interrupted turns.
+   * Uses `conn.turn` to discard stale completions from interrupted turns.
    */
   function playAudioDone(): void {
     const io = conn.voiceIO;

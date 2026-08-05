@@ -67,6 +67,10 @@ class PlaybackProcessor extends AudioWorkletProcessor {
         this.stopTurn('interrupt');
       } else if (d.event === 'done') {
         this.isDone = true;
+        // Echoed back on this turn's 'stop' so the host can tell WHICH turn
+        // drained: a stop already in flight when a barge-in lands would
+        // otherwise settle the next turn's done() the moment it arrives.
+        this.doneTurn = d.turn ?? null;
       }
     };
   }
@@ -75,6 +79,8 @@ class PlaybackProcessor extends AudioWorkletProcessor {
   // reallocating the sample buffer or re-instantiating the worklet.
   resetTurn() {
     this.isDone = false;
+    // Host turn id carried by this turn's 'done' (null until one arrives).
+    this.doneTurn = null;
     this.playing = false;
     // Whether any real audio has been rendered this turn. Separates a turn's
     // pre-roll (nothing to extrapolate from, and not a defect) from a
@@ -107,10 +113,12 @@ class PlaybackProcessor extends AudioWorkletProcessor {
   // Must NOT return false from process() — a processor that stops is dead
   // for good, forcing a new node (and buffer) per reply.
   // \`reason\` ('interrupt' | 'done') tells the host which turn boundary this
-  // stop belongs to: interrupt-stops are dropped host-side (flush() already
-  // settled that turn), so they can never resolve a later turn's done() early.
+  // stop belongs to — interrupt-stops are dropped host-side, flush() having
+  // already settled that turn — and \`turn\` names WHICH turn drained (the id
+  // this turn's 'done' carried), so a drain-stop still in flight when a
+  // barge-in lands cannot settle the next turn's done() early.
   stopTurn(reason) {
-    this.port.postMessage({ event: 'stop', reason, stats: this.stats });
+    this.port.postMessage({ event: 'stop', reason, turn: this.doneTurn, stats: this.stats });
     this.resetTurn();
   }
 

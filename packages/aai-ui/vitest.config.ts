@@ -16,7 +16,7 @@ export default defineConfig({
       exclude: sharedCoverageExclude,
       // Ratchet: floors only move up. Raise to ~2-3 points below actuals
       // whenever a coverage run shows comfortable headroom.
-      thresholds: { lines: 93, functions: 90, branches: 86, statements: 92 },
+      thresholds: { lines: 94, functions: 90, branches: 89, statements: 94 },
     },
   },
 });
