@@ -514,9 +514,7 @@ describe("builtinFetch", () => {
     expect(builtinFetch({ AAI_GUEST_TOKEN: "tok" })).toBe(safeFetch);
   });
 
-  test("only an exact 1 opts in", () => {
-    for (const v of ["0", "true", "yes", ""]) {
-      expect(builtinFetch({ [CONTAINED_ENV]: v })).toBe(safeFetch);
-    }
+  test.each(["0", "true", "yes", ""])("only an exact 1 opts in, not %j", (v) => {
+    expect(builtinFetch({ [CONTAINED_ENV]: v })).toBe(safeFetch);
   });
 });

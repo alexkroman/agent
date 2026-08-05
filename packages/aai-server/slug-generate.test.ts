@@ -37,12 +37,12 @@ describe("generatedSlug", () => {
     expect(slug.length).toBeGreaterThan(SLUG_SUFFIX_LENGTH + 1);
   });
 
-  test("an unusable base (wrong charset, empty) falls back to words", () => {
-    for (const base of ["", "-", "Contact Form!", "-leading-dash"]) {
-      const slug = generatedSlug(base);
-      expect(VALID_SLUG_RE.test(slug)).toBe(true);
-    }
-  });
+  test.each(["", "-", "Contact Form!", "-leading-dash"])(
+    "an unusable base (%j) falls back to words",
+    (base) => {
+      expect(VALID_SLUG_RE.test(generatedSlug(base))).toBe(true);
+    },
+  );
 
   test.each([
     // The CLI path: agent({ name }) seeds the slug.

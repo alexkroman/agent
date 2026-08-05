@@ -5,7 +5,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { createOwnedMap } from "../sdk/owned-map.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
-import { makeMockCore, silentLogger } from "./_test-utils.ts";
+import { makeMockCore, silentLogger, tick } from "./_test-utils.ts";
 import type { SessionCore } from "./session-core.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
@@ -41,7 +41,7 @@ describe("wireSessionSocket — close during start()", () => {
     // start() finally resolves — the buffer must not drain into the stopped
     // session, and it must not be marked ready.
     startGate.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
     expect(core.onAudio).not.toHaveBeenCalled();
     expect(sessions.size).toBe(0);
   });
@@ -64,7 +64,7 @@ describe("wireSessionSocket — close during start()", () => {
     await vi.waitFor(() => expect(core.stop).toHaveBeenCalled());
 
     startGate.reject(new Error("boom"));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
     expect(core.stop).toHaveBeenCalledTimes(1);
     expect(onSessionEnd).toHaveBeenCalledTimes(1);
   });
@@ -83,7 +83,7 @@ describe("wireSessionSocket — close during start()", () => {
 
     ws.close();
     ws.dispatchEvent(new MessageEvent("message", { data: new Uint8Array([9]) }));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
     expect(core.onAudio).not.toHaveBeenCalled();
   });
 });

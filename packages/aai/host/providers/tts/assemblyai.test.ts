@@ -3,6 +3,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { AssemblyAITtsLanguage } from "../../../sdk/providers/tts/assemblyai.ts";
 import type { TtsError } from "../../../sdk/providers.ts";
+import { tick } from "../../_test-utils.ts";
 import { FakeWebSocket, pcmBase64 } from "./_assemblyai-fake-ws-test-utils.ts";
 import { openSession } from "./_assemblyai-session-test-utils.ts";
 import { openAssemblyAITts } from "./assemblyai.ts";
@@ -378,7 +379,7 @@ describe("AssemblyAI TTS adapter", () => {
       expect(done).toBe(1);
 
       // Let the replacement socket finish connecting so queued frames go out.
-      await new Promise((r) => setTimeout(r, 0));
+      await tick();
       const next = FakeWebSocket.instances.at(-1);
       session.sendText("New turn ");
       session.flush();

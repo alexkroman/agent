@@ -10,6 +10,7 @@
 import type { AddressInfo } from "node:net";
 import { describe, expect, it, vi } from "vitest";
 import { WebSocketServer } from "ws";
+import { sleep } from "./_sleep.ts";
 import { agentBootEnv, dialGuest, drainProcStream } from "./warm-harness.ts";
 
 function streamOf(chunks: string[]): ReadableStream<Uint8Array> {
@@ -75,7 +76,7 @@ describe("dialGuest", () => {
     await new Promise((resolve) => probe.close(resolve));
 
     const pending = dialGuest(`ws://127.0.0.1:${port}/ws`, "tok");
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    await sleep(150);
     const wss = new WebSocketServer({ host: "127.0.0.1", port });
     await new Promise((resolve) => wss.once("listening", resolve));
 

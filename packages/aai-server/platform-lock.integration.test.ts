@@ -35,6 +35,7 @@
 import type { CloseableDb, ReservedDb } from "@alexkroman1/aai/runtime";
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
+import { sleep } from "./_sleep.ts";
 import {
   createPgSlugLock,
   SLUG_LOCK_NAMESPACE,
@@ -131,7 +132,7 @@ describeIfPg("slug mutation lock over real Postgres advisory locks", () => {
       order.push("ran");
       return Promise.resolve("done");
     });
-    await new Promise((r) => setTimeout(r, 120));
+    await sleep(120);
     expect(order).toEqual([]);
 
     await release();

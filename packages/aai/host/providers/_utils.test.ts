@@ -17,13 +17,14 @@ function makeShell(cleanCloseIsFatal?: boolean) {
 }
 
 describe("createSessionShell close handling", () => {
-  it("surfaces abnormal close codes regardless of the flag", () => {
-    for (const flag of [undefined, false, true]) {
+  it.each([undefined, false, true])(
+    "surfaces abnormal close codes regardless of the flag (%s)",
+    (flag) => {
       const { shell, errors } = makeShell(flag);
       shell.onSocketClose(1006);
       expect(errors).toEqual(["socket closed 1006"]);
-    }
-  });
+    },
+  );
 
   it("ignores a clean close by default, so a finished output stream is not an error", () => {
     const { shell, errors } = makeShell();

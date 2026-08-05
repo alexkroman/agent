@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { sleep } from "./_sleep.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import { createSandbox, type SandboxOptions } from "./sandbox.ts";
 import { resolveSandbox } from "./sandbox-resolve.ts";
@@ -339,7 +340,7 @@ describe("createSandbox", () => {
         );
       });
       // Let the identity-checked detach (queued under the slug lock) settle.
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await sleep(0);
 
       expect(deps.slots.get("raced")?.sandbox).toBe(replacement);
       expect(replacement.shutdown).not.toHaveBeenCalled();

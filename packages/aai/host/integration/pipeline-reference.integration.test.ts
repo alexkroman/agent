@@ -27,6 +27,7 @@ import type { ClientSink } from "../../sdk/protocol.ts";
 import { openai } from "../../sdk/providers/llm/openai.ts";
 import { assemblyAIStt } from "../../sdk/providers/stt/assemblyai.ts";
 import { cartesia } from "../../sdk/providers/tts/cartesia.ts";
+import { sleep } from "../_test-utils.ts";
 import { createRuntime } from "../runtime.ts";
 import { consoleLogger } from "../runtime-config.ts";
 
@@ -105,7 +106,7 @@ describe.skipIf(!envReady)("pipeline integration — reference stack", () => {
     const chunkBytes = 3200;
     for (let i = 0; i < pcm.length; i += chunkBytes) {
       session.onAudio(new Uint8Array(pcm.subarray(i, i + chunkBytes)));
-      await new Promise((r) => setTimeout(r, 100));
+      await sleep(100);
     }
     await session.stop();
 

@@ -196,11 +196,12 @@ describe("project CRUD", () => {
     expect((await res.json()) as { name: string }).toMatchObject({ name: expected });
   });
 
-  test("create rejects names that slugify to nothing", async () => {
-    for (const name of ["!!!", "   ", "-", "…"]) {
+  test.each(["!!!", "   ", "-", "…"])(
+    "create rejects the name %j, which slugifies to nothing",
+    async (name) => {
       expect((await authFetch(fetch, "/studio/projects", { body: { name } })).status).toBe(400);
-    }
-  });
+    },
+  );
 
   test("create rejects a name that would claim a reserved slug", async () => {
     // Better to fail here than to let the project exist and die at publish.

@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { S2S_MAX_RESUME_ATTEMPTS } from "../../sdk/constants.ts";
-import { makeMockHandle, silentLogger } from "../_test-utils.ts";
+import { makeMockHandle, silentLogger, sleep } from "../_test-utils.ts";
 import type { ConnectS2sOptions, S2sCallbacks, S2sHandle, S2sWebSocket } from "../s2s.ts";
 import { _internals, createS2sTransport, type S2sTransportOptions } from "./s2s-transport.ts";
 import type { TransportCallbacks } from "./types.ts";
@@ -166,7 +166,7 @@ describe("S2sTransport reconnect", () => {
     cb1.onReplyStarted("rep_1");
     cb1.onClose(1008, "unauthorized");
 
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await sleep(5);
     expect(handles.length).toBe(1);
     expect(callbacks.onError).toHaveBeenCalledWith(
       "connection",
@@ -186,7 +186,7 @@ describe("S2sTransport reconnect", () => {
     // Upstream close after stop() must be treated as clean shutdown, not a transient drop.
     cb1.onClose(1005, "");
 
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await sleep(5);
     expect(handles.length).toBe(1);
     expect(callbacks.onError).not.toHaveBeenCalled();
   });
@@ -255,7 +255,7 @@ describe("S2sTransport reconnect", () => {
     cb1.onClose(1005, "");
 
     await vi.waitFor(() => expect(callbacks.onError).toHaveBeenCalled());
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await sleep(5);
     expect(callbacks.onError).toHaveBeenCalledTimes(1);
     // No further resume attempt after the failure (the 1006 close is transient
     // by code, but the retired session must not loop back into resume).
@@ -287,7 +287,7 @@ describe("S2sTransport reconnect", () => {
     // it must neither re-emit the error nor kick off another resume loop.
     const cb2 = expectAt(capturedCallbacks, 1, "resume callbacks");
     cb2.onClose(1006, "");
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await sleep(5);
     expect(callbacks.onError).toHaveBeenCalledTimes(1);
     expect(spy).toHaveBeenCalledTimes(2);
   });
@@ -468,7 +468,7 @@ describe("S2sTransport reconnect", () => {
     // installed, and the client hears nothing: it hung up, so there is no
     // session left to fail.
     resume.resolve(resumeHandle);
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await sleep(5);
     expect(resumeHandle.close).toHaveBeenCalled();
     expect(callbacks.onError).not.toHaveBeenCalled();
   });

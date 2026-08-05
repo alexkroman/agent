@@ -6,6 +6,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel } from "../_pipeline-test-fakes.ts";
+import { sleep } from "../_test-utils.ts";
 import { inFlightReplyScript, makeOpts } from "./_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
 
@@ -273,7 +274,7 @@ describe("PipelineTransport", () => {
       expect(callbacks.onCancelled).not.toHaveBeenCalled();
 
       // The user keeps talking past the duration gate → the next partial interrupts.
-      await new Promise((r) => setTimeout(r, 120));
+      await sleep(120);
       stt.last()?.firePartial("wait stop that");
       expect(callbacks.onCancelled).toHaveBeenCalled();
       expect(tts.last()?.cancel).toHaveBeenCalled();
@@ -373,7 +374,7 @@ describe("PipelineTransport", () => {
       // streamText turn against closed providers AFTER stop() — and stop()
       // hangs on its TTS drain for the whole flush timeout.
       await t.stop();
-      await new Promise((r) => setTimeout(r, 50));
+      await sleep(50);
       expect(llm.calls.length).toBe(1);
     });
 
@@ -382,7 +383,7 @@ describe("PipelineTransport", () => {
       t.reset?.();
       // The queued turn carries pre-reset user text: it must not run into the
       // fresh history.
-      await new Promise((r) => setTimeout(r, 50));
+      await sleep(50);
       expect(llm.calls.length).toBe(1);
       await t.stop();
     });
@@ -390,7 +391,7 @@ describe("PipelineTransport", () => {
     test("a turn queued behind an active one does not run after cancelReply()", async () => {
       const { t, llm } = await startWithQueuedTurn();
       t.cancelReply();
-      await new Promise((r) => setTimeout(r, 50));
+      await sleep(50);
       expect(llm.calls.length).toBe(1);
       await t.stop();
     });
@@ -407,7 +408,7 @@ describe("PipelineTransport", () => {
       });
 
       t.reset?.();
-      await new Promise((r) => setTimeout(r, 50));
+      await sleep(50);
       // persistInterruptedTurn runs after the abort settles; post-reset it must
       // not push the `[interrupted]` tail into the just-cleared history. Read
       // through a follow-up turn's LLM request rather than the transcript
@@ -470,7 +471,7 @@ describe("PipelineTransport", () => {
       expect(callbacks.onCancelled).toHaveBeenCalled();
       // Well past the aborted stream settling, which is when the frame used to
       // arrive; the interim snapshots (onAgentTranscriptPartial) are unaffected.
-      await new Promise((r) => setTimeout(r, 80));
+      await sleep(80);
       expect(vi.mocked(callbacks.onAgentTranscript).mock.calls.length).toBe(transcriptsBefore);
       await t.stop();
     });

@@ -106,11 +106,12 @@ describe("resolvePort", () => {
     expect(resolvePort(raw, 8080)).toBe(expected);
   });
 
-  test("throws on an unparseable PORT instead of binding an ephemeral one", () => {
-    // listen(NaN) binds an ephemeral port: the process looks healthy while
-    // the platform proxy's configured port gets nothing. Fail boot instead.
-    for (const raw of ["tcp://0.0.0.0:8080", "abc", "-1", "70000", "80.5"]) {
+  // listen(NaN) binds an ephemeral port: the process looks healthy while
+  // the platform proxy's configured port gets nothing. Fail boot instead.
+  test.each(["tcp://0.0.0.0:8080", "abc", "-1", "70000", "80.5"])(
+    "throws on an unparseable PORT (%j) instead of binding an ephemeral one",
+    (raw) => {
       expect(() => resolvePort(raw, 8080)).toThrow("Invalid PORT");
-    }
-  });
+    },
+  );
 });

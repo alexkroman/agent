@@ -12,11 +12,12 @@ const DEV_ENV: NodeJS.ProcessEnv = {};
 const PROD_ENV: NodeJS.ProcessEnv = { SUPABASE_STORAGE_BUCKET: "aai-blobs" };
 
 describe("resolveSandboxBackend", () => {
-  it("honors an explicit SANDBOX_BACKEND override for every backend", () => {
-    for (const backend of ["modal", "subprocess"] as const) {
+  it.each(["modal", "subprocess"] as const)(
+    "honors an explicit SANDBOX_BACKEND=%s override",
+    (backend) => {
       expect(resolveSandboxBackend({ ...DEV_ENV, SANDBOX_BACKEND: backend })).toBe(backend);
-    }
-  });
+    },
+  );
 
   it("lets the override win over the production default", () => {
     expect(resolveSandboxBackend({ ...PROD_ENV, SANDBOX_BACKEND: "subprocess" })).toBe(

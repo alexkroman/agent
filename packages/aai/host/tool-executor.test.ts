@@ -2,7 +2,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import type { ToolDef } from "../sdk/types.ts";
-import { makeTool } from "./_test-utils.ts";
+import { makeTool, sleep } from "./_test-utils.ts";
 import { executeToolCall } from "./tool-executor.ts";
 
 function run(
@@ -101,7 +101,7 @@ describe("executeToolCall", () => {
   test("handles async tool execution", async () => {
     const tool = makeTool({
       execute: async () => {
-        await new Promise((r) => setTimeout(r, 10));
+        await sleep(10);
         return "async result";
       },
     });

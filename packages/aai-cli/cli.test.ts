@@ -14,13 +14,13 @@ function normalize(s: string): string {
 }
 
 describe("cli", () => {
-  test("main command has expected subcommands", () => {
-    const subs = mainCommand.subCommands as Record<string, unknown>;
-    expect(subs).toBeDefined();
-    for (const cmd of ["init", "dev", "test", "build", "deploy", "delete", "secret", "storage"]) {
+  test.each(["init", "dev", "test", "build", "deploy", "delete", "secret", "storage"])(
+    "main command declares the %s subcommand",
+    (cmd) => {
+      const subs = mainCommand.subCommands as Record<string, unknown>;
       expect(subs[cmd]).toBeDefined();
-    }
-  });
+    },
+  );
 
   test("main command meta has correct name", () => {
     const meta = mainCommand.meta as { name?: string; version?: string };

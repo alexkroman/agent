@@ -16,7 +16,14 @@ import {
   FAKE_TTS_API_KEY_ENV,
   registerFakeProviders,
 } from "./_pipeline-test-fakes.ts";
-import { flush, makeAgent, makeClientSink, makeMockHandle, silentLogger } from "./_test-utils.ts";
+import {
+  flush,
+  makeAgent,
+  makeClientSink,
+  makeMockHandle,
+  silentLogger,
+  sleep,
+} from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";
 import type { OpenaiRealtimeWebSocket } from "./transports/openai-realtime-transport.ts";
 import { _internals } from "./transports/s2s-transport.ts";
@@ -45,7 +52,7 @@ describe("createRuntime shutdown", () => {
       expect(connectSpy).toHaveBeenCalled();
     });
     await flush();
-    await new Promise((r) => setTimeout(r, 50));
+    await sleep(50);
 
     await expect(runtime.shutdown()).resolves.toBeUndefined();
   });

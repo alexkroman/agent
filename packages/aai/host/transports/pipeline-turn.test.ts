@@ -6,6 +6,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel, type ScriptedPart } from "../_pipeline-test-fakes.ts";
+import { sleep } from "../_test-utils.ts";
 import {
   firstCallArg,
   inFlightReplyScript,
@@ -35,7 +36,7 @@ describe("PipelineTransport — STT → LLM turn", () => {
     const t = createPipelineTransport(opts);
     await t.start();
     stt.last()?.fireFinal("   ");
-    await new Promise((r) => setTimeout(r, 10));
+    await sleep(10);
     expect(callbacks.onUserTranscript).not.toHaveBeenCalled();
     expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
     await t.stop();
@@ -393,7 +394,7 @@ describe("interrupted-speech persistence", () => {
 
     stt.last()?.fireFinal("hi");
     // Abort during the pre-first-delta delay.
-    await new Promise((r) => setTimeout(r, 10));
+    await sleep(10);
     t.cancelReply();
 
     // No text accumulated → no interrupted transcript surfaced.
@@ -523,7 +524,7 @@ describe("interrupted-speech persistence", () => {
         delayMs: 20,
       }),
       executeTool: vi.fn(async () => {
-        await new Promise((r) => setTimeout(r, 100));
+        await sleep(100);
         return "ok";
       }),
       toolSchemas: [noopToolSchema],
