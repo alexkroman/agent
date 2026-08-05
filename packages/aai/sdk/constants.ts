@@ -309,8 +309,10 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 2000;
  * agent picks its reply back up. Set to 0 to disable recovery.
  *
  * **This is a floor on the wait, not the whole of it** — elapsing while the
- * caller is still mid-utterance only defers the resume, which
- * {@link DEFAULT_SPEECH_IDLE_TIMEOUT_MS} then releases. Note the value equals
+ * caller is still mid-utterance only defers the resume, which the speaking
+ * edge's idle watchdog (`DEFAULT_SPEECH_IDLE_TIMEOUT_MS`, internal) then
+ * releases. Named rather than `{@link}`ed: it is `@internal`, so the docs build
+ * excludes it and a link would fail to resolve. Note the value equals
  * {@link DEFAULT_MIN_TURN_SILENCE_MS}: measured from roughly the same instant
  * (this window restarts on every partial, and the last partial lands at about
  * the end of speech, while the final is withheld for `min_turn_silence` after
