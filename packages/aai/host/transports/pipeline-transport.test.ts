@@ -566,16 +566,22 @@ describe("PipelineTransport — recovery when the LLM stream fails", () => {
     await t.stop();
   });
 
-  test("still reports the error to the client", async () => {
+  test("still reports the error to the client, NON-fatally", async () => {
     // Speaking to the caller is additive: a programmatic client must still see
     // that the turn failed rather than a normal-looking reply.
+    //
+    // And non-fatally, because the very next thing this transport does is speak
+    // `errorPhrase` — "Could you say that again?" — and invite another turn.
+    // `onError` defaults to fatal, which aai-ui answers by releasing the
+    // microphone and ending the call, so the caller was asked to repeat
+    // themselves into a session the client had already torn down.
     const { opts, stt, callbacks } = makeOpts({ llm: failingLlm() });
     const t = createPipelineTransport(opts);
     await t.start();
     stt.last()?.fireFinal("are you there?");
 
     await vi.waitFor(() => {
-      expect(callbacks.onError).toHaveBeenCalledWith("llm", expect.any(String));
+      expect(callbacks.onError).toHaveBeenCalledWith("llm", expect.any(String), { fatal: false });
     });
     await t.stop();
   });
@@ -587,7 +593,9 @@ describe("PipelineTransport — recovery when the LLM stream fails", () => {
     stt.last()?.fireFinal("are you there?");
 
     await vi.waitFor(() => {
-      expect(callbacks.onError).toHaveBeenCalledWith("llm", expect.any(String));
+      expect(callbacks.onError).toHaveBeenCalledWith("llm", expect.any(String), {
+        fatal: false,
+      });
     });
     expect(tts.last()?.textChunks.join("")).toBe("");
     await t.stop();

@@ -199,6 +199,53 @@ describe("LLM stream error reporting", () => {
     );
   });
 
+  // A TURN failing is not the SESSION failing, and `onError` defaults to fatal —
+  // which aai-ui answers by calling `cleanupAudio()` and ending the call. So the
+  // three turn-level reporters below must all pass `{ fatal: false }`, or the
+  // transport speaks `errorPhrase` ("Could you say that again?") into a
+  // microphone it just had switched off. Found by the pipeline fuzz once its LLM
+  // script could fail a turn; the terminal paths (`onProviderError`, the
+  // provider-open rejection) stay fatal, and both call `terminate()`.
+  test("an error part reports the turn failure NON-fatally", () => {
+    const emitError = vi.fn();
+    const handler = createStreamPartHandler({
+      onDelta: () => undefined,
+      sendTtsText: () => undefined,
+      onToolCall: () => undefined,
+      emitError,
+      log: makeLogger(),
+      sid: "sid-1",
+    });
+    handler.handle({ type: "error", error: apiError() });
+    expect(emitError).toHaveBeenCalledWith("llm", "Internal Server Error", { fatal: false });
+  });
+
+  test("a thrown LLM stream reports the turn failure NON-fatally", async () => {
+    const emitError = vi.fn();
+    const llm = createFakeLanguageModel({ script: [{ type: "text", text: "hi" }] });
+    (llm as unknown as { doStream: () => Promise<never> }).doStream = () =>
+      Promise.reject(new Error("connection reset"));
+    const result = await consumeLlmStream({
+      llm,
+      systemPrompt: "s",
+      messages: [{ role: "user", content: "hi" }],
+      tools: {},
+      toolChoice: "auto",
+      temperature: undefined,
+      repairToolCall: async () => null,
+      maxSteps: 1,
+      sendTtsText: () => undefined,
+      callbacks: { onToolCall: () => undefined },
+      emitError,
+      log: silentLogger,
+      sid: "sid-5",
+      signal: new AbortController().signal,
+      onDelta: () => undefined,
+    });
+    expect(result.failed).toBe(true);
+    expect(emitError).toHaveBeenCalledWith("llm", "connection reset", { fatal: false });
+  });
+
   test("reports failed: true so the caller can speak a recovery phrase", async () => {
     // A failed turn produces no text, so nothing reaches TTS and the caller
     // hears silence. The transport speaks `errorPhrase` instead — but it can
@@ -438,7 +485,13 @@ describe("flushTtsAndWait", () => {
       await vi.advanceTimersByTimeAsync(PIPELINE_FLUSH_TIMEOUT_MS + 10);
       await pending;
 
-      expect(emitError).toHaveBeenCalledWith("tts", expect.stringMatching(/cut short/i));
+      // NON-fatal, and that is the whole point of the pairing below: the reply is
+      // clipped and the session is RESYNCHRONIZED to keep going, so reporting it
+      // as fatal (onError's default) had aai-ui release the microphone and end a
+      // call that was still live.
+      expect(emitError).toHaveBeenCalledWith("tts", expect.stringMatching(/cut short/i), {
+        fatal: false,
+      });
       expect(calls).toEqual(["flush", "cancel"]);
     } finally {
       vi.useRealTimers();

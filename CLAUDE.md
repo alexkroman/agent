@@ -1256,6 +1256,24 @@ present in the `agent()` config:
   drives the LLM loop itself via the Vercel AI SDK's `streamText`, and STT
   and TTS are pluggable providers imported from the `@alexkroman1/aai/stt`
   and `@alexkroman1/aai/tts` subpath exports.
+
+  **A failing TURN is not a failing SESSION** (`EmitError` in
+  `transports/types.ts`, `createEmitError` in `transports/pipeline-error.ts`).
+  `onError` defaults to `fatal: true`, and aai-ui answers a fatal frame by
+  calling `cleanupAudio()`, bumping the connection generation and setting
+  `running: false` — the microphone is RELEASED and the call ends. Only the two
+  paths that really terminate may report that way, and both call `terminate()`:
+  `onProviderError` and the provider-open rejection (a session with no STT
+  cannot hear). The three turn-level reporters pass `{ fatal: false }` — an
+  `error` part in the LLM stream, a thrown `streamText`, and a TTS flush
+  timeout. Reported as fatal, the first two were especially perverse: the
+  transport's next act is to speak `errorPhrase` ("Sorry, I had a problem just
+  then. Could you say that again?") and invite another turn, so the caller was
+  asked to repeat themselves into a microphone the client had just switched off,
+  while the TTS case ended a live call over one clipped sentence. The pipeline
+  fuzz covers both LLM reporters (separate code paths: an `error` stream part,
+  and a request that never streams); the TTS one needs a real deadline to
+  elapse, so a deterministic spec pins it.
 - **S2S mode** (explicit opt-in — `s2s: assemblyAIS2s()` from the main
   export, or `openaiRealtime()` from `@alexkroman1/aai/s2s`) uses
   `createS2sTransport()` in `packages/aai/host/transports/s2s-transport.ts`.
@@ -2118,6 +2136,22 @@ you only need to list one package.
   step count carries an unusual `minLength`, because a run spends its first
   steps getting the session past `start()` and shorter scripts finish before a
   reply ever completes.
+  - Its generated world (`_pipeline-fuzz-input.ts`) is split from the spec, and
+    its request-payload validator from `_pipeline-fuzz-model.ts`, so the spec
+    file is the ORACLES and the driver. Note biome's `noSecrets` rule is off for
+    `**/_*-fuzz-*.ts` alongside test files (`biome.json`): a camelCase action
+    name like `armBargeInFromTool` reads as high-entropy to it, and mangling a
+    domain identifier to satisfy a false positive is the wrong trade.
+  - **Its fatality oracle needed a generator change to mean anything.** "Nothing
+    conversational may reach a client that was told the session is over" passed
+    on arrival — the fake LLM could not fail a turn, so the state was
+    unreachable and the oracle decorative. The script pattern now carries a
+    `fail` turn (an `error` stream part) and the instrumented `doStream`
+    sometimes refuses outright, which are separate reporters; it then failed at
+    once, on `onReplyDone`/`onSpeechStarted` after a fatal `llm` error. Hence
+    the floors on `error:llm`, `llmRefused`, and `nonFatal:llm`: the first two
+    keep the state reachable, the third turns a regression to `fatal` into a
+    failure rather than a silent gap.
 - **`aai` has a fast-check PROPERTY TEST over the S2S stack**
   (`host/integration/s2s-fuzz.integration.test.ts` plus `_s2s-fuzz-model.ts`,
   `_s2s-fuzz-harness.ts`, `_s2s-fuzz-commands.ts`; same command, also keyless).
@@ -2130,19 +2164,22 @@ you only need to list one package.
     predates it stubs out a neighbouring layer (the transport specs mock
     `connectS2s`, the wire specs mock the callbacks), and all three bugs it found
     live in the seam BETWEEN layers, with every layer's own suite green.
-  - **fast-check model-based commands, not a hand-rolled walk.** Legality lives
-    in each command's `check()` against a model that IS the provider state
-    machine, so an illegal frame is never generated (no audio outside a reply, no
-    `reply.started` while the service awaits a `tool.result`). Findings arrive
-    SHRUNK — the three were two, three, and four commands long, which is what a
-    hand-rolled walk's 40-step trace never gave.
+  - **Model-based COMMANDS, where the pipeline fuzz generates a script.** Both
+    are fast-check; the difference is that legality here lives in each command's
+    `check()` against a model that IS the provider state machine, so an illegal
+    frame is never generated (no audio outside a reply, no `reply.started` while
+    the service awaits a `tool.result`) and a counterexample contains only the
+    commands that ran. Reverting each of the three fixes reproduces it from
+    `[session.error(rate_limited)]`, `[drop.transient, openSocket,
+    session.error(session_not_found)]`, and `[drop.transient]` — one, three, and
+    one command.
   - **No timers anywhere.** Socket opening and tool settlement are COMMANDS, so
     when a tool settles relative to a drop is part of the generated plan rather
-    than a race. That is what makes shrinking and seed replay mean anything: the
-    predecessor awaited real `setTimeout`s, could not re-run its own
-    counterexamples, and intermittently reported a finding that no rerun could
-    reproduce. It also made the suite ~400x faster (50s → ~130ms), because the
-    per-command drain is a `setImmediate` rather than a ~1ms timer.
+    than a race. That is what makes shrinking and replay mean anything: this
+    suite's own first draft awaited real `setTimeout`s, could not re-run its
+    counterexamples, and intermittently reported a finding no rerun could
+    reproduce. It is also why it runs in ~150ms rather than ~50s — the
+    per-command drain is a `setImmediate`, not a ~1ms timer.
   - **Three properties, differentiated by a per-run `faultBudget`** (0 / 2 / 3):
     turns, reconnects, retirement. One combined property cannot serve both ends
     — at 2 faults per 40 commands a tool call rarely survived to be answered (the

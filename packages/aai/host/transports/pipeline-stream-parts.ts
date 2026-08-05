@@ -13,10 +13,11 @@ import {
   DEFAULT_DEAD_AIR_COVER_MS,
   DEFAULT_HOLD_PHRASE,
 } from "../../sdk/constants.ts";
-import type { SessionErrorCode } from "../../sdk/protocol.ts";
+
 import { capToolResult, errorMessage, toArgsRecord } from "../../sdk/utils.ts";
 import { createRestartableTimer } from "../_timer.ts";
 import type { Logger } from "../runtime-config.ts";
+import type { EmitError } from "./types.ts";
 
 /** A single `fullStream` part from `streamText`. */
 export type StreamPart = {
@@ -45,7 +46,7 @@ type StreamPartHandlerDeps = {
   /** Tool-result completion, so the client UI can flip pending → done. */
   onToolCallDone?: ((callId: string, result: string) => void) | undefined;
   /** Report an LLM-stream error. */
-  emitError: (code: SessionErrorCode, message: string) => void;
+  emitError: EmitError;
   /**
    * Spoken when the model's first action in a turn is a tool call with no
    * preceding text — guarantees the caller hears something instead of dead
@@ -294,7 +295,9 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
         errored = true;
         const msg = errorMessage(part.error);
         log.error("LLM stream error", { message: msg, sid, ...llmErrorDetails(part.error) });
-        emitError("llm", msg);
+        // NON-fatal: `errored` above ends this TURN (the outcome speaks
+        // `errorPhrase`), and the session keeps taking turns after it.
+        emitError("llm", msg, { fatal: false });
         return;
       }
       default:

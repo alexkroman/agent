@@ -62,9 +62,7 @@
         "useFilenamingConvention": {
           "level": "error",
           "options": {
-            "filenameCases": [
-              "kebab-case"
-            ],
+            "filenameCases": ["kebab-case"],
             "requireAscii": true
           }
         },
@@ -171,10 +169,7 @@
   },
   "overrides": [
     {
-      "includes": [
-        "packages/aai/**/*.ts",
-        "packages/aai/**/*.tsx"
-      ],
+      "includes": ["packages/aai/**/*.ts", "packages/aai/**/*.tsx"],
       "linter": {
         "rules": {
           "style": {
@@ -199,10 +194,7 @@
       }
     },
     {
-      "includes": [
-        "packages/aai/sdk/**/*.ts",
-        "packages/aai/sdk/**/*.tsx"
-      ],
+      "includes": ["packages/aai/sdk/**/*.ts", "packages/aai/sdk/**/*.tsx"],
       "linter": {
         "rules": {
           "style": {
@@ -272,7 +264,8 @@
         "**/*.test.tsx",
         "**/_test-utils.ts",
         "**/_jsdom-setup.ts",
-        "**/vitest*.config.ts"
+        "**/vitest*.config.ts",
+        "**/_*-fuzz-*.ts"
       ],
       "linter": {
         "rules": {
@@ -296,9 +289,7 @@
       }
     },
     {
-      "includes": [
-        "packages/aai/sdk/types.ts"
-      ],
+      "includes": ["packages/aai/sdk/types.ts"],
       "linter": {
         "rules": {
           "suspicious": {
@@ -308,9 +299,7 @@
       }
     },
     {
-      "includes": [
-        "packages/aai-templates/templates/*/tools/**"
-      ],
+      "includes": ["packages/aai-templates/templates/*/tools/**"],
       "linter": {
         "rules": {
           "style": {
