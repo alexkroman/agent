@@ -1,5 +1,13 @@
 # aai-studio-client
 
+## 0.4.2
+
+### Patch Changes
+
+- 842d229: Add a Work locally section to the studio Settings panel with the aai CLI commands that pull the open project
+- 1908738: Preview pane: probe the agent page before framing it, so a preview still deploying (or one whose agent was swept) shows the pane's own 'Starting your preview' screen instead of the platform's raw {"error":"HTML not found"} 404 body
+  - @alexkroman1/aai-ui@5.7.0
+
 ## 0.4.1
 
 ### Patch Changes

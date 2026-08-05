@@ -1,5 +1,12 @@
 # @alexkroman1/aai
 
+## 5.7.0
+
+### Patch Changes
+
+- 56efab9: Stop studio Publish from claiming reserved `-preview` slugs, and refuse to derive a `-preview` project name from a directory
+- 1c034af: Keep one guest sandbox per slug and per studio project across web-service replicas: a cross-replica registry lets a cold broker route to a live peer's guest instead of spawning a duplicate.
+
 ## 5.6.0
 
 ### Minor Changes
