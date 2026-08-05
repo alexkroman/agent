@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import type { TurnEvent } from "assemblyai";
 import { describe, expect, test, vi } from "vitest";
 import {
+  DEFAULT_MAX_TURN_SILENCE_MS,
   DEFAULT_MIN_TURN_SILENCE_MS,
   DEFAULT_SESSION_START_TIMEOUT_MS,
   DEFAULT_STT_PROMPT,
@@ -332,22 +333,48 @@ describe("assemblyAIStt STT adapter — voice focus", () => {
   });
 });
 
-describe("assemblyAIStt STT adapter — endpointing (min_turn_silence)", () => {
-  test("always sets minTurnSilence; defaults to DEFAULT_MIN_TURN_SILENCE_MS", async () => {
+describe("assemblyAIStt STT adapter — endpointing (min/max_turn_silence)", () => {
+  test("always sets BOTH halves; defaults to the DEFAULT_*_TURN_SILENCE_MS pair", async () => {
     // Endpointing is the provider's job — the pipeline transport commits a
-    // turn on every final, so this window is the only thing keeping a
-    // mid-utterance pause from splitting one request across turns.
+    // turn on every final. Both halves are sent because the service defaults
+    // them independently (min from the `mode` preset, max to 1536), so sending
+    // only one is how they end up inverted.
     const session = await openSession({ model: "universal-3-5-pro" });
     const fake = session._transcriber as unknown as FakeTranscriber;
     expect(fake.params.minTurnSilence).toBe(DEFAULT_MIN_TURN_SILENCE_MS);
-    expect(fake.params.minTurnSilence).toBe(3000);
+    expect(fake.params.minTurnSilence).toBe(1000);
+    expect(fake.params.maxTurnSilence).toBe(DEFAULT_MAX_TURN_SILENCE_MS);
+    expect(fake.params.maxTurnSilence).toBe(3500);
     await session.close();
   });
 
-  test("minTurnSilenceMs overrides the default", async () => {
-    const session = await openSession({ model: "universal-3-5-pro", minTurnSilenceMs: 800 });
+  test("the default minimum stays BELOW the default maximum", () => {
+    // The bug this pair replaced: min was raised 1500 -> 2000 -> 3000 to stop
+    // utterances splitting, while max was never set and sat at the service
+    // default 1536. Above 1536 the completeness check can no longer fire
+    // before the content-blind force-end closes the turn, so every ending came
+    // from the acoustic fallback — the very mechanism that splits utterances.
+    // An inverted pair is silently wrong on the wire, so assert it here.
+    expect(DEFAULT_MIN_TURN_SILENCE_MS).toBeLessThan(DEFAULT_MAX_TURN_SILENCE_MS);
+  });
+
+  test("each override is independent", async () => {
+    const session = await openSession({
+      model: "universal-3-5-pro",
+      minTurnSilenceMs: 400,
+      maxTurnSilenceMs: 5000,
+    });
     const fake = session._transcriber as unknown as FakeTranscriber;
-    expect(fake.params.minTurnSilence).toBe(800);
+    expect(fake.params.minTurnSilence).toBe(400);
+    expect(fake.params.maxTurnSilence).toBe(5000);
+    await session.close();
+  });
+
+  test("overriding one leaves the other at its default", async () => {
+    const session = await openSession({ model: "universal-3-5-pro", minTurnSilenceMs: 200 });
+    const fake = session._transcriber as unknown as FakeTranscriber;
+    expect(fake.params.minTurnSilence).toBe(200);
+    expect(fake.params.maxTurnSilence).toBe(DEFAULT_MAX_TURN_SILENCE_MS);
     await session.close();
   });
 });

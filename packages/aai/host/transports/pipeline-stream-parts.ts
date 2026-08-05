@@ -212,7 +212,7 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
     }
     // Nothing has reached the caller yet, so this is the turn's OPENING gap
     // rather than a gap between things the model said. The hold phrase is the
-    // filler that fits it — "Still working on that." implies work already
+    // filler that fits it — "I'm still checking on this." implies work already
     // narrated, and is what the caller would otherwise hear as the very first
     // words of the turn. Marks holdEmitted so the `tool-call` branch below
     // cannot say it a second time.
@@ -224,8 +224,8 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
       coverPhraseCount += 1;
     }
     // Counted either way: it drives the backoff, so an opening filler must
-    // still push the next one out (a hold phrase followed 2s later by "Still
-    // working on that." is the stuck-loop cadence the backoff exists to avoid).
+    // still push the next one out (a hold phrase followed 5s later by "I'm
+    // still checking on this." is the stuck-loop cadence the backoff avoids).
     coverCount += 1;
     emitText(phrase, false);
     pendingSeparator = true;
