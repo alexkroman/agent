@@ -76,6 +76,14 @@ export type PublisherDeps = {
   harnessPath?: string | undefined;
   /** The project's live sandbox, or null when it has none. */
   liveSession: (scope: string, project: string) => LiveSession | null;
+  /**
+   * Run after a SUCCESSFUL deploy, with the slug it claimed. Both deploy
+   * paths — Publish and the auto preview deploy — go through this one
+   * publisher, so a per-deploy consequence wired here cannot be implemented
+   * for one and forgotten for the other. The studio uses it to give a newly
+   * claimed slug the database its project asked for (studio-database.ts).
+   */
+  afterDeploy?: ((scope: string, project: string, slug: string) => Promise<void>) | undefined;
 };
 
 /** Send one `workspace/deploy` and validate the guest's response. */
@@ -106,9 +114,13 @@ async function requestDeploy(
 }
 
 /**
- * Build the broker's `deployWorkspace`: live sandbox first, else an
- * ephemeral one spawned for this deploy and torn down after (Publish from
- * the editor shouldn't leave a sandbox running that no chat session owns).
+ * Build the broker's `deployWorkspace`: one deploy (see {@link runDeploy}),
+ * then whatever the slug it claimed owes its project ({@link
+ * PublisherDeps.afterDeploy}).
+ *
+ * `afterDeploy` can never fail a deploy. The CLI output is already on its
+ * way to the chat, so reporting a transport error over a follow-up would be
+ * a lie about what happened.
  */
 export function createWorkspacePublisher(deps: PublisherDeps) {
   return async function deployWorkspace(
@@ -117,65 +129,92 @@ export function createWorkspacePublisher(deps: PublisherDeps) {
     files: Record<string, string>,
     target: WorkspaceDeployTarget,
   ): Promise<WorkspaceDeployOutcome> {
-    const existing = deps.liveSession(scope, project);
-    if (existing) {
-      try {
-        const outcome = await requestDeploy(existing.warm, files, target);
-        existing.touch();
-        return outcome;
-      } catch (err) {
-        // Dead sandbox — replace it with a fresh one for this publish;
-        // the next chat broker call heals the session itself.
-        console.warn("Studio publish: live sandbox failed; using a fresh one", {
+    const outcome = await runDeploy(deps, scope, project, files, target);
+    // A failed deploy claimed no slug, so there is nothing to follow up on.
+    const slug = outcome.ok ? (outcome.slug ?? target.slug) : undefined;
+    if (deps.afterDeploy && slug !== undefined) {
+      await deps.afterDeploy(scope, project, slug).catch((err: unknown) => {
+        console.warn("Studio publish: post-deploy step failed", {
           project,
+          slug,
           error: errorMessage(err),
         });
-        await existing.dispose();
-      }
-    }
-
-    // Neither half below throws — see the module doc. Deliberately not
-    // retried either: a build that kills its sandbox usually kills the next
-    // one too, and a silent second attempt only doubles the wait before the
-    // user learns that.
-    let warm: WarmHarness;
-    try {
-      warm = await deps.spawn({
-        harnessPath: deps.harnessPath ?? resolveHarnessPath(),
-        slug: project,
-        role: "studio-publish",
       });
-    } catch (err) {
-      console.warn("Studio publish: could not start a sandbox", {
-        project,
-        error: errorMessage(err),
-      });
-      return {
-        ok: false,
-        output:
-          `Could not start a build sandbox for Publish (${errorMessage(err)}). ` +
-          "Nothing was deployed. Try Publish again in a moment.",
-      };
     }
-    try {
-      warm.conn.listen();
-      return await requestDeploy(warm, files, target);
-    } catch (err) {
-      // Died mid-publish — an OOM at the bundler's memory peak is the
-      // realistic one (see the burst-range notes in aai-server).
-      console.warn("Studio publish: sandbox failed during deploy", {
-        project,
-        error: errorMessage(err),
-      });
-      return {
-        ok: false,
-        output:
-          `The build sandbox stopped responding during Publish (${errorMessage(err)}). ` +
-          "This usually means the build ran out of memory. Try Publish again; if it " +
-          "keeps failing, reduce what the build has to bundle.",
-      };
-    } finally {
-      await warm[Symbol.asyncDispose]().catch(() => undefined);
-    }
+    return outcome;
   };
+}
+
+/**
+ * One deploy: live sandbox first, else an ephemeral one spawned for this
+ * deploy and torn down after (Publish from the editor shouldn't leave a
+ * sandbox running that no chat session owns).
+ */
+async function runDeploy(
+  deps: PublisherDeps,
+  scope: string,
+  project: string,
+  files: Record<string, string>,
+  target: WorkspaceDeployTarget,
+): Promise<WorkspaceDeployOutcome> {
+  const existing = deps.liveSession(scope, project);
+  if (existing) {
+    try {
+      const outcome = await requestDeploy(existing.warm, files, target);
+      existing.touch();
+      return outcome;
+    } catch (err) {
+      // Dead sandbox — replace it with a fresh one for this publish;
+      // the next chat broker call heals the session itself.
+      console.warn("Studio publish: live sandbox failed; using a fresh one", {
+        project,
+        error: errorMessage(err),
+      });
+      await existing.dispose();
+    }
+  }
+
+  // Neither half below throws — see the module doc. Deliberately not
+  // retried either: a build that kills its sandbox usually kills the next
+  // one too, and a silent second attempt only doubles the wait before the
+  // user learns that.
+  let warm: WarmHarness;
+  try {
+    warm = await deps.spawn({
+      harnessPath: deps.harnessPath ?? resolveHarnessPath(),
+      slug: project,
+      role: "studio-publish",
+    });
+  } catch (err) {
+    console.warn("Studio publish: could not start a sandbox", {
+      project,
+      error: errorMessage(err),
+    });
+    return {
+      ok: false,
+      output:
+        `Could not start a build sandbox for Publish (${errorMessage(err)}). ` +
+        "Nothing was deployed. Try Publish again in a moment.",
+    };
+  }
+  try {
+    warm.conn.listen();
+    return await requestDeploy(warm, files, target);
+  } catch (err) {
+    // Died mid-publish — an OOM at the bundler's memory peak is the
+    // realistic one (see the burst-range notes in aai-server).
+    console.warn("Studio publish: sandbox failed during deploy", {
+      project,
+      error: errorMessage(err),
+    });
+    return {
+      ok: false,
+      output:
+        `The build sandbox stopped responding during Publish (${errorMessage(err)}). ` +
+        "This usually means the build ran out of memory. Try Publish again; if it " +
+        "keeps failing, reduce what the build has to bundle.",
+    };
+  } finally {
+    await warm[Symbol.asyncDispose]().catch(() => undefined);
+  }
 }

@@ -146,7 +146,7 @@ export type ToolContext<S = DefaultSessionState> = {
   state: S;
   /**
    * SQL database scoped to this app. Available when storage is enabled
-   * (`aai storage enable`, or the Storage toggle in the studio); accessing
+   * (`aai storage enable`, or Settings → Database in the studio); accessing
    * it otherwise throws.
    */
   db: Db;

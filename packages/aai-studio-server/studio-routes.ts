@@ -17,10 +17,14 @@
  *   (`aai push`; upserts, fast-forward-checked against `baseHash`)
  * - `POST /studio/projects/:project/deploy`   — the project's sandbox runs
  *   `aai deploy`; the CLI output rides back for the chat
+ * - `GET/POST/DELETE /studio/projects/:project/database` — the project's
+ *   `ctx.db` database, one switch across BOTH deployed agents (production and
+ *   preview). See studio-database.ts: per-slug provisioning is the platform
+ *   primitive (`aai storage enable`), and a project is two slugs.
  *
- * Storage (per-app database) is deliberately NOT exposed here: enabling it
- * is a CLI action (`aai storage enable`), and deployed-agent secrets are
- * managed by the client against the platform's own `/:slug/secret` routes.
+ * Deployed-agent SECRETS stay off this surface: the client manages them
+ * against the platform's own `/:slug/secret` routes, the exact ones
+ * `aai secret` uses.
  * - `POST /studio/projects/:project/session`  — boot the project's coding-agent
  *   sandbox; the browser then streams chat turns DIRECTLY to the sandbox's
  *   public `/studio/chat` (see studio-session-broker.ts)
@@ -45,7 +49,6 @@ import { errorMessage } from "@alexkroman1/aai";
 import { zValidator } from "@hono/zod-validator";
 import { deleteAgentResources } from "aai-server/delete";
 import { authMw } from "aai-server/middleware";
-import { resolvePublicOrigin } from "aai-server/public-origin";
 import { RESERVED_SLUGS } from "aai-server/schemas";
 import { verifySlugOwner } from "aai-server/secrets";
 import { generatedSlug } from "aai-server/slug-generate";
@@ -55,7 +58,8 @@ import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { streamSSE } from "hono/streaming";
 import { registerAccountRoutes } from "./studio-account-routes.ts";
-import type { StudioHonoEnv } from "./studio-context.ts";
+import { requestPublicOrigin, type StudioHonoEnv } from "./studio-context.ts";
+import { databaseDeployHook, registerDatabaseRoutes } from "./studio-database-routes.ts";
 import { deployStudioProject } from "./studio-deploy.ts";
 import { studioLlmInfo } from "./studio-llm.ts";
 import { wakeProjectPreview } from "./studio-preview.ts";
@@ -113,20 +117,6 @@ export type StudioRouteOptions = {
   previewQueue?: PreviewQueue;
 };
 
-/**
- * The public platform origin the guest's `aai deploy` must dial — the
- * browser-facing origin, not this service's own. See `resolvePublicOrigin`
- * for the resolution order and for why the request URL's own scheme is
- * never trusted (it is always cleartext behind Modal, and publishing
- * `http://` cost every Publish its Authorization header on the redirect).
- */
-export function requestPublicOrigin(
-  c: Context<StudioHonoEnv>,
-  env: NodeJS.ProcessEnv = process.env,
-): string {
-  return resolvePublicOrigin(c.req.raw, env);
-}
-
 /** Server-generated project name: prompt-derived base + random suffix. */
 function nameFromPrompt(prompt: string | undefined): string {
   return generatedSlug(prompt ? projectBaseFromPrompt(prompt) : undefined);
@@ -157,12 +147,16 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     // the process. The workspace/chat bindings below are read eagerly for the
     // same reason.
     const secrets = c.env.secrets;
+    const afterDeploy = databaseDeployHook(c);
     broker ??= (options.broker ?? createStudioSessionBroker)({
       workspaces: c.env.workspaces,
       chats: c.env.chats,
       ...(options.sessionRegistry && { registry: options.sessionRegistry }),
       ...(options.replicaId && { replicaId: options.replicaId }),
       ...(options.previewQueue && { previewQueue: options.previewQueue }),
+      // Runs after any successful deploy, on both paths — see
+      // studio-database.ts.
+      afterDeploy,
       // A preview job redelivered here may have been enqueued by a replica
       // that is gone, so the drain resolves the user's key from Vault rather
       // than the job carrying one. Bound to the request env's SecretStore —
@@ -449,6 +443,11 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     if (!result.ok) return c.json({ error: result.error }, 400);
     return c.json(result);
   });
+
+  // The project's `ctx.db` database — ONE switch across both deployed agents
+  // (production and preview). See studio-database.ts for why intent is
+  // stamped on the workspace rather than provisioned for unclaimed slugs.
+  registerDatabaseRoutes(studio, ensureBroker);
 
   // Boot (or refresh) the project's coding-agent sandbox and return its
   // public chat URL — the browser talks to the sandbox directly from here

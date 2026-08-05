@@ -341,8 +341,8 @@ export function saveGameState(ctx: ToolContext, state: GameState): void {
 
 // ── Persistent save slots (ctx.db) ───────────────────────────────────────────
 // save_game / load_game are genuine cross-session persistence, so they use
-// the app's SQL database. Requires storage: `aai storage enable` (or the
-// Storage toggle in the studio); under `aai dev`, set DATABASE_URL in .env.
+// the app's SQL database. Requires storage: `aai storage enable` (or
+// Settings → Database in the studio); under `aai dev`, set DATABASE_URL in .env.
 //
 // Slots are keyed by name alone — the whole point of a save is loading it in
 // a LATER session, whose sessionId differs, so the key can't embed one. The

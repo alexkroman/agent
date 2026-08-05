@@ -36,6 +36,7 @@ import { resolveHarnessPath } from "aai-server/constants";
 import { createKeyedLock, withLock } from "aai-server/platform-barrel";
 import { SandboxNameTakenError, studioSandboxName } from "aai-server/sandbox-directory";
 import { spawnWarmHarness, type WarmHarness } from "aai-server/sandbox-vm";
+import { MAX_CHAT_STEPS } from "./studio-limits.ts";
 import { studioLlmModelId } from "./studio-llm.ts";
 import { createPreviewDeployer, type PreviewTarget } from "./studio-preview.ts";
 import { createMemoryPreviewQueue, type PreviewQueue } from "./studio-preview-queue.ts";
@@ -46,6 +47,7 @@ import { createSessionFleet, soloFleet } from "./studio-session-fleet.ts";
 import { createSessionReaper } from "./studio-session-idle.ts";
 import {
   createWorkspacePublisher,
+  type PublisherDeps,
   type WorkspaceDeployOutcome,
   type WorkspaceDeployTarget,
 } from "./studio-session-publish.ts";
@@ -53,21 +55,6 @@ import { STUDIO_SESSION_IDLE_MS, type StudioSessionRegistry } from "./studio-ses
 import { chatUrlForGuest, wireGuest } from "./studio-session-wire.ts";
 import { getWorkspace, projectKey } from "./studio-workspace.ts";
 
-/**
- * Steps one chat turn may take.
- *
- * Was 16, which the starter evals showed was the dominant cause of failure:
- * turns died mid-repair (build → read error → edit → build) with a broken
- * workspace, not because the agent was lost but because it ran out of room.
- * opencode allows ~1000 and summarizes as it approaches the context limit;
- * this is the same trade at a more conservative ceiling, paired with
- * compaction in the guest (studio-compaction.ts) so the extra steps are
- * actually reachable.
- *
- * A runaway turn is still bounded — by this cap, by each tool's own deadline,
- * and by the client's Stop button.
- */
-const MAX_CHAT_STEPS = 80;
 /** Deadline for installing a session in the guest (workspace transfer). */
 const SESSION_INIT_TIMEOUT_MS = 60_000;
 
@@ -115,6 +102,8 @@ export type StudioSessionBrokerOptions = BrokerStores & {
    * same-replica jobs run (see `createPreviewDeployer`).
    */
   resolveApiKey?: (userId: string) => Promise<string | null>;
+  /** A per-deploy follow-up BOTH deploy paths run — see {@link PublisherDeps}. */
+  afterDeploy?: PublisherDeps["afterDeploy"];
 };
 
 export type StudioSessionBroker = {
@@ -441,6 +430,9 @@ export function createStudioSessionBroker(
   const deployWorkspaceImpl = createWorkspacePublisher({
     spawn,
     harnessPath: options.harnessPath,
+    // Both deploy paths below go through this one publisher, which is what
+    // makes `afterDeploy` a per-deploy consequence neither can skip.
+    ...(options.afterDeploy && { afterDeploy: options.afterDeploy }),
     liveSession: (scope, project) => {
       const entry = sessions.get(projectKey(scope, project));
       if (!entry) return null;

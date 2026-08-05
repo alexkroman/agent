@@ -5,8 +5,8 @@
 import { authFetch, deployAgent, type TestFetch } from "aai-server/test-utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { createTestCombined } from "./_test-combined.ts";
+import { requestPublicOrigin } from "./studio-context.ts";
 import type { StudioDeployResult } from "./studio-deploy.ts";
-import { requestPublicOrigin } from "./studio-routes.ts";
 import type { StudioSessionBroker } from "./studio-session-broker.ts";
 import { mutateWorkspace, studioScope } from "./studio-workspace.ts";
 

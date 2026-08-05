@@ -93,7 +93,7 @@ describe("executeToolCall", () => {
     expect(JSON.parse(result)).toEqual({
       error:
         "Storage is not enabled for this app. Enable it with `aai storage enable` (CLI) or " +
-        "the Storage toggle in the studio; under `aai dev`, set DATABASE_URL in the " +
+        "Settings → Database in the studio; under `aai dev`, set DATABASE_URL in the " +
         "project .env.",
     });
   });

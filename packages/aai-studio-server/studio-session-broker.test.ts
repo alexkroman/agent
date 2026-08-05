@@ -59,7 +59,10 @@ function fakeGuest(guestOrigin = "wss://tunnel.example:443"): FakeGuest {
   return { warm, requests, handlers, disposed: () => disposed };
 }
 
-async function makeBroker(guests: FakeGuest[]) {
+async function makeBroker(
+  guests: FakeGuest[],
+  extra: Partial<Parameters<typeof createStudioSessionBroker>[0]> = {},
+) {
   const workspaces = createMemoryWorkspaceStore();
   const chats = createMemoryChatStore();
   await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
@@ -75,6 +78,7 @@ async function makeBroker(guests: FakeGuest[]) {
     chats,
     spawn: spawn as never,
     harnessPath: "/fake/harness.mjs",
+    ...extra,
   });
   return { broker, workspaces, chats, spawn };
 }
@@ -504,6 +508,52 @@ describe("studio publish (workspace/deploy)", () => {
     expect(outcome.ok).toBe(false);
     expect(outcome.output).toMatch(/could not start a build sandbox/i);
     expect(outcome.output).toMatch(/nothing was deployed/i);
+    await broker.dispose();
+  });
+
+  // `afterDeploy` is what lets a per-deploy consequence — the studio uses it
+  // to give a newly claimed slug the database its project asked for — be
+  // wired ONCE for both deploy paths (Publish and the auto preview) instead
+  // of into one and forgotten in the other.
+  test("afterDeploy runs with the claimed slug, on success only", async () => {
+    const afterDeploy = vi.fn(async () => undefined);
+    const { broker } = await makeBroker([fakeGuest(), fakeGuest()], { afterDeploy });
+    const target = { serverUrl: "https://platform.example", apiKey: "caller-key" };
+
+    await broker.deployWorkspace(SCOPE, PROJECT, { "agent.ts": "// v1" }, target);
+    expect(afterDeploy).toHaveBeenCalledWith(SCOPE, PROJECT, "proj");
+
+    // A failed deploy claimed nothing, so there is nothing to reconcile.
+    afterDeploy.mockClear();
+    const dead = fakeGuest();
+    dead.warm.conn.dispose();
+    const failing = await makeBroker([dead], { afterDeploy });
+    const outcome = await failing.broker.deployWorkspace(
+      SCOPE,
+      PROJECT,
+      { "agent.ts": "// v1" },
+      target,
+    );
+    expect(outcome.ok).toBe(false);
+    expect(afterDeploy).not.toHaveBeenCalled();
+    await broker.dispose();
+    await failing.broker.dispose();
+  });
+
+  test("a failing afterDeploy never turns a shipped deploy into an error", async () => {
+    // The CLI output is already on its way to the chat; reporting a transport
+    // failure over a follow-up would be a lie about what happened.
+    const afterDeploy = vi.fn(async () => {
+      throw new Error("vault unavailable");
+    });
+    const { broker } = await makeBroker([fakeGuest()], { afterDeploy });
+    const outcome = await broker.deployWorkspace(
+      SCOPE,
+      PROJECT,
+      { "agent.ts": "// v1" },
+      { serverUrl: "https://platform.example", apiKey: "caller-key" },
+    );
+    expect(outcome.ok).toBe(true);
     await broker.dispose();
   });
 });

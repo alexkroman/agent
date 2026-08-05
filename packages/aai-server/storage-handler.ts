@@ -9,9 +9,12 @@
  * takes effect on the next deploy (or sandbox rebuild) — nothing here
  * restarts resident sandboxes.
  *
- * Owner-authenticated exactly like the secret routes. Storage is CLI-only
- * (`aai storage enable`) — the studio deliberately has no toggle, so these
- * Hono handlers are the only callers.
+ * Owner-authenticated exactly like the secret routes, which serve
+ * `aai storage enable`. The studio's Settings pane switches a database on per
+ * PROJECT rather than per slug — a project is two deployed agents (production
+ * and preview) — so it calls the CORE functions below directly through
+ * aai-studio-server/studio-database.ts; the Hono handlers stay the CLI's
+ * per-slug surface.
  */
 
 import { HTTPException } from "hono/http-exception";
