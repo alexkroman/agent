@@ -55,6 +55,97 @@ async function jsonBody<T>(res: Response, what: string): Promise<T> {
   return body;
 }
 
+/**
+ * Fetch, turning a transport failure into an error that names the server.
+ *
+ * A connection failure here is undici's bare `TypeError: fetch failed` — no
+ * URL, no cause worth printing — and `aai login` is exactly where it is least
+ * diagnosable: the target is resolved (dev mode pins `localhost:8080`
+ * whenever the CLI itself lives in the monorepo, whatever the cwd), so the
+ * user cannot tell which server was unreachable, or that a local one was
+ * expected at all. `apiRequest` has always said "could not reach <url>";
+ * login used raw fetch and said nothing.
+ */
+async function reachable(
+  fetchFn: typeof globalThis.fetch,
+  url: string,
+  serverUrl: string,
+): Promise<Response> {
+  try {
+    return await fetchFn(url);
+  } catch (err) {
+    throw unreachableError(serverUrl, err);
+  }
+}
+
+/**
+ * "Could not reach <server>", with advice chosen by the kind of host and the
+ * original transport failure preserved as the cause.
+ */
+function unreachableError(serverUrl: string, cause: unknown): CliError {
+  const hint = isLoopback(serverUrl)
+    ? "That's a local server — start it with `pnpm dev:aai-server`, or pass `--server <url>` " +
+      "to log in elsewhere. (A CLI installed from the monorepo targets localhost by default; " +
+      "set AAI_NO_DEV=1 to use the hosted platform.)"
+    : "Check your network connection and verify the server URL is correct.";
+  return new CliError("login_unreachable", `Could not reach ${serverUrl}.`, hint, { cause });
+}
+
+/** Whether `url`'s host is loopback — used only to pick a better hint. */
+function isLoopback(url: string): boolean {
+  try {
+    const { hostname } = new URL(url);
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Poll the exchange until the browser approves the link, or the deadline.
+ *
+ * A transport failure is retried rather than fatal: the user is off in a
+ * browser approving, and a dev server reloading in that window would
+ * otherwise lose a login that was about to succeed. The last one is
+ * remembered, so a server that never comes back is reported as unreachable
+ * rather than as "you didn't approve in time" — which would blame the user
+ * for someone else's outage.
+ */
+async function pollForGrant(
+  fetchFn: typeof globalThis.fetch,
+  serverUrl: string,
+  code: string,
+  opts: { intervalMs: number; deadline: number },
+): Promise<{ apiKey: string; email?: string }> {
+  let lastTransportError: unknown;
+  for (;;) {
+    let res: Response | null = null;
+    try {
+      res = await fetchFn(`${serverUrl}/studio/cli-link/exchange`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      lastTransportError = undefined;
+    } catch (err) {
+      lastTransportError = err;
+    }
+    // 404 is "not approved yet" — anything else settles the login.
+    if (res && res.status !== 404) {
+      return await jsonBody<{ apiKey: string; email?: string }>(res, "Linking your account");
+    }
+    if (Date.now() >= opts.deadline) {
+      if (lastTransportError !== undefined) throw unreachableError(serverUrl, lastTransportError);
+      throw new CliError(
+        "login_timeout",
+        "Timed out waiting for the link to be approved in the browser.",
+        "Run `aai login` again and approve the link within five minutes.",
+      );
+    }
+    await sleep(opts.intervalMs);
+  }
+}
+
 function requireTty(): void {
   if (!process.stdin.isTTY) {
     throw new CliError(
@@ -110,14 +201,14 @@ export async function executeLogin(
   if (opts.server) await approveServer(serverUrl);
 
   const auth = await jsonBody<{ mode: string }>(
-    await fetchFn(`${serverUrl}/studio/auth`),
+    await reachable(fetchFn, `${serverUrl}/studio/auth`, serverUrl),
     "Reading the server's login configuration",
   );
   if (auth.mode === "none") {
     throw new CliError(
       "login_unavailable",
       "This server has no browser login configured, so there is no account to link.",
-      "Set the ASSEMBLYAI_API_KEY environment variable, or run any platform command to be prompted for a key.",
+      "Set the ASSEMBLYAI_API_KEY environment variable instead — it's the only other way to authenticate.",
     );
   }
 
@@ -130,28 +221,10 @@ export async function executeLogin(
   );
   (deps.openBrowser ?? defaultOpenBrowser)(linkUrl);
 
-  const pollInterval = deps.pollIntervalMs ?? LINK_POLL_INTERVAL_MS;
-  const deadline = Date.now() + (deps.timeoutMs ?? LINK_TIMEOUT_MS);
-  let granted: { apiKey: string; email?: string };
-  for (;;) {
-    const res = await fetchFn(`${serverUrl}/studio/cli-link/exchange`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code }),
-    });
-    if (res.status !== 404) {
-      granted = await jsonBody<{ apiKey: string; email?: string }>(res, "Linking your account");
-      break;
-    }
-    if (Date.now() >= deadline) {
-      throw new CliError(
-        "login_timeout",
-        "Timed out waiting for the link to be approved in the browser.",
-        "Run `aai login` again and approve the link within five minutes.",
-      );
-    }
-    await sleep(pollInterval);
-  }
+  const granted = await pollForGrant(fetchFn, serverUrl, code, {
+    intervalMs: deps.pollIntervalMs ?? LINK_POLL_INTERVAL_MS,
+    deadline: Date.now() + (deps.timeoutMs ?? LINK_TIMEOUT_MS),
+  });
   if (!granted.apiKey) {
     throw new CliError("login_failed", "Linking your account did not return an API key.");
   }

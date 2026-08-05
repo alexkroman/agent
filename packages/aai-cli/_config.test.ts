@@ -169,37 +169,38 @@ describe("ensureApiKey", () => {
     }
   }
 
-  test("prompts and saves when no key exists", async () => {
+  test("directs an unauthenticated user to `aai login` instead of prompting", async () => {
     // Isolate from the host shell: an exported ASSEMBLYAI_API_KEY would
-    // short-circuit the prompt path and fail this test on developer machines.
+    // short-circuit this and pass on developer machines regardless.
     vi.stubEnv("ASSEMBLYAI_API_KEY", "");
     const p = await import("@clack/prompts");
-    vi.mocked(p.password).mockResolvedValue("new-api-key");
-    vi.mocked(p.isCancel).mockReturnValue(false);
 
+    // Pasting a raw key is no longer an authentication path. `aai login`
+    // links a real account (and is what the studio's own onboarding sets up),
+    // so a pasted key produced a half-configured CLI that could push and
+    // publish while belonging to no account the user could see.
     await withTtyStdin(() =>
       withTempDir(async (dir) => {
-        const { readGlobalConfig, ensureApiKey } = await import("./_config.ts");
-        const key = await ensureApiKey(dir);
-        expect(key).toBe("new-api-key");
-        expect(p.password).toHaveBeenCalledWith({ message: "Enter your AssemblyAI API key" });
-        const saved = await readGlobalConfig(dir);
-        expect(saved.apiKey).toBe("new-api-key");
+        const { ensureApiKey } = await import("./_config.ts");
+        await expect(ensureApiKey(dir)).rejects.toMatchObject({
+          code: "not_logged_in",
+          hint: expect.stringContaining("aai login"),
+        });
+        expect(p.password).not.toHaveBeenCalled();
       }),
     );
-    vi.mocked(p.password).mockReset();
-    vi.mocked(p.isCancel).mockReset();
   });
 
-  test("fails fast (no prompt) when there is no key and no TTY", async () => {
+  test("refuses the same way with no TTY — the failure is not about prompting", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "");
     const p = await import("@clack/prompts");
 
     await withTempDir(async (dir) => {
       const { ensureApiKey } = await import("./_config.ts");
-      // The hidden password prompt would otherwise consume piped stdin as
-      // keystrokes (e.g. eat the secret in `echo $V | aai secret put N`).
-      await expect(ensureApiKey(dir)).rejects.toThrow(/no TTY/i);
+      await expect(ensureApiKey(dir)).rejects.toMatchObject({
+        code: "not_logged_in",
+        hint: expect.stringContaining("aai login"),
+      });
       expect(p.password).not.toHaveBeenCalled();
     });
   });
@@ -231,29 +232,5 @@ describe("ensureApiKey", () => {
       await expect(ensureApiKey(dir)).resolves.toBe("env-var-key");
       expect(writeSpy).toHaveBeenCalled();
     });
-  });
-
-  test("calls cancel and exits when user cancels prompt", async () => {
-    vi.stubEnv("ASSEMBLYAI_API_KEY", "");
-    const p = await import("@clack/prompts");
-    const cancelSymbol = Symbol("cancel");
-    vi.mocked(p.password).mockResolvedValue(cancelSymbol as unknown as string);
-    vi.mocked(p.isCancel).mockReturnValue(true);
-    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
-      throw new Error("process.exit");
-    });
-
-    await withTtyStdin(() =>
-      withTempDir(async (dir) => {
-        const { ensureApiKey } = await import("./_config.ts");
-        await expect(ensureApiKey(dir)).rejects.toThrow("process.exit");
-        expect(p.cancel).toHaveBeenCalledWith("Setup cancelled");
-        expect(exitSpy).toHaveBeenCalledWith(0);
-      }),
-    );
-    exitSpy.mockRestore();
-    vi.mocked(p.password).mockReset();
-    vi.mocked(p.isCancel).mockReset();
-    vi.mocked(p.cancel).mockReset();
   });
 });

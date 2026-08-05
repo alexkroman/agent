@@ -2,11 +2,10 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import * as p from "@clack/prompts";
 import envPaths from "env-paths";
 import { z } from "zod";
 import { CliError } from "./_output.ts";
-import { log, unwrapCancel } from "./_ui.ts";
+import { log } from "./_ui.ts";
 import { errorMessage, readJson, writeJson } from "./_utils.ts";
 
 /**
@@ -198,34 +197,35 @@ async function trySaveApiKey(dir: string, config: GlobalConfig, apiKey: string):
   }
 }
 
+/**
+ * The credential every platform command runs on.
+ *
+ * Two sources, in order: the key `aai login` saved, then
+ * `ASSEMBLYAI_API_KEY` for non-interactive callers (CI, scripts, the eval
+ * harnesses).
+ *
+ * There is deliberately NO "paste a key" prompt. Pasting one produced a
+ * half-configured CLI — able to push and publish while linked to no account
+ * the user could see in the studio — and it made `aai login`, which is the
+ * real onboarding path, optional in practice. It was also the riskier code
+ * path: a hidden password prompt reads stdin, so a piped invocation could
+ * have its input eaten and persisted as the API key.
+ */
 export async function ensureApiKey(configDir?: string): Promise<string> {
   const dir = configDir ?? getConfigDir();
   const config = await readGlobalConfig(dir);
   if (config.apiKey) return config.apiKey;
 
-  // Allow non-interactive usage (CI, Claude Code) via env var
+  // Non-interactive usage (CI, scripts) still authenticates by env var.
   const envKey = process.env.ASSEMBLYAI_API_KEY;
   if (envKey) {
     await trySaveApiKey(dir, config, envKey);
     return envKey;
   }
 
-  // Without a TTY there is nobody to answer the prompt — and worse, the
-  // hidden password prompt would consume piped stdin as keystrokes (e.g.
-  // eating the secret value in `echo "$SECRET" | aai secret put NAME --json`)
-  // and hang, or persist that stray input as the API key. Fail fast instead.
-  if (!process.stdin.isTTY) {
-    throw new CliError(
-      "no_api_key",
-      "No API key configured and no TTY to prompt for one.",
-      "Set the ASSEMBLYAI_API_KEY environment variable, or run `aai login` interactively once to save a key.",
-    );
-  }
-
-  const apiKey = unwrapCancel(
-    await p.password({ message: "Enter your AssemblyAI API key" }),
-    "Setup cancelled",
+  throw new CliError(
+    "not_logged_in",
+    "You're not logged in.",
+    "Run `aai login` to link your account, or set ASSEMBLYAI_API_KEY for non-interactive use.",
   );
-  await trySaveApiKey(dir, config, apiKey);
-  return apiKey;
 }

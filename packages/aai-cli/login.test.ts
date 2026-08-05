@@ -104,6 +104,66 @@ describe("aai login", () => {
     expect(spawnMock).toHaveBeenCalledOnce();
   });
 
+  test("an unreachable server names the URL instead of a bare 'fetch failed'", async () => {
+    // The realistic case: the dev server isn't running, so `aai login` in the
+    // monorepo (where isDevMode pins http://localhost:8080) got undici's bare
+    // "fetch failed" — no URL, no hint, nothing to act on. `apiRequest` has
+    // said "could not reach <url>" for years; login used raw fetch.
+    const fetchFn = vi.fn(() => Promise.reject(new TypeError("fetch failed")));
+    const err = (await executeLogin(
+      {},
+      { fetchFn: fetchFn as unknown as typeof fetch, openBrowser: vi.fn(), pollIntervalMs: 1 },
+    ).catch((e: unknown) => e)) as { code?: string; message?: string; hint?: string };
+
+    expect(err.code).toBe("login_unreachable");
+    expect(err.message).toContain("localhost:8080");
+    expect(err.hint).toBeTruthy();
+  });
+
+  test("a server that dies mid-approval reports unreachable, not a fake timeout", async () => {
+    // Reporting "timed out waiting for the link to be approved" would blame
+    // the user for a server that went away.
+    let call = 0;
+    const fetchFn = vi.fn((input: string | URL) => {
+      call++;
+      if (String(input).includes("/studio/auth")) {
+        return Promise.resolve(new Response(JSON.stringify({ mode: "dev" }), { status: 200 }));
+      }
+      return Promise.reject(new TypeError("fetch failed"));
+    });
+    const err = (await executeLogin(
+      {},
+      {
+        fetchFn: fetchFn as unknown as typeof fetch,
+        openBrowser: vi.fn(),
+        pollIntervalMs: 1,
+        timeoutMs: 5,
+      },
+    ).catch((e: unknown) => e)) as { code?: string };
+
+    expect(err.code).toBe("login_unreachable");
+    expect(call).toBeGreaterThan(1);
+  });
+
+  test("survives a brief blip while polling — a restart shouldn't lose the login", async () => {
+    let exchangeCalls = 0;
+    const fetchFn = vi.fn((input: string | URL) => {
+      if (String(input).includes("/studio/auth")) {
+        return Promise.resolve(new Response(JSON.stringify({ mode: "dev" }), { status: 200 }));
+      }
+      exchangeCalls++;
+      if (exchangeCalls === 1) return Promise.reject(new TypeError("fetch failed"));
+      return Promise.resolve(
+        new Response(JSON.stringify({ apiKey: "k", email: "a@b.test" }), { status: 200 }),
+      );
+    });
+    const result = await executeLogin(
+      {},
+      { fetchFn: fetchFn as unknown as typeof fetch, openBrowser: vi.fn(), pollIntervalMs: 1 },
+    );
+    expect(result.ok).toBe(true);
+  });
+
   test("fails when the exchange returns no API key", async () => {
     const { fetchFn } = fakeFetch({
       "/studio/auth": () => ({ body: { mode: "supabase" } }),
