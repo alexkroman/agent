@@ -2293,6 +2293,26 @@ service's control work is light — and one container served both badly.
   existed to protect. Studio guests DO go down with the replica (the
   broker's `dispose()`): their coding-agent sessions live on the host's
   control channel, so a dead host makes them useless.
+- **Shutdown ENDS long-lived responses; it must never let the process exit
+  destroy them** (`live-streams.ts`, wired into `serve-lifecycle.ts`). SSE
+  streams never end on their own, so `server.close()` waited out
+  `SHUTDOWN_CLOSE_FALLBACK_MS` and `process.exit(0)` then destroyed the
+  sockets — cutting each chunked body before its terminating `0\r\n\r\n`.
+  That is a protocol error to whatever is reading, and in production the
+  reader is Modal's in-container ASGI proxy, which surfaced it as a recurring
+  unretrieved-task `ClientPayloadError: Response payload is not completed:
+  <TransferEncodingError: 400, 'Not enough data to satisfy transfer length
+  header.'>` on `GET /studio/projects/<x>/events`, with nothing tying it to a
+  replica scale-in. Both ends of the hop register: the studio's SSE pusher
+  (`studio-sse.ts`) and the agent service's PROXIED passthrough of it
+  (`gracefulEventStream` in `studio-proxy.ts` — `text/event-stream` only, so
+  assets and JSON stay zero-copy). Ending them is also what lets
+  `server.close()` complete, so shutdown stops hitting the fallback timer at
+  all. The client sees a clean stream end and resubscribes on its existing
+  backoff (`useEventStream`). Any future long-lived response owes the same
+  registration — the wire-level guard is `live-streams.test.ts`, which reads
+  raw socket bytes because a handler-level assertion passes with the bug
+  present.
 - **A long-lived connection is ONE Modal input, so the function `timeout`
   bounds CALL DURATION** — not request latency. Both services therefore set it
   explicitly (`FUNCTION_TIMEOUT_SECS` = 4h on the agent app, matching
