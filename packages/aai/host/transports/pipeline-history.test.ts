@@ -1,6 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 
+import type { ModelMessage } from "ai";
 import { describe, expect, test } from "vitest";
+import { DEFAULT_MAX_HISTORY } from "../../sdk/constants.ts";
 import type { Message } from "../../sdk/types.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
 
@@ -150,5 +152,106 @@ describe("createPipelineHistory", () => {
     });
     expect(h.llm).toHaveLength(1);
     expect(JSON.stringify(h.llm)).toContain("enc-blob");
+  });
+});
+
+/** Tool-call ids that appear as a result with no preceding call. */
+function orphanToolResults(llm: readonly ModelMessage[]): string[] {
+  const called = new Set<string>();
+  const orphans: string[] = [];
+  for (const m of llm) {
+    if (!Array.isArray(m.content)) continue;
+    for (const part of m.content as { type?: string; toolCallId?: string }[]) {
+      if (part.type === "tool-call" && part.toolCallId !== undefined) called.add(part.toolCallId);
+      if (
+        part.type === "tool-result" &&
+        part.toolCallId !== undefined &&
+        !called.has(part.toolCallId)
+      ) {
+        orphans.push(part.toolCallId);
+      }
+    }
+  }
+  return orphans;
+}
+
+const toolCallMsg = (id: string): ModelMessage =>
+  ({
+    role: "assistant",
+    content: [{ type: "tool-call", toolCallId: id, toolName: "lookup", input: {} }],
+  }) as ModelMessage;
+
+const toolResultMsg = (id: string): ModelMessage =>
+  ({
+    role: "tool",
+    content: [
+      {
+        type: "tool-result",
+        toolCallId: id,
+        toolName: "lookup",
+        output: { type: "text", value: "ok" },
+      },
+    ],
+  }) as ModelMessage;
+
+// The LLM view holds tool-call/result PAIRS, and the cap is an index trim, so
+// its boundary can land between the two. Both providers reject an orphaned
+// `tool` message outright (OpenAI: "messages with role 'tool' must be a
+// response to a preceding message with 'tool_calls'"), which fails every
+// remaining turn of a long call — see capLlm in pipeline-history.ts.
+describe("createPipelineHistory — LLM history cap and tool-call pairing", () => {
+  test("trimming an assistant tool-call drops the result it orphaned", () => {
+    const h = createPipelineHistory();
+    // Put a tool pair at the very front of a full window.
+    h.pushLlm(toolCallMsg("c1"), toolResultMsg("c1"));
+    for (let i = 0; i < DEFAULT_MAX_HISTORY - 2; i++) {
+      h.pushLlm({ role: "assistant", content: `filler ${i}` });
+    }
+    expect(h.llm).toHaveLength(DEFAULT_MAX_HISTORY);
+    expect(h.llm[0]?.role).toBe("assistant");
+    expect(h.llm[1]?.role).toBe("tool");
+
+    // One more message pushes the window past the tool-call.
+    h.pushLlm({ role: "user", content: "one more question" });
+
+    expect(h.llm[0]?.role).not.toBe("tool");
+    expect(orphanToolResults(h.llm)).toEqual([]);
+  });
+
+  test("a long conversation of mixed turn shapes never orphans a tool result", () => {
+    // Turn sizes vary — a text-only turn is 2 messages, a one-tool turn 4, a
+    // tool chain more — so the window drifts out of alignment with turn
+    // boundaries on its own. A uniform turn size hides this entirely: 4
+    // divides DEFAULT_MAX_HISTORY, so every trim lands on a turn boundary.
+    let state = 12_345;
+    const rnd = (): number => {
+      state = (state * 1_103_515_245 + 12_345) & 0x7f_ff_ff_ff;
+      return state / 0x7f_ff_ff_ff;
+    };
+    const h = createPipelineHistory();
+    let callNo = 0;
+    for (let turn = 0; turn < 400; turn++) {
+      h.pushLlm({ role: "user", content: `question ${turn}` });
+      const toolCalls = Math.floor(rnd() * 3);
+      for (let k = 0; k < toolCalls; k++) {
+        const id = `c${callNo++}`;
+        h.pushLlm(toolCallMsg(id), toolResultMsg(id));
+      }
+      h.pushLlm({ role: "assistant", content: `reply ${turn}` });
+      expect(orphanToolResults(h.llm)).toEqual([]);
+      expect(h.llm.length).toBeLessThanOrEqual(DEFAULT_MAX_HISTORY);
+    }
+  });
+
+  test("healing the split never strands a call whose result survived", () => {
+    // The trim only ever removes from the front, so a leading `tool` message is
+    // the one shape it can produce — a call is never separated from a result
+    // that comes after it.
+    const h = createPipelineHistory();
+    for (let i = 0; i < DEFAULT_MAX_HISTORY; i++) {
+      const id = `c${i}`;
+      h.pushLlm(toolCallMsg(id), toolResultMsg(id));
+      expect(orphanToolResults(h.llm)).toEqual([]);
+    }
   });
 });
