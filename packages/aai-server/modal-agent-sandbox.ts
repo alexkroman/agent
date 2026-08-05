@@ -41,7 +41,7 @@ import {
 
 /** Where agent-mode boot artifacts land in the sandbox (written pre-exec). */
 export const AGENT_BUNDLE_REMOTE_PATH = "/tmp/aai-agent-bundle.mjs";
-const AGENT_ENV_REMOTE_PATH = "/tmp/aai-agent-env.json";
+export const AGENT_ENV_REMOTE_PATH = "/tmp/aai-agent-env.json";
 
 /**
  * Spawn one DEPLOYED AGENT as a server in a fresh Modal sandbox: create from

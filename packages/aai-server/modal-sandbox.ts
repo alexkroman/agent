@@ -203,6 +203,57 @@ export function isModalConfigured(): boolean {
 
 // ── Modal context (client/app/image, resolved once) ──────────────────────────
 
+/**
+ * Modal's duplicate-name refusal, in our vocabulary.
+ *
+ * Extracted because the ENTIRE fleet-wide-uniqueness design rests on this one
+ * `instanceof`: a sandbox's name is what stops two replicas serving one deploy,
+ * which is what let the lease table and its heartbeat be deleted. If Modal ever
+ * stops throwing `AlreadyExistsError` here, the create silently becomes a
+ * second sandbox instead of a routable "you lost the race" — no error, just a
+ * duplicate. Only NAMED creates translate; an unnamed create has no race to
+ * lose. Returns the error to throw rather than throwing, so the call site reads
+ * as a plain rethrow.
+ */
+export function translateCreateError(err: unknown, name: string | undefined): unknown {
+  return name && err instanceof AlreadyExistsError
+    ? new SandboxNameTakenError(name, { cause: err })
+    : err;
+}
+
+/**
+ * Which image a spawn starts from: the deploy's PIN when it has one, else the
+ * current harness image.
+ *
+ * A pinned tag is the image the agent was deployed against, so platform
+ * upgrades never change the environment under an already-deployed bundle. An
+ * unresolvable pin fails LOUDLY rather than silently substituting the current
+ * image — that substitution is exactly the untested-environment drift pinning
+ * exists to prevent, and hiding it behind a warning made a registry loss
+ * invisible until an agent misbehaved. `SANDBOX_IGNORE_IMAGE_PINS=1` is the
+ * operator kill switch for a registry loss, and it says so in the log.
+ */
+export async function resolveSpawnImage(opts: {
+  imageTag: string | undefined;
+  fromName: (tag: string) => Promise<Image>;
+  current: () => Promise<Image>;
+  env?: NodeJS.ProcessEnv;
+}): Promise<Image> {
+  const { imageTag, env = process.env } = opts;
+  if (!imageTag) return await opts.current();
+  if (env.SANDBOX_IGNORE_IMAGE_PINS === "1") {
+    console.warn("SANDBOX_IGNORE_IMAGE_PINS=1: ignoring pinned harness image", { imageTag });
+    return await opts.current();
+  }
+  return await opts.fromName(imageTag).catch((err: unknown) => {
+    throw new Error(
+      `pinned harness image ${imageTag} is unresolvable — redeploy the agent, ` +
+        `or set SANDBOX_IGNORE_IMAGE_PINS=1 to force the current image: ${errorMessage(err)}`,
+      { cause: err },
+    );
+  });
+}
+
 async function buildContext(): Promise<ModalSpawnContext> {
   if (!isModalConfigured()) throw modalRequiredError();
   const client = modalClient();
@@ -227,36 +278,17 @@ async function buildContext(): Promise<ModalSpawnContext> {
     try {
       return await client.sandboxes.create(app, image, params);
     } catch (err) {
-      if (params.name && err instanceof AlreadyExistsError) {
-        throw new SandboxNameTakenError(params.name, { cause: err });
-      }
-      throw err;
+      throw translateCreateError(err, params.name);
     }
   };
 
   return {
     async createGuestSandbox(code, params, imageTag) {
-      // A pinned tag (the image the agent was DEPLOYED against) wins over
-      // the current harness image, so platform upgrades never change the
-      // environment under an already-deployed bundle. An unresolvable pin
-      // fails LOUDLY rather than silently substituting the current image —
-      // that substitution is exactly the untested-environment drift pinning
-      // exists to prevent, and hiding it behind a warning made a registry
-      // loss invisible until an agent misbehaved.
-      if (imageTag && process.env.SANDBOX_IGNORE_IMAGE_PINS !== "1") {
-        const pinned = await client.images.fromName(imageTag).catch((err: unknown) => {
-          throw new Error(
-            `pinned harness image ${imageTag} is unresolvable — redeploy the agent, ` +
-              `or set SANDBOX_IGNORE_IMAGE_PINS=1 to force the current image: ${errorMessage(err)}`,
-            { cause: err },
-          );
-        });
-        return create(pinned, params);
-      }
-      if (imageTag) {
-        console.warn("SANDBOX_IGNORE_IMAGE_PINS=1: ignoring pinned harness image", { imageTag });
-      }
-      const image = await harnessImage(code);
+      const image = await resolveSpawnImage({
+        imageTag,
+        fromName: (tag) => client.images.fromName(tag),
+        current: () => harnessImage(code),
+      });
       return create(image, params);
     },
     async lookupGuestSandbox(name) {

@@ -1,9 +1,22 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Shared test helpers for the sandbox test files: a fake guest WebSocket
- * (the seam `rpc-transport.ts` speaks to) and the agent-spawn options base.
+ * Shared test helpers for the sandbox test files: a fake guest WebSocket (the
+ * seam `rpc-transport.ts` speaks to), fakes for Modal's sandbox/process/spawn
+ * surfaces, and the agent-spawn options base.
+ *
+ * The Modal fakes are shared by the two spawn suites — `modal-sandbox.test.ts`
+ * (studio/inspect guests, which get a control channel) and
+ * `modal-agent-sandbox.test.ts` (deployed agents, which get none) — because
+ * the two paths differ only in what they do WITH the sandbox, and a second
+ * copy of the fakes would let them drift apart.
  */
 
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { vi } from "vitest";
+import type { ModalProcLike, ModalSandboxLike, ModalSpawnContext } from "./modal-sandbox.ts";
+import { GUEST_PORT } from "./modal-sandbox.ts";
 import type { RpcWebSocket } from "./rpc-transport.ts";
 import type { AgentSpawnOptions } from "./sandbox-vm.ts";
 
@@ -73,5 +86,91 @@ export function baseOpts(overrides?: Partial<AgentSpawnOptions>): AgentSpawnOpti
     env: { FOO: "bar" },
     harnessPath: "/tmp/harness.mjs",
     ...overrides,
+  };
+}
+
+// ── Modal fakes ──────────────────────────────────────────────────────────────
+
+export type FakeProc = {
+  proc: ModalProcLike;
+  /** Push bytes onto the guest's stderr. */
+  pushStderr(text: string): void;
+  /** Settle proc.wait(). */
+  exit(code: number): void;
+};
+
+export function makeFakeProc(): FakeProc {
+  const encoder = new TextEncoder();
+  let stderrController!: ReadableStreamDefaultController<Uint8Array>;
+  const stderr = new ReadableStream<Uint8Array>({
+    start(c) {
+      stderrController = c;
+    },
+  });
+  const stdout = new ReadableStream<Uint8Array>({
+    start(c) {
+      c.close();
+    },
+  });
+  let resolveWait!: (code: number) => void;
+  const waitPromise = new Promise<number>((resolve) => {
+    resolveWait = resolve;
+  });
+  return {
+    proc: { stdout, stderr, wait: () => waitPromise },
+    pushStderr: (text) => stderrController.enqueue(encoder.encode(text)),
+    exit: (code) => resolveWait(code),
+  };
+}
+
+export function makeFakeSandbox(fakeProc: FakeProc): ModalSandboxLike & {
+  execCalls: { command: string[]; params: Record<string, unknown> }[];
+  /** path → content written pre-exec (agent-mode boot artifacts). */
+  files: Map<string, string>;
+  updateNetworkPolicy: ReturnType<typeof vi.fn>;
+  terminate: ReturnType<typeof vi.fn>;
+} {
+  const execCalls: { command: string[]; params: Record<string, unknown> }[] = [];
+  const files = new Map<string, string>();
+  return {
+    sandboxId: "sb-test",
+    execCalls,
+    files,
+    // Modal's readiness probe, satisfied immediately: these tests exercise the
+    // spawn sequence, not the boot wait (which raceGuestExit covers).
+    waitUntilReady: () => Promise.resolve(),
+    filesystem: {
+      writeText: async (data: string, remotePath: string) => {
+        files.set(remotePath, data);
+      },
+    },
+    exec: async (command, params) => {
+      execCalls.push({ command, params: params as unknown as Record<string, unknown> });
+      return fakeProc.proc;
+    },
+    tunnels: async () => ({
+      [GUEST_PORT]: { host: "tunnel.modal.test", port: 12_345 },
+    }),
+    updateNetworkPolicy: vi.fn().mockResolvedValue(undefined),
+    terminate: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+export async function makeHarnessFile(content = "// harness"): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "aai-modal-test-"));
+  const path = join(dir, "harness.mjs");
+  await writeFile(path, content, "utf-8");
+  return path;
+}
+
+export function makeCtx(sb: ModalSandboxLike): ModalSpawnContext & { codes: string[] } {
+  const codes: string[] = [];
+  return {
+    codes,
+    lookupGuestSandbox: () => Promise.resolve(null),
+    createGuestSandbox: async (code, _params) => {
+      codes.push(code);
+      return sb;
+    },
   };
 }
