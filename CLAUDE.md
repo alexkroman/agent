@@ -28,6 +28,18 @@ pnpm check:affected      # Only check packages affected by changes since main
 | E2E | `pnpm test:e2e` | Full process spawn + Playwright browser | 300s |
 | Templates | `pnpm test:templates` | Template agent example tests | 5s |
 
+#### Mutation testing (Stryker)
+
+`pnpm test:mutate` (or a scope: `test:mutate:{sdk,host,server,cli}`, configs
+`stryker.*.config.mjs` at the root). Not a gate — nothing in `check.sh` or CI
+runs it; reach for it when deciding whether a suite's assertions are real.
+
+**A run EDITS THE WORKING TREE.** TypeScript 7 dropped the JS API Stryker's
+tsconfig preprocessor calls, so the base config sets `inPlace: true` to skip
+it — mutants are written into the actual source files and restored from
+`.stryker-tmp/backup-*` when the run ends. Never run vitest, edit source, or
+commit while one is in flight, and never launch one in the background.
+
 ### Single-package shortcuts
 
 ```sh
@@ -36,6 +48,7 @@ pnpm test:aai-ui         # Run only aai-ui unit tests
 pnpm test:aai-cli        # Run only aai-cli unit tests
 pnpm test:aai-server     # Run only aai-server unit tests
 pnpm test:aai-studio-client  # Run studio front-end unit tests
+pnpm test:aai-studio-server  # Run studio service unit tests
 pnpm test:templates      # Run template agent tests
 pnpm dev:aai-server      # Start aai-server in dev mode
 ```
@@ -71,6 +84,21 @@ all in one turbo call with `--continue` (shows all failures at once).
 
 `pnpm check:affected` uses turbo's `--affected` flag to only run tasks
 for packages changed since the default branch.
+
+Three gates in the full run are easy to miss because they sit outside the
+turbo graph and outside the ratchets below:
+
+- **`pnpm check:markdown`** — markdownlint over every `.md` in the repo
+  (CLAUDE.md included). In `check.sh`'s full mode and in CI, not in
+  `check:local`, so a docs-only edit passes locally and fails on push.
+- **`pnpm check:template-types`** — type-checks every template under the
+  SCAFFOLD's tsconfig, i.e. what `aai init` really produces, against the
+  PUBLISHED types. Runs after build for that reason; the repo's own strict
+  config is a different compiler and hides real template bugs.
+- **`pnpm check:gateway-models`** — re-probes the AssemblyAI gateway's
+  `/v1/models` (both regions) and diffs it against the committed catalog.
+  Needs network + a key, so it is standalone, not in `check.sh`. Regenerate
+  with `scripts/gen-gateway-models.mjs` rather than hand-editing the list.
 
 ### Quality ratchets
 
@@ -270,7 +298,7 @@ model) is the security boundary.
 - `studio.ts` / `_studio.ts` — the studio round-trip: pull/push/publish
   executors over the `/studio/projects` routes, the local source walk
   (guest-snapshot ignore rules + cap mirrors, `.env`/lockfiles never sync)
-- `_init.ts` / `_deploy.ts` / `_delete.ts` / `_bundler.ts` — internal logic
+- `_init.ts` / `_deploy.ts` / `_bundler.ts` — internal logic
 - `_dev-server.ts` — dev server for directory-based agents: loads `agent.ts`,
   builds runtime, watches for file changes, optionally runs Vite for client HMR
 - `_bundler.ts` — bundles `agent.ts` (and optional `client.tsx`) into
@@ -408,8 +436,12 @@ model) is the security boundary.
   call site while results/incoming params stay `unknown` (untrusted wire
   data — Zod at the receiving site is the contract)
 - `transport-websocket.ts` — WebSocket transport layer
-- `auth.ts` — authentication/authorization
-- `credentials.ts` — credential derivation
+- `middleware.ts` — the auth surface: `resolveBearer` (the one place a raw
+  key or a studio JWT becomes an API key + optional userId — see "Auth"),
+  `validateSlug`, `requireOwner`, and the Hono middlewares over them;
+  `_bearer.ts` parses the header, `supabase-auth.ts` verifies session tokens
+- `secrets.ts` — credential digests: `hashApiKey`/`verifyApiKeyHash`
+  (`sha256:<hex>`, constant-time) and `verifySlugOwner`
 - `bundle-store.ts` — deploy persistence: content-addressed, immutable
   blobs (`blobs/<sha256>` — worker + client files, in Supabase Storage via
   its S3-compatible endpoint in production, memory in dev/tests) committed
@@ -436,13 +468,19 @@ model) is the security boundary.
   eviction), `studio-session-registry.ts` (the cross-replica row that makes
   a project's sandbox one fleet-wide, not one per replica),
   `studio-session-adopt.ts` (installing a session into a PEER's guest over
-  HTTP), `studio-llm.ts` (gateway model config; the key is always the
-  caller's), `studio-workspace-dir.ts` (materializes a workspace to a
-  scratch dir — eval-suite only now), `studio-errors.ts`
-  (`StudioBuildError`), `studio-deploy.ts` (guest build → validate config →
-  deploy), `studio-workspace.ts` (project file store), `studio-prompt.ts`
-  (system prompt from the scaffold CLAUDE.md), `studio-static.ts` (serves
-  the built client)
+  HTTP), `studio-session-fleet.ts` (the broker's view of the REST of the
+  fleet), `studio-session-wire.ts` (the guest→host half of the control
+  channel + its validation), `studio-session-publish.ts` (one deploy of a
+  workspace — Publish and the auto preview deploys share it),
+  `studio-llm.ts` (gateway model config; the key is always the
+  caller's), `studio-deploy.ts` (guest build → validate config →
+  deploy), `studio-workspace.ts` (project file store), `studio-prompt.ts` +
+  `studio-preamble.ts` (system prompt: the v0-style preamble plus the
+  scaffold CLAUDE.md), `studio-sse.ts` (shared payload builder + stream
+  lifecycle behind both project-event routes), `studio-account-routes.ts`
+  (browser-session account surface, incl. the `aai login` device link),
+  `studio-template.ts` (a new project starts EMPTY — read the file before
+  changing that), `studio-static.ts` (serves the built client)
 - `packages/aai-studio-client/` — the studio's React front-end (Vite +
   Tailwind v4 + `useChat` + TanStack Query + CodeMirror), its own private
   workspace package built into its `dist/` by
@@ -467,8 +505,9 @@ voice agents without the CLI:
   `SecretStore`). Blob `Storage` serves only deploy artifacts. Rows carry an
   optimistic `version`: writes go through `createWorkspace` /
   `mutateWorkspace` (`studio-workspace.ts`), which retry a conflicted write
-  once — the in-process keyed lock (`studio-workspace-lock.ts`) still
-  serializes local writers, so a conflict means another replica. `scope` is
+  once — an in-process keyed lock (`createKeyedLock` from
+  `aai-server/platform-barrel`, in `studio-workspace.ts`) still serializes
+  local writers, so a conflict means another replica. `scope` is
   a *deterministic* SHA-256 (`studioScope`) — stable so a caller can find
   its projects again. Browser sessions scope by the studio USER id
   (`user:<uid>` — stable across AssemblyAI key rotation); a raw-key caller
@@ -1703,9 +1742,12 @@ you only need to list one package.
   copies lost their 20s argon2 timeout; the aai-server excludes named two
   deleted files while missing a live integration test; and the templates
   copy skipped two of its four test files.
-- Slow/integration tests have separate per-package configs
-  (`vitest.slow.config.ts`, `vitest.integration.config.ts`) to avoid running
-  during `vitest run`.
+- Slow tiers run off the ONE root `vitest.slow.config.ts`, never a
+  per-package config: each package declares a `test:integration` /
+  `test:e2e` script pointing at it and narrows the files with
+  `VITEST_INCLUDE` (plus `VITEST_PROFILE=e2e` for the 300s timeout), and
+  exposes it to turbo as `check:integration` / `check:e2e`. That keeps the
+  slow files out of a plain `vitest run` without a second config to drift.
 - In tests, use `flush()` from `_test-utils.ts` instead of
   `await new Promise(r => setTimeout(r, 0))` to yield to microtasks.
 - Use `vi.waitFor()` instead of arbitrary delays when polling for async results.
@@ -1738,6 +1780,8 @@ you only need to list one package.
 | aai-ui | threads | **jsdom** | `_jsdom-setup.ts` (stubs `scrollIntoView`) | `globals: true` so `describe`/`test`/`expect` don't need imports |
 | aai-cli | threads | node | — | `restoreMocks: true` |
 | aai-server | **forks** | node | — | Forks for process isolation; excludes integration tests |
+| aai-studio-server | **forks** | node | — | Forks for the same reason as aai-server |
+| aai-guest | threads | node | — | Harness/studio-tool suites |
 | aai-studio-client | threads | node | — | `.tsx` tests via `react-dom/server` (no jsdom) |
 | aai-templates | threads | node | — | Also matches `templates.test.ts` + `template-api-coverage.test.ts` |
 
@@ -2918,8 +2962,13 @@ asks for confirmation on a TTY before implicitly deploying.
   test network/filesystem/env denial: the executor has no in-process
   sandbox — the Modal container is the boundary, so those are Modal's to
   enforce, not host code's.
-- `net.test.ts` / `ssrf-extended.test.ts` — SSRF bypass prevention
-  (IPv4-mapped IPv6, cloud metadata, `.internal` domains).
+- `aai/host/ssrf.test.ts` — SSRF bypass prevention (IPv4-mapped IPv6, cloud
+  metadata, `.internal` domains, redirect re-validation). Its two siblings
+  cover the parts that suite structurally cannot: `ssrf-pinning.test.ts`
+  (the DNS pin that must not rewrite the URL, or TLS breaks) and
+  `ssrf-dispatcher.test.ts` (dispatcher and `fetch` from the SAME undici —
+  the suite above injects a fake fetch and builds no real dispatcher, which
+  is how that outage shipped unnoticed).
 
 There is deliberately **no load or chaos tier.** `packages/aai-server/load/`
 and `packages/aai-server/adversarial/` (plus the `load-and-adversarial` CI
