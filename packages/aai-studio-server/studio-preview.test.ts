@@ -146,21 +146,62 @@ describe("wakeProjectPreview", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  test("a stamped build failure does not redeploy, but still warms", async () => {
+  /**
+   * A settled failure is the one case with no queued job behind it, so the
+   * wake is the only thing that can retry it. Not retrying is what turned a
+   * transient failure — a platform 500, a Storage blip — into a permanently
+   * stuck error banner that only an edit could clear.
+   */
+  test("a stamped failure is retried on open, and still warms", async () => {
     const workspaces = makeStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// broken" } });
+    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
     await mutateWorkspace(workspaces, SCOPE, PROJECT, (current) => ({
       ...current,
       previewSlug: "p-preview",
-      previewError: "Build failed: nope",
+      previewError: "deploy failed (HTTP 500): Internal server error",
     }));
     const schedule = scheduleFn();
     const fetchImpl = okFetch();
     wake(workspaces, schedule, fetchImpl);
-    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
-    // Deterministic failure — the banner already carries the CLI output;
-    // the next edit reschedules.
-    expect(schedule).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(schedule).toHaveBeenCalledTimes(1));
+    // The previous deploy's agent is what the pane embeds, so it is still
+    // worth warming while the retry runs.
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  test("a stamped failure is retried even with no agent ever deployed", async () => {
+    // A first-ever preview that failed has no previewSlug and no deployedSlug,
+    // so there is nothing to warm — and the early `if (!slug) return` this
+    // replaced meant such a project could never retry at all.
+    const workspaces = makeStore();
+    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    await mutateWorkspace(workspaces, SCOPE, PROJECT, (current) => ({
+      ...current,
+      previewError: "deploy failed (HTTP 500): Internal server error",
+    }));
+    const schedule = scheduleFn();
+    const fetchImpl = okFetch();
+    wake(workspaces, schedule, fetchImpl);
+    await vi.waitFor(() => expect(schedule).toHaveBeenCalledTimes(1));
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test("a retry leaves previewError stamped for the pane's banner", async () => {
+    // Cleared only by a deploy that SUCCEEDS (see `attempt`), so the pane
+    // keeps showing the last real error instead of flickering to "starting".
+    const workspaces = makeStore();
+    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    await mutateWorkspace(workspaces, SCOPE, PROJECT, (current) => ({
+      ...current,
+      previewSlug: "p-preview",
+      previewError: "deploy failed (HTTP 500): Internal server error",
+    }));
+    const schedule = scheduleFn();
+    wake(workspaces, schedule, okFetch());
+    await vi.waitFor(() => expect(schedule).toHaveBeenCalledTimes(1));
+    await settled();
+    const after = await getWorkspace(workspaces, SCOPE, PROJECT);
+    expect(after?.previewError).toBe("deploy failed (HTTP 500): Internal server error");
   });
 
   test("falls back to warming the production agent for pre-preview projects", async () => {
@@ -236,21 +277,26 @@ describe("wakeProjectPreview", () => {
     expect(schedule).toHaveBeenCalledTimes(1);
   });
 
-  test("a 404 with a stamped build failure still does not redeploy", async () => {
+  test("a 404 plus a stamped failure schedules exactly once", async () => {
     const workspaces = makeStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// broken" } });
+    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
     await mutateWorkspace(workspaces, SCOPE, PROJECT, (current) => ({
       ...current,
       previewSlug: "p-preview",
-      previewError: "Build failed: nope",
+      previewHash: currentFilesHash(current),
+      previewError: "deploy failed (HTTP 500): Internal server error",
     }));
     const schedule = scheduleFn();
     const fetchImpl = vi.fn(async () => new Response("nope", { status: 404 }));
     wake(workspaces, schedule, fetchImpl as ReturnType<typeof okFetch>);
-    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(schedule).toHaveBeenCalledTimes(1));
     await settled();
-    // Deterministic failure — regenerating would only re-fail into the banner.
-    expect(schedule).not.toHaveBeenCalled();
+    // Both reasons to redeploy are present; they must not double up.
+    expect(schedule).toHaveBeenCalledTimes(1);
+    // The 404 branch still drops the stamp, else the deploy no-ops on a hash
+    // that matches a preview the platform no longer serves.
+    const after = await getWorkspace(workspaces, SCOPE, PROJECT);
+    expect(after?.previewHash).toBeUndefined();
   });
 
   test("a missing project is a silent no-op", async () => {
