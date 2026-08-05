@@ -57,6 +57,23 @@ export interface AssemblyAIOptions {
    */
   streamingUrl?: string;
   /**
+   * Languages to bias the model toward, sent as the `language_codes` connection
+   * parameter (e.g. `["en"]`, `["en", "es"]`).
+   *
+   * Universal-3.5 Pro **code-switches across 18 languages by default**, so an
+   * unset value is not "English" — it is "detect per turn". That default costs
+   * accuracy on a monolingual line in a way that is easy to misread as an audio
+   * problem: measured against tau2-bench, English utterances came back
+   * transliterated into Devanagari and Hebrew script
+   * (`Hello? Any update?` → `हेलो एनी अपडेट`), including an authentication turn,
+   * so the tool call built from it was garbage. Nothing in the transcript says
+   * "wrong language" — it reads as a mis-hearing.
+   *
+   * A single-element list pins one language and keeps code-switching off; omit
+   * for a genuinely multilingual line.
+   */
+  languages?: string[];
+  /**
    * Voice focus (voice isolation) mode, sent as the `voice_focus` connection
    * parameter. Defaults to `"near-field"` to suppress background noise for
    * close-mic / phone audio. Set to `""` (or `"off"`) to disable.

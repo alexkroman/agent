@@ -382,6 +382,40 @@ describe("assemblyAIStt STT adapter — region (EU data residency)", () => {
     await us.close();
   });
 
+  test("languages sets language_codes, and is absent unless asked for", async () => {
+    // Universal-3.5 Pro code-switches across 18 languages when this is unset,
+    // so the absent case must stay absent — sending a default would silently
+    // disable multilingual transcription for every agent.
+    const unset = await openSession({ model: "universal-3-5-pro" });
+    expect("languageCodes" in (unset._transcriber as unknown as FakeTranscriber).params).toBe(
+      false,
+    );
+    await unset.close();
+
+    const pinned = await openSession({ model: "universal-3-5-pro", languages: ["en"] });
+    expect((pinned._transcriber as unknown as FakeTranscriber).params.languageCodes).toEqual([
+      "en",
+    ]);
+    await pinned.close();
+
+    const several = await openSession({
+      model: "universal-3-5-pro",
+      languages: ["en", "es"],
+    });
+    expect((several._transcriber as unknown as FakeTranscriber).params.languageCodes).toEqual([
+      "en",
+      "es",
+    ]);
+    await several.close();
+
+    // An empty list is a no-op, not "pin zero languages".
+    const empty = await openSession({ model: "universal-3-5-pro", languages: [] });
+    expect("languageCodes" in (empty._transcriber as unknown as FakeTranscriber).params).toBe(
+      false,
+    );
+    await empty.close();
+  });
+
   test("streamingUrl overrides the endpoint, and wins over region", async () => {
     const sandbox = "wss://streaming.sandbox000.assemblyai-labs.com/v3/ws";
 

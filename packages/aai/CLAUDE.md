@@ -297,6 +297,19 @@ Reference providers shipped today:
   default host, so a bare origin connects to the wrong route and fails at
   connect. Leave unset in production — the SDK's default already tracks path
   bumps, which is why the US case pins nothing host-side.
+
+  **An unset `languages` is "detect per turn", NOT "English".** Universal-3.5
+  Pro code-switches across 18 languages natively, so a monolingual line pays
+  for detection it does not want — and the failure does not look like a
+  language problem. Measured against tau2-bench retail, English utterances came
+  back transliterated into Devanagari and Hebrew script (`Hello? Any update?` →
+  `हेलो एनी अपडेट`), authentication turns included, so the tool arguments built
+  from them were garbage while every transcript looked like an ordinary
+  mis-hearing. `assemblyAIStt({ languages: ["en"] })` pins one language (the
+  `language_codes` connection parameter); a multi-element list biases toward a
+  known subset while keeping code-switching. It stays UNSENT when absent — a
+  host-side default would silently disable multilingual transcription for every
+  agent, which is the mirror-image bug.
 - **LLM**: one of the typed factories below — each returns a pure
   descriptor; the `@ai-sdk/*` package is only imported by the host-side
   resolver (`host/providers/resolve.ts`), never by the agent bundle:
