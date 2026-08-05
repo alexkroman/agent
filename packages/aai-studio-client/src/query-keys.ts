@@ -5,6 +5,10 @@
 
 export const queryKeys = {
   status: ["status"] as const,
+  /** The signed-in account (email + whether a key is stored), per bearer. */
+  account: (bearer: string) => ["account", bearer] as const,
+  /** Prefix key: invalidates the account regardless of which bearer read it. */
+  accounts: ["account"] as const,
   projects: ["projects"] as const,
   project: (name: string | null) => ["project", name] as const,
   chat: (name: string | null) => ["chat", name] as const,
