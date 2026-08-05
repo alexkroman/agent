@@ -62,7 +62,6 @@
     "@vitest/coverage-v8": "^4.1.10",
     "citty": "^0.2.2",
     "knip": "^6.29.0",
-    "kokoro-js": "^1.2.1",
     "lefthook": "^2.1.10",
     "markdownlint-cli2": "^0.23.1",
     "publint": "^0.3.22",
@@ -81,16 +80,12 @@
   "pnpm": {
     "ignoredBuiltDependencies": [
       "esbuild",
-      "isolated-vm",
       "lefthook"
     ],
     "onlyBuiltDependencies": [
       "esbuild",
-      "isolated-vm",
       "lefthook",
-      "onnxruntime-node",
-      "protobufjs",
-      "sharp"
+      "protobufjs"
     ],
     "patchedDependencies": {},
     "overrides": {
