@@ -88,15 +88,15 @@ describe("Deepgram STT adapter", () => {
   });
 
   test("throws stt_auth_failed when API key is missing", async () => {
-    const saved = process.env.DEEPGRAM_API_KEY;
-    delete process.env.DEEPGRAM_API_KEY;
+    // `undefined` unsets the var, and vitest restores it after the test — the
+    // hand-rolled restore this replaces wrote back `undefined` directly, which
+    // env coercion turns into the STRING "undefined" for every later test.
+    vi.stubEnv("DEEPGRAM_API_KEY", undefined);
 
     const opener = openDeepgram({});
     await expect(
       opener.open({ sampleRate: 16_000, apiKey: "", signal: new AbortController().signal }),
     ).rejects.toMatchObject({ code: "stt_auth_failed" });
-
-    process.env.DEEPGRAM_API_KEY = saved;
   });
 
   test("final transcript fires 'final' event with text", async () => {

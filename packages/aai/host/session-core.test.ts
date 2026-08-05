@@ -257,13 +257,8 @@ describe("createSessionCore — tool call pending results", () => {
   });
 
   test("a barged-in reply's late tool result is not forwarded to the next reply", async () => {
-    let resolveSlow: (v: string) => void = () => undefined;
-    const executeTool = vi.fn(
-      () =>
-        new Promise<string>((r) => {
-          resolveSlow = r;
-        }),
-    );
+    const slow = Promise.withResolvers<string>();
+    const executeTool = vi.fn(() => slow.promise);
     const { core, transport } = makeCore({ executeTool });
     await core.start();
 
@@ -279,7 +274,7 @@ describe("createSessionCore — tool call pending results", () => {
 
     // r1's tool finally resolves — its result belongs to the cancelled reply
     // and must not be routed into r2.
-    resolveSlow("slow-output");
+    slow.resolve("slow-output");
     await flush();
     core.onReplyDone();
     await flush();

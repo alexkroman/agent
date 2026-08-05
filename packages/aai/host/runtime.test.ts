@@ -324,17 +324,13 @@ describe("executeToolCall", () => {
       },
     };
     const spy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    try {
-      const result = await executeToolCall("failTool", {}, { tool, env: {} });
-      expect(result).toContain("error");
-      expect(result).toContain("no-logger-boom");
-      expect(spy).toHaveBeenCalledWith(
-        expect.stringContaining("[tool-executor] Tool execution failed: failTool"),
-        expect.any(Error),
-      );
-    } finally {
-      spy.mockRestore();
-    }
+    const result = await executeToolCall("failTool", {}, { tool, env: {} });
+    expect(result).toContain("error");
+    expect(result).toContain("no-logger-boom");
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining("[tool-executor] Tool execution failed: failTool"),
+      expect.any(Error),
+    );
   });
 
   test("throws storage-not-enabled when db is not provided and tool accesses it", async () => {

@@ -205,12 +205,10 @@ describe("createVoiceIO", () => {
     io.enqueue(new Int16Array([1, 2, 3]).buffer);
     const playNode = findWorkletNode(audio.workletNodes(), "playback-processor");
 
-    let resolved = false;
-    void io.done().then(() => {
-      resolved = true;
-    });
+    const resolved = vi.fn();
+    void io.done().then(resolved);
     drainStop(playNode);
-    await vi.waitFor(() => expect(resolved).toBe(true));
+    await vi.waitFor(() => expect(resolved).toHaveBeenCalled());
     await io.close();
   });
 
@@ -302,16 +300,14 @@ describe("createVoiceIO", () => {
     io.flush();
 
     // Next turn registers its own done() before the interrupt's stop arrives.
-    let resolved = false;
-    void io.done().then(() => {
-      resolved = true;
-    });
+    const resolved = vi.fn();
+    void io.done().then(resolved);
     playNode.port.simulateMessage({ event: "stop", reason: "interrupt", turn: null });
     await Promise.resolve();
-    expect(resolved).toBe(false);
+    expect(resolved).not.toHaveBeenCalled();
 
     drainStop(playNode);
-    await vi.waitFor(() => expect(resolved).toBe(true));
+    await vi.waitFor(() => expect(resolved).toHaveBeenCalled());
     await io.close();
   });
 
@@ -322,29 +318,25 @@ describe("createVoiceIO", () => {
 
     // Turn 1 drains and the worklet posts its stop — but a barge-in lands
     // first, so flush() settles turn 1 before that stop is delivered.
-    let firstResolved = false;
-    void io.done().then(() => {
-      firstResolved = true;
-    });
+    const firstResolved = vi.fn();
+    void io.done().then(firstResolved);
     const staleTurn = currentTurn(playNode);
     io.flush();
-    await vi.waitFor(() => expect(firstResolved).toBe(true));
+    await vi.waitFor(() => expect(firstResolved).toHaveBeenCalled());
 
     // Turn 2 is already waiting when turn 1's stop finally arrives. Settling
     // on it would report the live reply finished while it is still speaking.
-    let resolved = false;
+    const resolved = vi.fn();
     io.enqueue(new Int16Array([4, 5, 6]).buffer);
-    void io.done().then(() => {
-      resolved = true;
-    });
+    void io.done().then(resolved);
     playNode.port.simulateMessage({ event: "stop", reason: "done", turn: staleTurn });
     playNode.port.simulateMessage({ event: "stop", reason: "interrupt", turn: staleTurn });
     await Promise.resolve();
-    expect(resolved).toBe(false);
+    expect(resolved).not.toHaveBeenCalled();
 
     // Turn 2's own drain-stop settles it.
     drainStop(playNode);
-    await vi.waitFor(() => expect(resolved).toBe(true));
+    await vi.waitFor(() => expect(resolved).toHaveBeenCalled());
     await io.close();
   });
 
@@ -352,12 +344,10 @@ describe("createVoiceIO", () => {
     const io = await createVoiceIO(voiceOpts());
     io.enqueue(new Int16Array([1, 2, 3]).buffer);
 
-    let resolved = false;
-    void io.done().then(() => {
-      resolved = true;
-    });
+    const resolved = vi.fn();
+    void io.done().then(resolved);
     io.flush();
-    await vi.waitFor(() => expect(resolved).toBe(true));
+    await vi.waitFor(() => expect(resolved).toHaveBeenCalled());
     await io.close();
   });
 
@@ -366,19 +356,15 @@ describe("createVoiceIO", () => {
     io.enqueue(new Int16Array([1, 2, 3]).buffer);
     const playNode = findWorkletNode(audio.workletNodes(), "playback-processor");
 
-    let firstResolved = false;
-    let secondResolved = false;
-    void io.done().then(() => {
-      firstResolved = true;
-    });
-    void io.done().then(() => {
-      secondResolved = true;
-    });
-    await vi.waitFor(() => expect(firstResolved).toBe(true));
-    expect(secondResolved).toBe(false);
+    const firstResolved = vi.fn();
+    const secondResolved = vi.fn();
+    void io.done().then(firstResolved);
+    void io.done().then(secondResolved);
+    await vi.waitFor(() => expect(firstResolved).toHaveBeenCalled());
+    expect(secondResolved).not.toHaveBeenCalled();
 
     drainStop(playNode);
-    await vi.waitFor(() => expect(secondResolved).toBe(true));
+    await vi.waitFor(() => expect(secondResolved).toHaveBeenCalled());
     await io.close();
   });
 
@@ -536,14 +522,12 @@ describe("createVoiceIO", () => {
       // The context stays "running" and the worklet never posts 'stop' —
       // a silently dead processor. The hard cap must settle done() so
       // session state can't hang in "speaking" forever.
-      let resolved = false;
-      void io.done().then(() => {
-        resolved = true;
-      });
+      const resolved = vi.fn();
+      void io.done().then(resolved);
       await vi.advanceTimersByTimeAsync(64_000);
-      expect(resolved).toBe(false);
+      expect(resolved).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1000);
-      expect(resolved).toBe(true);
+      expect(resolved).toHaveBeenCalled();
       await io.close();
     } finally {
       vi.useRealTimers();

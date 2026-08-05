@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import { createSandbox, type SandboxOptions } from "./sandbox.ts";
 import { resolveSandbox } from "./sandbox-resolve.ts";
@@ -68,10 +68,6 @@ describe("createSandbox", () => {
     vi.clearAllMocks();
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
   });
 
   it("creates a sandbox with the server-handle shape", async () => {
@@ -144,25 +140,15 @@ describe("createSandbox", () => {
   });
 
   it("passes harnessPath from GUEST_HARNESS_PATH env var to spawnAgentServer", async () => {
-    const originalEnv = process.env.GUEST_HARNESS_PATH;
-    process.env.GUEST_HARNESS_PATH = "/custom/harness.mjs";
+    vi.stubEnv("GUEST_HARNESS_PATH", "/custom/harness.mjs");
+    const sandbox = createSandbox(makeSandboxOptions());
 
-    try {
-      const sandbox = createSandbox(makeSandboxOptions());
-
-      expect(mockSpawnAgentServer).toHaveBeenCalledWith(
-        expect.objectContaining({
-          harnessPath: "/custom/harness.mjs",
-        }),
-      );
-      await sandbox.shutdown();
-    } finally {
-      if (originalEnv === undefined) {
-        delete process.env.GUEST_HARNESS_PATH;
-      } else {
-        process.env.GUEST_HARNESS_PATH = originalEnv;
-      }
-    }
+    expect(mockSpawnAgentServer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        harnessPath: "/custom/harness.mjs",
+      }),
+    );
+    await sandbox.shutdown();
   });
 
   // ── Lazy VM initialization tests ──────────────────────────────────────────

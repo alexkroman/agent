@@ -142,13 +142,8 @@ describe("initAudioCapture races", () => {
 
     // Init completes with a done() the test resolves later — the replayed
     // greeting drain is now in flight.
-    let resolveDone!: () => void;
-    const io = makeFakeIO(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveDone = resolve;
-        }),
-    );
+    const greetingDrain = Promise.withResolvers<void>();
+    const io = makeFakeIO(() => greetingDrain.promise);
     pendingInits.shift()?.(io);
     await vi.waitFor(() => expect(core.getSnapshot().recording).toBe(true));
 
@@ -157,7 +152,7 @@ describe("initAudioCapture races", () => {
     expect(core.getSnapshot().state).toBe("thinking");
 
     // The stale greeting drain resolving late must not flip state back.
-    resolveDone();
+    greetingDrain.resolve();
     await new Promise<void>((r) => setTimeout(r, 0));
     expect(core.getSnapshot().state).toBe("thinking");
   });

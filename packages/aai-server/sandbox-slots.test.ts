@@ -54,7 +54,6 @@ describe("slot cache", () => {
     };
     await expect(terminateSlot(slot)).resolves.toBeUndefined();
     expect(warn).toHaveBeenCalled();
-    warn.mockRestore();
   });
 
   it("retireSlot detaches synchronously and hands the sandbox its drain budget", async () => {

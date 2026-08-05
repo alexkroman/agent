@@ -335,11 +335,7 @@ describe("spawnModalWarm", () => {
     expect(await spawnOnce()).not.toHaveProperty("regions");
 
     vi.stubEnv("MODAL_SANDBOX_REGION", "us-east-1");
-    try {
-      expect(await spawnOnce()).toMatchObject({ regions: ["us-east-1"] });
-    } finally {
-      vi.unstubAllEnvs();
-    }
+    expect(await spawnOnce()).toMatchObject({ regions: ["us-east-1"] });
   });
 
   it("passes a matching reservation alongside each hard cap (Modal rejects a bare cap)", async () => {
@@ -351,33 +347,29 @@ describe("spawnModalWarm", () => {
     vi.stubEnv("SANDBOX_CPU_LIMIT", "1");
     vi.stubEnv("SANDBOX_MEMORY_MB", "1024");
     vi.stubEnv("SANDBOX_MEMORY_LIMIT_MB", "1024");
-    try {
-      const fake = makeFakeProc();
-      const sb = makeFakeSandbox(fake);
-      const createParams: Record<string, unknown>[] = [];
-      const ctx: ModalSpawnContext = {
-        lookupGuestSandbox: () => Promise.resolve(null),
-        prepareGuestImage: () => Promise.resolve(),
-        createGuestSandbox: async (_code, params) => {
-          createParams.push(params as unknown as Record<string, unknown>);
-          return sb;
-        },
-      };
-      const harnessPath = await makeHarnessFile();
-      const socket = createFakeGuestSocket();
-      const { dial } = makeFakeDial(socket);
+    const fake = makeFakeProc();
+    const sb = makeFakeSandbox(fake);
+    const createParams: Record<string, unknown>[] = [];
+    const ctx: ModalSpawnContext = {
+      lookupGuestSandbox: () => Promise.resolve(null),
+      prepareGuestImage: () => Promise.resolve(),
+      createGuestSandbox: async (_code, params) => {
+        createParams.push(params as unknown as Record<string, unknown>);
+        return sb;
+      },
+    };
+    const harnessPath = await makeHarnessFile();
+    const socket = createFakeGuestSocket();
+    const { dial } = makeFakeDial(socket);
 
-      const warm = await spawnModalWarm({ harnessPath }, ctx, dial);
-      expect(createParams[0]).toMatchObject({
-        cpu: 1,
-        cpuLimit: 1,
-        memoryMiB: 1024,
-        memoryLimitMiB: 1024,
-      });
-      await warm.cleanup();
-    } finally {
-      vi.unstubAllEnvs();
-    }
+    const warm = await spawnModalWarm({ harnessPath }, ctx, dial);
+    expect(createParams[0]).toMatchObject({
+      cpu: 1,
+      cpuLimit: 1,
+      memoryMiB: 1024,
+      memoryLimitMiB: 1024,
+    });
+    await warm.cleanup();
   });
 
   it("forwards a burst range — reservation below cap — when both are configured", async () => {
@@ -388,33 +380,29 @@ describe("spawnModalWarm", () => {
     vi.stubEnv("SANDBOX_CPU_LIMIT", "4");
     vi.stubEnv("SANDBOX_MEMORY_MB", "1024");
     vi.stubEnv("SANDBOX_MEMORY_LIMIT_MB", "4096");
-    try {
-      const fake = makeFakeProc();
-      const sb = makeFakeSandbox(fake);
-      const createParams: Record<string, unknown>[] = [];
-      const ctx: ModalSpawnContext = {
-        lookupGuestSandbox: () => Promise.resolve(null),
-        prepareGuestImage: () => Promise.resolve(),
-        createGuestSandbox: async (_code, params) => {
-          createParams.push(params as unknown as Record<string, unknown>);
-          return sb;
-        },
-      };
-      const harnessPath = await makeHarnessFile();
-      const socket = createFakeGuestSocket();
-      const { dial } = makeFakeDial(socket);
+    const fake = makeFakeProc();
+    const sb = makeFakeSandbox(fake);
+    const createParams: Record<string, unknown>[] = [];
+    const ctx: ModalSpawnContext = {
+      lookupGuestSandbox: () => Promise.resolve(null),
+      prepareGuestImage: () => Promise.resolve(),
+      createGuestSandbox: async (_code, params) => {
+        createParams.push(params as unknown as Record<string, unknown>);
+        return sb;
+      },
+    };
+    const harnessPath = await makeHarnessFile();
+    const socket = createFakeGuestSocket();
+    const { dial } = makeFakeDial(socket);
 
-      const warm = await spawnModalWarm({ harnessPath }, ctx, dial);
-      expect(createParams[0]).toMatchObject({
-        cpu: 1,
-        cpuLimit: 4,
-        memoryMiB: 1024,
-        memoryLimitMiB: 4096,
-      });
-      await warm.cleanup();
-    } finally {
-      vi.unstubAllEnvs();
-    }
+    const warm = await spawnModalWarm({ harnessPath }, ctx, dial);
+    expect(createParams[0]).toMatchObject({
+      cpu: 1,
+      cpuLimit: 4,
+      memoryMiB: 1024,
+      memoryLimitMiB: 4096,
+    });
+    await warm.cleanup();
   });
 
   it("omits cpu/memory reservations entirely when no limits are configured", async () => {
@@ -442,28 +430,24 @@ describe("spawnModalWarm", () => {
 
   it("honors SANDBOX_IDLE_TIMEOUT_SECS over the default idle timeout", async () => {
     vi.stubEnv("SANDBOX_IDLE_TIMEOUT_SECS", "600");
-    try {
-      const fake = makeFakeProc();
-      const sb = makeFakeSandbox(fake);
-      const createParams: Record<string, unknown>[] = [];
-      const ctx: ModalSpawnContext = {
-        lookupGuestSandbox: () => Promise.resolve(null),
-        prepareGuestImage: () => Promise.resolve(),
-        createGuestSandbox: async (_code, params) => {
-          createParams.push(params as unknown as Record<string, unknown>);
-          return sb;
-        },
-      };
-      const harnessPath = await makeHarnessFile();
-      const socket = createFakeGuestSocket();
-      const { dial } = makeFakeDial(socket);
+    const fake = makeFakeProc();
+    const sb = makeFakeSandbox(fake);
+    const createParams: Record<string, unknown>[] = [];
+    const ctx: ModalSpawnContext = {
+      lookupGuestSandbox: () => Promise.resolve(null),
+      prepareGuestImage: () => Promise.resolve(),
+      createGuestSandbox: async (_code, params) => {
+        createParams.push(params as unknown as Record<string, unknown>);
+        return sb;
+      },
+    };
+    const harnessPath = await makeHarnessFile();
+    const socket = createFakeGuestSocket();
+    const { dial } = makeFakeDial(socket);
 
-      const warm = await spawnModalWarm({ harnessPath }, ctx, dial);
-      expect(createParams[0]).toMatchObject({ idleTimeoutMs: 600_000 });
-      await warm.cleanup();
-    } finally {
-      vi.unstubAllEnvs();
-    }
+    const warm = await spawnModalWarm({ harnessPath }, ctx, dial);
+    expect(createParams[0]).toMatchObject({ idleTimeoutMs: 600_000 });
+    await warm.cleanup();
   });
 
   it("terminates the sandbox when the dial fails, and wraps the error", async () => {
@@ -605,6 +589,5 @@ describe("resolveSpawnImage", () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("SANDBOX_IGNORE_IMAGE_PINS"), {
       imageTag: "aai-guest-harness:gone",
     });
-    warn.mockRestore();
   });
 });

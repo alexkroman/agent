@@ -3,7 +3,7 @@
 // custom runtime options, and session routing (S2S vs pipeline vs OpenAI
 // Realtime). Tool-execution specs live in runtime.test.ts.
 
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { SESSION_RESUME_GRACE_MS } from "../sdk/constants.ts";
 import { openaiRealtime } from "../sdk/providers/s2s/openai-realtime.ts";
@@ -34,10 +34,6 @@ function makeMockWs() {
 }
 
 describe("createRuntime shutdown", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
   test("shutdown stops active sessions gracefully", async () => {
     const mockHandle = makeMockHandle();
     const connectSpy = vi.spyOn(_internals, "connectS2s").mockResolvedValue(mockHandle);
@@ -52,7 +48,6 @@ describe("createRuntime shutdown", () => {
     await new Promise((r) => setTimeout(r, 50));
 
     await expect(runtime.shutdown()).resolves.toBeUndefined();
-    connectSpy.mockRestore();
   });
 
   test("shutdown warns when a session stop rejects", async () => {
@@ -71,7 +66,6 @@ describe("createRuntime shutdown", () => {
     await flush();
 
     await runtime.shutdown();
-    connectSpy.mockRestore();
   });
 
   test("shutdown warns on timeout when sessions hang", async () => {
@@ -95,7 +89,6 @@ describe("createRuntime shutdown", () => {
     await flush();
 
     await runtime.shutdown();
-    connectSpy.mockRestore();
   });
 
   test("state is not re-initialized when already present for session", async () => {
@@ -457,7 +450,6 @@ describe("Runtime — session routing", () => {
     );
 
     await session.stop();
-    connectSpy.mockRestore();
   });
 
   test("agent.s2s = openaiRealtime() routes to OpenAI Realtime transport", async () => {

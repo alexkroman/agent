@@ -8,7 +8,7 @@
  */
 
 import type { AddressInfo } from "node:net";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { WebSocketServer } from "ws";
 import { agentBootEnv, dialGuest, drainProcStream } from "./warm-harness.ts";
 
@@ -23,10 +23,6 @@ function streamOf(chunks: string[]): ReadableStream<Uint8Array> {
 }
 
 describe("drainProcStream", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
   it("logs guest output under the label and skips blank chunks", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     await drainProcStream(streamOf(["boom at line 3\n", "   \n"]), "[container:x] stderr");

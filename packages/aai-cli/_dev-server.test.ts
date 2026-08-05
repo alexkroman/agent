@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { AgentDef } from "@alexkroman1/aai";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
   chokidarState,
   mockChokidarWatch,
@@ -105,9 +105,6 @@ beforeEach(() => {
 // `restoreMocks` does not unstub env vars, and several tests here stub ones the
 // dev server reads (ASSEMBLYAI_API_KEY, AAI_DEV_HOST, AAI_ALLOW_HOST) — one
 // leaking forward would silently change what a later test exercises.
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 

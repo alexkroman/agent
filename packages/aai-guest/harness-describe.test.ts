@@ -11,12 +11,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { mainDescribe, takeDescribeNonce } from "./harness-describe.ts";
 
 describe("takeDescribeNonce", () => {
-  afterEach(() => {
-    delete process.env.AAI_DESCRIBE_NONCE;
-  });
-
   test("returns the nonce and REMOVES it from process.env before any bundle import", () => {
-    process.env.AAI_DESCRIBE_NONCE = "n-123";
+    vi.stubEnv("AAI_DESCRIBE_NONCE", "n-123");
     expect(takeDescribeNonce()).toBe("n-123");
     expect(process.env.AAI_DESCRIBE_NONCE).toBeUndefined();
   });
@@ -49,7 +45,6 @@ describe("mainDescribe", () => {
   });
 
   afterEach(async () => {
-    vi.restoreAllMocks();
     await rm(dir, { recursive: true, force: true });
   });
 

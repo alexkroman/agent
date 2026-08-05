@@ -334,7 +334,7 @@ describe("session upgrades (direct-to-tunnel)", () => {
   });
 
   test("a store failure during an upgrade answers 500 and destroys the socket", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
     const ctx = await startServerWithOrchestrator({ seedSandbox: false });
     ctx.store.getAgent = () => Promise.reject(new Error("storage down"));
     try {
@@ -342,7 +342,6 @@ describe("session upgrades (direct-to-tunnel)", () => {
       expect(response).toMatch(/^HTTP\/1\.1 500 Internal Server Error/);
     } finally {
       await ctx.close();
-      errorSpy.mockRestore();
     }
   });
 

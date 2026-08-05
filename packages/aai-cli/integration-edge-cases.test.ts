@@ -150,20 +150,16 @@ describe("init creates working project", () => {
           "templates/simple/agent.json": JSON.stringify({ name: "Default Name" }),
         });
         vi.stubEnv("AAI_TEMPLATES_DIR", rootDir);
-        try {
-          const target = path.join(dir, "my-project");
-          await runInit({ targetDir: target, template: "simple" });
+        const target = path.join(dir, "my-project");
+        await runInit({ targetDir: target, template: "simple" });
 
-          expect(await fileExists(path.join(target, "agent.json"))).toBe(true);
-          const agentContent = await fs.readFile(path.join(target, "agent.json"), "utf-8");
-          expect(agentContent).toContain("Default Name");
-          expect(await fileExists(path.join(target, "shared.txt"))).toBe(true);
-          expect(await fileExists(path.join(target, ".env"))).toBe(true);
-          expect(await fs.readFile(path.join(target, ".env"), "utf-8")).toBe("MY_KEY=");
-          expect(await fileExists(path.join(target, "package.json"))).toBe(true);
-        } finally {
-          vi.unstubAllEnvs();
-        }
+        expect(await fileExists(path.join(target, "agent.json"))).toBe(true);
+        const agentContent = await fs.readFile(path.join(target, "agent.json"), "utf-8");
+        expect(agentContent).toContain("Default Name");
+        expect(await fileExists(path.join(target, "shared.txt"))).toBe(true);
+        expect(await fileExists(path.join(target, ".env"))).toBe(true);
+        expect(await fs.readFile(path.join(target, ".env"), "utf-8")).toBe("MY_KEY=");
+        expect(await fileExists(path.join(target, "package.json"))).toBe(true);
       }),
     );
   });

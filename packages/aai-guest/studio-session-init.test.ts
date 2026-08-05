@@ -12,7 +12,7 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { HarnessState } from "./harness-bundle.ts";
 import { resetSessionIdentity } from "./studio-chat.ts";
 import { handleSessionInitRequest } from "./studio-session-init.ts";
@@ -88,7 +88,6 @@ describe("guest studio session-init", () => {
     resetSessionIdentity();
     vi.spyOn(console, "error").mockImplementation(() => undefined);
   });
-  afterEach(() => vi.restoreAllMocks());
 
   test("ignores requests for other routes", () => {
     const out = fakeRes();

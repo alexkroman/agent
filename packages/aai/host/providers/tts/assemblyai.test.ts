@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { AssemblyAITtsLanguage } from "../../../sdk/providers/tts/assemblyai.ts";
 import type { TtsError } from "../../../sdk/providers.ts";
 import { FakeWebSocket, pcmBase64 } from "./_assemblyai-fake-ws-test-utils.ts";
@@ -16,10 +16,6 @@ vi.mock("ws", async () => {
 
 beforeEach(() => {
   FakeWebSocket.reset();
-});
-
-afterEach(() => {
-  vi.restoreAllMocks();
 });
 
 describe("AssemblyAI TTS adapter", () => {

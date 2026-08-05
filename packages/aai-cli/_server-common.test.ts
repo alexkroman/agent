@@ -1,18 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { resolveServerEnv } from "./_server-common.ts";
 import { withTempDir } from "./_test-utils.ts";
 
 describe("resolveServerEnv", () => {
-  // Clean up env vars set directly by tests (e.g. shell-override test)
-  const injectedKeys: string[] = [];
-  afterEach(() => {
-    for (const key of injectedKeys) delete process.env[key];
-    injectedKeys.length = 0;
-  });
-
   test("returns empty env without .env file and no declared keys", async () => {
     const env = await resolveServerEnv(undefined, { ASSEMBLYAI_API_KEY: "test-key-123" });
     expect(env).toEqual({});
@@ -42,13 +35,12 @@ describe("resolveServerEnv", () => {
   });
 
   test("shell env overrides .env values for declared keys", async () => {
-    injectedKeys.push("AAI_TEST_OVERRIDE", "ASSEMBLYAI_API_KEY");
     await withTempDir(async (dir) => {
       await fs.writeFile(
         path.join(dir, ".env"),
         "AAI_TEST_OVERRIDE=from-file\nASSEMBLYAI_API_KEY=key",
       );
-      process.env.AAI_TEST_OVERRIDE = "from-shell";
+      vi.stubEnv("AAI_TEST_OVERRIDE", "from-shell");
       const env = await resolveServerEnv(dir);
       expect(env.AAI_TEST_OVERRIDE).toBe("from-shell");
     });

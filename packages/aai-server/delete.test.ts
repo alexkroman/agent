@@ -90,7 +90,7 @@ test("delete's change event shuts down the resident sandbox", async () => {
 });
 
 test("delete succeeds even if sandbox shutdown fails", async () => {
-  const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  vi.spyOn(console, "warn").mockImplementation(() => undefined);
   const { fetch, slots } = await setup();
   await deployAgent(fetch);
 
@@ -105,5 +105,4 @@ test("delete succeeds even if sandbox shutdown fails", async () => {
   expect(resp.status).toBe(200);
   await settleEvents();
   expect(shutdown).toHaveBeenCalled();
-  warn.mockRestore();
 });

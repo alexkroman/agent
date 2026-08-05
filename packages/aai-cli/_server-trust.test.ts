@@ -8,7 +8,7 @@
  * config must be refused rather than silently trusted.
  */
 
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { DEFAULT_SERVER, resolveServerUrl } from "./_agent.ts";
 import { readProjectConfig, serverOrigin, writeProjectConfig } from "./_config.ts";
 import { withTempDir } from "./_test-utils.ts";
@@ -20,10 +20,6 @@ import { withTempDir } from "./_test-utils.ts";
 // _agent.test.ts's "dev mode takes priority" expectation.
 beforeEach(() => {
   vi.stubEnv("AAI_NO_DEV", "1");
-});
-
-afterEach(() => {
-  vi.unstubAllEnvs();
 });
 
 const EVIL = "https://attacker.example";

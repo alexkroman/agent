@@ -97,10 +97,6 @@ describe("agents-row change stream drives sandbox invalidation", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
   it("reuses the resident sandbox while nothing changed", async () => {
     const deps = await seedAgent("stable");
     const first = await resolveSandbox("stable", deps);
@@ -413,7 +409,6 @@ describe("broker readiness cap", () => {
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
     mockSpawnAgentServer.mockReset();
   });
 
@@ -482,10 +477,6 @@ describe("cross-replica registry keeps one sandbox per slug fleet-wide", () => {
       alive: () => true,
       onExit: vi.fn(),
     });
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
   });
 
   it("routes a cold broker to a live peer instead of spawning a duplicate", async () => {

@@ -5,7 +5,7 @@
  * teardown.
  */
 
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   errMsg,
   handleHostResponse,
@@ -29,7 +29,6 @@ beforeEach(() => {
 afterEach(() => {
   rejectAllPendingHostRequests("test teardown");
   setHostSend(null);
-  vi.restoreAllMocks();
 });
 
 /** Answer the most recent outbound host request. */

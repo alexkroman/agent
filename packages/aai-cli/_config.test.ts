@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { readProjectConfig, writeProjectConfig } from "./_config.ts";
 import { withTempDir } from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
@@ -64,15 +64,11 @@ describe("readProjectConfig / writeProjectConfig", () => {
 describe("getConfigDir", () => {
   // The suite-wide setup file sets AAI_CONFIG_DIR (see _test-setup.ts);
   // clear it here so the env-paths default is what's under test. VITEST is
-  // pinned explicitly because one test below clears it, and `restoreMocks`
-  // does not unstub env vars — leaving these order-dependent otherwise.
+  // pinned explicitly because one test below clears it; `unstubEnvs` in
+  // vitest.shared.ts is what keeps that from leaking into later tests.
   beforeEach(() => {
     vi.stubEnv("AAI_CONFIG_DIR", "");
     vi.stubEnv("VITEST", "true");
-  });
-
-  afterEach(() => {
-    vi.unstubAllEnvs();
   });
 
   test("AAI_CONFIG_DIR overrides everything", async () => {
@@ -141,11 +137,8 @@ describe("readGlobalConfig / writeGlobalConfig", () => {
 });
 
 describe("ensureApiKey", () => {
-  // Several tests below export ASSEMBLYAI_API_KEY to prove it is ignored, and
-  // `restoreMocks` does not unstub env vars.
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
+  // Several tests below export ASSEMBLYAI_API_KEY to prove it is ignored;
+  // `unstubEnvs` in vitest.shared.ts is what keeps that out of later tests.
 
   test("returns saved key without prompting", async () => {
     const p = await import("@clack/prompts");

@@ -245,7 +245,6 @@ describe("createPgSlugLock", () => {
     expect(warn).toHaveBeenCalled();
     // And the lock is still held, which is exactly why the failure is logged.
     expect(held.has("my-agent")).toBe(true);
-    warn.mockRestore();
   });
 });
 

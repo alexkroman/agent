@@ -2,7 +2,7 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { withTempDir, writeFiles } from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
 
@@ -32,10 +32,6 @@ async function useFakeRoot(dir: string): Promise<void> {
   });
   vi.stubEnv("AAI_TEMPLATES_DIR", rootDir);
 }
-
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
 
 describe("bundled templates", () => {
   // `bundle-templates.mjs` copies templates/ and scaffold/ next to the built

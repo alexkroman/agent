@@ -240,14 +240,8 @@ describe("PipelineTransport", () => {
       // are still connecting. stop() must not resolve until the open settles,
       // and the session that lands after the abort must be closed (not leaked).
       const closeStt = vi.fn(async () => undefined);
-      let resolveOpen!: (s: SttSession) => void;
-      const slowStt: SttOpener = {
-        name: "slow-stt",
-        open: () =>
-          new Promise<SttSession>((res) => {
-            resolveOpen = res;
-          }),
-      };
+      const open = Promise.withResolvers<SttSession>();
+      const slowStt: SttOpener = { name: "slow-stt", open: () => open.promise };
       const { opts } = makeOpts({ stt: slowStt });
       const t = createPipelineTransport(opts);
 
@@ -265,7 +259,7 @@ describe("PipelineTransport", () => {
         on: (() => () => undefined) as SttSession["on"],
         close: closeStt,
       };
-      resolveOpen(landed);
+      open.resolve(landed);
       await stopP;
 
       expect(stopResolved).toBe(true);

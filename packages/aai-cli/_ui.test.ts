@@ -38,8 +38,6 @@ describe("notify (before silenceOutput)", () => {
     expect(spy).toHaveBeenCalledWith("boom");
     // Human mode must not double-report by also writing the raw line.
     expect(stderr).not.toHaveBeenCalled();
-    spy.mockRestore();
-    stderr.mockRestore();
   });
 });
 
@@ -69,7 +67,6 @@ describe("notify (after silenceOutput)", () => {
     const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
     notify("error", "Restart failed: boom");
     expect(stderr).toHaveBeenCalledWith("Restart failed: boom\n");
-    stderr.mockRestore();
   });
 
   test("reports every level, so a rebuild notice is not lost either", () => {
@@ -78,6 +75,5 @@ describe("notify (after silenceOutput)", () => {
       notify(level, `msg-${level}`);
       expect(stderr).toHaveBeenCalledWith(`msg-${level}\n`);
     }
-    stderr.mockRestore();
   });
 });

@@ -349,7 +349,6 @@ describe("createHarnessImageResolver", () => {
     // Cached by code: the second call re-reads no package.json, so a spawn
     // never pays SHA-256 over the ~13 MB bundle plus a handful of reads.
     expect(spy.mock.calls).toHaveLength(0);
-    spy.mockRestore();
   });
 });
 

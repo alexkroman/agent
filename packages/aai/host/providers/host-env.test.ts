@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { requireApiKey } from "./_utils.ts";
 import { PROVIDER_CREDENTIAL_ENVS, withHostCredentialFallback } from "./host-env.ts";
 import { resolveApiKey } from "./resolve.ts";
@@ -19,12 +19,8 @@ describe("resolveApiKey", () => {
   // tenant that supplied no credential of its own.
   test("does not fall back to the host process environment", () => {
     const key = "AAI_TEST_FALLBACK_KEY";
-    process.env[key] = "platform-secret";
-    try {
-      expect(resolveApiKey(key, {})).toBe("");
-    } finally {
-      delete process.env[key];
-    }
+    vi.stubEnv(key, "platform-secret");
+    expect(resolveApiKey(key, {})).toBe("");
   });
 });
 
@@ -40,13 +36,9 @@ describe("requireApiKey", () => {
 
   test("does not fall back to the host process environment", () => {
     const key = "AAI_TEST_REQUIRE_KEY";
-    process.env[key] = "platform-secret";
-    try {
-      expect(() => requireApiKey("", key, "Test provider", fail)).toThrow(/missing API key/);
-      expect(() => requireApiKey(undefined, key, "Test provider", fail)).toThrow(/missing API key/);
-    } finally {
-      delete process.env[key];
-    }
+    vi.stubEnv(key, "platform-secret");
+    expect(() => requireApiKey("", key, "Test provider", fail)).toThrow(/missing API key/);
+    expect(() => requireApiKey(undefined, key, "Test provider", fail)).toThrow(/missing API key/);
   });
 
   test("names the env var to set", () => {

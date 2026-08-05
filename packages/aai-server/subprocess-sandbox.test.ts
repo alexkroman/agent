@@ -35,15 +35,12 @@ function makeFakeProc(): FakeProc {
         c.close();
       },
     });
-  let resolveWait!: (code: number) => void;
-  const waitPromise = new Promise<number>((resolve) => {
-    resolveWait = resolve;
-  });
+  const wait = Promise.withResolvers<number>();
   const kill = vi.fn();
   return {
-    proc: { stdout: emptyStream(), stderr: emptyStream(), wait: () => waitPromise, kill },
+    proc: { stdout: emptyStream(), stderr: emptyStream(), wait: () => wait.promise, kill },
     kill,
-    exit: (code) => resolveWait(code),
+    exit: (code) => wait.resolve(code),
   };
 }
 
@@ -101,18 +98,14 @@ describe("buildHarnessSpawn", () => {
     vi.stubEnv("SUPABASE_DB_URL", "postgres://platform-secret");
     vi.stubEnv("MODAL_TOKEN_SECRET", "modal-secret");
     vi.stubEnv("ASSEMBLYAI_API_KEY", "assembly-secret");
-    try {
-      const { env } = buildHarnessSpawn(BASE_PARAMS);
-      expect(Object.keys(env).toSorted()).toEqual([
-        "AAI_GUEST_HOST",
-        "AAI_GUEST_PORT",
-        "AAI_GUEST_TOKEN",
-        "PATH",
-      ]);
-      expect(Object.values(env).join(" ")).not.toMatch(/secret/);
-    } finally {
-      vi.unstubAllEnvs();
-    }
+    const { env } = buildHarnessSpawn(BASE_PARAMS);
+    expect(Object.keys(env).toSorted()).toEqual([
+      "AAI_GUEST_HOST",
+      "AAI_GUEST_PORT",
+      "AAI_GUEST_TOKEN",
+      "PATH",
+    ]);
+    expect(Object.values(env).join(" ")).not.toMatch(/secret/);
   });
 
   it("does not run the guest in the server's working directory", () => {
@@ -186,17 +179,13 @@ describe("spawnSubprocessWarm", () => {
 
   it("honors SANDBOX_MEMORY_LIMIT_MB", async () => {
     vi.stubEnv("SANDBOX_MEMORY_LIMIT_MB", "256");
-    try {
-      const fake = makeFakeProc();
-      const ctx = makeCtx(fake);
-      const { dial } = makeFakeDial(createFakeGuestSocket());
-      const harnessPath = await makeHarnessFile();
-      const warm = await spawnSubprocessWarm({ harnessPath }, ctx, dial);
-      expect(ctx.runs[0]).toMatchObject({ memoryLimitMiB: 256 });
-      await warm.cleanup();
-    } finally {
-      vi.unstubAllEnvs();
-    }
+    const fake = makeFakeProc();
+    const ctx = makeCtx(fake);
+    const { dial } = makeFakeDial(createFakeGuestSocket());
+    const harnessPath = await makeHarnessFile();
+    const warm = await spawnSubprocessWarm({ harnessPath }, ctx, dial);
+    expect(ctx.runs[0]).toMatchObject({ memoryLimitMiB: 256 });
+    await warm.cleanup();
   });
 
   it("kills the harness when the dial fails, and wraps the error", async () => {

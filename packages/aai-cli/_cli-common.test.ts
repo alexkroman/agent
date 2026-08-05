@@ -161,10 +161,7 @@ describe("runCommand", () => {
   });
 
   afterEach(() => {
-    exitSpy.mockRestore();
-    stdoutSpy.mockRestore();
     vi.clearAllMocks();
-    vi.unstubAllEnvs();
   });
 
   test("human mode: success runs the body without exiting", async () => {

@@ -83,16 +83,13 @@ describe("ElevenLabs Scribe STT adapter", () => {
   });
 
   test("throws stt_auth_failed when API key is missing", async () => {
-    const saved = process.env.ELEVENLABS_API_KEY;
-    delete process.env.ELEVENLABS_API_KEY;
+    vi.stubEnv("ELEVENLABS_API_KEY", undefined);
 
     const opener = openElevenLabs({});
     const controller = new AbortController();
     await expect(
       opener.open({ sampleRate: 16_000, apiKey: "", signal: controller.signal }),
     ).rejects.toMatchObject({ code: "stt_auth_failed" });
-
-    if (saved !== undefined) process.env.ELEVENLABS_API_KEY = saved;
   });
 
   test("partial_transcript fires 'partial' with msg.text", async () => {

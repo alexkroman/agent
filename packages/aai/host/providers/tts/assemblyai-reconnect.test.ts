@@ -3,7 +3,7 @@
 // for file length. The protocol has no discard/cancel frame, so a mid-turn
 // cancel drops the connection and reconnects; see the adapter's module doc.
 
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { TTS_RECONNECT_TIMEOUT_MS } from "../../../sdk/constants.ts";
 import type { TtsError } from "../../../sdk/providers.ts";
 import { FakeWebSocket, pcmBase64 } from "./_assemblyai-fake-ws-test-utils.ts";
@@ -18,10 +18,6 @@ vi.mock("ws", async () => {
 
 beforeEach(() => {
   FakeWebSocket.reset();
-});
-
-afterEach(() => {
-  vi.restoreAllMocks();
 });
 
 describe("AssemblyAI TTS cancel() reconnect", () => {

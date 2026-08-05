@@ -174,8 +174,6 @@ describe("assemblyAIStt STT adapter — raw turn trace (AAI_DEBUG)", () => {
     );
 
     await session.close();
-    vi.unstubAllEnvs();
-    debugSpy.mockRestore();
   });
 
   test("traces empty-transcript turns, which are otherwise dropped silently", async () => {
@@ -199,8 +197,6 @@ describe("assemblyAIStt STT adapter — raw turn trace (AAI_DEBUG)", () => {
     );
 
     await session.close();
-    vi.unstubAllEnvs();
-    debugSpy.mockRestore();
   });
 });
 
