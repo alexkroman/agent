@@ -929,8 +929,10 @@ Never hardcode secrets in agent code.
   `ctx.env`.
 - **Production:** `npx @alexkroman1/aai-cli secret put NAME`
 - **Access:** `ctx.env.MY_KEY` in tool execute functions.
-- **AssemblyAI key:** CLI prompts on first use, stores globally. No `.env`
-  entry needed. For CI, set `ASSEMBLYAI_API_KEY` env var.
+- **AssemblyAI key:** `npx @alexkroman1/aai-cli login` links your account and
+  stores the key globally — the only way the CLI authenticates. No `.env`
+  entry needed. For CI, point `AAI_CONFIG_DIR` at a config dir holding a
+  logged-in key (an exported `ASSEMBLYAI_API_KEY` does not authenticate).
 
 ## Voice rules for systemPrompt
 

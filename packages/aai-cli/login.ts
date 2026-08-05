@@ -151,7 +151,7 @@ function requireTty(): void {
     throw new CliError(
       "login_interactive",
       "`aai login` is interactive and needs a TTY.",
-      "Non-interactive setups can set the ASSEMBLYAI_API_KEY environment variable instead.",
+      "Log in on a machine with a terminal, then point AAI_CONFIG_DIR at that config dir — logging in is the only way to authenticate.",
     );
   }
 }
@@ -208,7 +208,7 @@ export async function executeLogin(
     throw new CliError(
       "login_unavailable",
       "This server has no browser login configured, so there is no account to link.",
-      "Set the ASSEMBLYAI_API_KEY environment variable instead — it's the only other way to authenticate.",
+      "Point `--server` at a platform with browser login configured — linking an account there is the only way to authenticate.",
     );
   }
 

@@ -3174,13 +3174,30 @@ copy missing from the command users actually run.
 
 The API key itself is stored 0600 in the global `config.json`
 (`AAI_CONFIG_DIR` overrides the config dir location).
-**`ensureApiKey` has exactly two sources: the key `aai login` saved, then
-`ASSEMBLYAI_API_KEY` for non-interactive callers.** There is no "paste a key"
-prompt — it produced a CLI that could push and publish while linked to no
-account the user could see in the studio, and it made `aai login` optional in
-practice. It was also the riskier path: a hidden password prompt reads stdin,
-so a piped invocation could have its input eaten and persisted as the API key.
-Unauthenticated commands fail with `not_logged_in` pointing at `aai login`.
+**`ensureApiKey` has exactly ONE source: the key `aai login` saved.** Neither a
+"paste a key" prompt nor an `ASSEMBLYAI_API_KEY` env var authenticates the CLI.
+Both produced the same thing — a CLI that could push, publish, and read/write
+another account's secrets while linked to no account the user could see in the
+studio, and an `aai login` that was optional in practice. The env var was the
+worse of the two: it applies to every invocation in a shell, it PERSISTED
+itself into the global config on first use (so the CLI stayed authenticated as
+that key long after the export was gone), and it collides with what the same
+name means in a project `.env`, where it is a *provider* credential for the dev
+server rather than a platform identity. The prompt was separately the riskier
+code path: a hidden password prompt reads stdin, so a piped invocation could
+have its input eaten and persisted as the API key. Unauthenticated commands
+fail with `not_logged_in` pointing at `aai login`; non-interactive callers (CI,
+scripts, the eval harnesses) point `AAI_CONFIG_DIR` at a config dir holding a
+logged-in key, which is what `aaiEnv()` seeds for the e2e suite's spawned CLIs.
+
+**`aai dev` is the one command a shell-exported key still reaches, and only as
+a provider credential.** `resolveAgentEnv` (`_dev-server.ts`) falls back to the
+login key only when NEITHER `.env` nor the shell carries one — otherwise
+exporting the key the usual way would hard-fail with `not_logged_in`. The
+exported value deliberately never enters `ctx.env`: it reaches the resolvers
+through `withHostCredentialFallback` (the same documented ergonomic every other
+provider key gets), and `agentEnvWarnings` flags it as shell-only so the "works
+here, dead after deploy" case stays visible.
 
 **Tests must never resolve the real config dir.** `getConfigDir()` returns a
 per-process temp dir whenever `VITEST` is set (unless `AAI_CONFIG_DIR` says

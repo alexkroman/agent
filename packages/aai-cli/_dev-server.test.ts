@@ -102,6 +102,13 @@ beforeEach(() => {
   mockValidateAgentExport.mockImplementation(() => undefined);
 });
 
+// `restoreMocks` does not unstub env vars, and several tests here stub ones the
+// dev server reads (ASSEMBLYAI_API_KEY, AAI_DEV_HOST, AAI_ALLOW_HOST) — one
+// leaking forward would silently change what a later test exercises.
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 describe("startDevServer", () => {
@@ -189,7 +196,7 @@ describe("startDevServer", () => {
     });
   });
 
-  test("falls back to ensureApiKey when ASSEMBLYAI_API_KEY is missing", async () => {
+  test("falls back to the logged-in key when .env declares none", async () => {
     await withTempDir(async (dir) => {
       await writeAgentTs(dir);
 
@@ -211,7 +218,34 @@ describe("startDevServer", () => {
     });
   });
 
-  test("does not call ensureApiKey when ASSEMBLYAI_API_KEY is present", async () => {
+  /**
+   * A shell-exported key no longer authenticates the CLI (`ensureApiKey`
+   * reads the login key alone), but it is still a provider credential the dev
+   * server honors through `withHostCredentialFallback`. So `aai dev` must not
+   * demand a login for a developer who exports it the usual way — and the key
+   * must stay out of `ctx.env`, where it would break dev/prod parity.
+   */
+  test("does not require a login when the key is exported in the shell", async () => {
+    await withTempDir(async (dir) => {
+      await writeAgentTs(dir);
+      vi.stubEnv("ASSEMBLYAI_API_KEY", "shell-key");
+      mockResolveServerEnv.mockResolvedValue({ OTHER_VAR: "value" });
+      mockEnsureApiKey.mockClear();
+
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+
+      expect(mockEnsureApiKey).not.toHaveBeenCalled();
+      expect(mockCreateRuntime).toHaveBeenCalledWith(
+        expect.objectContaining({
+          env: expect.not.objectContaining({ ASSEMBLYAI_API_KEY: expect.anything() }),
+        }),
+      );
+
+      await cleanup();
+    });
+  });
+
+  test("does not call ensureApiKey when .env declares ASSEMBLYAI_API_KEY", async () => {
     await withTempDir(async (dir) => {
       await writeAgentTs(dir);
       mockResolveServerEnv.mockResolvedValue({ ASSEMBLYAI_API_KEY: "already-set" });
@@ -340,10 +374,6 @@ describe("file watcher filtering", () => {
 });
 
 describe("dev server bind host", () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
   test("binds loopback by default (no host argument)", async () => {
     await withTempDir(async (dir) => {
       await writeAgentTs(dir);
@@ -377,10 +407,6 @@ describe("dev server bind host", () => {
 });
 
 describe("dev server host mode gate", () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
   // resolveServerEnv only surfaces keys declared in `.env`, so without an
   // explicit pass-through the shell-exported gate would never reach
   // isHostAllowed and host mode would be unreachable in `aai dev`.

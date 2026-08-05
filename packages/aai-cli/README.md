@@ -52,8 +52,12 @@ required credentials, and print the agent's public URL.
   outside one it runs `init`.
 - `--server <url>` targets a self-hosted platform; the origin is remembered
   in your user config after explicit approval.
+- `aai login` is the only way to authenticate — it links an account already
+  signed in to the studio. An exported `ASSEMBLYAI_API_KEY` does not log you
+  in; in a project that variable is a provider credential for `aai dev`.
 - The API key is stored `0600` in your user config dir (`AAI_CONFIG_DIR`
-  overrides the location).
+  overrides the location). Non-interactive callers point `AAI_CONFIG_DIR` at a
+  config dir holding a key from an interactive `aai login`.
 
 ## Documentation
 

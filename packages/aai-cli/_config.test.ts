@@ -141,6 +141,12 @@ describe("readGlobalConfig / writeGlobalConfig", () => {
 });
 
 describe("ensureApiKey", () => {
+  // Several tests below export ASSEMBLYAI_API_KEY to prove it is ignored, and
+  // `restoreMocks` does not unstub env vars.
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   test("returns saved key without prompting", async () => {
     const p = await import("@clack/prompts");
     await withTempDir(async (dir) => {
@@ -170,9 +176,6 @@ describe("ensureApiKey", () => {
   }
 
   test("directs an unauthenticated user to `aai login` instead of prompting", async () => {
-    // Isolate from the host shell: an exported ASSEMBLYAI_API_KEY would
-    // short-circuit this and pass on developer machines regardless.
-    vi.stubEnv("ASSEMBLYAI_API_KEY", "");
     const p = await import("@clack/prompts");
 
     // Pasting a raw key is no longer an authentication path. `aai login`
@@ -192,7 +195,6 @@ describe("ensureApiKey", () => {
   });
 
   test("refuses the same way with no TTY — the failure is not about prompting", async () => {
-    vi.stubEnv("ASSEMBLYAI_API_KEY", "");
     const p = await import("@clack/prompts");
 
     await withTempDir(async (dir) => {
@@ -205,32 +207,46 @@ describe("ensureApiKey", () => {
     });
   });
 
-  test("reads from ASSEMBLYAI_API_KEY env var and saves to config", async () => {
-    const p = await import("@clack/prompts");
+  /**
+   * `ASSEMBLYAI_API_KEY` is NOT an authentication path. It used to be, and it
+   * left the CLI authenticated as whatever key happened to be exported —
+   * belonging to no account visible in the studio — and then PERSISTED that
+   * key into the global config, so the CLI stayed logged in as it long after
+   * the export was gone. In a project the same variable means a *provider*
+   * credential in `.env` (see `aai dev`), which is why an export must not
+   * quietly become a platform identity.
+   */
+  test("ignores an exported ASSEMBLYAI_API_KEY", async () => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "env-var-key");
+
+    await withTempDir(async (dir) => {
+      const { ensureApiKey } = await import("./_config.ts");
+      await expect(ensureApiKey(dir)).rejects.toMatchObject({
+        code: "not_logged_in",
+        hint: expect.stringContaining("aai login"),
+      });
+    });
+  });
+
+  test("does not write the exported key into the global config", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "env-var-key");
 
     await withTempDir(async (dir) => {
       const { readGlobalConfig, ensureApiKey } = await import("./_config.ts");
-      const key = await ensureApiKey(dir);
-      expect(key).toBe("env-var-key");
-      expect(p.password).not.toHaveBeenCalled();
-      const saved = await readGlobalConfig(dir);
-      expect(saved.apiKey).toBe("env-var-key");
+      await expect(ensureApiKey(dir)).rejects.toThrow();
+      // A refusal must leave no credential behind: a persisted env key would
+      // authenticate every LATER invocation, export or not.
+      expect((await readGlobalConfig(dir)).apiKey).toBeUndefined();
     });
-    vi.mocked(p.password).mockReset();
   });
 
-  test("still returns the env key (with a warning) when the config write fails", async () => {
+  test("the saved login key wins even with a different key exported", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "env-var-key");
+
     await withTempDir(async (dir) => {
-      const { ensureApiKey } = await import("./_config.ts");
-      const fsp = (await import("node:fs/promises")).default;
-      const writeSpy = vi
-        .spyOn(fsp, "writeFile")
-        .mockRejectedValueOnce(Object.assign(new Error("EACCES: permission denied"), {}));
-      // Saving is best-effort — the key in hand still works for this run.
-      await expect(ensureApiKey(dir)).resolves.toBe("env-var-key");
-      expect(writeSpy).toHaveBeenCalled();
+      const { writeGlobalConfig, ensureApiKey } = await import("./_config.ts");
+      await writeGlobalConfig(dir, { apiKey: "logged-in-key" });
+      await expect(ensureApiKey(dir)).resolves.toBe("logged-in-key");
     });
   });
 });
