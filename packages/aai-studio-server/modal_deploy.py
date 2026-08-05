@@ -51,15 +51,18 @@ STUDIO_MAX_INPUTS = 40
 # request. And — contrary to what this comment used to claim — the studio DOES
 # serve long-lived responses: `GET /studio/events` and
 # `GET /studio/projects/<x>/events` are SSE streams a browser holds open for as
-# long as a project is on screen. (Only WebSockets were ruled out; chat streams
-# browser→guest directly, but these do not.) An SSE stream reaped at this
-# ceiling is cut mid-body, which surfaces as the ASGI proxy's
-# `ClientPayloadError: ... TransferEncodingError`.
+# long as a project is on screen, which is hours. (Only WebSockets were ruled
+# out; chat streams browser→guest directly, but these do not.) They did not
+# exist when this value was chosen. A stream reaped at this ceiling is cut
+# mid-body, and the client loses its subscription until its own backoff
+# resubscribes.
 #
-# The streams are bounded server-side instead, well under this value, and end
-# themselves gracefully so the client resubscribes — see SSE_MAX_STREAM_MS in
-# studio-sse.ts. This must stay comfortably ABOVE that cap; lowering it below
-# would put the truncation back.
+# This ONLY binds in split mode. Production runs `AAI_SERVICE=combined` (no
+# `STUDIO_UPSTREAM_URL` in the `aai-server` Secret), so these routes are served
+# by the agent app under its 4h `FUNCTION_TIMEOUT_SECS` and this app takes no
+# runtime traffic at all — which is why the ceiling has never actually been
+# reached. Raise it toward the agent app's 4h before deploying split, or bound
+# the streams server-side so they end themselves first.
 STUDIO_FUNCTION_TIMEOUT_SECS = 30 * 60
 
 # ── Guest-sandbox resources ──────────────────────────────────────────────────

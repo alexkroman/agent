@@ -1,18 +1,21 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The event streams' lifecycle: they must end THEMSELVES before any
- * intermediary cuts them mid-body.
+ * The event streams' lifecycle. Three properties, each of which fails
+ * invisibly: an ended stream must stop writing (a heartbeat into a closed
+ * response throws every 25s forever), a burst must deliver in order (a turn's
+ * file sync then the preview stamp, where the slower producer would otherwise
+ * land last and push a stale snapshot), and a vanished row must end the stream
+ * rather than hold the connection.
  *
- * On Modal a long-lived response is one input, so the studio app's function
- * timeout bounds a stream's whole lifetime — and a stream reaped there is
- * truncated, which the ASGI proxy reports as `ClientPayloadError: ...
- * TransferEncodingError`. See SSE_MAX_STREAM_MS.
+ * The wire-level half — that an ended stream terminates its chunked body
+ * instead of being cut mid-frame — lives in aai-server/live-streams.test.ts,
+ * which reads raw socket bytes the way Modal's ASGI proxy parser does.
  */
 
-import { resetLiveStreams } from "aai-server/live-streams";
+import { endLiveStreams, resetLiveStreams } from "aai-server/live-streams";
 import type { SSEStreamingApi } from "hono/streaming";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createSsePusher, SSE_MAX_STREAM_MS } from "./studio-sse.ts";
+import { createSsePusher } from "./studio-sse.ts";
 
 /**
  * Hono's SSE handle, reduced to what the pusher touches. `writeSSE` records
@@ -47,24 +50,22 @@ afterEach(() => {
 });
 
 describe("createSsePusher", () => {
-  it("ends the stream itself once it reaches the lifetime cap", async () => {
-    const { stream } = makeStream();
+  it("holds open indefinitely while the client is there", async () => {
+    const { stream, frames } = makeStream();
     const sse = createSsePusher(stream);
     let cleaned = false;
     const held = sse.wait(() => {
       cleaned = true;
     });
 
-    // Still open well past the heartbeat interval — the cap is not a timeout on
-    // an idle stream, it is a ceiling on a healthy one.
-    await vi.advanceTimersByTimeAsync(SSE_MAX_STREAM_MS - 1000);
+    // A subscription lives as long as the project is on screen — hours. Only a
+    // disconnect, a null push, or shutdown ends one; nothing here expires it.
+    await vi.advanceTimersByTimeAsync(2 * 60 * 60_000);
     expect(cleaned).toBe(false);
+    expect(frames.filter((f) => f.event === "ping").length).toBeGreaterThan(0);
 
-    await vi.advanceTimersByTimeAsync(1000);
+    endLiveStreams();
     await held;
-    // Resolving `wait` is what returns the route handler, which is what lets
-    // hono terminate the chunked body — the client then resubscribes and its
-    // first frame is current state again.
     expect(cleaned).toBe(true);
   });
 
@@ -79,9 +80,9 @@ describe("createSsePusher", () => {
 
     abort();
     await held;
-    // Both timers are cleared on the way out; a fired lifetime timer after the
-    // response is gone would be a write to a closed stream every 25s.
-    await vi.advanceTimersByTimeAsync(SSE_MAX_STREAM_MS * 2);
+    // The interval is cleared on the way out; left armed, it would write into a
+    // closed response every 25s for the life of the process.
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
     expect(frames.filter((f) => f.event === "ping").length).toBe(beats);
   });
 
@@ -120,7 +121,7 @@ describe("createSsePusher", () => {
       "newer",
     ]);
 
-    await vi.advanceTimersByTimeAsync(SSE_MAX_STREAM_MS);
+    endLiveStreams();
     await held;
   });
 

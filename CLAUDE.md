@@ -2388,25 +2388,38 @@ service's control work is light — and one container served both badly.
   under the same cap, so it stays pinned rather than inherited. The sandbox
   layer hit the same trap first and documents it in `modal-sandbox-env.ts`.
 
-  **A stream reaped at that ceiling is cut MID-BODY — the same
-  `TransferEncodingError`, with no shutdown anywhere near it.** The studio
-  app's 30 min was reasoned as headroom for a cold-sandbox Publish, on the
+  **`STUDIO_FUNCTION_TIMEOUT_SECS` (30 min) is a latent split-mode hazard, not
+  a live one.** It was reasoned as headroom for a cold-sandbox Publish, on the
   premise that "nothing here is long-lived by design" — true of WebSockets
   (chat streams browser→guest directly) and false of the event streams a
-  browser holds open for as long as a project is on screen, which did not
-  exist when the value was set. Both `GET /studio/events` and
-  `GET /studio/projects/:project/events` are open for hours.
+  browser holds open for as long as a project is on screen, which did not exist
+  when the value was set. Both `GET /studio/events` and
+  `GET /studio/projects/:project/events` are open for hours. It does not bite
+  today only because production runs `combined`, so those routes are served by
+  the agent app under its 4h. Deploying split without raising it would start
+  reaping them.
 
-  The fix is that the streams bound THEMSELVES, well under the smallest
-  per-input timeout in the path (`SSE_MAX_STREAM_MS` = 15 min in
-  `studio-sse.ts`), ending gracefully so the client resubscribes — rather than
-  raising the ceiling, which only moves the cliff. It costs one 3s reconnect
-  per stream per cap period and nothing is missed across the gap, because the
-  first frame of every stream is the current state. Recycling at the origin
-  covers both hops: the agent service's relay sees its upstream end and closes
-  its own body, so neither app's input ever approaches its timeout. Raising the
-  cap means raising `STUDIO_FUNCTION_TIMEOUT_SECS` first — the invariant is
-  documented at both ends.
+  **Most `TransferEncodingError`s in the log are NOT truncation we caused.**
+  Measured over 6h of production `aai-server-web` logs (2026-08-05): 38 SSE
+  stream completions, 40 of these errors, pairing 1:1 by timestamp — at every
+  duration from 25s to 1375s, and continuing across a redeploy that shipped the
+  registry above. Modal's `_proxy_http_request.send_response()` is still
+  iterating the upstream body when the client goes away, and Modal never awaits
+  that task ("Task exception was never retrieved"), so ONE lands in the log per
+  abandoned stream. The browser is already gone when it fires. Two corollaries
+  before treating a spike as a regression: **join it to Modal's request log
+  first** — the `duration` on the completion line at the same second is the
+  stream's whole lifetime, which is what separates a client abort (any
+  duration, all of them multiples of `SSE_HEARTBEAT_MS`, because nothing in the
+  chain notices a departed client until data flows) from a real deadline (a
+  tight cluster at one value); and a rise in the count usually means a client is
+  churning subscriptions, not that a stream was cut.
+
+  **Capping the streams' own lifetime was considered and rejected.** It cannot
+  reduce the above — a tab close still aborts whatever stream is open — while
+  `projectPayload` carries `files: workspace.files`, so every forced recycle
+  re-sends the whole workspace file map to every open tab. If split mode ever
+  ships, raise the ceiling rather than adding a cap under it.
 
 ### Modal sandbox notes
 
