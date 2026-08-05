@@ -7,6 +7,8 @@ this is its own package. Repo-wide conventions live in the root
 [CLAUDE.md](../../CLAUDE.md); the host side of every contract below is in
 [aai-server](../aai-server/CLAUDE.md).
 
+## Key files
+
 - `packages/aai-guest/` — its own private workspace package: the Node guest
   entry point (runs inside a Modal Sandbox) that runs the COMPLETE agent.
   ONE BINARY, TWO MODES, selected by the spawner via `AAI_GUEST_MODE`
@@ -49,13 +51,15 @@ this is its own package. Repo-wide conventions live in the root
   builds through the aai CLI bundlers), `studio-publish.ts` (Publish =
   the literal `aai deploy` CLI, run in-sandbox), `limits.ts` (import-free constants
   mirroring the SDK's). The harness embeds NO agent runtime — every worker
-  bundle ships its own (`__aaiCreateRuntime`, see "User-shipped runtime"
-  below) — and tsdown bundles the harness (server shell + studio coding
-  agent) into the single `dist/harness.mjs` the server resolves via
+  bundle ships its own (`__aaiCreateRuntime`, see "User-shipped runtime" in
+  the root [CLAUDE.md](../../CLAUDE.md)) — and tsdown bundles the harness
+  (server shell + studio coding agent) into the single `dist/harness.mjs`
+  the server resolves via
   `aai-guest/harness` and bakes into the snapshot image, keeping the build
   toolchain (`@alexkroman1/aai-cli`, the client-build plugins) EXTERNAL:
   it resolves at runtime from the node_modules next to the harness
-### Agent guests are servers (no control channel)
+
+## Agent guests are servers (no control channel)
 
 DEPLOYED AGENTS spawn as servers (`spawnAgentServer` in sandbox-vm.ts;
 guest side in `aai-guest/harness-agent-mode.ts`). The whole
@@ -93,7 +97,8 @@ pin and versioned by `GUEST_CONTRACT_VERSION` (additive changes only):
   enforces itself), both gated by the per-sandbox bearer
   from the exec env. Nothing else — no WebSocket, no RPC, no host
   connection. The guest's public `/client-config` doubles as the broker's
-  name/greeting source (proxied — see "Pre-connection client config").
+  name/greeting source (proxied — see "Pre-connection
+  client config" in [aai](../aai/CLAUDE.md)).
 - **Lifecycle is guest-owned — the host runs NO idle machinery**: the agent
   guest self-exits after `AGENT_IDLE_EXIT_MS` (5 min; override by setting
   `AAI_GUEST_IDLE_EXIT_MS` on the SERVER, which `agentBootEnv` forwards into

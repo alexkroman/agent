@@ -176,6 +176,27 @@ names `aai`, `aai-ui`, `aai-cli` are taken on npm by other publishers —
 publishing under those names returns 404. The `scripts/check-publish-names.mjs`
 script enforces this at CI time.
 
+### Per-package guides
+
+**This file holds only what is true repo-wide.** Everything package-specific —
+key files, invariants, and the failure each one came from — lives beside the
+code, and loads when you work in that directory:
+
+| Guide | Covers |
+| --- | --- |
+| [packages/aai](packages/aai/CLAUDE.md) | SDK structure, session modes, providers, voices, `ctx.db`, `ctx.generate`, guest network access, the defaults table, self-hosted server defaults |
+| [packages/aai-ui](packages/aai-ui/CLAUDE.md) | Browser client key files, the client audio path (jitter buffer, pacing, capture) |
+| [packages/aai-cli](packages/aai-cli/CLAUDE.md) | CLI key files, credential destinations |
+| [packages/aai-guest](packages/aai-guest/CLAUDE.md) | The harness: its modes, and the agent-guests-are-servers contract |
+| [packages/aai-server](packages/aai-server/CLAUDE.md) | Platform sandbox, Modal notes, split services, stateless server, sandbox isolation + security-boundary tests |
+| [packages/aai-studio-server](packages/aai-studio-server/CLAUDE.md) | The browser studio end to end, one studio sandbox per project |
+| [packages/aai-studio-client](packages/aai-studio-client/CLAUDE.md) | The studio front-end's panes |
+
+Cross-file references below name the guide, e.g. *see "Modal sandbox notes"
+in [aai-server](packages/aai-server/CLAUDE.md)*. When a section moves, its
+inbound references have to move with it — that is the cost of the split, and
+the reason to keep sections whole rather than splitting one across files.
+
 ### Package exports
 
 #### `aai` (shared core SDK)
@@ -248,9 +269,8 @@ replaced the workspace with a truncated tree.
 null). Publishing deploys under the project's own name, so such a project
 would claim a slug the orphan-preview sweep reaps hourly — taking the agent,
 its app-database schema, and its secrets with it. See the `-preview` note in
-the Modal sandbox section for the matching deploy-boundary rule.
-
-### Key files
+"Modal sandbox notes" ([aai-server](packages/aai-server/CLAUDE.md)) for the
+matching deploy-boundary rule.
 
 ### Dev/prod parity
 
@@ -302,7 +322,7 @@ version it was built and tested against, the same one `aai dev` ran.
 | `run_code` | fails in dev, works in prod | The host-side guard refuses rather than evaluating in-process. Fail-closed, so harmless. |
 | `withHostCredentialFallback` (`providers/host-env.ts`) | works in dev, fails in prod | Deliberate ergonomic: an exported `ANTHROPIC_API_KEY` should work for `aai dev`. Two guards keep the cliff visible: the dev server warns when a required key resolved from the shell only (`agentEnvWarnings` in `_dev-server.ts` — it won't survive `aai deploy`, which uploads `.env`), and the deploy core preflights required credentials (below), so the failure surfaces at deploy time, not as an auth error at first session. |
 | `ctx.db` backing (BYO `DATABASE_URL` in dev vs platform-provisioned schema+role) | prod is stricter | Dev connects wherever the developer points it; prod pins search_path + statement_timeout on a per-app role. |
-| Platform sandboxes need Modal credentials in production only | prod is stricter | `aai dev` runs tools in-process; the platform spawns real Modal sandboxes in production (`MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET`), and an isolation-free child process in local dev — see "Modal sandbox notes". |
+| Platform sandboxes need Modal credentials in production only | prod is stricter | `aai dev` runs tools in-process; the platform spawns real Modal sandboxes in production (`MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET`), and an isolation-free child process in local dev — see "Modal sandbox notes" in [aai-server](packages/aai-server/CLAUDE.md). |
 
 **Deploy-time credential preflight** (`missingCredentials` in
 `aai-server/deploy.ts`). The classic dev/prod credential failure — an agent
@@ -869,7 +889,19 @@ to allow that one deliberate version split.
 ### Updating CLAUDE.md
 
 When you make changes that affect architecture, security model, conventions,
-or gotchas, update this file.
+or gotchas, document them — **in the guide that owns the code you changed**
+(see "Per-package guides"), not here. This file is for what holds repo-wide;
+it is loaded into every session, so anything package-specific costs context
+in every session that never touches that package.
+
+Two rules keep the split from rotting:
+
+- **Whole sections move, never halves.** A section split across two files
+  grows two divergent copies of the same rule — the failure mode the
+  canonical-config-schema section describes, applied to prose.
+- **A reference across files names the file.** *see "Modal sandbox notes" in
+  [aai-server](packages/aai-server/CLAUDE.md)* — a bare "see X below" is
+  wrong the moment X lives elsewhere, and nothing checks it.
 
 ## PR workflow
 
@@ -912,6 +944,27 @@ catches the most common issues that historically required follow-up commits:
    come out with it.
 
 ## Security architecture
+
+The threat model and its enforcement live with the code that enforces them:
+
+- **Sandbox isolation, platform sandbox, credential separation, the SSRF
+  guard, and the boundary tests** — [aai-server](packages/aai-server/CLAUDE.md).
+- **The agent-guest contract** (boot, hash verification, the token-gated
+  `/manage/*` surface, guest-owned idleness) —
+  [aai-guest](packages/aai-guest/CLAUDE.md).
+- **`run_code`, provider credential resolution, and the branded env records
+  that keep host credentials out of `ctx.env`** — [aai](packages/aai/CLAUDE.md).
+- **Where the CLI is allowed to send an API key** —
+  [aai-cli](packages/aai-cli/CLAUDE.md).
+
+Two rules are repo-wide and belong here:
+
+- **There is no platform-owned AssemblyAI key.** Every key on the platform is
+  a user's own; anything that would let an agent borrow a platform credential
+  is a bug, not a convenience.
+- **The container is the boundary.** No in-process sandbox (`node:vm`, an
+  import allowlist, an egress policy) is treated as one — each was tried and
+  removed. Don't reintroduce one and reason as though it holds.
 
 ### Known limitations
 

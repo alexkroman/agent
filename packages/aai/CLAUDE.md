@@ -5,7 +5,7 @@ other package builds on. Repo-wide commands, conventions, and the package map
 live in the root [CLAUDE.md](../../CLAUDE.md); the platform that runs these
 agents is documented in [aai-server](../aai-server/CLAUDE.md).
 
-### SDK structure
+## SDK structure
 
 The SDK is organized into two directories with a **hard dependency
 boundary** — this split is critical for sandbox security:
@@ -40,7 +40,7 @@ Sandbox — the same runtime as the host and `aai dev` — loading the agent's
 ESM bundle directly; the Modal sandbox (not a language runtime permission
 model) is the security boundary.
 
-### `ctx.generate` (one-shot LLM generation)
+## `ctx.generate` (one-shot LLM generation)
 
 Tool `execute` code gets one-shot LLM generation via `ctx.generate` — a
 **runtime capability like `ctx.db`**. One implementation,
@@ -64,7 +64,7 @@ marker, never the `~standard` interface (`isConvertibleSchema`).
 removed unused; multi-step orchestration is composed directly over
 `ctx.generate`.)
 
-### Session modes
+## Session modes
 
 Each agent runs in one of two session modes, selected by `toAgentConfig()`
 (run in the generated bundle entry) based on which top-level fields are
@@ -298,7 +298,7 @@ Adding a provider means: descriptor factory there, an opener in
 `host/providers/_utils.ts`), and one registry/switch entry in
 `host/providers/resolve.ts`.
 
-### Voices
+## Voices
 
 **`ASSEMBLYAI_TTS_VOICES` in `sdk/providers/tts/assemblyai.ts` is the list.**
 Read it there; do not restate it here, and do not trust a voice name that
@@ -328,7 +328,7 @@ owns its own voice). An explicit AssemblyAI TTS stage picks it with
 `assemblyAIPipeline({ voice })`). S2S mode's voice rides on the `s2s`
 descriptor — `voice` is a compile error there.
 
-### Storage (`ctx.db`)
+## Storage (`ctx.db`)
 
 There is no KV store anymore. Persistent state is the opt-in **app
 database**: enabling storage for an app (CLI `aai storage enable` — the
@@ -356,7 +356,7 @@ host-proxied `db/query` RPC is gone: it kept a versioned RPC in the
 harness↔bundle contract to protect a credential that only reaches the
 tenant's own data anyway.
 
-### Guest network access
+## Guest network access
 
 There is **no per-agent egress policy**. `allowedHosts` and its enforcement
 stack (the SDK's `tool-egress`/`guest-fetch-policy` in-process guard, the
@@ -390,7 +390,7 @@ The residual risk in a container is prompt injection steering the model at an
 internal endpoint; accepted, because the sandbox has nothing internal worth
 reaching and an author who wants that can already write it.
 
-### Default values and magic numbers
+## Default values and magic numbers
 
 All numeric constants live in `packages/aai/sdk/constants.ts` (client-audio
 budgets are split into `sdk/client-audio-constants.ts` for file-length reasons
@@ -415,7 +415,7 @@ defaults that affect agent behavior:
 | resume grace | 120,000 (`SESSION_RESUME_GRACE_MS`) | `constants.ts` | How long a disconnected session's per-session tool state (`ctx.state`) survives awaiting a `?sessionId=<id>` resume — the runtime's stateMap sweep (in-guest on the platform, in-process under `aai dev`) waits it out, cancelled when the session resumes. Sized above the browser client's worst-case automatic-reconnect span (~105s); the client reconnects with the sessionId from the `config` frame, so the resumed session finds its state under the same key. |
 | `builtinTools` | `DEFAULT_BUILTIN_TOOLS` (`think`, `remember`, `recall`, `calculate`) | `constants.ts` | Cognitive built-ins on by default: private reasoning scratchpad, session notes, safe calculator. Set `builtinTools` explicitly (including `[]`) to override. `web_search`/`visit_webpage`/`get_page_design`/`fetch_json`/`run_code` remain opt-in. A custom or relayed tool with the same name wins — the built-in is dropped. |
 
-### Self-hosted server defaults (`aai/host/server.ts`)
+## Self-hosted server defaults (`aai/host/server.ts`)
 
 `createServer` has no request authentication of its own — it is the `aai dev`
 backend, not the managed platform. Two defaults exist because of that, and

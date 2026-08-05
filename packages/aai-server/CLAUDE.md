@@ -6,13 +6,14 @@ that imports this one's core; the guest it spawns is
 [aai-guest](../aai-guest/CLAUDE.md). Repo-wide commands and conventions live in
 the root [CLAUDE.md](../../CLAUDE.md).
 
-#### packages/aai-server/
+## Key files
 
 - `orchestrator.ts` — HTTP + WebSocket routing
 - `sandbox.ts` — agent sandbox lifecycle: `sessionUrl()` (the public tunnel
   endpoint the broker hands to clients), `drain(deadlineMs?)` (retirement's
   one request), `shutdown()`. DEPLOYED AGENTS RUN AS SERVERS — the host
-  holds NO channel to them (see "Agent guests are servers" below)
+  holds NO channel to them (see "Agent guests are
+  servers" in [aai-guest](../aai-guest/CLAUDE.md))
 - `sandbox-vm.ts` — `spawnAgentServer` (the agent-server dispatch over the
   two backends), `describeBundle` (deploy-time bundle inspection as a
   ONE-SHOT describe-mode exec — no channel), and the studio-side
@@ -89,7 +90,8 @@ the root [CLAUDE.md](../../CLAUDE.md).
   `deprovisionAppDatabase`, `openAppDb`)
 - `storage-handler.ts` — `GET/POST/DELETE /:slug/storage` (owner-auth'd)
   toggling the app's database
-### Stateless server (aai-server)
+
+## Stateless server (aai-server)
 
 The platform server holds no cross-request durable or coordination state in
 process — any replica can serve any request, and a replica restart loses
@@ -157,7 +159,7 @@ What deliberately stays in-process, and why it doesn't break statelessness:
   mechanisms so local writer fan-out doesn't burn the cross-replica
   retry/lease on itself.
 
-### Split services (aai-server / aai-studio-server)
+## Split services (aai-server / aai-studio-server)
 
 Two packages, one surface each. `aai-server` is the AGENT service plus the
 shared platform core (stores, locks, epochs, sandbox machinery — exported to
@@ -299,7 +301,7 @@ service's control work is light — and one container served both badly.
   under the same cap, so it stays pinned rather than inherited. The sandbox
   layer hit the same trap first and documents it in `modal-sandbox-env.ts`.
 
-### Modal sandbox notes
+## Modal sandbox notes
 
 - **Two backends, selected by `sandbox-backend.ts`.** Guest sandboxes are
   **remote Modal Sandboxes** (`modal-sandbox.ts`) in production and a plain
@@ -465,7 +467,8 @@ service's control work is light — and one container served both badly.
   `aai-guest/limits.ts`; the window also covers the boot gap before the
   first dial). AGENT guests have no host socket, so they own their own
   lifecycle instead: self-exit after `AGENT_IDLE_EXIT_MS` with zero
-  sessions (see "Agent guests are servers"). Either way, once the exec has
+  sessions (see "Agent guests are servers" in
+  [aai-guest](../aai-guest/CLAUDE.md)). Either way, once the exec has
   exited, Modal's `idleTimeoutMs` (`SANDBOX_IDLE_TIMEOUT_SECS`, default
   15 min) terminates the sandbox. These are backstops, not the normal
   path: Modal delivers stop signals to the container's **Python** runtime,
@@ -480,7 +483,7 @@ service's control work is light — and one container served both badly.
   `pnpm --filter aai-server deploy:modal`) — there is no Docker image or
   Fly.io deployment anymore.
 
-### Modal sandbox isolation
+## Modal sandbox isolation
 
 Each agent runs in its own **Modal Sandbox** — a remote, isolated container
 on Modal's infrastructure (`modal-sandbox.ts`). The guest runs a Node
@@ -522,7 +525,7 @@ Key properties:
   state (`ctx.state`, history, the resume grace window) exactly as the
   self-hosted runtime does. The host holds no session state.
 
-### No warm pool — every spawn boots from the snapshot image
+## No warm pool — every spawn boots from the snapshot image
 
 There is NO warm sandbox pool (`sandbox-pool.ts`, `SANDBOX_POOL_SIZE`, the
 `pool` role, and the `setTags` retag plumbing were all deleted). Production
@@ -535,7 +538,7 @@ JS SDK exposes sandbox MEMORY snapshots (today it exposes only
 restore-from-snapshot slots into this single spawn path — do NOT
 reintroduce a host-managed pool to approximate it.
 
-### No horizontal sandbox scaling — one sandbox per slug, FLEET-WIDE
+## No horizontal sandbox scaling — one sandbox per slug, FLEET-WIDE
 
 Per-slug horizontal scaling (`sandbox-scale.ts`: session caps, overflow
 replicas, least-connections routing over guest-reported counts) stays
@@ -579,7 +582,7 @@ the moment a cold broker runs, and that moment already reads the database.
 A change stream would be a second mechanism answering the same question —
 the duplication rule that shaped `watchAgentInvalidation`.
 
-### Platform sandbox (aai-server)
+## Platform sandbox (aai-server)
 
 Agent code runs in **per-agent Modal Sandboxes**. Key files:
 `packages/aai-server/sandbox.ts`, `sandbox-vm.ts`, `modal-sandbox.ts`,
@@ -792,7 +795,7 @@ stored env at sandbox creation time and kept host-side only.
   (`projectBaseFromPrompt`); an unusable base falls back to `human-id`
   words. Clients never generate names — creation always hits the server.
 
-### No host mode on deployed agents
+## No host mode on deployed agents
 
 Host mode (`?host=1` — the caller supplies `systemPrompt`, `greeting`, and
 relayed tool schemas while the session runs on the operator's credentials) is
@@ -807,7 +810,7 @@ pure handshake redirects to the sandbox, and the platform process terminates
 no sessions of any kind. Don't reintroduce an in-process session surface — if
 platform host mode ever returns, run it in the guest on the bundle's runtime.
 
-### Testing security boundaries
+## Testing security boundaries
 
 - `modal-sandbox.test.ts` — Modal spawn flow against an injected fake
   context: sandbox creation, tunnel dial + per-sandbox token, teardown on

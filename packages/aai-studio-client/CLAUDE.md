@@ -5,6 +5,8 @@ Vite + React + Tailwind v4, served by aai-server. It talks to
 code imports in either direction. Repo-wide conventions live in the root
 [CLAUDE.md](../../CLAUDE.md).
 
+## Key files
+
 - `packages/aai-studio-client/` — the studio's React front-end (Vite +
   Tailwind v4 + `useChat` + TanStack Query + CodeMirror), its own private
   workspace package built into its `dist/` by

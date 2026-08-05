@@ -4,7 +4,7 @@ React 19 session, audio, and UI components. Repo-wide commands and conventions
 live in the root [CLAUDE.md](../../CLAUDE.md); the wire protocol and session
 modes it talks to are in [aai](../aai/CLAUDE.md).
 
-#### packages/aai-ui/
+## Key files
 
 - `index.ts` — main exports, React UI component
 - `session-core.ts` — WebSocket session management + reactive snapshot
@@ -22,7 +22,7 @@ modes it talks to are in [aai](../aai/CLAUDE.md).
   message-list, start-screen, sidebar-layout, tool-call-block, button,
   aai-logo, tool-config-context)
 
-### Client audio path (browser ⇄ server)
+## Client audio path (browser ⇄ server)
 
 Both legs carry **raw PCM16 over the session WebSocket** — 384 kbps down at
 24 kHz, 256 kbps up at 16 kHz, uncompressed, with the mic streaming

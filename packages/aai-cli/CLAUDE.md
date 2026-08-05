@@ -5,7 +5,7 @@ storage, templates (`deploy` is hidden/internal — the mechanism in-guest
 Publish runs). Repo-wide commands and conventions live in the root
 [CLAUDE.md](../../CLAUDE.md).
 
-#### packages/aai-cli/
+## Key files
 
 - `cli.ts` — arg parsing, subcommand dispatch
 - `_cli-common.ts` — shared citty plumbing (`sharedArgs`, `setup`,
@@ -29,7 +29,7 @@ Publish runs). Repo-wide commands and conventions live in the root
 - `_templates.ts` — template handling
 - `_ui.ts` — CLI output helpers (`log`, `fmtUrl`, `parsePort`)
 
-### CLI credential destinations (`aai-cli/_agent.ts`)
+## CLI credential destinations (`aai-cli/_agent.ts`)
 
 `.aai/project.json` is in the working tree, so a cloned repo controls its
 `serverUrl` — and `aai deploy` / `aai secret` pair that URL with the user's API

@@ -6,6 +6,8 @@ HTTP/SSE and shares the platform core from
 [aai-server](../aai-server/CLAUDE.md). Repo-wide commands and conventions live
 in the root [CLAUDE.md](../../CLAUDE.md).
 
+## Key files
+
 - `packages/aai-studio-server/` — the browser studio server side, its own
   package/service (see "Browser studio"):
   `studio-routes.ts` (HTTP surface), `studio-session-broker.ts` (per-project
@@ -27,7 +29,8 @@ in the root [CLAUDE.md](../../CLAUDE.md).
   (browser-session account surface, incl. the `aai login` device link),
   `studio-template.ts` (a new project starts EMPTY — read the file before
   changing that), `studio-static.ts` (serves the built client)
-### Browser studio (aai-studio-server)
+
+## Browser studio (aai-studio-server)
 
 Loading the platform server root (`GET /`) serves the **studio** — a
 browser-based coding agent (TypeScript agent loop on the Vercel AI SDK,
@@ -54,7 +57,7 @@ voice agents without the CLI:
   (evals, programmatic callers) scopes by the key itself (`requestScope` in
   `studio-routes.ts`).
 - **The CLI round-trips workspaces** (`aai list/pull/push/publish/delete` —
-  see the aai-cli section): `GET /studio/projects/:project` returns
+  see [aai-cli](../aai-cli/CLAUDE.md)): `GET /studio/projects/:project` returns
   `sourceHash` (the stamped files hash) as the pull's fast-forward token,
   and `PUT /studio/projects/:project/source` (`syncWorkspaceSource` in
   `studio-workspace.ts`) replaces the whole file map atomically — upserting
@@ -335,7 +338,8 @@ voice agents without the CLI:
   - `test_agent` builds the live session workspace via
     `aai-guest/studio-build.ts`, which dynamic-imports
     `@alexkroman1/aai-cli/worker-bundler` from the **toolchain
-    `node_modules` baked next to the harness** (see "Modal sandbox notes");
+    `node_modules` baked next to the harness** (see "Modal sandbox notes" in
+    [aai-server](../aai-server/CLAUDE.md));
     workspaces materialize under that root (`workspacesRoot()`) so bare
     imports (`@alexkroman1/aai`, `zod`, `react`, `@alexkroman1/aai-ui`)
     resolve by the normal walk-up, exactly as in a user project. Diagnostics
@@ -463,7 +467,7 @@ voice agents without the CLI:
   the studio routes. Enforced in `validateSlug`, `DeployBodySchema`, and
   the deploy core.
 
-### One studio sandbox per project, fleet-wide
+## One studio sandbox per project, fleet-wide
 
 The same problem hit the studio harder, and the fix is shaped differently
 because a studio guest is STATEFUL to the host: it holds an installed
