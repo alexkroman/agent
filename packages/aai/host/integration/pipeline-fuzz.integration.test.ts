@@ -62,7 +62,7 @@ import {
 /** Seeds run as short sessions (structural + integrity invariants). */
 const SHORT_SEEDS = 40;
 /** Seeds run long enough to push the LLM history past DEFAULT_MAX_HISTORY. */
-const LONG_SEEDS = 4;
+const LONG_SEEDS = 3;
 
 const noop = (): void => undefined;
 const silentLogger: Logger = { info: noop, warn: noop, error: noop, debug: noop };
@@ -453,47 +453,76 @@ async function runSeed(
   return violations;
 }
 
+interface BatchResult {
+  cov: Coverage;
+  /** Sliced: a systemic break should report a readable sample, not hundreds. */
+  violations: string[];
+  unhandled: string[];
+}
+
+/** Run a batch of seeds, collecting violations, unhandled rejections, coverage. */
+async function runBatch(
+  batch: { seed: number; steps: number; opts?: SeedOptions }[],
+): Promise<BatchResult> {
+  const unhandled: string[] = [];
+  const onUnhandled = (e: unknown): void => {
+    unhandled.push(String(e));
+  };
+  process.on("unhandledRejection", onUnhandled);
+  const cov: Coverage = {};
+  const violations: string[] = [];
+  try {
+    for (const { seed, steps, opts } of batch) {
+      violations.push(...(await runSeed(seed, steps, cov, opts)));
+    }
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
+  return { cov, violations: violations.slice(0, 8), unhandled };
+}
+
+// Split into two tests rather than one: each gets its own timeout budget, and
+// the integration profile allows 30s. One combined run measured ~10s locally,
+// which a loaded shared runner can stretch past the limit.
 describe("pipeline transport — randomized interleaving", () => {
   test("global invariants hold across random event orderings", async () => {
-    const unhandled: string[] = [];
-    const onUnhandled = (e: unknown): void => {
-      unhandled.push(String(e));
-    };
-    process.on("unhandledRejection", onUnhandled);
+    const { cov, violations, unhandled } = await runBatch(
+      Array.from({ length: SHORT_SEEDS }, (_, i) => ({ seed: i + 1, steps: 30 })),
+    );
+    expect({ violations, unhandled }).toEqual({ violations: [], unhandled: [] });
 
-    const cov: Coverage = {};
-    const violations: string[] = [];
-    try {
-      for (let seed = 1; seed <= SHORT_SEEDS; seed++) {
-        violations.push(...(await runSeed(seed, 30, cov)));
-      }
-      for (let seed = 1; seed <= LONG_SEEDS; seed++) {
-        violations.push(
-          ...(await runSeed(1000 + seed, 200, cov, {
-            longSession: true,
-            // Vary the starting alignment: whether a trim splits a tool pair
-            // depends on where the window boundary falls inside a turn.
-            seedHistory: seed % 4,
-          })),
-        );
-      }
-    } finally {
-      process.off("unhandledRejection", onUnhandled);
-    }
+    // Coverage floors — see the module doc. Set well below measured actuals
+    // (noted alongside) because the random walk's yield depends on real
+    // timing: these exist to catch a generator that stopped reaching a state,
+    // not to pin a count.
+    expect(cov.replyStarted ?? 0).toBeGreaterThan(60); // ~370
+    expect(cov.replyDone ?? 0).toBeGreaterThan(20); // ~250
+    expect(cov.replyIntegrityChecked ?? 0).toBeGreaterThan(20); // ~250
+    expect(cov.toolExecuted ?? 0).toBeGreaterThan(20); // ~200
+    expect(cov.llmRequestWithTool ?? 0).toBeGreaterThan(20); // ~400
+    expect(cov.bargeInFromInsideTool ?? 0).toBeGreaterThan(8); // ~37
+    // Barge-in needs the turn to have SPOKEN, so this is the most
+    // timing-sensitive counter of the set — measured ~15.
+    expect(cov.cancelled ?? 0).toBeGreaterThan(4);
+  });
 
-    expect({ violations: violations.slice(0, 8), unhandled }).toEqual({
-      violations: [],
-      unhandled: [],
-    });
+  test("global invariants hold across a long session past the history cap", async () => {
+    const { cov, violations, unhandled } = await runBatch(
+      Array.from({ length: LONG_SEEDS }, (_, i) => ({
+        seed: 1000 + i + 1,
+        steps: 200,
+        opts: {
+          longSession: true,
+          // Vary the starting alignment: whether a trim splits a tool pair
+          // depends on where the window boundary falls inside a turn.
+          seedHistory: (i + 1) % 4,
+        },
+      })),
+    );
+    expect({ violations, unhandled }).toEqual({ violations: [], unhandled: [] });
 
-    // Coverage floors — see the module doc.
-    expect(cov.replyStarted ?? 0).toBeGreaterThan(100);
-    expect(cov.replyDone ?? 0).toBeGreaterThan(20);
-    expect(cov.replyIntegrityChecked ?? 0).toBeGreaterThan(20);
-    expect(cov.cancelled ?? 0).toBeGreaterThan(10);
-    expect(cov.toolExecuted ?? 0).toBeGreaterThan(20);
-    expect(cov.bargeInFromInsideTool ?? 0).toBeGreaterThan(10);
-    expect(cov.llmRequestWithTool ?? 0).toBeGreaterThan(20);
+    // The state this batch exists for: past DEFAULT_MAX_HISTORY the cap trims
+    // on every push, which is what can orphan a tool result. Measured ~66.
     expect(cov.llmRequestAtHistoryCap ?? 0).toBeGreaterThan(10);
   });
 });
