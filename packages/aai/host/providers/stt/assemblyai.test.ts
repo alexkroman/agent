@@ -222,9 +222,9 @@ describe("assemblyAIStt STT adapter — agent_context (Universal-3.5 Pro only)",
     await session.close();
   });
 
-  test("u3-rt-pro: trims agentContext to 1750 chars, both at connect and mid-stream", async () => {
+  test("u3-rt-pro: trims agentContext to 1500 chars, both at connect and mid-stream", async () => {
     const long = "x".repeat(2000);
-    const trimmed = "x".repeat(1750);
+    const trimmed = "x".repeat(1500);
 
     const session = await openSession({ model: "u3-rt-pro" }, { agentContext: long });
     const fake = session._transcriber as unknown as FakeTranscriber;
@@ -242,16 +242,16 @@ describe("assemblyAIStt STT adapter — agent_context (Universal-3.5 Pro only)",
     // sending." A voice agent's question is at the *end* of its reply, so
     // truncating from the front drops the one part worth sending.
     const long = `${"filler. ".repeat(400)}What is your email address?`;
-    expect(long.length).toBeGreaterThan(1750);
+    expect(long.length).toBeGreaterThan(1500);
 
     const session = await openSession({ model: "universal-3-5-pro" }, { agentContext: long });
     const fake = session._transcriber as unknown as FakeTranscriber;
-    expect((fake.params.agentContext as string).length).toBe(1750);
+    expect((fake.params.agentContext as string).length).toBe(1500);
     expect(fake.params.agentContext).toContain("What is your email address?");
 
     session.updateAgentContext?.(long);
     const sent = fake.updateConfigurationCalls[0]?.agent_context as string;
-    expect(sent.length).toBe(1750);
+    expect(sent.length).toBe(1500);
     expect(sent).toContain("What is your email address?");
     await session.close();
   });
