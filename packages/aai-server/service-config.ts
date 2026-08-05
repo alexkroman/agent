@@ -10,7 +10,7 @@
 import { randomUUID } from "node:crypto";
 import { errorMessage } from "@alexkroman1/aai";
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
-import { isLocalDev, requireEnv } from "./_boot.ts";
+import { assertServiceRoleKey, isLocalDev, requireEnv } from "./_boot.ts";
 import { type AgentRows, createMemoryAgentRows, createPgAgentRows } from "./agent-store.ts";
 import { type AppDatabases, type AppDbTarget, createAppDatabases } from "./app-database.ts";
 import {
@@ -277,6 +277,14 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
 
 /** Assemble the shared service bindings from the environment. */
 export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
+  // One key, two consumers that both need service-role authority (Storage
+  // blobs below, the Realtime streams in buildPlatformDb) and neither of which
+  // reports an anon key as a credential problem — see assertServiceRoleKey.
+  // Checked here rather than at each consumer because this is the only caller
+  // of both, so one guard cannot be half-applied.
+  if (!isLocalDev(env) && env.SUPABASE_SERVICE_ROLE_KEY) {
+    assertServiceRoleKey(env.SUPABASE_SERVICE_ROLE_KEY);
+  }
   const storage = buildStorage(env);
   const { secrets, agents, workspaces, chats, events, appDb, slugLock, sql } = buildPlatformDb(env);
   const slots = createSlotCache();

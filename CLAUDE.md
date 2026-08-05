@@ -450,6 +450,29 @@ model) is the security boundary.
   while any other failure throws — the bundle store caches misses under a
   sentinel and retries failures, so conflating them makes a live deploy read
   as absent.
+
+  **`SUPABASE_SERVICE_ROLE_KEY` must be a SECRET key (`sb_secret_…`), and boot
+  refuses a publishable one** (`assertServiceRoleKey` in `_boot.ts`, called
+  once from `buildServiceConfig` — the only caller of both consumers, so the
+  guard cannot be half-applied). A publishable key authenticates fine and then
+  carries `anon` authority, which breaks both things that share the variable,
+  neither of them legibly. **Storage**: a `blobs/<sha256>` write dies on
+  `storage.objects` RLS with `new row violates row-level security policy`,
+  reading as a broken bucket policy rather than a wrong key — and the
+  `SUPABASE_S3_*` path this replaced went through Supabase's S3 gateway, which
+  bypasses RLS entirely, so the same wrong key was INERT until deploys stopped
+  using it. **Realtime** is worse: nothing surfaces at all. Filter columns are
+  validated against the subscriber's role and the platform schema grants
+  `select` to `service_role` only, so every filtered subscribe fails
+  server-side with `invalid column for filter` and realtime-js retries the
+  join forever — the service boots healthy and merely stops invalidating
+  resident sandboxes on redeploy and stops pushing studio SSE. Only the two
+  definitely-wrong forms throw (the `sb_publishable_` prefix, and a legacy JWT
+  whose `role` claim is `anon`); anything unrecognizable is left to Supabase,
+  which rejects it with a better message than a shape check can. Note
+  `SUPABASE_PUBLISHABLE_KEY` (browser sign-in, `supabase-auth.ts`) is a
+  separate setting and stays publishable.
+
   Agent env lives in Supabase Vault through the injected `SecretStore`.
   Orphan blobs from superseded/deleted deploys are accepted (content
   dedupes; a shared blob must not die with one referrer).
