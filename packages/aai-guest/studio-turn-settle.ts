@@ -48,6 +48,7 @@ export const MUTATING_TOOLS: ReadonlySet<string> = new Set([
   "bash",
   "add_dependency",
   "remove_dependency",
+  "update_dependencies",
   "download_to_workspace",
   "use_template",
 ]);

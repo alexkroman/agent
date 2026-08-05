@@ -139,7 +139,7 @@ export const WORKSPACE_TSCONFIG = `${JSON.stringify(
  * the type packages — stay out: the agent never imports them, and every
  * entry here is one more package `npm install` reifies.
  */
-const WORKSPACE_DEPENDENCIES = [
+export const WORKSPACE_DEPENDENCIES = [
   "@alexkroman1/aai",
   "@alexkroman1/aai-ui",
   "react",

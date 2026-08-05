@@ -47,6 +47,23 @@ describe("add_dependency / remove_dependency", () => {
   });
 });
 
+describe("update_dependencies", () => {
+  // As above, the real collaborators are only exercised up to the gate: a
+  // name that passes would spawn npm against the live registry.
+  test.each(["-g", "date-fns@2", "; rm -rf /", "../escape", "UPPER/case"])(
+    "rejects %s without spawning",
+    async (name) => {
+      const result = await execute(makeTools(), "update_dependencies", { packages: [name] });
+      expect(result).toContain("not valid npm package name");
+    },
+  );
+
+  test("a missing package.json is an error, not a spawn", async () => {
+    const result = await execute(makeTools(), "update_dependencies", {});
+    expect(result).toContain("package.json is missing");
+  });
+});
+
 describe("npm_info", () => {
   test.each(["-g", "; rm -rf /", "https://evil.example/pkg.tgz"])(
     "rejects invalid spec %s without spawning",
