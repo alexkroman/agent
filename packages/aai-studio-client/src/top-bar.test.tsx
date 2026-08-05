@@ -87,6 +87,34 @@ describe("TopBar", () => {
     expect((publish as HTMLButtonElement).disabled).toBe(false);
   });
 
+  test("Publish reads as a closed toggle by default", () => {
+    render(<TopBar {...barProps} />);
+    const publish = screen.getByRole("button", { name: "Publish" });
+    expect(publish.getAttribute("aria-expanded")).toBe("false");
+    expect(publish.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(publish.getAttribute("aria-controls")).toBeNull();
+  });
+
+  test("an open menu shows on the button, so pressing again reads as 'hide'", () => {
+    // The pressed affordance is the panel's only dismiss cue now — the menu
+    // has no Close button.
+    render(<TopBar {...barProps} publishOpen={true} />);
+    const publish = screen.getByRole("button", { name: "Publish" });
+    expect(publish.getAttribute("aria-expanded")).toBe("true");
+    expect(publish.getAttribute("aria-controls")).toBe("publish-menu");
+    expect(publish.getAttribute("title")).toContain("Hide");
+    expect(publish.className).toContain("bg-indigo-hover");
+  });
+
+  test("the toggle fires on press whether the menu is open or closed", () => {
+    const onTogglePublish = vi.fn();
+    const { rerender } = render(<TopBar {...barProps} onTogglePublish={onTogglePublish} />);
+    fireEvent.click(screen.getByRole("button", { name: "Publish" }));
+    rerender(<TopBar {...barProps} publishOpen={true} onTogglePublish={onTogglePublish} />);
+    fireEvent.click(screen.getByRole("button", { name: "Publish" }));
+    expect(onTogglePublish).toHaveBeenCalledTimes(2);
+  });
+
   test("a deployed slug shows the production link", () => {
     render(<TopBar {...barProps} deployedSlug="my-agent" />);
     // The production URL is a plain link that opens in a new tab.
@@ -111,14 +139,48 @@ describe("PublishMenu", () => {
     expect(container.innerHTML).toBe("");
   });
 
-  test("open: Publish triggers the deploy, Close dismisses", () => {
+  test("open: Publish triggers the deploy", () => {
     const onPublish = vi.fn();
-    const onClose = vi.fn();
-    render(<PublishMenu open={true} busy={false} onPublish={onPublish} onClose={onClose} />);
+    render(<PublishMenu {...menuProps} open={true} onPublish={onPublish} />);
     fireEvent.click(screen.getByRole("button", { name: "Publish" }));
     expect(onPublish).toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  });
+
+  test("no Close button — the top bar's pressed toggle is the dismiss control", () => {
+    render(<PublishMenu {...menuProps} open={true} />);
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
+  });
+
+  test("Escape dismisses", () => {
+    const onClose = vi.fn();
+    render(<PublishMenu {...menuProps} open={true} onClose={onClose} />);
+    fireEvent.keyDown(window, { key: "Escape" });
     expect(onClose).toHaveBeenCalled();
+  });
+
+  test("a click away dismisses; one inside the panel does not", () => {
+    const onClose = vi.fn();
+    render(<PublishMenu {...menuProps} open={true} onClose={onClose} />);
+    fireEvent.pointerDown(screen.getByRole("dialog"));
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.pointerDown(document.body);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  test("pressing the top bar's toggle does not double-fire the dismiss", () => {
+    // Outside-click would close what the toggle is about to reopen, so the
+    // toggle is exempt and `onTogglePublish` stays the single owner.
+    const onClose = vi.fn();
+    render(
+      <>
+        <TopBar {...barProps} publishOpen={true} />
+        <PublishMenu {...menuProps} open={true} onClose={onClose} />
+      </>,
+    );
+    const toggle = document.querySelector("[data-publish-toggle]");
+    expect(toggle).not.toBeNull();
+    fireEvent.pointerDown(toggle as Element);
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   test("busy shows progress and disables the button", () => {
@@ -140,9 +202,23 @@ describe("PublishMenu", () => {
     expect(screen.queryByRole("link")).toBeNull();
   });
 
-  test("a successful deploy shows output and the live URL", () => {
-    render(<PublishMenu {...menuProps} open={true} output="deployed" deployedSlug="my-agent" />);
-    expect(screen.getByText("deployed")).toBeDefined();
+  test("a successful deploy leads with the live URL and folds the CLI output away", () => {
+    // The transcript repeats the URL twice more and also lands in the chat,
+    // so it is a disclosure rather than a third copy of the same line.
+    const { container } = render(
+      <PublishMenu {...menuProps} open={true} output="deployed" deployedSlug="my-agent" />,
+    );
     expect(screen.getByRole("link").getAttribute("href")).toBe(agentUrl("my-agent"));
+    const details = container.querySelector("details");
+    expect(details).not.toBeNull();
+    expect((details as HTMLDetailsElement).open).toBe(false);
+    expect(details?.textContent).toContain("deployed");
+  });
+
+  test("the panel names itself once — no eyebrow repeating the toggle's label", () => {
+    render(<PublishMenu {...menuProps} open={true} />);
+    // Exactly one thing in the panel says "Publish": the action button.
+    expect(screen.getAllByText("Publish")).toHaveLength(1);
+    expect(screen.getByRole("dialog").getAttribute("aria-label")).toBe("Publish");
   });
 });

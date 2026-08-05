@@ -20,6 +20,19 @@ import { api, errorText, parseSecrets } from "./api.ts";
 import { CliCommands } from "./cli-commands.tsx";
 import { queryKeys } from "./query-keys.ts";
 
+/**
+ * Secrets the PLATFORM manages, which this pane neither lists, deletes, nor
+ * sets. `ASSEMBLYAI_API_KEY` is seeded into every deployed agent at publish
+ * from the caller's own account key (aai-cli/deploy.ts) — it is not a
+ * third-party key the user attached, and deleting it takes the agent off the
+ * air (S2S/STT/TTS connect with an empty bearer and AssemblyAI answers
+ * `unauthorized`) with nothing in this pane to put it back. Overriding it
+ * with a key for a different account stays a CLI action (`aai secret`, or
+ * `.env` + `aai publish`), where it is deliberate rather than a Delete button
+ * one row away from a third-party key.
+ */
+const PLATFORM_MANAGED_SECRETS: readonly string[] = ["ASSEMBLYAI_API_KEY"];
+
 /** One page section: eyebrow heading, blurb, body. The page is a stack of these. */
 function Card({
   title,
@@ -72,6 +85,8 @@ export function SettingsPane({
 }: SettingsPaneProps) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState("");
+  /** Managed key names the last save refused (see PLATFORM_MANAGED_SECRETS). */
+  const [rejected, setRejected] = useState<string[]>([]);
 
   const secrets = useQuery({
     queryKey: queryKeys.secrets(slug),
@@ -121,13 +136,23 @@ export function SettingsPane({
   });
 
   const onSave = () => {
-    const updates = parseSecrets(draft);
+    const parsed = parseSecrets(draft);
+    // A managed key typed into the box would save and then not appear in the
+    // list below, which reads as a failed write — so it is refused by name
+    // and said so, rather than accepted and hidden.
+    const managed = Object.keys(parsed).filter((name) => PLATFORM_MANAGED_SECRETS.includes(name));
+    setRejected(managed);
+    const updates = Object.fromEntries(
+      Object.entries(parsed).filter(([name]) => !managed.includes(name)),
+    );
     if (Object.keys(updates).length === 0 || save.isPending) return;
     save.mutate(updates);
   };
 
   const message = errorText(secrets.error ?? save.error ?? remove.error);
-  const names = secrets.data ?? [];
+  // Platform-managed keys are filtered out of the list, which is also what
+  // withholds their Delete button — there is no row to hang one on.
+  const names = (secrets.data ?? []).filter((name) => !PLATFORM_MANAGED_SECRETS.includes(name));
 
   return (
     // min-w-0 keeps the page from stretching the flex row sideways, exactly
@@ -146,10 +171,11 @@ export function SettingsPane({
           blurb={
             slug ? (
               <>
-                Environment variables for the deployed agent (
-                <code className="font-mono">ctx.env</code>).{" "}
-                <code className="font-mono">ASSEMBLYAI_API_KEY</code> is set for you at publish; add
-                third-party keys here, one <code className="font-mono">KEY=value</code> per line.
+                Third-party keys for the deployed agent, readable as{" "}
+                <code className="font-mono">ctx.env</code> — one{" "}
+                <code className="font-mono">KEY=value</code> per line.{" "}
+                <code className="font-mono">ASSEMBLYAI_API_KEY</code> is set and managed for you at
+                publish, so it is not listed here.
               </>
             ) : (
               "Publish the project first — secrets attach to the deployed agent."
@@ -184,7 +210,10 @@ export function SettingsPane({
               <textarea
                 className="field h-28 resize-y py-2 font-mono text-xs"
                 value={draft}
-                onChange={(e) => setDraft(e.target.value)}
+                onChange={(e) => {
+                  setDraft(e.target.value);
+                  setRejected([]);
+                }}
                 placeholder="OPENAI_API_KEY=..."
                 spellCheck={false}
               />
@@ -197,6 +226,12 @@ export function SettingsPane({
                 {save.isPending ? "Saving…" : "Save secrets"}
               </button>
             </>
+          )}
+          {rejected.length > 0 && (
+            <p className="m-0 text-xs text-err">
+              {rejected.join(", ")} {rejected.length > 1 ? "are" : "is"} managed for you and can't
+              be set here.
+            </p>
           )}
           {message && <p className="m-0 text-xs text-err">{message}</p>}
         </Card>

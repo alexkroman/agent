@@ -192,7 +192,18 @@ runs the studio's Publish route (the in-sandbox `aai deploy`), syncing
 deploy when the slug already exists, after it on a first publish), and
 `aai pull <project>` materializes a workspace locally, layering the shipped
 scaffold underneath (never overwriting workspace files) so the result runs
-under `aai dev`. `aai delete` in a linked directory deletes the STUDIO
+under `aai dev`. **package.json is MERGED rather than skipped**
+(`mergeScaffoldManifest` in `aai-cli/_templates.ts`): the scaffold fills in
+top-level fields the pulled manifest lacks, and for `dependencies` /
+`devDependencies` / `scripts` it fills in per ENTRY. Skip-if-exists was wrong
+here because a studio workspace's manifest declares its runtime deps and NO
+toolchain — correct in the guest, where the toolchain is baked (see
+`ensureProjectShape`), and fatal on a laptop, where `pnpm install` then
+fetched no `vite`, `@vitejs/plugin-react`, or `@tailwindcss/vite` and
+`aai dev` died resolving the vite.config.ts the same layering had just
+written. Per-entry matters both ways: the workspace's exact pins survive the
+scaffold's carets, and one agent-added devDependency can't shadow the whole
+toolchain block. `aai delete` in a linked directory deletes the STUDIO
 PROJECT (`DELETE /studio/projects/:project`), which cascades server-side to
 the workspace, chat, and the project's deployed + preview agents — and
 CLEARS the link fields from `.aai/project.json`, keeping `serverUrl`. Left
@@ -511,7 +522,16 @@ voice agents without the CLI:
   `studio-workspace.ts`) replaces the whole file map atomically — upserting
   on first push (reserved-name + create-rate-limit gated), 409ing when
   `baseHash` no longer matches the stored files, no-oping (no version bump,
-  no preview churn) when the pushed files are byte-identical. The token is
+  no preview churn) when the pushed files are byte-identical. A push that
+  DID change something schedules a preview deploy **and refreshes the
+  project's live coding-agent sandbox** (`refreshSession` on the broker): a
+  guest materializes its workspace once, at install, so a session brokered
+  before the push keeps serving the pre-push tree — and its next end-of-turn
+  `studio/sync-workspace` writes that stale tree back OVER the push. The
+  refresh reuses the local sandbox, or installs into a peer's over HTTP
+  (`fleet.adopt`), and deliberately never SPAWNS: with no live sandbox there
+  is no stale tree to fix, and a CLI push must not boot a coding agent.
+  The token is
   deliberately the FILES hash, never the row version: preview/Publish stamp
   metadata (bumping the version) right after every settled edit, so a
   version token would go stale on almost every push while the files were
@@ -670,7 +690,10 @@ voice agents without the CLI:
   deliberate removal), and an unparseable manifest is left alone for
   `npm install` to report. Toolchain-only packages (vite,
   typescript, the `@types/*`) stay undeclared: the agent never imports them,
-  and every entry is one more package that install has to reify.
+  and every entry is one more package that install has to reify. That holds
+  only IN the guest, where the toolchain is baked next to the harness — the
+  CLI's `aai pull` merges them back in for the local project (see the
+  `aai pull` note in the aai-cli section).
 - **Guest tools carry their own deadlines** (`aai-guest/studio-tools.ts`):
   every tool is wrapped in a 120s timeout resolving to an error tool
   result, and `bash` has its own wall-clock kill (60s default, 300s max)
@@ -862,7 +885,18 @@ voice agents without the CLI:
   secrets are managed in the Settings pane's Secrets card, which talks to
   the platform's own `/:slug/secret` routes — the exact ones `aai secret`
   uses — and posts a note into the chat on every change (key names only,
-  values withheld) so the coding agent knows which keys exist. Storage
+  values withheld) so the coding agent knows which keys exist.
+  **`ASSEMBLYAI_API_KEY` is platform-managed and the pane neither lists,
+  deletes, nor sets it** (`PLATFORM_MANAGED_SECRETS` in `settings.tsx`): it
+  is seeded at publish from the caller's own account key, so it is not a
+  third-party key the user attached, and deleting it takes the agent off the
+  air (an empty bearer → `unauthorized` from AssemblyAI) with nothing in the
+  pane to put it back. Filtering it out of the list is also what withholds
+  its Delete button — there is no row to hang one on. Setting it is refused
+  by name rather than accepted: a save that then vanished from the list
+  reads as a failed write. Overriding it with another account's key stays a
+  CLI action (`aai secret`, or `.env` + `aai publish`), where it is
+  deliberate. Storage
   (`ctx.db`) is CLI-only (`aai storage enable <slug>`): the studio's
   storage routes and toggle were removed, and the prompt tells the agent to
   direct users to the CLI.
@@ -2259,6 +2293,26 @@ service's control work is light — and one container served both badly.
   existed to protect. Studio guests DO go down with the replica (the
   broker's `dispose()`): their coding-agent sessions live on the host's
   control channel, so a dead host makes them useless.
+- **Shutdown ENDS long-lived responses; it must never let the process exit
+  destroy them** (`live-streams.ts`, wired into `serve-lifecycle.ts`). SSE
+  streams never end on their own, so `server.close()` waited out
+  `SHUTDOWN_CLOSE_FALLBACK_MS` and `process.exit(0)` then destroyed the
+  sockets — cutting each chunked body before its terminating `0\r\n\r\n`.
+  That is a protocol error to whatever is reading, and in production the
+  reader is Modal's in-container ASGI proxy, which surfaced it as a recurring
+  unretrieved-task `ClientPayloadError: Response payload is not completed:
+  <TransferEncodingError: 400, 'Not enough data to satisfy transfer length
+  header.'>` on `GET /studio/projects/<x>/events`, with nothing tying it to a
+  replica scale-in. Both ends of the hop register: the studio's SSE pusher
+  (`studio-sse.ts`) and the agent service's PROXIED passthrough of it
+  (`gracefulEventStream` in `studio-proxy.ts` — `text/event-stream` only, so
+  assets and JSON stay zero-copy). Ending them is also what lets
+  `server.close()` complete, so shutdown stops hitting the fallback timer at
+  all. The client sees a clean stream end and resubscribes on its existing
+  backoff (`useEventStream`). Any future long-lived response owes the same
+  registration — the wire-level guard is `live-streams.test.ts`, which reads
+  raw socket bytes because a handler-level assertion passes with the bug
+  present.
 - **A long-lived connection is ONE Modal input, so the function `timeout`
   bounds CALL DURATION** — not request latency. Both services therefore set it
   explicitly (`FUNCTION_TIMEOUT_SECS` = 4h on the agent app, matching
@@ -2446,6 +2500,21 @@ service's control work is light — and one container served both badly.
   the guard and got an agent the hourly sweep would delete. Inferring the
   opt-in from the slug's shape would NOT have fixed it: a production Publish
   of such a project passes exactly that slug.
+- **The guest snapshot image is resolved AT BOOT, not on the first spawn**
+  (`prewarmModal(harnessPath)` in modal-sandbox.ts, called from
+  `assertSandboxBackendOrWarn`). Two memoized stages otherwise charged to
+  whoever spawns first: the Modal app lookup (a gRPC round trip), and the
+  harness image — reading the ~13 MB harness, the synchronous SHA-256 that
+  forms its content-addressed tag, and resolving that tag. On a harness
+  version nobody has published yet — i.e. right after EVERY deploy —
+  "resolving" means BUILDING: toolchain layer, builder sandbox, 13 MB write,
+  `snapshotFilesystem`, publish. That landed on one unlucky user's first
+  voice session or studio chat. `createGuestSandbox` awaits the same memoized
+  promise, so a spawn racing the prewarm joins it rather than starting a
+  second build, and replicas racing each other are no worse than the
+  concurrent cold spawns that raced before (the resolver tries
+  `images.fromName(tag)` first). Fire-and-forget: a failure only warns and
+  the memo resets, exactly as when the first spawn was the first caller.
 - **Readiness is Modal's readiness PROBE**, not host-side polling
   (`GUEST_READINESS_PROBE` in modal-sandbox.ts): every guest sandbox is
   created with `readinessProbe: Probe.withTcp(8080)` and the spawn awaits

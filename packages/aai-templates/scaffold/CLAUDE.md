@@ -196,7 +196,7 @@ export default agent({
 
 **Prefer pipeline mode** — the default — unless the user specifically
 asks for the speech-to-speech API. Nearly every template ships this way, and
-it is what the App Builder defaults to. The host runs the LLM loop locally
+it is what AssemblyAI Build defaults to. The host runs the LLM loop locally
 (Vercel AI SDK) with your chosen STT, LLM, and TTS. You want explicit
 providers when:
 

@@ -145,6 +145,58 @@ describe("SettingsPane", () => {
     expect(notify.mock.calls[0]?.[0]).toContain("deleted the secret OLD_KEY");
   });
 
+  test("ASSEMBLYAI_API_KEY is neither listed nor deletable", async () => {
+    // It is seeded at publish from the caller's account key; deleting it
+    // takes the agent off the air with nothing in this pane to restore it.
+    stubFetch({
+      "GET /demo/secret": () => jsonResponse({ vars: ["ASSEMBLYAI_API_KEY", "OPENAI_API_KEY"] }),
+    });
+    renderPanel("demo");
+    await waitFor(() => {
+      expect(screen.getByText("OPENAI_API_KEY")).toBeTruthy();
+    });
+    // The blurb still names it; the LIST must not — and with no row, there
+    // is nothing to hang a Delete button on.
+    expect(screen.queryByRole("listitem", { name: /ASSEMBLYAI_API_KEY/ })).toBeNull();
+    expect(screen.getAllByText("Delete")).toHaveLength(1);
+    const rows = screen.getAllByRole("listitem").map((li) => li.textContent);
+    expect(rows.some((text) => text?.includes("ASSEMBLYAI_API_KEY"))).toBe(false);
+  });
+
+  test("a managed key typed into the box is refused rather than saved and hidden", async () => {
+    const fetchMock = stubFetch({
+      "GET /demo/secret": () => jsonResponse({ vars: [] }),
+      "PUT /demo/secret": () => jsonResponse({ ok: true, keys: ["OPENAI_API_KEY"] }),
+    });
+    const notify = renderPanel("demo");
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByPlaceholderText("OPENAI_API_KEY=..."), {
+      target: { value: "ASSEMBLYAI_API_KEY=leaked\nOPENAI_API_KEY=ok" },
+    });
+    fireEvent.click(screen.getByText("Save secrets"));
+    await waitFor(() => {
+      expect(screen.getByText(/managed for you and can't be set here/)).toBeTruthy();
+    });
+    // The rest of the draft still saved; only the managed key was dropped.
+    const put = fetchMock.mock.calls.find(([, init]) => (init as RequestInit)?.method === "PUT");
+    expect(put?.[1]?.body).toContain("OPENAI_API_KEY");
+    expect(put?.[1]?.body).not.toContain("ASSEMBLYAI_API_KEY");
+    expect(notify.mock.calls[0]?.[0]).not.toContain("ASSEMBLYAI_API_KEY");
+  });
+
+  test("a draft of nothing but managed keys sends no request at all", async () => {
+    const fetchMock = stubFetch({ "GET /demo/secret": () => jsonResponse({ vars: [] }) });
+    const notify = renderPanel("demo");
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByPlaceholderText("OPENAI_API_KEY=..."), {
+      target: { value: "ASSEMBLYAI_API_KEY=leaked" },
+    });
+    fireEvent.click(screen.getByText("Save secrets"));
+    expect(screen.getByText(/managed for you and can't be set here/)).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(notify).not.toHaveBeenCalled();
+  });
+
   test("Delete project asks for confirmation before firing", () => {
     stubFetch({});
     const onDeleteProject = vi.fn();

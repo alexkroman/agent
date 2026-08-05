@@ -22,7 +22,9 @@ async function useFakeTemplates(dir: string): Promise<void> {
     "scaffold/.env.example": "MY_KEY=",
     "templates/simple/agent.json": JSON.stringify({ name: "Default Name" }),
     "templates/simple/readme.txt": "hello",
-    // Empty package.json (no deps) so executeInit skips pnpm install — hermetic.
+    // Empty package.json. It no longer keeps the install away — the scaffold's
+    // dependencies are merged UNDER a template manifest rather than skipped
+    // (layerScaffold) — so tests that reach installDeps stub execa.
     "templates/simple/package.json": "{}",
   });
   vi.stubEnv("AAI_TEMPLATES_DIR", rootDir);
@@ -280,6 +282,9 @@ describe("executeInit", () => {
       silenced(async (dir) => {
         await useFakeTemplates(dir);
         const target = path.join(dir, "deployed-agent");
+        // The template's empty manifest gets the scaffold's dependencies
+        // merged under it, so the install runs — let it succeed.
+        execaMock.mockResolvedValue({ failed: false });
         executePublish.mockResolvedValue({
           ok: true,
           data: {

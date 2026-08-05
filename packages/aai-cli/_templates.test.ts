@@ -13,7 +13,8 @@ vi.mock("./_agent.ts", () => ({
   getMonorepoRoot: vi.fn().mockReturnValue(null),
 }));
 
-const { bundledTemplatesDir, downloadAndMergeTemplate } = await import("./_templates.ts");
+const { bundledTemplatesDir, downloadAndMergeTemplate, layerScaffold, mergeScaffoldManifest } =
+  await import("./_templates.ts");
 
 /** Create a fake templates root with scaffold + two templates, and point resolution at it. */
 async function useFakeRoot(dir: string): Promise<void> {
@@ -147,6 +148,102 @@ describe("downloadAndMergeTemplate", () => {
       // Should not throw even without scaffold dir
       await downloadAndMergeTemplate("simple", target);
       expect(await fileExists(path.join(target, "agent.ts"))).toBe(true);
+    });
+  });
+});
+
+describe("mergeScaffoldManifest", () => {
+  test("fills top-level fields the manifest lacks, and keeps the ones it has", () => {
+    const merged = mergeScaffoldManifest(
+      { type: "module", name: "mine" },
+      { type: "commonjs", engines: { node: ">=24" }, packageManager: "pnpm@10" },
+    );
+    expect(merged).toEqual({
+      type: "module",
+      name: "mine",
+      engines: { node: ">=24" },
+      packageManager: "pnpm@10",
+    });
+  });
+
+  test("merges dependency maps per ENTRY, so declared pins survive", () => {
+    // A pulled studio workspace pins exact installed versions; the scaffold's
+    // caret ranges must not clobber them.
+    const merged = mergeScaffoldManifest(
+      { dependencies: { "@alexkroman1/aai": "5.7.1" } },
+      { dependencies: { "@alexkroman1/aai": "^5.7.0", zod: "^4.4.3" } },
+    );
+    expect(merged?.dependencies).toEqual({ "@alexkroman1/aai": "5.7.1", zod: "^4.4.3" });
+  });
+
+  test("one agent-added devDependency does not shadow the whole toolchain block", () => {
+    const merged = mergeScaffoldManifest(
+      { devDependencies: { "some-tool": "^1.0.0" } },
+      { devDependencies: { vite: "^8.1.5", "@vitejs/plugin-react": "^6.0.4" } },
+    );
+    expect(merged?.devDependencies).toEqual({
+      "some-tool": "^1.0.0",
+      vite: "^8.1.5",
+      "@vitejs/plugin-react": "^6.0.4",
+    });
+  });
+
+  test("nothing missing → null, so no file is rewritten", () => {
+    expect(mergeScaffoldManifest({ type: "module" }, { type: "commonjs" })).toBeNull();
+    expect(
+      mergeScaffoldManifest({ dependencies: { zod: "1" } }, { dependencies: { zod: "^4" } }),
+    ).toBeNull();
+  });
+});
+
+describe("layerScaffold", () => {
+  test("completes a pulled workspace manifest with the scaffold's toolchain", async () => {
+    // The regression: a studio workspace declares its runtime deps and no
+    // toolchain (baked into the guest sandbox), so a plain skip-if-exists
+    // layering left `vite` uninstallable and `aai dev` unable to resolve the
+    // vite.config.ts the same layering had just written.
+    await withTempDir(async (dir) => {
+      const rootDir = await writeFiles(path.join(dir, "templates-root"), {
+        "scaffold/vite.config.ts": 'import { defineConfig } from "vite";',
+        "scaffold/package.json": JSON.stringify({
+          type: "module",
+          scripts: { dev: "aai dev" },
+          dependencies: { "@alexkroman1/aai": "^5.7.0", zod: "^4.4.3" },
+          devDependencies: { vite: "^8.1.5", "@vitejs/plugin-react": "^6.0.4" },
+        }),
+      });
+      vi.stubEnv("AAI_TEMPLATES_DIR", rootDir);
+
+      const target = await writeFiles(path.join(dir, "pulled"), {
+        "agent.ts": "export default {};",
+        "package.json": JSON.stringify({
+          name: "aai-studio-workspace",
+          private: true,
+          type: "module",
+          dependencies: { "@alexkroman1/aai": "5.7.1" },
+        }),
+      });
+      await layerScaffold(target);
+
+      const pkg = JSON.parse(await fs.readFile(path.join(target, "package.json"), "utf-8"));
+      expect(pkg.name).toBe("aai-studio-workspace");
+      expect(pkg.dependencies["@alexkroman1/aai"]).toBe("5.7.1");
+      expect(pkg.devDependencies.vite).toBe("^8.1.5");
+      expect(pkg.devDependencies["@vitejs/plugin-react"]).toBe("^6.0.4");
+      expect(pkg.scripts.dev).toBe("aai dev");
+      // The config that needs those deps is layered in by the same call.
+      expect(await fileExists(path.join(target, "vite.config.ts"))).toBe(true);
+    });
+  });
+
+  test("a directory with no manifest just gets the scaffold's, verbatim", async () => {
+    await withTempDir(async (dir) => {
+      await useFakeRoot(dir);
+      const target = path.join(dir, "empty");
+      await fs.mkdir(target, { recursive: true });
+      await layerScaffold(target);
+      const pkg = JSON.parse(await fs.readFile(path.join(target, "package.json"), "utf-8"));
+      expect(pkg.name).toBe("scaffold");
     });
   });
 });

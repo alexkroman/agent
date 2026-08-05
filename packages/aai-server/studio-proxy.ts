@@ -24,6 +24,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import type { Context } from "hono";
 import { proxy } from "hono/proxy";
 import type { HonoEnv } from "./context.ts";
+import { registerLiveStream } from "./live-streams.ts";
 import { publicForwardedHeaders } from "./public-origin.ts";
 
 /**
@@ -79,16 +80,67 @@ export function createStudioProxy(
     headers.delete("host");
 
     try {
-      return await proxy(target, {
+      const res = await proxy(target, {
         raw: new Request(c.req.raw, { headers }),
         // Pass upstream redirects through to the browser (the studio app
         // redirects /studio/ → /) instead of following them proxy-side.
         redirect: "manual",
         customFetch: fetchFn,
       });
+      return gracefulEventStream(res);
     } catch (err) {
       console.error(`Studio proxy request failed: ${errorMessage(err)}`);
       return c.json({ error: "Studio is unavailable — try again shortly" }, 502);
     }
   };
+}
+
+/**
+ * Make a proxied SSE response endable at shutdown.
+ *
+ * The studio service ends its own streams gracefully (studio-sse.ts), which
+ * covers a studio replica going down. This covers the other half: in split
+ * mode the browser's connection terminates HERE, so an agent replica exiting
+ * with a proxied stream open cuts the chunked body mid-frame — the same
+ * `TransferEncodingError` Modal's proxy reports, from the other side of the
+ * hop. Relaying through a stream we own lets shutdown close it, so the
+ * terminating chunk goes out and the client resubscribes normally.
+ *
+ * Only `text/event-stream` is wrapped. Every other proxied response — the
+ * studio bundle, JSON, assets — completes on its own and must stay a
+ * zero-copy passthrough.
+ */
+function gracefulEventStream(res: Response): Response {
+  const body = res.body;
+  if (!(body && res.headers.get("content-type")?.includes("text/event-stream"))) return res;
+
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+  const reader = body.getReader();
+  const writer = writable.getWriter();
+  const close = (): void => {
+    void reader.cancel().catch(() => undefined);
+    void writer.close().catch(() => undefined);
+  };
+  const unregister = registerLiveStream(close);
+
+  void (async () => {
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        await writer.write(value);
+      }
+    } catch {
+      // Upstream dropped; close below so the downstream body still ends.
+    } finally {
+      unregister();
+      await writer.close().catch(() => undefined);
+    }
+  })();
+
+  return new Response(readable, {
+    status: res.status,
+    statusText: res.statusText,
+    headers: res.headers,
+  });
 }

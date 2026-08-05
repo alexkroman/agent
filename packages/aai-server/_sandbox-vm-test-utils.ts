@@ -168,6 +168,7 @@ export function makeCtx(sb: ModalSandboxLike): ModalSpawnContext & { codes: stri
   return {
     codes,
     lookupGuestSandbox: () => Promise.resolve(null),
+    prepareGuestImage: () => Promise.resolve(),
     createGuestSandbox: async (code, _params) => {
       codes.push(code);
       return sb;

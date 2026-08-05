@@ -176,8 +176,8 @@ function EmptyStateBody({ status }: { status: StudioStatus | undefined }) {
     <>
       <div className="rounded-lg border border-line bg-cream px-[18px] py-4">
         <p className="m-0 text-[13px] leading-5">
-          Welcome to AssemblyAI App Builder. Tell me what your voice agent should do and I'll build
-          the first version.
+          Welcome to AssemblyAI Build. Tell me what your voice agent should do and I'll build the
+          first version.
         </p>
       </div>
       <LlmStatusNote status={status} />

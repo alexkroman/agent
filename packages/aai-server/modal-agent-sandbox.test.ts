@@ -167,6 +167,7 @@ describe("spawnModalAgentServer", () => {
     const params: Record<string, unknown>[] = [];
     const ctx: ModalSpawnContext = {
       lookupGuestSandbox: () => Promise.resolve(null),
+      prepareGuestImage: () => Promise.resolve(),
       createGuestSandbox: async (_code, p) => {
         params.push(p as unknown as Record<string, unknown>);
         return sb;
@@ -200,6 +201,7 @@ describe("spawnModalAgentServer", () => {
     const sb = makeFakeSandbox(fake);
     const ctx: ModalSpawnContext = {
       lookupGuestSandbox: () => Promise.resolve(null),
+      prepareGuestImage: () => Promise.resolve(),
       createGuestSandbox: async (_code, _p, imageTag) => {
         tags.push(imageTag);
         return sb;

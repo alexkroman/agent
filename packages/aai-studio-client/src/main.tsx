@@ -46,7 +46,7 @@ function GateCard({ children }: { children: React.ReactNode }) {
       <div className="flex w-[420px] flex-col gap-3.5 rounded-lg border border-line bg-panel p-10 shadow-sm">
         <div className="flex items-center gap-2.5">
           <img src={logoUrl} alt="AssemblyAI" className="h-5 w-5" />
-          <span className="font-serif text-[16px]">AssemblyAI App Builder</span>
+          <span className="font-serif text-[16px]">AssemblyAI Build</span>
         </div>
         {children}
       </div>
@@ -90,7 +90,7 @@ function SignInGate({
       <p className="m-0 text-[15px] leading-[21px] text-muted">
         {mode === "dev"
           ? "Local dev mode: enter any email to sign in."
-          : "Describe a voice agent and App Builder writes and tests it — you publish when it's ready. Sign in with GitHub to start."}
+          : "Describe a voice agent and AssemblyAI Build writes and tests it — you publish when it's ready. Sign in with GitHub to start."}
       </p>
       {mode === "dev" && (
         <input
@@ -162,8 +162,8 @@ function KeyGate({
         Connect your AssemblyAI account
       </h1>
       <p className="m-0 text-[15px] leading-[21px] text-muted">
-        {email ? `Signed in as ${email}. ` : ""}App Builder runs every agent on your own AssemblyAI
-        API key — get one from{" "}
+        {email ? `Signed in as ${email}. ` : ""}AssemblyAI Build runs every agent on your own
+        AssemblyAI API key — get one from{" "}
         <a
           href="https://www.assemblyai.com/dashboard"
           target="_blank"
@@ -192,7 +192,7 @@ function KeyGate({
         disabled={busy}
         onClick={() => void submit()}
       >
-        {busy ? "Saving…" : "Open App Builder"}
+        {busy ? "Saving…" : "Open AssemblyAI Build"}
       </button>
     </GateCard>
   );
@@ -247,7 +247,7 @@ function CliLinkGate({
           className="btn btn-primary h-10 self-start px-5"
           onClick={() => onDone()}
         >
-          Open App Builder
+          Open AssemblyAI Build
         </button>
       </GateCard>
     );

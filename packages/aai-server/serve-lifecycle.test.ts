@@ -1,9 +1,11 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { endLiveStreams, registerLiveStream } from "./live-streams.ts";
 import { createShutdownHandler, startService } from "./serve-lifecycle.ts";
 
 beforeEach(() => {
+  endLiveStreams();
   vi.restoreAllMocks();
   vi.spyOn(console, "info").mockImplementation(() => undefined);
   vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -28,6 +30,30 @@ describe("createShutdownHandler", () => {
     await shutdown();
 
     expect(order).toEqual(["teardown", "close", "exit"]);
+  });
+
+  // Long-lived responses never end on their own, so `close()` would wait out
+  // the fallback and `process.exit` would destroy them MID-CHUNK — a
+  // truncated chunked body to whatever is reading (Modal's ASGI proxy, in
+  // production). They have to be ended BEFORE the close, which is also what
+  // lets the close complete at all.
+  it("ends live streams before closing the server", async () => {
+    const order: string[] = [];
+    registerLiveStream(() => order.push("end-stream"));
+    const shutdown = createShutdownHandler({
+      onShutdown: async () => {
+        order.push("teardown");
+      },
+      closeServer: (cb) => {
+        order.push("close");
+        cb();
+      },
+      exit: vi.fn(),
+    });
+
+    await shutdown();
+
+    expect(order).toEqual(["teardown", "end-stream", "close"]);
   });
 
   // A platform that signals twice, or an impatient operator, must not run

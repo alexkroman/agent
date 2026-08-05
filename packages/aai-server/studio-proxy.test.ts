@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { endLiveStreams } from "./live-streams.ts";
 import { createStudioProxy } from "./studio-proxy.ts";
 import { createTestOrchestrator } from "./test-utils.ts";
 
@@ -12,6 +13,12 @@ function makeContext(req: Request) {
       Response.json(body, status === undefined ? {} : { status }),
   } as unknown as Parameters<ReturnType<typeof createStudioProxy>>[0];
 }
+
+// A relayed SSE body registers itself for shutdown; leaking one across tests
+// would let a later `endLiveStreams()` end a stream it never opened.
+afterEach(() => {
+  endLiveStreams();
+});
 
 describe("createStudioProxy", () => {
   test("forwards method, path, query, and auth header to the upstream", async () => {
@@ -61,11 +68,50 @@ describe("createStudioProxy", () => {
     const proxy = createStudioProxy("http://studio.internal:8080", async () => upstream);
 
     const res = await proxy(makeContext(new Request("https://platform.example/studio/chat")));
-    expect(res.body).toBe(upstreamBody); // the same stream, not a copy
     expect(res.headers.get("content-type")).toBe("text/event-stream");
     // Stale after transparent decompression — must not be relayed.
     expect(res.headers.get("content-encoding")).toBeNull();
     expect(res.headers.get("content-length")).toBeNull();
+
+    // An SSE body is relayed through a stream WE own (so shutdown can end it
+    // — see live-streams.ts) rather than handed through by reference. It must
+    // still arrive chunk by chunk: the relay is a pump, never a buffer.
+    expect(res.body).not.toBe(upstreamBody);
+    const reader = (res.body as ReadableStream<Uint8Array>).getReader();
+    const decoder = new TextDecoder();
+    const seen: string[] = [];
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      seen.push(decoder.decode(value));
+    }
+    expect(seen).toEqual(chunks);
+  });
+
+  test("a non-SSE response stays a zero-copy passthrough", async () => {
+    // Only long-lived streams pay for the relay; assets and JSON must not.
+    const body = new ReadableStream<Uint8Array>({
+      start: (controller) => controller.close(),
+    });
+    const upstream = new Response(body, { headers: { "content-type": "application/json" } });
+    const proxy = createStudioProxy("http://studio.internal:8080", async () => upstream);
+    const res = await proxy(makeContext(new Request("https://platform.example/studio/projects")));
+    expect(res.body).toBe(body);
+  });
+
+  test("shutdown ends a relayed SSE body instead of leaving it hanging", async () => {
+    // Without this the agent replica's exit destroys the socket mid-chunk and
+    // Modal's proxy reports a truncated chunked body.
+    const upstream = new Response(new ReadableStream<Uint8Array>({ start: () => undefined }), {
+      headers: { "content-type": "text/event-stream" },
+    });
+    const proxy = createStudioProxy("http://studio.internal:8080", async () => upstream);
+    const res = await proxy(makeContext(new Request("https://platform.example/studio/chat")));
+    const reader = (res.body as ReadableStream<Uint8Array>).getReader();
+    const read = reader.read();
+
+    expect(endLiveStreams()).toBe(1);
+    expect(await read).toEqual({ done: true, value: undefined });
   });
 
   test("forwards a POST body", async () => {

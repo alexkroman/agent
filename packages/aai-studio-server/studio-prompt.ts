@@ -2,7 +2,7 @@
 /**
  * System prompt for the studio's coding agent.
  *
- * The preamble (`studio-preamble.ts`) carries the App Builder's own rules
+ * The preamble (`studio-preamble.ts`) carries AssemblyAI Build's own rules
  * in a v0-style arc — overview, workflow, guidelines, design, capabilities,
  * refusals, alignment examples. The authoring knowledge comes from the same
  * `CLAUDE.md` the CLI scaffolds into every `aai init` project

@@ -43,6 +43,7 @@ import { studioSystemPrompt } from "./studio-prompt.ts";
 import type { adoptPeerSession } from "./studio-session-adopt.ts";
 import type { SessionEntry } from "./studio-session-entry.ts";
 import { createSessionFleet, soloFleet } from "./studio-session-fleet.ts";
+import { createSessionReaper } from "./studio-session-idle.ts";
 import {
   createWorkspacePublisher,
   type WorkspaceDeployOutcome,
@@ -134,6 +135,14 @@ export type StudioSessionBroker = {
     serverUrl?: string,
   ): Promise<{ url: string; token: string } | null>;
   /**
+   * Re-install the workspace's CURRENT files into the project's live sandbox
+   * (local, or a peer's); true when one was refreshed. NEVER spawns. What an
+   * out-of-band write (`aai push`, an editor PUT) owes the coding agent: a
+   * guest materializes its tree once, at install, so a session brokered
+   * earlier serves pre-edit files AND syncs them back at end of turn.
+   */
+  refreshSession(scope: string, project: string, apiKey: string): Promise<boolean>;
+  /**
    * Fire-and-forget: deploy the workspace's current files to the project's
    * PREVIEW slug (editor saves take this path; agent turns schedule via the
    * sync-workspace callback). Coalesced per project.
@@ -185,42 +194,8 @@ export function createStudioSessionBroker(
    */
   const sessionLock = createKeyedLock();
 
-  /**
-   * Tear down `entry` and drop it from the map — but only while it is still
-   * the project's session. Every caller runs its cleanup AFTER an await (a
-   * re-init that rejected, a publish whose sandbox died mid-request), and by
-   * then the client may have re-brokered and installed a replacement: the
-   * owned map's release deletes only while this claim still holds the key,
-   * so a replacement is never evicted and never strands a live sandbox.
-   */
-  async function disposeEntry(entry: SessionEntry): Promise<void> {
-    entry.release();
-    // Owner-checked inside the fleet: a replacement sandbox that already
-    // re-claimed this project must not lose its row to our teardown.
-    await fleet.release(entry.scope, entry.project);
-    await entry.warm[Symbol.asyncDispose]().catch(() => undefined);
-  }
-
-  // Idle eviction: chat turns run browser→guest, so the host's only view of
-  // activity is broker calls and the guest's end-of-turn RPCs (both touch
-  // lastUsed). Losing a live-but-quiet sandbox costs one re-broker.
-  const sweeper = setInterval(() => {
-    const now = Date.now();
-    for (const entry of sessions.values()) {
-      if (now - entry.lastUsed > idleMs) void sweepIfIdle(entry);
-    }
-  }, 60_000);
-
-  /**
-   * Evict `entry` unless someone in the fleet has been brokering it — see
-   * `SessionFleet.heldByUs`. The lease and the idle window are the same
-   * number for exactly this comparison (see STUDIO_SESSION_IDLE_MS).
-   */
-  async function sweepIfIdle(entry: SessionEntry): Promise<void> {
-    if (await fleet.heldByUs(entry.scope, entry.project)) return;
-    await disposeEntry(entry);
-  }
-  sweeper.unref?.();
+  // Teardown + idle eviction (studio-session-idle.ts).
+  const { disposeEntry, stop: stopSweeper } = createSessionReaper({ sessions, fleet, idleMs });
 
   /**
    * Wire one sandbox's guest→host RPCs (studio-session-wire.ts). Everything
@@ -380,14 +355,37 @@ export function createStudioSessionBroker(
     }
   }
 
+  /** Install into a freshly spawned guest, disposing it on any failure — an
+   *  un-installed sandbox that nothing references is a billed orphan. */
+  async function installOrDispose(
+    warm: WarmHarness,
+    key: string,
+    scope: string,
+    project: string,
+    apiKey: string,
+    workspace: Awaited<ReturnType<typeof getWorkspace>>,
+  ): Promise<string | null> {
+    try {
+      wire(warm, key, scope, project);
+      const token = await initSession(warm, scope, project, apiKey, workspace);
+      if (token !== null) return token;
+    } catch (err) {
+      await warm[Symbol.asyncDispose]().catch(() => undefined);
+      throw err;
+    }
+    await warm[Symbol.asyncDispose]().catch(() => undefined);
+    return null;
+  }
+
   /** Reuse-or-adopt-or-spawn for one project. Runs under the session lock. */
   async function ensureSessionLocked(
     key: string,
     scope: string,
     project: string,
     apiKey: string,
-    serverUrl?: string,
+    opts: { serverUrl?: string | undefined; allowSpawn?: boolean } = {},
   ): Promise<{ url: string; token: string } | null> {
+    const { serverUrl, allowSpawn = true } = opts;
     const reused = await reuseSession(key, scope, project, apiKey, serverUrl);
     if (reused) return reused;
 
@@ -406,24 +404,16 @@ export function createStudioSessionBroker(
     const adopted = await adopt();
     if (adopted) return adopted;
 
+    // A refresh stops here: reuse or adopt is the whole job, and booting a
+    // coding-agent sandbox nobody asked for is not one.
+    if (!allowSpawn) return null;
     const warm = await spawnNamed(scope, project);
     // A peer created this project's sandbox between the adopt above and the
     // create — adopt the winner (see spawnNamed).
     if (!warm) return await adopt();
 
-    let token: string;
-    try {
-      wire(warm, key, scope, project);
-      const minted = await initSession(warm, scope, project, apiKey, workspace);
-      if (minted === null) {
-        await warm[Symbol.asyncDispose]().catch(() => undefined);
-        return null;
-      }
-      token = minted;
-    } catch (err) {
-      await warm[Symbol.asyncDispose]().catch(() => undefined);
-      throw err;
-    }
+    const token = await installOrDispose(warm, key, scope, project, apiKey, workspace);
+    if (token === null) return null;
     const url = chatUrlForGuest(warm.guestOrigin);
     const entry: SessionEntry = {
       warm,
@@ -480,8 +470,18 @@ export function createStudioSessionBroker(
       // Per project, not global: brokering one project must never queue
       // behind another project's Modal spawn.
       return withLock(sessionLock, key, () =>
-        ensureSessionLocked(key, scope, project, apiKey, serverUrl),
+        ensureSessionLocked(key, scope, project, apiKey, { serverUrl }),
       );
+    },
+
+    async refreshSession(scope, project, apiKey) {
+      const key = projectKey(scope, project);
+      // Under the SAME lock as ensureSession, so a refresh can never install
+      // over an in-flight broker.
+      const session = await withLock(sessionLock, key, () =>
+        ensureSessionLocked(key, scope, project, apiKey, { allowSpawn: false }),
+      );
+      return session !== null;
     },
 
     schedulePreview(scope, project, target) {
@@ -491,7 +491,7 @@ export function createStudioSessionBroker(
     deployWorkspace: deployWorkspaceImpl,
 
     async dispose() {
-      clearInterval(sweeper);
+      stopSweeper();
       previews.dispose();
       await Promise.allSettled([...sessions.values()].map((entry) => disposeEntry(entry)));
     },

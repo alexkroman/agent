@@ -5,6 +5,7 @@
  * the stream lifecycle helper.
  */
 
+import { registerLiveStream } from "aai-server/live-streams";
 import type { SSEStreamingApi } from "hono/streaming";
 import {
   currentFilesHash,
@@ -64,6 +65,9 @@ export function createSsePusher(stream: SSEStreamingApi): {
     closed = true;
     done.resolve();
   };
+  // Shutdown ends the stream through this instead of the process exit
+  // destroying the socket mid-chunk — see aai-server/live-streams.ts.
+  const unregister = registerLiveStream(finish);
   const write = (event: string, data: string): Promise<void> =>
     closed ? Promise.resolve() : stream.writeSSE({ event, data });
   let chain: Promise<void> = Promise.resolve();
@@ -89,6 +93,7 @@ export function createSsePusher(stream: SSEStreamingApi): {
     try {
       await done.promise;
     } finally {
+      unregister();
       cleanup();
       clearInterval(heartbeat);
     }

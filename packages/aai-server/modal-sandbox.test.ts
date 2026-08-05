@@ -175,6 +175,7 @@ describe("spawnModalWarm", () => {
     const createParams: Record<string, unknown>[] = [];
     const ctx: ModalSpawnContext = {
       lookupGuestSandbox: () => Promise.resolve(null),
+      prepareGuestImage: () => Promise.resolve(),
       createGuestSandbox: async (_code, params) => {
         createParams.push(params as unknown as Record<string, unknown>);
         return sb;
@@ -226,6 +227,7 @@ describe("spawnModalWarm", () => {
     const tags: (string | undefined)[] = [];
     const ctx: ModalSpawnContext = {
       lookupGuestSandbox: () => Promise.resolve(null),
+      prepareGuestImage: () => Promise.resolve(),
       createGuestSandbox: async (_code, _params, imageTag) => {
         tags.push(imageTag);
         return sb;
@@ -278,6 +280,7 @@ describe("spawnModalWarm", () => {
         { harnessPath, ...identity },
         {
           lookupGuestSandbox: () => Promise.resolve(null),
+          prepareGuestImage: () => Promise.resolve(),
           createGuestSandbox: async (_code, params) => {
             createParams.push(params as unknown as Record<string, unknown>);
             return sb;
@@ -317,6 +320,7 @@ describe("spawnModalWarm", () => {
         { harnessPath },
         {
           lookupGuestSandbox: () => Promise.resolve(null),
+          prepareGuestImage: () => Promise.resolve(),
           createGuestSandbox: async (_code, params) => {
             createParams.push(params as unknown as Record<string, unknown>);
             return sb;
@@ -353,6 +357,7 @@ describe("spawnModalWarm", () => {
       const createParams: Record<string, unknown>[] = [];
       const ctx: ModalSpawnContext = {
         lookupGuestSandbox: () => Promise.resolve(null),
+        prepareGuestImage: () => Promise.resolve(),
         createGuestSandbox: async (_code, params) => {
           createParams.push(params as unknown as Record<string, unknown>);
           return sb;
@@ -389,6 +394,7 @@ describe("spawnModalWarm", () => {
       const createParams: Record<string, unknown>[] = [];
       const ctx: ModalSpawnContext = {
         lookupGuestSandbox: () => Promise.resolve(null),
+        prepareGuestImage: () => Promise.resolve(),
         createGuestSandbox: async (_code, params) => {
           createParams.push(params as unknown as Record<string, unknown>);
           return sb;
@@ -417,6 +423,7 @@ describe("spawnModalWarm", () => {
     const createParams: Record<string, unknown>[] = [];
     const ctx: ModalSpawnContext = {
       lookupGuestSandbox: () => Promise.resolve(null),
+      prepareGuestImage: () => Promise.resolve(),
       createGuestSandbox: async (_code, params) => {
         createParams.push(params as unknown as Record<string, unknown>);
         return sb;
@@ -441,6 +448,7 @@ describe("spawnModalWarm", () => {
       const createParams: Record<string, unknown>[] = [];
       const ctx: ModalSpawnContext = {
         lookupGuestSandbox: () => Promise.resolve(null),
+        prepareGuestImage: () => Promise.resolve(),
         createGuestSandbox: async (_code, params) => {
           createParams.push(params as unknown as Record<string, unknown>);
           return sb;

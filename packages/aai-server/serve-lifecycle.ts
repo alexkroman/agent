@@ -22,6 +22,7 @@ import type { Server as NodeHttpServer } from "node:http";
 import { errorMessage } from "@alexkroman1/aai";
 import { serve } from "@hono/node-server";
 import { SHUTDOWN_CLOSE_FALLBACK_MS } from "./constants.ts";
+import { endLiveStreams } from "./live-streams.ts";
 
 /** The slice of a node HTTP server this module drives. Injectable for tests. */
 export type ServerLike = {
@@ -65,6 +66,14 @@ export function createShutdownHandler(opts: ShutdownHandlerOptions): () => Promi
       // orphan timeout reclaims it).
       console.warn("Shutdown teardown failed:", errorMessage(err));
     }
+    // Long-lived responses (SSE) never end on their own, so `close()` below
+    // would wait out the fallback and then have `process.exit` destroy them
+    // MID-CHUNK — a truncated chunked body to whatever is reading, which in
+    // production is Modal's ASGI proxy (see live-streams.ts). Ending them
+    // first is both the fix and what lets `close()` actually complete.
+    const ended = endLiveStreams();
+    if (ended > 0) console.info(`Shutdown: ended ${ended} live stream(s)`);
+
     opts.closeServer(() => exit(0));
     const timer = setTimeout(() => {
       // Loud on purpose: silently exiting here is how a hung shutdown hides.

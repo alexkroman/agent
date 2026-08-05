@@ -72,7 +72,7 @@ export function HomeHero({ status, creating, onStart }: HomeHeroProps) {
   return (
     <main className="flex min-h-0 flex-1 flex-col items-center justify-center gap-9 overflow-y-auto bg-cream px-6 py-10">
       <div className="flex flex-col items-center gap-3">
-        <span className="eyebrow self-center">AssemblyAI App Builder</span>
+        <span className="eyebrow self-center">AssemblyAI Build</span>
         <h1 className="m-0 text-center font-serif text-[38px] leading-[1.12] font-normal text-balance">
           What should your voice agent do?
         </h1>
