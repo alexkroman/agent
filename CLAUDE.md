@@ -754,6 +754,17 @@ voice agents without the CLI:
   agent knows which keys exist. Storage (`ctx.db`) is CLI-only
   (`aai storage enable <slug>`): the studio's storage routes and toggle
   were removed, and the prompt tells the agent to direct users to the CLI.
+- **The Settings panel is also where the CLI round-trip is discoverable**
+  (`cli-commands.tsx`, the "Work locally" section): the install / `aai login`
+  / `aai pull <project>` / `aai dev` sequence with the project name filled
+  in and one copy button each. It renders whether or not the project has
+  ever been published — pulling a workspace needs no deployed slug. The
+  commands carry `--server <studio origin>` unconditionally, because the CLI
+  otherwise targets its own shipped default AND because passing `--server`
+  is what APPROVES an origin for credentialed requests (`resolveServerUrl`
+  in `aai-cli/_agent.ts`); the client can't compare against the CLI's
+  default without importing from aai-cli, which would widen the package
+  boundary.
 - **Vite must not be allowed to mutate `process.env`.** Vite's `build()`
   sets `NODE_ENV=production` when it is unset — a permanent, global side
   effect on the calling process. Both CLI bundlers therefore wrap the
