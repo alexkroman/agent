@@ -1,13 +1,16 @@
 // Copyright 2026 the AAI authors. MIT license.
-// Deployed-agent secrets panel — its own UI, not part of Publish. Talks to
-// the platform's own `/:slug/secret` routes (the exact ones `aai secret`
-// uses), so it needs a published slug to attach secrets to. Every change
-// posts a note into the chat (values withheld) so the coding agent knows
-// which keys exist without ever seeing them.
+// The Settings panel. Its main section is deployed-agent secrets — its own
+// UI, not part of Publish. Talks to the platform's own `/:slug/secret` routes
+// (the exact ones `aai secret` uses), so it needs a published slug to attach
+// secrets to. Every change posts a note into the chat (values withheld) so
+// the coding agent knows which keys exist without ever seeing them.
+// Below it sit the two project-scoped sections that work without a publish:
+// the CLI pull commands (cli-commands.tsx) and the delete-project button.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, errorText, parseSecrets } from "./api.ts";
+import { CliCommands } from "./cli-commands.tsx";
 import { queryKeys } from "./query-keys.ts";
 
 type SecretsPanelProps = {
@@ -101,7 +104,9 @@ export function SecretsPanel({
   const names = secrets.data ?? [];
 
   return (
-    <div className="absolute top-14 right-5 z-10 flex w-80 flex-col gap-3 rounded-lg border border-line bg-panel p-5 shadow-md">
+    // The panel grew past a short viewport once the CLI section landed under
+    // the secrets list, so it scrolls itself rather than running off-screen.
+    <div className="absolute top-14 right-5 z-10 flex max-h-[calc(100vh-5rem)] w-96 flex-col gap-3 overflow-y-auto rounded-lg border border-line bg-panel p-5 shadow-md">
       <span className="eyebrow">Settings · Secrets</span>
       {slug ? (
         <>
@@ -158,6 +163,8 @@ export function SecretsPanel({
         </>
       )}
       {message && <p className="m-0 text-xs text-err">{message}</p>}
+      {/* Unconditional — pulling a project locally needs no published slug. */}
+      <CliCommands project={project} />
       <div className="flex flex-col gap-2 border-t border-line pt-3">
         <span className="eyebrow">Danger zone</span>
         <p className="m-0 text-[13px] leading-5 text-muted">
