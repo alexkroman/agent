@@ -564,7 +564,18 @@ describe("createPreviewDeployer", () => {
       serverUrl: TARGET.serverUrl,
       userId: "user-1",
     });
-    const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "ok" }));
+    const targets: WorkspaceDeployTarget[] = [];
+    const deploy = vi.fn(
+      async (
+        _scope: string,
+        _project: string,
+        _files: Record<string, string>,
+        target: WorkspaceDeployTarget,
+      ): Promise<WorkspaceDeployOutcome> => {
+        targets.push(target);
+        return { ok: true, output: "ok" };
+      },
+    );
     const deployer = createPreviewDeployer({
       workspaces,
       deployWorkspace: deploy,
@@ -573,7 +584,7 @@ describe("createPreviewDeployer", () => {
       resolveApiKey: (userId) => Promise.resolve(userId === "user-1" ? "stored-key" : null),
     });
     await deployer.drainOnce();
-    expect(deploy.mock.calls[0]?.[3]).toMatchObject({ apiKey: "stored-key" });
+    expect(targets[0]).toMatchObject({ apiKey: "stored-key" });
   });
 
   test("a redelivered job with no resolvable key is archived", async () => {

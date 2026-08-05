@@ -2201,7 +2201,22 @@ service's control work is light — and one container served both badly.
   bounded by `MIN_CONTAINERS`/`MAX_CONTAINERS`. Scale-in is FREE for voice
   sessions: a replica going down RETIRES its agent guests instead of
   waiting on or terminating them (`teardownSandboxes` — one awaited,
-  deadline-carrying drain per guest, then exit). Sessions dial the sandbox
+  deadline-carrying drain per guest, then exit).
+
+  **Shutdown has to stop BOOTING sandboxes before it stops serving.**
+  Flipping `draining` only makes `/health` fail; the proxy stops routing here
+  when it notices, up to a health-check interval later. A request landing in
+  that window used to take the cold broker path, find an emptied slot, and
+  spawn a guest seconds before the process exited — ORPHANED, since no slot
+  referenced it and nothing held it, billing until Modal's idle timeout. Two
+  guards, in order of importance: `brokerSessionUrl` refuses to boot a new
+  sandbox when `isDraining` (503, so the client re-brokers onto a live
+  replica) while still serving a LIVE resident, which orphans nothing; and
+  `teardownSandboxes` waits `SHUTDOWN_GRACE_MS` (3s, env-overridable) before
+  emptying the slots, so requests that would have been served still are. The
+  wait is deliberately short — it spends the same SIGTERM allowance the
+  drains need, and an undelivered drain is the worse failure. The studio-only
+  service passes 0: its slot cache is always empty, so it has no such window. Sessions dial the sandbox
   tunnel directly and the guest has no dependency on the replica, so live
   calls finish in the guests on their own clock after the replica is gone;
   the next replica's broker spawns fresh sandboxes on demand. The old

@@ -336,6 +336,51 @@ describe("storage (ctx.db) delivery", () => {
 });
 
 /**
+ * Shutdown must not leave a sandbox behind. Flipping `draining` only makes
+ * `/health` fail — the platform's proxy stops routing here when it notices —
+ * so requests keep arriving for a window. Booting one then produces a guest
+ * nothing holds: no slot references it, this process is about to exit, and it
+ * bills until Modal's idle timeout. Rare at MIN_CONTAINERS=1 (only a
+ * redeploy shuts a replica down); routine at 0.
+ */
+describe("broker while draining", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  });
+
+  it("refuses to boot a new sandbox, answering a retryable 503", async () => {
+    const deps = await seedAgent("shutting-down");
+    mockSpawnAgentServer.mockClear();
+
+    const brokered = await brokerSessionUrl("shutting-down", {
+      ...deps,
+      isDraining: () => true,
+    });
+
+    expect(brokered).toEqual({ ok: false, status: 503 });
+    expect(mockSpawnAgentServer).not.toHaveBeenCalled();
+    // Nothing installed either — an empty slot must not be left behind.
+    expect(deps.slots.get("shutting-down")?.sandbox).toBeUndefined();
+    deps.unwatch();
+  });
+
+  // A guest that already exists orphans nothing by being handed out, and the
+  // guests outlive this process by design — cutting them off would break
+  // sessions that are about to be perfectly fine.
+  it("still serves a live resident", async () => {
+    const deps = await seedAgent("warm");
+    const first = await brokerSessionUrl("warm", deps);
+    expect(first).toMatchObject({ ok: true });
+
+    const draining = await brokerSessionUrl("warm", { ...deps, isDraining: () => true });
+    expect(draining).toMatchObject({ ok: true, sessionUrl: "wss://tunnel.test:443/websocket" });
+    await deps.slots.get("warm")?.sandbox?.shutdown();
+    deps.unwatch();
+  });
+});
+
+/**
  * A boot that never finishes must not hold the CLIENT for the guest's full
  * boot budget (`AGENT_HEALTH_TIMEOUT_MS`, 120s): an agent whose top-level
  * code blocks never becomes ready, so every broker call hung two minutes

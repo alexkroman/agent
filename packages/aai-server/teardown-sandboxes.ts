@@ -26,7 +26,37 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import { sleep } from "./_sleep.ts";
 import { retireSlot, type SlotCache } from "./sandbox-slots.ts";
+
+/**
+ * How long to keep serving after `draining` flips, before tearing anything
+ * down. Override with `SHUTDOWN_GRACE_MS`; 0 disables the wait.
+ *
+ * The flip only makes `/health` fail — the platform's proxy stops routing
+ * here when it NOTICES, which is up to one health-check interval later.
+ * Tearing down inside that window means requests still arriving find an
+ * emptied slot: the broker refuses to boot a replacement (see
+ * `ResolveSandboxOpts.isDraining`), so they get a retryable 503, but a 503 to
+ * a user who would otherwise have been served is worth a few seconds of
+ * patience. The guests are unaffected either way — they outlive this process
+ * by design.
+ *
+ * Deliberately short. Modal delivers SIGTERM and then kills the container,
+ * so this budget is spent from the same allowance the drains below need; a
+ * long wait would trade a rare 503 for undelivered drain requests, which is
+ * the worse failure (a guest that never learns it was retired).
+ */
+export const SHUTDOWN_GRACE_MS = 3000;
+
+/** Resolve the grace period from the environment. */
+export function shutdownGraceMs(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.SHUTDOWN_GRACE_MS;
+  if (raw === undefined || raw.trim() === "") return SHUTDOWN_GRACE_MS;
+  const parsed = Number(raw);
+  // An unusable value falls back rather than disabling the wait by accident.
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : SHUTDOWN_GRACE_MS;
+}
 
 export type TeardownTargets = {
   /** The replica's slug→sandbox map; every resident is retired. */
@@ -37,11 +67,20 @@ export type TeardownTargets = {
    * broker was never built (its dispose resolves immediately).
    */
   broker?: { dispose(): Promise<void> } | undefined;
+  /**
+   * Seconds to keep serving before teardown, so the proxy can observe the
+   * `/health` 503 first. Defaults to {@link shutdownGraceMs}; 0 skips it.
+   */
+  graceMs?: number;
 };
 
 /** Release every guest this process owns. Never throws. */
 export async function teardownSandboxes(targets: TeardownTargets): Promise<void> {
   const { slots, broker } = targets;
+
+  // Let the proxy notice we are unhealthy before emptying the slots.
+  const graceMs = targets.graceMs ?? shutdownGraceMs();
+  if (graceMs > 0) await sleep(graceMs);
 
   const work: Promise<unknown>[] = [...slots.values()].map((slot) =>
     retireSlot(slot, "replica-shutdown"),

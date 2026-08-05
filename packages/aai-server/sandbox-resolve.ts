@@ -65,6 +65,25 @@ export type ResolveSandboxOpts = {
    * no platform database) leaves every replica independent, as before.
    */
   registry?: SandboxRegistry;
+  /**
+   * True once this replica is shutting down. The broker then refuses to boot
+   * a NEW sandbox, answering a retryable 503 instead.
+   *
+   * Without it, a request landing between "draining flipped" and "process
+   * exits" — the window before the platform's proxy has observed the
+   * `/health` 503 and stopped routing here — takes the cold path, finds an
+   * emptied slot, and spawns a sandbox seconds before the process dies. That
+   * guest is then ORPHANED: nothing holds it, no slot references it, and it
+   * bills until Modal's idle timeout reclaims it. Rare at
+   * `MIN_CONTAINERS=1`, where only a redeploy shuts a replica down; routine
+   * at 0, where every quiet stretch does.
+   *
+   * A LIVE resident is still served while draining — handing back a URL for
+   * a guest that already exists orphans nothing, and refusing would break
+   * sessions that are about to be perfectly fine (the guests outlive this
+   * process by design; see teardown-sandboxes.ts).
+   */
+  isDraining?: () => boolean;
 };
 
 type BundleParts = {
@@ -382,6 +401,13 @@ export async function brokerSessionUrl(
   if (!(resident && isLive(resident))) {
     const peer = await findPeerSession(slug, opts);
     if (peer) return peer;
+    // Shutting down: a sandbox booted now would outlive the process with
+    // nothing holding it (see `isDraining`). 503 is exactly right — the
+    // client re-brokers, and the proxy routes that retry to a live replica.
+    if (opts.isDraining?.()) {
+      debug("Refusing to boot a sandbox while draining", { slug });
+      return { ok: false, status: 503 };
+    }
   }
   const sandbox = await resolveSandbox(slug, opts);
   if (!sandbox) return { ok: false, status: 404 };

@@ -107,10 +107,11 @@ async function main(): Promise<void> {
   // release: without the dispose they outlive it and burn their orphan
   // timeout (billed, on Modal) on every scale-in. Shared by both modes so
   // the two shutdown paths cannot drift.
-  const teardown = async (): Promise<void> => {
+  const teardown = async (graceMs?: number): Promise<void> => {
     await teardownSandboxes({
       slots: base.slots,
       broker: { dispose: disposeStudio },
+      ...(graceMs !== undefined && { graceMs }),
     });
     await base.events.close();
   };
@@ -126,7 +127,12 @@ async function main(): Promise<void> {
       onShutdown: async () => {
         draining = true;
         console.info("Studio service shutting down...");
-        await teardown();
+        // No grace wait: this service brokers no agent sandboxes (its slot
+        // cache is always empty), so there is no window in which a late
+        // request could spawn one and orphan it. Its own studio guests are
+        // useless without this process's control channel, so delaying their
+        // disposal only bills them for longer.
+        await teardown(0);
       },
     });
     return;

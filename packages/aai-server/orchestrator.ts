@@ -215,6 +215,9 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     secrets,
     ...(opts.appDb && { appDb: opts.appDb }),
     ...(opts.registry && { registry: opts.registry }),
+    // Same predicate `/health` reports on, so "the proxy has been told to
+    // stop routing here" and "stop booting sandboxes" can never disagree.
+    ...(opts.isDraining && { isDraining: opts.isDraining }),
   };
 
   const agents = new Hono<HonoEnv>();
