@@ -29,6 +29,7 @@ import type { TtsSession, Unsubscribe } from "../../sdk/providers.ts";
 import type { Message, ToolChoice } from "../../sdk/types.ts";
 import { errorMessage } from "../../sdk/utils.ts";
 import type { Logger } from "../runtime-config.ts";
+import { createToolCallRepair } from "./pipeline-repair.ts";
 import { smoothTextStream } from "./pipeline-smooth.ts";
 import {
   createStreamPartHandler,
@@ -402,4 +403,47 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     // dead-air filler may fire into the silence that follows it.
     handler?.dispose();
   }
+}
+
+/** Per-turn entry into {@link consumeLlmStream} — see {@link createTurnLlmRunner}. */
+export type TurnLlmRunner = (
+  signal: AbortSignal,
+  onDelta: (delta: string) => void,
+  onStepPersisted?: () => void,
+) => Promise<LlmStreamResult>;
+
+/**
+ * Bind a session's fixed `streamText` parameters once, leaving each turn to
+ * supply only what is genuinely per-turn: its abort signal and the two
+ * accumulation hooks.
+ *
+ * Session-scoped provider plumbing rather than turn orchestration, so it lives
+ * beside {@link consumeLlmStream} instead of in the transport.
+ *
+ * `messages` is the live LLM-history array, bound once — the history module
+ * mutates it in place (push/splice), so the reference stays current.
+ */
+/**
+ * The session-fixed half of {@link ConsumeLlmStreamParams} — derived by
+ * subtraction rather than re-declared, so a new stream parameter cannot be
+ * silently dropped here.
+ */
+export type TurnLlmRunnerDeps = Omit<
+  ConsumeLlmStreamParams,
+  "repairToolCall" | "signal" | "onDelta" | "onStepPersisted"
+>;
+
+export function createTurnLlmRunner(deps: TurnLlmRunnerDeps): TurnLlmRunner {
+  return (signal, onDelta, onStepPersisted) =>
+    consumeLlmStream({
+      ...deps,
+      // Built per turn so the repair holds THIS turn's signal. Reading the
+      // mutable turn state at repair time raced barge-in: settled, the repair
+      // ran unsignalled (an orphaned billed call); replaced, it held the NEXT
+      // turn's signal.
+      repairToolCall: createToolCallRepair(deps.llm, deps.log, () => signal),
+      signal,
+      onDelta,
+      onStepPersisted,
+    });
 }

@@ -5,8 +5,10 @@
 import { APICallError, RetryError } from "ai";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
+  DEAD_AIR_COVER_MAX_MS,
   DEAD_AIR_COVER_PHRASES,
   DEFAULT_DEAD_AIR_COVER_MS,
+  DEFAULT_HOLD_PHRASE,
   PIPELINE_FLUSH_TIMEOUT_MS,
   TTS_COALESCE_MAX_CHARS,
 } from "../../sdk/constants.ts";
@@ -346,6 +348,39 @@ describe("createStreamPartHandler dead-air cover", () => {
     vi.useRealTimers();
   });
 
+  test("covers the turn's opening gap, before any tool call exists", () => {
+    // The failure this exists for: the cover was armed only by a `tool-call`
+    // part, so the window between the committed user turn and the model's FIRST
+    // stream part was uncovered and unbounded — a slow first token, or a
+    // reasoning phase that emits no text, is silence the caller cannot
+    // distinguish from a dropped call. Measured on tau2-bench retail with
+    // gpt-5.5: 31.4s, ended only by the first tool call finally reaching the
+    // hold phrase.
+    const { spoken } = harness();
+    expect(spoken).toEqual([]);
+    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS);
+    // The hold phrase, not a cover phrase: "Still working on that." as the
+    // first words of a turn describes work the caller never heard start.
+    expect(spoken.join("")).toContain(DEFAULT_HOLD_PHRASE);
+  });
+
+  test("a turn that answers promptly pays nothing for the opening cover", () => {
+    const { spoken, handler } = harness();
+    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS - 1);
+    handler.handle({ type: "text-delta", text: "Sure, here you go. " });
+    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 10);
+    expect(spoken.join("")).toBe("Sure, here you go. ");
+  });
+
+  test("an opening filler is not said twice when the first tool call lands", () => {
+    // Both triggers emit the hold phrase; `holdEmitted` is what keeps the
+    // caller from hearing "One moment. One moment." a beat apart.
+    const { spoken, toolCall } = harness();
+    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS);
+    toolCall("tc-1");
+    expect(spoken.join("").split(DEFAULT_HOLD_PHRASE).length - 1).toBe(1);
+  });
+
   test("covers a tool window that opens after the model has already spoken", () => {
     // The failure this exists for: the model says "Let me check that", then
     // chains tool calls for 15+ seconds. holdPhrase is state-gated on "has the
@@ -365,6 +400,11 @@ describe("createStreamPartHandler dead-air cover", () => {
     toolCall("tc-1"); // opens with a tool call: holdPhrase fires immediately
     const covers = (): number =>
       DEAD_AIR_COVER_PHRASES.filter((p) => spoken.join("").includes(p)).length;
+    // The hold phrase counts toward the backoff, so the first cover is one
+    // step out rather than a single base window after it — under a second of
+    // silence between two fillers reads as chatter.
+    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS);
+    expect(covers()).toBe(0);
     vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS);
     expect(covers()).toBe(1);
     // Backoff: the second cover is not due at another single window.
@@ -372,6 +412,30 @@ describe("createStreamPartHandler dead-air cover", () => {
     expect(covers()).toBe(1);
     vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 8);
     expect(covers()).toBeGreaterThanOrEqual(2);
+  });
+
+  test("the backoff flattens at DEAD_AIR_COVER_MAX_MS instead of drifting silent", () => {
+    // Uncapped doubling put a 90s chain's fillers 16s and then 32s apart — the
+    // dead air the cover exists to prevent, at the tail of exactly the long
+    // chains it exists for. Measured on the tau2-bench retail runs, whose 45s
+    // tool chains ended in a silent 15s stretch.
+    const { spoken, toolCall } = harness();
+    toolCall("tc-1");
+    // Ramp past the doubling phase (hold + two covers gets the wait to the cap).
+    vi.advanceTimersByTime(DEAD_AIR_COVER_MAX_MS * 4);
+    const before = spoken.length;
+    // From here every window is the cap, so N more windows means N more fillers.
+    vi.advanceTimersByTime(DEAD_AIR_COVER_MAX_MS * 3);
+    expect(spoken.length - before).toBe(3);
+  });
+
+  test("the hold phrase does not consume a cover phrase's turn in the cycle", () => {
+    // Sharing one counter between the backoff and the phrase index made the
+    // caller hear "One moment." and then skip to the second cover phrase.
+    const { spoken, toolCall } = harness();
+    toolCall("tc-1");
+    vi.advanceTimersByTime(DEAD_AIR_COVER_MAX_MS * 2);
+    expect(spoken.join("")).toContain(DEAD_AIR_COVER_PHRASES[0]);
   });
 
   test("speech cancels a pending cover", () => {
@@ -414,7 +478,8 @@ describe("createStreamPartHandler dead-air cover", () => {
     const ctl = new AbortController();
     const { spoken, toolCall } = harness({ signal: ctl.signal });
     toolCall("tc-1");
-    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS);
+    // Two base windows: the hold phrase counts toward the backoff.
+    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 2);
     expect(spoken.join("")).toContain(DEAD_AIR_COVER_PHRASES[0]);
   });
 

@@ -127,8 +127,29 @@ function withoutReasoning(m: ModelMessage): ModelMessage | null {
  * the next turn's LLM repeat calls it already made or deny results it already
  * has), and the spoken-so-far text, marked `[interrupted]` so the model knows
  * it was cut off. The LLM view only receives the text tail that is not
- * already inside a persisted step message; the client transcript gets the
- * full spoken text via `onTranscript`.
+ * already inside a persisted step message.
+ *
+ * **Nothing is emitted to the CLIENT here.** This runs when the aborted stream
+ * settles, which is necessarily after the barge-in's `cancelled` frame, and the
+ * client treats `cancelled` as the end of the reply: aai-ui's handler commits
+ * the live agent bubble into the conversation (`commitAgentTranscript`). An
+ * `agent_transcript` arriving 1ms later therefore does not amend that message —
+ * it opens a NEW live bubble for a reply that is already over, which the next
+ * `reply_done`/`cancelled` commits a second time. Measured on tau2-bench
+ * retail: 19 of 73 cancels in one run were followed by exactly this frame, so
+ * the interrupted reply appeared twice in the transcript — once with the
+ * dead-air filler the caller heard, and again in the model-text-only form this
+ * function used to send. The client needs no frame from here: every word that
+ * reached TTS was already published as an interim `agent_transcript` by
+ * `sendTtsText`.
+ *
+ * Those interim snapshots are not a superset of `spoken`, and that is the point:
+ * they carry what reached the TTS provider, while `accumulated` carries every
+ * model delta — including whatever was still inside the TTS batch coalescer
+ * (`TTS_COALESCE_MAX_CHARS`) when the abort discarded it. So the client now shows
+ * what the caller actually heard, where the removed frame replaced it with words
+ * that were never synthesized. History deliberately keeps the fuller
+ * `accumulated` text: the model needs to know what it had committed to saying.
  */
 export function persistInterruptedTurn(args: {
   history: PipelineHistory;
@@ -138,8 +159,6 @@ export function persistInterruptedTurn(args: {
   persistedLen: number;
   /** Response messages of the turn's completed steps. */
   stepMessages: readonly ModelMessage[];
-  /** Surface the interrupted transcript to the client. */
-  onTranscript: (text: string) => void;
   /** Seed the STT provider with the agent's side of the dialog. */
   updateAgentContext: (text: string) => void;
 }): void {
@@ -150,7 +169,6 @@ export function persistInterruptedTurn(args: {
   // turn that got no further than its filler leaves nothing to persist.
   const spoken = accumulated.trim();
   if (spoken.length === 0) return;
-  args.onTranscript(spoken);
   history.pushConversation({ role: "assistant", content: `${spoken} [interrupted]` });
   const tail = accumulated.slice(persistedLen).trim();
   if (tail.length > 0) {

@@ -7,6 +7,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "BuiltinToolSchema",
   "CAPTURE_STOP_ACK_TIMEOUT_MS",
   "CLIENT_AUDIO_LEAD_MS",
+  "DEAD_AIR_COVER_MAX_MS",
   "DEAD_AIR_COVER_PHRASES",
   "DEFAULT_BUILTIN_TOOLS",
   "DEFAULT_DEAD_AIR_COVER_MS",

@@ -124,6 +124,10 @@ function makeActivity(overrides: Partial<ActivityDeps> = {}): {
     silenceTimeoutMs: undefined,
     silencePrompt: undefined,
     falseInterruptionTimeoutMs: 20,
+    // The resume is deferred until the speaking edge closes, so the watchdog is
+    // what releases it — short here, since a barge-in opens the edge and these
+    // specs never commit the final that would close it.
+    speechIdleTimeoutMs: 40,
     minBargeInWords: 2,
     interruptionMinDurationMs: 0,
     isTerminated: () => false,

@@ -15,13 +15,7 @@ import { createEmitError } from "./pipeline-error.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
 import { createPipelineProviderSessions } from "./pipeline-providers.ts";
 import { createReplyTailTracker } from "./pipeline-recovery.ts";
-import { createToolCallRepair } from "./pipeline-repair.ts";
-import {
-  createPlaybackClock,
-  flushTtsAndWait,
-  type LlmStreamResult,
-  consumeLlmStream as runLlmStream,
-} from "./pipeline-stream.ts";
+import { createPlaybackClock, createTurnLlmRunner, flushTtsAndWait } from "./pipeline-stream.ts";
 import {
   type PipelineTransportOptions,
   resolvePipelineOptions,
@@ -47,6 +41,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     errorPhrase,
     startFailurePhrase,
     falseInterruptionTimeoutMs,
+    speechIdleTimeoutMs,
     toolChoice,
     toolSchemas,
     executeTool,
@@ -189,7 +184,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     chainTurn(async () => {
       resumeTurnScope = kind?.isResume === true;
       try {
-        await runTurn(text, { synthetic: kind?.synthetic === true }).catch(logTurnCrash(crashLabel));
+        await runTurn(text, { synthetic: kind?.synthetic === true }).catch(
+          logTurnCrash(crashLabel),
+        );
       } finally {
         resumeTurnScope = false;
       }
@@ -261,36 +258,23 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     drainTts: () => drainTts(sessionAbort.signal),
   });
 
-  const consumeLlmStream = (
-    signal: AbortSignal,
-    onDelta: (delta: string) => void,
-    onStepPersisted?: () => void,
-  ): Promise<LlmStreamResult> =>
-    runLlmStream({
-      llm: opts.llm,
-      systemPrompt,
-      messages: history.llm,
-      tools,
-      toolChoice,
-      temperature: opts.temperature,
-      // Built per turn so the repair holds THIS turn's signal. Reading the
-      // mutable turn state at repair time raced barge-in: settled, the
-      // repair ran unsignalled (an orphaned billed call); replaced, it held
-      // the NEXT turn's signal.
-      repairToolCall: createToolCallRepair(opts.llm, log, () => signal),
-      maxSteps,
-      holdPhrase,
-      // An open speech edge means an utterance is in progress (0 when not).
-      callerSpeaking: () => speechEdges.durationMs() > 0,
-      sendTtsText,
-      callbacks,
-      emitError,
-      log,
-      sid: opts.sid,
-      signal,
-      onDelta,
-      onStepPersisted,
-    });
+  const consumeLlmStream = createTurnLlmRunner({
+    llm: opts.llm,
+    systemPrompt,
+    messages: history.llm,
+    tools,
+    toolChoice,
+    temperature: opts.temperature,
+    maxSteps,
+    holdPhrase,
+    // An open speech edge means an utterance is in progress (0 when not).
+    callerSpeaking: () => speechEdges.durationMs() > 0,
+    sendTtsText,
+    callbacks,
+    emitError,
+    log,
+    sid: opts.sid,
+  });
 
   /** Per-turn TTS drain — see flushTtsAndWait in pipeline-stream.ts. */
   function drainTts(signal: AbortSignal): Promise<void> {
@@ -344,6 +328,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   }
 
   function runTurn(userText: string, kind?: { synthetic?: boolean }): Promise<void> {
+    // An injected prompt (resume / silence nudge) this turn never got to use is
+    // rolled back rather than left standing as something the user said — see
+    // persistBargeIn.
+    const syntheticPrompt = kind?.synthetic === true ? userText : undefined;
     return runReply("pipeline", async (signal) => {
       // reset() bumps this before clearing history — the persistence below
       // runs asynchronously after the abort and must not write the
@@ -368,10 +356,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
           accumulated,
           persistedLen,
           stepMessages: responseMessages,
-          // An injected prompt (resume / silence nudge) this turn never got to
-          // use is rolled back rather than left standing as something the user
-          // supposedly said — see persistBargeIn.
-          syntheticPrompt: kind?.synthetic === true ? userText : undefined,
+          syntheticPrompt,
         });
         return false;
       }

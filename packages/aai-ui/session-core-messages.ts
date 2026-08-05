@@ -137,11 +137,15 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
   }
 
   /**
-   * `agent_transcript` carries the reply's text *so far* and is cumulative
-   * within a reply (see the protocol schema), so it renders as the live
-   * assistant bubble and only becomes a message when the reply closes. Pipeline
-   * mode sends one per piece of speech, so appending each would break a single
-   * reply into a message per sentence.
+   * `agent_transcript` carries the reply's text so far as a full-replacement
+   * snapshot (see the protocol schema), so it renders as the live assistant
+   * bubble and only becomes a message when the reply closes. Pipeline mode sends
+   * one per piece of speech, so appending each would break a single reply into a
+   * message per sentence.
+   *
+   * Replace rather than merge: a snapshot is not append-only. A pipeline reply's
+   * closing snapshot drops the dead-air filler the interim ones carried, so it
+   * can be shorter than its predecessor and differ mid-string.
    */
   function handleAgentTranscriptEvent(text: string): void {
     updateState({ agentTranscript: text });

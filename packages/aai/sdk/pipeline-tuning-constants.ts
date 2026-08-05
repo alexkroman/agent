@@ -26,6 +26,43 @@ export const DEAD_AIR_COVER_PHRASES: readonly string[] = [
 ];
 
 /**
+ * How long a pipeline turn may send nothing to TTS while tools run before the
+ * transport speaks a {@link DEAD_AIR_COVER_PHRASES} filler.
+ *
+ * {@link DEFAULT_HOLD_PHRASE} only covers a turn whose *first* action is a
+ * tool call: once the model has spoken a word it is suppressed for the rest of
+ * the turn. A model that says "Let me look that up" and then chains six tool
+ * calls therefore goes silent for as long as the chain takes — measured at
+ * 15-24s against the tau2-bench retail tasks, well past the point a caller
+ * assumes the line is dead. Cover is time-based instead: any gap this long
+ * gets filler, whether or not the model already spoke.
+ *
+ * @internal
+ */
+export const DEFAULT_DEAD_AIR_COVER_MS = 2000;
+
+/**
+ * Ceiling on the dead-air cover's exponential backoff, so a long tool chain
+ * settles into a steady heartbeat instead of drifting into silence.
+ *
+ * Uncapped doubling from {@link DEFAULT_DEAD_AIR_COVER_MS} put the fillers of a
+ * 90s chain at 0, 2, 6, 14, 30 and 62s — gaps of 2, 4, 8, 16 and 32s. Net of
+ * each phrase's own ~1.3s of audio that is roughly 0.7s, 2.7s, 6.7s, 14.6s and
+ * 30.6s of actual silence: two fillers almost on top of each other at the start,
+ * and then gaps well past the point where the caller concludes the line is dead
+ * — reintroducing, at the tail of exactly the long chains it exists for, the
+ * dead air the mechanism is there to cover. Measured against the tau2-bench
+ * retail runs, whose 45s tool chains ended with a silent 15s stretch.
+ *
+ * At 8000 the same chain reassures roughly every 6.5s of silence once it has
+ * ramped, which is the cadence a human on a phone keeps ("bear with me…"),
+ * while the ramp still keeps a short chain from chattering.
+ *
+ * @internal
+ */
+export const DEAD_AIR_COVER_MAX_MS = 8000;
+
+/**
  * Instruction injected as a synthetic user turn when a barge-in turns out to
  * be a false interruption (see {@link DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS}).
  * The interrupted reply's spoken-so-far text is already in history, marked
@@ -141,3 +178,28 @@ export const STT_CONNECT_RETRY_DELAY_MS = 500;
  * @internal
  */
 export const TTS_RECONNECT_TIMEOUT_MS = 8000;
+
+/**
+ * Watchdog for the pipeline speaking edge: how long after the last STT partial
+ * to force `speech_stopped` when no non-empty final ever arrives. Genuine
+ * utterances close the edge when their final commits, well inside this window
+ * (provider endpointing — e.g. {@link DEFAULT_MIN_TURN_SILENCE_MS} — plus
+ * final latency); this only bounds the leak for noise partials that never
+ * commit.
+ *
+ * **It is also what releases a deferred false-interruption resume**, so it sets
+ * how long a genuinely false interruption leaves the agent silent before it
+ * picks its reply back up (this window, then the resume turn's own
+ * time-to-first-audio). That is why it is 3500 rather than the 5000 it was while
+ * nothing depended on it: at 5000 a reply cut by STT noise resumed almost six
+ * seconds later, which a caller reads as a dropped call. The floor is the
+ * endpointing delay plus final-emission latency — below `min_turn_silence` the
+ * edge would close while a real final is still in flight, putting back the race
+ * that {@link DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS} documents. 3500 clears the
+ * 2000 default by 1.5s; an agent raising `minTurnSilenceMs` past ~3000 should
+ * raise this with it (the transport's `speechIdleTimeoutMs` option), and the
+ * mooted-resume abort in pipeline-user-speech.ts is the backstop if it does not.
+ *
+ * @internal
+ */
+export const DEFAULT_SPEECH_IDLE_TIMEOUT_MS = 3500;

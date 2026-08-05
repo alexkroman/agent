@@ -92,6 +92,11 @@ describe("PipelineTransport", () => {
           delayMs: 20,
         }),
         falseInterruptionTimeoutMs: 40,
+        // The resume is deferred until the speaking edge closes (the noise
+        // partial opens it and no final ever arrives), so the watchdog is what
+        // releases it — shortened here to keep the spec inside vi.waitFor's
+        // window. The specs asserting NO resume keep the shipped value.
+        speechIdleTimeoutMs: 60,
       });
       const t = createPipelineTransport(opts);
       await t.start();
@@ -186,7 +191,15 @@ describe("PipelineTransport", () => {
           [{ type: "text", text: "As I was counting…" }],
         ],
       });
-      const { opts, stt, tts, callbacks } = makeOpts({ llm, falseInterruptionTimeoutMs: 40 });
+      const { opts, stt, tts, callbacks } = makeOpts({
+        llm,
+        falseInterruptionTimeoutMs: 40,
+        // The resume is deferred until the speaking edge closes (the noise
+        // partial opens it and no final ever arrives), so the watchdog is what
+        // releases it — shortened here to keep the spec inside vi.waitFor's
+        // window. The specs asserting NO resume keep the shipped value.
+        speechIdleTimeoutMs: 60,
+      });
       const t = createPipelineTransport(opts);
       await t.start();
 
@@ -333,6 +346,58 @@ describe("PipelineTransport", () => {
       const idx = transcriptCalls.calls.findIndex((c) => c[0] === "okay, cool.");
       expect(idx).not.toBe(-1);
       expect(transcriptCalls.invocationCallOrder[idx]).toBeGreaterThan(cancelledCall as number);
+      await t.stop();
+    });
+
+    test("a resume mooted by the real user turn leaves no synthetic prompt in history", async () => {
+      // The resume fires, the caller's final lands a beat later and moots it
+      // while it is still silent. The prompt was pushed into history before the
+      // stream ran and nothing rolled it back, so the model's next request
+      // carried "the user did not actually say anything. Continue your reply"
+      // immediately followed by what the user really said — two consecutive,
+      // contradictory user messages.
+      const { opts, stt, tts, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({
+          // The resume arm gets a script that cannot finish on its own, and the
+          // 400ms per-part delay is what makes the moot observable: the final
+          // has to land while the resume is still SILENT (no text accumulated,
+          // no audio fired), which is the only state the abort can roll back.
+          steps: [script, script, [{ type: "text", text: "ok" }]],
+          delayMs: 400,
+        }),
+        falseInterruptionTimeoutMs: 40,
+        speechIdleTimeoutMs: 60,
+      });
+      const llm = opts.llm as ReturnType<typeof createFakeLanguageModel>;
+      const t = createPipelineTransport(opts);
+      await t.start();
+
+      stt.last()?.fireFinal("where is my order");
+      await vi.waitFor(() => {
+        expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
+      });
+      tts.last()?.fireAudio(new Int16Array(2400));
+
+      // Noise partial → barge-in → the window elapses and the edge closes, so
+      // the resume turn starts.
+      stt.last()?.firePartial("uh what");
+      await vi.waitFor(() => {
+        expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(2);
+      });
+
+      // The caller's real turn commits, mooting the still-silent resume.
+      expect(callbacks.onAudioChunk).toHaveBeenCalledTimes(1); // turn 1's only
+      stt.last()?.fireFinal("actually where is my refund");
+      await vi.waitFor(() => {
+        expect(callbacks.onUserTranscript).toHaveBeenCalledWith("actually where is my refund");
+      });
+      await vi.waitFor(() => {
+        if (llm.calls.length < 3) throw new Error("mooted resume's replacement turn not started");
+      });
+
+      const request = JSON.stringify(llm.calls.at(-1));
+      expect(request).toContain("actually where is my refund");
+      expect(request).not.toContain("did not actually say anything");
       await t.stop();
     });
 

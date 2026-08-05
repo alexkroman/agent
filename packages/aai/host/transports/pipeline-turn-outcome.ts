@@ -45,7 +45,9 @@ export interface TurnOutcome {
   /**
    * Barge-in mid-turn: keep the completed tool steps and the spoken-so-far
    * text. Skipped when the conversation has since been reset, so an interrupted
-   * tail never lands in a fresh conversation.
+   * tail never lands in a fresh conversation. Emits nothing to the client — the
+   * `cancelled` frame already ended this reply there, and the interim
+   * transcripts already carried its text (see `persistInterruptedTurn`).
    *
    * `syntheticPrompt` — the turn's own user text, set only when that text was
    * INJECTED (a false-interruption resume prompt, a silence nudge) — is dropped
@@ -112,7 +114,6 @@ export function createTurnOutcome(deps: TurnOutcomeDeps): TurnOutcome {
         accumulated: args.accumulated,
         persistedLen: args.persistedLen,
         stepMessages: args.stepMessages,
-        onTranscript: (text) => callbacks.onAgentTranscript(text, true),
         updateAgentContext: (text) => providers.stt?.updateAgentContext?.(text),
       });
       if (args.syntheticPrompt !== undefined && leftNoTrace) {

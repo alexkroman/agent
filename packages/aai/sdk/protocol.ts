@@ -139,12 +139,25 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
     text: z.string().max(MAX_TRANSCRIPT_CHARS),
   }),
   /**
-   * The current reply's transcript **so far** — cumulative, and the last one
-   * before `reply_done` is the whole reply. Pipeline mode sends one as each
-   * piece of text reaches TTS, so captions track the speech; S2S sends a single
-   * one per reply, when its provider reports the finished transcript. Either
-   * way a client renders the latest text for the reply in progress and commits
-   * it on `reply_done`/`cancelled` — never appending them as separate turns.
+   * The current reply's transcript so far — a **full-replacement snapshot**, and
+   * the last one before `reply_done` is the whole reply. Pipeline mode sends one
+   * as each piece of text reaches TTS, so captions track the speech; S2S sends a
+   * single one per reply, when its provider reports the finished transcript.
+   * Either way a client renders the latest text for the reply in progress and
+   * commits it on `reply_done`/`cancelled` — never appending them as separate
+   * turns.
+   *
+   * Snapshot, NOT an append-only or monotonically growing string: a pipeline
+   * reply's final snapshot can be SHORTER than the one before it, and can differ
+   * in the middle rather than only at the end. The interim snapshots are built
+   * from everything handed to TTS, which includes the hold phrase and the
+   * dead-air cover fillers the caller hears; the reply's closing snapshot is the
+   * model's own words, with that filler removed — so "One moment. Thanks, I
+   * found your account. Still working on that. Here it is." is followed by
+   * "Thanks, I found your account. Here it is.". That is deliberate: the
+   * committed message should read as dialogue, while the live caption should
+   * match the audio. A client that diffs against the previous snapshot, renders
+   * incrementally, or assumes a common prefix will corrupt — replace the text.
    */
   z.object({
     type: z.literal("agent_transcript"),
