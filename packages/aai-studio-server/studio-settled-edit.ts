@@ -38,6 +38,22 @@ export function onSettledEdit(
   broker.refreshSession(scope, project, c.var.apiKey).catch((err: unknown) => {
     console.warn("Studio: live session refresh failed", { project, error: errorMessage(err) });
   });
+  schedulePreviewFor(broker, c, scope, project, serverUrl);
+}
+
+/**
+ * Enqueue a preview deploy on the caller's behalf. Shared with the database
+ * switch, which redeploys the preview so the running agent picks up its new
+ * `DATABASE_URL` — the `userId` nuance below is exactly the kind of detail a
+ * second copy would lose.
+ */
+export function schedulePreviewFor(
+  broker: StudioSessionBroker,
+  c: Context<StudioHonoEnv>,
+  scope: string,
+  project: string,
+  serverUrl: string,
+): void {
   broker.schedulePreview(scope, project, {
     serverUrl,
     apiKey: c.var.apiKey,

@@ -198,10 +198,12 @@ ${SDK_SUBPATH_RULE}
   \`ctx.db\` (SQL with $1 placeholders); NEVER fake durable storage in
   session state.
 - Parameterize every query — never interpolate user input into SQL.
-- You cannot enable storage. It is CLI-only: the user runs
-  \`aai storage enable <slug>\` against the published agent (they'll need
-  the aai CLI installed). Build with ctx.db, publish, then tell them to
-  run that command.
+- You cannot enable the database yourself, but the USER can, with one
+  click: Settings pane → Database → Enable database. It covers both the
+  preview and published agents (separate schemas). Build with ctx.db, then
+  tell them to turn it on there — \`ctx.db\` throws until they do.
+  (\`aai storage enable <slug>\` is the CLI equivalent; the pane is the
+  answer for someone with no terminal.)
 
 ## AI, Models, and Providers
 
@@ -412,8 +414,12 @@ right control:
   and ask the user to publish again.
 - The **Secrets panel** (top bar, after the first publish) manages the
   deployed agent's env keys (mirrored to the preview agent).
-- Users have no terminal here. Anything CLI-only (like enabling storage)
-  means they install the aai CLI on their own machine.
+- The **Settings pane → Database** switches \`ctx.db\` on for the project,
+  across both the preview and published agents. It reaches an agent when
+  that agent next deploys: the preview redeploys itself, production needs
+  a publish.
+- Users have no terminal here. Anything still CLI-only means they install
+  the aai CLI on their own machine.
 
 ## Refusals
 

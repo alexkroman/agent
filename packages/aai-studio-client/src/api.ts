@@ -36,6 +36,28 @@ export type AuthConfig =
 
 export type Account = { email?: string; hasKey: boolean };
 
+/** One deployed agent's database state (see GET …/database). */
+export type DatabaseEnvironment = {
+  environment: "production" | "preview";
+  /** The deployed slug; absent until that environment has deployed. */
+  slug?: string;
+  enabled: boolean;
+};
+
+/**
+ * The project's `ctx.db` database, across both deployed agents. `enabled` is
+ * the project's setting — what the next deploy of either agent provisions —
+ * while each environment row says whether it has a database RIGHT NOW.
+ * `configured: false` means this server cannot provision at all.
+ */
+export type DatabaseState = {
+  enabled: boolean;
+  configured: boolean;
+  environments: DatabaseEnvironment[];
+  /** An environment that could not be switched, when others succeeded. */
+  warning?: string;
+};
+
 export type StudioStatus = {
   llm: boolean;
   provider?: string;
@@ -380,6 +402,28 @@ export const api = {
       `/projects/${encodeURIComponent(project)}/deploy`,
       { method: "POST", body: "{}" },
     ),
+
+  /**
+   * The project's database (`ctx.db`) across both environments. A studio
+   * route rather than the platform's per-slug `/:slug/storage`: a project is
+   * two deployed agents, and the switch can be flipped before either exists
+   * (see aai-studio-server/studio-database.ts).
+   */
+  getDatabase: (key: string, project: string) =>
+    request<DatabaseState>(key, `/projects/${encodeURIComponent(project)}/database`),
+
+  /** Provision the database for both environments. */
+  enableDatabase: (key: string, project: string) =>
+    request<DatabaseState>(key, `/projects/${encodeURIComponent(project)}/database`, {
+      method: "POST",
+      body: "{}",
+    }),
+
+  /** Drop both environments' databases — and all their data. */
+  disableDatabase: (key: string, project: string) =>
+    request<DatabaseState>(key, `/projects/${encodeURIComponent(project)}/database`, {
+      method: "DELETE",
+    }),
 
   // Deployed-agent secrets — the same platform routes `aai secret` uses.
 

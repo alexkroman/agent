@@ -499,7 +499,10 @@ model) is the security boundary.
   caller's), `studio-workspace-dir.ts` (materializes a workspace to a
   scratch dir — eval-suite only now), `studio-errors.ts`
   (`StudioBuildError`), `studio-deploy.ts` (guest build → validate config →
-  deploy), `studio-workspace.ts` (project file store), `studio-prompt.ts`
+  deploy), `studio-database.ts` + `studio-database-routes.ts` (the project
+  database switch across both environments, and the post-deploy hook that
+  provisions a newly claimed slug), `studio-workspace.ts` (project file
+  store), `studio-prompt.ts`
   (system prompt from the scaffold CLAUDE.md), `studio-static.ts` (serves
   the built client)
 - `packages/aai-studio-client/` — the studio's React front-end (Vite +
@@ -909,7 +912,9 @@ voice agents without the CLI:
     in the deploy body) exists because the Secrets panel needs a deployed
     slug to attach secrets to — a hard preflight failure would deadlock
     first publishes. The public origin comes from `requestPublicOrigin`
-    (studio-routes.ts) → `resolvePublicOrigin` (aai-server/public-origin.ts).
+    (studio-context.ts — beside the context type, not in studio-routes.ts, so
+    route modules under it can resolve the origin without importing their own
+    parent) → `resolvePublicOrigin` (aai-server/public-origin.ts).
   A hostile or pathological workspace burns the tenant's own sandbox CPU —
   never the web container's. Covered end-to-end by
   `aai-server/workspace-build-integration.test.ts` (a real harness process
@@ -938,10 +943,42 @@ voice agents without the CLI:
   by name rather than accepted: a save that then vanished from the list
   reads as a failed write. Overriding it with another account's key stays a
   CLI action (`aai secret`, or `.env` + `aai publish`), where it is
-  deliberate. Storage
-  (`ctx.db`) is CLI-only (`aai storage enable <slug>`): the studio's
-  storage routes and toggle were removed, and the prompt tells the agent to
-  direct users to the CLI.
+  deliberate.
+- **The Database card switches `ctx.db` on per PROJECT, across both
+  environments** (`database-card.tsx` → `GET/POST/DELETE
+  /studio/projects/:project/database` → `aai-studio-server/
+  studio-database.ts`). The platform primitive is per SLUG (`aai storage
+  enable <slug>`, `/:slug/storage`) and a project is two deployed agents, so
+  a per-slug toggle here would have made that the user's bookkeeping — and
+  "enable the database" that only reached the preview would be a broken
+  promise either way. Each environment gets its OWN schema: the preview is
+  where half-finished tool code runs, and a shared one would let a preview
+  turn drop the production table.
+  - **Intent is stamped on the workspace (`databaseEnabled`); provisioning
+    follows the SLUG.** The switch is reachable before either agent exists
+    (the usual state — a project has a preview long before a publish), and
+    provisioning an unclaimed slug would create a schema no cleanup path can
+    see (the orphan-preview sweep and `deleteAgentResources` both key off an
+    agents row) and that another tenant could inherit by claiming the name
+    first. So the flag records the want, the switch provisions the slugs that
+    exist, and `reconcileProjectDatabase` provisions the rest as their deploys
+    claim them — hung off the ONE hook (`afterDeploy` on the session broker's
+    single publisher) that both Publish and the auto preview pass through.
+    The invariant: an app database exists only for a deployed, owned slug.
+  - **It reaches an agent on that agent's next DEPLOY** — `DATABASE_URL` is
+    read from the `app-db:` secret when a sandbox is BUILT, and deploy/delete
+    are the only mutations that move sandboxes (the same trade secret changes
+    make). So the switch force-redeploys the PREVIEW (clear `previewHash`,
+    schedule — the `wakeProjectPreview` pattern), because that is the
+    environment the user is looking at, while production waits for a Publish,
+    which the card says out loud.
+  - **An already-provisioned slug is never re-provisioned**: `provision`
+    rotates the role's password on every call, so re-running it would
+    invalidate the `DATABASE_URL` a live sandbox is holding.
+  - Ownership of each slug is checked against the agents row's credential
+    hashes (`verifySlugOwner`), exactly as the project-delete cascade does —
+    a workspace naming a foreign slug must not become a lever on, or an
+    oracle for, someone else's agent.
 - **The Settings pane is also where the CLI round-trip is discoverable**
   (`cli-commands.tsx`, the "Work locally" section): the install / `aai login`
   / `aai pull <project>` / `aai dev` sequence with the project name filled
@@ -1317,9 +1354,10 @@ descriptor — `voice` is a compile error there.
 ### Storage (`ctx.db`)
 
 There is no KV store anymore. Persistent state is the opt-in **app
-database**: enabling storage for an app (CLI `aai storage enable` — the
-studio deliberately has NO storage toggle, so this is a CLI-only action;
-or `DATABASE_URL` in the project `.env` under
+database**: enabling storage for an app (CLI `aai storage enable <slug>`; the
+studio's Settings pane → Database, which switches BOTH of a project's agents
+at once — see the Database-card note under "Browser studio"; or
+`DATABASE_URL` in the project `.env` under
 `aai dev`) gives its tools `ctx.db` — a SQL handle
 (`query<T>(sql, params?)`, `$1` placeholders) backed by a per-app schema in
 the platform's Supabase Postgres. Accessing `ctx.db` without storage

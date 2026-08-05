@@ -60,6 +60,12 @@ export type StudioWorkspace = {
    * turn to carry their failure output.
    */
   previewError?: string;
+  /**
+   * The project wants a database (`ctx.db`) — see studio-database.ts. Intent
+   * rather than state: it can be set before either agent is deployed, and each
+   * environment's schema is provisioned as its slug appears. Absent means off.
+   */
+  databaseEnabled?: boolean;
   updatedAt: number;
 };
 

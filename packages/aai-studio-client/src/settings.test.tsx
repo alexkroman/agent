@@ -13,6 +13,22 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { jsonResponse, stubFetch } from "./_test-utils.ts";
 import { SettingsPane } from "./settings.tsx";
 
+/**
+ * The pane also renders the Database card, which reads its own state on
+ * mount. Spread into every route table here so the secrets assertions below
+ * don't have to know about it (the card itself is covered by
+ * database-card.test.tsx).
+ */
+const DATABASE_STATE = {
+  "GET /studio/projects/demo/database": () =>
+    jsonResponse({ enabled: false, configured: true, environments: [] }),
+};
+
+/** How many requests this mock saw for one path — counts survive the card's own. */
+function callsTo(fetchMock: ReturnType<typeof stubFetch>, path: string): number {
+  return fetchMock.mock.calls.filter(([input]) => String(input) === path).length;
+}
+
 function renderPanel(slug: string | undefined, onNotifyChat = vi.fn(), onDeleteProject = vi.fn()) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
@@ -36,22 +52,25 @@ afterEach(() => {
 });
 
 describe("SettingsPane", () => {
-  test("unpublished projects get the publish-first gate, no requests", () => {
-    const fetchMock = stubFetch({});
+  test("unpublished projects get the publish-first gate, no secret requests", () => {
+    const fetchMock = stubFetch({ ...DATABASE_STATE });
     renderPanel(undefined);
     expect(screen.getByText(/Publish the project first/)).toBeTruthy();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(callsTo(fetchMock, "/demo/secret")).toBe(0);
   });
 
   test("the CLI section renders with no published slug — pulling needs no deploy", () => {
-    stubFetch({});
+    stubFetch({ ...DATABASE_STATE });
     renderPanel(undefined);
     expect(screen.getByText("aai pull demo")).toBeTruthy();
     expect(screen.getByText("Work locally")).toBeTruthy();
   });
 
   test("lists the deployed agent's secret names", async () => {
-    stubFetch({ "GET /demo/secret": () => jsonResponse({ vars: ["OPENAI_API_KEY"] }) });
+    stubFetch({
+      ...DATABASE_STATE,
+      "GET /demo/secret": () => jsonResponse({ vars: ["OPENAI_API_KEY"] }),
+    });
     renderPanel("demo");
     await waitFor(() => {
       expect(screen.getByText("OPENAI_API_KEY")).toBeTruthy();
@@ -60,6 +79,7 @@ describe("SettingsPane", () => {
 
   test("saving secrets PUTs them and posts a chat note without the values", async () => {
     stubFetch({
+      ...DATABASE_STATE,
       "GET /demo/secret": () => jsonResponse({ vars: [] }),
       "PUT /demo/secret": () => jsonResponse({ ok: true, keys: ["MY_KEY"] }),
     });
@@ -78,6 +98,7 @@ describe("SettingsPane", () => {
 
   test("saving multiple secrets pluralizes the chat note", async () => {
     stubFetch({
+      ...DATABASE_STATE,
       "GET /demo/secret": () => jsonResponse({ vars: [] }),
       "PUT /demo/secret": () => jsonResponse({ ok: true, keys: ["A", "B"] }),
     });
@@ -93,18 +114,22 @@ describe("SettingsPane", () => {
   });
 
   test("saving an empty draft is a no-op — no request, no note", async () => {
-    const fetchMock = stubFetch({ "GET /demo/secret": () => jsonResponse({ vars: [] }) });
+    const fetchMock = stubFetch({
+      ...DATABASE_STATE,
+      "GET /demo/secret": () => jsonResponse({ vars: [] }),
+    });
     const notify = renderPanel("demo");
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(callsTo(fetchMock, "/demo/secret")).toBe(1);
     });
     fireEvent.click(screen.getByText("Save secrets"));
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(callsTo(fetchMock, "/demo/secret")).toBe(1);
     expect(notify).not.toHaveBeenCalled();
   });
 
   test("a failed listing surfaces the server's error message", async () => {
     stubFetch({
+      ...DATABASE_STATE,
       "GET /demo/secret": () => jsonResponse({ error: "unauthorized" }, 401),
     });
     renderPanel("demo");
@@ -115,6 +140,7 @@ describe("SettingsPane", () => {
 
   test("a failed save surfaces its error and posts no note", async () => {
     stubFetch({
+      ...DATABASE_STATE,
       "GET /demo/secret": () => jsonResponse({ vars: [] }),
       "PUT /demo/secret": () => jsonResponse({ error: "vault unavailable" }, 503),
     });
@@ -131,6 +157,7 @@ describe("SettingsPane", () => {
 
   test("deleting a secret posts a chat note", async () => {
     stubFetch({
+      ...DATABASE_STATE,
       "GET /demo/secret": () => jsonResponse({ vars: ["OLD_KEY"] }),
       "DELETE /demo/secret/OLD_KEY": () => jsonResponse({ ok: true }),
     });
@@ -149,6 +176,7 @@ describe("SettingsPane", () => {
     // It is seeded at publish from the caller's account key; deleting it
     // takes the agent off the air with nothing in this pane to restore it.
     stubFetch({
+      ...DATABASE_STATE,
       "GET /demo/secret": () => jsonResponse({ vars: ["ASSEMBLYAI_API_KEY", "OPENAI_API_KEY"] }),
     });
     renderPanel("demo");
@@ -165,11 +193,12 @@ describe("SettingsPane", () => {
 
   test("a managed key typed into the box is refused rather than saved and hidden", async () => {
     const fetchMock = stubFetch({
+      ...DATABASE_STATE,
       "GET /demo/secret": () => jsonResponse({ vars: [] }),
       "PUT /demo/secret": () => jsonResponse({ ok: true, keys: ["OPENAI_API_KEY"] }),
     });
     const notify = renderPanel("demo");
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(callsTo(fetchMock, "/demo/secret")).toBe(1));
     fireEvent.change(screen.getByPlaceholderText("OPENAI_API_KEY=..."), {
       target: { value: "ASSEMBLYAI_API_KEY=leaked\nOPENAI_API_KEY=ok" },
     });
@@ -185,20 +214,23 @@ describe("SettingsPane", () => {
   });
 
   test("a draft of nothing but managed keys sends no request at all", async () => {
-    const fetchMock = stubFetch({ "GET /demo/secret": () => jsonResponse({ vars: [] }) });
+    const fetchMock = stubFetch({
+      ...DATABASE_STATE,
+      "GET /demo/secret": () => jsonResponse({ vars: [] }),
+    });
     const notify = renderPanel("demo");
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(callsTo(fetchMock, "/demo/secret")).toBe(1));
     fireEvent.change(screen.getByPlaceholderText("OPENAI_API_KEY=..."), {
       target: { value: "ASSEMBLYAI_API_KEY=leaked" },
     });
     fireEvent.click(screen.getByText("Save secrets"));
     expect(screen.getByText(/managed for you and can't be set here/)).toBeTruthy();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(callsTo(fetchMock, "/demo/secret")).toBe(1);
     expect(notify).not.toHaveBeenCalled();
   });
 
   test("Delete project asks for confirmation before firing", () => {
-    stubFetch({});
+    stubFetch({ ...DATABASE_STATE });
     const onDeleteProject = vi.fn();
     vi.stubGlobal(
       "confirm",
@@ -216,7 +248,10 @@ describe("SettingsPane", () => {
   });
 
   test("Delete project is available even on published projects", async () => {
-    stubFetch({ "GET /demo/secret": () => jsonResponse({ vars: [] }) });
+    stubFetch({
+      ...DATABASE_STATE,
+      "GET /demo/secret": () => jsonResponse({ vars: [] }),
+    });
     renderPanel("demo");
     await waitFor(() => {
       expect(screen.getByText("Delete project")).toBeTruthy();

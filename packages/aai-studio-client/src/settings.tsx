@@ -10,15 +10,17 @@
 // ones `aai secret` uses), so it needs a published slug to attach secrets
 // to. Every change posts a note into the chat (values withheld) so the
 // coding agent knows which keys exist without ever seeing them. Below it sit
-// the two project-scoped sections that work without a publish: the CLI pull
-// commands (cli-commands.tsx) and the delete-project button.
+// the project-scoped sections that work without a publish: the Database
+// switch (database-card.tsx), the CLI pull commands (cli-commands.tsx), and
+// the delete-project button.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ReactNode } from "react";
 import { useState } from "react";
 import { api, errorText, parseSecrets } from "./api.ts";
 import { CliCommands } from "./cli-commands.tsx";
+import { DatabaseCard } from "./database-card.tsx";
 import { queryKeys } from "./query-keys.ts";
+import { Card } from "./settings-card.tsx";
 
 /**
  * Secrets the PLATFORM manages, which this pane neither lists, deletes, nor
@@ -32,27 +34,6 @@ import { queryKeys } from "./query-keys.ts";
  * one row away from a third-party key.
  */
 const PLATFORM_MANAGED_SECRETS: readonly string[] = ["ASSEMBLYAI_API_KEY"];
-
-/** One page section: eyebrow heading, blurb, body. The page is a stack of these. */
-function Card({
-  title,
-  blurb,
-  children,
-}: {
-  title: string;
-  blurb: ReactNode;
-  children?: ReactNode;
-}) {
-  return (
-    <section className="flex flex-col gap-4 rounded-lg border border-line bg-panel p-6">
-      <div className="flex flex-col gap-2">
-        <span className="eyebrow">{title}</span>
-        <p className="m-0 max-w-2xl text-[13px] leading-5 text-muted">{blurb}</p>
-      </div>
-      {children}
-    </section>
-  );
-}
 
 type SettingsPaneProps = {
   bearer: string;
@@ -235,6 +216,11 @@ export function SettingsPane({
           )}
           {message && <p className="m-0 text-xs text-err">{message}</p>}
         </Card>
+
+        {/* Unconditional, like the two below: a database is provisioned per
+            environment as each one deploys, so it can be switched on before
+            the project has ever been published. */}
+        <DatabaseCard bearer={bearer} project={project} onNotifyChat={onNotifyChat} />
 
         {/* Unconditional — pulling a project locally needs no published slug. */}
         <Card

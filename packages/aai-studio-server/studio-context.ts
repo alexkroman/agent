@@ -15,7 +15,9 @@
 import type { ChatStore } from "aai-server/chat-store";
 import type { HonoEnv } from "aai-server/context";
 import type { PlatformEvents } from "aai-server/platform-events";
+import { resolvePublicOrigin } from "aai-server/public-origin";
 import type { WorkspaceStore } from "aai-server/workspace-store";
+import type { Context } from "hono";
 
 export type StudioHonoEnv = HonoEnv & {
   Bindings: HonoEnv["Bindings"] & {
@@ -36,3 +38,21 @@ export type StudioHonoEnv = HonoEnv & {
     project: string;
   };
 };
+
+/**
+ * The public platform origin the guest's `aai deploy` must dial — the
+ * browser-facing origin, not this service's own. See `resolvePublicOrigin`
+ * for the resolution order and for why the request URL's own scheme is
+ * never trusted (it is always cleartext behind Modal, and publishing
+ * `http://` cost every Publish its Authorization header on the redirect).
+ *
+ * Lives beside the context type rather than in studio-routes.ts so route
+ * modules under it (the database switch, which redeploys a preview) can
+ * resolve the origin without importing their own parent.
+ */
+export function requestPublicOrigin(
+  c: Context<StudioHonoEnv>,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return resolvePublicOrigin(c.req.raw, env);
+}

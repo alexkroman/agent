@@ -651,10 +651,11 @@ interpolate values into the SQL string. The rows come back as plain objects;
 A query returning more than 1000 rows throws — always bound reads with
 `LIMIT` (paginate with `LIMIT`/`OFFSET`).
 
-**Storage must be enabled** or accessing `ctx.db` throws:
+**The database must be enabled** or accessing `ctx.db` throws:
 
 - CLI: `aai storage enable`
-- Studio: the Storage toggle
+- Studio: Settings pane → Database → Enable database (covers both the
+  preview and published agents, each with its own schema)
 - `aai dev`: set `DATABASE_URL` in the project `.env`
 
 Create tables lazily from tool code and upsert with `on conflict`:
@@ -986,9 +987,11 @@ Common mistakes when working in aai projects:
   platform's Modal/Deno sandbox; the self-hosted `aai dev` server has no
   sandbox, so there `run_code` refuses with an error result. Deploy to test
   it end-to-end, or use the `calculate` builtin for simple arithmetic in dev.
-- **`ctx.db` throws until storage is enabled.** Enable it with
-  `aai storage enable` (CLI), the Storage toggle (studio), or `DATABASE_URL`
-  in `.env` (`aai dev`) before shipping tools that persist data.
+- **`ctx.db` throws until the database is enabled.** Enable it with
+  `aai storage enable` (CLI), Settings → Database (studio), or
+  `DATABASE_URL` in `.env` (`aai dev`) before shipping tools that persist
+  data. In the studio it takes effect when each agent next deploys — the
+  preview redeploys itself, production on the next publish.
 - **The database is per-app.** Rows are shared by every session of one
   deployment — key them yourself if sessions must not see each other's data
   (or keep session-scoped data in `ctx.state`).

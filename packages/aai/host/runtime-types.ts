@@ -87,7 +87,7 @@ export type RuntimeOptions = {
   /**
    * SQL database exposed to tool code as `ctx.db`. When omitted, the runtime
    * connects one itself from `DATABASE_URL` in the provider env (self-hosted
-   * `aai dev` parity with the platform's storage toggle); with neither,
+   * `aai dev` parity with the platform's database switch); with neither,
    * `ctx.db` access throws.
    */
   db?: Db | undefined;

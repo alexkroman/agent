@@ -22,3 +22,18 @@ export const MAX_STUDIO_CHAT_MESSAGES = 80;
  * message carrying a couple of full-file tool outputs still fits.
  */
 export const MAX_STUDIO_MESSAGE_BYTES = 600_000;
+/**
+ * Steps one chat turn may take.
+ *
+ * Was 16, which the starter evals showed was the dominant cause of failure:
+ * turns died mid-repair (build → read error → edit → build) with a broken
+ * workspace, not because the agent was lost but because it ran out of room.
+ * opencode allows ~1000 and summarizes as it approaches the context limit;
+ * this is the same trade at a more conservative ceiling, paired with
+ * compaction in the guest (studio-compaction.ts) so the extra steps are
+ * actually reachable.
+ *
+ * A runaway turn is still bounded — by this cap, by each tool's own deadline,
+ * and by the client's Stop button.
+ */
+export const MAX_CHAT_STEPS = 80;
