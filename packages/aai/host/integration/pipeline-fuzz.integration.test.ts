@@ -36,9 +36,21 @@
  * state. The coverage floors at the bottom fail the suite when the random walk
  * stops visiting barge-in, tool execution, history trimming, or reply
  * completion — a greener result than last run is usually a broken generator
- * rather than a fixed bug.
+ * rather than a fixed bug. fast-check has no equivalent (`fc.statistics` only
+ * prints), so those stay hand-rolled and accumulate across runs.
+ *
+ * ## What fast-check generates
+ *
+ * Everything a seeded PRNG used to decide, as one structured value per run, so a
+ * failure shrinks instead of reporting a seed: the step script (action + the
+ * utterance opener + the pause after it), the LLM script pattern (which turns
+ * call a tool), and each tool call's behaviour. The last two are SHORT lists
+ * consumed cyclically rather than one entry per possible call — a run may
+ * consume thousands of script steps, and generating that many would print a wall
+ * of a counterexample and shrink to nothing readable.
  */
 
+import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import {
   createFakeLanguageModel,
@@ -52,17 +64,111 @@ import type { Logger } from "../runtime-config.ts";
 import { createPipelineTransport } from "../transports/pipeline-transport.ts";
 import type { TransportCallbacks } from "../transports/types.ts";
 import {
-  mulberry32,
   norm,
   type PromptMsg,
   promptProblems,
   trackStreamLifetime,
 } from "./_pipeline-fuzz-model.ts";
 
-/** Seeds run as short sessions (structural + integrity invariants). */
-const SHORT_SEEDS = 40;
-/** Seeds run long enough to push the LLM history past DEFAULT_MAX_HISTORY. */
-const LONG_SEEDS = 3;
+/** Runs of the short session property (structural + integrity invariants). */
+const SHORT_RUNS = 120;
+/** Runs long enough to push the LLM history past DEFAULT_MAX_HISTORY. */
+const LONG_RUNS = 3;
+/** Steps per long run — enough turns to trim at the cap. */
+const LONG_STEPS = 200;
+/** Scripted LLM steps available to a run; far more than any run consumes. */
+const SCRIPT_LENGTH = 2000;
+
+/** The events a generated step can fire. */
+type ActionKind =
+  | "sttPartial"
+  | "sttFinal"
+  | "ttsAudio"
+  | "cancelReply"
+  | "reset"
+  | "sendUserAudio"
+  | "armBargeInFromTool";
+
+const ACTION_KINDS: readonly ActionKind[] = [
+  "sttPartial",
+  "sttFinal",
+  "ttsAudio",
+  "cancelReply",
+  "reset",
+  "sendUserAudio",
+  "armBargeInFromTool",
+];
+
+/** Utterance openers — "wait stop that" is the one that reads as a barge-in. */
+const OPENERS = ["please look it up", "tell me more", "wait stop that", "yes go on"] as const;
+
+/**
+ * One step of a short session: the event to fire, the opener any utterance it
+ * produces uses, and how long to pause afterwards (`null` = no pause). The
+ * pause is generated because whether a reply completes before the next event
+ * lands is exactly what decides which interleaving a step produces.
+ */
+type FuzzStep = {
+  action: ActionKind;
+  opener: number;
+  pauseMs: number | null;
+};
+
+const stepArb: fc.Arbitrary<FuzzStep> = fc.record({
+  action: fc.constantFrom(...ACTION_KINDS),
+  opener: fc.nat({ max: OPENERS.length - 1 }),
+  pauseMs: fc.option(fc.integer({ min: 0, max: 4 }), { nil: null, freq: 2 }),
+});
+
+/**
+ * How one tool call behaves. Mirrors the roll this harness used before: mostly
+ * immediate, sometimes slow, occasionally throwing. Consumed cyclically.
+ */
+type ToolBehavior = { kind: "ok" } | { kind: "slow"; ms: number } | { kind: "throw" };
+
+const toolBehaviorArb: fc.Arbitrary<ToolBehavior> = fc.oneof(
+  { weight: 6, arbitrary: fc.record({ kind: fc.constant("ok" as const) }) },
+  {
+    weight: 3,
+    arbitrary: fc.record({
+      kind: fc.constant("slow" as const),
+      ms: fc.integer({ min: 0, max: 7 }),
+    }),
+  },
+  { weight: 1, arbitrary: fc.record({ kind: fc.constant("throw" as const) }) },
+);
+
+/**
+ * Which scripted LLM turns call a tool; cycled over the script. Weighted 40%
+ * true to match the fixed probability this harness used before — a uniform
+ * boolean plus fast-check's bias toward "smaller" values left a good share of
+ * runs with an all-text script, i.e. no tool calls at all, which is precisely
+ * the state the tool-result oracles need.
+ */
+const scriptPatternArb = fc.array(
+  fc.oneof(
+    { weight: 4, arbitrary: fc.constant(true) },
+    { weight: 6, arbitrary: fc.constant(false) },
+  ),
+  { minLength: 4, maxLength: 12 },
+);
+
+/** The generated world for one run. */
+type RunInput = {
+  steps: readonly FuzzStep[];
+  script: readonly boolean[];
+  tools: readonly ToolBehavior[];
+};
+
+const shortRunArb: fc.Arbitrary<RunInput> = fc.record({
+  // A floor on the step count, unusually for these harnesses: a run spends its
+  // first steps getting the session past start(), so very short scripts finish
+  // before a reply ever completes and contribute nothing to the floors below.
+  // 6 is where coverage stops paying for the longer counterexamples.
+  steps: fc.array(stepArb, { minLength: 6, maxLength: 40 }),
+  script: scriptPatternArb,
+  tools: fc.array(toolBehaviorArb, { minLength: 1, maxLength: 12 }),
+});
 
 const noop = (): void => undefined;
 const silentLogger: Logger = { info: noop, warn: noop, error: noop, debug: noop };
@@ -98,17 +204,23 @@ interface Monitor {
   disturb: () => void;
 }
 
-/** Build the LLM script: text-only turns interleaved with tool-call turns. */
+/**
+ * Build the LLM script: text-only turns interleaved with tool-call turns.
+ *
+ * `pattern` says which script steps call a tool and is CYCLED — a run can
+ * consume any number of steps, so the generated pattern is short enough to read
+ * in a counterexample rather than one entry per step.
+ */
 function buildScript(
-  rnd: () => number,
-  seed: number,
+  pattern: readonly boolean[],
+  runId: string,
 ): { steps: ScriptedPart[][]; stepText: string[] } {
   const steps: ScriptedPart[][] = [];
   const stepText: string[] = [];
-  for (let i = 0; i < 2000; i++) {
-    if (rnd() < 0.4) {
+  for (let i = 0; i < SCRIPT_LENGTH; i++) {
+    if (pattern[i % pattern.length] === true) {
       steps.push([
-        { type: "tool-call", toolCallId: `c${seed}-${i}`, toolName: "lookup", input: "{}" },
+        { type: "tool-call", toolCallId: `c${runId}-${i}`, toolName: "lookup", input: "{}" },
       ]);
       stepText.push("");
     } else {
@@ -244,23 +356,28 @@ interface SeedOptions {
   seedHistory?: number;
 }
 
-/** The events a generator step can fire. */
+/**
+ * The events a generated step can fire, keyed by action.
+ *
+ * `reset` is a no-op in a long session: it clears history, so a long run that
+ * reset could never reach the cap its runs exist to exercise.
+ */
 function buildActions(
   mon: Monitor,
   deps: {
     stt: FakeSttProvider;
     tts: FakeTtsProvider;
     transport: ReturnType<typeof createPipelineTransport>;
-    utterance: () => string;
+    utterance: (opener: number) => string;
     longSession: boolean;
     armBargeInFromTool: () => void;
   },
-): (() => void)[] {
+): Record<ActionKind, (opener: number) => void> {
   const { stt, tts, transport, utterance } = deps;
-  return [
-    () => stt.last()?.firePartial(utterance()),
-    () => stt.last()?.fireFinal(utterance()),
-    () => {
+  return {
+    sttPartial: (opener) => stt.last()?.firePartial(utterance(opener)),
+    sttFinal: (opener) => stt.last()?.fireFinal(utterance(opener)),
+    ttsAudio: () => {
       // A real TTS provider emits audio only while a turn's synthesis is in
       // flight, never after signalling `done` for it (TtsEvents in
       // sdk/providers.ts). Outside that window this would trip the truncation
@@ -271,35 +388,32 @@ function buildActions(
       }
       tts.last()?.fireAudio(new Int16Array(2400));
     },
-    () => {
+    cancelReply: () => {
       mon.disturb();
       transport.cancelReply();
     },
-    // reset() clears history, so a long session that resets can never reach the
-    // cap — the state its seeds exist to exercise.
-    ...(deps.longSession
-      ? []
-      : [
-          (): void => {
-            mon.disturb();
-            // Optional on Transport (S2S has no conversation state of its own).
-            transport.reset?.();
-          },
-        ]),
-    () => transport.sendUserAudio(new Uint8Array(320)),
-    deps.armBargeInFromTool,
-  ];
+    reset: () => {
+      if (deps.longSession) return;
+      mon.disturb();
+      // Optional on Transport (S2S has no conversation state of its own).
+      transport.reset?.();
+    },
+    sendUserAudio: () => transport.sendUserAudio(new Uint8Array(320)),
+    armBargeInFromTool: () => deps.armBargeInFromTool(),
+  };
 }
 
-async function runSeed(
-  seed: number,
-  steps: number,
+let runCounter = 0;
+
+async function runOne(
+  input: RunInput,
+  stepCount: number,
   cov: Coverage,
   seedOpts: SeedOptions = {},
 ): Promise<string[]> {
   const longSession = seedOpts.longSession === true;
-  const rnd = mulberry32(seed);
-  const pick = <T>(xs: readonly T[]): T => xs[Math.floor(rnd() * xs.length)] as T;
+  // Only used to keep tool-call ids unique across runs in one process.
+  const runId = String(++runCounter);
   const violations: string[] = [];
   let step = 0;
 
@@ -310,7 +424,7 @@ async function runSeed(
     liveStreams: 0,
     maxLiveStreams: 0,
     consumedSteps: 0,
-    flag: (what) => violations.push(`seed ${seed} step ${step}: ${what}`),
+    flag: (what) => violations.push(`step ${step}: ${what}`),
     hit: (key) => {
       cov[key] = (cov[key] ?? 0) + 1;
     },
@@ -321,13 +435,14 @@ async function runSeed(
 
   const stt: FakeSttProvider = createFakeSttProvider();
   const tts: FakeTtsProvider = createFakeTtsProvider();
-  const { steps: script, stepText } = buildScript(rnd, seed);
+  const { steps: script, stepText } = buildScript(input.script, runId);
   const llm = createFakeLanguageModel({ steps: script, delayMs: 1 });
   instrumentLlm(llm, stepText, mon);
 
   // Bias toward the rare state a uniform random walk barely reaches: a barge-in
   // landing INSIDE a tool execution.
   let bargeInFromTool = false;
+  let toolCallIndex = 0;
   const executeTool = async (): Promise<string> => {
     mon.hit("toolExecuted");
     mon.toolInFlight++;
@@ -337,9 +452,9 @@ async function runSeed(
         mon.hit("bargeInFromInsideTool");
         stt.last()?.firePartial("no wait stop that please");
       }
-      const roll = rnd();
-      if (roll < 0.1) throw new Error("tool blew up");
-      if (roll < 0.4) await new Promise((r) => setTimeout(r, Math.floor(rnd() * 8)));
+      const behavior = input.tools[toolCallIndex++ % input.tools.length] as ToolBehavior;
+      if (behavior.kind === "throw") throw new Error("tool blew up");
+      if (behavior.kind === "slow") await new Promise((r) => setTimeout(r, behavior.ms));
       return "tool result";
     } finally {
       mon.toolInFlight--;
@@ -352,7 +467,7 @@ async function runSeed(
   }));
 
   const transport = createPipelineTransport({
-    sid: `fuzz-${seed}`,
+    sid: `fuzz-${runId}`,
     stt,
     llm,
     tts,
@@ -385,10 +500,9 @@ async function runSeed(
   await transport.start();
 
   let seq = 0;
-  const utterance = (): string => {
+  const utterance = (opener: number): string => {
     seq++;
-    const opener = pick(["please look it up", "tell me more", "wait stop that", "yes go on"]);
-    return `${opener} number ${seq}`;
+    return `${OPENERS[opener % OPENERS.length] as string} number ${seq}`;
   };
 
   const actions = buildActions(mon, {
@@ -420,11 +534,11 @@ async function runSeed(
     }
   };
 
-  for (step = 0; step < steps; step++) {
+  for (step = 0; step < stepCount; step++) {
     if (longSession) {
-      // Plain back-to-back turns: the point is to accumulate history, and the
+      // Plain back-to-back turns: the point is to accumulate history, and a
       // random walk spends most steps on events that commit no turn.
-      stt.last()?.fireFinal(utterance());
+      stt.last()?.fireFinal(utterance(step));
       await new Promise((r) => setTimeout(r, 4));
       checkSerialization();
       continue;
@@ -433,8 +547,11 @@ async function runSeed(
       stt: stt.last()?.audioFrames.length ?? 0,
       tts: tts.last()?.textChunks.length ?? 0,
     };
-    pick(actions)();
-    if (rnd() < 0.6) await new Promise((r) => setTimeout(r, Math.floor(rnd() * 5)));
+    const fuzzStep = input.steps[step % input.steps.length] as FuzzStep;
+    actions[fuzzStep.action](fuzzStep.opener);
+    if (fuzzStep.pauseMs !== null) {
+      await new Promise((r) => setTimeout(r, fuzzStep.pauseMs ?? 0));
+    }
     checkClosedSessionWrites(before);
     checkSerialization();
   }
@@ -453,32 +570,28 @@ async function runSeed(
   return violations;
 }
 
-interface BatchResult {
+/**
+ * Shared across every run of a property: coverage accumulates (a floor is about
+ * the whole run, not one interleaving) and unhandled rejections are collected
+ * process-wide, since the rejection that matters is usually one no run awaited.
+ */
+type Harness = {
   cov: Coverage;
-  /** Sliced: a systemic break should report a readable sample, not hundreds. */
-  violations: string[];
   unhandled: string[];
-}
+  dispose(): void;
+};
 
-/** Run a batch of seeds, collecting violations, unhandled rejections, coverage. */
-async function runBatch(
-  batch: { seed: number; steps: number; opts?: SeedOptions }[],
-): Promise<BatchResult> {
+function installHarness(): Harness {
   const unhandled: string[] = [];
   const onUnhandled = (e: unknown): void => {
     unhandled.push(String(e));
   };
   process.on("unhandledRejection", onUnhandled);
-  const cov: Coverage = {};
-  const violations: string[] = [];
-  try {
-    for (const { seed, steps, opts } of batch) {
-      violations.push(...(await runSeed(seed, steps, cov, opts)));
-    }
-  } finally {
-    process.off("unhandledRejection", onUnhandled);
-  }
-  return { cov, violations: violations.slice(0, 8), unhandled };
+  return {
+    cov: {},
+    unhandled,
+    dispose: () => process.off("unhandledRejection", onUnhandled),
+  };
 }
 
 // Split into two tests rather than one: each gets its own timeout budget, and
@@ -486,43 +599,74 @@ async function runBatch(
 // which a loaded shared runner can stretch past the limit.
 describe("pipeline transport — randomized interleaving", () => {
   test("global invariants hold across random event orderings", async () => {
-    const { cov, violations, unhandled } = await runBatch(
-      Array.from({ length: SHORT_SEEDS }, (_, i) => ({ seed: i + 1, steps: 30 })),
-    );
-    expect({ violations, unhandled }).toEqual({ violations: [], unhandled: [] });
+    const harness = installHarness();
+    try {
+      await fc.assert(
+        fc.asyncProperty(shortRunArb, async (input) => {
+          const violations = await runOne(input, input.steps.length, harness.cov);
+          // Sliced: a systemic break should report a readable sample, not
+          // hundreds of lines of the same thing.
+          expect(violations.slice(0, 8)).toEqual([]);
+        }),
+        { numRuns: SHORT_RUNS },
+      );
+      expect(harness.unhandled).toEqual([]);
+    } finally {
+      harness.dispose();
+    }
 
-    // Coverage floors — see the module doc. Set well below measured actuals
-    // (noted alongside) because the random walk's yield depends on real
-    // timing: these exist to catch a generator that stopped reaching a state,
-    // not to pin a count.
-    expect(cov.replyStarted ?? 0).toBeGreaterThan(60); // ~370
-    expect(cov.replyDone ?? 0).toBeGreaterThan(20); // ~250
-    expect(cov.replyIntegrityChecked ?? 0).toBeGreaterThan(20); // ~250
-    expect(cov.toolExecuted ?? 0).toBeGreaterThan(20); // ~200
-    expect(cov.llmRequestWithTool ?? 0).toBeGreaterThan(20); // ~400
-    expect(cov.bargeInFromInsideTool ?? 0).toBeGreaterThan(8); // ~37
+    // Coverage floors — see the module doc. Set roughly 3x below the lowest of
+    // four measured runs (actuals noted alongside) because these vary more than
+    // they used to: the old harness ran a FIXED seed list, so its counts were
+    // near-constant, while fast-check draws a fresh seed per CI run and the step
+    // count is itself generated. That is the trade — new interleavings every run
+    // in exchange for looser floors — and it is the right one, because a floor
+    // is here to catch a generator that stopped reaching a state, never to pin a
+    // count.
+    const { cov } = harness;
+    expect(cov.replyStarted ?? 0, "no reply ever started").toBeGreaterThan(120); // ~350
+    expect(cov.replyDone ?? 0, "no reply ever completed").toBeGreaterThan(25); // ~95
+    expect(cov.replyIntegrityChecked ?? 0, "reply text never checked").toBeGreaterThan(25); // ~95
+    expect(cov.toolExecuted ?? 0, "no tool ever ran").toBeGreaterThan(18); // ~62
+    expect(cov.llmRequestWithTool ?? 0, "no request carried a tool result").toBeGreaterThan(18); // ~65
+    expect(cov.bargeInFromInsideTool ?? 0, "never barged in during a tool").toBeGreaterThan(12); // ~35
     // Barge-in needs the turn to have SPOKEN, so this is the most
-    // timing-sensitive counter of the set — measured ~15.
-    expect(cov.cancelled ?? 0).toBeGreaterThan(4);
-  });
+    // timing-sensitive counter of the set.
+    expect(cov.cancelled ?? 0, "no reply was ever cancelled").toBeGreaterThan(7); // ~33
+  }, 60_000);
 
   test("global invariants hold across a long session past the history cap", async () => {
-    const { cov, violations, unhandled } = await runBatch(
-      Array.from({ length: LONG_SEEDS }, (_, i) => ({
-        seed: 1000 + i + 1,
-        steps: 200,
-        opts: {
-          longSession: true,
-          // Vary the starting alignment: whether a trim splits a tool pair
-          // depends on where the window boundary falls inside a turn.
-          seedHistory: (i + 1) % 4,
-        },
-      })),
-    );
-    expect({ violations, unhandled }).toEqual({ violations: [], unhandled: [] });
+    const harness = installHarness();
+    try {
+      await fc.assert(
+        fc.asyncProperty(
+          scriptPatternArb,
+          // Prior history length varies the starting alignment: whether a trim
+          // splits a tool pair depends on where the window boundary falls
+          // inside a turn.
+          fc.nat({ max: 3 }),
+          async (script, seedHistory) => {
+            const violations = await runOne(
+              { steps: [], script, tools: [{ kind: "ok" }] },
+              LONG_STEPS,
+              harness.cov,
+              { longSession: true, seedHistory },
+            );
+            expect(violations.slice(0, 8)).toEqual([]);
+          },
+        ),
+        { numRuns: LONG_RUNS },
+      );
+      expect(harness.unhandled).toEqual([]);
+    } finally {
+      harness.dispose();
+    }
 
-    // The state this batch exists for: past DEFAULT_MAX_HISTORY the cap trims
-    // on every push, which is what can orphan a tool result. Measured ~66.
-    expect(cov.llmRequestAtHistoryCap ?? 0).toBeGreaterThan(10);
-  });
+    // The state this property exists for: past DEFAULT_MAX_HISTORY the cap
+    // trims on every push, which is what can orphan a tool result.
+    expect(
+      harness.cov.llmRequestAtHistoryCap ?? 0,
+      "never reached the history cap",
+    ).toBeGreaterThan(10);
+  }, 60_000);
 });
