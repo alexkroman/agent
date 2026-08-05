@@ -1,5 +1,13 @@
 # @alexkroman1/aai-cli
 
+## 5.8.1
+
+### Patch Changes
+
+- 3ddfbfc: aai pull merges the scaffold's package.json under the pulled workspace's own, so a pulled studio project installs the toolchain (vite, @vitejs/plugin-react, @tailwindcss/vite) its vite.config.ts imports instead of failing on the first aai dev.
+  - @alexkroman1/aai@5.8.1
+  - @alexkroman1/aai-ui@5.8.1
+
 ## 5.8.0
 
 ### Patch Changes

@@ -1,5 +1,15 @@
 # aai-studio-server
 
+## 0.5.4
+
+### Patch Changes
+
+- ba1aacd: Read preview-queue jobs back when the driver returns jsonb as a string, instead of archiving every job as unreadable
+  - aai-server@3.4.4
+  - @alexkroman1/aai@5.8.1
+  - @alexkroman1/aai-ui@5.8.1
+  - aai-studio-client@0.4.4
+
 ## 0.5.3
 
 ### Patch Changes
