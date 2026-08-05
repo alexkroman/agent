@@ -14,10 +14,9 @@
 import { randomBytes } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { errorMessage } from "@alexkroman1/aai";
-import { CONTAINED_ENV } from "@alexkroman1/aai/runtime";
 import { debug } from "./_debug-log.ts";
 import { GUEST_READY_TIMEOUT_MS, raceGuestExit } from "./guest-readiness.ts";
-import { HARNESS_REMOTE_PATH } from "./modal-harness-image.ts";
+import { guestExecBaseEnv, HARNESS_REMOTE_PATH } from "./modal-harness-image.ts";
 import {
   GUEST_PORT,
   GUEST_READINESS_PROBE,
@@ -119,7 +118,7 @@ export async function spawnModalAgentServer(
             bundleSha256: opts.workerSha256,
             envPath: AGENT_ENV_REMOTE_PATH,
           }),
-          [CONTAINED_ENV]: "1",
+          ...guestExecBaseEnv(),
         },
       }),
       sb.tunnels(),

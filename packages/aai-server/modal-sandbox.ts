@@ -35,7 +35,6 @@ import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { errorMessage } from "@alexkroman1/aai";
-import { CONTAINED_ENV } from "@alexkroman1/aai/runtime";
 import {
   AlreadyExistsError,
   type Image,
@@ -47,7 +46,11 @@ import { debug } from "./_debug-log.ts";
 import { keyedMemoAsync, memoAsync } from "./_memo.ts";
 import { GUEST_READY_TIMEOUT_MS, raceGuestExit } from "./guest-readiness.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
-import { createHarnessImageResolver, HARNESS_REMOTE_PATH } from "./modal-harness-image.ts";
+import {
+  createHarnessImageResolver,
+  guestExecBaseEnv,
+  HARNESS_REMOTE_PATH,
+} from "./modal-harness-image.ts";
 import {
   DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
   DEFAULT_SANDBOX_TIMEOUT_MS,
@@ -440,16 +443,11 @@ export async function spawnModalWarm(
         mode: "binary",
         stdout: "pipe",
         stderr: "pipe",
-        // CONTAINED: a Modal Sandbox is a real container, so the network
-        // builtins drop their SSRF screen — it guards nothing a tenant cannot
-        // bypass with a raw fetch from their own tool code, and the container
-        // holds no platform credentials. Deliberately NOT set by the
-        // subprocess backend, whose "guest" is a child process on the
-        // developer's own machine.
+        // Compile cache + CONTAINED — see guestExecBaseEnv.
         env: {
           AAI_GUEST_TOKEN: token,
           AAI_GUEST_PORT: String(GUEST_PORT),
-          [CONTAINED_ENV]: "1",
+          ...guestExecBaseEnv(),
         },
       }),
       sb.tunnels(),

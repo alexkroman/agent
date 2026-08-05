@@ -5,11 +5,6 @@
   "bin": {
     "aai": "bin.mjs"
   },
-  "publishConfig": {
-    "bin": {
-      "aai": "dist/cli.mjs"
-    }
-  },
   "exports": {
     "./client-bundler": {
       "@dev/source": "./client-bundler.ts",
@@ -28,6 +23,7 @@
     }
   },
   "files": [
+    "bin.mjs",
     "dist"
   ],
   "scripts": {

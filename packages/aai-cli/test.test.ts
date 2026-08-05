@@ -37,19 +37,22 @@ describe("aai test", () => {
     expect(existsSync(path.join(tempDir, "agent.test.ts"))).toBe(true);
   });
 
-  test("runs vitest against agent.test.ts with type stripping enabled", async () => {
+  test("runs vitest against agent.test.ts without overriding NODE_OPTIONS", async () => {
     await writeFile(path.join(tempDir, "agent.test.ts"), "// test file");
     expect(runVitest(tempDir)).toBe(true);
     const [, args, opts] = execaSync.mock.calls[0] as [
       string,
       string[],
-      { cwd: string; env: Record<string, string> },
+      { cwd: string; env?: Record<string, string> },
     ];
     // Resolution mode (local bin vs npx) varies by environment; the vitest
     // CLI arguments and env are the same either way.
     expect(args.slice(-4)).toEqual(["run", "--root", ".", "agent.test.ts"]);
     expect(opts.cwd).toBe(tempDir);
-    expect(opts.env.NODE_OPTIONS).toContain("--experimental-strip-types");
+    // Type stripping is default-on for every supported Node, so the child
+    // inherits the parent env untouched — no NODE_OPTIONS to propagate into
+    // vitest's workers.
+    expect(opts.env).toBeUndefined();
   });
 
   test("runs the project-local vitest bin directly when installed", async () => {

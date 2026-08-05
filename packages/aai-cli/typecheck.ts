@@ -20,7 +20,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 // Zod-free imports only — this module is the `/typecheck` subpath the guest
 // sandbox loads, so it must stay light (no build toolchain, no zod).
@@ -73,13 +73,62 @@ function findTypescriptPackage(cwd: string): string | undefined {
   }
 }
 
-/** Resolve the project's TypeScript compiler entry (its own `tsc` bin). */
-function resolveTscEntry(cwd: string): string {
+/**
+ * Resolve the project's TypeScript compiler entry (its own `tsc` bin), plus
+ * its major version — see {@link tscArgs} for what the version decides.
+ */
+function resolveTsc(cwd: string): { entry: string; major: number } {
   const dir = findTypescriptPackage(cwd);
   if (dir === undefined) throw new Error("no typescript package in the project's node_modules");
-  const bin = binFromPackageJson(path.join(dir, "package.json"), "tsc");
+  const manifest = path.join(dir, "package.json");
+  const bin = binFromPackageJson(manifest, "tsc");
   if (!bin) throw new Error("installed typescript package declares no tsc bin");
-  return bin;
+  return { entry: bin, major: readMajor(manifest) };
+}
+
+/**
+ * The resolved compiler's major version, or 0 when it can't be read.
+ *
+ * 0 is the safe answer: {@link tscArgs} only ADDS flags above a version
+ * floor, so an unreadable manifest degrades to the flag set every TypeScript
+ * accepts rather than failing a build over a cosmetic read.
+ */
+function readMajor(manifest: string): number {
+  try {
+    const { version } = JSON.parse(readFileSync(manifest, "utf-8")) as { version?: unknown };
+    return typeof version === "string" ? Number.parseInt(version, 10) || 0 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * The `tsc` argv for one project check.
+ *
+ * `--singleThreaded` is the interesting one, and it is a SPEEDUP here rather
+ * than a throttle. TypeScript 7 parallelizes parse/check/emit by default,
+ * which pays off on a repo-sized program and costs on a single agent project —
+ * and this function only ever checks one of those. Measured on the templates
+ * project (14 agents, the closest in-repo analogue of a studio workspace):
+ *
+ * - pinned to 1 core: 2.4–2.9s parallel vs 1.2–1.4s single — ~2x faster
+ * - on 4 cores:       1.21–1.24s parallel vs 1.01–1.04s single
+ *
+ * The 1-core number is the one that matters: a guest sandbox RESERVES one CPU
+ * (`SANDBOX_CPU`) and this same check runs after every settled write burst in
+ * the studio (`aai-guest/studio-write-diagnostics.ts`), where the whole design
+ * rests on it finishing in well under a second. Parallelism inside a one-core
+ * reservation is oversubscription: the threads exist, contend, and the wall
+ * clock doubles.
+ *
+ * Gated on major >= 7 because the flag is TS 7's, and an unknown compiler
+ * option is a HARD error (TS5023) — a project pinning an older TypeScript
+ * would fail its build on a flag it never asked for. `engines`/scaffold pin
+ * `^7`, so in practice this floor is always met; it exists so a project that
+ * pins otherwise degrades instead of breaking.
+ */
+function tscArgs(entry: string, major: number): string[] {
+  return [entry, "--noEmit", "--pretty", "false", ...(major >= 7 ? ["--singleThreaded"] : [])];
 }
 
 /**
@@ -92,9 +141,9 @@ function resolveTscEntry(cwd: string): string {
 export async function typecheckProject(cwd: string): Promise<TypecheckResult> {
   if (!existsSync(path.join(cwd, "tsconfig.json"))) return { ok: true, skipped: true };
 
-  let tscEntry: string;
+  let tsc: { entry: string; major: number };
   try {
-    tscEntry = resolveTscEntry(cwd);
+    tsc = resolveTsc(cwd);
   } catch (err) {
     return {
       ok: false,
@@ -105,7 +154,7 @@ export async function typecheckProject(cwd: string): Promise<TypecheckResult> {
   }
 
   const result = await new Promise<{ code: number | null; output: string }>((resolve, reject) => {
-    const child = spawn(process.execPath, [tscEntry, "--noEmit", "--pretty", "false"], {
+    const child = spawn(process.execPath, tscArgs(tsc.entry, tsc.major), {
       cwd,
       timeout: TYPECHECK_TIMEOUT_MS,
       stdio: ["ignore", "pipe", "pipe"],

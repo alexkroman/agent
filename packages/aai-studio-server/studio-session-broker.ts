@@ -367,10 +367,10 @@ export function createStudioSessionBroker(
       const token = await initSession(warm, scope, project, apiKey, workspace);
       if (token !== null) return token;
     } catch (err) {
-      await warm[Symbol.asyncDispose]().catch(() => undefined);
+      await warm[Symbol.asyncDispose]();
       throw err;
     }
-    await warm[Symbol.asyncDispose]().catch(() => undefined);
+    await warm[Symbol.asyncDispose]();
     return null;
   }
 

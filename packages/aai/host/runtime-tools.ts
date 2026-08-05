@@ -168,6 +168,14 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
   };
   const toolSchemas = builtins.schemas;
 
+  // Deliberately NOT `stateMap.getOrInsertComputed(sid, ...)`, which is the
+  // obvious fit. `Map.prototype.getOrInsert{,Computed}` is V8 14.6 — Node 26 —
+  // while this package publishes `engines.node: ">=24"` so SDK consumers on
+  // the previous LTS keep working. `lib: ["ESNext"]` types it either way, so
+  // tsc is no guard at all here: it type-checks, ships, and throws
+  // `not a function` on the consumer's Node 24. The V8 14.6 additions are
+  // usable in the platform packages (aai-server, aai-guest, aai-studio-*,
+  // all `>=26`) and not in this one.
   const getState = (sid: string) => {
     if (!stateMap.has(sid) && agent.state) stateMap.set(sid, agent.state());
     return stateMap.get(sid) ?? {};

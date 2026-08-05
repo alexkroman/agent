@@ -7,10 +7,9 @@
  * backend in describe-exec.ts.
  */
 
-import { CONTAINED_ENV } from "@alexkroman1/aai/runtime";
 import { mintDescribeNonce, readDescribeResult } from "./describe-exec.ts";
 import { AGENT_BUNDLE_REMOTE_PATH } from "./modal-agent-sandbox.ts";
-import { HARNESS_REMOTE_PATH } from "./modal-harness-image.ts";
+import { guestExecBaseEnv, HARNESS_REMOTE_PATH } from "./modal-harness-image.ts";
 import { harnessCode, type ModalSpawnContext, modalContext } from "./modal-sandbox.ts";
 import { guestSandboxResources } from "./modal-sandbox-env.ts";
 import { sandboxTags } from "./sandbox-role.ts";
@@ -51,7 +50,7 @@ export async function describeModalBundle(
       env: {
         AAI_DESCRIBE_BUNDLE_PATH: AGENT_BUNDLE_REMOTE_PATH,
         AAI_DESCRIBE_NONCE: nonce,
-        [CONTAINED_ENV]: "1",
+        ...guestExecBaseEnv(),
       },
     });
     return await readDescribeResult(proc, `modal:${sb.sandboxId}`, nonce);

@@ -54,12 +54,13 @@ export function runVitest(cwd: string): boolean {
   if (!testFile) return false;
 
   const { cmd, args } = resolveVitestCommand(cwd);
-  // execa extends process.env by default, so only the override is passed.
-  execaSync(cmd, [...args, "run", "--root", ".", testFile], {
-    cwd,
-    stdio: "inherit",
-    env: { NODE_OPTIONS: "--experimental-strip-types" },
-  });
+  // No NODE_OPTIONS override: this used to force `--experimental-strip-types`,
+  // which is redundant on every Node this CLI supports (`engines.node >=24`) —
+  // type stripping has been on by default since 23.6, and in Node 26 the flag
+  // survives only as an alias for `--strip-types`. Setting NODE_OPTIONS is not
+  // free either: it propagates to every vitest worker, so a value that ever
+  // stops being accepted would fail the whole run rather than degrade.
+  execaSync(cmd, [...args, "run", "--root", ".", testFile], { cwd, stdio: "inherit" });
 
   return true;
 }

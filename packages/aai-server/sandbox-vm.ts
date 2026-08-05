@@ -17,7 +17,7 @@
  * describe-mode exec, not a channel.
  */
 
-import { createHash } from "node:crypto";
+import { hash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { keyedMemoAsync } from "./_memo.ts";
 import { spawnModalAgentServer } from "./modal-agent-sandbox.ts";
@@ -202,7 +202,7 @@ export async function spawnAgentServer(
 ): Promise<AgentServerHandle> {
   // The blob store is content-addressed; carrying the hash to the guest
   // (which verifies before loading) extends that property end-to-end.
-  const workerSha256 = createHash("sha256").update(opts.workerCode, "utf-8").digest("hex");
+  const workerSha256 = hash("sha256", opts.workerCode);
   const common = {
     harnessPath: opts.harnessPath,
     slug: opts.slug,
