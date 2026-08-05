@@ -78,18 +78,17 @@ describe("createPgPreviewQueue", () => {
     return { sql, calls, setRows };
   }
 
-  test("creates the extension and queue once, tolerating an existing queue", async () => {
+  /**
+   * The extension and the queue are declared in supabase/migrations. A lazy
+   * `pgmq.create` here would create the queue under whatever connection first
+   * noticed, and hide a missed migration.
+   */
+  test("issues no DDL — the extension and queue come from migrations", async () => {
     const { sql, calls } = fakeSql();
     const queue = createPgPreviewQueue(sql);
     await queue.enqueue(JOB);
     await queue.enqueue(JOB);
-
-    expect(calls[0]?.query).toBe("create extension if not exists pgmq");
-    // pgmq.create is not `if not exists`, so the duplicate has to be caught.
-    expect(calls[1]?.query).toContain("when duplicate_table or duplicate_object then null");
-    expect(calls[1]?.query).toContain(PREVIEW_QUEUE);
-    // Memoized: the second enqueue does not re-run the DDL.
-    expect(calls.filter((c) => c.query.includes("create extension"))).toHaveLength(1);
+    expect(calls.filter((c) => /^\s*(create|do)\b/i.test(c.query))).toEqual([]);
     expect(calls.filter((c) => c.query.includes("pgmq.send"))).toHaveLength(2);
   });
 

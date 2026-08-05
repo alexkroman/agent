@@ -7,11 +7,13 @@
  * piggybacked delete) and the "expired rows are ignored, never removed"
  * posture of the lock lease table.
  *
- * Every job body is a plpgsql DO block that first checks `to_regclass` for
- * the table it sweeps: the platform tables are created lazily by their
- * stores, so on a fresh database a job can fire before its table exists —
- * plpgsql only plans a statement when the branch is reached, so the guard
- * makes that a no-op instead of an hourly error.
+ * The platform tables are declared in
+ * `supabase/migrations/*_platform_schema.sql` and applied before any code
+ * runs, so a sweep body no longer needs to guard against its own table's
+ * absence — that `to_regclass` wrapper existed only because the stores
+ * created their tables lazily on first use. Two guards remain, for tables
+ * migrations do NOT own: `pgmq.a_<queue>` (created by pgmq on the first
+ * archive, so it can legitimately not exist yet) and `vault.secrets`.
  *
  * `cron.schedule(name, …)` upserts by job name, so re-running the setup on
  * every boot is idempotent and a changed schedule or command takes effect on
@@ -29,7 +31,11 @@ export type CronJob = {
   command: string;
 };
 
-/** Wrap a sweep in a table-existence guard (see module doc). */
+/**
+ * Wrap a sweep in a table-existence guard, for the tables migrations do not
+ * own (see module doc). plpgsql only plans a statement when its branch is
+ * reached, so this makes a missing table a no-op instead of an hourly error.
+ */
 function guarded(table: string, body: string): string {
   return `do $$
 begin
@@ -45,10 +51,7 @@ end $$`;
  * overwritten — deleting it is equivalent and keeps the table proportional
  * to recently active scopes.
  */
-const SWEEP_RATE_LIMITS = guarded(
-  "aai_platform.studio_rate_limits",
-  "delete from aai_platform.studio_rate_limits where reset_at <= now()",
-);
+const SWEEP_RATE_LIMITS = "delete from aai_platform.studio_rate_limits where reset_at <= now()";
 
 /**
  * Archived preview-deploy jobs (aai-studio-server/studio-preview-queue.ts).
@@ -69,10 +72,7 @@ const SWEEP_PREVIEW_ARCHIVE = guarded(
  * whose rows carry guest credentials and so should not linger past their
  * lease any longer than the sweep interval.
  */
-const SWEEP_STUDIO_SESSIONS = guarded(
-  "aai_platform.studio_sessions",
-  "delete from aai_platform.studio_sessions where expires_at <= now()",
-);
+const SWEEP_STUDIO_SESSIONS = "delete from aai_platform.studio_sessions where expires_at <= now()";
 
 /**
  * Orphaned preview agents: `<project>-preview` deploys whose studio project

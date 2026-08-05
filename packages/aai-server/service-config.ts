@@ -40,7 +40,7 @@ import {
   localSlugLock,
   type SlugMutationLock,
 } from "./platform-lock.ts";
-import { createRealtimePlatformEvents, ensureRealtimeSetup } from "./realtime-events.ts";
+import { createRealtimePlatformEvents } from "./realtime-events.ts";
 import { describeSandboxBackend, resolveSandboxBackend } from "./sandbox-backend.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import {
@@ -144,17 +144,18 @@ function buildMemoryStores(): {
 }
 
 /**
- * Boot-time database housekeeping for production: the Realtime publication
- * the change streams depend on, and the pg_cron janitorial sweeps. Loud on
- * failure, but deliberately not fatal — with no publication, superseded
- * sandboxes last until idle eviction and previews until the next project
- * open; a missing sweep degrades to table growth. Neither is worth
- * refusing to serve traffic over.
+ * Boot-time database housekeeping for production: scheduling the pg_cron
+ * janitorial sweeps. Loud on failure, but deliberately not fatal — a missing
+ * sweep degrades to table growth, which is not worth refusing to serve
+ * traffic over.
+ *
+ * This used to also create the platform tables, the Realtime publication, and
+ * the `service_role` grants. All of that is declared in
+ * `supabase/migrations/*_platform_schema.sql` now and applied before any code
+ * runs; only the SCHEDULING stays here, because the sweep bodies are defined
+ * in TypeScript (pg-cron.ts) and change with the code that owns them.
  */
 function bootstrapPlatformDb(sql: SqlExec): void {
-  ensureRealtimeSetup(sql).catch((err: unknown) => {
-    console.error("Realtime publication setup failed — change streams will not fire:", err);
-  });
   schedulePlatformSweeps(sql).catch((err: unknown) => {
     console.error("pg_cron sweep scheduling failed — janitorial sweeps will not run:", err);
   });

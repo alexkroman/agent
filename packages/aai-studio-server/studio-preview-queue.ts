@@ -36,7 +36,6 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import { memoAsync } from "aai-server/platform-barrel";
 import type { SqlExec } from "aai-server/secret-store";
 
 /** The pgmq queue name. Also the prefix of its archive table. */
@@ -108,29 +107,18 @@ function parseJob(raw: unknown): PreviewJob | null {
 /**
  * pgmq-backed queue over the platform admin connection.
  *
- * `pgmq.create` is not `if not exists`, so creation is wrapped in a DO block
- * that swallows the duplicate — the same lazily-created, memoized,
- * reset-on-failure shape as `ensureTableOnce`.
+ * The extension and the queue itself are declared in
+ * `supabase/migrations/*_platform_schema.sql`, so there is no lazy DDL here —
+ * a missing queue fails loudly on the first send rather than being created
+ * under whatever connection happened to notice.
  */
 export function createPgPreviewQueue(sql: SqlExec): PreviewQueue {
-  const ensure = memoAsync(async () => {
-    await sql("create extension if not exists pgmq");
-    await sql(`do $$
-begin
-  perform pgmq.create('${PREVIEW_QUEUE}');
-exception
-  when duplicate_table or duplicate_object then null;
-end $$`);
-  });
-
   return {
     async enqueue(job) {
-      await ensure();
       await sql("select pgmq.send($1, $2::jsonb)", [PREVIEW_QUEUE, JSON.stringify(job)]);
     },
 
     async claim(max) {
-      await ensure();
       const rows = await sql("select * from pgmq.read($1, $2::int, $3::int)", [
         PREVIEW_QUEUE,
         Math.ceil(PREVIEW_JOB_VISIBILITY_MS / 1000),
@@ -154,12 +142,10 @@ end $$`);
     },
 
     async ack(id) {
-      await ensure();
       await sql("select pgmq.delete($1, $2::bigint)", [PREVIEW_QUEUE, id]);
     },
 
     async archive(id) {
-      await ensure();
       await sql("select pgmq.archive($1, $2::bigint)", [PREVIEW_QUEUE, id]);
     },
   };

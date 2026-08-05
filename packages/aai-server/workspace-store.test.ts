@@ -166,27 +166,18 @@ test("memory store never shares mutable state with callers", async () => {
 // ── Postgres SQL shapes ─────────────────────────────────────────────────────
 
 describe("createPgWorkspaceStore SQL", () => {
-  test("lazily creates the aai_platform schema and table exactly once", async () => {
+  /**
+   * The table is declared in supabase/migrations, applied before any code
+   * runs. A store that issues DDL is the regression: it papers over a missed
+   * migration and creates the table under whatever connection first noticed.
+   */
+  test("issues no DDL — the schema comes from migrations", async () => {
     const { sql, log } = createFakeSql();
     const store = createPgWorkspaceStore(sql);
     await store.put("s", "p", { v: 1 }, null);
     await store.get("s", "p");
     await store.list("s");
-    const ddl = log.filter((entry) => entry.query.startsWith("create"));
-    expect(ddl.map((entry) => entry.query)).toEqual([
-      "create schema if not exists aai_platform",
-      expect.stringContaining("create table if not exists aai_platform.studio_workspaces"),
-    ]);
-    // Deliberately NOT the public schema.
-    expect(ddl[1]?.query).toContain("version integer not null default 1");
-    expect(ddl[1]?.query).toContain("primary key (scope, project)");
-  });
-
-  test("a failed ensure is retried on the next call, not memoized", async () => {
-    const { sql } = createFakeSql({ failEnsures: 1 });
-    const store = createPgWorkspaceStore(sql);
-    await expect(store.get("s", "p")).rejects.toThrow("ddl refused");
-    expect(await store.get("s", "p")).toBeNull();
+    expect(log.filter((entry) => /^\s*(create|alter)/i.test(entry.query))).toEqual([]);
   });
 
   test("create is insert … on conflict do nothing with the doc as jsonb", async () => {

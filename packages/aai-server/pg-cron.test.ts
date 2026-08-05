@@ -55,12 +55,18 @@ test("the retired list names no job that is still scheduled", () => {
   for (const name of RETIRED_CRON_JOBS) expect(live.has(name)).toBe(false);
 });
 
-test("every sweep body is guarded on its table's existence", () => {
-  for (const job of PLATFORM_CRON_JOBS) {
-    // The platform tables are created lazily by their stores; an unguarded
-    // job errors on schedule until the table exists.
-    expect(job.command).toContain("to_regclass");
-  }
+/**
+ * The platform tables come from migrations now, applied before any code runs,
+ * so a sweep over one needs no existence guard. The exceptions are tables
+ * migrations do not own: pgmq creates `a_<queue>` on the first archive, and
+ * `vault.secrets` belongs to Supabase.
+ */
+test("only sweeps over tables migrations do not own are guarded", () => {
+  const guarded = PLATFORM_CRON_JOBS.filter((job) => job.command.includes("to_regclass"));
+  expect(guarded.map((job) => job.name).sort()).toEqual([
+    "aai-sweep-orphan-previews",
+    "aai-sweep-preview-archive",
+  ]);
 });
 
 test("the orphan-preview sweep only reaps unreferenced, aged preview slugs", () => {

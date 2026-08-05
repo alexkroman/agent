@@ -18,8 +18,16 @@ studio app must be deployed alongside this one.
 Deploy (from the repo root, with the Python `modal` CLI authed via
 `modal token new`):
 
+    supabase db push          # FIRST — see below
     modal deploy packages/aai-server/modal_deploy.py
     # or: pnpm --filter aai-server deploy:modal (same command via pnpm)
+
+The platform schema (``aai_platform``, the Realtime publication and its
+``service_role`` grants, the pgmq queue) is declared in
+``supabase/migrations`` and must be applied BEFORE the code that queries it.
+It used to be created lazily by each store on first use, which needed no
+ordering but silently papered over a missing table. A skipped migration now
+fails loudly with "relation does not exist" on the first read.
 
 Required Modal Secret named ``aai-server`` with (at least):
 

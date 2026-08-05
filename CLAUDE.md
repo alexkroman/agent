@@ -2022,7 +2022,20 @@ nothing but live control-channel connections (voice sessions don't pass
 through it at all). Everything durable lives in Supabase (bundles and
 client files in Storage, agent env + app-db credentials in Vault, studio
 workspaces/chats and per-app data in Postgres), and cross-replica
-coordination lives in the same Postgres over `SUPABASE_DB_URL`:
+coordination lives in the same Postgres over `SUPABASE_DB_URL`.
+
+**The schema is DECLARED, in `supabase/migrations`** — not created lazily by
+the store that reads it. Every `aai_platform` store used to call a memoized
+`create schema/table if not exists` on first use (`pg-ensure.ts`), which is
+why pg_cron sweep bodies were wrapped in `to_regclass` guards: on a fresh
+database a job could fire before its table existed. Migrations delete both,
+plus the boot-time publication/grant setup. The trade is deploy ORDERING —
+`supabase db push` before the deploy — and a missed migration now fails
+loudly with "relation does not exist" instead of being papered over by a lazy
+create that runs on whichever connection first noticed.
+`platform-schema.test.ts` is the guard in both directions: every
+`aai_platform.<table>` the source queries must be declared in a migration,
+and the store suites assert that no store issues DDL:
 
 - **Per-slug mutation lock** (`platform-lock.ts`): deploy/delete/secret/
   storage mutations for a slug run under a **Postgres advisory lock**
@@ -2170,18 +2183,19 @@ service's control work is light — and one container served both badly.
   `aai_platform.slug_epochs` table); the documented way to apply a secret
   now is to redeploy.
 
-  **Supabase setup this depends on** (all idempotent, run at boot by
-  `bootstrapPlatformDb` in service-config.ts): the watched tables exist,
-  are members of the `supabase_realtime` publication, and are SELECT-granted
-  to `service_role` — Realtime validates channel filter columns (and gates
-  row visibility) against what the subscriber's claimed role can SELECT, and
-  the app-created `aai_platform` schema gets none of Supabase's default
-  `public` grants, so without the grant every filtered subscribe fails with
-  `invalid column for filter <col>` (`ensureRealtimeSetup`) — and the
-  pg_cron sweeps are scheduled
-  (`schedulePlatformSweeps`). The env carries `SUPABASE_URL` +
-  `SUPABASE_SERVICE_ROLE_KEY` for the Realtime socket, required in
-  production alongside `SUPABASE_DB_URL`.
+  **Supabase setup this depends on lives in `supabase/migrations`**, applied
+  with `supabase db push` BEFORE the code that queries it: the `aai_platform`
+  schema and its tables, the watched tables' membership in the
+  `supabase_realtime` publication, the `service_role` SELECT grants, and the
+  `pg_cron`/`pgmq` extensions. Realtime validates channel filter columns (and
+  gates row visibility) against what the subscriber's claimed role can SELECT,
+  and the app-created `aai_platform` schema gets none of Supabase's default
+  `public` grants, so without those grants every filtered subscribe fails with
+  `invalid column for filter <col>`. Only the pg_cron SCHEDULING stays at boot
+  (`schedulePlatformSweeps` via `bootstrapPlatformDb`), because the sweep
+  bodies are defined in TypeScript and change with the code that owns them.
+  The env carries `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` for the
+  Realtime socket, required in production alongside `SUPABASE_DB_URL`.
 - **A superseded sandbox is RETIRED, not terminated** (`sandbox-retire.ts`).
   A mutation replaces the code a slug runs; it says nothing about the calls
   already in flight on the old sandbox, and closing their sockets inline —

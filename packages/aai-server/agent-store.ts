@@ -24,7 +24,6 @@
  */
 
 import { z } from "zod";
-import { ensureTableOnce } from "./pg-ensure.ts";
 import type { SqlExec } from "./secret-store.ts";
 
 /**
@@ -88,18 +87,6 @@ export type AgentRows = {
 
 const TABLE = "aai_platform.agents";
 /** DDL shared with the boot-time Realtime publication setup (realtime-events.ts). */
-export const ENSURE_AGENTS_TABLE_SQL = `create table if not exists ${TABLE} (
-  slug text primary key,
-  credential_hashes jsonb not null,
-  config jsonb not null,
-  worker_hash text not null,
-  client_files jsonb not null,
-  harness_image_tag text,
-  version bigint not null,
-  updated_at timestamptz not null default now()
-);
-alter table ${TABLE} add column if not exists harness_image_tag text`;
-
 const GET_SQL = `select slug, credential_hashes, config, worker_hash, client_files,
   harness_image_tag, version
 from ${TABLE} where slug = $1`;
@@ -131,11 +118,8 @@ function jsonColumn(value: unknown): unknown {
 
 /** Postgres-backed agent rows over the platform admin connection. */
 export function createPgAgentRows(sql: SqlExec): AgentRows {
-  const ensure = ensureTableOnce(sql, ENSURE_AGENTS_TABLE_SQL);
-
   return {
     async get(slug) {
-      await ensure();
       const rows = await sql(GET_SQL, [slug]);
       const row = rows[0];
       if (!row) return null;
@@ -162,7 +146,6 @@ export function createPgAgentRows(sql: SqlExec): AgentRows {
     },
 
     async put(record) {
-      await ensure();
       await sql(PUT_SQL, [
         record.slug,
         JSON.stringify(record.credential_hashes),
@@ -174,12 +157,10 @@ export function createPgAgentRows(sql: SqlExec): AgentRows {
     },
 
     async delete(slug) {
-      await ensure();
       await sql(DELETE_SQL, [slug]);
     },
 
     async getVersion(slug) {
-      await ensure();
       const rows = await sql(VERSION_SQL, [slug]);
       const raw = rows[0]?.version;
       return raw == null ? null : Number(raw);

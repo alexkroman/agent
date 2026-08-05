@@ -1,0 +1,16 @@
+# Supabase CLI project config, for applying `migrations/` to the platform
+# database (`supabase link --project-ref <ref>` then `supabase db push`).
+#
+# Deliberately minimal. The platform does not run a local Supabase stack: dev
+# and tests use in-memory stores (see `isLocalDev`), and the only thing the CLI
+# is used for here is migrations. Sections for auth/storage/realtime settings
+# are intentionally absent — those are configured in the Supabase dashboard,
+# and duplicating them here would create a second source of truth that nothing
+# applies.
+
+project_id = "aai-platform"
+
+[db]
+# Matches the Postgres major the platform's Supabase project runs. Only used
+# by a local `supabase start`, which this repo does not require.
+major_version = 17

@@ -8,12 +8,10 @@
 import { describe, expect, test, vi } from "vitest";
 import {
   createRealtimePlatformEvents,
-  ensureRealtimeSetup,
   type RealtimeChannelLike,
   type RealtimeClientLike,
   realtimeEndpoint,
 } from "./realtime-events.ts";
-import type { SqlExec } from "./secret-store.ts";
 
 type ChangeHandler = (payload: {
   new?: Record<string, unknown> | null;
@@ -190,35 +188,4 @@ describe("workspace channels", () => {
     expect(channels[0]?.unsubscribed).toBe(true);
     expect(client.disconnect).toHaveBeenCalled();
   });
-});
-
-test("ensureRealtimeSetup creates the tables, the publication, then the grants", async () => {
-  const statements: string[] = [];
-  const sql: SqlExec = (query) => {
-    statements.push(query);
-    return Promise.resolve([]);
-  };
-  await ensureRealtimeSetup(sql);
-
-  expect(statements[0]).toContain("create schema if not exists aai_platform");
-  expect(statements[1]).toContain("aai_platform.agents");
-  expect(statements[2]).toContain("aai_platform.studio_workspaces");
-  expect(statements[3]).toContain("aai_platform.studio_chats");
-  const publication = statements[4];
-  // Every watched table is added to the publication.
-  for (const table of ["agents", "studio_workspaces", "studio_chats"]) {
-    expect(publication).toContain(
-      `alter publication supabase_realtime add table aai_platform.${table}`,
-    );
-  }
-  // Realtime validates channel filters against the columns the subscriber's
-  // claimed role (service_role — the key the client connects with) can
-  // SELECT, so every watched table needs the grant or filtered subscribes
-  // fail with `invalid column for filter <col>`.
-  const grants = statements[5];
-  expect(grants).toContain("rolname = 'service_role'");
-  expect(grants).toContain("grant usage on schema aai_platform to service_role");
-  expect(grants).toContain(
-    "grant select on aai_platform.agents, aai_platform.studio_workspaces, aai_platform.studio_chats",
-  );
 });
