@@ -209,8 +209,9 @@ describeIfPg("slug mutation lock over real Postgres advisory locks", () => {
     // Postgres's side.
     const slug = `crash-${process.pid}`;
     const dying = createPostgresDb({ url, max: 1 });
+    let reserved: ReservedDb | undefined;
     try {
-      const reserved = await dying.reserve();
+      reserved = await dying.reserve();
       await reserved.query(ACQUIRE, [SLUG_LOCK_NAMESPACE, slug]);
       const pid = Number(
         (await reserved.query<{ pid: number }>("select pg_backend_pid() as pid"))[0]?.pid,
@@ -225,6 +226,17 @@ describeIfPg("slug mutation lock over real Postgres advisory locks", () => {
       // A survivor can take the slug straight away — no lease to outlast.
       await expect(lock(slug, () => Promise.resolve("recovered"))).resolves.toBe("recovered");
     } finally {
+      // Hand the reservation back BEFORE closing, even though its backend is
+      // gone. `close()` is the orderly shutdown this test's own prose warns
+      // about: with a reservation still out it waits for it, and whether that
+      // wait ever ends depends on the pool having already noticed the socket
+      // die — a race the terminate above is what starts. Measured on a real
+      // cluster: ~1 run in 8 hung here for the FULL test timeout with the body
+      // already finished (every assertion passed, `closing` logged, `closed`
+      // never), and CI lost all three attempts. A `.catch()` does not cover a
+      // hang, and the retry that "fixed" it locally was the second attempt
+      // finding the connection already dead.
+      reserved?.release();
       // The pool's one connection is dead; tearing it down may reject.
       await dying.close().catch(() => undefined);
     }

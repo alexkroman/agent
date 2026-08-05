@@ -135,9 +135,9 @@ describe("cross-package smoke: SDK → server deploy", () => {
 
     // Each schema must have the fields the S2S API expects
     for (const schema of schemas) {
-      expect(schema.description).toBeTruthy();
-      expect(schema.parameters).toBeDefined();
-      expect(schema.parameters).toHaveProperty("type", "object");
+      expect.soft(schema.description, schema.name).toBeTruthy();
+      expect.soft(schema.parameters, schema.name).toBeDefined();
+      expect.soft(schema.parameters, schema.name).toHaveProperty("type", "object");
     }
   });
 

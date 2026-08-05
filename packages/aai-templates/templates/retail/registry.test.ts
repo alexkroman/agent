@@ -105,16 +105,18 @@ describe("tool registry", () => {
     );
   });
 
+  // Both sweep the registry, so they assert softly: adding a batch of tools
+  // should list every one still missing its entry, not just the first.
   test("every registered tool has sample args, so the sweeps below cover it", () => {
     for (const [name] of registry) {
-      expect(SAMPLE_ARGS[name], `add SAMPLE_ARGS["${name}"]`).toBeDefined();
+      expect.soft(SAMPLE_ARGS[name], `add SAMPLE_ARGS["${name}"]`).toBeDefined();
     }
   });
 
   test("every tool declares a description the model can act on", () => {
     for (const [name, def] of registry) {
-      expect(def.description, name).toBeTruthy();
-      expect(def.description.length, name).toBeGreaterThan(40);
+      expect.soft(def.description, name).toBeTruthy();
+      expect.soft(def.description.length, name).toBeGreaterThan(40);
     }
   });
 });

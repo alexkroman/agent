@@ -68,15 +68,17 @@ describe("parseWsUpgradeParams", () => {
       "emoji-🙂",
     ]) {
       const out = parseWsUpgradeParams(`/websocket?sessionId=${encodeURIComponent(bad)}`);
-      expect(out.resumeFrom).toBeUndefined();
+      // Soft, and labelled with the shape: a loosened guard usually admits a
+      // whole class of ids, and which ones got through is the finding.
+      expect.soft(out.resumeFrom, JSON.stringify(bad)).toBeUndefined();
       // Not resuming, so the greeting must still play.
-      expect(out.skipGreeting).toBe(false);
+      expect.soft(out.skipGreeting, JSON.stringify(bad)).toBe(false);
     }
   });
 
   test("accepts the shapes the server actually mints", () => {
     for (const ok of [crypto.randomUUID(), "a", "A-Z_0-9-abc", "x".repeat(128)]) {
-      expect(parseWsUpgradeParams(`/websocket?sessionId=${ok}`).resumeFrom).toBe(ok);
+      expect.soft(parseWsUpgradeParams(`/websocket?sessionId=${ok}`).resumeFrom, ok).toBe(ok);
     }
   });
 });

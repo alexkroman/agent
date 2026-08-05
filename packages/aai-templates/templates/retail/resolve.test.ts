@@ -19,7 +19,9 @@ describe("normalizeOrderId", () => {
       "5866402",
       " #w 586 6402 ",
     ]) {
-      expect(normalizeOrderId(spoken), spoken).toBe("#W5866402");
+      // Soft: a narrowed normalizer drops a whole family of spoken forms, and
+      // which ones it drops is what says where the pattern went wrong.
+      expect.soft(normalizeOrderId(spoken), spoken).toBe("#W5866402");
     }
   });
 });
@@ -37,7 +39,7 @@ describe("resolveOrder — canonical ids", () => {
     const state = stateFor("olivia_ito_3591");
     for (const spoken of ["#W5866402", "W 5866402", "5866402"]) {
       const order = resolveOrder(state, spoken);
-      expect(isError(order) ? null : order.order_id, spoken).toBe("#W5866402");
+      expect.soft(isError(order) ? null : order.order_id, spoken).toBe("#W5866402");
     }
   });
 
@@ -52,7 +54,7 @@ describe("resolveOrder — shorthand", () => {
     const state = stateFor("olivia_ito_3591");
     for (const spoken of ["the delivered one", "my delivered order", "delivered"]) {
       const order = resolveOrder(state, spoken);
-      expect(isError(order) ? null : order.order_id, spoken).toBe("#W5866402");
+      expect.soft(isError(order) ? null : order.order_id, spoken).toBe("#W5866402");
     }
   });
 
@@ -61,7 +63,7 @@ describe("resolveOrder — shorthand", () => {
     const result = resolveOrder(state, "my pending order");
     if (!isError(result)) throw new Error("expected ambiguity");
     for (const id of ["#W5442520", "#W7941031", "#W3657213"]) {
-      expect(result.error).toContain(id);
+      expect.soft(result.error, `ambiguity message omits ${id}`).toContain(id);
     }
   });
 

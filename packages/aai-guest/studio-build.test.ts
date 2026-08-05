@@ -53,7 +53,8 @@ describe("toolchainModules", () => {
       .map((m) => m[1] as string)
       .filter((s) => path.isAbsolute(s));
     expect(quoted.length).toBeGreaterThan(0);
-    for (const p of quoted) expect({ p, exists: existsSync(p) }).toEqual({ p, exists: true });
+    // Soft, so a prompt naming several unresolvable paths reports all of them.
+    for (const p of quoted) expect.soft(existsSync(p), p).toBe(true);
   });
 
   test("degrades to no section rather than naming paths it could not resolve", () => {
