@@ -116,8 +116,9 @@ segmented control switches between — `preview.tsx`, `code-view.tsx`,
 
 - **The pane probes before it frames** (`useAgentPageReady` in
   `preview.tsx`): a stamped `previewSlug` is not proof the platform serves
-  `/:slug/`. The stamp outlives the deploy behind it (the swept-agent case
-  above, which the wake path regenerates) and a first or repeat deploy takes
+  `/:slug/`. The stamp outlives the deploy behind it (the swept-agent case the
+  wake path regenerates — see `packages/aai-studio-server/CLAUDE.md`) and a
+  first or repeat deploy takes
   seconds to land, and `GET /:slug/` answers a slug with no agents row with
   a bare `{"error":"HTML not found"}` — which rendered as the ENTIRE pane,
   reading as a broken studio rather than a preview on its way. So the pane

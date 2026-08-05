@@ -776,8 +776,8 @@ service's control work is light — and one container served both badly.
 **`missingCredentials` in `deploy.ts`.** The classic dev/prod credential
 failure — an agent that ran locally on shell-exported keys dies at first
 session start after deploy with what looks like a provider outage — is caught
-at the deploy
-boundary instead. The required key set is derived from the bundle's
+at the deploy boundary instead. The required key set is derived from the
+bundle's
 self-described config (never from anything a client sent):
 `requiredProviderEnvVars` over the stt/llm/tts/s2s descriptors (the same
 registry-backed derivation the runtime resolves keys with) plus the agent's
