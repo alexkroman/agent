@@ -104,6 +104,13 @@ was the pre-push hook — and `git push --no-verify` skipped them entirely.
   owning package's guide and leave a pointer (see "Package guides" and
   "Updating CLAUDE.md"), not to delete rationale — except in the scaffold
   guide, which ships to users and has no packages to push sections into.
+  **The same cap is also a TEST**
+  (`packages/aai-templates/claude-md-limit.test.ts`), so it fails in the
+  ordinary test run and not only in `pnpm check` — an agent editing a guide
+  sees it without knowing this gate exists. It asserts both lines separately
+  (over budget = refactor before adding more; over 150k = a guide is being
+  truncated right now), that the root still links every package guide, and
+  that the script and CI wiring still agree with it.
 
 These are pure git/fs checks (no build needed), so they run up front and
 fail fast. To tighten quality over time, lower the entries in the
