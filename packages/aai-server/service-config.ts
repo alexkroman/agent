@@ -8,6 +8,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { errorMessage } from "@alexkroman1/aai";
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
 import { isLocalDev, requireEnv } from "./_boot.ts";
 import { type AgentRows, createMemoryAgentRows, createPgAgentRows } from "./agent-store.ts";
@@ -19,6 +20,7 @@ import {
 } from "./blob-storage.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./chat-store.ts";
+import { resolveHarnessPath } from "./constants.ts";
 import { isModalConfigured, modalRequiredError, prewarmModal } from "./modal-sandbox.ts";
 import { createModalSandboxDirectory } from "./modal-sandbox-directory.ts";
 import type { OrchestratorOpts } from "./orchestrator.ts";
@@ -356,9 +358,22 @@ export function assertSandboxBackendOrWarn(env: NodeJS.ProcessEnv): void {
       throw modalRequiredError();
     }
   } else {
-    // Resolve the Modal app/image context now (fire-and-forget) so the gRPC
-    // round trip doesn't land on the first session's cold start.
-    prewarmModal();
+    // Resolve the Modal context AND bake/publish the guest snapshot image now
+    // (fire-and-forget), so neither the gRPC round trip nor — far more
+    // expensive, and unavoidable on the first boot of every new harness
+    // version — the image build lands on the first session's cold start.
+    // The harness path is resolved separately: it throws when the harness
+    // isn't built, which must not take down boot for a prewarm.
+    prewarmModal(harnessPathOrWarn());
+  }
+}
+
+/** The built harness, or undefined with a warning — a prewarm may not fail boot. */
+function harnessPathOrWarn(): string | undefined {
+  try {
+    return resolveHarnessPath();
+  } catch (err) {
+    console.warn(`[sandbox] guest image prewarm skipped: ${errorMessage(err)}`);
   }
 }
 

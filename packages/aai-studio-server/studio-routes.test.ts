@@ -48,10 +48,15 @@ const deployWorkspaceMock = vi.fn(
   }),
 );
 const schedulePreviewMock = vi.fn();
+const refreshSessionMock = vi.fn(
+  async (..._args: Parameters<StudioSessionBroker["refreshSession"]>) => true,
+);
 const brokerMock = vi.fn(
   (): StudioSessionBroker => ({
     ensureSession: (...args: Parameters<StudioSessionBroker["ensureSession"]>) =>
       ensureSessionMock(...args),
+    refreshSession: (...args: Parameters<StudioSessionBroker["refreshSession"]>) =>
+      refreshSessionMock(...args),
     schedulePreview: (...args: Parameters<StudioSessionBroker["schedulePreview"]>) =>
       schedulePreviewMock(...args),
     deployWorkspace: (...args: Parameters<StudioSessionBroker["deployWorkspace"]>) =>
@@ -395,12 +400,17 @@ describe("project CRUD", () => {
   // tested in studio-workspace.test.ts — this covers the route wiring.
   test("source sync: first push creates, stale baseHash 409s, no-op skips preview", async () => {
     schedulePreviewMock.mockClear();
+    refreshSessionMock.mockClear();
     const push = (body: unknown) =>
       authFetch(fetch, "/studio/projects/pushed/source", { method: "PUT", body });
     const created = await push({ files: { "agent.ts": "export {};" } });
     expect(created.status).toBe(201);
     const { sourceHash } = (await created.json()) as { sourceHash: string };
     expect(schedulePreviewMock).toHaveBeenCalledTimes(1);
+    // A push edits the workspace from OUTSIDE the studio, so the project's
+    // live coding-agent sandbox has to be re-installed with the pushed tree —
+    // otherwise its next end-of-turn sync writes the pre-push files back.
+    expect(refreshSessionMock).toHaveBeenCalledWith(studioScope("key1"), "pushed", "key1");
     // GET returns the same fast-forward token the push did.
     const got = (await (
       await authFetch(fetch, "/studio/projects/pushed", { method: "GET" })
@@ -408,11 +418,14 @@ describe("project CRUD", () => {
     expect(got.sourceHash).toBe(sourceHash);
     expect(got.files["agent.ts"]).toBe("export {};");
 
-    // Identical files: accepted, but nothing changed — no preview churn.
+    // Identical files: accepted, but nothing changed — no preview churn, and
+    // no reason to reinstall a session already holding these exact files.
     schedulePreviewMock.mockClear();
+    refreshSessionMock.mockClear();
     const noop = await push({ files: { "agent.ts": "export {};" }, baseHash: sourceHash });
     expect(noop.status).toBe(200);
     expect(schedulePreviewMock).not.toHaveBeenCalled();
+    expect(refreshSessionMock).not.toHaveBeenCalled();
 
     // A stale token (the studio edited since the pull) is a 409, not a stomp.
     const stale = await push({ files: { "agent.ts": "changed" }, baseHash: "not-the-hash" });

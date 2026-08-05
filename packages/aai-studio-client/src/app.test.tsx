@@ -158,9 +158,7 @@ describe("chat history hydration", () => {
     });
     renderApp(vi.fn());
     // Straight into the project chat — no hero, no sidebar click.
-    await waitFor(() =>
-      expect(screen.getByText(/Welcome to AssemblyAI App Builder/)).toBeDefined(),
-    );
+    await waitFor(() => expect(screen.getByText(/Welcome to AssemblyAI Build/)).toBeDefined());
     const paths = fetchMock.mock.calls.map(
       (c) => new URL(String(c[0]), "http://studio.test").pathname,
     );
@@ -183,7 +181,7 @@ describe("chat history hydration", () => {
     await waitFor(() => expect(screen.getByText("build a pizza bot")).toBeDefined());
     expect(screen.getByText(/Done — pizza bot/)).toBeDefined();
     // Hydrated history means no "new chat" welcome bubble.
-    expect(screen.queryByText(/Welcome to AssemblyAI App Builder/)).toBeNull();
+    expect(screen.queryByText(/Welcome to AssemblyAI Build/)).toBeNull();
   });
 
   test("a project with no history shows the empty chat, not a stuck loader", async () => {
@@ -193,9 +191,7 @@ describe("chat history hydration", () => {
     });
     renderApp(vi.fn());
     await openProject("demo");
-    await waitFor(() =>
-      expect(screen.getByText(/Welcome to AssemblyAI App Builder/)).toBeDefined(),
-    );
+    await waitFor(() => expect(screen.getByText(/Welcome to AssemblyAI Build/)).toBeDefined());
     expect(screen.queryByText("Loading conversation…")).toBeNull();
   });
 
@@ -217,10 +213,9 @@ describe("chat history hydration", () => {
     // Holds on the boot state while the retry rides out the restart…
     await waitFor(() => expect(screen.getByText("Starting sandbox…")).toBeDefined());
     // …then connects on its own once the broker answers (first retry ~1s).
-    await waitFor(
-      () => expect(screen.getByText(/Welcome to AssemblyAI App Builder/)).toBeDefined(),
-      { timeout: 4000 },
-    );
+    await waitFor(() => expect(screen.getByText(/Welcome to AssemblyAI Build/)).toBeDefined(), {
+      timeout: 4000,
+    });
     expect(calls).toBe(2);
   });
 
@@ -240,9 +235,7 @@ describe("chat history hydration", () => {
       expect(screen.getByText(/Could not start the project's sandbox/)).toBeDefined(),
     );
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-    await waitFor(() =>
-      expect(screen.getByText(/Welcome to AssemblyAI App Builder/)).toBeDefined(),
-    );
+    await waitFor(() => expect(screen.getByText(/Welcome to AssemblyAI Build/)).toBeDefined());
     expect(calls).toBe(2);
   });
 
@@ -256,6 +249,6 @@ describe("chat history hydration", () => {
     renderApp(vi.fn());
     await openProject("demo");
     await waitFor(() => expect(screen.getByText("Loading conversation…")).toBeDefined());
-    expect(screen.queryByText(/Welcome to AssemblyAI App Builder/)).toBeNull();
+    expect(screen.queryByText(/Welcome to AssemblyAI Build/)).toBeNull();
   });
 });

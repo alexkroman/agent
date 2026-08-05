@@ -71,6 +71,7 @@ import {
 } from "./studio-schemas.ts";
 import { createStudioSessionBroker, type StudioSessionBroker } from "./studio-session-broker.ts";
 import type { StudioSessionRegistry } from "./studio-session-registry.ts";
+import { onSettledEdit } from "./studio-settled-edit.ts";
 import { createSsePusher, projectPayload } from "./studio-sse.ts";
 import { starterFiles } from "./studio-template.ts";
 import {
@@ -345,18 +346,9 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     return c.json({ ok: true });
   });
 
-  // A manual edit is a settled edit — schedule an auto preview deploy, same
-  // as the coding agent's end-of-turn sync (fire-and-forget, coalesced).
-  const schedulePreview = (c: Context<StudioHonoEnv>, scope: string, project: string): void => {
-    ensureBroker(c).schedulePreview(scope, project, {
-      serverUrl: requestPublicOrigin(c),
-      apiKey: c.var.apiKey,
-      // Present for browser sessions only. It is what lets the queued job
-      // outlive this replica: the row names the user, and the drain resolves
-      // the key from Vault instead of the row carrying a credential.
-      ...(c.var.userId && { userId: c.var.userId }),
-    });
-  };
+  /** See studio-settled-edit.ts — what an out-of-turn workspace write owes. */
+  const settledEdit = (c: Context<StudioHonoEnv>, scope: string, project: string): void =>
+    onSettledEdit(ensureBroker(c), c, scope, project, requestPublicOrigin(c));
 
   studio.put("/projects/:project/file", zValidator("json", StudioFileSchema), async (c) => {
     const { scope, project } = c.var;
@@ -373,7 +365,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     } catch (err) {
       return c.json({ error: errorMessage(err) }, 400);
     }
-    schedulePreview(c, scope, project);
+    settledEdit(c, scope, project);
     return c.json({ ok: true });
   });
 
@@ -392,7 +384,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
       return { ...current, files };
     });
     if (!(workspace && deleted)) return c.json({ error: "File not found" }, 404);
-    schedulePreview(c, scope, project);
+    settledEdit(c, scope, project);
     return c.json({ ok: true });
   });
 
@@ -429,7 +421,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     }
     try {
       const result = await syncWorkspaceSource(c.env.workspaces, scope, project, files, baseHash);
-      if (result.changed) schedulePreview(c, scope, project);
+      if (result.changed) settledEdit(c, scope, project);
       return c.json(
         { ok: true, sourceHash: result.sourceHash, created: result.created },
         result.created ? 201 : 200,

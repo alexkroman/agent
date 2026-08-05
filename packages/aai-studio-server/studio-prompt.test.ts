@@ -51,7 +51,7 @@ describe("studioSystemPrompt", () => {
   test("composes the studio preamble with the scaffold guide", () => {
     const prompt = studioSystemPrompt();
     // Studio preamble (workflow + environment overrides).
-    expect(prompt).toContain("AssemblyAI App Builder coding agent");
+    expect(prompt).toContain("AssemblyAI Build coding agent");
     expect(prompt).toContain("test_agent");
     // Any non-AssemblyAI provider needs a key the user must supply, so a
     // generated agent should default to an all-AssemblyAI pipeline (STT +
@@ -132,7 +132,7 @@ describe("studioSystemPrompt", () => {
 
   test("falls back to the built-in guide when the scaffold file is absent", () => {
     const prompt = composeStudioPrompt(null);
-    expect(prompt).toContain("AssemblyAI App Builder coding agent");
+    expect(prompt).toContain("AssemblyAI Build coding agent");
     expect(prompt).toContain("agent() essentials");
     // The preamble points at a "Design guidelines" section; the fallback is
     // the only guide on this path, so it must carry one of its own.

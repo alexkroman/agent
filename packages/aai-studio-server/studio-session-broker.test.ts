@@ -179,6 +179,32 @@ describe("studio session broker", () => {
     await broker.dispose();
   });
 
+  test("refreshSession re-installs a live sandbox with the pushed files", async () => {
+    // `aai push` writes the workspace from outside the studio. The live
+    // guest materialized its tree at install, so without this the agent
+    // reads pre-push files — and syncs them back at end of turn.
+    const guest = fakeGuest();
+    const { broker, workspaces, spawn } = await makeBroker([guest]);
+    await broker.ensureSession(SCOPE, PROJECT, "k");
+    const { syncWorkspaceSource } = await import("./studio-workspace.ts");
+    await syncWorkspaceSource(workspaces, SCOPE, PROJECT, { "agent.ts": "// pushed" });
+
+    expect(await broker.refreshSession(SCOPE, PROJECT, "k")).toBe(true);
+    expect(spawn).toHaveBeenCalledTimes(1);
+    const inits = guest.requests.filter((r) => r.method === "studio/session-init");
+    expect(inits).toHaveLength(2);
+    const reinit = (inits[1]?.params ?? {}) as { files?: Record<string, string> };
+    expect(reinit.files?.["agent.ts"]).toBe("// pushed");
+    await broker.dispose();
+  });
+
+  test("refreshSession never spawns — no live sandbox means nothing is stale", async () => {
+    const { broker, spawn } = await makeBroker([fakeGuest()]);
+    expect(await broker.refreshSession(SCOPE, PROJECT, "k")).toBe(false);
+    expect(spawn).not.toHaveBeenCalled();
+    await broker.dispose();
+  });
+
   test("a dead sandbox is replaced on the next broker call", async () => {
     const first = fakeGuest();
     const second = fakeGuest("wss://tunnel2.example:443");

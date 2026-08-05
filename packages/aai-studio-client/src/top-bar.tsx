@@ -6,6 +6,7 @@
 // switching lives in the home sidebar (brand → home), not here.
 
 import clsx from "clsx";
+import { useEffect, useRef } from "react";
 import logoUrl from "./assets/assemblyai-logomark.svg";
 
 /**
@@ -19,6 +20,15 @@ export function agentUrl(slug: string): string {
 
 /** Tooltip while a chat turn is streaming and Publish is locked. */
 const PUBLISH_WAIT_FOR_TURN = "Publish unlocks when the agent finishes its turn";
+
+/**
+ * Links the top bar's toggle to the panel it opens (`aria-controls`), and
+ * marks the toggle so the dismiss-on-outside-click handler can tell "clicked
+ * away" from "pressed the toggle again" — without that exemption the two
+ * would fight and the second press would reopen what the dismiss just closed.
+ */
+const PUBLISH_MENU_ID = "publish-menu";
+const PUBLISH_TOGGLE_ATTR = "data-publish-toggle";
 
 type PublishMenuProps = {
   open: boolean;
@@ -37,50 +47,87 @@ type PublishMenuProps = {
   onClose: () => void;
 };
 
+/**
+ * The Publish dropdown. Deliberately says each thing ONCE: the top bar's
+ * toggle is the panel's heading (so there is no eyebrow) and its pressed
+ * state is the dismiss control (so there is no Close button), and a
+ * successful deploy is reported as the production LINK alone — the raw
+ * `aai deploy` transcript repeats that URL twice more, so it is folded away
+ * behind a disclosure. It also lands in the chat, which is where the coding
+ * agent reads it from. A FAILED deploy stays expanded: the error is the
+ * result, not a detail.
+ */
 export function PublishMenu(props: PublishMenuProps) {
-  if (!props.open) return null;
+  const panel = useRef<HTMLDivElement>(null);
+  const { open, onClose } = props;
+
+  // With Close gone, dismissal is Escape or a click away from the panel.
+  // The toggle exempts itself (see PUBLISH_TOGGLE_ATTR).
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Element | null;
+      if (panel.current?.contains(target as Node)) return;
+      if (target?.closest?.(`[${PUBLISH_TOGGLE_ATTR}]`)) return;
+      onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+  const published = props.deployedSlug && !props.error;
   return (
-    <div className="absolute top-14 right-5 z-10 flex w-96 flex-col gap-3 rounded-lg border border-line bg-panel p-5 shadow-md">
-      <span className="eyebrow">Publish</span>
+    <div
+      ref={panel}
+      id={PUBLISH_MENU_ID}
+      role="dialog"
+      aria-label="Publish"
+      className="absolute top-14 right-5 z-10 flex w-96 flex-col gap-3 rounded-lg border border-line bg-panel p-5 shadow-md"
+    >
       <p className="m-0 text-[13px] leading-5 text-muted">
-        Runs <code className="font-mono">aai deploy</code> in the project's sandbox and ships the
-        agent to PRODUCTION — the preview updates on its own as you edit; only Publish touches
-        production. The CLI output lands in the chat, so the agent can fix any errors. Third-party
-        keys live under Settings.
+        Ships the current workspace to production with <code className="font-mono">aai deploy</code>
+        . The preview updates on its own as you edit — only this touches production. Output lands in
+        the chat so the agent can fix any errors; third-party keys live under Settings.
       </p>
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={props.onPublish}
-          disabled={props.busy || props.chatBusy}
-          title={props.chatBusy && !props.busy ? PUBLISH_WAIT_FOR_TURN : undefined}
-        >
-          {props.busy ? "Publishing…" : "Publish"}
-        </button>
-        <button type="button" className="btn" onClick={props.onClose}>
-          Close
-        </button>
-      </div>
-      {(props.output ?? props.error) && (
-        <pre
-          className={clsx(
-            "m-0 max-h-40 overflow-auto rounded-md border border-line bg-cream p-2 font-mono text-[11px] whitespace-pre-wrap",
-            props.error && "text-err",
-          )}
-        >
-          {props.error ?? props.output}
-        </pre>
-      )}
-      {props.deployedSlug && !props.error && (
+      <button
+        type="button"
+        className="btn btn-primary self-start"
+        onClick={props.onPublish}
+        disabled={props.busy || props.chatBusy}
+        title={props.chatBusy && !props.busy ? PUBLISH_WAIT_FOR_TURN : undefined}
+      >
+        {props.busy ? "Publishing…" : "Publish"}
+      </button>
+      {published && (
         <a
           className="font-mono text-xs break-all text-indigo"
-          href={agentUrl(props.deployedSlug)}
+          href={agentUrl(props.deployedSlug as string)}
           target="_blank"
           rel="noreferrer"
         >
-          Production at {agentUrl(props.deployedSlug)}
+          {agentUrl(props.deployedSlug as string)} ↗
         </a>
+      )}
+      {props.error && (
+        <pre className="m-0 max-h-40 overflow-auto rounded-md border border-line bg-cream p-2 font-mono text-[11px] whitespace-pre-wrap text-err">
+          {props.error}
+        </pre>
+      )}
+      {props.output && !props.error && (
+        <details className="text-xs text-muted">
+          <summary className="cursor-pointer select-none">CLI output</summary>
+          <pre className="m-0 mt-2 max-h-40 overflow-auto rounded-md border border-line bg-cream p-2 font-mono text-[11px] whitespace-pre-wrap">
+            {props.output}
+          </pre>
+        </details>
       )}
     </div>
   );
@@ -109,6 +156,13 @@ type TopBarProps = {
   hasBuild: boolean;
   /** A chat turn is streaming — Publish locks until it settles (see PublishMenuProps). */
   chatBusy?: boolean;
+  /**
+   * The Publish menu is showing. The button is a TOGGLE, so it has to look
+   * pressed while it is: it is the panel's only dismiss control now, and a
+   * primary button that reads identical open and closed gives no hint that
+   * pressing it again hides what it just opened.
+   */
+  publishOpen?: boolean;
   /** Brand click: back to the hero home (deselects the project). */
   onGoHome: () => void;
   onSelectTab: (tab: StudioTab) => void;
@@ -123,6 +177,7 @@ export function TopBar(props: TopBarProps) {
   let publishTitle: string | undefined;
   if (!props.hasBuild) publishTitle = "Publish unlocks after your first build";
   else if (props.chatBusy) publishTitle = PUBLISH_WAIT_FOR_TURN;
+  else if (props.publishOpen) publishTitle = "Hide the publish menu";
   return (
     <header className="flex h-[60px] flex-none items-center gap-3.5 border-b border-line bg-panel px-5">
       <button
@@ -132,9 +187,7 @@ export function TopBar(props: TopBarProps) {
         title="Home"
       >
         <img src={logoUrl} alt="AssemblyAI" className="h-5 w-5" />
-        <span className="font-serif text-[16px] whitespace-nowrap text-fg">
-          AssemblyAI App Builder
-        </span>
+        <span className="font-serif text-[16px] whitespace-nowrap text-fg">AssemblyAI Build</span>
       </button>
       {props.project && (
         <>
@@ -180,12 +233,25 @@ export function TopBar(props: TopBarProps) {
       )}
       <button
         type="button"
-        className="btn btn-primary px-[18px]"
+        {...{ [PUBLISH_TOGGLE_ATTR]: "" }}
+        className={clsx(
+          "btn btn-primary flex items-center gap-2 px-[18px]",
+          // Pressed: darker face, inset shadow, and the caret flipped — the
+          // three together read as "this is held down, press again to close".
+          props.publishOpen &&
+            "border-indigo-hover bg-indigo-hover shadow-[inset_0_2px_4px_rgb(20_18_12/0.35)]",
+        )}
         onClick={props.onTogglePublish}
         disabled={!props.hasBuild || props.chatBusy}
         title={publishTitle}
+        aria-haspopup="dialog"
+        aria-expanded={props.publishOpen ?? false}
+        aria-controls={props.publishOpen ? PUBLISH_MENU_ID : undefined}
       >
         Publish
+        <span aria-hidden className="text-[8px] leading-none">
+          {props.publishOpen ? "▲" : "▼"}
+        </span>
       </button>
       <button type="button" className="btn" onClick={props.onLogOut}>
         Log out

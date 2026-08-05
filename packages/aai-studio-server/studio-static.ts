@@ -97,10 +97,10 @@ export function studioCsp(
 }
 
 const FALLBACK_HTML = `<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><title>AssemblyAI App Builder</title></head>
+<html lang="en"><head><meta charset="utf-8"><title>AssemblyAI Build</title></head>
 <body style="font-family:sans-serif;max-width:40rem;margin:4rem auto;line-height:1.5">
-<h1>AssemblyAI App Builder</h1>
-<p>The App Builder client has not been built on this server.</p>
+<h1>AssemblyAI Build</h1>
+<p>The AssemblyAI Build client has not been built on this server.</p>
 <p>Run <code>pnpm --filter aai-studio-client build</code> and restart, then
 reload this page to use the browser coding agent.</p>
 </body></html>`;

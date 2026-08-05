@@ -125,6 +125,15 @@ export type ModalSpawnContext = {
    * lease table with a heartbeat.
    */
   lookupGuestSandbox(name: string): Promise<ModalSandboxLike | null>;
+  /**
+   * Resolve the snapshot image guests spawn from — building and publishing it
+   * when this harness version has never been baked.
+   *
+   * Idempotent and memoized on the harness code, which is exactly what makes
+   * it callable at boot: `createGuestSandbox` awaits the SAME promise, so a
+   * spawn racing the prewarm joins it rather than starting a second build.
+   */
+  prepareGuestImage(code: string): Promise<void>;
 };
 
 // ── Configuration ────────────────────────────────────────────────────────────
@@ -291,6 +300,9 @@ async function buildContext(): Promise<ModalSpawnContext> {
       });
       return create(image, params);
     },
+    async prepareGuestImage(code) {
+      await harnessImage(code);
+    },
     async lookupGuestSandbox(name) {
       // `fromName` throws NotFoundError when no RUNNING sandbox holds the
       // name — which is the answer, not an error. Any other failure also
@@ -313,13 +325,32 @@ async function buildContext(): Promise<ModalSpawnContext> {
 export const modalContext = memoAsync(buildContext);
 
 /**
- * Fire-and-forget warm-up of the memoized Modal context (app lookup/creation
- * is a gRPC round trip that would otherwise land on the first session's cold
- * start). A failure only warns — the next spawn retries via the memo reset.
+ * Fire-and-forget warm-up of everything a spawn needs before it can ask Modal
+ * for a sandbox, so the FIRST session pays for none of it: the Modal context
+ * (app lookup, a gRPC round trip) and — given `harnessPath` — the guest
+ * snapshot image.
+ *
+ * The image is the expensive half and the reason this takes a path at all.
+ * Resolving it means reading the ~13 MB harness, a synchronous SHA-256 over it
+ * for the content-addressed tag, and a lookup; on a harness version nobody has
+ * published yet (i.e. right after every deploy) it means BUILDING — toolchain
+ * layer, builder sandbox, 13 MB write, snapshot, publish. That landed on one
+ * unlucky user's first voice session.
+ *
+ * Both stages are memoized, so a spawn racing this joins it rather than
+ * starting a second build, and replicas racing each other are no worse than
+ * the concurrent cold spawns that raced before. Failures only warn — the memo
+ * resets and the next spawn retries as if it were the first caller.
  */
-export function prewarmModal(): void {
-  void modalContext().catch((err: unknown) => {
-    console.warn(`Modal context prewarm failed: ${errorMessage(err)}`);
+export function prewarmModal(harnessPath?: string): void {
+  void (async () => {
+    const ctx = await modalContext();
+    if (!harnessPath) return;
+    const started = Date.now();
+    await ctx.prepareGuestImage(await harnessCode(harnessPath));
+    debug("Guest harness image ready", { ms: Date.now() - started });
+  })().catch((err: unknown) => {
+    console.warn(`Modal prewarm failed: ${errorMessage(err)}`);
   });
 }
 

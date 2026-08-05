@@ -64,6 +64,86 @@ export async function listTemplates(root = resolveTemplatesDir()): Promise<strin
     .sort();
 }
 
+/** package.json fields merged key-by-key rather than whole. */
+const MERGED_MANIFEST_FIELDS = ["dependencies", "devDependencies", "scripts"] as const;
+
+type Manifest = Record<string, unknown>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Fill a manifest's gaps from the scaffold's, `existing` always winning.
+ *
+ * The same rule the file layering uses, one level deeper: a top-level field
+ * the manifest already declares is left alone, and for the three map fields
+ * it is each ENTRY that is left alone. Per-entry matters both ways — a
+ * workspace manifest pins its `dependencies` to exact installed versions and
+ * must keep them, while a single agent-added `devDependencies` entry must not
+ * shadow the whole toolchain block.
+ *
+ * Returns null when nothing was missing, so the common case writes no file.
+ */
+export function mergeScaffoldManifest(existing: Manifest, scaffold: Manifest): Manifest | null {
+  const merged: Manifest = { ...existing };
+  let changed = false;
+  for (const [key, value] of Object.entries(scaffold)) {
+    const mine = merged[key];
+    if (mine === undefined) {
+      merged[key] = value;
+      changed = true;
+      continue;
+    }
+    if (!(MERGED_MANIFEST_FIELDS as readonly string[]).includes(key)) continue;
+    if (!(isRecord(mine) && isRecord(value))) continue;
+    const entries = { ...mine };
+    for (const [dep, spec] of Object.entries(value)) {
+      if (dep in entries) continue;
+      entries[dep] = spec;
+      changed = true;
+    }
+    merged[key] = entries;
+  }
+  return changed ? merged : null;
+}
+
+/**
+ * Merge the scaffold's package.json UNDER the one already in `targetDir`.
+ *
+ * The file-level layering below can only skip a manifest that already exists,
+ * and for `aai pull` that manifest is the studio workspace's — which declares
+ * its runtime dependencies and nothing else. Toolchain packages are baked into
+ * the guest sandbox, so the workspace deliberately never names them (see
+ * aai-guest/studio-project-shape.ts); on a laptop nothing bakes them, so
+ * `pnpm install` fetched no `vite`, no `@vitejs/plugin-react`, no
+ * `@tailwindcss/vite`, and `aai dev` died resolving the vite.config.ts the
+ * very same layering had just written. Completing the manifest is the same job
+ * as completing the file tree.
+ */
+async function layerScaffoldManifest(scaffoldDir: string, targetDir: string): Promise<void> {
+  const target = path.join(targetDir, "package.json");
+  const [mine, theirs] = await Promise.all([
+    readJsonFile(target),
+    readJsonFile(path.join(scaffoldDir, "package.json")),
+  ]);
+  // No manifest of its own means `fs.cp` copied the scaffold's verbatim.
+  if (!(mine && theirs)) return;
+  const merged = mergeScaffoldManifest(mine, theirs);
+  if (merged) await fs.writeFile(target, `${JSON.stringify(merged, null, 2)}\n`, "utf-8");
+}
+
+/** Parse a JSON file, or null when it is missing or unparseable. */
+async function readJsonFile(file: string): Promise<Manifest | null> {
+  try {
+    const parsed: unknown = JSON.parse(await fs.readFile(file, "utf-8"));
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    // Missing, or mid-edit — leave it for the package manager to report.
+    return null;
+  }
+}
+
 /**
  * Layer the base scaffold (package.json, tsconfig, …) into targetDir
  * WITHOUT overwriting anything already there. Shared by `aai init`
@@ -71,12 +151,15 @@ export async function listTemplates(root = resolveTemplatesDir()): Promise<strin
  * files — the workspace stores source, and the scaffold completes it into a
  * runnable project the same way the guest's `ensureProjectShape` does
  * before an in-sandbox build).
+ *
+ * package.json is the one file merged rather than skipped — see
+ * {@link layerScaffoldManifest}.
  */
 export async function layerScaffold(targetDir: string): Promise<void> {
   const scaffoldDir = path.join(resolveTemplatesDir(), "scaffold");
-  if (existsSync(scaffoldDir)) {
-    await fs.cp(scaffoldDir, targetDir, { recursive: true, force: false, errorOnExist: false });
-  }
+  if (!existsSync(scaffoldDir)) return;
+  await fs.cp(scaffoldDir, targetDir, { recursive: true, force: false, errorOnExist: false });
+  await layerScaffoldManifest(scaffoldDir, targetDir);
 }
 
 /**

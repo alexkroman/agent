@@ -335,6 +335,7 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
         deployedSlug={deployedSlug}
         hasBuild={hasBuild}
         chatBusy={chatBusy}
+        publishOpen={publishOpen}
         onGoHome={() => selectProject(null)}
         onSelectTab={(next) => {
           setPublishOpen(false);
