@@ -167,11 +167,13 @@ describe("applyConsequences MISS matrix", () => {
     ] as const) {
       const state = playingState();
       const { deltas, clockEvents } = applyConsequences(state, miss, position, "standard", null);
-      expect(state.health).toBe(5 - dmg);
-      expect(deltas.health).toBe(-dmg);
-      expect(state.clocks[0]?.filled).toBe(ticks);
-      expect(deltas.clockTicks).toBe(ticks);
-      expect(clockEvents).toHaveLength(0); // 4-segment clock not full yet
+      // Each row starts from a fresh state, so they are independent — assert
+      // softly and a rebalanced table reports the whole matrix in one run.
+      expect.soft(state.health, position).toBe(5 - dmg);
+      expect.soft(deltas.health, position).toBe(-dmg);
+      expect.soft(state.clocks[0]?.filled, position).toBe(ticks);
+      expect.soft(deltas.clockTicks, position).toBe(ticks);
+      expect.soft(clockEvents, position).toHaveLength(0); // 4-segment clock not full yet
     }
   });
 

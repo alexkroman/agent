@@ -81,7 +81,9 @@ describe("platform schema migrations", () => {
   test("put the watched tables in the publication and grant service_role SELECT", () => {
     const sql = migrationSql();
     for (const table of ["agents", "studio_workspaces", "studio_chats"]) {
-      expect(sql).toContain(`alter publication supabase_realtime add table aai_platform.${table}`);
+      expect
+        .soft(sql, `${table} is not in the publication`)
+        .toContain(`alter publication supabase_realtime add table aai_platform.${table}`);
     }
     expect(sql).toContain("grant usage on schema aai_platform to service_role");
     expect(sql).toContain("grant select on");
@@ -93,8 +95,9 @@ describe("platform schema migrations", () => {
     // that check for themselves (the publication, the pgmq queue).
     const creates = [...sql.matchAll(/^\s*create (table|schema|extension|index)([^;]*)/gim)];
     expect(creates.length).toBeGreaterThan(0);
+    // Soft, so a migration adding several unguarded creates names them all.
     for (const [statement] of creates) {
-      expect(statement).toContain("if not exists");
+      expect.soft(statement).toContain("if not exists");
     }
   });
 });

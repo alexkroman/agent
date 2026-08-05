@@ -57,7 +57,9 @@ describe("storeView", () => {
       "#W4316152",
       "#W1840144",
     ]) {
-      expect(json, `projection leaked ${leaked}`).not.toContain(leaked);
+      // Soft: a widened projection leaks several fields at once, and the full
+      // list is what says how much of the other customers' records got out.
+      expect.soft(json, `projection leaked ${leaked}`).not.toContain(leaked);
     }
   });
 
@@ -84,15 +86,17 @@ describe("DEMO_PERSONAS", () => {
     const users = Object.values((structuredClone(seedJson) as unknown as Store).users);
     for (const persona of DEMO_PERSONAS) {
       const user = users.find((u) => u.email === persona.email);
-      expect(user, `no seeded customer has email ${persona.email}`).toBeDefined();
-      expect(`${user?.name.first_name} ${user?.name.last_name}`).toBe(persona.name);
-      expect(user?.address.zip).toBe(persona.zip);
+      expect.soft(user, `no seeded customer has email ${persona.email}`).toBeDefined();
+      expect
+        .soft(`${user?.name.first_name} ${user?.name.last_name}`, persona.email)
+        .toBe(persona.name);
+      expect.soft(user?.address.zip, persona.email).toBe(persona.zip);
     }
   });
 
   test("every persona carries a hint, so a user can pick a path deliberately", () => {
     for (const persona of DEMO_PERSONAS) {
-      expect(persona.hint.length, persona.name).toBeGreaterThan(20);
+      expect.soft(persona.hint.length, persona.name).toBeGreaterThan(20);
     }
   });
 });

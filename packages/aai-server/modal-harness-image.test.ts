@@ -43,12 +43,14 @@ describe("resolveSdkSpecs", () => {
   test("pins each SDK package to the exact installed version", () => {
     const specs = resolveSdkSpecs();
     expect(specs.length).toBeGreaterThan(0);
+    // Soft: a bad resolution usually hits every SDK package at once, and the
+    // whole list is what says whether the derivation or one package broke.
     for (const spec of specs) {
-      expect(spec).toMatch(/^@alexkroman1\/[^@]+@\d+\.\d+\.\d+/);
+      expect.soft(spec).toMatch(/^@alexkroman1\/[^@]+@\d+\.\d+\.\d+/);
       // Neither a range nor an unresolved workspace protocol — npm in the
       // guest can install neither reproducibly.
-      expect(spec).not.toContain("workspace:");
-      expect(spec).not.toMatch(/@[\^~*]/);
+      expect.soft(spec).not.toContain("workspace:");
+      expect.soft(spec).not.toMatch(/@[\^~*]/);
     }
   });
 });
@@ -61,7 +63,7 @@ describe("readToolchainLock", () => {
     // The SDK packages are installed separately — they cannot be locked (a
     // lockfile entry needs an integrity hash that only exists post-publish).
     for (const name of Object.keys(manifest.dependencies ?? {})) {
-      expect(name).not.toMatch(/^@alexkroman1\//);
+      expect.soft(name).not.toMatch(/^@alexkroman1\//);
     }
     const parsed = JSON.parse(lock.lock) as { lockfileVersion?: number };
     expect(parsed.lockfileVersion).toBeGreaterThanOrEqual(2);
@@ -71,8 +73,10 @@ describe("readToolchainLock", () => {
     const manifest = JSON.parse(readToolchainLock().manifest) as {
       dependencies: Record<string, string>;
     };
-    for (const version of Object.values(manifest.dependencies)) {
-      expect(version).toMatch(/^\d+\.\d+\.\d+/);
+    // Soft, and labelled: a hand-edited manifest tends to loosen more than one
+    // pin, and the failure has to name which package it is.
+    for (const [name, version] of Object.entries(manifest.dependencies)) {
+      expect.soft(version, name).toMatch(/^\d+\.\d+\.\d+/);
     }
   });
 });
@@ -152,8 +156,8 @@ describe("toolchainImage", () => {
       // Base64's alphabet contains no quotes, so the single-quoted payload is
       // inert to the shell — no escaping to get wrong.
       const payload = /'([^']*)'/.exec(line)?.[1] ?? "";
-      expect(payload).toMatch(/^[A-Za-z0-9+/=]+$/);
-      expect(payload.length).toBeGreaterThan(0);
+      expect.soft(payload).toMatch(/^[A-Za-z0-9+/=]+$/);
+      expect.soft(payload.length).toBeGreaterThan(0);
     }
   });
 

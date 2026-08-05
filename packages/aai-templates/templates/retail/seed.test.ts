@@ -90,18 +90,25 @@ describe("seed shape", () => {
     expect(Object.keys(seed.orders)).toHaveLength(22);
   });
 
+  // These four sweep the whole corpus, so they assert SOFTLY: one hand-edited
+  // order usually breaks several records at once, and a hard failure reports
+  // the first and hides how far the damage runs.
   test("every order belongs to a seeded user and is listed on that user", () => {
     for (const order of Object.values(seed.orders)) {
       const user = seed.users[order.user_id];
-      expect(user, `order ${order.order_id} has no seeded user`).toBeDefined();
-      expect(user?.orders).toContain(order.order_id);
+      expect.soft(user, `order ${order.order_id} has no seeded user`).toBeDefined();
+      expect
+        .soft(user?.orders ?? [], `${order.order_id} is not listed on its user`)
+        .toContain(order.order_id);
     }
   });
 
   test("every user's listed orders are all seeded", () => {
     for (const user of Object.values(seed.users)) {
       for (const orderId of user.orders) {
-        expect(seed.orders[orderId], `${user.user_id} lists unseeded ${orderId}`).toBeDefined();
+        expect
+          .soft(seed.orders[orderId], `${user.user_id} lists unseeded ${orderId}`)
+          .toBeDefined();
       }
     }
   });
@@ -110,11 +117,10 @@ describe("seed shape", () => {
     for (const order of Object.values(seed.orders)) {
       for (const item of order.items) {
         const variant = seed.products[item.product_id]?.variants[item.item_id];
-        expect(
-          variant,
-          `${order.order_id}: ${item.item_id} missing from its product`,
-        ).toBeDefined();
-        expect(variant?.price).toBe(item.price);
+        expect
+          .soft(variant, `${order.order_id}: ${item.item_id} missing from its product`)
+          .toBeDefined();
+        expect.soft(variant?.price, `${order.order_id}: ${item.item_id} price`).toBe(item.price);
       }
     }
   });
@@ -123,10 +129,12 @@ describe("seed shape", () => {
     for (const order of Object.values(seed.orders)) {
       const user = seed.users[order.user_id];
       for (const payment of order.payment_history) {
-        expect(
-          user?.payment_methods[payment.payment_method_id],
-          `${order.order_id}: unknown method ${payment.payment_method_id}`,
-        ).toBeDefined();
+        expect
+          .soft(
+            user?.payment_methods[payment.payment_method_id],
+            `${order.order_id}: unknown method ${payment.payment_method_id}`,
+          )
+          .toBeDefined();
       }
     }
   });
@@ -148,7 +156,7 @@ describe("seed coverage — each datum backs a specific test in agent.test.ts", 
   test("every status the tools branch on is present", () => {
     const statuses = new Set(Object.values(seed.orders).map((o) => o.status));
     for (const s of ["pending", "processed", "delivered", "cancelled"]) {
-      expect(statuses, `no ${s} order seeded`).toContain(s);
+      expect.soft(statuses, `no ${s} order seeded`).toContain(s);
     }
   });
 

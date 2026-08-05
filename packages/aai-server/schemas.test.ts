@@ -150,7 +150,7 @@ describe("DeployBodySchema", () => {
     // reserved even though the /metrics endpoint was removed, so the path
     // can never be claimed by a tenant if it ever returns.
     for (const slug of ["studio", "studio-assets", "health", "metrics", "deploy"]) {
-      expect(RESERVED_SLUGS.has(slug)).toBe(true);
+      expect.soft(RESERVED_SLUGS.has(slug), `${slug} is claimable`).toBe(true);
     }
   });
 

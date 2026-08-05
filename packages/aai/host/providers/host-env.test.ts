@@ -117,7 +117,9 @@ describe("withHostCredentialFallback", () => {
       "GROQ_API_KEY",
       "AI_GATEWAY_API_KEY",
     ]) {
-      expect(PROVIDER_CREDENTIAL_ENVS).toContain(name);
+      // Soft: a broken derivation drops a whole provider family, and the set
+      // of missing names is what points at which registry stopped feeding it.
+      expect.soft(PROVIDER_CREDENTIAL_ENVS, name).toContain(name);
     }
   });
 
@@ -129,7 +131,7 @@ describe("withHostCredentialFallback", () => {
     const hostEnv = Object.fromEntries(PROVIDER_CREDENTIAL_ENVS.map((n) => [n, `value-${n}`]));
     const merged = withHostCredentialFallback({}, hostEnv);
     for (const name of PROVIDER_CREDENTIAL_ENVS) {
-      expect(resolveApiKey(name, merged)).toBe(`value-${name}`);
+      expect.soft(resolveApiKey(name, merged), name).toBe(`value-${name}`);
     }
   });
 });

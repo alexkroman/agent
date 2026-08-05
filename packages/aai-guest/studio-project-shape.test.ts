@@ -53,7 +53,7 @@ describe("ensureProjectShape", () => {
     // materialize a different SDK build than the harness resolved, into a
     // workspace node_modules that shadows the baked one.
     for (const [name, version] of Object.entries(dependencies)) {
-      expect({ name, version }).toEqual({ name, version: expect.stringMatching(/^\d+\.\d+\./) });
+      expect.soft(version, name).toMatch(/^\d+\.\d+\./);
     }
   });
 
@@ -221,8 +221,10 @@ describe("scaffold parity (drift guard)", () => {
       "lib",
       "jsx",
     ];
+    // Soft: drift usually moves several options at once, and one hard failure
+    // would hide the rest behind a second run.
     for (const key of shared) {
-      expect({ [key]: mine[key] }).toEqual({ [key]: theirs[key] });
+      expect.soft(mine[key], key).toEqual(theirs[key]);
     }
   });
 });
