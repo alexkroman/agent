@@ -2,8 +2,8 @@
 /**
  * Project-level tools for the studio coding agent — the voice-agent AAI
  * versions of the v0/Lovable project tools: dependency management
- * (`add_dependency`/`remove_dependency`), asset download
- * (`download_to_workspace`), and a design-brief generator
+ * (`add_dependency`/`remove_dependency`/`update_dependencies`), asset
+ * download (`download_to_workspace`), and a design-brief generator
  * (`generate_design_inspiration`).
  *
  * Like every studio tool these execute INSIDE the guest sandbox: an npm
@@ -19,13 +19,14 @@
  * client.tsx) rather than writing a file that breaks at publish time.
  */
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { safeFetch } from "@alexkroman1/aai/runtime";
 import { generateText, type LanguageModel, type ToolSet, tool } from "ai";
 import { z } from "zod";
 import { errMsg } from "./harness-rpc.ts";
 import { MAX_STUDIO_FILE_BYTES } from "./limits.ts";
+import { WORKSPACE_DEPENDENCIES } from "./studio-project-shape.ts";
 import { envWithoutGuestToken, runCapped } from "./studio-spawn.ts";
 import { STUDIO_TOOL_DESCRIPTIONS } from "./studio-tool-descriptions.ts";
 import { resolveInside } from "./studio-workspace-fs.ts";
@@ -43,6 +44,28 @@ const DOWNLOAD_TIMEOUT_MS = 30_000;
  * leading `-` flag, a path, or a git URL into the npm invocation.
  */
 const PACKAGE_SPEC_RE = /^(@[a-z0-9~][\w.~-]*\/)?[a-z0-9~][\w.~-]*(@[\w.^~<>=* -]+)?$/;
+
+/**
+ * The same shape with NO version part. `update_dependencies` appends
+ * `@latest` itself, so a caller-supplied version would either be ignored or
+ * contradict the tool's whole purpose — refusing it is clearer than
+ * silently overriding it, and it keeps the spec we hand npm entirely ours.
+ */
+const PACKAGE_NAME_RE = /^(@[a-z0-9~][\w.~-]*\/)?[a-z0-9~][\w.~-]*$/;
+
+/**
+ * Packages whose versions the PLATFORM owns, never the registry.
+ *
+ * These are pinned to the versions installed in the baked toolchain
+ * (`resolveWorkspaceDependencies`), and `ensureProjectShape` reconciles the
+ * pins on every settled write — so "update these to latest" is both futile
+ * (the next reconcile rewrites them back) and actively harmful in the window
+ * before it: `npm install` reifies the whole manifest, and a newer SDK,
+ * React, or Tailwind materialized into a workspace-local `node_modules`
+ * SHADOWS the baked copy the harness resolved and the build was tested
+ * against. See `reconcileWorkspacePins` for the full argument.
+ */
+const TOOLCHAIN_MANAGED: ReadonlySet<string> = new Set(WORKSPACE_DEPENDENCIES);
 
 /**
  * The registry fields `npm_info` reports: enough to confirm a package and
@@ -87,6 +110,146 @@ async function npmTool(dir: string, verb: "install" | "uninstall", spec: string)
       return `npm ${verb} ${spec} succeeded${body ? `\n${body}` : ""}`;
     }
     return `npm ${verb} ${spec} failed [exit code ${exitCode}]\n${body || "(no output)"}`;
+  } catch (err) {
+    return `Error: ${errMsg(err)}`;
+  }
+}
+
+/**
+ * The workspace's declared dependency specs, both kinds merged.
+ *
+ * `npm install <name>@latest` updates an entry wherever it already lives, so
+ * the two sets are one namespace as far as this tool is concerned;
+ * `dependencies` wins a (malformed) duplicate, matching npm's own precedence.
+ */
+function declaredSpecs(manifest: unknown): Record<string, string> {
+  const m = (manifest ?? {}) as Record<string, unknown>;
+  const pick = (key: string): Record<string, string> => {
+    const value = m[key];
+    return value && typeof value === "object" ? (value as Record<string, string>) : {};
+  };
+  return { ...pick("devDependencies"), ...pick("dependencies") };
+}
+
+/** Parse the workspace manifest, or `null` when it is missing/unparseable. */
+async function readManifest(dir: string): Promise<unknown | null> {
+  try {
+    return JSON.parse(await readFile(path.join(dir, "package.json"), "utf-8")) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+/** One `name: before → after` line per package the install was asked about. */
+function describeUpdates(
+  targets: string[],
+  before: Record<string, string>,
+  after: Record<string, string>,
+): string[] {
+  return targets.map((name) => {
+    const from = before[name];
+    const to = after[name];
+    if (to === undefined) return `${name}: no longer declared in package.json`;
+    if (to === from) return `${name}: ${to} (unchanged — already latest)`;
+    return `${name}: ${from} → ${to}`;
+  });
+}
+
+/**
+ * Split the packages under consideration into the ones to install, the
+ * toolchain-owned ones to leave alone, and the ones the manifest never
+ * declared. An empty request means "every declared package".
+ */
+function partitionTargets(
+  requested: string[],
+  declared: string[],
+): { targets: string[]; pinned: string[]; undeclared: string[] } {
+  const targets: string[] = [];
+  const pinned: string[] = [];
+  const undeclared: string[] = [];
+  for (const name of requested.length > 0 ? requested : declared) {
+    if (TOOLCHAIN_MANAGED.has(name)) pinned.push(name);
+    else if (!declared.includes(name)) undeclared.push(name);
+    else targets.push(name);
+  }
+  return { targets, pinned, undeclared };
+}
+
+/** Trailing lines explaining every name the install deliberately skipped. */
+function skipNotes(pinned: string[], undeclared: string[]): string[] {
+  const notes: string[] = [];
+  if (undeclared.length > 0) {
+    notes.push(
+      `Not declared in package.json — use add_dependency to install: ${undeclared.join(", ")}`,
+    );
+  }
+  if (pinned.length > 0) {
+    notes.push(
+      "Left pinned (the platform owns these versions and builds resolve them " +
+        `from the installed toolchain): ${pinned.join(", ")}`,
+    );
+  }
+  return notes;
+}
+
+/**
+ * Bump declared dependencies to the registry's latest.
+ *
+ * With no names, every updatable declared package is bumped in ONE npm
+ * invocation — npm resolves the set together, so a peer conflict between two
+ * of them fails the whole install rather than leaving the manifest half
+ * updated. The report is a diff of the DECLARED specs (read before, read
+ * after), because npm's own output says how many packages changed on disk,
+ * not which versions the manifest now asks for — and the manifest is what the
+ * build bundles.
+ */
+async function updateDependencies(dir: string, requested?: string[]): Promise<string> {
+  const names = [...new Set(requested ?? [])];
+  const invalid = names.filter((name) => !PACKAGE_NAME_RE.test(name));
+  if (invalid.length > 0) {
+    return (
+      `Error: ${invalid.join(", ")} — not valid npm package name(s). ` +
+      "Pass names only; the target version is always the registry's latest."
+    );
+  }
+  const manifest = await readManifest(dir);
+  if (manifest === null) {
+    return "Error: package.json is missing or is not valid JSON — fix it before updating dependencies";
+  }
+  const before = declaredSpecs(manifest);
+  const { targets, pinned, undeclared } = partitionTargets(names, Object.keys(before));
+  const notes = skipNotes(pinned, undeclared);
+  if (targets.length === 0) {
+    return ["No dependencies to update.", ...notes].join("\n");
+  }
+
+  try {
+    const { exitCode, output } = await runNpm(dir, [
+      "install",
+      ...targets.map((name) => `${name}@latest`),
+    ]);
+    const body = output.trim();
+    const after = declaredSpecs(await readManifest(dir));
+    // A failure is diffed too, and only the diff decides whether to claim
+    // nothing changed: npm aborts a resolution conflict before touching the
+    // manifest, but a lifecycle-script failure lands after the write, and
+    // "nothing was updated" would then be a lie the agent acts on.
+    const changed = targets.filter((name) => after[name] !== before[name]);
+    if (exitCode !== 0) {
+      return [
+        changed.length === 0
+          ? `npm install failed [exit code ${exitCode}] — nothing was updated`
+          : `npm install failed [exit code ${exitCode}], but package.json changed:`,
+        ...describeUpdates(changed, before, after),
+        body || "(no output)",
+        ...notes,
+      ].join("\n");
+    }
+    return [
+      "Updated to the registry's latest:",
+      ...describeUpdates(targets, before, after),
+      ...notes,
+    ].join("\n");
   } catch (err) {
     return `Error: ${errMsg(err)}`;
   }
@@ -167,6 +330,19 @@ export function createProjectTools(deps: ProjectToolDeps): ToolSet {
         package: z.string().describe("npm package to uninstall"),
       }),
       execute: ({ package: spec }) => npmTool(dir, "uninstall", spec),
+    }),
+    update_dependencies: tool({
+      description: STUDIO_TOOL_DESCRIPTIONS.update_dependencies,
+      inputSchema: z.object({
+        packages: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Package NAMES to update (no versions), e.g. ["date-fns"]. ' +
+              "Omit to update every updatable package declared in package.json.",
+          ),
+      }),
+      execute: ({ packages }) => updateDependencies(dir, packages),
     }),
     download_to_workspace: tool({
       description: STUDIO_TOOL_DESCRIPTIONS.download_to_workspace,

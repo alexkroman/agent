@@ -737,6 +737,18 @@ voice agents without the CLI:
   only IN the guest, where the toolchain is baked next to the harness — the
   CLI's `aai pull` merges them back in for the local project (see the
   `aai pull` note in the aai-cli section).
+
+  **The same reasoning is what `update_dependencies` refuses**
+  (`TOOLCHAIN_MANAGED` in `aai-guest/studio-project-tools.ts`): the tool
+  bumps declared packages to the registry's latest via
+  `npm install <name>@latest`, but never the six toolchain-owned ones. A
+  bump there is futile — the next `ensureProjectShape` reconcile rewrites
+  the pin back — and harmful until it happens, because the newer SDK,
+  React, or Tailwind it materializes locally shadows the baked copy the
+  harness resolved and the build was tested against. Skipped names are
+  REPORTED in the tool result (with why), not silently dropped: a coding
+  agent told "nothing happened" retries, and one told nothing at all
+  claims it upgraded the SDK.
 - **Guest tools carry their own deadlines** (`aai-guest/studio-tools.ts`):
   every tool is wrapped in a 120s timeout resolving to an error tool
   result, and `bash` has its own wall-clock kill (60s default, 300s max)

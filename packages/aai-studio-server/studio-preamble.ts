@@ -271,7 +271,8 @@ These CLI-specific parts do NOT apply in AssemblyAI Build:
   check it with npm_info (real version and exports, not a guess), FIRST
   install it with add_dependency, and THEN write the code that imports
   it — builds will bundle it (remove_dependency uninstalls one nothing
-  imports anymore). Prefer the SDK's builtins and plain fetch over
+  imports anymore, and update_dependencies bumps declared packages to
+  their latest). Prefer the SDK's builtins and plain fetch over
   adding dependencies. Note the workspace ships without node_modules,
   and only workspace source files (never node_modules, dist, or .git)
   sync back to the project.

@@ -4,7 +4,7 @@
 // covers the gates themselves with the real collaborators; this file covers
 // what each tool does with a success, a failure, a kill, and a bad body.
 
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { safeFetch } from "@alexkroman1/aai/runtime";
@@ -102,6 +102,137 @@ describe("add_dependency / remove_dependency (spawn mocked)", () => {
   test("a spawn failure surfaces as an error string, not a throw", async () => {
     runCappedMock.mockRejectedValue(new Error("spawn npm ENOENT"));
     expect(await execute("add_dependency", { package: "x" })).toBe("Error: spawn npm ENOENT");
+  });
+});
+
+describe("update_dependencies (spawn mocked)", () => {
+  // These assert on WHETHER and WITH WHAT npm was spawned, so the shared mock
+  // must not carry calls in from a sibling test.
+  beforeEach(() => {
+    runCappedMock.mockReset();
+  });
+
+  const manifest = (deps: Record<string, string>, dev: Record<string, string> = {}) =>
+    writeFile(
+      path.join(dir, "package.json"),
+      JSON.stringify({ name: "w", dependencies: deps, devDependencies: dev }, null, 2),
+    );
+
+  /** Stand in for npm: succeed, and rewrite the manifest the way it would. */
+  const installsTo = (after: Record<string, string>, stdout = "changed 2 packages\n") =>
+    runCappedMock.mockImplementation(async () => {
+      await manifest(after);
+      return npmResult({ stdout });
+    });
+
+  test("with no names, bumps every declared package and diffs the manifest", async () => {
+    await manifest({ "date-fns": "^2.0.0", zod: "4.1.0" }, { "fake-timers": "^1.0.0" });
+    installsTo({ "date-fns": "^4.1.0", zod: "4.1.0", "fake-timers": "^1.0.0" });
+
+    const result = String(await execute("update_dependencies", {}));
+
+    // One invocation for the whole set, each name pinned to @latest by us.
+    expect(runCappedMock).toHaveBeenCalledTimes(1);
+    expect(runCappedMock.mock.calls[0]?.[1]).toEqual([
+      "install",
+      "fake-timers@latest",
+      "date-fns@latest",
+      "--no-audit",
+      "--no-fund",
+      "--loglevel=error",
+    ]);
+    expect(result).toContain("date-fns: ^2.0.0 → ^4.1.0");
+    expect(result).toContain("fake-timers: ^1.0.0 (unchanged — already latest)");
+    // zod is the toolchain's to version, so it is neither installed nor diffed.
+    expect(result).toContain("Left pinned");
+    expect(result).toContain("zod");
+    expect(result).not.toContain("zod: ");
+  });
+
+  test("updates only the named packages", async () => {
+    await manifest({ "date-fns": "^2.0.0", nanoid: "^3.0.0" });
+    installsTo({ "date-fns": "^4.1.0", nanoid: "^3.0.0" });
+
+    const result = String(await execute("update_dependencies", { packages: ["date-fns"] }));
+
+    expect(runCappedMock.mock.calls[0]?.[1]).toEqual([
+      "install",
+      "date-fns@latest",
+      "--no-audit",
+      "--no-fund",
+      "--loglevel=error",
+    ]);
+    expect(result).toContain("date-fns: ^2.0.0 → ^4.1.0");
+    expect(result).not.toContain("nanoid");
+  });
+
+  test("a package that is not declared is named, and does not get installed", async () => {
+    await manifest({ "date-fns": "^2.0.0" });
+    installsTo({ "date-fns": "^4.1.0" });
+
+    const result = String(
+      await execute("update_dependencies", { packages: ["date-fns", "never-installed"] }),
+    );
+
+    expect(runCappedMock.mock.calls[0]?.[1]).not.toContain("never-installed@latest");
+    expect(result).toContain("use add_dependency to install: never-installed");
+  });
+
+  test("a request for only toolchain-owned packages updates nothing", async () => {
+    await manifest({ "@alexkroman1/aai": "1.2.3", react: "19.0.0" });
+
+    const result = String(
+      await execute("update_dependencies", { packages: ["@alexkroman1/aai", "react"] }),
+    );
+
+    // Bumping these shadows the baked toolchain with an untested build, and
+    // the next ensureProjectShape reconcile would revert the pins anyway.
+    expect(runCappedMock).not.toHaveBeenCalled();
+    expect(result).toContain("No dependencies to update.");
+    expect(result).toContain("Left pinned");
+  });
+
+  test("a failed install reports npm's tail and claims no updates", async () => {
+    await manifest({ "date-fns": "^2.0.0" });
+    runCappedMock.mockResolvedValue(npmResult({ exitCode: 1, stdout: "ERESOLVE conflict\n" }));
+
+    const result = String(await execute("update_dependencies", {}));
+
+    expect(result).toContain("nothing was updated");
+    expect(result).toContain("ERESOLVE conflict");
+    expect(result).not.toContain("Updated to the registry's latest");
+  });
+
+  test("a failure that still rewrote the manifest reports what changed", async () => {
+    // npm aborts a resolution conflict before writing, but a postinstall
+    // script fails AFTER — claiming nothing changed there sends the agent
+    // looking for a version it already has.
+    await manifest({ "date-fns": "^2.0.0" });
+    runCappedMock.mockImplementation(async () => {
+      await manifest({ "date-fns": "^4.1.0" });
+      return npmResult({ exitCode: 1, stdout: "postinstall failed\n" });
+    });
+
+    const result = String(await execute("update_dependencies", {}));
+
+    expect(result).toContain("npm install failed [exit code 1], but package.json changed:");
+    expect(result).toContain("date-fns: ^2.0.0 → ^4.1.0");
+    expect(result).toContain("postinstall failed");
+  });
+
+  test("an unparseable manifest is refused rather than reified by npm", async () => {
+    await writeFile(path.join(dir, "package.json"), "{ not json");
+
+    const result = String(await execute("update_dependencies", {}));
+
+    expect(runCappedMock).not.toHaveBeenCalled();
+    expect(result).toContain("not valid JSON");
+  });
+
+  test("a spawn failure surfaces as an error string", async () => {
+    await manifest({ "date-fns": "^2.0.0" });
+    runCappedMock.mockRejectedValue(new Error("spawn npm ENOENT"));
+    expect(await execute("update_dependencies", {})).toBe("Error: spawn npm ENOENT");
   });
 });
 

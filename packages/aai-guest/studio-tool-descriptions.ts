@@ -98,6 +98,16 @@ GUIDELINES:
 WHEN TO USE:
 - Removing a dependency nothing imports anymore — check with grep before uninstalling.`,
 
+  update_dependencies: `Update packages already declared in package.json to their latest published version. Pass names to update just those, or omit packages to update every updatable one. Reports each package's declared version before and after.
+
+WHEN TO USE:
+- The user asks to update/upgrade dependencies, or a package is too old for an API the request needs.
+- Installing a NEW package is add_dependency's job, not this tool's.
+
+NOTE:
+- The platform-owned packages (@alexkroman1/aai, @alexkroman1/aai-ui, react, react-dom, tailwindcss, zod) stay pinned to the installed toolchain and are reported as left alone — that is correct, not a failure.
+- Latest versions can bring breaking changes: run test_agent afterwards and fix what the build reports.`,
+
   list_templates: `List the worked example agents (templates) that ship with the platform — the same set \`aai init\` scaffolds — with each template's files.
 
 WHEN TO USE:

@@ -74,6 +74,7 @@ export const STUDIO_TOOL_LABELS: Readonly<Record<string, string>> = {
   npm_info: "Look up package",
   add_dependency: "Add dependency",
   remove_dependency: "Remove dependency",
+  update_dependencies: "Update dependencies",
   download_to_workspace: "Download file",
   list_templates: "List templates",
   use_template: "Use template",
