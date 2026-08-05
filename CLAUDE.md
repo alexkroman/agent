@@ -651,7 +651,16 @@ voice agents without the CLI:
   manifest — a range would let the workspace materialize a different SDK
   build than the harness resolved, into a workspace-local `node_modules`
   that *shadows* the baked one. Pinned, the local copy is byte-identical and
-  the shadowing is merely redundant. Toolchain-only packages (vite,
+  the shadowing is merely redundant — **but only while the pins still match
+  the toolchain**, which they stop doing the moment the platform ships a new
+  SDK. So an EXISTING manifest is the one exception to "existing files win":
+  `reconcileWorkspacePins` rewrites the declared toolchain pins to the
+  installed versions on every `ensureProjectShape`, leaving agent-added
+  dependencies, scripts, and everything else exactly as found. Absent
+  entries are NOT added back (npm reifies only what is declared, so an
+  absent entry is no shadowing hazard, and re-adding one would override a
+  deliberate removal), and an unparseable manifest is left alone for
+  `npm install` to report. Toolchain-only packages (vite,
   typescript, the `@types/*`) stay undeclared: the agent never imports them,
   and every entry is one more package that install has to reify.
 - **Guest tools carry their own deadlines** (`aai-guest/studio-tools.ts`):

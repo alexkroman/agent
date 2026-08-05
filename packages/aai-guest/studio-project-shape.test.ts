@@ -65,6 +65,87 @@ describe("ensureProjectShape", () => {
     await expect(readFile(path.join(dir, "tsconfig.json"), "utf-8")).resolves.toBe("{}");
   });
 
+  /**
+   * The pins are exact versions of the installed toolchain. Ship a new SDK and
+   * an old manifest goes stale — and `add_dependency` reifies the WHOLE
+   * manifest, so the stale pin materializes an OLD SDK into a workspace-local
+   * node_modules that SHADOWS the baked one.
+   */
+  describe("existing package.json pins", () => {
+    const readPkg = async (): Promise<Record<string, string>> => {
+      const { dependencies = {} } = JSON.parse(
+        await readFile(path.join(dir, "package.json"), "utf-8"),
+      ) as { dependencies?: Record<string, string> };
+      return dependencies;
+    };
+
+    test("are reconciled against the installed toolchain", async () => {
+      dir = await mkdtemp(path.join(tmpdir(), "aai-shape-"));
+      const installed = resolveWorkspaceDependencies();
+      await writeFile(
+        path.join(dir, "package.json"),
+        JSON.stringify({ name: "w", dependencies: { "@alexkroman1/aai": "0.0.1" } }),
+        "utf-8",
+      );
+      await ensureProjectShape(dir);
+      expect((await readPkg())["@alexkroman1/aai"]).toBe(installed["@alexkroman1/aai"]);
+    });
+
+    test("leave the agent's own dependencies alone", async () => {
+      dir = await mkdtemp(path.join(tmpdir(), "aai-shape-"));
+      await writeFile(
+        path.join(dir, "package.json"),
+        JSON.stringify({
+          name: "w",
+          type: "module",
+          dependencies: { "@alexkroman1/aai": "0.0.1", "date-fns": "^4.1.0" },
+          scripts: { test: "vitest run" },
+        }),
+        "utf-8",
+      );
+      await ensureProjectShape(dir);
+      const deps = await readPkg();
+      expect(deps["date-fns"]).toBe("^4.1.0");
+      const pkg = JSON.parse(await readFile(path.join(dir, "package.json"), "utf-8")) as {
+        scripts?: Record<string, string>;
+        type?: string;
+      };
+      // Everything but the pins survives — this is a reconcile, not a rewrite.
+      expect(pkg.scripts?.test).toBe("vitest run");
+      expect(pkg.type).toBe("module");
+    });
+
+    // `npm install` reifies only what is declared, so an absent entry is no
+    // shadowing hazard — and re-adding one would override a deliberate removal.
+    test("are not added back when the manifest omits them", async () => {
+      dir = await mkdtemp(path.join(tmpdir(), "aai-shape-"));
+      await writeFile(
+        path.join(dir, "package.json"),
+        JSON.stringify({ name: "w", dependencies: { "date-fns": "^4.1.0" } }),
+        "utf-8",
+      );
+      await ensureProjectShape(dir);
+      expect(await readPkg()).toEqual({ "date-fns": "^4.1.0" });
+    });
+
+    // The agent may be mid-edit, and `npm install` reports a broken manifest
+    // far better than a silent rewrite would.
+    test("leave an unparseable manifest untouched", async () => {
+      dir = await mkdtemp(path.join(tmpdir(), "aai-shape-"));
+      await writeFile(path.join(dir, "package.json"), "{ not json", "utf-8");
+      await ensureProjectShape(dir);
+      await expect(readFile(path.join(dir, "package.json"), "utf-8")).resolves.toBe("{ not json");
+    });
+
+    test("rewrite nothing when the pins already match", async () => {
+      dir = await mkdtemp(path.join(tmpdir(), "aai-shape-"));
+      await ensureProjectShape(dir);
+      const before = await readFile(path.join(dir, "package.json"), "utf-8");
+      await ensureProjectShape(dir);
+      expect(await readFile(path.join(dir, "package.json"), "utf-8")).toBe(before);
+    });
+  });
+
   test("tsconfig excludes tests and pins node types (studio variant)", () => {
     const parsed = JSON.parse(WORKSPACE_TSCONFIG) as {
       compilerOptions: Record<string, unknown> & { types: string[] };

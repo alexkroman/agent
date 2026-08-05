@@ -14,10 +14,15 @@
  * one deliberate difference: the tsconfig omits vitest types and excludes
  * test files, so a drifted test fails `test_agent` rather than blocking the
  * build and Publish typecheck gate — see WORKSPACE_TSCONFIG below.
+ *
+ * The one exception to "existing files win" is an existing package.json's
+ * toolchain PINS, which are reconciled against what is installed — see
+ * `reconcileWorkspacePins` for why a stale pin is a shadowing hazard rather
+ * than a cosmetic wart.
  */
 
 import { readFileSync } from "node:fs";
-import { access, writeFile } from "node:fs/promises";
+import { access, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { toolchainModules } from "./studio-build.ts";
 
@@ -187,7 +192,55 @@ export function workspacePackageJson(
   )}\n`;
 }
 
-/** Write any missing project-shape files into `dir` (existing files win). */
+/**
+ * Bring an EXISTING manifest's toolchain pins back in line with what is
+ * actually installed, leaving everything else — including dependencies the
+ * agent added — exactly as it found them.
+ *
+ * The pins are exact versions read from the toolchain when the manifest was
+ * first written. Upgrade the platform's SDK and they go stale, and staleness
+ * here is not cosmetic: `add_dependency` runs `npm install`, which reifies the
+ * WHOLE manifest, so an old pin materializes an OLD SDK into a
+ * workspace-local `node_modules` that then SHADOWS the baked one. The
+ * reasoning that made exact pinning safe — the local copy is byte-identical to
+ * the baked one, so the shadowing is merely redundant — holds only while the
+ * manifest matches the toolchain, which it stops doing the moment the server
+ * ships a new SDK. Secondary but real: package.json is the first place the
+ * coding agent looks to learn what it may import, and a stale version there is
+ * a wrong answer.
+ *
+ * Only ALREADY-DECLARED entries are rewritten. Absent ones are not added
+ * back: `npm install` reifies only what is declared, so an absent entry is not
+ * a shadowing hazard, and re-adding one would override a deliberate removal.
+ * An unparseable manifest is left alone — the agent may be mid-edit, and
+ * `npm install` will report it far better than a silent rewrite would.
+ */
+async function reconcileWorkspacePins(abs: string): Promise<void> {
+  const installed = resolveWorkspaceDependencies();
+  if (Object.keys(installed).length === 0) return;
+  let manifest: { dependencies?: Record<string, string> } & Record<string, unknown>;
+  try {
+    manifest = JSON.parse(await readFile(abs, "utf-8")) as typeof manifest;
+  } catch {
+    return;
+  }
+  const declared = manifest.dependencies;
+  if (!declared || typeof declared !== "object") return;
+  let changed = false;
+  for (const [name, version] of Object.entries(installed)) {
+    if (name in declared && declared[name] !== version) {
+      declared[name] = version;
+      changed = true;
+    }
+  }
+  if (changed) await writeFile(abs, `${JSON.stringify(manifest, null, 2)}\n`, "utf-8");
+}
+
+/**
+ * Write any missing project-shape files into `dir`. Existing files win, with
+ * one exception: an existing package.json has its toolchain pins reconciled
+ * against what is installed (see {@link reconcileWorkspacePins}).
+ */
 export async function ensureProjectShape(dir: string): Promise<void> {
   const shapeFiles: Record<string, string> = {
     "package.json": workspacePackageJson(),
@@ -199,7 +252,11 @@ export async function ensureProjectShape(dir: string): Promise<void> {
   await Promise.all(
     Object.entries(shapeFiles).map(async ([rel, content]) => {
       const abs = path.join(dir, rel);
-      if (!(await fileExists(abs))) await writeFile(abs, content, "utf-8");
+      if (await fileExists(abs)) {
+        if (rel === "package.json") await reconcileWorkspacePins(abs);
+        return;
+      }
+      await writeFile(abs, content, "utf-8");
     }),
   );
 }
