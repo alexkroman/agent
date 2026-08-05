@@ -38,22 +38,41 @@
  * splitting worse rather than better, and 3000 changed nothing at all. It also
  * taxed every complete utterance ~3s for a protection it was not buying.
  *
- * **The floor is 1000 and the two knobs guard OPPOSITE splits.** A minimum too
- * low splits a multi-sentence utterance — "How many options do you have? Also,
- * I want to return three items." — because the first sentence genuinely reads
- * complete, so the check ends the turn at the question mark and the agent
- * answers half the request. A maximum too low splits a hesitant one, which
- * never reads complete. So this value must clear the pause a speaker leaves
- * BETWEEN two sentences, while the ceiling must clear the pause left WITHIN
- * one. `pipeline-transport-options.test.ts` pins the 1000 floor.
+ * **The two knobs guard OPPOSITE splits, and this one must clear a DICTATION
+ * pause.** A minimum too low splits a multi-sentence utterance — "How many
+ * options do you have? Also, I want to return three items." — because the first
+ * sentence genuinely reads complete, so the check ends the turn at the question
+ * mark and the agent answers half the request. Worse, it splits a caller
+ * spelling something: "Y, U, S, U, F." carries terminal punctuation from the
+ * ASR, so a fragment of a spelled name READS complete and the turn ends
+ * mid-entity. A maximum too low splits a hesitant utterance, which never reads
+ * complete. So this value must clear the pause a speaker leaves between
+ * sentences and between dictated characters, while the ceiling clears the pause
+ * left WITHIN one continuous thought.
  *
- * That rules out AssemblyAI's `max_accuracy` preset value of 800 (the presets
- * set 128 / 128 / 800), which is tuned for dictation rather than for a caller
- * who strings sentences together. 1000 is the floor with no margin above it on
- * purpose: every ms here is paid by every finished utterance, and the pause
- * this has to clear is the one case that justifies the cost.
+ * **1600 is measured, not chosen.** At 1000 this regressed tau2-bench retail
+ * hard: DB reward 1.00 -> 0.40 across the same five tasks, while NL assertions
+ * went UP (0.60 -> 0.80) — the agent talked better and acted worse, because it
+ * was authenticating against truncated names. Instrumenting the failing run,
+ * the pauses INSIDE one user utterance were 856, 917, 927, 941, 946, 972, 973,
+ * 991, 993, 1024, 1026, 1050, 1066, 1087, 1172, 1328 and 1455 ms: nine of the
+ * eighteen clear 1000, and none clear 1536. The caller spelled their name,
+ * it landed truncated, they spelled it again, and then gave up — so no auth, no
+ * returns, and an unchanged database. 1600 sits above the observed 1455 ms
+ * worst case with a little margin. AssemblyAI documents exactly this
+ * ("raise `min_turn_silence` when brief pauses end turns too early, for example
+ * while a caller dictates a phone number"); the 1000 floor in
+ * `pipeline-transport-options.test.ts` is a floor, not a target.
+ *
+ * That also rules out AssemblyAI's `mode` preset values (128 / 128 / 800): even
+ * `max_accuracy` is tuned for clean dictation into a mic, not for a phone
+ * caller who strings sentences together and spells identifiers mid-thought.
+ *
+ * The cost is real and paid by every finished utterance, so do not raise this
+ * further without a measurement — reach for {@link DEFAULT_MAX_TURN_SILENCE_MS}
+ * instead, which only bills the utterances that need it.
  */
-export const DEFAULT_MIN_TURN_SILENCE_MS = 1000;
+export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
 
 /**
  * Maximum silence (ms) before AssemblyAI force-ends a turn regardless of

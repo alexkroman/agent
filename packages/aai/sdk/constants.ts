@@ -297,7 +297,7 @@ export const DEFAULT_INTERRUPTION_MIN_DURATION_MS = 500;
  * edge's idle watchdog (`DEFAULT_SPEECH_IDLE_TIMEOUT_MS`, internal) then
  * releases. Named rather than `{@link}`ed: it is `@internal`, so the docs build
  * excludes it and a link would fail to resolve. Note how this sits against
- * endpointing: it is ABOVE {@link DEFAULT_MIN_TURN_SILENCE_MS} (1000) but BELOW
+ * endpointing: it is ABOVE {@link DEFAULT_MIN_TURN_SILENCE_MS} (1600) but BELOW
  * {@link DEFAULT_MAX_TURN_SILENCE_MS} (3500). Both are measured from roughly
  * the same instant (this window restarts on every partial, and the last partial
  * lands at about the end of speech, while the final is withheld for endpointing

@@ -85,7 +85,7 @@ export interface AssemblyAIOptions {
    * whether the turn reads as COMPLETE — if it does the turn ends, if not a
    * partial is emitted and the turn stays open. So this is the latency floor on
    * utterances that really did finish. Defaults to
-   * `DEFAULT_MIN_TURN_SILENCE_MS` (1000).
+   * `DEFAULT_MIN_TURN_SILENCE_MS` (1600).
    *
    * To tolerate longer mid-utterance pauses, raise {@link maxTurnSilenceMs}
    * instead — and never above it. This is a minimum and that is a maximum, so a
