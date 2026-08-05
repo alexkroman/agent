@@ -10,30 +10,50 @@
  * `SUPABASE_DB_URL` connection Vault and the studio stores use — so the
  * server process itself holds no cross-request coordination state.
  *
- * Implementation is a lease row per key in `aai_platform.slug_locks`, NOT a
- * Postgres advisory lock: advisory locks are connection-scoped and `SqlExec`
- * runs over a pool, so acquire and release could land on different
- * connections. A lease survives any connection and expires on its own if the
- * holder crashes mid-operation.
+ * ## It is a Postgres ADVISORY LOCK, on a reserved connection
  *
- * The lease is not renewed while held. An operation outrunning
- * `leaseMs` loses exclusivity — the same single-concurrent-writer posture as
- * the workspace store's one conflict retry. Deploys (the slowest holder)
- * finish in seconds; the default lease leaves an order-of-magnitude margin.
+ * This used to be a lease row per key in `aai_platform.slug_locks`, on the
+ * reasoning that "advisory locks are connection-scoped and `SqlExec` runs
+ * over a pool, so acquire and release could land on different connections."
+ * That constraint is real, and the answer to it is to stop using the pool:
+ * `AdminDb.reserve()` (postgres.js `sql.reserve()`) holds ONE connection for
+ * the critical section, which is exactly the affinity an advisory lock needs.
  *
- * The Postgres lock still takes the in-process `withSlugLock` first: local
- * waiters queue on the mutex instead of hammering the database, and local
- * mutual exclusion with sandbox provisioning (`sandbox.ts`, which stays on
- * the in-process lock — it guards this replica's slot cache, a legitimately
- * process-local resource) is preserved.
+ * What that deletes, beyond the table itself:
+ *
+ * - **The poll loop.** `pg_advisory_lock` QUEUES the waiter inside Postgres,
+ *   so a contended acquire costs one blocking statement instead of a 250ms
+ *   round trip until the deadline.
+ * - **The acquire deadline's implementation.** `lock_timeout` on the
+ *   reserved connection makes Postgres enforce it and raise `55P03`, which
+ *   is the whole of {@link SlugLockTimeoutError}'s trigger.
+ * - **Lease expiry, and its pg_cron sweep.** A dropped connection releases
+ *   the lock, so a crashed replica frees its slug immediately rather than
+ *   after a lease, and there are no dead rows to collect.
+ * - **The "not renewed while held" caveat.** There is no lease to outrun: an
+ *   operation holds the lock until it finishes, however long that takes.
+ *   (The reservation is the new resource to respect — hence the `finally`.)
+ *
+ * ## Session mode is required
+ *
+ * A transaction-mode pooler (Supavisor's 6543 port, PgBouncer with
+ * `pgbouncer=true`) hands the underlying server connection back after every
+ * transaction, so a session-scoped advisory lock taken through one is not
+ * held by the client that thinks it holds it. That is silent loss of mutual
+ * exclusion, so {@link assertSessionModeUrl} refuses such a URL at
+ * construction instead: the platform admin connection must be the direct
+ * (session-mode) string. Per-app databases are unaffected — they are fronted
+ * by the pooler on purpose and take no advisory locks.
+ *
+ * The advisory lock still takes the in-process `withSlugLock` first: local
+ * waiters queue on the mutex instead of each holding a reserved connection
+ * while blocked, and local mutual exclusion with sandbox provisioning
+ * (`sandbox.ts`, which stays on the in-process lock — it guards this
+ * replica's slot cache, a legitimately process-local resource) is preserved.
  */
 
-import { randomUUID } from "node:crypto";
 import { errorMessage } from "@alexkroman1/aai";
-import { sleep } from "./_sleep.ts";
-import { ensureTableOnce } from "./pg-ensure.ts";
 import { withSlugLock } from "./sandbox-slots.ts";
-import type { SqlExec } from "./secret-store.ts";
 
 /** Run `fn` while holding the platform-wide mutation lock for `slug`. */
 export type SlugMutationLock = <T>(slug: string, fn: () => Promise<T>) => Promise<T>;
@@ -51,16 +71,16 @@ export type InvalidatableStore = { invalidate?: ((slug: string) => void) | undef
  * The lock every per-slug mutation route takes: cross-replica exclusion, plus
  * a fresh local view of the slug.
  *
- * The lease alone is not enough. Each replica's bundle store caches the
+ * Exclusion alone is not enough. Each replica's bundle store caches the
  * agents row (read-through, short TTL), and the mutations are all
  * read-modify-write: `handleSecretSet` merges onto `getEnv`,
  * `handleSecretDelete` deletes a key from it, and `deployLocked` merges both
  * the stored env and the `credential_hashes` off `getAgent`. A row that
  * replica A wrote moments ago can be invisible to replica B's cache — which
  * then computes its merge from a pre-lock snapshot and writes the older
- * value back. The lease serialized the two writes perfectly and one of them
- * still vanished, with no error anywhere: a secret silently reverts, or a
- * deploy silently drops a co-owner's credential hash.
+ * value back. The writes were serialized perfectly and one of them still
+ * vanished, with no error anywhere: a secret silently reverts, or a deploy
+ * silently drops a co-owner's credential hash.
  *
  * Dropping the row cache on lock ACQUISITION is the fix, and it belongs here
  * rather than at each route because a route that forgets produces no error,
@@ -84,83 +104,125 @@ export function createMutationLock(
     });
 }
 
-/** Thrown when another holder keeps the lease past the acquire deadline. */
+/** Thrown when another holder keeps the lock past the acquire deadline. */
 export class SlugLockTimeoutError extends Error {
-  constructor(key: string) {
-    super(`Another operation for ${key} is in progress — retry shortly`);
+  constructor(key: string, options?: ErrorOptions) {
+    super(`Another operation for ${key} is in progress — retry shortly`, options);
     this.name = "SlugLockTimeoutError";
   }
 }
 
-const TABLE = "aai_platform.slug_locks";
-const ENSURE_TABLE_SQL = `create table if not exists ${TABLE} (
-  key text primary key,
-  holder text not null,
-  expires_at timestamptz not null
-)`;
+/**
+ * Advisory-lock namespace for slug mutations — the first of the two-int key.
+ *
+ * Two ints rather than one bigint so this namespace can never collide with
+ * another advisory-lock user in the same database (Supabase's own tooling
+ * included): a collision would be two unrelated operations mysteriously
+ * serializing, which is invisible until it is a latency mystery.
+ */
+export const SLUG_LOCK_NAMESPACE = 0x41_41_49_01;
 
-// `returning` only produces a row when the insert landed or the do-update's
-// where-clause passed — i.e. exactly when this holder acquired the lease.
-const ACQUIRE_SQL = `insert into ${TABLE} as l (key, holder, expires_at)
-values ($1, $2, now() + $3::int * interval '1 millisecond')
-on conflict (key) do update
-  set holder = excluded.holder, expires_at = excluded.expires_at
-  where l.expires_at <= now()
-returning holder`;
+/**
+ * `hashtext` maps the slug into the int4 the second key slot takes. Two
+ * different slugs CAN collide there, which costs them contention with each
+ * other and nothing else — they are independent mutations, and both still
+ * run, one after the other.
+ */
+const ACQUIRE_SQL = "select pg_advisory_lock($1::int, hashtext($2)::int)";
+const RELEASE_SQL = "select pg_advisory_unlock($1::int, hashtext($2)::int)";
 
-const RELEASE_SQL = `delete from ${TABLE} where key = $1 and holder = $2`;
+/** Postgres error code for a statement that hit `lock_timeout`. */
+const LOCK_NOT_AVAILABLE = "55P03";
 
-/** How long one acquired lease excludes other replicas. */
-export const SLUG_LOCK_LEASE_MS = 60_000;
-/** How long an acquirer polls a contended lease before giving up. */
+/** How long an acquirer waits on a contended lock before giving up. */
 export const SLUG_LOCK_ACQUIRE_TIMEOUT_MS = 15_000;
-const ACQUIRE_POLL_MS = 250;
+
+/**
+ * The admin-pool slice the lock needs: one connection held for the critical
+ * section. Structurally the same shape `createPostgresDb` returns, so tests
+ * inject a fake without a database.
+ */
+export type AdminDb = {
+  reserve(): Promise<{
+    query(sql: string, params?: unknown[]): Promise<Record<string, unknown>[]>;
+    release(): void;
+  }>;
+};
 
 export type PgSlugLockOptions = {
-  leaseMs?: number;
   acquireTimeoutMs?: number;
-  pollMs?: number;
 };
 
 /**
- * Postgres lease-backed slug lock over the platform admin connection.
- * Schema/table are created lazily and memoized, matching the studio
- * workspace store; a failed ensure resets the memo so one transient DDL
- * error doesn't wedge every later mutation.
+ * Refuse a transaction-mode pooler URL: a session-scoped advisory lock taken
+ * through one is not held by whoever thinks it holds it (see the module doc).
+ * Throwing at construction is the point — the alternative is a lock that
+ * appears to work and silently stops excluding anything.
  */
-export function createPgSlugLock(sql: SqlExec, opts: PgSlugLockOptions = {}): SlugMutationLock {
-  const leaseMs = opts.leaseMs ?? SLUG_LOCK_LEASE_MS;
-  const acquireTimeoutMs = opts.acquireTimeoutMs ?? SLUG_LOCK_ACQUIRE_TIMEOUT_MS;
-  const pollMs = opts.pollMs ?? ACQUIRE_POLL_MS;
-
-  const ensure = ensureTableOnce(sql, ENSURE_TABLE_SQL);
-
-  async function acquire(key: string): Promise<string> {
-    const holder = randomUUID();
-    const deadline = Date.now() + acquireTimeoutMs;
-    for (;;) {
-      const rows = await sql(ACQUIRE_SQL, [key, holder, leaseMs]);
-      if (rows.length > 0) return holder;
-      if (Date.now() >= deadline) throw new SlugLockTimeoutError(key);
-      await sleep(pollMs);
-    }
+export function assertSessionModeUrl(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    // Not our business to validate connection strings in general — the driver
+    // will reject an unusable one with a better message than we can.
+    return;
   }
+  const transactionMode = parsed.port === "6543" || parsed.searchParams.get("pgbouncer") === "true";
+  if (transactionMode) {
+    throw new Error(
+      "SUPABASE_DB_URL points at a TRANSACTION-mode pooler (port 6543 / pgbouncer=true). " +
+        "The platform admin connection must be the direct session-mode string: per-slug " +
+        "mutation locks are Postgres advisory locks, and a transaction-mode pooler returns " +
+        "the server connection between statements, so the lock would stop excluding " +
+        "concurrent deploys without any error.",
+    );
+  }
+}
+
+/**
+ * Postgres advisory-lock slug lock over the platform admin connection.
+ *
+ * No DDL, no table, no sweep — the lock lives in Postgres's own lock
+ * manager, and a dropped connection releases it.
+ */
+export function createPgSlugLock(db: AdminDb, opts: PgSlugLockOptions = {}): SlugMutationLock {
+  const acquireTimeoutMs = opts.acquireTimeoutMs ?? SLUG_LOCK_ACQUIRE_TIMEOUT_MS;
 
   return (slug, fn) =>
-    // Local mutex first: in-process waiters queue here instead of polling
-    // the database against each other.
+    // Local mutex first: in-process waiters queue here instead of each
+    // holding a reserved connection open while blocked on the same lock.
     withSlugLock(slug, async () => {
-      await ensure();
-      const holder = await acquire(slug);
+      const reserved = await db.reserve();
+      let held = false;
       try {
+        // Postgres enforces the acquire deadline and queues the waiter, so
+        // there is no poll loop. `lock_timeout` is per-connection state,
+        // which is exactly what the reservation buys.
+        await reserved.query(`set lock_timeout = ${Math.max(1, Math.round(acquireTimeoutMs))}`);
+        try {
+          await reserved.query(ACQUIRE_SQL, [SLUG_LOCK_NAMESPACE, slug]);
+          held = true;
+        } catch (err) {
+          if ((err as { code?: unknown }).code === LOCK_NOT_AVAILABLE) {
+            throw new SlugLockTimeoutError(slug, { cause: err });
+          }
+          throw err;
+        }
         return await fn();
       } finally {
-        // Best-effort: a failed delete just leaves the lease to expire.
-        try {
-          await sql(RELEASE_SQL, [slug, holder]);
-        } catch (err) {
-          console.warn(`Failed to release slug lock for ${slug}: ${errorMessage(err)}`);
+        // Releasing the CONNECTION is what actually frees the lock, so the
+        // unlock is best-effort tidiness; skipping it when the acquire failed
+        // matters more, since unlocking a lock we never took logs a Postgres
+        // warning and returns false.
+        if (held) {
+          await reserved
+            .query(RELEASE_SQL, [SLUG_LOCK_NAMESPACE, slug])
+            .catch((err: unknown) =>
+              console.warn(`Failed to release slug lock for ${slug}: ${errorMessage(err)}`),
+            );
         }
+        reserved.release();
       }
     });
 }

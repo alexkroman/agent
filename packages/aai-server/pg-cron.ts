@@ -40,15 +40,6 @@ end $$`;
 }
 
 /**
- * Expired slug-lock leases. `ACQUIRE_SQL` (platform-lock.ts) already treats
- * an expired row as free, so this is dead-row hygiene, not correctness.
- */
-const SWEEP_SLUG_LOCKS = guarded(
-  "aai_platform.slug_locks",
-  "delete from aai_platform.slug_locks where expires_at <= now()",
-);
-
-/**
  * Expired rate-limit windows. A live scope reuses its row in place
  * (studio-rate-limit.ts), so an expired row is only read again to be
  * overwritten — deleting it is equivalent and keeps the table proportional
@@ -149,7 +140,6 @@ end $$`;
  * the table is shared infrastructure in `aai_platform`, and scheduling is
  * idempotent, so both services installing the same job set is correct. */
 export const PLATFORM_CRON_JOBS: readonly CronJob[] = [
-  { name: "aai-sweep-slug-locks", schedule: "*/30 * * * *", command: SWEEP_SLUG_LOCKS },
   { name: "aai-sweep-rate-limits", schedule: "7 * * * *", command: SWEEP_RATE_LIMITS },
   {
     name: "aai-sweep-sandbox-registry",
@@ -161,16 +151,46 @@ export const PLATFORM_CRON_JOBS: readonly CronJob[] = [
 ];
 
 /**
- * Install (or update) the sweep jobs. Runs at boot on the platform admin
- * connection; failures propagate to the caller, which logs loudly — a
- * missing sweep degrades to table growth, never to wrong answers.
+ * Jobs earlier versions scheduled that must be actively UNSCHEDULED.
+ *
+ * `cron.schedule` upserts by name, so deleting a job from
+ * {@link PLATFORM_CRON_JOBS} does not remove it from a database that already
+ * has it — it keeps firing forever, against a table that may no longer
+ * exist. The `guarded()` wrapper makes that harmless rather than noisy, which
+ * is precisely why it would go unnoticed: a retired job stays in
+ * `cron.job` indefinitely, showing up in every operator's job listing as
+ * though it were current.
+ *
+ * Entries here are permanent — this is the record of what the platform used
+ * to run — so removing one only makes sense if the job name is being reused.
+ */
+export const RETIRED_CRON_JOBS: readonly string[] = [
+  // Slug mutation locks are Postgres advisory locks now (platform-lock.ts):
+  // a dropped connection releases them, so there is no lease to expire and
+  // no aai_platform.slug_locks table to sweep.
+  "aai-sweep-slug-locks",
+];
+
+/**
+ * Install (or update) the sweep jobs, and retire the ones that no longer
+ * exist. Runs at boot on the platform admin connection; failures propagate to
+ * the caller, which logs loudly — a missing sweep degrades to table growth,
+ * never to wrong answers.
  */
 export async function schedulePlatformSweeps(
   sql: SqlExec,
   jobs: readonly CronJob[] = PLATFORM_CRON_JOBS,
+  retired: readonly string[] = RETIRED_CRON_JOBS,
 ): Promise<void> {
   await sql("create extension if not exists pg_cron");
   for (const job of jobs) {
     await sql("select cron.schedule($1, $2, $3)", [job.name, job.schedule, job.command]);
+  }
+  for (const name of retired) {
+    // `cron.unschedule` throws when the job does not exist, which is the
+    // normal case on every boot after the first — so each one is
+    // individually tolerated rather than allowed to abort the loop. The
+    // `::text` cast picks the by-name overload over `unschedule(bigint)`.
+    await sql("select cron.unschedule($1::text)", [name]).catch(() => undefined);
   }
 }

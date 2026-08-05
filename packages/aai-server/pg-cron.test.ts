@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { expect, test } from "vitest";
-import { PLATFORM_CRON_JOBS, schedulePlatformSweeps } from "./pg-cron.ts";
+import { PLATFORM_CRON_JOBS, RETIRED_CRON_JOBS, schedulePlatformSweeps } from "./pg-cron.ts";
 import type { SqlExec } from "./secret-store.ts";
 
 function captureSql() {
@@ -15,7 +15,7 @@ function captureSql() {
 
 test("installs the extension then upserts every job by name", async () => {
   const { sql, calls } = captureSql();
-  await schedulePlatformSweeps(sql);
+  await schedulePlatformSweeps(sql, PLATFORM_CRON_JOBS, []);
 
   expect(calls[0]?.query).toBe("create extension if not exists pg_cron");
   const scheduled = calls.slice(1);
@@ -24,6 +24,35 @@ test("installs the extension then upserts every job by name", async () => {
     expect(scheduled[i]?.query).toBe("select cron.schedule($1, $2, $3)");
     expect(scheduled[i]?.params).toEqual([job.name, job.schedule, job.command]);
   }
+});
+
+/**
+ * `cron.schedule` upserts by name, so deleting a job from the list leaves a
+ * database that already has it firing forever — and `guarded()` makes that
+ * silent. Retirement has to be an explicit statement.
+ */
+test("unschedules retired jobs, tolerating the ones already gone", async () => {
+  const { sql, calls } = captureSql();
+  const failing: SqlExec = (query, params) =>
+    query.includes("unschedule")
+      ? Promise.reject(new Error(`could not find job ${String(params?.[0])}`))
+      : sql(query, params);
+  await expect(
+    schedulePlatformSweeps(failing, [], ["aai-sweep-slug-locks", "aai-sweep-gone"]),
+  ).resolves.toBeUndefined();
+  expect(calls.filter((c) => c.query.includes("unschedule"))).toHaveLength(0);
+
+  const fresh = captureSql();
+  await schedulePlatformSweeps(fresh.sql, [], ["aai-sweep-slug-locks"]);
+  expect(fresh.calls.at(-1)).toEqual({
+    query: "select cron.unschedule($1::text)",
+    params: ["aai-sweep-slug-locks"],
+  });
+});
+
+test("the retired list names no job that is still scheduled", () => {
+  const live = new Set(PLATFORM_CRON_JOBS.map((j) => j.name));
+  for (const name of RETIRED_CRON_JOBS) expect(live.has(name)).toBe(false);
 });
 
 test("every sweep body is guarded on its table's existence", () => {
@@ -64,9 +93,7 @@ test("the orphan-preview sweep deprovisions the app database like the delete rou
   expect(command).toContain("exception when others");
 });
 
-test("lock and rate-limit sweeps delete only expired rows", () => {
-  const locks = PLATFORM_CRON_JOBS.find((j) => j.name === "aai-sweep-slug-locks");
-  expect(locks?.command).toContain("expires_at <= now()");
+test("lease sweeps delete only expired rows", () => {
   const limits = PLATFORM_CRON_JOBS.find((j) => j.name === "aai-sweep-rate-limits");
   expect(limits?.command).toContain("reset_at <= now()");
 });

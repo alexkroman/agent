@@ -377,7 +377,7 @@ model) is the security boundary.
   (`@modal.web_server` wrapping the node process);
   `pnpm --filter aai-server deploy:modal`
 - `platform-lock.ts` — cross-replica per-slug mutation lock (see "Stateless
-  server" below): Postgres lease rows in `aai_platform.slug_locks` in
+  server" below): a Postgres ADVISORY lock on a reserved connection in
   production, the in-process keyed lock in dev/tests
 - `agent-store.ts` — the agents table (`aai_platform.agents`; memory in
   dev/tests): one row per agent — slug, credential hashes, the bundle's
@@ -395,9 +395,14 @@ model) is the security boundary.
   `postgres_changes` on `aai_platform.agents` / `studio_workspaces` /
   `studio_chats` over `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`, plus
   the boot-time `supabase_realtime` publication setup
-- `pg-cron.ts` — janitorial sweeps as pg_cron jobs (expired slug-lock
-  leases, dead rate-limit windows, orphaned `-preview` agents + their app
-  database schema/role and Vault secrets), installed idempotently at boot
+- `pg-cron.ts` — janitorial sweeps as pg_cron jobs (dead rate-limit windows,
+  orphaned `-preview` agents + their app database schema/role and Vault
+  secrets), installed idempotently at boot. `cron.schedule` upserts by name,
+  so a job DELETED from `PLATFORM_CRON_JOBS` keeps firing on any database that
+  already has it — and `guarded()` makes that silent. Retiring one therefore
+  means adding its name to `RETIRED_CRON_JOBS`, which is unscheduled at boot;
+  those entries are permanent, since they are the record of what the platform
+  used to run
 - `studio-proxy.ts` / `app-middleware.ts` — the split deployment (see
   "Split services" below): the agent service's reverse proxy to the studio
   service, and the apps' shared base middleware
@@ -1991,22 +1996,37 @@ workspaces/chats and per-app data in Postgres), and cross-replica
 coordination lives in the same Postgres over `SUPABASE_DB_URL`:
 
 - **Per-slug mutation lock** (`platform-lock.ts`): deploy/delete/secret/
-  storage mutations for a slug run under a lease row in
-  `aai_platform.slug_locks` (`createPgSlugLock`), injected as the `slugLock`
-  binding. A lease table, not a Postgres advisory lock — advisory locks are
-  connection-scoped and `SqlExec` runs over a pool, so acquire and release
-  could land on different connections; a lease survives any connection and
-  expires on its own if the holder crashes. The Postgres lock still takes
-  the in-process `withSlugLock` first (local waiters queue on the mutex
-  instead of polling the database), and it is **not renewed while held** —
-  an operation outrunning `SLUG_LOCK_LEASE_MS` loses exclusivity. Contention
-  past the acquire deadline surfaces as `SlugLockTimeoutError` → 409.
+  storage mutations for a slug run under a **Postgres advisory lock**
+  (`createPgSlugLock`), injected as the `slugLock` binding. This was a lease
+  table, on the reasoning that "advisory locks are connection-scoped and
+  `SqlExec` runs over a pool, so acquire and release could land on different
+  connections" — true, and the answer is to stop using the pool:
+  `AdminDb.reserve()` (postgres.js `sql.reserve()`) holds ONE connection for
+  the critical section. That deleted the table, the 250ms poll loop
+  (`pg_advisory_lock` queues the waiter inside Postgres), the lease sweep,
+  and the "not renewed while held" caveat — an operation now holds the lock
+  until it finishes, however long that takes, and a dropped connection
+  releases it, so a crashed replica frees its slug immediately. The acquire
+  deadline is `lock_timeout` on that connection; Postgres raises `55P03`,
+  which becomes `SlugLockTimeoutError` → 409. The key is
+  `pg_advisory_lock(SLUG_LOCK_NAMESPACE, hashtext(slug))` — two ints so the
+  namespace can never collide with another advisory-lock user in the
+  database. It still takes the in-process `withSlugLock` first, now so a
+  local waiter doesn't hold a reserved connection open while blocked.
   `sandbox-resolve.ts` stays on the in-process lock deliberately: it guards
   this replica's slot cache, a legitimately process-local resource.
 
+  **`SUPABASE_DB_URL` must be the direct, SESSION-mode connection string.** A
+  transaction-mode pooler (Supavisor's port 6543, `pgbouncer=true`) returns
+  the server connection between statements, so an advisory lock taken through
+  one is not held by whoever thinks it holds it — silent loss of mutual
+  exclusion. `assertSessionModeUrl` refuses such a URL at boot rather than
+  letting that be discovered later. Per-app databases are unaffected: they are
+  fronted by the pooler on purpose and take no advisory locks.
+
   **The binding is wrapped in `createMutationLock`, and must stay wrapped:
-  taking the lock also drops this replica's cached view of the slug.** The
-  lease alone is not enough, because every mutation is a read-modify-write
+  taking the lock also drops this replica's cached view of the slug.**
+  Exclusion alone is not enough, because every mutation is a read-modify-write
   over a read-through row cache — `handleSecretSet` merges onto `getEnv`,
   `deployLocked` merges the stored env *and* `credential_hashes` off
   `getAgent`. A row that replica A wrote moments ago can be invisible to

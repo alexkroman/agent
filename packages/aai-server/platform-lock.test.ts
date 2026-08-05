@@ -5,108 +5,182 @@ import { createMemoryAgentRows } from "./agent-store.ts";
 import { createMemoryBlobStorage } from "./blob-storage.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import {
+  type AdminDb,
+  assertSessionModeUrl,
   createMutationLock,
   createPgSlugLock,
   localSlugLock,
+  SLUG_LOCK_NAMESPACE,
   SlugLockTimeoutError,
 } from "./platform-lock.ts";
-import { createMemorySecretStore, type SqlExec } from "./secret-store.ts";
+import { createMemorySecretStore } from "./secret-store.ts";
 import { TEST_AGENT_CONFIG } from "./test-utils.ts";
 
-/**
- * Fake `SqlExec` reproducing the lease-table semantics of the lock's two
- * statements (insert-or-take-over-when-expired, delete-if-mine) over an
- * in-memory map with an injectable clock — exercising the acquire/poll/
- * release logic without a real database.
- */
-function fakeLeaseDb(clock: { now: number }) {
-  const leases = new Map<string, { holder: string; expiresAt: number }>();
-  const statements: string[] = [];
-  const exec: SqlExec = (query, params) => {
-    statements.push(query);
-    if (query.startsWith("create")) return Promise.resolve([]);
-    if (query.startsWith("delete")) {
-      const [key, holder] = params as [string, string];
-      if (leases.get(key)?.holder === holder) leases.delete(key);
-      return Promise.resolve([]);
-    }
-    // The acquire upsert.
-    const [key, holder, leaseMs] = params as [string, string, number];
-    const existing = leases.get(key);
-    if (existing && existing.expiresAt > clock.now) return Promise.resolve([]);
-    leases.set(key, { holder, expiresAt: clock.now + leaseMs });
-    return Promise.resolve([{ holder }]);
-  };
-  return { exec, leases, statements };
+/** The Postgres error a statement that hit `lock_timeout` raises. */
+class LockTimeout extends Error {
+  code = "55P03";
 }
 
+/**
+ * Fake admin pool implementing advisory-lock semantics over an in-memory
+ * held-key set: acquire blocks while another connection holds the key, and
+ * releasing the CONNECTION frees whatever it held (which is the property the
+ * real lock depends on for crash safety).
+ */
+function fakeAdvisoryDb(opts: { timeoutOnContention?: boolean } = {}) {
+  const held = new Set<string>();
+  const statements: string[] = [];
+  let reservations = 0;
+  let live = 0;
+
+  const db: AdminDb = {
+    reserve() {
+      reservations++;
+      live++;
+      const mine = new Set<string>();
+      let released = false;
+      return Promise.resolve({
+        query(sql: string, params?: unknown[]) {
+          statements.push(sql);
+          if (sql.startsWith("set lock_timeout")) return Promise.resolve([]);
+          const key = String((params ?? [])[1]);
+          if (sql.includes("pg_advisory_unlock")) {
+            held.delete(key);
+            mine.delete(key);
+            return Promise.resolve([]);
+          }
+          if (held.has(key)) {
+            // A real acquire would block here; the fake either raises the
+            // lock_timeout error or never resolves, mirroring the two
+            // outcomes Postgres can produce.
+            return opts.timeoutOnContention
+              ? Promise.reject(new LockTimeout("canceling statement due to lock timeout"))
+              : new Promise<Record<string, unknown>[]>(() => undefined);
+          }
+          held.add(key);
+          mine.add(key);
+          return Promise.resolve([]);
+        },
+        release() {
+          if (released) return;
+          released = true;
+          live--;
+          // Dropping the connection releases every lock it held.
+          for (const key of mine) held.delete(key);
+        },
+      });
+    },
+  };
+  return { db, held, statements, counts: () => ({ reservations, live }) };
+}
+
+describe("assertSessionModeUrl", () => {
+  test("accepts the direct session-mode connection string", () => {
+    expect(() =>
+      assertSessionModeUrl("postgresql://postgres:pw@db.ref.supabase.co:5432/postgres"),
+    ).not.toThrow();
+  });
+
+  // A transaction-mode pooler returns the server connection between
+  // statements, so an advisory lock taken through one excludes nothing —
+  // with no error anywhere. Refusing the URL is the only visible failure.
+  test("refuses a transaction-mode pooler port", () => {
+    expect(() =>
+      assertSessionModeUrl(
+        "postgresql://postgres:pw@aws-0-us-east-2.pooler.supabase.com:6543/postgres",
+      ),
+    ).toThrow(/TRANSACTION-mode pooler/);
+  });
+
+  test("refuses an explicit pgbouncer=true", () => {
+    expect(() =>
+      assertSessionModeUrl("postgresql://postgres:pw@host:5432/postgres?pgbouncer=true"),
+    ).toThrow(/TRANSACTION-mode pooler/);
+  });
+
+  test("leaves an unparseable connection string to the driver", () => {
+    expect(() => assertSessionModeUrl("not a url")).not.toThrow();
+  });
+});
+
 describe("createPgSlugLock", () => {
-  test("acquires, runs the work, and releases the lease", async () => {
-    const clock = { now: 1_000_000 };
-    const db = fakeLeaseDb(clock);
-    const lock = createPgSlugLock(db.exec);
+  test("acquires, runs the work, releases the lock and the connection", async () => {
+    const { db, held, counts } = fakeAdvisoryDb();
+    const lock = createPgSlugLock(db);
     const result = await lock("my-agent", async () => {
-      expect(db.leases.has("my-agent")).toBe(true);
+      expect(held.has("my-agent")).toBe(true);
       return "done";
     });
     expect(result).toBe("done");
-    expect(db.leases.has("my-agent")).toBe(false);
+    expect(held.has("my-agent")).toBe(false);
+    // A leaked reservation permanently shrinks the admin pool, so the
+    // release matters as much as the unlock.
+    expect(counts().live).toBe(0);
   });
 
-  test("releases the lease when the work throws", async () => {
-    const clock = { now: 1_000_000 };
-    const db = fakeLeaseDb(clock);
-    const lock = createPgSlugLock(db.exec);
+  test("releases the lock and the connection when the work throws", async () => {
+    const { db, held, counts } = fakeAdvisoryDb();
+    const lock = createPgSlugLock(db);
     await expect(
       lock("my-agent", async () => {
         throw new Error("boom");
       }),
     ).rejects.toThrow("boom");
-    expect(db.leases.has("my-agent")).toBe(false);
+    expect(held.has("my-agent")).toBe(false);
+    expect(counts().live).toBe(0);
   });
 
-  test("waits for a contended lease and proceeds once it is released", async () => {
-    const clock = { now: 1_000_000 };
-    const db = fakeLeaseDb(clock);
-    const lock = createPgSlugLock(db.exec, { pollMs: 1, acquireTimeoutMs: 1000 });
-    // Simulate another replica's live lease.
-    db.leases.set("my-agent", { holder: "other-replica", expiresAt: clock.now + 60_000 });
-    const order: string[] = [];
-    const pending = lock("my-agent", async () => {
-      order.push("ran");
-    });
-    // Give the acquirer a few polls against the held lease, then release it.
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(order).toEqual([]);
-    db.leases.delete("my-agent");
-    await pending;
-    expect(order).toEqual(["ran"]);
+  test("applies the acquire deadline as a Postgres lock_timeout", async () => {
+    const { db, statements } = fakeAdvisoryDb();
+    const lock = createPgSlugLock(db, { acquireTimeoutMs: 2500 });
+    await lock("my-agent", () => Promise.resolve("ok"));
+    // Postgres enforces the deadline and queues the waiter, so there is no
+    // poll loop to observe — the `set` is the whole mechanism.
+    expect(statements).toContain("set lock_timeout = 2500");
+    expect(statements.filter((s) => s.includes("pg_advisory_lock"))).toHaveLength(1);
   });
 
-  test("takes over an expired lease from a crashed holder", async () => {
-    const clock = { now: 1_000_000 };
-    const db = fakeLeaseDb(clock);
-    const lock = createPgSlugLock(db.exec, { pollMs: 1 });
-    db.leases.set("my-agent", { holder: "crashed-replica", expiresAt: clock.now - 1 });
-    await expect(lock("my-agent", async () => "ok")).resolves.toBe("ok");
-    expect(db.leases.has("my-agent")).toBe(false);
-  });
-
-  test("times out with SlugLockTimeoutError when the lease never frees", async () => {
-    const clock = { now: 1_000_000 };
-    const db = fakeLeaseDb(clock);
-    const lock = createPgSlugLock(db.exec, { pollMs: 1, acquireTimeoutMs: 5 });
-    db.leases.set("my-agent", { holder: "other-replica", expiresAt: clock.now + 60_000 });
+  test("maps a lock_timeout to SlugLockTimeoutError", async () => {
+    const { db } = fakeAdvisoryDb({ timeoutOnContention: true });
+    const lock = createPgSlugLock(db, { acquireTimeoutMs: 5 });
+    // Another replica holds it: reserve a connection and take the lock.
+    const other = await db.reserve();
+    await other.query("select pg_advisory_lock($1::int, hashtext($2)::int)", [
+      SLUG_LOCK_NAMESPACE,
+      "my-agent",
+    ]);
     await expect(lock("my-agent", async () => "never")).rejects.toBeInstanceOf(
       SlugLockTimeoutError,
     );
+    other.release();
   });
 
-  test("serializes in-process waiters without burning database polls", async () => {
-    const clock = { now: 1_000_000 };
-    const db = fakeLeaseDb(clock);
-    const lock = createPgSlugLock(db.exec, { pollMs: 1 });
+  test("does not unlock a lock it never acquired", async () => {
+    const { db, statements } = fakeAdvisoryDb({ timeoutOnContention: true });
+    const lock = createPgSlugLock(db);
+    const other = await db.reserve();
+    await other.query("select pg_advisory_lock($1::int, hashtext($2)::int)", [
+      SLUG_LOCK_NAMESPACE,
+      "my-agent",
+    ]);
+    statements.length = 0;
+    await expect(lock("my-agent", async () => "never")).rejects.toBeInstanceOf(
+      SlugLockTimeoutError,
+    );
+    // Unlocking a lock this session never took logs a Postgres warning and
+    // returns false — never issue it.
+    expect(statements.filter((s) => s.includes("pg_advisory_unlock"))).toHaveLength(0);
+    other.release();
+  });
+
+  test("serializes in-process waiters on one reservation at a time", async () => {
+    const { db, counts } = fakeAdvisoryDb();
+    const lock = createPgSlugLock(db);
     const order: string[] = [];
+    let peakLive = 0;
+    const watch = setInterval(() => {
+      peakLive = Math.max(peakLive, counts().live);
+    }, 0);
     await Promise.all([
       lock("my-agent", async () => {
         order.push("first-start");
@@ -118,17 +192,17 @@ describe("createPgSlugLock", () => {
         order.push("second-end");
       }),
     ]);
+    clearInterval(watch);
     expect(order).toEqual(["first-start", "first-end", "second-start", "second-end"]);
-    // The second waiter queued on the local mutex, then acquired a free
-    // lease first try — no contention polls hit the database.
-    const acquires = db.statements.filter((s) => s.startsWith("insert")).length;
-    expect(acquires).toBe(2);
+    // The local mutex is what keeps the loser from holding a reserved
+    // connection open while blocked on the same lock.
+    expect(peakLive).toBeLessThanOrEqual(1);
+    expect(counts().reservations).toBe(2);
   });
 
   test("different slugs do not block each other", async () => {
-    const clock = { now: 1_000_000 };
-    const db = fakeLeaseDb(clock);
-    const lock = createPgSlugLock(db.exec, { pollMs: 1 });
+    const { db } = fakeAdvisoryDb();
+    const lock = createPgSlugLock(db);
     let aRelease: (() => void) | undefined;
     const held = new Promise<void>((resolve) => {
       aRelease = resolve;
@@ -139,14 +213,25 @@ describe("createPgSlugLock", () => {
     await a;
   });
 
-  test("a failed release leaves the lease to expire without failing the work", async () => {
-    const clock = { now: 1_000_000 };
-    const db = fakeLeaseDb(clock);
-    const exec: SqlExec = (query, params) =>
-      query.startsWith("delete") ? Promise.reject(new Error("db blip")) : db.exec(query, params);
-    const lock = createPgSlugLock(exec);
+  test("a failed unlock still returns the connection, which frees the lock", async () => {
+    const { db, held } = fakeAdvisoryDb();
+    const failing: AdminDb = {
+      async reserve() {
+        const reserved = await db.reserve();
+        return {
+          query: (sql, params) =>
+            sql.includes("pg_advisory_unlock")
+              ? Promise.reject(new Error("db blip"))
+              : reserved.query(sql, params),
+          release: () => reserved.release(),
+        };
+      },
+    };
+    const lock = createPgSlugLock(failing);
     await expect(lock("my-agent", async () => "ok")).resolves.toBe("ok");
-    expect(db.leases.has("my-agent")).toBe(true); // expires on its own
+    // Crash safety in miniature: the connection going back is what frees it,
+    // so a failed unlock cannot wedge the slug the way a stuck lease could.
+    expect(held.has("my-agent")).toBe(false);
   });
 });
 

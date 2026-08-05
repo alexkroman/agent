@@ -29,7 +29,12 @@ import {
   withChatEvents,
   withWorkspaceEvents,
 } from "./platform-events.ts";
-import { createPgSlugLock, localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
+import {
+  assertSessionModeUrl,
+  createPgSlugLock,
+  localSlugLock,
+  type SlugMutationLock,
+} from "./platform-lock.ts";
 import { createRealtimePlatformEvents, ensureRealtimeSetup } from "./realtime-events.ts";
 import { describeSandboxBackend } from "./sandbox-backend.ts";
 import { createPgSandboxRegistry } from "./sandbox-registry.ts";
@@ -186,6 +191,11 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
       slugLock: localSlugLock,
     };
   }
+  // Session mode, not a transaction-mode pooler: the per-slug mutation lock
+  // is a Postgres advisory lock, which needs connection affinity to mean
+  // anything (see platform-lock.ts). Checked before the pool is built so the
+  // failure names the setting rather than surfacing as lost exclusion later.
+  if (!isLocalDev(env)) assertSessionModeUrl(url);
   // The pool lives for the process; connections drain when the process exits
   // (no explicit close() hook on the shutdown path today).
   const admin = createPostgresDb({ url, max: 4 });
@@ -230,7 +240,7 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
     // survives replica restarts and scale-out. (Cross-replica sandbox
     // invalidation rides the agents row's change stream — see
     // sandbox-resolve.ts.)
-    slugLock: createPgSlugLock(exec),
+    slugLock: createPgSlugLock(admin),
     sql: exec,
   };
 }
