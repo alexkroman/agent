@@ -9,5 +9,6 @@
 
 export { resolvePort } from "./_boot.ts";
 export { createKeyedLock, withLock } from "./_keyed-lock.ts";
+export { memoAsync } from "./_memo.ts";
 export { createCachedDirReader, isPathInside } from "./_static-files.ts";
 export { TtlCache } from "./_ttl-cache.ts";

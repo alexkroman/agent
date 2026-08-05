@@ -30,6 +30,7 @@ import {
 import { isStudioPath } from "aai-server/studio-proxy";
 import { teardownSandboxes } from "aai-server/teardown-sandboxes";
 import { createStudioApp, type StudioAppOpts } from "./studio-app.ts";
+import { createPgPreviewQueue } from "./studio-preview-queue.ts";
 import {
   CHAT_RATE_LIMIT,
   createPgRateLimiter,
@@ -64,6 +65,10 @@ function studioAppOpts(base: ServiceConfig, isDraining: () => boolean): StudioAp
   // Cross-replica studio session registry — only with a platform database.
   // Without one there is a single process, so there are no peers to find.
   const sessionRegistry = base.sql ? createPgStudioSessionRegistry(base.sql) : undefined;
+  // Durable preview deploys — only with a platform database. Without one the
+  // broker's in-memory queue applies: correct for a single process, and it
+  // loses pending previews on restart, which is what pgmq prevents.
+  const previewQueue = base.sql ? createPgPreviewQueue(base.sql) : undefined;
   return {
     store: base.store,
     workspaces: base.workspaces,
@@ -75,6 +80,7 @@ function studioAppOpts(base: ServiceConfig, isDraining: () => boolean): StudioAp
     ...(base.slugLock && { slugLock: base.slugLock }),
     ...(rateLimiters && { studioRateLimiters: rateLimiters }),
     ...(sessionRegistry && { studioSessionRegistry: sessionRegistry }),
+    ...(previewQueue && { previewQueue }),
     replicaId: base.replicaId,
     isDraining,
   };

@@ -4,10 +4,12 @@ import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
 import { describe, expect, test, vi } from "vitest";
 import {
   createPreviewDeployer,
+  type PreviewDeployerOptions,
   previewSlugFor,
   wakeProjectPreview,
   warmPreviewSandbox,
 } from "./studio-preview.ts";
+import { createMemoryPreviewQueue, PREVIEW_JOB_MAX_ATTEMPTS } from "./studio-preview-queue.ts";
 import type { WorkspaceDeployOutcome, WorkspaceDeployTarget } from "./studio-session-broker.ts";
 import {
   createWorkspace,
@@ -19,9 +21,22 @@ import {
 const SCOPE = "scope";
 const PROJECT = "contact-form-x7k2mq";
 const TARGET = { serverUrl: "https://platform.example", apiKey: "caller-key" };
+/** Jump the memory queue's clock past any visibility timeout. */
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 function makeStore() {
   return createMemoryWorkspaceStore();
+}
+
+/**
+ * A deployer over a fresh in-memory queue, with the periodic drain disabled —
+ * scheduling kicks a drain synchronously, so the timer would only add
+ * nondeterminism to these tests.
+ */
+function makeDeployer(opts: Omit<PreviewDeployerOptions, "queue" | "pollMs">) {
+  const queue = createMemoryPreviewQueue();
+  const deployer = createPreviewDeployer({ ...opts, queue, pollMs: 0 });
+  return Object.assign(deployer, { queue });
 }
 
 /** Wait for the fire-and-forget deploy loop to drain. */
@@ -104,7 +119,13 @@ describe("wakeProjectPreview", () => {
       fetchImpl: fetchImpl as typeof fetch,
     });
 
-  test("a stale preview reschedules its deploy and warms the last-good slug", async () => {
+  /**
+   * The queue owns delivery now, so a stale preview means a job is still
+   * enqueued and the drain will run it. Re-scheduling on project open would
+   * be a second mechanism answering the same question — and the weaker one,
+   * since it only fires when a human happens to look.
+   */
+  test("a stale preview only warms — the queue owns the redeploy", async () => {
     const workspaces = makeStore();
     await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
     await mutateWorkspace(workspaces, SCOPE, PROJECT, (current) => ({
@@ -116,9 +137,10 @@ describe("wakeProjectPreview", () => {
     const fetchImpl = okFetch();
     wake(workspaces, schedule, fetchImpl);
     await vi.waitFor(() => {
-      expect(schedule).toHaveBeenCalledWith(SCOPE, PROJECT, TARGET);
       expect(fetchImpl).toHaveBeenCalledTimes(1);
     });
+    await settled();
+    expect(schedule).not.toHaveBeenCalled();
     const [url] = fetchImpl.mock.calls[0] as unknown[] as [URL];
     expect(url.toString()).toBe("https://platform.example/p-preview/client-config");
   });
@@ -275,7 +297,7 @@ describe("createPreviewDeployer", () => {
     const deploy = vi.fn(
       async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "Deployed" }),
     );
-    const deployer = createPreviewDeployer({ workspaces, deployWorkspace: deploy });
+    const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
 
     deployer.schedule(SCOPE, PROJECT, TARGET);
     await vi.waitFor(async () => {
@@ -314,7 +336,7 @@ describe("createPreviewDeployer", () => {
         _target: WorkspaceDeployTarget,
       ): Promise<WorkspaceDeployOutcome> => ({ ok: true, slug: "claimed", output: "ok" }),
     );
-    const deployer = createPreviewDeployer({ workspaces, deployWorkspace: deploy });
+    const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
 
     deployer.schedule(SCOPE, PROJECT, TARGET);
     await vi.waitFor(async () => {
@@ -335,7 +357,7 @@ describe("createPreviewDeployer", () => {
     const workspaces = makeStore();
     await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
     const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "ok" }));
-    const deployer = createPreviewDeployer({ workspaces, deployWorkspace: deploy });
+    const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
 
     deployer.schedule(SCOPE, PROJECT, TARGET);
     await vi.waitFor(async () => {
@@ -365,7 +387,7 @@ describe("createPreviewDeployer", () => {
         return { ok: true, output: "ok" };
       },
     );
-    const deployer = createPreviewDeployer({ workspaces, deployWorkspace: deploy });
+    const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
 
     deployer.schedule(SCOPE, PROJECT, TARGET);
     await vi.waitFor(() => expect(deploy).toHaveBeenCalledTimes(1));
@@ -397,7 +419,7 @@ describe("createPreviewDeployer", () => {
         output: "Build failed:\nagent.ts:1: oops",
       }),
     );
-    const deployer = createPreviewDeployer({ workspaces, deployWorkspace: deploy });
+    const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
 
     deployer.schedule(SCOPE, PROJECT, TARGET);
     await vi.waitFor(async () => {
@@ -421,7 +443,7 @@ describe("createPreviewDeployer", () => {
       async (): Promise<WorkspaceDeployOutcome> =>
         ok ? { ok: true, output: "Deployed" } : { ok: false, output: "Build failed" },
     );
-    const deployer = createPreviewDeployer({ workspaces, deployWorkspace: deploy });
+    const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
 
     deployer.schedule(SCOPE, PROJECT, TARGET);
     await vi.waitFor(async () => {
@@ -444,7 +466,7 @@ describe("createPreviewDeployer", () => {
   test("a deleted project deploys nothing and never resurrects", async () => {
     const workspaces = makeStore();
     const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "ok" }));
-    const deployer = createPreviewDeployer({ workspaces, deployWorkspace: deploy });
+    const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
     deployer.schedule(SCOPE, "ghost", TARGET);
     await settled();
     expect(deploy).not.toHaveBeenCalled();
@@ -458,12 +480,120 @@ describe("createPreviewDeployer", () => {
     const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => {
       throw new Error("sandbox gone");
     });
-    const deployer = createPreviewDeployer({ workspaces, deployWorkspace: deploy });
+    const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
     deployer.schedule(SCOPE, PROJECT, TARGET);
     await vi.waitFor(() => expect(warn).toHaveBeenCalled());
-    // A later schedule runs again — the in-flight entry was cleaned up.
+    // A later schedule runs again — nothing wedged.
     deployer.schedule(SCOPE, PROJECT, TARGET);
     await vi.waitFor(() => expect(deploy).toHaveBeenCalledTimes(2));
+    warn.mockRestore();
+  });
+
+  /**
+   * The whole point of the queue. Before it, a deploy that died mid-flight
+   * (replica restart, sandbox gone) was simply lost, and the workspace sat
+   * stamped-stale with nothing on the way — the pane showing "Updating
+   * preview…" indefinitely.
+   */
+  test("a job whose deploy throws is left for redelivery, not consumed", async () => {
+    const workspaces = makeStore();
+    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    let attempts = 0;
+    const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => {
+      attempts++;
+      if (attempts === 1) throw new Error("sandbox gone");
+      return { ok: true, output: "Deployed" };
+    });
+    const queue = createMemoryPreviewQueue({ now: () => Date.now() + attempts * DAY_MS });
+    const deployer = createPreviewDeployer({
+      workspaces,
+      deployWorkspace: deploy,
+      queue,
+      pollMs: 0,
+    });
+
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await vi.waitFor(() => expect(warn).toHaveBeenCalled());
+    // Not acked and not archived: still in the queue, merely invisible.
+    expect(queue.archived).toEqual([]);
+
+    // The next drain — any replica's — picks it up and finishes the work.
+    await deployer.drainOnce();
+    await vi.waitFor(async () => {
+      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewHash).toBeDefined();
+    });
+    warn.mockRestore();
+  });
+
+  test("a job redelivered past the attempt cap is archived, not retried forever", async () => {
+    const workspaces = makeStore();
+    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => {
+      throw new Error("crash loop");
+    });
+    let reads = 0;
+    const queue = createMemoryPreviewQueue({ now: () => Date.now() + ++reads * DAY_MS });
+    const deployer = createPreviewDeployer({
+      workspaces,
+      deployWorkspace: deploy,
+      queue,
+      pollMs: 0,
+    });
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    for (let i = 0; i < PREVIEW_JOB_MAX_ATTEMPTS + 2; i++) await deployer.drainOnce();
+    expect(queue.archived).toHaveLength(1);
+    // Capped: the deploy is not attempted once per drain forever.
+    expect(deploy.mock.calls.length).toBeLessThanOrEqual(PREVIEW_JOB_MAX_ATTEMPTS);
+    warn.mockRestore();
+  });
+
+  /**
+   * A durable row must never carry a credential, so a job redelivered to a
+   * replica that did not enqueue it resolves the user's key from Vault.
+   */
+  test("a redelivered job resolves the caller's key by user id", async () => {
+    const workspaces = makeStore();
+    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    const queue = createMemoryPreviewQueue();
+    // Enqueued by a replica that is now gone: only the row survives.
+    await queue.enqueue({
+      scope: SCOPE,
+      project: PROJECT,
+      serverUrl: TARGET.serverUrl,
+      userId: "user-1",
+    });
+    const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "ok" }));
+    const deployer = createPreviewDeployer({
+      workspaces,
+      deployWorkspace: deploy,
+      queue,
+      pollMs: 0,
+      resolveApiKey: (userId) => Promise.resolve(userId === "user-1" ? "stored-key" : null),
+    });
+    await deployer.drainOnce();
+    expect(deploy.mock.calls[0]?.[3]).toMatchObject({ apiKey: "stored-key" });
+  });
+
+  test("a redelivered job with no resolvable key is archived", async () => {
+    const workspaces = makeStore();
+    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const queue = createMemoryPreviewQueue();
+    // No userId: a raw-key caller's job whose enqueuing replica is gone. No
+    // replica will ever hold that credential, so retrying is pointless.
+    await queue.enqueue({ scope: SCOPE, project: PROJECT, serverUrl: TARGET.serverUrl });
+    const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "ok" }));
+    const deployer = createPreviewDeployer({
+      workspaces,
+      deployWorkspace: deploy,
+      queue,
+      pollMs: 0,
+    });
+    await deployer.drainOnce();
+    expect(deploy).not.toHaveBeenCalled();
+    expect(queue.archived).toHaveLength(1);
     warn.mockRestore();
   });
 });

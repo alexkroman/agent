@@ -37,6 +37,7 @@ import { createKeyedLock, withLock } from "aai-server/platform-barrel";
 import { spawnWarmHarness, type WarmHarness } from "aai-server/sandbox-vm";
 import { studioLlmModelId } from "./studio-llm.ts";
 import { createPreviewDeployer, type PreviewTarget } from "./studio-preview.ts";
+import { createMemoryPreviewQueue, type PreviewQueue } from "./studio-preview-queue.ts";
 import { studioSystemPrompt } from "./studio-prompt.ts";
 import type { adoptPeerSession } from "./studio-session-adopt.ts";
 import { createSessionFleet, soloFleet } from "./studio-session-fleet.ts";
@@ -98,6 +99,19 @@ export type StudioSessionBrokerOptions = BrokerStores & {
   replicaId?: string;
   /** Test seam for the peer install (studio-session-adopt.ts). */
   adopt?: typeof adoptPeerSession;
+  /**
+   * Durable preview-deploy queue (studio-preview-queue.ts). Defaults to an
+   * in-memory queue, which is correct for dev/tests (one process) and loses
+   * pending previews on restart — exactly what the pgmq implementation exists
+   * to prevent in production.
+   */
+  previewQueue?: PreviewQueue;
+  /**
+   * A studio user's stored AssemblyAI key, so a preview job REDELIVERED to a
+   * replica that did not enqueue it can still deploy. Without it, only
+   * same-replica jobs run (see `createPreviewDeployer`).
+   */
+  resolveApiKey?: (userId: string) => Promise<string | null>;
 };
 
 export type StudioSessionBroker = {
@@ -465,6 +479,8 @@ export function createStudioSessionBroker(
   const previews = createPreviewDeployer({
     workspaces: options.workspaces,
     deployWorkspace: deployWorkspaceImpl,
+    queue: options.previewQueue ?? createMemoryPreviewQueue(),
+    ...(options.resolveApiKey && { resolveApiKey: options.resolveApiKey }),
   });
 
   return {
@@ -485,6 +501,7 @@ export function createStudioSessionBroker(
 
     async dispose() {
       clearInterval(sweeper);
+      previews.dispose();
       await Promise.allSettled([...sessions.values()].map((entry) => disposeEntry(entry)));
     },
   };

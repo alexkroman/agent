@@ -674,9 +674,23 @@ voice agents without the CLI:
   share the RPC but never carry the flag, so a half-finished tree is never
   deployed) and editor file PUT/DELETEs — schedules a deploy of the
   workspace to the project's preview slug (`<project>-preview`) through
-  the same in-guest `aai deploy` path Publish uses (`studio-preview.ts`:
-  fire-and-forget, coalesced per project, no-op when the preview already
-  matches). Success stamps `previewSlug`/`previewHash` on the workspace;
+  the same in-guest `aai deploy` path Publish uses (`studio-preview.ts`).
+  **Scheduling is DURABLE**: the edit enqueues a job in
+  `studio-preview-queue.ts` (Supabase's `pgmq` in production, in-memory in
+  dev/tests) and a per-replica drain runs it, at-least-once — a claimed job is
+  invisible for a visibility timeout rather than deleted, so a replica restart
+  or a sandbox death mid-deploy no longer drops the work. Past
+  `PREVIEW_JOB_MAX_ATTEMPTS` redeliveries a job is archived (that is a crash
+  loop, not a slow deploy); a pg_cron sweep prunes the archive. Coalescing is
+  not managed: the deploy re-reads the workspace and no-ops when `previewHash`
+  matches, and the drain holds a per-project lock, so N jobs for one project
+  cost one deploy plus a read each — replacing an in-process map with a dirty
+  bit whose whole purpose was to approximate that without durability.
+  **A queue row NEVER carries a credential**: it names the studio `userId`,
+  and the drain resolves the key from Vault (`user-key:<uid>`), so a job
+  redelivered to another replica can still deploy. A raw-key caller's job
+  (CLI, evals) has no `userId`, so it runs only on the replica that enqueued
+  it and is archived if redelivered elsewhere. Success stamps `previewSlug`/`previewHash` on the workspace;
   failure stamps `previewError` for the pane's banner (an auto-deploy has
   no chat turn to carry CLI output). `GET /studio/projects/:project`
   returns `previewSlug`/`previewVersion`/`previewStale`/`previewError`,
@@ -701,14 +715,15 @@ voice agents without the CLI:
   mirrors writes to the preview slug best-effort so previews run with the
   same third-party keys. **Landing on a project wakes its preview**
   (`wakeProjectPreview` in studio-preview.ts, hung off the once-per-open
-  session broker call): a STALE preview reschedules its auto-deploy — the deploys
-  are fire-and-forget with in-process coalescing, so a replica restart can
-  drop one and leave the pane on "Updating preview…" until the next edit —
-  skipping empty workspaces (the first agent turn owns the first preview)
-  and stamped build failures (deterministic; the banner carries the output),
-  and the embedded agent's sandbox is warmed through the platform's public
-  client-config broker (`warmPreviewSandbox`) so a preview idle-evicted
-  since the last visit is booting before the pane's iframe asks for it.
+  session broker call): the embedded agent's sandbox is warmed through the
+  platform's public client-config broker (`warmPreviewSandbox`) so a preview
+  idle-evicted since the last visit is booting before the pane's iframe asks
+  for it. It used to ALSO redeploy a stale preview, because scheduling was
+  fire-and-forget in-process state that a replica restart could drop, leaving
+  the pane on "Updating preview…" until the next edit; the queue owns delivery
+  now, so a stale preview means a job is still queued — re-scheduling here
+  would be a second mechanism answering the same question, and the weaker one,
+  since it only fires when a human opens the project.
   The warm-up doubles as an existence check: a 404 from the broker means
   the agent behind the workspace's preview stamp is GONE (expired, swept,
   or deleted out from under it), so the wake clears `previewHash` and

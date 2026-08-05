@@ -49,6 +49,7 @@ import { resolvePublicOrigin } from "aai-server/public-origin";
 import { RESERVED_SLUGS } from "aai-server/schemas";
 import { verifySlugOwner } from "aai-server/secrets";
 import { generatedSlug } from "aai-server/slug-generate";
+import { userApiKeySecretName } from "aai-server/supabase-auth";
 import { WorkspaceConflictError } from "aai-server/workspace-store";
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -58,6 +59,7 @@ import type { StudioHonoEnv } from "./studio-context.ts";
 import { deployStudioProject } from "./studio-deploy.ts";
 import { studioLlmInfo } from "./studio-llm.ts";
 import { wakeProjectPreview } from "./studio-preview.ts";
+import type { PreviewQueue } from "./studio-preview-queue.ts";
 import {
   CHAT_RATE_LIMIT,
   createRateLimiter,
@@ -108,6 +110,11 @@ export type StudioRouteOptions = {
    */
   sessionRegistry?: StudioSessionRegistry;
   replicaId?: string;
+  /**
+   * Durable preview-deploy queue (studio-preview-queue.ts). Injected in
+   * production (pgmq); the broker's in-memory default covers dev and tests.
+   */
+  previewQueue?: PreviewQueue;
 };
 
 /**
@@ -153,6 +160,12 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
       chats: c.env.chats,
       ...(options.sessionRegistry && { registry: options.sessionRegistry }),
       ...(options.replicaId && { replicaId: options.replicaId }),
+      ...(options.previewQueue && { previewQueue: options.previewQueue }),
+      // A preview job redelivered here may have been enqueued by a replica
+      // that is gone, so the drain resolves the user's key from Vault rather
+      // than the job carrying one. Bound to the request env's SecretStore —
+      // the same `user-key:<uid>` record the bearer resolution reads.
+      resolveApiKey: (userId) => c.env.secrets.get(userApiKeySecretName(userId)),
     });
     return broker;
   };
@@ -352,6 +365,10 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     ensureBroker(c).schedulePreview(scope, project, {
       serverUrl: requestPublicOrigin(c),
       apiKey: c.var.apiKey,
+      // Present for browser sessions only. It is what lets the queued job
+      // outlive this replica: the row names the user, and the drain resolves
+      // the key from Vault instead of the row carrying a credential.
+      ...(c.var.userId && { userId: c.var.userId }),
     });
   };
 

@@ -51,6 +51,19 @@ const SWEEP_RATE_LIMITS = guarded(
 );
 
 /**
+ * Archived preview-deploy jobs (aai-studio-server/studio-preview-queue.ts).
+ * `pgmq.archive` moves a job that could not be run — unreadable payload,
+ * crash loop, no resolvable credential — out of the queue and into
+ * `pgmq.a_<queue>`, deliberately keeping it for inspection rather than
+ * dropping it. Without a sweep that table only grows; a week is long enough
+ * to notice a pattern in it and act.
+ */
+const SWEEP_PREVIEW_ARCHIVE = guarded(
+  "pgmq.a_aai_studio_preview",
+  "delete from pgmq.a_aai_studio_preview where archived_at < now() - interval '7 days'",
+);
+
+/**
  * Expired sandbox registrations. `findPeer` (sandbox-registry.ts) already
  * filters on `expires_at`, so this is dead-row hygiene, not correctness — it
  * keeps the table proportional to live sandboxes rather than to every
@@ -148,6 +161,11 @@ export const PLATFORM_CRON_JOBS: readonly CronJob[] = [
   },
   { name: "aai-sweep-studio-sessions", schedule: "*/30 * * * *", command: SWEEP_STUDIO_SESSIONS },
   { name: "aai-sweep-orphan-previews", schedule: "23 * * * *", command: SWEEP_ORPHAN_PREVIEWS },
+  {
+    name: "aai-sweep-preview-archive",
+    schedule: "41 3 * * *",
+    command: SWEEP_PREVIEW_ARCHIVE,
+  },
 ];
 
 /**
