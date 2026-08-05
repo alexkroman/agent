@@ -15,12 +15,10 @@ const barProps = {
   project: "demo" as string | null,
   tab: "preview" as const,
   hasBuild: true,
-  settingsOpen: false,
   onGoHome: noop,
   onSelectTab: noop,
   onLogOut: noop,
   onTogglePublish: noop,
-  onToggleSettings: noop,
 };
 
 describe("TopBar", () => {
@@ -45,26 +43,35 @@ describe("TopBar", () => {
     expect(screen.queryByRole("button", { name: "Settings" })).toBeNull();
   });
 
-  test("tab buttons switch between Preview and Code", () => {
+  test("the switcher moves between all three panes", () => {
     const onSelectTab = vi.fn();
     render(<TopBar {...barProps} onSelectTab={onSelectTab} />);
-    fireEvent.click(screen.getByRole("button", { name: "Code" }));
-    expect(onSelectTab).toHaveBeenCalledWith("code");
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
-    expect(onSelectTab).toHaveBeenCalledWith("preview");
+    for (const [label, id] of [
+      ["Code", "code"],
+      ["Settings", "settings"],
+      ["Preview", "preview"],
+    ]) {
+      fireEvent.click(screen.getByRole("button", { name: label as string }));
+      expect(onSelectTab).toHaveBeenCalledWith(id);
+    }
   });
 
-  test("Publish locks until there is a build; Settings stays available", () => {
-    // Settings must never gate on a build or a deploy — the panel holds the
+  test("the open pane is the current one", () => {
+    render(<TopBar {...barProps} tab="settings" />);
+    expect(screen.getByRole("button", { name: "Settings" }).getAttribute("aria-current")).toBe(
+      "page",
+    );
+    expect(screen.getByRole("button", { name: "Preview" }).getAttribute("aria-current")).toBeNull();
+  });
+
+  test("Publish locks until there is a build; Settings stays reachable", () => {
+    // Settings must never gate on a build or a deploy — the pane holds the
     // Delete project button, which has to work before anything is published.
-    const onToggleSettings = vi.fn();
-    render(<TopBar {...barProps} hasBuild={false} onToggleSettings={onToggleSettings} />);
+    render(<TopBar {...barProps} hasBuild={false} />);
     const publish = screen.getByRole("button", { name: "Publish" });
     const settings = screen.getByRole("button", { name: "Settings" });
     expect((publish as HTMLButtonElement).disabled).toBe(true);
     expect((settings as HTMLButtonElement).disabled).toBe(false);
-    fireEvent.click(settings);
-    expect(onToggleSettings).toHaveBeenCalled();
   });
 
   test("Publish locks while a chat turn streams, even with a build", () => {

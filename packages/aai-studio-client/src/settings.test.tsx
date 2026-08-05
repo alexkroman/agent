@@ -1,26 +1,27 @@
 // @vitest-environment jsdom
 // Copyright 2026 the AAI authors. MIT license.
-// The Secrets panel: its own UI (not part of Publish), talking to the
-// platform's own /:slug/secret routes. Unpublished projects get the
-// "publish first" gate, and every successful change posts a note into the
-// chat so the coding agent knows which keys exist — values never included.
+// The Settings pane: a full page (not a dropdown), whose main section is
+// deployed-agent secrets talking to the platform's own /:slug/secret routes.
+// Unpublished projects get the "publish first" gate, and every successful
+// change posts a note into the chat so the coding agent knows which keys
+// exist — values never included. The CLI and delete sections work with no
+// published slug at all.
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { jsonResponse, stubFetch } from "./_test-utils.ts";
-import { SecretsPanel } from "./secrets.tsx";
+import { SettingsPane } from "./settings.tsx";
 
 function renderPanel(slug: string | undefined, onNotifyChat = vi.fn(), onDeleteProject = vi.fn()) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <SecretsPanel
+      <SettingsPane
         bearer="sk-test"
         project="demo"
         slug={slug}
         onNotifyChat={onNotifyChat}
-        onClose={() => undefined}
         onDeleteProject={onDeleteProject}
         deleting={false}
       />
@@ -34,12 +35,19 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("SecretsPanel", () => {
+describe("SettingsPane", () => {
   test("unpublished projects get the publish-first gate, no requests", () => {
     const fetchMock = stubFetch({});
     renderPanel(undefined);
     expect(screen.getByText(/Publish the project first/)).toBeTruthy();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("the CLI section renders with no published slug — pulling needs no deploy", () => {
+    stubFetch({});
+    renderPanel(undefined);
+    expect(screen.getByText("aai pull demo")).toBeTruthy();
+    expect(screen.getByText("Work locally")).toBeTruthy();
   });
 
   test("lists the deployed agent's secret names", async () => {
