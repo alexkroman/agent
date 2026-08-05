@@ -21,6 +21,7 @@ import {
 import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./chat-store.ts";
 import { resolveHarnessPath } from "./constants.ts";
+import { endLiveStreams } from "./live-streams.ts";
 import { isModalConfigured, modalRequiredError, prewarmModal } from "./modal-sandbox.ts";
 import { createModalSandboxDirectory } from "./modal-sandbox-directory.ts";
 import type { OrchestratorOpts } from "./orchestrator.ts";
@@ -392,6 +393,12 @@ export function installProcessSafetyNets(): void {
   });
   process.on("uncaughtException", (err) => {
     console.error("Uncaught exception:", err);
+    // The other way this process dies with responses open. `process.exit`
+    // destroys sockets mid-body, so every live SSE stream would be cut before
+    // its terminating chunk — the `TransferEncodingError` of live-streams.ts,
+    // with a crash rather than a scale-in behind it. Ending them is synchronous
+    // and cannot make the crash worse.
+    endLiveStreams();
     process.exit(1);
   });
 }

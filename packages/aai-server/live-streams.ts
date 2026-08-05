@@ -34,25 +34,49 @@ type EndStream = () => void;
 const live = new Set<EndStream>();
 
 /**
+ * Latched by {@link endLiveStreams}: once shutdown has drained the registry,
+ * nothing will ever drain it again, so a stream registered afterwards would be
+ * held open until the process exit destroys it — the exact truncation this
+ * module exists to prevent, reintroduced for the narrow set of clients that
+ * reconnect during shutdown. That set is not narrow in practice: the studio
+ * client's first reconnect backoff is 3s and the agent service's shutdown
+ * spends `SHUTDOWN_GRACE_MS` (3s) still serving on purpose, so a resubscribe
+ * landing here mid-shutdown is the MODAL case, not the rare one.
+ */
+let closed = false;
+
+/**
  * Register a live response's ender. Returns the deregistration, which the
  * caller MUST run when the stream ends on its own — a registry that only
  * grows is a leak, and worse, would let shutdown call an ender for a response
  * that has already completed.
+ *
+ * Once shutdown has run, `end` is invoked SYNCHRONOUSLY instead of registered:
+ * a stream that arrives during shutdown ends itself the same graceful way one
+ * caught by shutdown does (the terminating chunk goes out, the client backs
+ * off and lands on a live replica) rather than waiting for a drain that has
+ * already happened.
  */
 export function registerLiveStream(end: EndStream): () => void {
+  if (closed) {
+    end();
+    return () => undefined;
+  }
   live.add(end);
   return () => live.delete(end);
 }
 
 /**
- * End every registered response. Enders deregister themselves as their
- * streams settle, so iterate a copy.
+ * End every registered response, and latch the registry closed so streams
+ * opened after this point end themselves (see {@link closed}). Enders
+ * deregister themselves as their streams settle, so iterate a copy.
  *
  * Returns the count for the shutdown log: "how many live streams did this
  * replica cut" is the number you want when a client reports a reconnect
  * storm, and it is invisible otherwise.
  */
 export function endLiveStreams(): number {
+  closed = true;
   const enders = [...live];
   live.clear();
   for (const end of enders) {
@@ -69,4 +93,14 @@ export function endLiveStreams(): number {
 /** Test seam: number of registered streams. */
 export function liveStreamCount(): number {
   return live.size;
+}
+
+/**
+ * Test seam: drop the shutdown latch. A process shuts down once, so nothing in
+ * production resets this — but a suite that exercises shutdown has to hand the
+ * next test a registry that still accepts registrations.
+ */
+export function resetLiveStreams(): void {
+  live.clear();
+  closed = false;
 }

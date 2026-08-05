@@ -15,10 +15,18 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { afterEach, describe, expect, test } from "vitest";
-import { endLiveStreams, liveStreamCount, registerLiveStream } from "./live-streams.ts";
+import {
+  endLiveStreams,
+  liveStreamCount,
+  registerLiveStream,
+  resetLiveStreams,
+} from "./live-streams.ts";
 
 afterEach(() => {
-  endLiveStreams();
+  // Drops the shutdown latch too — without the reset, the first test to call
+  // endLiveStreams() would leave every later one registering into a closed
+  // registry.
+  resetLiveStreams();
 });
 
 describe("registry", () => {
@@ -39,6 +47,24 @@ describe("registry", () => {
     unregister();
     expect(liveStreamCount()).toBe(0);
     expect(endLiveStreams()).toBe(0);
+  });
+
+  test("a stream registered after shutdown ends immediately", () => {
+    // The reconnect case: the client's first backoff is 3s and shutdown keeps
+    // serving for SHUTDOWN_GRACE_MS, so a resubscribe lands here mid-shutdown
+    // routinely. Registering it would hold it open until the process exit cut
+    // it mid-chunk — the very truncation the registry exists to prevent.
+    endLiveStreams();
+    let ended = false;
+    const unregister = registerLiveStream(() => {
+      ended = true;
+    });
+    expect(ended).toBe(true);
+    // Not registered, so a later drain pass cannot end it a second time.
+    expect(liveStreamCount()).toBe(0);
+    expect(endLiveStreams()).toBe(0);
+    // And its deregistration is still safe to call as the stream settles.
+    expect(() => unregister()).not.toThrow();
   });
 
   test("one ender that throws does not strand the others", () => {
@@ -69,28 +95,34 @@ function rawGet(port: number, path: string): { done: Promise<string> } {
   return { done };
 }
 
+/**
+ * Serve the studio's SSE shape — hold open until something ends the stream,
+ * exactly as createSsePusher's `wait` does — on an ephemeral port.
+ */
+async function serveHeldSse(): Promise<{ port: number; close: () => Promise<void> }> {
+  const app = new Hono();
+  app.get("/events", (c) =>
+    streamSSE(c, async (stream) => {
+      const held = Promise.withResolvers<void>();
+      const unregister = registerLiveStream(() => held.resolve());
+      stream.onAbort(() => held.resolve());
+      await stream.writeSSE({ event: "project", data: '{"a":1}' });
+      try {
+        await held.promise;
+      } finally {
+        unregister();
+      }
+    }),
+  );
+  const server = serve({ fetch: app.fetch, port: 0 });
+  await new Promise((r) => server.once("listening", r));
+  const { port } = server.address() as net.AddressInfo;
+  return { port, close: () => new Promise<void>((r) => server.close(() => r())) };
+}
+
 describe("an SSE response ended by shutdown", () => {
   test("terminates its chunked body instead of being cut mid-frame", async () => {
-    const app = new Hono();
-    // The studio's shape: hold open until something ends the stream, exactly
-    // as createSsePusher's `wait` does.
-    app.get("/events", (c) =>
-      streamSSE(c, async (stream) => {
-        const held = Promise.withResolvers<void>();
-        const unregister = registerLiveStream(() => held.resolve());
-        stream.onAbort(() => held.resolve());
-        await stream.writeSSE({ event: "project", data: '{"a":1}' });
-        try {
-          await held.promise;
-        } finally {
-          unregister();
-        }
-      }),
-    );
-
-    const server = serve({ fetch: app.fetch, port: 0 });
-    await new Promise((r) => server.once("listening", r));
-    const { port } = server.address() as net.AddressInfo;
+    const { port, close } = await serveHeldSse();
 
     const res = rawGet(port, "/events");
     // Let the first frame land, then shut down as SIGTERM would.
@@ -106,6 +138,21 @@ describe("an SSE response ended by shutdown", () => {
     // And the stream deregistered as it settled.
     expect(liveStreamCount()).toBe(0);
 
-    await new Promise((r) => server.close(r));
+    await close();
+  });
+
+  test("a stream opened DURING shutdown also terminates its body", async () => {
+    const { port, close } = await serveHeldSse();
+    // Shutdown has already drained the registry; the client's 3s reconnect
+    // lands inside the grace window while this replica is still serving.
+    endLiveStreams();
+
+    const raw = await rawGet(port, "/events").done;
+    expect(raw).toMatch(/transfer-encoding: chunked/i);
+    expect(raw.endsWith("0\r\n\r\n")).toBe(true);
+    // Held open instead, it would have been cut by the process exit.
+    expect(liveStreamCount()).toBe(0);
+
+    await close();
   });
 });

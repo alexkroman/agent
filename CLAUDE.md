@@ -2355,6 +2355,25 @@ service's control work is light — and one container served both badly.
   registration — the wire-level guard is `live-streams.test.ts`, which reads
   raw socket bytes because a handler-level assertion passes with the bug
   present.
+
+  Three properties of the ending itself, each of which was a hole that put the
+  truncation back while the registry looked correct:
+  - **It runs FIRST, before the service teardown.** Ending a stream is
+    synchronous and depends on nothing, while `onShutdown` sleeps
+    `SHUTDOWN_GRACE_MS` and then awaits one drain request per resident guest —
+    seconds at best, unbounded when a guest is unreachable. Modal SIGKILLs the
+    container when its stop grace lapses, so ending them *after* the teardown
+    made the graceful end contingent on sandbox teardown finishing in time.
+  - **The registry LATCHES closed.** Nothing drains it twice, so a stream
+    registered after shutdown began would be held open until the exit destroyed
+    it; `registerLiveStream` therefore ends a late arrival on the spot instead.
+    That is not the rare case — the client's first reconnect backoff is 3s and
+    shutdown deliberately keeps serving for `SHUTDOWN_GRACE_MS`, so a
+    resubscribe landing mid-shutdown is the MODAL case. (`resetLiveStreams` is
+    a test-only seam for the latch.)
+  - **The crash path ends them too** (`installProcessSafetyNets` in
+    `service-config.ts`): `uncaughtException` → `process.exit(1)` destroys
+    sockets exactly as a scale-in does.
 - **A long-lived connection is ONE Modal input, so the function `timeout`
   bounds CALL DURATION** — not request latency. Both services therefore set it
   explicitly (`FUNCTION_TIMEOUT_SECS` = 4h on the agent app, matching
@@ -2368,6 +2387,26 @@ service's control work is light — and one container served both badly.
   are handshake redirects — but SSE streams through the studio proxy sit
   under the same cap, so it stays pinned rather than inherited. The sandbox
   layer hit the same trap first and documents it in `modal-sandbox-env.ts`.
+
+  **A stream reaped at that ceiling is cut MID-BODY — the same
+  `TransferEncodingError`, with no shutdown anywhere near it.** The studio
+  app's 30 min was reasoned as headroom for a cold-sandbox Publish, on the
+  premise that "nothing here is long-lived by design" — true of WebSockets
+  (chat streams browser→guest directly) and false of the event streams a
+  browser holds open for as long as a project is on screen, which did not
+  exist when the value was set. Both `GET /studio/events` and
+  `GET /studio/projects/:project/events` are open for hours.
+
+  The fix is that the streams bound THEMSELVES, well under the smallest
+  per-input timeout in the path (`SSE_MAX_STREAM_MS` = 15 min in
+  `studio-sse.ts`), ending gracefully so the client resubscribes — rather than
+  raising the ceiling, which only moves the cliff. It costs one 3s reconnect
+  per stream per cap period and nothing is missed across the gap, because the
+  first frame of every stream is the current state. Recycling at the origin
+  covers both hops: the agent service's relay sees its upstream end and closes
+  its own body, so neither app's input ever approaches its timeout. Raising the
+  cap means raising `STUDIO_FUNCTION_TIMEOUT_SECS` first — the invariant is
+  documented at both ends.
 
 ### Modal sandbox notes
 

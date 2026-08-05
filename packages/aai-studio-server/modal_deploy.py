@@ -41,13 +41,25 @@ STUDIO_MAX_CONTAINERS = 5
 STUDIO_TARGET_INPUTS = 20
 STUDIO_MAX_INPUTS = 40
 
-# Modal's default function timeout (300s) bounds each input. Unlike the agent
-# service this app holds no WebSockets — chat streams browser→guest directly —
-# so nothing here is long-lived by design. Publish is the outlier: it can boot
-# a cold guest sandbox and run a full in-guest `aai deploy` (typecheck, bundle,
-# upload) inside one request. This is precautionary headroom for that, not a
-# fix for an observed failure; it stays well under the agent service's 4h so a
-# wedged request is still reaped in reasonable time.
+# Modal's default function timeout (300s) bounds each input, and a long-lived
+# response is ONE input for its whole lifetime — so this bounds CALL DURATION,
+# not request latency (the trap the agent app documents at FUNCTION_TIMEOUT_SECS
+# and modal-sandbox-env.ts documents for sandboxes).
+#
+# Two kinds of input run long here. Publish can boot a cold guest sandbox and
+# run a full in-guest `aai deploy` (typecheck, bundle, upload) inside one
+# request. And — contrary to what this comment used to claim — the studio DOES
+# serve long-lived responses: `GET /studio/events` and
+# `GET /studio/projects/<x>/events` are SSE streams a browser holds open for as
+# long as a project is on screen. (Only WebSockets were ruled out; chat streams
+# browser→guest directly, but these do not.) An SSE stream reaped at this
+# ceiling is cut mid-body, which surfaces as the ASGI proxy's
+# `ClientPayloadError: ... TransferEncodingError`.
+#
+# The streams are bounded server-side instead, well under this value, and end
+# themselves gracefully so the client resubscribes — see SSE_MAX_STREAM_MS in
+# studio-sse.ts. This must stay comfortably ABOVE that cap; lowering it below
+# would put the truncation back.
 STUDIO_FUNCTION_TIMEOUT_SECS = 30 * 60
 
 # ── Guest-sandbox resources ──────────────────────────────────────────────────
