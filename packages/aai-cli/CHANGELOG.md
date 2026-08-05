@@ -1,5 +1,16 @@
 # @alexkroman1/aai-cli
 
+## 5.9.0
+
+### Minor Changes
+
+- f5e2c54: Require `aai login`: an exported ASSEMBLYAI_API_KEY no longer authenticates the CLI. Non-interactive callers point AAI_CONFIG_DIR at a config dir holding a logged-in key; in a project the variable stays a provider credential for `aai dev`.
+
+### Patch Changes
+
+- @alexkroman1/aai@5.9.0
+- @alexkroman1/aai-ui@5.9.0
+
 ## 5.8.1
 
 ### Patch Changes

@@ -1,5 +1,14 @@
 # aai-studio-server
 
+## 0.5.5
+
+### Patch Changes
+
+- aai-server@3.4.5
+- @alexkroman1/aai@5.9.0
+- @alexkroman1/aai-ui@5.9.0
+- aai-studio-client@0.4.5
+
 ## 0.5.4
 
 ### Patch Changes
