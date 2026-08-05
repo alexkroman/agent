@@ -608,3 +608,96 @@ describe("createPreviewDeployer", () => {
     warn.mockRestore();
   });
 });
+
+/**
+ * The queue is best-effort by design: preview scheduling must never fail a
+ * caller's request, and a queue read that fails must not wedge the drain. Both
+ * guarantees are pure error handling, so nothing else in this file reaches
+ * them — and a swallowed error is exactly the kind of code that rots unnoticed.
+ */
+describe("queue failures are contained", () => {
+  test("an enqueue failure is logged and never reaches the caller", async () => {
+    const workspaces = makeStore();
+    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const queue = createMemoryPreviewQueue();
+    queue.enqueue = () => Promise.reject(new Error("pgmq is down"));
+    const deployer = createPreviewDeployer({
+      workspaces,
+      deployWorkspace: async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "ok" }),
+      queue,
+      pollMs: 0,
+    });
+
+    // `schedule` is fire-and-forget from an editor PUT or an agent turn: a
+    // throw here would surface as a failed file write.
+    expect(() => deployer.schedule(SCOPE, PROJECT, TARGET)).not.toThrow();
+    await settled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("Preview queue enqueue failed"));
+    warn.mockRestore();
+  });
+
+  test("a claim failure yields no jobs rather than throwing", async () => {
+    const workspaces = makeStore();
+    const queue = createMemoryPreviewQueue();
+    queue.claim = () => Promise.reject(new Error("connection reset"));
+    const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "ok" }));
+    const deployer = createPreviewDeployer({
+      workspaces,
+      deployWorkspace: deploy,
+      queue,
+      pollMs: 0,
+    });
+
+    // The drain runs on a timer and on every edit; a rejection would become an
+    // unhandled one, and the next tick has to keep working regardless.
+    await expect(deployer.drainOnce()).resolves.toBeUndefined();
+    expect(deploy).not.toHaveBeenCalled();
+  });
+
+  test("an ack failure is logged, leaving the job for redelivery", async () => {
+    const workspaces = makeStore();
+    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const queue = createMemoryPreviewQueue();
+    queue.ack = () => Promise.reject(new Error("ack lost"));
+    const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "ok" }));
+    const deployer = createPreviewDeployer({
+      workspaces,
+      deployWorkspace: deploy,
+      queue,
+      pollMs: 0,
+    });
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await settled();
+
+    // The deploy still happened and was still stamped — an unacked job is
+    // redelivered and then no-ops on the matching hash, which is the whole
+    // reason at-least-once is safe here.
+    expect(deploy).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("Preview queue ack failed"));
+    warn.mockRestore();
+  });
+});
+
+describe("wakeProjectPreview containment", () => {
+  test("a failing workspace read is swallowed — the wake is only an accelerator", async () => {
+    // Hung off the once-per-open session broker call, whose response must not
+    // depend on it. The pane's own iframe fetch remains the functional path.
+    const workspaces = makeStore();
+    workspaces.get = () => Promise.reject(new Error("database unreachable"));
+    const schedule = vi.fn();
+    expect(() =>
+      wakeProjectPreview({
+        workspaces,
+        scope: SCOPE,
+        project: PROJECT,
+        target: TARGET,
+        schedule,
+        fetchImpl: () => Promise.reject(new Error("never asked")),
+      }),
+    ).not.toThrow();
+    await settled();
+    expect(schedule).not.toHaveBeenCalled();
+  });
+});
