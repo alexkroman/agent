@@ -13,7 +13,7 @@ import { createMemorySecretStore } from "aai-server/secret-store";
 import { isStudioPath } from "aai-server/studio-proxy";
 import { createTestOrchestrator, type TestFetch } from "aai-server/test-utils";
 import type { WorkspaceStore } from "aai-server/workspace-store";
-import { createStudioApp } from "./studio-app.ts";
+import { createStudioApp, type StudioAppOpts } from "./studio-app.ts";
 
 /** Combined-mode harness: agent orchestrator + studio app in one fetch. */
 type CombinedOverrides = Partial<OrchestratorOpts> & {
@@ -21,12 +21,19 @@ type CombinedOverrides = Partial<OrchestratorOpts> & {
   // StudioHonoEnv. Accepted here because this harness builds both apps.
   workspaces?: WorkspaceStore;
   chats?: ChatStore;
+  // Studio-only options. Forwarded so a test can assert they reach the
+  // session broker: the routes pass each one through a conditional spread,
+  // and with every option absent, omitting a key and passing it as
+  // `undefined` are indistinguishable from outside.
+  studioSessionRegistry?: StudioAppOpts["studioSessionRegistry"];
+  previewQueue?: StudioAppOpts["previewQueue"];
+  replicaId?: string;
 };
 
 export async function createTestCombined(overrides: CombinedOverrides = {}) {
   const secrets = overrides.secrets ?? createMemorySecretStore();
   const orch = await createTestOrchestrator({ ...overrides, secrets });
-  const { app: studioApp } = createStudioApp({
+  const { app: studioApp, dispose: disposeStudio } = createStudioApp({
     store: overrides.store ?? orch.store,
     workspaces: overrides.workspaces ?? orch.workspaces,
     chats: overrides.chats ?? orch.chats,
@@ -37,11 +44,19 @@ export async function createTestCombined(overrides: CombinedOverrides = {}) {
     ...(overrides.auth && { auth: overrides.auth }),
     ...(overrides.appDb && { appDb: overrides.appDb }),
     ...(overrides.slugLock && { slugLock: overrides.slugLock }),
+    ...(overrides.studioSessionRegistry && {
+      studioSessionRegistry: overrides.studioSessionRegistry,
+    }),
+    ...(overrides.previewQueue && { previewQueue: overrides.previewQueue }),
+    ...(overrides.replicaId && { replicaId: overrides.replicaId }),
   });
   const fetch: TestFetch = async (input, init) => {
     const path = typeof input === "string" ? input : new URL(String(input)).pathname;
     const pathname = new URL(path, "http://combined.test").pathname;
     return isStudioPath(pathname) ? studioApp.request(input, init) : orch.fetch(input, init);
   };
-  return { ...orch, fetch, studioApp };
+  // `disposeStudio` releases the studio's per-project coding-agent sandboxes;
+  // exposed so a test can assert the shutdown path rather than leaving the
+  // only caller in production code.
+  return { ...orch, fetch, studioApp, disposeStudio };
 }

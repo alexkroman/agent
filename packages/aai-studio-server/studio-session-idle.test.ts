@@ -228,10 +228,12 @@ describe("createSessionReaper", () => {
     // Node's Timeout has `unref`; a fake or browser-shimmed timer may not, and
     // an unconditional call would throw at construction.
     const real = globalThis.setInterval;
-    vi.spyOn(globalThis, "setInterval").mockImplementation(
-      // biome-ignore lint/suspicious/noExplicitAny: deliberately unref-less handle
-      ((fn: () => void, ms: number) => ({ id: real(fn, ms) })) as any,
-    );
+    // A handle with no `unref` — the shape a fake or browser-shimmed timer
+    // returns. Cast through `unknown` rather than widening to `any`.
+    const unreflessSetInterval = ((fn: () => void, ms: number) => ({
+      id: real(fn, ms),
+    })) as unknown as typeof globalThis.setInterval;
+    vi.spyOn(globalThis, "setInterval").mockImplementation(unreflessSetInterval);
 
     const sessions = createOwnedMap<string, SessionEntry>();
     const { fleet } = makeFleet();

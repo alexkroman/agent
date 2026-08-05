@@ -31,11 +31,12 @@ vi.mock("node:module", async (importOriginal) => {
     createRequire: (url: string | URL) => {
       const req = actual.createRequire(url);
       return Object.assign(req.bind(null) as typeof req, req, {
-        resolve: ((id: string, ...rest: unknown[]) =>
+        // Only the one-argument form is used by the module under test;
+        // everything else delegates to the real resolver unchanged.
+        resolve: ((id: string) =>
           id === "aai-studio-client/package.json"
             ? nodePath.join(tmp.dir, "package.json")
-            : // biome-ignore lint/suspicious/noExplicitAny: delegating to the real resolve
-              (req.resolve as any)(id, ...rest)) as typeof req.resolve,
+            : req.resolve(id)) as typeof req.resolve,
       });
     },
   };
