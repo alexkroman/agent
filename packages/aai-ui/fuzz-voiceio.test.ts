@@ -15,22 +15,20 @@
  * The simulated worklet mirrors the real one: it posts a drain-stop only after
  * a 'done' arrived, echoing that message's turn id, and delivery may lag the
  * host's own turn accounting by several operations.
+ *
+ * Driven by fast-check over a generated op script, so a failure shrinks to the
+ * shortest sequence that still breaks an invariant. Every run tears its world
+ * down in a `finally` — fake timers off, audio mocks restored — because
+ * shrinking REPLAYS the property dozens of times: a run that threw while fake
+ * timers were installed would hang the next replay's `createVoiceIO`, turning a
+ * real counterexample into a timeout.
  */
 
+import fc from "fast-check";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { installAudioMocks, type MockAudioWorkletNode, voiceOpts } from "./_react-test-utils.ts";
 import { createVoiceIO, type VoiceIO } from "./audio.ts";
 import { PLAYBACK_DONE_MAX_WAIT_MS } from "./types.ts";
-
-function rng(seed: number): () => number {
-  let s = seed | 0;
-  return () => {
-    s = (s + 0x6d_2b_79_f5) | 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
-  };
-}
 
 function noop(): void {
   /* expected console output / unused callback */
@@ -46,6 +44,44 @@ function lastDoneTurn(node: MockAudioWorkletNode): number | null {
   return dones.at(-1)?.turn ?? null;
 }
 
+/**
+ * One operation against the VoiceIO. Weights mirror the roll thresholds this
+ * harness used before fast-check drove it.
+ *
+ * `drainStop.lag` is the number of operations the worklet's stop delivery
+ * trails the host's own turn accounting by — `null` means it arrives at once.
+ * A lagged stop crossing a later flush and the next turn's `done()` is the
+ * in-flight-drain-stop race, so the lag is generated rather than fixed.
+ */
+type VoiceOp =
+  | { kind: "enqueue"; samples: number }
+  | { kind: "done" }
+  | { kind: "flush" }
+  | { kind: "drainStop"; lag: number | null }
+  | { kind: "interruptStop" }
+  | { kind: "suspendPlayback" };
+
+const voiceOpArb: fc.Arbitrary<VoiceOp> = fc.oneof(
+  {
+    weight: 30,
+    arbitrary: fc.record({
+      kind: fc.constant("enqueue" as const),
+      samples: fc.integer({ min: 4, max: 11 }),
+    }),
+  },
+  { weight: 25, arbitrary: fc.record({ kind: fc.constant("done" as const) }) },
+  { weight: 13, arbitrary: fc.record({ kind: fc.constant("flush" as const) }) },
+  {
+    weight: 18,
+    arbitrary: fc.record({
+      kind: fc.constant("drainStop" as const),
+      lag: fc.option(fc.integer({ min: 2, max: 5 }), { nil: null }),
+    }),
+  },
+  { weight: 7, arbitrary: fc.record({ kind: fc.constant("interruptStop" as const) }) },
+  { weight: 7, arbitrary: fc.record({ kind: fc.constant("suspendPlayback" as const) }) },
+);
+
 type PendingDone = {
   turn: number | null;
   settled: boolean;
@@ -56,7 +92,7 @@ type PendingDone = {
   promise: Promise<void>;
 };
 
-/** One seed's world: the VoiceIO under test plus the bookkeeping L1/L2 need. */
+/** One run's world: the VoiceIO under test plus the bookkeeping L1/L2 need. */
 type World = {
   io: VoiceIO;
   log: string[];
@@ -73,15 +109,15 @@ type World = {
   restore(): void;
 };
 
-async function createWorld(seed: number): Promise<World> {
-  // Fresh mocks per seed: the mock registries accumulate, so a shared install
+async function createWorld(): Promise<World> {
+  // Fresh mocks per run: the mock registries accumulate, so a shared install
   // would leave this iteration driving a previous one's dead node.
   const audio = installAudioMocks();
   const warn = vi.spyOn(console, "warn").mockImplementation(noop);
   const io = await createVoiceIO(voiceOpts({ onError: noop }));
   const world: World = {
     io,
-    log: [`seed=${seed}`],
+    log: [],
     pending: [],
     violations: [],
     elapsed: 0,
@@ -139,7 +175,7 @@ function registerDone(w: World): void {
 }
 
 /** The worklet drained the turn its last 'done' named, and posts its stop. */
-function postDrainStop(w: World, r: () => number): void {
+function postDrainStop(w: World, lag: number | null): void {
   const node = w.playNode();
   const turn = node ? lastDoneTurn(node) : null;
   if (!node || turn === null) return;
@@ -147,14 +183,13 @@ function postDrainStop(w: World, r: () => number): void {
     for (const p of w.pending) if (p.turn === turn) p.ownStopDelivered = true;
     node.port.simulateMessage({ event: "stop", reason: "done", turn, stats: undefined });
   };
-  if (r() < 0.5) {
+  if (lag === null) {
     w.log.push(`stop(done, turn=${turn}) delivered now`);
     deliver();
     return;
   }
   // Lagged delivery crosses later operations — a flush and the next turn's
   // done() — which is the in-flight-drain-stop race.
-  const lag = 2 + Math.floor(r() * 4);
   w.log.push(`stop(done, turn=${turn}) delivery lagged ${lag} ops`);
   setTimeout(deliver, lag);
 }
@@ -171,20 +206,19 @@ function postInterruptStop(w: World): void {
   });
 }
 
-async function randomStep(w: World, r: () => number): Promise<void> {
-  const roll = r();
-  if (roll < 0.3) {
+async function applyOp(w: World, op: VoiceOp): Promise<void> {
+  if (op.kind === "enqueue") {
     w.log.push("enqueue");
-    w.io.enqueue(bytes(4 + Math.floor(r() * 8)));
-  } else if (roll < 0.55) {
+    w.io.enqueue(bytes(op.samples));
+  } else if (op.kind === "done") {
     registerDone(w);
-  } else if (roll < 0.68) {
+  } else if (op.kind === "flush") {
     w.log.push("flush");
     w.io.flush();
     w.endTurns();
-  } else if (roll < 0.86) {
-    postDrainStop(w, r);
-  } else if (roll < 0.93) {
+  } else if (op.kind === "drainStop") {
+    postDrainStop(w, op.lag);
+  } else if (op.kind === "interruptStop") {
     postInterruptStop(w);
   } else {
     w.log.push("playback context suspended");
@@ -194,38 +228,56 @@ async function randomStep(w: World, r: () => number): Promise<void> {
   await vi.advanceTimersByTimeAsync(1);
 }
 
+/** Drive one op script; returns the invariant violations it produced. */
+async function runVoiceIoScript(ops: readonly VoiceOp[]): Promise<string[]> {
+  // Built on REAL timers: createVoiceIO awaits module loading, which is real
+  // I/O that fake timers cannot pump.
+  const w = await createWorld();
+  vi.useFakeTimers();
+  try {
+    for (const op of ops) await applyOp(w, op);
+
+    // L3: close twice — idempotent, never rejects. Reported through `problems`
+    // rather than asserted here, so this helper stays assertion-free and every
+    // violation reaches the property with the op log attached.
+    w.endTurns();
+    const problems: string[] = [];
+    for (const attempt of [1, 2]) {
+      const outcome = await w.io.close().then(
+        (value) => (value === undefined ? null : `resolved with ${String(value)}`),
+        (err: unknown) => `rejected with ${String(err)}`,
+      );
+      if (outcome) problems.push(`close() #${attempt} ${outcome}`);
+    }
+
+    // L1: every done() settles once the context is gone.
+    w.elapsed += PLAYBACK_DONE_MAX_WAIT_MS + 1000;
+    await vi.advanceTimersByTimeAsync(PLAYBACK_DONE_MAX_WAIT_MS + 1000);
+    await Promise.all(w.pending.map((p) => p.promise));
+
+    problems.push(...w.violations);
+    const unsettled = w.pending.filter((p) => !p.settled).length;
+    if (unsettled > 0) problems.push(`${unsettled} done() never settled`);
+    return problems.map((problem) => `${problem}\n  ${w.log.join("\n  ")}`);
+  } finally {
+    // Order matters: fake timers must come off even when an assertion above
+    // threw, or the next shrink replay's createVoiceIO never resolves.
+    vi.useRealTimers();
+    w.restore();
+  }
+}
+
 describe("fuzz: VoiceIO lifecycle", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
 
   it("settles every done() and only for its own turn", async () => {
-    for (let seed = 1; seed <= 200; seed++) {
-      const w = await createWorld(seed);
-      const r = rng(seed);
-      vi.useFakeTimers();
-
-      for (let step = 0; step < 30; step++) {
-        await randomStep(w, r);
-      }
-
-      // L3: close twice — idempotent, never rejects.
-      w.endTurns();
-      await expect(w.io.close()).resolves.toBeUndefined();
-      await expect(w.io.close()).resolves.toBeUndefined();
-
-      // L1: every done() settles once the context is gone.
-      w.elapsed += PLAYBACK_DONE_MAX_WAIT_MS + 1000;
-      await vi.advanceTimersByTimeAsync(PLAYBACK_DONE_MAX_WAIT_MS + 1000);
-      await Promise.all(w.pending.map((p) => p.promise));
-      expect(
-        w.pending.filter((p) => !p.settled),
-        `seed ${seed}: unsettled done()\n  ${w.log.join("\n  ")}`,
-      ).toEqual([]);
-      expect(w.violations, `seed ${seed}: stale settle\n  ${w.log.join("\n  ")}`).toEqual([]);
-
-      vi.useRealTimers();
-      w.restore();
-    }
-  });
+    await fc.assert(
+      fc.asyncProperty(fc.array(voiceOpArb, { minLength: 1, maxLength: 30 }), async (ops) => {
+        expect(await runVoiceIoScript(ops)).toEqual([]);
+      }),
+      { numRuns: 200 },
+    );
+  }, 120_000);
 });
