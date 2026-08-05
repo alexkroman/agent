@@ -4,9 +4,15 @@
  * FUZZ HARNESS: randomized snapshot commits against the tool-call /
  * custom-event hooks, checking exactly-once delivery and completeness — the
  * watermark + `fired` cursor in hooks.ts is the thing under test.
+ *
+ * Driven by fast-check: the generated value is the whole commit script (a list
+ * of commits, each a list of mutations), so a failure SHRINKS to the shortest
+ * script that still breaks delivery — usually two or three mutations — instead
+ * of reporting a seed and a 40-line op log to read by hand.
  */
 
 import { act, renderHook } from "@testing-library/react";
+import fc from "fast-check";
 import { createElement, type ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 import { createMockSessionCore } from "./_react-test-utils.ts";
@@ -15,17 +21,10 @@ import { useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
 import type { AgentCustomEvent } from "./session-core-types.ts";
 import type { ToolCallInfo } from "./types.ts";
 
-function rng(seed: number): () => number {
-  let s = seed | 0;
-  return () => {
-    s = (s + 0x6d_2b_79_f5) | 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
-  };
-}
-
 const CAP = 200;
+
+/** Enough commits to slide the snapshot window well past its cap. */
+const OVERFLOW_STEPS = CAP + 60;
 
 function appendCapped<T>(list: readonly T[], item: T, cap: number): T[] {
   if (list.length < cap) return [...list, item];
@@ -39,6 +38,18 @@ type Collections = { toolCalls: ToolCallInfo[]; customEvents: AgentCustomEvent[]
 
 /** Counters mirroring the message handlers' monotonic sequence numbers. */
 type Seqs = { tool: number; event: number };
+
+/**
+ * One mutation of the snapshot collections. `pick` indexes the pending calls
+ * modulo their count, so the choice stays meaningful however many are pending
+ * when the mutation runs — a state-dependent selection fast-check cannot know
+ * at generation time.
+ */
+type Mutation =
+  | { kind: "addToolCall"; name: "alpha" | "beta" }
+  | { kind: "completePending"; pick: number }
+  | { kind: "addEvent"; name: "ping" | "pong" }
+  | { kind: "reset" };
 
 function addToolCall(c: Collections, seqs: Seqs, name: string): void {
   seqs.tool += 1;
@@ -56,13 +67,13 @@ function addToolCall(c: Collections, seqs: Seqs, name: string): void {
   );
 }
 
-/** Complete one pending call, chosen at random — often out of arrival order. */
-function completeRandomPending(c: Collections, r: () => number): void {
+/** Complete one pending call — often out of arrival order. */
+function completePending(c: Collections, pick: number): void {
   const pending = c.toolCalls.filter((tc) => tc.status === "pending");
-  const pick = pending[Math.floor(r() * pending.length)];
-  if (!pick) return;
+  const chosen = pending[pick % pending.length];
+  if (!chosen) return;
   c.toolCalls = c.toolCalls.map((tc) =>
-    tc.callId === pick.callId ? { ...tc, status: "done" as const, result: '{"ok":true}' } : tc,
+    tc.callId === chosen.callId ? { ...tc, status: "done" as const, result: '{"ok":true}' } : tc,
   );
 }
 
@@ -75,15 +86,13 @@ function addEvent(c: Collections, seqs: Seqs, name: string): void {
   );
 }
 
-/** One random mutation of the snapshot collections. */
-function mutate(c: Collections, seqs: Seqs, r: () => number): void {
-  const roll = r();
-  if (roll < 0.4) {
-    addToolCall(c, seqs, r() < 0.5 ? "alpha" : "beta");
-  } else if (roll < 0.7) {
-    completeRandomPending(c, r);
-  } else if (roll < 0.9) {
-    addEvent(c, seqs, r() < 0.6 ? "ping" : "pong");
+function applyMutation(c: Collections, seqs: Seqs, m: Mutation): void {
+  if (m.kind === "addToolCall") {
+    addToolCall(c, seqs, m.name);
+  } else if (m.kind === "completePending") {
+    completePending(c, m.pick);
+  } else if (m.kind === "addEvent") {
+    addEvent(c, seqs, m.name);
   } else {
     // Session reset: the server `reset` frame clears both collections.
     c.toolCalls = [];
@@ -91,24 +100,60 @@ function mutate(c: Collections, seqs: Seqs, r: () => number): void {
   }
 }
 
+/**
+ * Mutation weights mirror the original harness's roll thresholds: adds
+ * dominate, resets are rare. Weighting matters more than it looks — an even
+ * split would spend most of the run on resets and empty collections, which is
+ * the state where these hooks have nothing to get wrong.
+ */
+const mutationArb: fc.Arbitrary<Mutation> = fc.oneof(
+  {
+    weight: 4,
+    arbitrary: fc.record({
+      kind: fc.constant("addToolCall" as const),
+      name: fc.constantFrom("alpha" as const, "beta" as const),
+    }),
+  },
+  {
+    weight: 3,
+    arbitrary: fc.record({
+      kind: fc.constant("completePending" as const),
+      pick: fc.nat({ max: 1000 }),
+    }),
+  },
+  {
+    weight: 2,
+    arbitrary: fc.record({
+      kind: fc.constant("addEvent" as const),
+      name: fc.constantFrom("ping" as const, "pong" as const),
+    }),
+  },
+  { weight: 1, arbitrary: fc.record({ kind: fc.constant("reset" as const) }) },
+);
+
+/** A commit script: each entry is one snapshot commit's batch of mutations. */
+const scriptArb = fc.array(fc.array(mutationArb, { minLength: 1, maxLength: 4 }), {
+  minLength: 1,
+  maxLength: 12,
+});
+
 const dupes = <T>(xs: T[]): T[] => xs.filter((x, i) => xs.indexOf(x) !== i);
 
-/** What the hooks actually delivered for one seed, and what they owed. */
-type SeedRun = {
+/** What the hooks actually delivered for one script, and what they owed. */
+type Run = {
   fired: { start: string[]; done: string[]; events: number[] };
   expected: { start: Set<string>; done: Set<string>; events: Set<number> };
 };
 
 /**
- * Drive one seed's commit sequence through all three hooks. Expectations are
- * everything that appeared in a COMMITTED snapshot, so a call created and
- * evicted inside one batch is not held against the hook.
+ * Drive one commit script through all three hooks. Expectations are everything
+ * that appeared in a COMMITTED snapshot, so a call created and evicted inside
+ * one batch is not held against the hook.
  */
-function runDeliverySeed(seed: number): SeedRun {
-  const r = rng(seed);
+function runScript(script: Mutation[][]): Run {
   const core = createMockSessionCore({ state: "ready", started: true });
-  const fired: SeedRun["fired"] = { start: [], done: [], events: [] };
-  const expected: SeedRun["expected"] = { start: new Set(), done: new Set(), events: new Set() };
+  const fired: Run["fired"] = { start: [], done: [], events: [] };
+  const expected: Run["expected"] = { start: new Set(), done: new Set(), events: new Set() };
 
   const wrapper = ({ children }: { children: ReactNode }) =>
     createElement(SessionProvider, { value: core }, children);
@@ -123,9 +168,8 @@ function runDeliverySeed(seed: number): SeedRun {
 
   const c: Collections = { toolCalls: [], customEvents: [] };
   const seqs: Seqs = { tool: 0, event: 0 };
-  for (let commit = 0; commit < 12; commit++) {
-    const mutations = 1 + Math.floor(r() * 4);
-    for (let m = 0; m < mutations; m++) mutate(c, seqs, r);
+  for (const batch of script) {
+    for (const m of batch) applyMutation(c, seqs, m);
     act(() => core.update({ toolCalls: c.toolCalls, customEvents: c.customEvents }));
     for (const tc of c.toolCalls) {
       expected.start.add(tc.callId);
@@ -136,41 +180,74 @@ function runDeliverySeed(seed: number): SeedRun {
   return { fired, expected };
 }
 
+/**
+ * Push more tool calls through `useToolResult` than the snapshot cap holds,
+ * settling the ones the script names at the step it names, so the window slides
+ * past a call's arrival before it settles.
+ */
+function runOverflow(settles: readonly { at: number; pick: number }[]): {
+  fired: string[];
+  everDone: Set<string>;
+} {
+  const core = createMockSessionCore({ state: "ready", started: true });
+  const fired: string[] = [];
+  const wrapper = ({ children }: { children: ReactNode }) =>
+    createElement(SessionProvider, { value: core }, children);
+  renderHook(() => useToolResult((_n, _res, tc) => fired.push(tc.callId)), { wrapper });
+
+  const byStep = new Map<number, number[]>();
+  for (const { at, pick } of settles) byStep.set(at, [...(byStep.get(at) ?? []), pick]);
+
+  const c: Collections = { toolCalls: [], customEvents: [] };
+  const seqs: Seqs = { tool: 0, event: 0 };
+  const everDone = new Set<string>();
+  for (let step = 0; step < OVERFLOW_STEPS; step++) {
+    addToolCall(c, seqs, "alpha");
+    for (const pick of byStep.get(step) ?? []) completePending(c, pick);
+    act(() => core.update({ toolCalls: c.toolCalls }));
+    for (const tc of c.toolCalls) if (tc.status === "done") everDone.add(tc.callId);
+  }
+  return { fired, everDone };
+}
+
 describe("fuzz: tool-call + custom-event hook delivery", () => {
   it("delivers every settled tool call and matching event exactly once", () => {
-    for (let seed = 1; seed <= 60; seed++) {
-      const { fired, expected } = runDeliverySeed(seed);
-      expect(dupes(fired.start), `seed ${seed}: duplicate start fires`).toEqual([]);
-      expect(dupes(fired.done), `seed ${seed}: duplicate done fires`).toEqual([]);
-      expect(dupes(fired.events), `seed ${seed}: duplicate events`).toEqual([]);
-      expect(new Set(fired.start), `seed ${seed}: start delivery mismatch`).toEqual(expected.start);
-      expect(new Set(fired.done), `seed ${seed}: done delivery mismatch`).toEqual(expected.done);
-      expect(new Set(fired.events), `seed ${seed}: event delivery mismatch`).toEqual(
-        expected.events,
-      );
-    }
+    fc.assert(
+      fc.property(scriptArb, (script) => {
+        const { fired, expected } = runScript(script);
+        expect(dupes(fired.start), "duplicate start fires").toEqual([]);
+        expect(dupes(fired.done), "duplicate done fires").toEqual([]);
+        expect(dupes(fired.events), "duplicate events").toEqual([]);
+        expect(new Set(fired.start), "start delivery mismatch").toEqual(expected.start);
+        expect(new Set(fired.done), "done delivery mismatch").toEqual(expected.done);
+        expect(new Set(fired.events), "event delivery mismatch").toEqual(expected.events);
+      }),
+      { numRuns: 100 },
+    );
   });
 
   it("overflows the cap without dropping or duplicating a delivery", () => {
-    const core = createMockSessionCore({ state: "ready", started: true });
-    const fired: string[] = [];
-    const wrapper = ({ children }: { children: ReactNode }) =>
-      createElement(SessionProvider, { value: core }, children);
-    renderHook(() => useToolResult((_n, _res, tc) => fired.push(tc.callId)), { wrapper });
-
-    // More tool calls than the snapshot cap, some settling only after the
-    // window has slid past their arrival.
-    const c: Collections = { toolCalls: [], customEvents: [] };
-    const seqs: Seqs = { tool: 0, event: 0 };
-    const r = rng(99);
-    const everDone = new Set<string>();
-    for (let i = 0; i < CAP + 60; i++) {
-      addToolCall(c, seqs, "alpha");
-      if (r() < 0.6) completeRandomPending(c, r);
-      act(() => core.update({ toolCalls: c.toolCalls }));
-      for (const tc of c.toolCalls) if (tc.status === "done") everDone.add(tc.callId);
-    }
-    expect(dupes(fired)).toEqual([]);
-    expect(new Set(fired)).toEqual(everDone);
+    // The step COUNT is fixed — the point is to push more calls than the
+    // snapshot cap — so the only generated part is which steps also settle a
+    // call, letting the window slide past a call's arrival before it settles.
+    //
+    // Settles are a SPARSE list of (step, pick) rather than one option per
+    // step: a fixed-length array shrinks to 260 entries of mostly `null`,
+    // which prints as a wall and buries the one entry that matters. This form
+    // shrinks to the handful of settles actually needed to break delivery.
+    const settleArb = fc.array(
+      fc.record({ at: fc.nat({ max: OVERFLOW_STEPS - 1 }), pick: fc.nat({ max: 1000 }) }),
+      { maxLength: 60 },
+    );
+    fc.assert(
+      fc.property(settleArb, (settles) => {
+        const { fired, everDone } = runOverflow(settles);
+        expect(dupes(fired)).toEqual([]);
+        expect(new Set(fired)).toEqual(everDone);
+      }),
+      // Each run drives 260 commits through React, so this one is expensive;
+      // the interesting variation is which calls settle late, not how many runs.
+      { numRuns: 10 },
+    );
   });
 });
