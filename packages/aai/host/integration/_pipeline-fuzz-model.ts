@@ -1,31 +1,15 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * Machinery for the pipeline transport's randomized interleaving fuzz
- * (`pipeline-fuzz.integration.test.ts`): the seeded PRNG, the LLM
- * request-payload validator, and the stream-lifetime probe.
+ * (`pipeline-fuzz.integration.test.ts`): the LLM request-payload validator and
+ * the stream-lifetime probe. fast-check supplies the randomness now, so there is
+ * no PRNG here.
  *
  * Kept out of the spec so each piece stays small enough to read on its own, and
  * so the spec is the oracles and the generator rather than their plumbing.
  *
  * @internal Test infrastructure, not part of any public API.
  */
-
-/** mulberry32's step constant (0x6d2b79f5). */
-const MULBERRY_STEP = 1_831_565_813;
-/** 2^32, to map a uint32 into [0, 1). */
-const UINT32_RANGE = 2 ** 32;
-
-/** Deterministic PRNG — a seed must replay the same event sequence. */
-export function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + MULBERRY_STEP) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / UINT32_RANGE;
-  };
-}
 
 /** Collapse whitespace so a text comparison is about content, not chunking. */
 export function norm(s: string): string {

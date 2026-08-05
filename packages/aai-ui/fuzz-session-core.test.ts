@@ -3,25 +3,25 @@
  * FUZZ HARNESS: randomized interleavings of server frames, client
  * control calls, and socket lifecycle events against `createSessionCore`,
  * checking snapshot invariants after every step.
+ *
+ * Driven by fast-check over a generated op script, so a failure shrinks to the
+ * shortest interleaving that still breaks an invariant.
+ *
+ * Two details this harness needs that the others do not. Unhandled rejections
+ * are collected and CLEARED per run: they are process-global, and one left over
+ * from an earlier run would fail every later one — including the shrink
+ * replays, which would then converge on the wrong counterexample. And the audio
+ * mocks plus fake timers are installed once for the whole property rather than
+ * per run, because `loadAudioModules` is real I/O that fake timers cannot pump.
  */
 
+import fc from "fast-check";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installAudioMocks } from "./_react-test-utils.ts";
 import { MockWebSocket, makeConfig } from "./_session-core-test-utils.ts";
 import { createSessionCore } from "./session-core.ts";
 import { loadAudioModules } from "./session-core-audio-setup.ts";
 import type { SessionCore, SessionSnapshot } from "./session-core-types.ts";
-
-function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d_2b_79_f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
-  };
-}
 
 function noop(): void {
   /* expected console output */
@@ -30,7 +30,6 @@ function noop(): void {
 type Ctx = {
   core: SessionCore;
   socket: () => MockWebSocket | null;
-  rnd: () => number;
   log: string[];
 };
 
@@ -42,6 +41,7 @@ const SERVER_OPS = [
   "agent_transcript",
   "tool_call",
   "tool_call_done",
+  "tool_call_done_unknown",
   "reply_done",
   "cancelled",
   "reset",
@@ -96,12 +96,22 @@ function serverOp(ctx: Ctx, op: (typeof SERVER_OPS)[number]): void {
       });
       break;
     case "tool_call_done": {
-      // Sometimes complete a real pending call, sometimes an unknown one.
+      // Complete a real pending call when there is one. `tool_call_done_unknown`
+      // is the other half of what used to be one op with an 80/20 roll inside —
+      // split so a counterexample says which case it needed.
       const pending = ctx.core.getSnapshot().toolCalls.find((tc) => tc.status === "pending");
-      const id = pending && ctx.rnd() < 0.8 ? pending.callId : `tc-${++toolIdSeq}`;
+      const id = pending ? pending.callId : `tc-${++toolIdSeq}`;
       send({ type: "tool_call_done", toolCallId: id, toolName: "lookup", result: "{}" });
       break;
     }
+    case "tool_call_done_unknown":
+      send({
+        type: "tool_call_done",
+        toolCallId: `tc-${++toolIdSeq}`,
+        toolName: "lookup",
+        result: "{}",
+      });
+      break;
     case "reply_done":
       send({ type: "reply_done" });
       break;
@@ -191,22 +201,53 @@ function socketOp(ctx: Ctx, op: (typeof SOCKET_OPS)[number]): void {
   }
 }
 
-/** Pick and apply one random operation. */
-async function randomStep(ctx: Ctx): Promise<void> {
-  const roll = ctx.rnd();
-  const pick = <T>(ops: readonly T[]): T => ops[Math.floor(ctx.rnd() * ops.length)] as T;
-  if (roll < 0.55) {
-    const op = pick(SERVER_OPS);
-    ctx.log.push(`server:${op}`);
-    serverOp(ctx, op);
-  } else if (roll < 0.8) {
-    const op = pick(CLIENT_OPS);
-    ctx.log.push(`client:${op}`);
-    clientOp(ctx, op);
-  } else if (roll < 0.92) {
-    const op = pick(SOCKET_OPS);
-    ctx.log.push(`socket:${op}`);
-    socketOp(ctx, op);
+/**
+ * One step of an interleaving. Weights mirror the roll thresholds this harness
+ * used before fast-check drove it: mostly server frames, then client control
+ * calls, then socket lifecycle, and occasionally a full settle.
+ */
+type Step =
+  | { kind: "server"; op: (typeof SERVER_OPS)[number] }
+  | { kind: "client"; op: (typeof CLIENT_OPS)[number] }
+  | { kind: "socket"; op: (typeof SOCKET_OPS)[number] }
+  | { kind: "settle" };
+
+const stepArb: fc.Arbitrary<Step> = fc.oneof(
+  {
+    weight: 55,
+    arbitrary: fc.record({
+      kind: fc.constant("server" as const),
+      op: fc.constantFrom(...SERVER_OPS),
+    }),
+  },
+  {
+    weight: 25,
+    arbitrary: fc.record({
+      kind: fc.constant("client" as const),
+      op: fc.constantFrom(...CLIENT_OPS),
+    }),
+  },
+  {
+    weight: 12,
+    arbitrary: fc.record({
+      kind: fc.constant("socket" as const),
+      op: fc.constantFrom(...SOCKET_OPS),
+    }),
+  },
+  { weight: 8, arbitrary: fc.record({ kind: fc.constant("settle" as const) }) },
+);
+
+/** Apply one generated operation. */
+async function applyStep(ctx: Ctx, step: Step): Promise<void> {
+  if (step.kind === "server") {
+    ctx.log.push(`server:${step.op}`);
+    serverOp(ctx, step.op);
+  } else if (step.kind === "client") {
+    ctx.log.push(`client:${step.op}`);
+    clientOp(ctx, step.op);
+  } else if (step.kind === "socket") {
+    ctx.log.push(`socket:${step.op}`);
+    socketOp(ctx, step.op);
   } else {
     ctx.log.push("settle");
     await settle();
@@ -283,51 +324,70 @@ describe("fuzz: session-core interleavings", () => {
     process.removeAllListeners("unhandledRejection");
   });
 
-  it("holds snapshot invariants across random op sequences", async () => {
-    for (let seed = 1; seed <= 200; seed++) {
-      const rnd = mulberry32(seed);
-      let socket: MockWebSocket | null = null;
-      const WS = class extends MockWebSocket {
-        constructor(url: string) {
-          super(url);
-          socket = this;
-        }
-      } as unknown as import("./types.ts").WebSocketConstructor;
-
-      const core = createSessionCore({ platformUrl: "https://host/agent/", WebSocket: WS });
-      const log: string[] = [`seed=${seed}`];
-      const ctx: Ctx = { core, socket: () => socket, rnd, log };
-
-      let prev = core.getSnapshot();
-      for (let i = 0; i < 24; i++) {
-        await randomStep(ctx);
-        const snap = core.getSnapshot();
-        checkInvariants(snap, prev, log);
-        prev = snap;
+  /**
+   * Drive one interleaving, then tear the session down and check it quiesces.
+   * Returns the problems found, so every violation reaches the property with
+   * the op log attached rather than throwing past it.
+   */
+  async function runScript(steps: readonly Step[]): Promise<string[]> {
+    // Process-global, so clear before the run: a rejection left by an earlier
+    // run would be reported against this one and mislead the shrinker.
+    rejections.length = 0;
+    let socket: MockWebSocket | null = null;
+    const WS = class extends MockWebSocket {
+      constructor(url: string) {
+        super(url);
+        socket = this;
       }
-      await settle();
-      checkInvariants(core.getSnapshot(), prev, log);
+    } as unknown as import("./types.ts").WebSocketConstructor;
 
-      // Put the session mid-reply where possible, so the teardown below has a
-      // pending playback drain to race with (microtask flush only — advancing
-      // the clock here would settle the very drain under test).
-      serverOp(ctx, "audio_chunk");
-      serverOp(ctx, "audio_done");
-      await vi.advanceTimersByTimeAsync(0);
+    const core = createSessionCore({ platformUrl: "https://host/agent/", WebSocket: WS });
+    const log: string[] = [];
+    const ctx: Ctx = { core, socket: () => socket, log };
 
-      // Quiescence: after an explicit teardown with no further server frames,
-      // no late async continuation may write session state again.
-      const fatal = core.getSnapshot().state === "error";
-      core.disconnect();
-      const afterTeardown = core.getSnapshot();
-      await settle();
-      const quiesced = core.getSnapshot();
-      expect(
-        quiesced.state,
-        `seed ${seed}: state moved after teardown (was ${afterTeardown.state})\nops:\n  ${log.join("\n  ")}`,
-      ).toBe(fatal ? afterTeardown.state : "disconnected");
-      expect(quiesced.recording, `seed ${seed}: recording after teardown`).toBe(false);
-      expect(rejections, `unhandled rejections for seed ${seed}`).toEqual([]);
+    let prev = core.getSnapshot();
+    for (const step of steps) {
+      await applyStep(ctx, step);
+      const snap = core.getSnapshot();
+      checkInvariants(snap, prev, log);
+      prev = snap;
     }
-  });
+    await settle();
+    checkInvariants(core.getSnapshot(), prev, log);
+
+    // Put the session mid-reply where possible, so the teardown below has a
+    // pending playback drain to race with (microtask flush only — advancing
+    // the clock here would settle the very drain under test).
+    serverOp(ctx, "audio_chunk");
+    serverOp(ctx, "audio_done");
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Quiescence: after an explicit teardown with no further server frames,
+    // no late async continuation may write session state again.
+    const fatal = core.getSnapshot().state === "error";
+    core.disconnect();
+    const afterTeardown = core.getSnapshot();
+    await settle();
+    const quiesced = core.getSnapshot();
+
+    const problems: string[] = [];
+    const expectedState = fatal ? afterTeardown.state : "disconnected";
+    if (quiesced.state !== expectedState) {
+      problems.push(
+        `state moved after teardown: ${afterTeardown.state} -> ${quiesced.state}, expected ${expectedState}`,
+      );
+    }
+    if (quiesced.recording) problems.push("recording after teardown");
+    for (const rejection of rejections) problems.push(`unhandled rejection: ${String(rejection)}`);
+    return problems.map((problem) => `${problem}\nops:\n  ${log.join("\n  ")}`);
+  }
+
+  it("holds snapshot invariants across random op sequences", async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.array(stepArb, { minLength: 1, maxLength: 24 }), async (steps) => {
+        expect(await runScript(steps)).toEqual([]);
+      }),
+      { numRuns: 200 },
+    );
+  }, 120_000);
 });

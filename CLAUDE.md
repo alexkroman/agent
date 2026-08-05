@@ -2072,7 +2072,12 @@ you only need to list one package.
   result is usually a broken generator, not a fixed bug. Discovery and
   regression are separate jobs — findings get a deterministic spec of their own
   (the `capLlm` one lives in `pipeline-history.test.ts`), because whether a
-  random walk reaches a given alignment is luck.
+  random walk reaches a given alignment is luck. That is measured, not assumed:
+  reverting the `capLlm` fix leaves this suite GREEN (both before and after it
+  moved to fast-check) while `pipeline-history.test.ts` fails immediately. The
+  step count carries an unusual `minLength`, because a run spends its first
+  steps getting the session past `start()` and shorter scripts finish before a
+  reply ever completes.
 - Slow/integration tests have separate per-package configs
   (`vitest.slow.config.ts`, `vitest.integration.config.ts`) to avoid running
   during `vitest run`.
@@ -2190,24 +2195,80 @@ AAI_TEST_PM=npm pnpm test:e2e
 
 Treat those two branches as a debugging tool, not covered ground.
 
+#### Property tests run on fast-check
+
+Every randomized suite in the repo — the four `aai-ui/fuzz-*.test.ts`
+harnesses, `worklets/audio-stress.test.ts`,
+`aai-studio-server/studio-concurrency-fuzz.test.ts`,
+`aai/host/integration/pipeline-fuzz.integration.test.ts`, and the value-level
+properties in `sdk/protocol.test.ts` / `host/ssrf.test.ts` — is driven by
+**fast-check**. Six hand-rolled mulberry32/xorshift copies and their
+`for (seed = 1; seed <= N)` loops are gone; do not add a seventh.
+
+What that buys, and the rules that come with it:
+
+- **Failures SHRINK.** A hit reports the smallest input that still breaks the
+  invariant, so a counterexample reads as a scenario rather than a transcript:
+  reverting the drain-stop turn-id guard in `audio.ts` shrinks to
+  `enqueue, done, drainStop(lag=2), done`, and dropping the turn-epoch bump in
+  `cleanupAudio` shrinks to `start, open, config`. The `fc.scheduler` harnesses
+  additionally print the interleaving as a `schedulerFor()` template that
+  pastes straight into a deterministic regression test.
+- **Generate the whole world, not a seed.** Anything a PRNG used to decide
+  becomes part of the generated value. Where a run consumes an unbounded number
+  of decisions (chunk sizes across a second of audio, LLM script steps, deploy
+  outcomes), generate a SHORT list and consume it CYCLICALLY — one entry per
+  decision prints a wall of a counterexample and shrinks to nothing readable.
+- **State-dependent choices stay dynamic.** A step that needs live state (which
+  pending tool call to settle, whether a socket can open) generates an INTENT
+  and no-ops when its precondition fails. Forcing it would drive the system
+  through a transition it cannot really make.
+- **Every run must be independently replayable.** Shrinking re-runs the property
+  dozens of times, so per-run state has to be torn down in a `finally` (fake
+  timers, audio mocks) and process-global state cleared per run (unhandled
+  rejections). A leak here does not merely flake — it converges the shrinker on
+  the wrong counterexample.
+- **Coverage floors stay hand-rolled.** fast-check has no equivalent
+  (`fc.statistics` only prints), and an all-green property proves nothing about
+  a state the generator never entered. They are also LOOSER than the fixed-seed
+  versions they replaced, by design: a fixed seed list produced near-constant
+  counts, while fast-check draws a fresh seed per run. Set them ~3x below
+  measured actuals and record the actuals in a comment.
+- **A generator must not break its own contract.** The failure looks like a
+  finding and is not. An all-false pacing script in `audio-stress` never
+  delivered a chunk, so the delivery loop rendered forever and died on
+  `RangeError: Invalid array length` a minute later; the fix forces one delivery
+  by APPENDING rather than filtering, so every generated value maps to a legal
+  one and shrinking stays well behaved.
+
 #### Randomized interleaving tests (aai-studio-server)
 
 `studio-concurrency-fuzz.test.ts` is a property suite over the studio's two
 async pipelines — the durable preview queue and the SSE event streams. Each
-seed builds a different interleaving of edits, drains, deploy failures,
+run builds a different interleaving of edits, drains, deploy failures,
 disconnects, and shutdown drains, then asserts invariants that must hold for
-all of them: preview convergence, one deploy per project at a time, archive
-only past the attempt cap, no write into an ended stream, frame order, and no
-live-stream registry leak. It found the two races the routes and the Realtime
-pool now guard against.
+all of them: preview convergence, one deploy per project at a time, no write
+into an ended stream, frame order, and no live-stream registry leak. It found
+the two races the routes and the Realtime pool now guard against.
 
-Two rules if you extend it. **Seed the PRNG** (never `Math.random`) — a
-failure that cannot be replayed reports a mystery instead of a bug, and the
-suite prints the seed. And **assert the invariant, not the mechanism**: two
+**`fc.scheduler` owns the async ordering here**, and it wraps the resumption
+INSIDE the deploy body (`s.schedule` in the body) rather than the deploy
+function (`s.scheduleFunction` around it). The scheduler runs task bodies one
+at a time to completion, so wrapping the whole function serializes deploys and
+makes the no-concurrent-deploy invariant unfalsifiable — the harness would
+report success by construction.
+
+Two rules if you extend it. **Assert the invariant, not the mechanism**: two
 early false positives came from over-strict invariants — a project no edit
 selected was never scheduled, and a build failure stamps `previewError` and
 counts as SETTLED rather than converged. Both readings would have been "fixed"
-by weakening the mechanism instead.
+by weakening the mechanism instead. And **check that the state you assert about
+is reachable at all**: "archive only past the attempt cap" was VACUOUS for as
+long as it lived here (zero archives over 200 seeds, and over 100 fast-check
+runs) because reaching it needs six alternating clock-advance/drain pairs with
+every deploy throwing — a sequence a random 40-op walk effectively never
+produces. A coverage floor cannot fix that; the cap boundary has its own
+targeted property asserting both directions instead.
 
 #### Fixture replay testing (aai/host)
 
@@ -2223,7 +2284,7 @@ that are replayed through the real orchestration layer. Key helpers:
 #### Fuzz harnesses (aai-ui)
 
 `packages/aai-ui/fuzz-*.test.ts` drive the browser session's four
-concurrency-bearing layers with seeded-random operation sequences and assert
+concurrency-bearing layers with generated operation sequences and assert
 INVARIANTS rather than scenarios — `fuzz-session-core` (server frames ×
 client control calls × socket lifecycle: snapshot monotonicity, caps, and
 quiescence after teardown), `fuzz-voiceio` (enqueue/done/flush/close ×
@@ -2234,11 +2295,11 @@ the watermark cursor), `fuzz-reconnect` (partysocket + a fuzzed
 worklet processors have their own equivalent in
 `worklets/audio-stress.test.ts`.
 
-Three properties they need to keep paying off. Every failure prints its
-**seed and op log**, so a hit reproduces exactly. A harness must be checked
-for **sensitivity** — revert the fix and confirm it fails — because the
-common outcome is a harness that models the system too politely to reach the
-bug: `fuzz-voiceio` silently exercised a DEAD worklet node for many
+Two properties they need to keep paying off, beyond what fast-check gives
+every harness (see "Property tests run on fast-check"). A harness must be
+checked for **sensitivity** — revert the fix and confirm it fails — because
+the common outcome is a harness that models the system too politely to reach
+the bug: `fuzz-voiceio` silently exercised a DEAD worklet node for many
 iterations (the audio mocks accumulate nodes across a test, so
 `findWorkletNode` returned the first-ever one) and passed with the bug
 present. And the model has to stay **faithful to the protocol** — one
