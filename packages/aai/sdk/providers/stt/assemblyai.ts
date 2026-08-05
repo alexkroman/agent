@@ -84,7 +84,7 @@ export interface AssemblyAIOptions {
    * sent as the `min_turn_silence` connection parameter. This is where
    * endpointing lives: mid-utterance pauses shorter than this aggregate into
    * one final instead of splitting the request across turns. Defaults to
-   * `DEFAULT_MIN_TURN_SILENCE_MS` (2000).
+   * `DEFAULT_MIN_TURN_SILENCE_MS` (3000).
    */
   minTurnSilenceMs?: number;
   /**

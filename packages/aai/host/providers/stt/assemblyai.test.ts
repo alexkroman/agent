@@ -340,7 +340,7 @@ describe("assemblyAIStt STT adapter — endpointing (min_turn_silence)", () => {
     const session = await openSession({ model: "universal-3-5-pro" });
     const fake = session._transcriber as unknown as FakeTranscriber;
     expect(fake.params.minTurnSilence).toBe(DEFAULT_MIN_TURN_SILENCE_MS);
-    expect(fake.params.minTurnSilence).toBe(2000);
+    expect(fake.params.minTurnSilence).toBe(3000);
     await session.close();
   });
 

@@ -290,13 +290,27 @@ export const DEFAULT_INTERRUPTION_MIN_DURATION_MS = 500;
  * across several finals, each committing a turn — the agent answering half the
  * request while the rest is still being spoken, then that same breath barging
  * in and cancelling the reply. The cost is latency on a request that really did
- * end at the first sentence; the failure it prevents costs the whole call. 2000
- * rather than 1500 because 1500 still split real speech: on Full-Duplex-Bench
- * v3's human recordings, "I'm looking for, um, for a new [pause] let me think
- * [pause] a desk" committed a final after "for a new" and the real request came
- * as a separate turn — and that benchmark localizes it to silence, not word
- * accuracy (self-corrections 100%, hesitations 33%, pauses 57%). */
-export const DEFAULT_MIN_TURN_SILENCE_MS = 2000;
+ * end at the first sentence; the failure it prevents costs the whole call.
+ *
+ * Raised 1500 -> 2000 -> 3000, each step on the same measurement: the previous
+ * value still split real speech. At 1500, Full-Duplex-Bench v3's recording of
+ * "I'm looking for, um, for a new [pause] let me think [pause] a desk"
+ * committed a final after "for a new". At 2000 that same recording still
+ * split — the agent answered the fragment with "Sure. What", was barged in on
+ * when the caller resumed, and the real reply landed 15s later, so the caller
+ * heard two words and then dead air. tau2-bench shows the other half of the
+ * same failure independently, as mis-heard tool arguments whose utterance was
+ * cut in two. The benchmark localizes it to *silence* rather than word accuracy
+ * (self-corrections 100%, hesitations 33%, pauses 57%), which is why the fix is
+ * here and not in STT quality.
+ *
+ * Note this now EXCEEDS {@link DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS}, so a
+ * genuine barge-in's recovery window always elapses before its own final
+ * arrives. That is safe only because a fired window whose utterance is still
+ * open merely DEFERS the resume (see `host/transports/pipeline-recovery.ts`);
+ * without that deferral this value would make every real barge-in resume over
+ * the caller. */
+export const DEFAULT_MIN_TURN_SILENCE_MS = 3000;
 
 /**
  * False-interruption recovery window (pipeline mode). A barge-in triggered by
@@ -312,14 +326,17 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 2000;
  * caller is still mid-utterance only defers the resume, which the speaking
  * edge's idle watchdog (`DEFAULT_SPEECH_IDLE_TIMEOUT_MS`, internal) then
  * releases. Named rather than `{@link}`ed: it is `@internal`, so the docs build
- * excludes it and a link would fail to resolve. Note the value equals
- * {@link DEFAULT_MIN_TURN_SILENCE_MS}: measured from roughly the same instant
- * (this window restarts on every partial, and the last partial lands at about
- * the end of speech, while the final is withheld for `min_turn_silence` after
- * it), so on its own it raced every genuine barge-in's own final. Raising it
- * past endpointing would ALSO fix that, but only for a provider whose
- * endpointing is known here — which the transport cannot see, since it receives
- * an already-resolved `SttOpener`. Hence the deferral, which needs no such
+ * excludes it and a link would fail to resolve. Note the value is now BELOW
+ * {@link DEFAULT_MIN_TURN_SILENCE_MS} (3000): both are measured from roughly
+ * the same instant (this window restarts on every partial, and the last partial
+ * lands at about the end of speech, while the final is withheld for
+ * `min_turn_silence` after it), so this no longer merely RACES a genuine
+ * barge-in's own final — it loses to it every time. The deferral is therefore
+ * load-bearing rather than a safety net, and the effective semantics are "this
+ * long after the utterance ENDS", not "after the barge-in". Raising it past
+ * endpointing would also work, but only for a provider whose endpointing is
+ * known here — which the transport cannot see, since it receives an
+ * already-resolved `SttOpener`. Hence the deferral, which needs no such
  * knowledge. See the module doc in `host/transports/pipeline-recovery.ts`.
  */
 export const DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS = 2000;
