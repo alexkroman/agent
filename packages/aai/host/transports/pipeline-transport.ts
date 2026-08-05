@@ -7,11 +7,11 @@
 // which is S2S-only). `sendToolResult` is a no-op because results are
 // already handled by streamText.
 
-import type { SessionErrorCode } from "../../sdk/protocol.ts";
 import type { SttError, TtsError } from "../../sdk/providers.ts";
 import type { Message } from "../../sdk/types.ts";
 import { bytesToPcm16, pcm16ToBytes } from "../_pcm.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
+import { createEmitError } from "./pipeline-error.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
 import { createPipelineProviderSessions } from "./pipeline-providers.ts";
 import { createReplyTailTracker } from "./pipeline-recovery.ts";
@@ -54,6 +54,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
 
   const { callbacks, sessionConfig } = opts;
   const systemPrompt = sessionConfig.systemPrompt;
+  // Omitting the third argument says the session is OVER — see pipeline-error.ts.
+  const emitError = createEmitError(callbacks);
 
   const sessionAbort = new AbortController();
   // Turn-crash handler for chainTurn call sites — see turnCrashLogger.
@@ -187,10 +189,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
         resumeTurnScope = false;
       }
     });
-  }
-
-  function emitError(code: SessionErrorCode, message: string): void {
-    callbacks.onError(code, message);
   }
 
   /** Abort the in-flight turn (if any) and cancel TTS playback. */

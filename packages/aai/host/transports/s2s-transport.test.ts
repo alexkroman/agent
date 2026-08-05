@@ -392,6 +392,102 @@ describe("S2sTransport reconnect", () => {
     );
   });
 
+  // Regression: found by `integration/s2s-fuzz.integration.test.ts`. Whether a
+  // random walk reaches these two orderings is luck, so each gets a spec of its
+  // own — discovery and regression are different jobs.
+  test("an in-band service error is reported NON-fatally (the session is still up)", async () => {
+    const { callbacks, capturedCallbacks } = setupSpiedTransport();
+    const t = createS2sTransport(makeTransportOptions({ callbacks }));
+    await t.start();
+
+    const cb = expectAt(capturedCallbacks, 0, "callbacks");
+    cb.onSessionReady("sess");
+    // A `session.error` with a non-expiry code (rate limit, rejected field) or a
+    // bare `error` frame: nothing closes the socket, and the conversation
+    // continues through it. Reported as fatal — onError's default — aai-ui
+    // releases the microphone and ends the call, so the agent keeps replying to
+    // a session that can no longer hear anyone.
+    cb.onError(new Error("slow down"));
+    expect(callbacks.onError).toHaveBeenCalledWith("internal", "slow down", { fatal: false });
+
+    // Still usable: a later reply must reach the client normally.
+    cb.onReplyStarted("r1");
+    cb.onAudio(new Uint8Array([1, 2]));
+    expect(callbacks.onAudioChunk).toHaveBeenCalledTimes(1);
+  });
+
+  test("an in-band resume rejection closes the socket it was rejected on", async () => {
+    const { callbacks, handles, capturedCallbacks } = setupSpiedTransport();
+    const t = createS2sTransport(makeTransportOptions({ callbacks }));
+    await t.start();
+
+    const cb1 = expectAt(capturedCallbacks, 0, "first callbacks");
+    cb1.onSessionReady("sess_abc");
+    cb1.onClose(1005, "");
+    await vi.waitFor(() => expect(handles.length).toBe(2));
+
+    // The service answers our `session.resume` with `session_not_found` IN BAND
+    // — it does not close. Retiring the session while leaving that socket open
+    // held a live (billed) provider session whose frames kept flowing to a
+    // client already told the call was over.
+    const cb2 = expectAt(capturedCallbacks, 1, "resume callbacks");
+    cb2.onSessionExpired();
+
+    expect(callbacks.onError).toHaveBeenCalledWith(
+      "connection",
+      expect.stringContaining("session expired"),
+    );
+    const h2 = expectAt(handles, 1, "resumed handle");
+    expect(h2.close).toHaveBeenCalled();
+
+    // And the retired transport relays nothing further from that socket.
+    const audioCalls = vi.mocked(callbacks.onAudioChunk).mock.calls.length;
+    cb2.onUserTranscript("are you still there");
+    expect(callbacks.onUserTranscript).not.toHaveBeenCalled();
+    expect(callbacks.onAudioChunk).toHaveBeenCalledTimes(audioCalls);
+  });
+
+  test("stop() abandons a resume handshake that has not completed", async () => {
+    // The third finding from the property test, shrunk by fast-check to two
+    // commands: session.ready, then a transient drop. `stop()`'s own
+    // `handle.close()` can only reach a socket that OPENED — a resume still
+    // waiting on its `open` has produced no handle — and `ws` sets no
+    // handshakeTimeout, so the half-open (billed) provider connection was pinned
+    // for the life of the process.
+    const signals: (AbortSignal | undefined)[] = [];
+    const capturedCallbacks: S2sCallbacks[] = [];
+    const resumeHandle = makeMockHandle();
+    let resolveResume: ((h: S2sHandle) => void) | undefined;
+    vi.spyOn(_internals, "connectS2s").mockImplementation((o: ConnectS2sOptions) => {
+      signals.push(o.signal);
+      capturedCallbacks.push(o.callbacks);
+      if (signals.length === 1) return Promise.resolve(makeMockHandle());
+      // The resume socket never opens, so this promise never settles on its own.
+      return new Promise<S2sHandle>((resolve) => {
+        resolveResume = resolve;
+      });
+    });
+
+    const callbacks = makeCallbacks();
+    const t = createS2sTransport(makeTransportOptions({ callbacks }));
+    await t.start();
+    const cb1 = expectAt(capturedCallbacks, 0, "first callbacks");
+    cb1.onSessionReady("sess_abc");
+    cb1.onClose(1005, ""); // transient → a resume starts and hangs mid-handshake
+    await vi.waitFor(() => expect(signals.length).toBe(2));
+
+    await t.stop();
+    expect(signals[1]?.aborted).toBe(true);
+
+    // If the handshake does settle after all, the socket is closed rather than
+    // installed, and the client hears nothing: it hung up, so there is no
+    // session left to fail.
+    resolveResume?.(resumeHandle);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(resumeHandle.close).toHaveBeenCalled();
+    expect(callbacks.onError).not.toHaveBeenCalled();
+  });
+
   test("cancelReply drops in-flight audio until the next reply starts", async () => {
     const { callbacks, capturedCallbacks } = setupSpiedTransport();
     const t = createS2sTransport(makeTransportOptions({ callbacks }));

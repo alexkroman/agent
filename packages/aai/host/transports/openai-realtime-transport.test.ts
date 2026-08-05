@@ -482,20 +482,25 @@ describe("cancel, error, close", () => {
     expect(cbs.onSpeechStarted).toHaveBeenCalledTimes(1);
   });
 
-  test("error event routes to onError with internal code", async () => {
+  // NON-fatal is the load-bearing half of these two. An in-band `error` event
+  // leaves the socket open and the session usable, while a fatal frame makes
+  // aai-ui release the microphone and end the call — so reporting one as fatal
+  // cost the user their mic for a complaint the session survived. Session death
+  // is handleClose's to report, with the close code attached.
+  test("error event routes to onError with internal code, non-fatally", async () => {
     const { fake, cbs, ready } = startedTransport();
     await ready;
     fake.fire("message", {
       data: JSON.stringify({ type: "error", error: { message: "boom" } }),
     });
-    expect(cbs.onError).toHaveBeenCalledWith("internal", "boom");
+    expect(cbs.onError).toHaveBeenCalledWith("internal", "boom", { fatal: false });
   });
 
   test("error event with missing message uses fallback", async () => {
     const { fake, cbs, ready } = startedTransport();
     await ready;
     fake.fire("message", { data: JSON.stringify({ type: "error" }) });
-    expect(cbs.onError).toHaveBeenCalledWith("internal", expect.any(String));
+    expect(cbs.onError).toHaveBeenCalledWith("internal", expect.any(String), { fatal: false });
   });
 
   test("unexpected close routes to onError with connection code", async () => {

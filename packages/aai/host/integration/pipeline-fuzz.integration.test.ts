@@ -64,6 +64,17 @@ import type { Logger } from "../runtime-config.ts";
 import { createPipelineTransport } from "../transports/pipeline-transport.ts";
 import type { TransportCallbacks } from "../transports/types.ts";
 import {
+  type ActionKind,
+  type FuzzStep,
+  OPENERS,
+  type RunInput,
+  SCRIPT_LENGTH,
+  type ScriptTurn,
+  scriptPatternArb,
+  shortRunArb,
+  type ToolBehavior,
+} from "./_pipeline-fuzz-input.ts";
+import {
   norm,
   type PromptMsg,
   promptProblems,
@@ -76,99 +87,6 @@ const SHORT_RUNS = 120;
 const LONG_RUNS = 3;
 /** Steps per long run — enough turns to trim at the cap. */
 const LONG_STEPS = 200;
-/** Scripted LLM steps available to a run; far more than any run consumes. */
-const SCRIPT_LENGTH = 2000;
-
-/** The events a generated step can fire. */
-type ActionKind =
-  | "sttPartial"
-  | "sttFinal"
-  | "ttsAudio"
-  | "cancelReply"
-  | "reset"
-  | "sendUserAudio"
-  | "armBargeInFromTool";
-
-const ACTION_KINDS: readonly ActionKind[] = [
-  "sttPartial",
-  "sttFinal",
-  "ttsAudio",
-  "cancelReply",
-  "reset",
-  "sendUserAudio",
-  "armBargeInFromTool",
-];
-
-/** Utterance openers — "wait stop that" is the one that reads as a barge-in. */
-const OPENERS = ["please look it up", "tell me more", "wait stop that", "yes go on"] as const;
-
-/**
- * One step of a short session: the event to fire, the opener any utterance it
- * produces uses, and how long to pause afterwards (`null` = no pause). The
- * pause is generated because whether a reply completes before the next event
- * lands is exactly what decides which interleaving a step produces.
- */
-type FuzzStep = {
-  action: ActionKind;
-  opener: number;
-  pauseMs: number | null;
-};
-
-const stepArb: fc.Arbitrary<FuzzStep> = fc.record({
-  action: fc.constantFrom(...ACTION_KINDS),
-  opener: fc.nat({ max: OPENERS.length - 1 }),
-  pauseMs: fc.option(fc.integer({ min: 0, max: 4 }), { nil: null, freq: 2 }),
-});
-
-/**
- * How one tool call behaves. Mirrors the roll this harness used before: mostly
- * immediate, sometimes slow, occasionally throwing. Consumed cyclically.
- */
-type ToolBehavior = { kind: "ok" } | { kind: "slow"; ms: number } | { kind: "throw" };
-
-const toolBehaviorArb: fc.Arbitrary<ToolBehavior> = fc.oneof(
-  { weight: 6, arbitrary: fc.record({ kind: fc.constant("ok" as const) }) },
-  {
-    weight: 3,
-    arbitrary: fc.record({
-      kind: fc.constant("slow" as const),
-      ms: fc.integer({ min: 0, max: 7 }),
-    }),
-  },
-  { weight: 1, arbitrary: fc.record({ kind: fc.constant("throw" as const) }) },
-);
-
-/**
- * Which scripted LLM turns call a tool; cycled over the script. Weighted 40%
- * true to match the fixed probability this harness used before — a uniform
- * boolean plus fast-check's bias toward "smaller" values left a good share of
- * runs with an all-text script, i.e. no tool calls at all, which is precisely
- * the state the tool-result oracles need.
- */
-const scriptPatternArb = fc.array(
-  fc.oneof(
-    { weight: 4, arbitrary: fc.constant(true) },
-    { weight: 6, arbitrary: fc.constant(false) },
-  ),
-  { minLength: 4, maxLength: 12 },
-);
-
-/** The generated world for one run. */
-type RunInput = {
-  steps: readonly FuzzStep[];
-  script: readonly boolean[];
-  tools: readonly ToolBehavior[];
-};
-
-const shortRunArb: fc.Arbitrary<RunInput> = fc.record({
-  // A floor on the step count, unusually for these harnesses: a run spends its
-  // first steps getting the session past start(), so very short scripts finish
-  // before a reply ever completes and contribute nothing to the floors below.
-  // 6 is where coverage stops paying for the longer counterexamples.
-  steps: fc.array(stepArb, { minLength: 6, maxLength: 40 }),
-  script: scriptPatternArb,
-  tools: fc.array(toolBehaviorArb, { minLength: 1, maxLength: 12 }),
-});
 
 const noop = (): void => undefined;
 const silentLogger: Logger = { info: noop, warn: noop, error: noop, debug: noop };
@@ -194,6 +112,13 @@ interface ReplyRecord {
 interface Monitor {
   current: ReplyRecord | null;
   stopped: boolean;
+  /**
+   * The session was reported DEAD to the client: an `onError` without
+   * `fatal: false`. aai-ui answers that by calling `cleanupAudio()`, bumping the
+   * connection generation and setting `running: false` — the microphone is
+   * RELEASED and the call ends — so nothing conversational may follow it.
+   */
+  declaredDead: string | null;
   toolInFlight: number;
   liveStreams: number;
   maxLiveStreams: number;
@@ -212,13 +137,19 @@ interface Monitor {
  * in a counterexample rather than one entry per step.
  */
 function buildScript(
-  pattern: readonly boolean[],
+  pattern: readonly ScriptTurn[],
   runId: string,
 ): { steps: ScriptedPart[][]; stepText: string[] } {
   const steps: ScriptedPart[][] = [];
   const stepText: string[] = [];
   for (let i = 0; i < SCRIPT_LENGTH; i++) {
-    if (pattern[i % pattern.length] === true) {
+    const turn = pattern[i % pattern.length];
+    if (turn === "fail") {
+      // A provider that fails mid-turn — a rate limit, a content filter, a
+      // dropped upstream connection.
+      steps.push([{ type: "error", error: new Error(`llm blew up on step ${i}`) }]);
+      stepText.push("");
+    } else if (turn === "tool") {
       steps.push([
         { type: "tool-call", toolCallId: `c${runId}-${i}`, toolName: "lookup", input: "{}" },
       ]);
@@ -253,6 +184,15 @@ function createCallbacks(mon: Monitor, tts: FakeTtsProvider): TransportCallbacks
   let doneCount = 0;
   const afterStop = (name: string): void => {
     if (mon.stopped) mon.flag(`${name} fired after stop() resolved`);
+    // A fatal error frame is not a banner: the client has released the
+    // microphone and ended the call (aai-ui's `handleErrorEvent`), so the session
+    // going on to speak, listen or call tools means the two ends disagree about
+    // whether it is alive. Only the paths that really terminate may report
+    // fatally — in pipeline mode the provider open/error ones, which call
+    // `terminate()`, never a turn-level LLM or TTS failure.
+    if (mon.declaredDead !== null) {
+      mon.flag(`${name} fired after a fatal [${mon.declaredDead}]`);
+    }
   };
   return {
     onReplyStarted: (id: string) => {
@@ -300,19 +240,21 @@ function createCallbacks(mon: Monitor, tts: FakeTtsProvider): TransportCallbacks
     },
     onAudioDone: noop,
     onUserTranscript: () => afterStop("onUserTranscript"),
-    onUserTranscriptPartial: noop,
+    onUserTranscriptPartial: () => afterStop("onUserTranscriptPartial"),
     onAgentTranscript: () => afterStop("onAgentTranscript"),
-    onAgentTranscriptPartial: noop,
-    onToolCall: noop,
+    onAgentTranscriptPartial: () => afterStop("onAgentTranscriptPartial"),
+    onToolCall: () => afterStop("onToolCall"),
     onToolCallDone: noop,
-    onError: (code: string) => {
+    onError: (code: string, _message: string, errOpts?: { fatal?: boolean }) => {
       mon.hit(`error:${code}`);
+      if (errOpts?.fatal === false) mon.hit(`nonFatal:${code}`);
+      else mon.declaredDead ??= code;
       const reply = mon.current;
       if (reply === null) return;
       if (code === "llm") reply.failed = true;
       if (code === "tts") reply.disturbed = true;
     },
-    onSpeechStarted: noop,
+    onSpeechStarted: () => afterStop("onSpeechStarted"),
     onSpeechStopped: noop,
     onSessionReady: noop,
   };
@@ -323,12 +265,22 @@ function instrumentLlm(
   llm: ReturnType<typeof createFakeLanguageModel>,
   stepText: readonly string[],
   mon: Monitor,
+  refusals: readonly boolean[],
 ): void {
   const llmObj = llm as unknown as { doStream: (o: unknown) => Promise<unknown> };
   const rawDoStream = llmObj.doStream;
+  let requests = 0;
   llmObj.doStream = async (o) => {
     const opts = o as { prompt?: unknown; abortSignal?: AbortSignal };
     mon.hit("llmRequest");
+    // A request that never produces a stream at all. Reported by the catch in
+    // `consumeLlmStream` rather than the stream-part handler — a separate
+    // reporter, and the other half of what the fatality oracle checks: both end
+    // the TURN, neither ends the session.
+    if (refusals[requests++ % refusals.length] === true) {
+      mon.hit("llmRefused");
+      throw new Error("provider refused the connection");
+    }
     if (Array.isArray(opts.prompt)) {
       if (opts.prompt.some((m) => (m as PromptMsg).role === "tool")) mon.hit("llmRequestWithTool");
       // Past DEFAULT_MAX_HISTORY the cap trims on every push — the state the
@@ -420,6 +372,7 @@ async function runOne(
   const mon: Monitor = {
     current: null,
     stopped: false,
+    declaredDead: null,
     toolInFlight: 0,
     liveStreams: 0,
     maxLiveStreams: 0,
@@ -437,7 +390,7 @@ async function runOne(
   const tts: FakeTtsProvider = createFakeTtsProvider();
   const { steps: script, stepText } = buildScript(input.script, runId);
   const llm = createFakeLanguageModel({ steps: script, delayMs: 1 });
-  instrumentLlm(llm, stepText, mon);
+  instrumentLlm(llm, stepText, mon, input.refusals);
 
   // Bias toward the rare state a uniform random walk barely reaches: a barge-in
   // landing INSIDE a tool execution.
@@ -633,6 +586,15 @@ describe("pipeline transport — randomized interleaving", () => {
     // Barge-in needs the turn to have SPOKEN, so this is the most
     // timing-sensitive counter of the set.
     expect(cov.cancelled ?? 0, "no reply was ever cancelled").toBeGreaterThan(7); // ~33
+    // Both ways a turn's LLM can fail, because they are separate reporters: an
+    // `error` stream part, and a request that never streams at all. Each keeps
+    // the fatality oracle in `createCallbacks` reachable — it passed on arrival
+    // precisely because nothing here could fail a turn.
+    expect(cov["error:llm"] ?? 0, "no turn's LLM stream ever failed").toBeGreaterThan(8);
+    expect(cov.llmRefused ?? 0, "no LLM request was ever refused").toBeGreaterThan(2);
+    // And every one of them was reported NON-fatally, so a regression to the
+    // `onError` default is a failure here rather than a silent gap.
+    expect(cov["nonFatal:llm"] ?? 0).toBe(cov["error:llm"] ?? 0);
   }, 60_000);
 
   test("global invariants hold across a long session past the history cap", async () => {
@@ -647,7 +609,11 @@ describe("pipeline transport — randomized interleaving", () => {
           fc.nat({ max: 3 }),
           async (script, seedHistory) => {
             const violations = await runOne(
-              { steps: [], script, tools: [{ kind: "ok" }] },
+              // Never refused: this property's job is to accumulate history past
+              // the cap, and a refused request contributes no turn to it. The
+              // `fail` turns the shared pattern can carry are fine — they commit
+              // the user's side and exercise the fatality oracle here too.
+              { steps: [], script, tools: [{ kind: "ok" }], refusals: [false] },
               LONG_STEPS,
               harness.cov,
               { longSession: true, seedHistory },

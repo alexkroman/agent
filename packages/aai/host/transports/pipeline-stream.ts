@@ -24,7 +24,7 @@ import {
   PIPELINE_PLAYBACK_GRACE_MS,
   TTS_COALESCE_MAX_CHARS,
 } from "../../sdk/constants.ts";
-import type { SessionErrorCode } from "../../sdk/protocol.ts";
+
 import type { TtsSession, Unsubscribe } from "../../sdk/providers.ts";
 import type { Message, ToolChoice } from "../../sdk/types.ts";
 import { errorMessage } from "../../sdk/utils.ts";
@@ -35,7 +35,7 @@ import {
   llmErrorDetails,
   type StreamPartHandler,
 } from "./pipeline-stream-parts.ts";
-import type { TransportCallbacks } from "./types.ts";
+import type { EmitError, TransportCallbacks } from "./types.ts";
 
 /** Estimated client-side playback clock — see {@link createPlaybackClock}. */
 export type PlaybackClock = {
@@ -103,7 +103,7 @@ export async function flushTtsAndWait(args: {
   signal: AbortSignal;
   log: Logger;
   sid: string;
-  emitError: (code: SessionErrorCode, message: string) => void;
+  emitError: EmitError;
 }): Promise<void> {
   const { tts, signal, log, sid, emitError } = args;
   if (!tts) return;
@@ -122,7 +122,12 @@ export async function flushTtsAndWait(args: {
     // client (and the error log) as a `tts` error is the only trace — without
     // it a truncated turn is indistinguishable from a short one, in a session
     // that otherwise reports itself healthy.
-    emitError("tts", "Speech synthesis did not finish; the reply may be cut short.");
+    // NON-fatal: the reply is clipped, the session is not over — the lines below
+    // resynchronize the turn and the conversation continues. Reported as fatal,
+    // this cost the user their microphone for a truncated sentence.
+    emitError("tts", "Speech synthesis did not finish; the reply may be cut short.", {
+      fatal: false,
+    });
     // Abandon the turn on the PROVIDER too, not just here. The session's turn
     // accounting still has this turn in flight with acknowledgements
     // outstanding, and `onTurnText` deliberately does not reset a turn it
@@ -231,7 +236,7 @@ export interface ConsumeLlmStreamParams {
   /** Tool-call/tool-result observability hooks, forwarded to SessionCore. */
   callbacks: Pick<TransportCallbacks, "onToolCall" | "onToolCallDone">;
   /** Report an LLM-stream error. */
-  emitError: (code: SessionErrorCode, message: string) => void;
+  emitError: EmitError;
   log: Logger;
   sid: string;
   /** The turn's abort signal (turn cancellation / barge-in / session end). */
@@ -386,7 +391,11 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     ttsText.flush();
     const msg = errorMessage(err);
     log.error("LLM streamText failed", { error: msg, sid, ...llmErrorDetails(err) });
-    emitError("llm", msg);
+    // NON-fatal: this turn is over, the session is not. The caller returns
+    // `failed: true`, which speaks `errorPhrase` — "Sorry, I had a problem just
+    // then. Could you say that again?" — so reporting the session dead here asked
+    // the user to repeat themselves into a released microphone.
+    emitError("llm", msg, { fatal: false });
     return { messages: collected, failed: true };
   } finally {
     // The turn is over on every path (completed, aborted, errored) — no

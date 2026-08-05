@@ -51,6 +51,21 @@ export type TransportCallbacks = {
   onSessionReady?(providerSessionId: string): void;
 };
 
+/** Per-error options a transport may attach — the shape `onError` takes. */
+export type EmitErrorOpts = { fatal?: boolean };
+
+/**
+ * A transport's own error reporter, threaded into its internals.
+ *
+ * **Omitting `fatal` means the session is OVER**, because `onError` defaults to
+ * fatal and aai-ui answers a fatal frame by releasing the microphone and ending
+ * the call. A failing TURN is not a failing session: pass `{ fatal: false }`
+ * unless the caller is on a path that really terminates.
+ *
+ * @internal
+ */
+export type EmitError = (code: SessionErrorCode, message: string, opts?: EmitErrorOpts) => void;
+
 /**
  * Minimal config a transport may receive at construction time.
  * @internal
