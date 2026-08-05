@@ -161,8 +161,17 @@ describe("startDevServer restart behavior", () => {
       const startPromise = startDevServer({ cwd: dir, port: 3000 });
       // The watcher must exist before the initial build/listen finishes —
       // otherwise a save during boot never fires an event at all.
-      await vi.waitFor(() => expect(chokidarState.allCallback).toBeDefined());
-      await vi.waitFor(() => expect(mockListen).toHaveBeenCalled());
+      //
+      // These two were the only waitFors in the file left on vitest's 1s
+      // default, against the 15s ceiling the header explains: reaching the
+      // initial listen runs a REAL bundler build, so 1s holds standalone and
+      // flakes under a contended full-repo run. Measured 2 failures in 5
+      // five-project runs (`expected "vi.fn()" to be called at least once` on
+      // the listen wait) versus 0 in 3 on the same commit's parent.
+      await vi.waitFor(() => expect(chokidarState.allCallback).toBeDefined(), {
+        timeout: 15_000,
+      });
+      await vi.waitFor(() => expect(mockListen).toHaveBeenCalled(), { timeout: 15_000 });
 
       fireChange(dir, "agent.ts");
       // Let the debounce elapse while startup is still blocked: the event must
