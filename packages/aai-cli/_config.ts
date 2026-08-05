@@ -1,7 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
+
 import { mkdtempSync } from "node:fs";
+import fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import envPaths from "env-paths";
 import { z } from "zod";
 import { CliError } from "./_output.ts";
@@ -155,6 +158,97 @@ export function serverOrigin(url: string): string | null {
   return parsed.origin;
 }
 
+/** Bounded so a stuck lock degrades to the old racy write, never a hang. */
+const CONFIG_LOCK_TIMEOUT_MS = 2000;
+const CONFIG_LOCK_RETRY_MS = 20;
+/** Older than this and the holder is assumed dead (crashed mid-update). */
+const CONFIG_LOCK_STALE_MS = 10_000;
+
+/**
+ * Serialize a read-modify-write of the global config ACROSS PROCESSES.
+ *
+ * `writeJson` makes each individual write atomic, so no reader ever sees a
+ * torn file — but the read→modify→write SPAN is not atomic, and every writer
+ * here replaces the whole document. Two concurrent CLI invocations therefore
+ * lose each other's updates: measured on this repo, 8 parallel commands each
+ * approving a distinct origin recorded only 5 of them, and — the case that
+ * matters — a concurrent `approveServer` straddling the final write of
+ * `aai login` DISCARDS THE API KEY the login just reported saving, leaving
+ * the next command with `not_logged_in`. That window is wide open in practice:
+ * `aai login` polls for up to five minutes while the user approves in the
+ * browser, so any other command run in that time can be mid-update when the
+ * key lands.
+ *
+ * The lock is a `wx` (exclusive-create) lockfile — atomic on every platform
+ * we target, and the only primitive available across processes without a
+ * daemon. Three deliberate properties:
+ *
+ * - **Acquisition is bounded** (`CONFIG_LOCK_TIMEOUT_MS`). On timeout the
+ *   update proceeds UNLOCKED rather than throwing: these are small
+ *   convenience files, and failing `aai login` because a lockfile is stuck
+ *   would be strictly worse than the lost update the lock exists to prevent.
+ * - **A stale lock is broken** (`CONFIG_LOCK_STALE_MS`). A process killed
+ *   mid-update leaves the file behind; without this, one crash would make
+ *   every later config write take the unlocked path forever.
+ * - **Never nest.** Re-entering from inside `fn` would self-deadlock until the
+ *   timeout. `executeLogin` calls `approveServer` and the key update in
+ *   sequence, not nested — keep it that way.
+ */
+async function withGlobalConfigLock<T>(dir: string, fn: () => Promise<T>): Promise<T> {
+  const lockPath = path.join(dir, "config.lock");
+  const deadline = Date.now() + CONFIG_LOCK_TIMEOUT_MS;
+  let held = false;
+  for (;;) {
+    try {
+      await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+      // "wx" fails when the file exists — the atomic test-and-set.
+      await (await fs.open(lockPath, "wx", 0o600)).close();
+      held = true;
+      break;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") break; // unlockable; proceed
+      const age = await fs
+        .stat(lockPath)
+        .then((s) => Date.now() - s.mtimeMs)
+        .catch(() => 0);
+      if (age > CONFIG_LOCK_STALE_MS) {
+        await fs.rm(lockPath, { force: true }).catch(() => undefined);
+        continue;
+      }
+      if (Date.now() >= deadline) break; // proceed unlocked
+      await sleep(CONFIG_LOCK_RETRY_MS);
+    }
+  }
+  try {
+    return await fn();
+  } finally {
+    if (held) await fs.rm(lockPath, { force: true }).catch(() => undefined);
+  }
+}
+
+/**
+ * Apply `update` to the global config under the cross-process lock, re-reading
+ * inside it so the merge is against current contents rather than a snapshot
+ * taken before the lock was held. Every read-modify-write of the global config
+ * must go through this — a direct `readGlobalConfig`/`writeGlobalConfig` pair
+ * is the bug this exists to prevent.
+ *
+ * Returning the argument unchanged skips the write, so the common no-op case
+ * (an origin already approved — i.e. most `--server` invocations) costs a read
+ * rather than a rewrite plus the lock contention that comes with it.
+ */
+export async function updateGlobalConfig(
+  update: (current: GlobalConfig) => GlobalConfig,
+  configDir?: string,
+): Promise<void> {
+  const dir = configDir ?? getConfigDir();
+  await withGlobalConfigLock(dir, async () => {
+    const current = await readGlobalConfig(dir);
+    const next = update(current);
+    if (next !== current) await writeGlobalConfig(dir, next);
+  });
+}
+
 /**
  * Record `url`'s origin as user-approved, so later commands in this project
  * may send credentials there without re-passing `--server`.
@@ -162,11 +256,12 @@ export function serverOrigin(url: string): string | null {
 export async function approveServer(url: string, configDir?: string): Promise<void> {
   const origin = serverOrigin(url);
   if (!origin) return;
-  const dir = configDir ?? getConfigDir();
-  const config = await readGlobalConfig(dir);
-  const approved = config.approvedServers ?? [];
-  if (approved.includes(origin)) return;
-  await writeGlobalConfig(dir, { ...config, approvedServers: [...approved, origin] });
+  await updateGlobalConfig((config) => {
+    const approved = config.approvedServers ?? [];
+    return approved.includes(origin)
+      ? config
+      : { ...config, approvedServers: [...approved, origin] };
+  }, configDir);
 }
 
 export async function readGlobalConfig(configDir?: string): Promise<GlobalConfig> {

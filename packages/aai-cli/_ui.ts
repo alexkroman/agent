@@ -25,6 +25,32 @@ export function silenceOutput(): void {
 }
 
 /**
+ * Emit a message that must survive JSON mode — human mode gets the normal
+ * clack styling, JSON mode gets a plain line on STDERR.
+ *
+ * `silenceOutput` no-ops every `log` method so that JSON mode's contract
+ * ("exactly one result line on stdout") holds. That is right for
+ * request/response commands, and wrong for LONG-RUNNING ones: `aai dev`
+ * writes its single JSON line at startup and then keeps running, so every
+ * later message — a failed rebuild, an unhandled rejection, "the dev server
+ * is down; save a file to retry" — was silenced for the rest of the process.
+ * And JSON mode is AUTO-DETECTED on a pipe, so that is the normal case:
+ * `aai dev > dev.log`, a process supervisor, or a container all hid every
+ * build failure, leaving the old agent served with nothing to say why edits
+ * had stopped taking effect.
+ *
+ * stderr keeps the stdout contract intact — a script still parses one JSON
+ * line — while a human tailing the log sees what happened.
+ */
+export function notify(level: "error" | "warn" | "info" | "success", message: string): void {
+  if (!silenced) {
+    log[level](message);
+    return;
+  }
+  process.stderr.write(`${message}\n`);
+}
+
+/**
  * Unwrap a clack prompt result, exiting cleanly if the user cancelled.
  * `message` lets the caller name what was cancelled (e.g. "Setup cancelled").
  */

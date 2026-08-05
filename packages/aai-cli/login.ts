@@ -25,7 +25,7 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { resolveServerUrl } from "./_agent.ts";
-import { approveServer, getConfigDir, readGlobalConfig, writeGlobalConfig } from "./_config.ts";
+import { approveServer, readGlobalConfig, updateGlobalConfig } from "./_config.ts";
 import { CliError, type CommandResult, ok } from "./_output.ts";
 import { log } from "./_ui.ts";
 
@@ -229,8 +229,11 @@ export async function executeLogin(
     throw new CliError("login_failed", "Linking your account did not return an API key.");
   }
 
-  const dir = getConfigDir();
-  await writeGlobalConfig(dir, { ...(await readGlobalConfig(dir)), apiKey: granted.apiKey });
+  // Under the cross-process lock (see `updateGlobalConfig`): a plain
+  // read-then-write here loses the key outright when another command's
+  // `approveServer` straddles it, and this login has already told the user
+  // their key was saved.
+  await updateGlobalConfig((config) => ({ ...config, apiKey: granted.apiKey }));
   const email = granted.email ?? "your account";
   log.success(`Linked ${email} — your API key is saved for future commands.`);
   return ok({ email, server: serverUrl });

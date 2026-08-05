@@ -91,8 +91,15 @@ export async function readJson(filePath: string): Promise<unknown> {
  * torn config.json fails `JSON.parse`, reads back as `{}`, and the next
  * read-modify-write silently wipes fields like `approvedServers`. Rename on
  * the same filesystem is atomic, so readers only ever see a complete file.
- * Two concurrent CLI processes can still lose each other's *updates*
- * (last rename wins) — acceptable for these small user-config files.
+ *
+ * Atomic per WRITE is not atomic per read-modify-write: two concurrent CLI
+ * processes still lose each other's *updates* (last rename wins). That was
+ * long documented here as acceptable "for these small user-config files",
+ * and it is — for `.aai/project.json`, which is per-directory. It is NOT
+ * acceptable for the GLOBAL config, where it dropped the API key a
+ * successful `aai login` had just reported saving. Every global-config
+ * update therefore goes through `updateGlobalConfig` in `_config.ts`, which
+ * holds a cross-process lock around the read and the write.
  *
  * `mode` restricts the file's permissions (the rename carries the temp
  * file's mode to the destination, so an existing world-readable file is

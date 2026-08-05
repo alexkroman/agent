@@ -30,7 +30,7 @@ import { createWorkerEvaluator } from "./_bundler.ts";
 import { ensureApiKey } from "./_config.ts";
 import { fallbackHtmlPlugin } from "./_default-html.ts";
 import { resolveServerEnv } from "./_server-common.ts";
-import { log } from "./_ui.ts";
+import { log, notify } from "./_ui.ts";
 import { errorCode, errorMessage } from "./_utils.ts";
 import { buildWorker } from "./worker-bundler.ts";
 
@@ -192,7 +192,7 @@ export function watchDirectory(dir: string, onChange: () => void): FSWatcher {
   const DEBOUNCE_MS = 300;
 
   const debouncedChange = pDebounce(() => {
-    log.info("File change detected, restarting...");
+    notify("info", "File change detected, restarting...");
     onChange();
   }, DEBOUNCE_MS);
 
@@ -208,7 +208,8 @@ export function watchDirectory(dir: string, onChange: () => void): FSWatcher {
       errorCode(err) === "ENOSPC"
         ? " The inotify watch limit was reached — raise the fs.inotify max_user_watches sysctl."
         : "";
-    log.error(
+    notify(
+      "error",
       `File watcher error: ${errorMessage(err)}.${hint} ` +
         "Auto-restart on file changes may have stopped; restart `aai dev` after fixing.",
     );
@@ -217,7 +218,7 @@ export function watchDirectory(dir: string, onChange: () => void): FSWatcher {
     // debouncedChange resolves after onChange runs — a throw there must not
     // become an unhandled rejection that kills the dev server.
     debouncedChange().catch((err: unknown) => {
-      log.error(`Watch handler failed: ${errorMessage(err)}`);
+      notify("error", `Watch handler failed: ${errorMessage(err)}`);
     });
   });
   return watcher;
@@ -354,7 +355,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     // (catch-then-finally = try/finally semantics), or watching wedges forever.
     void restart()
       .catch((err: unknown) => {
-        log.error(`Restart failed: ${errorMessage(err)}`);
+        notify("error", `Restart failed: ${errorMessage(err)}`);
       })
       .finally(() => {
         restarting = false;
@@ -383,7 +384,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       // event. (The backend AgentServer keeps its own 'error' listener from
       // listen(), and exposes no event surface to add logging here.)
       viteServer.httpServer?.on("error", (err) => {
-        log.error(`Vite dev server error: ${errorMessage(err)}`);
+        notify("error", `Vite dev server error: ${errorMessage(err)}`);
       });
     }
   } catch (err) {
@@ -414,7 +415,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     try {
       newServer = await buildServer();
     } catch (err) {
-      log.error(`Restart failed: ${errorMessage(err)} (previous server still running)`);
+      notify("error", `Restart failed: ${errorMessage(err)} (previous server still running)`);
       return;
     }
     // The cleanup fn may have run while we were rebuilding — don't leave a
@@ -439,9 +440,12 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
         await newServer.close().catch(() => undefined);
         return;
       }
-      log.success("Restarted");
+      notify("success", "Restarted");
     } catch (err) {
-      log.error(`Restart failed: ${errorMessage(err)} — dev server is down; save a file to retry.`);
+      notify(
+        "error",
+        `Restart failed: ${errorMessage(err)} — dev server is down; save a file to retry.`,
+      );
       await newServer.close().catch(() => undefined);
     }
   }
