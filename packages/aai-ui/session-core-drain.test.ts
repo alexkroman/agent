@@ -133,4 +133,36 @@ describe("late playback drain vs teardown", () => {
     await flush();
     expect(core.getSnapshot().state).toBe("speaking");
   });
+  it("a matching drain-stop settles the turn and returns to listening", async () => {
+    // The happy path the guards above exist to protect: without it, "discard
+    // every late completion" and "discard the right ones" look identical.
+    const core = createSessionCore({ platformUrl: "https://host/agent/", WebSocket: WS });
+    core.start();
+    socket?.simulateOpen();
+    socket?.simulateMessage(makeConfig());
+    await flush();
+    socket?.simulateMessage(new Uint8Array([1, 2, 3, 4]));
+    socket?.simulateMessage(JSON.stringify({ type: "audio_done" }));
+    await flush();
+    expect(core.getSnapshot().state).toBe("speaking");
+
+    const play = findWorkletNode(audio.workletNodes(), "playback-processor");
+    // The worklet echoes the turn id this turn's `done()` posted.
+    play.port.simulateMessage({ event: "stop", reason: "done", turn: 1, stats: undefined });
+    await flush();
+
+    expect(core.getSnapshot().state).toBe("listening");
+  });
+
+  it("audio_done with no audio pipeline yet still returns to listening", async () => {
+    // Greeting audio can arrive before the worklet is up; there is nothing to
+    // wait on, so the transition happens optimistically.
+    const core = createSessionCore({ platformUrl: "https://host/agent/", WebSocket: WS });
+    core.start();
+    socket?.simulateOpen();
+    // No config frame, so audio init has not run and voiceIO is absent.
+    socket?.simulateMessage(JSON.stringify({ type: "audio_done" }));
+
+    expect(core.getSnapshot().state).toBe("listening");
+  });
 });

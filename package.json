@@ -19,6 +19,8 @@
     "test:mutate:host": "stryker run stryker.host.config.mjs",
     "test:mutate:server": "stryker run stryker.server.config.mjs",
     "test:mutate:cli": "stryker run stryker.cli.config.mjs",
+    "test:mutate:ui": "stryker run stryker.ui.config.mjs",
+    "test:mutate:studio": "stryker run stryker.studio.config.mjs",
     "aai": "node packages/aai-cli/cli.ts",
     "dev:aai-server": "pnpm --filter aai-studio-server dev",
     "typecheck": "turbo run typecheck",

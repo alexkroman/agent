@@ -18,6 +18,9 @@ import { createSessionCore } from "./session-core.ts";
 import type { SessionCore } from "./session-core-types.ts";
 import { MIC_SEND_MAX_BUFFERED_BYTES } from "./types.ts";
 
+/** Mirrors the module-private cap in session-core-messages.ts. */
+const MAX_PREINIT_AUDIO_CHUNKS = 100;
+
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 describe("createSessionCore", () => {
@@ -79,6 +82,30 @@ describe("createSessionCore", () => {
         [1, 2, 3, 4],
         [5, 6, 7, 8],
       ]);
+    });
+
+    it("buffers at most MAX_PREINIT_AUDIO_CHUNKS, dropping the overflow", async () => {
+      // The pre-init buffer is a bounded cushion for greeting audio that beats
+      // the worklet, not an unbounded queue: a server that streams a long
+      // greeting while mic permission is still pending must not grow it
+      // without limit.
+      const OVERFLOW = 5;
+      core.connect();
+      lastSocket?.simulateOpen();
+      lastSocket?.simulateMessage(makeConfig());
+      for (let i = 0; i < MAX_PREINIT_AUDIO_CHUNKS + OVERFLOW; i += 1) {
+        lastSocket?.simulateMessage(new Uint8Array([i & 0xff]).buffer);
+      }
+
+      await vi.waitFor(() => {
+        expect(audio.workletNodes().some((n) => n.name === "playback-processor")).toBe(true);
+      });
+      const playNode = findWorkletNode(audio.workletNodes(), "playback-processor");
+      const writes = playNode.port.posted.filter(
+        (p): p is { event: "write"; buffer: Uint8Array } =>
+          (p as { event?: string }).event === "write",
+      );
+      expect(writes).toHaveLength(MAX_PREINIT_AUDIO_CHUNKS);
     });
   });
 

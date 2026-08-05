@@ -1,95 +1,50 @@
 // Copyright 2025 the AAI authors. MIT license.
 // Studio HTTP surface, exercised through the full orchestrator (routing
-// order vs the /:slug routes matters and is covered here).
+// order vs the /:slug routes matters and is covered here). The response
+// CONTRACT — error bodies, `ok` acknowledgements, broker/deploy wiring —
+// lives in studio-routes-contract.test.ts; shared fakes in
+// _studio-routes-test-utils.ts.
 
 import { createDevAuth } from "aai-server/supabase-auth";
 import { authFetch, deployAgent, type TestFetch } from "aai-server/test-utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import {
+  createProject,
+  deployMock,
+  devToken,
+  ensureSessionMock,
+  refreshSessionMock,
+  schedulePreviewMock,
+  wakePreviewMock,
+} from "./_studio-routes-test-utils.ts";
 import { createTestCombined } from "./_test-combined.ts";
 import { requestPublicOrigin } from "./studio-context.ts";
-import type { StudioDeployResult } from "./studio-deploy.ts";
-import type { StudioSessionBroker } from "./studio-session-broker.ts";
 import { mutateWorkspace, studioScope } from "./studio-workspace.ts";
 
-const deployMock = vi.fn(
-  async (..._args: unknown[]): Promise<StudioDeployResult> => ({
-    ok: true,
-    slug: "proj",
-    url: "/proj/",
-    output: "Deployed /proj/",
-  }),
-);
-
 // The orchestrator constructs its studio routes internally; intercept the
-// deploy pipeline at the module boundary so no bundler/sandbox runs here.
+// deploy pipeline, the session broker, and the preview wake at the module
+// boundary so no bundler or sandbox runs here. The fakes are reached through
+// an `await import()` because a vi.mock factory is hoisted above the imports.
 vi.mock("./studio-deploy.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("./studio-deploy.ts")>();
-  return { ...original, deployStudioProject: (...args: unknown[]) => deployMock(...args) };
+  const { deployMock: mock } = await import("./_studio-routes-test-utils.ts");
+  return { ...original, deployStudioProject: (...args: unknown[]) => mock(...args) };
 });
 
-// Session broker: replace sandbox provisioning with an observable fake so
-// the route's gating/wiring is exercised without Modal.
-const ensureSessionMock = vi.fn(
-  async (...args: Parameters<StudioSessionBroker["ensureSession"]>) =>
-    args[1] === "ghost"
-      ? null
-      : { url: "https://tunnel.example/studio/chat", token: "chat-token-1" },
-);
-const deployWorkspaceMock = vi.fn(
-  async (
-    _scope: string,
-    _project: string,
-    _files: Record<string, string>,
-    _target: { serverUrl: string; apiKey: string; slug?: string | undefined },
-  ) => ({
-    ok: true,
-    slug: "p",
-    url: "https://platform.example/p",
-    output: "Deployed https://platform.example/p",
-  }),
-);
-const schedulePreviewMock = vi.fn();
-const refreshSessionMock = vi.fn(
-  async (..._args: Parameters<StudioSessionBroker["refreshSession"]>) => true,
-);
-const brokerMock = vi.fn(
-  (): StudioSessionBroker => ({
-    ensureSession: (...args: Parameters<StudioSessionBroker["ensureSession"]>) =>
-      ensureSessionMock(...args),
-    refreshSession: (...args: Parameters<StudioSessionBroker["refreshSession"]>) =>
-      refreshSessionMock(...args),
-    schedulePreview: (...args: Parameters<StudioSessionBroker["schedulePreview"]>) =>
-      schedulePreviewMock(...args),
-    deployWorkspace: (...args: Parameters<StudioSessionBroker["deployWorkspace"]>) =>
-      deployWorkspaceMock(...args),
-    dispose: async () => undefined,
-  }),
-);
 vi.mock("./studio-session-broker.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("./studio-session-broker.ts")>();
+  const { brokerMock } = await import("./_studio-routes-test-utils.ts");
   return {
     ...original,
     createStudioSessionBroker: (...args: unknown[]) => brokerMock(...(args as [])),
   };
 });
 
-// Preview wake-up: observable fake so the session route's wiring is
-// asserted without real HTTP (behavior lives in studio-preview.test.ts).
-const wakePreviewMock = vi.fn();
 vi.mock("./studio-preview.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("./studio-preview.ts")>();
-  return { ...original, wakeProjectPreview: (...args: unknown[]) => wakePreviewMock(...args) };
+  const { wakePreviewMock: mock } = await import("./_studio-routes-test-utils.ts");
+  return { ...original, wakeProjectPreview: (...args: unknown[]) => mock(...args) };
 });
-
-/** A dev-auth browser session token, the way the login screen mints one. */
-const devToken = (email: string) =>
-  `dev.${Buffer.from(JSON.stringify({ id: `dev:${email}`, email }))
-    .toString("base64url")
-    .replace(/=+$/, "")}.dev`;
-
-function createProject(fetch: TestFetch, name = "proj", key = "key1"): Promise<Response> {
-  return authFetch(fetch, "/studio/projects", { body: { name }, key });
-}
 
 describe("studio page + routing", () => {
   test("GET / serves the studio shell with a strict CSP", async () => {
@@ -375,21 +330,39 @@ describe("project CRUD", () => {
     expect(list.projects).toEqual([]);
   });
 
-  test("delete project cascades to its deployed agents — owned ones only", async () => {
+  test("delete project cascades to BOTH of its deployed agents", async () => {
     const combined = await createTestCombined();
-    // The agents Publish and the preview auto-deploy would have created.
+    // The two agents Publish and the preview auto-deploy would have created.
+    // Neither is named `*-preview` here: `POST /deploy` REFUSES that suffix
+    // (only the studio's own preview deployer may claim it), so deploying one
+    // through this route silently 400s and leaves nothing to cascade to —
+    // which is how this assertion passed vacuously for a while.
     await deployAgent(combined.fetch, "proj", "key1");
-    await deployAgent(combined.fetch, "proj-preview", "key1");
-    // A slug the caller does NOT own: the workspace naming it must not
-    // become a deletion oracle.
-    await deployAgent(combined.fetch, "someone-elses", "key2");
+    await deployAgent(combined.fetch, "proj-pv", "key1");
+    expect(await combined.store.getAgent("proj")).not.toBeNull();
+    expect(await combined.store.getAgent("proj-pv")).not.toBeNull();
+
     await createProject(combined.fetch);
     // Stamp the deploy metadata the way Publish/preview do.
     await mutateWorkspace(combined.workspaces, studioScope("key1"), "proj", (current) => ({
       ...current,
       deployedSlug: "proj",
-      previewSlug: "proj-preview",
+      previewSlug: "proj-pv",
     }));
+
+    const res = await authFetch(combined.fetch, "/studio/projects/proj", { method: "DELETE" });
+    expect(res.status).toBe(200);
+    expect(await combined.store.getAgent("proj")).toBeNull();
+    expect(await combined.store.getAgent("proj-pv")).toBeNull();
+  });
+
+  test("delete project spares a slug the caller does not own", async () => {
+    const combined = await createTestCombined();
+    // A workspace naming someone else's slug — however it got there — must not
+    // become a deletion oracle. Ownership is the agents row's credential
+    // hash, never project scope alone.
+    await deployAgent(combined.fetch, "someone-elses", "key2");
+    await createProject(combined.fetch);
     await mutateWorkspace(combined.workspaces, studioScope("key1"), "proj", (current) => ({
       ...current,
       deployedSlug: "someone-elses",
@@ -397,10 +370,7 @@ describe("project CRUD", () => {
 
     const res = await authFetch(combined.fetch, "/studio/projects/proj", { method: "DELETE" });
     expect(res.status).toBe(200);
-    // The preview agent (owned) is gone; the foreign slug survives.
-    expect(await combined.store.getAgent("proj-preview")).toBeNull();
     expect(await combined.store.getAgent("someone-elses")).not.toBeNull();
-    expect(await combined.store.getAgent("proj")).not.toBeNull();
   });
 
   // The `aai push` surface; fast-forward/no-op/metadata semantics are unit

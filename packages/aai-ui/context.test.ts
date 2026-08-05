@@ -25,9 +25,11 @@ describe("useSession", () => {
   });
 
   it("throws when used outside SessionProvider", () => {
+    // The message names the fix — a bare "cannot read properties of null" from
+    // deep inside a hook is the failure this guard exists to replace.
     expect(() => {
       renderHook(() => useSession());
-    }).toThrow();
+    }).toThrow("Session hooks must be used within <SessionProvider>");
   });
 
   it("exposes session methods", () => {
@@ -122,15 +124,22 @@ describe("useSessionSelector", () => {
   it("throws when used outside SessionProvider", () => {
     expect(() => {
       renderHook(() => useSessionSelector((s) => s.running));
-    }).toThrow();
+    }).toThrow("Session hooks must be used within <SessionProvider>");
   });
 });
 
 describe("useTheme", () => {
   it("returns default theme when no provider", () => {
     const { result } = renderHook(() => useTheme());
-    expect(result.current.bg).toBe("#FBF8F2");
-    expect(result.current.primary).toBe("#3F2BC1");
+    // Every field, not a sample: an unset one reaches components as
+    // `undefined` and renders as a missing color rather than an error.
+    expect(result.current).toEqual({
+      bg: "#FBF8F2",
+      primary: "#3F2BC1",
+      text: "#1B1A18",
+      surface: "#FFFFFF",
+      border: "#DCD7CC",
+    });
   });
 
   it("returns custom theme from provider", () => {
@@ -178,6 +187,50 @@ describe("useTheme", () => {
     const first = result.current;
     rerender();
     expect(result.current).toBe(first);
+  });
+
+  it("re-merges when the theme value changes", () => {
+    // The other half of the identity guard: memoizing on nothing would pin
+    // the first theme forever, so a live theme change would never land.
+    let value: ClientTheme = { primary: "#f00" };
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      React.createElement(ThemeProvider, { value }, children);
+    const { result, rerender } = renderHook(() => useTheme(), { wrapper });
+    expect(result.current.primary).toBe("#f00");
+
+    value = { primary: "#00f" };
+    rerender();
+    expect(result.current.primary).toBe("#00f");
+  });
+
+  it("repaints the page when the theme background changes", () => {
+    let value: ClientTheme = { bg: "#123456" };
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      React.createElement(ThemeProvider, { value }, children);
+    const { rerender } = renderHook(() => useTheme(), { wrapper });
+    expect(document.body.style.background).toBe("rgb(18, 52, 86)");
+
+    value = { bg: "#654321" };
+    rerender();
+    expect(document.body.style.background).toBe("rgb(101, 67, 33)");
+  });
+
+  it("restores the page background it found on unmount", () => {
+    // The provider is not necessarily the page's only owner — a host app that
+    // mounts the studio in a pane keeps its own background, and leaving the
+    // theme's color behind would repaint the host.
+    document.body.style.background = "rgb(1, 2, 3)";
+    document.documentElement.style.background = "rgb(4, 5, 6)";
+
+    const { unmount } = renderHook(() => useTheme(), {
+      wrapper: ({ children }: { children: ReactNode }) =>
+        React.createElement(ThemeProvider, { value: { bg: "#123456" } }, children),
+    });
+    expect(document.body.style.background).toBe("rgb(18, 52, 86)");
+
+    unmount();
+    expect(document.body.style.background).toBe("rgb(1, 2, 3)");
+    expect(document.documentElement.style.background).toBe("rgb(4, 5, 6)");
   });
 
   it("fills missing theme fields with defaults", () => {

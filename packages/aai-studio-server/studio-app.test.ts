@@ -10,8 +10,29 @@
 import { createMemoryChatStore } from "aai-server/chat-store";
 import { createTestStore } from "aai-server/test-utils";
 import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createStudioApp, type StudioAppOpts } from "./studio-app.ts";
+import type { createStudioRoutes } from "./studio-routes.ts";
+
+/** Options the app forwarded to `createStudioRoutes` on the last build. */
+const routeOpts = vi.hoisted(
+  () => ({ last: undefined }) as { last?: Parameters<typeof createStudioRoutes>[0] },
+);
+
+// The route factory is wrapped, not replaced: the app under test still gets
+// real routes, and the forwarded options become observable. Without this the
+// four conditional spreads below are invisible — with every option absent,
+// omitting a key and passing it as `undefined` look identical from outside.
+vi.mock("./studio-routes.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./studio-routes.ts")>();
+  return {
+    ...actual,
+    createStudioRoutes: (opts: Parameters<typeof createStudioRoutes>[0]) => {
+      routeOpts.last = opts;
+      return actual.createStudioRoutes(opts);
+    },
+  };
+});
 
 function makeApp(overrides: Partial<StudioAppOpts> = {}) {
   const { app } = createStudioApp({
@@ -26,6 +47,10 @@ function makeApp(overrides: Partial<StudioAppOpts> = {}) {
 }
 
 describe("createStudioApp", () => {
+  beforeEach(() => {
+    routeOpts.last = undefined;
+  });
+
   it("serves the health check, and 503s while draining", async () => {
     const healthy = makeApp();
     expect((await healthy.fetch("/health")).status).toBe(200);
@@ -73,5 +98,72 @@ describe("createStudioApp", () => {
     const res = await fetch("/");
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("text/html");
+  });
+
+  it("serves the same shell for a project URL", async () => {
+    // `/studio/chat/<project>` is a shareable link; the client reads the
+    // project from the path, so the server hands back the plain shell.
+    const { fetch } = makeApp();
+    const res = await fetch("/studio/chat/contact-form-x7k2mq");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/html");
+  });
+
+  it("routes /favicon.ico to the favicon handler", async () => {
+    // The not-built fallback page and non-browser clients request the icon at
+    // the root, so it needs its own path. Whether the client happens to be
+    // built here decides the status, so the assertion keys off WHICH 404 —
+    // the handler's own ("Favicon not found") rather than the router's.
+    const { fetch } = makeApp();
+    const res = await fetch("/favicon.ico");
+
+    if (res.status === 200) {
+      expect(res.headers.get("content-type")).toBe("image/x-icon");
+    } else {
+      expect(res.status).toBe(404);
+      expect(await res.text()).toContain("Favicon not found");
+    }
+  });
+
+  it.each(["/studio", "/studio/"])("redirects %s to the studio page", async (path) => {
+    const { fetch } = makeApp();
+    const res = await fetch(path);
+    expect(res.status).toBe(302);
+    // An empty Location would resolve to the current path — i.e. no redirect.
+    expect(res.headers.get("location")).toBe("/");
+  });
+
+  describe("option forwarding", () => {
+    const registry = {} as NonNullable<StudioAppOpts["studioSessionRegistry"]>;
+    const previewQueue = {} as NonNullable<StudioAppOpts["previewQueue"]>;
+    const rateLimiters = {} as NonNullable<StudioAppOpts["studioRateLimiters"]>;
+
+    it("passes each optional dependency through to the routes", () => {
+      makeApp({
+        studioRateLimiters: rateLimiters,
+        studioSessionRegistry: registry,
+        previewQueue,
+        replicaId: "replica-7",
+      });
+      expect(routeOpts.last).toEqual({
+        rateLimiters,
+        sessionRegistry: registry,
+        previewQueue,
+        replicaId: "replica-7",
+      });
+    });
+
+    it("omits an absent dependency rather than passing undefined", () => {
+      // The routes distinguish "not configured" from "configured as
+      // undefined" only by key presence, so the spreads must add nothing.
+      makeApp();
+      expect(routeOpts.last).toEqual({});
+      expect(Object.keys(routeOpts.last ?? {})).toEqual([]);
+    });
+
+    it("forwards one dependency without inventing the others", () => {
+      makeApp({ replicaId: "replica-7" });
+      expect(routeOpts.last).toEqual({ replicaId: "replica-7" });
+    });
   });
 });
