@@ -7,6 +7,10 @@ export const sharedConfig = {
   ssr: { resolve: { conditions: ["@dev/source"] } },
   test: {
     reporters: process.env.CI ? ["dot", "github-actions"] : ["default"],
+    // Every suite in the repo restores spies between tests, so this belongs
+    // here rather than being re-declared per package. It is also the option
+    // the root config's drift list names as one several projects had dropped.
+    restoreMocks: true,
   },
 };
 
@@ -20,17 +24,24 @@ export const sharedCoverageExclude = [
   "**/*.test-d.ts",
   "**/dist/**",
   "**/__snapshots__/**",
-  // Test infrastructure: helpers, fakes, and setup files that exist only
-  // for tests must not count toward (or against) production coverage.
+  // Test infrastructure: helpers, fakes, harnesses, and setup files that
+  // exist only for tests must not count toward (or against) production
+  // coverage.
+  //
+  // These are globs rather than a filename allowlist on purpose: the list was
+  // previously enumerated file by file, so a new `_mock-foo.ts` or
+  // `_bar-harness.ts` silently counted as production source and dragged a
+  // package's coverage floor down for a reason nobody would connect to this
+  // file. The leading underscore is load-bearing — production modules like
+  // `aai-server/warm-harness.ts` and `aai-ui/session-core-audio-setup.ts`
+  // match the un-prefixed shapes and must stay measured.
   "**/_test-utils.ts",
   "**/test-utils.ts",
   "**/*-test-utils.ts",
-  "**/_react-test-utils.ts",
-  "**/_jsdom-setup.ts",
+  "**/_*-setup.ts",
   "**/_test-matchers.ts",
-  "**/_mock-api.ts",
-  "**/_mock-registry.ts",
-  "**/_mock-ws.ts",
-  "**/_pipeline-test-fakes.ts",
+  "**/_mock-*.ts",
+  "**/_*-fakes.ts",
+  "**/_*-harness.ts",
   "**/fixtures/**",
 ];

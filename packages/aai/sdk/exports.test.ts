@@ -15,54 +15,30 @@ import { describe, expect, test } from "vitest";
 // tests import-sized headroom.
 const IMPORT_TIMEOUT_MS = 30_000;
 
+/**
+ * Every published subpath, paired with a loader.
+ *
+ * A table rather than ten copy-pasted tests, so adding a subpath export is
+ * one line here instead of another duplicated body — the doc comment above
+ * says "all ten", and this is what keeps that claim self-maintaining. The
+ * loaders stay literal `import()` calls (not a computed specifier) so each
+ * one remains statically resolvable.
+ */
+const SUBPATH_IMPORTS: ReadonlyArray<readonly [label: string, load: () => Promise<object>]> = [
+  ["@alexkroman1/aai main", () => import("@alexkroman1/aai")],
+  ["@alexkroman1/aai/utils", () => import("@alexkroman1/aai/utils")],
+  ["@alexkroman1/aai/protocol", () => import("@alexkroman1/aai/protocol")],
+  ["@alexkroman1/aai/manifest", () => import("@alexkroman1/aai/manifest")],
+  ["@alexkroman1/aai/runtime", () => import("@alexkroman1/aai/runtime")],
+  ["@alexkroman1/aai/s2s", () => import("@alexkroman1/aai/s2s")],
+  ["@alexkroman1/aai/stt", () => import("@alexkroman1/aai/stt")],
+  ["@alexkroman1/aai/tts", () => import("@alexkroman1/aai/tts")],
+  ["@alexkroman1/aai/llm", () => import("@alexkroman1/aai/llm")],
+  ["@alexkroman1/aai/tools", () => import("@alexkroman1/aai/tools")],
+];
+
 describe("export surface stability", { timeout: IMPORT_TIMEOUT_MS }, () => {
-  test("@alexkroman1/aai main export", async () => {
-    const mod = await import("@alexkroman1/aai");
-    expect(Object.keys(mod).sort()).toMatchSnapshot();
-  });
-
-  test("@alexkroman1/aai/utils export", async () => {
-    const mod = await import("@alexkroman1/aai/utils");
-    expect(Object.keys(mod).sort()).toMatchSnapshot();
-  });
-
-  test("@alexkroman1/aai/protocol export", async () => {
-    const mod = await import("@alexkroman1/aai/protocol");
-    expect(Object.keys(mod).sort()).toMatchSnapshot();
-  });
-
-  test("@alexkroman1/aai/manifest export", async () => {
-    const mod = await import("@alexkroman1/aai/manifest");
-    expect(Object.keys(mod).sort()).toMatchSnapshot();
-  });
-
-  test("@alexkroman1/aai/runtime export", async () => {
-    const mod = await import("@alexkroman1/aai/runtime");
-    expect(Object.keys(mod).sort()).toMatchSnapshot();
-  });
-
-  test("@alexkroman1/aai/s2s export", async () => {
-    const mod = await import("@alexkroman1/aai/s2s");
-    expect(Object.keys(mod).sort()).toMatchSnapshot();
-  });
-
-  test("@alexkroman1/aai/stt export", async () => {
-    const mod = await import("@alexkroman1/aai/stt");
-    expect(Object.keys(mod).sort()).toMatchSnapshot();
-  });
-
-  test("@alexkroman1/aai/tts export", async () => {
-    const mod = await import("@alexkroman1/aai/tts");
-    expect(Object.keys(mod).sort()).toMatchSnapshot();
-  });
-
-  test("@alexkroman1/aai/llm export", async () => {
-    const mod = await import("@alexkroman1/aai/llm");
-    expect(Object.keys(mod).sort()).toMatchSnapshot();
-  });
-
-  test("@alexkroman1/aai/tools export", async () => {
-    const mod = await import("@alexkroman1/aai/tools");
-    expect(Object.keys(mod).sort()).toMatchSnapshot();
+  test.each(SUBPATH_IMPORTS)("%s export", async (_label, load) => {
+    expect(Object.keys(await load()).sort()).toMatchSnapshot();
   });
 });

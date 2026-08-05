@@ -19,7 +19,11 @@ import { sharedConfig, sharedCoverageExclude } from "./vitest.shared.ts";
  *   `orchestrator-integration.test.ts`, which the shortcut then ran
  * - the templates project matched only the per-template `agent.test.ts` glob,
  *   silently skipping `templates.test.ts` and `template-api-coverage.test.ts`
- * - several projects dropped `restoreMocks`
+ * - several projects dropped `restoreMocks` (which is why that option, and the
+ *   CI reporters, now live in `vitest.shared.ts` and are spread in via
+ *   `...sharedConfig.test` — a package config that declares `test` without
+ *   that spread silently replaces the shared options rather than extending
+ *   them, which is how every package came to drop `reporters`)
  *
  * None of that is reachable now: `--project <name>` and `pnpm --filter <pkg>
  * test` load the same file. Project names live in the package configs so the
@@ -29,7 +33,7 @@ import { sharedConfig, sharedCoverageExclude } from "./vitest.shared.ts";
 export default defineConfig({
   ...sharedConfig,
   test: {
-    restoreMocks: true,
+    ...sharedConfig.test,
     coverage: {
       provider: "v8",
       include: ["packages/*/"],
@@ -56,6 +60,7 @@ export default defineConfig({
       {
         ...sharedConfig,
         test: {
+          ...sharedConfig.test,
           name: "aai-types",
           root: "packages/aai",
           include: [],

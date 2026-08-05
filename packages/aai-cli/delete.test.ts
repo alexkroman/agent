@@ -7,6 +7,11 @@ const deleteOpts = (fetch: typeof globalThis.fetch, overrides?: Record<string, u
   slug: "cool-cats-jump",
   apiKey: "test-key",
   fetch,
+  // The retry-path tests here assert on retry BEHAVIOUR, not on the backoff:
+  // at the 300ms default, the six of them slept 3.6s of real wall clock (2
+  // retries each) for the file's 3.63s total. `_api-client.ts` documents this
+  // exact override for exactly this reason.
+  retryDelay: 0,
   ...overrides,
 });
 

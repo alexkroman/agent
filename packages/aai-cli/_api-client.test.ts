@@ -179,6 +179,7 @@ describe("apiRequest", () => {
     const promise = apiRequest("https://api.example.com/deploy", {
       apiKey: "my-key",
       action: "deploy",
+      retryDelay: 0,
       fetch,
     });
     await expect(promise).rejects.toThrow(
@@ -195,6 +196,7 @@ describe("apiRequest", () => {
       await apiRequest("https://api.example.com/deploy", {
         apiKey: "my-key",
         action: "deploy",
+        retryDelay: 0,
         fetch,
       });
       expect.unreachable("should have thrown");

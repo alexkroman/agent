@@ -8,9 +8,8 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { DEFAULT_FALSE_INTERRUPTION_PROMPT } from "../../sdk/constants.ts";
+import { sleep } from "../_test-utils.ts";
 import { buildTailResumePrompt, createFalseInterruptionRecovery } from "./pipeline-recovery.ts";
-
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 describe("createFalseInterruptionRecovery", () => {
   function makeRecovery(over: Partial<Parameters<typeof createFalseInterruptionRecovery>[0]> = {}) {

@@ -4,11 +4,11 @@ import { sharedConfig, sharedCoverageExclude } from "../../vitest.shared.ts";
 export default defineConfig({
   ...sharedConfig,
   test: {
+    ...sharedConfig.test,
     // Project name for `--project aai-studio-client`; the workspace root discovers this
     // file by glob, so the name must live here (else it defaults to the
     // package.json name).
     name: "aai-studio-client",
-    restoreMocks: true,
     // Most tests render via react-dom/server in node; interaction tests
     // (app.test.tsx, code-view.test.tsx) opt into jsdom with a per-file
     // `@vitest-environment` pragma.

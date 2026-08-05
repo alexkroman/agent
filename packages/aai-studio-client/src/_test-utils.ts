@@ -11,16 +11,39 @@ export function jsonResponse(body: unknown, status = 200): Response {
 }
 
 /**
- * A never-ending SSE stream — what the studio's event routes look like to a
- * client that subscribes and hears nothing. Tests that assert on pushes
- * build their own bodies; everything else stubs the events routes with this
- * so the app's always-on subscriptions don't trip the strict route table.
+ * An SSE stream.
+ *
+ * With no `frames`, a never-ending one — what the studio's event routes look
+ * like to a client that subscribes and hears nothing, which is how the app's
+ * always-on subscriptions are stubbed so they don't trip the strict route
+ * table. With `frames`, those frames are enqueued and the stream CLOSES, which
+ * is what a push-asserting test wants (a closed stream is also what makes the
+ * client report `onDown`).
+ *
+ * Frames are written verbatim, so a test can split one SSE frame across two
+ * entries to exercise reassembly.
  */
-export function sseResponse(): Response {
-  return new Response(new ReadableStream<Uint8Array>(), {
+export function sseResponse(frames?: readonly string[]): Response {
+  const stream = new ReadableStream<Uint8Array>(
+    frames === undefined
+      ? {}
+      : {
+          start(controller) {
+            const encoder = new TextEncoder();
+            for (const frame of frames) controller.enqueue(encoder.encode(frame));
+            controller.close();
+          },
+        },
+  );
+  return new Response(stream, {
     status: 200,
     headers: { "Content-Type": "text/event-stream" },
   });
+}
+
+/** Wait until a stream's `finally` block has run. */
+export function settle(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 /**

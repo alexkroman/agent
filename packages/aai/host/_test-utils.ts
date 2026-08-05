@@ -18,6 +18,25 @@ export function flush(): Promise<void> {
   return new Promise<void>((r) => queueMicrotask(r));
 }
 
+/**
+ * Yield a full MACROTASK — drains microtasks and also lets already-scheduled
+ * zero-delay timers and I/O callbacks run.
+ *
+ * Deliberately not called `flush`: several specs had a local
+ * `const flush = () => new Promise(r => setTimeout(r, 0))` that SHADOWED the
+ * microtask `flush` above, so the same identifier meant two different waits
+ * depending on the file you were reading. Pick by what you need to drain, not
+ * by which one happens to be in scope.
+ */
+export function tick(): Promise<void> {
+  return new Promise<void>((r) => setTimeout(r, 0));
+}
+
+/** Sleep real wall-clock ms. Prefer fake timers or `vi.waitFor` where possible. */
+export function sleep(ms: number): Promise<void> {
+  return new Promise<void>((r) => setTimeout(r, ms));
+}
+
 export function createMockToolContext(overrides?: Partial<ToolContext>): ToolContext {
   return {
     env: {},

@@ -222,8 +222,13 @@ Each package has distinct test helpers tailored to its domain:
   developer's real `~/.config/aai/config.json` (API key + approved servers).
 - **`aai-ui/_react-test-utils.ts`** — `createMockSessionCore()`,
   `MockAudioContext`, `installAudioMocks()`
-- **`aai-server/test-utils.ts`** — (no underscore) `createMockKv()`,
-  `createTestStore()` (in-memory BundleStore)
+- **`aai-server/test-utils.ts`** — (no underscore) `createTestStore()`
+  (in-memory BundleStore), `createTestOrchestrator()`, `authHeaders()` /
+  `authFetch()` / `deployAgent()` / `deployBody()`, `makeSlot()`.
+  (`createMockKv()` was listed here for a while and has never existed in this
+  package — KV was removed. Reach for `authHeaders`/`authFetch` rather than
+  spelling out a `Bearer`+`Content-Type` literal; ~47 sites across 8 files
+  still do.)
 
 ### `@dev/source` custom export condition
 
@@ -355,11 +360,37 @@ you only need to list one package.
   copies lost their 20s argon2 timeout; the aai-server excludes named two
   deleted files while missing a live integration test; and the templates
   copy skipped two of its four test files.
-- Slow/integration tests have separate per-package configs
-  (`vitest.slow.config.ts`, `vitest.integration.config.ts`) to avoid running
-  during `vitest run`.
+- **Shared test options live in `vitest.shared.ts` and must be SPREAD IN.**
+  `sharedConfig.test` holds `restoreMocks` and the CI `reporters`; a package
+  config that writes `test: { … }` without `...sharedConfig.test` REPLACES that
+  object rather than extending it, which is how every package silently lost
+  `reporters` while each re-declared `restoreMocks` by hand.
+- **The slow tiers use ONE root config, `vitest.slow.config.ts`**, selected by
+  `VITEST_PROFILE` (`integration` 30s / `e2e` 300s) with `VITEST_INCLUDE`
+  choosing the files. There is no per-package slow config and no
+  `vitest.integration.config.ts`.
+- **Integration-tier membership is a NAMING CONVENTION: `*.integration.test.ts`.**
+  Unit configs exclude that glob and `test:integration` selects it, so a new
+  integration test lands in the right tier with no config edit. It replaced a
+  hand-kept filename list duplicated between each `exclude` array and the
+  `VITEST_INCLUDE` env var, which had gone stale: `aai` and
+  `aai-studio-server` between them excluded five files that no longer existed.
+  **Only the `.integration.` infix decides the tier**, so several tests are
+  deliberately UNIT tests despite "integration" in the name — `aai-cli`'s
+  `integration.test.ts` / `integration-edge-cases.test.ts`, and
+  `aai-server`'s `agent-server-integration.test.ts`. That last one really does
+  boot a real harness subprocess (hence that package's 20s timeout) and is a
+  standing judgement call: it is the only test covering
+  `subprocess-sandbox.ts` / `warm-harness.ts` / `sandbox-vm.ts`, so promoting
+  it to the integration tier drops aai-server's measured line coverage ~92% →
+  88.74% and trips its 89% floor. Moving it means restoring that coverage
+  first, not lowering the floor.
 - In tests, use `flush()` from `_test-utils.ts` instead of
-  `await new Promise(r => setTimeout(r, 0))` to yield to microtasks.
+  `await new Promise(r => setTimeout(r, 0))` to yield to microtasks — and note
+  `flush()` is MICROTASK-only. For a full macrotask yield use `tick()`, and for
+  real elapsed time `sleep(ms)`, both from `aai/host/_test-utils.ts`; several
+  specs used to define a *local* `flush` as `setTimeout(r, 0)`, shadowing the
+  export so one name meant two different waits.
 - Use `vi.waitFor()` instead of arbitrary delays when polling for async results.
 - Type-level tests use `.test-d.ts` files with `typecheck: { only: true }`
   — they are checked by tsc but never executed at runtime. Use

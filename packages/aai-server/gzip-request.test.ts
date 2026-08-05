@@ -90,13 +90,16 @@ describe("gzip deploy request decompression", () => {
   test("deploy body over the wire-size cap is rejected with 413 (bodyLimit)", async () => {
     const { fetch } = await createTestOrchestrator();
 
-    // Uncompressed JSON larger than MAX_INFLATED_BODY_BYTES: the deploy
-    // route's bodyLimit middleware must reject it (via Content-Length)
-    // before anything buffers or parses it.
+    // A body larger than MAX_INFLATED_BODY_BYTES: the deploy route's
+    // bodyLimit middleware must reject it (via Content-Length) before
+    // anything buffers or parses it — so the bytes need only be over the cap,
+    // not valid JSON. Sent as bytes rather than a `"x".repeat(cap)` string
+    // because that string is UTF-16 in the heap: 240MB to assert on a
+    // Content-Length the request never gets to parse.
     const res = await fetch("/deploy", {
       method: "POST",
       headers: authHeaders(),
-      body: `{"pad":"${"x".repeat(MAX_INFLATED_BODY_BYTES + 1)}"}`,
+      body: new Uint8Array(MAX_INFLATED_BODY_BYTES + 1),
     });
 
     expect(res.status).toBe(413);

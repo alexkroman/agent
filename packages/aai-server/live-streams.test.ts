@@ -14,7 +14,7 @@ import net from "node:net";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   endLiveStreams,
   liveStreamCount,
@@ -80,17 +80,42 @@ describe("registry", () => {
   });
 });
 
-/** Read a raw HTTP response, optionally hanging up after `hangUpAfterMs`. */
+/** The terminating zero-length chunk that ends a `chunked` body. */
+const CHUNKED_TERMINATOR = "0\r\n\r\n";
+
+/**
+ * Read a raw HTTP response off a socket, the way Modal's ASGI proxy parser
+ * does.
+ *
+ * Resolves as soon as the chunked body is COMPLETE — i.e. the terminating
+ * `0\r\n\r\n` has arrived — and then hangs up. It used to resolve on the
+ * socket's `close` event instead, which is the same bytes but ~6s later per
+ * call: the body (terminator included) is fully on the wire within ~150ms,
+ * and the rest was spent waiting out the node-server connection timeout that
+ * no assertion here depends on. That was 12s of the suite's wall clock across
+ * these two tests.
+ *
+ * `error`/`close` still settle it so a genuinely truncated body fails the
+ * `endsWith` assertion rather than hanging until the test timeout.
+ */
 function rawGet(port: number, path: string): { done: Promise<string> } {
   const chunks: Buffer[] = [];
   const done = new Promise<string>((resolve) => {
     const sock = net.connect(port, "127.0.0.1", () => {
       sock.write(`GET ${path} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n`);
     });
-    sock.on("data", (d: Buffer) => chunks.push(d));
-    const finish = () => resolve(Buffer.concat(chunks).toString("latin1"));
-    sock.on("close", finish);
-    sock.on("error", finish);
+    const settle = () => resolve(Buffer.concat(chunks).toString("latin1"));
+    sock.on("data", (d: Buffer) => {
+      chunks.push(d);
+      // Check the accumulated buffer, not the chunk: the terminator can be
+      // split across TCP segments.
+      if (Buffer.concat(chunks).toString("latin1").endsWith(CHUNKED_TERMINATOR)) {
+        settle();
+        sock.destroy();
+      }
+    });
+    sock.on("close", settle);
+    sock.on("error", settle);
   });
   return { done };
 }
@@ -125,16 +150,17 @@ describe("an SSE response ended by shutdown", () => {
     const { port, close } = await serveHeldSse();
 
     const res = rawGet(port, "/events");
-    // Let the first frame land, then shut down as SIGTERM would.
-    await new Promise((r) => setTimeout(r, 150));
-    expect(liveStreamCount()).toBe(1);
+    // Wait for the handler to register, then shut down as SIGTERM would. The
+    // first frame is written before the handler awaits its held promise, so
+    // registration is the only thing worth waiting on here.
+    await vi.waitFor(() => expect(liveStreamCount()).toBe(1));
     endLiveStreams();
 
     const raw = await res.done;
     expect(raw).toMatch(/transfer-encoding: chunked/i);
     expect(raw).toContain("event: project");
     // The whole point: the terminating zero-length chunk went out.
-    expect(raw.endsWith("0\r\n\r\n")).toBe(true);
+    expect(raw.endsWith(CHUNKED_TERMINATOR)).toBe(true);
     // And the stream deregistered as it settled.
     expect(liveStreamCount()).toBe(0);
 
@@ -149,7 +175,7 @@ describe("an SSE response ended by shutdown", () => {
 
     const raw = await rawGet(port, "/events").done;
     expect(raw).toMatch(/transfer-encoding: chunked/i);
-    expect(raw.endsWith("0\r\n\r\n")).toBe(true);
+    expect(raw.endsWith(CHUNKED_TERMINATOR)).toBe(true);
     // Held open instead, it would have been cut by the process exit.
     expect(liveStreamCount()).toBe(0);
 

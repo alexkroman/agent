@@ -4,11 +4,11 @@ import { sharedConfig, sharedCoverageExclude } from "../../vitest.shared.ts";
 export default defineConfig({
   ...sharedConfig,
   test: {
+    ...sharedConfig.test,
     // Project name for `--project aai-guest`; the workspace root discovers this
     // file by glob, so the name must live here (else it defaults to the
     // package.json name).
     name: "aai-guest",
-    restoreMocks: true,
     include: ["**/*.test.ts"],
     exclude: ["node_modules", "dist"],
     coverage: {

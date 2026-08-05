@@ -7,11 +7,11 @@ import { sharedConfig, sharedCoverageExclude } from "../../vitest.shared.ts";
 export default defineConfig({
   ...sharedConfig,
   test: {
+    ...sharedConfig.test,
     // Project name for `--project aai-templates`; the workspace root discovers this
     // file by glob, so the name must live here (else it defaults to the
     // package.json name).
     name: "aai-templates",
-    restoreMocks: true,
     // The template glob is deliberately generic (any `*.test.ts` under a
     // template directory), so a new template's test file is picked up on
     // creation rather than needing this list extended per filename.

@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { jsonResponse, stubFetch } from "./_test-utils.ts";
+import { jsonResponse, settle, sseResponse, stubFetch } from "./_test-utils.ts";
 import { ApiError, api, isTransientSessionError, parseSecrets } from "./api.ts";
 
 describe("parseSecrets", () => {
@@ -255,23 +255,6 @@ describe("isTransientSessionError", () => {
 });
 
 describe("api.watchProject", () => {
-  function sseResponse(frames: string[]): Response {
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        const encoder = new TextEncoder();
-        for (const frame of frames) controller.enqueue(encoder.encode(frame));
-        controller.close();
-      },
-    });
-    return new Response(stream, {
-      status: 200,
-      headers: { "Content-Type": "text/event-stream" },
-    });
-  }
-
-  /** Wait until the stream's finally block has run. */
-  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
-
   test("parses project frames and ignores pings; a closed stream reports down", async () => {
     stubFetch(() =>
       sseResponse([
@@ -372,22 +355,9 @@ describe("api.watchProject", () => {
 });
 
 describe("api.watchProjects", () => {
-  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
-
   test("delivers pushed project lists", async () => {
-    stubFetch(
-      () =>
-        new Response(
-          new ReadableStream<Uint8Array>({
-            start(controller) {
-              const encoder = new TextEncoder();
-              controller.enqueue(encoder.encode('event: projects\ndata: ["a"]\n\n'));
-              controller.enqueue(encoder.encode('event: projects\ndata: ["a","b"]\n\n'));
-              controller.close();
-            },
-          }),
-          { status: 200, headers: { "Content-Type": "text/event-stream" } },
-        ),
+    stubFetch(() =>
+      sseResponse(['event: projects\ndata: ["a"]\n\n', 'event: projects\ndata: ["a","b"]\n\n']),
     );
     const lists: string[][] = [];
     const down = vi.fn();

@@ -7,24 +7,23 @@ import type { SessionCore, SessionCoreOptions } from "./session-core.ts";
 import { createSessionCore } from "./session-core.ts";
 import type { Transport } from "./transports/types.ts";
 
+// `playAudioDone` / `start` / `stop` are plain `vi.fn()`s like every other
+// member here: a spy already records its own call count, so the hand-rolled
+// `let audioDoneCount = 0` + getter + `readonly` field triple (and the same
+// for starts/stops) was 18 lines of bookkeeping duplicating `mock.calls`.
 function makeSink(): {
   events: ClientEvent[];
   audioChunks: Uint8Array[];
   closeReasons: (string | undefined)[];
-  readonly audioDoneCount: number;
   sink: ClientSink;
 } {
   const events: ClientEvent[] = [];
   const audioChunks: Uint8Array[] = [];
   const closeReasons: (string | undefined)[] = [];
-  let audioDoneCount = 0;
   return {
     events,
     audioChunks,
     closeReasons,
-    get audioDoneCount() {
-      return audioDoneCount;
-    },
     sink: {
       open: true,
       event: (e) => {
@@ -33,9 +32,7 @@ function makeSink(): {
       playAudioChunk: (chunk) => {
         audioChunks.push(chunk);
       },
-      playAudioDone: () => {
-        audioDoneCount++;
-      },
+      playAudioDone: vi.fn(),
       close: (reason) => {
         closeReasons.push(reason);
       },
@@ -43,25 +40,13 @@ function makeSink(): {
   };
 }
 
-function makeTransport(): Transport & { readonly starts: number; readonly stops: number } {
-  let starts = 0;
-  let stops = 0;
+function makeTransport(): Transport {
   return {
-    start: async () => {
-      starts++;
-    },
-    stop: async () => {
-      stops++;
-    },
+    start: vi.fn(async () => undefined),
+    stop: vi.fn(async () => undefined),
     sendUserAudio: vi.fn(),
     sendToolResult: vi.fn(),
     cancelReply: vi.fn(),
-    get starts() {
-      return starts;
-    },
-    get stops() {
-      return stops;
-    },
   };
 }
 
@@ -92,16 +77,16 @@ describe("createSessionCore — lifecycle", () => {
   test("start/stop calls transport", async () => {
     const { core, transport } = makeCore();
     await core.start();
-    expect(transport.starts).toBe(1);
+    expect(transport.start).toHaveBeenCalledTimes(1);
     await core.stop();
-    expect(transport.stops).toBe(1);
+    expect(transport.stop).toHaveBeenCalledTimes(1);
   });
   test("stop is idempotent", async () => {
     const { core, transport } = makeCore();
     await core.start();
     await core.stop();
     await core.stop();
-    expect(transport.stops).toBe(1);
+    expect(transport.stop).toHaveBeenCalledTimes(1);
   });
   test("transport events during stop()'s drain cannot start post-teardown tool work", async () => {
     // stop() aborts the current reply and then awaits transport.stop() — an
@@ -235,7 +220,7 @@ describe("createSessionCore — reply dedup", () => {
     core.onReplyStarted("r1");
     core.onReplyDone();
     expect(sink.events.some((e) => e.type === "reply_done")).toBe(true);
-    expect(sink.audioDoneCount).toBeGreaterThanOrEqual(1);
+    expect(sink.sink.playAudioDone).toHaveBeenCalled();
   });
   test("duplicate reply_done is dropped", async () => {
     const { core, sink } = makeCore();
@@ -370,7 +355,7 @@ describe("createSessionCore — tool concurrency", () => {
     // await would hang on the never-resolving tool.
     await core.stop();
     expect(signals[0]?.aborted).toBe(true);
-    expect(transport.stops).toBe(1);
+    expect(transport.stop).toHaveBeenCalledTimes(1);
   });
 });
 
