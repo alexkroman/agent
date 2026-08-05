@@ -44,6 +44,19 @@ export interface AssemblyAIOptions {
    */
   region?: "us" | "eu";
   /**
+   * Streaming WebSocket endpoint override, sent as the SDK's
+   * `websocketBaseUrl`. Must include the versioned path (e.g.
+   * `wss://streaming.sandbox000.assemblyai-labs.com/v3/ws`) — the SDK only
+   * supplies that path for its own default host, so a bare origin connects to
+   * the wrong route.
+   *
+   * Takes precedence over {@link AssemblyAIOptions.region}: an explicit
+   * endpoint is a deliberate choice and must not be silently overwritten by
+   * the residency shorthand. Intended for pre-release/staging clusters and
+   * A/B measurement against the default host; leave unset in production.
+   */
+  streamingUrl?: string;
+  /**
    * Voice focus (voice isolation) mode, sent as the `voice_focus` connection
    * parameter. Defaults to `"near-field"` to suppress background noise for
    * close-mic / phone audio. Set to `""` (or `"off"`) to disable.
