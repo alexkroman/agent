@@ -8,6 +8,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UIMessage } from "ai";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { AccountMenu } from "./account-menu.tsx";
 import {
   ApiError,
   api,
@@ -75,6 +76,9 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
   const [currentFile, setCurrentFile] = useState<string | null>(null);
   const [tab, setTab] = useState<StudioTab>("preview");
   const [publishOpen, setPublishOpen] = useState(false);
+  // The two top-bar dropdowns overlap in the same corner, so opening one
+  // closes the other.
+  const [accountOpen, setAccountOpen] = useState(false);
   const [previewNonce, setPreviewNonce] = useState(0);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   // A chat turn is in flight. Publish locks on this: the preview only
@@ -336,14 +340,23 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
         hasBuild={hasBuild}
         chatBusy={chatBusy}
         publishOpen={publishOpen}
+        accountOpen={accountOpen}
         onGoHome={() => selectProject(null)}
         onSelectTab={(next) => {
           setPublishOpen(false);
           setTab(next);
         }}
         onLogOut={onSignOut}
-        onTogglePublish={() => setPublishOpen((v) => !v)}
+        onTogglePublish={() => {
+          setAccountOpen(false);
+          setPublishOpen((v) => !v);
+        }}
+        onToggleAccount={() => {
+          setPublishOpen(false);
+          setAccountOpen((v) => !v);
+        }}
       />
+      <AccountMenu open={accountOpen} bearer={bearer} onClose={() => setAccountOpen(false)} />
       <PublishMenu
         open={publishOpen}
         busy={publish.isPending}

@@ -6,8 +6,10 @@
 // switching lives in the home sidebar (brand → home), not here.
 
 import clsx from "clsx";
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
+import { ACCOUNT_MENU_ID, ACCOUNT_TOGGLE_ATTR } from "./account-menu.tsx";
 import logoUrl from "./assets/assemblyai-logomark.svg";
+import { useDismissablePanel } from "./dismissable.ts";
 
 /**
  * Absolute URL of a deployed agent. The href works either way, but the *text*
@@ -24,8 +26,7 @@ const PUBLISH_WAIT_FOR_TURN = "Publish unlocks when the agent finishes its turn"
 /**
  * Links the top bar's toggle to the panel it opens (`aria-controls`), and
  * marks the toggle so the dismiss-on-outside-click handler can tell "clicked
- * away" from "pressed the toggle again" — without that exemption the two
- * would fight and the second press would reopen what the dismiss just closed.
+ * away" from "pressed the toggle again" (see dismissable.ts).
  */
 const PUBLISH_MENU_ID = "publish-menu";
 const PUBLISH_TOGGLE_ATTR = "data-publish-toggle";
@@ -63,24 +64,7 @@ export function PublishMenu(props: PublishMenuProps) {
 
   // With Close gone, dismissal is Escape or a click away from the panel.
   // The toggle exempts itself (see PUBLISH_TOGGLE_ATTR).
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    const onPointerDown = (e: PointerEvent) => {
-      const target = e.target as Element | null;
-      if (panel.current?.contains(target as Node)) return;
-      if (target?.closest?.(`[${PUBLISH_TOGGLE_ATTR}]`)) return;
-      onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("pointerdown", onPointerDown);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("pointerdown", onPointerDown);
-    };
-  }, [open, onClose]);
+  useDismissablePanel({ open, onClose, panel, toggleAttr: PUBLISH_TOGGLE_ATTR });
 
   if (!open) return null;
   const published = props.deployedSlug && !props.error;
@@ -163,11 +147,14 @@ type TopBarProps = {
    * pressing it again hides what it just opened.
    */
   publishOpen?: boolean;
+  /** The Account panel is showing — same toggle semantics as Publish. */
+  accountOpen?: boolean;
   /** Brand click: back to the hero home (deselects the project). */
   onGoHome: () => void;
   onSelectTab: (tab: StudioTab) => void;
   onLogOut: () => void;
   onTogglePublish: () => void;
+  onToggleAccount: () => void;
 };
 
 /** Shared 60px top bar (all 1x options): brand, project name, segmented, actions. */
@@ -252,6 +239,21 @@ export function TopBar(props: TopBarProps) {
         <span aria-hidden className="text-[8px] leading-none">
           {props.publishOpen ? "▲" : "▼"}
         </span>
+      </button>
+      {/* Account-scoped, so it sits outside the project panes and is here on
+          the home screen too — where the API key would otherwise be
+          unreachable. */}
+      <button
+        type="button"
+        {...{ [ACCOUNT_TOGGLE_ATTR]: "" }}
+        className={clsx("btn", props.accountOpen && "border-fg text-fg")}
+        onClick={props.onToggleAccount}
+        title="Your AssemblyAI account key"
+        aria-haspopup="dialog"
+        aria-expanded={props.accountOpen ?? false}
+        aria-controls={props.accountOpen ? ACCOUNT_MENU_ID : undefined}
+      >
+        Account
       </button>
       <button type="button" className="btn" onClick={props.onLogOut}>
         Log out

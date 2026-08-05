@@ -19,6 +19,7 @@ const barProps = {
   onSelectTab: noop,
   onLogOut: noop,
   onTogglePublish: noop,
+  onToggleAccount: noop,
 };
 
 describe("TopBar", () => {
@@ -128,6 +129,27 @@ describe("TopBar", () => {
     render(<TopBar {...barProps} onLogOut={onLogOut} />);
     fireEvent.click(screen.getByRole("button", { name: "Log out" }));
     expect(onLogOut).toHaveBeenCalled();
+  });
+
+  // Account-scoped, so unlike the pane switcher it is present with no project
+  // open — the home screen is where a wrong key most needs replacing.
+  test("Account toggles the account panel, with or without a project", () => {
+    for (const project of ["demo", null]) {
+      const onToggleAccount = vi.fn();
+      render(<TopBar {...barProps} project={project} onToggleAccount={onToggleAccount} />);
+      const toggle = screen.getByRole("button", { name: "Account" });
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      fireEvent.click(toggle);
+      expect(onToggleAccount).toHaveBeenCalled();
+      cleanup();
+    }
+  });
+
+  test("an open account panel marks the toggle expanded and owning it", () => {
+    render(<TopBar {...barProps} accountOpen />);
+    const toggle = screen.getByRole("button", { name: "Account" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(toggle.getAttribute("aria-controls")).toBe("account-menu");
   });
 });
 

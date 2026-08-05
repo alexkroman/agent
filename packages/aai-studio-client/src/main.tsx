@@ -35,6 +35,7 @@ import { App } from "./app.tsx";
 import logoUrl from "./assets/assemblyai-logomark.svg";
 import { useStudioAuth } from "./auth.tsx";
 import { clearCliLinkCode, consumeCliLinkCode, linkConfirmationCode } from "./cli-link.ts";
+import { queryKeys } from "./query-keys.ts";
 import { isEnterSubmit } from "./send-button.tsx";
 import "./styles.css";
 
@@ -303,7 +304,7 @@ function AccountGate({
 }) {
   const client = useQueryClient();
   const account = useQuery({
-    queryKey: ["account", bearer],
+    queryKey: queryKeys.account(bearer),
     queryFn: () => api.getAccount(bearer),
     retry: (count, err) => !(err instanceof ApiError && err.status < 500) && count < 3,
   });
@@ -340,7 +341,7 @@ function AccountGate({
       <KeyGate
         bearer={bearer}
         email={account.data.email}
-        onSaved={() => void client.invalidateQueries({ queryKey: ["account"] })}
+        onSaved={() => void client.invalidateQueries({ queryKey: queryKeys.accounts })}
       />
     );
   }
