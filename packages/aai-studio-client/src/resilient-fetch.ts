@@ -36,6 +36,23 @@ export type ResilientFetchOptions = {
   fetchImpl?: typeof fetch;
 };
 
+/**
+ * The guest refuses a second concurrent turn (see `createTurnGate` in
+ * aai-guest/studio-turn-stream.ts): a project has ONE sandbox, and each tab
+ * posts its own whole-conversation view, so interleaving two turns raced the
+ * workspace edits and the loser's turn vanished from the stored conversation.
+ */
+export const TURN_IN_FLIGHT_STATUS = 423;
+
+/**
+ * What the user sees when another tab holds the turn. The AI SDK surfaces a
+ * non-2xx as `new Error(await response.text())`, so without this the panel
+ * would render the raw JSON body — and the queue's error handling hands their
+ * typed follow-up back to the composer, so waiting costs them nothing.
+ */
+export const TURN_IN_FLIGHT_MESSAGE =
+  "This project is already working in another tab or window. Wait for that turn to finish, then send again.";
+
 /** Did this rejection come from the caller aborting, rather than a dead peer? */
 function isAbort(err: unknown, init?: RequestInit): boolean {
   if (init?.signal?.aborted === true) return true;
@@ -56,6 +73,10 @@ export function createResilientFetch(options: ResilientFetchOptions): typeof fet
       if (!isAbort(err, init)) onStale();
       throw err;
     }
+    // A busy guest is HEALTHY — re-brokering would spawn nothing useful and
+    // reset the session other tabs are using. It is the one rejection from
+    // this surface that must not be read as staleness.
+    if (res.status === TURN_IN_FLIGHT_STATUS) throw new Error(TURN_IN_FLIGHT_MESSAGE);
     if (res.status === 401 || res.status === 409) onStale();
     return res;
   }) as typeof fetch;

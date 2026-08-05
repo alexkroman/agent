@@ -26,7 +26,7 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
-import { createCoalescingRunner, formatSchemaIssues } from "@alexkroman1/aai/internal";
+import { formatSchemaIssues } from "@alexkroman1/aai/internal";
 import { ASSEMBLYAI_LLM_API_KEY_ENV, assemblyAILlm } from "@alexkroman1/aai/llm";
 import { resolveAllBuiltins, resolveLlm } from "@alexkroman1/aai/runtime";
 import {
@@ -55,13 +55,36 @@ import { createTemplateTools } from "./studio-template-tools.ts";
 import { createToolCallRepair } from "./studio-tool-repair.ts";
 import { createStudioTools, STUDIO_TOOL_LABELS, withToolDeadlines } from "./studio-tools.ts";
 import { createTurnBudget } from "./studio-turn-budget.ts";
-import { materializeWorkspace, snapshotWorkspace } from "./studio-workspace-fs.ts";
+import { createWorkspaceCheckpointer, MUTATING_TOOLS, settleTurn } from "./studio-turn-settle.ts";
+import {
+  createTurnGate,
+  deliverTurn,
+  TURN_IN_FLIGHT_CODE,
+  TURN_IN_FLIGHT_STATUS,
+} from "./studio-turn-stream.ts";
+import { materializeWorkspace } from "./studio-workspace-fs.ts";
 import type { TypecheckFn } from "./studio-write-diagnostics.ts";
 
 /** Matches the host store's whole-conversation byte cap (4 MB). */
 const MAX_CHAT_BODY_BYTES = 4_000_000;
 /** Deadline for the end-of-turn workspace sync / chat persist RPCs. */
 const SYNC_RPC_TIMEOUT_MS = 30_000;
+
+/**
+ * One turn at a time, per PROCESS — not per session object.
+ *
+ * A sandbox serves one project (its identity is pinned at first install), but
+ * `studio/session-init` runs again on every page open, so a gate hanging off
+ * the session would be replaced by the very event that creates the race:
+ * measured, a second tab opening the project mid-turn re-installed the
+ * session, got a fresh gate, and streamed a concurrent turn anyway.
+ */
+let turnGate = createTurnGate();
+
+/** Test-only: drop the in-flight turn, like {@link resetSessionIdentity}. */
+export function resetTurnGate(): void {
+  turnGate = createTurnGate();
+}
 
 export type StudioSessionParams = {
   /** Workspace scope (`user:<uid>` or a key digest) — half of this guest's identity. */
@@ -239,78 +262,6 @@ export function createGuestWebTools(): ToolSet {
   return out;
 }
 
-/**
- * Push the workspace and settled conversation back to the host's stores.
- *
- * `done: true` marks this sync as the TURN-COMPLETE one — the guest's analog
- * of opencode's `session.idle` / codex's `agent-turn-complete`. The host
- * keys auto preview deploys off it; mid-turn checkpoints (below) share the
- * RPC method but never carry the flag, so a half-finished workspace is never
- * preview-deployed.
- */
-async function settleTurn(session: StudioSession, messages: UIMessage[]): Promise<void> {
-  const { files, warnings } = await snapshotWorkspace(session.dir);
-  for (const warning of warnings) console.error(`studio sync: ${warning}`);
-  // Independent stores — no reason to pay two 30s worst cases in sequence.
-  await Promise.all([
-    hostRequest("studio/sync-workspace", { files, done: true }, SYNC_RPC_TIMEOUT_MS),
-    hostRequest("studio/persist-chat", { messages }, SYNC_RPC_TIMEOUT_MS),
-  ]);
-}
-
-/**
- * Tools whose success changes files on disk. `bash` is in the set because it
- * is a real shell — a redirect or `mv` is as much an edit as `write_file`.
- * Read-only tools are excluded so a turn that only searches and reads never
- * pays for a snapshot.
- */
-export const MUTATING_TOOLS: ReadonlySet<string> = new Set([
-  "write_file",
-  "edit_file",
-  "delete_file",
-  "bash",
-  "add_dependency",
-  "remove_dependency",
-  "download_to_workspace",
-  "use_template",
-]);
-
-/**
- * Mid-turn workspace checkpointing.
- *
- * `settleTurn` runs from `onFinish`, which a killed guest never reaches — so
- * before this, a sandbox that died mid-turn lost every edit the turn had
- * made, and the user reloaded to an empty project having watched the agent
- * write the file. Checkpointing after each mutating step caps that loss at
- * the step in flight.
- *
- * Snapshots are serialized rather than concurrent: two overlapping walks of
- * the same workspace can interleave into a torn tree, and the host applies
- * whichever lands last. Checkpoints requested while one is running coalesce
- * into ONE trailing sync (`createCoalescingRunner`) instead of queueing
- * without bound — the snapshot reads the tree as it stands, so a long tool
- * chain issues at most one extra sync after the current one, never a backlog.
- */
-function createWorkspaceCheckpointer(session: StudioSession): () => void {
-  const runner = createCoalescingRunner(async () => {
-    const { files } = await snapshotWorkspace(session.dir);
-    await hostRequest("studio/sync-workspace", { files }, SYNC_RPC_TIMEOUT_MS);
-  });
-  let reported: Promise<void> | null = null;
-
-  return () => {
-    const run = runner.trigger();
-    // Coalesced triggers share one run promise — log each run's failure once.
-    if (run === reported) return;
-    reported = run;
-    run.catch((err: unknown) => {
-      // Never fatal — a lost checkpoint costs recoverable work, while a
-      // thrown one would kill a reply that is otherwise fine.
-      console.error(`studio chat: workspace checkpoint failed: ${errMsg(err)}`);
-    });
-  };
-}
-
 /** Run one coding-agent turn, streaming the UI message stream to `res`. */
 async function runTurn(
   session: StudioSession,
@@ -433,7 +384,9 @@ async function runTurn(
     repairToolCall: createToolCallRepair(model),
   });
 
-  void result.pipeUIMessageStreamToResponse(res, {
+  // The stream carries its own failures now — see studio-turn-stream.ts for
+  // what a silently truncated turn looked like before it did.
+  const { failure } = await deliverTurn(result, res, {
     headers: CORS_HEADERS,
     originalMessages: messages,
     // Fires on finish AND on client abort — either way the workspace edits
@@ -444,9 +397,12 @@ async function runTurn(
         console.error(`studio chat: failed to settle turn: ${errMsg(err)}`);
       });
     },
-    onError: (error) => errMsg(error),
+    toErrorText: errMsg,
   });
-  await result.consumeStream({ onError: () => undefined });
+  if (failure !== undefined) {
+    // The client was told in-band; this is the operator-side record.
+    console.error(`studio chat: turn stream failed: ${errMsg(failure)}`);
+  }
 }
 
 /**
@@ -489,11 +445,36 @@ export function handleStudioRequest(
     sendJson(res, 405, { error: "Method not allowed" });
     return true;
   }
-  void runTurn(session, deps, req, res).catch((err: unknown) => {
-    const message = errMsg(err);
-    console.error(`studio chat: turn failed: ${message}`);
-    if (!res.headersSent) sendJson(res, 500, { error: message });
-    else res.destroy();
-  });
+  // One turn at a time per guest: a project has one sandbox and every tab
+  // posts its own whole-conversation view, so a second concurrent turn
+  // interleaves workspace edits and its settle erases the first turn.
+  const release = turnGate.enter();
+  if (!release) {
+    sendJson(res, TURN_IN_FLIGHT_STATUS, {
+      error: "This project is already running a turn",
+      code: TURN_IN_FLIGHT_CODE,
+    });
+    return true;
+  }
+  // Released by whichever comes first: the response closing, or the turn
+  // settling. Liveness over strictness — the turn promise only resolves once
+  // the body has DRAINED, so a client that opens a turn and stops reading
+  // would otherwise lock this project's chat out for the life of the sandbox.
+  // The residual overlap is a settle (`onFinish` → sync + persist) still
+  // running as the next turn starts, which its own inbound persist follows.
+  //
+  // This is also what keeps the composer's own queue working: it dispatches
+  // the next follow-up the moment the client observes the stream end, which is
+  // strictly after this response closed here — so back-to-back queued turns
+  // are never refused as concurrent (25 in a row, measured).
+  res.on("close", release);
+  void runTurn(session, deps, req, res)
+    .catch((err: unknown) => {
+      const message = errMsg(err);
+      console.error(`studio chat: turn failed: ${message}`);
+      if (!res.headersSent) sendJson(res, 500, { error: message });
+      else res.destroy();
+    })
+    .finally(release);
   return true;
 }
