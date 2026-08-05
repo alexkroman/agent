@@ -94,10 +94,19 @@ export function agentEnvWarnings(
 async function resolveAgentEnv(root: string, agentDef: AgentDef): Promise<Record<string, string>> {
   const env = await resolveServerEnv(root);
 
-  // Only AssemblyAI's key has an interactive setup flow (it doubles as the
-  // platform credential), so that one is prompted for.
+  // Only AssemblyAI's key has a setup flow of its own (it doubles as the
+  // platform credential), so that one falls back to the logged-in key.
+  //
+  // A shell-exported key is deliberately checked FIRST and left out of `env`:
+  // `withHostCredentialFallback` (below, in `buildServer`) already routes it
+  // to the provider resolvers without letting it into `ctx.env`, and
+  // `agentEnvWarnings` flags it as shell-only so the "works here, dead after
+  // deploy" case stays visible. Without this check `aai dev` would hard-fail
+  // with `not_logged_in` for a developer whose key is exported the usual way,
+  // since `ensureApiKey` reads the login key and nothing else.
   const required = requiredProviderEnvVars(agentDef);
-  if (required.includes("ASSEMBLYAI_API_KEY") && !env.ASSEMBLYAI_API_KEY) {
+  const hasShellKey = Boolean(process.env.ASSEMBLYAI_API_KEY);
+  if (required.includes("ASSEMBLYAI_API_KEY") && !env.ASSEMBLYAI_API_KEY && !hasShellKey) {
     env.ASSEMBLYAI_API_KEY = await ensureApiKey();
   }
 

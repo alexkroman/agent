@@ -33,7 +33,15 @@ export const pm = (process.env.AAI_TEST_PM ?? "pnpm") as "pnpm" | "npm" | "yarn"
  */
 let _e2eConfigDir: string | undefined;
 function e2eConfigDir(): string {
-  _e2eConfigDir ??= fs.mkdtempSync(path.join(os.tmpdir(), "aai-e2e-config-"));
+  if (_e2eConfigDir === undefined) {
+    _e2eConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), "aai-e2e-config-"));
+    // Seeded with a key, the way `aai login` would leave it: an exported
+    // ASSEMBLYAI_API_KEY is no longer an authentication path, so the config
+    // file is the only thing that can make a spawned CLI logged in.
+    fs.writeFileSync(path.join(_e2eConfigDir, "config.json"), JSON.stringify({ apiKey: "test" }), {
+      mode: 0o600,
+    });
+  }
   return _e2eConfigDir;
 }
 
@@ -49,6 +57,9 @@ export function aaiEnv(): NodeJS.ProcessEnv {
     // Deliberately no AAI_TEMPLATES_DIR: the override pinned every e2e run to
     // the workspace's template sources, so the resolution order `init` really
     // ships (monorepo, then the copy bundled into dist/) was never exercised.
+    // A PROVIDER credential for the scaffolded project's own runtime (the
+    // default pipeline is all-AssemblyAI), not authentication — the CLI
+    // authenticates from AAI_CONFIG_DIR's config.json above and nowhere else.
     ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY || "test",
     npm_config_ignore_scripts: "true", // avoid postinstall hooks in linked pkgs
   };

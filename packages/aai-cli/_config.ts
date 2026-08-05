@@ -5,7 +5,6 @@ import path from "node:path";
 import envPaths from "env-paths";
 import { z } from "zod";
 import { CliError } from "./_output.ts";
-import { log } from "./_ui.ts";
 import { errorMessage, readJson, writeJson } from "./_utils.ts";
 
 /**
@@ -183,49 +182,34 @@ export async function writeGlobalConfig(configDir: string, data: GlobalConfig): 
 }
 
 /**
- * Persist the API key to the global config, warning (not failing) when the
- * config dir is unwritable — the key in hand still works for this run.
- */
-async function trySaveApiKey(dir: string, config: GlobalConfig, apiKey: string): Promise<void> {
-  try {
-    await writeGlobalConfig(dir, { ...config, apiKey });
-  } catch (err) {
-    log.warn(
-      `Couldn't save your API key to ${path.join(dir, "config.json")}: ${errorMessage(err)} — ` +
-        "you'll be prompted again next run.",
-    );
-  }
-}
-
-/**
  * The credential every platform command runs on.
  *
- * Two sources, in order: the key `aai login` saved, then
- * `ASSEMBLYAI_API_KEY` for non-interactive callers (CI, scripts, the eval
- * harnesses).
+ * ONE source: the key `aai login` saved to the global config. Nothing else
+ * authenticates the CLI.
  *
- * There is deliberately NO "paste a key" prompt. Pasting one produced a
- * half-configured CLI — able to push and publish while linked to no account
- * the user could see in the studio — and it made `aai login`, which is the
- * real onboarding path, optional in practice. It was also the riskier code
- * path: a hidden password prompt reads stdin, so a piped invocation could
- * have its input eaten and persisted as the API key.
+ * There is deliberately no "paste a key" prompt and no `ASSEMBLYAI_API_KEY`
+ * fallback. Both produced the same half-configured CLI — able to push,
+ * publish, and read/write another account's secrets while linked to no
+ * account the user could see in the studio — and both made `aai login`, the
+ * real onboarding path, optional in practice. The env var was the worse of
+ * the two: it applies to every invocation in a shell, it silently PERSISTED
+ * itself into the global config on first use (so the CLI stayed authenticated
+ * as that key long after the export was gone), and it collides with the
+ * variable the same name serves in a project `.env`, where it is a *provider*
+ * credential for the local dev server rather than a platform identity.
+ *
+ * Non-interactive callers (CI, scripts, the eval harnesses) authenticate by
+ * pointing `AAI_CONFIG_DIR` at a config dir holding a key from an interactive
+ * `aai login`.
  */
 export async function ensureApiKey(configDir?: string): Promise<string> {
   const dir = configDir ?? getConfigDir();
   const config = await readGlobalConfig(dir);
   if (config.apiKey) return config.apiKey;
 
-  // Non-interactive usage (CI, scripts) still authenticates by env var.
-  const envKey = process.env.ASSEMBLYAI_API_KEY;
-  if (envKey) {
-    await trySaveApiKey(dir, config, envKey);
-    return envKey;
-  }
-
   throw new CliError(
     "not_logged_in",
     "You're not logged in.",
-    "Run `aai login` to link your account, or set ASSEMBLYAI_API_KEY for non-interactive use.",
+    "Run `aai login` to link your account. Non-interactive setups can point AAI_CONFIG_DIR at a config dir holding a logged-in key.",
   );
 }
