@@ -102,6 +102,13 @@ const deps = (model: LanguageModel): StudioChatDeps => ({
   loadBundle: async () => ({ config: { name: "A", toolSchemas: [] } }),
   executeTool: async (name) => `ran ${name}`,
   model,
+  // A clean check, without spawning tsc. The real one is a ~0.5s compiler
+  // run per write — by far the slowest thing in a scripted turn, and under
+  // full-suite parallel load it alone blew this file's 5s budget. What the
+  // post-write diagnostics path does with a compiler's OUTPUT is covered by
+  // studio-write-diagnostics.test.ts; here it is a dependency, not the
+  // subject.
+  typecheck: () => Promise.resolve({ ok: true, skipped: false }),
 });
 
 const CHAT_TOKEN = "test-chat-token";
