@@ -169,6 +169,48 @@ documentation: write down the tunnel + `AAI_PUBLIC_ORIGIN` requirement, since
 today the first thing a developer hits when they try `SANDBOX_BACKEND=modal`
 locally is a Publish that fails for a reason nothing explains.
 
+## Should the in-memory implementations be deleted?
+
+No. They are not primarily a dev-mode convenience — they are the test doubles
+for the whole `aai-server` + `aai-studio-server` unit suites. Around thirty
+test files construct `createMemorySecretStore` / `createMemoryAgentRows` /
+`createMemoryWorkspaceStore` / `createMemoryChatStore` /
+`createMemoryPlatformEvents` / `localSlugLock` / `createTestStore`, directly
+or through `test-utils.ts` and `_test-combined.ts`. Deleting them makes a
+Docker daemon a prerequisite for `pnpm test`, and turns a fast forks-pool
+suite into one bounded by Postgres round trips — a large, permanent cost paid
+on every run, to remove code that is a few dozen lines per store.
+
+The legitimate worry behind the question is **drift**: two implementations of
+one interface where tests only ever see the cheap one. But look at where the
+drift actually is. `workspace-store.test.ts` and `chat-store.test.ts` already
+run behavioral parity suites (`describe.each`) across both implementations —
+so memory-vs-pg is pinned. What is *not* pinned is that the "postgres" arm of
+those suites runs against a hand-written fake `SqlExec`: a `Map` that
+reimplements the store's SQL semantics in TypeScript. Nothing anywhere proves
+that fake agrees with real Postgres.
+
+So the untested seam is fake-SQL-vs-Postgres, and deleting the memory stores
+does not touch it. The fix is step 7 — run the existing suites against the
+Docker stack's real Postgres — which closes the actual gap and keeps the fast
+path. Two cheap follow-ups in the same direction:
+
+- Extend the `describe.each` parity pattern to the stores that lack it
+  (`agent-store`, `secret-store`), so every pair is pinned by one shared
+  suite rather than two independent ones.
+- Where a memory implementation is only reachable from tests after the
+  profile lands, move it to `test-utils.ts` rather than deleting it — it
+  stops counting as production source for coverage, and stops reading like a
+  second supported backend.
+
+The narrower version of the question — should the *dev server* stop
+defaulting to memory, i.e. should `pnpm dev:aai-server` require Docker — is a
+judgement call worth revisiting once the profile has been in use for a while.
+The case against flipping it now: most work in this repo (CLI, UI, SDK,
+templates) never touches the platform stores, and a default that needs a
+daemon running is a default that gets worked around. Ship the profile, see
+who uses it, then decide.
+
 ## Assessment
 
 **Supabase in Docker: worth it.** It is cheap (one devDependency, no bespoke
