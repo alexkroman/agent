@@ -1,5 +1,22 @@
 # @alexkroman1/aai-server
 
+## 3.4.3
+
+### Patch Changes
+
+- d140e9b: Bake the guest toolchain as a cached Modal image layer instead of an npm install exec
+- d140e9b: Store deploy artifacts through Supabase Storage's own client instead of a generic S3 driver
+- d140e9b: Serialize per-slug mutations with a Postgres advisory lock instead of a lease table
+- d140e9b: Stop booting sandboxes once a replica is draining, and let the proxy observe the health 503 first
+- d140e9b: Identify guest sandboxes by Modal name instead of a heartbeated lease table
+- d140e9b: Use Modal readiness probes for guest boot, and lock the guest toolchain
+- d140e9b: Declare the platform schema in Supabase migrations instead of creating it lazily per store
+- Updated dependencies [d140e9b]
+- Updated dependencies [d140e9b]
+  - @alexkroman1/aai@5.8.0
+  - aai-guest@0.4.4
+  - @alexkroman1/aai-ui@5.8.0
+
 ## 3.4.2
 
 ### Patch Changes

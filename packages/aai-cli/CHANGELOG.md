@@ -1,5 +1,14 @@
 # @alexkroman1/aai-cli
 
+## 5.8.0
+
+### Patch Changes
+
+- Updated dependencies [d140e9b]
+- Updated dependencies [d140e9b]
+  - @alexkroman1/aai@5.8.0
+  - @alexkroman1/aai-ui@5.8.0
+
 ## 5.7.0
 
 ### Minor Changes

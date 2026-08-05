@@ -1,5 +1,24 @@
 # aai-studio-server
 
+## 0.5.3
+
+### Patch Changes
+
+- d140e9b: Make auto preview deploys durable with a pgmq-backed queue instead of in-process state
+- Updated dependencies [d140e9b]
+- Updated dependencies [d140e9b]
+- Updated dependencies [d140e9b]
+- Updated dependencies [d140e9b]
+- Updated dependencies [d140e9b]
+- Updated dependencies [d140e9b]
+- Updated dependencies [d140e9b]
+- Updated dependencies [d140e9b]
+- Updated dependencies [d140e9b]
+  - aai-server@3.4.3
+  - @alexkroman1/aai@5.8.0
+  - @alexkroman1/aai-ui@5.8.0
+  - aai-studio-client@0.4.3
+
 ## 0.5.2
 
 ### Patch Changes
