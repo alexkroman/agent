@@ -104,20 +104,35 @@ export function warmPreviewSandbox(
  * fire-and-forget in-process state and a replica restart could drop a
  * deploy — leaving the pane on "Updating preview…" with nothing on the way
  * until the next edit. The queue (studio-preview-queue.ts) makes that
- * delivery durable, so a stale preview means a job is still queued and the
- * drain will run it. Re-scheduling here would be a second mechanism
+ * delivery durable, so a STALE preview means a job is still queued and the
+ * drain will run it. Re-scheduling that here would be a second mechanism
  * answering the same question, and the weaker one: it only fires when a
  * human opens the project.
  *
- * The warm-up doubles as an existence check, which the queue does NOT
- * cover: a 404 from the broker means the platform no longer knows the agent
- * at all — the deploy behind the workspace's preview stamp is GONE
- * (expired/swept/deleted out from under it), so "preview is current" is a
- * lie the stamp can never correct on its own, and no queued job exists
- * because nothing was edited. That clears `previewHash` and enqueues a
- * deploy. Only 404 triggers it: a 503 means a sandbox mid-boot (the broker
- * keeps booting it and the pane's own fetch retries), and redeploying on it
- * would churn a healthy slow boot.
+ * It then does two things the queue does NOT cover, both of them cases where
+ * no job exists and the workspace stamp cannot correct itself:
+ *
+ * - **A 404 from the broker** means the platform no longer knows the agent at
+ *   all — the deploy behind the workspace's preview stamp is GONE
+ *   (expired/swept/deleted out from under it), so "preview is current" is a
+ *   lie, and no queued job exists because nothing was edited. That clears
+ *   `previewHash` (else the deploy no-ops on the matching hash) and enqueues
+ *   a deploy. Only 404 triggers it: a 503 means a sandbox mid-boot (the
+ *   broker keeps booting it and the pane's own fetch retries), and
+ *   redeploying on that would churn a healthy slow boot.
+ * - **A stamped `previewError`** is a SETTLED failure: the job ran, failed,
+ *   and left the queue. So there is no queued job to defer to here either,
+ *   and nothing short of another edit would ever retry it. This deliberately
+ *   does NOT try to tell a deterministic failure (broken code, which will
+ *   re-fail into the same banner) from a transient one (a platform 500, a
+ *   Storage blip, a deploy racing a redeploy) — the only signal available is
+ *   the CLI's output prose, and sniffing it is exactly the check that breaks
+ *   when a message is reworded. The trade is asymmetric: being wrong costs
+ *   one extra deploy per project-open, re-stamping the banner that is already
+ *   there, while not retrying leaves a transient failure stuck permanently.
+ *   The stamp itself is left in place — a successful deploy deletes it
+ *   (see `attempt`), so the pane keeps showing the last real error until
+ *   there is something better to say, rather than flickering to "starting".
  */
 export function wakeProjectPreview(options: {
   workspaces: WorkspaceStore;
@@ -132,24 +147,32 @@ export function wakeProjectPreview(options: {
   void getWorkspace(workspaces, scope, project)
     .then(async (workspace) => {
       if (!workspace) return;
-      const deployable = Object.keys(workspace.files).length > 0;
-      // Nothing deployable in a fresh workspace (the first agent turn owns
-      // the first preview), and a stamped build failure is deterministic — a
-      // redeploy would only re-fail into the same banner.
-      const canRedeploy = deployable && !workspace.previewError;
+      // Nothing deployable in a fresh workspace — the first agent turn owns
+      // the first preview.
+      if (Object.keys(workspace.files).length === 0) return;
+      // A settled failure has no queued job behind it, so this is the only
+      // thing that can retry it (see the doc comment).
+      const retrySettledFailure = Boolean(workspace.previewError);
       const slug = workspace.previewSlug ?? workspace.deployedSlug;
-      if (!slug) return;
-      const status = await warmPreviewSandbox(target.serverUrl, slug, options.fetchImpl ?? fetch);
-      if (status !== 404 || !canRedeploy) return;
-      // The agent is gone but the stamp says current — the deploy would
-      // no-op on the matching hash, so drop the stamp first. `previewSlug`
-      // stays: the redeploy re-claims the same slug, so the pane's URL
-      // never rots.
-      await mutateWorkspace(workspaces, scope, project, (current) => {
-        const next = { ...current };
-        delete next.previewHash;
-        return next;
-      });
+      // Warm whatever the pane embeds even when a retry is already decided:
+      // on a failure that followed a working deploy, `previewSlug` still
+      // points at that agent and the pane loads it while the retry runs.
+      // Doubles as an existence check — a 404 means the stamped agent is gone.
+      const gone =
+        slug !== undefined &&
+        (await warmPreviewSandbox(target.serverUrl, slug, options.fetchImpl ?? fetch)) === 404;
+      if (!(gone || retrySettledFailure)) return;
+      if (gone) {
+        // The agent is gone but the stamp may say current — the deploy would
+        // no-op on the matching hash, so drop the stamp first. `previewSlug`
+        // stays: the redeploy re-claims the same slug, so the pane's URL
+        // never rots.
+        await mutateWorkspace(workspaces, scope, project, (current) => {
+          const next = { ...current };
+          delete next.previewHash;
+          return next;
+        });
+      }
       options.schedule(scope, project, target);
     })
     .catch(() => undefined);

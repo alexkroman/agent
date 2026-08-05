@@ -795,6 +795,25 @@ voice agents without the CLI:
   never redeploy. Only 404 triggers this; a 503 is a sandbox mid-boot and
   stays retry-only.
 
+  **A stamped `previewError` is retried on open too**, for the same reason the
+  404 case exists: a settled failure is the one state with NO queued job behind
+  it (the job ran, failed, and left the queue), so nothing short of another
+  edit would ever clear it. This deliberately does not try to tell a
+  deterministic failure (broken code, which re-fails into the same banner) from
+  a transient one — the only signal available is the deploy CLI's output prose,
+  and sniffing it is exactly the check that breaks when a message is reworded.
+  The trade is asymmetric: being wrong costs one extra deploy per
+  project-open, re-stamping the banner already there, while not retrying
+  strands a transient failure permanently. That is not hypothetical — a
+  platform-side `deploy failed (HTTP 500)` (the anon-key Storage RLS bug) left
+  projects pinned on an error banner with a working workspace behind it. The
+  stamp is left in place while the retry runs, because only a SUCCESSFUL deploy
+  deletes it; the pane keeps showing the last real error rather than flickering
+  to "starting". A project whose first-ever preview failed has no
+  `previewSlug`/`deployedSlug` and so nothing to warm — it still schedules
+  (an early "no slug, give up" return meant exactly those projects could never
+  retry).
+
   **The pane probes before it frames** (`useAgentPageReady` in
   `preview.tsx`): a stamped `previewSlug` is not proof the platform serves
   `/:slug/`. The stamp outlives the deploy behind it (the swept-agent case
