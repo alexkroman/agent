@@ -38,7 +38,7 @@ import { SandboxNameTakenError, studioSandboxName } from "aai-server/sandbox-dir
 import { spawnWarmHarness, type WarmHarness } from "aai-server/sandbox-vm";
 import { MAX_CHAT_STEPS } from "./studio-limits.ts";
 import { studioLlmModelId } from "./studio-llm.ts";
-import { createPreviewDeployer, type PreviewTarget } from "./studio-preview.ts";
+import { createPreviewDeployer, type PreviewOrigin, type PreviewTarget } from "./studio-preview.ts";
 import { createMemoryPreviewQueue, type PreviewQueue } from "./studio-preview-queue.ts";
 import { studioSystemPrompt } from "./studio-prompt.ts";
 import type { adoptPeerSession } from "./studio-session-adopt.ts";
@@ -112,16 +112,24 @@ export type StudioSessionBroker = {
    * workspace's current files, and return the guest's public chat URL.
    * Null when the project doesn't exist.
    *
-   * `serverUrl` (the public platform origin) arms auto preview deploys: the
-   * guest's end-of-turn `studio/sync-workspace` schedules a deploy of the
-   * edited workspace to the project's preview slug (studio-preview.ts).
-   * Omitted, agent edits sync without auto-previewing.
+   * `preview` arms auto preview deploys: the guest's end-of-turn
+   * `studio/sync-workspace` schedules a deploy of the edited workspace to the
+   * project's preview slug (studio-preview.ts). Omitted, agent edits sync
+   * without auto-previewing.
+   *
+   * It is an OBJECT, not a bare `serverUrl`, because the caller's `userId`
+   * has to ride along with it: a queued preview job that does not name a
+   * studio user can only ever be run by the replica that enqueued it, and is
+   * ARCHIVED — the work silently dropped — the moment it is redelivered
+   * anywhere else. That is the exact durability the queue exists to provide,
+   * and while this took a bare string the primary preview path (every coding
+   * agent turn) could not supply the field at all.
    */
   ensureSession(
     scope: string,
     project: string,
     apiKey: string,
-    serverUrl?: string,
+    preview?: PreviewOrigin,
   ): Promise<{ url: string; token: string } | null>;
   /**
    * Re-install the workspace's CURRENT files into the project's live sandbox
@@ -291,7 +299,7 @@ export function createStudioSessionBroker(
     scope: string,
     project: string,
     apiKey: string,
-    serverUrl?: string,
+    preview?: PreviewOrigin,
   ): Promise<{ url: string; token: string } | null> {
     const existing = sessions.get(key);
     if (!existing) return null;
@@ -306,7 +314,7 @@ export function createStudioSessionBroker(
       );
       if (token === null) return null;
       existing.lastUsed = Date.now();
-      if (serverUrl) existing.previewTarget = { serverUrl, apiKey };
+      if (preview) existing.previewTarget = { ...preview, apiKey };
       return { url: existing.url, token };
     } catch (err) {
       // Dead sandbox (idle-killed, crashed) — drop it so the caller respawns.
@@ -372,10 +380,10 @@ export function createStudioSessionBroker(
     scope: string,
     project: string,
     apiKey: string,
-    opts: { serverUrl?: string | undefined; allowSpawn?: boolean } = {},
+    opts: { preview?: PreviewOrigin | undefined; allowSpawn?: boolean } = {},
   ): Promise<{ url: string; token: string } | null> {
-    const { serverUrl, allowSpawn = true } = opts;
-    const reused = await reuseSession(key, scope, project, apiKey, serverUrl);
+    const { preview, allowSpawn = true } = opts;
+    const reused = await reuseSession(key, scope, project, apiKey, preview);
     if (reused) return reused;
 
     // Check the project exists BEFORE taking a sandbox. Spawning first and
@@ -411,7 +419,7 @@ export function createStudioSessionBroker(
       project,
       lastUsed: Date.now(),
       chatToken: token,
-      ...(serverUrl ? { previewTarget: { serverUrl, apiKey } } : {}),
+      ...(preview ? { previewTarget: { ...preview, apiKey } } : {}),
       release: () => false,
     };
     entry.release = sessions.claim(key, entry);
@@ -457,12 +465,12 @@ export function createStudioSessionBroker(
   });
 
   return {
-    ensureSession(scope, project, apiKey, serverUrl) {
+    ensureSession(scope, project, apiKey, preview) {
       const key = projectKey(scope, project);
       // Per project, not global: brokering one project must never queue
       // behind another project's Modal spawn.
       return withLock(sessionLock, key, () =>
-        ensureSessionLocked(key, scope, project, apiKey, { serverUrl }),
+        ensureSessionLocked(key, scope, project, apiKey, { preview }),
       );
     },
 

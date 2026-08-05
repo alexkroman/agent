@@ -56,11 +56,11 @@ import { userApiKeySecretName } from "aai-server/supabase-auth";
 import { WorkspaceConflictError } from "aai-server/workspace-store";
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { streamSSE } from "hono/streaming";
 import { registerAccountRoutes } from "./studio-account-routes.ts";
 import { requestPublicOrigin, type StudioHonoEnv } from "./studio-context.ts";
 import { databaseDeployHook, registerDatabaseRoutes } from "./studio-database-routes.ts";
 import { deployStudioProject } from "./studio-deploy.ts";
+import { registerEventRoutes } from "./studio-events-routes.ts";
 import { studioLlmInfo } from "./studio-llm.ts";
 import { wakeProjectPreview } from "./studio-preview.ts";
 import type { PreviewQueue } from "./studio-preview-queue.ts";
@@ -75,8 +75,8 @@ import {
 } from "./studio-schemas.ts";
 import { createStudioSessionBroker, type StudioSessionBroker } from "./studio-session-broker.ts";
 import type { StudioSessionRegistry } from "./studio-session-registry.ts";
-import { onSettledEdit } from "./studio-settled-edit.ts";
-import { createSsePusher, projectPayload } from "./studio-sse.ts";
+import { onSettledEdit, previewOrigin } from "./studio-settled-edit.ts";
+import { projectPayload } from "./studio-sse.ts";
 import { starterFiles } from "./studio-template.ts";
 import {
   createWorkspace,
@@ -203,27 +203,12 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   studio.use("/projects/:project", projectMw);
   studio.use("/projects/:project/*", projectMw);
 
+  // The two live event streams (studio-events-routes.ts).
+  registerEventRoutes(studio, requestScope);
+
   studio.get("/projects", async (c) => {
     const scope = requestScope(c);
     return c.json({ projects: await listProjects(c.env.workspaces, scope) });
-  });
-
-  // Live project LIST for the caller's scope — fed by scope-level workspace
-  // change events, so a project created or deleted on another device shows
-  // up in the home sidebar without a refresh. Own top-level path (never
-  // `/projects/events`) because "events" is a valid project name.
-  studio.get("/events", (c) => {
-    const scope = requestScope(c);
-    return streamSSE(c, async (stream) => {
-      const sse = createSsePusher(stream);
-      const list = async (): Promise<string> =>
-        JSON.stringify(await listProjects(c.env.workspaces, scope));
-      await sse.write("projects", await list());
-      const unwatch = c.env.events.watchScopeProjects(scope, () =>
-        sse.push(async () => ({ event: "projects", data: await list() })),
-      );
-      await sse.wait(unwatch);
-    });
   });
 
   studio.post("/projects", zValidator("json", CreateProjectSchema), async (c) => {
@@ -257,44 +242,6 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     const workspace = await getWorkspace(c.env.workspaces, scope, project);
     if (!workspace) return c.json({ error: "Project not found" }, 404);
     return c.json(projectPayload(workspace));
-  });
-
-  // Live project state: an SSE stream fed by the workspace and chat rows'
-  // change streams (Supabase Realtime in production — see
-  // platform-events.ts). This replaced the client's preview polling loop.
-  // Events are signals: each one re-reads its row, so the pushed payload is
-  // always current, never a possibly-truncated wire payload. The first
-  // event is the current state, so a subscriber can't miss an edit that
-  // landed between its GET and the subscription. `chat` frames carry the
-  // settled conversation (the guest's end-of-turn persist), so other
-  // tabs/devices see finished turns without re-opening the project.
-  studio.get("/projects/:project/events", async (c) => {
-    const { scope, project } = c.var;
-    const workspace = await getWorkspace(c.env.workspaces, scope, project);
-    if (!workspace) return c.json({ error: "Project not found" }, 404);
-    return streamSSE(c, async (stream) => {
-      const sse = createSsePusher(stream);
-      await sse.write("project", JSON.stringify(projectPayload(workspace)));
-      const unwatchWorkspace = c.env.events.watchWorkspace(scope, project, () =>
-        sse.push(async () => {
-          const current = await getWorkspace(c.env.workspaces, scope, project);
-          // A vanished workspace (project deleted) ends the stream; the
-          // client's other queries surface the 404.
-          if (!current) return null;
-          return { event: "project", data: JSON.stringify(projectPayload(current)) };
-        }),
-      );
-      const unwatchChat = c.env.events.watchChat(scope, project, () =>
-        sse.push(async () => {
-          const messages = await c.env.chats.getChat(scope, project);
-          return { event: "chat", data: JSON.stringify(messages ?? []) };
-        }),
-      );
-      await sse.wait(() => {
-        unwatchWorkspace();
-        unwatchChat();
-      });
-    });
   });
 
   // Persisted chat history for the project — written server-side when a chat
@@ -342,7 +289,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
 
   /** See studio-settled-edit.ts — what an out-of-turn workspace write owes. */
   const settledEdit = (c: Context<StudioHonoEnv>, scope: string, project: string): void =>
-    onSettledEdit(ensureBroker(c), c, scope, project, requestPublicOrigin(c));
+    onSettledEdit(ensureBroker(c), c, scope, project);
 
   studio.put("/projects/:project/file", zValidator("json", StudioFileSchema), async (c) => {
     const { scope, project } = c.var;
@@ -457,14 +404,12 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     const { scope, project } = c.var;
     const limited = await limits.chat(scope);
     if (limited) return limited;
-    // The public origin arms auto preview deploys: the guest's end-of-turn
-    // sync makes the broker ship the edited workspace to the preview slug.
-    const session = await ensureBroker(c).ensureSession(
-      scope,
-      project,
-      c.var.apiKey,
-      requestPublicOrigin(c),
-    );
+    // Arms auto preview deploys: the guest's end-of-turn sync makes the
+    // broker ship the edited workspace to the preview slug. `userId` rides
+    // along because a queued job that does not name a studio user cannot be
+    // run by any other replica — see `ensureSession`.
+    const preview = previewOrigin(c);
+    const session = await ensureBroker(c).ensureSession(scope, project, c.var.apiKey, preview);
     if (!session) return c.json({ error: "Project not found" }, 404);
     // The user just landed on (or re-opened) this project — wake its preview
     // too (fire-and-forget; gates and rationale live in studio-preview.ts).
@@ -472,7 +417,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
       workspaces: c.env.workspaces,
       scope,
       project,
-      target: { serverUrl: requestPublicOrigin(c), apiKey: c.var.apiKey },
+      target: { ...preview, apiKey: c.var.apiKey },
       schedule: ensureBroker(c).schedulePreview,
     });
     // `token` is the guest chat surface's per-session bearer — the browser

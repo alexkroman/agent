@@ -120,6 +120,16 @@ function logSubscribeStatus(topic: string): (status: string, err?: Error) => voi
  * by its watchers and released (unsubscribed) when the last one unwatches.
  * Entries are dropped by identity so a late unwatch can never tear down a
  * successor channel for the same key.
+ *
+ * **A (re)join is itself a signal.** `subscribe()` only SENDS the join; the
+ * server-side `postgres_changes` binding does not exist until the push is
+ * acked with `SUBSCRIBED`, and realtime-js rejoins the channel after any
+ * socket drop. Changes in either window are delivered to nobody, ever — these
+ * are pure signal streams with no sequence number to resume from and (since
+ * the studio client's polling loop was removed) nothing downstream that would
+ * notice. So every successful join fires the key's watchers, which re-read
+ * their row exactly as they do for a change event. That makes the join gap and
+ * a reconnect outage cost a redundant read instead of a silently stale client.
  */
 function createChannelPool(client: RealtimeClientLike) {
   type Entry = { channel: RealtimeChannelLike; watchers: Set<() => void> };
@@ -133,20 +143,34 @@ function createChannelPool(client: RealtimeClientLike) {
       accepts: (row: Record<string, unknown> | null | undefined) => boolean,
       onChange: () => void,
     ): Unwatch {
-      let entry = entries.get(key);
-      if (!entry) {
-        const channel = client.channel(topic);
-        const created: Entry = { channel, watchers: new Set() };
-        channel.on("postgres_changes", filter, (payload) => {
-          if (!accepts(payload.new ?? payload.old)) return;
-          for (const watcher of created.watchers) watcher();
-        });
-        channel.subscribe(logSubscribeStatus(topic));
-        entries.set(key, created);
-        entry = created;
-      }
-      const current = entry;
+      const existing = entries.get(key);
+      // Register the watcher BEFORE any subscribe, so the join signal below
+      // cannot land ahead of the watcher that triggered the join. It is the
+      // one that most needs it — the join is what makes its subscription real.
+      const created: Entry = existing ?? { channel: client.channel(topic), watchers: new Set() };
+      const current = created;
       current.watchers.add(onChange);
+      if (!existing) {
+        entries.set(key, current);
+        // Snapshot before dispatch: a watcher is free to unwatch (or another
+        // watcher may subscribe) from inside its own callback, and mutating
+        // the set mid-iteration decides who runs by insertion order.
+        const fire = (): void => {
+          for (const watcher of [...current.watchers]) watcher();
+        };
+        current.channel.on("postgres_changes", filter, (payload) => {
+          if (!accepts(payload.new ?? payload.old)) return;
+          fire();
+        });
+        const logStatus = logSubscribeStatus(topic);
+        current.channel.subscribe((status, err) => {
+          logStatus(status, err);
+          // See the note above: the join is the point from which changes are
+          // delivered, so it is also the point at which watchers owe
+          // themselves a re-read.
+          if (status === "SUBSCRIBED") fire();
+        });
+      }
       return () => {
         current.watchers.delete(onChange);
         if (current.watchers.size > 0) return;
@@ -180,7 +204,8 @@ export function createRealtimePlatformEvents(opts: RealtimePlatformEventsOptions
         // Delete events carry the identity in `old`; everything else in `new`.
         const slug = payload.new?.slug ?? payload.old?.slug;
         if (typeof slug !== "string" || slug.length === 0) return;
-        for (const watcher of agentWatchers) watcher(slug);
+        // Snapshot: a handler may unwatch from inside its own callback.
+        for (const watcher of [...agentWatchers]) watcher(slug);
       },
     );
     agentsChannel.subscribe(logSubscribeStatus("aai:agents"));

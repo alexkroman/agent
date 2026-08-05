@@ -5,6 +5,7 @@ import type { GuestConnection } from "aai-server/rpc-schemas";
 import type { WarmHarness } from "aai-server/sandbox-vm";
 import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
 import { describe, expect, test, vi } from "vitest";
+import { createMemoryPreviewQueue, type PreviewJob } from "./studio-preview-queue.ts";
 import { chatUrlForGuest, createStudioSessionBroker } from "./studio-session-broker.ts";
 import { createMemoryStudioSessionRegistry } from "./studio-session-registry.ts";
 import { createWorkspace, getWorkspace } from "./studio-workspace.ts";
@@ -73,14 +74,24 @@ async function makeBroker(
     if (!guest) throw new Error("no more fake guests");
     return guest.warm;
   });
+  // Every preview job enqueued: the ROW is what a redelivery elsewhere sees.
+  const enqueued: PreviewJob[] = [];
+  const inner = createMemoryPreviewQueue();
   const broker = createStudioSessionBroker({
     workspaces,
     chats,
     spawn: spawn as never,
     harnessPath: "/fake/harness.mjs",
+    previewQueue: {
+      ...inner,
+      enqueue: (job) => {
+        enqueued.push(job);
+        return inner.enqueue(job);
+      },
+    },
     ...extra,
   });
-  return { broker, workspaces, chats, spawn };
+  return { broker, workspaces, chats, spawn, enqueued };
 }
 
 describe("studio session broker", () => {
@@ -246,9 +257,12 @@ describe("studio session broker", () => {
    */
   test("a done sync auto-deploys a preview; checkpoints do not", async () => {
     const guest = fakeGuest();
-    const { broker, workspaces } = await makeBroker([guest]);
-    // Brokered WITH a serverUrl — that is what arms preview deploys.
-    await broker.ensureSession(SCOPE, PROJECT, "caller-key", "https://platform.example");
+    const { broker, workspaces, enqueued } = await makeBroker([guest]);
+    // Brokered WITH a preview origin — that is what arms preview deploys.
+    await broker.ensureSession(SCOPE, PROJECT, "caller-key", {
+      serverUrl: "https://platform.example",
+      userId: "user-1",
+    });
     const sync = guest.handlers.get("studio/sync-workspace");
 
     // Mid-turn checkpoint: files land, no preview deploy.
@@ -269,6 +283,13 @@ describe("studio session broker", () => {
       slug: `${PROJECT}-preview`,
       files: { "agent.ts": "// settled" },
     });
+    // The ROW names the brokering user — the only thing that lets a redelivery
+    // run elsewhere (the drain resolves that user's key from Vault); a job
+    // without one is ARCHIVED, so the preview silently never lands, and while
+    // the broker took a bare `serverUrl` this path could not name one.
+    expect(enqueued).toEqual([
+      { scope: SCOPE, project: PROJECT, serverUrl: "https://platform.example", userId: "user-1" },
+    ]);
     await broker.dispose();
   });
 

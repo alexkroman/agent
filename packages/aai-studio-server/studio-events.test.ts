@@ -13,7 +13,7 @@
 import { authHeaders, type TestFetch } from "aai-server/test-utils";
 import { expect, test } from "vitest";
 import { createTestCombined } from "./_test-combined.ts";
-import { mutateWorkspace, studioScope } from "./studio-workspace.ts";
+import { createWorkspace, mutateWorkspace, studioScope } from "./studio-workspace.ts";
 
 /** Parse the payloads of `event` out of complete frames in `buffer`. */
 function payloadsOf(buffer: string, event: string): unknown[] {
@@ -106,6 +106,89 @@ test("a workspace write pushes the updated project state", async () => {
     previewStale: false,
   });
   expect(updated?.previewVersion).toBeTruthy();
+});
+
+/**
+ * The route must SUBSCRIBE before it READS, and its initial frame must be
+ * produced by a read taken after that subscribe.
+ *
+ * Read-then-subscribe loses every change that lands in the gap, permanently:
+ * these streams are the only push mechanism left (the client's polling loop is
+ * gone), so the pane keeps showing the pre-change snapshot until something
+ * else happens to touch the row. The gap is microtask-sized in this harness
+ * and much wider in production — a real socket write on one side and a
+ * Supabase Realtime channel JOIN round trip on the other. Opening a project at
+ * the moment its preview deploy stamps the workspace is the collision, and it
+ * strands the Preview pane on "Updating preview…" with a finished preview
+ * behind it.
+ *
+ * Modelled by committing a change from INSIDE the subscribe and making the
+ * store's reads wait for it: whatever the initial frame reports, it either was
+ * read after the subscribe or it was not. Under read-then-subscribe the read
+ * happens before the subscribe exists, so it reports the pre-change row and
+ * nothing ever corrects it.
+ */
+test("a change landing between subscribe and the first read still reaches the client", async () => {
+  const base = await createTestCombined();
+  let raced: Promise<unknown> | undefined;
+  const harness = await createTestCombined({
+    // Reads made after the injected change has been committed must observe it.
+    workspaces: {
+      ...base.workspaces,
+      get: async (s, p) => {
+        await raced;
+        return base.workspaces.get(s, p);
+      },
+    },
+    chats: base.chats,
+    events: {
+      ...base.events,
+      watchWorkspace: (s, p, cb) => {
+        // A preview deploy stamping the row exactly as the stream subscribes.
+        raced ??= mutateWorkspace(base.workspaces, s, p, (current) => ({
+          ...current,
+          previewSlug: "proj-preview",
+          previewHash: current.hash ?? "",
+        }));
+        return base.events.watchWorkspace(s, p, cb);
+      },
+    },
+  });
+  await harness.fetch("/studio/projects", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ name: "proj" }),
+  });
+
+  const stream = await openEvents(harness.fetch, "proj");
+  const [initial] = (await readFrames(stream, "project", 1)) as Record<string, unknown>[];
+  expect(initial).toMatchObject({ previewSlug: "proj-preview", previewStale: false });
+});
+
+test("the project list stream subscribes before its first read", async () => {
+  const base = await createTestCombined();
+  let raced: Promise<unknown> | undefined;
+  const harness = await createTestCombined({
+    workspaces: {
+      ...base.workspaces,
+      list: async (s) => {
+        await raced;
+        return base.workspaces.list(s);
+      },
+    },
+    chats: base.chats,
+    events: {
+      ...base.events,
+      watchScopeProjects: (s, cb) => {
+        // A project created on another device as this stream subscribes.
+        raced ??= createWorkspace(base.workspaces, s, "raced", { files: {} });
+        return base.events.watchScopeProjects(s, cb);
+      },
+    },
+  });
+  const res = await harness.fetch("/studio/events", { headers: authHeaders() });
+  const [initial] = (await readFrames(res, "projects", 1)) as string[][];
+  expect(initial).toEqual(["raced"]);
 });
 
 test("a settled chat turn pushes the conversation as a chat frame", async () => {
