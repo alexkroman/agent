@@ -46,12 +46,18 @@ export interface TurnOutcome {
    * Barge-in mid-turn: keep the completed tool steps and the spoken-so-far
    * text. Skipped when the conversation has since been reset, so an interrupted
    * tail never lands in a fresh conversation.
+   *
+   * `syntheticPrompt` — the turn's own user text, set only when that text was
+   * INJECTED (a false-interruption resume prompt, a silence nudge) — is dropped
+   * from history when this turn left nothing else behind. See
+   * {@link PipelineHistory.dropTrailingUser}.
    */
   persistBargeIn(args: {
     historyEpoch: number;
     accumulated: string;
     persistedLen: number;
     stepMessages: ModelMessage[];
+    syntheticPrompt?: string | undefined;
   }): void;
   /**
    * Speak `errorPhrase` after a failed LLM turn, so a provider outage hands the
@@ -97,6 +103,10 @@ export function createTurnOutcome(deps: TurnOutcomeDeps): TurnOutcome {
   return {
     persistBargeIn(args) {
       if (!gate.historyCurrent(args.historyEpoch)) return;
+      // Computed before persisting, while the synthetic prompt is still the
+      // trailing message: nothing was persisted exactly when there are no
+      // completed steps and no spoken text.
+      const leftNoTrace = args.stepMessages.length === 0 && args.accumulated.trim().length === 0;
       persistInterruptedTurn({
         history,
         accumulated: args.accumulated,
@@ -105,6 +115,9 @@ export function createTurnOutcome(deps: TurnOutcomeDeps): TurnOutcome {
         onTranscript: (text) => callbacks.onAgentTranscript(text, true),
         updateAgentContext: (text) => providers.stt?.updateAgentContext?.(text),
       });
+      if (args.syntheticPrompt !== undefined && leftNoTrace) {
+        history.dropTrailingUser(args.syntheticPrompt);
+      }
     },
 
     speakRecovery(failed) {

@@ -28,6 +28,22 @@ export interface PipelineHistory {
   pushConversation(...msgs: Message[]): void;
   /** Append ModelMessage(s) — e.g. a turn's response messages — to the LLM view. */
   pushLlm(...msgs: ModelMessage[]): void;
+  /**
+   * Drop a trailing user message matching `content` from both views.
+   *
+   * For a SYNTHETIC prompt (false-interruption resume, silence nudge) whose
+   * turn was aborted before it produced anything: the prompt is pushed before
+   * the LLM stream runs, and nothing else rolls it back, so a resume that a
+   * committed user turn mooted left `"…the user did not actually say anything.
+   * Continue your reply…"` in history directly ahead of the words the user
+   * really said — two consecutive, contradictory user messages, which is an
+   * invitation to answer the wrong one. A prompt whose turn DID produce
+   * something must stay: the assistant tail persisted beside it answers it.
+   *
+   * Matched on content rather than trimmed blindly so this can never eat a
+   * message it did not write.
+   */
+  dropTrailingUser(content: string): void;
   /** Seed both views from resent text history (e.g. reconnect/resume). */
   seed(msgs: readonly Message[]): void;
   /** Clear both views. */
@@ -161,6 +177,12 @@ export function createPipelineHistory(seed?: readonly Message[]): PipelineHistor
         if (cleaned) llm.push(cleaned);
       }
       capLlm(llm);
+    },
+    dropTrailingUser(content: string): void {
+      const last = conversation.at(-1);
+      if (last?.role === "user" && last.content === content) conversation.pop();
+      const lastLlm = llm.at(-1);
+      if (lastLlm?.role === "user" && lastLlm.content === content) llm.pop();
     },
     seed(msgs: readonly Message[]): void {
       if (msgs.length === 0) return;

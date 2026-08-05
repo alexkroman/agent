@@ -20,6 +20,28 @@ import { createRestartableTimer } from "../_timer.ts";
  * `clear()` cancels it when real speech commits (or the client cancels). If
  * the window elapses while the transport is idle, `onResume` runs the
  * continuation turn.
+ *
+ * **The window elapsing is not sufficient on its own — the utterance must also
+ * be over.** Endpointing lives in the STT provider, so a genuine barge-in's
+ * final is withheld for `min_turn_silence` after the caller stops speaking
+ * (`DEFAULT_MIN_TURN_SILENCE_MS`, 2000) — the same 2000 the recovery window
+ * defaulted to, measured from the same instant (the window restarts on every
+ * partial, and the last partial lands at roughly the end of speech). The two
+ * deadlines were therefore separated only by the difference between partial
+ * and final latency, a few hundred ms in either direction: EVERY genuine
+ * barge-in raced its own resume, and the resume won often enough to be the
+ * common case rather than an edge case. Every such resume cost a billed
+ * LLM turn, left "the user did not actually say anything" in history directly
+ * ahead of the real user turn, and — when it got audio out before the final
+ * landed, TTS time-to-first-audio being ~350ms — made the caller hear the agent
+ * continue the reply they had just interrupted before answering them.
+ *
+ * So a fired window whose utterance is still open only DEFERS the resume;
+ * {@link FalseInterruptionRecovery.onUtteranceEnded} releases it once the
+ * speaking edge closes with no committed turn, which is the signal that proves
+ * no final is coming. A committed final clears the deferral through
+ * {@link FalseInterruptionRecovery.onUserTurn} instead, so it can never resume
+ * over a real turn.
  */
 export interface FalseInterruptionRecovery {
   /**
@@ -31,10 +53,22 @@ export interface FalseInterruptionRecovery {
    * on continued partials must not clobber the barge-in's prompt.
    */
   arm(resumePrompt?: string): void;
-  /** Cancel a pending recovery window, keeping the consecutive-resume budget. */
+  /**
+   * Cancel a pending recovery window — including a resume deferred by an open
+   * utterance — keeping the consecutive-resume budget.
+   */
   clear(): void;
-  /** Is a recovery window currently pending? Drives re-arming on continued speech. */
+  /**
+   * Is a recovery outstanding (window pending, or a resume deferred awaiting
+   * the utterance's end)? Drives re-arming on continued speech.
+   */
   pending(): boolean;
+  /**
+   * The utterance went quiet without committing a turn (the speaking edge's
+   * idle watchdog closed it) — no final is coming, so release a resume the
+   * window deferred while speech was still in progress. No-op otherwise.
+   */
+  onUtteranceEnded(): void;
   /**
    * A real user turn committed (STT final) — the barge-in that preceded it was
    * genuine. Cancel the window and restore the budget.
@@ -55,10 +89,20 @@ export function createFalseInterruptionRecovery(opts: {
    * something else took the floor, so the interruption resolved itself.
    */
   isBusy: () => boolean;
+  /**
+   * True while an utterance is still open (the speaking edge has not closed and
+   * no turn has committed). A final may yet arrive — the STT provider holds it
+   * back for its endpointing window — so a resume now would race it. See the
+   * interface doc.
+   */
+  isUtteranceInProgress: () => boolean;
   /** Run the resume turn with the armed prompt. Only called when active and not busy. */
   onResume: (resumePrompt: string) => void;
 }): FalseInterruptionRecovery {
   let consecutive = 0;
+  // The window elapsed while the caller was still mid-utterance; the resume is
+  // owed, and onUtteranceEnded() delivers it.
+  let deferred = false;
   let resumePrompt = DEFAULT_FALSE_INTERRUPTION_PROMPT;
   const window = createRestartableTimer(() => fire());
 
@@ -71,21 +115,52 @@ export function createFalseInterruptionRecovery(opts: {
     window.arm(opts.timeoutMs);
   }
 
-  function fire(): void {
-    if (!opts.isActive()) return;
-    if (opts.isBusy()) return;
-    if (consecutive >= opts.maxConsecutive) return;
+  /** Shared gate for both resume paths (window elapsed / deferral released). */
+  function canResume(): boolean {
+    if (!opts.isActive()) return false;
+    if (opts.isBusy()) return false;
+    return consecutive < opts.maxConsecutive;
+  }
+
+  function resume(): void {
+    deferred = false;
     consecutive++;
     opts.onResume(resumePrompt);
   }
 
+  function fire(): void {
+    if (!canResume()) return;
+    // Still mid-utterance: hold the resume rather than spending it against a
+    // final that endpointing has not released yet.
+    if (opts.isUtteranceInProgress()) {
+      deferred = true;
+      return;
+    }
+    resume();
+  }
+
+  function clear(): void {
+    deferred = false;
+    window.clear();
+  }
+
   return {
     arm,
-    clear: window.clear,
-    pending: window.pending,
+    clear,
+    // Deferred counts as pending: a recovery is still outstanding, so continued
+    // partials keep extending the window rather than treating it as resolved.
+    pending: (): boolean => window.pending() || deferred,
+    onUtteranceEnded(): void {
+      if (!deferred) return;
+      if (!canResume()) {
+        deferred = false;
+        return;
+      }
+      resume();
+    },
     onUserTurn(): void {
       consecutive = 0;
-      window.clear();
+      clear();
     },
   };
 }

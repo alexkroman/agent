@@ -113,6 +113,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     silenceTimeoutMs: opts.silenceTimeoutMs,
     silencePrompt: opts.silencePrompt,
     falseInterruptionTimeoutMs,
+    speechIdleTimeoutMs,
     minBargeInWords,
     interruptionMinDurationMs,
     isTerminated: () => terminated,
@@ -180,11 +181,15 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       .then(() => (terminated || !gate.queueCurrent(epoch) ? undefined : start()));
   }
 
-  function runChainedTurn(text: string, crashLabel: string, kind?: { isResume: boolean }): void {
+  function runChainedTurn(
+    text: string,
+    crashLabel: string,
+    kind?: { isResume?: boolean; synthetic?: boolean },
+  ): void {
     chainTurn(async () => {
       resumeTurnScope = kind?.isResume === true;
       try {
-        await runTurn(text).catch(logTurnCrash(crashLabel));
+        await runTurn(text, { synthetic: kind?.synthetic === true }).catch(logTurnCrash(crashLabel));
       } finally {
         resumeTurnScope = false;
       }
@@ -338,7 +343,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     }
   }
 
-  function runTurn(userText: string): Promise<void> {
+  function runTurn(userText: string, kind?: { synthetic?: boolean }): Promise<void> {
     return runReply("pipeline", async (signal) => {
       // reset() bumps this before clearing history — the persistence below
       // runs asynchronously after the abort and must not write the
@@ -363,6 +368,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
           accumulated,
           persistedLen,
           stepMessages: responseMessages,
+          // An injected prompt (resume / silence nudge) this turn never got to
+          // use is rolled back rather than left standing as something the user
+          // supposedly said — see persistBargeIn.
+          syntheticPrompt: kind?.synthetic === true ? userText : undefined,
         });
         return false;
       }
