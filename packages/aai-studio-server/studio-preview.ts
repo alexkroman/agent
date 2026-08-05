@@ -29,13 +29,15 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import { createCoalescingRunner } from "@alexkroman1/aai/internal";
 import { MAX_SLUG_LENGTH, PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/utils";
-import { createKeyedLock, withLock } from "aai-server/platform-barrel";
+import { createKeyedLock, TtlCache, withLock } from "aai-server/platform-barrel";
 import type { WorkspaceStore } from "aai-server/workspace-store";
 import {
-  bestEffort,
   type ClaimedPreviewJob,
   PREVIEW_JOB_MAX_ATTEMPTS,
+  PREVIEW_JOB_VISIBILITY_MS,
+  type PreviewJob,
   type PreviewQueue,
 } from "./studio-preview-queue.ts";
 import type { StudioSessionBroker } from "./studio-session-broker.ts";
@@ -210,13 +212,28 @@ export type PreviewDeployerOptions = {
    * dropped. 0 disables the timer (tests drive `drainOnce` directly).
    */
   pollMs?: number;
-  /** Max jobs claimed per drain pass. */
-  batchSize?: number;
 };
 
 /** Default drain cadence. Well under the pane's tolerance for staleness. */
 export const PREVIEW_DRAIN_POLL_MS = 15_000;
 const PREVIEW_DRAIN_BATCH = 5;
+
+/**
+ * How long a raw-key caller's credential stays available to the drain: long
+ * enough to cover every redelivery of a job this replica enqueued, and no
+ * longer. A TTL rather than deletion-on-settle because several jobs for one
+ * project are routine (a turn-complete sync plus two editor PUTs) and they
+ * share the one entry — dropping it when the first settled left the rest with
+ * no credential and archived them.
+ */
+const LOCAL_KEY_TTL_MS = PREVIEW_JOB_VISIBILITY_MS * (PREVIEW_JOB_MAX_ATTEMPTS + 1);
+
+/** Log-and-continue wrapper: queue trouble must never fail a caller's request. */
+function bestEffort(what: string): (err: unknown) => undefined {
+  return (err: unknown) => {
+    console.warn(`Preview queue ${what} failed: ${errorMessage(err)}`);
+  };
+}
 
 export function createPreviewDeployer(
   options: PreviewDeployerOptions,
@@ -224,11 +241,11 @@ export function createPreviewDeployer(
   const projectLock = createKeyedLock();
   /**
    * Keys for jobs enqueued by THIS replica, so a raw-key caller's preview
-   * still deploys without its credential ever being persisted. Entries are
-   * dropped once the job settles; a job redelivered to another replica finds
-   * no entry and falls back to `resolveApiKey`.
+   * still deploys without its credential ever becoming a queue row. Bounded
+   * and expiring (see {@link LOCAL_KEY_TTL_MS}); a job redelivered to another
+   * replica finds no entry there and needs `resolveApiKey`.
    */
-  const localKeys = new Map<string, string>();
+  const localKeys = new TtlCache<string>(LOCAL_KEY_TTL_MS, 1000);
 
   /** One deploy attempt against the workspace's CURRENT files. */
   async function attempt(scope: string, project: string, target: PreviewTarget): Promise<void> {
@@ -269,38 +286,42 @@ export function createPreviewDeployer(
   }
 
   /**
-   * The key one claimed job runs on: this replica's own if it enqueued the
-   * job, else the user's stored key. Null means the job cannot be run here
-   * and must be left for (or given up by) whoever can.
+   * The key one claimed job runs on. Null means the job cannot be run here.
+   *
+   * A job naming a studio user resolves its key from Vault — the durable
+   * path, and the only one a job redelivered to another replica can take, so
+   * it is tried first: it is also the fresher answer if the user rotated
+   * their key since the edit. The in-process map covers raw-key callers (the
+   * CLI, evals), whose credential deliberately never becomes a queue row.
    */
-  async function keyFor(job: ClaimedPreviewJob["job"], key: string): Promise<string | null> {
-    const local = localKeys.get(key);
-    if (local) return local;
-    if (!(job.userId && options.resolveApiKey)) return null;
-    return await options.resolveApiKey(job.userId).catch(() => null);
+  async function keyFor(job: PreviewJob): Promise<string | null> {
+    if (job.userId && options.resolveApiKey) {
+      const resolved = await options.resolveApiKey(job.userId).catch(() => null);
+      if (resolved) return resolved;
+    }
+    return localKeys.get(projectKey(job.scope, job.project)) ?? null;
   }
 
   async function runJob(claimed: ClaimedPreviewJob): Promise<void> {
     const { scope, project, serverUrl } = claimed.job;
-    const key = projectKey(scope, project);
-    const apiKey = await keyFor(claimed.job, key);
+    const apiKey = await keyFor(claimed.job);
     if (!apiKey) {
       // Nothing here can deploy it. Archiving beats redelivering forever:
       // the only jobs that reach this are raw-key callers' whose enqueuing
       // replica is gone, and no replica will ever hold their credential.
       console.warn("Archiving preview job with no resolvable credential", { project });
       await options.queue.archive(claimed.id).catch(bestEffort("archive"));
-      localKeys.delete(key);
       return;
     }
     // Per project, so two jobs for one project cannot deploy concurrently —
     // the second finds `previewHash` current and no-ops.
-    await withLock(projectLock, key, () => attempt(scope, project, { serverUrl, apiKey }));
+    await withLock(projectLock, projectKey(scope, project), () =>
+      attempt(scope, project, { serverUrl, apiKey }),
+    );
     // Settled (deployed, or stamped with a build failure): the job is done
     // either way. A build error is deterministic, so retrying it would just
     // rewrite the same banner.
     await options.queue.ack(claimed.id).catch(bestEffort("ack"));
-    localKeys.delete(key);
   }
 
   /**
@@ -312,7 +333,7 @@ export function createPreviewDeployer(
    */
   async function drainOnce(): Promise<void> {
     const claimed = await options.queue
-      .claim(options.batchSize ?? PREVIEW_DRAIN_BATCH)
+      .claim(PREVIEW_DRAIN_BATCH)
       .catch(() => [] as ClaimedPreviewJob[]);
     await Promise.all(
       claimed.map(async (job) => {
@@ -338,9 +359,25 @@ export function createPreviewDeployer(
     );
   }
 
+  /**
+   * Both drain triggers — the timer and every `schedule` — go through one
+   * coalescing runner.
+   *
+   * Unserialized, an edit burst (several turn-complete syncs plus editor PUTs)
+   * fired N overlapping drains, each paying its own `pgmq.read`, and jobs
+   * claimed by the losers then sat invisible on the per-project lock burning
+   * their visibility window. The in-process pump this queue replaced DID
+   * coalesce; the primitive is how that property comes back without the
+   * hand-rolled flags (see `createCoalescingRunner`). A drain reads latest
+   * state when it runs, which is exactly what makes collapsing N triggers into
+   * one run plus one trailing run safe.
+   */
+  const drain = createCoalescingRunner(drainOnce);
+  const triggerDrain = (): void => void drain.trigger().catch(bestEffort("drain"));
+
   const pollMs = options.pollMs ?? PREVIEW_DRAIN_POLL_MS;
   // Unref'd: a pending preview drain must never hold the process open.
-  const timer = pollMs > 0 ? setInterval(() => void drainOnce(), pollMs) : undefined;
+  const timer = pollMs > 0 ? setInterval(triggerDrain, pollMs) : undefined;
   timer?.unref?.();
 
   return {
@@ -356,7 +393,7 @@ export function createPreviewDeployer(
           serverUrl: target.serverUrl,
           ...(target.userId && { userId: target.userId }),
         })
-        .then(() => drainOnce())
+        .then(triggerDrain)
         .catch(bestEffort("enqueue"));
     },
     drainOnce,

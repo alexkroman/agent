@@ -79,11 +79,13 @@ export function createSupabaseBlobStorage(opts: SupabaseBlobStorageOptions): Blo
     { apikey: opts.serviceRoleKey, Authorization: `Bearer ${opts.serviceRoleKey}` },
     opts.fetch,
   );
-  const bucket = (): ReturnType<StorageClient["from"]> => client.from(opts.bucket);
+  // `from` is a pure accessor over the client — no per-call state, so one
+  // handle serves every read and write.
+  const bucket = client.from(opts.bucket);
 
   return {
     async getItem(key) {
-      const { data, error } = await bucket().download(key);
+      const { data, error } = await bucket.download(key);
       if (error) {
         // A miss and a failure are different answers and the caller
         // distinguishes them (bundle-store caches misses under a sentinel and
@@ -97,7 +99,7 @@ export function createSupabaseBlobStorage(opts: SupabaseBlobStorageOptions): Blo
     },
 
     async setItem(key, value) {
-      const { error } = await bucket().upload(key, value, UPLOAD_OPTIONS);
+      const { error } = await bucket.upload(key, value, UPLOAD_OPTIONS);
       if (error) {
         throw new Error(`blob write failed for ${key}: ${errorMessage(error)}`, { cause: error });
       }
@@ -113,8 +115,8 @@ export function createSupabaseBlobStorage(opts: SupabaseBlobStorageOptions): Blo
  * like it had never happened.
  */
 function isNotFound(error: unknown): boolean {
-  const status = (error as { statusCode?: unknown; status?: unknown }).statusCode ?? undefined;
-  return Number(status ?? (error as { status?: unknown }).status) === 404;
+  const { statusCode, status } = error as { statusCode?: unknown; status?: unknown };
+  return Number(statusCode ?? status) === 404;
 }
 
 /** In-memory blob storage for local dev and tests. */

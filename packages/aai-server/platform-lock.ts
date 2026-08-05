@@ -29,7 +29,9 @@
  *   is the whole of {@link SlugLockTimeoutError}'s trigger.
  * - **Lease expiry, and its pg_cron sweep.** A dropped connection releases
  *   the lock, so a crashed replica frees its slug immediately rather than
- *   after a lease, and there are no dead rows to collect.
+ *   after a lease, and there are no dead rows to collect. (Returning a
+ *   reservation to the pool is NOT a drop — session state survives it, so the
+ *   explicit `pg_advisory_unlock` is the normal release path.)
  * - **The "not renewed while held" caveat.** There is no lease to outrun: an
  *   operation holds the lock until it finishes, however long that takes.
  *   (The reservation is the new resource to respect — hence the `finally`.)
@@ -53,6 +55,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import type { CloseableDb } from "@alexkroman1/aai/runtime";
 import { withSlugLock } from "./sandbox-slots.ts";
 
 /** Run `fn` while holding the platform-wide mutation lock for `slug`. */
@@ -139,15 +142,14 @@ export const SLUG_LOCK_ACQUIRE_TIMEOUT_MS = 15_000;
 
 /**
  * The admin-pool slice the lock needs: one connection held for the critical
- * section. Structurally the same shape `createPostgresDb` returns, so tests
- * inject a fake without a database.
+ * section.
+ *
+ * A `Pick` of the real type rather than a second spelling of it — a
+ * hand-written copy drifts silently (a `release()` that became async would
+ * type-check against the copy and break at runtime), and `Pick` is just as
+ * injectable for tests.
  */
-export type AdminDb = {
-  reserve(): Promise<{
-    query(sql: string, params?: unknown[]): Promise<Record<string, unknown>[]>;
-    release(): void;
-  }>;
-};
+export type AdminDb = Pick<CloseableDb, "reserve">;
 
 export type PgSlugLockOptions = {
   acquireTimeoutMs?: number;
@@ -211,10 +213,14 @@ export function createPgSlugLock(db: AdminDb, opts: PgSlugLockOptions = {}): Slu
         }
         return await fn();
       } finally {
-        // Releasing the CONNECTION is what actually frees the lock, so the
-        // unlock is best-effort tidiness; skipping it when the acquire failed
-        // matters more, since unlocking a lock we never took logs a Postgres
-        // warning and returns false.
+        // The explicit unlock is the REAL release path: postgres.js
+        // `release()` returns the connection to the pool with its session
+        // state intact, so an advisory lock survives it — a failed unlock
+        // leaks the lock onto a pooled connection, which is why the failure is
+        // logged rather than swallowed. (A DROPPED connection does free it;
+        // that is the crashed-replica backstop, a different event.) Skipping
+        // the unlock when the acquire failed matters too: unlocking a lock
+        // this session never took logs a Postgres warning and returns false.
         if (held) {
           await reserved
             .query(RELEASE_SQL, [SLUG_LOCK_NAMESPACE, slug])

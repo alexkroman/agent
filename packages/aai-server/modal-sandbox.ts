@@ -36,7 +36,13 @@ import { readFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { errorMessage } from "@alexkroman1/aai";
 import { CONTAINED_ENV } from "@alexkroman1/aai/runtime";
-import { ModalClient, Probe, type SandboxCreateParams } from "modal";
+import {
+  AlreadyExistsError,
+  type Image,
+  ModalClient,
+  Probe,
+  type SandboxCreateParams,
+} from "modal";
 import { debug } from "./_debug-log.ts";
 import { keyedMemoAsync, memoAsync } from "./_memo.ts";
 import { GUEST_READY_TIMEOUT_MS, raceGuestExit } from "./guest-readiness.ts";
@@ -48,6 +54,7 @@ import {
   guestSandboxResources,
 } from "./modal-sandbox-env.ts";
 import type { RpcWebSocket } from "./rpc-transport.ts";
+import { SandboxNameTakenError } from "./sandbox-directory.ts";
 import { resolveSandboxRole, type SpawnIdentity, sandboxTags } from "./sandbox-role.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
 import { type DialGuest, dialGuest, startGuestLogging, warmFromGuest } from "./warm-harness.ts";
@@ -120,16 +127,6 @@ export type ModalSpawnContext = {
   lookupGuestSandbox(name: string): Promise<ModalSandboxLike | null>;
 };
 
-/** Thrown when a spawn lost the name race — another replica created it first. */
-export class SandboxNameTakenError extends Error {
-  readonly sandboxName: string;
-  constructor(sandboxName: string) {
-    super(`a sandbox named ${sandboxName} is already running`);
-    this.name = "SandboxNameTakenError";
-    this.sandboxName = sandboxName;
-  }
-}
-
 // ── Configuration ────────────────────────────────────────────────────────────
 
 /**
@@ -171,8 +168,9 @@ const READINESS_PROBE_INTERVAL_MS = 250;
  * - One deadline, enforced in one place, instead of a poll loop with its own
  *   per-attempt timeout and last-error bookkeeping.
  */
-export const GUEST_READINESS_PROBE = (): Probe =>
-  Probe.withTcp(GUEST_PORT, { intervalMs: READINESS_PROBE_INTERVAL_MS });
+export const GUEST_READINESS_PROBE = Probe.withTcp(GUEST_PORT, {
+  intervalMs: READINESS_PROBE_INTERVAL_MS,
+});
 
 export function modalRequiredError(): Error {
   return new Error(
@@ -216,6 +214,26 @@ async function buildContext(): Promise<ModalSpawnContext> {
   // Snapshot image with the harness baked in — see modal-harness-image.ts.
   const harnessImage = createHarnessImageResolver({ client, app, baseTag, baseImage });
 
+  /**
+   * Every named create funnels through here, so the "lost the race"
+   * translation is a property of creating a NAMED guest sandbox rather than of
+   * one caller's `.catch`. Both spawn paths pass a name now (agents via
+   * `agentSandboxName`, studio via `studioSandboxName`); when the mapping
+   * lived in the agent spawner, the studio got half the mechanism — its loser
+   * surfaced a raw Modal error out of the broker route instead of the typed
+   * one callers key on.
+   */
+  const create = async (image: Image, params: SandboxCreateParams) => {
+    try {
+      return await client.sandboxes.create(app, image, params);
+    } catch (err) {
+      if (params.name && err instanceof AlreadyExistsError) {
+        throw new SandboxNameTakenError(params.name, { cause: err });
+      }
+      throw err;
+    }
+  };
+
   return {
     async createGuestSandbox(code, params, imageTag) {
       // A pinned tag (the image the agent was DEPLOYED against) wins over
@@ -233,13 +251,13 @@ async function buildContext(): Promise<ModalSpawnContext> {
             { cause: err },
           );
         });
-        return client.sandboxes.create(app, pinned, params);
+        return create(pinned, params);
       }
       if (imageTag) {
         console.warn("SANDBOX_IGNORE_IMAGE_PINS=1: ignoring pinned harness image", { imageTag });
       }
       const image = await harnessImage(code);
-      return client.sandboxes.create(app, image, params);
+      return create(image, params);
     },
     async lookupGuestSandbox(name) {
       // `fromName` throws NotFoundError when no RUNNING sandbox holds the
@@ -339,7 +357,7 @@ export async function spawnModalWarm(
       // The host dials in through this tunnel; the harness's bearer-token
       // check is what keeps the public tunnel URL from being an open door.
       encryptedPorts: [GUEST_PORT],
-      readinessProbe: GUEST_READINESS_PROBE(),
+      readinessProbe: GUEST_READINESS_PROBE,
       timeoutMs: limits.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
       idleTimeoutMs: limits.idleTimeoutMs ?? DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
       ...resourceParams,

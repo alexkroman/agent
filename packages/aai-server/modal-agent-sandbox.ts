@@ -15,7 +15,6 @@ import { randomBytes } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { errorMessage } from "@alexkroman1/aai";
 import { CONTAINED_ENV } from "@alexkroman1/aai/runtime";
-import { AlreadyExistsError } from "modal";
 import { debug } from "./_debug-log.ts";
 import { GUEST_READY_TIMEOUT_MS, raceGuestExit } from "./guest-readiness.ts";
 import { HARNESS_REMOTE_PATH } from "./modal-harness-image.ts";
@@ -25,7 +24,6 @@ import {
   harnessCode,
   type ModalSpawnContext,
   modalContext,
-  SandboxNameTakenError,
 } from "./modal-sandbox.ts";
 import {
   DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
@@ -63,11 +61,12 @@ export async function spawnModalAgentServer(
     imageTag?: string | undefined;
     /**
      * The fleet-wide sandbox NAME for this deploy (see sandbox-directory.ts).
-     * Modal refuses a duplicate, which is what keeps one deploy to one
-     * sandbox platform-wide with no lease table. Omitted by callers that are
-     * deliberately unnamed (nothing today).
+     * Modal refuses a duplicate, which is what keeps one deploy to one sandbox
+     * platform-wide with no lease table — and `createGuestSandbox` turns that
+     * refusal into `SandboxNameTakenError` for every named create, so this
+     * spawner needs no error handling of its own.
      */
-    name?: string | undefined;
+    name: string;
   },
   ctx?: ModalSpawnContext,
   fetchFn?: GuestFetch,
@@ -80,32 +79,26 @@ export async function spawnModalAgentServer(
   const role = resolveSandboxRole({ slug: opts.slug });
 
   const t0 = performance.now();
-  const sb = await context
-    .createGuestSandbox(
-      code,
-      {
-        command: ["sleep", "infinity"],
-        encryptedPorts: [GUEST_PORT],
-        readinessProbe: GUEST_READINESS_PROBE(),
-        timeoutMs: limits.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
-        idleTimeoutMs: limits.idleTimeoutMs ?? DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
-        ...resourceParams,
-        tags: sandboxTags(role, opts.slug),
-        ...(opts.name && { name: opts.name }),
-      },
-      opts.imageTag,
-    )
-    .catch((err: unknown) => {
-      // Lost the name race: another replica created this deploy's sandbox
-      // between our directory lookup and this create. Distinguished so the
-      // caller can go back to the directory instead of retrying a spawn that
-      // can only lose again — this is the ONE remaining path to a duplicate,
-      // and the name is what closes it.
-      if (opts.name && err instanceof AlreadyExistsError) {
-        throw new SandboxNameTakenError(opts.name);
-      }
-      throw err;
-    });
+  // No inner function may reference `opts`: doing so context-allocates it into
+  // the scope every closure below shares, and `terminate` outlives the spawn —
+  // so the ~8 MB worker bundle in `opts.workerCode` would stay reachable for
+  // the sandbox's whole life. Same trap sandbox.ts documents; a `.catch` here
+  // reintroduced it once. The name goes into a local for that reason.
+  const sandboxName = opts.name;
+  const sb = await context.createGuestSandbox(
+    code,
+    {
+      command: ["sleep", "infinity"],
+      encryptedPorts: [GUEST_PORT],
+      readinessProbe: GUEST_READINESS_PROBE,
+      timeoutMs: limits.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
+      idleTimeoutMs: limits.idleTimeoutMs ?? DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
+      ...resourceParams,
+      tags: sandboxTags(role, opts.slug),
+      name: sandboxName,
+    },
+    opts.imageTag,
+  );
   try {
     // Boot artifacts land on the sandbox filesystem BEFORE exec — the guest
     // reads (and hash-verifies) them at boot; nothing arrives over a channel.

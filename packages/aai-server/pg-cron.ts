@@ -4,8 +4,7 @@
  * Postgres, not in-process. A scheduled database job survives replica churn
  * by construction, runs exactly once platform-wide instead of once per
  * replica, and replaces the in-process sweepers (the rate limiter's
- * piggybacked delete) and the "expired rows are ignored, never removed"
- * posture of the lock lease table.
+ * piggybacked delete).
  *
  * The platform tables are declared in
  * `supabase/migrations/*_platform_schema.sql` and applied before any code
@@ -17,7 +16,9 @@
  *
  * `cron.schedule(name, …)` upserts by job name, so re-running the setup on
  * every boot is idempotent and a changed schedule or command takes effect on
- * the next deploy.
+ * the next deploy. Retirement is the same statement read the other way: boot
+ * unschedules every `aai-sweep-*` job the code no longer declares, so
+ * {@link PLATFORM_CRON_JOBS} is the whole truth about what the platform runs.
  */
 
 import type { SqlExec } from "./secret-store.ts";
@@ -99,9 +100,9 @@ declare
   target record;
   app_id text;
 begin
-  if to_regclass('aai_platform.agents') is null
-    or to_regclass('aai_platform.studio_workspaces') is null
-    or to_regclass('vault.secrets') is null then
+  -- Only vault.secrets needs guarding: the aai_platform tables come from
+  -- migrations, but Vault belongs to Supabase and may not be provisioned.
+  if to_regclass('vault.secrets') is null then
     return;
   end if;
   for target in
@@ -152,50 +153,44 @@ export const PLATFORM_CRON_JOBS: readonly CronJob[] = [
 ];
 
 /**
- * Jobs earlier versions scheduled that must be actively UNSCHEDULED.
+ * Every job name this module owns starts with this — so what the platform
+ * schedules can be DIFFED against what the database has, and a retired job
+ * needs no list of its own.
  *
- * `cron.schedule` upserts by name, so deleting a job from
- * {@link PLATFORM_CRON_JOBS} does not remove it from a database that already
- * has it — it keeps firing forever, against a table that may no longer
- * exist. The `guarded()` wrapper makes that harmless rather than noisy, which
- * is precisely why it would go unnoticed: a retired job stays in
- * `cron.job` indefinitely, showing up in every operator's job listing as
- * though it were current.
- *
- * Entries here are permanent — this is the record of what the platform used
- * to run — so removing one only makes sense if the job name is being reused.
+ * The list it replaces was hand-maintained and permanent, and its only
+ * failure mode was forgetting to add to it: `cron.schedule` upserts by name,
+ * so deleting a job from {@link PLATFORM_CRON_JOBS} leaves a database that
+ * already has it firing forever, against a table that may no longer exist.
+ * The `guarded()` wrapper makes that harmless rather than noisy, which is
+ * exactly why it went unnoticed — the job just sat in `cron.job` looking
+ * current in every operator's listing. Diffing cannot be forgotten.
  */
-export const RETIRED_CRON_JOBS: readonly string[] = [
-  // Slug mutation locks are Postgres advisory locks now (platform-lock.ts):
-  // a dropped connection releases them, so there is no lease to expire and
-  // no aai_platform.slug_locks table to sweep.
-  "aai-sweep-slug-locks",
-  // A guest sandbox's fleet-wide identity is its Modal NAME now
-  // (sandbox-directory.ts), released when the sandbox stops — so there is no
-  // aai_platform.sandbox_registry table and nothing to expire.
-  "aai-sweep-sandbox-registry",
-];
+const CRON_JOB_PREFIX = "aai-sweep-";
 
 /**
- * Install (or update) the sweep jobs, and retire the ones that no longer
- * exist. Runs at boot on the platform admin connection; failures propagate to
- * the caller, which logs loudly — a missing sweep degrades to table growth,
- * never to wrong answers.
+ * Install (or update) the sweep jobs, and unschedule every `aai-sweep-*` job
+ * the platform no longer declares. Runs at boot on the platform admin
+ * connection; failures propagate to the caller, which logs loudly — a missing
+ * sweep degrades to table growth, never to wrong answers.
  */
 export async function schedulePlatformSweeps(
   sql: SqlExec,
   jobs: readonly CronJob[] = PLATFORM_CRON_JOBS,
-  retired: readonly string[] = RETIRED_CRON_JOBS,
 ): Promise<void> {
   await sql("create extension if not exists pg_cron");
   for (const job of jobs) {
     await sql("select cron.schedule($1, $2, $3)", [job.name, job.schedule, job.command]);
   }
-  for (const name of retired) {
-    // `cron.unschedule` throws when the job does not exist, which is the
-    // normal case on every boot after the first — so each one is
-    // individually tolerated rather than allowed to abort the loop. The
-    // `::text` cast picks the by-name overload over `unschedule(bigint)`.
-    await sql("select cron.unschedule($1::text)", [name]).catch(() => undefined);
+  const declared = new Set(jobs.map((job) => job.name));
+  const existing = await sql("select jobname from cron.job where jobname like $1", [
+    `${CRON_JOB_PREFIX}%`,
+  ]);
+  for (const row of existing) {
+    const jobname = String(row.jobname);
+    if (declared.has(jobname)) continue;
+    // The `::text` cast picks the by-name overload over `unschedule(bigint)`.
+    // Tolerated individually: another replica booting concurrently may have
+    // unscheduled it between the read and here.
+    await sql("select cron.unschedule($1::text)", [jobname]).catch(() => undefined);
   }
 }

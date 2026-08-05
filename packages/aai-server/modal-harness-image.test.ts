@@ -8,6 +8,7 @@ import {
   GUEST_ROOT,
   HARNESS_REMOTE_PATH,
   harnessImageTag,
+  localHarnessImageTag,
   readToolchainLock,
   resolveSdkSpecs,
   toolchainFingerprint,
@@ -239,12 +240,7 @@ describe("createHarnessImageResolver", () => {
     return { state, resolve };
   }
 
-  const tagFor = (code: string): string =>
-    harnessImageTag(
-      "node:24-slim",
-      code,
-      toolchainFingerprint(resolveSdkSpecs(), readToolchainLock()),
-    );
+  const tagFor = (code: string): string => localHarnessImageTag("node:24-slim", code);
 
   test("reuses a published tag without building anything", async () => {
     const { state, resolve } = make({ publishedTags: new Set([tagFor("harness code")]) });

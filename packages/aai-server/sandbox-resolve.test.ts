@@ -14,8 +14,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryPlatformEvents } from "./platform-events.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import type { Sandbox } from "./sandbox.ts";
-import { createMemorySandboxDirectory } from "./sandbox-directory.ts";
-import { brokerSessionUrl, resolveSandbox, watchAgentInvalidation } from "./sandbox-resolve.ts";
+import { brokerSessionUrl } from "./sandbox-broker.ts";
+import { createMemorySandboxDirectory, SandboxNameTakenError } from "./sandbox-directory.ts";
+import { resolveSandbox, watchAgentInvalidation } from "./sandbox-resolve.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { appDbSecretName, createMemorySecretStore } from "./secret-store.ts";
 import { createTestStore } from "./test-utils.ts";
@@ -365,6 +366,25 @@ describe("broker while draining", () => {
     deps.unwatch();
   });
 
+  /**
+   * The broker's 503 is the polite half; the guard sits at sandbox
+   * CONSTRUCTION, which is the path `resolveSandbox` and the change stream's
+   * blue-green `handoverSlot` share — the latter's boot easily outlasts the
+   * shutdown grace window, so guarding only the broker left the orphan
+   * reachable through the second door.
+   */
+  it("refuses at construction, not just at the broker", async () => {
+    const seeded = await seedAgent("construction-guard");
+    mockSpawnAgentServer.mockClear();
+    await expect(
+      resolveSandbox("construction-guard", { ...seeded, isDraining: () => true }),
+    ).rejects.toThrow(/draining/);
+    expect(mockSpawnAgentServer).not.toHaveBeenCalled();
+    // And no empty slot is left claimed behind the refusal.
+    expect(seeded.slots.get("construction-guard")).toBeUndefined();
+    seeded.unwatch();
+  });
+
   // A guest that already exists orphans nothing by being handed out, and the
   // guests outlive this process by design — cutting them off would break
   // sessions that are about to be perfectly fine.
@@ -588,9 +608,7 @@ describe("losing the sandbox name race", () => {
         sessionUrl: "wss://winner.test:443/websocket",
         guestOrigin: "wss://winner.test:443",
       });
-      const err = new Error("a sandbox named agent-x-v1 is already running");
-      err.name = "SandboxNameTakenError";
-      return Promise.reject(err);
+      return Promise.reject(new SandboxNameTakenError("agent-x-v1"));
     });
     try {
       const brokered = await brokerSessionUrl("raced", { ...seeded, directory });
@@ -603,11 +621,9 @@ describe("losing the sandbox name race", () => {
   it("answers a retryable 503 when the winner has not published yet", async () => {
     const seeded = await seedAgent("raced-early");
     const directory = createMemorySandboxDirectory();
-    mockSpawnAgentServer.mockImplementationOnce(() => {
-      const err = new Error("a sandbox named agent-y-v1 is already running");
-      err.name = "SandboxNameTakenError";
-      return Promise.reject(err);
-    });
+    mockSpawnAgentServer.mockImplementationOnce(() =>
+      Promise.reject(new SandboxNameTakenError("agent-y-v1")),
+    );
     try {
       const brokered = await brokerSessionUrl("raced-early", { ...seeded, directory });
       // Retryable, never a 404: the agent exists, its sandbox is mid-boot

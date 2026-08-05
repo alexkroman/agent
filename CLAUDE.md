@@ -387,6 +387,9 @@ model) is the security boundary.
 - `sandbox-resolve.ts` — slot-based slug→sandbox resolution +
   `watchAgentInvalidation`, the event-driven sandbox invalidation (split
   from sandbox.ts, which owns one sandbox's lifecycle)
+- `sandbox-broker.ts` — `brokerSessionUrl`: slug → the public session URL a
+  client dials, with the one failure taxonomy `GET /:slug/client-config` and
+  the `/:slug/websocket` upgrade share. The platform's ONLY routing point
 - `sandbox-directory.ts` / `sandbox-peers.ts` — the fleet-wide answer to "is
   some replica already serving this deploy?", which is a Modal sandbox NAME
   (`agent-<hash(slug)>-v<version>`) rather than a lease table — see "No
@@ -403,10 +406,11 @@ model) is the security boundary.
   orphaned `-preview` agents + their app database schema/role and Vault
   secrets), installed idempotently at boot. `cron.schedule` upserts by name,
   so a job DELETED from `PLATFORM_CRON_JOBS` keeps firing on any database that
-  already has it — and `guarded()` makes that silent. Retiring one therefore
-  means adding its name to `RETIRED_CRON_JOBS`, which is unscheduled at boot;
-  those entries are permanent, since they are the record of what the platform
-  used to run
+  already has it — and `guarded()` makes that silent. Boot therefore DIFFS:
+  every `aai-sweep-*` job in `cron.job` that the code no longer declares is
+  unscheduled, so `PLATFORM_CRON_JOBS` is the whole truth about what the
+  platform runs and retiring one cannot be forgotten (the hand-maintained
+  retired list this replaced had exactly one failure mode — omission)
 - `studio-proxy.ts` / `app-middleware.ts` — the split deployment (see
   "Split services" below): the agent service's reverse proxy to the studio
   service, and the apps' shared base middleware

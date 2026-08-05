@@ -86,7 +86,6 @@ export type AgentRows = {
 };
 
 const TABLE = "aai_platform.agents";
-/** DDL shared with the boot-time Realtime publication setup (realtime-events.ts). */
 const GET_SQL = `select slug, credential_hashes, config, worker_hash, client_files,
   harness_image_tag, version
 from ${TABLE} where slug = $1`;

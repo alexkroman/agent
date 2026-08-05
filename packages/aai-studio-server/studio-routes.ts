@@ -150,6 +150,12 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   // (the stores ride on the request env). Per-replica, like the slot cache.
   let broker: StudioSessionBroker | undefined;
   const ensureBroker = (c: Context<StudioHonoEnv>): StudioSessionBroker => {
+    // Read the store out of the request env rather than closing over `c`: the
+    // broker outlives every request, and a closure over the Context would pin
+    // that whole request — its body, headers, and response — for the life of
+    // the process. The workspace/chat bindings below are read eagerly for the
+    // same reason.
+    const secrets = c.env.secrets;
     broker ??= (options.broker ?? createStudioSessionBroker)({
       workspaces: c.env.workspaces,
       chats: c.env.chats,
@@ -160,7 +166,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
       // that is gone, so the drain resolves the user's key from Vault rather
       // than the job carrying one. Bound to the request env's SecretStore —
       // the same `user-key:<uid>` record the bearer resolution reads.
-      resolveApiKey: (userId) => c.env.secrets.get(userApiKeySecretName(userId)),
+      resolveApiKey: (userId) => secrets.get(userApiKeySecretName(userId)),
     });
     return broker;
   };
@@ -168,8 +174,6 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   const studio = new Hono<StudioHonoEnv>();
 
   const limits = createRouteLimits(options.rateLimiters);
-  const { chat: chatLimiter, projectCreate: projectCreateLimiter } = limits;
-  const rateLimited = limits.refuse;
 
   // `llm: true` is legacy shape — chat always runs now, on the caller's key.
   studio.get("/status", (c) => c.json({ llm: true, ...studioLlmInfo() }));
@@ -229,7 +233,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
 
   studio.post("/projects", zValidator("json", CreateProjectSchema), async (c) => {
     const scope = requestScope(c);
-    const limited = await rateLimited(scope, projectCreateLimiter);
+    const limited = await limits.projectCreate(scope);
     if (limited) return limited;
     const { name, prompt } = c.req.valid("json");
     // No explicit name: the server generates one, v0-style — a readable base
@@ -420,7 +424,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
       // Creation via push: same guards as POST /projects — reserved names
       // can never go live, and creates are rate-limited per scope.
       if (RESERVED_SLUGS.has(project)) return c.json({ error: "That name is reserved" }, 400);
-      const limited = await rateLimited(scope, projectCreateLimiter);
+      const limited = await limits.projectCreate(scope);
       if (limited) return limited;
     }
     try {
@@ -460,7 +464,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   // agent's /websocket. Rate-limited: each call can spawn a Modal sandbox.
   studio.post("/projects/:project/session", async (c) => {
     const { scope, project } = c.var;
-    const limited = await rateLimited(scope, chatLimiter);
+    const limited = await limits.chat(scope);
     if (limited) return limited;
     // The public origin arms auto preview deploys: the guest's end-of-turn
     // sync makes the broker ship the edited workspace to the preview slug.

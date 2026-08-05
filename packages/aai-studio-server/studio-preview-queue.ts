@@ -35,7 +35,6 @@
  * store: pgmq in production, an in-memory array in dev/tests.
  */
 
-import { errorMessage } from "@alexkroman1/aai";
 import type { SqlExec } from "aai-server/secret-store";
 
 /** The pgmq queue name. Also the prefix of its archive table. */
@@ -193,12 +192,5 @@ export function createMemoryPreviewQueue(
       rows.delete(id);
       return Promise.resolve();
     },
-  };
-}
-
-/** Log-and-continue wrapper: queue trouble must never fail a caller's request. */
-export function bestEffort(what: string): (err: unknown) => undefined {
-  return (err: unknown) => {
-    console.warn(`Preview queue ${what} failed: ${errorMessage(err)}`);
   };
 }

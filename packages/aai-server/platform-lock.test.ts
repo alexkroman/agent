@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { createMemoryAgentRows } from "./agent-store.ts";
 import { createMemoryBlobStorage } from "./blob-storage.ts";
 import { createBundleStore } from "./bundle-store.ts";
@@ -40,14 +40,16 @@ function fakeAdvisoryDb(opts: { timeoutOnContention?: boolean } = {}) {
       const mine = new Set<string>();
       let released = false;
       return Promise.resolve({
-        query(sql: string, params?: unknown[]) {
+        query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]> {
+          const rows = (value: Record<string, unknown>[]): Promise<T[]> =>
+            Promise.resolve(value as T[]);
           statements.push(sql);
-          if (sql.startsWith("set lock_timeout")) return Promise.resolve([]);
+          if (sql.startsWith("set lock_timeout")) return rows([]);
           const key = String((params ?? [])[1]);
           if (sql.includes("pg_advisory_unlock")) {
             held.delete(key);
             mine.delete(key);
-            return Promise.resolve([]);
+            return rows([]);
           }
           if (held.has(key)) {
             // A real acquire would block here; the fake either raises the
@@ -55,18 +57,21 @@ function fakeAdvisoryDb(opts: { timeoutOnContention?: boolean } = {}) {
             // outcomes Postgres can produce.
             return opts.timeoutOnContention
               ? Promise.reject(new LockTimeout("canceling statement due to lock timeout"))
-              : new Promise<Record<string, unknown>[]>(() => undefined);
+              : new Promise<T[]>(() => undefined);
           }
           held.add(key);
           mine.add(key);
-          return Promise.resolve([]);
+          return rows([]);
         },
         release() {
           if (released) return;
           released = true;
           live--;
-          // Dropping the connection releases every lock it held.
-          for (const key of mine) held.delete(key);
+          // Deliberately does NOT drop `mine`: postgres.js `release()` returns
+          // the connection to the POOL with its session state intact, so an
+          // advisory lock survives it. The explicit unlock is what frees the
+          // lock; a dropped connection (a crashed replica) is the backstop,
+          // and that is a different event this fake does not model.
         },
       });
     },
@@ -213,7 +218,13 @@ describe("createPgSlugLock", () => {
     await a;
   });
 
-  test("a failed unlock still returns the connection, which frees the lock", async () => {
+  /**
+   * The unlock is the real release path, not tidiness: `release()` returns the
+   * connection to the pool with its session state intact, so a failed unlock
+   * LEAKS the lock onto a pooled connection. Hence the warning — and hence
+   * this test pins the leak rather than pretending the release covers it.
+   */
+  test("a failed unlock warns and still returns the connection", async () => {
     const { db, held } = fakeAdvisoryDb();
     const failing: AdminDb = {
       async reserve() {
@@ -227,11 +238,14 @@ describe("createPgSlugLock", () => {
         };
       },
     };
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const lock = createPgSlugLock(failing);
+    // The caller's work still succeeds — a release failure must not fail it.
     await expect(lock("my-agent", async () => "ok")).resolves.toBe("ok");
-    // Crash safety in miniature: the connection going back is what frees it,
-    // so a failed unlock cannot wedge the slug the way a stuck lease could.
-    expect(held.has("my-agent")).toBe(false);
+    expect(warn).toHaveBeenCalled();
+    // And the lock is still held, which is exactly why the failure is logged.
+    expect(held.has("my-agent")).toBe(true);
+    warn.mockRestore();
   });
 });
 

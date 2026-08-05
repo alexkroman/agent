@@ -50,6 +50,7 @@ export {
   type CloseableDb,
   type CreatePostgresDbOptions,
   createPostgresDb,
+  type ReservedDb,
 } from "./postgres-db.ts";
 export { PROVIDER_CREDENTIAL_ENVS, withHostCredentialFallback } from "./providers/host-env.ts";
 // Narrow named exports rather than the whole module: the rest of resolve.ts is

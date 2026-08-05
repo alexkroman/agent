@@ -60,18 +60,14 @@ export type WorkspaceStore = {
 
 const TABLE = "aai_platform.studio_workspaces";
 
-// Deliberately NOT `public`; platform-internal tables get their own schema
-// (`ensureTableOnce` creates it).
-/** DDL shared with the boot-time Realtime publication setup (realtime-events.ts). */
 /**
  * Postgres-backed workspace store over the platform admin connection.
  *
- * Schema + table are created lazily on first use and memoized; a failed
- * ensure resets the memo so one transient DDL error doesn't wedge the store
- * for the process lifetime. Documents are bound as JSON text with a
- * `::jsonb` cast so the statement shape is driver-agnostic; reads accept
- * either the parsed object (what the `postgres` driver returns for jsonb)
- * or a raw string.
+ * The table is declared in `supabase/migrations` (in `aai_platform`,
+ * deliberately not `public`), so this store issues no DDL. Documents are bound
+ * as JSON text with a `::jsonb` cast so the statement shape is
+ * driver-agnostic; reads accept either the parsed object (what the `postgres`
+ * driver returns for jsonb) or a raw string.
  */
 export function createPgWorkspaceStore(sql: SqlExec): WorkspaceStore {
   const parseDoc = (value: unknown): unknown =>

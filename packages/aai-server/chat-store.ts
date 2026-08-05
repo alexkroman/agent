@@ -81,11 +81,10 @@ function trimChat(messages: unknown[], budget: number): { trimmed: unknown[]; pa
 
 const TABLE = "aai_platform.studio_chats";
 
-/** DDL shared with the boot-time Realtime publication setup (realtime-events.ts). */
 /**
- * Postgres-backed chat store over the platform admin connection. Lazy
- * schema/table ensure with the failed-ensure reset, and the same
- * string-or-object jsonb read tolerance as the workspace store.
+ * Postgres-backed chat store over the platform admin connection. The table is
+ * declared in `supabase/migrations`, so this store issues no DDL; it shares
+ * the workspace store's string-or-object jsonb read tolerance.
  */
 export function createPgChatStore(sql: SqlExec): ChatStore {
   return {

@@ -28,7 +28,8 @@ import { HTTPException } from "hono/http-exception";
 import { TtlCache } from "./_ttl-cache.ts";
 import type { AppContext } from "./context.ts";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";
-import { brokerSessionUrl, type ResolveSandboxOpts } from "./sandbox-resolve.ts";
+import { brokerSessionUrl } from "./sandbox-broker.ts";
+import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
 
 /**
  * Per-request cap on the guest config proxy fetch. Short: this sits on the

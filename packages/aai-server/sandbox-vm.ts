@@ -22,12 +22,7 @@ import { readFile } from "node:fs/promises";
 import { keyedMemoAsync } from "./_memo.ts";
 import { spawnModalAgentServer } from "./modal-agent-sandbox.ts";
 import { describeModalBundle } from "./modal-describe.ts";
-import {
-  harnessImageTag,
-  readToolchainLock,
-  resolveSdkSpecs,
-  toolchainFingerprint,
-} from "./modal-harness-image.ts";
+import { localHarnessImageTag } from "./modal-harness-image.ts";
 import { DEFAULT_SANDBOX_IMAGE, spawnModalWarm } from "./modal-sandbox.ts";
 import type { GuestConnection } from "./rpc-schemas.ts";
 import { resolveSandboxBackend } from "./sandbox-backend.ts";
@@ -138,11 +133,7 @@ export function currentHarnessImageTag(harnessPath: string): Promise<string | nu
     if (resolveSandboxBackend(process.env) !== "modal") return null;
     const code = await readFile(harnessPath, "utf-8");
     const baseTag = process.env.MODAL_SANDBOX_IMAGE ?? DEFAULT_SANDBOX_IMAGE;
-    return harnessImageTag(
-      baseTag,
-      code,
-      toolchainFingerprint(resolveSdkSpecs(), readToolchainLock()),
-    );
+    return localHarnessImageTag(baseTag, code);
   });
 }
 

@@ -215,8 +215,10 @@ export function workspacePackageJson(
  * An unparseable manifest is left alone — the agent may be mid-edit, and
  * `npm install` will report it far better than a silent rewrite would.
  */
-async function reconcileWorkspacePins(abs: string): Promise<void> {
-  const installed = resolveWorkspaceDependencies();
+async function reconcileWorkspacePins(
+  abs: string,
+  installed: Record<string, string>,
+): Promise<void> {
   if (Object.keys(installed).length === 0) return;
   let manifest: { dependencies?: Record<string, string> } & Record<string, unknown>;
   try {
@@ -242,8 +244,12 @@ async function reconcileWorkspacePins(abs: string): Promise<void> {
  * against what is installed (see {@link reconcileWorkspacePins}).
  */
 export async function ensureProjectShape(dir: string): Promise<void> {
+  // One resolution pass for both consumers below — it is a handful of
+  // readFileSync + JSON.parse over the toolchain, and every settled write
+  // burst reaches here.
+  const installed = resolveWorkspaceDependencies();
   const shapeFiles: Record<string, string> = {
-    "package.json": workspacePackageJson(),
+    "package.json": workspacePackageJson(installed),
     "tsconfig.json": WORKSPACE_TSCONFIG,
     "global.d.ts": WORKSPACE_GLOBAL_DTS,
     "vite.config.ts": WORKSPACE_VITE_CONFIG,
@@ -253,7 +259,7 @@ export async function ensureProjectShape(dir: string): Promise<void> {
     Object.entries(shapeFiles).map(async ([rel, content]) => {
       const abs = path.join(dir, rel);
       if (await fileExists(abs)) {
-        if (rel === "package.json") await reconcileWorkspacePins(abs);
+        if (rel === "package.json") await reconcileWorkspacePins(abs, installed);
         return;
       }
       await writeFile(abs, content, "utf-8");

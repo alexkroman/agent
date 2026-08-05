@@ -112,42 +112,36 @@ function expectedManifest(versions) {
 }
 
 const versions = installedVersions();
-const manifest = expectedManifest(versions);
+
+/**
+ * Both committed files declare the same dependency map, so both are checked
+ * the same way: every installed version present, and nothing extra. Reads the
+ * map through `pick` rather than duplicating the loop per file — the two
+ * copies of it drifted into different wording for the same problem.
+ *
+ * Compares PARSED JSON, not bytes: a formatter reaching these files must not
+ * be able to fail the gate.
+ */
+function drift(label, path, pick) {
+  if (!existsSync(path)) return [`${path} is missing`];
+  const declared = pick(readJson(path)) ?? {};
+  const problems = [];
+  for (const [name, version] of Object.entries(versions)) {
+    if (declared[name] !== version) {
+      problems.push(`${label} has ${name}@${declared[name] ?? "(absent)"}, installed is ${version}`);
+    }
+  }
+  for (const name of Object.keys(declared)) {
+    if (!(name in versions)) problems.push(`${label} has stray dependency ${name}`);
+  }
+  return problems;
+}
 
 if (checkOnly) {
-  const problems = [];
-  // Compare PARSED manifests, not bytes: a formatter reaching this file must
-  // not be able to fail the gate, and the only thing that matters is the
-  // dependency map the lockfile is validated against.
-  if (!existsSync(manifestPath)) {
-    problems.push(`${manifestPath} is missing`);
-  } else {
-    const committed = readJson(manifestPath).dependencies ?? {};
-    for (const [name, version] of Object.entries(versions)) {
-      if (committed[name] !== version) {
-        problems.push(
-          `manifest has ${name}@${committed[name] ?? "(absent)"}, installed is ${version}`,
-        );
-      }
-    }
-    for (const name of Object.keys(committed)) {
-      if (!(name in versions)) problems.push(`manifest has stray dependency ${name}`);
-    }
-  }
-  if (!existsSync(lockPath)) {
-    problems.push(`${lockPath} is missing`);
-  } else {
-    const lock = readJson(lockPath);
-    const locked = lock.packages?.[""]?.dependencies ?? {};
-    for (const [name, version] of Object.entries(versions)) {
-      if (locked[name] !== version) {
-        problems.push(`lockfile has ${name}@${locked[name] ?? "(absent)"}, manifest wants ${version}`);
-      }
-    }
-    for (const name of Object.keys(locked)) {
-      if (!(name in versions)) problems.push(`lockfile has stray dependency ${name}`);
-    }
-  }
+  const problems = [
+    ...drift("manifest", manifestPath, (json) => json.dependencies),
+    ...drift("lockfile", lockPath, (json) => json.packages?.[""]?.dependencies),
+  ];
   if (problems.length > 0) {
     console.error("Guest toolchain lockfile is out of date:");
     for (const problem of problems) console.error(`  - ${problem}`);
@@ -158,7 +152,7 @@ if (checkOnly) {
   process.exit(0);
 }
 
-writeFileSync(manifestPath, manifest);
+writeFileSync(manifestPath, expectedManifest(versions));
 // `--package-lock-only` resolves and writes the lockfile without installing
 // anything, which is all the image build needs from it.
 execFileSync("npm", ["install", "--package-lock-only", "--no-audit", "--no-fund"], {

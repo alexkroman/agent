@@ -87,10 +87,10 @@ export type ToolchainLock = {
   lock: string;
 };
 
-/** Where the locked toolchain's own files live in this repo. */
-function toolchainDir(): string {
+/** The aai-guest package root — the anchor for everything read off disk here. */
+function guestPackageDir(): string {
   const require = createRequire(import.meta.url);
-  return path.join(path.dirname(require.resolve("aai-guest/package.json")), "toolchain");
+  return path.dirname(require.resolve("aai-guest/package.json"));
 }
 
 /**
@@ -103,7 +103,7 @@ function toolchainDir(): string {
  * against.
  */
 export function readToolchainLock(): ToolchainLock {
-  const dir = toolchainDir();
+  const dir = path.join(guestPackageDir(), "toolchain");
   const read = (name: string): string => {
     const file = path.join(dir, name);
     try {
@@ -127,9 +127,8 @@ export function readToolchainLock(): ToolchainLock {
  * range would let one `harness_image_tag` mean two different trees).
  */
 export function resolveSdkSpecs(): string[] {
-  const require = createRequire(import.meta.url);
-  const guestPkgPath = require.resolve("aai-guest/package.json");
-  const guestDir = path.dirname(guestPkgPath);
+  const guestDir = guestPackageDir();
+  const guestPkgPath = path.join(guestDir, "package.json");
   const guestPkg = JSON.parse(readFileSync(guestPkgPath, "utf-8")) as {
     dependencies?: Record<string, string>;
     devDependencies?: Record<string, string>;
@@ -188,6 +187,25 @@ export function harnessImageTag(baseTag: string, code: string, toolchain: string
     .update(toolchain.join(","))
     .digest("hex");
   return `${HARNESS_IMAGE_NAME}:${hash.slice(0, 16)}`;
+}
+
+/**
+ * {@link harnessImageTag} against THIS checkout's toolchain — the recipe every
+ * tag site needs, in one place.
+ *
+ * Two callers have to agree exactly: the resolver that PUBLISHES the image,
+ * and `currentHarnessImageTag` (sandbox-vm.ts), which records the tag on the
+ * agents row so a deploy pins its environment. Spelling the three calls out
+ * twice is how a future tag input gets added to one of them only — and the
+ * symptom would be a pin that resolves to nothing, failing every spawn of an
+ * already-deployed agent.
+ */
+export function localHarnessImageTag(baseTag: string, code: string): string {
+  return harnessImageTag(
+    baseTag,
+    code,
+    toolchainFingerprint(resolveSdkSpecs(), readToolchainLock()),
+  );
 }
 
 export type HarnessImageResolver = (code: string) => Promise<Image>;
@@ -297,11 +315,7 @@ export function createHarnessImageResolver(deps: {
   const tagOnce = (code: string): string => {
     let tag = tagMemo.get(code);
     if (tag === undefined) {
-      tag = harnessImageTag(
-        baseTag,
-        code,
-        toolchainFingerprint(resolveSdkSpecs(), readToolchainLock()),
-      );
+      tag = localHarnessImageTag(baseTag, code);
       tagMemo.set(code, tag);
     }
     return tag;

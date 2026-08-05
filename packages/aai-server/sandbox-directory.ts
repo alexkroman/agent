@@ -74,6 +74,25 @@ export type SandboxDirectory = {
 };
 
 /**
+ * Thrown when creating a named sandbox lost the race — another replica got
+ * there first, so Modal refused the duplicate.
+ *
+ * It lives here, beside the naming functions, rather than in the Modal
+ * backend: the name is this module's mechanism, and the class needs nothing
+ * from the SDK. That is what lets callers use `instanceof` instead of
+ * comparing `err.name` to a string — a taxonomy any rename, subclass, or
+ * rewrap would silently defeat.
+ */
+export class SandboxNameTakenError extends Error {
+  readonly sandboxName: string;
+  constructor(sandboxName: string, options?: ErrorOptions) {
+    super(`a sandbox named ${sandboxName} is already running`, options);
+    this.name = "SandboxNameTakenError";
+    this.sandboxName = sandboxName;
+  }
+}
+
+/**
  * The Modal sandbox name for one deploy of one slug.
  *
  * Pure and stable: every replica computes the same name for the same
@@ -102,8 +121,11 @@ export function studioSandboxName(scope: string, project: string): string {
 }
 
 /**
- * The directory for dev, tests, and the subprocess backend: no peers exist in
- * a single process, so every lookup is a miss. Tests inject entries.
+ * Test-only directory: every lookup is a miss until a test injects a peer.
+ *
+ * Note that dev and the subprocess backend get NO directory at all
+ * (service-config wires one only for the Modal backend) — a single process has
+ * no peers, so there is nothing to look up.
  */
 export function createMemorySandboxDirectory(): SandboxDirectory & {
   /** Test seam: pretend a peer replica is running this deploy. */

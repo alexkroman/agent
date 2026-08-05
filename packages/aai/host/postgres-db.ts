@@ -36,6 +36,8 @@ export type CloseableDb = Db & {
   /**
    * Hold one connection out of the pool until `release()`.
    *
+   * @internal
+   *
    * The pooled `query` above gives no connection affinity, which makes every
    * session-scoped Postgres feature unusable through it: a
    * `pg_advisory_lock` and its `pg_advisory_unlock` can land on different

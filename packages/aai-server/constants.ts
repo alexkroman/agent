@@ -15,7 +15,7 @@ export const MAX_ENV_SIZE = 65_536;
  * collapses to zero — cutting live calls on every redeploy, which is the
  * exact failure the window exists to prevent.
  */
-function envMs(raw: string | undefined, fallback: number): number {
+export function envMs(raw: string | undefined, fallback: number): number {
   if (raw === undefined || raw.trim() === "") return fallback;
   const ms = Number(raw);
   return Number.isFinite(ms) && ms >= 0 ? ms : fallback;

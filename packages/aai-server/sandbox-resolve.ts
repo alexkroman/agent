@@ -9,14 +9,12 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import pTimeout from "p-timeout";
 import { debug } from "./_debug-log.ts";
 import { type AppDatabases, type AppDbMeta, parseAppDbMeta } from "./app-database.ts";
 import { BROKER_READY_TIMEOUT_MS } from "./constants.ts";
 import type { PlatformEvents, Unwatch } from "./platform-events.ts";
 import { createSandbox, type Sandbox } from "./sandbox.ts";
 import type { SandboxDirectory } from "./sandbox-directory.ts";
-import { findPeerSession } from "./sandbox-peers.ts";
 import {
   type AgentSlot,
   deleteSlot,
@@ -145,6 +143,12 @@ function buildSandboxFromParts(
   opts: ResolveSandboxOpts,
   onSandboxLost: (sandbox: Sandbox) => void,
 ): Sandbox {
+  // Shutting down: a sandbox booted now outlives the process with nothing
+  // holding it (see `isDraining`). The guard lives at CONSTRUCTION rather than
+  // at one request path because there are two — the broker and the change
+  // stream's blue-green `handoverSlot`, whose boot easily outlasts the
+  // shutdown grace window.
+  if (opts.isDraining?.()) throw new DrainingError(slug);
   // Storage: the app's OWN scoped Postgres credentials (role/search_path
   // pinned at provisioning — see app-database.ts) ride into the guest as
   // DATABASE_URL, and the bundle's runtime connects directly, exactly as
@@ -271,7 +275,20 @@ async function handoverSlot(
     deleteSlot(opts.slots, slug);
     return;
   }
-  const replacement = buildSlotSandbox(slug, parts, opts);
+  let replacement: Sandbox;
+  try {
+    replacement = buildSlotSandbox(slug, parts, opts);
+  } catch (err) {
+    // Draining: leave the old resident attached and untouched. Retiring it to
+    // honour a deploy this process will not live to serve would cut its live
+    // calls for nothing — every surviving replica gets the same event and does
+    // the handover properly.
+    if (err instanceof DrainingError) {
+      debug("Draining; leaving the superseded resident to the surviving replicas", { slug });
+      return;
+    }
+    throw err;
+  }
   try {
     await replacement.sessionUrl();
   } catch (err) {
@@ -335,6 +352,8 @@ async function rebuildSlot(
   }
 }
 
+/** Also stop REACTING to deploys while draining — see `watchAgentInvalidation`. */
+
 /**
  * Map a slug to its (possibly freshly built) ONE resident sandbox. A LIVE
  * resident is served as-is — whether it is still current is not this path's
@@ -375,103 +394,16 @@ export async function resolveSandbox(
   });
 }
 
-export type BrokeredSession =
-  | { ok: true; sessionUrl: string; guestOrigin: string }
-  | { ok: false; status: 404 | 503; cause?: unknown };
-
 /**
- * The session-broker sequence shared by `GET /:slug/client-config` and the
- * plain `/:slug/websocket` upgrade: resolve the slug's live sandbox (booting
- * it on demand) and ask it for its public session URL. One failure taxonomy
- * for both callers — no bundle/sandbox is a 404; a sandbox VM that failed to
- * start is a retryable 503 (the failure hook detaches it, so the next
- * attempt rebuilds).
+ * Thrown instead of booting a sandbox while this replica is going away.
  *
- * The readiness wait is capped at {@link BROKER_READY_TIMEOUT_MS}, well under
- * the guest's own boot budget: a still-booting sandbox is a retryable 503
- * here, not a two-minute held request. Nothing is torn down on that path —
- * see the constant for why the boot continues and the next call joins it.
+ * Its own type so the broker can turn it into a retryable 503 while
+ * `handoverSlot` can treat it as "leave the old resident alone" — the two
+ * callers want opposite things from the same refusal.
  */
-export async function brokerSessionUrl(
-  slug: string,
-  opts: ResolveSandboxOpts,
-): Promise<BrokeredSession> {
-  // Cold on this replica: prefer a live peer replica's guest over spawning a
-  // duplicate (see sandbox-directory.ts). Sessions dial the guest directly, so
-  // a peer's URL serves the client exactly as well as a local one. A warm
-  // local resident always wins — it costs nothing, and the lookup is a
-  // round trip on a path where the caller is waiting.
-  const resident = opts.slots.get(slug)?.sandbox;
-  if (!(resident && isLive(resident))) {
-    const peer = await findPeerSession(slug, opts);
-    if (peer) return peer;
-    // Shutting down: a sandbox booted now would outlive the process with
-    // nothing holding it (see `isDraining`). 503 is exactly right — the
-    // client re-brokers, and the proxy routes that retry to a live replica.
-    if (opts.isDraining?.()) {
-      debug("Refusing to boot a sandbox while draining", { slug });
-      return { ok: false, status: 503 };
-    }
-  }
-  const sandbox = await resolveSandbox(slug, opts);
-  if (!sandbox) return { ok: false, status: 404 };
-  return await awaitBrokeredUrl(slug, sandbox, opts);
-}
-
-/** Postgres-free: `SandboxNameTakenError` by name, so this module imports no Modal. */
-function isNameTaken(err: unknown): boolean {
-  return (err as { name?: unknown } | null)?.name === "SandboxNameTakenError";
-}
-
-/**
- * Wait for a resolved sandbox to publish its URLs, within the broker's cap.
- *
- * Split from `brokerSessionUrl` to keep each readable: this half is entirely
- * about the three ways the wait can end (ready, still booting, lost the name
- * race), and the other is about which sandbox to wait on.
- */
-async function awaitBrokeredUrl(
-  slug: string,
-  sandbox: Sandbox,
-  opts: ResolveSandboxOpts,
-): Promise<BrokeredSession> {
-  // Both resolve off the same readiness promise — no extra wait.
-  const readyTimeoutMs = opts.readyTimeoutMs ?? BROKER_READY_TIMEOUT_MS;
-  const ready = Promise.all([sandbox.sessionUrl(), sandbox.guestOrigin()]);
-  // Contained: on the timeout path nothing is awaiting `ready`, and a boot
-  // that fails afterwards must not surface as an unhandled rejection.
-  ready.catch(() => undefined);
-  try {
-    const [sessionUrl, guestOrigin] =
-      readyTimeoutMs > 0
-        ? await pTimeout(ready, {
-            milliseconds: readyTimeoutMs,
-            message: `sandbox not ready within ${readyTimeoutMs}ms`,
-          })
-        : await ready;
-    return { ok: true, sessionUrl, guestOrigin };
-  } catch (err) {
-    // Lost the NAME race: a peer created this deploy's sandbox between our
-    // directory lookup and the create (sandbox-directory.ts). Go back to the
-    // directory rather than retrying a spawn that can only lose again — the
-    // peer's guest serves this client exactly as well as a local one.
-    if (isNameTaken(err)) {
-      debug("Lost the sandbox name race; routing to the peer", { slug });
-      const peer = await findPeerSession(slug, opts);
-      if (peer) return peer;
-      // The winner has not published a tunnel yet, or already went away: a
-      // retryable 503, exactly like every other still-booting sandbox.
-      return { ok: false, status: 503, cause: err };
-    }
-    // Still booting is not the same as failed to boot, and only the first is
-    // worth a quiet line: the failure path already logs (and detaches) via
-    // `Sandbox VM failed to start`.
-    if (sandbox.alive()) {
-      debug("Sandbox still booting; answering 503 while it continues", {
-        slug,
-        waitedMs: readyTimeoutMs,
-      });
-    }
-    return { ok: false, status: 503, cause: err };
+export class DrainingError extends Error {
+  constructor(slug: string) {
+    super(`replica is draining; refusing to boot a sandbox for ${slug}`);
+    this.name = "DrainingError";
   }
 }

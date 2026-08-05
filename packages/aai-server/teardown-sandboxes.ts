@@ -27,6 +27,7 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { sleep } from "./_sleep.ts";
+import { envMs } from "./constants.ts";
 import { retireSlot, type SlotCache } from "./sandbox-slots.ts";
 
 /**
@@ -49,13 +50,14 @@ import { retireSlot, type SlotCache } from "./sandbox-slots.ts";
  */
 export const SHUTDOWN_GRACE_MS = 3000;
 
-/** Resolve the grace period from the environment. */
+/**
+ * Resolve the grace period from the environment, through the one env-ms parse
+ * the package shares (`envMs`) — an unusable value falls back rather than
+ * disabling the wait by accident, which is exactly the rule that constant
+ * documents for `SANDBOX_RETIRE_DRAIN_MS`.
+ */
 export function shutdownGraceMs(env: NodeJS.ProcessEnv = process.env): number {
-  const raw = env.SHUTDOWN_GRACE_MS;
-  if (raw === undefined || raw.trim() === "") return SHUTDOWN_GRACE_MS;
-  const parsed = Number(raw);
-  // An unusable value falls back rather than disabling the wait by accident.
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : SHUTDOWN_GRACE_MS;
+  return envMs(env.SHUTDOWN_GRACE_MS, SHUTDOWN_GRACE_MS);
 }
 
 export type TeardownTargets = {

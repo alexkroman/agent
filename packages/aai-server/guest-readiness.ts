@@ -46,10 +46,9 @@ export async function pollGuestHealth(
   origin: string,
   proc: GuestProcLike,
   fetchFn: GuestFetch = fetch,
-  timeoutMs = GUEST_READY_TIMEOUT_MS,
 ): Promise<void> {
   const url = guestHttpUrl(origin, GUEST_ROUTES.health);
-  const deadline = Date.now() + timeoutMs;
+  const deadline = Date.now() + GUEST_READY_TIMEOUT_MS;
   let lastError = "no response";
   await raceGuestExit(
     (async () => {
@@ -62,7 +61,9 @@ export async function pollGuestHealth(
           lastError = errorMessage(err);
         }
         if (Date.now() >= deadline) {
-          throw new Error(`guest /health not ready after ${timeoutMs}ms: ${lastError}`);
+          throw new Error(
+            `guest /health not ready after ${GUEST_READY_TIMEOUT_MS}ms: ${lastError}`,
+          );
         }
         await sleep(AGENT_HEALTH_RETRY_MS);
       }

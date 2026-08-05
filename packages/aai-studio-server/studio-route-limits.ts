@@ -16,12 +16,18 @@ import {
   type StudioRateLimiters,
 } from "./studio-rate-limit.ts";
 
-/** A limiter pair plus the shared refusal, ready for the route table. */
+/** Null when the request may proceed, else the 429 to return as-is. */
+export type RefuseFn = (scope: string) => Promise<Response | null>;
+
+/**
+ * One gate per limited route. The limiters themselves stay private: every
+ * caller only ever asked "may this scope proceed on this route", and handing
+ * out the pair meant each route re-supplying the limiter that its own name
+ * already determines.
+ */
 export type RouteLimits = {
-  chat: RateLimiter;
-  projectCreate: RateLimiter;
-  /** Null when the request may proceed, else the 429 to return as-is. */
-  refuse(scope: string, limiter: RateLimiter): Promise<Response | null>;
+  chat: RefuseFn;
+  projectCreate: RefuseFn;
 };
 
 /**
@@ -32,16 +38,18 @@ export type RouteLimits = {
  * covers dev and tests.
  */
 export function createRouteLimits(injected?: StudioRateLimiters): RouteLimits {
-  return {
-    chat: injected?.chat ?? createRateLimiter(CHAT_RATE_LIMIT),
-    projectCreate: injected?.projectCreate ?? createRateLimiter(PROJECT_CREATE_RATE_LIMIT),
-    async refuse(scope, limiter) {
+  const refuse =
+    (limiter: RateLimiter): RefuseFn =>
+    async (scope) => {
       const verdict = await limiter.check(scope);
       if (verdict.ok) return null;
       return Response.json(
         { error: "Rate limit exceeded — try again later" },
         { status: 429, headers: { "Retry-After": String(verdict.retryAfterSeconds) } },
       );
-    },
+    };
+  return {
+    chat: refuse(injected?.chat ?? createRateLimiter(CHAT_RATE_LIMIT)),
+    projectCreate: refuse(injected?.projectCreate ?? createRateLimiter(PROJECT_CREATE_RATE_LIMIT)),
   };
 }

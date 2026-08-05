@@ -17,7 +17,9 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import type { BrokeredSession, ResolveSandboxOpts } from "./sandbox-resolve.ts";
+// Type-only, so the broker→peers→broker cycle is erased at compile time.
+import type { BrokeredSession } from "./sandbox-broker.ts";
+import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
 
 /**
  * The broker's cross-replica route: a live peer sandbox for `slug`.

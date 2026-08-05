@@ -52,6 +52,23 @@ import {
   type WorkspaceStore,
 } from "./workspace-store.ts";
 
+/**
+ * Connections the platform admin pool may open per replica. Every statement
+ * on it is a short query (Vault, agents rows, workspaces, chats, the sweeps)
+ * — the one long-held resource, a slug lock's reserved connection, has its
+ * own pool below.
+ */
+const ADMIN_POOL_MAX = 4;
+
+/**
+ * Connections reserved for per-slug mutation locks. Each concurrent
+ * distinct-slug mutation holds one for its whole critical section, so this is
+ * the ceiling on concurrent mutations THIS replica can start — past it,
+ * acquires queue in the pool, which is indistinguishable to the caller from
+ * queueing in Postgres's lock manager.
+ */
+const SLUG_LOCK_POOL_MAX = 4;
+
 /** Comma-separated extra placement clusters (APP_DB_URLS) → pooled targets. */
 function parseExtraAppDbTargets(raw: string | undefined): AppDbTarget[] {
   if (!raw) return [];
@@ -198,9 +215,10 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   // anything (see platform-lock.ts). Checked before the pool is built so the
   // failure names the setting rather than surfacing as lost exclusion later.
   if (!isLocalDev(env)) assertSessionModeUrl(url);
-  // The pool lives for the process; connections drain when the process exits
-  // (no explicit close() hook on the shutdown path today).
-  const admin = createPostgresDb({ url, max: 4 });
+  // The pools live for the process; connections drain when the process exits
+  // (no explicit close() hook on the shutdown path today), and postgres.js
+  // opens them lazily, so an idle replica pays for none of this.
+  const admin = createPostgresDb({ url, max: ADMIN_POOL_MAX });
   const exec: SqlExec = (query, params) => admin.query(query, params);
   const localDev = isLocalDev(env);
   if (localDev) {
@@ -242,7 +260,15 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
     // survives replica restarts and scale-out. (Cross-replica sandbox
     // invalidation rides the agents row's change stream — see
     // sandbox-resolve.ts.)
-    slugLock: createPgSlugLock(admin),
+    // Its OWN pool, deliberately: a held slug lock pins its connection for
+    // the whole critical section — a deploy's blob uploads, config
+    // extraction, and sandbox spawn, i.e. seconds — while every other
+    // statement here is a single short query. Sharing one pool let a handful
+    // of concurrent distinct-slug deploys hold every connection and starve
+    // Vault reads, workspace writes, and the agents-row lookups the broker
+    // makes, on a replica that was otherwise healthy. Separated, lock
+    // acquires queue only against each other.
+    slugLock: createPgSlugLock(createPostgresDb({ url, max: SLUG_LOCK_POOL_MAX })),
     sql: exec,
   };
 }

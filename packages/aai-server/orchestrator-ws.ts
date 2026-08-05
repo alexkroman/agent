@@ -24,7 +24,8 @@
  */
 
 import { answerUpgrade } from "./_upgrade-reply.ts";
-import { brokerSessionUrl, type ResolveSandboxOpts } from "./sandbox-resolve.ts";
+import { brokerSessionUrl } from "./sandbox-broker.ts";
+import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
 import { SLUG_PATTERN_SOURCE } from "./schemas.ts";
 
 export type WsUpgradeOpts = {

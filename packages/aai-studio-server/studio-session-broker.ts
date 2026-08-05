@@ -34,7 +34,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import { createOwnedMap } from "@alexkroman1/aai/internal";
 import { resolveHarnessPath } from "aai-server/constants";
 import { createKeyedLock, withLock } from "aai-server/platform-barrel";
-import { studioSandboxName } from "aai-server/sandbox-directory";
+import { SandboxNameTakenError, studioSandboxName } from "aai-server/sandbox-directory";
 import { spawnWarmHarness, type WarmHarness } from "aai-server/sandbox-vm";
 import { studioLlmModelId } from "./studio-llm.ts";
 import { createPreviewDeployer, type PreviewTarget } from "./studio-preview.ts";
@@ -355,6 +355,31 @@ export function createStudioSessionBroker(
     }
   }
 
+  /**
+   * Spawn this project's guest under its fleet-wide name, or null when a peer
+   * won the name race — Modal refuses a duplicate name, so two replicas
+   * racing the cold path cannot both spawn even if the registry read missed
+   * (see `studioSandboxName`). Null means "adopt the winner": failing the
+   * broker instead would make the mechanism that prevents a duplicate spawn
+   * cost the user a failed call, healed only by the client's re-broker.
+   *
+   * Tagged with the project name so the Modal dashboard shows WHICH studio
+   * session a sandbox serves, not a shared "studio-session" blob.
+   */
+  async function spawnNamed(scope: string, project: string): Promise<WarmHarness | null> {
+    try {
+      return await spawn({
+        harnessPath: options.harnessPath ?? resolveHarnessPath(),
+        slug: project,
+        role: "studio",
+        name: studioSandboxName(scope, project),
+      });
+    } catch (err) {
+      if (err instanceof SandboxNameTakenError) return null;
+      throw err;
+    }
+  }
+
   /** Reuse-or-adopt-or-spawn for one project. Runs under the session lock. */
   async function ensureSessionLocked(
     key: string,
@@ -376,24 +401,16 @@ export function createStudioSessionBroker(
     // running this project's guest. Checked after the workspace read so a
     // bogus project never reaches the registry, and before the spawn because
     // the spawn is exactly the duplicate this prevents.
-    const adopted = await fleet.adopt(
-      scope,
-      project,
-      sessionParams(scope, project, apiKey, workspace.files),
-    );
+    const adopt = (): Promise<{ url: string; token: string } | null> =>
+      fleet.adopt(scope, project, sessionParams(scope, project, apiKey, workspace.files));
+    const adopted = await adopt();
     if (adopted) return adopted;
 
-    // Tagged with the project name so the Modal dashboard shows WHICH
-    // studio session a sandbox serves, not a shared "studio-session" blob.
-    const warm = await spawn({
-      harnessPath: options.harnessPath ?? resolveHarnessPath(),
-      slug: project,
-      role: "studio",
-      // Fleet-wide name: Modal refuses a duplicate, so two replicas racing
-      // this cold path cannot both spawn — even if the lease read above
-      // missed (see studioSandboxName).
-      name: studioSandboxName(scope, project),
-    });
+    const warm = await spawnNamed(scope, project);
+    // A peer created this project's sandbox between the adopt above and the
+    // create — adopt the winner (see spawnNamed).
+    if (!warm) return await adopt();
+
     let token: string;
     try {
       wire(warm, key, scope, project);
