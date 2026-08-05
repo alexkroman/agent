@@ -102,7 +102,24 @@ export function assemblyAIPipeline(opts: AssemblyAIPipelineOptions = {}): {
   const { voice, region } = opts;
   return {
     stt: assemblyAIStt(region ? { region } : {}),
-    llm: assemblyAILlm(region ? { region } : {}),
+    // `reasoningEffort: "none"` because on a voice line time-to-first-token IS
+    // the quality, and the default model is a reasoning model. Measured against
+    // tau2-bench retail: 12 of 53 turns waited over 5s for the agent's first
+    // word, worst 19.1s — and in every gap over 8s the first word was ordinary
+    // content with no tool call yet, so the wait was the model thinking, not
+    // work being done.
+    //
+    // Nothing in the pipeline can cover that window: `holdPhrase` fires when a
+    // turn OPENS with a tool call and the dead-air cover measures tool
+    // execution, so both sit downstream of the first token. One of those gaps
+    // was the hold phrase itself ("One moment.") arriving 10.9s late.
+    //
+    // Safe as a default because the preset's descriptor carries the factory's
+    // own `gpt-5.5`, a GPT-5-family model that accepts the parameter; an agent
+    // overriding `llm` replaces this descriptor whole, so the parameter never
+    // reaches a model that would reject it. An agent that wants thinking depth
+    // declares its own stage (`assemblyAILlm({ model, reasoningEffort })`).
+    llm: assemblyAILlm({ reasoningEffort: "none", ...(region ? { region } : {}) }),
     tts: assemblyAITts(voice ? { voice } : {}),
   };
 }

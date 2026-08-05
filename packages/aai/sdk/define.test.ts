@@ -61,6 +61,35 @@ describe("agent()", () => {
     expect(agent({ name: "t", ...assemblyAIPipeline(), llm }).llm).toBe(llm);
   });
 
+  test("the default pipeline turns reasoning OFF", () => {
+    // Time-to-first-token IS the quality on a voice line, and nothing in the
+    // pipeline can cover the wait before the first token (holdPhrase needs a
+    // turn that opened with a tool call; the dead-air cover measures tool
+    // execution). Pinned as a test because the symptom of losing it is seconds
+    // of silence rather than an error.
+    const { llm } = assemblyAIPipeline();
+    expect(llm.options.reasoningEffort).toBe("none");
+    // Only valid on the GPT-5 family, so the descriptor must carry such a model.
+    expect(llm.options.model).toBe("gpt-5.5");
+
+    // An agent with no providers at all gets the same treatment. Asserted
+    // through toAgentConfig, not agent(): the default fill runs at the
+    // mode-derivation sites (toAgentConfig, and the runtime's provider
+    // resolution), so `agent()` itself leaves the stage unset.
+    expect(toAgentConfig(agent({ name: "t" })).llm).toStrictEqual(llm);
+
+    // Region must not drop it.
+    expect(assemblyAIPipeline({ region: "eu" }).llm.options.reasoningEffort).toBe("none");
+  });
+
+  test("an explicit llm stage keeps its own reasoning setting", () => {
+    // The override replaces the descriptor whole, which is what keeps
+    // `reasoning_effort` off models that reject it.
+    const claude = assemblyAILlm({ model: "claude-sonnet-4-6" });
+    expect(agent({ name: "t", llm: claude }).llm).toBe(claude);
+    expect(claude.options.reasoningEffort).toBeUndefined();
+  });
+
   test("applies defaults", () => {
     const def = agent({ name: "Test Agent" });
     expect(def.name).toBe("Test Agent");
