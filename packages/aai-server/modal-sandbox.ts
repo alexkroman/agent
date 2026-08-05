@@ -145,7 +145,7 @@ export type ModalSpawnContext = {
  * `buildContext`). Override with `MODAL_SANDBOX_IMAGE` (pin a version tag in
  * production for reproducible guests).
  */
-export const DEFAULT_SANDBOX_IMAGE = "node:24-slim";
+export const DEFAULT_SANDBOX_IMAGE = "node:26-slim";
 
 /** Modal App the sandboxes are created under. Override with `MODAL_APP_NAME`. */
 const DEFAULT_MODAL_APP_NAME = "aai-server";

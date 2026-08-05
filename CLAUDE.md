@@ -2745,9 +2745,23 @@ service's control work is light — and one container served both badly.
   with no cache to build. The shared harness lifecycle (exit fan-out,
   memoized cleanup, guest dial retry, stdio draining, loopback port
   allocation) lives in `warm-harness.ts`, used by both backends.
-- The guest base image defaults to `node:24-slim`; pin via
+- The guest base image defaults to `node:26-slim`; pin via
   `MODAL_SANDBOX_IMAGE` for reproducible guests. `MODAL_APP_NAME` selects the
   Modal App sandboxes are created under (default `aai-server`).
+
+  **Its major tracks the SERVICE image's** (`node:26-slim` in
+  `scripts/modal_image.py`) **and `.node-version`.** The guest is the dev
+  server (see "Dev/prod parity"), so a split major would mean the harness runs
+  one runtime in production and another under `aai dev` — the asymmetry that
+  section exists to enumerate, and one that no test can see because each side
+  is internally consistent. The three move together; `@types/node` is the
+  fourth, since it is what `tsc` checks every package and every studio
+  workspace against — pinned two majors ahead of the runtime, it accepts APIs
+  the deployed container does not have.
+
+  Note the ceiling is a RANGE, not a pin: published `engines.node` stays
+  `>=24` so SDK consumers on the previous LTS are not broken by a platform
+  deploy, which is why bumping this image is not a package-visible change.
 - **The harness AND the build toolchain are baked into a snapshot image**,
   not written per spawn, in two halves that cache differently. The
   TOOLCHAIN is a native image LAYER (`toolchainImage`: a

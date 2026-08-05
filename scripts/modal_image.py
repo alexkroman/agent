@@ -139,7 +139,12 @@ def build_image(*, port: int, region: str, extra_env: dict[str, str] | None = No
     return (
         # ``add_python`` layers the Modal runtime's Python next to Node — the
         # container entrypoint is Modal's Python runtime, which spawns node.
-        modal.Image.from_registry("node:24-slim", add_python="3.13")
+        #
+        # Keep the major in lockstep with ``DEFAULT_SANDBOX_IMAGE``
+        # (aai-server/modal-sandbox.ts): the host and its guest sandboxes run
+        # the same runtime by design, which is what makes the harness the dev
+        # server (see "Dev/prod parity" in CLAUDE.md).
+        modal.Image.from_registry("node:26-slim", add_python="3.13")
         .apt_install("ca-certificates")
         .run_commands(f"corepack enable && corepack prepare pnpm@{PNPM_VERSION} --activate")
         .add_local_dir(REPO_ROOT, remote_path="/app", copy=True, ignore=BUILD_IGNORE)
