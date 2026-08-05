@@ -38,3 +38,9 @@ packages/*/package.json.e2e-backup
 # check-doc-examples scratch (cleaned up on exit; ignore crash leftovers)
 .doc-examples-scratch-*/
 tsconfig.doc-examples-*.json
+
+# Supabase CLI link state (`supabase link` writes the project ref and the
+# remote's component versions here). Deliberately NOT the whole `supabase/`
+# directory: config.toml and migrations/ are checked in and load-bearing —
+# the platform schema is applied from there before every deploy.
+supabase/.temp/
