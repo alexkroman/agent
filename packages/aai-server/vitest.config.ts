@@ -5,11 +5,16 @@ import { sharedConfig, sharedCoverageExclude } from "../../vitest.shared.ts";
 export default defineConfig({
   ...sharedConfig,
   test: {
+    ...sharedConfig.test,
     // Project name for `--project aai-server`; the workspace root discovers this
     // file by glob, so the name must live here (else it defaults to the
     // package.json name).
     name: "aai-server",
-    restoreMocks: true,
+    // Process isolation: this suite spawns real subprocesses and mutates
+    // process-global state. CLAUDE.md's per-package table has always recorded
+    // aai-server as `forks` with that rationale, but the config had lost the
+    // setting, so the table and the config disagreed.
+    pool: "forks",
     // Auto-builds the aai-guest harness bundle createSandbox resolves eagerly.
     globalSetup: [
       fileURLToPath(new URL("../../scripts/ensure-guest-harness.mjs", import.meta.url)),
@@ -21,16 +26,14 @@ export default defineConfig({
     // actually wrong. (Sized when auth still paid argon2id derivations;
     // ownership digests are cheap now, but the contention headroom stays.)
     testTimeout: 20_000,
-    exclude: [
-      "orchestrator-integration.test.ts",
-      "ws-integration.test.ts",
-      "workspace-build-integration.test.ts",
-      // Need a real Postgres (AAI_TEST_PG_URL) — integration tier only.
-      "platform-lock.integration.test.ts",
-      "platform-schema.integration.test.ts",
-      "node_modules",
-      "dist",
-    ],
+    // Integration-tier membership is a naming convention, not a hand-kept
+    // filename list. The list this replaces had drifted twice over: it named
+    // files that no longer existed, and it missed
+    // `agent-server.integration.test.ts` (then `agent-server-integration.test.ts`),
+    // which boots a REAL harness subprocess and was therefore running in the
+    // 5s unit tier with no retry. `test:integration` selects the same glob,
+    // so a new integration test needs no edit in either place.
+    exclude: ["**/*.integration.test.ts", "node_modules", "dist"],
     coverage: {
       exclude: [...sharedCoverageExclude],
       // Ratchet: floors only move up (functions eased 88→85 once, when the

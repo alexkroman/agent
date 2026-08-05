@@ -19,82 +19,36 @@ import {
 // ── Slug Validation & Path Traversal ───────────────────────────────────
 
 describe("slug validation prevents path traversal", () => {
-  test("deploy rejects a body slug with path traversal characters", async () => {
-    const { fetch } = await createTestOrchestrator();
-
-    // The slug now travels in the deploy body; DeployBodySchema must reject
-    // anything outside the slug grammar before it becomes a storage path.
-    const res = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders(),
-      body: deployBody({ slug: "../etc/passwd" }),
-    });
-    expect(res.status).toBe(400);
-  });
-
-  test("deploy rejects a body slug with URL-encoded traversal", async () => {
+  // The slug travels in the deploy body; DeployBodySchema must reject
+  // anything outside the slug grammar before it becomes a storage path.
+  test.each([
+    ["path traversal characters", "../etc/passwd"],
+    ["URL-encoded traversal", "%2e%2e%2fetc%2fpasswd"],
+    ["a reserved name", "studio"],
+  ])("deploy rejects a body slug with %s", async (_why, slug) => {
     const { fetch } = await createTestOrchestrator();
 
     const res = await fetch("/deploy", {
       method: "POST",
       headers: authHeaders(),
-      body: deployBody({ slug: "%2e%2e%2fetc%2fpasswd" }),
+      body: deployBody({ slug }),
     });
     expect(res.status).toBe(400);
   });
 
-  test("deploy rejects a reserved body slug", async () => {
+  // Same assertion for every malformed slug in a request PATH, so the grammar
+  // is a table rather than six copy-pasted bodies — a new rule is one row.
+  test.each([
+    ["dots", "/my.agent/health"],
+    ["uppercase letters", "/MyAgent/health"],
+    ["spaces", "/my agent/health"],
+    ["a leading hyphen", "/-agent/health"],
+    ["a trailing hyphen", "/agent-/health"],
+    ["over 64 characters", `/${"a".repeat(65)}/health`],
+  ])("rejects a slug with %s", async (_why, path) => {
     const { fetch } = await createTestOrchestrator();
 
-    const res = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders(),
-      body: deployBody({ slug: "studio" }),
-    });
-    expect(res.status).toBe(400);
-  });
-
-  test("rejects slug with dots", async () => {
-    const { fetch } = await createTestOrchestrator();
-
-    const res = await fetch("/my.agent/health");
-    expect(res.status).toBe(400);
-  });
-
-  test("rejects slug with uppercase letters", async () => {
-    const { fetch } = await createTestOrchestrator();
-
-    const res = await fetch("/MyAgent/health");
-    expect(res.status).toBe(400);
-  });
-
-  test("rejects slug with spaces", async () => {
-    const { fetch } = await createTestOrchestrator();
-
-    const res = await fetch("/my agent/health");
-    // Spaces in URLs result in 400 or routing failure
-    expect(res.status).toBeGreaterThanOrEqual(400);
-  });
-
-  test("rejects slug starting with hyphen", async () => {
-    const { fetch } = await createTestOrchestrator();
-
-    const res = await fetch("/-agent/health");
-    expect(res.status).toBe(400);
-  });
-
-  test("rejects slug ending with hyphen", async () => {
-    const { fetch } = await createTestOrchestrator();
-
-    const res = await fetch("/agent-/health");
-    expect(res.status).toBe(400);
-  });
-
-  test("rejects slug over 64 characters", async () => {
-    const { fetch } = await createTestOrchestrator();
-
-    const longSlug = `${"a".repeat(65)}`;
-    const res = await fetch(`/${longSlug}/health`);
+    const res = await fetch(path);
     expect(res.status).toBe(400);
   });
 });

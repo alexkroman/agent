@@ -303,6 +303,12 @@ function checkInvariants(snap: SessionSnapshot, prev: SessionSnapshot, log: stri
 describe("fuzz: session-core interleavings", () => {
   let audio: ReturnType<typeof installAudioMocks>;
   const rejections: unknown[] = [];
+  // Named, so afterEach can remove exactly THIS listener. The teardown used
+  // `process.removeAllListeners("unhandledRejection")`, which strips every
+  // listener on the process — vitest's own included, plus any installed by
+  // another test file sharing this worker. A harness that disarms someone
+  // else's rejection guard is worse than one that leaks its own.
+  const onUnhandledRejection = (reason: unknown) => rejections.push(reason);
 
   beforeEach(async () => {
     // Warm the memoized audio imports on real timers — module loading is real
@@ -312,7 +318,7 @@ describe("fuzz: session-core interleavings", () => {
     vi.useFakeTimers();
     audio = installAudioMocks();
     rejections.length = 0;
-    process.on("unhandledRejection", (r) => rejections.push(r));
+    process.on("unhandledRejection", onUnhandledRejection);
     vi.spyOn(console, "error").mockImplementation(noop);
     vi.spyOn(console, "warn").mockImplementation(noop);
     vi.spyOn(console, "debug").mockImplementation(noop);
@@ -321,7 +327,7 @@ describe("fuzz: session-core interleavings", () => {
   afterEach(() => {
     audio.restore();
     vi.useRealTimers();
-    process.removeAllListeners("unhandledRejection");
+    process.off("unhandledRejection", onUnhandledRejection);
   });
 
   /**

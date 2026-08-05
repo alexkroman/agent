@@ -12,6 +12,11 @@ export type DeleteOpts = {
   apiKey: string;
   /** Optional fetch implementation for testing. Defaults to globalThis.fetch. */
   fetch?: typeof globalThis.fetch;
+  /**
+   * Delay between retries in ms (default 300, see `_api-client.ts`). Tests
+   * pass 0 so retry-path assertions don't sleep real wall-clock time.
+   */
+  retryDelay?: number;
 };
 
 export async function runDelete(opts: DeleteOpts): Promise<void> {
@@ -21,6 +26,7 @@ export async function runDelete(opts: DeleteOpts): Promise<void> {
     action: "delete",
     hints: { 404: HINT_NOT_DEPLOYED },
     ...(opts.fetch ? { fetch: opts.fetch } : {}),
+    ...(opts.retryDelay === undefined ? {} : { retryDelay: opts.retryDelay }),
   });
 }
 

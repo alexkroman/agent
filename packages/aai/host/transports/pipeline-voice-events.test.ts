@@ -8,10 +8,9 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel, type ScriptedPart } from "../_pipeline-test-fakes.ts";
+import { tick } from "../_test-utils.ts";
 import { inFlightReplyScript, makeOpts, noopToolSchema } from "./_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
-
-const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 describe("PipelineTransport", () => {
   describe("user-speaking events", () => {
@@ -379,7 +378,7 @@ describe("PipelineTransport", () => {
       await vi.waitFor(() => {
         expect(tts.last()?.textChunks.join("")).toContain("Un momento.");
       });
-      await flush();
+      await tick();
       await t.stop();
     });
 

@@ -33,6 +33,23 @@ const PATTERNS = [
   { label: "biome-ignore", re: "biome-ignore" },
   { label: "eslint-disable", re: "eslint-disable" },
   { label: "as any", re: "\\bas any\\b" },
+  // NOT YET COUNTED, deliberately: `as unknown as T`. It is the double-cast
+  // that launders a value past the type checker without tripping `as any`
+  // above, and being uncounted is why it became the dominant hatch idiom here
+  // — measured 2026-08, there are 198 of them under packages/ (173 in test
+  // files) against 3 `as any`. So it belongs in this list.
+  //
+  // Adding the line is a one-word change; what it needs is a branch where the
+  // count does not JUMP. Because the ratchet diffs the work tree against the
+  // merge-base with origin/main, enabling it on a branch that is many commits
+  // ahead charges that branch for every cast those commits added (+47 when
+  // this was tried), so the gate fails for debt the diff never introduced.
+  // Land it either directly on top of origin/main, or together with enough
+  // removals to cover the delta. The three worst concentrations are the
+  // provider suites' `session._transcriber as unknown as Fake…` (27 in
+  // stt/assemblyai.test.ts alone), ssrf-pinning.test.ts's mock-fetch casts
+  // (12), and host-mode.test.ts's `ws as unknown as SessionWebSocket` (8) —
+  // each of which wants a typed seam rather than a cast at every call site.
 ];
 
 // Only count source under packages/, never built output.

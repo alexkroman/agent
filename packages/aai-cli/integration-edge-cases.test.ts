@@ -102,6 +102,8 @@ describe("network failure", () => {
         bundle: makeBundle(),
         env: {},
         apiKey: "test-key",
+        // The assertion is on the error, not the backoff — don't sleep 2×300ms.
+        retryDelay: 0,
       }),
     ).rejects.toThrow("could not reach");
   });
@@ -112,6 +114,7 @@ describe("network failure", () => {
         url: "http://127.0.0.1:1",
         slug: "my-agent",
         apiKey: "test-key",
+        retryDelay: 0,
       }),
     ).rejects.toThrow("could not reach");
   });
