@@ -262,6 +262,23 @@ export const api = {
     request<ProjectData>(key, `/projects/${encodeURIComponent(project)}`),
 
   /**
+   * Does the platform serve an agent page at `/:slug/` yet? Unauthenticated,
+   * like the page itself — the Preview pane frames that URL directly, so it
+   * asks first (see the probe in preview.tsx). The agent health route is the
+   * exact question: it 404s when there is no agents row, which is precisely
+   * when the page 404s, and it says nothing about the sandbox (a booting
+   * sandbox is the page's own business — its client re-brokers).
+   *
+   * A rejected fetch reads as "not there" rather than throwing: the caller
+   * polls, and there is nothing to do about an offline browser here.
+   */
+  agentPageReady: (slug: string): Promise<boolean> =>
+    fetch(`/${encodeURIComponent(slug)}/health`).then(
+      (res) => res.ok,
+      () => false,
+    ),
+
+  /**
    * Subscribe to the project's live state (`GET …/events`, SSE): the server
    * pushes a full {@link ProjectData} whenever the workspace row changes —
    * fed by Supabase Realtime server-side — which is how a finished preview

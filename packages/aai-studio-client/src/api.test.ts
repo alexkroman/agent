@@ -215,6 +215,26 @@ describe("api", () => {
   });
 });
 
+describe("api.agentPageReady", () => {
+  test("the agent health route decides whether `/:slug/` is framable", async () => {
+    stubFetch({ "/p-preview/health": () => jsonResponse({ status: "ok", slug: "p-preview" }) });
+    await expect(api.agentPageReady("p-preview")).resolves.toBe(true);
+
+    stubFetch({ "/p-preview/health": () => jsonResponse({ error: "Not found" }, 404) });
+    await expect(api.agentPageReady("p-preview")).resolves.toBe(false);
+  });
+
+  test("a rejected fetch reads as not-ready rather than throwing", async () => {
+    // The Preview pane polls this; an offline browser must leave it on the
+    // pane's own screen, not surface an unhandled rejection.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.reject(new TypeError("Failed to fetch"))),
+    );
+    await expect(api.agentPageReady("p-preview")).resolves.toBe(false);
+  });
+});
+
 describe("isTransientSessionError", () => {
   test("4xx answers are final — a bad key or missing project can't be retried away", () => {
     expect(isTransientSessionError(new ApiError(401, "unauthorized"))).toBe(false);
