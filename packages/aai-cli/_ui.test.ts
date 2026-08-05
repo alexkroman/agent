@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { describe, expect, test } from "vitest";
-import { log, parsePort, silenceOutput } from "./_ui.ts";
+import { describe, expect, test, vi } from "vitest";
+import { log, notify, parsePort, silenceOutput } from "./_ui.ts";
 
 describe("parsePort", () => {
   test("parses valid port", () => {
@@ -28,6 +28,21 @@ describe("parsePort", () => {
   });
 });
 
+// NOTE: `silenceOutput()` sets irreversible module state, so everything that
+// depends on the un-silenced path must be declared BEFORE the describe below.
+describe("notify (before silenceOutput)", () => {
+  test("delegates to the styled log in human mode", () => {
+    const spy = vi.spyOn(log, "error").mockImplementation(() => undefined);
+    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    notify("error", "boom");
+    expect(spy).toHaveBeenCalledWith("boom");
+    // Human mode must not double-report by also writing the raw line.
+    expect(stderr).not.toHaveBeenCalled();
+    spy.mockRestore();
+    stderr.mockRestore();
+  });
+});
+
 describe("silenceOutput", () => {
   test("replaces log methods with no-ops after silenceOutput()", () => {
     silenceOutput();
@@ -38,5 +53,31 @@ describe("silenceOutput", () => {
     expect(() => log.warn("test")).not.toThrow();
     expect(() => log.step("test")).not.toThrow();
     expect(() => log.message("test")).not.toThrow();
+  });
+});
+
+/**
+ * The reason `notify` exists: JSON mode is auto-detected on a pipe, and
+ * `silenceOutput` no-ops every `log` method for the rest of the process. That
+ * is correct for a request/response command (stdout carries exactly one JSON
+ * line) and wrong for a long-running one — a piped `aai dev` silenced every
+ * later rebuild failure, so edits stopped taking effect with nothing said.
+ * stderr keeps the stdout contract while still reporting.
+ */
+describe("notify (after silenceOutput)", () => {
+  test("writes to stderr instead of vanishing", () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    notify("error", "Restart failed: boom");
+    expect(stderr).toHaveBeenCalledWith("Restart failed: boom\n");
+    stderr.mockRestore();
+  });
+
+  test("reports every level, so a rebuild notice is not lost either", () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    for (const level of ["error", "warn", "info", "success"] as const) {
+      notify(level, `msg-${level}`);
+      expect(stderr).toHaveBeenCalledWith(`msg-${level}\n`);
+    }
+    stderr.mockRestore();
   });
 });

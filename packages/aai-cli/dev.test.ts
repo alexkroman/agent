@@ -1,9 +1,13 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
 
-const { mockCleanup, mockStartDevServer } = vi.hoisted(() => {
+const { mockCleanup, mockStartDevServer, mockNotify } = vi.hoisted(() => {
   const mockCleanup = vi.fn();
-  return { mockCleanup, mockStartDevServer: vi.fn(async () => mockCleanup) };
+  return {
+    mockCleanup,
+    mockStartDevServer: vi.fn(async () => mockCleanup),
+    mockNotify: vi.fn(),
+  };
 });
 
 vi.mock("./_dev-server.ts", () => ({
@@ -13,6 +17,7 @@ vi.mock("./_dev-server.ts", () => ({
 vi.mock("./_ui.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./_ui.ts")>()),
   log: (await import("./_test-utils.ts")).makeMockLog(),
+  notify: mockNotify,
 }));
 
 import { executeDev } from "./dev.ts";
@@ -81,21 +86,24 @@ describe("executeDev", () => {
     });
   });
 
-  // The defense-in-depth process handlers must log and keep the host alive —
+  // The defense-in-depth process handlers must report and keep the host alive —
   // one bad session's stray rejection/throw must not crash every other one.
-  test("unhandledRejection and uncaughtException handlers log without exiting", async () => {
+  //
+  // They report through `notify`, not `log`: `aai dev` is long-running and JSON
+  // mode (auto-detected on a pipe) no-ops every `log` method for the rest of the
+  // process, so a piped dev server hid these entirely. Asserting on `notify`
+  // is what keeps a revert to `log.error` from silently going unnoticed again.
+  test("unhandledRejection and uncaughtException handlers report without exiting", async () => {
     await withCapturedHandlers(async (handlers) => {
       mockCleanup.mockResolvedValue(undefined);
       await executeDev({ cwd: "/tmp/agent", port: "3123" });
-      const { log } = await import("./_ui.ts");
-      const logError = log.error as ReturnType<typeof vi.fn>;
-      logError.mockClear();
+      mockNotify.mockClear();
 
       handlers.get("unhandledRejection")?.(new Error("socket died"));
-      expect(logError).toHaveBeenCalledWith(expect.stringContaining("socket died"));
+      expect(mockNotify).toHaveBeenCalledWith("error", expect.stringContaining("socket died"));
 
       handlers.get("uncaughtException")?.(new Error("callback threw"));
-      expect(logError).toHaveBeenCalledWith(expect.stringContaining("callback threw"));
+      expect(mockNotify).toHaveBeenCalledWith("error", expect.stringContaining("callback threw"));
 
       expect(process.exit).not.toHaveBeenCalled();
     });

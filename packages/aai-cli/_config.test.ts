@@ -250,3 +250,104 @@ describe("ensureApiKey", () => {
     });
   });
 });
+
+/**
+ * The global config is one document shared by every command and every
+ * terminal, and each writer replaces the whole thing. `writeJson` makes each
+ * write atomic, so no reader sees a torn file — but the read→modify→write SPAN
+ * was unserialized, so concurrent invocations lost each other's updates.
+ *
+ * The case that made this worth locking is the API key: `aai login` polls for
+ * up to five minutes while the user approves in the browser, so any command run
+ * in that window can be mid-update when the key lands — and then writes its own
+ * stale snapshot back over it, leaving the user `not_logged_in` right after a
+ * login that reported success.
+ */
+describe("global config concurrent updates", () => {
+  test("concurrent approveServer calls do not lose approvals", async () => {
+    await withTempDir(async (dir) => {
+      const { approveServer, readGlobalConfig, writeGlobalConfig } = await import("./_config.ts");
+      await writeGlobalConfig(dir, { approvedServers: [] });
+
+      const origins = Array.from({ length: 8 }, (_, i) => `http://127.0.0.1:900${i}`);
+      await Promise.all(origins.map((origin) => approveServer(origin, dir)));
+
+      const approved = (await readGlobalConfig(dir)).approvedServers ?? [];
+      expect([...approved].sort()).toEqual([...origins].sort());
+    });
+  });
+
+  test("a concurrent approveServer cannot discard the login key", async () => {
+    await withTempDir(async (dir) => {
+      const { approveServer, readGlobalConfig, updateGlobalConfig, writeGlobalConfig } =
+        await import("./_config.ts");
+
+      // Repeat: the lost update depends on interleaving, so a single pass can
+      // pass by luck even with the serialization removed.
+      for (let i = 0; i < 20; i++) {
+        await writeGlobalConfig(dir, { approvedServers: [] });
+        await Promise.all([
+          approveServer(`http://127.0.0.1:9${String(i).padStart(3, "0")}`, dir),
+          updateGlobalConfig((config) => ({ ...config, apiKey: "key-from-login" }), dir),
+        ]);
+        const after = await readGlobalConfig(dir);
+        expect(after.apiKey).toBe("key-from-login");
+        expect(after.approvedServers).toHaveLength(1);
+      }
+    });
+  });
+
+  test("leaves no lock file behind", async () => {
+    await withTempDir(async (dir) => {
+      const { approveServer } = await import("./_config.ts");
+      await approveServer("https://example.com", dir);
+      expect(await fileExists(path.join(dir, "config.lock"))).toBe(false);
+    });
+  });
+
+  test("a stale lock file is broken rather than blocking forever", async () => {
+    await withTempDir(async (dir) => {
+      const { approveServer, readGlobalConfig } = await import("./_config.ts");
+      const fs = await import("node:fs/promises");
+      const lockPath = path.join(dir, "config.lock");
+      await fs.writeFile(lockPath, "");
+      // Backdate well past the staleness window — a process killed mid-update
+      // must not make every later config write take the unlocked path forever.
+      const old = new Date(Date.now() - 60_000);
+      await fs.utimes(lockPath, old, old);
+
+      await approveServer("https://example.com", dir);
+      expect((await readGlobalConfig(dir)).approvedServers).toEqual(["https://example.com"]);
+    });
+  });
+});
+
+describe("updateGlobalConfig", () => {
+  test("an unchanged return skips the write", async () => {
+    await withTempDir(async (dir) => {
+      const { updateGlobalConfig, writeGlobalConfig } = await import("./_config.ts");
+      const file = path.join(dir, "config.json");
+      await writeGlobalConfig(dir, { apiKey: "k" });
+      const { stat } = await import("node:fs/promises");
+      const mtimeBefore = (await stat(file)).mtimeMs;
+
+      // Identity return = "nothing to do": most `--server` invocations pass an
+      // already-approved origin, and rewriting the file there is pure churn.
+      await updateGlobalConfig((config) => config, dir);
+      expect((await stat(file)).mtimeMs).toBe(mtimeBefore);
+    });
+  });
+
+  test("merges against contents read inside the lock", async () => {
+    await withTempDir(async (dir) => {
+      const { updateGlobalConfig, readGlobalConfig, writeGlobalConfig } = await import(
+        "./_config.ts"
+      );
+      await writeGlobalConfig(dir, { approvedServers: ["https://a.example"] });
+      await updateGlobalConfig((config) => ({ ...config, apiKey: "k" }), dir);
+
+      const after = await readGlobalConfig(dir);
+      expect(after).toEqual({ approvedServers: ["https://a.example"], apiKey: "k" });
+    });
+  });
+});

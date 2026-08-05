@@ -122,7 +122,17 @@ export function serverCommonModule(): Record<string, unknown> {
 }
 
 export function uiModule(): Record<string, unknown> {
-  return { log: makeMockLog(), fmtUrl: vi.fn((url: string) => url) };
+  const log = makeMockLog();
+  return {
+    log,
+    // `notify` is the JSON-mode-surviving channel the long-running watch loop
+    // reports through (see _ui.ts). Delegating to the same mock log keeps the
+    // specs asserting on the level they care about rather than on the wrapper.
+    notify: vi.fn((level: "error" | "warn" | "info" | "success", message: string) => {
+      log[level](message);
+    }),
+    fmtUrl: vi.fn((url: string) => url),
+  };
 }
 
 export function defaultHtmlModule(): Record<string, unknown> {

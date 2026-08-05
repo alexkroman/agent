@@ -227,6 +227,23 @@ because `log.warn` is silenced in JSON mode and JSON mode is auto-detected on
 a pipe — a scripted push otherwise reported plain success while having
 replaced the workspace with a truncated tree.
 
+**A LONG-RUNNING command's diagnostics go through `notify` (`_ui.ts`), not
+`log`.** `silenceOutput()` no-ops every `log` method so JSON mode's contract —
+exactly one result line on stdout — holds. That is right for a
+request/response command and wrong for `aai dev`, which writes its JSON line at
+startup and then keeps running: every later message was silenced for the rest of
+the process, including "Restart failed: … (previous server still running)", the
+watcher's ENOSPC/EMFILE error, and the `unhandledRejection`/`uncaughtException`
+handlers whose entire purpose is diagnostics. Since JSON mode is AUTO-DETECTED
+on a pipe, that is the NORMAL case — `aai dev > dev.log`, a process supervisor,
+a container — so a syntax error left the previous agent being served with
+nothing anywhere saying why edits had stopped taking effect (verified: stderr
+empty, stdout one line, old version still served). `notify` keeps the styled
+clack output in human mode and writes a plain line to STDERR once silenced, so
+the stdout contract survives while a human tailing the log still sees the
+failure. Any new post-startup output in a long-running command owes the same
+treatment.
+
 **A `*-preview` project name is refused** (`projectNameFromDir` returns
 null). Publishing deploys under the project's own name, so such a project
 would claim a slug the orphan-preview sweep reaps hourly — taking the agent,
@@ -3279,6 +3296,26 @@ have its input eaten and persisted as the API key. Unauthenticated commands
 fail with `not_logged_in` pointing at `aai login`; non-interactive callers (CI,
 scripts, the eval harnesses) point `AAI_CONFIG_DIR` at a config dir holding a
 logged-in key, which is what `aaiEnv()` seeds for the e2e suite's spawned CLIs.
+
+**Every global-config update goes through `updateGlobalConfig`, which holds a
+cross-process lock.** `writeJson` makes each write atomic (temp file + rename),
+so no reader sees a torn file — but the read→modify→write SPAN is not atomic and
+every writer replaces the whole document, so concurrent invocations lose each
+other's updates. Measured: 8 parallel commands each approving a distinct origin
+recorded only 5, and a concurrent `approveServer` straddling the final write of
+`aai login` DISCARDS THE API KEY — the login prints "your API key is saved" and
+the next command says `not_logged_in`. The window is wide open in practice,
+because `aai login` polls for up to five minutes while the user approves in the
+browser, so anything else run in that time can be mid-update when the key lands.
+The lock is a `wx` exclusive-create lockfile with three deliberate properties:
+acquisition is **bounded** (on timeout the update proceeds UNLOCKED rather than
+throwing — failing a login on a stuck lockfile is worse than the lost update),
+a **stale** lock is broken (a process killed mid-update must not send every later
+write down the unlocked path forever), and it must **never nest** (re-entry
+self-deadlocks until the timeout; `executeLogin` calls `approveServer` and the
+key update in sequence, not nested). `.aai/project.json` deliberately keeps the
+last-write-wins behaviour — it is per-directory, not shared across every command
+and terminal.
 
 **`aai dev` is the one command a shell-exported key still reaches, and only as
 a provider credential.** `resolveAgentEnv` (`_dev-server.ts`) falls back to the
