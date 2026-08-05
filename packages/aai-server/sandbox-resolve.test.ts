@@ -467,7 +467,8 @@ describe("cross-replica registry keeps one sandbox per slug fleet-wide", () => {
   beforeEach(() => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    // Earlier suites `restoreAllMocks`, which strips the hoisted default.
+    // `restoreMocks` (vitest.shared.ts) restores every spy before each test,
+    // which strips the hoisted factory's default — so re-arm it here.
     mockSpawnAgentServer.mockReset().mockResolvedValue({
       sessionUrl: "wss://tunnel.test:443/websocket",
       guestOrigin: "wss://tunnel.test:443",
