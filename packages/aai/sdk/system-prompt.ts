@@ -21,10 +21,12 @@ const TOOL_PREAMBLE =
   "silent between them and speak again when you have the answer. Narrating each step " +
   '("I will check the next order. I will keep checking your orders.") tells the caller nothing ' +
   "they need and makes a short wait sound like a long one.\n" +
-  "\nReport RESULTS, never intentions. After that one opening phrase, do not announce what you " +
-  'are about to do — no "I will look up …", "I will check …", "Let me pull up …". The caller ' +
-  "cannot act on a plan, only on an answer, and each announcement is another sentence they can " +
-  "interrupt. Everything you say after the opener should be something you now KNOW.\n" +
+  "\nThat opening phrase is ONLY for a turn that begins with a tool call and has nothing else to " +
+  "say yet. If you already know something the caller is waiting on, lead with THAT instead — " +
+  '"One moment." in front of an answer you already have just delays it.\n' +
+  "\nOtherwise, report RESULTS, never intentions: do not announce what you are about to do — no " +
+  '"I will look up …", "I will check …", "Let me pull up …". The caller cannot act on a plan, ' +
+  "only on an answer, and each announcement is another sentence they can interrupt.\n" +
   'Wrong: "Thanks. I will look up your account now. I found your account. I will check that ' +
   'order now. Your order is delivered, and I found both items. I will check the options."\n' +
   'Right: "One moment." … then, once the calls are done: "Your order is delivered. Both items ' +
@@ -69,7 +71,9 @@ const VOICE_RULES =
   '- Use short conversational sentences. To list things, say "First," "Next," "Finally,"\n' +
   "- Your FIRST sentence must be at most 8 words and must carry the answer or the next " +
   "question. Never open with a preface, an acknowledgement, or a restatement of what the " +
-  "caller just said. Everything else goes in later sentences.\n" +
+  "caller just said. Everything else goes in later sentences. The ONE exception is a turn that " +
+  "starts with a tool call and has no answer yet, which may open with a brief holding phrase — " +
+  "never in front of something you already know.\n" +
   "- Keep the whole reply to 2 sentences and about 30 spoken words. Going long is the single " +
   "most expensive habit on a phone call: the longer you talk, the more likely the caller cuts " +
   "in, and everything after that point is never heard.\n" +
