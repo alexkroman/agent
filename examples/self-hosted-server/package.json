@@ -3,13 +3,15 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "A voice agent served from your own Node process with @alexkroman1/aai's runtime — no managed platform.",
+  "description": "Deploy an agent template to your own Node process with @alexkroman1/aai's runtime — no managed platform.",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "start": "node server.mjs"
   },
   "dependencies": {
-    "@alexkroman1/aai": "^5.3.0",
-    "@alexkroman1/aai-ui": "^5.3.0",
-    "zod": "^4.4.3"
+    "@alexkroman1/aai": "^5.10.0",
+    "@alexkroman1/aai-ui": "^5.10.0"
   }
 }

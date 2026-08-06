@@ -1,11 +1,18 @@
-// A voice agent served entirely from your own Node process — no managed
-// platform, no CLI. The same `agent()` definition a deployed agent uses,
-// wired to the SDK's runtime and server:
+// Deploy an agent template to your own Node process — no managed platform, no
+// `aai` CLI.
 //
-//   agent()  →  createRuntime()  →  createServer()  →  listen()
+// `agent.ts` next to this file is the `simple` template verbatim, untouched.
+// This file is the deployment: the three SDK calls the CLI's `aai dev` wraps,
+// called directly.
 //
-// The browser UI is @alexkroman1/aai-ui's prebuilt default client, served
-// as static files. Voice sessions connect on `WS /websocket`.
+//   agent.ts  →  createRuntime()  →  createServer()  →  listen()
+//
+// Tools declared on the agent run IN THIS PROCESS, on your credentials —
+// the opposite arrangement from `examples/host-server`, where callers bring
+// their own agent and execute their own tools.
+//
+// The browser UI is @alexkroman1/aai-ui's prebuilt default client, served as
+// static files. Voice sessions connect on `WS /websocket`.
 //
 // Run it:
 //
@@ -17,30 +24,17 @@
 
 import { createRequire } from "node:module";
 import path from "node:path";
-import { agent, tool } from "@alexkroman1/aai";
 import { createRuntime, createServer } from "@alexkroman1/aai/runtime";
-import { z } from "zod";
+// Node 24 strips the types natively, so the template's `.ts` is imported
+// as-is — no build step, and no second copy of the agent in JavaScript that
+// could drift from the one you deploy.
+import myAgent from "./agent.ts";
 
 const apiKey = process.env.ASSEMBLYAI_API_KEY;
 if (!apiKey) {
   console.error("Set ASSEMBLYAI_API_KEY (the default pipeline is all-AssemblyAI).");
   process.exit(1);
 }
-
-const myAgent = agent({
-  name: "Dice Roller",
-  systemPrompt:
-    "You are a cheerful dice-rolling assistant. Offer to roll dice and " +
-    "report results with a little drama.",
-  greeting: "Hi! Name a die — d6, d20, anything — and I'll roll it.",
-  tools: {
-    roll_die: tool({
-      description: "Roll a single die with the given number of sides.",
-      parameters: z.object({ sides: z.number().int().min(2).max(1000) }),
-      execute: ({ sides }) => ({ rolled: 1 + Math.floor(Math.random() * sides) }),
-    }),
-  },
-});
 
 // The prebuilt browser UI that `aai dev` serves — shipped inside aai-ui.
 const require = createRequire(import.meta.url);
@@ -50,6 +44,10 @@ const clientDir = path.join(
   "default-client",
 );
 
+// `env` is what tool code sees as `ctx.env`, and where provider credentials
+// are resolved from. On the platform this comes from `aai secret put`; here it
+// is yours to assemble — from a vault, a mounted file, whatever you already
+// use. Nothing falls back to the host's process.env on its own.
 const runtime = createRuntime({
   agent: myAgent,
   env: { ASSEMBLYAI_API_KEY: apiKey },

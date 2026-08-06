@@ -1,8 +1,13 @@
-# Dispatch Command Center — no-SDK edition
+# Raw Voice Agent API — no SDK
 
-This is the [`dispatch-center`](../../packages/aai-templates/templates/dispatch-center)
-template rebuilt **from scratch against the raw [AssemblyAI Voice Agent
-API](https://www.assemblyai.com/docs/voice-agents/voice-agent-api/quickstart)**.
+A browser talking **directly to the [AssemblyAI Voice Agent
+API](https://www.assemblyai.com/docs/voice-agents/voice-agent-api/quickstart)**
+over one WebSocket, with nothing in between. The workload happens to be the
+[`dispatch-center`](../../packages/aai-templates/templates/dispatch-center)
+template rebuilt from scratch; the point is the wire protocol, not the domain.
+
+Read [How the wire protocol maps](#how-the-wire-protocol-maps) first — that
+table is the reason this example exists.
 
 It uses **no SDKs and no libraries** — not `@alexkroman1/aai`, not
 `@alexkroman1/aai-ui`, not `ws`, not React, not zod, not a bundler. Just:
@@ -51,7 +56,7 @@ sent back as `tool.result`.
 
 ```sh
 export ASSEMBLYAI_API_KEY=your_key_here
-cd examples/dispatch-center-vanilla
+cd examples/raw-voice-agent-api
 node server.mjs
 # open http://localhost:3000 and click "Start Dispatch"
 ```
