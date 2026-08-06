@@ -254,6 +254,88 @@ describe("AssemblyAI TTS adapter", () => {
       ]);
     });
 
+    test("flushes at the character budget when no sentence end arrives", async () => {
+      // Sentence-only segmentation makes time-to-first-audio the length of the
+      // reply's FIRST SENTENCE, and a long opening clause is most of a second of
+      // silence on its own. Measured against production: 538ms to first audio
+      // sentence-only vs 286ms with the budget. See the module doc.
+      const { session, ws } = await openSession();
+      session.sendText("Let me pull up the details on that order for you ");
+      expect(ws._frames()).toEqual([
+        // Cut after the last WHOLE word inside the budget — never mid-token.
+        { type: "Generate", text: "Let me pull up the details on that " },
+        { type: "Flush" },
+      ]);
+    });
+
+    test("holds text that has not reached the budget or a sentence end", async () => {
+      const { session, ws } = await openSession();
+      session.sendText("Let me pull up the ");
+      expect(ws._frames()).toEqual([]);
+    });
+
+    test("a sentence boundary wins over the budget even when far past it", async () => {
+      // The budget only bounds the WAIT for a sentence end; it is not a cap. A
+      // buffer holding complete sentences still flushes as one large segment,
+      // which is both better prosody and fewer round trips.
+      const { session, ws } = await openSession();
+      session.sendText("One thing happened. Two things happened. Still going ");
+      expect(ws._frames()).toEqual([
+        { type: "Generate", text: "One thing happened. Two things happened. " },
+        { type: "Flush" },
+      ]);
+    });
+
+    test("flushes a single token that overruns the budget rather than holding it", async () => {
+      // Once one token is longer than the budget, "wait for a word that fits"
+      // can never become true again — every later delta only lengthens the
+      // buffer — so holding would strand the text until end of turn.
+      const { session, ws } = await openSession();
+      session.sendText("https://example.com/orders/1234567890/tracking next ");
+      expect(ws._frames()).toEqual([
+        { type: "Generate", text: "https://example.com/orders/1234567890/tracking " },
+        { type: "Flush" },
+      ]);
+    });
+
+    test("emits every whole segment a single delta carries", async () => {
+      // A budget split consumes only its own segment, so without looping a burst
+      // would dribble out one segment per LATER delta — and stall completely if
+      // none followed, restoring the whole-turn lag this adapter exists to avoid.
+      const { session, ws } = await openSession();
+      session.sendText(
+        "Let me pull up the details on that order for you and check the warehouse status now ",
+      );
+      expect(ws._frames()).toEqual([
+        { type: "Generate", text: "Let me pull up the details on that " },
+        { type: "Flush" },
+        { type: "Generate", text: "order for you and check the warehouse " },
+        { type: "Flush" },
+      ]);
+    });
+
+    test("budget segments each hold the turn open until the end-of-turn flush", async () => {
+      // Every segment earns its own FlushDone, but `done` may only fire for the
+      // last: flushTtsAndWait resolves on it, so a premature one advances the
+      // orchestrator while later segments are still synthesizing.
+      const { session, ws } = await openSession();
+      let done = 0;
+      session.on("done", () => {
+        done += 1;
+      });
+
+      session.sendText(
+        "Let me pull up the details on that order for you and check the warehouse status now ",
+      );
+      ws._msg({ type: "FlushDone" }); // first budget segment
+      ws._msg({ type: "FlushDone" }); // second budget segment
+      expect(done).toBe(0);
+
+      session.flush(); // end of turn — "status now " is still buffered
+      ws._msg({ type: "FlushDone" });
+      expect(done).toBe(1);
+    });
+
     test("flushes the hold phrase, which must be audible during tool execution", async () => {
       // DEFAULT_HOLD_PHRASE is "One moment." — two words. Its entire purpose is
       // to break silence while a tool runs, so it cannot wait for the turn's

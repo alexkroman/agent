@@ -109,25 +109,45 @@
  *
  * ---
  *
- * **CURRENTLY 800, AGAINST THE EVIDENCE ABOVE — set deliberately, UNVERIFIED.**
- * Everything above argues for 1600 and was measured, most recently by the
- * gold-utterance A/B in the table. 800 is a product decision to buy latency at
- * the cost of splits; it is not a measurement, and it is the value that A/B
- * predicts will be split-dominated.
+ * **800 WAS TRIED AND FAILED — measured, on reward.** It was set deliberately
+ * against everything above, as a product decision to buy latency at the cost of
+ * splits, and the validation run it asked for disproved it. tau2-bench retail,
+ * the same 25 tasks at the same seed, differing only in this pair:
  *
- * The specific risk, from the numbers already recorded above: intra-utterance
- * pauses inside FAILING utterances measured 856-1455 ms, nine of eighteen of
- * them above 1000. At 800 essentially every one of those ends the turn, which
- * is the mechanism that truncates a spelled name or email mid-identifier — so
- * the tool call authenticates against a fragment. Expect NL assertions to hold
- * or rise while DB match falls; that divergence is the signature, and it is
- * invisible to any harness that scores no database.
+ * | run | min / max | reward | mis-heard | split / merged | reached a tool call |
+ * | --- | --- | --- | --- | --- | --- |
+ * | `retail-stt-default-1248` | 1600 / 3500 | **0.68** | 43% | 23 / 14 (1.6:1) | 15 of 294 (5.1%) |
+ * | `retail-stt-default-139` | 800 / 1600 | **0.12** | 52% | 27 / 8 (3.4:1) | 26 of 264 (9.8%) |
  *
- * Validate on tau2 reward or on tool-argument accuracy against
- * `evaluation_criteria.actions`. If it does not hold, the value to return to
- * is 1600.
+ * `retail-stt-default-1031` independently scored 0.68, so that is the stable
+ * baseline and 0.12 is a 5.7x regression — 3 of 25 tasks passing against 17.
+ * The prediction recorded here held exactly: splits rose ~30% per utterance
+ * while merges fell ~37%, moving the error off the knee into the expensive
+ * direction, and the rate at which a mis-hearing corrupted a tool argument
+ * nearly doubled. Task 1 is the canonical failure — "Yusuf Rossi, zip code one
+ * nine one two two" came back as "You'll surprise me. Zip code 19122.", then
+ * "Already gave it—Yusuf Rossi" as "Yusuf Rafi", and
+ * `find_user_id_by_name_zip.last_name='rafi'` authenticated against a fragment.
+ *
+ * Two notes on how that was established, both reusable:
+ *
+ * `scripts/stt_errors.py` in tau2-bench IS the gold-utterance alignment
+ * instrument this doc asks for — it aligns greedily over 1:1/1:2/2:1 and reports
+ * the CARDINALITY, so a split is a named finding rather than a low similarity
+ * score. Do not rewrite it. `scripts/failure_report.py` covers the wire side.
+ *
+ * And confirm the window was LIVE before believing a null result. Audio time is
+ * `tick x 0.2` in tau2's discrete-time adapter and `user_labels.txt` shares that
+ * timeline, so gold-utterance-end to `user_transcript` measures what the service
+ * actually waited out: median 2.00s at 1600/3500 against 1.20s at 800/1600 (the
+ * 0.80s delta is precisely this knob), p90 3.8s against 2.2s (the ceiling). A
+ * dev-server restart is what loads a changed constant, and `watchDirectory`
+ * ignores `node_modules` — where the linked SDK lives — so an SDK edit mid-run
+ * reaches nothing. That cuts both ways: it is why this run is a clean A/B
+ * despite three unrelated SDK commits landing inside its window, and it is why
+ * a run can silently measure the PREVIOUS value.
  */
-export const DEFAULT_MIN_TURN_SILENCE_MS = 800;
+export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
 
 /**
  * Maximum silence (ms) before AssemblyAI force-ends a turn regardless of
@@ -143,23 +163,31 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 800;
  * number the hesitation failures were actually measured against, and moving
  * 1536 -> 3500 is the whole of the split fix.
  *
- * **CURRENTLY 1600, down from 3500 — set deliberately, UNVERIFIED.** Two
- * consequences of that, both departures from what is argued above:
+ * **CURRENTLY 2500, down from 3500 — a deliberate trim, and the one number in
+ * this pair with no measurement of its own.** 1600 was tried alongside a
+ * minimum of 800 and reverted; see that constant's doc for the run. Since the
+ * two moved together there, that run cannot apportion the damage between them,
+ * so what is known is only that 1600/800 loses to 3500/1600 — not that a
+ * ceiling of 2500 is safe on its own.
  *
- * First, 1600 is a hair over the service's own 1536 default, so it very nearly
- * restores the state this constant was introduced to escape: the paragraph
- * above records that 1536 "silently governed every turn" and that moving it to
- * 3500 "is the whole of the split fix". Pause tolerance for hesitant speech is
- * therefore back to roughly what it was before that fix.
+ * What 2500 does buy is the ORDERING, which 1600 broke. It exceeds
+ * {@link DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS} (2000) again, so a barge-in on
+ * an utterance that never reads complete still finds that utterance OPEN when
+ * the 2000 ms recovery window fires, and the deferral in
+ * `host/transports/pipeline-recovery.ts` is reached rather than skipped. At
+ * 1600 the force-end landed first and the resume proceeded instead — a
+ * behaviour change, not a tuning change, and the reason that value could not
+ * simply be kept for its latency. It also stays clear of the service's own 1536
+ * default, so the ceiling is ours rather than silently the service's, which is
+ * the state this constant was introduced to escape.
  *
- * Second, it no longer exceeds {@link DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS}
- * (2000) — it is now BELOW it, inverting the coupling described above. A
- * barge-in on an utterance that never reads complete now has that utterance
- * force-ended at 1600 ms, BEFORE the 2000 ms recovery window elapses, so the
- * window no longer finds an open utterance to defer against
- * (`host/transports/pipeline-recovery.ts`). The deferral path that made the
- * old ordering safe is simply not reached; the resume proceeds instead. That
- * is a behaviour change, not a tuning change, and it is the one to look at
- * first if false-interruption recovery starts misbehaving.
+ * What it costs is ~1s of pause tolerance for hesitant speech against 3500 —
+ * paid only by utterances that never read complete, which is the whole reason
+ * this is the knob to trim rather than the minimum. The measured tail is
+ * content-driven and long (p90 endpoint latency ~4.0-4.6s at every setting
+ * swept), so a hesitation that used to be held to 3500 now force-ends ~1s
+ * earlier and splits. If splits reappear on hesitant, non-spelling utterances
+ * while spelled identifiers stay intact, this is the value to put back to 3500 —
+ * that asymmetry is the signature that distinguishes it from the minimum.
  */
-export const DEFAULT_MAX_TURN_SILENCE_MS = 1600;
+export const DEFAULT_MAX_TURN_SILENCE_MS = 2500;

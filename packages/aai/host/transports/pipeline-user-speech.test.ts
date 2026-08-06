@@ -143,6 +143,7 @@ function makeActivity(overrides: Partial<ActivityDeps> = {}): {
       state.spoke = false;
     },
     tailResumePrompt: () => "TAIL_PROMPT",
+    audio: { send: vi.fn(), duck: vi.fn(), resume: vi.fn(), drop: vi.fn() },
     runChainedTurn: (text, _label, kind) => {
       calls.chained.push({ text, isResume: kind?.isResume === true });
     },
@@ -152,7 +153,12 @@ function makeActivity(overrides: Partial<ActivityDeps> = {}): {
 }
 
 describe("barge-in recovery classification", () => {
-  test("a barge-in mid-stream arms the [interrupted] continuation prompt", async () => {
+  test("a barge-in mid-stream resumes from the CUT POINT when one is known", async () => {
+    // History's [interrupted] marker records what the model GENERATED, but TTS
+    // runs behind the text, so the caller heard less than that. Resuming from
+    // the marker re-speaks the gap — measured at 10% of consecutive agent
+    // utterances repeating 60%+ of their words. The cut-point estimate names
+    // the last words actually heard, so it wins whenever it is available.
     const { activity, calls } = makeActivity();
     activity.sttEvents.onSttPartial("stop right there");
     expect(calls.aborts).toBe(1);
@@ -160,8 +166,20 @@ describe("barge-in recovery classification", () => {
     await vi.waitFor(() => {
       expect(calls.chained).toHaveLength(1);
     });
-    expect(calls.chained[0]?.text).toBe(DEFAULT_FALSE_INTERRUPTION_PROMPT);
+    expect(calls.chained[0]?.text).toBe("TAIL_PROMPT");
     expect(calls.chained[0]?.isResume).toBe(true);
+  });
+
+  test("a mid-stream barge-in falls back to [interrupted] when no cut point exists", async () => {
+    // Nothing audible yet, or essentially all of it heard: there is no boundary
+    // to quote, and plain continuation is already the right instruction.
+    const { activity, calls } = makeActivity({ tailResumePrompt: () => undefined });
+    activity.sttEvents.onSttPartial("stop right there");
+    expect(calls.aborts).toBe(1);
+    await vi.waitFor(() => {
+      expect(calls.chained).toHaveLength(1);
+    });
+    expect(calls.chained[0]?.text).toBe(DEFAULT_FALSE_INTERRUPTION_PROMPT);
   });
 
   test("a barge-in during the TTS drain arms the cut-point prompt, not [interrupted]", async () => {

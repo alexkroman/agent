@@ -24,7 +24,8 @@ import { createRestartableTimer } from "../_timer.ts";
  * **The window elapsing is not sufficient on its own — the utterance must also
  * be over.** Endpointing lives in the STT provider, so a genuine barge-in's
  * final is withheld for `min_turn_silence` after the caller stops speaking
- * (`DEFAULT_MIN_TURN_SILENCE_MS`, 2000) — the same 2000 the recovery window
+ * (`DEFAULT_MIN_TURN_SILENCE_MS`, 1600 today; 2000 when this was written) —
+ * then exactly the 2000 the recovery window
  * defaulted to, measured from the same instant (the window restarts on every
  * partial, and the last partial lands at roughly the end of speech). The two
  * deadlines were therefore separated only by the difference between partial

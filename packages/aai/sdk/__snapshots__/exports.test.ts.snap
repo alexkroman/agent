@@ -67,6 +67,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "MIC_SILENCE_PROBE_MS",
   "PACER_BURST_MS",
   "PIPELINE_FLUSH_TIMEOUT_MS",
+  "PIPELINE_MAX_AUDIO_HOLD_MS",
   "PIPELINE_PLAYBACK_GRACE_MS",
   "PLAYBACK_BUFFER_SECONDS",
   "PLAYBACK_CONCEAL_FADE_MS",

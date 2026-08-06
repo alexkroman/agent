@@ -283,3 +283,26 @@ export const TTS_RECONNECT_TIMEOUT_MS = 8000;
  * @internal
  */
 export const DEFAULT_SPEECH_IDLE_TIMEOUT_MS = 3500;
+
+/**
+ * How long (ms) the pipeline goes quiet when the caller starts speaking over
+ * the agent, before either a barge-in aborts the turn or the reply resumes —
+ * see `createAudioHold`.
+ *
+ * **Expiry is the NORMAL path, not a backstop.** The first design waited for
+ * the barge-in decision to resolve and used a 1500ms timer only as a safety
+ * net; measured against benchmark audio, the net fired 33 times against 37
+ * barge-ins, because the resolving event is the STT final and that cannot
+ * arrive until {@link DEFAULT_MIN_TURN_SILENCE_MS} (1600ms) after the caller
+ * stops. The resolve path was unreachable in the common case and the timer was
+ * silently doing the work.
+ *
+ * So this is a duck, not a hold: pause briefly, the way a person does when
+ * someone else starts talking, then carry on unless the speech sustains into a
+ * real barge-in (~1s, once it clears `minBargeInWords` and
+ * `interruptionMinDurationMs`). 400ms is long enough to stop talking over a
+ * cough or an aside and short enough that resuming reads as a pause rather than
+ * a stall — and it is well under the ~1s barge-in decision, so a genuine
+ * interruption still aborts the turn and discards the rest.
+ */
+export const PIPELINE_MAX_AUDIO_HOLD_MS = 400;

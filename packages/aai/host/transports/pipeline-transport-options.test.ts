@@ -54,12 +54,13 @@ describe("pipeline defaults", () => {
     // half the request. It has to be long enough for the pause between two
     // spoken sentences.
     //
-    // The floor was 1000, chosen when the default was 1600. The default is now
-    // 800 (a deliberate latency-for-splits trade — see the block comment on
-    // DEFAULT_MIN_TURN_SILENCE_MS), so the floor moves with it. This guards
-    // DRIFT, not correctness: 800 is below every window the measurements
-    // justified, and the assertion above cannot tell you whether it is right.
-    expect(DEFAULT_MIN_TURN_SILENCE_MS).toBeGreaterThanOrEqual(800);
+    // The floor is 1000, and it briefly moved to 800 to follow a default that
+    // was set to 800 and then reverted on tau2 reward (0.68 -> 0.12; see the
+    // block comment on DEFAULT_MIN_TURN_SILENCE_MS). It is back where it was:
+    // 800 is below every window the measurements justified, and this assertion
+    // guards DRIFT rather than correctness — it cannot tell you whether a value
+    // above the floor is right.
+    expect(DEFAULT_MIN_TURN_SILENCE_MS).toBeGreaterThanOrEqual(1000);
   });
 
   test("the barge-in duration gate is on, and short enough to stay responsive", () => {

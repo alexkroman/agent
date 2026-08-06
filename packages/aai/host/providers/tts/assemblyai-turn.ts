@@ -2,7 +2,7 @@
 /**
  * Turn-acknowledgement accounting for the AssemblyAI streaming TTS adapter.
  *
- * The adapter flushes per sentence, so one turn spans several `Flush` frames
+ * The adapter flushes per segment, so one turn spans several `Flush` frames
  * and the turn ends only when the LAST one is acknowledged — see the module
  * doc in `assemblyai.ts`. This module owns that bookkeeping: how many flushes
  * are outstanding, whether the pipeline has closed the turn, and the one

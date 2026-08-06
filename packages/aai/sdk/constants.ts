@@ -320,7 +320,7 @@ export const DEFAULT_INTERRUPTION_MIN_DURATION_MS = 500;
  * releases. Named rather than `{@link}`ed: it is `@internal`, so the docs build
  * excludes it and a link would fail to resolve. Note how this sits against
  * endpointing: it is ABOVE {@link DEFAULT_MIN_TURN_SILENCE_MS} (1600) but BELOW
- * {@link DEFAULT_MAX_TURN_SILENCE_MS} (3500). Both are measured from roughly
+ * {@link DEFAULT_MAX_TURN_SILENCE_MS} (2500). Both are measured from roughly
  * the same instant (this window restarts on every partial, and the last partial
  * lands at about the end of speech, while the final is withheld for endpointing
  * after it), so a barge-in on an utterance that reads COMPLETE now has its final
@@ -399,6 +399,7 @@ export {
   DEFAULT_VOICE_FOCUS,
   DEFAULT_VOICE_FOCUS_THRESHOLD,
   MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES,
+  PIPELINE_MAX_AUDIO_HOLD_MS,
   STT_CONNECT_MAX_RETRIES,
   STT_CONNECT_RETRY_DELAY_MS,
   STT_CONNECT_TIMEOUT_MS,

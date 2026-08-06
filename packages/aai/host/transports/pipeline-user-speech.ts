@@ -13,6 +13,7 @@ import {
 } from "../../sdk/constants.ts";
 import type { SttTurnMeta } from "../../sdk/providers.ts";
 import type { Logger } from "../runtime-config.ts";
+import type { AgentAudioPath } from "./pipeline-audio-hold.ts";
 import {
   createFalseInterruptionRecovery,
   type FalseInterruptionRecovery,
@@ -74,6 +75,8 @@ function createSttEventHandlers(deps: {
   speechEdges: SpeechEdgeTracker;
   /** Outward speaking-edge gate — see {@link createGatedSpeechEdges}. */
   edgeGate: GatedSpeechEdges;
+  /** The outgoing audio path — duck/resume/drop. See createAgentAudioPath. */
+  audio: AgentAudioPath;
   recovery: FalseInterruptionRecovery;
   nudger: SilenceNudger;
   callbacks: {
@@ -131,7 +134,17 @@ function createSttEventHandlers(deps: {
     // it repeats itself or rambles. Only a turn whose body is still streaming
     // resumes from the marker; everything else is a playback cut.
     if (deps.isTurnInFlight() && !deps.isTurnDraining()) {
-      return () => recovery.arm(DEFAULT_FALSE_INTERRUPTION_PROMPT);
+      // Prefer the CUT-POINT prompt here too, not just on the playback tail.
+      // The `[interrupted]` marker records what the model GENERATED, but the
+      // caller only heard as far as the audio actually got — TTS runs behind
+      // the text — so "continue from where it was cut off" points at the wrong
+      // place and the gap gets re-spoken. Measured: 10% of consecutive agent
+      // utterances repeated 60%+ of their words. Quoting the last words the
+      // caller actually heard names the real boundary. Falls back to the
+      // generic prompt when the estimate is unavailable (nothing audible yet,
+      // or essentially all of it heard), where continuing is already correct.
+      const cutPrompt = deps.tailResumePrompt();
+      return () => recovery.arm(cutPrompt ?? DEFAULT_FALSE_INTERRUPTION_PROMPT);
     }
     const tailPrompt = deps.tailResumePrompt();
     if (tailPrompt === undefined) return () => undefined;
@@ -173,6 +186,10 @@ function createSttEventHandlers(deps: {
         if (words >= 1) callbacks.onUserTranscriptPartial?.(text);
       };
       if (words >= 1) {
+        // Stop making noise NOW; whether this aborts the turn is decided below.
+        // Taken on the first word rather than at the barge-in threshold, which
+        // is ~1s later — see createAudioHold.
+        if (agentIsSpeaking()) deps.audio.duck();
         speechEdges.speechStarted();
         // Still talking through a pending recovery window: push the deadline out
         // so the resume can't fire over a user who barged in and kept going.
@@ -185,12 +202,16 @@ function createSttEventHandlers(deps: {
         // held edge then has no floor left to protect and is released here
         // rather than on a timer. Cheap, and partials keep arriving for as
         // long as the user is talking.
-        if (!agentIsSpeaking()) deps.edgeGate.release();
+        if (!agentIsSpeaking()) {
+          deps.edgeGate.release();
+          deps.audio.resume();
+        }
         emitPartial();
         return;
       }
       log.info("Pipeline barge-in", { sid: deps.sid });
       const armRecovery = bargeInRecoveryArm();
+      deps.audio.drop();
       deps.abortInFlightTurn();
       // Ordered before `cancelled`: this is the moment the agent yields, which
       // is what `speech_started` promises the client in S2S mode too.
@@ -238,6 +259,7 @@ function createSttEventHandlers(deps: {
       // agent nor re-prompts into a not-yet-spoken reply are lost.
       if (agentIsSpeaking() && hasMinWords(trimmed, deps.minBargeInWords)) {
         log.info("Pipeline replacing in-flight turn", { sid: deps.sid });
+        deps.audio.drop();
         deps.abortInFlightTurn();
         deps.edgeGate.release();
         callbacks.onCancelled();
@@ -245,6 +267,11 @@ function createSttEventHandlers(deps: {
       // Commit the turn immediately: endpointing (aggregating a disfluent
       // utterance's pauses into one final) is the STT provider's job — the
       // AssemblyAI opener sets `min_turn_silence` for exactly this.
+      // The utterance resolved without taking the floor (a backchannel, an
+      // aside, a short answer chained behind the reply) — so the reply the hold
+      // paused is still the right thing to be saying. Resume it rather than
+      // letting the backstop do it late.
+      deps.audio.resume();
       speechEdges.speechEnded();
       deps.commitUserTurn(trimmed);
     },
@@ -309,6 +336,8 @@ export function createUserActivity(deps: {
   abortInFlightTurn(): void;
   /** Cut-point resume prompt for a playback-tail barge-in — see {@link SttEventHandlers}. */
   tailResumePrompt(): string | undefined;
+  /** Provisional yield — see {@link createAgentAudioPath}. */
+  audio: AgentAudioPath;
   /**
    * Chain `runTurn(text)` behind the active turn, logging crashes as
    * `crashLabel`. `synthetic` marks `text` as an injected instruction rather
@@ -340,7 +369,13 @@ export function createUserActivity(deps: {
   // the watchdog fires rather than at construction.
   const speechEdges = createSpeechEdgeTracker(edgeGate, {
     idleTimeoutMs: deps.speechIdleTimeoutMs,
-    onIdle: () => recovery.onUtteranceEnded(),
+    onIdle: () => {
+      // The utterance went quiet without ever committing a turn — noise, or a
+      // cough that produced a single partial. It never took the floor, so the
+      // paused reply resumes.
+      deps.audio.resume();
+      recovery.onUtteranceEnded();
+    },
   });
 
   // Silence nudge: `silencePrompt` becomes a synthetic user message (in LLM
@@ -389,6 +424,7 @@ export function createUserActivity(deps: {
     tailResumePrompt: deps.tailResumePrompt,
     speechEdges,
     edgeGate,
+    audio: deps.audio,
     recovery,
     nudger,
     callbacks,

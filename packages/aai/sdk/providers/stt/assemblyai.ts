@@ -115,7 +115,7 @@ export interface AssemblyAIOptions {
    * content, sent as the `max_turn_silence` connection parameter. This is the
    * pause-tolerance knob: it bounds only utterances that never read as
    * complete, so raising it costs an ordinary finished sentence nothing.
-   * Defaults to `DEFAULT_MAX_TURN_SILENCE_MS` (3500); the service's own default
+   * Defaults to `DEFAULT_MAX_TURN_SILENCE_MS` (2500); the service's own default
    * is 1536. Raise it for callers who dictate confirmation numbers or
    * addresses, and keep it above {@link minTurnSilenceMs}.
    */

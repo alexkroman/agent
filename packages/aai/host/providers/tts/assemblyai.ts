@@ -40,20 +40,13 @@
  * just more buffered text. Cartesia has no equivalent — `continue: true`
  * synthesizes on arrival — so this is the adapter's job, not the pipeline's.
  *
- * The segment size is a measured tradeoff, since each flushed segment is
- * synthesized as its own utterance with its own prosody and padding. For one
- * fixed text: end-of-turn flush only = 5.44s of audio but no sound until the
- * stream ended; flushing every word-granularity delta = 94ms to first audio
- * but 14.16s of audio (2.6x, audibly disjointed); flushing per *sentence* =
- * 6.48s vs 6.24s for the same three sentences, i.e. ~4%. Hence
- * {@link SEGMENT_BOUNDARY_RE} — sentence-terminal punctuation only, never the
- * commas the pipeline's own coalescer breaks on. {@link MIN_SEGMENT_WORDS}
- * then holds off on single-token segments, which are the abbreviation false
- * positives ("Dr. ", "e.g. ") that measured 25% longer audio; they simply wait
- * for the rest of the sentence. Two words is the floor rather than a character
- * count because every hold/cover phrase ("One moment.", "Almost there.") is a
- * short two-word sentence that *must* still flush — being audible mid-turn is
- * the only reason those phrases exist.
+ * Where those segments are cut — a sentence end, or a character budget when no
+ * sentence end is in sight — is one measured rule with a sharp cliff either
+ * side of it, and lives in `assemblyai-segment.ts` (`splitSegment`). Read it
+ * before changing the cadence: segments that are too long make
+ * time-to-first-audio the length of the reply's first sentence, and segments
+ * that are too short are each padded into a ~800ms slot, which is how per-delta
+ * "continuous" streaming reaches 3.1x the audio for the same words.
  *
  * Text is therefore buffered host-side and `Generate` is only ever sent as the
  * head of a `Generate`+`Flush` pair, which has two consequences worth keeping.
@@ -115,7 +108,6 @@ import { errorMessage, safeJsonParse } from "../../../sdk/utils.ts";
 import { base64ToUint8 } from "../../_base64.ts";
 import { bytesToPcm16 } from "../../_pcm.ts";
 import { PROVIDER_WS_OPTIONS } from "../../_ws.ts";
-import { hasMinWords } from "../../transports/pipeline-text.ts";
 import {
   assertPcm16Rate,
   closeOnAbort,
@@ -126,6 +118,7 @@ import {
   requireApiKey,
   waitForOpen,
 } from "../_utils.ts";
+import { splitSegment } from "./assemblyai-segment.ts";
 import { createTurnTracker, type SynthesisAck } from "./assemblyai-turn.ts";
 
 export interface AssemblyAITtsSession extends TtsSession {
@@ -148,44 +141,6 @@ interface AssemblyAITtsMessage {
 function errorDetail(msg: AssemblyAITtsMessage): string {
   const reason = msg.error?.trim() ? msg.error : "unknown";
   return `(${msg.error_code ?? ""}): ${reason}`;
-}
-
-/**
- * A sentence end anywhere in the buffered text: terminal punctuation, optional
- * closing quotes/brackets, then whitespace or the end of the buffer. The
- * trailing-whitespace requirement is what keeps "3.5" and "v1.2" from matching.
- *
- * Deliberately narrower than the pipeline coalescer's CLAUSE_BOUNDARY_RE, which
- * also breaks on `,;:` — a comma is mid-sentence, and flushing there hands the
- * server a fragment to synthesize with a falling final intonation.
- */
-const SEGMENT_BOUNDARY_RE = /[.!?…]["')\]]*(?:\s|$)/g;
-
-/**
- * Words a segment needs before sentence-terminal punctuation flushes it — see
- * the module doc. Single-token segments are abbreviations far more often than
- * sentences.
- */
-const MIN_SEGMENT_WORDS = 2;
-
-/**
- * Split `buffered` at the LAST sentence boundary whose head is a big enough
- * utterance, returning the text to synthesize now and the remainder to hold.
- *
- * The *last* boundary rather than the first: when several sentences arrive
- * before a flush, one larger segment sounds better than several small ones and
- * costs fewer round trips. Word count only grows with prefix length, so the
- * last boundary's head qualifies exactly when any boundary's head does — one
- * early-exit word scan replaces a per-boundary count (this runs on every
- * coalesced chunk of every reply).
- */
-function splitSegment(buffered: string): { head: string; tail: string } | undefined {
-  let end: number | undefined;
-  // matchAll clones the regex, so the shared `lastIndex` is never mutated here.
-  for (const m of buffered.matchAll(SEGMENT_BOUNDARY_RE)) end = m.index + m[0].length;
-  if (end === undefined) return;
-  if (!hasMinWords(buffered.slice(0, end), MIN_SEGMENT_WORDS)) return;
-  return { head: buffered.slice(0, end), tail: buffered.slice(end) };
 }
 
 function buildUrl(
@@ -409,12 +364,15 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
           // First text of a new turn — nothing from the last one carries over.
           turn.onTurnText();
           buffered += text;
-          // Synthesize each complete sentence as it lands rather than waiting
-          // for the end of the turn — see the module doc.
-          const split = splitSegment(buffered);
-          if (!split) return;
-          buffered = split.tail;
-          if (send({ type: "Generate", text: split.head }) && send({ type: "Flush" })) {
+          // Synthesize each segment as it lands rather than waiting for the end
+          // of the turn — see the module doc. Loops because one delta can carry
+          // more than one segment's worth: the budget split takes ~40 chars at a
+          // time, so a burst (a whole buffered sentence, a hold phrase arriving
+          // with the reply's opening) would otherwise dribble out one segment per
+          // later delta and stall completely if no delta followed.
+          for (let split = splitSegment(buffered); split; split = splitSegment(buffered)) {
+            buffered = split.tail;
+            if (!(send({ type: "Generate", text: split.head }) && send({ type: "Flush" }))) return;
             turn.onFlushSent();
           }
         },

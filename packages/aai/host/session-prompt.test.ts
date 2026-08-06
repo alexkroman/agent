@@ -33,7 +33,7 @@ describe("buildSystemPrompt", () => {
     const result = buildSystemPrompt(makeConfig(), { hasTools: false, voice: true });
     expect(result).toContain("CRITICAL OUTPUT RULES");
     expect(result).toContain("NEVER use markdown");
-    expect(result).toContain("NEVER use contractions");
+    expect(result).toContain("Your FIRST sentence must be at most 8 words");
   });
 
   test("omits voice rules when voice is false", () => {

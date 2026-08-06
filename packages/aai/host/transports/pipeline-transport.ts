@@ -11,6 +11,7 @@ import type { SttError, TtsError } from "../../sdk/providers.ts";
 import type { Message } from "../../sdk/types.ts";
 import { bytesToPcm16, pcm16ToBytes } from "../_pcm.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
+import { createAgentAudioPath } from "./pipeline-audio-hold.ts";
 import { createEmitError } from "./pipeline-error.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
 import { createPipelineProviderSessions } from "./pipeline-providers.ts";
@@ -99,6 +100,13 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     remainingMs: () => playbackClock.remainingMs(),
   });
 
+  const agentAudio = createAgentAudioPath({
+    replyTail,
+    playbackClock,
+    toClient: (pcm) => callbacks.onAudioChunk(pcm16ToBytes(pcm)),
+    onBackstop: () => log.info("Pipeline audio duck expired", { sid: opts.sid }),
+  });
+
   // Silence nudger, false-interruption recovery, speaking edges and the STT
   // handlers that drive them — see createUserActivity.
   const { nudger, recovery, speechEdges, sttEvents } = createUserActivity({
@@ -120,6 +128,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     isPlaybackPending: () => playbackClock.pending(),
     abortInFlightTurn: () => abortInFlightTurn(),
     tailResumePrompt: () => replyTail.resumePrompt(),
+    audio: agentAudio,
     runChainedTurn,
   });
 
@@ -143,10 +152,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       onTtsError: (err) => onProviderError("tts", err),
       onTtsAudio: (pcm) => {
         if (!turns.audioGateOpen()) return;
+        // On RECEIPT: this feeds `agentIsSpeaking`, the duck's own precondition.
         turns.markSpoke();
-        replyTail.onAudio(pcm);
-        playbackClock.onChunk(pcm);
-        callbacks.onAudioChunk(pcm16ToBytes(pcm));
+        agentAudio.send(pcm);
       },
     },
     onAudioReady,
