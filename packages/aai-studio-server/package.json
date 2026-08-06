@@ -31,7 +31,7 @@
     "@sindresorhus/slugify": "^3.0.0",
     "aai-server": "workspace:*",
     "aai-studio-client": "workspace:*",
-    "hono": "^4.12.31",
+    "hono": "^4.12.34",
     "mime-types": "^3.0.2",
     "p-timeout": "^7.0.1",
     "react": "^19.2.8",
@@ -45,7 +45,7 @@
     "fast-check": "^4.9.0",
     "tsdown": "^0.22.13",
     "typescript": "^7.0.2",
-    "vite": "^8.1.5",
+    "vite": "^8.2.0",
     "vitest": "^4.1.10"
   }
 }
