@@ -17,6 +17,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import path from "node:path";
+import { parseArgs } from "node:util";
 import { EventSourceParserStream } from "eventsource-parser/stream";
 import {
   checkCapabilities,
@@ -338,13 +339,30 @@ function verdict(s, expectation, files) {
   };
 }
 
-const args = process.argv.slice(2);
-const only = args.includes("--only") ? args[args.indexOf("--only") + 1] : undefined;
-const outFile = args.includes("--out") ? args[args.indexOf("--out") + 1] : undefined;
-// Repeats matter more than breadth here: run-to-run variance on an identical
-// config swamps the effect of a prompt edit, so a single pass cannot tell a
-// real improvement from a lucky one.
-const repeat = args.includes("--repeat") ? Number(args[args.indexOf("--repeat") + 1]) : 1;
+// `parseArgs` rather than indexOf/slice, because the hand-rolled version had
+// three ways to run NOTHING and still exit 0 — on a harness that spends real
+// tokens, so "it finished quickly" was the only symptom. `--repeat` with no
+// value and `--repeat two` both reached `Number(undefined)`/`Number("two")`,
+// i.e. NaN, and `for (i = 0; i < NaN; i++)` runs zero times; `--only --out
+// f.json` took the literal string "--out" as the filter, which matches no
+// starter. parseArgs rejects all three at the boundary, and its strict mode
+// also catches a mistyped flag instead of ignoring it.
+const { values: cli } = parseArgs({
+  options: {
+    only: { type: "string" },
+    out: { type: "string" },
+    // Repeats matter more than breadth here: run-to-run variance on an
+    // identical config swamps the effect of a prompt edit, so a single pass
+    // cannot tell a real improvement from a lucky one.
+    repeat: { type: "string", default: "1" },
+  },
+});
+const only = cli.only;
+const outFile = cli.out;
+const repeat = Number(cli.repeat);
+if (!Number.isInteger(repeat) || repeat < 1) {
+  throw new Error(`--repeat must be a positive integer, got ${JSON.stringify(cli.repeat)}`);
+}
 
 const key = apiKey();
 const allStarters = await starters();

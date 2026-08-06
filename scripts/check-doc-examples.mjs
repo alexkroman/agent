@@ -25,7 +25,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -59,18 +59,39 @@ const PROMPT_SOURCES = [
   "packages/aai-guest/studio-chat.ts",
 ];
 
-const SKIP_DIRS = new Set(["node_modules", "dist", "__snapshots__", "fixtures", "coverage"]);
-
-function* walk(dir) {
-  for (const entry of readdirSync(dir)) {
-    const full = path.join(dir, entry);
-    const stat = statSync(full);
-    if (stat.isDirectory()) {
-      if (!(SKIP_DIRS.has(entry) || entry.startsWith("."))) yield* walk(full);
-    } else if (/\.(ts|tsx)$/.test(entry) && !/\.test(-d)?\.tsx?$/.test(entry)) {
-      yield full;
-    }
-  }
+/**
+ * Source files of one package, from git rather than a recursive `readdirSync`.
+ *
+ * The same call the file-length and escape-hatch ratchets use, and for the
+ * same reasons: git already knows what is source, so `.gitignore` is honoured
+ * for free (the hand-rolled walk needed a SKIP_DIRS list — node_modules, dist,
+ * coverage, … — that had to be kept in sync with reality by hand), and
+ * `--others --exclude-standard` still includes a new file that has not been
+ * committed yet, so a doc example added in the working tree is checked.
+ */
+function sourceFiles(repo, pkg) {
+  // A bare DIRECTORY pathspec, with the extension filter applied in JS. A
+  // `${pkg}/**/*.ts` pathspec looks equivalent and is not: it requires at
+  // least one directory level, so it silently skips the package-root files
+  // (`index.ts`, `internal.ts`) — which dropped this check from 49 examples
+  // to 43 while still reporting ✓, since "how many were found" is not
+  // something a green run asserts.
+  const out = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", pkg], {
+    cwd: repo,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  return out
+    .split("\n")
+    .filter(
+      (p) =>
+        /\.tsx?$/.test(p) &&
+        !/\.test(-d)?\.tsx?$/.test(p) &&
+        !p.includes("/dist/") &&
+        !p.includes("/__snapshots__/") &&
+        !p.includes("/fixtures/"),
+    )
+    .map((p) => path.join(repo, p));
 }
 
 /** Extract ```ts / ```tsx fences (minus `no-check`) from a markdown string. */
@@ -113,7 +134,7 @@ function extractFromSource(text) {
 
 const examples = [];
 for (const pkg of SOURCE_GLOBS) {
-  for (const file of walk(path.join(repo, pkg))) {
+  for (const file of sourceFiles(repo, pkg)) {
     for (const b of extractFromSource(readFileSync(file, "utf-8"))) {
       examples.push({ ...b, origin: path.relative(repo, file) });
     }
@@ -135,8 +156,29 @@ for (const src of PROMPT_SOURCES) {
   }
 }
 
-if (examples.length === 0) {
-  console.error("check-doc-examples: extracted zero examples — the extractor is broken.");
+/**
+ * Floor on how many examples the extractor must find, in the same spirit as
+ * the coverage floors: a green run says every example it FOUND compiles, and
+ * says nothing about how many it should have.
+ *
+ * Zero was the old floor and it is far too loose to catch the failure that
+ * actually happens — a discovery change that quietly stops matching some
+ * files. Swapping the recursive walk for `git ls-files` did exactly that
+ * twice in one sitting (49 → 17 on a doubled path prefix, then 49 → 43 on a
+ * `**` pathspec that skips package-root files), and both runs reported ✓.
+ *
+ * Set a few below the current actual (49 at the time of writing). Raise it
+ * when the real count rises; never lower it to make a run pass — a drop means
+ * examples stopped being discovered, which is the bug.
+ */
+const MIN_EXAMPLES = 45;
+if (examples.length < MIN_EXAMPLES) {
+  console.error(
+    `check-doc-examples: extracted only ${examples.length} examples, expected at least ` +
+      `${MIN_EXAMPLES}. Either the extractor stopped matching files (check SOURCE_GLOBS, ` +
+      "MARKDOWN_FILES and PROMPT_SOURCES), or examples were genuinely removed — in which " +
+      "case lower MIN_EXAMPLES deliberately, in the same commit.",
+  );
   process.exit(1);
 }
 
