@@ -24,6 +24,20 @@ vi.mock("node:child_process", () => ({
 }));
 
 /** Route-keyed fake fetch; records every call. */
+/**
+ * Narrow a partial `fetch` mock to `typeof fetch` — this file's ONE seam.
+ *
+ * The mocks below take only the arguments they care about (`input`, or none
+ * at all) and return `Promise<Response>` or a rejection, which is not
+ * assignable to `typeof fetch`'s full overloaded signature. Widening once
+ * here keeps the escape-hatch count at 1 for the file rather than one per
+ * call site; `fakeFetch` above needs no cast because it is written to the
+ * real signature.
+ */
+function asFetch(fn: (...args: never[]) => unknown): typeof fetch {
+  return fn as unknown as typeof fetch;
+}
+
 function fakeFetch(
   routes: Record<string, (init?: RequestInit) => { status?: number; body: unknown }>,
 ) {
@@ -112,7 +126,7 @@ describe("aai login", () => {
     const fetchFn = vi.fn(() => Promise.reject(new TypeError("fetch failed")));
     const err = (await executeLogin(
       {},
-      { fetchFn: fetchFn as unknown as typeof fetch, openBrowser: vi.fn(), pollIntervalMs: 1 },
+      { fetchFn: asFetch(fetchFn), openBrowser: vi.fn(), pollIntervalMs: 1 },
     ).catch((e: unknown) => e)) as { code?: string; message?: string; hint?: string };
 
     expect(err.code).toBe("login_unreachable");
@@ -134,7 +148,7 @@ describe("aai login", () => {
     const err = (await executeLogin(
       {},
       {
-        fetchFn: fetchFn as unknown as typeof fetch,
+        fetchFn: asFetch(fetchFn),
         openBrowser: vi.fn(),
         pollIntervalMs: 1,
         timeoutMs: 5,
@@ -159,7 +173,7 @@ describe("aai login", () => {
     });
     const result = await executeLogin(
       {},
-      { fetchFn: fetchFn as unknown as typeof fetch, openBrowser: vi.fn(), pollIntervalMs: 1 },
+      { fetchFn: asFetch(fetchFn), openBrowser: vi.fn(), pollIntervalMs: 1 },
     );
     expect(result.ok).toBe(true);
   });

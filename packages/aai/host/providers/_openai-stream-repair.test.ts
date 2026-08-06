@@ -29,9 +29,23 @@ function chunk(delta: unknown, finishReason: string | null = null): string {
   });
 }
 
+/**
+ * A `fetch` that resolves every call to `respond()` — the file's ONE narrowing
+ * seam for fake fetches.
+ *
+ * `vi.fn(async () => new Response(…))` infers a nullary async function, which
+ * is not assignable to `typeof globalThis.fetch` (RequestInfo/URL + RequestInit,
+ * plus overloads), so each fake previously carried its own double cast. Route
+ * new ones through here instead of adding a cast at the call site; the returned
+ * value is still the spy, so `toHaveBeenCalled` assertions work unchanged.
+ */
+function respondingFetch(respond: () => Promise<Response>): typeof globalThis.fetch {
+  return vi.fn(respond) as unknown as typeof globalThis.fetch;
+}
+
 /** A fetch that replays `body` as an SSE response, in the given slices. */
 function sseFetch(body: string, slices = 1): typeof globalThis.fetch {
-  return vi.fn(async () => {
+  return respondingFetch(async () => {
     const encoder = new TextEncoder();
     const size = Math.ceil(body.length / slices);
     const stream = new ReadableStream<Uint8Array>({
@@ -46,7 +60,7 @@ function sseFetch(body: string, slices = 1): typeof globalThis.fetch {
       status: 200,
       headers: { "content-type": "text/event-stream" },
     });
-  }) as unknown as typeof globalThis.fetch;
+  });
 }
 
 /** Read a repaired response body back into its `data:` payload strings. */
@@ -202,19 +216,19 @@ describe("repairOpenAiStream", () => {
 
   it("does not touch non-SSE responses", async () => {
     const json = JSON.stringify({ choices: [{ message: { content: "hi" } }] });
-    const base = vi.fn(
+    const base = respondingFetch(
       async () =>
         new Response(json, { status: 200, headers: { "content-type": "application/json" } }),
-    ) as unknown as typeof globalThis.fetch;
+    );
     const wrapped = repairOpenAiStream(base, { generateId: seqIds() });
     const response = await wrapped("https://example.test/v1/chat/completions");
     expect(await response.text()).toBe(json);
   });
 
   it("preserves status and headers of the upstream response", async () => {
-    const base = vi.fn(
+    const base = respondingFetch(
       async () => new Response("nope", { status: 429, headers: { "retry-after": "3" } }),
-    ) as unknown as typeof globalThis.fetch;
+    );
     const wrapped = repairOpenAiStream(base);
     const response = await wrapped("https://example.test/v1/chat/completions");
     expect(response.status).toBe(429);
