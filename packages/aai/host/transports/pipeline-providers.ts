@@ -8,6 +8,7 @@ import type {
   SttError,
   SttOpener,
   SttSession,
+  SttTurnMeta,
   TtsError,
   TtsOpener,
   TtsSession,
@@ -38,8 +39,8 @@ export interface PipelineProviderOptions {
   signal: AbortSignal;
   /** Provider event handlers, implemented by the turn orchestrator. */
   handlers: {
-    onSttPartial(text: string): void;
-    onSttFinal(text: string): void;
+    onSttPartial(text: string, meta?: SttTurnMeta): void;
+    onSttFinal(text: string, meta?: SttTurnMeta): void;
     onSttError(err: SttError): void;
     onTtsError(err: TtsError): void;
     onTtsAudio(pcm: Int16Array): void;
@@ -92,8 +93,8 @@ export function createPipelineProviderSessions(
 
   function adoptStt(session: SttSession): void {
     sttSession = session;
-    sttSubs.push(session.on("partial", (text) => handlers.onSttPartial(text)));
-    sttSubs.push(session.on("final", (text) => handlers.onSttFinal(text)));
+    sttSubs.push(session.on("partial", (text, meta) => handlers.onSttPartial(text, meta)));
+    sttSubs.push(session.on("final", (text, meta) => handlers.onSttFinal(text, meta)));
     sttSubs.push(session.on("error", (err) => handlers.onSttError(err)));
   }
 

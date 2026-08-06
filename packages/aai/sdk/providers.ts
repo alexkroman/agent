@@ -98,11 +98,41 @@ export function makeSttError(code: SttError["code"], message: string): SttError 
 }
 
 /** Events emitted by an open {@link SttSession}. */
+/**
+ * Provider-reported detail about the turn a transcript belongs to.
+ *
+ * Optional throughout: every field is something a given provider may not
+ * report, and a consumer must treat `undefined` as "no opinion" rather than
+ * as a low value. Passed alongside the text rather than folded into it so
+ * that a provider gaining a signal does not change any existing call site.
+ */
+export type SttTurnMeta = {
+  /**
+   * The service's confidence that the user's turn has ENDED, 0..1, as of this
+   * transcript. AssemblyAI reports it per interim turn
+   * (`end_of_turn_confidence`); providers that do not report it omit it.
+   *
+   * It rises as an utterance settles and resets when the caller resumes, so a
+   * dictated identifier produces a sawtooth rather than a ramp — observed on
+   * a spoken phone number: `0, 0.25, 0` across revisions of the same prefix,
+   * then `0 → 0.25 → 0.4 → 0.55 → 0.7 → 0.8 → 0.95 → 1` once the full number
+   * had landed. That shape is why it is worth having: the silence-window
+   * knobs (`min_turn_silence`) decide end-of-turn on elapsed time alone and
+   * cannot tell "paused between digits" from "finished", which is the
+   * mechanism that truncates a spelled identifier mid-entity.
+   *
+   * Nothing in the pipeline acts on it yet — it is plumbed so that a
+   * confidence-aware endpointing or barge-in policy can be measured against
+   * the current time-based one rather than guessed at.
+   */
+  endOfTurnConfidence?: number;
+};
+
 export type SttEvents = {
   /** Interim transcript; drives barge-in detection. */
-  partial: (text: string) => void;
+  partial: (text: string, meta?: SttTurnMeta) => void;
   /** End-of-turn final transcript; cue to run the LLM. */
-  final: (text: string) => void;
+  final: (text: string, meta?: SttTurnMeta) => void;
   /** Terminal error. The session is expected to end after this fires. */
   error: (err: SttError) => void;
 };

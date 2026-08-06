@@ -262,6 +262,22 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
         teardown: () => transcriber.close(),
       });
 
+      /**
+       * `end_of_turn_confidence` off the turn event.
+       *
+       * Read defensively because the `assemblyai` SDK does not yet declare the
+       * field on its turn type — it is on the wire and absent from the `.d.ts`
+       * — so a direct property access does not type-check. A narrow `as` to a
+       * shape with one `unknown` member keeps that local and honest: nothing is
+       * laundered past the checker beyond this field's existence, and the
+       * `typeof` guard is what actually admits the value. Delete the cast once
+       * the SDK types it.
+       */
+      const readEndOfTurnConfidence = (event: object): number | undefined => {
+        const raw = (event as { end_of_turn_confidence?: unknown }).end_of_turn_confidence;
+        return typeof raw === "number" ? raw : undefined;
+      };
+
       transcriber.on("turn", (event) => {
         if (shell.isClosed()) return;
         const text = event.transcript ?? "";
@@ -270,13 +286,21 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
         // so a word that appears in an interim turn and is then revised out of
         // the final one is attributable to STT rather than to the transport's
         // turn aggregation (see pipeline-user-speech.ts's matching trace).
+        const endOfTurnConfidence = readEndOfTurnConfidence(event);
         consoleLogger.debug("AssemblyAI STT turn", {
           transcript: text,
           endOfTurn: event.end_of_turn,
           formatted: event.turn_is_formatted,
+          endOfTurnConfidence,
         });
         if (text.length === 0) return;
-        emitter.emit(event.end_of_turn ? "final" : "partial", text);
+        // The key is OMITTED rather than set to undefined: `exactOptionalPropertyTypes`
+        // distinguishes the two, and "the provider said nothing" is the absent case.
+        emitter.emit(
+          event.end_of_turn ? "final" : "partial",
+          text,
+          endOfTurnConfidence === undefined ? {} : { endOfTurnConfidence },
+        );
       });
 
       transcriber.on("error", (err) => shell.onSocketError(err));

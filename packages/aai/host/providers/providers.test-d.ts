@@ -6,6 +6,7 @@ import type {
   SttOpener,
   SttProvider,
   SttSession,
+  SttTurnMeta,
   TtsEvents,
   TtsProvider,
   TtsSession,
@@ -24,8 +25,13 @@ test("SttOpener.open returns Promise<SttSession>", () => {
   expectTypeOf<SttOpener["open"]>().returns.toEqualTypeOf<Promise<SttSession>>();
 });
 
-test("SttEvents.partial takes a string", () => {
-  expectTypeOf<SttEvents["partial"]>().parameters.toEqualTypeOf<[string]>();
+test("SttEvents.partial takes a string plus optional turn metadata", () => {
+  // The meta arg is OPTIONAL so that a provider with no end-of-turn signal
+  // (deepgram, elevenlabs, soniox) keeps emitting `emit("partial", text)`
+  // unchanged — adding a signal to one provider must not touch the others.
+  expectTypeOf<SttEvents["partial"]>().parameters.toEqualTypeOf<
+    [text: string, meta?: SttTurnMeta | undefined]
+  >();
 });
 
 test("TtsSession.cancel is synchronous", () => {

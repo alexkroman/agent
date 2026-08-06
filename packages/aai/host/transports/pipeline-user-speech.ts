@@ -11,6 +11,7 @@ import {
   DEFAULT_SILENCE_PROMPT,
   MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES,
 } from "../../sdk/constants.ts";
+import type { SttTurnMeta } from "../../sdk/providers.ts";
 import type { Logger } from "../runtime-config.ts";
 import {
   createFalseInterruptionRecovery,
@@ -29,9 +30,9 @@ import type { TransportCallbacks } from "./types.ts";
 /** STT transcript-stream handlers. See {@link createSttEventHandlers}. */
 export interface SttEventHandlers {
   /** An interim transcript arrived. */
-  onSttPartial(text: string): void;
+  onSttPartial(text: string, meta?: SttTurnMeta): void;
   /** A committed transcript arrived. */
-  onSttFinal(text: string): void;
+  onSttFinal(text: string, meta?: SttTurnMeta): void;
 }
 
 /**
@@ -149,7 +150,7 @@ function createSttEventHandlers(deps: {
   }
 
   return {
-    onSttPartial(text: string): void {
+    onSttPartial(text: string, _meta?: SttTurnMeta): void {
       if (deps.isTerminated()) return;
       // Debug trace (AAI_DEBUG=1): partials are the only record of a word STT
       // heard mid-utterance and then dropped from its final, which otherwise
@@ -199,7 +200,7 @@ function createSttEventHandlers(deps: {
       armRecovery();
     },
 
-    onSttFinal(text: string): void {
+    onSttFinal(text: string, _meta?: SttTurnMeta): void {
       if (deps.isTerminated()) return;
       const trimmed = text.trim();
       if (trimmed.length === 0) return;

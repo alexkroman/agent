@@ -101,6 +101,92 @@ function fakeOf(session: AssemblyAISession): FakeTranscriber {
   return session._transcriber as unknown as FakeTranscriber;
 }
 
+describe("assemblyAIStt STT adapter — end_of_turn_confidence", () => {
+  /**
+   * A caller dictating a phone number, as the service actually reports it.
+   * The point of the sequence is that confidence is NOT monotonic: it climbs
+   * while a prefix settles, then RESETS to 0 when the caller speaks the next
+   * group. Any consumer that treats a rise as "they are done" fires mid-number
+   * — which is the truncation the silence-window knobs already struggle with.
+   */
+  const DICTATED_NUMBER = [
+    { transcript: "3 of", end_of_turn_confidence: 0 },
+    { transcript: "302.", end_of_turn_confidence: 0 },
+    { transcript: "302.", end_of_turn_confidence: 0.25 },
+    { transcript: "302-746-", end_of_turn_confidence: 0 },
+    { transcript: "302-743-", end_of_turn_confidence: 0.175 },
+    { transcript: "302-743-", end_of_turn_confidence: 0.275 },
+    { transcript: "302-743-", end_of_turn_confidence: 0.425 },
+    { transcript: "302-743-", end_of_turn_confidence: 0 },
+    { transcript: "302-743-9958.", end_of_turn_confidence: 0 },
+    { transcript: "302-743-9958.", end_of_turn_confidence: 0.25 },
+    { transcript: "302-743-9958.", end_of_turn_confidence: 0.4 },
+    { transcript: "302-743-9958.", end_of_turn_confidence: 0.55 },
+    { transcript: "302-743-9958.", end_of_turn_confidence: 0.7 },
+    { transcript: "302-743-9958.", end_of_turn_confidence: 0.8 },
+    { transcript: "302-743-9958.", end_of_turn_confidence: 0.95 },
+    { transcript: "302-743-9958.", end_of_turn_confidence: 1 },
+  ];
+
+  test("forwards the per-turn confidence onto the partial/final meta", async () => {
+    const session = await openSession({ model: "universal-3-5-pro" });
+    const seen: Array<number | undefined> = [];
+    session.on("partial", (_t, meta) => seen.push(meta?.endOfTurnConfidence));
+    const fake = fakeOf(session);
+
+    for (const turn of DICTATED_NUMBER) {
+      fake._fire("turn", { ...turn, end_of_turn: false });
+    }
+    await flush();
+
+    expect(seen).toEqual(DICTATED_NUMBER.map((t) => t.end_of_turn_confidence));
+    // The sawtooth is the property worth pinning: TWO drops back to 0 from a
+    // non-zero reading (after 0.25, and after 0.425), each one the caller
+    // resuming mid-identifier. A consumer that reads a rising value as "they
+    // have finished" fires at both and truncates the number.
+    const resets = seen.filter((c, i) => i > 0 && c === 0 && (seen[i - 1] ?? 0) > 0);
+    expect(resets).toHaveLength(2);
+    // And it only reaches 1.0 once, on the last frame — the genuine end.
+    expect(seen.filter((c) => c === 1)).toHaveLength(1);
+    expect(seen.at(-1)).toBe(1);
+
+    await session.close();
+  });
+
+  test("omits the field entirely when the service does not report it", async () => {
+    const session = await openSession({ model: "universal-3-5-pro" });
+    const metas: Array<Record<string, unknown> | undefined> = [];
+    session.on("final", (_t, meta) => metas.push(meta));
+    const fake = fakeOf(session);
+
+    fake._fire("turn", { transcript: "done.", end_of_turn: true } as TurnEvent);
+    await flush();
+
+    // Absent, not `undefined` — "the provider said nothing" must be
+    // distinguishable from "the provider reported zero confidence".
+    expect(metas).toHaveLength(1);
+    expect(metas[0]).not.toHaveProperty("endOfTurnConfidence");
+
+    await session.close();
+  });
+
+  test("a zero reading survives as 0, not as absent", async () => {
+    const session = await openSession({ model: "universal-3-5-pro" });
+    const seen: Array<number | undefined> = [];
+    session.on("partial", (_t, meta) => seen.push(meta?.endOfTurnConfidence));
+    const fake = fakeOf(session);
+
+    // No cast: `_fire` takes `...args: unknown[]`, so the extra field the
+    // SDK type does not declare needs no laundering to reach the adapter.
+    fake._fire("turn", { transcript: "3 of", end_of_turn: false, end_of_turn_confidence: 0 });
+    await flush();
+
+    expect(seen).toEqual([0]);
+
+    await session.close();
+  });
+});
+
 describe("assemblyAIStt STT adapter — fixture replay", () => {
   test("maps turn events onto partial/final SttEvents", async () => {
     const fixture = JSON.parse(
