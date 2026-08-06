@@ -71,8 +71,63 @@
  * The cost is real and paid by every finished utterance, so do not raise this
  * further without a measurement — reach for {@link DEFAULT_MAX_TURN_SILENCE_MS}
  * instead, which only bills the utterances that need it.
+ *
+ * ---
+ *
+ * **Re-confirmed at 1600 against AssemblyAI's NEW endpointer.** The service
+ * shipped an endpointing change, which invalidated the premise of everything
+ * above (those failures were the semantic completeness check firing
+ * mid-spelling, so a change to how that check decides can move the knee). It
+ * was briefly dropped to 800 to retest, then restored on direct evidence.
+ *
+ * The two tau2-bench retail runs differ ONLY in the endpointer — `sandbox`
+ * carries the new one, `default` does not — so aligning every committed STT
+ * final to its gold utterance (`user_labels.txt`) A/Bs the models at an
+ * identical 1600, offline, over 549 substantive utterances:
+ *
+ * | endpointer | clean | SPLIT | MERGED | balance |
+ * | --- | --- | --- | --- | --- |
+ * | old (`retail-stt-default-1031`) | 72% | 12.5% | 8.6% | +10, split-heavy |
+ * | new (`retail-stt-sandbox-1031`) | 73% |  9.9% | 8.9% | +3, balanced |
+ *
+ * So the new model splits 21% less at the same window and the error is now
+ * SYMMETRIC — which is the signature of sitting at the knee. That is the whole
+ * argument: the knee moved DOWN (the old model wanted a longer window at 1600;
+ * this one does not), but it moved modestly, and 1600 is now near-optimal
+ * rather than too long. Halving it to 800 pushes hard into split-dominated
+ * error, and splits are the expensive direction — a split truncates a spelled
+ * identifier so the tool call authenticates against a fragment, while a merge
+ * keeps every word and costs only latency. Both error classes land on the same
+ * content (spelled emails and names); moving this knob only chooses which one
+ * you get.
+ *
+ * `scripts/voice-replay/` CANNOT settle this knob — it declares no tools and
+ * scores no database, so the regression (truncated auth arguments: NL
+ * assertions rise while DB match collapses) is invisible to it. The instrument
+ * that produced the table above is gold-utterance alignment over an archived
+ * run's `task.log`; reach for that, or for reward.
+ *
+ * ---
+ *
+ * **CURRENTLY 800, AGAINST THE EVIDENCE ABOVE — set deliberately, UNVERIFIED.**
+ * Everything above argues for 1600 and was measured, most recently by the
+ * gold-utterance A/B in the table. 800 is a product decision to buy latency at
+ * the cost of splits; it is not a measurement, and it is the value that A/B
+ * predicts will be split-dominated.
+ *
+ * The specific risk, from the numbers already recorded above: intra-utterance
+ * pauses inside FAILING utterances measured 856-1455 ms, nine of eighteen of
+ * them above 1000. At 800 essentially every one of those ends the turn, which
+ * is the mechanism that truncates a spelled name or email mid-identifier — so
+ * the tool call authenticates against a fragment. Expect NL assertions to hold
+ * or rise while DB match falls; that divergence is the signature, and it is
+ * invisible to any harness that scores no database.
+ *
+ * Validate on tau2 reward or on tool-argument accuracy against
+ * `evaluation_criteria.actions`. If it does not hold, the value to return to
+ * is 1600.
  */
-export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
+export const DEFAULT_MIN_TURN_SILENCE_MS = 800;
 
 /**
  * Maximum silence (ms) before AssemblyAI force-ends a turn regardless of
@@ -88,13 +143,23 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
  * number the hesitation failures were actually measured against, and moving
  * 1536 -> 3500 is the whole of the split fix.
  *
- * Note this EXCEEDS {@link DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS} (2000) even
- * though the minimum no longer does, so the recovery-window coupling survives
- * in narrowed form: a barge-in on an utterance that never reads complete still
- * has its window elapse before its own final. That stays safe for the same
- * reason as before — a fired window whose utterance is still open merely
- * DEFERS the resume (`host/transports/pipeline-recovery.ts`) — and the case is
- * now exactly the one where the caller is still audibly mid-sentence, which is
- * what the deferral tests for.
+ * **CURRENTLY 1600, down from 3500 — set deliberately, UNVERIFIED.** Two
+ * consequences of that, both departures from what is argued above:
+ *
+ * First, 1600 is a hair over the service's own 1536 default, so it very nearly
+ * restores the state this constant was introduced to escape: the paragraph
+ * above records that 1536 "silently governed every turn" and that moving it to
+ * 3500 "is the whole of the split fix". Pause tolerance for hesitant speech is
+ * therefore back to roughly what it was before that fix.
+ *
+ * Second, it no longer exceeds {@link DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS}
+ * (2000) — it is now BELOW it, inverting the coupling described above. A
+ * barge-in on an utterance that never reads complete now has that utterance
+ * force-ended at 1600 ms, BEFORE the 2000 ms recovery window elapses, so the
+ * window no longer finds an open utterance to defer against
+ * (`host/transports/pipeline-recovery.ts`). The deferral path that made the
+ * old ordering safe is simply not reached; the resume proceeds instead. That
+ * is a behaviour change, not a tuning change, and it is the one to look at
+ * first if false-interruption recovery starts misbehaving.
  */
-export const DEFAULT_MAX_TURN_SILENCE_MS = 3500;
+export const DEFAULT_MAX_TURN_SILENCE_MS = 1600;

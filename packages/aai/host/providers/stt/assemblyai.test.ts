@@ -382,9 +382,9 @@ describe("assemblyAIStt STT adapter — endpointing (min/max_turn_silence)", () 
     const session = await openSession({ model: "universal-3-5-pro" });
     const fake = fakeOf(session);
     expect(fake.params.minTurnSilence).toBe(DEFAULT_MIN_TURN_SILENCE_MS);
-    expect(fake.params.minTurnSilence).toBe(1600);
+    expect(fake.params.minTurnSilence).toBe(800);
     expect(fake.params.maxTurnSilence).toBe(DEFAULT_MAX_TURN_SILENCE_MS);
-    expect(fake.params.maxTurnSilence).toBe(3500);
+    expect(fake.params.maxTurnSilence).toBe(1600);
     await session.close();
   });
 
