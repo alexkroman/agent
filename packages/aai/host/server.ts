@@ -55,6 +55,12 @@ export type ServerOptions = {
    * Supplying `env` does not by itself enable host mode: it is opt-in via
    * `AAI_ALLOW_HOST` (see `isHostAllowed`). Omitting `env` disables host mode
    * unconditionally — any `?host=1` connection is rejected.
+   *
+   * It need not carry provider credentials at all: a client may bring its own
+   * in the handshake's `credentials` block, which wins over anything here for
+   * that connection. A server holding only `AAI_ALLOW_HOST` is the multi-tenant
+   * shape — every session runs on the caller's key, so an unauthenticated
+   * client has no operator credential to spend. See `examples/host-server`.
    */
   env?: Record<string, string>;
   /**

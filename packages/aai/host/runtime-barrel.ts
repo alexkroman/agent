@@ -47,6 +47,11 @@ export {
   startHostSession,
 } from "./host-mode.ts";
 export {
+  createHostServer,
+  type HostServerOptions,
+  type HostSessionDefaults,
+} from "./host-server.ts";
+export {
   type CloseableDb,
   type CreatePostgresDbOptions,
   createPostgresDb,

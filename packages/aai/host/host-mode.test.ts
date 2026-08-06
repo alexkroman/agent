@@ -12,6 +12,8 @@ import {
   createRelayExecuteTool,
   isHostAllowed,
   startHostSession,
+  unknownCredentialName,
+  withHostCredentials,
 } from "./host-mode.ts";
 import type { Runtime, RuntimeOptions } from "./runtime.ts";
 import { createSessionCore } from "./session-core.ts";
@@ -247,6 +249,47 @@ describe("isHostAllowed", () => {
   });
 });
 
+describe("host-supplied credentials", () => {
+  test.each([
+    ["ASSEMBLYAI_API_KEY", undefined],
+    ["OPENAI_API_KEY", undefined],
+    ["CARTESIA_API_KEY", undefined],
+    // The two that make the allowlist load-bearing rather than tidy: one
+    // would repoint ctx.db at a Postgres the client owns, the other would
+    // let an unapproved client approve itself.
+    ["DATABASE_URL", "DATABASE_URL"],
+    ["AAI_ALLOW_HOST", "AAI_ALLOW_HOST"],
+    ["ASSEMBLYAI_KEY", "ASSEMBLYAI_KEY"],
+  ])("%s → rejected name %s", (name, expected) => {
+    expect(unknownCredentialName({ [name]: "v" })).toBe(expected);
+  });
+
+  test("absent or empty credentials are allowed", () => {
+    expect(unknownCredentialName(undefined)).toBeUndefined();
+    expect(unknownCredentialName({})).toBeUndefined();
+  });
+
+  test("reports a rejected name even when allowed ones accompany it", () => {
+    expect(unknownCredentialName({ ASSEMBLYAI_API_KEY: "a", DATABASE_URL: "b" })).toBe(
+      "DATABASE_URL",
+    );
+  });
+
+  test("client credentials win over the server's own", () => {
+    expect(
+      withHostCredentials(
+        { ASSEMBLYAI_API_KEY: "operator", DATABASE_URL: "postgres://operator" },
+        { ASSEMBLYAI_API_KEY: "tenant" },
+      ),
+    ).toEqual({ ASSEMBLYAI_API_KEY: "tenant", DATABASE_URL: "postgres://operator" });
+  });
+
+  test("no credentials leaves the server env untouched", () => {
+    const env = { ASSEMBLYAI_API_KEY: "operator" };
+    expect(withHostCredentials(env, undefined)).toBe(env);
+  });
+});
+
 describe("buildHostAgent", () => {
   test("maps systemPrompt/greeting and relays tools (no in-process tool defs)", () => {
     const agent = buildHostAgent({
@@ -442,6 +485,68 @@ describe("startHostSession (deferred host handshake)", () => {
     expect(createRuntime).not.toHaveBeenCalled();
     expect(ws.sentJson()).toContainEqual(
       expect.objectContaining({ type: "error", code: "protocol" }),
+    );
+  });
+
+  test("the client's credentials reach the per-connection runtime and beat the server's", async () => {
+    // The multi-tenant shape: the server holds only the gate, so the session
+    // can only run on a key the caller brought.
+    const ws = openMockWs();
+    let captured: RuntimeOptions | undefined;
+
+    startHostSession(ws as unknown as SessionWebSocket, {
+      env: { AAI_ALLOW_HOST: "1", ASSEMBLYAI_API_KEY: "operator" },
+      logger: silentLogger,
+      createRuntime: (o) => {
+        captured = o;
+        return makeFakeRuntime(o).runtime;
+      },
+    });
+
+    ws.simulateMessage(
+      hostConfigFrame({
+        host: {
+          systemPrompt: "You are a host agent.",
+          tools: [],
+          credentials: { ASSEMBLYAI_API_KEY: "tenant" },
+        },
+      }),
+    );
+    await Promise.resolve();
+
+    expect(captured?.env).toMatchObject({ ASSEMBLYAI_API_KEY: "tenant" });
+  });
+
+  test("a credential name outside the provider allowlist rejects the handshake", async () => {
+    const ws = openMockWs();
+    const createRuntime = vi.fn();
+
+    startHostSession(ws as unknown as SessionWebSocket, {
+      env: { AAI_ALLOW_HOST: "1" },
+      logger: silentLogger,
+      createRuntime,
+    });
+
+    ws.simulateMessage(
+      hostConfigFrame({
+        host: {
+          systemPrompt: "You are a host agent.",
+          tools: [],
+          credentials: { DATABASE_URL: "postgres://attacker" },
+        },
+      }),
+    );
+    await Promise.resolve();
+
+    // No runtime at all — the rejection lands before anything is built, so
+    // the smuggled value never reaches provider or db resolution.
+    expect(createRuntime).not.toHaveBeenCalled();
+    expect(ws.sentJson()).toContainEqual(
+      expect.objectContaining({
+        type: "error",
+        code: "protocol",
+        message: expect.stringContaining("DATABASE_URL"),
+      }),
     );
   });
 
