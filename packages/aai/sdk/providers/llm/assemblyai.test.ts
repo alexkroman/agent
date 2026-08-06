@@ -5,9 +5,9 @@ import { describe, expect, it } from "vitest";
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL, assemblyAILlm } from "./assemblyai.ts";
 
 describe("assemblyAILlm (LLM factory)", () => {
-  it("defaults the model to gpt-5.6-luna", () => {
-    expect(ASSEMBLYAI_LLM_DEFAULT_MODEL).toBe("gpt-5.6-luna");
-    expect(assemblyAILlm().options.model).toBe("gpt-5.6-luna");
+  it("defaults the model to qwen3-next-80b-a3b", () => {
+    expect(ASSEMBLYAI_LLM_DEFAULT_MODEL).toBe("qwen3-next-80b-a3b");
+    expect(assemblyAILlm().options.model).toBe("qwen3-next-80b-a3b");
   });
 
   it("keeps an explicit model", () => {
@@ -29,8 +29,12 @@ describe("assemblyAILlm (LLM factory)", () => {
       expect(assemblyAILlm({ model }).options.reasoningEffort).toBe("none");
     });
 
-    it("covers the bare factory, since the default model is one of them", () => {
-      expect(assemblyAILlm().options.reasoningEffort).toBe("none");
+    // The default model is NOT one of them, so the bare factory leaves
+    // reasoning unset — the constraint is per-model, not global. The default
+    // pipeline still turns reasoning off, but it does so explicitly
+    // (`assemblyAIPipeline`), for latency rather than for this constraint.
+    it("leaves the bare factory alone, since the default model is not one of them", () => {
+      expect(assemblyAILlm().options.reasoningEffort).toBeUndefined();
     });
 
     it("leaves an explicit effort alone — naming a value is deliberate", () => {

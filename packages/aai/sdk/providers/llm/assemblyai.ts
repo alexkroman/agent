@@ -45,8 +45,15 @@ export const ASSEMBLYAI_LLM_GATEWAY_EU_URL = "https://llm-gateway.eu.assemblyai.
  * 400 that only appears at the first session — so "invent a plausible model
  * name" is a failure mode with no compile-time or deploy-time guard, and one
  * that a code-generating agent falls into readily.
+ *
+ * **Changing this id changes more than the model**, because
+ * {@link TOOLS_REQUIRE_NO_REASONING} is keyed by model id: while the default
+ * was `gpt-5.6-luna` the bare `assemblyAILlm()` carried an implicit
+ * `reasoningEffort: "none"`, and on `qwen3-next-80b-a3b` it carries none at
+ * all. Only the raw factory is affected — `assemblyAIPipeline()` passes
+ * `"none"` explicitly, for latency rather than for that constraint.
  */
-export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "gpt-5.6-luna";
+export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "qwen3-next-80b-a3b";
 
 /**
  * Reasoning effort accepted by the gateway's GPT-5-family models, including
@@ -132,7 +139,14 @@ export interface AssemblyAILlmOptions {
    * on its own server-side default. Set `"none"` (gpt-5.1 and later) or
    * `"minimal"` (the original `gpt-5`/`-mini`/`-nano`) to turn reasoning
    * off, e.g. when a voice turn's time-to-first-token matters more than
-   * thinking depth. Only GPT-5-family models accept the parameter.
+   * thinking depth.
+   *
+   * The GPT-5 family is not the only one that accepts it: the default
+   * `qwen3-next-80b-a3b` is a hybrid-thinking model and takes the parameter
+   * too — measured 2026-08-06 against the live gateway, `"none"` and `"low"`
+   * both return a normal tool-calling completion, streaming included. Models
+   * that do not accept it reject a bogus value with a 400 naming the ones
+   * they do.
    *
    * **Exception: on the `gpt-5.6` models unset is not a usable state, so the
    * factory fills in `"none"`** — they reject a tool-carrying request at any

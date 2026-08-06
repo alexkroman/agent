@@ -449,15 +449,22 @@ Reference providers shipped today:
     `[]` (an absent `choices` stays absent). Every other byte passes through.
     Remove each repair once the gateway emits conformant frames.
 
-    **The default model is `gpt-5.6-luna`, and on the 5.6 family
-    `reasoning_effort: "none"` is REQUIRED for tool use — not a tuning knob.**
-    With `tools` present and any other effort — INCLUDING the model's own
-    server-side default, i.e. sending no `reasoning_effort` at all — the
-    gateway rejects the request: *"Function tools with reasoning_effort are not
-    supported for gpt-5.6-luna in /v1/chat/completions. To use function tools,
-    use /v1/responses or set reasoning_effort to 'none'."* Measured 2026-08-06
-    against the live gateway, 4/4 attempts on both `-luna` and `-terra`;
-    `gpt-5.5` is unaffected, 4/4 fine.
+    **The default model is `qwen3-next-80b-a3b`.** It replaced `gpt-5.6-luna`,
+    and the swap moves WHERE reasoning gets turned off — see the two blocks
+    below, because the mechanism is not the same one.
+
+    **On the `gpt-5.6` family `reasoning_effort: "none"` is REQUIRED for tool
+    use — not a tuning knob.** Those models are still selectable, so the rule
+    stands even though the default no longer trips it. With `tools` present and
+    any other effort — INCLUDING the model's own server-side default, i.e.
+    sending no `reasoning_effort` at all — the gateway rejects the request:
+    *"Function tools with reasoning_effort are not supported for gpt-5.6-luna
+    in /v1/chat/completions. To use function tools, use /v1/responses or set
+    reasoning_effort to 'none'."* Measured 2026-08-06 against the live gateway,
+    4/4 attempts on both `-luna` and `-terra`; `gpt-5.5` is unaffected, 4/4
+    fine. **Qwen is unaffected too**, measured the same day: `"none"`, `"low"`,
+    and no `reasoning_effort` at all each return a normal tool-calling
+    completion, streaming included.
 
     **That message is not what this SDK would see.** The pipeline streams, and
     streaming turns the same rejection into a bare
@@ -478,23 +485,34 @@ Reference providers shipped today:
     `reasoning_effort` for ANY model, including ones that plainly honour it
     (a bogus value 400s naming the supported ones).
 
-    **Luna was chosen on COST, with latency a modest bonus — do not restate it
-    as a latency win.** At $1/$6 per M against `gpt-5.5`'s $5/$30 it is 5x
-    cheaper, and cached input is $0.10 against $0.50. On time-to-first-token
-    the edge is real but small: measured 2026-08-06, 18 paired tool-calling
-    turns with two tools declared and `reasoning_effort: "none"` on both, p50
-    **832ms vs 999ms** with luna ahead on 13 of 18 — ~17%, not the multiple an
-    early n=1 probe suggested. Without tools and at the same effort it is
-    736ms vs 820ms over 18 samples. The 5x-looking gaps in the first
-    measurements were an ARTIFACT of comparing luna-with-`none` against
-    `gpt-5.5` on its server-side reasoning DEFAULT (1786ms p50): most of what
-    looked like a model difference was the reasoning setting, which this
-    pipeline turns off on both. For reference at the same settings,
-    `claude-opus-4-8` is 1217ms and `claude-sonnet-5` 1568ms.
+    **On the qwen default, `assemblyAIPipeline()` is the ONLY thing turning
+    reasoning off, and that is a real change of load-bearing part.** Qwen is a
+    hybrid-thinking model and is deliberately NOT in
+    `TOOLS_REQUIRE_NO_REASONING` — nothing rejects a thinking request, so there
+    is no error to catch the loss. The factory therefore contributes no effort
+    and the preset's explicit `reasoningEffort: "none"`
+    (`sdk/providers/assemblyai-pipeline.ts`) carries the whole weight; delete
+    it as redundant — which it WAS while the default was `-luna`, backstopped
+    by the factory — and every default pipeline silently pays per-turn thinking
+    latency, the symptom being seconds of pre-first-token silence rather than a
+    failure. `define.test.ts` pins the preset's effort AND its model id for
+    that reason. Note the raw `assemblyAILlm()` genuinely does change shape
+    here: it used to carry an implicit `"none"` and now carries nothing.
 
-    Answer quality is NOT measured here, and it is the axis that should
-    actually decide a default — a tau2 run is what would settle it. Treat this
-    default as cost-motivated and quality-unverified.
+    Latency and cost were measured against `gpt-5.5` for the previous default
+    and are kept as the reference points: luna is $1/$6 per M against
+    `gpt-5.5`'s $5/$30, and on time-to-first-token (2026-08-06, 18 paired
+    tool-calling turns, `reasoning_effort: "none"` on both) p50 **832ms vs
+    999ms**, with `claude-opus-4-8` at 1217ms and `claude-sonnet-5` at 1568ms.
+    The 5x-looking gaps in the first measurements were an ARTIFACT of comparing
+    luna-with-`none` against `gpt-5.5` on its server-side reasoning DEFAULT
+    (1786ms p50) — most of what looked like a model difference was the
+    reasoning setting, which this pipeline turns off regardless of model.
+
+    **Neither the qwen swap nor the luna one was decided on answer quality**,
+    and that is the axis that should decide a default — a tau2 run is what
+    would settle it. Qwen has no paired latency numbers in this table either.
+    Treat the current default as quality-unverified.
 - **TTS**: one of
   - `cartesia({ voice })` — `CARTESIA_API_KEY`
   - `rime({ voice })` — `RIME_API_KEY`

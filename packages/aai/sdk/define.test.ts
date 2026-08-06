@@ -69,10 +69,12 @@ describe("agent()", () => {
     // of silence rather than an error.
     const { llm } = assemblyAIPipeline();
     expect(llm.options.reasoningEffort).toBe("none");
-    // Only valid on the GPT-5 family, so the descriptor must carry such a
-    // model. On the current default it is additionally REQUIRED: the gateway
-    // rejects a tool-carrying request to gpt-5.6-* at any other effort.
-    expect(llm.options.model).toBe("gpt-5.6-luna");
+    // The descriptor must carry a model that accepts the parameter. On the
+    // current default the preset is the ONLY thing setting it — qwen is not in
+    // TOOLS_REQUIRE_NO_REASONING, so the factory contributes no effort of its
+    // own and this assertion is what stands between the default pipeline and
+    // per-turn thinking latency.
+    expect(llm.options.model).toBe("qwen3-next-80b-a3b");
 
     // An agent with no providers at all gets the same treatment. Asserted
     // through toAgentConfig, not agent(): the default fill runs at the
