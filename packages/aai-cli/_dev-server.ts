@@ -3,8 +3,8 @@
  * Dev server for directory-based agents.
  *
  * Imports agent.ts directly for the full agent definition,
- * builds a runtime, and starts an HTTP+WebSocket server. Watches for
- * file changes and restarts automatically. Optionally runs Vite for
+ * builds a runtime, and starts an HTTP+WebSocket server. File watching is
+ * opt-in via `AAI_DEV_WATCH=1` (see devWatchEnabled). Optionally runs Vite for
  * client SPA HMR.
  */
 
@@ -29,6 +29,7 @@ import type { ViteDevServer } from "vite";
 import { createWorkerEvaluator } from "./_bundler.ts";
 import { ensureApiKey } from "./_config.ts";
 import { fallbackHtmlPlugin } from "./_default-html.ts";
+import { devBindHost, devWatchEnabled, hostModeEnv } from "./_dev-env.ts";
 import { resolveServerEnv } from "./_server-common.ts";
 import { log, notify } from "./_ui.ts";
 import { errorCode, errorMessage } from "./_utils.ts";
@@ -114,27 +115,6 @@ async function resolveAgentEnv(root: string, agentDef: AgentDef): Promise<Record
   // the first session (or a deploy-time rejection) — warn now.
   for (const warning of agentEnvWarnings(agentDef, env)) log.warn(warning);
   return env;
-}
-
-/**
- * The env handed to `createServer` for host-mode connections: provider
- * credentials plus the `AAI_ALLOW_HOST` gate read straight from the shell
- * (it is a control variable, not something an agent declares in `.env`).
- */
-function hostModeEnv(providerEnv: Record<string, string>): Record<string, string> {
-  const gate = process.env.AAI_ALLOW_HOST;
-  return gate === undefined ? providerEnv : { ...providerEnv, AAI_ALLOW_HOST: gate };
-}
-
-/**
- * Explicit bind host for the dev server, or `undefined` to take the
- * loopback default. An empty `AAI_DEV_HOST` means "unset", not "every
- * interface" — Node treats `listen(port, "")` as 0.0.0.0, which would quietly
- * undo the loopback default this exists to guard.
- */
-function devBindHost(): string | undefined {
-  const host = process.env.AAI_DEV_HOST?.trim();
-  return host ? host : undefined;
 }
 
 // ─── Agent loading ──────────────────────────────────────────────────────────
@@ -365,8 +345,8 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   // Install the watcher BEFORE the initial build: `ignoreInitial` means an
   // edit saved during startup (bundle + listen + Vite boot) would otherwise
   // never fire an event and the dev server would serve stale code until the
-  // next save.
-  const watcher = watchDirectory(cwd, kickRestart);
+  // next save. Undefined unless AAI_DEV_WATCH is set — see devWatchEnabled.
+  const watcher = devWatchEnabled() ? watchDirectory(cwd, kickRestart) : undefined;
 
   let viteServer: ViteDevServer | undefined;
   try {
@@ -389,7 +369,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     }
   } catch (err) {
     // Startup failed — the watcher was already opened; don't leak it.
-    await watcher.close().catch(() => undefined);
+    await watcher?.close().catch(() => undefined);
     await viteServer?.close().catch(() => undefined);
     throw err;
   }
@@ -480,7 +460,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     cleanupPromise ??= (async () => {
       closed = true;
       // Each close is best-effort: one failing must not leak the others.
-      await watcher.close().catch(() => undefined);
+      await watcher?.close().catch(() => undefined);
       await viteServer?.close().catch(() => undefined);
       await currentServer.close().catch(() => undefined);
     })();
