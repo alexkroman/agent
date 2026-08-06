@@ -252,7 +252,7 @@ describe("startHostSession (deferred host handshake)", () => {
     ): Promise<{ calls: number; audioLeadMs: unknown }> {
       const ws = openMockWs();
       let startSession: ReturnType<typeof vi.fn> = vi.fn();
-      startHostSession(ws as unknown as SessionWebSocket, {
+      startHostSession(asSessionWs(ws), {
         env: { AAI_ALLOW_HOST: "1" },
         logger: silentLogger,
         createRuntime: (o) => {
@@ -296,7 +296,7 @@ describe("startHostSession (deferred host handshake)", () => {
     test("a non-positive audioLeadMs is refused at the handshake", async () => {
       const ws = openMockWs();
       const createRuntime = vi.fn();
-      startHostSession(ws as unknown as SessionWebSocket, {
+      startHostSession(asSessionWs(ws), {
         env: { AAI_ALLOW_HOST: "1" },
         logger: silentLogger,
         createRuntime,
