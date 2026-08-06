@@ -15,19 +15,18 @@
  * when the matching inbound `tool_result` arrives.
  */
 
-import pTimeout from "p-timeout";
-import type { ExecuteTool, ToolSchema } from "../sdk/_internal-types.ts";
+import type { ToolSchema } from "../sdk/_internal-types.ts";
 import {
   ASSEMBLYAI_S2S_SAMPLE_RATE,
   DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS,
-  DEFAULT_RELAY_TOOL_TIMEOUT_MS,
   WS_OPEN,
 } from "../sdk/constants.ts";
 import type { ClientEvent, HostConfig } from "../sdk/protocol.ts";
 import { HostConfigMessageSchema } from "../sdk/protocol.ts";
 import type { AgentDef } from "../sdk/types.ts";
-import { errorMessage, safeJsonParse, toolError } from "../sdk/utils.ts";
+import { errorMessage, safeJsonParse } from "../sdk/utils.ts";
 import { UNPACED_AUDIO_LEAD_MS } from "./audio-pacer.ts";
+import { createRelayExecuteTool } from "./host-relay.ts";
 import { ALL_PROVIDER_ENV_VARS } from "./providers/resolve.ts";
 import { createRuntime, type RuntimeOptions, type SessionStartOptions } from "./runtime.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
@@ -41,115 +40,6 @@ import { type SessionWebSocket, safeSend } from "./ws-handler.ts";
  * conversational agent.
  */
 const DEFAULT_HOST_MAX_STEPS = 30;
-
-/**
- * The inbound `tool_result` payload routed to {@link RelayExecuteTool.onToolResult}.
- * @internal
- */
-export type RelayToolResult = {
-  toolCallId: string;
-  result: string;
-  error?: string | undefined;
-};
-
-/**
- * A relay tool executor plus the hooks needed to feed it inbound results.
- * @internal
- */
-export type RelayExecuteTool = {
-  /** {@link ExecuteTool} that relays each call to the client and awaits a result. */
-  executeTool: ExecuteTool;
-  /** Resolve (or reject) the pending call matching `toolCallId`. */
-  onToolResult(msg: RelayToolResult): void;
-  /** Reject every still-pending call (call on connection close). */
-  dispose(): void;
-};
-
-type ToolCallEvent = Extract<ClientEvent, { type: "tool_call" }>;
-
-/**
- * A relay's `result` field arrives as a string on the wire. Clients commonly
- * JSON-encode their tool output; unwrap a JSON string so the model receives
- * clean text, but leave object/array JSON (and non-JSON) untouched.
- */
-function normalizeResult(raw: string): string {
-  const parsed = safeJsonParse(raw);
-  return typeof parsed === "string" ? parsed : raw;
-}
-
-/**
- * Build a relay tool executor: `executeTool` emits a `tool_call` frame via
- * `send` and returns a promise keyed by `toolCallId`; `onToolResult` settles
- * that promise when the client replies. Calls that never receive a result
- * reject after `timeoutMs` (default `DEFAULT_RELAY_TOOL_TIMEOUT_MS`, 120 000 ms).
- *
- * @internal
- */
-export function createRelayExecuteTool(opts: {
-  send: (event: ToolCallEvent) => void;
-  timeoutMs?: number | undefined;
-}): RelayExecuteTool {
-  const timeoutMs = opts.timeoutMs ?? DEFAULT_RELAY_TOOL_TIMEOUT_MS;
-  type Pending = {
-    resolve: (value: string) => void;
-    reject: (reason: Error) => void;
-  };
-  const pending = new Map<string, Pending>();
-
-  const executeTool: ExecuteTool = (name, args, _sessionId, _messages, callOpts) => {
-    const toolCallId = callOpts?.toolCallId;
-    if (!toolCallId) {
-      // Defensive: every path should thread a toolCallId (see session-core /
-      // to-vercel-tools). Without one the result can't be correlated.
-      return Promise.resolve(toolError(`Relay tool "${name}" invoked without a toolCallId`));
-    }
-    if (pending.has(toolCallId)) {
-      // A second in-flight call with the same id would clobber the first
-      // entry, and the first call's timer would then delete the new entry —
-      // dropping its genuine tool_result. Refuse instead of clobbering.
-      return Promise.resolve(
-        toolError(`Relay tool "${name}" duplicates in-flight toolCallId "${toolCallId}"`),
-      );
-    }
-    const signal = callOpts?.signal;
-    if (signal?.aborted) {
-      return Promise.resolve(toolError(`Relay tool "${name}" (${toolCallId}) was cancelled`));
-    }
-    const { promise, resolve, reject } = Promise.withResolvers<string>();
-    pending.set(toolCallId, { resolve, reject });
-    opts.send({ type: "tool_call", toolCallId, toolName: name, args });
-    // p-timeout owns the deadline and the abort listener: it rejects with the
-    // timeout Error below, or with the signal's abort reason on cancellation.
-    // Either way the pending entry is dropped once the call settles.
-    return pTimeout(promise, {
-      milliseconds: timeoutMs,
-      ...(signal !== undefined ? { signal } : {}),
-      message: new Error(`Relay tool "${name}" (${toolCallId}) timed out after ${timeoutMs}ms`),
-    }).finally(() => {
-      pending.delete(toolCallId);
-    });
-  };
-
-  function onToolResult(msg: RelayToolResult): void {
-    const entry = pending.get(msg.toolCallId);
-    if (!entry) return;
-    pending.delete(msg.toolCallId);
-    if (msg.error !== undefined) {
-      entry.reject(new Error(msg.error));
-      return;
-    }
-    entry.resolve(normalizeResult(msg.result));
-  }
-
-  function dispose(): void {
-    for (const [, entry] of pending) {
-      entry.reject(new Error("Relay disposed before tool result arrived"));
-    }
-    pending.clear();
-  }
-
-  return { executeTool, onToolResult, dispose };
-}
 
 /**
  * Whether host mode is permitted for this environment.

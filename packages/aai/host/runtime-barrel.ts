@@ -39,13 +39,15 @@ export {
 } from "./generate.ts";
 export {
   buildHostAgent,
-  createRelayExecuteTool,
   isHostAllowed,
-  type RelayExecuteTool,
-  type RelayToolResult,
   type StartHostSessionOptions,
   startHostSession,
 } from "./host-mode.ts";
+export {
+  createRelayExecuteTool,
+  type RelayExecuteTool,
+  type RelayToolResult,
+} from "./host-relay.ts";
 export {
   createHostServer,
   type HostServerOptions,

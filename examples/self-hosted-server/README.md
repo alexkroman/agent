@@ -57,7 +57,7 @@ export default agent({
   tools: {
     roll_die: tool({
       description: "Roll a single die with the given number of sides.",
-      parameters: z.object({ sides: z.number().int().min(2).max(1000) }),
+      inputSchema: z.object({ sides: z.number().int().min(2).max(1000) }),
       execute: ({ sides }) => ({ rolled: 1 + Math.floor(Math.random() * sides) }),
     }),
   },
