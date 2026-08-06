@@ -8,6 +8,14 @@ conventions and testing rules live in the root `CLAUDE.md`.
 - `.` — default React UI component + session + client helpers
 - `./styles.css` — default styles
 - `./default-client/*` — prebuilt default client assets (`dist/default-client/`)
+- `./client-dir` — **Node only**: `defaultClientDir()`, the filesystem path of
+  those assets, for passing to `createServer`/`createAgentServer` as
+  `clientDir`. Its own subpath because it imports `node:module`/`node:path`,
+  which must never reach the browser barrel. It is a FUNCTION, not a constant:
+  resolution throws when the package is missing, and a module-level constant
+  would move that failure to import time, firing for callers that never wanted
+  the client. `aai-cli`'s dev server and every self-hosted example used to
+  carry their own copy of the three-line resolve.
 
 ## Key files
 

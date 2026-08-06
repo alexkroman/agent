@@ -24,13 +24,7 @@
 import type { AgentDef } from "../sdk/types.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
-import {
-  type AgentServer,
-  createServer,
-  type ServerOptions,
-  type SessionRuntime,
-} from "./server.ts";
-import { safeSend } from "./ws-handler.ts";
+import { type AgentServer, createServer, decliningRuntime, type ServerOptions } from "./server.ts";
 
 /**
  * Session settings every tenant inherits, minus the four the handshake owns.
@@ -72,28 +66,8 @@ export type HostServerOptions = {
   request?: ServerOptions["request"];
 };
 
-/**
- * The runtime for plain `/websocket` sessions on a host-only server: there is
- * no agent to run one on, so it says so and closes rather than accepting a
- * socket it can never answer.
- */
-function declineNonHostSessions(logger: Logger): SessionRuntime {
-  return {
-    startSession(ws) {
-      safeSend(
-        ws,
-        JSON.stringify({
-          type: "error",
-          code: "protocol",
-          message: "This server serves host-mode sessions only — connect with ?host=1.",
-        }),
-        logger,
-      );
-      ws.close?.(1008);
-    },
-    shutdown: () => Promise.resolve(),
-  };
-}
+/** Plain `/websocket` sessions have no agent to run on a host-only server. */
+const HOST_ONLY = "This server serves host-mode sessions only — connect with ?host=1.";
 
 /**
  * Create a multi-tenant host server: an HTTP + WebSocket server whose voice
@@ -124,7 +98,7 @@ function declineNonHostSessions(logger: Logger): SessionRuntime {
 export function createHostServer(options: HostServerOptions = {}): AgentServer {
   const { defaults, env, name = "host", logger = consoleLogger } = options;
   return createServer({
-    runtime: declineNonHostSessions(logger),
+    runtime: decliningRuntime(HOST_ONLY, logger),
     name,
     logger,
     // The gate goes on LAST: calling this function is the opt-in, so an

@@ -23,6 +23,10 @@
 // platform server). It is consumed directly by sibling test files.
 
 export type { AgentEnv, HostCredentialEnv, ProviderEnv } from "../sdk/env-types.ts";
+export {
+  type AgentServerOptions,
+  createAgentServer,
+} from "./agent-server.ts";
 export type { RunCodeExecutor } from "./builtin-run-code.ts";
 export {
   type BuiltinToolOptions,
@@ -89,6 +93,7 @@ export {
   type AgentServer,
   createServer,
   DEFAULT_LISTEN_HOST,
+  decliningRuntime,
   isPathInside,
   type ServerOptions,
   type SessionRuntime,

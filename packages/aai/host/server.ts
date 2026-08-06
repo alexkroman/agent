@@ -118,6 +118,29 @@ export type AgentServer = {
  */
 export const DEFAULT_LISTEN_HOST = "127.0.0.1";
 
+/**
+ * A {@link SessionRuntime} that turns every session away with a protocol error
+ * and closes, instead of accepting a socket it cannot answer.
+ *
+ * For a server whose `/websocket` has no agent behind it — `createHostServer`,
+ * which serves only `?host=1` sessions. The guest harness hand-rolls the same
+ * shape for its drain refusal; this is here so the third one does not get
+ * written by hand too.
+ *
+ * A refusal must SAY something: closing a bare socket leaves the client
+ * reconnecting against a server that will never answer, with nothing in the
+ * frame log explaining why.
+ */
+export function decliningRuntime(message: string, logger: Logger = consoleLogger): SessionRuntime {
+  return {
+    startSession(ws) {
+      safeSend(ws, JSON.stringify({ type: "error", code: "protocol", message }), logger);
+      ws.close?.(1008);
+    },
+    shutdown: () => Promise.resolve(),
+  };
+}
+
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 
 /**
