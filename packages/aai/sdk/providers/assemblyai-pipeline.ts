@@ -18,7 +18,7 @@
  * export default agent({
  *   name: "Jane",
  *   stt: assemblyAIStt({ model: "universal-3-5-pro" }),
- *   llm: assemblyAILlm({ model: "gpt-5.5" }),
+ *   llm: assemblyAILlm({ model: "gpt-5.6-luna" }),
  *   tts: assemblyAITts({ voice: "jane" }),
  * });
  * ```
@@ -115,10 +115,18 @@ export function assemblyAIPipeline(opts: AssemblyAIPipelineOptions = {}): {
     // was the hold phrase itself ("One moment.") arriving 10.9s late.
     //
     // Safe as a default because the preset's descriptor carries the factory's
-    // own `gpt-5.5`, a GPT-5-family model that accepts the parameter; an agent
-    // overriding `llm` replaces this descriptor whole, so the parameter never
-    // reaches a model that would reject it. An agent that wants thinking depth
-    // declares its own stage (`assemblyAILlm({ model, reasoningEffort })`).
+    // own default model, a GPT-5-family model that accepts the parameter; an
+    // agent overriding `llm` replaces this descriptor whole, so the parameter
+    // never reaches a model that would reject it. An agent that wants thinking
+    // depth declares its own stage (`assemblyAILlm({ model, reasoningEffort })`).
+    //
+    // On the current default (`gpt-5.6-luna`) it is no longer only a latency
+    // choice — it is REQUIRED. That model rejects a tool-carrying request at
+    // any non-`none` effort, and the pipeline sends tools on nearly every
+    // agent, so the setting is load-bearing rather than a tuning knob. The
+    // factory now defaults it for exactly that reason, which makes this
+    // argument redundant and deliberately kept: it states the intent (latency)
+    // that survives a change of default model.
     llm: assemblyAILlm({ reasoningEffort: "none", ...(region ? { region } : {}) }),
     tts: assemblyAITts(voice ? { voice } : {}),
   };

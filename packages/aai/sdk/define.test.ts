@@ -69,8 +69,10 @@ describe("agent()", () => {
     // of silence rather than an error.
     const { llm } = assemblyAIPipeline();
     expect(llm.options.reasoningEffort).toBe("none");
-    // Only valid on the GPT-5 family, so the descriptor must carry such a model.
-    expect(llm.options.model).toBe("gpt-5.5");
+    // Only valid on the GPT-5 family, so the descriptor must carry such a
+    // model. On the current default it is additionally REQUIRED: the gateway
+    // rejects a tool-carrying request to gpt-5.6-* at any other effort.
+    expect(llm.options.model).toBe("gpt-5.6-luna");
 
     // An agent with no providers at all gets the same treatment. Asserted
     // through toAgentConfig, not agent(): the default fill runs at the

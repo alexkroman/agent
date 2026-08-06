@@ -162,12 +162,12 @@ describe("resolveLlm", () => {
       expect(model).toHaveProperty("specificationVersion");
     });
 
-    it("defaults to gpt-5.5 when the descriptor names no model", () => {
+    it("defaults to gpt-5.6-luna when the descriptor names no model", () => {
       const model = resolveLlm(
         { kind: ASSEMBLYAI_LLM_KIND, options: {} },
         { ASSEMBLYAI_API_KEY: "fake-key" },
       );
-      expect(model).toMatchObject({ modelId: "gpt-5.5" });
+      expect(model).toMatchObject({ modelId: "gpt-5.6-luna" });
     });
 
     // `reasoningEffort` is forwarded as `reasoning_effort` only when the
@@ -208,11 +208,21 @@ describe("resolveLlm", () => {
       return body;
     }
 
+    // Note this goes through `resolveLlm` on a RAW descriptor, not through
+    // `assemblyAILlm()` — so the factory's per-model reasoning default (see
+    // TOOLS_REQUIRE_NO_REASONING) is not in play and the resolver's own
+    // "unset means unset" rule is what is under test. `gpt-5.5` keeps that
+    // rule honest now that the default model carries a factory default.
     it("leaves reasoning on its server-side default when reasoningEffort is unset", async () => {
-      const body = await requestBodyFor({});
+      const body = await requestBodyFor({ model: "gpt-5.5" });
       const parsed = JSON.parse(body) as Record<string, unknown>;
       expect(parsed).toMatchObject({ model: "gpt-5.5" });
       expect(parsed).not.toHaveProperty("reasoning_effort");
+    });
+
+    it("still defaults the model id for a descriptor that names none", async () => {
+      const parsed = JSON.parse(await requestBodyFor({})) as Record<string, unknown>;
+      expect(parsed).toMatchObject({ model: "gpt-5.6-luna" });
     });
 
     it('turns reasoning off when the descriptor sets reasoningEffort: "none"', async () => {
