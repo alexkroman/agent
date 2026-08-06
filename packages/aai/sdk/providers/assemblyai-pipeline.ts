@@ -120,14 +120,16 @@ export function assemblyAIPipeline(opts: AssemblyAIPipelineOptions = {}): {
     // model that would reject it. An agent that wants thinking depth declares
     // its own stage (`assemblyAILlm({ model, reasoningEffort })`).
     //
-    // On the current default (`gpt-5.5`) this argument is the ONLY thing
-    // turning reasoning off: gpt-5.5 is not in TOOLS_REQUIRE_NO_REASONING (it
-    // accepts tools at any effort), so the factory adds nothing and dropping
-    // this as redundant would silently restore per-turn thinking latency to
-    // every default pipeline — measured at 1786ms p50 time-to-first-token on
-    // gpt-5.5's server-side reasoning default, against 999ms with it off.
-    // The redundancy is real only while the default sits inside that set,
-    // which it does not; do not remove it on that reasoning.
+    // On the current default (`gpt-5.6-luna`) the factory would fill in the
+    // same `"none"` on its own — luna is in TOOLS_REQUIRE_NO_REASONING, where
+    // the value is a tool-calling REQUIREMENT rather than a latency choice —
+    // so this argument is currently a backstop rather than the only thing
+    // turning reasoning off. **Keep it anyway.** That agreement is a property
+    // of the id, not of the pipeline: the default has been `gpt-5.5` and
+    // `qwen3-next-80b-a3b`, both outside the set, and under either of those
+    // this line is the whole latency guarantee — 1786ms p50 time-to-first-token
+    // on gpt-5.5's server-side reasoning default against 999ms with it off.
+    // Deleting it as redundant makes the next id change a silent regression.
     llm: assemblyAILlm({ reasoningEffort: "none", ...(region ? { region } : {}) }),
     tts: assemblyAITts(voice ? { voice } : {}),
   };

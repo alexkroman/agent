@@ -12,6 +12,7 @@
  * doesn't.
  */
 
+import { ASSEMBLYAI_LLM_DEFAULT_MODEL } from "@alexkroman1/aai/llm";
 import { ASSEMBLYAI_GATEWAY_MODELS } from "./studio-llm.ts";
 import { sdkSpecifiers } from "./studio-sdk-exports.ts";
 
@@ -213,7 +214,8 @@ ${SDK_SUBPATH_RULE}
     import { agent } from "@alexkroman1/aai";
     export default agent({ name: "…", voice: "jane" });
   An agent() with no stt/llm/tts runs the default AssemblyAI pipeline with
-  real defaults for all three stages (universal-3-5-pro, gpt-5.5, jane), so
+  real defaults for all three stages (universal-3-5-pro,
+  ${ASSEMBLYAI_LLM_DEFAULT_MODEL}, jane), so
   there is no gateway model id to invent — an invented one is a 400 at the
   first session, with no compile-time or deploy-time check to catch it. The
   top-level \`voice\` field picks the default pipeline's TTS voice; do not
@@ -246,7 +248,7 @@ ${SDK_SUBPATH_RULE}
 - **Never invent a gateway model id.** The LLM Gateway rejects unknown
   models with a 400 "model not found" that only shows up at runtime. Use one
   of exactly these: ${ASSEMBLYAI_GATEWAY_MODELS.join(", ")}. Prefer
-  "gpt-5.5" unless the user asks for a different model.
+  "${ASSEMBLYAI_LLM_DEFAULT_MODEL}" unless the user asks for a different model.
 - For a one-shot LLM call inside a tool (summarize, classify, extract),
   use ctx.generate — see the reference below. Its \`schema\` option is
   a zod schema (typed structured output) or plain JSON Schema.

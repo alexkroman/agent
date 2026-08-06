@@ -2,6 +2,7 @@
 
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { ASSEMBLYAI_LLM_DEFAULT_MODEL } from "@alexkroman1/aai/llm";
 import { afterEach, describe, expect, test } from "vitest";
 import {
   _resetStudioPromptCache,
@@ -55,9 +56,9 @@ describe("studioSystemPrompt", () => {
     expect(prompt).toContain("test_agent");
     // Any non-AssemblyAI provider needs a key the user must supply, so a
     // generated agent should default to an all-AssemblyAI pipeline (STT +
-    // gpt-5.5 on the LLM Gateway + TTS) on the one key publishing
-    // guarantees, with the S2S voice agent API only on request. Both are
-    // graded by the CONFIG_CASES half of the studio codegen evals.
+    // the gateway LLM + TTS) on the one key publishing guarantees, with the
+    // S2S voice agent API only on request. Both are graded by the
+    // CONFIG_CASES half of the studio codegen evals.
     expect(prompt).toContain("Default to a cascaded (pipeline-mode) agent");
     // The zero-import golden path: no provider fields, `voice` for the TTS
     // voice. The preamble must teach it explicitly — it outranks the
@@ -72,8 +73,14 @@ describe("studioSystemPrompt", () => {
     // gpt-5.2 appears nowhere in the preamble literal, so it can only be here
     // if the ASSEMBLYAI_GATEWAY_MODELS interpolation ran.
     expect(prompt).toContain("gpt-5.2");
-    // The default gateway model for generated pipeline agents.
-    expect(prompt).toContain('"gpt-5.5" unless the user asks for a different model');
+    // The default gateway model for generated pipeline agents, read from the
+    // SDK constant rather than spelled out: the preamble interpolates it, so
+    // changing the SDK default can no longer leave the prompt naming the old
+    // one (which is exactly how it drifted before).
+    expect(prompt).toContain(
+      `"${ASSEMBLYAI_LLM_DEFAULT_MODEL}" unless the user asks for a different model`,
+    );
+    expect(prompt).toContain(`universal-3-5-pro,\n  ${ASSEMBLYAI_LLM_DEFAULT_MODEL}, jane`);
     // Publishing is the user's call, so the agent must be told it cannot.
     expect(prompt).toContain("You cannot publish");
     // Working-style rules: implement with tools instead of pasting code

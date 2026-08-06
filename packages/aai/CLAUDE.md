@@ -449,15 +449,16 @@ Reference providers shipped today:
     `[]` (an absent `choices` stays absent). Every other byte passes through.
     Remove each repair once the gateway emits conformant frames.
 
-    **The default model is `gpt-5.5`.** `gpt-5.6-luna` and
-    `qwen3-next-80b-a3b` were each tried as the default and each reverted; the
-    id is a one-line change, but it moves WHERE reasoning gets turned off, so
-    read the two blocks below together before changing it again.
+    **The default model is `gpt-5.6-luna`.** It has been `gpt-5.5` and
+    `qwen3-next-80b-a3b` in between; the id is a one-line change, but it moves
+    WHERE reasoning gets turned off, so read the two blocks below together
+    before changing it again.
 
     **On the `gpt-5.6` family `reasoning_effort: "none"` is REQUIRED for tool
-    use — not a tuning knob.** Those models are selectable even though the
-    default is not one of them, so the rule stands. With `tools` present and
-    any other effort — INCLUDING the model's own server-side default, i.e.
+    use — not a tuning knob.** The default is now one of them, so this is the
+    live path rather than a rule about a model an author might select. With
+    `tools` present and any other effort — INCLUDING the model's own
+    server-side default, i.e.
     sending no `reasoning_effort` at all — the gateway rejects the request:
     *"Function tools with reasoning_effort are not supported for gpt-5.6-luna
     in /v1/chat/completions. To use function tools, use /v1/responses or set
@@ -486,36 +487,37 @@ Reference providers shipped today:
     `reasoning_effort` for ANY model, including ones that plainly honour it
     (a bogus value 400s naming the supported ones).
 
-    **`assemblyAIPipeline()` is the ONLY thing turning reasoning off on the
-    default, and its explicit `reasoningEffort: "none"` is therefore NOT
-    redundant.** `gpt-5.5` is deliberately not in `TOOLS_REQUIRE_NO_REASONING`
-    — it accepts tools at any effort — so the factory contributes nothing and
-    the preset's argument (`sdk/providers/assemblyai-pipeline.ts`) carries the
-    whole weight. Delete it as redundant and every default pipeline silently
-    pays per-turn thinking latency: **1786ms p50 time-to-first-token on
-    gpt-5.5's server-side reasoning default, against 999ms with it off**, and
-    the symptom is seconds of pre-first-token silence rather than a failure.
-    `define.test.ts` pins the preset's effort AND its model id together for
-    that reason. The redundancy is real only while the default sits INSIDE that
-    set, which is a property of the id and has been true for one of the three
-    models tried — do not generalize from it.
+    **`assemblyAIPipeline()`'s explicit `reasoningEffort: "none"` is a
+    backstop on the current default, and must stay anyway.** Because
+    `gpt-5.6-luna` IS in `TOOLS_REQUIRE_NO_REASONING`, the factory now fills
+    the same value and the preset's argument
+    (`sdk/providers/assemblyai-pipeline.ts`) agrees with it rather than
+    carrying the whole weight. That agreement is a property of the id, not of
+    the pipeline: under `gpt-5.5` or `qwen3-next-80b-a3b` — the other two
+    defaults tried, both outside the set — the preset's argument is the only
+    thing turning reasoning off, and deleting it as redundant costs every
+    default pipeline **1786ms p50 time-to-first-token against 999ms with
+    reasoning off**, with seconds of pre-first-token silence rather than a
+    failure as the symptom. So the two settings are pinned TOGETHER in
+    `define.test.ts` (effort and model id in one test): the preset's `"none"`
+    is what makes the next id change safe, and the pin is what makes an id
+    change that needs a second look fail loudly.
 
-    Reference numbers from the luna evaluation, kept because they are the only
-    paired measurements here: luna is $1/$6 per M against `gpt-5.5`'s $5/$30,
-    and on time-to-first-token (2026-08-06, 18 paired tool-calling turns,
+    Why luna: it is $1/$6 per M against `gpt-5.5`'s $5/$30, and on
+    time-to-first-token (2026-08-06, 18 paired tool-calling turns,
     `reasoning_effort: "none"` on both) p50 **832ms vs 999ms** — ~17%, not the
     multiple an early n=1 probe suggested. `claude-opus-4-8` is 1217ms and
     `claude-sonnet-5` 1568ms at the same settings. The 5x-looking gaps in the
     first measurements were an ARTIFACT of comparing luna-with-`none` against
     `gpt-5.5` on its reasoning DEFAULT (1786ms) — most of what looked like a
     model difference was the reasoning setting, which this pipeline turns off
-    regardless of model.
+    regardless of model. So the honest case for luna is cost (5x) plus a
+    modest latency edge, not a latency multiple.
 
     **No default here has been chosen on answer quality**, which is the axis
     that should decide one — a tau2 run is what would settle it. Qwen has no
     paired latency numbers at all. Treat the current default as
-    quality-unverified, and note that cost alone argued for luna: reverting to
-    `gpt-5.5` takes the 5x-cheaper option off the table, deliberately.
+    quality-unverified.
 - **TTS**: one of
   - `cartesia({ voice })` — `CARTESIA_API_KEY`
   - `rime({ voice })` — `RIME_API_KEY`

@@ -48,12 +48,14 @@ export const ASSEMBLYAI_LLM_GATEWAY_EU_URL = "https://llm-gateway.eu.assemblyai.
  *
  * **Changing this id changes more than the model**, because
  * {@link TOOLS_REQUIRE_NO_REASONING} is keyed by model id: a default that
- * lands in that set makes the bare `assemblyAILlm()` carry an implicit
- * `reasoningEffort: "none"`, and one outside it (`gpt-5.5`, as here) makes it
- * carry none at all. Only the raw factory is affected — `assemblyAIPipeline()`
- * passes `"none"` explicitly, for latency rather than for that constraint.
+ * lands in that set (`gpt-5.6-luna`, as here) makes the bare
+ * `assemblyAILlm()` carry an implicit `reasoningEffort: "none"`, and one
+ * outside it makes it carry none at all. Only the raw factory is affected —
+ * `assemblyAIPipeline()` passes `"none"` explicitly, for latency rather than
+ * for that constraint, so the two agree on the current default and the
+ * pipeline is unaffected by a default that leaves the set.
  */
-export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "gpt-5.5";
+export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "gpt-5.6-luna";
 
 /**
  * Reasoning effort accepted by the gateway's GPT-5-family models, including
@@ -151,7 +153,9 @@ export interface AssemblyAILlmOptions {
    * factory fills in `"none"`** — they reject a tool-carrying request at any
    * other effort, and streaming reports that as a bare 500. Setting a
    * non-`none` effort on one of them is honoured, and breaks tool calls. See
-   * `TOOLS_REQUIRE_NO_REASONING`.
+   * `TOOLS_REQUIRE_NO_REASONING`. The default model
+   * ({@link ASSEMBLYAI_LLM_DEFAULT_MODEL}) is one of them, so a bare
+   * `assemblyAILlm()` lands in that exception rather than in the rule above.
    */
   reasoningEffort?: AssemblyAIReasoningEffort;
   /**

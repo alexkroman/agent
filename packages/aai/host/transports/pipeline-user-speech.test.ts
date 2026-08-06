@@ -143,7 +143,6 @@ function makeActivity(overrides: Partial<ActivityDeps> = {}): {
       state.spoke = false;
     },
     tailResumePrompt: () => "TAIL_PROMPT",
-    audio: { send: vi.fn(), duck: vi.fn(), resume: vi.fn(), drop: vi.fn() },
     runChainedTurn: (text, _label, kind) => {
       calls.chained.push({ text, isResume: kind?.isResume === true });
     },
