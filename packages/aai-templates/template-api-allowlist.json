@@ -156,6 +156,7 @@
     "SttOpenOptions",
     "SttProvider",
     "SttSession",
+    "SttTurnMeta",
     "Unsubscribe",
     "assemblyAIStt",
     "deepgram",
