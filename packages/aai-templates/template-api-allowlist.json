@@ -2,6 +2,7 @@
   "@alexkroman1/aai": [
     "AGENT_CSP",
     "ASSEMBLYAI_S2S_KIND",
+    "ASSEMBLYAI_S2S_SAMPLE_RATE",
     "AgentDef",
     "AgentParams",
     "AssemblyAIPipelineOptions",
@@ -38,6 +39,7 @@
     "DEFAULT_SYSTEM_PROMPT",
     "DEFAULT_TOOL_CHOICE",
     "DEFAULT_TTS_SAMPLE_RATE",
+    "DEFAULT_VOICE_FOCUS_THRESHOLD",
     "DefaultSessionState",
     "DefaultToolResult",
     "DefaultedAgentField",

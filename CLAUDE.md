@@ -329,12 +329,31 @@ you only need to list one package.
 
 - **Vitest**. Test files co-located: `foo.ts` → `foo.test.ts`.
 - **The aai-server test project auto-builds the guest harness**:
-  `scripts/ensure-guest-harness.mjs` runs as vitest `globalSetup` (root and
-  per-package configs) and builds `aai-guest` when `dist/harness.mjs` is
-  missing or older than the guest package's sources — `createSandbox`
-  resolves it eagerly, so an unbuilt harness otherwise fails every sandbox
-  test. Staleness tracks aai-guest sources only (not the bundled SDK);
-  `GUEST_HARNESS_PATH` skips the check. The same script also runs as
+  `scripts/ensure-guest-harness.mjs` runs as vitest `globalSetup` — wired in
+  `packages/aai-server/vitest.config.ts`, the ONE config that declares it —
+  and builds `aai-guest` when `dist/harness.mjs` is missing or older than the
+  sources, tracking BOTH aai-guest and the `packages/aai` SDK it bundles.
+  `createSandbox` resolves the harness eagerly, so an unbuilt one otherwise
+  fails every sandbox test. `GUEST_HARNESS_PATH` skips the check.
+
+  **Inside a turbo task (`TURBO_HASH`) it VERIFIES instead of building**, and a
+  missing harness there THROWS, naming the `dependsOn` to add. Turbo already
+  orders `aai-guest#build` ahead of every consumer and decides staleness by
+  hashing inputs; the mtime heuristic is only a guess, and it guesses wrong in
+  the ordinary case — a turbo cache HIT restores `dist/harness.mjs` with the
+  archived mtime, so any edit under `packages/aai` makes a byte-correct harness
+  look stale. The globalSetup then spawned a NESTED `turbo run build` inside
+  the parent run, and two tsdown processes wrote `dist/` while sibling tasks
+  read it: `aai-studio-server#test` (which declares no globalSetup of its own)
+  and `aai-server#check:integration` failed intermittently with "Guest harness
+  not built" or `MODULE_NOT_FOUND` on `aai-guest` — naming a file nothing in
+  their own package touches. It is the mirror image of the race
+  `packages/aai-server/turbo.json` documents: that comment notes this script
+  cannot wait out a harness being rebuilt underneath it, and the script was
+  itself that rebuild. **A harness a turbo task needs must be DECLARED**
+  (`^build`, or `aai-guest#build`), never built at test time.
+
+  The same script also runs as
   `predev` in aai-server and aai-studio-server (so `pnpm dev:aai-server`
   always boots with a fresh harness for local-dev sandboxes) and
   as `predeploy:modal` in both server packages (a fail-fast before the

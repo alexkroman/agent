@@ -3,12 +3,12 @@
  * Speech-to-Speech WebSocket client for AssemblyAI's S2S API.
  */
 
-import { z } from "zod";
 import type { ToolSchema } from "../sdk/_internal-types.ts";
 import { LOG_PREVIEW_CHARS, WS_NORMAL_CLOSURE, WS_OPEN } from "../sdk/constants.ts";
 import { errorMessage, safeJsonParse } from "../sdk/utils.ts";
 import { createAudioSendGate } from "./_audio-gate.ts";
 import { base64ToUint8, uint8ToBase64 } from "./_base64.ts";
+import { parseS2sMessage, type S2sServerMessage } from "./_s2s-messages.ts";
 import {
   countReplyAudio,
   createReplyAudit,
@@ -26,79 +26,18 @@ import {
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger, debugLoggingEnabled } from "./runtime-config.ts";
 
+/**
+ * One `session.update` audio-format block. `audio/pcm` is this service's own
+ * encoding name, NOT the protocol's client-facing `pcm16` (`sdk/protocol.ts`).
+ */
+const pcmAudio = (sample_rate: number) => ({
+  type: "audio",
+  format: { encoding: "audio/pcm", sample_rate },
+});
+
 export type S2sWebSocket = HeaderWebSocket;
 export type CreateS2sWebSocket = CreateHeaderWebSocket;
 export const defaultCreateS2sWebSocket: CreateS2sWebSocket = defaultCreateHeaderWebSocket;
-
-// ── Zod schemas for S2S server messages ─────────────────────────────────
-
-const S2sMessageSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("session.ready"), session_id: z.string() }).passthrough(),
-  z
-    .object({
-      type: z.literal("session.updated"),
-      config: z.object({ id: z.string().optional() }).passthrough().optional(),
-    })
-    .passthrough(),
-  z.object({ type: z.literal("input.speech.started") }),
-  z.object({ type: z.literal("input.speech.stopped") }),
-  z.object({ type: z.literal("transcript.user"), item_id: z.string(), text: z.string() }),
-  // Live partial of the current user utterance. `text` is the FULL transcript
-  // so far (each delta supersedes the previous one for an item_id), not an
-  // increment — so it is passed straight through, never concatenated.
-  //
-  // The two docs pages disagree on the field name: the events reference says
-  // `text`, the message-sequence page's example says `delta`. Accept either,
-  // preferring the events reference, exactly as `tool.call` below does for
-  // `arguments`/`args` — a name mismatch here is silent (the union rejects the
-  // frame and it is dropped as unrecognised), which is how live captions went
-  // missing in S2S mode in the first place.
-  z
-    .object({
-      type: z.literal("transcript.user.delta"),
-      item_id: z.string().optional(),
-      text: z.string().optional(),
-      delta: z.string().optional(),
-    })
-    .transform((m) => ({ type: m.type, text: m.text ?? m.delta ?? "" })),
-  z.object({ type: z.literal("reply.started"), reply_id: z.string() }),
-  // `transcript.agent.delta` is deliberately absent: the events reference
-  // documents it, but the live service sends none — see `_s2s-reply.ts`.
-  z.object({
-    type: z.literal("transcript.agent"),
-    text: z.string(),
-    reply_id: z.string().optional().default(""),
-    item_id: z.string().optional().default(""),
-    interrupted: z.boolean().optional().default(false),
-  }),
-  // AssemblyAI's S2S protocol delivers tool args under `arguments`; older
-  // implementations and our internal tests use `args`. Accept either, with
-  // `arguments` taking precedence so the live wire format wins.
-  z
-    .object({
-      type: z.literal("tool.call"),
-      call_id: z.string(),
-      name: z.string(),
-      arguments: z.record(z.string(), z.unknown()).optional(),
-      args: z.record(z.string(), z.unknown()).optional(),
-    })
-    .transform((m) => ({
-      type: m.type,
-      call_id: m.call_id,
-      name: m.name,
-      args: m.arguments ?? m.args ?? {},
-    })),
-  z.object({ type: z.literal("reply.done"), status: z.string().optional() }),
-  z.object({ type: z.literal("session.error"), code: z.string(), message: z.string() }),
-  z.object({ type: z.literal("error"), message: z.string() }),
-]);
-
-type S2sServerMessage = z.infer<typeof S2sMessageSchema>;
-
-function parseS2sMessage(obj: Record<string, unknown>): S2sServerMessage | undefined {
-  const result = S2sMessageSchema.safeParse(obj);
-  return result.success ? result.data : undefined;
-}
 
 /**
  * Per-connection dispatch state. Used to dedup events that the upstream S2S
@@ -357,7 +296,22 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
 
     updateSession(sessionConfig: S2sSessionConfig): void {
       const { systemPrompt, ...rest } = sessionConfig;
-      send({ type: "session.update", session: { system_prompt: systemPrompt, ...rest } });
+      send({
+        type: "session.update",
+        session: {
+          system_prompt: systemPrompt,
+          ...rest,
+          // DECLARED, and spread last so it stays authoritative. Omitting the
+          // format is the one S2S failure with NO symptom: the service applies
+          // its own rate and then emits nothing at all — no speech edges, no
+          // transcript, no error — so the agent greets and is permanently deaf.
+          // A declaration the audio does not match at least earns a 1011, which
+          // the close path already handles. The transport resamples to exactly
+          // this rate, so the number and the bytes cannot drift apart.
+          input: pcmAudio(config.inputSampleRate),
+          output: pcmAudio(config.outputSampleRate),
+        },
+      });
     },
 
     resumeSession(sessionId: string): void {

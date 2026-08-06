@@ -14,9 +14,13 @@ const DATE_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
 };
 
 const TOOL_PREAMBLE =
-  "\n\nWhen you decide to use a tool, ALWAYS say a brief natural phrase BEFORE the tool call " +
+  "\n\nBefore the FIRST tool call of a turn, say a brief natural phrase " +
   '(e.g. "Let me look that up" or "One moment while I check"). ' +
-  "This fills silence while the tool executes. Keep preambles to one short sentence.\n" +
+  "This fills silence while the tool executes. Keep it to one short sentence.\n" +
+  "\nSay it ONCE PER TURN, not once per tool call. If you need several tools to answer, stay " +
+  "silent between them and speak again when you have the answer. Narrating each step " +
+  '("I will check the next order. I will keep checking your orders.") tells the caller nothing ' +
+  "they need and makes a short wait sound like a long one.\n" +
   "\nNEVER tell the caller an action is done unless a tool call returned a successful result for " +
   "it. Announcing an action is not performing it: if you say you are looking something up, " +
   "booking, changing, moving, or cancelling it, you MUST make the matching tool call in that same " +
@@ -30,7 +34,13 @@ const TOOL_PREAMBLE =
   'spoken separators ("K dash 2" is K2, "P dash five dash two" is P52) and join spelled-out ' +
   'letters and digits ("A B C one two three" is ABC123). Add nothing the caller did not say: ' +
   '"Z K 3 F F W" is ZK3FFW, never ZEDK3FFW. Write personal names in ordinary title case ' +
-  '("Rivera", not "rivera"), matching how the record would store them.';
+  '("Rivera", not "rivera"), matching how the record would store them.\n' +
+  "\nIf a lookup on something the caller spelled comes back not-found, treat a MIS-HEARING as the " +
+  "most likely cause before you assume the record is missing. Spoken letters are easily confused " +
+  "— F and S, B and P and V, D and G and T, M and N — so retry the lookup with the plausible " +
+  "alternatives first. Only ask the caller to repeat themselves after that, and when you do, ask " +
+  "for something DIFFERENT (another identifier, or just the one letter you are unsure of) rather " +
+  "than making them say the same thing again. Repeating the same request gets the same audio.";
 
 const VOICE_RULES =
   "\n\nCRITICAL OUTPUT RULES — you MUST follow these for EVERY response:\n" +

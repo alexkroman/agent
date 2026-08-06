@@ -80,6 +80,22 @@ export interface AssemblyAIOptions {
    */
   voiceFocus?: "near-field" | "far-field" | "off" | string;
   /**
+   * How aggressively Voice Focus suppresses background audio, sent as the
+   * `voice_focus_threshold` connection parameter (0-1, higher is more
+   * aggressive). Defaults to `DEFAULT_VOICE_FOCUS_THRESHOLD` (0.9), above the
+   * service's own 0.7.
+   *
+   * Raise it when BACKGROUND SPEECH — a television, a radio, another
+   * conversation — is reaching the transcript. That is the case the default is
+   * tuned for, and the case no VAD setting can fix: those frames really are
+   * speech, so a frame gate cannot distinguish them from the caller (see the
+   * constant's doc for the measurement). Lower it if the caller's own quiet or
+   * distant speech is being suppressed.
+   *
+   * Ignored when {@link voiceFocus} is off — it tunes that filter.
+   */
+  voiceFocusThreshold?: number;
+  /**
    * Silence (ms) before the service runs its end-of-turn check, sent as the
    * `min_turn_silence` connection parameter. At this point the model asks
    * whether the turn reads as COMPLETE — if it does the turn ends, if not a
