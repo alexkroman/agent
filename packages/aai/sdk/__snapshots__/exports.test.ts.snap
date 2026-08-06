@@ -37,6 +37,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "DEFAULT_SYSTEM_PROMPT",
   "DEFAULT_TOOL_CHOICE",
   "DEFAULT_TTS_SAMPLE_RATE",
+  "DEFAULT_VOICE_FOCUS",
   "DEFAULT_VOICE_FOCUS_THRESHOLD",
   "FETCH_TIMEOUT_MS",
   "HTML_ACCEPT",

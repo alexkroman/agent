@@ -8,7 +8,8 @@
 import { describe, expect, test, vi } from "vitest";
 import { DEFAULT_FALSE_INTERRUPTION_PROMPT } from "../../sdk/constants.ts";
 import { silentLogger, sleep } from "../_test-utils.ts";
-import { createSpeechEdgeTracker, createUserActivity } from "./pipeline-user-speech.ts";
+import { createSpeechEdgeTracker } from "./pipeline-speech-edges.ts";
+import { createUserActivity } from "./pipeline-user-speech.ts";
 
 function makeEdgeCallbacks(): { onSpeechStarted: () => void; onSpeechStopped: () => void } {
   return { onSpeechStarted: vi.fn(), onSpeechStopped: vi.fn() };

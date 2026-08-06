@@ -4,12 +4,19 @@
  */
 
 import type { ToolSchema } from "../sdk/_internal-types.ts";
-import { LOG_PREVIEW_CHARS, WS_NORMAL_CLOSURE, WS_OPEN } from "../sdk/constants.ts";
+import {
+  DEFAULT_VOICE_FOCUS,
+  DEFAULT_VOICE_FOCUS_THRESHOLD,
+  LOG_PREVIEW_CHARS,
+  WS_NORMAL_CLOSURE,
+  WS_OPEN,
+} from "../sdk/constants.ts";
 import { errorMessage, safeJsonParse } from "../sdk/utils.ts";
 import { createAudioSendGate } from "./_audio-gate.ts";
 import { base64ToUint8, uint8ToBase64 } from "./_base64.ts";
 import { parseS2sMessage, type S2sServerMessage } from "./_s2s-messages.ts";
 import {
+  appendReplyDelta,
   countReplyAudio,
   createReplyAudit,
   type ReplyAudit,
@@ -34,6 +41,52 @@ const pcmAudio = (sample_rate: number) => ({
   type: "audio",
   format: { encoding: "audio/pcm", sample_rate },
 });
+
+/**
+ * Voice-focus block for the S2S `input`, pinned to the SAME numbers the pipeline
+ * STT stage pins — one constant, both transports.
+ *
+ * Sent because the S2S default is the service's 0.7, and the interferer that
+ * matters is background SPEECH: a television or a second conversation, which
+ * only the pre-model filter can suppress (a frame gate cannot tell "a voice"
+ * from "the caller's voice"). Measured on tau2-bench retail — see
+ * {@link DEFAULT_VOICE_FOCUS_THRESHOLD} for the numbers and for why raising
+ * `vad_threshold` instead is a regression in both directions.
+ *
+ * This closes half of a transport asymmetry: every transcription-side knob the
+ * pipeline pins after measurement (`language_codes`, `voice_focus`,
+ * `transcription_prompt`, `keyterms`) was unreachable in S2S, so an S2S agent
+ * ran on service defaults for all of them. `turn_detection` is deliberately NOT
+ * pinned here — its default is adaptive and entity-aware, and setting
+ * `min_silence`/`max_silence` turns both off for the rest of the session.
+ */
+const voiceFocusInput = () => ({
+  voice_focus: DEFAULT_VOICE_FOCUS,
+  voice_focus_threshold: DEFAULT_VOICE_FOCUS_THRESHOLD,
+});
+
+/**
+ * Documented cap on `input.transcription_prompt`. Trimmed here rather than left
+ * to the service, for the same reason `agent_context` is trimmed in the STT
+ * opener: an over-long value is a rejected `session.update` field on a session
+ * that otherwise looks healthy, and the failure would surface as unbiased
+ * transcription rather than as a config error.
+ */
+const TRANSCRIPTION_PROMPT_MAX_CHARS = 1750;
+
+/**
+ * `input.transcription_prompt` block, or nothing when there is no prompt.
+ *
+ * Keeps the HEAD, unlike `agent_context`'s tail-keeping trim: this is a
+ * standing description of the call's vocabulary written by the agent author, so
+ * its opening sentences are the substantive part. `agent_context` keeps the tail
+ * because it carries the agent's last reply, whose trailing question is the
+ * whole point.
+ */
+const transcriptionPromptInput = (sttPrompt: string | undefined) => {
+  if (sttPrompt === undefined || sttPrompt.trim().length === 0) return {};
+  return { transcription_prompt: sttPrompt.slice(0, TRANSCRIPTION_PROMPT_MAX_CHARS) };
+};
 
 export type S2sWebSocket = HeaderWebSocket;
 export type CreateS2sWebSocket = CreateHeaderWebSocket;
@@ -74,12 +127,21 @@ function dispatchReplyDone(
   ctx.log.info("S2S << reply.done", { ...sidFields(ctx), status, ...audit });
   const anomaly = replyAnomaly(state.reply, status);
   if (anomaly !== undefined) ctx.log.warn(anomaly, { ...sidFields(ctx), ...audit });
-  // A reply that sent no `transcript.agent` commits nothing to history: there
-  // is no salvage path. Reconstructing the text from `transcript.agent.delta`
-  // was tried and removed — the service sends no deltas either, so the
-  // accumulator was always empty (see `_s2s-reply.ts`).
-  if (status === "interrupted") callbacks.onCancelled();
-  else callbacks.onReplyDone();
+  if (status === "interrupted") {
+    // No salvage from deltas here, deliberately: the delta batch covers the
+    // whole composed reply, so committing it would credit the agent with words
+    // the caller was talking over and never heard (see `_s2s-reply.ts`).
+    callbacks.onCancelled();
+    return;
+  }
+  // A completed reply that sent no `transcript.agent` — the ordinary shape of a
+  // tool-preamble turn — has its text recovered from the word deltas, which are
+  // the only carrier of it. Emitted before `onReplyDone` so the transcript is
+  // committed to history within the turn it belongs to.
+  if (!state.reply.sawFinal && state.reply.deltaText !== "") {
+    callbacks.onAgentTranscript(state.reply.deltaText, false);
+  }
+  callbacks.onReplyDone();
 }
 
 function dispatchS2sMessage(
@@ -125,6 +187,13 @@ function dispatchS2sMessage(
       state.reply.sawFinal = true;
       callbacks.onAgentTranscript(msg.text, msg.interrupted);
       break;
+    case "transcript.agent.delta":
+      // Forwarded as a partial (replace semantics — the accumulation is the
+      // text so far), never straight to history: the final `transcript.agent`
+      // owns that when it arrives, and `dispatchReplyDone` owns it when it
+      // does not.
+      callbacks.onAgentTranscriptPartial(appendReplyDelta(state.reply, msg.text));
+      break;
     case "tool.call":
       state.reply.sawToolCall = true;
       callbacks.onToolCall(msg.call_id, msg.name, msg.args);
@@ -162,6 +231,22 @@ export type S2sSessionConfig = {
   systemPrompt: string;
   tools: ToolSchema[];
   greeting?: string;
+  /**
+   * Contextual biasing for transcription — the agent's `sttPrompt`, sent as
+   * `input.transcription_prompt`.
+   *
+   * It used to be pipeline-only, which made it a SILENT config drop: `agent({
+   * sttPrompt })` and host mode's `host.sttPrompt` both reached the agent
+   * definition, and only `pipeline-transport.ts` ever read it, so an S2S agent
+   * that set one got unbiased transcription and no warning. That is the
+   * dropped-field bug class the SDK guide warns about — a working agent quietly
+   * ignoring part of its own config.
+   *
+   * It earns its place: the caller's spelled name and ZIP are what gate a task,
+   * and on tau2-bench retail adding a transcription prompt took the
+   * authenticating first name from 1 of 6 attempts correct to 6 of 6.
+   */
+  sttPrompt?: string;
 };
 
 /** Callbacks fired into the owning session at construction time. */
@@ -175,6 +260,8 @@ export type S2sCallbacks = {
   /** Live partial of the user's current utterance; replaces, never appends. */
   onUserTranscriptPartial(text: string): void;
   onAgentTranscript(text: string, interrupted: boolean): void;
+  /** The reply's text so far, accumulated from `transcript.agent.delta`. */
+  onAgentTranscriptPartial(text: string): void;
   onToolCall(callId: string, name: string, args: Record<string, unknown>): void;
   onSpeechStarted(): void;
   onSpeechStopped(): void;
@@ -295,7 +382,10 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     },
 
     updateSession(sessionConfig: S2sSessionConfig): void {
-      const { systemPrompt, ...rest } = sessionConfig;
+      // Both are destructured OUT rather than left to the spread: they are SDK
+      // field names, and `rest` goes onto the wire verbatim, so leaving either
+      // in would send an unknown key the service rejects.
+      const { systemPrompt, sttPrompt, ...rest } = sessionConfig;
       send({
         type: "session.update",
         session: {
@@ -308,7 +398,11 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
           // A declaration the audio does not match at least earns a 1011, which
           // the close path already handles. The transport resamples to exactly
           // this rate, so the number and the bytes cannot drift apart.
-          input: pcmAudio(config.inputSampleRate),
+          input: {
+            ...pcmAudio(config.inputSampleRate),
+            ...voiceFocusInput(),
+            ...transcriptionPromptInput(sttPrompt),
+          },
           output: pcmAudio(config.outputSampleRate),
         },
       });

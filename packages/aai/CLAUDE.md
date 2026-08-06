@@ -182,21 +182,67 @@ present in the `agent()` config:
   tools changes nothing; calling one does. So a tool-using agent renders blank
   reply text for exactly the turns that do the work, `reply.done` logs
   `agentText: "none"`, and `replyAnomaly` warns "delivered audio with no
-  transcript" once per tool turn. There is no client-side remedy —
-  `transcript.agent` is the only event in the protocol carrying agent text.
-  Anything reading reply text (history, evals, a tau2-style harness scoring
-  what the agent *said*) sees silence for a turn the user heard answered.
+  transcript" once per tool turn. Anything reading reply text (history, evals, a
+  tau2-style harness scoring what the agent *said*) sees silence for a turn the
+  user heard answered.
 
-  Two traps here. The docs contradict each other on whether it is intended:
-  the canonical message-sequence page shows `transcript.agent` inside its
-  `opt tool call` branch and calls it "Per agent reply", while the
-  execution-modes page's `interactive` diagram shows neither tool-turn reply
-  emitting it — the service matches the latter. And
-  `transcript.agent.delta` is documented in the events reference but **is not
-  implemented**: zero frames arrive even for a plain greeting reply that does
-  send `transcript.agent`, and it appears nowhere on the canonical page. An
-  accumulator for it was added (#a42cdbd3) and removed again once measurement
-  showed it could never fire; do not re-add one on the strength of the docs.
+  The docs contradict each other on whether that is intended: the canonical
+  message-sequence page shows `transcript.agent` inside its `opt tool call`
+  branch and calls it "Per agent reply", while the execution-modes page's
+  `interactive` diagram shows neither tool-turn reply emitting it — the service
+  matches the latter.
+
+  **`transcript.agent.delta` DOES arrive, and it is the remedy.** This guide said
+  the opposite — "not implemented: zero frames arrive even for a plain greeting
+  reply", with an instruction not to re-add the accumulator removed in #a42cdbd3.
+  Re-measured 2026-08-06 against the live service with a standalone client
+  (`tau2-bench/scripts/vaapi_delta_probe.py`, no SDK): a bare greeting reply —
+  the exact case named as producing none — emits one frame per word carrying
+  `start_ms`/`end_ms`. Over one 215s retail session, 511 frames across 20
+  replies, of which **5 sent deltas and never a final `transcript.agent`** (116
+  words, all tool-preamble turns, otherwise unrecoverable). Two properties decide
+  how they are consumed, and neither matches the docs' "streaming ... useful for
+  live captioning in sync with playback": they arrive in a **batch** (every delta
+  for a reply within 0.000-0.031s), and they arrive **before** the final
+  `transcript.agent` (0.4-7.7s earlier). So `s2s.ts` forwards the accumulation as
+  a partial and, on a COMPLETED reply that never sent a final, commits it as the
+  reply's transcript. Never on an interrupted reply: the batch covers the whole
+  composed reply while `transcript.agent` with `interrupted: true` is trimmed to
+  what was spoken, so committing it would put words in history the caller never
+  heard.
+
+  **S2S sends Voice Focus and `sttPrompt`; `languages`, `keyterms` and `voice`
+  are still unreachable.** `updateSession` pins
+  `input.voice_focus`/`voice_focus_threshold` from the same
+  `DEFAULT_VOICE_FOCUS`/`DEFAULT_VOICE_FOCUS_THRESHOLD` constants the pipeline
+  STT stage reads (the S2S default is the service's 0.7, and the interferer that
+  matters is background speech), and forwards `sttPrompt` as
+  `input.transcription_prompt`, trimmed to that field's documented 1750-char cap
+  — keeping the HEAD, unlike `agent_context`'s tail-keeping trim, because this is
+  a standing vocabulary description rather than a trailing question.
+
+  `sttPrompt` was pipeline-only until 2026-08-06, which made it a SILENT config
+  drop of exactly the class this guide warns about: `agent({ sttPrompt })` and
+  `host.sttPrompt` both reached the agent definition and only
+  `pipeline-transport.ts` read it, so an S2S agent that set one got unbiased
+  transcription and no warning. `runtime-transport.test.ts` pins the forwarding
+  at the point it was missing (verified to fail when reverted).
+
+  What remains unreachable is `input.language_codes`, `input.keyterms` and
+  `output.voice`, because `assemblyAIS2s()` takes no options at all — so an S2S
+  agent cannot pick its voice either, and the claim elsewhere in this guide that
+  "S2S mode's voice rides on the `s2s` descriptor" is wrong: `voice` is a compile
+  error on `agent()` and there is no descriptor field to put it on. Note
+  `languages` must stay AUTHOR-controlled rather than defaulted here — an unset
+  value means "detect per turn", and a host-side `["en"]` would silently disable
+  multilingual transcription for every agent, the mirror-image bug.
+
+  Measured on tau2 retail (2 runs per arm, identical audio and pacing):
+  `language_codes: ["en"]` + voice focus 0.9 + a `transcription_prompt` took the
+  authenticating caller's first name from 1 of 6 attempts correct to 6 of 6, and
+  word recall 0.892/0.913 → 0.931/0.924. `turn_detection` is deliberately NOT
+  pinned: its default is adaptive and entity-aware (it waits out a spelled
+  value), and setting `min_silence`/`max_silence` disables both for the session.
 
   **An in-band service error is NOT the end of the session, and a fatal frame
   is not a banner.** `SessionCore.onError` defaults to `fatal: true`, and
@@ -402,6 +448,53 @@ Reference providers shipped today:
     failed" *after* the reply has streamed — the wrapper rewrites that null to
     `[]` (an absent `choices` stays absent). Every other byte passes through.
     Remove each repair once the gateway emits conformant frames.
+
+    **The default model is `gpt-5.6-luna`, and on the 5.6 family
+    `reasoning_effort: "none"` is REQUIRED for tool use — not a tuning knob.**
+    With `tools` present and any other effort — INCLUDING the model's own
+    server-side default, i.e. sending no `reasoning_effort` at all — the
+    gateway rejects the request: *"Function tools with reasoning_effort are not
+    supported for gpt-5.6-luna in /v1/chat/completions. To use function tools,
+    use /v1/responses or set reasoning_effort to 'none'."* Measured 2026-08-06
+    against the live gateway, 4/4 attempts on both `-luna` and `-terra`;
+    `gpt-5.5` is unaffected, 4/4 fine.
+
+    **That message is not what this SDK would see.** The pipeline streams, and
+    streaming turns the same rejection into a bare
+    `{"message":"something went wrong","code":500}` with the explanation
+    stripped — the diagnosis exists only in the non-streaming reply, which
+    nothing in the pipeline sends. And since `DEFAULT_BUILTIN_TOOLS` puts four
+    tools on every agent that does not opt out, an unguarded descriptor fails
+    on *every* turn while reading as a gateway outage. So the constraint is
+    encoded rather than documented: `TOOLS_REQUIRE_NO_REASONING` in
+    `sdk/providers/llm/assemblyai.ts` makes the factory default
+    `reasoningEffort` to `"none"` for those model ids, covering all three ways
+    a descriptor is built — `assemblyAILlm()` bare, the `llm: "gpt-5.6-luna"`
+    string shorthand (`from-string.ts`), and an explicit `model`. An explicit
+    `reasoningEffort` is still honoured, same rule as `gatewayUrl` winning over
+    `region`. Add a model id to that set when the gateway adds one that shares
+    the constraint; the generated catalog (`gateway-models.ts`) cannot carry it
+    — its flags come from `supported_parameters`, which does not list
+    `reasoning_effort` for ANY model, including ones that plainly honour it
+    (a bogus value 400s naming the supported ones).
+
+    **Luna was chosen on COST, with latency a modest bonus — do not restate it
+    as a latency win.** At $1/$6 per M against `gpt-5.5`'s $5/$30 it is 5x
+    cheaper, and cached input is $0.10 against $0.50. On time-to-first-token
+    the edge is real but small: measured 2026-08-06, 18 paired tool-calling
+    turns with two tools declared and `reasoning_effort: "none"` on both, p50
+    **832ms vs 999ms** with luna ahead on 13 of 18 — ~17%, not the multiple an
+    early n=1 probe suggested. Without tools and at the same effort it is
+    736ms vs 820ms over 18 samples. The 5x-looking gaps in the first
+    measurements were an ARTIFACT of comparing luna-with-`none` against
+    `gpt-5.5` on its server-side reasoning DEFAULT (1786ms p50): most of what
+    looked like a model difference was the reasoning setting, which this
+    pipeline turns off on both. For reference at the same settings,
+    `claude-opus-4-8` is 1217ms and `claude-sonnet-5` 1568ms.
+
+    Answer quality is NOT measured here, and it is the axis that should
+    actually decide a default — a tau2 run is what would settle it. Treat this
+    default as cost-motivated and quality-unverified.
 - **TTS**: one of
   - `cartesia({ voice })` — `CARTESIA_API_KEY`
   - `rime({ voice })` — `RIME_API_KEY`
@@ -583,6 +676,53 @@ The residual risk in a container is prompt injection steering the model at an
 internal endpoint; accepted, because the sandbox has nothing internal worth
 reaching and an author who wants that can already write it.
 
+## `speech_started` means "the agent is yielding", on BOTH transports
+
+The two transports derive this event differently and a client cannot tell them
+apart, so pipeline mode holds it back to match S2S rather than emitting what it
+happens to know. In S2S the service fires its speech-started the moment it stops
+generating, so the event coincides with a real interruption. Pipeline mode has
+no VAD and derives the edge from the STT transcript stream, where the FIRST
+non-empty partial opened it — one word of a cough, a backchannel, or a phrase
+the caller addressed to someone else in the room. `minBargeInWords` and
+`interruptionMinDurationMs` correctly declined to abort the reply for those, so
+the agent kept talking; the client had been told it stopped.
+
+**That divergence is not cosmetic, because clients act on it.** tau2-bench's
+harness DISCARDS its entire agent playout buffer on `speech_started` and has no
+`cancelled` handler at all — so the one event that really means "the agent
+stopped" is ignored, and the one that did not is treated as authoritative. A
+reply still being spoken was thrown away mid-sentence. `aai-ui` reads the same
+event as informational (it only clears the caption; playback stops on
+`cancelled`), which is why this never showed up in the browser.
+
+Measured by replaying the benchmark's own recorded caller audio against a live
+pipeline agent (`scripts/voice-replay/`), on the run's 10 conversations richest
+in these signals: **184 `speech_started` against 87 `cancelled` — 53% of the
+events the client acted on were not interruptions at all.** The agent yielded
+to non-directed speech on 12 of 12 occasions and then sat silent a median 5.9s
+(these are real barge-outs, not inter-sentence gaps: only 2.5% of natural gaps
+between agent segments are ≤0.6s).
+
+So while the agent holds the floor the edge is HELD, and released only when a
+barge-in really fires (alongside `cancelled`) or when the agent stops speaking
+on its own — `createGatedSpeechEdges` in `pipeline-user-speech.ts`. While the
+agent is silent it passes straight through: there is no floor to yield and the
+event just means "listening". Live captions are unaffected either way, because
+`user_transcript_partial` is emitted independently of the gate.
+
+The property to preserve — and what the specs in `pipeline-voice-events.test.ts`
+pin — is that **the score no longer depends on how the client reads the event**.
+Across the panel, the spread between a client that truncates on
+`speech_started` and one that truncates on `cancelled` collapsed from up to
+**66.7 points** (R_Y 89.7% vs 46.7%; S_BC 33.3% vs 100%) to **≤2.7 points**
+(R_Y 44.1% both ways). Note which direction R_Y moved: the benchmark's
+flattering 90% yield rate was an ARTIFACT of the same bug that wrecked
+selectivity — truncating on a signal that arrives ~470ms after the first partial
+makes yields look instant. A correct client's yield rate against the old code
+was already 46.7%. Do not read the drop as a regression, and do not "fix" it by
+reverting the gate.
+
 ## Data flow
 
 On the platform, the browser's session WebSocket connects DIRECTLY to the
@@ -726,6 +866,33 @@ both are fail-closed:
   all-AssemblyAI pipeline, so one caller-supplied `ASSEMBLYAI_API_KEY` covers
   STT, the LLM gateway and TTS. The stale comment had a real cost: it is what
   made a placeholder `agent()` look mandatory on every host server.
+
+- **Host-mode audio pacing is the CLIENT'S declaration, and it defaults to
+  paced** (`HostConfig.audioLeadMs`: omitted = the pacer's real-time
+  `CLIENT_AUDIO_LEAD_MS`, a number = that lead, `null` = unpaced).
+
+  Unpaced used to be the blanket default, on the reasoning that a host-mode
+  client is programmatic and therefore keeps its own clock. That conflates two
+  different things: being programmatic does not mean consuming FASTER than the
+  wall clock, and only a client whose timeline runs ahead is starved by pacing.
+  For a client that drains at 1x it is destructive, because in S2S mode the
+  service synthesises a whole reply server-side and it arrives in one burst
+  (measured: up to 1118 audio frames in one tau2 tick, against 205 on the
+  pipeline transport, whose per-sentence TTS flush paces it inherently). tau2
+  plays 200ms per tick and buffers the rest, so the backlog grew to MINUTES — and
+  it DISCARDS that buffer on barge-in, so 36% of all agent audio was destroyed
+  unheard, p99 181s and max 272s per barge-in on a 215s call, against 18-23% and
+  a 15s max for the pipeline arms. The caller heard a fraction of the replies and
+  kept asking "are you still there?"; the S2S arm completed a reply for 0.53 of
+  caller turns where the pipeline managed 1.00, and 18% of its sessions completed
+  no reply at all. Pacing keeps the backlog on OUR side, where
+  `PacedAudioSink.clear()` drops it on barge-in instead of handing it over to be
+  thrown away.
+
+  So tau2 is not the case unpaced was written for: its `_async_run_tick` enforces
+  a MINIMUM tick duration, so it never runs ahead of the wall clock (measured
+  mean 315ms per 200ms tick — 0.63x real time). Reach for `null` only for a
+  harness that genuinely steps faster than real time.
 
 ## Pipeline-transport interleaving fuzz
 

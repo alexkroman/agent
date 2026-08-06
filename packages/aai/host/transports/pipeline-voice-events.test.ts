@@ -50,6 +50,83 @@ describe("PipelineTransport", () => {
       await t.stop();
     });
 
+    // `speech_started` must mean the same thing on both transports: the user
+    // took the floor and the agent is yielding. S2S gets that for free (the
+    // service stops generating when it fires); pipeline mode derives the edge
+    // from STT partials, so a sub-threshold noise would otherwise announce an
+    // interruption that never happens. Clients act on it — tau2-bench discards
+    // its entire agent playout buffer on this event and has no `cancelled`
+    // handler — so a premature edge silences a reply that is still being
+    // spoken. See createGatedSpeechEdges in pipeline-user-speech.ts.
+    test("a sub-threshold partial over agent speech does NOT fire onSpeechStarted", async () => {
+      const { opts, stt, tts, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({ script: inFlightReplyScript(), delayMs: 20 }),
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+
+      stt.last()?.fireFinal("hi there");
+      await vi.waitFor(() => {
+        expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
+      });
+      tts.last()?.fireAudio(new Int16Array(2400)); // the turn has now SPOKEN
+      vi.mocked(callbacks.onSpeechStarted).mockClear();
+
+      // One word — below minBargeInWords, so the reply is correctly NOT
+      // aborted. The client must not be told the agent yielded either.
+      stt.last()?.firePartial("mm-hmm");
+      expect(callbacks.onCancelled).not.toHaveBeenCalled();
+      expect(callbacks.onSpeechStarted).not.toHaveBeenCalled();
+      // Live captions are independent of the gate.
+      expect(callbacks.onUserTranscriptPartial).toHaveBeenCalledWith("mm-hmm");
+      await t.stop();
+    });
+
+    test("a barge-in over agent speech fires onSpeechStarted with the cancel", async () => {
+      const { opts, stt, tts, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({ script: inFlightReplyScript(), delayMs: 20 }),
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+
+      stt.last()?.fireFinal("hi there");
+      await vi.waitFor(() => {
+        expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
+      });
+      tts.last()?.fireAudio(new Int16Array(2400));
+      vi.mocked(callbacks.onSpeechStarted).mockClear();
+
+      stt.last()?.firePartial("wait stop"); // ≥ minBargeInWords → real barge-in
+      expect(callbacks.onCancelled).toHaveBeenCalled();
+      expect(callbacks.onSpeechStarted).toHaveBeenCalledTimes(1);
+      await t.stop();
+    });
+
+    test("a held edge is released once the agent stops speaking on its own", async () => {
+      const { opts, stt, tts, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({ script: [{ type: "text", text: "hi" }] }),
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+
+      stt.last()?.fireFinal("hi there");
+      await vi.waitFor(() => {
+        expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
+      });
+      tts.last()?.fireAudio(new Int16Array(2400));
+      await vi.waitFor(() => {
+        expect(callbacks.onReplyDone).toHaveBeenCalled();
+      });
+      vi.mocked(callbacks.onSpeechStarted).mockClear();
+
+      // Held while the reply drains, then released on the next partial once
+      // there is no floor left to protect — the user is speaking into silence.
+      stt.last()?.firePartial("one");
+      stt.last()?.firePartial("one more");
+      expect(callbacks.onSpeechStarted).toHaveBeenCalledTimes(1);
+      await t.stop();
+    });
+
     test("interim transcripts are forwarded via onUserTranscriptPartial", async () => {
       const { opts, stt, callbacks } = makeOpts({
         llm: createFakeLanguageModel({ script: [{ type: "text", text: "hi" }] }),

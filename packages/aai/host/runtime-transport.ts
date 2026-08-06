@@ -179,6 +179,9 @@ export function createTransportFactory(
         systemPrompt,
         tools: toolSchemas,
         ...(agentConfig.greeting !== undefined ? { greeting: agentConfig.greeting } : {}),
+        // Forwarded on its own presence, like the pipeline branch above. Omitting
+        // it here is what made `sttPrompt` a silent no-op for every S2S agent.
+        ...(agentConfig.sttPrompt !== undefined ? { sttPrompt: agentConfig.sttPrompt } : {}),
       },
       callbacks,
       sid: sessionOpts.id,

@@ -298,10 +298,17 @@ export type AgentDef<S = DefaultSessionState> = {
    */
   greeting: string;
   /**
-   * Pipeline mode only. Bias prompt for the streaming STT — use it to teach
-   * the transcriber the agent's own vocabulary (product names, spelled-out
-   * identifiers). Defaults to empty (unbiased transcription); see
-   * {@link DEFAULT_STT_PROMPT} for what an effective prompt looks like.
+   * Bias prompt for transcription — use it to teach the transcriber the agent's
+   * own vocabulary (product names, spelled-out identifiers). Defaults to empty
+   * (unbiased transcription); see {@link DEFAULT_STT_PROMPT} for what an
+   * effective prompt looks like.
+   *
+   * Honoured in both session modes: the pipeline passes it to its STT stage,
+   * S2S sends it as `input.transcription_prompt` (trimmed to that field's
+   * 1750-char cap). It was pipeline-only until measurement showed what it costs
+   * to drop — on tau2-bench retail a transcription prompt took the caller's
+   * spelled first name from 1 of 6 attempts correct to 6 of 6, and the S2S path
+   * was ignoring the field without a warning.
    */
   sttPrompt?: string;
   /**

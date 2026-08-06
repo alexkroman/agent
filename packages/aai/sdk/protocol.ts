@@ -334,8 +334,12 @@ export const HostConfigSchema = z.object({
    * product codes, passport numbers — and steering the LLM alone leaves those
    * identifiers transcribed unbiased, where a formatted final turn can revise
    * a spelled code out of the transcript entirely. Omit it to keep whatever
-   * the deployed agent configures. No effect on S2S transports, which have no
-   * separate STT stage.
+   * the deployed agent configures.
+   *
+   * Honoured by BOTH transports: the pipeline passes it to its STT stage, and
+   * S2S sends it as `input.transcription_prompt` (trimmed to that field's
+   * documented 1750-char cap). It used to be pipeline-only, which made it a
+   * silent no-op for every S2S agent rather than a documented limitation.
    */
   sttPrompt: z.string().optional(),
   /**
@@ -355,6 +359,28 @@ export const HostConfigSchema = z.object({
    * client set `DATABASE_URL` and point `ctx.db` at a server it controls.
    */
   credentials: z.record(z.string(), z.string().min(1)).optional(),
+  /**
+   * How much agent audio the host may keep in flight, in ms — the client
+   * declaring its own playback behaviour, because it is the only party that
+   * knows it.
+   *
+   * Omitted means real-time pacing (`CLIENT_AUDIO_LEAD_MS`), which is right for
+   * anything that plays audio at one second per second. `null` disables pacing
+   * entirely, for a client whose timeline runs FASTER than the wall clock (a
+   * simulation stepping per processed tick); metering to the wall clock starves
+   * that client, and it does so invisibly.
+   *
+   * The default is paced because the opposite default was measured to be
+   * destructive for the far more common case: a client that drains at 1x. In
+   * S2S mode the service synthesises a whole reply server-side and it arrives
+   * in one burst, so unpaced relay handed the tau2 harness a backlog that grew
+   * to MINUTES — and that harness discards its buffered audio on barge-in, so
+   * 36% of all agent speech was destroyed unheard (p99 181s per barge-in,
+   * against 15s max on the pipeline transport, whose per-sentence TTS flush
+   * paces it inherently). Pacing keeps the backlog on this side, where
+   * `PacedAudioSink.clear()` drops it on barge-in instead.
+   */
+  audioLeadMs: z.union([z.number().positive(), z.null()]).optional(),
 });
 
 /** Host-provided agent configuration for a host-mode connection. */

@@ -40,6 +40,7 @@
     "DEFAULT_SYSTEM_PROMPT",
     "DEFAULT_TOOL_CHOICE",
     "DEFAULT_TTS_SAMPLE_RATE",
+    "DEFAULT_VOICE_FOCUS",
     "DEFAULT_VOICE_FOCUS_THRESHOLD",
     "DefaultSessionState",
     "DefaultToolResult",

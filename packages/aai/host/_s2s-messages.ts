@@ -43,8 +43,22 @@ const S2sMessageSchema = z.discriminatedUnion("type", [
     })
     .transform((m) => ({ type: m.type, text: m.text ?? m.delta ?? "" })),
   z.object({ type: z.literal("reply.started"), reply_id: z.string() }),
-  // `transcript.agent.delta` is deliberately absent: the events reference
-  // documents it, but the live service sends none — see `_s2s-reply.ts`.
+  // One WORD of the agent's reply, with its playback offsets. Unlike
+  // `transcript.user.delta`, whose `text` is cumulative, this really is an
+  // increment and must be APPENDED — see the accumulator in `_s2s-reply.ts`.
+  // `text` is accepted as an alias for the same reason `tool.call` accepts
+  // `arguments`/`args`: a silent name mismatch here drops the frame.
+  z
+    .object({
+      type: z.literal("transcript.agent.delta"),
+      reply_id: z.string().optional(),
+      item_id: z.string().optional(),
+      delta: z.string().optional(),
+      text: z.string().optional(),
+      start_ms: z.number().nullish(),
+      end_ms: z.number().nullish(),
+    })
+    .transform((m) => ({ type: m.type, text: m.delta ?? m.text ?? "" })),
   z.object({
     type: z.literal("transcript.agent"),
     text: z.string(),

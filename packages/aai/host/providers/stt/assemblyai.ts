@@ -6,6 +6,7 @@ import {
   DEFAULT_MAX_TURN_SILENCE_MS,
   DEFAULT_MIN_TURN_SILENCE_MS,
   DEFAULT_STT_PROMPT,
+  DEFAULT_VOICE_FOCUS,
   DEFAULT_VOICE_FOCUS_THRESHOLD,
   STT_CONNECT_MAX_RETRIES,
   STT_CONNECT_RETRY_DELAY_MS,
@@ -189,7 +190,7 @@ function buildTranscriberParams(
     ? normalizeAgentContext(openOpts.agentContext ?? "")
     : undefined;
   // Voice focus (voice isolation); defaults to near-field. "off"/"" disables.
-  const requestedVoiceFocus = opts.voiceFocus ?? "near-field";
+  const requestedVoiceFocus = opts.voiceFocus ?? DEFAULT_VOICE_FOCUS;
   const voiceFocus = requestedVoiceFocus === "off" ? "" : requestedVoiceFocus;
   // Above the service's own 0.7, because the interferer that matters here is
   // background SPEECH and only the pre-model filter can suppress it — see

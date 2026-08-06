@@ -54,6 +54,7 @@ export function makeMockCallbacks(): S2sCallbacks {
     onUserTranscript: vi.fn(),
     onUserTranscriptPartial: vi.fn(),
     onAgentTranscript: vi.fn(),
+    onAgentTranscriptPartial: vi.fn(),
     onToolCall: vi.fn(),
     onSpeechStarted: vi.fn(),
     onSpeechStopped: vi.fn(),

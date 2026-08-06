@@ -4,6 +4,7 @@
 // _s2s-test-utils.ts.
 
 import { describe, expect, test } from "vitest";
+import { DEFAULT_VOICE_FOCUS, DEFAULT_VOICE_FOCUS_THRESHOLD } from "../sdk/constants.ts";
 import {
   createWebSocketStub,
   emitMessage,
@@ -59,6 +60,102 @@ describe("connectS2s", () => {
     const sent = lastSent(raw) as { type: string; session: { system_prompt: string } };
     expect(sent.type).toBe("session.update");
     expect(sent.session.system_prompt).toBe("test");
+  });
+
+  // The S2S default is the service's 0.7 while the pipeline STT stage pins 0.9,
+  // so an S2S agent ran with weaker background-speech suppression than a
+  // pipeline agent on the same audio — measured to be what decides spelled
+  // name/ZIP authentication on tau2-bench retail. Both now read one constant.
+  test("updateSession pins voice focus on the input block", async () => {
+    const { raw, handle } = await setupHandle();
+
+    handle.updateSession({ systemPrompt: "test", tools: [] });
+
+    const sent = lastSent(raw) as {
+      session: { input: Record<string, unknown>; output: Record<string, unknown> };
+    };
+    expect(sent.session.input).toMatchObject({
+      voice_focus: DEFAULT_VOICE_FOCUS,
+      voice_focus_threshold: DEFAULT_VOICE_FOCUS_THRESHOLD,
+    });
+    // Declaring the format stays authoritative — it is the one S2S failure with
+    // no symptom at all, so the pin must not have displaced it.
+    expect(sent.session.input).toMatchObject({ format: { encoding: "audio/pcm" } });
+    // Voice focus is an INPUT concern; sending it on output would be a rejected
+    // field on a session that otherwise looks healthy.
+    expect(sent.session.output).not.toHaveProperty("voice_focus");
+  });
+
+  // `sttPrompt` was pipeline-only, which made it a SILENT no-op for every S2S
+  // agent: it reached the agent definition and only the pipeline transport read
+  // it. The service's matching field is `input.transcription_prompt`.
+  test("updateSession sends sttPrompt as input.transcription_prompt", async () => {
+    const { raw, handle } = await setupHandle();
+
+    handle.updateSession({
+      systemPrompt: "test",
+      tools: [],
+      sttPrompt: "Expect spelled-out names and five-digit ZIP codes.",
+    });
+
+    const sent = lastSent(raw) as { session: Record<string, unknown> };
+    const input = sent.session.input as Record<string, unknown>;
+    expect(input.transcription_prompt).toBe("Expect spelled-out names and five-digit ZIP codes.");
+    // An SDK field name must never reach the wire — the service rejects unknown
+    // keys, and the spread that builds `session` would otherwise carry it.
+    expect(sent.session).not.toHaveProperty("sttPrompt");
+  });
+
+  test("updateSession omits transcription_prompt when there is no sttPrompt", async () => {
+    const { raw, handle } = await setupHandle();
+
+    handle.updateSession({ systemPrompt: "test", tools: [] });
+
+    const sent = lastSent(raw) as { session: { input: Record<string, unknown> } };
+    expect(sent.session.input).not.toHaveProperty("transcription_prompt");
+  });
+
+  // Whitespace-only is "not configured", not "bias on nothing".
+  test("updateSession omits transcription_prompt for a blank sttPrompt", async () => {
+    const { raw, handle } = await setupHandle();
+
+    handle.updateSession({ systemPrompt: "test", tools: [], sttPrompt: "   \n " });
+
+    const sent = lastSent(raw) as { session: { input: Record<string, unknown> } };
+    expect(sent.session.input).not.toHaveProperty("transcription_prompt");
+  });
+
+  // Trimmed here rather than left to the service: an over-long value is a
+  // rejected field on a session that otherwise looks healthy, so the failure
+  // would present as unbiased transcription rather than a config error. Keeps
+  // the HEAD — this is a standing vocabulary description, so its opening is the
+  // substantive part (unlike `agent_context`, which keeps its tail).
+  test("updateSession trims a long sttPrompt to the documented cap", async () => {
+    const { raw, handle } = await setupHandle();
+
+    handle.updateSession({
+      systemPrompt: "test",
+      tools: [],
+      sttPrompt: `${"a".repeat(1750)}TAIL`,
+    });
+
+    const sent = lastSent(raw) as { session: { input: { transcription_prompt?: string } } };
+    const prompt = sent.session.input.transcription_prompt ?? "";
+    expect(prompt).toHaveLength(1750);
+    // The tail is what gets dropped, not the head.
+    expect(prompt.endsWith("TAIL")).toBe(false);
+  });
+
+  // `turn_detection` is deliberately left unset: the service's default is
+  // adaptive and entity-aware (it waits out a spelled-out value), and setting
+  // `min_silence`/`max_silence` turns both off for the rest of the session.
+  test("updateSession does not pin turn_detection", async () => {
+    const { raw, handle } = await setupHandle();
+
+    handle.updateSession({ systemPrompt: "test", tools: [] });
+
+    const sent = lastSent(raw) as { session: { input: Record<string, unknown> } };
+    expect(sent.session.input).not.toHaveProperty("turn_detection");
   });
 
   test("sendAudio sends base64-encoded audio when open", async () => {

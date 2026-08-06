@@ -227,6 +227,21 @@ export const STT_CONNECT_RETRY_DELAY_MS = 500;
 export const DEFAULT_VOICE_FOCUS_THRESHOLD = 0.9;
 
 /**
+ * Voice Focus model both transports pin — the near-field one, matching a caller
+ * speaking into a handset or headset.
+ *
+ * `far-field` amplifies the room, and the room is where the interfering speech
+ * is: measured on the same corpus it more than doubled background leakage (44%
+ * against 18%). Named here rather than written as a literal at each call site so
+ * the pipeline STT stage and the S2S `session.update` cannot drift — they were
+ * two different code paths sending two different configurations, which is how
+ * S2S ended up on the service's 0.7 default while the pipeline ran at 0.9.
+ *
+ * @internal
+ */
+export const DEFAULT_VOICE_FOCUS = "near-field";
+
+/**
  * Deadline for the TTS replacement socket opened after a mid-turn cancel
  * (barge-in drops the whole connection — see the AssemblyAI TTS module doc).
  *
