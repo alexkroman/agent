@@ -8,9 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type AudioMockContext, findWorkletNode, installAudioMocks } from "./_react-test-utils.ts";
 import {
   assertValidClientFrames,
-  type ConstructorType,
   lastSocket,
   MockWebSocket,
+  MockWebSocketConstructor,
   makeConfig,
   resetLastSocket,
 } from "./_session-core-test-utils.ts";
@@ -30,7 +30,7 @@ describe("createSessionCore", () => {
     resetLastSocket();
     core = createSessionCore({
       platformUrl: "ws://localhost:3000",
-      WebSocket: MockWebSocket as unknown as ConstructorType,
+      WebSocket: MockWebSocketConstructor,
     });
   });
 
@@ -135,11 +135,7 @@ describe("createSessionCore", () => {
     it("non-string non-binary frame is dropped with a console warning", () => {
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(vi.fn());
       // Dispatch a numeric data value directly to bypass simulateMessage type checks
-      for (const cb of (
-        lastSocket as unknown as { _listeners: Map<string, Set<(...a: unknown[]) => void>> }
-      )._listeners.get("message") ?? []) {
-        cb({ data: 42 });
-      }
+      lastSocket?.dispatchRaw("message", { data: 42 });
       expect(warnSpy).toHaveBeenCalledWith(
         "session-core: non-string, non-binary frame received; dropping",
       );
@@ -154,7 +150,7 @@ describe("createSessionCore", () => {
       const onSessionId = vi.fn();
       core = createSessionCore({
         platformUrl: "ws://localhost:3000",
-        WebSocket: MockWebSocket as unknown as ConstructorType,
+        WebSocket: MockWebSocketConstructor,
         onSessionId,
       });
       core.connect();
@@ -168,7 +164,7 @@ describe("createSessionCore", () => {
       const onSessionId = vi.fn();
       core = createSessionCore({
         platformUrl: "ws://localhost:3000",
-        WebSocket: MockWebSocket as unknown as ConstructorType,
+        WebSocket: MockWebSocketConstructor,
         onSessionId,
       });
       core.connect();
@@ -232,7 +228,7 @@ describe("createSessionCore", () => {
     it("converts http to ws protocol", () => {
       core = createSessionCore({
         platformUrl: "http://localhost:3000",
-        WebSocket: MockWebSocket as unknown as ConstructorType,
+        WebSocket: MockWebSocketConstructor,
       });
       core.connect();
       expect(lastSocket?.url).toMatch(/^ws:/);
@@ -241,7 +237,7 @@ describe("createSessionCore", () => {
     it("converts https to wss protocol", () => {
       core = createSessionCore({
         platformUrl: "https://example.com",
-        WebSocket: MockWebSocket as unknown as ConstructorType,
+        WebSocket: MockWebSocketConstructor,
       });
       core.connect();
       expect(lastSocket?.url).toMatch(/^wss:/);
@@ -250,7 +246,7 @@ describe("createSessionCore", () => {
     it("uses resumeSessionId on first connect", () => {
       core = createSessionCore({
         platformUrl: "ws://localhost:3000",
-        WebSocket: MockWebSocket as unknown as ConstructorType,
+        WebSocket: MockWebSocketConstructor,
         resumeSessionId: "prev-session",
       });
       core.connect();

@@ -12,9 +12,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installAudioMocks } from "./_react-test-utils.ts";
 import {
-  type ConstructorType,
   lastSocket,
-  MockWebSocket,
+  type MockWebSocket,
+  MockWebSocketConstructor,
   makeConfig,
   resetLastSocket,
 } from "./_session-core-test-utils.ts";
@@ -32,7 +32,7 @@ describe("session-core server events", () => {
     resetLastSocket();
     core = createSessionCore({
       platformUrl: "ws://localhost:3000",
-      WebSocket: MockWebSocket as unknown as ConstructorType,
+      WebSocket: MockWebSocketConstructor,
     });
   });
 

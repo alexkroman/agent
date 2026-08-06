@@ -278,39 +278,38 @@ describe("createRuntime", () => {
   });
 });
 
+/**
+ * A tool whose `execute` resolves to something other than the declared
+ * `string`, for the coercion paths below. Agent bundles are not typechecked by
+ * either bundler, so these values really do reach `executeToolCall` in
+ * production — the cast stages that, and stays at this one seam; the
+ * escape-hatch ratchet counts every occurrence.
+ */
+function toolReturning(description: string, value: unknown): ToolDef {
+  return { description, execute: () => value as unknown as string };
+}
+
 describe("executeToolCall", () => {
   test("returns 'null' when tool execute returns null", async () => {
-    const tool: ToolDef = {
-      description: "Returns null",
-      execute: () => null as unknown as string,
-    };
+    const tool = toolReturning("Returns null", null);
     const result = await executeToolCall("nullTool", {}, { tool, env: {} });
     expect(result).toBe("null");
   });
 
   test("returns 'null' when tool execute returns undefined", async () => {
-    const tool: ToolDef = {
-      description: "Returns undefined",
-      execute: () => undefined as unknown as string,
-    };
+    const tool = toolReturning("Returns undefined", undefined);
     const result = await executeToolCall("undefinedTool", {}, { tool, env: {} });
     expect(result).toBe("null");
   });
 
   test("JSON.stringifies non-string results", async () => {
-    const tool: ToolDef = {
-      description: "Returns object",
-      execute: () => ({ count: 42 }) as unknown as string,
-    };
+    const tool = toolReturning("Returns object", { count: 42 });
     const result = await executeToolCall("objTool", {}, { tool, env: {} });
     expect(result).toBe(JSON.stringify({ count: 42 }));
   });
 
   test("JSON.stringifies numeric results", async () => {
-    const tool: ToolDef = {
-      description: "Returns number",
-      execute: () => 123 as unknown as string,
-    };
+    const tool = toolReturning("Returns number", 123);
     const result = await executeToolCall("numTool", {}, { tool, env: {} });
     expect(result).toBe("123");
   });

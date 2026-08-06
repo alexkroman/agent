@@ -29,20 +29,31 @@ import { ssrfSafeFetch } from "./ssrf.ts";
 /** The undici-only `dispatcher` extension to RequestInit. */
 type MaybeDispatcher = RequestInit & { dispatcher?: unknown };
 
-function okFetch() {
-  return vi.fn(async () => new Response("body", { status: 200 }));
+/**
+ * A stand-in for the injected `fetch`, plus a typed view of what it recorded.
+ *
+ * Both narrowings live here so no test below carries one: `vi.fn()`'s inferred
+ * signature is not `typeof globalThis.fetch`, and the recorded call tuple is
+ * typed from that signature rather than from `ssrfSafeFetch`'s call site. The
+ * escape-hatch ratchet counts every occurrence, so keep them at this seam.
+ */
+function okFetch(): {
+  fetch: typeof globalThis.fetch;
+  firstCall(): [string, MaybeDispatcher];
+} {
+  const fn = vi.fn(async () => new Response("body", { status: 200 }));
+  return {
+    fetch: fn as unknown as typeof globalThis.fetch,
+    firstCall: () => fn.mock.calls[0] as unknown as [string, MaybeDispatcher],
+  };
 }
 
 describe("ssrfSafeFetch: DNS pinning", () => {
   test("keeps the original hostname in the request URL", async () => {
     const mockFetch = okFetch();
-    await ssrfSafeFetch(
-      "https://example.com/page",
-      {},
-      mockFetch as unknown as typeof globalThis.fetch,
-    );
+    await ssrfSafeFetch("https://example.com/page", {}, mockFetch.fetch);
 
-    const [url] = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+    const [url] = mockFetch.firstCall();
     expect(url).toBe("https://example.com/page");
     // Regression: must not be rewritten to https://93.184.216.34/page
     expect(url).not.toContain(PINNED_IP);
@@ -50,38 +61,26 @@ describe("ssrfSafeFetch: DNS pinning", () => {
 
   test("does not override the Host header", async () => {
     const mockFetch = okFetch();
-    await ssrfSafeFetch(
-      "https://example.com/page",
-      {},
-      mockFetch as unknown as typeof globalThis.fetch,
-    );
+    await ssrfSafeFetch("https://example.com/page", {}, mockFetch.fetch);
 
-    const [, init] = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+    const [, init] = mockFetch.firstCall();
     expect(new Headers(init.headers).has("host")).toBe(false);
   });
 
   test("pins the connection to the pre-validated IP via a dispatcher", async () => {
     const mockFetch = okFetch();
-    await ssrfSafeFetch(
-      "https://example.com/page",
-      {},
-      mockFetch as unknown as typeof globalThis.fetch,
-    );
+    await ssrfSafeFetch("https://example.com/page", {}, mockFetch.fetch);
 
-    const [, init] = mockFetch.mock.calls[0] as unknown as [string, MaybeDispatcher];
+    const [, init] = mockFetch.firstCall();
     expect(init.dispatcher).toBeDefined();
   });
 
   test("resolves DNS exactly once per hop (single resolution closes the TOCTOU/rebinding window)", async () => {
     const { lookup } = await import("node:dns/promises");
-    const lookupMock = lookup as unknown as ReturnType<typeof vi.fn>;
+    const lookupMock = vi.mocked(lookup);
     lookupMock.mockClear();
     const mockFetch = okFetch();
-    await ssrfSafeFetch(
-      "https://example.com/page",
-      {},
-      mockFetch as unknown as typeof globalThis.fetch,
-    );
+    await ssrfSafeFetch("https://example.com/page", {}, mockFetch.fetch);
     // The same resolved IP must feed both the bogon check and the dispatcher
     // pin. A second resolution would reopen the rebinding window the pin closes.
     expect(lookupMock).toHaveBeenCalledTimes(1);
@@ -89,13 +88,9 @@ describe("ssrfSafeFetch: DNS pinning", () => {
 
   test("attaches no dispatcher when the URL is already a literal IP", async () => {
     const mockFetch = okFetch();
-    await ssrfSafeFetch(
-      `https://${PINNED_IP}/page`,
-      {},
-      mockFetch as unknown as typeof globalThis.fetch,
-    );
+    await ssrfSafeFetch(`https://${PINNED_IP}/page`, {}, mockFetch.fetch);
 
-    const [, init] = mockFetch.mock.calls[0] as unknown as [string, MaybeDispatcher];
+    const [, init] = mockFetch.firstCall();
     expect(init.dispatcher).toBeUndefined();
   });
 
@@ -104,10 +99,10 @@ describe("ssrfSafeFetch: DNS pinning", () => {
     await ssrfSafeFetch(
       "https://example.com/page",
       { headers: { Accept: "application/json" } },
-      mockFetch as unknown as typeof globalThis.fetch,
+      mockFetch.fetch,
     );
 
-    const [, init] = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+    const [, init] = mockFetch.firstCall();
     expect(new Headers(init.headers).get("accept")).toBe("application/json");
   });
 });

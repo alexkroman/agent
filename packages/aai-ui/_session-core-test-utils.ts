@@ -68,6 +68,15 @@ export class MockWebSocket {
     }
   }
 
+  /**
+   * Fire a raw payload at the `type` listeners, bypassing the typed
+   * `simulate*` helpers — for frames a real socket can deliver but those
+   * signatures forbid (e.g. a message whose `data` is a number).
+   */
+  dispatchRaw(type: string, payload: unknown) {
+    for (const cb of this._listeners.get(type) ?? []) cb(payload);
+  }
+
   /** Simulate a socket error. Browsers fire "error" with no payload and
    *  always follow it with "close" — tests must call simulateClose after. */
   simulateError() {
@@ -86,6 +95,32 @@ export class MockWebSocket {
 }
 
 export type ConstructorType = import("./types.ts").WebSocketConstructor;
+
+/**
+ * {@link MockWebSocket} as the session core's `WebSocket` option.
+ *
+ * It implements the slice of the constructor contract the core uses but does
+ * not structurally satisfy `WebSocketConstructor`, so the narrowing needs a
+ * cast. Import THIS rather than casting at each call site; the escape-hatch
+ * ratchet counts every occurrence.
+ */
+export const MockWebSocketConstructor = MockWebSocket as unknown as ConstructorType;
+
+/**
+ * A `WebSocket` option whose every instance is handed to `onSocket`, for
+ * tests that need the socket the core actually opened. Shares
+ * {@link MockWebSocketConstructor}'s narrowing rationale.
+ */
+export function recordingWebSocketClass(
+  onSocket: (socket: MockWebSocket) => void,
+): ConstructorType {
+  return class extends MockWebSocket {
+    constructor(url: string) {
+      super(url);
+      onSocket(this);
+    }
+  } as unknown as ConstructorType;
+}
 
 // ─── Outbound protocol contract ─────────────────────────────────────────────
 

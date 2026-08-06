@@ -7,11 +7,10 @@
  * non-fatal audio failure paths (mic release vs. survivable banner).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { type AudioMockContext, installAudioMocks } from "./_react-test-utils.ts";
+import { type AudioMockContext, fakeMediaStream, installAudioMocks } from "./_react-test-utils.ts";
 import {
-  type ConstructorType,
   lastSocket,
-  MockWebSocket,
+  MockWebSocketConstructor,
   makeConfig,
   resetLastSocket,
 } from "./_session-core-test-utils.ts";
@@ -28,7 +27,7 @@ describe("session-core error handling", () => {
     resetLastSocket();
     core = createSessionCore({
       platformUrl: "ws://localhost:3000",
-      WebSocket: MockWebSocket as unknown as ConstructorType,
+      WebSocket: MockWebSocketConstructor,
     });
   });
 
@@ -205,8 +204,7 @@ describe("session-core error handling", () => {
           this.stopped = true;
         },
       };
-      navigator.mediaDevices.getUserMedia = () =>
-        Promise.resolve({ getTracks: () => [track] } as unknown as MediaStream);
+      navigator.mediaDevices.getUserMedia = () => Promise.resolve(fakeMediaStream(track));
 
       core.connect();
       lastSocket?.simulateOpen();

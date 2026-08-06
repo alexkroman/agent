@@ -123,14 +123,20 @@ export function makeFakeProc(): FakeProc {
   };
 }
 
+/** Exactly what `ModalSandboxLike.exec` is handed — recorded verbatim. */
+type ExecCall = {
+  command: string[];
+  params: Parameters<ModalSandboxLike["exec"]>[1];
+};
+
 export function makeFakeSandbox(fakeProc: FakeProc): ModalSandboxLike & {
-  execCalls: { command: string[]; params: Record<string, unknown> }[];
+  execCalls: ExecCall[];
   /** path → content written pre-exec (agent-mode boot artifacts). */
   files: Map<string, string>;
   updateNetworkPolicy: ReturnType<typeof vi.fn>;
   terminate: ReturnType<typeof vi.fn>;
 } {
-  const execCalls: { command: string[]; params: Record<string, unknown> }[] = [];
+  const execCalls: ExecCall[] = [];
   const files = new Map<string, string>();
   return {
     sandboxId: "sb-test",
@@ -145,7 +151,7 @@ export function makeFakeSandbox(fakeProc: FakeProc): ModalSandboxLike & {
       },
     },
     exec: async (command, params) => {
-      execCalls.push({ command, params: params as unknown as Record<string, unknown> });
+      execCalls.push({ command, params });
       return fakeProc.proc;
     },
     tunnels: async () => ({

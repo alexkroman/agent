@@ -12,6 +12,19 @@ const SESSION_NOTES_TTL_MS = 86_400_000;
  * real execution happens inside the guest sandbox (see deno-harness). This
  * host-side def is a guard that refuses to evaluate code.
  */
+/** A `vi.fn()` standing in for `fetch`, however its return was inferred. */
+type MockFetch = { mock: { calls: unknown[] } };
+
+/**
+ * The `[url, init]` pair a mocked fetch recorded. `vi.fn()` types its call
+ * tuple from its own inferred signature rather than from the `fetch` call
+ * site, so reading it back needs a cast — keep it at this one seam; the
+ * escape-hatch ratchet counts every occurrence.
+ */
+function firstFetchCall(mockFetch: MockFetch): [string, RequestInit] {
+  return mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+}
+
 function runCode(code: string): Promise<unknown> {
   const { defs } = resolveAllBuiltins(["run_code"]);
   return defs.run_code?.execute({ code }, createMockToolContext()) as Promise<unknown>;
@@ -138,7 +151,7 @@ describe("resolveAllBuiltins defs", () => {
       },
       ctx,
     );
-    const callArgs = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+    const callArgs = firstFetchCall(mockFetch);
     expect(callArgs[1]).toMatchObject({
       headers: { Accept: "application/json", "x-api-key": "tok" },
     });
@@ -157,7 +170,7 @@ describe("resolveAllBuiltins defs", () => {
       },
       ctx,
     );
-    const callArgs = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+    const callArgs = firstFetchCall(mockFetch);
     // Authorization should be stripped, Accept should remain
     expect(callArgs[1]).toMatchObject({ headers: { Accept: "application/json" } });
     expect((callArgs[1].headers as Record<string, string>).Authorization).toBeUndefined();
@@ -166,7 +179,7 @@ describe("resolveAllBuiltins defs", () => {
   test("fetch_json delegates fetch without SSRF checks — platform adapter handles it", async () => {
     const mockFetch = vi.fn(async () => new Response(JSON.stringify({ ok: true })));
     const { defs } = resolveAllBuiltins(["fetch_json"], {
-      fetch: mockFetch as unknown as typeof globalThis.fetch,
+      fetch: mockFetch as typeof globalThis.fetch,
     });
     const ctx = createMockToolContext();
     // SDK tools pass through — SSRF is enforced by the network adapter in
@@ -221,7 +234,7 @@ describe("resolveAllBuiltins defs", () => {
       { title: "Result 1", url: "https://example.com/1", description: "Desc & 1" },
       { title: "Result 2", url: "https://example.com/2", description: "Desc 2" },
     ]);
-    const fetchUrl = (mockFetch.mock.calls[0] as unknown as [string])[0];
+    const fetchUrl = firstFetchCall(mockFetch)[0];
     expect(fetchUrl).toContain("html.duckduckgo.com");
     expect(fetchUrl).toContain("q=aai+sdk");
   });
@@ -417,7 +430,7 @@ describe("resolveAllBuiltins defs", () => {
       return new Response("", { status: 404 });
     });
     const { defs } = resolveAllBuiltins(["visit_webpage"], {
-      fetch: mockFetch as unknown as typeof globalThis.fetch,
+      fetch: mockFetch as typeof globalThis.fetch,
     });
     const ctx = createMockToolContext();
     const result = await defs.visit_webpage?.execute({ url: "https://evil.com/redirect" }, ctx);

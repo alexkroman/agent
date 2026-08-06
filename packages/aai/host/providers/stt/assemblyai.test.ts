@@ -90,6 +90,17 @@ async function openSession(
   })) as AssemblyAISession;
 }
 
+/**
+ * The mocked `assemblyai` module hands the adapter a {@link FakeTranscriber},
+ * but `AssemblyAISession._transcriber` is typed as the real SDK's
+ * `StreamingTranscriber` — structurally unrelated shapes, so the narrowing
+ * needs a cast. Keep it to this one seam rather than repeating it at every
+ * assertion; the escape-hatch ratchet counts each occurrence.
+ */
+function fakeOf(session: AssemblyAISession): FakeTranscriber {
+  return session._transcriber as unknown as FakeTranscriber;
+}
+
 describe("assemblyAIStt STT adapter — fixture replay", () => {
   test("maps turn events onto partial/final SttEvents", async () => {
     const fixture = JSON.parse(
@@ -105,7 +116,7 @@ describe("assemblyAIStt STT adapter — fixture replay", () => {
     session.on("final", (t) => finals.push(t));
     session.on("error", (e) => errors.push(e.message));
 
-    const fake = session._transcriber as unknown as FakeTranscriber;
+    const fake = fakeOf(session);
     for (const msg of fixture) {
       if (msg.type === "Turn") fake._fire("turn", msg as TurnEvent);
     }
@@ -149,7 +160,7 @@ describe("assemblyAIStt STT adapter — raw turn trace (AAI_DEBUG)", () => {
       apiKey: "k",
       signal: new AbortController().signal,
     })) as AssemblyAISession;
-    const fake = session._transcriber as unknown as FakeTranscriber;
+    const fake = fakeOf(session);
 
     fake._fire("turn", { transcript: "track my order T-O-999", end_of_turn: false } as TurnEvent);
     fake._fire("turn", {
@@ -188,7 +199,7 @@ describe("assemblyAIStt STT adapter — raw turn trace (AAI_DEBUG)", () => {
       apiKey: "k",
       signal: new AbortController().signal,
     })) as AssemblyAISession;
-    const fake = session._transcriber as unknown as FakeTranscriber;
+    const fake = fakeOf(session);
 
     fake._fire("turn", { transcript: "", end_of_turn: true } as TurnEvent);
     await flush();
@@ -208,7 +219,7 @@ describe("assemblyAIStt STT adapter — agent_context (Universal-3.5 Pro only)",
       { model: "universal-3-5-pro" },
       { agentContext: "Hi, how can I help you today?" },
     );
-    const fake = session._transcriber as unknown as FakeTranscriber;
+    const fake = fakeOf(session);
 
     expect(fake.params.agentContext).toBe("Hi, how can I help you today?");
 
@@ -225,7 +236,7 @@ describe("assemblyAIStt STT adapter — agent_context (Universal-3.5 Pro only)",
     const trimmed = "x".repeat(1500);
 
     const session = await openSession({ model: "u3-rt-pro" }, { agentContext: long });
-    const fake = session._transcriber as unknown as FakeTranscriber;
+    const fake = fakeOf(session);
 
     expect(fake.params.agentContext).toBe(trimmed);
 
@@ -243,7 +254,7 @@ describe("assemblyAIStt STT adapter — agent_context (Universal-3.5 Pro only)",
     expect(long.length).toBeGreaterThan(1500);
 
     const session = await openSession({ model: "universal-3-5-pro" }, { agentContext: long });
-    const fake = session._transcriber as unknown as FakeTranscriber;
+    const fake = fakeOf(session);
     expect((fake.params.agentContext as string).length).toBe(1500);
     expect(fake.params.agentContext).toContain("What is your email address?");
 
@@ -256,7 +267,7 @@ describe("assemblyAIStt STT adapter — agent_context (Universal-3.5 Pro only)",
 
   test("universal-3-5-pro: skips empty/whitespace-only agentContext, both at connect and mid-stream", async () => {
     const session = await openSession({ model: "universal-3-5-pro" }, { agentContext: "   " });
-    const fake = session._transcriber as unknown as FakeTranscriber;
+    const fake = fakeOf(session);
 
     expect(fake.params.agentContext).toBeUndefined();
 
@@ -271,7 +282,7 @@ describe("assemblyAIStt STT adapter — agent_context (Universal-3.5 Pro only)",
       { model: "universal-streaming-english" },
       { agentContext: "Hi, how can I help you today?" },
     );
-    const fake = session._transcriber as unknown as FakeTranscriber;
+    const fake = fakeOf(session);
 
     expect(fake.params.agentContext).toBeUndefined();
     expect("agentContext" in fake.params).toBe(false);
@@ -290,7 +301,7 @@ describe("assemblyAIStt STT adapter — prompt default", () => {
     // caller never used. Agents that need it supply their own.
     expect(DEFAULT_STT_PROMPT).toBe("");
     const session = await openSession({ model: "universal-3-5-pro" });
-    const fake = session._transcriber as unknown as FakeTranscriber;
+    const fake = fakeOf(session);
     expect("prompt" in fake.params).toBe(false);
     await session.close();
   });
@@ -300,14 +311,14 @@ describe("assemblyAIStt STT adapter — prompt default", () => {
       { model: "universal-3-5-pro" },
       { sttPrompt: "Terms: dosage names." },
     );
-    const fake = session._transcriber as unknown as FakeTranscriber;
+    const fake = fakeOf(session);
     expect(fake.params.prompt).toBe("Terms: dosage names.");
     await session.close();
   });
 
   test("sttPrompt: '' opts out — no prompt param at all", async () => {
     const session = await openSession({ model: "universal-3-5-pro" }, { sttPrompt: "" });
-    const fake = session._transcriber as unknown as FakeTranscriber;
+    const fake = fakeOf(session);
     expect("prompt" in fake.params).toBe(false);
     await session.close();
   });
@@ -316,18 +327,18 @@ describe("assemblyAIStt STT adapter — prompt default", () => {
 describe("assemblyAIStt STT adapter — voice focus", () => {
   test("defaults voiceFocus to near-field at connect", async () => {
     const session = await openSession({ model: "universal-3-5-pro" });
-    const fake = session._transcriber as unknown as FakeTranscriber;
+    const fake = fakeOf(session);
     expect(fake.params.voiceFocus).toBe("near-field");
     await session.close();
   });
 
   test("respects an explicit voiceFocus and disables on 'off'", async () => {
     const far = await openSession({ model: "universal-3-5-pro", voiceFocus: "far-field" });
-    expect((far._transcriber as unknown as FakeTranscriber).params.voiceFocus).toBe("far-field");
+    expect(fakeOf(far).params.voiceFocus).toBe("far-field");
     await far.close();
 
     const off = await openSession({ model: "universal-3-5-pro", voiceFocus: "off" });
-    const offFake = off._transcriber as unknown as FakeTranscriber;
+    const offFake = fakeOf(off);
     expect(offFake.params.voiceFocus).toBeUndefined();
     expect("voiceFocus" in offFake.params).toBe(false);
     await off.close();
@@ -335,7 +346,7 @@ describe("assemblyAIStt STT adapter — voice focus", () => {
 
   test("sends voiceFocusThreshold, defaulting ABOVE the service's own 0.7", async () => {
     const session = await openSession({ model: "universal-3-5-pro" });
-    const fake = session._transcriber as unknown as FakeTranscriber;
+    const fake = fakeOf(session);
     // The whole point of the default is that it is more aggressive than the
     // service's — inheriting 0.7 is the regression this pins.
     expect(fake.params.voiceFocusThreshold).toBe(DEFAULT_VOICE_FOCUS_THRESHOLD);
@@ -345,7 +356,7 @@ describe("assemblyAIStt STT adapter — voice focus", () => {
 
   test("respects an explicit voiceFocusThreshold", async () => {
     const session = await openSession({ model: "universal-3-5-pro", voiceFocusThreshold: 0.5 });
-    const fake = session._transcriber as unknown as FakeTranscriber;
+    const fake = fakeOf(session);
     expect(fake.params.voiceFocusThreshold).toBe(0.5);
     await session.close();
   });
@@ -356,7 +367,7 @@ describe("assemblyAIStt STT adapter — voice focus", () => {
       voiceFocus: "off",
       voiceFocusThreshold: 0.9,
     });
-    const fake = off._transcriber as unknown as FakeTranscriber;
+    const fake = fakeOf(off);
     expect("voiceFocusThreshold" in fake.params).toBe(false);
     await off.close();
   });
@@ -369,7 +380,7 @@ describe("assemblyAIStt STT adapter — endpointing (min/max_turn_silence)", () 
     // them independently (min from the `mode` preset, max to 1536), so sending
     // only one is how they end up inverted.
     const session = await openSession({ model: "universal-3-5-pro" });
-    const fake = session._transcriber as unknown as FakeTranscriber;
+    const fake = fakeOf(session);
     expect(fake.params.minTurnSilence).toBe(DEFAULT_MIN_TURN_SILENCE_MS);
     expect(fake.params.minTurnSilence).toBe(1600);
     expect(fake.params.maxTurnSilence).toBe(DEFAULT_MAX_TURN_SILENCE_MS);
@@ -393,7 +404,7 @@ describe("assemblyAIStt STT adapter — endpointing (min/max_turn_silence)", () 
       minTurnSilenceMs: 400,
       maxTurnSilenceMs: 5000,
     });
-    const fake = session._transcriber as unknown as FakeTranscriber;
+    const fake = fakeOf(session);
     expect(fake.params.minTurnSilence).toBe(400);
     expect(fake.params.maxTurnSilence).toBe(5000);
     await session.close();
@@ -401,7 +412,7 @@ describe("assemblyAIStt STT adapter — endpointing (min/max_turn_silence)", () 
 
   test("overriding one leaves the other at its default", async () => {
     const session = await openSession({ model: "universal-3-5-pro", minTurnSilenceMs: 200 });
-    const fake = session._transcriber as unknown as FakeTranscriber;
+    const fake = fakeOf(session);
     expect(fake.params.minTurnSilence).toBe(200);
     expect(fake.params.maxTurnSilence).toBe(DEFAULT_MAX_TURN_SILENCE_MS);
     await session.close();
@@ -416,7 +427,7 @@ describe("assemblyAIStt STT adapter — region (EU data residency)", () => {
 
   test("region: 'eu' points the SDK's streaming socket at the EU endpoint", async () => {
     const session = await openSession({ model: "universal-3-5-pro", region: "eu" });
-    const fake = session._transcriber as unknown as FakeTranscriber;
+    const fake = fakeOf(session);
     expect(fake.params.websocketBaseUrl).toBe(ASSEMBLYAI_STREAMING_EU_URL);
     expect(fake.params.websocketBaseUrl).toBe("wss://streaming.eu.assemblyai.com/v3/ws");
     await session.close();
@@ -426,15 +437,11 @@ describe("assemblyAIStt STT adapter — region (EU data residency)", () => {
     // Not pinned host-side: a stale copy of the SDK's versioned default path
     // would silently override an SDK path bump.
     const unset = await openSession({ model: "universal-3-5-pro" });
-    expect("websocketBaseUrl" in (unset._transcriber as unknown as FakeTranscriber).params).toBe(
-      false,
-    );
+    expect("websocketBaseUrl" in fakeOf(unset).params).toBe(false);
     await unset.close();
 
     const us = await openSession({ model: "universal-3-5-pro", region: "us" });
-    expect("websocketBaseUrl" in (us._transcriber as unknown as FakeTranscriber).params).toBe(
-      false,
-    );
+    expect("websocketBaseUrl" in fakeOf(us).params).toBe(false);
     await us.close();
   });
 
@@ -443,32 +450,23 @@ describe("assemblyAIStt STT adapter — region (EU data residency)", () => {
     // so the absent case must stay absent — sending a default would silently
     // disable multilingual transcription for every agent.
     const unset = await openSession({ model: "universal-3-5-pro" });
-    expect("languageCodes" in (unset._transcriber as unknown as FakeTranscriber).params).toBe(
-      false,
-    );
+    expect("languageCodes" in fakeOf(unset).params).toBe(false);
     await unset.close();
 
     const pinned = await openSession({ model: "universal-3-5-pro", languages: ["en"] });
-    expect((pinned._transcriber as unknown as FakeTranscriber).params.languageCodes).toEqual([
-      "en",
-    ]);
+    expect(fakeOf(pinned).params.languageCodes).toEqual(["en"]);
     await pinned.close();
 
     const several = await openSession({
       model: "universal-3-5-pro",
       languages: ["en", "es"],
     });
-    expect((several._transcriber as unknown as FakeTranscriber).params.languageCodes).toEqual([
-      "en",
-      "es",
-    ]);
+    expect(fakeOf(several).params.languageCodes).toEqual(["en", "es"]);
     await several.close();
 
     // An empty list is a no-op, not "pin zero languages".
     const empty = await openSession({ model: "universal-3-5-pro", languages: [] });
-    expect("languageCodes" in (empty._transcriber as unknown as FakeTranscriber).params).toBe(
-      false,
-    );
+    expect("languageCodes" in fakeOf(empty).params).toBe(false);
     await empty.close();
   });
 
@@ -476,9 +474,7 @@ describe("assemblyAIStt STT adapter — region (EU data residency)", () => {
     const sandbox = "wss://streaming.sandbox000.assemblyai-labs.com/v3/ws";
 
     const session = await openSession({ model: "universal-3-5-pro", streamingUrl: sandbox });
-    expect((session._transcriber as unknown as FakeTranscriber).params.websocketBaseUrl).toBe(
-      sandbox,
-    );
+    expect(fakeOf(session).params.websocketBaseUrl).toBe(sandbox);
     await session.close();
 
     // An explicit endpoint is a deliberate choice; the residency shorthand
@@ -488,7 +484,7 @@ describe("assemblyAIStt STT adapter — region (EU data residency)", () => {
       region: "eu",
       streamingUrl: sandbox,
     });
-    expect((both._transcriber as unknown as FakeTranscriber).params.websocketBaseUrl).toBe(sandbox);
+    expect(fakeOf(both).params.websocketBaseUrl).toBe(sandbox);
     await both.close();
   });
 });
@@ -496,7 +492,7 @@ describe("assemblyAIStt STT adapter — region (EU data residency)", () => {
 describe("assemblyAIStt STT adapter — connect budget", () => {
   test("overrides the SDK's 1000 ms connect deadline and pins the retry policy", async () => {
     const session = await openSession({ model: "universal-3-5-pro" });
-    const fake = session._transcriber as unknown as FakeTranscriber;
+    const fake = fakeOf(session);
 
     // The SDK default is 1000 ms for socket-open *plus* the server's `Begin`,
     // which a healthy connect can exceed; never inherit it.
@@ -519,7 +515,7 @@ describe("assemblyAIStt STT adapter — connect budget", () => {
 
   test("forwards explicit connect overrides, including 0 to disable", async () => {
     const slow = await openSession({ connectTimeoutMs: 9000, maxConnectRetries: 0 });
-    const slowFake = slow._transcriber as unknown as FakeTranscriber;
+    const slowFake = fakeOf(slow);
     expect(slowFake.params.connectTimeout).toBe(9000);
     expect(slowFake.params.maxConnectionRetries).toBe(0);
     await slow.close();
@@ -527,7 +523,7 @@ describe("assemblyAIStt STT adapter — connect budget", () => {
     // 0 is the SDK's "no deadline" value — it must survive as 0, not fall
     // back to the default via `??`-on-falsy.
     const unbounded = await openSession({ connectTimeoutMs: 0 });
-    expect((unbounded._transcriber as unknown as FakeTranscriber).params.connectTimeout).toBe(0);
+    expect(fakeOf(unbounded).params.connectTimeout).toBe(0);
     await unbounded.close();
   });
 });
@@ -541,7 +537,7 @@ describe("assemblyAIStt STT adapter — frame coalescing (50–1000 ms)", () => 
 
   test("buffers sub-100 ms frames and forwards one ~100 ms frame once accumulated", async () => {
     const session = await openSession({ model: "universal-3-5-pro" });
-    const fake = session._transcriber as unknown as FakeTranscriber;
+    const fake = fakeOf(session);
 
     const frame20 = new Int16Array(SAMPLES_20MS); // reused: exercises the copy
     for (let i = 0; i < 4; i++) session.sendAudio(frame20); // 80 ms — nothing yet
@@ -556,7 +552,7 @@ describe("assemblyAIStt STT adapter — frame coalescing (50–1000 ms)", () => 
 
   test("splits an over-long chunk into frames capped at 1000 ms", async () => {
     const session = await openSession({ model: "universal-3-5-pro" });
-    const fake = session._transcriber as unknown as FakeTranscriber;
+    const fake = fakeOf(session);
 
     // 1000 ms + 70 ms in a single call: forwards one 1000 ms frame, carries 70 ms.
     session.sendAudio(new Int16Array(SAMPLES_1000MS + 1120));
@@ -571,7 +567,7 @@ describe("assemblyAIStt STT adapter — frame coalescing (50–1000 ms)", () => 
 
   test("drops a sub-50 ms tail on close (below AssemblyAI's floor)", async () => {
     const session = await openSession({ model: "universal-3-5-pro" });
-    const fake = session._transcriber as unknown as FakeTranscriber;
+    const fake = fakeOf(session);
 
     session.sendAudio(new Int16Array(SAMPLES_20MS)); // 20 ms, held below 100 ms
     expect(fake.sentAudio.length).toBe(0);

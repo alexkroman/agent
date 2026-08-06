@@ -205,7 +205,13 @@ export type AudioMockOptions = {
   forceSampleRate?: number;
 };
 
-const g = globalThis as unknown as Record<string, unknown>;
+/**
+ * `globalThis` as a mutable bag, for installing incomplete DOM mocks
+ * (`AudioContext`, `navigator`) that do not satisfy the real interfaces.
+ * Exported so tests share this one widening; the escape-hatch ratchet counts
+ * every occurrence.
+ */
+export const g = globalThis as unknown as Record<string, unknown>;
 
 export function installAudioMocks(
   mockOpts: AudioMockOptions = {},
@@ -273,4 +279,23 @@ export function findWorkletNode(nodes: MockAudioWorkletNode[], name: string): Mo
   const node = nodes.find((n) => n.name === name);
   if (!node) throw new Error(`No worklet node named "${name}"`);
   return node;
+}
+
+/**
+ * Fire a worklet node's `onprocessorerror`, the way the browser does when a
+ * processor throws. `MockAudioWorkletNode` does not declare the handler, so
+ * reaching it needs a cast — keep it at this one seam; the escape-hatch
+ * ratchet counts every occurrence.
+ */
+export function crashWorklet(node: MockAudioWorkletNode): void {
+  (node as unknown as { onprocessorerror: () => void }).onprocessorerror();
+}
+
+/**
+ * A `MediaStream` carrying just the tracks a test cares about. The real
+ * interface has far more surface than `getUserMedia` consumers touch, so the
+ * stand-in needs a cast — keep it at this one seam.
+ */
+export function fakeMediaStream(...tracks: { stop: () => void }[]): MediaStream {
+  return { getTracks: () => tracks } as unknown as MediaStream;
 }

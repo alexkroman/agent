@@ -137,11 +137,21 @@ async function openSession(): Promise<{
   return { session, controller };
 }
 
+/**
+ * The mocked `@cartesia/cartesia-js` module hands the adapter a
+ * {@link FakeTTSWS}, but `CartesiaSession._ws` is typed as the real SDK's
+ * `TTSWS` — structurally unrelated shapes, so the narrowing needs a cast.
+ * Keep it at this one seam; the escape-hatch ratchet counts every occurrence.
+ */
+function fakeWs(session: CartesiaSession): FakeTTSWS {
+  return session._ws as unknown as FakeTTSWS;
+}
+
 describe("cartesia TTS adapter", () => {
   test("generation config is set once on the context; per-send payloads carry only transcript/continue", async () => {
     const { session, controller } = await openSession();
 
-    const ws = session._ws as unknown as FakeTTSWS;
+    const ws = fakeWs(session);
     expect(ws.contexts[0]?.options).toMatchObject({
       model_id: "sonic-2",
       language: "en",
@@ -226,7 +236,7 @@ describe("cartesia TTS adapter", () => {
     const turn1 = session._currentContextId();
     const audioLengths: number[] = [];
     session.on("audio", (pcm) => audioLengths.push(pcm.length));
-    const ws = session._ws as unknown as { _fire(event: string, payload: unknown): void };
+    const ws = fakeWs(session);
 
     session.sendText("hello");
     // A chunk for the active context plays normally.
@@ -252,7 +262,7 @@ describe("cartesia TTS adapter", () => {
     await flush();
 
     // Cartesia finishes synthesizing and emits `done` for the flushed context.
-    const ws = session._ws as unknown as { _fire(event: string, payload: unknown): void };
+    const ws = fakeWs(session);
     ws._fire("done", { context_id: turn1 });
 
     // A late cancel (e.g. client `cancel` event after the turn completed
@@ -293,7 +303,7 @@ describe("cartesia TTS adapter", () => {
 
     // Cartesia's per-context 400 for a cancelled/retired context (its `done`
     // raced our `cancel` on the wire). Must not become a fatal tts_stream_error.
-    const ws = session._ws as unknown as { _fire(event: string, payload: unknown): void };
+    const ws = fakeWs(session);
     ws._fire(
       "error",
       new Error(
@@ -325,7 +335,7 @@ describe("cartesia TTS adapter", () => {
     const errors: string[] = [];
     session.on("error", (e) => errors.push(e.code));
 
-    const ws = session._ws as unknown as { _fire(event: string, payload: unknown): void };
+    const ws = fakeWs(session);
     ws._fire("error", new Error("connection reset by peer"));
     await flush();
 

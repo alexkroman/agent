@@ -8,9 +8,9 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  type ConstructorType,
   lastSocket,
-  MockWebSocket,
+  type MockWebSocket,
+  MockWebSocketConstructor,
   makeConfig,
   resetLastSocket,
 } from "./_session-core-test-utils.ts";
@@ -61,7 +61,7 @@ describe("initAudioCapture races", () => {
     createVoiceIOMock.mockClear();
     core = createSessionCore({
       platformUrl: "ws://localhost:3000",
-      WebSocket: MockWebSocket as unknown as ConstructorType,
+      WebSocket: MockWebSocketConstructor,
     });
   });
 

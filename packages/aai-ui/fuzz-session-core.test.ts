@@ -18,7 +18,11 @@
 import fc from "fast-check";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installAudioMocks } from "./_react-test-utils.ts";
-import { MockWebSocket, makeConfig } from "./_session-core-test-utils.ts";
+import {
+  type MockWebSocket,
+  makeConfig,
+  recordingWebSocketClass,
+} from "./_session-core-test-utils.ts";
 import { createSessionCore } from "./session-core.ts";
 import { loadAudioModules } from "./session-core-audio-setup.ts";
 import type { SessionCore, SessionSnapshot } from "./session-core-types.ts";
@@ -340,12 +344,9 @@ describe("fuzz: session-core interleavings", () => {
     // run would be reported against this one and mislead the shrinker.
     rejections.length = 0;
     let socket: MockWebSocket | null = null;
-    const WS = class extends MockWebSocket {
-      constructor(url: string) {
-        super(url);
-        socket = this;
-      }
-    } as unknown as import("./types.ts").WebSocketConstructor;
+    const WS = recordingWebSocketClass((s) => {
+      socket = s;
+    });
 
     const core = createSessionCore({ platformUrl: "https://host/agent/", WebSocket: WS });
     const log: string[] = [];

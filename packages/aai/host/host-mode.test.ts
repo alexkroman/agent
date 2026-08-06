@@ -70,6 +70,16 @@ function openMockWs(): MockWebSocket {
   return ws;
 }
 
+/**
+ * `MockWebSocket` implements the slice of the socket contract the host
+ * session actually touches, but it does not structurally satisfy
+ * `SessionWebSocket`. Narrow at this one seam rather than at every
+ * `startHostSession` call; the escape-hatch ratchet counts each occurrence.
+ */
+function asSessionWs(ws: MockWebSocket): SessionWebSocket {
+  return ws as unknown as SessionWebSocket;
+}
+
 describe("isHostAllowed", () => {
   // Host mode lets an unauthenticated client replace the agent definition and
   // spend the operator's provider credentials, so it must be opt-in: an unset
@@ -190,7 +200,7 @@ describe("startHostSession (deferred host handshake)", () => {
     let captured: RuntimeOptions | undefined;
     let startSession: ReturnType<typeof vi.fn> = vi.fn();
 
-    startHostSession(ws as unknown as SessionWebSocket, {
+    startHostSession(asSessionWs(ws), {
       // Host mode is opt-in, so the happy path must enable it explicitly.
       env: { AAI_ALLOW_HOST: "1" },
       logger: silentLogger,
@@ -239,7 +249,7 @@ describe("startHostSession (deferred host handshake)", () => {
       const ws = openMockWs();
       const createRuntime = vi.fn();
 
-      startHostSession(ws as unknown as SessionWebSocket, {
+      startHostSession(asSessionWs(ws), {
         env: { AAI_ALLOW_HOST: "1" },
         baseAgent: { ...s2sBase, s2s: assemblyAIS2s() },
         logger: silentLogger,
@@ -263,7 +273,7 @@ describe("startHostSession (deferred host handshake)", () => {
       const ws = openMockWs();
       const createRuntime = vi.fn((o: RuntimeOptions) => makeFakeRuntime(o).runtime);
 
-      startHostSession(ws as unknown as SessionWebSocket, {
+      startHostSession(asSessionWs(ws), {
         env: { AAI_ALLOW_HOST: "1", ASSEMBLYAI_API_KEY: "k" },
         baseAgent: { ...s2sBase, s2s: assemblyAIS2s() },
         logger: silentLogger,
@@ -279,7 +289,7 @@ describe("startHostSession (deferred host handshake)", () => {
       const ws = openMockWs();
       const createRuntime = vi.fn((o: RuntimeOptions) => makeFakeRuntime(o).runtime);
 
-      startHostSession(ws as unknown as SessionWebSocket, {
+      startHostSession(asSessionWs(ws), {
         env: { AAI_ALLOW_HOST: "1", ASSEMBLYAI_API_KEY: "k" },
         baseAgent: { ...s2sBase, s2s: assemblyAIS2s() },
         logger: silentLogger,
@@ -297,7 +307,7 @@ describe("startHostSession (deferred host handshake)", () => {
       const ws = openMockWs();
       let captured: RuntimeOptions | undefined;
 
-      startHostSession(ws as unknown as SessionWebSocket, {
+      startHostSession(asSessionWs(ws), {
         env: { AAI_ALLOW_HOST: "1" },
         logger: silentLogger,
         createRuntime: (o) => {
@@ -319,7 +329,7 @@ describe("startHostSession (deferred host handshake)", () => {
     const ws = openMockWs();
     const createRuntime = vi.fn();
 
-    startHostSession(ws as unknown as SessionWebSocket, {
+    startHostSession(asSessionWs(ws), {
       env: { AAI_ALLOW_HOST: "0" },
       logger: silentLogger,
       createRuntime,
@@ -339,7 +349,7 @@ describe("startHostSession (deferred host handshake)", () => {
     const ws = openMockWs();
     let captured: RuntimeOptions | undefined;
 
-    startHostSession(ws as unknown as SessionWebSocket, {
+    startHostSession(asSessionWs(ws), {
       env: { AAI_ALLOW_HOST: "1", ASSEMBLYAI_API_KEY: "operator" },
       logger: silentLogger,
       createRuntime: (o) => {
@@ -366,7 +376,7 @@ describe("startHostSession (deferred host handshake)", () => {
     const ws = openMockWs();
     const createRuntime = vi.fn();
 
-    startHostSession(ws as unknown as SessionWebSocket, {
+    startHostSession(asSessionWs(ws), {
       env: { AAI_ALLOW_HOST: "1" },
       logger: silentLogger,
       createRuntime,
@@ -404,7 +414,7 @@ describe("startHostSession (deferred host handshake)", () => {
     const envGate = Promise.withResolvers<Record<string, string>>();
     let startSession: ReturnType<typeof vi.fn> = vi.fn();
 
-    startHostSession(ws as unknown as SessionWebSocket, {
+    startHostSession(asSessionWs(ws), {
       env: envGate.promise,
       allowHost: true,
       logger: silentLogger,
@@ -428,7 +438,7 @@ describe("startHostSession (deferred host handshake)", () => {
   test("a rejected env fetch rejects the handshake instead of hanging the socket", async () => {
     const ws = openMockWs();
     const createRuntime = vi.fn();
-    startHostSession(ws as unknown as SessionWebSocket, {
+    startHostSession(asSessionWs(ws), {
       env: Promise.reject(new Error("vault down")),
       allowHost: true,
       logger: silentLogger,
@@ -450,7 +460,7 @@ describe("startHostSession (deferred host handshake)", () => {
     // DATABASE_URL-backed pg pool) in the server process.
     const ws = openMockWs();
     let shutdown: ReturnType<typeof vi.fn> | undefined;
-    startHostSession(ws as unknown as SessionWebSocket, {
+    startHostSession(asSessionWs(ws), {
       env: { AAI_ALLOW_HOST: "1" },
       logger: silentLogger,
       createRuntime: (o) => {
@@ -473,7 +483,7 @@ describe("startHostSession (deferred host handshake)", () => {
     try {
       const ws = openMockWs();
       const logger = makeLogger();
-      startHostSession(ws as unknown as SessionWebSocket, {
+      startHostSession(asSessionWs(ws), {
         env: { AAI_ALLOW_HOST: "1" },
         logger,
       });
@@ -490,7 +500,7 @@ describe("startHostSession (deferred host handshake)", () => {
     const ws = openMockWs();
     const createRuntime = vi.fn();
 
-    startHostSession(ws as unknown as SessionWebSocket, {
+    startHostSession(asSessionWs(ws), {
       // Enabled, so the rejection below is attributable to the bad frame.
       env: { AAI_ALLOW_HOST: "1" },
       logger: silentLogger,
@@ -515,7 +525,7 @@ describe("startHostSession (deferred host handshake)", () => {
     const logger = makeLogger();
 
     let core: ReturnType<typeof createSessionCore> | undefined;
-    wireSessionSocket(ws as unknown as SessionWebSocket, {
+    wireSessionSocket(asSessionWs(ws), {
       sessions: createOwnedMap(),
       logger,
       readyConfig: { audioFormat: "pcm16", sampleRate: 16_000, ttsSampleRate: 24_000 },
