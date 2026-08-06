@@ -21,6 +21,12 @@
  * bundler resolves the SDK via its dist exports, and without a built dist
  * the SDK imports are silently left external — a harness that "builds"
  * but crashes on import inside the sandbox, which has no node_modules.
+ *
+ * **It builds only when NOT already inside a turbo task** (`TURBO_HASH`),
+ * where the build is turbo's job and rebuilding races the run's other tasks —
+ * see the comment on that branch below. So the mtime staleness check serves
+ * the direct callers (`predev`, `predeploy:modal`, a bare `vitest`), and turbo
+ * runs get a verification instead.
  */
 
 import { execFileSync } from "node:child_process";
@@ -54,6 +60,38 @@ export function ensureGuestHarness() {
   // The caller points at a harness of their own — trust it.
   if (process.env.GUEST_HARNESS_PATH) return;
   const builtAt = existsSync(harnessPath) ? statSync(harnessPath).mtimeMs : 0;
+  // Inside a turbo task, VERIFY — never build. Turbo already orders
+  // `aai-guest#build` ahead of every consumer (`^build` on aai-server's test
+  // task, `build` on check:integration), and it decides staleness by hashing
+  // inputs, which is correct where the mtime heuristic below is merely a
+  // guess. The guess is WRONG in the ordinary case: a cache HIT restores
+  // `dist/harness.mjs` with the archived mtime, so an unrelated edit anywhere
+  // in `packages/aai` makes a byte-correct harness look stale, and this
+  // globalSetup then spawns a NESTED `turbo run build` inside the parent
+  // turbo run. Two tsdown processes then write `dist/` while sibling tasks
+  // read it: `aai-studio-server#test` (no globalSetup of its own) and
+  // `aai-server#check:integration` both fail with "Guest harness not built"
+  // or MODULE_NOT_FOUND on `aai-guest`, naming a file nothing in their own
+  // package touched. It is the mirror image of the race documented in
+  // `packages/aai-server/turbo.json` — that comment notes this script cannot
+  // wait out a harness being rebuilt underneath it; this is the same script
+  // BEING that rebuild.
+  //
+  // A missing harness under turbo is therefore a dependency-graph bug, not
+  // something to paper over by building: the task that needs it failed to
+  // declare it, and every other task in the run is one unlucky interleaving
+  // from the same failure. Say so instead.
+  if (process.env.TURBO_HASH) {
+    if (builtAt === 0) {
+      throw new Error(
+        "Guest harness not built, and this task runs under turbo — a rebuild " +
+          "here would race sibling tasks reading dist/. Declare the build " +
+          "instead: add `^build` (or `aai-guest#build`) to this task's " +
+          "dependsOn in turbo.json.",
+      );
+    }
+    return;
+  }
   if (builtAt > Math.max(newestSourceMtime(guestDir), newestSourceMtime(sdkDir))) return;
   console.info(
     builtAt === 0
