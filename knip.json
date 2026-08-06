@@ -30,7 +30,6 @@
         "stryker*.config.mjs"
       ],
       "ignoreDependencies": [
-        "ws",
         "@stryker-mutator/api"
       ]
     },

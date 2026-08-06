@@ -78,6 +78,10 @@ jobs:
       - run: |
           pnpm exec turbo run check:publint check:attw check:typecheck docs
           pnpm run check:knip
+          # `turbo run lint` above is per-PACKAGE, and scripts/ is not a
+          # package — so until this line it was the one source directory in
+          # the repo that no lint job touched.
+          pnpm run lint:scripts
           pnpm run check:syncpack
           pnpm run check:sherif
           pnpm run check:markdown

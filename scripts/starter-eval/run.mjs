@@ -8,22 +8,23 @@
  * server and guest path the browser does, but yields structured data:
  * step count, tool calls, and whether test_agent ended green.
  *
- *   node scripts/starter-eval.mjs [--only <substring>] [--out <file>]
+ *   node scripts/starter-eval/run.mjs [--only <substring>] [--out <file>]
  *
  * Not wired into CI: it spends real tokens on the caller's own key.
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { homedir } from "node:os";
+import path from "node:path";
+import { EventSourceParserStream } from "eventsource-parser/stream";
 import {
   checkCapabilities,
   checkMode,
   checkUi,
   EXPECTATIONS,
   parseLoadedConfig,
-} from "./starter-expectations.mjs";
-import { createRequire } from "node:module";
-import { homedir } from "node:os";
-import path from "node:path";
+} from "./expectations.mjs";
 
 const ORIGIN = process.env.AAI_ORIGIN ?? "http://127.0.0.1:8080";
 
@@ -87,7 +88,8 @@ function redExcerpt(name, out) {
  * `parseLoadedConfig` reads `lastTestAgentOutput`, never this, so dropping the
  * config line here cannot affect the capability check.
  */
-const TEST_AGENT_PREAMBLE = /^\s*Bundle loaded[^.]*\.\s*Agent "[^"]*" \([a-z0-9]+ mode\)[^\n.]*\.\s*/i;
+const TEST_AGENT_PREAMBLE =
+  /^\s*Bundle loaded[^.]*\.\s*Agent "[^"]*" \([a-z0-9]+ mode\)[^\n.]*\.\s*/i;
 
 /** One failed test_agent run, reduced to what actually failed. */
 function failureExcerpt(out) {
@@ -129,6 +131,100 @@ async function api(key, endpoint, init = {}) {
 }
 
 /**
+ * The part carried by one SSE message, or `undefined` when it carries none —
+ * the `[DONE]` sentinel, an unparsable frame, or a bare scalar. `null` and
+ * scalars are framing noise rather than parts, and yielding one would only
+ * fault in `applyPart` on the first property read.
+ *
+ * A non-JSON frame is skipped rather than thrown on: one malformed message is
+ * not worth losing an eval turn that may already have run for minutes.
+ */
+function parseSseData(data) {
+  if (!data || data === "[DONE]") return;
+  let part;
+  try {
+    part = JSON.parse(data);
+  } catch {
+    return;
+  }
+  return typeof part === "object" && part !== null ? part : undefined;
+}
+
+/**
+ * Yield each parsed SSE part from a streaming response body.
+ *
+ * Framing is `eventsource-parser`'s job, not ours — it already ships in this
+ * repo (`aai-studio-client` consumes it) and it handles the parts a
+ * split-on-newline loop gets subtly wrong: `\r\n` and lone-`\r` delimiters,
+ * multi-line `data:` fields joined with a newline, comment/keep-alive lines,
+ * a BOM, and field values with no space after the colon.
+ */
+async function* ssePartsFrom(body) {
+  const messages = body
+    .pipeThrough(new TextDecoderStream())
+    .pipeThrough(new EventSourceParserStream());
+  for await (const message of messages) {
+    const part = parseSseData(message.data);
+    if (part !== undefined) yield part;
+  }
+}
+
+/** Fold one `tool-output-available` result into the summary. */
+function recordToolOutput(summary, name, out) {
+  if (name === "test_agent") {
+    summary.testAgentRuns.push({
+      buildFailed: /error TS\d|Type check failed|Build failed|failed to load/i.test(out),
+      testsFailed: /Tests: FAILED/i.test(out),
+      excerpt: failureExcerpt(out),
+    });
+    summary.lastTestAgentOutput = out;
+  }
+  // Any verification that came back red, whichever tool ran it.
+  //
+  // Counting only test_agent makes the metric movable by reordering tools: an
+  // agent whose cheaper checks catch the errors first scores zero repairs
+  // while having written exactly the same wrong code. That reordering IS
+  // worth something — early feedback beats a build per fix — but it is a
+  // different thing from getting the code right, and optimizing one number
+  // for both is how you end up congratulating yourself. write_file/edit_file
+  // are in the set because their results now carry post-write type
+  // diagnostics (check_types stays for transcripts predating its removal).
+  const verifies =
+    name === "test_agent" ||
+    name === "check_types" ||
+    name === "write_file" ||
+    name === "edit_file";
+  if (verifies && /error TS\d/i.test(out)) {
+    summary.redChecks.push(name);
+    // Keep the text, not just the count. A run that thrashes on cheap checks
+    // and never builds reports zero `repairs` while being the worst run of
+    // the set — without the excerpt there is nothing to diagnose it from
+    // afterwards.
+    summary.redExcerpts.push(redExcerpt(name, out));
+  }
+}
+
+/** Fold one stream part into the running summary. */
+function applyPart(summary, pending, part) {
+  const type = typeof part.type === "string" ? part.type : "";
+  if (type === "text-delta" && typeof part.delta === "string") {
+    summary.text += part.delta;
+    return;
+  }
+  if (type.startsWith("tool-input-available")) {
+    pending.set(part.toolCallId, part.toolName);
+    summary.toolCalls.push(part.toolName);
+    return;
+  }
+  if (type.startsWith("tool-output-available")) {
+    const out = typeof part.output === "string" ? part.output : JSON.stringify(part.output ?? "");
+    recordToolOutput(summary, pending.get(part.toolCallId), out);
+    return;
+  }
+  if (type === "error") summary.errors.push(String(part.errorText ?? "error"));
+}
+
+/**
  * Stream one turn and summarize it. The guest speaks the AI SDK UI message
  * stream, so each SSE `data:` line is a typed part — counting `tool-input-*`
  * and reading `tool-output-*` is how step behavior is observed without
@@ -145,7 +241,7 @@ async function runTurn(key, url, prompt) {
     signal: AbortSignal.timeout(TURN_TIMEOUT_MS),
     dispatcher: streamDispatcher,
   });
-  if (!res.ok || !res.body) {
+  if (!(res.ok && res.body)) {
     throw new Error(`chat -> ${res.status}: ${(await res.text()).slice(0, 300)}`);
   }
 
@@ -161,69 +257,8 @@ async function runTurn(key, url, prompt) {
   };
   const pending = new Map(); // toolCallId -> toolName
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      const payload = line.slice(6).trim();
-      if (!payload || payload === "[DONE]") continue;
-      let part;
-      try {
-        part = JSON.parse(payload);
-      } catch {
-        continue;
-      }
-      if (part.type === "text-delta" && typeof part.delta === "string") summary.text += part.delta;
-      if (typeof part.type === "string" && part.type.startsWith("tool-input-available")) {
-        pending.set(part.toolCallId, part.toolName);
-        summary.toolCalls.push(part.toolName);
-      }
-      if (typeof part.type === "string" && part.type.startsWith("tool-output-available")) {
-        const name = pending.get(part.toolCallId);
-        const out =
-          typeof part.output === "string" ? part.output : JSON.stringify(part.output ?? "");
-        if (name === "test_agent") {
-          summary.testAgentRuns.push({
-            buildFailed: /error TS\d|Type check failed|Build failed|failed to load/i.test(out),
-            testsFailed: /Tests: FAILED/i.test(out),
-            excerpt: failureExcerpt(out),
-          });
-          summary.lastTestAgentOutput = out;
-        }
-        // Any verification that came back red, whichever tool ran it.
-        //
-        // Counting only test_agent makes the metric movable by reordering
-        // tools: an agent whose cheaper checks catch the errors first scores
-        // zero repairs while having written exactly the same wrong code.
-        // That reordering IS worth something — early feedback beats a build
-        // per fix — but it is a different thing from getting the code right,
-        // and optimizing one number for both is how you end up
-        // congratulating yourself. write_file/edit_file are in the set
-        // because their results now carry post-write type diagnostics
-        // (check_types stays for transcripts predating its removal).
-        const verifies =
-          name === "test_agent" ||
-          name === "check_types" ||
-          name === "write_file" ||
-          name === "edit_file";
-        if (verifies && /error TS\d/i.test(out)) {
-          summary.redChecks.push(name);
-          // Keep the text, not just the count. A run that thrashes on cheap
-          // checks and never builds reports zero `repairs` while being
-          // the worst run of the set — without the excerpt there is nothing
-          // to diagnose it from afterwards.
-          summary.redExcerpts.push(redExcerpt(name, out));
-        }
-      }
-      if (part.type === "error") summary.errors.push(String(part.errorText ?? "error"));
-    }
+  for await (const part of ssePartsFrom(res.body)) {
+    applyPart(summary, pending, part);
   }
   summary.ms = Date.now() - started;
   return summary;
@@ -272,8 +307,9 @@ function verdict(s, expectation, files) {
   const reasons = [];
   if (s.testAgentRuns.length === 0) reasons.push("never-verified");
   else if (!built) reasons.push("verified-broken");
-  if (caps.missing.length) reasons.push(`missing:${caps.missing.join("/")}`);
-  if (caps.missingBuiltins.length) reasons.push(`missing-builtin:${caps.missingBuiltins.join("/")}`);
+  if (caps.missing.length > 0) reasons.push(`missing:${caps.missing.join("/")}`);
+  if (caps.missingBuiltins.length > 0)
+    reasons.push(`missing-builtin:${caps.missingBuiltins.join("/")}`);
   if (caps.tooFewTools) reasons.push(`too-few-tools:${caps.toolCount}`);
   if (!mode.ok) reasons.push(mode.note);
   if (!ui.ok) reasons.push(ui.note);
@@ -334,12 +370,14 @@ for (const e of EXPECTATIONS) {
     throw new Error(`expectation requires a UI but the prompt never asks for one: ${e.label}`);
   }
   for (const b of e.builtins ?? []) {
-    if (!templated && !starter.prompt.includes(b)) {
-      throw new Error(`expectation requires builtin ${b} but the prompt never names it: ${e.label}`);
+    if (!(templated || starter.prompt.includes(b))) {
+      throw new Error(
+        `expectation requires builtin ${b} but the prompt never names it: ${e.label}`,
+      );
     }
   }
   for (const b of e.builtinDelegation ?? []) {
-    if (!templated && !starter.prompt.includes(b)) {
+    if (!(templated || starter.prompt.includes(b))) {
       throw new Error(`builtinDelegation names ${b}, which the prompt never asks for: ${e.label}`);
     }
   }
@@ -355,7 +393,9 @@ for (const e of EXPECTATIONS) {
   }
 }
 
-const cases = allStarters.filter((c) => !only || c.label.toLowerCase().includes(only.toLowerCase()));
+const cases = allStarters.filter(
+  (c) => !only || c.label.toLowerCase().includes(only.toLowerCase()),
+);
 if (cases.length === 0) throw new Error(`no starter matched ${only}`);
 
 const results = [];
@@ -363,7 +403,9 @@ const plan = [];
 for (let rep = 0; rep < repeat; rep++) for (const c of cases) plan.push({ ...c, rep });
 for (const [i, c] of plan.entries()) {
   const project = `eval-${Date.now().toString(36)}-${i}`;
-  process.stderr.write(`\n[${i + 1}/${plan.length}] r${c.rep + 1} ${c.label}\n  project ${project} … `);
+  process.stderr.write(
+    `\n[${i + 1}/${plan.length}] r${c.rep + 1} ${c.label}\n  project ${project} … `,
+  );
   try {
     await api(key, "/projects", { method: "POST", body: JSON.stringify({ name: project }) });
     const session = await api(key, `/projects/${project}/session`, {
@@ -396,8 +438,8 @@ for (const [i, c] of plan.entries()) {
     process.stderr.write(
       `${v.shippable ? "SHIPPABLE" : "NOT-SHIPPABLE"}  tools=${v.toolCalls} ` +
         `repairs=${v.failedTestAgentRuns} red=${v.redChecks}  ${v.seconds}s` +
-        (v.reasons.length ? `  [${v.reasons.join(" ")}]` : "") +
-        `\n`,
+        (v.reasons.length > 0 ? `  [${v.reasons.join(" ")}]` : "") +
+        "\n",
     );
   } catch (err) {
     results.push({ label: c.label, rep: c.rep, project, error: String(err).slice(0, 300) });

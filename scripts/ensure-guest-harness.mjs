@@ -49,7 +49,7 @@ function newestSourceMtime(dir) {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) {
       newest = Math.max(newest, newestSourceMtime(path));
-    } else if (!entry.name.endsWith(".test.ts") && !entry.name.endsWith(".tsbuildinfo")) {
+    } else if (!(entry.name.endsWith(".test.ts") || entry.name.endsWith(".tsbuildinfo"))) {
       newest = Math.max(newest, statSync(path).mtimeMs);
     }
   }

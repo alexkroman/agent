@@ -73,6 +73,7 @@ if [ "$MODE" = "--local" ]; then
   if ! pnpm exec turbo run \
     build typecheck lint check:publint \
     check:syncpack check:sherif check:knip \
+    lint:scripts \
     test \
     --continue; then
     echo -e "\n${RED}Some checks failed.${NC}"
@@ -90,6 +91,7 @@ else
   if ! pnpm exec turbo run \
     build typecheck lint check:publint check:attw \
     check:syncpack check:sherif check:knip check:markdown \
+    lint:scripts \
     test check:typecheck check:integration docs \
     --continue; then
     echo -e "\n${RED}Some checks failed.${NC}"

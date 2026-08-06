@@ -211,7 +211,7 @@ export const EXPECTATIONS = [
  */
 export function parseLoadedConfig(text) {
   const m = /Agent "([^"]*)" \(([a-z0-9]+) mode\), tools: ([^\n.]*)/i.exec(text ?? "");
-  if (!m) return undefined;
+  if (!m) return;
   const raw = (m[3] ?? "").trim();
   return {
     name: m[1],
@@ -223,14 +223,13 @@ export function parseLoadedConfig(text) {
 /** Body of the `tools: { ... }` object literal, brace-matched. */
 function toolsBlock(source) {
   const at = source.search(/\btools\s*:\s*\{/);
-  if (at === -1) return undefined;
+  if (at === -1) return;
   const open = source.indexOf("{", at);
   let depth = 0;
   for (let i = open; i < source.length; i++) {
     if (source[i] === "{") depth++;
     else if (source[i] === "}" && --depth === 0) return source.slice(open + 1, i);
   }
-  return undefined;
 }
 
 /** Tool keys declared in agent.ts — the fallback when nothing ever loaded. */
@@ -269,9 +268,7 @@ export function toolDescriptionsFromSource(source) {
   const out = [];
   // Single, double and template quotes; descriptions routinely contain
   // apostrophes, so the character class per quote style matters.
-  for (const m of (source ?? "").matchAll(
-    /description\s*:\s*(?:"([^"]*)"|'([^']*)'|`([^`]*)`)/g,
-  )) {
+  for (const m of (source ?? "").matchAll(/description\s*:\s*(?:"([^"]*)"|'([^']*)'|`([^`]*)`)/g)) {
     out.push(m[1] ?? m[2] ?? m[3] ?? "");
   }
   return out;

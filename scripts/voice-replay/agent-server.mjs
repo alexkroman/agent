@@ -2,16 +2,19 @@
 // replay.py. Every turn-taking knob is a LAB_* env var so an A/B needs no code
 // edit — see scripts/README.md.
 //
-// Imports reach into packages/aai by RELATIVE path rather than by package name
-// (which the repo otherwise requires): `scripts/` is not a workspace package,
-// so nothing links `@alexkroman1/aai` into a node_modules above it and a bare
-// specifier cannot resolve here. Run with `--conditions=@dev/source`, which is
-// what maps these to TypeScript source.
-import { agent } from "../../packages/aai/index.ts";
-import { createRuntime, createServer } from "../../packages/aai/host/runtime-barrel.ts";
-import { anthropic } from "../../packages/aai/sdk/providers/llm-barrel.ts";
-import { assemblyAIStt } from "../../packages/aai/sdk/providers/stt-barrel.ts";
-import { assemblyAITts } from "../../packages/aai/sdk/providers/tts-barrel.ts";
+// Imported by PACKAGE NAME, like every other cross-package import in the repo.
+// That works because the root package.json takes `@alexkroman1/aai` as a
+// `workspace:*` devDependency purely so this file can — `scripts/` is not
+// itself a workspace package, so without that link a bare specifier has
+// nothing to resolve against and these were relative paths reaching into
+// `packages/aai/`, the one thing `noRestrictedImports` exists to forbid.
+// Run with `--conditions=@dev/source`, which maps the subpaths to TS source.
+
+import { agent } from "@alexkroman1/aai";
+import { anthropic } from "@alexkroman1/aai/llm";
+import { createRuntime, createServer } from "@alexkroman1/aai/runtime";
+import { assemblyAIStt } from "@alexkroman1/aai/stt";
+import { assemblyAITts } from "@alexkroman1/aai/tts";
 
 const num = (k, d) => (process.env[k] !== undefined ? Number(process.env[k]) : d);
 const str = (k, d) => (process.env[k] !== undefined ? process.env[k] : d);
@@ -46,7 +49,13 @@ const runtime = createRuntime({ agent: base, env, providerEnv: env });
 const server = createServer({ runtime, name: "turnlab", env, hostBaseAgent: base });
 const port = num("LAB_PORT", 8791);
 await server.listen(port);
-console.log(JSON.stringify({ ready: true, port, sttOpts,
-  minBargeInWords: base.minBargeInWords,
-  interruptionMinDurationMs: base.interruptionMinDurationMs,
-  falseInterruptionTimeoutMs: base.falseInterruptionTimeoutMs }));
+console.log(
+  JSON.stringify({
+    ready: true,
+    port,
+    sttOpts,
+    minBargeInWords: base.minBargeInWords,
+    interruptionMinDurationMs: base.interruptionMinDurationMs,
+    falseInterruptionTimeoutMs: base.falseInterruptionTimeoutMs,
+  }),
+);

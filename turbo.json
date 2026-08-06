@@ -16,7 +16,13 @@
     "npm_config_noproxy",
     "NODE_EXTRA_CA_CERTS",
     "SSL_CERT_FILE",
-    "SSL_CERT_DIR"
+    "SSL_CERT_DIR",
+    "ASSEMBLYAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "GUEST_HARNESS_PATH",
+    "TURBO_HASH",
+    "AAI_ORIGIN",
+    "AAI_STEP_CAP_HINT"
   ],
   "tasks": {
     "build": {
@@ -156,6 +162,12 @@
     "//#check:markdown": {
       "inputs": [
         "**/*.md"
+      ]
+    },
+    "//#lint:scripts": {
+      "inputs": [
+        "scripts/**",
+        "biome.json"
       ]
     },
     "docs": {

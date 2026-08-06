@@ -59,8 +59,20 @@ const PATTERNS = [
   { label: "as unknown as", re: "\\bas unknown as\\b" },
 ];
 
-// Only count source under packages/, never built output.
-const PATHSPECS = ["packages", ":!packages/**/dist/**"];
+// Only count source under packages/ and scripts/, never built output.
+// `scripts/` is included for the same reason it is linted: a `biome-ignore`
+// added to repo tooling is the same debt as one added to shipped source, and
+// leaving it uncounted makes `scripts/` the cheapest place to hide one.
+// This file is excluded from its own scan — not as an exemption, but because
+// it is the only file whose SOURCE is a list of the patterns. Counting it
+// makes the gate self-referential: the six pattern strings in PATTERNS above
+// are scored as six hatches, and editing this comment moves the ratchet.
+const PATHSPECS = [
+  "packages",
+  "scripts",
+  ":!packages/**/dist/**",
+  ":!scripts/check-escape-hatches.mjs",
+];
 
 /** Run git, returning stdout. Throws on real failure (not "no matches"). */
 function git(args, { allowNoMatch = false } = {}) {
@@ -103,9 +115,7 @@ function resolveBase() {
 
 const base = resolveBase();
 if (!base) {
-  console.log(
-    "check-hatches: no origin/main to compare against — skipping ratchet.",
-  );
+  console.log("check-hatches: no origin/main to compare against — skipping ratchet.");
   process.exit(0);
 }
 

@@ -25,7 +25,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -35,11 +35,7 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const scratch = path.join(repo, `packages/aai-templates/.doc-examples-scratch-${process.pid}`);
 
 /** Doc-comment sources: published packages' source trees. */
-const SOURCE_GLOBS = [
-  "packages/aai",
-  "packages/aai-ui",
-  "packages/aai-cli",
-];
+const SOURCE_GLOBS = ["packages/aai", "packages/aai-ui", "packages/aai-cli"];
 
 /** Markdown sources users and coding agents read examples from. */
 const MARKDOWN_FILES = [
@@ -70,7 +66,7 @@ function* walk(dir) {
     const full = path.join(dir, entry);
     const stat = statSync(full);
     if (stat.isDirectory()) {
-      if (!SKIP_DIRS.has(entry) && !entry.startsWith(".")) yield* walk(full);
+      if (!(SKIP_DIRS.has(entry) || entry.startsWith("."))) yield* walk(full);
     } else if (/\.(ts|tsx)$/.test(entry) && !/\.test(-d)?\.tsx?$/.test(entry)) {
       yield full;
     }
@@ -86,10 +82,11 @@ function extractFences(text, stripPrefix) {
     const raw = stripPrefix ? lines[i].replace(/^\s*\*( |$)/, "") : lines[i];
     const fence = raw.match(/^\s*```(\S*)\s*(.*)$/);
     if (!open) {
+      // Anything else — a bare fence, a ```sh block, or a ```ts marked
+      // `no-check` — is skipped: `open` stays null, so its body is not
+      // collected and its closing fence takes this same branch.
       if (fence && /^tsx?$/.test(fence[1]) && !fence[2].includes("no-check")) {
         open = { lang: fence[1], start: i + 1, body: [] };
-      } else if (fence && fence[1] === "" && false) {
-        // bare fences are never checked
       }
     } else if (fence) {
       blocks.push({ lang: open.lang, line: open.start + 1, code: open.body.join("\n") });

@@ -44,11 +44,10 @@ const MAX_CHARS = 120_000;
 // times.
 const files = [
   ...new Set(
-    execFileSync(
-      "git",
-      ["ls-files", "--cached", "--others", "--exclude-standard", "*CLAUDE.md"],
-      { cwd: ROOT, encoding: "utf8" },
-    )
+    execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "*CLAUDE.md"], {
+      cwd: ROOT,
+      encoding: "utf8",
+    })
       .split("\n")
       .filter(Boolean)
       .filter((path) => !path.includes("node_modules/")),
@@ -69,13 +68,15 @@ for (const path of files) {
 const pct = (size) => Math.round((size / MAX_CHARS) * 100);
 
 if (violations.length > 0) {
-  console.error(`\ncheck-claude-md: ${violations.length} file(s) over the ${MAX_CHARS} char cap:\n`);
+  console.error(
+    `\ncheck-claude-md: ${violations.length} file(s) over the ${MAX_CHARS} char cap:\n`,
+  );
   for (const { path, size } of violations) {
     console.error(`  ${path} — ${size} chars (${pct(size)}% of cap)`);
   }
   console.error(
     "\nMove sections into the owning package's CLAUDE.md and leave a pointer;\n" +
-      "see the root CLAUDE.md's \"Package guides\" table and \"Updating CLAUDE.md\".\n",
+      'see the root CLAUDE.md\'s "Package guides" table and "Updating CLAUDE.md".\n',
   );
   process.exit(1);
 }

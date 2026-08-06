@@ -12,7 +12,7 @@
  * scope. Wired up as `pnpm check:publish-names` in CI.
  */
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const ROOT = new URL("..", import.meta.url).pathname;
@@ -50,8 +50,8 @@ for (const entry of readdirSync(PACKAGES_DIR)) {
       `${pkgJsonPath}: name "${pkg.name}" is not under an allowed scope ` +
         `(${ALLOWED_SCOPES.join(", ")}). ` +
         `Unscoped names like "aai" are already taken on npm and publish ` +
-        `will 404. Either rename under @alexkroman1/ or mark the package ` +
-        `private.`,
+        "will 404. Either rename under @alexkroman1/ or mark the package " +
+        "private.",
     );
   }
 }

@@ -3,6 +3,7 @@
   "files": {
     "includes": [
       "packages/**",
+    "scripts/**",
       "!**/node_modules",
       "!**/dist",
       "!**/coverage",

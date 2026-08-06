@@ -19,12 +19,11 @@
  * its knock-on codes are therefore filtered out, and only the inference codes
  * this compares are counted.
  *
- *   node scripts/starter-eval-tsconfig-ab.mjs /tmp/eval-iter8b.json
+ *   node scripts/starter-eval/tsconfig-ab.mjs /tmp/eval-iter8b.json
  */
 
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -84,7 +83,7 @@ function check(files, compilerOptions) {
 }
 
 const file = process.argv[2];
-if (!file) throw new Error("usage: starter-eval-tsconfig-ab.mjs <results.json>");
+if (!file) throw new Error("usage: starter-eval/tsconfig-ab.mjs <results.json>");
 const runs = JSON.parse(readFileSync(file, "utf8")).filter((r) => r.files?.["agent.ts"]);
 
 for (const [label, opts] of Object.entries(VARIANTS)) {
