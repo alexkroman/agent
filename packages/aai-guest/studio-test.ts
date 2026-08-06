@@ -23,7 +23,7 @@ import { readFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { errMsg } from "./harness-rpc.ts";
+import { errorMessage } from "@alexkroman1/aai";
 import { scrubDir } from "./studio-build.ts";
 import { runCapped } from "./studio-spawn.ts";
 
@@ -90,7 +90,7 @@ export async function runWorkspaceTests(dir: string): Promise<TestRunResult> {
       : result.stdout;
   } catch (err) {
     code = -1;
-    output = errMsg(err);
+    output = errorMessage(err);
   }
 
   return {

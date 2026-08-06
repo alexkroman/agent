@@ -17,6 +17,7 @@
 
 import { createNanoEvents, type Emitter } from "nanoevents";
 import WebSocket from "ws";
+import { WS_OPEN } from "../../../sdk/constants.ts";
 import {
   RIME_API_KEY_ENV,
   RIME_DEFAULT_VOICE,
@@ -185,14 +186,14 @@ export function openRime(opts: RimeOptions): TtsOpener {
       const session: RimeSession = {
         sendText(text: string) {
           if (shell.isClosed() || text.length === 0) return;
-          if (ws.readyState !== WebSocket.OPEN) return;
+          if (ws.readyState !== WS_OPEN) return;
           doneLatch.rearm();
           ws.send(JSON.stringify({ text }));
         },
 
         flush() {
           if (shell.isClosed()) return;
-          if (ws.readyState !== WebSocket.OPEN) return;
+          if (ws.readyState !== WS_OPEN) return;
           // Force synthesis of any text buffered behind missing terminal
           // punctuation: a trailing `"."` keeps the WS reusable, whereas
           // the JSON `eos` operation would close it and require a
@@ -203,7 +204,7 @@ export function openRime(opts: RimeOptions): TtsOpener {
 
         cancel() {
           if (shell.isClosed()) return;
-          if (ws.readyState === WebSocket.OPEN) {
+          if (ws.readyState === WS_OPEN) {
             ws.send(JSON.stringify({ operation: "clear" }));
           }
           // Emit `done` synchronously — the orchestrator's state machine

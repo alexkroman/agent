@@ -70,6 +70,7 @@
  */
 
 import { pathToFileURL } from "node:url";
+import { errorMessage } from "@alexkroman1/aai";
 import { formatSchemaIssues } from "@alexkroman1/aai/internal";
 import { createServer, type SessionRuntime } from "@alexkroman1/aai/runtime";
 import { type WebSocket, WebSocketServer } from "ws";
@@ -85,7 +86,6 @@ import {
 import { installCrashGuards } from "./harness-crash-guards.ts";
 import { mainDescribe, takeDescribeNonce } from "./harness-describe.ts";
 import {
-  errMsg,
   handleHostResponse,
   rejectAllPendingHostRequests,
   sendError,
@@ -197,7 +197,7 @@ export function dispatchMessage(msg: JsonRpcMessage, state: HarnessState): void 
   // Request — handle concurrently so the socket keeps draining.
   const req = msg as JsonRpcRequest;
   void handleRequest(req, state).catch((err) => {
-    sendError(req.id, -32_603, errMsg(err));
+    sendError(req.id, -32_603, errorMessage(err));
   });
 }
 
@@ -240,8 +240,8 @@ export function lazyRuntime(
         // No bundle yet, or the runtime can't be built (missing provider
         // credential, invalid config) — answer with a close frame naming
         // the cause instead of a dangling socket.
-        console.error(`session refused: ${errMsg(err)}`);
-        socket.close(1011, errMsg(err).slice(0, 100));
+        console.error(`session refused: ${errorMessage(err)}`);
+        socket.close(1011, errorMessage(err).slice(0, 100));
         return;
       }
       runtime.startSession(ws, opts);
@@ -347,7 +347,7 @@ function main(): void {
   // non-zero — the spawner sees the process die and fails the spawn loudly.
   if (process.env.AAI_GUEST_MODE === "agent") {
     mainAgent(port, host, token).catch((err: unknown) => {
-      console.error(`agent-mode boot failed: ${errMsg(err)}`);
+      console.error(`agent-mode boot failed: ${errorMessage(err)}`);
       process.exit(1);
     });
     return;

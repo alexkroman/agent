@@ -24,11 +24,11 @@
 
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { errorMessage } from "@alexkroman1/aai";
 import { jsonSchema, type Tool, type ToolSet, tool } from "ai";
 import pTimeout from "p-timeout";
 import picomatch from "picomatch";
 import { z } from "zod";
-import { errMsg } from "./harness-rpc.ts";
 import { MAX_STUDIO_FILE_BYTES } from "./limits.ts";
 import { applyEdit, clearEditMisses, rewriteHint, StudioEditError } from "./studio-edit.ts";
 import { globMatcher, grepWorkspace, StudioGrepError } from "./studio-grep.ts";
@@ -215,7 +215,7 @@ function deadline(t: ToolSet[string]): ToolSet[string] {
       // An aborted turn (closed tab) settles the wrapper promptly; the
       // underlying tool work is NOT cancelled — it runs on in the background.
       ...(opts?.abortSignal ? { signal: opts.abortSignal } : {}),
-    }).catch((err: unknown) => `Error: ${errMsg(err)}`);
+    }).catch((err: unknown) => `Error: ${errorMessage(err)}`);
   return { ...t, execute: wrapped } as ToolSet[string];
 }
 
@@ -273,7 +273,7 @@ export function createStudioTools(deps: StudioToolDeps): ToolSet {
         try {
           match = picomatch(pattern, { dot: true });
         } catch (err) {
-          return `Error: invalid glob: ${errMsg(err)}`;
+          return `Error: invalid glob: ${errorMessage(err)}`;
         }
         // Not `.filter(match)`: filter's index argument would land in
         // picomatch's `returnObject` parameter and match everything.
@@ -409,7 +409,7 @@ export function createStudioTools(deps: StudioToolDeps): ToolSet {
           const body = output.trim() || "(no output)";
           return exitCode === 0 ? body : `[exit code ${exitCode}]\n${body}`;
         } catch (err) {
-          return `Error: ${errMsg(err)}`;
+          return `Error: ${errorMessage(err)}`;
         }
       },
     }),
@@ -439,7 +439,7 @@ export function createStudioTools(deps: StudioToolDeps): ToolSet {
         try {
           loaded = await deps.loadBundle(built.worker);
         } catch (err) {
-          return `Bundle failed to load: ${errMsg(err)}`;
+          return `Bundle failed to load: ${errorMessage(err)}`;
         }
         const { summary, toolNames } = describeConfig(loaded.config);
         // Reported after the config rather than gating on it: a failing test

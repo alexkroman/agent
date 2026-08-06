@@ -6,8 +6,8 @@
  */
 
 import { readFile } from "node:fs/promises";
+import { errorMessage } from "@alexkroman1/aai";
 import { emptyHarnessState, loadBundle } from "./harness-bundle.ts";
-import { errMsg } from "./harness-rpc.ts";
 
 /**
  * Read the exec's describe marker and REMOVE it from `process.env`.
@@ -52,7 +52,7 @@ export async function mainDescribe(bundlePath: string, nonce: string | undefined
     emit({ ok: true, config: loaded.config });
     process.exit(0);
   } catch (err) {
-    emit({ ok: false, error: errMsg(err) });
+    emit({ ok: false, error: errorMessage(err) });
     process.exit(1);
   }
 }

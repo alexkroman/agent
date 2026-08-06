@@ -237,9 +237,9 @@ What deliberately stays in-process, and why it doesn't break statelessness:
 ## Split services (aai-server / aai-studio-server)
 
 Two packages, one surface each. `aai-server` is the AGENT service plus the
-shared platform core (stores, locks, epochs, sandbox machinery — exported to
-the sibling via `"./*": "./*.ts"` exports; `platform-barrel.ts` is the
-sanctioned path to its `_`-internal utilities). `aai-studio-server` is the
+shared platform core (stores, locks, epochs, sandbox machinery);
+`platform-barrel.ts` is the sanctioned path to its `_`-internal utilities.
+`aai-studio-server` is the
 STUDIO service; its entry also hosts the `combined` composition
 (`AAI_SERVICE` combined|studio — a path dispatcher over both apps, which is
 what `pnpm dev:aai-server` and pre-split deployments run). Deploys are
@@ -247,6 +247,20 @@ per-service Modal apps (`aai-server-web`, `aai-studio-web`, each package's
 `modal_deploy.py`). The split exists because the two workloads scale
 differently — studio chat turns are LLM-bound and bursty, the agent
 service's control work is light — and one container served both badly.
+
+**The shared core is the `exports` map, and nothing else.** It is an
+explicit list of 31 subpaths, grouped by role (stores, coordination, sandbox
+machinery, schemas, app composition, the routes the studio reuses), and
+`platform-surface.test.ts` holds it to the imports that actually exist in
+both directions — an entry nobody imports fails, and so does an import with
+no entry. It was `"./*": "./*.ts"` for a long time, which meant every one of
+the package's ~70 modules was published to the sibling: the prose above
+described a "shared core" that no code distinguished from the agent
+service's own internals, so `aai-studio-server` reached into 31 of them and
+none of those reaches could be called a violation. Widening the surface is
+now an edit to package.json rather than a side effect of typing an import
+path. When a coupling goes away, delete the entry — this list only ratchets
+down, like the file-length allowlist.
 
 - **One public origin.** Browsers only ever talk to the agent service; in
   `agent` mode it reverse-proxies `/`, `/favicon.ico`, `/studio-assets/*`,

@@ -13,40 +13,16 @@
  * `@cartesia/cartesia-js`.
  */
 
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { createGroq } from "@ai-sdk/groq";
-import { createMistral } from "@ai-sdk/mistral";
-import { createOpenAI } from "@ai-sdk/openai";
-import { createXai } from "@ai-sdk/xai";
-import {
-  createGateway,
-  defaultSettingsMiddleware,
-  type LanguageModel,
-  wrapLanguageModel,
-} from "ai";
+import type { LanguageModel } from "ai";
 import type { ProviderEnv } from "../../sdk/env-types.ts";
-import { ANTHROPIC_API_KEY_ENV, ANTHROPIC_KIND } from "../../sdk/providers/llm/anthropic.ts";
 import {
-  ASSEMBLYAI_LLM_API_KEY_ENV,
-  ASSEMBLYAI_LLM_DEFAULT_MODEL,
-  ASSEMBLYAI_LLM_GATEWAY_EU_URL,
-  ASSEMBLYAI_LLM_GATEWAY_URL,
-  ASSEMBLYAI_LLM_KIND,
-  type AssemblyAILlmOptions,
-} from "../../sdk/providers/llm/assemblyai.ts";
-import { GATEWAY_API_KEY_ENV, GATEWAY_KIND } from "../../sdk/providers/llm/gateway.ts";
-import { GOOGLE_API_KEY_ENV, GOOGLE_KIND } from "../../sdk/providers/llm/google.ts";
-import { GROQ_API_KEY_ENV, GROQ_KIND } from "../../sdk/providers/llm/groq.ts";
-import { MISTRAL_API_KEY_ENV, MISTRAL_KIND } from "../../sdk/providers/llm/mistral.ts";
-import { OPENAI_API_KEY_ENV, OPENAI_KIND } from "../../sdk/providers/llm/openai.ts";
+  ASSEMBLYAI_S2S_API_KEY_ENV,
+  ASSEMBLYAI_S2S_KIND,
+} from "../../sdk/providers/s2s/assemblyai.ts";
 import {
-  OPENROUTER_API_KEY_ENV,
-  OPENROUTER_BASE_URL,
-  OPENROUTER_KIND,
-} from "../../sdk/providers/llm/openrouter.ts";
-import { XAI_API_KEY_ENV, XAI_KIND } from "../../sdk/providers/llm/xai.ts";
-import { OPENAI_REALTIME_KIND } from "../../sdk/providers/s2s/openai-realtime.ts";
+  OPENAI_REALTIME_API_KEY_ENV,
+  OPENAI_REALTIME_KIND,
+} from "../../sdk/providers/s2s/openai-realtime.ts";
 import {
   ASSEMBLYAI_API_KEY_ENV,
   ASSEMBLYAI_KIND,
@@ -80,12 +56,14 @@ import {
 import { RIME_API_KEY_ENV, RIME_KIND, type RimeOptions } from "../../sdk/providers/tts/rime.ts";
 import type {
   LlmProvider,
+  S2sProvider,
   SttOpener,
   SttProvider,
   TtsOpener,
   TtsProvider,
 } from "../../sdk/providers.ts";
-import { repairOpenAiStream } from "./_openai-stream-repair.ts";
+import type { LlmRegistryEntry } from "./_llm-registry.ts";
+import { LLM_REGISTRY } from "./_llm-registry.ts";
 import { requireApiKey } from "./_utils.ts";
 
 /**
@@ -199,6 +177,48 @@ const TTS_REGISTRY: Record<string, OpenerRegistryEntry<TtsOpener>> = {
 };
 
 /**
+ * S2S provider kinds. A closed union rather than `string`, so
+ * {@link isS2sKind} can narrow and the transport dispatch in
+ * `runtime-transport.ts` is exhaustive — adding a kind here is a compile
+ * error there until it has a builder.
+ */
+export type S2sKind = typeof ASSEMBLYAI_S2S_KIND | typeof OPENAI_REALTIME_KIND;
+
+/**
+ * One registry entry per S2S provider kind.
+ *
+ * S2S carries only a credential env var — unlike STT/TTS it has no opener
+ * (the transport owns its own socket) and unlike LLM no model factory. It is
+ * a registry anyway so that the three things that key off an S2S kind cannot
+ * drift: this map, {@link requiredProviderEnvVars}, and the transport
+ * dispatch. They used to be three hand-written comparisons, and they
+ * disagreed on the failure mode — `buildTransport` threw on an unrecognized
+ * kind while the credential derivation FELL THROUGH to AssemblyAI, so a
+ * third S2S vendor would have made the deploy preflight
+ * (`aai-server/deploy.ts`) and `aai dev` demand the wrong key and never
+ * name the right one.
+ */
+const S2S_REGISTRY: Record<S2sKind, { readonly envVar: string }> = {
+  [ASSEMBLYAI_S2S_KIND]: { envVar: ASSEMBLYAI_S2S_API_KEY_ENV },
+  [OPENAI_REALTIME_KIND]: { envVar: OPENAI_REALTIME_API_KEY_ENV },
+};
+
+/** Is `kind` an S2S provider this build can resolve? Narrows for the dispatch. */
+export function isS2sKind(kind: string | undefined): kind is S2sKind {
+  return kind !== undefined && Object.hasOwn(S2S_REGISTRY, kind);
+}
+
+/**
+ * The env var an {@link S2sProvider} descriptor's credential lives in,
+ * honouring a per-descriptor `apiKeyEnv` override exactly as the STT/TTS/LLM
+ * resolvers do. Throws on an unknown kind, listing what is supported.
+ */
+export function resolveS2sEnvVar(descriptor: S2sProvider): string {
+  const entry = lookupProvider(S2S_REGISTRY, descriptor.kind, "S2S");
+  return descriptorEnvVar(descriptor) ?? entry.envVar;
+}
+
+/**
  * Look up a registry entry by descriptor kind, or throw listing what is
  * supported. The supported list is derived from the registry, so it cannot go
  * stale when a provider is added.
@@ -242,8 +262,9 @@ export type ResolvedOpener<Opener> = {
  * configs. A non-string or empty value falls through to the registry default
  * rather than resolving to `""`.
  */
-function descriptorEnvVar(descriptor: { readonly options?: unknown }): string | undefined {
-  const value = (descriptor.options as Record<string, unknown> | undefined)?.apiKeyEnv;
+function descriptorEnvVar(descriptor: object | undefined): string | undefined {
+  const options = (descriptor as { options?: unknown } | undefined)?.options;
+  const value = (options as Record<string, unknown> | undefined)?.apiKeyEnv;
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
@@ -293,113 +314,13 @@ export function registerTtsKind(kind: string, entry: OpenerRegistryEntry<TtsOpen
   return registerKind(TTS_REGISTRY, kind, entry);
 }
 
+/** One registry entry per LLM provider kind — see `_llm-registry.ts`. */
+export type { LlmRegistryEntry } from "./_llm-registry.ts";
+
 /** Register an LLM kind. See {@link registerKind}. */
 export function registerLlmKind(kind: string, entry: LlmRegistryEntry): () => void {
   return registerKind(LLM_REGISTRY, kind, entry);
 }
-
-/** One registry entry per LLM provider kind — adding a provider is one entry here. */
-export type LlmRegistryEntry = {
-  readonly envVar: string;
-  readonly label: string;
-  readonly create: (apiKey: string, descriptor: LlmProvider) => LanguageModel;
-};
-
-function model(descriptor: LlmProvider): string {
-  return options<{ model: string }>(descriptor).model;
-}
-
-const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
-  [ANTHROPIC_KIND]: {
-    envVar: ANTHROPIC_API_KEY_ENV,
-    label: "Anthropic",
-    // Pass baseURL explicitly so the SDK's loadOptionalSetting returns
-    // before reading process.env["ANTHROPIC_BASE_URL"]. Without this,
-    // the Deno platform server needs --allow-env to start a session.
-    create: (apiKey, d) =>
-      createAnthropic({ apiKey, baseURL: "https://api.anthropic.com/v1" })(model(d)),
-  },
-  [OPENAI_KIND]: {
-    envVar: OPENAI_API_KEY_ENV,
-    label: "OpenAI",
-    create: (apiKey, d) => createOpenAI({ apiKey })(model(d)),
-  },
-  [GOOGLE_KIND]: {
-    envVar: GOOGLE_API_KEY_ENV,
-    label: "Google",
-    create: (apiKey, d) => createGoogleGenerativeAI({ apiKey })(model(d)),
-  },
-  [MISTRAL_KIND]: {
-    envVar: MISTRAL_API_KEY_ENV,
-    label: "Mistral",
-    create: (apiKey, d) => createMistral({ apiKey })(model(d)),
-  },
-  [XAI_KIND]: {
-    envVar: XAI_API_KEY_ENV,
-    label: "xAI",
-    create: (apiKey, d) => createXai({ apiKey })(model(d)),
-  },
-  [GROQ_KIND]: {
-    envVar: GROQ_API_KEY_ENV,
-    label: "Groq",
-    create: (apiKey, d) => createGroq({ apiKey })(model(d)),
-  },
-  [OPENROUTER_KIND]: {
-    envVar: OPENROUTER_API_KEY_ENV,
-    label: "OpenRouter",
-    // OpenRouter is an OpenAI-compatible chat-completions API, so it
-    // reuses @ai-sdk/openai's chat client pointed at its base URL — the
-    // same shape as the AssemblyAI LLM Gateway below. Model ids are
-    // "creator/model" strings, e.g. "anthropic/claude-sonnet-4.5".
-    create: (apiKey, d) =>
-      createOpenAI({ apiKey, baseURL: OPENROUTER_BASE_URL, name: "openrouter" }).chat(model(d)),
-  },
-  [GATEWAY_KIND]: {
-    envVar: GATEWAY_API_KEY_ENV,
-    label: "Vercel AI Gateway",
-    // `createGateway` ships inside the `ai` package (a regular dependency),
-    // so gateway models need no extra @ai-sdk/* install. Model ids are
-    // "creator/model" strings, e.g. "zai/glm-4.6".
-    create: (apiKey, d) => createGateway({ apiKey })(model(d)),
-  },
-  [ASSEMBLYAI_LLM_KIND]: {
-    envVar: ASSEMBLYAI_LLM_API_KEY_ENV,
-    label: "AssemblyAI",
-    create: (apiKey, d) => {
-      const opts = options<AssemblyAILlmOptions>(d);
-      // An explicit gatewayUrl WINS over `region`, same rule as the STT
-      // opener's streamingUrl: naming an endpoint is deliberate and the
-      // residency shorthand must not silently overwrite it.
-      const baseURL =
-        opts.gatewayUrl ||
-        (opts.region === "eu" ? ASSEMBLYAI_LLM_GATEWAY_EU_URL : ASSEMBLYAI_LLM_GATEWAY_URL);
-      // The gateway implements /chat/completions only, so use .chat() —
-      // the provider's default callable targets OpenAI's Responses API.
-      // `fetch` repairs the gateway's id-less streaming tool_call deltas,
-      // which the SDK's streaming tracker would otherwise reject.
-      // A descriptor reaching the host with no model is either an older
-      // bundle or a hand-built config; the factory's default is the right
-      // answer for both, and better than a runtime 400 from the gateway.
-      const modelId = opts.model ?? ASSEMBLYAI_LLM_DEFAULT_MODEL;
-      const chat = createOpenAI({
-        apiKey,
-        baseURL,
-        name: "assemblyai",
-        fetch: repairOpenAiStream(),
-      }).chat(modelId);
-      // reasoning_effort is sent only when the descriptor asks for one —
-      // unset, the model runs on its own server-side reasoning default.
-      const reasoningEffort = opts.reasoningEffort;
-      if (reasoningEffort === undefined) return chat;
-      return wrapLanguageModel({
-        model: chat,
-        middleware: defaultSettingsMiddleware({
-          settings: { providerOptions: { openai: { reasoningEffort } } },
-        }),
-      });
-    },
-  },
-};
 
 /**
  * Resolve an {@link LlmProvider} descriptor into a Vercel AI SDK
@@ -461,15 +382,19 @@ export function requiredProviderEnvVars(agent: {
   add(envVarFor(TTS_REGISTRY, agent.tts));
   add(envVarFor(LLM_REGISTRY, agent.llm));
 
-  // No pipeline triple: an explicit `s2s` descriptor selects its vendor, and
-  // no descriptors at all means the default AssemblyAI pipeline — which needs
-  // the same ASSEMBLYAI_API_KEY, so one branch covers both.
+  // No pipeline triple: either an explicit `s2s` descriptor selects a vendor,
+  // or nothing is declared and the default AssemblyAI pipeline is injected.
   const pipeline = agent.stt !== undefined && agent.llm !== undefined && agent.tts !== undefined;
   if (!pipeline) {
+    const s2sKind = descriptorKind(agent.s2s);
+    // An UNRECOGNIZED s2s kind contributes nothing, matching what an
+    // unrecognized stt/tts/llm kind does above. Naming the wrong vendor's key
+    // is worse than naming none: this list is what the deploy preflight
+    // rejects on, so a wrong entry blocks the deploy AND hides the real key.
     add(
-      descriptorKind(agent.s2s) === OPENAI_REALTIME_KIND
-        ? OPENAI_API_KEY_ENV
-        : ASSEMBLYAI_API_KEY_ENV,
+      agent.s2s === undefined
+        ? ASSEMBLYAI_API_KEY_ENV
+        : (descriptorEnvVar(agent.s2s) ?? (isS2sKind(s2sKind) ? S2S_REGISTRY[s2sKind].envVar : "")),
     );
   }
   return [...vars];
@@ -489,8 +414,9 @@ export const ALL_PROVIDER_ENV_VARS: readonly string[] = [
     ...Object.values(STT_REGISTRY).map((e) => e.envVar),
     ...Object.values(TTS_REGISTRY).map((e) => e.envVar),
     ...Object.values(LLM_REGISTRY).map((e) => e.envVar),
-    // S2S: the default AssemblyAI path and the OpenAI Realtime alternative.
+    ...Object.values(S2S_REGISTRY).map((e) => e.envVar),
+    // The descriptor-less default: no `s2s` field and no pipeline triple means
+    // the injected AssemblyAI pipeline, which no registry entry represents.
     ASSEMBLYAI_API_KEY_ENV,
-    OPENAI_API_KEY_ENV,
   ]),
 ];

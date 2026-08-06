@@ -37,7 +37,7 @@
 
 import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { errMsg } from "./harness-rpc.ts";
+import { errorMessage } from "@alexkroman1/aai";
 
 /** Extensions oxc can parse. JSON is skipped — it is not a script. */
 const CHECKED = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs"]);
@@ -98,7 +98,7 @@ export async function syntaxError(
   try {
     await transform(content, file);
   } catch (err) {
-    return tidy(errMsg(err));
+    return tidy(errorMessage(err));
   }
 }
 

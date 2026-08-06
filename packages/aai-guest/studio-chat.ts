@@ -26,6 +26,7 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
+import { errorMessage } from "@alexkroman1/aai";
 import { formatSchemaIssues } from "@alexkroman1/aai/internal";
 import { ASSEMBLYAI_LLM_API_KEY_ENV, assemblyAILlm } from "@alexkroman1/aai/llm";
 import { resolveAllBuiltins, resolveLlm } from "@alexkroman1/aai/runtime";
@@ -40,7 +41,7 @@ import {
   type UIMessage,
 } from "ai";
 import { verifyBearer } from "./harness-auth.ts";
-import { errMsg, hostRequest } from "./harness-rpc.ts";
+import { hostRequest } from "./harness-rpc.ts";
 import {
   buildWorkspaceDir,
   toolchainModules,
@@ -312,7 +313,7 @@ async function runTurn(
   // killed first turn erased the whole transcript.
   void hostRequest("studio/persist-chat", { messages }, SYNC_RPC_TIMEOUT_MS).catch(
     (err: unknown) => {
-      console.error(`studio chat: failed to persist inbound messages: ${errMsg(err)}`);
+      console.error(`studio chat: failed to persist inbound messages: ${errorMessage(err)}`);
     },
   );
 
@@ -394,14 +395,14 @@ async function runTurn(
     // logged, never fatal: losing one snapshot must not kill the reply.
     onFinish: ({ messages: updated }) => {
       void settleTurn(session, updated).catch((err: unknown) => {
-        console.error(`studio chat: failed to settle turn: ${errMsg(err)}`);
+        console.error(`studio chat: failed to settle turn: ${errorMessage(err)}`);
       });
     },
-    toErrorText: errMsg,
+    toErrorText: errorMessage,
   });
   if (failure !== undefined) {
     // The client was told in-band; this is the operator-side record.
-    console.error(`studio chat: turn stream failed: ${errMsg(failure)}`);
+    console.error(`studio chat: turn stream failed: ${errorMessage(failure)}`);
   }
 }
 
@@ -470,7 +471,7 @@ export function handleStudioRequest(
   res.on("close", release);
   void runTurn(session, deps, req, res)
     .catch((err: unknown) => {
-      const message = errMsg(err);
+      const message = errorMessage(err);
       console.error(`studio chat: turn failed: ${message}`);
       if (!res.headersSent) sendJson(res, 500, { error: message });
       else res.destroy();

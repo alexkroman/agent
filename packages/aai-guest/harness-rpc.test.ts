@@ -7,7 +7,6 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
-  errMsg,
   handleHostResponse,
   hostRequest,
   pendingHostRequests,
@@ -90,12 +89,5 @@ describe("host request proxy", () => {
 
   test("a response for an unknown id is ignored", () => {
     expect(() => handleHostResponse({ id: 424_242, result: "?" })).not.toThrow();
-  });
-});
-
-describe("helpers", () => {
-  test("errMsg extracts messages from Errors and stringifies the rest", () => {
-    expect(errMsg(new Error("x"))).toBe("x");
-    expect(errMsg("raw")).toBe("raw");
   });
 });

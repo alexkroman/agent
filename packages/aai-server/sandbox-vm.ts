@@ -25,7 +25,7 @@ import { describeModalBundle } from "./modal-describe.ts";
 import { localHarnessImageTag } from "./modal-harness-image.ts";
 import { DEFAULT_SANDBOX_IMAGE, spawnModalWarm } from "./modal-sandbox.ts";
 import type { GuestConnection } from "./rpc-schemas.ts";
-import { resolveSandboxBackend } from "./sandbox-backend.ts";
+import { resolveSandboxBackend, type SandboxBackend } from "./sandbox-backend.ts";
 import { agentSandboxName } from "./sandbox-directory.ts";
 import type { SpawnIdentity } from "./sandbox-role.ts";
 import {
@@ -86,19 +86,116 @@ export type AgentSpawnOptions = {
   imageTag?: string | undefined;
 };
 
+// ── The backend contract ─────────────────────────────────────────────────────
+
+/** What a backend's agent-server spawner is handed. */
+export type BackendAgentSpawn = {
+  harnessPath: string;
+  slug: string;
+  workerCode: string;
+  /** Content hash the guest verifies the bundle against before loading. */
+  workerSha256: string;
+  agentEnv: Record<string, string>;
+  /** Modal only — the harness snapshot image this deploy is pinned to. */
+  imageTag?: string | undefined;
+  /** Modal only — the fleet-wide sandbox name (see sandbox-directory.ts). */
+  name?: string | undefined;
+};
+
+/**
+ * The operations a sandbox backend implements. Both backends implement all
+ * four; this type is what says so.
+ *
+ * It replaced four independent `switch (resolveSandboxBackend(...))`
+ * statements, one per operation, each shaped
+ * `case "subprocess": … default: → modal`. Two problems with that: the
+ * `default` arm meant a third backend compiled clean and silently ran on
+ * Modal at every one of the four sites, and nothing anywhere stated that the
+ * two backends were answering the same set of questions — so an operation
+ * added for one could be missed for the other. Indexing a
+ * `Record<SandboxBackend, …>` is exhaustive by construction: a new member of
+ * the union fails to compile until it has all four.
+ */
+export type SandboxBackendOps = {
+  spawnWarm(opts: { harnessPath: string } & SpawnIdentity): Promise<WarmHarness>;
+  spawnAgentServer(opts: BackendAgentSpawn): Promise<AgentServerHandle>;
+  describeBundle(opts: { harnessPath: string; workerCode: string }): Promise<unknown>;
+  /**
+   * The content-addressed harness image tag new sandboxes spawn from, or null
+   * for a backend with no image (nothing to pin).
+   */
+  harnessImageTag(harnessPath: string): Promise<string | null>;
+};
+
+const SANDBOX_BACKENDS: Record<SandboxBackend, SandboxBackendOps> = {
+  modal: {
+    spawnWarm: spawnModalWarm,
+    spawnAgentServer: spawnModalAgentServer,
+    describeBundle: describeModalBundle,
+    // Pure computation — base tag from env, harness code from disk, toolchain
+    // specs from package.json — so it needs no Modal credentials and never
+    // dials out.
+    harnessImageTag: async (harnessPath) =>
+      localHarnessImageTag(
+        process.env.MODAL_SANDBOX_IMAGE ?? DEFAULT_SANDBOX_IMAGE,
+        await readFile(harnessPath, "utf-8"),
+      ),
+  },
+  subprocess: {
+    spawnWarm: spawnSubprocessWarm,
+    // The Modal-only fields are dropped HERE, explicitly, rather than left to
+    // be ignored by the callee's signature: there is no image to pin, and a
+    // single process has no fleet to be unique within (nor a Modal control
+    // plane that would enforce a name).
+    spawnAgentServer: (opts) =>
+      spawnSubprocessAgentServer({
+        harnessPath: opts.harnessPath,
+        slug: opts.slug,
+        workerCode: opts.workerCode,
+        workerSha256: opts.workerSha256,
+        agentEnv: opts.agentEnv,
+      }),
+    describeBundle: describeSubprocessBundle,
+    harnessImageTag: async () => null,
+  },
+};
+
+/**
+ * The backend this process runs on. `resolveSandboxBackend` (see
+ * `sandbox-backend.ts`) picks Modal in production and the isolation-free
+ * `subprocess` backend in local dev. Operations fail loudly when the chosen
+ * backend's prerequisites are absent — there is no fallback *between*
+ * backends at call time, only at selection time, and selection can never
+ * reach `subprocess` outside local dev.
+ *
+ * `backends` is the test seam: a full per-backend record, so an injected fake
+ * resolves through the same selection policy as the real thing.
+ */
+function activeBackend(
+  backends: Record<SandboxBackend, SandboxBackendOps> = SANDBOX_BACKENDS,
+): SandboxBackendOps {
+  return backends[resolveSandboxBackend(process.env)];
+}
+
+/** Per-backend implementations of ONE operation — the narrow test seam. */
+export type BackendMap<Op extends keyof SandboxBackendOps> = Record<
+  SandboxBackend,
+  SandboxBackendOps[Op]
+>;
+
+function opFor<Op extends keyof SandboxBackendOps>(
+  op: Op,
+  override: BackendMap<Op> | undefined,
+): SandboxBackendOps[Op] {
+  return override ? override[resolveSandboxBackend(process.env)] : activeBackend()[op];
+}
+
 // ── Warm-harness spawning ────────────────────────────────────────────────────
 
 /**
  * Spawn a warm Node harness in a fresh sandbox. The returned WarmHarness has
  * a running guest process and a dialed RPC channel, but no listeners
  * attached and no bundle loaded.
- *
- * Single dispatch point for the backend policy. `resolveSandboxBackend` (see
- * `sandbox-backend.ts`) picks Modal in production and the isolation-free
- * `subprocess` backend in local dev. Spawning fails loudly when the chosen
- * backend's prerequisites are absent — there is no fallback *between* backends
- * at spawn time, only at selection time, and selection can never reach
- * `subprocess` outside local dev.
  *
  * `slug`/`role` only affect the sandbox's observability tags (see
  * sandbox-role.ts); under Modal the security boundary is the sandbox
@@ -107,12 +204,7 @@ export type AgentSpawnOptions = {
 export async function spawnWarmHarness(
   opts: { harnessPath: string } & SpawnIdentity,
 ): Promise<WarmHarness> {
-  switch (resolveSandboxBackend(process.env)) {
-    case "subprocess":
-      return spawnSubprocessWarm(opts);
-    default:
-      return spawnModalWarm(opts);
-  }
+  return activeBackend().spawnWarm(opts);
 }
 
 // ── Current harness image tag ────────────────────────────────────────────────
@@ -122,28 +214,14 @@ const currentTagMemo = keyedMemoAsync<string | null>();
 /**
  * The content-addressed harness image tag THIS process would spawn new
  * sandboxes from — what a deploy records on the agents row
- * (`harness_image_tag`).
- * Null outside the Modal backend (the subprocess backend has no image and
- * pins nothing). Pure computation — base tag from env, harness code from
- * disk, toolchain specs from package.json — so it needs no Modal
- * credentials and never dials out.
+ * (`harness_image_tag`). Null outside the Modal backend (the subprocess
+ * backend has no image and pins nothing).
  */
 export function currentHarnessImageTag(harnessPath: string): Promise<string | null> {
-  return currentTagMemo(harnessPath, async () => {
-    if (resolveSandboxBackend(process.env) !== "modal") return null;
-    const code = await readFile(harnessPath, "utf-8");
-    const baseTag = process.env.MODAL_SANDBOX_IMAGE ?? DEFAULT_SANDBOX_IMAGE;
-    return localHarnessImageTag(baseTag, code);
-  });
+  return currentTagMemo(harnessPath, () => activeBackend().harnessImageTag(harnessPath));
 }
 
 // ── Bundle inspection ────────────────────────────────────────────────────────
-
-/** Injectable backend describers (tests). */
-type BundleDescribers = {
-  modal: typeof describeModalBundle;
-  subprocess: typeof describeSubprocessBundle;
-};
 
 /**
  * Load a worker bundle in a throwaway ONE-SHOT sandbox exec (the guest's
@@ -160,33 +238,19 @@ type BundleDescribers = {
  */
 export async function describeBundle(
   opts: { harnessPath: string; workerCode: string },
-  describers: BundleDescribers = {
-    modal: describeModalBundle,
-    subprocess: describeSubprocessBundle,
-  },
+  describers?: BackendMap<"describeBundle">,
 ): Promise<unknown> {
-  switch (resolveSandboxBackend(process.env)) {
-    case "subprocess":
-      return describers.subprocess(opts);
-    default:
-      return describers.modal(opts);
-  }
+  return opFor("describeBundle", describers)(opts);
 }
 
 // ── Agent-server spawning ─────────────────────────────────────────────────────
 
-/** Injectable backend spawners (tests). */
-type AgentSpawners = {
-  modal: typeof spawnModalAgentServer;
-  subprocess: typeof spawnSubprocessAgentServer;
-};
-
 /**
- * Spawn one DEPLOYED AGENT as a server on the selected backend. The single
- * dispatch point mirroring {@link spawnWarmHarness}, but for the HTTP-only
- * agent contract: boot artifacts (bundle, hash, env) are delivered at exec
- * time, readiness is the guest's `/health`, and the returned handle exposes
- * only the manage surface plus terminate.
+ * Spawn one DEPLOYED AGENT as a server on the selected backend. Mirrors
+ * {@link spawnWarmHarness}, but for the HTTP-only agent contract: boot
+ * artifacts (bundle, hash, env) are delivered at exec time, readiness is the
+ * guest's `/health`, and the returned handle exposes only the manage surface
+ * plus terminate.
  *
  * Every spawn boots directly from the published harness snapshot image —
  * there is no warm pool (deleted; production always ran with it disabled).
@@ -195,31 +259,20 @@ type AgentSpawners = {
  */
 export async function spawnAgentServer(
   opts: AgentSpawnOptions,
-  spawners: AgentSpawners = {
-    modal: spawnModalAgentServer,
-    subprocess: spawnSubprocessAgentServer,
-  },
+  spawners?: BackendMap<"spawnAgentServer">,
 ): Promise<AgentServerHandle> {
-  // The blob store is content-addressed; carrying the hash to the guest
-  // (which verifies before loading) extends that property end-to-end.
-  const workerSha256 = hash("sha256", opts.workerCode);
-  const common = {
+  return opFor(
+    "spawnAgentServer",
+    spawners,
+  )({
     harnessPath: opts.harnessPath,
     slug: opts.slug,
     workerCode: opts.workerCode,
-    workerSha256,
+    // The blob store is content-addressed; carrying the hash to the guest
+    // (which verifies before loading) extends that property end-to-end.
+    workerSha256: hash("sha256", opts.workerCode),
     agentEnv: opts.env,
-  };
-  switch (resolveSandboxBackend(process.env)) {
-    case "subprocess":
-      // No name: a single process has no fleet to be unique within, and the
-      // subprocess backend has no Modal control plane to enforce one.
-      return spawners.subprocess(common);
-    default:
-      return spawners.modal({
-        ...common,
-        imageTag: opts.imageTag,
-        name: agentSandboxName(opts.slug, opts.version),
-      });
-  }
+    imageTag: opts.imageTag,
+    name: agentSandboxName(opts.slug, opts.version),
+  });
 }

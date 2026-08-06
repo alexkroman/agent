@@ -6,8 +6,8 @@
  * `RuntimeOptions.runCode`.
  */
 
+import { errorMessage } from "@alexkroman1/aai";
 import pTimeout from "p-timeout";
-import { errMsg } from "./harness-rpc.ts";
 import type { AgentDef, ToolContext } from "./harness-types.ts";
 import { RUN_CODE_TIMEOUT_MS, STORAGE_DISABLED_MESSAGE, TOOL_TIMEOUT_MS } from "./limits.ts";
 
@@ -45,7 +45,7 @@ export async function runCode(code: string): Promise<string | { error: string }>
     const text = output.join("\n").trim();
     return text || "Code ran successfully (no output)";
   } catch (err) {
-    return { error: errMsg(err) };
+    return { error: errorMessage(err) };
   }
 }
 
@@ -128,6 +128,6 @@ export async function executeTool(
       state,
     };
   } catch (err) {
-    return { error: errMsg(err), state };
+    return { error: errorMessage(err), state };
   }
 }

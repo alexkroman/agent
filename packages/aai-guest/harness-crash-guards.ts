@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { errorMessage as errMessage } from "@alexkroman1/aai";
+import { errorMessage } from "@alexkroman1/aai";
 
 /**
  * Keep one bad turn from killing the sandbox.
@@ -22,10 +22,10 @@ import { errorMessage as errMessage } from "@alexkroman1/aai";
  */
 export function installCrashGuards(): void {
   process.on("unhandledRejection", (reason) => {
-    console.error(`Guest: unhandled rejection (session continues): ${errMessage(reason)}`);
+    console.error(`Guest: unhandled rejection (session continues): ${errorMessage(reason)}`);
   });
   process.on("uncaughtException", (err) => {
-    console.error(`Guest: uncaught exception; exiting: ${errMessage(err)}`);
+    console.error(`Guest: uncaught exception; exiting: ${errorMessage(err)}`);
     process.exit(4);
   });
 }

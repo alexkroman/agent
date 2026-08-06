@@ -18,13 +18,17 @@ import { MISTRAL_KIND } from "../../sdk/providers/llm/mistral.ts";
 import { OPENAI_KIND } from "../../sdk/providers/llm/openai.ts";
 import { OPENROUTER_KIND } from "../../sdk/providers/llm/openrouter.ts";
 import { XAI_KIND } from "../../sdk/providers/llm/xai.ts";
+import { ASSEMBLYAI_S2S_KIND } from "../../sdk/providers/s2s/assemblyai.ts";
+import { OPENAI_REALTIME_KIND } from "../../sdk/providers/s2s/openai-realtime.ts";
 import type { LlmProvider, SttOpener } from "../../sdk/providers.ts";
 import {
+  ALL_PROVIDER_ENV_VARS,
   registerLlmKind,
   registerSttKind,
   registerTtsKind,
   requiredProviderEnvVars,
   resolveLlm,
+  resolveS2sEnvVar,
   resolveStt,
   resolveTts,
 } from "./resolve.ts";
@@ -267,6 +271,56 @@ describe("requiredProviderEnvVars", () => {
     expect(requiredProviderEnvVars({ stt: { kind: "not-a-provider" } })).toEqual([
       "ASSEMBLYAI_API_KEY",
     ]);
+  });
+
+  it("names no key for an unrecognized S2S kind rather than falling back to AssemblyAI", () => {
+    // The S2S branch used to be `kind === openai-realtime ? OPENAI : ASSEMBLYAI`,
+    // so a third vendor's descriptor silently demanded ASSEMBLYAI_API_KEY — and
+    // this list is what the deploy preflight rejects on, so the deploy failed
+    // naming a key the agent does not use while never naming the one it does.
+    expect(requiredProviderEnvVars({ s2s: { kind: "some-new-vendor" } })).toEqual([]);
+  });
+
+  it("honours a per-descriptor apiKeyEnv on an S2S descriptor", () => {
+    // STT/TTS/LLM have supported this since per-stage credentials landed; S2S
+    // resolved a hardcoded literal, so the override was silently ignored.
+    expect(
+      requiredProviderEnvVars({
+        s2s: { kind: "assemblyai", options: { apiKeyEnv: "ASSEMBLYAI_STAGING_KEY" } },
+      }),
+    ).toEqual(["ASSEMBLYAI_STAGING_KEY"]);
+  });
+});
+
+describe("resolveS2sEnvVar", () => {
+  it("maps each S2S kind to its own vendor's credential", () => {
+    expect(resolveS2sEnvVar({ kind: ASSEMBLYAI_S2S_KIND, options: {} })).toBe("ASSEMBLYAI_API_KEY");
+    expect(resolveS2sEnvVar({ kind: OPENAI_REALTIME_KIND, options: {} })).toBe("OPENAI_API_KEY");
+  });
+
+  it("throws on an unknown kind, listing what is supported", () => {
+    expect(() => resolveS2sEnvVar({ kind: "nope", options: {} })).toThrow(
+      /Unknown S2S provider kind: "nope"\. Supported: assemblyai, openai-realtime\./,
+    );
+  });
+
+  it("prefers a descriptor's apiKeyEnv over the registry default", () => {
+    expect(
+      resolveS2sEnvVar({ kind: ASSEMBLYAI_S2S_KIND, options: { apiKeyEnv: "OTHER_KEY" } }),
+    ).toBe("OTHER_KEY");
+  });
+});
+
+describe("ALL_PROVIDER_ENV_VARS", () => {
+  it("covers every S2S vendor's credential", () => {
+    // Derived from S2S_REGISTRY, so a new S2S provider widens the
+    // withHostCredentialFallback allowlist without an edit here.
+    expect(ALL_PROVIDER_ENV_VARS).toContain("ASSEMBLYAI_API_KEY");
+    expect(ALL_PROVIDER_ENV_VARS).toContain("OPENAI_API_KEY");
+  });
+
+  it("has no duplicates", () => {
+    expect(ALL_PROVIDER_ENV_VARS).toEqual([...new Set(ALL_PROVIDER_ENV_VARS)]);
   });
 });
 

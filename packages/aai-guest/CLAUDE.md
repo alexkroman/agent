@@ -57,6 +57,17 @@ delivers):
   toolchain (`@alexkroman1/aai-cli`, the client-build plugins) EXTERNAL:
   it resolves at runtime from the node_modules next to the harness
 
+**Error text comes from the SDK's `errorMessage`, never a local copy.** This
+package had three implementations of it at once: a local `errMsg` in
+`harness-rpc.ts` used at 33 sites, a hand-inlined ternary in
+`studio-session-init.ts`, and — in `harness-crash-guards.ts` — the real
+`errorMessage` from `@alexkroman1/aai`, imported under an alias. The local
+one was strictly weaker: `errorMessage` also unwraps a non-`Error` object
+carrying a string `message`, which is exactly what a thrown value looks like
+after crossing this module's own JSON-RPC boundary, and `errMsg` rendered
+those as `[object Object]`. One name, one import, and the behaviour is
+covered once in `sdk/utils.test.ts`.
+
 ## Dev/prod parity
 
 **The guest IS the dev server — and the runtime IS the user's.** The

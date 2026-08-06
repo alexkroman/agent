@@ -28,6 +28,7 @@
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { errorMessage } from "@alexkroman1/aai";
 import { formatSchemaIssues } from "@alexkroman1/aai/internal";
 import { z } from "zod";
 import { verifyBearer } from "./harness-auth.ts";
@@ -113,7 +114,7 @@ async function install(
     state.studio = await initStudioSession(parsed.data);
     sendJson(res, 200, { ok: true });
   } catch (err) {
-    const error = err instanceof Error ? err.message : String(err);
+    const error = errorMessage(err);
     // A mismatched identity is the caller addressing the wrong sandbox, not a
     // guest fault — 409 so the broker drops its registry row and cold-spawns
     // instead of retrying against a guest that will never accept it.

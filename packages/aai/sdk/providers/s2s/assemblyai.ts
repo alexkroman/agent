@@ -21,6 +21,16 @@ import type { S2sProvider } from "../../providers.ts";
 /** Kind tag recognised by the host-side resolver. */
 export const ASSEMBLYAI_S2S_KIND = "assemblyai" as const;
 
+/**
+ * Env var holding this stage's credential.
+ *
+ * The same string as the STT/TTS/LLM AssemblyAI constants by design — a
+ * distinct NAME per stage is what lets `apiKeyEnv` point one stage at another
+ * account without moving the others (see `descriptorEnvVar` in
+ * `host/providers/resolve.ts`).
+ */
+export const ASSEMBLYAI_S2S_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+
 /** Descriptor returned by {@link assemblyAIS2s}. */
 export type AssemblyAIS2sProvider = S2sProvider & {
   readonly kind: typeof ASSEMBLYAI_S2S_KIND;
