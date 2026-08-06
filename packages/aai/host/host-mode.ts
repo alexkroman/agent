@@ -54,115 +54,6 @@ function hostAudioLead(declared: number | null | undefined): { audioLeadMs?: num
 }
 
 /**
- * The inbound `tool_result` payload routed to {@link RelayExecuteTool.onToolResult}.
- * @internal
- */
-export type RelayToolResult = {
-  toolCallId: string;
-  result: string;
-  error?: string | undefined;
-};
-
-/**
- * A relay tool executor plus the hooks needed to feed it inbound results.
- * @internal
- */
-export type RelayExecuteTool = {
-  /** {@link ExecuteTool} that relays each call to the client and awaits a result. */
-  executeTool: ExecuteTool;
-  /** Resolve (or reject) the pending call matching `toolCallId`. */
-  onToolResult(msg: RelayToolResult): void;
-  /** Reject every still-pending call (call on connection close). */
-  dispose(): void;
-};
-
-type ToolCallEvent = Extract<ClientEvent, { type: "tool_call" }>;
-
-/**
- * A relay's `result` field arrives as a string on the wire. Clients commonly
- * JSON-encode their tool output; unwrap a JSON string so the model receives
- * clean text, but leave object/array JSON (and non-JSON) untouched.
- */
-function normalizeResult(raw: string): string {
-  const parsed = safeJsonParse(raw);
-  return typeof parsed === "string" ? parsed : raw;
-}
-
-/**
- * Build a relay tool executor: `executeTool` emits a `tool_call` frame via
- * `send` and returns a promise keyed by `toolCallId`; `onToolResult` settles
- * that promise when the client replies. Calls that never receive a result
- * reject after `timeoutMs` (default `DEFAULT_RELAY_TOOL_TIMEOUT_MS`, 120 000 ms).
- *
- * @internal
- */
-export function createRelayExecuteTool(opts: {
-  send: (event: ToolCallEvent) => void;
-  timeoutMs?: number | undefined;
-}): RelayExecuteTool {
-  const timeoutMs = opts.timeoutMs ?? DEFAULT_RELAY_TOOL_TIMEOUT_MS;
-  type Pending = {
-    resolve: (value: string) => void;
-    reject: (reason: Error) => void;
-  };
-  const pending = new Map<string, Pending>();
-
-  const executeTool: ExecuteTool = (name, args, _sessionId, _messages, callOpts) => {
-    const toolCallId = callOpts?.toolCallId;
-    if (!toolCallId) {
-      // Defensive: every path should thread a toolCallId (see session-core /
-      // to-vercel-tools). Without one the result can't be correlated.
-      return Promise.resolve(toolError(`Relay tool "${name}" invoked without a toolCallId`));
-    }
-    if (pending.has(toolCallId)) {
-      // A second in-flight call with the same id would clobber the first
-      // entry, and the first call's timer would then delete the new entry —
-      // dropping its genuine tool_result. Refuse instead of clobbering.
-      return Promise.resolve(
-        toolError(`Relay tool "${name}" duplicates in-flight toolCallId "${toolCallId}"`),
-      );
-    }
-    const signal = callOpts?.signal;
-    if (signal?.aborted) {
-      return Promise.resolve(toolError(`Relay tool "${name}" (${toolCallId}) was cancelled`));
-    }
-    const { promise, resolve, reject } = Promise.withResolvers<string>();
-    pending.set(toolCallId, { resolve, reject });
-    opts.send({ type: "tool_call", toolCallId, toolName: name, args });
-    // p-timeout owns the deadline and the abort listener: it rejects with the
-    // timeout Error below, or with the signal's abort reason on cancellation.
-    // Either way the pending entry is dropped once the call settles.
-    return pTimeout(promise, {
-      milliseconds: timeoutMs,
-      ...(signal !== undefined ? { signal } : {}),
-      message: new Error(`Relay tool "${name}" (${toolCallId}) timed out after ${timeoutMs}ms`),
-    }).finally(() => {
-      pending.delete(toolCallId);
-    });
-  };
-
-  function onToolResult(msg: RelayToolResult): void {
-    const entry = pending.get(msg.toolCallId);
-    if (!entry) return;
-    pending.delete(msg.toolCallId);
-    if (msg.error !== undefined) {
-      entry.reject(new Error(msg.error));
-      return;
-    }
-    entry.resolve(normalizeResult(msg.result));
-  }
-
-  function dispose(): void {
-    for (const [, entry] of pending) {
-      entry.reject(new Error("Relay disposed before tool result arrived"));
-    }
-    pending.clear();
-  }
-
-  return { executeTool, onToolResult, dispose };
-}
-
-/**
  * Whether host mode is permitted for this environment.
  *
  * Opt-in: host mode is enabled only by an explicit `AAI_ALLOW_HOST` of
@@ -487,14 +378,22 @@ export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOpt
     });
 
     log.info("host-mode session starting", { tools: host.tools.length });
-    // The client declares its own playback behaviour (`HostConfig.audioLeadMs`),
-    // because it is the only party that knows it. Being programmatic does NOT
-    // imply consuming faster than real time: unpaced used to be the blanket
-    // default here on that reasoning, and for a client that drains at 1x it
-    // converts a whole burst-delivered S2S reply into a backlog the client must
-    // hold — which the tau2 harness discards on barge-in, destroying 36% of all
-    // agent speech unheard. Only a timeline that runs AHEAD of the wall clock is
-    // starved by pacing, and that client can now say so with `null`.
+    // Pacing is the CLIENT'S declaration, and it defaults to PACED.
+    //
+    // Unpaced used to be the blanket default, reasoning that a host-mode client
+    // is programmatic and therefore keeps its own clock. That conflates two
+    // things: being programmatic does not mean consuming FASTER than the wall
+    // clock, and only a client whose timeline runs ahead is starved by pacing.
+    // For one that drains at 1x it is destructive — in S2S mode the service
+    // synthesises a whole reply server-side and it arrives in one burst, so
+    // unpaced relay grew the tau2 harness's backlog to MINUTES, and that
+    // harness discards its buffer on barge-in: 36% of all agent speech was
+    // destroyed unheard. Pacing keeps the backlog on this side, where
+    // `PacedAudioSink.clear()` drops it on barge-in instead.
+    //
+    // So the client says. Omitted means the pacer's own real-time default (the
+    // field is omitted rather than set, so nothing forks that default); `null`
+    // means unpaced, for a harness that genuinely steps faster than real time.
     runtime.startSession(ws, {
       ...hostAudioLead(host.audioLeadMs),
       ...opts.startOpts,
