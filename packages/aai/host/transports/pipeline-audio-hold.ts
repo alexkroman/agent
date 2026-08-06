@@ -48,7 +48,10 @@ import { createRestartableTimer } from "../_timer.ts";
  * behaviour. Never releasing would be a permanently mute agent.
  */
 export interface AudioHold {
-  /** Begin withholding audio. Idempotent; re-arms the backstop. */
+  /**
+   * Begin withholding audio. Idempotent, and deliberately does NOT extend an
+   * existing hold — see the note on the backstop.
+   */
   hold(): void;
   /**
    * Offer a chunk. Returns what should go on the wire now: the chunk itself
@@ -92,6 +95,14 @@ export function createAudioHold(opts: {
 
   return {
     hold(): void {
+      // Only the FIRST duck of a stretch arms the timer. Re-arming on every
+      // partial looks reasonable ("the caller is still talking, hold longer")
+      // and deadlocks: once the agent is quiet the caller says "Are you still
+      // there?", each partial pushes the deadline out, and the audio is never
+      // released — which makes them talk more. Shipped that way, an agent went
+      // mute mid-word and the caller hung up after 35s of silence. The window
+      // is measured from the first word, always.
+      if (holding) return;
       holding = true;
       backstop.arm(opts.maxHoldMs);
     },

@@ -86,13 +86,22 @@ describe("createAudioHold", () => {
     expect(backstopped).toEqual([]);
   });
 
-  test("re-holding re-arms the backstop rather than stacking timers", async () => {
+  test("repeated holds do NOT extend the window — it runs from the first word", async () => {
+    // The deadlock this prevents: while the agent is quiet the caller keeps
+    // talking ("Are you still there?"), every partial calls hold() again, and a
+    // re-arming timer never fires — so the audio is never released, which makes
+    // them talk more. Shipped once; the agent went mute mid-word and the caller
+    // hung up after 35s.
     const { hold, backstopped } = makeHold(40);
+    const a = pcm(1);
     hold.hold();
-    await sleep(25);
-    hold.hold(); // the caller is still going — push the deadline out
-    await sleep(25);
-    expect(backstopped).toEqual([]); // would have fired at 40ms without re-arming
-    await vi.waitFor(() => expect(backstopped).toHaveLength(1));
+    hold.push(a);
+    const keepTalking = setInterval(() => hold.hold(), 5);
+    try {
+      await vi.waitFor(() => expect(backstopped).toHaveLength(1));
+    } finally {
+      clearInterval(keepTalking);
+    }
+    expect(backstopped[0]).toEqual([a]);
   });
 });
