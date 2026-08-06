@@ -6,9 +6,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  type ConstructorType,
   lastSocket,
-  MockWebSocket,
+  MockWebSocketConstructor,
   makeConfig,
   resetLastSocket,
 } from "./_session-core-test-utils.ts";
@@ -24,7 +23,7 @@ describe("createSessionCore", () => {
     resetLastSocket();
     core = createSessionCore({
       platformUrl: "ws://localhost:3000",
-      WebSocket: MockWebSocket as unknown as ConstructorType,
+      WebSocket: MockWebSocketConstructor,
     });
   });
 

@@ -2,7 +2,9 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   type AudioMockContext,
+  crashWorklet,
   findWorkletNode,
+  g,
   installAudioMocks,
   MockAudioContext,
   voiceOpts,
@@ -435,7 +437,7 @@ describe("createVoiceIO", () => {
     const onError = vi.fn();
     const io = await createVoiceIO(voiceOpts({ onError }));
     const cap = findWorkletNode(audio.workletNodes(), "capture-processor");
-    (cap as unknown as { onprocessorerror: () => void }).onprocessorerror();
+    crashWorklet(cap);
     expect(onError).toHaveBeenCalledWith(
       expect.objectContaining({ message: expect.stringContaining("capture") }),
     );
@@ -449,7 +451,7 @@ describe("createVoiceIO", () => {
     io.enqueue(new ArrayBuffer(2));
     const play = findWorkletNode(audio.workletNodes(), "playback-processor");
     const done = io.done();
-    (play as unknown as { onprocessorerror: () => void }).onprocessorerror();
+    crashWorklet(play);
     await expect(done).resolves.toBeUndefined();
     expect(onError).toHaveBeenCalledWith(
       expect.objectContaining({ message: expect.stringContaining("playback") }),
@@ -490,13 +492,10 @@ describe("createVoiceIO", () => {
         },
       },
     ];
-    const nav = (globalThis as unknown as Record<string, unknown>).navigator as {
-      mediaDevices: { getUserMedia: unknown };
-    };
+    const nav = g.navigator as { mediaDevices: { getUserMedia: unknown } };
     nav.mediaDevices.getUserMedia = () => Promise.resolve({ getTracks: () => tracks });
 
     let lastCtx!: MockAudioContext;
-    const g = globalThis as unknown as Record<string, unknown>;
     g.AudioContext = class extends MockAudioContext {
       constructor(opts?: { sampleRate?: number }) {
         super(opts);
@@ -556,9 +555,6 @@ describe("createVoiceIO", () => {
 
   test("cleans up on worklet load error", async () => {
     let _lastContext!: MockAudioContext;
-    // Double-cast needed: test assigns an incomplete AudioContext mock that
-    // doesn't satisfy the full DOM AudioContext interface.
-    const g = globalThis as unknown as Record<string, unknown>;
     g.AudioContext = class extends MockAudioContext {
       constructor(opts?: { sampleRate?: number }) {
         super(opts);

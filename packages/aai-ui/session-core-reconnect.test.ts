@@ -10,7 +10,7 @@
  */
 import ReconnectingWebSocket from "partysocket/ws";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { type AudioMockContext, installAudioMocks } from "./_react-test-utils.ts";
+import { type AudioMockContext, fakeMediaStream, installAudioMocks } from "./_react-test-utils.ts";
 import { MockWebSocket, makeConfig, resetLastSocket } from "./_session-core-test-utils.ts";
 import { createSessionCore } from "./session-core.ts";
 import type { SessionCore } from "./session-core-types.ts";
@@ -151,7 +151,7 @@ describe("session-core automatic reconnection (partysocket)", () => {
         },
       };
       tracks.push(track);
-      return { getTracks: () => [track] } as unknown as MediaStream;
+      return fakeMediaStream(track);
     }
 
     beforeEach(() => {

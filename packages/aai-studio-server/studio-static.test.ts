@@ -197,20 +197,25 @@ describe("studio client handlers", () => {
 
   const BINDINGS = { auth: undefined } as unknown as AppContext["env"];
 
+  /**
+   * Hono hands the route callback its own context type; the handlers take the
+   * app's `AppContext`. Narrow at this one seam rather than per route; the
+   * escape-hatch ratchet counts every occurrence.
+   */
+  const asAppContext = (c: object): AppContext => c as unknown as AppContext;
+
   /** A Hono app wired to the freshly imported handlers. */
   async function app() {
     const { handleStudioPage, handleStudioFavicon, handleStudioClientAsset } = await import(
       "./studio-static.ts"
     );
     const hono = new Hono();
-    hono.get("/", (c) => handleStudioPage(c as unknown as AppContext));
-    hono.get("/favicon.ico", (c) => handleStudioFavicon(c as unknown as AppContext));
-    hono.get("/studio-assets/:path{.+}", (c) =>
-      handleStudioClientAsset(c as unknown as AppContext),
-    );
+    hono.get("/", (c) => handleStudioPage(asAppContext(c)));
+    hono.get("/favicon.ico", (c) => handleStudioFavicon(asAppContext(c)));
+    hono.get("/studio-assets/:path{.+}", (c) => handleStudioClientAsset(asAppContext(c)));
     // Same handler with no `path` param — the shape a route change could
     // produce, where the handler must refuse rather than read something.
-    hono.get("/unparameterized", (c) => handleStudioClientAsset(c as unknown as AppContext));
+    hono.get("/unparameterized", (c) => handleStudioClientAsset(asAppContext(c)));
     return {
       get: (url: string) => hono.fetch(new Request(`http://studio.test${url}`), BINDINGS),
     };

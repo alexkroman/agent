@@ -10,6 +10,7 @@ import { sleep } from "../_test-utils.ts";
 import {
   firstCallArg,
   inFlightReplyScript,
+  llmCalls,
   makeOpts,
   noopToolSchema,
   partialTranscriptSpy,
@@ -266,7 +267,7 @@ describe("PipelineTransport — STT → LLM turn", () => {
     });
     const t = createPipelineTransport(opts);
     await t.start();
-    const llm = opts.llm as unknown as { calls: Array<{ prompt?: unknown }> };
+    const llm = llmCalls(opts);
 
     // Turn 1 — runs the tool and finishes speaking. (A hold phrase precedes the
     // reply because the turn opens with a tool call, so match by substring.)
@@ -338,7 +339,7 @@ describe("interrupted-speech persistence", () => {
     });
     const t = createPipelineTransport(opts);
     await t.start();
-    const llm = opts.llm as unknown as { calls: Array<{ prompt?: unknown }> };
+    const llm = llmCalls(opts);
 
     // Turn 1 — wait until text has streamed to TTS (so `accumulated` is
     // non-empty), then barge in (default threshold = 1 word).
@@ -390,7 +391,7 @@ describe("interrupted-speech persistence", () => {
     });
     const t = createPipelineTransport(opts);
     await t.start();
-    const llm = opts.llm as unknown as { calls: Array<{ prompt?: unknown }> };
+    const llm = llmCalls(opts);
 
     stt.last()?.fireFinal("hi");
     // Abort during the pre-first-delta delay.
@@ -427,7 +428,7 @@ describe("interrupted-speech persistence", () => {
     });
     const t = createPipelineTransport(opts);
     await t.start();
-    const llm = opts.llm as unknown as { calls: Array<{ prompt?: unknown }> };
+    const llm = llmCalls(opts);
 
     // Turn 1 — start speaking.
     stt.last()?.fireFinal("what is my balance");
@@ -479,7 +480,7 @@ describe("interrupted-speech persistence", () => {
     });
     const t = createPipelineTransport(opts);
     await t.start();
-    const llm = opts.llm as unknown as { calls: Array<{ prompt?: unknown }> };
+    const llm = llmCalls(opts);
 
     stt.last()?.fireFinal("look up my account");
     // Wait until step 1 finished (tool ran) and step 2's stream has started
@@ -575,7 +576,7 @@ describe("PipelineTransport — below-threshold deferral", () => {
     });
     const t = createPipelineTransport(opts);
     await t.start();
-    const llm = opts.llm as unknown as { calls: Array<{ prompt?: unknown }> };
+    const llm = llmCalls(opts);
 
     stt.last()?.fireFinal("update my order please"); // ≥2 words → starts turn 1
     await vi.waitFor(() => {

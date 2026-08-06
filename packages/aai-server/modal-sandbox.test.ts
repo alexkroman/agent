@@ -44,6 +44,21 @@ function makeFakeDial(socket: FakeGuestSocket) {
   return { dial, calls };
 }
 
+/**
+ * Widen a `createGuestSandbox` params object for `toMatchObject` assertions.
+ * The real type is a struct rather than an index signature, so the widening
+ * needs a cast — keep it at this one seam; the escape-hatch ratchet counts
+ * every occurrence.
+ */
+function asRecord(params: object): Record<string, unknown> {
+  return params as unknown as Record<string, unknown>;
+}
+
+/** A stand-in for a Modal `Image`, identified only by tag. */
+function fakeImage(tag: string): Image {
+  return { tag } as unknown as Image;
+}
+
 beforeEach(() => {
   _internals.resetModalContext();
 });
@@ -177,7 +192,7 @@ describe("spawnModalWarm", () => {
       lookupGuestSandbox: () => Promise.resolve(null),
       prepareGuestImage: () => Promise.resolve(),
       createGuestSandbox: async (_code, params) => {
-        createParams.push(params as unknown as Record<string, unknown>);
+        createParams.push(asRecord(params));
         return sb;
       },
     };
@@ -203,12 +218,9 @@ describe("spawnModalWarm", () => {
 
     // The harness runs on Node with the per-sandbox token in the EXEC env.
     expect(sb.execCalls).toHaveLength(1);
-    const { command, params } = sb.execCalls[0] as {
-      command: string[];
-      params: Record<string, unknown>;
-    };
+    const { command, params } = sb.execCalls[0] ?? { command: [], params: undefined };
     expect(command).toEqual(["node", expect.stringContaining("harness.mjs")]);
-    const env = params.env as Record<string, string>;
+    const env = params?.env ?? {};
     expect(env.AAI_GUEST_PORT).toBe(String(GUEST_PORT));
     expect(env.AAI_GUEST_TOKEN).toMatch(/^[0-9a-f]{64}$/);
 
@@ -255,8 +267,7 @@ describe("spawnModalWarm", () => {
       const socket = createFakeGuestSocket();
       const { dial } = makeFakeDial(socket);
       const warm = await spawnModalWarm({ harnessPath }, makeCtx(sb), dial);
-      const env = (sb.execCalls[0] as unknown as { params: { env: Record<string, string> } }).params
-        .env;
+      const env = sb.execCalls[0]?.params.env ?? {};
       tokens.push(env.AAI_GUEST_TOKEN as string);
       await warm.cleanup();
     };
@@ -282,7 +293,7 @@ describe("spawnModalWarm", () => {
           lookupGuestSandbox: () => Promise.resolve(null),
           prepareGuestImage: () => Promise.resolve(),
           createGuestSandbox: async (_code, params) => {
-            createParams.push(params as unknown as Record<string, unknown>);
+            createParams.push(asRecord(params));
             return sb;
           },
         },
@@ -322,7 +333,7 @@ describe("spawnModalWarm", () => {
           lookupGuestSandbox: () => Promise.resolve(null),
           prepareGuestImage: () => Promise.resolve(),
           createGuestSandbox: async (_code, params) => {
-            createParams.push(params as unknown as Record<string, unknown>);
+            createParams.push(asRecord(params));
             return sb;
           },
         },
@@ -354,7 +365,7 @@ describe("spawnModalWarm", () => {
       lookupGuestSandbox: () => Promise.resolve(null),
       prepareGuestImage: () => Promise.resolve(),
       createGuestSandbox: async (_code, params) => {
-        createParams.push(params as unknown as Record<string, unknown>);
+        createParams.push(asRecord(params));
         return sb;
       },
     };
@@ -387,7 +398,7 @@ describe("spawnModalWarm", () => {
       lookupGuestSandbox: () => Promise.resolve(null),
       prepareGuestImage: () => Promise.resolve(),
       createGuestSandbox: async (_code, params) => {
-        createParams.push(params as unknown as Record<string, unknown>);
+        createParams.push(asRecord(params));
         return sb;
       },
     };
@@ -413,7 +424,7 @@ describe("spawnModalWarm", () => {
       lookupGuestSandbox: () => Promise.resolve(null),
       prepareGuestImage: () => Promise.resolve(),
       createGuestSandbox: async (_code, params) => {
-        createParams.push(params as unknown as Record<string, unknown>);
+        createParams.push(asRecord(params));
         return sb;
       },
     };
@@ -437,7 +448,7 @@ describe("spawnModalWarm", () => {
       lookupGuestSandbox: () => Promise.resolve(null),
       prepareGuestImage: () => Promise.resolve(),
       createGuestSandbox: async (_code, params) => {
-        createParams.push(params as unknown as Record<string, unknown>);
+        createParams.push(asRecord(params));
         return sb;
       },
     };
@@ -533,8 +544,8 @@ describe("translateCreateError", () => {
 });
 
 describe("resolveSpawnImage", () => {
-  const current = { tag: "current" } as unknown as Image;
-  const pinned = { tag: "pinned" } as unknown as Image;
+  const current = fakeImage("current");
+  const pinned = fakeImage("pinned");
 
   it("uses the deploy's pin, without building the current image", async () => {
     // Per-deploy environment pinning: a platform upgrade must not change the

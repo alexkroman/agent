@@ -33,23 +33,30 @@ const PATTERNS = [
   { label: "biome-ignore", re: "biome-ignore" },
   { label: "eslint-disable", re: "eslint-disable" },
   { label: "as any", re: "\\bas any\\b" },
-  // NOT YET COUNTED, deliberately: `as unknown as T`. It is the double-cast
-  // that launders a value past the type checker without tripping `as any`
-  // above, and being uncounted is why it became the dominant hatch idiom here
-  // — measured 2026-08, there are 198 of them under packages/ (173 in test
-  // files) against 3 `as any`. So it belongs in this list.
+  // The double-cast that launders a value past the type checker without
+  // tripping `as any` above. Being uncounted for so long is exactly why it
+  // became the dominant hatch idiom here: it peaked at 210 under `packages/`
+  // against 3 `as any` (and all three of those are prose in comments, not
+  // real casts).
   //
-  // Adding the line is a one-word change; what it needs is a branch where the
-  // count does not JUMP. Because the ratchet diffs the work tree against the
-  // merge-base with origin/main, enabling it on a branch that is many commits
-  // ahead charges that branch for every cast those commits added (+47 when
-  // this was tried), so the gate fails for debt the diff never introduced.
-  // Land it either directly on top of origin/main, or together with enough
-  // removals to cover the delta. The three worst concentrations are the
-  // provider suites' `session._transcriber as unknown as Fake…` (27 in
-  // stt/assemblyai.test.ts alone), ssrf-pinning.test.ts's mock-fetch casts
-  // (12), and host-mode.test.ts's `ws as unknown as SessionWebSocket` (8) —
-  // each of which wants a typed seam rather than a cast at every call site.
+  // Counted since the branch that halved it. The removals were not
+  // suppressions moved elsewhere — each concentration got a TYPED SEAM, one
+  // narrowing in one helper that every call site then goes through:
+  // `fakeOf(session)` in stt/assemblyai.test.ts (35 -> 1),
+  // `asSessionWs(ws)` in host-mode.test.ts (13 -> 2),
+  // `okFetch().fetch` / `.firstCall()` in ssrf-pinning.test.ts (12 -> 2),
+  // `MockWebSocketConstructor` + `recordingWebSocketClass` shared across the
+  // aai-ui session-core suites (26 -> 7 for the package). Some vanished
+  // outright by using the tool's own affordance instead — `vi.mocked(fn)`, or
+  // typing a recorder with `Parameters<T>` so nothing needs widening.
+  //
+  // Adding this line was always a one-word change; what it needed was a branch
+  // where the count does not JUMP. Because the ratchet diffs the work tree
+  // against the merge-base with origin/main, enabling it on a branch many
+  // commits ahead charges that branch for every cast those commits added (+47
+  // when this was first tried). Land such a change directly on top of
+  // origin/main, as this one was.
+  { label: "as unknown as", re: "\\bas unknown as\\b" },
 ];
 
 // Only count source under packages/, never built output.

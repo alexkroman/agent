@@ -62,8 +62,20 @@ describe("fallbackHtmlPlugin", () => {
     return use.mock.calls[0]?.[0] as Connect.NextHandleFunction;
   }
 
-  function makeRes(): FakeRes {
-    return { setHeader: vi.fn(), end: vi.fn() };
+  /**
+   * A response double: `res` for assertions, `res.asServerResponse` for the
+   * middleware call. Connect's handler wants a real `ServerResponse`, which
+   * the double does not satisfy — that narrowing lives here rather than at
+   * each call; the escape-hatch ratchet counts every occurrence.
+   */
+  function makeRes(onEnd?: () => void): FakeRes & {
+    asServerResponse: Parameters<Connect.NextHandleFunction>[1];
+  } {
+    const res = { setHeader: vi.fn(), end: vi.fn(onEnd) };
+    return {
+      ...res,
+      asServerResponse: res as unknown as Parameters<Connect.NextHandleFunction>[1],
+    };
   }
 
   async function runPlugin(dir: string) {
@@ -90,11 +102,7 @@ describe("fallbackHtmlPlugin", () => {
       for (const url of ["/", "/index.html"]) {
         const res = makeRes();
         const next = vi.fn();
-        middleware(
-          { url } as Connect.IncomingMessage,
-          res as unknown as Parameters<Connect.NextHandleFunction>[1],
-          next,
-        );
+        middleware({ url } as Connect.IncomingMessage, res.asServerResponse, next);
         await vi.waitFor(() => expect(res.end).toHaveBeenCalledWith("<html>transformed</html>"));
         expect(res.setHeader).toHaveBeenCalledWith("Content-Type", "text/html");
         expect(next).not.toHaveBeenCalled();
@@ -109,11 +117,7 @@ describe("fallbackHtmlPlugin", () => {
       const middleware = getMiddleware(use);
       const res = makeRes();
       const next = vi.fn();
-      middleware(
-        { url: "/assets/app.js" } as Connect.IncomingMessage,
-        res as unknown as Parameters<Connect.NextHandleFunction>[1],
-        next,
-      );
+      middleware({ url: "/assets/app.js" } as Connect.IncomingMessage, res.asServerResponse, next);
       expect(next).toHaveBeenCalled();
       expect(res.end).not.toHaveBeenCalled();
     });
@@ -127,11 +131,7 @@ describe("fallbackHtmlPlugin", () => {
       const middleware = getMiddleware(use);
       const res = makeRes();
       const next = vi.fn();
-      middleware(
-        { url: "/" } as Connect.IncomingMessage,
-        res as unknown as Parameters<Connect.NextHandleFunction>[1],
-        next,
-      );
+      middleware({ url: "/" } as Connect.IncomingMessage, res.asServerResponse, next);
       await vi.waitFor(() => expect(next).toHaveBeenCalledWith(error));
       expect(res.end).not.toHaveBeenCalled();
     });
@@ -142,18 +142,11 @@ describe("fallbackHtmlPlugin", () => {
       const { use } = await runPlugin(dir);
       const middleware = getMiddleware(use);
       const error = new Error("res.end failed");
-      const res = {
-        setHeader: vi.fn(),
-        end: vi.fn(() => {
-          throw error;
-        }),
-      };
+      const res = makeRes(() => {
+        throw error;
+      });
       const next = vi.fn();
-      middleware(
-        { url: "/" } as Connect.IncomingMessage,
-        res as unknown as Parameters<Connect.NextHandleFunction>[1],
-        next,
-      );
+      middleware({ url: "/" } as Connect.IncomingMessage, res.asServerResponse, next);
       await vi.waitFor(() => expect(next).toHaveBeenCalledWith(error));
     });
   });

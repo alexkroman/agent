@@ -83,11 +83,34 @@ was the pre-push hook — and `git push --no-verify` skipped them entirely.
 
 - **`pnpm check:hatches`** (`scripts/check-escape-hatches.mjs`) — counts
   static-analysis escape hatches (`@ts-expect-error`, `@ts-ignore`,
-  `@ts-nocheck`, `biome-ignore`, `eslint-disable`, `as any`) across
-  `packages/` and fails on any **net-new** total versus the merge base.
-  The baseline only ratchets down — removing a hatch lowers the bar for the
-  next branch, and you can't silently add one. Fix the underlying
-  type/lint error instead of suppressing it.
+  `@ts-nocheck`, `biome-ignore`, `eslint-disable`, `as any`,
+  `as unknown as`) across `packages/` and fails on any **net-new** total
+  versus the merge base. The baseline only ratchets down — removing a hatch
+  lowers the bar for the next branch, and you can't silently add one. Fix the
+  underlying type/lint error instead of suppressing it.
+
+  **`as unknown as` is the one to watch, and the reason it is counted.** It
+  launders a value past the checker without tripping `as any`, and while it
+  went uncounted it became the dominant idiom here: 210 of them against 3
+  `as any` (all three of which are prose in comments, not casts). Counting it
+  came with halving it to 105, and the removals are the pattern to copy — a
+  concentration of identical casts is a missing **typed seam**, one narrowing
+  in one helper that every call site goes through (`fakeOf(session)`,
+  `asSessionWs(ws)`, `MockWebSocketConstructor`), not a cast repeated per
+  assertion. Some need no cast at all once the tool's own affordance is used:
+  `vi.mocked(fn)` instead of casting a mock back to a spy, and typing a
+  recorder with `Parameters<T>` instead of widening to
+  `Record<string, unknown>` and re-narrowing at each read.
+
+  Two properties of the gate worth knowing before relying on it. It compares
+  **grand totals, not per-pattern counts**, so a branch that removes hatches
+  buys headroom to add others — deliberate (it lets a refactor swap one for
+  another) but it means a large-reduction branch does not police itself; the
+  reduction only becomes the floor once it lands and is the next branch's
+  merge base. And because the diff is against the merge base, **enabling a new
+  pattern on a branch that is many commits ahead charges that branch for every
+  occurrence those commits added** (+47 when `as unknown as` was first tried).
+  Land a new pattern directly on top of `origin/main`.
 - **`pnpm check:file-length`** (`scripts/check-file-length.mjs`) — caps
   source files at 500 lines and test files at 700. Files that already
   exceed the cap are grandfathered in `scripts/file-length-allowlist.json`,

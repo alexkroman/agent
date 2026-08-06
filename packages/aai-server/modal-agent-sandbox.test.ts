@@ -73,7 +73,7 @@ async function spawn(
 function execEnv(sb: Awaited<ReturnType<typeof spawn>>["sb"]): Record<string, string> {
   const call = sb.execCalls[0];
   if (!call) throw new Error("the harness was never exec'd");
-  return (call.params as { env: Record<string, string> }).env;
+  return call.params.env ?? {};
 }
 
 describe("spawnModalAgentServer", () => {

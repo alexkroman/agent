@@ -40,6 +40,18 @@ export function makeCallbacks(): TransportCallbacks {
   };
 }
 
+/**
+ * The recorded calls of a {@link createFakeLanguageModel} passed through
+ * `makeOpts`. `PipelineTransportOptions.llm` is the plain `LanguageModel`
+ * type, which drops the fake's `calls` array — recovering it needs a cast, so
+ * keep it at this one seam; the escape-hatch ratchet counts every occurrence.
+ */
+export function llmCalls(opts: PipelineTransportOptions): {
+  calls: Array<{ prompt?: unknown }>;
+} {
+  return opts.llm as unknown as { calls: Array<{ prompt?: unknown }> };
+}
+
 export function makeOpts(
   overrides: Partial<PipelineTransportOptions> = {},
   {

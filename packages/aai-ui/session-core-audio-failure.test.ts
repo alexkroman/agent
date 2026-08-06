@@ -12,30 +12,30 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   findWorkletNode,
+  g,
   installAudioMocks,
   type MockAudioWorkletNode,
 } from "./_react-test-utils.ts";
-import { MockWebSocket, makeConfig } from "./_session-core-test-utils.ts";
+import {
+  type MockWebSocket,
+  makeConfig,
+  recordingWebSocketClass,
+} from "./_session-core-test-utils.ts";
 import { createSessionCore } from "./session-core.ts";
 import { loadAudioModules } from "./session-core-audio-setup.ts";
 import type { SessionCore } from "./session-core-types.ts";
-import type { WebSocketConstructor } from "./types.ts";
 
 /** `navigator.mediaDevices`, which installAudioMocks patches in place. */
 function mediaDevices(): { getUserMedia: unknown } {
-  return (globalThis.navigator as unknown as { mediaDevices: { getUserMedia: unknown } })
-    .mediaDevices;
+  return (g.navigator as { mediaDevices: { getUserMedia: unknown } }).mediaDevices;
 }
 
 describe("audio bring-up failures", () => {
   let audio: ReturnType<typeof installAudioMocks>;
   let socket: MockWebSocket | null = null;
-  const WS = class extends MockWebSocket {
-    constructor(url: string) {
-      super(url);
-      socket = this;
-    }
-  } as unknown as WebSocketConstructor;
+  const WS = recordingWebSocketClass((s) => {
+    socket = s;
+  });
 
   beforeEach(async () => {
     // The dynamic imports are real I/O; warm the memo before faking anything.
@@ -150,12 +150,9 @@ describe("audio bring-up failures", () => {
 describe("buffered greeting replay", () => {
   let audio: ReturnType<typeof installAudioMocks>;
   let socket: MockWebSocket | null = null;
-  const WS = class extends MockWebSocket {
-    constructor(url: string) {
-      super(url);
-      socket = this;
-    }
-  } as unknown as WebSocketConstructor;
+  const WS = recordingWebSocketClass((s) => {
+    socket = s;
+  });
 
   beforeEach(async () => {
     await loadAudioModules();
