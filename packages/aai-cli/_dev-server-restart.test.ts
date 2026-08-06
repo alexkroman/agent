@@ -76,6 +76,10 @@ beforeEach(() => {
   chokidarState.watchedDir = undefined;
   chokidarState.close = vi.fn().mockResolvedValue(undefined);
   mockChokidarWatch.mockClear();
+  // File watching is opt-in since it defaults OFF (see devWatchEnabled) — these
+  // suites exercise the watcher, so they turn it on. `unstubEnvs` in
+  // vitest.shared.ts undoes this before each test; no manual cleanup.
+  vi.stubEnv("AAI_DEV_WATCH", "1");
   primeDevServerMocks();
   mockValidateAgentExport.mockImplementation(() => undefined);
 });

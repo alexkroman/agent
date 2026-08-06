@@ -264,9 +264,13 @@ describe("guest studio chat surface", () => {
         expect(methods).toContain("studio/sync-workspace");
         expect(methods).toContain("studio/persist-chat");
       });
-      const sync = host.calls.find((c) => c.method === "studio/sync-workspace");
-      const syncedFiles = (sync?.params ?? {}) as { files?: Record<string, string> };
-      expect(syncedFiles.files?.["agent.ts"]).toBe("// updated by agent");
+      // Content-scoped for the same reason as the checkpoint test below: the
+      // FIRST recorded sync is not necessarily this test's, since the fake host
+      // is module-level and a prior turn can still be emitting.
+      const synced = host.calls
+        .filter((c) => c.method === "studio/sync-workspace")
+        .map((c) => (c.params as { files?: Record<string, string> }).files?.["agent.ts"]);
+      expect(synced).toContain("// updated by agent");
     } finally {
       await close();
     }
@@ -287,11 +291,21 @@ describe("guest studio chat surface", () => {
     try {
       await post(url, chatBody("update the agent"));
       await vi.waitFor(() => {
-        const syncs = host.calls.filter((c) => c.method === "studio/sync-workspace");
+        // Scoped by CONTENT, not by position. `fakeHost` installs a
+        // MODULE-LEVEL sender and `close()` shuts the HTTP server without
+        // awaiting the turn, so a previous test's still-running turn can push
+        // into this test's `calls` — afterEach's `setHostSend(null)` only
+        // covers the gap BETWEEN tests, not an overlap INTO one. That overlap
+        // is routine under full-suite load, and `syncs[0]` was then a foreign
+        // sync: the flake read `expected '// updated by agent' to be
+        // '// checkpointed'`, quoting a string this test never writes.
+        const mine = host.calls
+          .filter((c) => c.method === "studio/sync-workspace")
+          .map((c) => (c.params as { files?: Record<string, string> }).files?.["agent.ts"])
+          .filter((content) => content === "// original" || content === "// checkpointed");
         // One from the mutating step's checkpoint, one from the settle.
-        expect(syncs.length).toBeGreaterThanOrEqual(2);
-        const checkpoint = syncs[0]?.params as { files?: Record<string, string> };
-        expect(checkpoint.files?.["agent.ts"]).toBe("// checkpointed");
+        expect(mine.length).toBeGreaterThanOrEqual(2);
+        expect(mine).toContain("// checkpointed");
       });
     } finally {
       await close();

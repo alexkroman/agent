@@ -213,7 +213,10 @@ function buildUrl(
     }
     params.set("language", language);
   }
-  return `wss://${ASSEMBLYAI_TTS_HOST}/v1/ws/?${params.toString()}`;
+  // Length-checked rather than `??`: an empty `host` is a misconfiguration, and
+  // treating it as "unset" beats building `wss:///v1/ws/` and failing at connect.
+  const host = (opts.host?.length ?? 0) > 0 ? opts.host : ASSEMBLYAI_TTS_HOST;
+  return `wss://${host}/v1/ws/?${params.toString()}`;
 }
 
 /**

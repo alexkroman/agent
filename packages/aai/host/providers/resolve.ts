@@ -225,16 +225,38 @@ export type ResolvedOpener<Opener> = {
   readonly envVar: string;
 };
 
+/**
+ * A descriptor's own credential env var, overriding the registry default.
+ *
+ * The registry maps ONE env var per provider kind, which is right until two
+ * stages of the same vendor need different accounts. AssemblyAI's three
+ * `*_API_KEY_ENV` constants are distinct names for the same string
+ * (`ASSEMBLYAI_API_KEY`), so without this there is no way to run STT against a
+ * staging cluster while the LLM gateway and TTS stay on production — and the
+ * keys are strictly environment-scoped, measured: a production key is rejected
+ * by the sandbox STT cluster (1008) and a staging key is rejected by production
+ * STT and TTS. A mixed deployment therefore needs two credentials live at once.
+ *
+ * It names a VARIABLE, never a key, so the descriptor stays secret-free and
+ * safe to serialize — the same property that keeps API keys out of deployed
+ * configs. A non-string or empty value falls through to the registry default
+ * rather than resolving to `""`.
+ */
+function descriptorEnvVar(descriptor: { readonly options?: unknown }): string | undefined {
+  const value = (descriptor.options as Record<string, unknown> | undefined)?.apiKeyEnv;
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
 /** Resolve an {@link SttProvider} descriptor into a host-side opener + env var. */
 export function resolveStt(descriptor: SttProvider): ResolvedOpener<SttOpener> {
   const entry = lookupProvider(STT_REGISTRY, descriptor.kind, "STT");
-  return { opener: entry.open(descriptor), envVar: entry.envVar };
+  return { opener: entry.open(descriptor), envVar: descriptorEnvVar(descriptor) ?? entry.envVar };
 }
 
 /** Resolve a {@link TtsProvider} descriptor into a host-side opener + env var. */
 export function resolveTts(descriptor: TtsProvider): ResolvedOpener<TtsOpener> {
   const entry = lookupProvider(TTS_REGISTRY, descriptor.kind, "TTS");
-  return { opener: entry.open(descriptor), envVar: entry.envVar };
+  return { opener: entry.open(descriptor), envVar: descriptorEnvVar(descriptor) ?? entry.envVar };
 }
 
 /**
@@ -345,8 +367,12 @@ const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
     label: "AssemblyAI",
     create: (apiKey, d) => {
       const opts = options<AssemblyAILlmOptions>(d);
+      // An explicit gatewayUrl WINS over `region`, same rule as the STT
+      // opener's streamingUrl: naming an endpoint is deliberate and the
+      // residency shorthand must not silently overwrite it.
       const baseURL =
-        opts.region === "eu" ? ASSEMBLYAI_LLM_GATEWAY_EU_URL : ASSEMBLYAI_LLM_GATEWAY_URL;
+        opts.gatewayUrl ||
+        (opts.region === "eu" ? ASSEMBLYAI_LLM_GATEWAY_EU_URL : ASSEMBLYAI_LLM_GATEWAY_URL);
       // The gateway implements /chat/completions only, so use .chat() —
       // the provider's default callable targets OpenAI's Responses API.
       // `fetch` repairs the gateway's id-less streaming tool_call deltas,
@@ -385,7 +411,7 @@ const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
  */
 export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>): LanguageModel {
   const entry = lookupProvider(LLM_REGISTRY, descriptor.kind, "LLM");
-  const apiKey = requireKey(env, entry.envVar, entry.label);
+  const apiKey = requireKey(env, descriptorEnvVar(descriptor) ?? entry.envVar, entry.label);
   return entry.create(apiKey, descriptor);
 }
 

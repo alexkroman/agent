@@ -86,6 +86,19 @@ export interface AssemblyAILlmOptions {
    */
   region?: "us" | "eu";
   /**
+   * Gateway base URL, replacing {@link ASSEMBLYAI_LLM_GATEWAY_URL}. Must
+   * include the version path (`https://llm-gateway.sandbox000.assemblyai-labs.com/v1`) —
+   * the client appends `/chat/completions` and nothing else.
+   *
+   * Takes precedence over {@link AssemblyAILlmOptions.region}, matching
+   * `assemblyAIStt({ streamingUrl })`: naming an endpoint is deliberate and
+   * must not be silently overwritten by the residency shorthand. Intended for
+   * pre-release/staging clusters; a staging cluster generally issues its own
+   * keys, so point every AssemblyAI stage at the same environment or the ones
+   * left on production reject the key. Leave unset in production.
+   */
+  gatewayUrl?: string;
+  /**
    * Reasoning effort forwarded to the model as `reasoning_effort`.
    *
    * Unset, no `reasoning_effort` parameter is sent at all — the model runs
@@ -95,6 +108,18 @@ export interface AssemblyAILlmOptions {
    * thinking depth. Only GPT-5-family models accept the parameter.
    */
   reasoningEffort?: AssemblyAIReasoningEffort;
+  /**
+   * Env var holding this stage's credential, replacing the provider default
+   * (`ASSEMBLYAI_API_KEY`). Names a VARIABLE, not a key, so the descriptor
+   * stays secret-free and safe to serialize.
+   *
+   * For running one stage against a different account or cluster than the
+   * others — AssemblyAI keys are environment-scoped, so a staging STT cluster
+   * rejects a production key and vice versa, and a mixed setup needs both keys
+   * live at once. The variable must be present in the agent's env (`.env` or
+   * `aai secret put`), like any other credential.
+   */
+  apiKeyEnv?: string;
 }
 
 /** Descriptor returned by {@link assemblyAILlm}. */

@@ -98,6 +98,10 @@ beforeEach(() => {
   chokidarState.watchedDir = undefined;
   chokidarState.close = vi.fn().mockResolvedValue(undefined);
   mockChokidarWatch.mockClear();
+  // File watching is opt-in since it defaults OFF (see devWatchEnabled) — these
+  // suites exercise the watcher, so they turn it on. `unstubEnvs` in
+  // vitest.shared.ts undoes this before each test; no manual cleanup.
+  vi.stubEnv("AAI_DEV_WATCH", "1");
   primeDevServerMocks();
   mockValidateAgentExport.mockImplementation(() => undefined);
 });
@@ -272,6 +276,25 @@ describe("startDevServer", () => {
       );
 
       await cleanup();
+    });
+  });
+
+  test("does NOT watch by default — AAI_DEV_WATCH is opt-in", async () => {
+    // A restart replaces the server and ends in-flight voice sessions, which is
+    // right while editing an agent and wrong while a benchmark drives the host:
+    // a formatter save or a `.env` touch restarts underneath the run and the
+    // harness reports it as a provider failure. Cleanup must also survive the
+    // absent watcher — `watcher?.close()` — or every shutdown throws
+    // "Cannot read properties of undefined (reading 'close')".
+    vi.stubEnv("AAI_DEV_WATCH", "");
+    await withTempDir(async (dir) => {
+      await writeAgentTs(dir);
+
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+
+      expect(mockChokidarWatch).not.toHaveBeenCalled();
+
+      await expect(cleanup()).resolves.toBeUndefined();
     });
   });
 

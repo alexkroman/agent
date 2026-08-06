@@ -1,6 +1,16 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { createWorkerEvaluator } from "./_bundler.ts";
+
+// 30s, not the 5s default — the same reason `_dev-server-restart.test.ts`
+// raises its own. Every `evaluate()` here writes a real file to a tmpdir and
+// ESM-imports it, so these are filesystem+loader tests wearing the clothes of
+// unit tests. Standalone they finish in tens of milliseconds; under a full
+// `turbo run test` the eight package suites contend for CPU and this suite
+// timed out at 5s mid-import. A generous ceiling costs nothing on the happy
+// path, because a test that passes still returns as soon as the import
+// settles — the timeout only decides how long a genuinely stuck one hangs.
+vi.setConfig({ testTimeout: 30_000 });
 
 describe("createWorkerEvaluator", () => {
   test("byte-identical code returns the cached AgentDef without re-import", async () => {

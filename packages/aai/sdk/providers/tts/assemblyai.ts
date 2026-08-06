@@ -220,6 +220,31 @@ export interface AssemblyAITtsOptions {
    * code fails at connect time rather than muting the session.
    */
   language?: AssemblyAITtsLanguage;
+  /**
+   * Streaming-TTS host to dial, replacing the production `ASSEMBLYAI_TTS_HOST`. A bare
+   * host (`streaming-tts.sandbox000.assemblyai-labs.com`), not a URL — the
+   * adapter owns the `wss://` scheme and the `/v1/ws/` path, so a full URL here
+   * would be wrong in a way that only shows up at connect.
+   *
+   * Intended for pre-release/staging clusters, and it is the TTS half of the
+   * same A/B `assemblyAIStt({ streamingUrl })` gives STT. A staging cluster
+   * generally issues its own keys, so point every AssemblyAI stage at the same
+   * environment or the ones left on production reject the key. Leave unset in
+   * production.
+   */
+  host?: string;
+  /**
+   * Env var holding this stage's credential, replacing the provider default
+   * (`ASSEMBLYAI_API_KEY`). Names a VARIABLE, not a key, so the descriptor
+   * stays secret-free and safe to serialize.
+   *
+   * For running one stage against a different account or cluster than the
+   * others — AssemblyAI keys are environment-scoped, so a staging STT cluster
+   * rejects a production key and vice versa, and a mixed setup needs both keys
+   * live at once. The variable must be present in the agent's env (`.env` or
+   * `aai secret put`), like any other credential.
+   */
+  apiKeyEnv?: string;
 }
 
 /** Descriptor returned by {@link assemblyAITts}. */
