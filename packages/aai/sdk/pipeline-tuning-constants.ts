@@ -306,3 +306,28 @@ export const DEFAULT_SPEECH_IDLE_TIMEOUT_MS = 3500;
  * interruption still aborts the turn and discards the rest.
  */
 export const PIPELINE_MAX_AUDIO_HOLD_MS = 400;
+
+/**
+ * Filler spoken when a pipeline turn's first action is a tool call with no
+ * preceding text. **Empty by default: the agent says nothing and goes straight
+ * to the answer.** Set a phrase to reinstate it.
+ *
+ * It was "One moment." on the reasoning that the caller must hear something
+ * rather than dead air. Two measurements retired that. The silence it covers is
+ * now about a second — LLM time-to-first-text measured p50 **1.10s** / mean
+ * 1.42s on a tau2-bench retail run — which is a pause, not dead air, and
+ * {@link DEFAULT_DEAD_AIR_COVER_MS} still covers the long tool chains this was
+ * really protecting against. Against that, it costs the FIRST SENTENCE, and the
+ * voice rules spend that slot deliberately: the opener is capped at eight words
+ * and must carry the answer or the next question, because interruption rate
+ * climbs with reply length (measured 17% under 10 words to 59% past 35). "One
+ * moment." carries neither, so it pushed the real content back behind a filler
+ * sentence — exactly where a barge-in eats it.
+ *
+ * It also would not stay scoped. Prompt wording that merely PRESUPPOSED an
+ * opening phrase drove filler-opening replies from 15% to 43%; scoping the rule
+ * to tool-call turns brought that to 29%, which is roughly the share of turns
+ * that call a tool — the floor of the rule rather than a bug. Removing the
+ * default removes the floor.
+ */
+export const DEFAULT_HOLD_PHRASE = "";

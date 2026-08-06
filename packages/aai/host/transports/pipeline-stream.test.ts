@@ -321,6 +321,10 @@ describe("LLM stream error reporting", () => {
 });
 
 describe("createStreamPartHandler dead-air cover", () => {
+  // The shipped default is "" (see DEFAULT_HOLD_PHRASE); these specs name a
+  // phrase so they exercise the cover machinery rather than the default.
+  const TEST_HOLD_PHRASE = "One moment.";
+
   function harness(overrides: { holdPhrase?: string; signal?: AbortSignal } = {}) {
     const spoken: string[] = [];
     const handler = createStreamPartHandler({
@@ -334,6 +338,11 @@ describe("createStreamPartHandler dead-air cover", () => {
       emitError: () => undefined,
       log: silentLogger,
       sid: "t",
+      // These specs exercise the cover MECHANISM, which is still there — it is
+      // only off by default now (DEFAULT_HOLD_PHRASE is ""). Naming a phrase
+      // here keeps them testing the machinery rather than the shipped default;
+      // the "holdPhrase '' disables it" spec overrides this back to empty.
+      holdPhrase: TEST_HOLD_PHRASE,
       ...overrides,
     });
     const toolCall = (id: string): void =>
@@ -378,7 +387,7 @@ describe("createStreamPartHandler dead-air cover", () => {
     const { spoken, toolCall } = harness();
     vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS);
     toolCall("tc-1");
-    expect(spoken.join("").split(DEFAULT_HOLD_PHRASE).length - 1).toBe(1);
+    expect(spoken.join("").split(TEST_HOLD_PHRASE).length - 1).toBe(1);
   });
 
   test("covers a tool window that opens after the model has already spoken", () => {

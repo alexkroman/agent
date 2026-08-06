@@ -83,6 +83,7 @@ class ReplayResult:
     # the same real run be re-scored under several client truncation policies.
     arrivals: list[tuple[float, int]] = field(default_factory=list)
     events: list[tuple[float, str]] = field(default_factory=list)
+    eot: list[tuple[float, str, float | None, str]] = field(default_factory=list)
     agent_bytes: int = 0
     error: str | None = None
 
@@ -181,6 +182,14 @@ async def replay_one(
                         continue
                     kind = ev.get("type", "?")
                     res.events.append((now, kind))
+                    # Interim transcript + the STT's end-of-turn confidence, so
+                    # a speculative turn-start policy can be scored offline:
+                    # how much lead crossing a threshold buys, and how often
+                    # the text at that moment already equals the final.
+                    if kind in ("user_transcript_partial", "user_transcript"):
+                        res.eot.append(
+                            (now, kind, ev.get("eotConfidence"), ev.get("text", ""))
+                        )
                     if kind == "error" and ev.get("fatal") is not False:
                         res.error = f"{ev.get('code')}: {ev.get('message')}"
                         stop.set()
@@ -423,6 +432,7 @@ def main() -> None:
             # without paying for the conversations again.
             "events_raw": [[round(t, 3), k] for t, k in rep.events],
             "arrivals_raw": [[round(t, 3), n] for t, n in rep.arrivals],
+            "eot_raw": [[round(t, 3), k, c, x] for t, k, c, x in rep.eot],
         }
         for rep in replays
     ]

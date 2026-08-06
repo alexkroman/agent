@@ -82,7 +82,7 @@ export type SessionCore = {
   onAudioDone(): void;
   onUserTranscript(text: string): void;
   /** Interim user transcript — forwarded to the client, never added to history. */
-  onUserTranscriptPartial(text: string): void;
+  onUserTranscriptPartial(text: string, eotConfidence?: number): void;
   onAgentTranscript(text: string, interrupted: boolean): void;
   /**
    * The in-progress reply transcript — forwarded to the client so its captions
@@ -356,12 +356,16 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       emit({ type: "user_transcript", text });
       pushMessages({ role: "user", content: text });
     },
-    onUserTranscriptPartial(text) {
+    onUserTranscriptPartial(text, eotConfidence) {
       // Partials too, not just the committed turn: one long utterance would
       // otherwise only count at its `speech_started`, and could be reaped
       // mid-sentence.
       resetIdle();
-      emit({ type: "user_transcript_partial", text });
+      emit({
+        type: "user_transcript_partial",
+        text,
+        ...(eotConfidence === undefined ? {} : { eotConfidence }),
+      });
     },
     onAgentTranscript(text, interrupted) {
       resetIdle();

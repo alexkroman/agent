@@ -257,6 +257,7 @@ describe("assemblyAIStt STT adapter — raw turn trace (AAI_DEBUG)", () => {
     await flush();
 
     expect(debugSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       "AssemblyAI STT turn",
       expect.objectContaining({
         transcript: "track my order T-O-999",
@@ -264,6 +265,7 @@ describe("assemblyAIStt STT adapter — raw turn trace (AAI_DEBUG)", () => {
       }),
     );
     expect(debugSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       "AssemblyAI STT turn",
       expect.objectContaining({
         transcript: "I've been waiting on that one.",
@@ -291,6 +293,7 @@ describe("assemblyAIStt STT adapter — raw turn trace (AAI_DEBUG)", () => {
     await flush();
 
     expect(debugSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       "AssemblyAI STT turn",
       expect.objectContaining({ transcript: "", endOfTurn: true }),
     );

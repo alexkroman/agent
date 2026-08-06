@@ -137,6 +137,18 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("user_transcript_partial"),
     text: z.string().max(MAX_TRANSCRIPT_CHARS),
+    /**
+     * The STT service's confidence that the user's turn has ENDED as of this
+     * interim, 0..1, when the provider reports one (AssemblyAI's
+     * `end_of_turn_confidence`). Absent means "no opinion", never zero.
+     *
+     * Carried on the wire so an endpointing policy can be MEASURED before it
+     * is built: pairing each interim's confidence and text against the final
+     * that follows gives the lead time a speculative turn-start would buy and
+     * the rate at which the transcript would still have been correct. Nothing
+     * acts on it.
+     */
+    eotConfidence: z.number().min(0).max(1).optional(),
   }),
   /**
    * The current reply's transcript so far — a **full-replacement snapshot**, and

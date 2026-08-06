@@ -206,6 +206,9 @@ describe("PipelineTransport — STT → LLM turn", () => {
 
   test("guarantees a hold phrase when the turn opens with a tool call (no speech)", async () => {
     const { opts, stt, tts } = makeOpts({
+      // Opt in: DEFAULT_HOLD_PHRASE is "" now, so the phrase has to be named
+      // to test that the mechanism still fires when one is configured.
+      holdPhrase: "One moment.",
       llm: createFakeLanguageModel({
         steps: [
           [{ type: "tool-call", toolCallId: "tc-1", toolName: "lookup", input: "{}" }],
@@ -323,6 +326,7 @@ describe("PipelineTransport — STT → LLM turn", () => {
 describe("interrupted-speech persistence", () => {
   test("barge-in persists spoken-so-far text with an [interrupted] marker", async () => {
     const { opts, stt, tts, callbacks } = makeOpts({
+      holdPhrase: "One moment.", // opt in: the default is "" now
       minBargeInWords: 1, // pin so the one-word "stop" barge-in fires (default is now 2)
       llm: createFakeLanguageModel({
         // Turn 1 streams slowly so we can barge in mid-stream; turn 2 is a plain reply.
@@ -516,6 +520,7 @@ describe("interrupted-speech persistence", () => {
 
   test("barge-in during the hold phrase (no real text yet) persists nothing", async () => {
     const { opts, stt, tts, callbacks } = makeOpts({
+      holdPhrase: "One moment.", // opt in: DEFAULT_HOLD_PHRASE is "" now
       minBargeInWords: 1, // pin so the one-word "stop" barge-in fires (default is now 2)
       llm: createFakeLanguageModel({
         steps: [

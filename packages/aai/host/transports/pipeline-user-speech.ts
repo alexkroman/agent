@@ -12,7 +12,7 @@ import {
   MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES,
 } from "../../sdk/constants.ts";
 import type { SttTurnMeta } from "../../sdk/providers.ts";
-import type { Logger } from "../runtime-config.ts";
+import { debugPartialsEnabled, type Logger } from "../runtime-config.ts";
 import type { AgentAudioPath } from "./pipeline-audio-hold.ts";
 import {
   createFalseInterruptionRecovery,
@@ -27,6 +27,23 @@ import {
 } from "./pipeline-speech-edges.ts";
 import { hasMinWords, scanWords } from "./pipeline-text.ts";
 import type { TransportCallbacks } from "./types.ts";
+
+/**
+ * One line per interim is the noisiest thing in a voice session — one per
+ * ~200ms of speech, each a revision of the last — so it is opt-in via
+ * `AAI_DEBUG_PARTIALS=1` rather than plain `AAI_DEBUG`. Hoisted out of
+ * `onSttPartial` to keep that handler under the complexity cap; the branch is
+ * real logic, not noise to suppress.
+ *
+ * This gate deliberately does NOT cover the provider's own turn trace, which
+ * carries the same text plus `end_of_turn` and the end-of-turn confidence —
+ * that is the raw material for measuring an endpointing policy, and silencing
+ * the redundant copy must not lose it.
+ */
+function tracePartial(log: Logger, sid: string, text: string, meta?: SttTurnMeta): void {
+  if (!debugPartialsEnabled) return;
+  log.debug("Pipeline STT partial", { sid, text, eot: meta?.endOfTurnConfidence });
+}
 
 /** STT transcript-stream handlers. See {@link createSttEventHandlers}. */
 export interface SttEventHandlers {
@@ -81,7 +98,7 @@ function createSttEventHandlers(deps: {
   nudger: SilenceNudger;
   callbacks: {
     onCancelled(): void;
-    onUserTranscriptPartial?: ((text: string) => void) | undefined;
+    onUserTranscriptPartial?: ((text: string, eotConfidence?: number) => void) | undefined;
   };
   /** Commit a user turn: emit the transcript and run the chained reply. */
   commitUserTurn: (text: string) => void;
@@ -163,12 +180,12 @@ function createSttEventHandlers(deps: {
   }
 
   return {
-    onSttPartial(text: string, _meta?: SttTurnMeta): void {
+    onSttPartial(text: string, meta?: SttTurnMeta): void {
       if (deps.isTerminated()) return;
       // Debug trace (AAI_DEBUG=1): partials are the only record of a word STT
       // heard mid-utterance and then dropped from its final, which otherwise
       // looks like the LLM inventing a tool argument out of nowhere.
-      log.debug("Pipeline STT partial", { sid: deps.sid, text });
+      tracePartial(log, deps.sid, text, meta);
       // User speech proves presence: reset the nudge budget, restart the window.
       nudger.onUserSpeech();
       // Counted once, with a bounded scan: every consumer here is a threshold
@@ -183,7 +200,7 @@ function createSttEventHandlers(deps: {
       // clears userTranscript — emitting first would blank the caption it just
       // set.
       const emitPartial = (): void => {
-        if (words >= 1) callbacks.onUserTranscriptPartial?.(text);
+        if (words >= 1) callbacks.onUserTranscriptPartial?.(text, meta?.endOfTurnConfidence);
       };
       if (words >= 1) {
         // Stop making noise NOW; whether this aborts the turn is decided below.

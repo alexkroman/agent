@@ -6,6 +6,7 @@
 // never said. Enabled by AAI_DEBUG=1 (see runtime-config.debugLoggingEnabled).
 
 import { describe, expect, test, vi } from "vitest";
+import { tick } from "../_test-utils.ts";
 import type { Logger } from "../runtime-config.ts";
 import { makeOpts } from "./_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
@@ -61,21 +62,22 @@ describe("PipelineTransport — STT debug trace", () => {
     await t.stop();
   });
 
-  test("traces interim transcripts, so a word STT heard then dropped is visible", async () => {
-    // The diagnostic case: "PO999" appears in a partial but not in any final.
-    // Without partial tracing that loss is invisible in the log.
+  test("does NOT trace interim transcripts by default — they are opt-in", async () => {
+    // Interims are the highest-volume line in a session (one per ~200ms of
+    // speech, each a revision of the last) and drowned the turn-level events,
+    // so they sit behind AAI_DEBUG_PARTIALS rather than plain AAI_DEBUG.
+    //
+    // The diagnostic they existed for — a word STT heard in a partial and then
+    // dropped from every final — is not lost: the provider's own turn trace
+    // still logs it under AAI_DEBUG, with end_of_turn and the end-of-turn
+    // confidence alongside (host/providers/stt/assemblyai.test.ts).
     const logger = makeSpyLogger();
     const { opts, stt } = makeOpts({ logger });
     const t = createPipelineTransport(opts);
     await t.start();
     stt.last()?.firePartial("track my order PO999");
-    await vi.waitFor(() => {
-      expect(debugCalls(logger)).toEqual(
-        expect.arrayContaining([
-          ["Pipeline STT partial", expect.objectContaining({ text: "track my order PO999" })],
-        ]),
-      );
-    });
+    await tick();
+    expect(debugCalls(logger).map(([msg]) => msg)).not.toContain("Pipeline STT partial");
     await t.stop();
   });
 

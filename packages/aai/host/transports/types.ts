@@ -22,7 +22,7 @@ export type TransportCallbacks = {
    * forwards STT partials so the client can render live captions; S2S
    * transports never call it (their providers only surface committed turns).
    */
-  onUserTranscriptPartial?(text: string): void;
+  onUserTranscriptPartial?(text: string, eotConfidence?: number): void;
   onAgentTranscript(text: string, interrupted: boolean): void;
   /**
    * The reply's transcript *so far*, cumulative — called each time more of it

@@ -337,13 +337,6 @@ export const DEFAULT_INTERRUPTION_MIN_DURATION_MS = 500;
 export const DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS = 2000;
 
 /**
- * Default filler spoken when a pipeline turn's first action is a tool call with
- * no preceding text — guarantees the caller hears something instead of dead air
- * while the tool runs. `""` disables it.
- */
-export const DEFAULT_HOLD_PHRASE = "One moment.";
-
-/**
  * Spoken when a pipeline turn's LLM stream fails, so a provider outage is a
  * recoverable moment in the conversation instead of a dead line.
  *
@@ -395,6 +388,7 @@ export {
   DEAD_AIR_COVER_PHRASES,
   DEFAULT_DEAD_AIR_COVER_MS,
   DEFAULT_FALSE_INTERRUPTION_PROMPT,
+  DEFAULT_HOLD_PHRASE,
   DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
   DEFAULT_VOICE_FOCUS,
   DEFAULT_VOICE_FOCUS_THRESHOLD,

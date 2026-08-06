@@ -78,7 +78,7 @@ describe("PipelineTransport", () => {
       expect(callbacks.onCancelled).not.toHaveBeenCalled();
       expect(callbacks.onSpeechStarted).not.toHaveBeenCalled();
       // Live captions are independent of the gate.
-      expect(callbacks.onUserTranscriptPartial).toHaveBeenCalledWith("mm-hmm");
+      expect(callbacks.onUserTranscriptPartial).toHaveBeenCalledWith("mm-hmm", undefined);
       await t.stop();
     });
 
@@ -136,8 +136,12 @@ describe("PipelineTransport", () => {
 
       stt.last()?.firePartial("track my");
       stt.last()?.firePartial("track my order");
-      expect(callbacks.onUserTranscriptPartial).toHaveBeenNthCalledWith(1, "track my");
-      expect(callbacks.onUserTranscriptPartial).toHaveBeenNthCalledWith(2, "track my order");
+      expect(callbacks.onUserTranscriptPartial).toHaveBeenNthCalledWith(1, "track my", undefined);
+      expect(callbacks.onUserTranscriptPartial).toHaveBeenNthCalledWith(
+        2,
+        "track my order",
+        undefined,
+      );
       await t.stop();
     });
 

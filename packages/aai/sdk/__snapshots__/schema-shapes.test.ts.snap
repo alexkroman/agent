@@ -91,6 +91,7 @@ exports[`protocol schema shapes > ClientEventSchema option shapes 1`] = `
     "type",
   ],
   "user_transcript_partial": [
+    "eotConfidence",
     "text",
     "type",
   ],
@@ -194,6 +195,7 @@ exports[`protocol schema shapes > ServerMessageSchema option shapes 1`] = `
     "type",
   ],
   "user_transcript_partial": [
+    "eotConfidence",
     "text",
     "type",
   ],
