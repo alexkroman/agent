@@ -86,8 +86,36 @@ handshake and names itself, rather than being dropped silently.
 each call back over the socket and waits. That is why this needs no sandbox.
 
 **Each connection is isolated.** A single-use runtime is built when the
-handshake lands and shut down when the socket closes. That is also the scaling
-limit worth knowing: one runtime per live connection.
+handshake lands and shut down when the socket closes.
+
+## How many connections it holds
+
+Measured, not estimated — see [`bench/`](./bench) for the harness and the full
+table. On 4 vCPU / 16 GB: **1000 concurrent streaming sessions** at 460 MiB,
+just over one CPU core, sub-60ms event-loop lag and no audio loss. Marginal cost
+is ~300 KiB and ~0.1% of a core per session, so **memory is not the limit — one
+event loop is.** 16 GB would hold ~45,000 sessions' worth of RSS; a single core
+runs out at ~1000.
+
+Four things follow, if you need more on the same hardware:
+
+1. **Run one process per core.** The measured ceiling is one event loop, and the
+   box had three idle cores. Sessions share no state — each gets its own runtime
+   and dies with its socket — so `node:cluster` over a shared port scales this
+   almost linearly with no code change. The one thing to watch is `?sessionId=`
+   resume, which needs to land back on the process holding that session.
+2. **Terminate client TLS in front of Node.** Connect bursts, not steady state,
+   are what hurt: 400 simultaneous connects pushed ready-p95 to 2.3s versus
+   0.13s when paced, and each one is two TLS handshakes. Moving the inbound half
+   to nginx/haproxy takes that off the event loop.
+3. **Ask callers for larger audio frames.** At 20ms frames the server wakes 50
+   times a second per session to produce 10 provider writes — the vendor STT SDK
+   coalesces to 100ms anyway. 40–60ms client frames cut that overhead
+   proportionally and change nothing else.
+4. **Do not set `DATABASE_URL` on a host server.** `createRuntime` opens its own
+   Postgres pool per runtime, and here that means *per connection* — 1000 pools.
+   Tenant tools are relayed and never touch `ctx.db`, so a host server has no
+   use for it anyway.
 
 ## What it does not give you
 
