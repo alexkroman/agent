@@ -6,6 +6,7 @@ import {
   DEFAULT_MAX_TURN_SILENCE_MS,
   DEFAULT_MIN_TURN_SILENCE_MS,
   DEFAULT_STT_PROMPT,
+  DEFAULT_VOICE_FOCUS_THRESHOLD,
   STT_CONNECT_MAX_RETRIES,
   STT_CONNECT_RETRY_DELAY_MS,
   STT_CONNECT_TIMEOUT_MS,
@@ -187,9 +188,14 @@ function buildTranscriberParams(
   const initialAgentContext = agentContextCapable
     ? normalizeAgentContext(openOpts.agentContext ?? "")
     : undefined;
-  // Voice focus (noise suppression); defaults to near-field. "off"/"" disables.
+  // Voice focus (voice isolation); defaults to near-field. "off"/"" disables.
   const requestedVoiceFocus = opts.voiceFocus ?? "near-field";
   const voiceFocus = requestedVoiceFocus === "off" ? "" : requestedVoiceFocus;
+  // Above the service's own 0.7, because the interferer that matters here is
+  // background SPEECH and only the pre-model filter can suppress it — see
+  // DEFAULT_VOICE_FOCUS_THRESHOLD for the measurement, including why raising
+  // `vad_threshold` instead is a regression.
+  const voiceFocusThreshold = opts.voiceFocusThreshold ?? DEFAULT_VOICE_FOCUS_THRESHOLD;
   const params: Record<string, unknown> = {
     sampleRate: openOpts.sampleRate,
     speechModel,
@@ -218,7 +224,10 @@ function buildTranscriberParams(
   const sttPrompt = openOpts.sttPrompt ?? DEFAULT_STT_PROMPT;
   if (sttPrompt) params.prompt = sttPrompt;
   if (initialAgentContext !== undefined) params.agentContext = initialAgentContext;
-  if (voiceFocus) params.voiceFocus = voiceFocus;
+  if (voiceFocus) {
+    params.voiceFocus = voiceFocus;
+    params.voiceFocusThreshold = voiceFocusThreshold;
+  }
   return { params, agentContextCapable };
 }
 

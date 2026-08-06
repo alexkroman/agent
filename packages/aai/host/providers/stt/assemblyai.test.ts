@@ -11,6 +11,7 @@ import {
   DEFAULT_MIN_TURN_SILENCE_MS,
   DEFAULT_SESSION_START_TIMEOUT_MS,
   DEFAULT_STT_PROMPT,
+  DEFAULT_VOICE_FOCUS_THRESHOLD,
   STT_CONNECT_MAX_RETRIES,
   STT_CONNECT_RETRY_DELAY_MS,
   STT_CONNECT_TIMEOUT_MS,
@@ -329,6 +330,34 @@ describe("assemblyAIStt STT adapter — voice focus", () => {
     const offFake = off._transcriber as unknown as FakeTranscriber;
     expect(offFake.params.voiceFocus).toBeUndefined();
     expect("voiceFocus" in offFake.params).toBe(false);
+    await off.close();
+  });
+
+  test("sends voiceFocusThreshold, defaulting ABOVE the service's own 0.7", async () => {
+    const session = await openSession({ model: "universal-3-5-pro" });
+    const fake = session._transcriber as unknown as FakeTranscriber;
+    // The whole point of the default is that it is more aggressive than the
+    // service's — inheriting 0.7 is the regression this pins.
+    expect(fake.params.voiceFocusThreshold).toBe(DEFAULT_VOICE_FOCUS_THRESHOLD);
+    expect(DEFAULT_VOICE_FOCUS_THRESHOLD).toBeGreaterThan(0.7);
+    await session.close();
+  });
+
+  test("respects an explicit voiceFocusThreshold", async () => {
+    const session = await openSession({ model: "universal-3-5-pro", voiceFocusThreshold: 0.5 });
+    const fake = session._transcriber as unknown as FakeTranscriber;
+    expect(fake.params.voiceFocusThreshold).toBe(0.5);
+    await session.close();
+  });
+
+  test("omits the threshold when voice focus is off — it tunes a filter that isn't running", async () => {
+    const off = await openSession({
+      model: "universal-3-5-pro",
+      voiceFocus: "off",
+      voiceFocusThreshold: 0.9,
+    });
+    const fake = off._transcriber as unknown as FakeTranscriber;
+    expect("voiceFocusThreshold" in fake.params).toBe(false);
     await off.close();
   });
 });

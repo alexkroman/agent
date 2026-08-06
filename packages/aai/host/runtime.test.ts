@@ -6,7 +6,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "../sdk/_internal-types.ts";
-import { DEFAULT_BUILTIN_TOOLS } from "../sdk/constants.ts";
+import { ASSEMBLYAI_S2S_SAMPLE_RATE, DEFAULT_BUILTIN_TOOLS } from "../sdk/constants.ts";
 import type { Db } from "../sdk/db.ts";
 import { anthropic } from "../sdk/providers/llm/anthropic.ts";
 import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
@@ -223,6 +223,48 @@ describe("createRuntime", () => {
     expect(exec.readyConfig).toEqual(
       expect.objectContaining({ audioFormat: "pcm16", sampleRate: expect.any(Number) }),
     );
+  });
+
+  /**
+   * The Voice Agent API accepts 24 kHz alone, so the ready frame — which is
+   * what tells a client what to capture and play — must name that rate and not
+   * whatever was requested. A host-mode client that DECLARED something else was
+   * already refused at the handshake (`assertHostRatesSupported`), so the only
+   * caller that reaches this override is an operator passing `s2sConfig`
+   * directly, who gets the warn.
+   */
+  test("readyConfig pins an AssemblyAI S2S session to the service's only rate", () => {
+    const exec = createRuntime({
+      agent: makeAgent({ s2s: assemblyAIS2s() }),
+      env: { ASSEMBLYAI_API_KEY: "k" },
+      s2sConfig: {
+        wssUrl: "wss://fake",
+        inputSampleRate: 16_000,
+        outputSampleRate: 16_000,
+      },
+    });
+    expect(exec.readyConfig).toEqual({
+      audioFormat: "pcm16",
+      sampleRate: ASSEMBLYAI_S2S_SAMPLE_RATE,
+      ttsSampleRate: ASSEMBLYAI_S2S_SAMPLE_RATE,
+    });
+  });
+
+  test("a pipeline agent's rates are left entirely alone", () => {
+    const exec = createRuntime({
+      agent: makeAgent({
+        stt: assemblyAIStt(),
+        llm: anthropic({ model: "claude-sonnet-5" }),
+        tts: cartesia({ voice: "v" }),
+      }),
+      env: {
+        ASSEMBLYAI_API_KEY: "k",
+        ANTHROPIC_API_KEY: "k",
+        CARTESIA_API_KEY: "k",
+      },
+      s2sConfig: { wssUrl: "wss://fake", inputSampleRate: 16_000, outputSampleRate: 16_000 },
+    });
+    expect(exec.readyConfig).toMatchObject({ sampleRate: 16_000, ttsSampleRate: 16_000 });
   });
 
   test("shutdown resolves immediately when no sessions exist", async () => {

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import type { ToolSchema } from "../sdk/_internal-types.ts";
 import { createOwnedMap } from "../sdk/owned-map.ts";
 import type { ClientEvent } from "../sdk/protocol.ts";
+import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeConfig, makeLogger, silentLogger } from "./_test-utils.ts";
 import {
@@ -330,6 +331,100 @@ describe("startHostSession (deferred host handshake)", () => {
     // Session started on the fresh per-connection runtime, deferred to the frame.
     expect(startSession).toHaveBeenCalledTimes(1);
     expect(startSession.mock.calls[0]?.[0]).toBe(ws);
+  });
+
+  /**
+   * The host-side counterpart of aai-ui's `assertGranted`. The Voice Agent API
+   * accepts 24 kHz alone and honours no declaration otherwise, so audio at any
+   * other rate is decoded at 24 kHz and the service then emits NOTHING — no
+   * speech edge, no transcript, no error. Measured live, 16 kHz relabelled as
+   * 24 kHz produced zero events on 4 of 5 sessions; a tau2 retail run scored
+   * 2/25 that way. Pinning the rates makes every NUMBER say 24 kHz and cannot
+   * make the BYTES 24 kHz, and nothing later in the session can detect the
+   * difference — so a client that declares a rate we cannot honour has to be
+   * turned away here rather than silently overridden.
+   */
+  describe("S2S sample-rate handshake guard", () => {
+    const s2sBase = { name: "a", systemPrompt: "s", greeting: "", maxSteps: 5, tools: {} };
+
+    test("rejects a config frame declaring a rate the Voice Agent API cannot honour", async () => {
+      const ws = openMockWs();
+      const createRuntime = vi.fn();
+
+      startHostSession(ws as unknown as SessionWebSocket, {
+        env: { AAI_ALLOW_HOST: "1" },
+        baseAgent: { ...s2sBase, s2s: assemblyAIS2s() },
+        logger: silentLogger,
+        createRuntime,
+      });
+      ws.simulateMessage(hostConfigFrame()); // declares 8000 / 16000
+      await Promise.resolve();
+
+      expect(createRuntime).not.toHaveBeenCalled();
+      const err = ws
+        .sentJson()
+        .find((e): e is Extract<ClientEvent, { type: "error" }> => e.type === "error");
+      expect(err?.code).toBe("protocol");
+      // Names both offending fields and what to send instead.
+      expect(err?.message).toContain("sampleRate=8000");
+      expect(err?.message).toContain("ttsSampleRate=16000");
+      expect(err?.message).toContain("24000");
+    });
+
+    test("accepts a frame that declares the supported rate", async () => {
+      const ws = openMockWs();
+      const createRuntime = vi.fn((o: RuntimeOptions) => makeFakeRuntime(o).runtime);
+
+      startHostSession(ws as unknown as SessionWebSocket, {
+        env: { AAI_ALLOW_HOST: "1", ASSEMBLYAI_API_KEY: "k" },
+        baseAgent: { ...s2sBase, s2s: assemblyAIS2s() },
+        logger: silentLogger,
+        createRuntime,
+      });
+      ws.simulateMessage(hostConfigFrame({ sampleRate: 24_000, ttsSampleRate: 24_000 }));
+      await Promise.resolve();
+
+      expect(createRuntime).toHaveBeenCalledTimes(1);
+    });
+
+    test("accepts a frame that declares no rates — that means 'tell me what to use'", async () => {
+      const ws = openMockWs();
+      const createRuntime = vi.fn((o: RuntimeOptions) => makeFakeRuntime(o).runtime);
+
+      startHostSession(ws as unknown as SessionWebSocket, {
+        env: { AAI_ALLOW_HOST: "1", ASSEMBLYAI_API_KEY: "k" },
+        baseAgent: { ...s2sBase, s2s: assemblyAIS2s() },
+        logger: silentLogger,
+        createRuntime,
+      });
+      ws.simulateMessage(
+        JSON.stringify({ type: "config", host: { systemPrompt: "s", tools: [] } }),
+      );
+      await Promise.resolve();
+
+      expect(createRuntime).toHaveBeenCalledTimes(1);
+    });
+
+    test("leaves a pipeline agent's requested rates alone — they are negotiable there", async () => {
+      const ws = openMockWs();
+      let captured: RuntimeOptions | undefined;
+
+      startHostSession(ws as unknown as SessionWebSocket, {
+        env: { AAI_ALLOW_HOST: "1" },
+        logger: silentLogger,
+        createRuntime: (o) => {
+          captured = o;
+          return makeFakeRuntime(o).runtime;
+        },
+      });
+      ws.simulateMessage(hostConfigFrame());
+      await Promise.resolve();
+
+      expect(captured?.s2sConfig).toMatchObject({
+        inputSampleRate: 8000,
+        outputSampleRate: 16_000,
+      });
+    });
   });
 
   test("rejects with a protocol error when AAI_ALLOW_HOST is disabled", async () => {

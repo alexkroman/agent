@@ -4,6 +4,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
 [
   "AGENT_CSP",
   "ASSEMBLYAI_S2S_KIND",
+  "ASSEMBLYAI_S2S_SAMPLE_RATE",
   "BuiltinToolSchema",
   "CAPTURE_STOP_ACK_TIMEOUT_MS",
   "CLIENT_AUDIO_LEAD_MS",
@@ -35,6 +36,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "DEFAULT_SYSTEM_PROMPT",
   "DEFAULT_TOOL_CHOICE",
   "DEFAULT_TTS_SAMPLE_RATE",
+  "DEFAULT_VOICE_FOCUS_THRESHOLD",
   "FETCH_TIMEOUT_MS",
   "HTML_ACCEPT",
   "LOG_PREVIEW_CHARS",

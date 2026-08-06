@@ -18,6 +18,7 @@
 import pTimeout from "p-timeout";
 import type { ExecuteTool, ToolSchema } from "../sdk/_internal-types.ts";
 import {
+  ASSEMBLYAI_S2S_SAMPLE_RATE,
   DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS,
   DEFAULT_RELAY_TOOL_TIMEOUT_MS,
   WS_OPEN,
@@ -30,6 +31,7 @@ import { UNPACED_AUDIO_LEAD_MS } from "./audio-pacer.ts";
 import { createRuntime, type RuntimeOptions, type SessionStartOptions } from "./runtime.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
+import { usesAssemblyS2s } from "./runtime-transport.ts";
 import { type SessionWebSocket, safeSend } from "./ws-handler.ts";
 
 /**
@@ -264,6 +266,47 @@ function rejectHandshake(ws: SessionWebSocket, log: Logger, message: string): vo
  * `sampleRate`/`ttsSampleRate` alongside the `host` block; honoring them keeps
  * the negotiated audio format consistent end-to-end.
  */
+/**
+ * Refuse a handshake whose declared audio rates this transport cannot honour.
+ *
+ * The host-side counterpart of aai-ui's `assertGranted`: a client states the
+ * rate it will use, and a mismatch is a LOUD failure rather than a silent
+ * override. It has to be loud here because the AssemblyAI Voice Agent API
+ * accepts 24 kHz alone and honours no declaration to the contrary — so audio at
+ * any other rate is decoded at 24 kHz anyway, and the service then emits
+ * NOTHING: no speech edge, no transcript, no error. Measured live, 16 kHz audio
+ * relabelled as 24 kHz produced zero events on 4 of 5 sessions and a mangled
+ * fragment on the fifth; a tau2 retail run scored 2/25 that way, answering 62 of
+ * 171 user turns with an unresponsive period in 25 of 25 sessions.
+ *
+ * Pinning the rates and advertising them in the ready frame is what SHOULD have
+ * covered this, and does for any client that captures off that frame (aai-ui
+ * asks its AudioContext for the advertised rate and asserts it was granted).
+ * But a client is free to ignore the frame — tau2's harness derives its send
+ * rate from a module constant and treats the frame as a bare ack — and then no
+ * number anywhere is wrong while every byte is. There is nothing later in the
+ * session that can detect it, so it has to fail here.
+ *
+ * Returns an error message, or `undefined` when the rates are fine (including
+ * when the client declared none, which means "tell me what to use").
+ */
+function assertHostRatesSupported(
+  agent: AgentDef,
+  msg: { sampleRate?: number | undefined; ttsSampleRate?: number | undefined },
+): string | undefined {
+  if (!usesAssemblyS2s(agent)) return;
+  const rate = ASSEMBLYAI_S2S_SAMPLE_RATE;
+  const bad = (["sampleRate", "ttsSampleRate"] as const).filter(
+    (k) => msg[k] !== undefined && msg[k] !== rate,
+  );
+  if (bad.length === 0) return;
+  return (
+    `host-mode: this agent runs on the AssemblyAI Voice Agent API, which supports ${rate} Hz only, ` +
+    `but the config frame declared ${bad.map((k) => `${k}=${String(msg[k])}`).join(", ")}. ` +
+    `Send and expect ${rate} Hz PCM16, or omit the field to accept the rate in the config frame.`
+  );
+}
+
 function s2sConfigFromHandshake(msg: {
   sampleRate?: number | undefined;
   ttsSampleRate?: number | undefined;
@@ -327,6 +370,13 @@ export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOpt
     }
 
     const { host } = handshake;
+    const hostAgent = buildHostAgent(host, opts.baseAgent);
+    const rateError = assertHostRatesSupported(hostAgent, handshake);
+    if (rateError !== undefined) {
+      rejectHandshake(ws, log, rateError);
+      return;
+    }
+
     const relay = createRelayExecuteTool({
       send: (e) => sendEvent(ws, e, log),
       timeoutMs: opts.relayTimeoutMs,
@@ -335,7 +385,7 @@ export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOpt
     let runtime: ReturnType<typeof createRuntime>;
     try {
       runtime = makeRuntime({
-        agent: buildHostAgent(host, opts.baseAgent),
+        agent: hostAgent,
         env,
         executeTool: relay.executeTool,
         toolSchemas: host.tools as ToolSchema[],

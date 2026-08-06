@@ -187,6 +187,43 @@ export const STT_CONNECT_MAX_RETRIES = 2;
 export const STT_CONNECT_RETRY_DELAY_MS = 500;
 
 /**
+ * How aggressively AssemblyAI Voice Focus suppresses background audio
+ * (`voice_focus_threshold`, 0-1, higher is more aggressive). The service
+ * defaults to 0.7; we send 0.9.
+ *
+ * **The interferer this exists for is SPEECH, which is why the VAD knobs cannot
+ * substitute.** Voice Focus suppresses background audio BEFORE the model sees
+ * it; `vad_threshold` gates frames after. When the background is a television,
+ * a radio, or another conversation, those frames legitimately *are* speech, so
+ * a frame gate cannot tell "a voice" from "the caller's voice" — only the
+ * pre-model stage can. The symptom is unmistakable once seen and easy to
+ * misfile as a hallucinating model: fluent, well-formed English that the caller
+ * never said gets prepended to their real utterance, in the register of
+ * whatever was playing behind them.
+ *
+ * **0.9 is measured** — tau2-bench retail, four sessions replayed byte-identical
+ * through the live service at 8 kHz telephony with a TV news bed at 15 dB SNR
+ * (`medium_size_room_tv_news_iphone_mic.wav`). Against the service default:
+ * background words reaching the transcript fell 32% -> 18% of all words heard,
+ * caller-speech recall rose 51% -> 70%, and the name/ZIP that gates
+ * authentication survived 12/12 utterances against 9/12. At the default, whole
+ * spelled utterances were replaced by the broadcast — one authentication turn
+ * came back as "And we're getting that live look from the estuary here in
+ * Chaplin" — and the tool call built from it was garbage.
+ *
+ * Sent only when Voice Focus itself is on: it tunes that filter and means
+ * nothing without it. `far-field` was measured too and is much worse here (44%
+ * leakage) — it amplifies the room, which is where the interfering speech is.
+ * Disabling Voice Focus outright is catastrophic and not a fallback: recall
+ * collapsed to 4% with ONE end-of-turn in 232 s, because continuous background
+ * speech never leaves enough silence to endpoint, so a suppression regression
+ * surfaces as a turn-taking failure rather than a transcription one.
+ *
+ * @internal
+ */
+export const DEFAULT_VOICE_FOCUS_THRESHOLD = 0.9;
+
+/**
  * Deadline for the TTS replacement socket opened after a mid-turn cancel
  * (barge-in drops the whole connection — see the AssemblyAI TTS module doc).
  *

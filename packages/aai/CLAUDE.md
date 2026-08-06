@@ -120,6 +120,60 @@ present in the `agent()` config:
   the implicit default before the pipeline-by-default flip. There is no way
   to reach S2S by omission — only the `s2s` descriptor selects it.
 
+  **The Voice Agent API accepts ONE sample rate — 24 kHz, both directions — so
+  the CLIENT must send true 24 kHz audio, not 16 kHz relabelled as 24.** The
+  host pins and advertises the rate and refuses a client that declares another;
+  it does NOT resample (see the end of this section for why). Measured
+  against the live service (2026-08-05) with a standalone WebSocket client,
+  feeding the same real utterance three ways:
+
+  | sent | declared | result |
+  | --- | --- | --- |
+  | 16 kHz bytes | 24 kHz | `session.ready`, then **nothing at all** |
+  | resampled to true 24 kHz | 24 kHz | speech edges, correct transcript, 279 KB of reply audio |
+  | 16 kHz bytes | 16 kHz | `session.error{internal_error}` + close **1011** |
+
+  Row one is the whole problem: no `input.speech.started`, no
+  `transcript.user`, and **no error** — the service applies 24 kHz regardless,
+  decodes the audio 1.5x fast, and emits nothing. Output is unaffected, so the
+  agent greets normally and is then permanently deaf, which reads as a model or
+  service outage rather than an audio bug. Row three shows a wrong
+  *declaration* at least fails loudly, which is why `updateSession` always puts
+  the format on the wire.
+
+  **Pinning the rate is necessary and NOT sufficient — that is the trap.**
+  `pinAssemblyS2sRates` forces `S2SConfig` to 24 kHz before `buildReadyConfig`
+  advertises it, on the reasoning that the ready frame tells the client what to
+  capture. That holds for aai-ui, which asks its `AudioContext` for the
+  advertised rate and asserts it was granted (`assertGranted`, `audio.ts`). It
+  holds for nothing else: a programmatic client that treats the config frame as
+  a bare handshake ack keeps sending what it always sent. tau2's harness is
+  exactly that — its send rate is a module constant and its chunk size is
+  derived from it at construction — so the pin changed every number in the
+  stack and not one byte of audio. That run scored **2/25**, answering 62 of
+  171 user turns and hitting an unresponsive period in **25 of 25** sessions,
+  against 15/25 and 18/25 for the two pipeline transports running the same
+  tasks at the same minute.
+
+  Nothing later in the session can detect this: no number anywhere is wrong,
+  every byte is, and the service reports neither. So the mismatch is refused at
+  the door — `assertHostRatesSupported` (`host-mode.ts`) **rejects a host-mode
+  handshake that declares a rate this transport cannot honour**, the host-side
+  counterpart of aai-ui's `assertGranted`. Declaring nothing is fine and means
+  "tell me what to use"; declaring 16 kHz is a protocol error naming the rate to
+  use instead. `pinAssemblyS2sRates` keeps its warn for the one caller with no
+  handshake to fail — an operator passing `s2sConfig` to `createRuntime`.
+
+  **The host does not resample, deliberately.** A resampler was built and
+  reverted: it worked (16 kHz converted to true 24 kHz transcribed correctly
+  5/5 live, against 4/5 returning nothing when relabelled), but upsampling can
+  only preserve or degrade — it invents no bandwidth — and it put ~150 lines of
+  stateful DSP in the hot audio path to paper over a client that could simply
+  send the right rate. Every client already owns its own rate conversion: the
+  browser's WebAudio does it, tau2 resamples from 8 kHz μ-law regardless, so
+  making it 8→24 costs nothing. Rate conversion belongs at the edge; the host's
+  job is to state the requirement and refuse a client that will not meet it.
+
   **S2S has no agent captions on tool-call turns, and this is not our bug.**
   Measured against the live service (2026-08-03) with a standalone WebSocket
   client, no SDK in the path: `transcript.agent` is emitted for every non-tool
@@ -551,7 +605,8 @@ defaults that affect agent behavior:
 | `silenceTimeoutMs` | unset (disabled) | `pipeline-silence.ts` | Pipeline only: assistant proactively takes a turn after this much user silence. Capped at `MAX_CONSECUTIVE_SILENCE_NUDGES` (3) back-to-back nudges until the user speaks again. `silencePrompt` customizes the injected instruction (default `DEFAULT_SILENCE_PROMPT`); it is kept in LLM history but never emitted as a user transcript. |
 | `minBargeInWords` | 2 (`DEFAULT_MIN_BARGE_IN_WORDS`) | `constants.ts` | Pipeline only: interim-transcript words before user speech interrupts the in-flight reply. 2 keeps one-word backchannels from cutting the agent off; sub-threshold finals are answered after the reply. |
 | `interruptionMinDurationMs` | 500 (`DEFAULT_INTERRUPTION_MIN_DURATION_MS`) | `constants.ts` | Pipeline only: sustained speech (ms since the utterance's first partial) required before an interim-triggered barge-in fires — LiveKit's `min_interruption_duration` analog. Non-zero by default: room noise and echo of the agent's own voice produce short interim transcripts, and each one used to abandon a reply mid-word. Finals are never gated. 0 disables. |
-| AssemblyAI `min_turn_silence` / `max_turn_silence` | 1600 / 3500 (`DEFAULT_MIN_TURN_SILENCE_MS`, `DEFAULT_MAX_TURN_SILENCE_MS`) | `host/providers/stt/assemblyai.ts` | **Two knobs, not one, and the pause-tolerance one is the MAX.** On Universal-3.5 Pro the minimum is when the model runs its end-of-turn CHECK: the turn ends only if it READS as complete, otherwise a partial is emitted and the turn stays open. The maximum force-ends regardless of content. So the minimum is the latency floor on every finished utterance, while the maximum is paid only by utterances that never read complete. Both are always sent, because the service defaults them independently (min from the `mode` preset — 128/128/800 for `min_latency`/`balanced`/`max_accuracy` — and max to **1536**), and sending only one is how they invert. That inversion is the bug this pair replaced: the minimum was raised 1500 -> 2000 -> 3000 chasing Full-Duplex-Bench v3's hesitation recording while the maximum was never set, so from 2000 on the check could not fire before the content-blind force-end at 1536 had closed the turn — every ending came from the acoustic fallback, which is the mechanism that splits utterances, and the 3000 step changed nothing while taxing every complete utterance ~3s. The two knobs guard opposite splits, so the minimum must clear the pause BETWEEN sentences and BETWEEN dictated characters, while the maximum clears the pause WITHIN one continuous thought. **1600 is measured**: at 1000 tau2-bench retail regressed DB reward 1.00 -> 0.40 while NL assertions rose 0.60 -> 0.80 (the agent talked better and acted worse — it was authenticating against truncated spelled names, so no auth, no returns, unchanged DB). Pauses inside a single failing utterance measured 856-1455ms, nine of eighteen clearing 1000 and none clearing 1536. `pipeline-transport-options.test.ts` pins a 1000 floor, which is a floor and not a target. Note the max still EXCEEDS `DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS` (2000) though the min no longer does, so the recovery-window coupling survives in narrowed form — safe for the same reason, a fired window whose utterance is still open DEFERS the resume. Override via `assemblyAIStt({ minTurnSilenceMs, maxTurnSilenceMs })`. Three further knobs the SDK supports and we do not set: `mode`, `vad_threshold`, `interruption_delay`. |
+| AssemblyAI `min_turn_silence` / `max_turn_silence` | 1600 / 3500 (`DEFAULT_MIN_TURN_SILENCE_MS`, `DEFAULT_MAX_TURN_SILENCE_MS`) | `host/providers/stt/assemblyai.ts` | **Two knobs, not one, and the pause-tolerance one is the MAX.** On Universal-3.5 Pro the minimum is when the model runs its end-of-turn CHECK: the turn ends only if it READS as complete, otherwise a partial is emitted and the turn stays open. The maximum force-ends regardless of content. So the minimum is the latency floor on every finished utterance, while the maximum is paid only by utterances that never read complete. Both are always sent, because the service defaults them independently (min from the `mode` preset — 128/128/800 for `min_latency`/`balanced`/`max_accuracy` — and max to **1536**), and sending only one is how they invert. That inversion is the bug this pair replaced: the minimum was raised 1500 -> 2000 -> 3000 chasing Full-Duplex-Bench v3's hesitation recording while the maximum was never set, so from 2000 on the check could not fire before the content-blind force-end at 1536 had closed the turn — every ending came from the acoustic fallback, which is the mechanism that splits utterances, and the 3000 step changed nothing while taxing every complete utterance ~3s. The two knobs guard opposite splits, so the minimum must clear the pause BETWEEN sentences and BETWEEN dictated characters, while the maximum clears the pause WITHIN one continuous thought. **1600 is measured**: at 1000 tau2-bench retail regressed DB reward 1.00 -> 0.40 while NL assertions rose 0.60 -> 0.80 (the agent talked better and acted worse — it was authenticating against truncated spelled names, so no auth, no returns, unchanged DB). Pauses inside a single failing utterance measured 856-1455ms, nine of eighteen clearing 1000 and none clearing 1536. `pipeline-transport-options.test.ts` pins a 1000 floor, which is a floor and not a target. Note the max still EXCEEDS `DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS` (2000) though the min no longer does, so the recovery-window coupling survives in narrowed form — safe for the same reason, a fired window whose utterance is still open DEFERS the resume. Override via `assemblyAIStt({ minTurnSilenceMs, maxTurnSilenceMs })`. Two further knobs the SDK supports and we deliberately do not set: `mode` and `interruption_delay`. **`vad_threshold` is measured and deliberately LEFT ALONE** — see the Voice Focus row. |
+| AssemblyAI `voice_focus` / `voice_focus_threshold` | `near-field` / 0.9 (`DEFAULT_VOICE_FOCUS_THRESHOLD`) | `host/providers/stt/assemblyai.ts` | **Both are always sent together; the threshold is above the service's own 0.7.** The interferer this tunes for is background SPEECH — a television, a radio, another conversation — and that is why no VAD setting substitutes: Voice Focus suppresses background audio BEFORE the model sees it while `vad_threshold` gates frames after, and those frames legitimately *are* speech, so a frame gate cannot tell "a voice" from "the caller's voice". The symptom reads as a hallucinating model and is not one: fluent, well-formed English the caller never said, in the register of whatever was playing behind them, prepended to their real utterance. **0.9 is measured** — tau2-bench retail, four sessions replayed byte-identical through the live service at 8 kHz telephony with a TV news bed at 15 dB SNR (`medium_size_room_tv_news_iphone_mic.wav`): against the service default, background words fell 32% -> 18% of all words heard, caller-speech recall rose 51% -> 70%, and the name/ZIP gating authentication survived 12/12 utterances against 9/12. At the default one authentication turn came back as "And we're getting that live look from the estuary here in Chaplin" and the tool call built from it was garbage. **`vad_threshold` was swept in the same harness and loses in BOTH directions**, which is why it stays unset: 0.6 cut leakage to 15% but collapsed recall to 51% and took key facts *below* baseline (8/12), because the caller's quiet spelled letters are exactly what a stricter gate discards; 0.05-0.20 left recall flat at 70-71% (voice focus had already saturated it) while leakage rose 19% -> 27%, buying one recovered utterance — the content-free "Still waiting." — for five words of traffic report. `far-field` is much worse here (44% leakage; it amplifies the room, which is where the interfering speech is), and disabling Voice Focus is catastrophic rather than a fallback: recall collapsed to 4% with ONE end-of-turn in 232 s, because continuous background speech never leaves enough silence to endpoint — so a suppression regression surfaces as a turn-taking failure, not a transcription one. Override via `assemblyAIStt({ voiceFocus, voiceFocusThreshold })`; the threshold is omitted entirely when voice focus is off. |
 | Deepgram `endpointing` | 1500 (`DEFAULT_DEEPGRAM_ENDPOINTING_MS`) | `sdk/providers/stt/deepgram.ts` | Same role as `min_turn_silence` above — the provider owns end-of-turn; override via `deepgram({ endpointing })`. |
 | `holdPhrase` | `"One moment."` (`DEFAULT_HOLD_PHRASE`) | `pipeline-stream.ts` | Pipeline only: spoken when a turn opens with a tool call and no speech. `""` disables. |
 | `errorPhrase` | `"Sorry, I had a problem just then. Could you say that again?"` (`DEFAULT_ERROR_PHRASE`) | `pipeline-turn-outcome.ts` | Pipeline only: spoken when the turn's LLM stream fails, so a provider outage hands the conversation back instead of going silent. A failed turn produces no text, so nothing would otherwise reach TTS and the only trace is a `llm` session error the browser surfaces without a sound. `""` disables. |

@@ -196,3 +196,17 @@ export function createTransportFactory(
     );
   };
 }
+
+/**
+ * Will this agent's sessions run on the AssemblyAI S2S transport?
+ *
+ * Lives here so it stays in step with `buildTransport`'s dispatch above. The
+ * runtime asks before building its ready config, because that transport's
+ * output rate is fixed by the service rather than negotiable — see
+ * `pinAssemblyS2sRates`.
+ *
+ * @internal
+ */
+export function usesAssemblyS2s(agent: RuntimeOptions["agent"]): boolean {
+  return agent.s2s !== undefined && descriptorKind(agent.s2s) === ASSEMBLYAI_S2S_KIND;
+}

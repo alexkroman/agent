@@ -21,12 +21,13 @@ import type { AgentDef } from "../sdk/types.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import { createPostgresDb } from "./postgres-db.ts";
 import { descriptorKind, resolveLlm, resolveStt, resolveTts } from "./providers/resolve.ts";
-import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
+import { consoleLogger, DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "./runtime-config.ts";
 import { setupTools } from "./runtime-tools.ts";
 import {
   createTransportFactory,
   type ResolvedPipelineProviders,
   type TransportSessionOpts,
+  usesAssemblyS2s,
 } from "./runtime-transport.ts";
 import type { Runtime, RuntimeOptions, SessionStartOptions } from "./runtime-types.ts";
 import { createSessionCore, type SessionCore } from "./session-core.ts";
@@ -140,7 +141,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     createWebSocket,
     createOpenaiRealtimeWebSocket,
     logger = consoleLogger,
-    s2sConfig = DEFAULT_S2S_CONFIG,
+    s2sConfig: requestedS2sConfig = DEFAULT_S2S_CONFIG,
     sessionStartTimeoutMs,
     shutdownTimeoutMs = DEFAULT_SHUTDOWN_TIMEOUT_MS,
   } = opts;
@@ -205,6 +206,16 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // successor's entry (see sdk/owned-map.ts).
   const sessions = createOwnedMap<string, SessionCore>();
   const sinkMap = createOwnedMap<string, ClientSink>();
+  // The Voice Agent API accepts exactly one sample rate and honours no
+  // declaration to the contrary, so its rates are pinned rather than
+  // negotiated. Pinned BEFORE the ready config is built, because that frame is
+  // what tells the client what to capture and play: the two numbers disagreeing
+  // is the whole bug. A host-mode client that asked for something else was
+  // already refused at the handshake (`assertHostRatesSupported`), so nothing
+  // reaching here can be surprised by the override.
+  const s2sConfig = usesAssemblyS2s(agent)
+    ? pinAssemblyS2sRates(requestedS2sConfig, logger)
+    : requestedS2sConfig;
   const readyConfig: ReadyConfig = buildReadyConfig(s2sConfig);
 
   // Per-session tool state (self-hosted mode only); cleaned up on session
