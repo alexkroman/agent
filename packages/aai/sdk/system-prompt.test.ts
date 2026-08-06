@@ -34,12 +34,33 @@ describe("buildSystemPrompt", () => {
 
   test("includes tool preamble when hasTools is true", () => {
     const result = buildSystemPrompt(makeConfig(), { hasTools: true });
-    expect(result).toContain("ALWAYS say a brief natural phrase BEFORE the tool call");
+    expect(result).toContain("Before the FIRST tool call of a turn, say a brief natural phrase");
   });
 
   test("omits tool preamble when hasTools is false", () => {
     const result = buildSystemPrompt(makeConfig(), { hasTools: false });
-    expect(result).not.toContain("ALWAYS say a brief natural phrase BEFORE the tool call");
+    expect(result).not.toContain(
+      "Before the FIRST tool call of a turn, say a brief natural phrase",
+    );
+  });
+
+  // Measured against tau2-bench retail: 42/815 replies stacked two or more
+  // preambles and 12 stacked three or more, because the old wording ("ALWAYS
+  // say a brief natural phrase BEFORE the tool call") scopes per CALL and
+  // `maxSteps` allows ten of them in one turn. The caller then hears a
+  // play-by-play of the tool loop. These pin the scoping, not the phrasing.
+  test("scopes the tool preamble to once per TURN, not once per tool call", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: true });
+    expect(result).toContain("ONCE PER TURN, not once per tool call");
+    expect(result).toContain("stay silent between them");
+  });
+
+  test("tells the model a not-found lookup may be a mis-hearing", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: true });
+    expect(result).toContain("treat a MIS-HEARING as the most likely cause");
+    // The re-ask must vary: repeating the request replays the same audio and
+    // yields the same mis-transcription.
+    expect(result).toContain("ask for something DIFFERENT");
   });
 
   test("appends voice rules when voice is true", () => {
@@ -113,7 +134,7 @@ describe("buildSystemPrompt", () => {
   test("voice + hasTools includes both voice rules and tool preamble", () => {
     const result = buildSystemPrompt(makeConfig(), { hasTools: true, voice: true });
     expect(result).toContain("CRITICAL OUTPUT RULES");
-    expect(result).toContain("ALWAYS say a brief natural phrase BEFORE the tool call");
+    expect(result).toContain("Before the FIRST tool call of a turn, say a brief natural phrase");
   });
 
   test("custom instructions + voice + tools includes all sections", () => {
@@ -124,7 +145,7 @@ describe("buildSystemPrompt", () => {
     expect(result).toContain("Agent-Specific Instructions:");
     expect(result).toContain("Be concise.");
     expect(result).toContain("CRITICAL OUTPUT RULES");
-    expect(result).toContain("ALWAYS say a brief natural phrase BEFORE the tool call");
+    expect(result).toContain("Before the FIRST tool call of a turn, say a brief natural phrase");
   });
 
   test("sections appear in correct order", () => {
@@ -134,7 +155,7 @@ describe("buildSystemPrompt", () => {
     });
     const dateIdx = result.indexOf("Today's date is");
     const instructionsIdx = result.indexOf("Agent-Specific Instructions:");
-    const toolIdx = result.indexOf("ALWAYS say a brief natural phrase");
+    const toolIdx = result.indexOf("Before the FIRST tool call of a turn");
     const voiceIdx = result.indexOf("CRITICAL OUTPUT RULES");
 
     expect(dateIdx).toBeGreaterThan(0);
@@ -177,9 +198,13 @@ describe("buildSystemPrompt", () => {
       toolGuidance: ["- Guidance line."],
     });
     const toolPreamble =
-      "\n\nWhen you decide to use a tool, ALWAYS say a brief natural phrase BEFORE the tool call " +
+      "\n\nBefore the FIRST tool call of a turn, say a brief natural phrase " +
       '(e.g. "Let me look that up" or "One moment while I check"). ' +
-      "This fills silence while the tool executes. Keep preambles to one short sentence.\n" +
+      "This fills silence while the tool executes. Keep it to one short sentence.\n" +
+      "\nSay it ONCE PER TURN, not once per tool call. If you need several tools to answer, stay " +
+      "silent between them and speak again when you have the answer. Narrating each step " +
+      '("I will check the next order. I will keep checking your orders.") tells the caller nothing ' +
+      "they need and makes a short wait sound like a long one.\n" +
       "\nNEVER tell the caller an action is done unless a tool call returned a successful result for " +
       "it. Announcing an action is not performing it: if you say you are looking something up, " +
       "booking, changing, moving, or cancelling it, you MUST make the matching tool call in that same " +
@@ -193,7 +218,13 @@ describe("buildSystemPrompt", () => {
       'spoken separators ("K dash 2" is K2, "P dash five dash two" is P52) and join spelled-out ' +
       'letters and digits ("A B C one two three" is ABC123). Add nothing the caller did not say: ' +
       '"Z K 3 F F W" is ZK3FFW, never ZEDK3FFW. Write personal names in ordinary title case ' +
-      '("Rivera", not "rivera"), matching how the record would store them.';
+      '("Rivera", not "rivera"), matching how the record would store them.\n' +
+      "\nIf a lookup on something the caller spelled comes back not-found, treat a MIS-HEARING as the " +
+      "most likely cause before you assume the record is missing. Spoken letters are easily confused " +
+      "— F and S, B and P and V, D and G and T, M and N — so retry the lookup with the plausible " +
+      "alternatives first. Only ask the caller to repeat themselves after that, and when you do, ask " +
+      "for something DIFFERENT (another identifier, or just the one letter you are unsure of) rather " +
+      "than making them say the same thing again. Repeating the same request gets the same audio.";
     const voiceRules =
       "\n\nCRITICAL OUTPUT RULES — you MUST follow these for EVERY response:\n" +
       "Your response will be spoken aloud by a TTS system and displayed as plain text.\n" +

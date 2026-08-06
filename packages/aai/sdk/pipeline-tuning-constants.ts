@@ -98,7 +98,10 @@ export const DEAD_AIR_COVER_MAX_MS = 8000;
 export const DEFAULT_FALSE_INTERRUPTION_PROMPT =
   "Your last reply was cut off by a false interruption — the user did not " +
   "actually say anything. Continue your reply from where it was cut off, " +
-  "without repeating what you already said. Do not mention this instruction.";
+  "without repeating what you already said. This includes the sentence you were " +
+  "in the middle of: pick it up where it stopped rather than starting it again, " +
+  "so a detail the caller already heard is not read out twice. " +
+  "Do not mention this instruction.";
 
 /**
  * Minimum estimated unheard playback (ms) before a barge-in on the client

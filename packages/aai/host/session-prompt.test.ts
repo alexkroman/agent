@@ -19,12 +19,14 @@ describe("buildSystemPrompt", () => {
 
   test("includes tool preamble when hasTools is true", () => {
     const result = buildSystemPrompt(makeConfig(), { hasTools: true });
-    expect(result).toContain("ALWAYS say a brief natural phrase BEFORE the tool call");
+    expect(result).toContain("Before the FIRST tool call of a turn, say a brief natural phrase");
   });
 
   test("omits tool preamble when hasTools is false", () => {
     const result = buildSystemPrompt(makeConfig(), { hasTools: false });
-    expect(result).not.toContain("ALWAYS say a brief natural phrase BEFORE the tool call");
+    expect(result).not.toContain(
+      "Before the FIRST tool call of a turn, say a brief natural phrase",
+    );
   });
 
   test("appends voice rules when voice is true", () => {
@@ -58,7 +60,7 @@ describe("buildSystemPrompt", () => {
   test("voice + hasTools includes both voice rules and tool preamble", () => {
     const result = buildSystemPrompt(makeConfig(), { hasTools: true, voice: true });
     expect(result).toContain("CRITICAL OUTPUT RULES");
-    expect(result).toContain("ALWAYS say a brief natural phrase BEFORE the tool call");
+    expect(result).toContain("Before the FIRST tool call of a turn, say a brief natural phrase");
   });
 
   test("custom instructions + voice + tools includes all sections", () => {
@@ -69,6 +71,6 @@ describe("buildSystemPrompt", () => {
     expect(result).toContain("Agent-Specific Instructions:");
     expect(result).toContain("Be concise.");
     expect(result).toContain("CRITICAL OUTPUT RULES");
-    expect(result).toContain("ALWAYS say a brief natural phrase BEFORE the tool call");
+    expect(result).toContain("Before the FIRST tool call of a turn, say a brief natural phrase");
   });
 });
