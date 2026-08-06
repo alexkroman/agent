@@ -7,6 +7,22 @@ export const DEFAULT_STT_SAMPLE_RATE = 16_000;
 /** @internal */
 export const DEFAULT_TTS_SAMPLE_RATE = 24_000;
 
+/**
+ * The ONLY sample rate AssemblyAI's Voice Agent (S2S) API accepts, in BOTH
+ * directions. Measured against the live service (2026-08-05): declaring 8000 or
+ * 16000 for `input.format`/`output.format` earns `session.error` + close 1011,
+ * and declaring NOTHING is worse — the service silently applies 24000, decodes
+ * a 16 kHz capture 1.5x fast, and emits no speech edges, no transcript and no
+ * error, so the agent greets and is then permanently deaf.
+ *
+ * PINNED per transport rather than defaulted — see `pinAssemblyS2sRates`
+ * (`host/runtime-config.ts`), `updateSession` (`host/s2s.ts`), and the S2S
+ * section of `packages/aai/CLAUDE.md` for the measurements and the reasoning.
+ *
+ * @internal
+ */
+export const ASSEMBLYAI_S2S_SAMPLE_RATE = 24_000;
+
 /** Wall-clock budget (ms) for one tool `execute` call before it is aborted. */
 export const TOOL_EXECUTION_TIMEOUT_MS = 30_000;
 /** Deadline (ms) for `session.start()` — providers must be open by then. */

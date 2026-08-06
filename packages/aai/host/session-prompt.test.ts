@@ -17,14 +17,14 @@ describe("buildSystemPrompt", () => {
     expect(result).toContain(custom);
   });
 
-  test("includes tool preamble when hasTools is true", () => {
+  test("includes tool-fidelity rules when hasTools is true", () => {
     const result = buildSystemPrompt(makeConfig(), { hasTools: true });
-    expect(result).toContain("ALWAYS say a brief natural phrase BEFORE the tool call");
+    expect(result).toContain("NEVER tell the caller an action is done");
   });
 
-  test("omits tool preamble when hasTools is false", () => {
+  test("omits tool-fidelity rules when hasTools is false", () => {
     const result = buildSystemPrompt(makeConfig(), { hasTools: false });
-    expect(result).not.toContain("ALWAYS say a brief natural phrase BEFORE the tool call");
+    expect(result).not.toContain("NEVER tell the caller an action is done");
   });
 
   test("appends voice rules when voice is true", () => {
@@ -55,10 +55,10 @@ describe("buildSystemPrompt", () => {
     expect(result).toContain(`Today's date is ${today}.`);
   });
 
-  test("voice + hasTools includes both voice rules and tool preamble", () => {
+  test("voice + hasTools includes both voice rules and tool-fidelity rules", () => {
     const result = buildSystemPrompt(makeConfig(), { hasTools: true, voice: true });
     expect(result).toContain("CRITICAL OUTPUT RULES");
-    expect(result).toContain("ALWAYS say a brief natural phrase BEFORE the tool call");
+    expect(result).toContain("NEVER tell the caller an action is done");
   });
 
   test("custom instructions + voice + tools includes all sections", () => {
@@ -69,6 +69,6 @@ describe("buildSystemPrompt", () => {
     expect(result).toContain("Agent-Specific Instructions:");
     expect(result).toContain("Be concise.");
     expect(result).toContain("CRITICAL OUTPUT RULES");
-    expect(result).toContain("ALWAYS say a brief natural phrase BEFORE the tool call");
+    expect(result).toContain("NEVER tell the caller an action is done");
   });
 });

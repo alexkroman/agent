@@ -13,11 +13,28 @@ const DATE_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
   day: "numeric",
 };
 
-const TOOL_PREAMBLE =
-  "\n\nWhen you decide to use a tool, ALWAYS say a brief natural phrase BEFORE the tool call " +
-  '(e.g. "Let me look that up" or "One moment while I check"). ' +
-  "This fills silence while the tool executes. Keep preambles to one short sentence.\n" +
-  "\nNEVER tell the caller an action is done unless a tool call returned a successful result for " +
+/**
+ * Tool-fidelity rules, appended when the agent has tools.
+ *
+ * **No pre-tool preamble instruction.** This used to open with "ALWAYS say a
+ * brief natural phrase BEFORE the tool call … this fills silence while the tool
+ * executes", which was the wrong layer for the job twice over. The silence is
+ * already covered mechanically and better: `holdPhrase` (`DEFAULT_HOLD_PHRASE`,
+ * "One moment.") fires from `pipeline-stream-parts.ts` on exactly the condition
+ * the instruction described — a turn that opens with a tool call and no speech —
+ * and the time-based dead-air cover handles the long chains that a one-sentence
+ * preamble never could. Asking the MODEL to do it instead made every tool call
+ * wait on a generated sentence before the call could even be emitted, and
+ * because the cover only suppresses itself once the model has spoken, the
+ * instruction's real effect was to replace one instant canned phrase with a
+ * slower bespoke one. Measured on tau2-bench retail it also compounded across
+ * chains: an eight-call turn narrated every step ("I will check the next order.
+ * Checking another order now. I am checking the next one. I will check the last
+ * order."), which is the verbosity these prompts spend their other rules trying
+ * to prevent. Cover belongs to the transport; the model's job is the answer.
+ */
+const TOOL_RULES =
+  "\n\nNEVER tell the caller an action is done unless a tool call returned a successful result for " +
   "it. Announcing an action is not performing it: if you say you are looking something up, " +
   "booking, changing, moving, or cancelling it, you MUST make the matching tool call in that same " +
   "turn. If you did not call the tool, or it returned an error, say what you still need — do not " +
@@ -59,11 +76,13 @@ const VOICE_RULES =
  * Build the system prompt sent to the LLM from the agent configuration.
  *
  * Assembles the default system prompt, today's date, agent-specific instructions,
- * and optional sections for tool usage preamble and voice output rules.
+ * and optional sections for tool-fidelity and voice output rules.
  *
  * @param config - The serializable agent configuration (name, systemPrompt, etc.).
- * @param opts.hasTools - When `true`, appends a preamble instructing the LLM to
- *   speak a brief phrase before each tool call to fill silence.
+ * @param opts.hasTools - When `true`, appends the tool-fidelity rules
+ *   ({@link TOOL_RULES}): never claim an unperformed action, never state a
+ *   detail no tool returned, and normalize spoken identifiers into tool
+ *   arguments.
  * @param opts.voice - When `true`, appends strict voice-specific output rules
  *   (no markdown, no bullet points, conversational tone, concise responses).
  * @returns The assembled system prompt string.
@@ -78,7 +97,7 @@ export function buildSystemPrompt(
     ? `\n\nAgent-Specific Instructions:\n${config.systemPrompt}`
     : "";
 
-  const toolPreamble = opts.hasTools ? TOOL_PREAMBLE : "";
+  const toolRules = opts.hasTools ? TOOL_RULES : "";
 
   const guidance =
     opts.toolGuidance && opts.toolGuidance.length > 0
@@ -91,7 +110,7 @@ export function buildSystemPrompt(
     basePrompt +
     `\n\nToday's date is ${today}.` +
     agentInstructions +
-    toolPreamble +
+    toolRules +
     guidance +
     (opts.voice ? VOICE_RULES : "")
   );

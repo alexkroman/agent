@@ -7,7 +7,11 @@
  * and the {@link S2SConfig} for Speech-to-Speech endpoint configuration.
  */
 
-import { DEFAULT_STT_SAMPLE_RATE, DEFAULT_TTS_SAMPLE_RATE } from "../sdk/constants.ts";
+import {
+  ASSEMBLYAI_S2S_SAMPLE_RATE,
+  DEFAULT_STT_SAMPLE_RATE,
+  DEFAULT_TTS_SAMPLE_RATE,
+} from "../sdk/constants.ts";
 
 /** Structured context attached to log messages. */
 /** Structured context attached to a log line. */
@@ -114,3 +118,40 @@ export const DEFAULT_S2S_CONFIG: S2SConfig = {
   inputSampleRate: DEFAULT_STT_SAMPLE_RATE,
   outputSampleRate: DEFAULT_TTS_SAMPLE_RATE,
 };
+
+/**
+ * Force an {@link S2SConfig} onto the one sample rate AssemblyAI's Voice Agent
+ * API accepts ({@link ASSEMBLYAI_S2S_SAMPLE_RATE}) — call it only when the
+ * session will run on that transport.
+ *
+ * `S2SConfig.inputSampleRate` serves three different consumers: the pipeline's
+ * STT stage (16 kHz is right there, and cheaper), OpenAI Realtime (which
+ * honours whatever rate we declare), and this service (which honours nothing
+ * and accepts only 24 kHz). One field, three contracts — so the rate cannot be
+ * fixed by changing {@link DEFAULT_S2S_CONFIG}, which would silently move the
+ * pipeline's STT to 24 kHz too. It is pinned per transport instead.
+ *
+ * A PIN and not a default, because the requested rate is not the client's to
+ * choose: `s2sConfigFromHandshake` honours a host-mode client's requested rates
+ * (tau2's harness asks for 16 kHz), which is right for the pipeline and
+ * impossible here. Honouring it produced a permanently deaf agent — see
+ * {@link ASSEMBLYAI_S2S_SAMPLE_RATE}. The pinned rates are what
+ * `buildReadyConfig` then advertises to the client, so the client captures and
+ * plays at exactly what the service is told.
+ *
+ * @internal
+ */
+export function pinAssemblyS2sRates(config: S2SConfig, log?: Logger): S2SConfig {
+  const rate = ASSEMBLYAI_S2S_SAMPLE_RATE;
+  if (config.inputSampleRate === rate && config.outputSampleRate === rate) return config;
+  // Warn rather than fail: the request is usually a default nobody chose, and
+  // refusing the session would be worse than resampling the negotiation. But it
+  // must not be silent — a host-mode client that asked for 16 kHz is being told
+  // to capture at 24 kHz instead, and needs to know why its request vanished.
+  log?.warn("S2S sample rates pinned to the Voice Agent API's only supported rate", {
+    requestedInputSampleRate: config.inputSampleRate,
+    requestedOutputSampleRate: config.outputSampleRate,
+    sampleRate: rate,
+  });
+  return { ...config, inputSampleRate: rate, outputSampleRate: rate };
+}

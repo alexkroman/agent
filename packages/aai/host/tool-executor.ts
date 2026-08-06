@@ -80,6 +80,19 @@ function stringifyResult(result: unknown): string {
 }
 
 /**
+ * Is this the rejection an aborted `AbortSignal` produces?
+ *
+ * Matched by `name` rather than `instanceof DOMException`: the reason travels
+ * through `AbortController.abort(reason)` and `pTimeout({ signal })`, and a
+ * caller may abort with an ordinary `Error` of its own. `p-timeout`'s own
+ * `TimeoutError` is deliberately NOT matched — a timeout already carries a
+ * message naming the tool and its budget.
+ */
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === "AbortError";
+}
+
+/**
  * Validate a tool call's arguments and invoke its handler, returning the
  * stringified (and capped) result.
  *
@@ -129,6 +142,20 @@ export async function executeToolCall(
     // The call is over (timeout or failure): fire the per-call signal so a
     // still-running execute can observe ctx.signal and stop its side effects.
     callController.abort(err);
+    // A turn that moved on under us (barge-in, client reset, stop) is a
+    // CANCELLATION, not a tool failure, and `signal.reason` for it is a bare
+    // DOMException whose message is "This operation was aborted" — naming
+    // neither the tool nor the cause. That string is not just a log line: in S2S
+    // mode it is delivered to the provider as the tool's `tool.result`, so the
+    // model reads "This operation was aborted" as the tool's OUTPUT and answers
+    // the caller from it (seen against tau2-bench: `get_order_details` returning
+    // it mid-conversation). Mirrors the pre-run message above; the turn signal
+    // is the discriminator, since a tool aborting its own inner `fetch` throws
+    // an identical-looking AbortError that really is a tool failure.
+    if (turnSignal?.aborted === true && isAbortError(err)) {
+      logger?.info("Tool cancelled mid-flight by turn abort", { tool: name });
+      return toolError(`Tool "${name}" was cancelled while running`);
+    }
     if (logger) {
       logger.warn("Tool execution failed", { tool: name, error: errorDetail(err) });
     } else {

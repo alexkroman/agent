@@ -2,6 +2,7 @@
   "@alexkroman1/aai": [
     "AGENT_CSP",
     "ASSEMBLYAI_S2S_KIND",
+    "ASSEMBLYAI_S2S_SAMPLE_RATE",
     "AgentDef",
     "AgentParams",
     "AssemblyAIPipelineOptions",

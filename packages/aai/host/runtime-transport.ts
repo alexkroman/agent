@@ -177,6 +177,9 @@ export function createTransportFactory(
     if (pipelineProviders) {
       return buildPipelineTransport(args, pipelineProviders);
     }
+    // Keep the `usesAssemblyS2s` predicate below in step with this dispatch:
+    // the runtime pins the session's sample rates off it, and a predicate that
+    // disagreed would pin the wrong transport's audio (or fail to pin this one).
     if (agent.s2s !== undefined) {
       const kind = descriptorKind(agent.s2s);
       if (kind === OPENAI_REALTIME_KIND) {
@@ -195,4 +198,18 @@ export function createTransportFactory(
       "No transport for session: pipeline providers unresolved and no s2s descriptor set",
     );
   };
+}
+
+/**
+ * Will this agent's sessions run on the AssemblyAI S2S transport?
+ *
+ * Lives here so it stays in step with `buildTransport`'s dispatch above. The
+ * runtime asks before building its ready config, because that transport's
+ * sample rates are fixed by the service rather than negotiable — see
+ * `pinAssemblyS2sRates`.
+ *
+ * @internal
+ */
+export function usesAssemblyS2s(agent: RuntimeOptions["agent"]): boolean {
+  return agent.s2s !== undefined && descriptorKind(agent.s2s) === ASSEMBLYAI_S2S_KIND;
 }

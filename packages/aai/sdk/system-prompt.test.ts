@@ -32,14 +32,14 @@ describe("buildSystemPrompt", () => {
     expect(result).toContain(custom);
   });
 
-  test("includes tool preamble when hasTools is true", () => {
+  test("includes tool-fidelity rules when hasTools is true", () => {
     const result = buildSystemPrompt(makeConfig(), { hasTools: true });
-    expect(result).toContain("ALWAYS say a brief natural phrase BEFORE the tool call");
+    expect(result).toContain("NEVER tell the caller an action is done");
   });
 
-  test("omits tool preamble when hasTools is false", () => {
+  test("omits tool-fidelity rules when hasTools is false", () => {
     const result = buildSystemPrompt(makeConfig(), { hasTools: false });
-    expect(result).not.toContain("ALWAYS say a brief natural phrase BEFORE the tool call");
+    expect(result).not.toContain("NEVER tell the caller an action is done");
   });
 
   test("appends voice rules when voice is true", () => {
@@ -63,7 +63,7 @@ describe("buildSystemPrompt", () => {
     expect(result).toContain("Do NOT read out long lists");
   });
 
-  test("tool preamble forbids claiming an action without a successful tool result", () => {
+  test("tool rules forbid claiming an action without a successful tool result", () => {
     // The dominant failure across all three voice benchmarks: the agent says
     // "your window seat is reserved" having never called assign_seat, so the
     // final DB has seat=null. EVA scored faithfulness 0.075 on this alone.
@@ -72,7 +72,7 @@ describe("buildSystemPrompt", () => {
     expect(result).toContain("Carrying something over");
   });
 
-  test("tool preamble tells the agent to write spoken identifiers in written form", () => {
+  test("tool rules tell the agent to write spoken identifiers in written form", () => {
     // Spoken "K dash 2" reached add_to_cart as "K-2" (expected "K2"), and a
     // spelled confirmation code "Z K 3 F F W" arrived as "ZEDK3FFW" — the
     // single most common tool error in tau2 was "User not found".
@@ -110,10 +110,10 @@ describe("buildSystemPrompt", () => {
     expect(result).toContain("Today's date is Wednesday, December 31, 2025.");
   });
 
-  test("voice + hasTools includes both voice rules and tool preamble", () => {
+  test("voice + hasTools includes both voice rules and tool-fidelity rules", () => {
     const result = buildSystemPrompt(makeConfig(), { hasTools: true, voice: true });
     expect(result).toContain("CRITICAL OUTPUT RULES");
-    expect(result).toContain("ALWAYS say a brief natural phrase BEFORE the tool call");
+    expect(result).toContain("NEVER tell the caller an action is done");
   });
 
   test("custom instructions + voice + tools includes all sections", () => {
@@ -124,7 +124,7 @@ describe("buildSystemPrompt", () => {
     expect(result).toContain("Agent-Specific Instructions:");
     expect(result).toContain("Be concise.");
     expect(result).toContain("CRITICAL OUTPUT RULES");
-    expect(result).toContain("ALWAYS say a brief natural phrase BEFORE the tool call");
+    expect(result).toContain("NEVER tell the caller an action is done");
   });
 
   test("sections appear in correct order", () => {
@@ -134,7 +134,7 @@ describe("buildSystemPrompt", () => {
     });
     const dateIdx = result.indexOf("Today's date is");
     const instructionsIdx = result.indexOf("Agent-Specific Instructions:");
-    const toolIdx = result.indexOf("ALWAYS say a brief natural phrase");
+    const toolIdx = result.indexOf("NEVER tell the caller an action is done");
     const voiceIdx = result.indexOf("CRITICAL OUTPUT RULES");
 
     expect(dateIdx).toBeGreaterThan(0);
@@ -176,11 +176,8 @@ describe("buildSystemPrompt", () => {
       voice: true,
       toolGuidance: ["- Guidance line."],
     });
-    const toolPreamble =
-      "\n\nWhen you decide to use a tool, ALWAYS say a brief natural phrase BEFORE the tool call " +
-      '(e.g. "Let me look that up" or "One moment while I check"). ' +
-      "This fills silence while the tool executes. Keep preambles to one short sentence.\n" +
-      "\nNEVER tell the caller an action is done unless a tool call returned a successful result for " +
+    const toolRules =
+      "\n\nNEVER tell the caller an action is done unless a tool call returned a successful result for " +
       "it. Announcing an action is not performing it: if you say you are looking something up, " +
       "booking, changing, moving, or cancelling it, you MUST make the matching tool call in that same " +
       "turn. If you did not call the tool, or it returned an error, say what you still need — do not " +
@@ -220,7 +217,7 @@ describe("buildSystemPrompt", () => {
       DEFAULT_SYSTEM_PROMPT +
         "\n\nToday's date is Wednesday, January 15, 2025." +
         "\n\nAgent-Specific Instructions:\nCustom rules." +
-        toolPreamble +
+        toolRules +
         "\n\nBuilt-in Tool Usage:\n- Guidance line." +
         voiceRules,
     );

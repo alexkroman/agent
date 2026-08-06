@@ -120,6 +120,33 @@ present in the `agent()` config:
   the implicit default before the pipeline-by-default flip. There is no way
   to reach S2S by omission — only the `s2s` descriptor selects it.
 
+  **The Voice Agent API accepts ONE sample rate — 24 kHz, both directions — and
+  it must be DECLARED.** Measured against the live service (2026-08-05) with a
+  standalone WebSocket client: declaring 8000 or 16000 for either
+  `input.format` or `output.format` is answered ~10s later with
+  `session.error{code:"internal_error"}` and close **1011**; 24000 is accepted.
+  Sending no declaration at all is WORSE than a wrong one — the service
+  silently applies 24 kHz, so our 16 kHz capture was decoded 1.5x fast and
+  **33s of real speech produced zero events**: no `input.speech.started`, no
+  `transcript.user`, no error. Output happened to match (24 kHz either way), so
+  the agent greeted normally and was then permanently deaf, which is why this
+  read as a model or service outage rather than an audio bug. In a tau2-bench
+  retail run half the S2S sessions delivered only the greeting; the survivors
+  answered 6-37s late off turn detection reading sped-up audio, and split
+  utterances mid-sentence ("2 items from order W237.").
+  So the rate is **pinned, not defaulted** (`ASSEMBLYAI_S2S_SAMPLE_RATE`,
+  `pinAssemblyS2sRates` in `host/runtime-config.ts`, applied by `createRuntime`
+  via `usesAssemblyS2s`): pinned because `S2SConfig.inputSampleRate` serves
+  three consumers with three different contracts — the pipeline's STT stage
+  (16 kHz, cheaper and correct), OpenAI Realtime (honours what we declare), and
+  this service (honours nothing) — so `DEFAULT_S2S_CONFIG` cannot carry it
+  without moving pipeline STT to 24 kHz too. The pin also **overrules a
+  host-mode client's requested rate** (tau2's harness asks for 16 kHz via
+  `s2sConfigFromHandshake`), and it runs BEFORE `buildReadyConfig`, because that
+  frame is what tells the client what to capture: the two numbers disagreeing
+  IS the bug. `updateSession` then puts the format on the wire so a future
+  mismatch fails loudly (1011) instead of going silently deaf.
+
   **S2S has no agent captions on tool-call turns, and this is not our bug.**
   Measured against the live service (2026-08-03) with a standalone WebSocket
   client, no SDK in the path: `transcript.agent` is emitted for every non-tool

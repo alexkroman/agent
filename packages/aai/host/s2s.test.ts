@@ -61,6 +61,33 @@ describe("connectS2s", () => {
     expect(sent.session.system_prompt).toBe("test");
   });
 
+  test("updateSession DECLARES the audio format in both directions", async () => {
+    // Sending no `input.format` is the one S2S failure with no symptom: the
+    // service applies its own default rate (24k), decodes our audio at the wrong
+    // speed and emits NOTHING — no speech edges, no transcript, no error — so the
+    // agent greets and is then permanently deaf. The declaration is what makes a
+    // mismatch fail loudly instead. Rates come from the connection's own config,
+    // already pinned by `pinAssemblyS2sRates`.
+    const { raw, handle } = await setupHandle();
+
+    handle.updateSession({ systemPrompt: "test", tools: [] });
+
+    const sent = lastSent(raw) as {
+      session: {
+        input: { type: string; format: { encoding: string; sample_rate: number } };
+        output: { type: string; format: { encoding: string; sample_rate: number } };
+      };
+    };
+    expect(sent.session.input).toEqual({
+      type: "audio",
+      format: { encoding: "audio/pcm", sample_rate: s2sConfig.inputSampleRate },
+    });
+    expect(sent.session.output).toEqual({
+      type: "audio",
+      format: { encoding: "audio/pcm", sample_rate: s2sConfig.outputSampleRate },
+    });
+  });
+
   test("sendAudio sends base64-encoded audio when open", async () => {
     const { raw, handle } = await setupHandle();
 

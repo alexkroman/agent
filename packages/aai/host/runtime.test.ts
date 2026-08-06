@@ -6,7 +6,11 @@
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "../sdk/_internal-types.ts";
-import { DEFAULT_BUILTIN_TOOLS } from "../sdk/constants.ts";
+import {
+  ASSEMBLYAI_S2S_SAMPLE_RATE,
+  DEFAULT_BUILTIN_TOOLS,
+  DEFAULT_STT_SAMPLE_RATE,
+} from "../sdk/constants.ts";
 import type { Db } from "../sdk/db.ts";
 import { anthropic } from "../sdk/providers/llm/anthropic.ts";
 import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
@@ -223,6 +227,67 @@ describe("createRuntime", () => {
     expect(exec.readyConfig).toEqual(
       expect.objectContaining({ audioFormat: "pcm16", sampleRate: expect.any(Number) }),
     );
+  });
+
+  // The rate the client is TOLD to capture at has to be the rate the S2S service
+  // is actually using, and that service accepts exactly one. When these two
+  // numbers disagreed the agent greeted normally (output matched by luck) and
+  // was then permanently deaf: 16 kHz capture decoded as 24 kHz produced no
+  // speech edges, no transcript, and no error. See ASSEMBLYAI_S2S_SAMPLE_RATE.
+  describe("S2S sample-rate pinning", () => {
+    test("an S2S agent advertises the Voice Agent API's only supported rate", () => {
+      const exec = createRuntime({ agent: makeAgent(), env: {} });
+      expect(exec.readyConfig).toEqual({
+        audioFormat: "pcm16",
+        sampleRate: ASSEMBLYAI_S2S_SAMPLE_RATE,
+        ttsSampleRate: ASSEMBLYAI_S2S_SAMPLE_RATE,
+      });
+    });
+
+    test("a requested rate cannot override the pin, and the override is logged", () => {
+      // This is the host-mode path: `s2sConfigFromHandshake` honours a client's
+      // requested rates (tau2's harness asks for 16 kHz), which is right for the
+      // pipeline and impossible here — so the runtime overrules it rather than
+      // passing a rate the service will silently ignore.
+      const logger = makeLogger();
+      const exec = createRuntime({
+        agent: makeAgent(),
+        env: {},
+        logger,
+        s2sConfig: {
+          wssUrl: "wss://fake",
+          inputSampleRate: 16_000,
+          outputSampleRate: 16_000,
+        },
+      });
+      expect(exec.readyConfig.sampleRate).toBe(ASSEMBLYAI_S2S_SAMPLE_RATE);
+      expect(exec.readyConfig.ttsSampleRate).toBe(ASSEMBLYAI_S2S_SAMPLE_RATE);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("pinned"),
+        expect.objectContaining({ requestedInputSampleRate: 16_000 }),
+      );
+    });
+
+    test("a PIPELINE agent is left alone at the STT rate", () => {
+      // One `S2SConfig.inputSampleRate` field serves three consumers; pinning it
+      // globally would quietly move the pipeline's STT stage to 24 kHz too.
+      const logger = makeLogger();
+      const exec = createRuntime({
+        agent: makeAgent({
+          stt: assemblyAIStt(),
+          llm: anthropic({ model: "claude-sonnet-4-5" }),
+          tts: cartesia({ voice: "v1" }),
+        }),
+        // Providers resolve eagerly, so the runtime needs keys to construct.
+        env: { ASSEMBLYAI_API_KEY: "k", ANTHROPIC_API_KEY: "k", CARTESIA_API_KEY: "k" },
+        logger,
+      });
+      expect(exec.readyConfig.sampleRate).toBe(DEFAULT_STT_SAMPLE_RATE);
+      expect(logger.warn).not.toHaveBeenCalledWith(
+        expect.stringContaining("pinned"),
+        expect.anything(),
+      );
+    });
   });
 
   test("shutdown resolves immediately when no sessions exist", async () => {

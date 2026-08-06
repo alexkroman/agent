@@ -14,6 +14,22 @@
  * conversation needs (voice delivery, transcript noise, tool fidelity)
  * and leaves the persona and domain rules to the agent's own
  * instructions, which take precedence over these defaults.
+ *
+ * **Numerals, not words** — this used to say "say numbers the way a person
+ * says them (one hundred fifty-four dollars)", which is wrong twice over.
+ * The reply is not only spoken: it is also the `agent_transcript` that
+ * captions, history, logs, analytics, and evals all read, and a transcript
+ * saying "two four seven eight" where the value is 2478 is degraded for every
+ * one of them. Measured against AssemblyAI streaming TTS (2026-08-05,
+ * round-tripped back through streaming STT), it also buys nothing: `$154`,
+ * `$8,276.23`, `March 3 at 4:30 PM`, `11/14/2026`, `12 items` and
+ * `#W2378156` all voice correctly — `#` is even read as "number" — and the
+ * audio is the same length either way (10 vs "ten": 3.0s vs 2.9s). So the
+ * words-form was pure loss. Caveat kept deliberately narrow: a bare digit
+ * ID *is* read as a quantity (`19122` speaks as nineteen thousand odd), which
+ * is why the identifier clause says "normal written form" rather than
+ * promising a spoken rendering; an agent that needs a ZIP read out digit by
+ * digit should say so in its own instructions.
  */
 export const DEFAULT_SYSTEM_PROMPT: string = `\
 You are a voice agent in a real-time spoken conversation. What you
@@ -29,8 +45,9 @@ agent-specific instructions win.
   bullet points, no code, no headings — none of it can be spoken. To
   list things, say "First," "Next," "Finally," and never read out more
   than three items; offer to narrow down instead.
-- Say numbers, amounts, and dates the way a person says them ("one
-  hundred fifty-four dollars, on March third").
+- Write numbers, amounts, dates, and times as numerals ("$154", "12
+  items", "March 3", "4:30 PM"), and identifiers in their normal written
+  form ("#W2378156", "19122"). Never spell them out as words.
 - Ask at most one question per turn, and make it the one that unblocks
   the most.
 - Don't repeat the user's request back to them, don't recap what you

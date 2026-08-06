@@ -231,6 +231,30 @@ describe("executeToolCall — cancellation", () => {
     await vi.waitFor(() => expect(started).toBe(true));
     controller.abort();
     const result = await promise;
-    expect(JSON.parse(result)).toMatchObject({ error: expect.stringMatching(/abort/i) });
+    // The message must NAME THE TOOL, not repeat the DOMException. In S2S mode
+    // this string is delivered to the provider as the tool's `tool.result`, so
+    // the model reads it as the tool's output — a bare "This operation was
+    // aborted" (which is what `signal.reason` carries, and what this assertion
+    // used to accept via /abort/i) told neither the model nor a log reader which
+    // tool it referred to or why.
+    expect(JSON.parse(result)).toMatchObject({
+      error: 'Tool "hang" was cancelled while running',
+    });
+  });
+
+  test("a tool aborting its OWN work is a failure, not a cancellation", async () => {
+    // Same rejection shape as a turn abort (an AbortError), but the turn signal
+    // never fired — so the tool's own message must survive rather than being
+    // relabelled as a cancellation the session did not perform.
+    const controller = new AbortController();
+    const tool = makeTool({
+      execute: () => {
+        const err = new Error("inner fetch gave up");
+        err.name = "AbortError";
+        throw err;
+      },
+    });
+    const result = await run("selfabort", {}, tool, { signal: controller.signal });
+    expect(JSON.parse(result)).toMatchObject({ error: "inner fetch gave up" });
   });
 });

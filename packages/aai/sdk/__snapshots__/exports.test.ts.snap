@@ -4,6 +4,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
 [
   "AGENT_CSP",
   "ASSEMBLYAI_S2S_KIND",
+  "ASSEMBLYAI_S2S_SAMPLE_RATE",
   "BuiltinToolSchema",
   "CAPTURE_STOP_ACK_TIMEOUT_MS",
   "CLIENT_AUDIO_LEAD_MS",
