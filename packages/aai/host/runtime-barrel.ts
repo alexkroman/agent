@@ -23,6 +23,10 @@
 // platform server). It is consumed directly by sibling test files.
 
 export type { AgentEnv, HostCredentialEnv, ProviderEnv } from "../sdk/env-types.ts";
+export {
+  type AgentServerOptions,
+  createAgentServer,
+} from "./agent-server.ts";
 export type { RunCodeExecutor } from "./builtin-run-code.ts";
 export {
   type BuiltinToolOptions,
@@ -39,13 +43,20 @@ export {
 } from "./generate.ts";
 export {
   buildHostAgent,
-  createRelayExecuteTool,
   isHostAllowed,
-  type RelayExecuteTool,
-  type RelayToolResult,
   type StartHostSessionOptions,
   startHostSession,
 } from "./host-mode.ts";
+export {
+  createRelayExecuteTool,
+  type RelayExecuteTool,
+  type RelayToolResult,
+} from "./host-relay.ts";
+export {
+  createHostServer,
+  type HostServerOptions,
+  type HostSessionDefaults,
+} from "./host-server.ts";
 export {
   type CloseableDb,
   type CreatePostgresDbOptions,
@@ -82,6 +93,7 @@ export {
   type AgentServer,
   createServer,
   DEFAULT_LISTEN_HOST,
+  decliningRuntime,
   isPathInside,
   type ServerOptions,
   type SessionRuntime,

@@ -667,6 +667,47 @@ both are fail-closed:
   surfaces keys declared in `.env`, so `aai dev` passes the shell value through
   explicitly (`hostModeEnv`) — otherwise exporting the variable the usual way
   would have no effect.
+- **A host client may bring its own provider credentials**, and that is what
+  makes a host server safe to expose self-serve. The handshake's `credentials`
+  record (keyed by env var name) is merged over the server's env for that one
+  connection and WINS on conflict, so a server holding only `AAI_ALLOW_HOST`
+  runs every session on the caller's key — an unauthenticated client then has
+  no operator credential to spend, because there is none. Substituting a key
+  you own is not an escalation: it spends your quota and reveals nothing about
+  the operator's. `createHostServer` (`host/host-server.ts`) is that server in
+  one call and `examples/host-server` is the runnable shape.
+
+  **`createHostServer` exists because the three-line version was wrong three
+  ways.** Standing up a host-only server on `createServer` directly meant
+  remembering `AAI_ALLOW_HOST` (a stringly-typed flag guarding the only thing
+  the server does), inventing a placeholder `agent()` whose prompt is never
+  read just to carry provider descriptors, and hand-rolling a `SessionRuntime`
+  facade to decline the plain `/websocket` sessions it cannot serve. The
+  wrapper does all three once; `defaults` is the only knob, and it is typed to
+  exclude the four fields the handshake owns. Note the placeholder agent was
+  never needed even before the wrapper — see the `buildHostAgent` correction
+  below.
+
+  **The allowlist is load-bearing, not tidiness.** Names are screened against
+  `ALL_PROVIDER_ENV_VARS` — the same vocabulary bounding
+  `withHostCredentialFallback`, for the same reason. This record is merged into
+  the env the per-connection runtime is built from, and that env is read for
+  far more than provider keys: unbounded, a client sets `DATABASE_URL` and the
+  server opens `ctx.db` against a Postgres it controls, or sets
+  `AAI_ALLOW_HOST` and self-approves. So the gate is checked against the
+  SERVER's env before the merge, never the merged one. Unknown names are
+  REJECTED by name rather than dropped — a silent drop turns a typo
+  (`ASSEMBLYAI_KEY`) into a baffling provider-resolution failure two layers
+  down, and turns a genuine smuggling attempt into something the operator never
+  hears about.
+- **A host session with no base agent runs the DEFAULT PIPELINE, not S2S.**
+  `buildHostAgent`'s doc comment claimed the opposite until 2026-08 — it
+  predated the pipeline-by-default flip, and S2S has required an explicit `s2s`
+  descriptor ever since (see "Never let S2S be a fallback"). With no
+  `hostBaseAgent`, `createRuntime` fills all three stages from the
+  all-AssemblyAI pipeline, so one caller-supplied `ASSEMBLYAI_API_KEY` covers
+  STT, the LLM gateway and TTS. The stale comment had a real cost: it is what
+  made a placeholder `agent()` look mandatory on every host server.
 
 ## Pipeline-transport interleaving fuzz
 

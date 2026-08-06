@@ -15,19 +15,19 @@
  * when the matching inbound `tool_result` arrives.
  */
 
-import pTimeout from "p-timeout";
-import type { ExecuteTool, ToolSchema } from "../sdk/_internal-types.ts";
+import type { ToolSchema } from "../sdk/_internal-types.ts";
 import {
   ASSEMBLYAI_S2S_SAMPLE_RATE,
   DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS,
-  DEFAULT_RELAY_TOOL_TIMEOUT_MS,
   WS_OPEN,
 } from "../sdk/constants.ts";
 import type { ClientEvent, HostConfig } from "../sdk/protocol.ts";
 import { HostConfigMessageSchema } from "../sdk/protocol.ts";
 import type { AgentDef } from "../sdk/types.ts";
-import { errorMessage, safeJsonParse, toolError } from "../sdk/utils.ts";
+import { errorMessage, safeJsonParse } from "../sdk/utils.ts";
 import { UNPACED_AUDIO_LEAD_MS } from "./audio-pacer.ts";
+import { createRelayExecuteTool } from "./host-relay.ts";
+import { ALL_PROVIDER_ENV_VARS } from "./providers/resolve.ts";
 import { createRuntime, type RuntimeOptions, type SessionStartOptions } from "./runtime.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
@@ -40,115 +40,6 @@ import { type SessionWebSocket, safeSend } from "./ws-handler.ts";
  * conversational agent.
  */
 const DEFAULT_HOST_MAX_STEPS = 30;
-
-/**
- * The inbound `tool_result` payload routed to {@link RelayExecuteTool.onToolResult}.
- * @internal
- */
-export type RelayToolResult = {
-  toolCallId: string;
-  result: string;
-  error?: string | undefined;
-};
-
-/**
- * A relay tool executor plus the hooks needed to feed it inbound results.
- * @internal
- */
-export type RelayExecuteTool = {
-  /** {@link ExecuteTool} that relays each call to the client and awaits a result. */
-  executeTool: ExecuteTool;
-  /** Resolve (or reject) the pending call matching `toolCallId`. */
-  onToolResult(msg: RelayToolResult): void;
-  /** Reject every still-pending call (call on connection close). */
-  dispose(): void;
-};
-
-type ToolCallEvent = Extract<ClientEvent, { type: "tool_call" }>;
-
-/**
- * A relay's `result` field arrives as a string on the wire. Clients commonly
- * JSON-encode their tool output; unwrap a JSON string so the model receives
- * clean text, but leave object/array JSON (and non-JSON) untouched.
- */
-function normalizeResult(raw: string): string {
-  const parsed = safeJsonParse(raw);
-  return typeof parsed === "string" ? parsed : raw;
-}
-
-/**
- * Build a relay tool executor: `executeTool` emits a `tool_call` frame via
- * `send` and returns a promise keyed by `toolCallId`; `onToolResult` settles
- * that promise when the client replies. Calls that never receive a result
- * reject after `timeoutMs` (default `DEFAULT_RELAY_TOOL_TIMEOUT_MS`, 120 000 ms).
- *
- * @internal
- */
-export function createRelayExecuteTool(opts: {
-  send: (event: ToolCallEvent) => void;
-  timeoutMs?: number | undefined;
-}): RelayExecuteTool {
-  const timeoutMs = opts.timeoutMs ?? DEFAULT_RELAY_TOOL_TIMEOUT_MS;
-  type Pending = {
-    resolve: (value: string) => void;
-    reject: (reason: Error) => void;
-  };
-  const pending = new Map<string, Pending>();
-
-  const executeTool: ExecuteTool = (name, args, _sessionId, _messages, callOpts) => {
-    const toolCallId = callOpts?.toolCallId;
-    if (!toolCallId) {
-      // Defensive: every path should thread a toolCallId (see session-core /
-      // to-vercel-tools). Without one the result can't be correlated.
-      return Promise.resolve(toolError(`Relay tool "${name}" invoked without a toolCallId`));
-    }
-    if (pending.has(toolCallId)) {
-      // A second in-flight call with the same id would clobber the first
-      // entry, and the first call's timer would then delete the new entry —
-      // dropping its genuine tool_result. Refuse instead of clobbering.
-      return Promise.resolve(
-        toolError(`Relay tool "${name}" duplicates in-flight toolCallId "${toolCallId}"`),
-      );
-    }
-    const signal = callOpts?.signal;
-    if (signal?.aborted) {
-      return Promise.resolve(toolError(`Relay tool "${name}" (${toolCallId}) was cancelled`));
-    }
-    const { promise, resolve, reject } = Promise.withResolvers<string>();
-    pending.set(toolCallId, { resolve, reject });
-    opts.send({ type: "tool_call", toolCallId, toolName: name, args });
-    // p-timeout owns the deadline and the abort listener: it rejects with the
-    // timeout Error below, or with the signal's abort reason on cancellation.
-    // Either way the pending entry is dropped once the call settles.
-    return pTimeout(promise, {
-      milliseconds: timeoutMs,
-      ...(signal !== undefined ? { signal } : {}),
-      message: new Error(`Relay tool "${name}" (${toolCallId}) timed out after ${timeoutMs}ms`),
-    }).finally(() => {
-      pending.delete(toolCallId);
-    });
-  };
-
-  function onToolResult(msg: RelayToolResult): void {
-    const entry = pending.get(msg.toolCallId);
-    if (!entry) return;
-    pending.delete(msg.toolCallId);
-    if (msg.error !== undefined) {
-      entry.reject(new Error(msg.error));
-      return;
-    }
-    entry.resolve(normalizeResult(msg.result));
-  }
-
-  function dispose(): void {
-    for (const [, entry] of pending) {
-      entry.reject(new Error("Relay disposed before tool result arrived"));
-    }
-    pending.clear();
-  }
-
-  return { executeTool, onToolResult, dispose };
-}
 
 /**
  * Whether host mode is permitted for this environment.
@@ -174,6 +65,51 @@ export function isHostAllowed(env: Record<string, string>): boolean {
 }
 
 /**
+ * The first credential name in `credentials` that is not a provider
+ * credential, or `undefined` when every name is allowed.
+ *
+ * Bounded by {@link ALL_PROVIDER_ENV_VARS} — the same vocabulary that bounds
+ * `withHostCredentialFallback`, and for the same reason: this record is merged
+ * into the env of the per-connection runtime, which reads far more than
+ * provider keys out of it. An unbounded merge would let a `?host=1` client set
+ * `DATABASE_URL` and have the server open `ctx.db` against a Postgres it
+ * controls, or set `AAI_ALLOW_HOST` and self-approve.
+ *
+ * Unknown names are REJECTED rather than dropped. Silently ignoring them turns
+ * a typo (`ASSEMBLYAI_KEY`) into a confusing provider-resolution failure two
+ * layers down, and turns a genuine attempt to smuggle `DATABASE_URL` into
+ * something the operator never hears about.
+ *
+ * @internal
+ */
+export function unknownCredentialName(
+  credentials: Record<string, string> | undefined,
+): string | undefined {
+  if (!credentials) return;
+  return Object.keys(credentials).find((name) => !ALL_PROVIDER_ENV_VARS.includes(name));
+}
+
+/**
+ * The env the per-connection runtime is built from: the server's own env with
+ * the client's credentials layered on top.
+ *
+ * The client WINS on conflict. That is the point of the field — a host server
+ * can hold no credentials at all and let each session run on the caller's key
+ * — and it is not an escalation: substituting a key you own spends your quota,
+ * not the operator's, and reveals nothing about what the operator had.
+ *
+ * Callers must screen with {@link unknownCredentialName} first.
+ *
+ * @internal
+ */
+export function withHostCredentials(
+  env: Record<string, string>,
+  credentials: Record<string, string> | undefined,
+): Record<string, string> {
+  return credentials ? { ...env, ...credentials } : env;
+}
+
+/**
  * Synthesize an {@link AgentDef} from a host block. Host tools are relayed to
  * the client rather than executed in-process, so the agent carries no real
  * `ToolDef`s — the tool schemas are supplied to the runtime separately via
@@ -183,8 +119,15 @@ export function isHostAllowed(env: Record<string, string>): boolean {
  * config (`stt`/`llm`/`tts` and other pipeline settings) is inherited so the
  * host session runs the SAME pipeline the operator configured — only the
  * system prompt, greeting, and tools are overridden by the injected host
- * block. Without a `baseAgent`, no providers are set and the runtime falls
- * back to the default S2S path.
+ * block.
+ *
+ * Without a `baseAgent` no providers are set, and `createRuntime` then fills
+ * all three from the default all-AssemblyAI pipeline — NOT, as this comment
+ * claimed before the pipeline-by-default flip, the S2S path. S2S has needed an
+ * explicit `s2s` descriptor since; there is no fallback to it left. So a host
+ * server that wants the default pipeline needs no base agent at all, and
+ * inventing a placeholder one to carry providers it does not have is wasted
+ * ceremony.
  *
  * @internal
  */
@@ -370,6 +313,17 @@ export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOpt
     }
 
     const { host } = handshake;
+
+    // Screened BEFORE the merge, and the gate above is checked against the
+    // SERVER's env, never the merged one — a client must not be able to
+    // approve its own connection by sending the flag as a "credential".
+    const rejectedName = unknownCredentialName(host.credentials);
+    if (rejectedName !== undefined) {
+      rejectHandshake(ws, log, `host-mode: "${rejectedName}" is not a provider credential`);
+      return;
+    }
+    const sessionEnv = withHostCredentials(env, host.credentials);
+
     const hostAgent = buildHostAgent(host, opts.baseAgent);
     const rateError = assertHostRatesSupported(hostAgent, handshake);
     if (rateError !== undefined) {
@@ -386,7 +340,7 @@ export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOpt
     try {
       runtime = makeRuntime({
         agent: hostAgent,
-        env,
+        env: sessionEnv,
         executeTool: relay.executeTool,
         toolSchemas: host.tools as ToolSchema[],
         onToolResult: relay.onToolResult,

@@ -53,6 +53,41 @@ describe("HostConfigSchema", () => {
     const result = HostConfigSchema.safeParse({ systemPrompt: "Hi" });
     expect(result.success).toBe(false);
   });
+
+  test("accepts optional credentials", () => {
+    const result = HostConfigSchema.safeParse({
+      systemPrompt: "Hi",
+      tools: [],
+      credentials: { ASSEMBLYAI_API_KEY: "sk-test" },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.credentials).toEqual({ ASSEMBLYAI_API_KEY: "sk-test" });
+    }
+  });
+
+  test("rejects an empty credential value", () => {
+    // An empty key reaches the provider resolver as a present-but-useless
+    // credential, which fails as "invalid key" rather than "you sent none".
+    const result = HostConfigSchema.safeParse({
+      systemPrompt: "Hi",
+      tools: [],
+      credentials: { ASSEMBLYAI_API_KEY: "" },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  // Which NAMES are allowed is not a schema concern — the allowlist lives in
+  // `unknownCredentialName` (host-mode.ts), where the rejection can name the
+  // offending key instead of collapsing into a generic parse failure.
+  test("accepts an unlisted credential name at the schema layer", () => {
+    const result = HostConfigSchema.safeParse({
+      systemPrompt: "Hi",
+      tools: [],
+      credentials: { DATABASE_URL: "postgres://x" },
+    });
+    expect(result.success).toBe(true);
+  });
 });
 
 describe("HostConfigMessageSchema", () => {

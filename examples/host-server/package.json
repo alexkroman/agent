@@ -1,0 +1,14 @@
+{
+  "name": "host-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A multi-tenant voice agent server: each caller brings its own prompt, tools and AssemblyAI key.",
+  "scripts": {
+    "start": "node server.mjs",
+    "client": "node client.mjs"
+  },
+  "dependencies": {
+    "@alexkroman1/aai": "^5.10.0"
+  }
+}

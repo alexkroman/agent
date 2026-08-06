@@ -9,7 +9,6 @@
  */
 
 import { existsSync } from "node:fs";
-import { createRequire } from "node:module";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { AgentDef } from "@alexkroman1/aai";
@@ -22,6 +21,7 @@ import {
   requiredProviderEnvVars,
   withHostCredentialFallback,
 } from "@alexkroman1/aai/runtime";
+import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { type FSWatcher, watch } from "chokidar";
 import getPort, { portNumbers } from "get-port";
 import pDebounce from "p-debounce";
@@ -206,22 +206,6 @@ export function watchDirectory(dir: string, onChange: () => void): FSWatcher {
 
 // ─── Dev server ─────────────────────────────────────────────────────────────
 
-/** Locate the pre-built default aai-ui client (served when no custom client.tsx). */
-function resolveDefaultClientDir(): string {
-  const require = createRequire(import.meta.url);
-  let pkgPath: string;
-  try {
-    pkgPath = require.resolve("@alexkroman1/aai-ui/package.json");
-  } catch (err) {
-    throw new Error(
-      `Could not locate the default client UI (${errorMessage(err)}) — ` +
-        "is @alexkroman1/aai-ui installed? Try reinstalling dependencies (pnpm install).",
-      { cause: err },
-    );
-  }
-  return path.join(path.dirname(pkgPath), "dist", "default-client");
-}
-
 export type DevServerOptions = {
   cwd: string;
   port: number;
@@ -274,7 +258,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
 
   // When no custom client.tsx, serve the pre-built default aai-ui client.
   // Resolved once — the location can't change for the process lifetime.
-  const clientDirOpt = hasClient ? {} : { clientDir: resolveDefaultClientDir() };
+  const clientDirOpt = hasClient ? {} : { clientDir: defaultClientDir() };
 
   // One eval memo for the server's lifetime — a no-op save re-uses the
   // previously evaluated AgentDef instead of leaking another ESM module.

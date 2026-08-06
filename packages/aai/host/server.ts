@@ -55,6 +55,12 @@ export type ServerOptions = {
    * Supplying `env` does not by itself enable host mode: it is opt-in via
    * `AAI_ALLOW_HOST` (see `isHostAllowed`). Omitting `env` disables host mode
    * unconditionally — any `?host=1` connection is rejected.
+   *
+   * It need not carry provider credentials at all: a client may bring its own
+   * in the handshake's `credentials` block, which wins over anything here for
+   * that connection. A server holding only `AAI_ALLOW_HOST` is the multi-tenant
+   * shape — every session runs on the caller's key, so an unauthenticated
+   * client has no operator credential to spend. See `examples/host-server`.
    */
   env?: Record<string, string>;
   /**
@@ -111,6 +117,29 @@ export type AgentServer = {
  * an explicit choice by the caller.
  */
 export const DEFAULT_LISTEN_HOST = "127.0.0.1";
+
+/**
+ * A {@link SessionRuntime} that turns every session away with a protocol error
+ * and closes, instead of accepting a socket it cannot answer.
+ *
+ * For a server whose `/websocket` has no agent behind it — `createHostServer`,
+ * which serves only `?host=1` sessions. The guest harness hand-rolls the same
+ * shape for its drain refusal; this is here so the third one does not get
+ * written by hand too.
+ *
+ * A refusal must SAY something: closing a bare socket leaves the client
+ * reconnecting against a server that will never answer, with nothing in the
+ * frame log explaining why.
+ */
+export function decliningRuntime(message: string, logger: Logger = consoleLogger): SessionRuntime {
+  return {
+    startSession(ws) {
+      safeSend(ws, JSON.stringify({ type: "error", code: "protocol", message }), logger);
+      ws.close?.(1008);
+    },
+    shutdown: () => Promise.resolve(),
+  };
+}
 
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 

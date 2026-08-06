@@ -338,6 +338,23 @@ export const HostConfigSchema = z.object({
    * separate STT stage.
    */
   sttPrompt: z.string().optional(),
+  /**
+   * Provider credentials the session should run on, keyed by env var name
+   * (`{ ASSEMBLYAI_API_KEY: "…" }`) — the caller brings its own key instead of
+   * spending the operator's.
+   *
+   * This is what makes a host server multi-tenant without handing every
+   * connecting client the operator's credentials: the server can hold none at
+   * all and let each session pay for itself. Keys supplied here WIN over the
+   * server's own env for that one connection; a client can only substitute a
+   * credential it already owns, never read the operator's.
+   *
+   * Only names in `ALL_PROVIDER_ENV_VARS` are accepted, and the handshake is
+   * rejected outright when an unlisted one appears — this record is merged
+   * into the per-connection runtime's env, so an unbounded one would let a
+   * client set `DATABASE_URL` and point `ctx.db` at a server it controls.
+   */
+  credentials: z.record(z.string(), z.string().min(1)).optional(),
 });
 
 /** Host-provided agent configuration for a host-mode connection. */

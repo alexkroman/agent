@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import type { ToolSchema } from "../sdk/_internal-types.ts";
 import { createOwnedMap } from "../sdk/owned-map.ts";
 import type { ClientEvent } from "../sdk/protocol.ts";
@@ -9,17 +9,17 @@ import { MockWebSocket } from "./_mock-ws.ts";
 import { makeConfig, makeLogger, silentLogger } from "./_test-utils.ts";
 import {
   buildHostAgent,
-  createRelayExecuteTool,
   isHostAllowed,
   startHostSession,
+  unknownCredentialName,
+  withHostCredentials,
 } from "./host-mode.ts";
+import { createRelayExecuteTool } from "./host-relay.ts";
 import type { Runtime, RuntimeOptions } from "./runtime.ts";
 import { createSessionCore } from "./session-core.ts";
 import type { Transport } from "./transports/types.ts";
 import type { SessionWebSocket } from "./ws-handler.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
-
-type ToolCallEvent = Extract<ClientEvent, { type: "tool_call" }>;
 
 const TOOL_SCHEMA: ToolSchema = {
   type: "function",
@@ -70,159 +70,6 @@ function openMockWs(): MockWebSocket {
   return ws;
 }
 
-function makeSend() {
-  const events: ToolCallEvent[] = [];
-  const send = vi.fn((e: ToolCallEvent) => {
-    events.push(e);
-  });
-  return { send, events };
-}
-
-describe("createRelayExecuteTool", () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  test("emits a tool_call frame and resolves on a matching tool_result", async () => {
-    const { send, events } = makeSend();
-    const relay = createRelayExecuteTool({ send });
-
-    const p = relay.executeTool("lookup", { city: "Paris" }, "sess", [], {
-      toolCallId: "call-1",
-    });
-
-    expect(events).toEqual([
-      { type: "tool_call", toolCallId: "call-1", toolName: "lookup", args: { city: "Paris" } },
-    ]);
-
-    relay.onToolResult({ toolCallId: "call-1", result: "sunny" });
-    await expect(p).resolves.toBe("sunny");
-    relay.dispose();
-  });
-
-  test("unwraps a JSON-encoded string result but leaves object JSON intact", async () => {
-    const { send } = makeSend();
-    const relay = createRelayExecuteTool({ send });
-
-    const pStr = relay.executeTool("t", {}, undefined, undefined, { toolCallId: "a" });
-    relay.onToolResult({ toolCallId: "a", result: '"hello"' });
-    await expect(pStr).resolves.toBe("hello");
-
-    const pObj = relay.executeTool("t", {}, undefined, undefined, { toolCallId: "b" });
-    relay.onToolResult({ toolCallId: "b", result: '{"temp":72}' });
-    await expect(pObj).resolves.toBe('{"temp":72}');
-
-    const pPlain = relay.executeTool("t", {}, undefined, undefined, { toolCallId: "c" });
-    relay.onToolResult({ toolCallId: "c", result: "not json" });
-    await expect(pPlain).resolves.toBe("not json");
-  });
-
-  test("rejects when the tool_result carries an error", async () => {
-    const { send } = makeSend();
-    const relay = createRelayExecuteTool({ send });
-
-    const p = relay.executeTool("t", {}, undefined, undefined, { toolCallId: "err-1" });
-    relay.onToolResult({ toolCallId: "err-1", result: "", error: "boom" });
-    await expect(p).rejects.toThrow(/boom/);
-  });
-
-  test("ignores tool_result for an unknown toolCallId", async () => {
-    const { send } = makeSend();
-    const relay = createRelayExecuteTool({ send, timeoutMs: 50 });
-    vi.useFakeTimers();
-
-    const p = relay.executeTool("t", {}, undefined, undefined, { toolCallId: "known" });
-    const settled = expect(p).rejects.toThrow(/timed out/);
-
-    // A stray result for a different id must not resolve the pending call.
-    relay.onToolResult({ toolCallId: "other", result: "nope" });
-
-    await vi.advanceTimersByTimeAsync(50);
-    await settled;
-  });
-
-  test("times out when no tool_result arrives and cleans up", async () => {
-    vi.useFakeTimers();
-    const { send } = makeSend();
-    const relay = createRelayExecuteTool({ send, timeoutMs: 1000 });
-
-    const p = relay.executeTool("slow", {}, undefined, undefined, { toolCallId: "t-1" });
-    const settled = expect(p).rejects.toThrow(/slow.*timed out after 1000ms/);
-    await vi.advanceTimersByTimeAsync(1000);
-    await settled;
-
-    // After timeout the entry is cleared: a late result is a no-op (does not throw).
-    expect(() => relay.onToolResult({ toolCallId: "t-1", result: "late" })).not.toThrow();
-  });
-
-  test("returns a tool error (does not throw) when no toolCallId is provided", async () => {
-    const { send } = makeSend();
-    const relay = createRelayExecuteTool({ send });
-    const result = await relay.executeTool("t", {}, undefined, undefined, {});
-    expect(send).not.toHaveBeenCalled();
-    expect(JSON.parse(result)).toMatchObject({ error: expect.stringContaining("toolCallId") });
-  });
-
-  test("dispose rejects all pending calls", async () => {
-    const { send } = makeSend();
-    const relay = createRelayExecuteTool({ send });
-    const p = relay.executeTool("t", {}, undefined, undefined, { toolCallId: "x" });
-    const settled = expect(p).rejects.toThrow(/dispose/i);
-    relay.dispose();
-    await settled;
-  });
-
-  test("a duplicate in-flight toolCallId is refused without clobbering the first call", async () => {
-    const { send } = makeSend();
-    const relay = createRelayExecuteTool({ send });
-
-    const first = relay.executeTool("t", {}, undefined, undefined, { toolCallId: "dup" });
-    const second = await relay.executeTool("t", {}, undefined, undefined, { toolCallId: "dup" });
-    expect(JSON.parse(second)).toMatchObject({ error: expect.stringContaining("dup") });
-    // Only the first call emitted a frame.
-    expect(send).toHaveBeenCalledTimes(1);
-
-    // The first call still settles from its genuine result.
-    relay.onToolResult({ toolCallId: "dup", result: "first" });
-    await expect(first).resolves.toBe("first");
-    relay.dispose();
-  });
-
-  test("aborting the turn signal rejects the pending relay call; a late result is a no-op", async () => {
-    const { send } = makeSend();
-    const relay = createRelayExecuteTool({ send });
-    const controller = new AbortController();
-
-    const p = relay.executeTool("t", {}, undefined, undefined, {
-      toolCallId: "x",
-      signal: controller.signal,
-    });
-    // p-timeout rejects with the signal's abort reason.
-    const settled = expect(p).rejects.toThrow(/aborted/i);
-    controller.abort();
-    await settled;
-
-    // Entry was cleared: a stale client result after the abort is ignored.
-    expect(() => relay.onToolResult({ toolCallId: "x", result: "late" })).not.toThrow();
-    relay.dispose();
-  });
-
-  test("a pre-aborted signal returns a tool error without emitting a frame", async () => {
-    const { send } = makeSend();
-    const relay = createRelayExecuteTool({ send });
-    const controller = new AbortController();
-    controller.abort();
-
-    const result = await relay.executeTool("t", {}, undefined, undefined, {
-      toolCallId: "x",
-      signal: controller.signal,
-    });
-    expect(JSON.parse(result)).toMatchObject({ error: expect.stringContaining("cancelled") });
-    expect(send).not.toHaveBeenCalled();
-    relay.dispose();
-  });
-});
-
 describe("isHostAllowed", () => {
   // Host mode lets an unauthenticated client replace the agent definition and
   // spend the operator's provider credentials, so it must be opt-in: an unset
@@ -244,6 +91,47 @@ describe("isHostAllowed", () => {
     expect(isHostAllowed({ AAI_ALLOW_HOST: "0" })).toBe(false);
     expect(isHostAllowed({ AAI_ALLOW_HOST: "false" })).toBe(false);
     expect(isHostAllowed({ AAI_ALLOW_HOST: "False" })).toBe(false);
+  });
+});
+
+describe("host-supplied credentials", () => {
+  test.each([
+    ["ASSEMBLYAI_API_KEY", undefined],
+    ["OPENAI_API_KEY", undefined],
+    ["CARTESIA_API_KEY", undefined],
+    // The two that make the allowlist load-bearing rather than tidy: one
+    // would repoint ctx.db at a Postgres the client owns, the other would
+    // let an unapproved client approve itself.
+    ["DATABASE_URL", "DATABASE_URL"],
+    ["AAI_ALLOW_HOST", "AAI_ALLOW_HOST"],
+    ["ASSEMBLYAI_KEY", "ASSEMBLYAI_KEY"],
+  ])("%s → rejected name %s", (name, expected) => {
+    expect(unknownCredentialName({ [name]: "v" })).toBe(expected);
+  });
+
+  test("absent or empty credentials are allowed", () => {
+    expect(unknownCredentialName(undefined)).toBeUndefined();
+    expect(unknownCredentialName({})).toBeUndefined();
+  });
+
+  test("reports a rejected name even when allowed ones accompany it", () => {
+    expect(unknownCredentialName({ ASSEMBLYAI_API_KEY: "a", DATABASE_URL: "b" })).toBe(
+      "DATABASE_URL",
+    );
+  });
+
+  test("client credentials win over the server's own", () => {
+    expect(
+      withHostCredentials(
+        { ASSEMBLYAI_API_KEY: "operator", DATABASE_URL: "postgres://operator" },
+        { ASSEMBLYAI_API_KEY: "tenant" },
+      ),
+    ).toEqual({ ASSEMBLYAI_API_KEY: "tenant", DATABASE_URL: "postgres://operator" });
+  });
+
+  test("no credentials leaves the server env untouched", () => {
+    const env = { ASSEMBLYAI_API_KEY: "operator" };
+    expect(withHostCredentials(env, undefined)).toBe(env);
   });
 });
 
@@ -442,6 +330,68 @@ describe("startHostSession (deferred host handshake)", () => {
     expect(createRuntime).not.toHaveBeenCalled();
     expect(ws.sentJson()).toContainEqual(
       expect.objectContaining({ type: "error", code: "protocol" }),
+    );
+  });
+
+  test("the client's credentials reach the per-connection runtime and beat the server's", async () => {
+    // The multi-tenant shape: the server holds only the gate, so the session
+    // can only run on a key the caller brought.
+    const ws = openMockWs();
+    let captured: RuntimeOptions | undefined;
+
+    startHostSession(ws as unknown as SessionWebSocket, {
+      env: { AAI_ALLOW_HOST: "1", ASSEMBLYAI_API_KEY: "operator" },
+      logger: silentLogger,
+      createRuntime: (o) => {
+        captured = o;
+        return makeFakeRuntime(o).runtime;
+      },
+    });
+
+    ws.simulateMessage(
+      hostConfigFrame({
+        host: {
+          systemPrompt: "You are a host agent.",
+          tools: [],
+          credentials: { ASSEMBLYAI_API_KEY: "tenant" },
+        },
+      }),
+    );
+    await Promise.resolve();
+
+    expect(captured?.env).toMatchObject({ ASSEMBLYAI_API_KEY: "tenant" });
+  });
+
+  test("a credential name outside the provider allowlist rejects the handshake", async () => {
+    const ws = openMockWs();
+    const createRuntime = vi.fn();
+
+    startHostSession(ws as unknown as SessionWebSocket, {
+      env: { AAI_ALLOW_HOST: "1" },
+      logger: silentLogger,
+      createRuntime,
+    });
+
+    ws.simulateMessage(
+      hostConfigFrame({
+        host: {
+          systemPrompt: "You are a host agent.",
+          tools: [],
+          credentials: { DATABASE_URL: "postgres://attacker" },
+        },
+      }),
+    );
+    await Promise.resolve();
+
+    // No runtime at all — the rejection lands before anything is built, so
+    // the smuggled value never reaches provider or db resolution.
+    expect(createRuntime).not.toHaveBeenCalled();
+    expect(ws.sentJson()).toContainEqual(
+      expect.objectContaining({
+        type: "error",
+        code: "protocol",
+        message: expect.stringContaining("DATABASE_URL"),
+      }),
     );
   });
 
