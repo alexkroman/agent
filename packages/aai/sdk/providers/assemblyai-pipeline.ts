@@ -120,13 +120,14 @@ export function assemblyAIPipeline(opts: AssemblyAIPipelineOptions = {}): {
     // model that would reject it. An agent that wants thinking depth declares
     // its own stage (`assemblyAILlm({ model, reasoningEffort })`).
     //
-    // On the current default (`qwen3-next-80b-a3b`, a hybrid-thinking model)
-    // this argument is the ONLY thing turning reasoning off — unlike the
-    // `gpt-5.6` models it replaced, qwen is not in TOOLS_REQUIRE_NO_REASONING,
-    // so the factory adds nothing and dropping it here would silently restore
-    // per-turn thinking latency to every default pipeline. Verified 2026-08-06
-    // against the live gateway that qwen accepts `"none"` alongside tools and
-    // streams normally.
+    // On the current default (`gpt-5.5`) this argument is the ONLY thing
+    // turning reasoning off: gpt-5.5 is not in TOOLS_REQUIRE_NO_REASONING (it
+    // accepts tools at any effort), so the factory adds nothing and dropping
+    // this as redundant would silently restore per-turn thinking latency to
+    // every default pipeline — measured at 1786ms p50 time-to-first-token on
+    // gpt-5.5's server-side reasoning default, against 999ms with it off.
+    // The redundancy is real only while the default sits inside that set,
+    // which it does not; do not remove it on that reasoning.
     llm: assemblyAILlm({ reasoningEffort: "none", ...(region ? { region } : {}) }),
     tts: assemblyAITts(voice ? { voice } : {}),
   };

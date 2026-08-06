@@ -70,11 +70,11 @@ describe("agent()", () => {
     const { llm } = assemblyAIPipeline();
     expect(llm.options.reasoningEffort).toBe("none");
     // The descriptor must carry a model that accepts the parameter. On the
-    // current default the preset is the ONLY thing setting it — qwen is not in
-    // TOOLS_REQUIRE_NO_REASONING, so the factory contributes no effort of its
-    // own and this assertion is what stands between the default pipeline and
-    // per-turn thinking latency.
-    expect(llm.options.model).toBe("qwen3-next-80b-a3b");
+    // current default the preset is the ONLY thing setting it — gpt-5.5 is not
+    // in TOOLS_REQUIRE_NO_REASONING, so the factory contributes no effort of
+    // its own and this assertion is what stands between the default pipeline
+    // and per-turn thinking latency.
+    expect(llm.options.model).toBe("gpt-5.5");
 
     // An agent with no providers at all gets the same treatment. Asserted
     // through toAgentConfig, not agent(): the default fill runs at the

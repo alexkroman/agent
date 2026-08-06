@@ -162,12 +162,12 @@ describe("resolveLlm", () => {
       expect(model).toHaveProperty("specificationVersion");
     });
 
-    it("defaults to qwen3-next-80b-a3b when the descriptor names no model", () => {
+    it("defaults to gpt-5.5 when the descriptor names no model", () => {
       const model = resolveLlm(
         { kind: ASSEMBLYAI_LLM_KIND, options: {} },
         { ASSEMBLYAI_API_KEY: "fake-key" },
       );
-      expect(model).toMatchObject({ modelId: "qwen3-next-80b-a3b" });
+      expect(model).toMatchObject({ modelId: "gpt-5.5" });
     });
 
     // `reasoningEffort` is forwarded as `reasoning_effort` only when the
@@ -222,7 +222,7 @@ describe("resolveLlm", () => {
 
     it("still defaults the model id for a descriptor that names none", async () => {
       const parsed = JSON.parse(await requestBodyFor({})) as Record<string, unknown>;
-      expect(parsed).toMatchObject({ model: "qwen3-next-80b-a3b" });
+      expect(parsed).toMatchObject({ model: "gpt-5.5" });
     });
 
     it('turns reasoning off when the descriptor sets reasoningEffort: "none"', async () => {
