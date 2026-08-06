@@ -17,8 +17,8 @@
  * another user's turn. The per-tool deadline in studio-tools.ts bounds it.
  */
 
+import { errorMessage } from "@alexkroman1/aai";
 import picomatch from "picomatch";
-import { errMsg } from "./harness-rpc.ts";
 import { MAX_STUDIO_FILES } from "./limits.ts";
 
 /** Matches returned before the result is capped. */
@@ -55,7 +55,7 @@ export function globMatcher(glob: string): (path: string) => boolean {
   try {
     return picomatch(glob, { dot: true });
   } catch (err) {
-    throw new StudioGrepError(`Invalid glob ${JSON.stringify(glob)}: ${errMsg(err)}`, {
+    throw new StudioGrepError(`Invalid glob ${JSON.stringify(glob)}: ${errorMessage(err)}`, {
       cause: err,
     });
   }
@@ -67,7 +67,7 @@ function buildMatcher(pattern: string, opts: GrepOptions): RegExp {
     return new RegExp(source, opts.ignoreCase ? "i" : "");
   } catch (err) {
     throw new StudioGrepError(
-      `Invalid regex ${JSON.stringify(pattern)}: ${errMsg(err)}. ` +
+      `Invalid regex ${JSON.stringify(pattern)}: ${errorMessage(err)}. ` +
         "Pass literal: true to search for it as plain text.",
       { cause: err },
     );

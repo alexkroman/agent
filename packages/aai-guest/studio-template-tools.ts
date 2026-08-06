@@ -22,9 +22,9 @@
 
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { errorMessage } from "@alexkroman1/aai";
 import { type ToolSet, tool } from "ai";
 import { z } from "zod";
-import { errMsg } from "./harness-rpc.ts";
 import { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_FILES } from "./limits.ts";
 import { toolchainModules } from "./studio-build.ts";
 import { STUDIO_TOOL_DESCRIPTIONS } from "./studio-tool-descriptions.ts";
@@ -262,7 +262,7 @@ export function createTemplateTools(deps: TemplateToolDeps): ToolSet {
         try {
           names = await templateNames(root);
         } catch (err) {
-          return `Error: templates directory is unreadable: ${errMsg(err)}`;
+          return `Error: templates directory is unreadable: ${errorMessage(err)}`;
         }
         if (names.length === 0) return "No templates found";
         const listing = await templateListing(root, names);
@@ -292,7 +292,7 @@ export function createTemplateTools(deps: TemplateToolDeps): ToolSet {
             ...(overwrite !== undefined && { overwrite }),
           });
         } catch (err) {
-          return `Error: ${errMsg(err)}`;
+          return `Error: ${errorMessage(err)}`;
         }
         const checked = copied.written.find((rel) =>
           CHECKED_EXTS.has(path.extname(rel).toLowerCase()),

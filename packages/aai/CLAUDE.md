@@ -441,11 +441,29 @@ are only imported by the host-side openers/resolvers in
 data, so agent bundles never pull provider SDKs into the guest sandbox.
 
 Each provider defines its `KIND` tag and `<PROVIDER>_API_KEY_ENV`
-constant once in its `sdk/providers/{stt,tts,llm}/<name>.ts` module.
+constant once in its `sdk/providers/{stt,tts,llm,s2s}/<name>.ts` module.
 Adding a provider means: descriptor factory there, an opener in
 `host/providers/{stt,tts}/` (built on the shared session shell in
-`host/providers/_utils.ts`), and one registry/switch entry in
+`host/providers/_utils.ts`), and one entry in the matching registry in
 `host/providers/resolve.ts`.
+
+**All four stages are registries, S2S included.** For a long time only
+STT/TTS/LLM were: S2S was three hand-written kind comparisons, and they
+had drifted apart on the failure mode. `buildTransport` THREW on an
+unrecognized kind, while `requiredProviderEnvVars` FELL THROUGH to
+`ASSEMBLYAI_API_KEY` and `ALL_PROVIDER_ENV_VARS` listed the two vendor
+keys by hand. A third S2S vendor would therefore have made both credential
+preflights — the platform's deploy boundary (`aai-server/deploy.ts`) and
+`aai dev`'s — reject the deploy while naming a key the agent does not use
+and never naming the one it does, which is exactly the silently-wrong-vendor
+failure the STT/TTS registries were built to prevent. `S2S_REGISTRY` closes
+it: `S2sKind` is the closed union of its keys, `isS2sKind` narrows to it,
+and the dispatch in `runtime-transport.ts` is an exhaustiveness switch over
+that union — so a registry entry with no transport builder is a compile
+error rather than a first-session throw. S2S credentials also honour a
+descriptor's `apiKeyEnv` now, like every other stage; they resolve through
+`resolveS2sEnvVar`, so the key a session reads is by construction the key
+the preflight asked for.
 
 ## Voices
 

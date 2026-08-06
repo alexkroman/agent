@@ -6,6 +6,13 @@ import type { S2sProvider } from "../../providers.ts";
 /** Kind tag recognised by the host-side resolver. */
 export const OPENAI_REALTIME_KIND = "openai-realtime" as const;
 
+/**
+ * Env var holding this stage's credential — the same string as the OpenAI LLM
+ * constant, under a name of its own so `apiKeyEnv` can repoint this stage
+ * alone (see `descriptorEnvVar` in `host/providers/resolve.ts`).
+ */
+export const OPENAI_REALTIME_API_KEY_ENV = "OPENAI_API_KEY";
+
 /** Voice ids the OpenAI Realtime API accepts for TTS. */
 export type OpenaiRealtimeVoice =
   | "alloy"

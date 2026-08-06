@@ -30,7 +30,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { errMsg } from "./harness-rpc.ts";
+import { errorMessage } from "@alexkroman1/aai";
 import { annotateDiagnostics, type ExportResolver } from "./studio-diagnostics.ts";
 
 /** Result of one guest build; `buildError` is prose the coding agent can act on. */
@@ -135,7 +135,7 @@ export async function buildWorkspaceDir(
   try {
     tc = await loadToolchain();
   } catch (err) {
-    return { buildError: `Build toolchain unavailable in this sandbox: ${errMsg(err)}` };
+    return { buildError: `Build toolchain unavailable in this sandbox: ${errorMessage(err)}` };
   }
   // Type errors first, as their own failure: the bundlers strip types
   // unchecked, so this is the only gate that catches runtime-working-but-
@@ -184,7 +184,10 @@ export async function typecheckWorkspaceDir(
   try {
     ({ typecheckProject } = await import("@alexkroman1/aai-cli/typecheck"));
   } catch (err) {
-    return { ok: false, output: `Build toolchain unavailable in this sandbox: ${errMsg(err)}` };
+    return {
+      ok: false,
+      output: `Build toolchain unavailable in this sandbox: ${errorMessage(err)}`,
+    };
   }
   const typed = await typecheckProject(dir);
   return typed.ok

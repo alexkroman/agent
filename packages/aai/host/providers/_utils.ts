@@ -2,8 +2,8 @@
 /** Shared helpers for host-side STT/TTS provider openers. */
 
 import { pEvent } from "p-event";
-import WebSocket from "ws";
-import { STT_FRAME_MAX_MS, STT_FRAME_TARGET_MS } from "../../sdk/constants.ts";
+import type WebSocket from "ws";
+import { STT_FRAME_MAX_MS, STT_FRAME_TARGET_MS, WS_OPEN } from "../../sdk/constants.ts";
 import { errorMessage } from "../../sdk/utils.ts";
 
 /** PCM16 sample rates accepted by providers that stream raw PCM16 LE audio. */
@@ -92,7 +92,7 @@ export function createGuardedWs(
 export function dropSocket(ws: WebSocket, terminate?: () => void): void {
   ws.removeAllListeners();
   ws.on("error", () => undefined);
-  if (terminate && ws.readyState === WebSocket.OPEN) {
+  if (terminate && ws.readyState === WS_OPEN) {
     try {
       terminate();
     } catch {

@@ -3,6 +3,7 @@
 exports[`export surface stability > @alexkroman1/aai main export 1`] = `
 [
   "AGENT_CSP",
+  "ASSEMBLYAI_S2S_API_KEY_ENV",
   "ASSEMBLYAI_S2S_KIND",
   "ASSEMBLYAI_S2S_SAMPLE_RATE",
   "BuiltinToolSchema",
@@ -225,7 +226,9 @@ exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
 
 exports[`export surface stability > @alexkroman1/aai/s2s export 1`] = `
 [
+  "ASSEMBLYAI_S2S_API_KEY_ENV",
   "ASSEMBLYAI_S2S_KIND",
+  "OPENAI_REALTIME_API_KEY_ENV",
   "OPENAI_REALTIME_KIND",
   "assemblyAIS2s",
   "openaiRealtime",

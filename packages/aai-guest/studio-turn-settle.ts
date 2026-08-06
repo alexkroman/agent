@@ -7,9 +7,10 @@
  * TURN-COMPLETE.
  */
 
+import { errorMessage } from "@alexkroman1/aai";
 import { createCoalescingRunner } from "@alexkroman1/aai/internal";
 import type { UIMessage } from "ai";
-import { errMsg, hostRequest } from "./harness-rpc.ts";
+import { hostRequest } from "./harness-rpc.ts";
 import type { StudioSession } from "./studio-chat.ts";
 import { snapshotWorkspace } from "./studio-workspace-fs.ts";
 
@@ -84,7 +85,7 @@ export function createWorkspaceCheckpointer(session: StudioSession): () => void 
     run.catch((err: unknown) => {
       // Never fatal — a lost checkpoint costs recoverable work, while a
       // thrown one would kill a reply that is otherwise fine.
-      console.error(`studio chat: workspace checkpoint failed: ${errMsg(err)}`);
+      console.error(`studio chat: workspace checkpoint failed: ${errorMessage(err)}`);
     });
   };
 }

@@ -9,7 +9,9 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { baseOpts } from "./_sandbox-vm-test-utils.ts";
+import { agentSandboxName } from "./sandbox-directory.ts";
 import { describeBundle, spawnAgentServer } from "./sandbox-vm.ts";
+import * as subprocessSandbox from "./subprocess-sandbox.ts";
 import type { AgentServerHandle } from "./warm-harness.ts";
 
 // ── spawnAgentServer dispatch ────────────────────────────────────────────────
@@ -38,7 +40,34 @@ describe("spawnAgentServer", () => {
 
     expect(result).toBe(handle);
     expect(modal).not.toHaveBeenCalled();
+    // Every backend is handed the SAME spawn record — the Modal-only fields
+    // included. Which of them a backend uses is that backend's business (the
+    // subprocess entry in SANDBOX_BACKENDS drops them explicitly), not the
+    // dispatcher's, so the dispatcher has no per-backend argument shaping left
+    // to get wrong.
     expect(subprocess).toHaveBeenCalledWith({
+      harnessPath: opts.harnessPath,
+      slug: opts.slug,
+      workerCode: opts.workerCode,
+      workerSha256: createHash("sha256").update(opts.workerCode, "utf-8").digest("hex"),
+      agentEnv: opts.env,
+      imageTag: "aai-guest-harness:abcd1234",
+      name: agentSandboxName(opts.slug, opts.version),
+    });
+  });
+
+  it("hands the real subprocess backend only the fields it accepts", async () => {
+    // The Modal-only fields must not reach a backend that has no meaning for
+    // them; asserting it here keeps the drop deliberate rather than a
+    // side effect of the callee's signature.
+    const handle = fakeHandle();
+    const spawn = vi.spyOn(subprocessSandbox, "spawnSubprocessAgentServer");
+    spawn.mockResolvedValue(handle);
+    const opts = baseOpts({ imageTag: "aai-guest-harness:abcd1234" });
+
+    await spawnAgentServer(opts);
+
+    expect(spawn).toHaveBeenCalledWith({
       harnessPath: opts.harnessPath,
       slug: opts.slug,
       workerCode: opts.workerCode,

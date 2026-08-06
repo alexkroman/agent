@@ -12,15 +12,19 @@ import type { LanguageModel } from "ai";
 import type { AgentConfig, ToolSchema } from "../sdk/_internal-types.ts";
 import { DEFAULT_TOOL_CHOICE } from "../sdk/constants.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
-import { OPENAI_API_KEY_ENV } from "../sdk/providers/llm/openai.ts";
 import { ASSEMBLYAI_S2S_KIND } from "../sdk/providers/s2s/assemblyai.ts";
 import {
   OPENAI_REALTIME_KIND,
   type OpenaiRealtimeOptions,
 } from "../sdk/providers/s2s/openai-realtime.ts";
-import { ASSEMBLYAI_API_KEY_ENV } from "../sdk/providers/stt/assemblyai.ts";
 import type { SttOpener, TtsOpener } from "../sdk/providers.ts";
-import { descriptorKind, type ResolvedOpener, resolveApiKey } from "./providers/resolve.ts";
+import {
+  descriptorKind,
+  isS2sKind,
+  type ResolvedOpener,
+  resolveApiKey,
+  resolveS2sEnvVar,
+} from "./providers/resolve.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import type { RuntimeOptions } from "./runtime-types.ts";
 import type { ExecuteTool } from "./tool-executor.ts";
@@ -134,10 +138,21 @@ export function createTransportFactory(
     });
   }
 
+  /**
+   * The env var this agent's S2S credential lives in. Registry-derived (and
+   * `apiKeyEnv`-overridable) rather than a literal per builder, so the key the
+   * session reads is the same one `requiredProviderEnvVars` preflights — a
+   * disagreement there passes deploy and then fails at first session.
+   * Only called from the s2s branch of `buildTransport`, where `agent.s2s` is set.
+   */
+  function s2sApiKey(): string {
+    return agent.s2s === undefined ? "" : resolveApiKey(resolveS2sEnvVar(agent.s2s), env);
+  }
+
   function buildOpenaiRealtimeTransport(args: BuildTransportArgs): Transport {
     const { sessionOpts, systemPrompt, callbacks } = args;
     return createOpenaiRealtimeTransport({
-      apiKey: resolveApiKey(OPENAI_API_KEY_ENV, env),
+      apiKey: s2sApiKey(),
       options: (agent.s2s?.options ?? {}) as OpenaiRealtimeOptions,
       sessionConfig: {
         systemPrompt,
@@ -158,7 +173,7 @@ export function createTransportFactory(
   function buildAssemblyS2sTransport(args: BuildTransportArgs): Transport {
     const { sessionOpts, systemPrompt, callbacks } = args;
     return createS2sTransport({
-      apiKey: resolveApiKey(ASSEMBLYAI_API_KEY_ENV, env),
+      apiKey: s2sApiKey(),
       s2sConfig,
       sessionConfig: {
         systemPrompt,
@@ -179,13 +194,27 @@ export function createTransportFactory(
     }
     if (agent.s2s !== undefined) {
       const kind = descriptorKind(agent.s2s);
-      if (kind === OPENAI_REALTIME_KIND) {
-        return buildOpenaiRealtimeTransport(args);
+      // Narrow through the registry first: that turns the switch below into
+      // an exhaustiveness check over `S2sKind` (see its `default`), so a
+      // vendor added to the registry is a compile error here until it has a
+      // builder, rather than a runtime throw at a caller's first session.
+      if (!isS2sKind(kind)) {
+        throw new Error(`Unknown s2s provider kind: ${kind ?? "<missing>"}`);
       }
-      if (kind === ASSEMBLYAI_S2S_KIND) {
-        return buildAssemblyS2sTransport(args);
+      switch (kind) {
+        case OPENAI_REALTIME_KIND:
+          return buildOpenaiRealtimeTransport(args);
+        case ASSEMBLYAI_S2S_KIND:
+          return buildAssemblyS2sTransport(args);
+        default: {
+          // `kind` is `never` here, which is the point: adding a member to
+          // `S2sKind` (i.e. an entry to S2S_REGISTRY) fails to compile until
+          // it has a builder above, instead of reaching this throw at a
+          // caller's first session.
+          const unhandled: never = kind;
+          throw new Error(`Unhandled s2s provider kind: ${String(unhandled)}`);
+        }
       }
-      throw new Error(`Unknown s2s provider kind: ${kind ?? "<missing>"}`);
     }
     // Unreachable on any current path: provider resolution injects the
     // pipeline when nothing is declared, so S2S only happens via an explicit

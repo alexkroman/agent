@@ -21,10 +21,10 @@
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { errorMessage } from "@alexkroman1/aai";
 import { safeFetch } from "@alexkroman1/aai/runtime";
 import { generateText, type LanguageModel, type ToolSet, tool } from "ai";
 import { z } from "zod";
-import { errMsg } from "./harness-rpc.ts";
 import { MAX_STUDIO_FILE_BYTES } from "./limits.ts";
 import { WORKSPACE_DEPENDENCIES } from "./studio-project-shape.ts";
 import { envWithoutGuestToken, runCapped } from "./studio-spawn.ts";
@@ -111,7 +111,7 @@ async function npmTool(dir: string, verb: "install" | "uninstall", spec: string)
     }
     return `npm ${verb} ${spec} failed [exit code ${exitCode}]\n${body || "(no output)"}`;
   } catch (err) {
-    return `Error: ${errMsg(err)}`;
+    return `Error: ${errorMessage(err)}`;
   }
 }
 
@@ -251,7 +251,7 @@ async function updateDependencies(dir: string, requested?: string[]): Promise<st
       ...notes,
     ].join("\n");
   } catch (err) {
-    return `Error: ${errMsg(err)}`;
+    return `Error: ${errorMessage(err)}`;
   }
 }
 
@@ -260,13 +260,13 @@ async function downloadToWorkspace(dir: string, url: string, rel: string): Promi
   try {
     abs = resolveInside(dir, rel);
   } catch (err) {
-    return `Error: ${errMsg(err)}`;
+    return `Error: ${errorMessage(err)}`;
   }
   let response: Response;
   try {
     response = await safeFetch(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
   } catch (err) {
-    return `Error: fetch failed: ${errMsg(err)}`;
+    return `Error: fetch failed: ${errorMessage(err)}`;
   }
   if (!response.ok) return `Error: ${url} answered ${response.status} ${response.statusText}`;
   const bytes = new Uint8Array(await response.arrayBuffer());
@@ -313,7 +313,7 @@ export function createProjectTools(deps: ProjectToolDeps): ToolSet {
           }
           return body || `No registry metadata for ${spec}`;
         } catch (err) {
-          return `Error: ${errMsg(err)}`;
+          return `Error: ${errorMessage(err)}`;
         }
       },
     }),
@@ -392,7 +392,7 @@ export function createDesignInspirationTool(model: LanguageModel): ToolSet {
           });
           return text;
         } catch (err) {
-          return `Error: ${errMsg(err)}`;
+          return `Error: ${errorMessage(err)}`;
         }
       },
     }),

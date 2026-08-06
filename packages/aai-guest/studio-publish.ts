@@ -20,7 +20,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { errMsg } from "./harness-rpc.ts";
+import { errorMessage } from "@alexkroman1/aai";
 import { scrubDir } from "./studio-build.ts";
 import { ensureProjectShape, fileExists } from "./studio-project-shape.ts";
 import {
@@ -114,7 +114,7 @@ export async function deployWorkspaceDir(
   } catch (err) {
     return {
       ok: false,
-      output: `Publish toolchain unavailable in this sandbox: ${errMsg(err)}`,
+      output: `Publish toolchain unavailable in this sandbox: ${errorMessage(err)}`,
     };
   }
 
@@ -173,7 +173,7 @@ export async function deployWorkspaceDir(
       throw new Error(`aai deploy killed by ${result.signal} after ${DEPLOY_TIMEOUT_MS}ms`);
     }
   } catch (err) {
-    return { ok: false, output: `aai deploy failed to run: ${errMsg(err)}` };
+    return { ok: false, output: `aai deploy failed to run: ${errorMessage(err)}` };
   }
 
   const parsed = parseLastJsonLine<CliResult>(result.stdout);
