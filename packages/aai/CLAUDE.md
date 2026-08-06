@@ -704,10 +704,10 @@ both are fail-closed:
   `buildHostAgent`'s doc comment claimed the opposite until 2026-08 — it
   predated the pipeline-by-default flip, and S2S has required an explicit `s2s`
   descriptor ever since (see "Never let S2S be a fallback"). With no
-  `hostBaseAgent`, `createRuntime` fills all three stages from the all-AssemblyAI
-  pipeline, so one caller-supplied `ASSEMBLYAI_API_KEY` covers STT + LLM gateway
-  + TTS. The stale comment had a real cost: it is what made a placeholder
-  `agent()` look mandatory on every host server.
+  `hostBaseAgent`, `createRuntime` fills all three stages from the
+  all-AssemblyAI pipeline, so one caller-supplied `ASSEMBLYAI_API_KEY` covers
+  STT, the LLM gateway and TTS. The stale comment had a real cost: it is what
+  made a placeholder `agent()` look mandatory on every host server.
 
 ## Pipeline-transport interleaving fuzz
 

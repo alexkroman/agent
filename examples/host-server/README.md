@@ -1,8 +1,9 @@
 # Multi-tenant host server
 
-A self-hosted voice server that **ships with no agent**. Callers deploy one
-into it, per connection — bringing their own prompt, their own tools, and their
-own provider key.
+A self-hosted **streaming voice agent API**, in the shape of AssemblyAI's own:
+open a WebSocket, send a config frame, and that connection *is* a full voice
+agent. The server ships with no agent of its own — the caller brings the
+prompt, the tools, and the provider key.
 
 Where [`self-hosted-server`](../self-hosted-server) runs one operator-funded
 agent for everybody, this inverts the arrangement: the caller supplies the
