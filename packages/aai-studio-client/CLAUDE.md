@@ -163,3 +163,54 @@ segmented control switches between — `preview.tsx`, `code-view.tsx`,
   comes back); and a **failed turn drains the same way**, because an `error`
   status never flushes while every submit joins a non-empty queue — parking it
   there wedges the composer permanently.
+
+## Surviving a platform deploy (`stale-build.ts`)
+
+A chunk URL is only valid while the container image holding it is running,
+and a Modal deploy replaces that image. The client's assets are
+content-hashed and served `Cache-Control: immutable`, so **a tab open across
+a deploy is holding names the new containers 404** — with no race and no
+expiry to wait out. `CodeView` is lazily imported (CodeMirror is the bulk of
+the bundle), so nothing surfaces it until the user clicks the Code tab, which
+may be hours later. Untreated, React's `lazy` throws into a tree with no
+boundary and the whole studio unmounts to a blank page.
+
+Two other properties make this bigger than one lazy chunk, and neither is
+fixable from the client:
+
+- Modal's default deploy strategy is **rolling** — old containers keep
+  serving beside new ones (up to `scaledown_window`, 300s) and every request
+  is load-balanced independently, so a shell fetched from one build can have
+  its assets answered by the other.
+- **This package ships only as a side effect of a SERVER release.** Its
+  `dist/` is baked into the one Modal app's image (`aai-server-web`, running
+  `AAI_SERVICE=combined`), and `.github/workflows/deploy.yml` fires on a
+  version bump to `aai-server` **or** `aai-studio-server` — never on this
+  package's own version. So a studio-client change needs a changeset naming
+  one of those two, or it ships to nothing.
+
+The fix is in two halves, and the client half is deliberately just "reload":
+
+- **The shell is `no-store`** (`aai-studio-server/studio-static.ts`). It is
+  the one response that must never outlive the build it names; cached, it
+  pins a browser to a build whose assets are gone, and the entry script 404s
+  with no JS left to recover from it. It previously carried no cache headers
+  at all, which is not the same thing — with no validator, a heuristically
+  caching intermediary is free to reuse it.
+- **`lazyRetry` + `installStaleBuildRecovery`** wrap the two ways a missing
+  chunk reports itself: a rejected dynamic import, and Vite's cancelable
+  `vite:preloadError` for a `<link rel="modulepreload">` that failed before
+  any import ran (unclaimed, Vite rethrows it). Both retry once — a dropped
+  connection is not a deploy — then reload, which picks up the current shell
+  and with it the current chunk names.
+
+**The reload is guarded, and that is the load-bearing part.** A chunk can
+also fail for reasons a reload cannot fix (offline, a proxy, a genuinely
+broken deploy), and unguarded reload-on-failure is a loop that never renders
+long enough to say what went wrong. The marker lives in `sessionStorage`:
+per-tab, so one tab's recovery does not suppress another's, and gone when the
+tab closes, so a stale marker cannot disarm recovery weeks later. No store
+means no guard, so `reloadForStaleBuild` **declines** rather than reload
+unguarded — and on a triggered reload `lazyRetry` returns a promise that never
+settles, because the document is already being replaced and settling would
+flash a failure state over it.

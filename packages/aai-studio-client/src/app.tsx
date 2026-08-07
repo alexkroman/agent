@@ -23,12 +23,21 @@ import { HomeHero, HomeSidebar } from "./home.tsx";
 import { PreviewPane } from "./preview.tsx";
 import { queryKeys } from "./query-keys.ts";
 import { SettingsPane } from "./settings.tsx";
+import { lazyRetry } from "./stale-build.ts";
 import { PublishMenu, type StudioTab, TopBar } from "./top-bar.tsx";
 import { type StreamHandlers, useEventStream } from "./use-event-stream.ts";
 
 // CodeMirror is the bulk of the bundle and only the Code tab needs it — the
 // default (Preview) path shouldn't pay for it.
-const CodeView = lazy(() => import("./code-view.tsx").then((m) => ({ default: m.CodeView })));
+//
+// Wrapped in `lazyRetry` because that laziness is exactly what a deploy
+// breaks: the chunk URL is content-hashed and served `immutable`, so a tab
+// open across a Modal deploy is holding a name the new containers 404. The
+// user clicks Code hours later and, unhandled, `lazy` throws into a tree with
+// no boundary — a blank studio. See stale-build.ts.
+const CodeView = lazy(
+  lazyRetry(() => import("./code-view.tsx").then((m) => ({ default: m.CodeView }))),
+);
 
 type AppProps = {
   bearer: string;
