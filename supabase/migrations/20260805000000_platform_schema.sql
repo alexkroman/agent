@@ -142,6 +142,14 @@ end $$;
 -- grants, so without these every filtered subscribe fails server-side with
 -- `invalid column for filter <col>` (P0001) and realtime-js retries the join
 -- forever.
+--
+-- THE GRANT IS ALSO THE SECURITY BOUNDARY, and it is the only one: these
+-- tables carry no RLS policies, so what stops a browser subscribing to every
+-- tenant's workspace is that `anon`/`authenticated` are granted nothing here
+-- (and `aai_platform` is not a PostgREST-exposed schema). Supabase's docs
+-- assume RLS is that gate and their linter only inspects `public`, so nothing
+-- outside this file would report a mistake. Adding a role to this grant, or
+-- exposing the schema, therefore needs RLS policies in the same change.
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'service_role') then

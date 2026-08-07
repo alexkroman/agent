@@ -165,6 +165,51 @@ pattern both follow is the same — hand out a narrowly scoped capability and
 verify the result (a per-app Postgres role; a content hash) rather than proxy
 the bytes to keep the platform's credential out of reach.
 
+### Where we differ from Supabase's own recommendations
+
+Audited 2026-08 against their docs. Most of the surface is exactly what they
+recommend — direct session-mode connection, Vault's `create_secret` /
+`update_secret`, private-bucket `download()` + `createSignedUrl`, a custom
+schema with explicit grants, migrations applied ahead of deploy. Three places
+differ, and each is a decision rather than an oversight:
+
+- **`postgres_changes` instead of Broadcast.** Supabase now steers to
+  `realtime.broadcast_changes` triggers, because `postgres_changes`
+  authorizes every event against every subscriber (100 subscribers = 100
+  authorization checks per change) on a single ordering thread. Their stated
+  threshold is ~3,000 concurrent subscribers on the same changes; ours are
+  REPLICAS, not users, so we are orders of magnitude below it. The documented
+  direction if this ever moves, and worth knowing before adding a fourth
+  watched table.
+- **Realtime is protected by the GRANT, not by RLS.** The three published
+  tables have no policies; what stops a browser subscribing is that
+  `anon`/`authenticated` hold no `select` on `aai_platform` (and it is not a
+  PostgREST-exposed schema). That is sound and doubly covered, but Supabase's
+  docs — and their linter, which only inspects `public` — assume RLS is the
+  gate, so nothing external would ever flag a mistake here.
+- **Per-app Postgres roles instead of RLS.** "Generally you wouldn't use
+  these roles for your own application… use Row Level Security" does not
+  apply: RLS presumes a trusted client presenting a user JWT, and ours is
+  untrusted tenant code holding the credential itself in a sandbox. Their
+  other rule — "create a new user for every service you want to give access
+  to" — is the one that fits, and `APP_DB_CONNECTION_LIMIT` answers the
+  connection-cost objection they raise against many roles.
+
+Two operational facts the code depends on and cannot assert:
+
+- **A direct connection is IPv6-only without the IPv4 add-on**, so production
+  depends on one of the two. The shape is right on the merits ("direct
+  connections remain the best choice for long-lived sessions"), and if IPv4
+  ever becomes necessary the sanctioned fallback is **Supavisor SESSION mode
+  on port 5432**, which still holds advisory locks — `assertSessionModeUrl`
+  already permits it, since it refuses only port 6543 and `pgbouncer=true`.
+- **Legacy `anon`/`service_role` keys are deprecated (end of 2026) and can no
+  longer be rotated.** Boot already requires the new secret form, so we are
+  ahead — but `SUPABASE_SERVICE_ROLE_KEY` now holds an `sb_secret_…` key,
+  which is a naming wart, and the sanctioned placement for a non-JWT secret
+  key is the `apikey` header (the Realtime client does this; the Storage
+  client sends both `apikey` and `Authorization`).
+
 **The schema is DECLARED, in `supabase/migrations`** — not created lazily by
 the store that reads it. Every `aai_platform` store used to call a memoized
 `create schema/table if not exists` on first use (`pg-ensure.ts`), which is
@@ -1160,10 +1205,35 @@ stored env at sandbox creation time and kept host-side only.
   to heal it; it writes before storing the grant, so the CLI cannot exchange
   and get a request in ahead of the mapping.
 - **Browser sessions are Supabase Auth** (`supabase-auth.ts`): GitHub
-  OAuth sign-in via supabase-js (`signInWithOAuth`) in the studio client;
-  the server verifies
-  access tokens by asking Supabase (`GET /auth/v1/user` — no JWT
-  secret/JWKS handling), TTL-cached by SHA-256(token). Configured by
+  OAuth sign-in via supabase-js (`signInWithOAuth`) in the studio client.
+  The server verifies access tokens **two ways, and which one a route gets is
+  a security decision**:
+  - `verifyAccessToken` — the request path. `getClaims` (`@supabase/auth-js`),
+    which on a project using ASYMMETRIC JWT signing keys verifies the
+    signature locally against a process-cached JWKS and touches the network
+    not at all. Supabase's own guidance is to "prefer `getClaims` over
+    `getUser`, which always sends a request to the Auth server for each JWT",
+    and `GET /auth/v1/user` per token is what this replaced.
+  - `verifyAccessTokenFresh` — `GET /auth/v1/user`, uncached, used ONLY by
+    `requireStudioUser` (the three account routes). A signature check is
+    authoritative about who issued a token and when it expires and blind to
+    REVOCATION: a signed-out session stays cryptographically valid until
+    `exp`. Those routes read and rotate the account's AssemblyAI key and grant
+    a CLI one exchange for it, so they pay a round trip to see a sign-out at
+    once.
+
+  Two properties worth keeping. `getClaims` is safe on either kind of project
+  — on a symmetric (HS256) one it falls back to a server call by itself — and
+  that is also why the request path KEEPS its short TTL cache: on such a
+  project the cache is what stops a per-request round trip. And a rejected
+  token and an unreachable Supabase are opposite answers, so only
+  `isAuthRetryableFetchError` throws (a 5xx to the caller); everything else
+  caches as a rejection. `storageKey` is set explicitly because auth-js caches
+  the JWKS in a PROCESS-GLOBAL map keyed by it rather than by URL — two
+  clients pointed at different projects would otherwise verify one project's
+  tokens against the other's keys.
+
+  Configured by
   `SUPABASE_URL` + `SUPABASE_PUBLISHABLE_KEY`. Local dev (same `isLocalDev`
   policy as the in-memory stores — production can never resolve it) falls
   back to `createDevAuth`: the login screen mints self-describing

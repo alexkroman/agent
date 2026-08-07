@@ -4,13 +4,29 @@
  * production, a no-dependency dev implementation locally.
  *
  * The studio's browser client signs in with GitHub OAuth (Supabase's
- * `signInWithOAuth`) and sends
- * the resulting access token as its bearer. The platform resolves that token
- * to a Supabase user by asking Supabase itself (`GET /auth/v1/user` — no JWT
- * secret or JWKS handling to maintain, and it works for both HS256 and
- * asymmetric-key projects), then looks up the user's stored AssemblyAI API
- * key (`user-key:<uid>` in the SecretStore) so everything downstream — the
- * gateway LLM, deploys, ownership hashes — keeps running on the real key.
+ * `signInWithOAuth`) and sends the resulting access token as its bearer. The
+ * platform resolves that token to a Supabase user, then looks up the user's
+ * stored AssemblyAI API key (`user-key:<uid>` in the SecretStore) so
+ * everything downstream — the gateway LLM, deploys, ownership hashes — keeps
+ * running on the real key.
+ *
+ * **Two verifications, and the split is deliberate.** Supabase's guidance is
+ * to "prefer `getClaims` over `getUser`, which always sends a request to the
+ * Auth server for each JWT": on a project using asymmetric JWT signing keys,
+ * `getClaims` verifies the signature LOCALLY (WebCrypto) against a cached
+ * JWKS, so the hot path costs no network at all. Every request rides that
+ * path ({@link StudioAuth.verifyAccessToken}).
+ *
+ * What a local verification cannot see is REVOCATION — a signed-out session
+ * or a deleted user stays cryptographically valid until `exp`. So the three
+ * account routes, where that matters (they hand out and rotate the account's
+ * AssemblyAI key), ask the Auth server itself:
+ * {@link StudioAuth.verifyAccessTokenFresh}, uncached.
+ *
+ * Adopting `getClaims` is safe on either kind of project: on a symmetric
+ * (HS256) one it falls back to a server call by itself, which is exactly the
+ * behaviour this replaced. That is also why the hot path keeps its short TTL
+ * cache — on such a project it is what stops a per-request round trip.
  *
  * Raw API-key bearers are untouched: the `aai` CLI (and the in-guest
  * `aai deploy` Publish runs) authenticate with the key itself, and a key
@@ -25,6 +41,7 @@
  */
 
 import { hash } from "node:crypto";
+import { GoTrueClient, isAuthRetryableFetchError } from "@supabase/auth-js";
 import { TtlCache } from "./_ttl-cache.ts";
 
 /** SecretStore name for one studio user's AssemblyAI API key. */
@@ -78,8 +95,24 @@ export type StudioAuthClientConfig =
 
 export type StudioAuth = {
   clientConfig: StudioAuthClientConfig;
-  /** Resolve a session access token to its user; null when invalid/expired. */
+  /**
+   * Resolve a session access token to its user; null when invalid/expired.
+   *
+   * The hot path — every studio request. Verifies the token's SIGNATURE
+   * (locally, on an asymmetric-key project), which is authoritative about who
+   * issued the token and when it expires, and blind to whether the session
+   * has since been revoked. Bounded by the token's own lifetime and the cache
+   * TTL below; use {@link verifyAccessTokenFresh} where that matters.
+   */
   verifyAccessToken(token: string): Promise<StudioAuthUser | null>;
+  /**
+   * The same answer, from the Auth SERVER — so a signed-out session, a
+   * deleted user, or a revoked token is seen immediately rather than at
+   * `exp`. Uncached, and therefore a network round trip per call: reserve it
+   * for routes where acting on a stale identity is a real cost, not for
+   * request-path authentication.
+   */
+  verifyAccessTokenFresh(token: string): Promise<StudioAuthUser | null>;
 };
 
 // A JWT is three dot-separated base64url segments; platform API keys never
@@ -105,9 +138,60 @@ export function createSupabaseAuth(opts: {
   const base = opts.supabaseUrl.replace(/\/+$/, "");
   const doFetch = opts.fetchFn ?? globalThis.fetch;
   // Null (invalid token) is cached too: a rejected token that keeps arriving
-  // must not hammer Supabase on every request. The positive TTL is short
-  // enough that a revoked session dies within a minute.
+  // must not re-verify on every request. The positive TTL is short enough
+  // that a revoked session dies within a minute even on the local path.
   const cache = new TtlCache<StudioAuthUser | null>(VERIFY_TTL_MS, VERIFY_MAX);
+
+  // Session management is all OFF: this client never holds a session, it
+  // verifies tokens other people hold. Left on, `persistSession` would reach
+  // for browser storage and `autoRefreshToken` would start a timer for a
+  // session that does not exist.
+  //
+  // `storageKey` is set because auth-js caches the fetched JWKS in a
+  // PROCESS-GLOBAL map keyed by it (`GLOBAL_JWKS[storageKey]`) — not by URL.
+  // That cache is what makes local verification free, and sharing one entry
+  // between clients pointed at different projects would verify one project's
+  // tokens against another's signing keys. Deriving it from the URL makes the
+  // cache key the thing it is actually caching.
+  const gotrue = new GoTrueClient({
+    url: `${base}/auth/v1`,
+    headers: { apikey: opts.supabasePublishableKey },
+    storageKey: `aai-studio-auth-${base}`,
+    autoRefreshToken: false,
+    persistSession: false,
+    detectSessionInUrl: false,
+    fetch: doFetch,
+  });
+
+  /** JWT claims → the user shape, or null when the claims name no subject. */
+  const userFromClaims = (claims: { sub?: unknown; email?: unknown }): StudioAuthUser | null =>
+    typeof claims.sub === "string" && claims.sub.length > 0
+      ? {
+          id: claims.sub,
+          ...(typeof claims.email === "string" && claims.email ? { email: claims.email } : {}),
+        }
+      : null;
+
+  const verifyFresh = async (token: string): Promise<StudioAuthUser | null> => {
+    const res = await doFetch(`${base}/auth/v1/user`, {
+      headers: { apikey: opts.supabasePublishableKey, Authorization: `Bearer ${token}` },
+    });
+    if (res.status === 401 || res.status === 403) return null;
+    if (!res.ok) {
+      // Supabase being down is a 5xx to the caller, not a silent sign-out:
+      // fail closed but distinguishably from "your session expired".
+      throw new Error(`Supabase auth verification failed (HTTP ${res.status})`);
+    }
+    const body = (await res.json().catch(() => null)) as {
+      id?: unknown;
+      email?: unknown;
+    } | null;
+    if (!body || typeof body.id !== "string" || body.id.length === 0) return null;
+    return {
+      id: body.id,
+      ...(typeof body.email === "string" && body.email ? { email: body.email } : {}),
+    };
+  };
 
   return {
     // The publishable key is public by design (it ships in every Supabase browser app).
@@ -122,33 +206,24 @@ export function createSupabaseAuth(opts: {
       const cached = cache.get(cacheKey);
       if (cached !== undefined) return cached;
 
-      const res = await doFetch(`${base}/auth/v1/user`, {
-        headers: { apikey: opts.supabasePublishableKey, Authorization: `Bearer ${token}` },
-      });
-      if (res.status === 401 || res.status === 403) {
+      const { data, error } = await gotrue.getClaims(token);
+      if (error) {
+        // A malformed/expired/wrongly-signed token and an unreachable Supabase
+        // are opposite answers — the first is "sign in again", the second must
+        // not sign anyone out. Only the retryable-fetch class is the latter,
+        // and it is the one case that must NOT be cached as a rejection.
+        if (isAuthRetryableFetchError(error)) {
+          throw new Error(`Supabase auth verification failed: ${error.message}`, { cause: error });
+        }
         cache.set(cacheKey, null);
         return null;
       }
-      if (!res.ok) {
-        // Supabase being down is a 5xx to the caller, not a silent sign-out:
-        // fail closed but distinguishably from "your session expired".
-        throw new Error(`Supabase auth verification failed (HTTP ${res.status})`);
-      }
-      const body = (await res.json().catch(() => null)) as {
-        id?: unknown;
-        email?: unknown;
-      } | null;
-      if (!body || typeof body.id !== "string" || body.id.length === 0) {
-        cache.set(cacheKey, null);
-        return null;
-      }
-      const user: StudioAuthUser = {
-        id: body.id,
-        ...(typeof body.email === "string" && body.email ? { email: body.email } : {}),
-      };
+      const user = data ? userFromClaims(data.claims) : null;
       cache.set(cacheKey, user);
       return user;
     },
+
+    verifyAccessTokenFresh: verifyFresh,
   };
 }
 
@@ -184,9 +259,15 @@ export function parseDevToken(token: string): StudioAuthUser | null {
  * never resolve it.
  */
 export function createDevAuth(): StudioAuth {
+  // Both verifications are the same parse: a dev token carries its own
+  // identity and there is no Auth server behind it to ask for a fresher
+  // answer. The distinction only means something against real Supabase.
+  const verify = (token: string): Promise<StudioAuthUser | null> =>
+    Promise.resolve(parseDevToken(token));
   return {
     clientConfig: { mode: "dev" },
-    verifyAccessToken: (token) => Promise.resolve(parseDevToken(token)),
+    verifyAccessToken: verify,
+    verifyAccessTokenFresh: verify,
   };
 }
 

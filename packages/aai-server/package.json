@@ -19,6 +19,7 @@
     "@hono/node-server": "^2.0.11",
     "@hono/zod-validator": "^0.9.0",
     "@sindresorhus/slugify": "^3.0.0",
+    "@supabase/auth-js": "^2.112.2",
     "@supabase/realtime-js": "^2.112.0",
     "@supabase/storage-js": "^2.112.0",
     "aai-guest": "workspace:*",

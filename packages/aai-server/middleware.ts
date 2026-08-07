@@ -155,7 +155,12 @@ export async function requireStudioUser(
   if (!isJwtShaped(token)) {
     throw new HTTPException(401, { message: "Account routes require a browser session" });
   }
-  const user = await env.auth.verifyAccessToken(token);
+  // The FRESH verification, unlike the request path's: these routes read and
+  // rotate the account's AssemblyAI key and grant a CLI one exchange for it,
+  // so a session the user has since signed out of must not still spend it.
+  // A signature check cannot see that — a revoked token stays valid until
+  // `exp` — and three low-traffic routes can afford the round trip.
+  const user = await env.auth.verifyAccessTokenFresh(token);
   if (!user) {
     throw new HTTPException(401, { message: "Invalid or expired session — sign in again" });
   }
