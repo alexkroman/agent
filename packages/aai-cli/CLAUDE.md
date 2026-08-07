@@ -61,6 +61,16 @@ hidden `deploy` subcommand remains only because the guest's Publish
 (`aai-guest/studio-publish.ts`) executes it; a bare `aai` in a project
 offers to publish, and `aai init` publishes after scaffolding.
 
+**A pull that finds nothing PRINTS THE PROJECT LIST.** "No studio project
+named X" has two causes and the list is the only thing that separates them: a
+typo has the user's other projects beside it, while an EMPTY list means this
+login is scoped to a different account than the studio the project lives in
+(studio scope follows the account that owns the API key — see
+`packages/aai-server/CLAUDE.md`), so the hint says so and points back at
+`aai login`. The extra request is on an already-failing path and its own
+failure must never replace the 404, so it degrades to the old "run `aai list`"
+hint.
+
 **A workspace carries UTF-8 text only.** Both snapshots — the CLI's
 `collectSourceFiles` and the guest's `snapshotWorkspace` — decode with
 `TextDecoder({ fatal: true, ignoreBOM: true })` and SKIP a file that isn't

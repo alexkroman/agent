@@ -1034,12 +1034,26 @@ stored env at sandbox creation time and kept host-side only.
   gateway LLM, deploy env seeding) sees the real key either way. A key
   never contains dots, so the shape test (`isJwtShaped`) cleanly splits
   the two; the verification boundary is the backend's answer, never the
-  shape. Raw keys additionally resolve a `userId` when the key was stored
-  as some account's key — the `key-user:<sha256(key)>` reverse mapping
-  written by `PUT /studio/account/key`, TTL-cached (negatives included)
-  beside the user→key cache — which lands a linked CLI in the same studio
-  scope as the browser session; an unmapped key keeps the key-derived
-  scope.
+  shape. Raw keys additionally resolve a `userId` when some account owns
+  the key — the `key-user:<sha256(key)>` reverse mapping, TTL-cached
+  (negatives included) beside the user→key cache — which lands a linked CLI
+  in the same studio scope as the browser session; an unmapped key keeps the
+  key-derived scope.
+
+  **TWO routes write that mapping, and the second one is the reason a login
+  can be trusted.** `PUT /studio/account/key` writes it on key onboarding and
+  rotation, and `POST /studio/cli-link/approve` BACKFILLS it. The onboarding
+  write only covers keys stored since it existed, and there is no other way
+  for an account to acquire a mapping than to re-save the same key — so an
+  account onboarded earlier linked SUCCESSFULLY (`aai login` printed
+  `Linked <email>`) and then landed in the key-derived scope, where
+  `aai list` is empty and `aai pull <project>` reports "No studio project
+  named …" for a project the browser is showing. Nothing on either side named
+  the cause: both scopes are internally consistent, so every request
+  succeeded. The approval is the one point holding the account and the key a
+  CLI is about to authenticate with at once, which is what makes it the place
+  to heal it; it writes before storing the grant, so the CLI cannot exchange
+  and get a request in ahead of the mapping.
 - **Browser sessions are Supabase Auth** (`supabase-auth.ts`): GitHub
   OAuth sign-in via supabase-js (`signInWithOAuth`) in the studio client;
   the server verifies

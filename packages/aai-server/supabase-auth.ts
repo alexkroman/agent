@@ -35,10 +35,16 @@ export function userApiKeySecretName(userId: string): string {
 /**
  * SecretStore name for the REVERSE mapping: a raw API key (hashed — a
  * listing of stored names must never show a live credential) to the studio
- * user id that stored it via `PUT /studio/account/key`. This is what lets a
- * raw-key caller — the `aai` CLI after `aai login` — land in the same
- * `user:<uid>` studio scope as the browser, instead of the disjoint
- * key-derived scope, so both sides see one project list.
+ * user id that owns it. This is what lets a raw-key caller — the `aai` CLI
+ * after `aai login` — land in the same `user:<uid>` studio scope as the
+ * browser, instead of the disjoint key-derived scope, so both sides see one
+ * project list.
+ *
+ * TWO routes write it, and both are load-bearing: `PUT /studio/account/key`
+ * (key onboarding and rotation) and `POST /studio/cli-link/approve` (which
+ * backfills it, so an account whose key was stored before this mapping
+ * existed is healed by its next `aai login` rather than staying invisibly
+ * key-scoped — see the comment there).
  *
  * A rotated key leaves its old mapping behind on purpose: the old key still
  * belongs to the same account, so resolving it to the same user is correct,

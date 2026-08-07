@@ -45,10 +45,13 @@ voice agents without the CLI:
   a *deterministic* SHA-256 (`studioScope`) — stable so a caller can find
   its projects again. Browser sessions scope by the studio USER id
   (`user:<uid>` — stable across AssemblyAI key rotation); a raw-key caller
-  whose key some account stored via `PUT /studio/account/key` resolves to
-  the SAME `user:<uid>` scope (the `key-user:<sha256(key)>` reverse mapping
-  in `resolveBearer` — this is what makes a linked `aai` CLI and the
-  browser see one project list); only a raw key NO account has claimed
+  whose key an account owns resolves to the SAME `user:<uid>` scope (the
+  `key-user:<sha256(key)>` reverse mapping in `resolveBearer`, written by
+  `PUT /studio/account/key` and backfilled by
+  `POST /studio/cli-link/approve` — this is what makes a linked `aai` CLI and
+  the browser see one project list, and see `packages/aai-server/CLAUDE.md`
+  for why the backfill is what makes a login trustworthy); only a raw key NO
+  account has claimed
   (evals, programmatic callers) scopes by the key itself (`requestScope` in
   `studio-routes.ts`).
 - **The CLI round-trips workspaces** (`aai list/pull/push/publish/delete` —
