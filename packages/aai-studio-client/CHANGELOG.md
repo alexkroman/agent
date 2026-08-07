@@ -1,5 +1,11 @@
 # aai-studio-client
 
+## 0.4.7
+
+### Patch Changes
+
+- @alexkroman1/aai-ui@5.10.1
+
 ## 0.4.6
 
 ### Patch Changes
