@@ -10,7 +10,6 @@
 
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
 import type { AgentDef } from "@alexkroman1/aai";
 // One static import: the runtime barrel is already loaded for the helpers
 // below, so a dynamic import inside startDevServer would defer nothing.
@@ -30,6 +29,7 @@ import { createWorkerEvaluator } from "./_bundler.ts";
 import { ensureApiKey } from "./_config.ts";
 import { fallbackHtmlPlugin } from "./_default-html.ts";
 import { devBindHost, devWatchEnabled, hostModeEnv } from "./_dev-env.ts";
+import { createRestartSupervisor } from "./_dev-restart.ts";
 import { resolveServerEnv } from "./_server-common.ts";
 import { log, notify } from "./_ui.ts";
 import { errorCode, errorMessage } from "./_utils.ts";
@@ -296,49 +296,45 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     });
   }
 
-  // `restarting` starts true: startup counts as an in-flight "restart", so a
-  // change event landing during the multi-second boot queues a restart
-  // instead of racing the initial build.
-  let restarting = true;
-  let pendingRestart = false;
-  let closed = false;
-  let currentServer: AgentServer;
+  let viteServer: ViteDevServer | undefined;
+  let watcher: FSWatcher | undefined;
 
-  function kickRestart(): void {
-    // A change during an in-flight restart must not be dropped: flag it so
-    // restart() loops once more with the newest files. Otherwise the final
-    // save is silently ignored (stale server), or — if the in-flight restart
-    // failed on a mid-edit syntax error — the server stays down entirely.
-    if (restarting) {
-      pendingRestart = true;
-      return;
-    }
-    restarting = true;
-    // restart() catches its own build/listen failures, but a throw from an
-    // unexpected path must still be logged and must still clear `restarting`
-    // (catch-then-finally = try/finally semantics), or watching wedges forever.
-    void restart()
-      .catch((err: unknown) => {
-        notify("error", `Restart failed: ${errorMessage(err)}`);
-      })
-      .finally(() => {
-        restarting = false;
-      });
-  }
+  // The restart state machine — queueing, build-before-close ordering, listen
+  // retries, teardown races — lives in _dev-restart.ts, driven by the three
+  // operations below. Its invariants are specced there directly; this function
+  // only supplies the real build/listen/close and the surrounding wiring.
+  const supervisor = createRestartSupervisor<AgentServer>({
+    build: buildServer,
+    // Bind host matches the initial listen — a restart must not silently
+    // widen the dev server's exposure.
+    listen: (server) => server.listen(backendPort, devBindHost()),
+    close: (server) => server.close(),
+    notify,
+    teardown: async () => {
+      // Each close is best-effort: one failing must not leak the others.
+      await watcher?.close().catch(() => undefined);
+      await viteServer?.close().catch(() => undefined);
+    },
+  });
 
   // Install the watcher BEFORE the initial build: `ignoreInitial` means an
   // edit saved during startup (bundle + listen + Vite boot) would otherwise
   // never fire an event and the dev server would serve stale code until the
   // next save. Undefined unless AAI_DEV_WATCH is set — see devWatchEnabled.
-  const watcher = devWatchEnabled() ? watchDirectory(cwd, kickRestart) : undefined;
+  // The supervisor starts queueing, so an event landing mid-boot is held.
+  watcher = devWatchEnabled() ? watchDirectory(cwd, supervisor.request) : undefined;
 
-  let viteServer: ViteDevServer | undefined;
+  // Set once the backend has bound but before the supervisor owns it: if Vite
+  // then fails to boot, this is the only handle on a server already holding
+  // the port, and startDevServer throws. It used to leak.
+  let boundServer: AgentServer | undefined;
   try {
-    currentServer = await buildServer();
+    const initialServer = await buildServer();
     // Loopback by default (the dev server has no auth). AAI_DEV_HOST is the
     // escape hatch for setups where loopback isn't reachable — e.g. running
     // `aai dev` inside a container and connecting from the host.
-    await currentServer.listen(backendPort, devBindHost());
+    await initialServer.listen(backendPort, devBindHost());
+    boundServer = initialServer;
 
     if (hasClient) {
       const { createServer: createViteServer } = await import("vite");
@@ -351,103 +347,19 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
         notify("error", `Vite dev server error: ${errorMessage(err)}`);
       });
     }
+
+    // Startup complete: release the queue, and run the one restart an edit
+    // saved during boot asked for. Last, so nothing above can rebuild under
+    // a half-built server.
+    supervisor.adopt(initialServer);
   } catch (err) {
-    // Startup failed — the watcher was already opened; don't leak it.
-    await watcher?.close().catch(() => undefined);
-    await viteServer?.close().catch(() => undefined);
+    // Startup failed — the watcher and Vite were already opened; don't leak
+    // them, nor a backend that bound before Vite blew up. The supervisor
+    // never adopted anything, so its own close() covers the teardown set only.
+    await supervisor.close();
+    await boundServer?.close().catch(() => undefined);
     throw err;
   }
 
-  // Startup complete: release the queue, and run the one restart an edit
-  // saved during boot asked for.
-  restarting = false;
-  if (pendingRestart) kickRestart();
-
-  async function restart(): Promise<void> {
-    do {
-      pendingRestart = false;
-      await restartOnce();
-    } while (pendingRestart && !closed);
-  }
-
-  async function restartOnce(): Promise<void> {
-    // Build the replacement server FIRST (the slow part — full bundle +
-    // runtime construction). The old server keeps serving live sessions the
-    // whole time, and a failed build (e.g. a mid-edit syntax error) leaves it
-    // running instead of leaving the port dead until the next save.
-    let newServer: AgentServer;
-    try {
-      newServer = await buildServer();
-    } catch (err) {
-      notify("error", `Restart failed: ${errorMessage(err)} (previous server still running)`);
-      return;
-    }
-    // The cleanup fn may have run while we were rebuilding — don't leave a
-    // freshly-built server orphaned (leaked port / hung event loop).
-    if (closed) {
-      await newServer.close().catch(() => undefined);
-      return;
-    }
-    // The old server holds the port, so it must close before the new one
-    // listens — the down-window is now just this close+listen swap.
-    try {
-      await currentServer.close();
-    } catch {
-      /* ignore */
-    }
-    try {
-      await listenWithRetry(newServer);
-      currentServer = newServer;
-      if (closed) {
-        // Cleanup raced with the swap: it closed the old server, so shut the
-        // new one down too rather than leaving it listening forever.
-        await newServer.close().catch(() => undefined);
-        return;
-      }
-      notify("success", "Restarted");
-    } catch (err) {
-      notify(
-        "error",
-        `Restart failed: ${errorMessage(err)} — dev server is down; save a file to retry.`,
-      );
-      await newServer.close().catch(() => undefined);
-    }
-  }
-
-  /**
-   * Listen with a few short-backoff retries. During the close→listen swap the
-   * port is momentarily free, so another process can snatch it (or the OS can
-   * hold it in TIME_WAIT); one blind attempt would leave the dev server down
-   * until the next file change.
-   */
-  async function listenWithRetry(server: AgentServer): Promise<void> {
-    const LISTEN_ATTEMPTS = 3;
-    const LISTEN_RETRY_DELAY_MS = 250;
-    for (let attempt = 1; ; attempt++) {
-      try {
-        // Bind host matches the initial listen — a restart must not silently
-        // widen the dev server's exposure.
-        await server.listen(backendPort, devBindHost());
-        return;
-      } catch (err) {
-        if (attempt >= LISTEN_ATTEMPTS || closed) throw err;
-        await sleep(LISTEN_RETRY_DELAY_MS);
-      }
-    }
-  }
-
-  // Idempotent: SIGINT followed by SIGTERM must not run the teardown twice
-  // concurrently (double server close → ERR_SERVER_NOT_RUNNING noise, double
-  // runtime shutdown). The second call joins the in-flight teardown.
-  let cleanupPromise: Promise<void> | undefined;
-  return () => {
-    cleanupPromise ??= (async () => {
-      closed = true;
-      // Each close is best-effort: one failing must not leak the others.
-      await watcher?.close().catch(() => undefined);
-      await viteServer?.close().catch(() => undefined);
-      await currentServer.close().catch(() => undefined);
-    })();
-    return cleanupPromise;
-  };
+  return supervisor.close;
 }
