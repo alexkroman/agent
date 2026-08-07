@@ -63,6 +63,15 @@ describe("createMemoryBlobStorage", () => {
     await store.setItem("blobs/abc", "worker code");
     expect(await store.getItem("blobs/abc")).toBe("worker code");
   });
+
+  // Null here means "no URL exists", not "signing failed" — there is no
+  // server in front of a Map. It is what keeps local dev and tests on the
+  // byte path while production hands guests a URL.
+  test("cannot sign, for a written key as much as an absent one", async () => {
+    const store = createMemoryBlobStorage();
+    await store.setItem("blobs/abc", "worker code");
+    expect(await store.signedUrl("blobs/abc", 300)).toBeNull();
+  });
 });
 
 describe("createSupabaseBlobStorage", () => {
@@ -105,6 +114,31 @@ describe("createSupabaseBlobStorage", () => {
     const { store } = storage(() => new Response("nope", { status: 503 }));
     await expect(store.setItem("blobs/abc", "code")).rejects.toThrow(
       /blob write failed for blobs\/abc/,
+    );
+  });
+
+  test("signs a read URL for one object, scoped and expiring", async () => {
+    const { store, calls } = storage(
+      () => new Response(JSON.stringify({ signedURL: "/object/sign/aai-blobs/blobs/abc?token=t" })),
+    );
+    const url = await store.signedUrl("blobs/abc", 300);
+    // Absolute, so the guest can fetch it with nothing but the string.
+    expect(url).toBe("https://ref.supabase.co/storage/v1/object/sign/aai-blobs/blobs/abc?token=t");
+    // And it carries a token rather than the service-role key it was minted
+    // with — that key stays here, which is the point of handing out a URL.
+    expect(url).not.toContain("service-role-key");
+    const [call] = calls;
+    expect(call?.url).toContain("/storage/v1/object/sign/aai-blobs/blobs/abc");
+    expect(call?.body).toContain("300");
+  });
+
+  // Unlike getItem, a failed signing is never null: null means "this backend
+  // cannot sign", and conflating the two would quietly put production back on
+  // the byte path with nothing reporting it.
+  test("throws when signing fails rather than reporting no URL", async () => {
+    const { store } = storage(() => new Response("nope", { status: 500 }));
+    await expect(store.signedUrl("blobs/abc", 300)).rejects.toThrow(
+      /blob signing failed for blobs\/abc/,
     );
   });
 });

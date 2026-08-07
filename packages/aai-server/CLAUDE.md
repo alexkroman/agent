@@ -98,8 +98,9 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
 - `blob-storage.ts` — where those blobs live: Supabase Storage through
   `@supabase/storage-js` in production (authenticated with the SAME
   `SUPABASE_SERVICE_ROLE_KEY` as Realtime — Storage has no credential of its
-  own), memory in dev/tests. The surface is deliberately `getItem`/`setItem`
-  and nothing else. It replaced unstorage's generic S3 driver plus a local
+  own), memory in dev/tests. The surface is `getItem`/`setItem`/`signedUrl`
+  and nothing else (see "The guest fetches its own bundle" for the third).
+  It replaced unstorage's generic S3 driver plus a local
   override of that driver's `getKeys` (which lists the whole bucket and reads
   only the first 1000-key page): once workspaces moved to Postgres NOTHING
   lists keys, so the override guarded a call no longer made, and the
@@ -155,6 +156,67 @@ through it at all). Everything durable lives in Supabase (bundles and
 client files in Storage, agent env + app-db credentials in Vault, studio
 workspaces/chats and per-app data in Postgres), and cross-replica
 coordination lives in the same Postgres over `SUPABASE_DB_URL`.
+
+**Being stateless does not mean everything has to flow THROUGH the replica.**
+Two of the largest byte paths deliberately don't: `ctx.db` connects from the
+guest directly on the app's own scoped role, and a guest fetches its own worker
+bundle from a signed Storage URL (see "The guest fetches its own bundle"). The
+pattern both follow is the same — hand out a narrowly scoped capability and
+verify the result (a per-app Postgres role; a content hash) rather than proxy
+the bytes to keep the platform's credential out of reach.
+
+### Where we differ from Supabase's own recommendations
+
+Audited 2026-08 against their docs. Most of the surface is exactly what they
+recommend — direct session-mode connection, Vault's `create_secret` /
+`update_secret`, private-bucket `download()` + `createSignedUrl`, a custom
+schema with explicit grants, migrations applied ahead of deploy. Three places
+differ, and each is a decision rather than an oversight:
+
+- **`postgres_changes` instead of Broadcast.** Supabase now steers to
+  `realtime.broadcast_changes` triggers, because `postgres_changes`
+  authorizes every event against every subscriber (100 subscribers = 100
+  authorization checks per change) on a single ordering thread. Their stated
+  threshold is ~3,000 concurrent subscribers on the same changes; ours are
+  REPLICAS, not users, so we are orders of magnitude below it. The documented
+  direction if this ever moves, and worth knowing before adding a fourth
+  watched table.
+- **RLS is enabled and DENY-ALL, which is not what RLS is usually for.**
+  Access is really controlled by the grant: `anon`/`authenticated` hold no
+  privilege on `aai_platform`, and it is not a PostgREST-exposed schema.
+  Policies would add nothing on top — the platform connects as the tables'
+  OWNER (owners bypass RLS) and Realtime subscribes as `service_role`
+  (BYPASSRLS), so every real reader is exempt anyway. What
+  `20260807000000_platform_rls.sql` buys is the failure mode of a mistake:
+  add a grant to `authenticated`, or expose the schema, and the result is zero
+  rows rather than every tenant's workspace. **ENABLE, never FORCE** — forcing
+  applies policies to the owner too, i.e. to every query the platform makes.
+  Three guards in `platform-schema.test.ts` hold all of this, and they exist
+  because NOTHING EXTERNAL WILL: splinter's `rls_disabled_in_public` (0013)
+  and the RLS-disabled email alerts both key on `public`, so a table added
+  here without RLS is invisible to every check Supabase runs on the project.
+- **Per-app Postgres roles instead of RLS.** "Generally you wouldn't use
+  these roles for your own application… use Row Level Security" does not
+  apply: RLS presumes a trusted client presenting a user JWT, and ours is
+  untrusted tenant code holding the credential itself in a sandbox. Their
+  other rule — "create a new user for every service you want to give access
+  to" — is the one that fits, and `APP_DB_CONNECTION_LIMIT` answers the
+  connection-cost objection they raise against many roles.
+
+Two operational facts the code depends on and cannot assert:
+
+- **A direct connection is IPv6-only without the IPv4 add-on**, so production
+  depends on one of the two. The shape is right on the merits ("direct
+  connections remain the best choice for long-lived sessions"), and if IPv4
+  ever becomes necessary the sanctioned fallback is **Supavisor SESSION mode
+  on port 5432**, which still holds advisory locks — `assertSessionModeUrl`
+  already permits it, since it refuses only port 6543 and `pgbouncer=true`.
+- **Legacy `anon`/`service_role` keys are deprecated (end of 2026) and can no
+  longer be rotated.** Boot already requires the new secret form, so we are
+  ahead — but `SUPABASE_SERVICE_ROLE_KEY` now holds an `sb_secret_…` key,
+  which is a naming wart, and the sanctioned placement for a non-JWT secret
+  key is the `apikey` header (the Realtime client does this; the Storage
+  client sends both `apikey` and `Authorization`).
 
 **The schema is DECLARED, in `supabase/migrations`** — not created lazily by
 the store that reads it. Every `aai_platform` store used to call a memoized
@@ -1151,10 +1213,35 @@ stored env at sandbox creation time and kept host-side only.
   to heal it; it writes before storing the grant, so the CLI cannot exchange
   and get a request in ahead of the mapping.
 - **Browser sessions are Supabase Auth** (`supabase-auth.ts`): GitHub
-  OAuth sign-in via supabase-js (`signInWithOAuth`) in the studio client;
-  the server verifies
-  access tokens by asking Supabase (`GET /auth/v1/user` — no JWT
-  secret/JWKS handling), TTL-cached by SHA-256(token). Configured by
+  OAuth sign-in via supabase-js (`signInWithOAuth`) in the studio client.
+  The server verifies access tokens **two ways, and which one a route gets is
+  a security decision**:
+  - `verifyAccessToken` — the request path. `getClaims` (`@supabase/auth-js`),
+    which on a project using ASYMMETRIC JWT signing keys verifies the
+    signature locally against a process-cached JWKS and touches the network
+    not at all. Supabase's own guidance is to "prefer `getClaims` over
+    `getUser`, which always sends a request to the Auth server for each JWT",
+    and `GET /auth/v1/user` per token is what this replaced.
+  - `verifyAccessTokenFresh` — `GET /auth/v1/user`, uncached, used ONLY by
+    `requireStudioUser` (the three account routes). A signature check is
+    authoritative about who issued a token and when it expires and blind to
+    REVOCATION: a signed-out session stays cryptographically valid until
+    `exp`. Those routes read and rotate the account's AssemblyAI key and grant
+    a CLI one exchange for it, so they pay a round trip to see a sign-out at
+    once.
+
+  Two properties worth keeping. `getClaims` is safe on either kind of project
+  — on a symmetric (HS256) one it falls back to a server call by itself — and
+  that is also why the request path KEEPS its short TTL cache: on such a
+  project the cache is what stops a per-request round trip. And a rejected
+  token and an unreachable Supabase are opposite answers, so only
+  `isAuthRetryableFetchError` throws (a 5xx to the caller); everything else
+  caches as a rejection. `storageKey` is set explicitly because auth-js caches
+  the JWKS in a PROCESS-GLOBAL map keyed by it rather than by URL — two
+  clients pointed at different projects would otherwise verify one project's
+  tokens against the other's keys.
+
+  Configured by
   `SUPABASE_URL` + `SUPABASE_PUBLISHABLE_KEY`. Local dev (same `isLocalDev`
   policy as the in-memory stores — production can never resolve it) falls
   back to `createDevAuth`: the login screen mints self-describing
@@ -1263,6 +1350,52 @@ that grows a dependency-declaring field (`overrides`, `resolutions`,
 at image build as a lockfile mismatch; the second does **not** — the install
 succeeds and merely resolves a different tree than the source layer expects,
 which is why it needs a test rather than a comment.
+
+### The guest fetches its own bundle (signed Storage URL)
+
+A cold agent spawn used to move the worker bundle — ~8 MB typical, 30 MB cap —
+through this process **twice**: `loadBundleParts` read the blob out of Supabase
+Storage into the replica's heap, and `spawnModalAgentServer` wrote those same
+bytes into the sandbox with `filesystem.writeText`. Neither hop bought
+anything. The guest now fetches the bundle itself from a time-boxed signed
+Storage URL (`BlobStorage.signedUrl` → `BundleStore.getWorkerUrl` →
+`WorkerSource` in `sandbox-vm.ts` → `AAI_BUNDLE_URL` in the exec env), and both
+transfers disappear.
+
+**The hash is the whole security argument, and it predates this.** Agent mode
+already refused to load a bundle whose sha-256 did not match `AAI_BUNDLE_SHA256`
+(`readAgentBoot`), so the guest trusts the HASH, never the transport. What
+changed is where that hash comes from: the agents row's `worker_hash` — the
+deploy's own record of what it published — rather than a digest of the bytes
+the host happened to be holding, which made the check a tautology on the file
+path. The URL grants read of exactly one immutable blob, carries no
+service-role key, and expires (`WORKER_URL_TTL_SECONDS`, 5 min — sized against
+the 120s readiness budget plus scheduling, because a URL expiring inside it
+turns slow Modal scheduling into a boot failure that only appears under
+capacity pressure).
+
+**There is no fallback for a failure.** Signing throws and fails the spawn,
+like every other spawn failure; the client re-brokers. `signedUrl` resolving
+`null` means something else entirely — *this backend cannot sign* — which is
+true only of the memory blob store behind local dev and tests, and puts them on
+the byte path. Conflating the two would silently put production back on the
+byte path with nothing reporting it.
+
+**A pinned guest may be too old to understand it, and that is checked**
+(`guestUnderstandsBundleUrl`). Deployed agents spawn from the harness image
+pinned on their row, so the guest can be arbitrarily older than the platform,
+and a `GUEST_CONTRACT_VERSION` 1 harness reads only `AAI_BUNDLE_PATH` — handed
+a URL it fails boot outright. Nothing can ask a guest its version *before*
+exec, so the host compares images instead: no pin, or `SANDBOX_IGNORE_IMAGE_PINS`
+(which must agree with `resolveSpawnImage` substituting the current image), or a
+pin equal to the tag this process builds. The tag hashes the harness content, so
+"same tag" means "same harness". **So the saving lands per deploy**, as agents
+are redeployed onto a harness that understands the URL — not all at once when
+this ships.
+
+One side effect worth knowing: `loadBundleParts` now reads the agents row ONCE
+and derives the worker source from it, where it previously issued `getAgent`
+and `getWorkerCode` concurrently and each read the row.
 
 ### No warm pool — every spawn boots from the snapshot image
 

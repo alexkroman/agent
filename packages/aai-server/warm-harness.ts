@@ -189,7 +189,13 @@ export function agentBootEnv(
   opts: {
     token: string;
     port: number;
-    bundlePath: string;
+    /**
+     * Where the bundle is: a path the spawner wrote into the sandbox, or a
+     * URL the guest fetches (see {@link WorkerSource}). Exactly one, because
+     * the shape decides — there is no precedence rule for the guest to get
+     * wrong, and no way to name a path that was never written.
+     */
+    bundle: { path: string } | { url: string };
     bundleSha256: string;
     envPath: string;
   },
@@ -201,7 +207,9 @@ export function agentBootEnv(
     AAI_GUEST_MODE: "agent",
     AAI_GUEST_TOKEN: opts.token,
     AAI_GUEST_PORT: String(opts.port),
-    AAI_BUNDLE_PATH: opts.bundlePath,
+    ...("url" in opts.bundle
+      ? { AAI_BUNDLE_URL: opts.bundle.url }
+      : { AAI_BUNDLE_PATH: opts.bundle.path }),
     AAI_BUNDLE_SHA256: opts.bundleSha256,
     AAI_AGENT_ENV_PATH: opts.envPath,
     ...(idleExitMs ? { AAI_GUEST_IDLE_EXIT_MS: idleExitMs } : {}),

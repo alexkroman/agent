@@ -324,6 +324,65 @@ async function applyMutation(
   }
 }
 
+/**
+ * The metadata fields a stamp may write. Deliberately NOT `Partial<
+ * StudioWorkspace>`: `files` and `hash` are absent from this type, so the
+ * cheap write path is structurally incapable of touching the file map or
+ * desynchronizing its hash. `undefined` REMOVES the field (the shape the call
+ * sites already had — `delete next.previewHash`).
+ */
+type StampField =
+  | "deployedSlug"
+  | "deployedHash"
+  | "previewSlug"
+  | "previewHash"
+  | "previewError"
+  | "databaseEnabled";
+
+// `?: T | undefined` rather than `Partial<Pick<…>>`: under
+// `exactOptionalPropertyTypes` those differ, and only this form lets a call
+// site pass an explicit `undefined` — which is how a stamp says REMOVE.
+export type WorkspaceStamp = {
+  [K in StampField]?: StudioWorkspace[K] | undefined;
+};
+
+/**
+ * Record deploy/preview/database metadata without reading or rewriting the
+ * file map — {@link WorkspaceStore.patch}, which is where the reasoning lives.
+ *
+ * Every field here is re-derivable and independently owned, so last-write-wins
+ * per field is the right merge: two stamps that touch different fields both
+ * survive, where the versioned read-modify-write this replaced made one of
+ * them retry against the other. And a stamp can no longer revert a file edit
+ * that landed mid-deploy, because it never carries files — the call sites used
+ * to spell that hazard out one by one ("writing the pre-deploy files back
+ * would silently revert anything edited meanwhile"), and now the type says it.
+ *
+ * Still under the workspace lock, and that is not vestigial: `mutateWorkspace`
+ * has exactly ONE conflict retry, sized for CROSS-REPLICA races, and an
+ * unlocked stamp landing inside a local file write's read-modify-write would
+ * spend it on a writer in the same process.
+ *
+ * @returns the updated workspace, or null when the project no longer exists.
+ */
+export function stampWorkspaceMeta(
+  store: WorkspaceStore,
+  scope: string,
+  project: string,
+  stamp: WorkspaceStamp,
+): Promise<StudioWorkspace | null> {
+  const set: Record<string, unknown> = { updatedAt: Date.now() };
+  const remove: string[] = [];
+  for (const [field, value] of Object.entries(stamp)) {
+    if (value === undefined) remove.push(field);
+    else set[field] = value;
+  }
+  return withLock(workspaceLock, projectKey(scope, project), async () => {
+    const record = await store.patch(scope, project, { set, remove });
+    return record ? parseWorkspace(record.doc) : null;
+  });
+}
+
 export async function deleteWorkspace(
   store: WorkspaceStore,
   scope: string,

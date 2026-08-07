@@ -37,6 +37,7 @@ import {
   spawnModalAgentServer,
 } from "./modal-agent-sandbox.ts";
 import { GUEST_PORT, type ModalSpawnContext } from "./modal-context.ts";
+import type { WorkerSource } from "./sandbox-vm.ts";
 
 const WORKER = 'export default { name: "deployed" };';
 /** Any 64-hex value: the host forwards it, the guest is what verifies it. */
@@ -49,6 +50,7 @@ async function spawn(
     imageTag?: string;
     name?: string;
     slug?: string;
+    worker?: WorkerSource;
   } = {},
   fake?: FakeProc,
 ) {
@@ -59,8 +61,7 @@ async function spawn(
     {
       harnessPath,
       slug: overrides.slug ?? "deployed-agent",
-      workerCode: WORKER,
-      workerSha256: SHA,
+      worker: overrides.worker ?? { kind: "inline", code: WORKER, sha256: SHA },
       agentEnv: overrides.agentEnv ?? { ASSEMBLYAI_API_KEY: "k" },
       name: overrides.name ?? "agent-abc123-v7",
       ...(overrides.imageTag ? { imageTag: overrides.imageTag } : {}),
@@ -123,8 +124,7 @@ describe("spawnModalAgentServer", () => {
       {
         harnessPath,
         slug: "ordered",
-        workerCode: WORKER,
-        workerSha256: SHA,
+        worker: { kind: "inline", code: WORKER, sha256: SHA },
         agentEnv: {},
         name: "agent-ordered-v1",
       },
@@ -165,8 +165,7 @@ describe("spawnModalAgentServer", () => {
       {
         harnessPath,
         slug: "tunnel-first",
-        workerCode: WORKER,
-        workerSha256: SHA,
+        worker: { kind: "inline", code: WORKER, sha256: SHA },
         agentEnv: {},
         name: "agent-tunnel-first-v1",
       },
@@ -200,8 +199,7 @@ describe("spawnModalAgentServer", () => {
           {
             harnessPath,
             slug: "write-fails",
-            workerCode: WORKER,
-            workerSha256: SHA,
+            worker: { kind: "inline", code: WORKER, sha256: SHA },
             agentEnv: {},
             name: "agent-write-fails-v1",
           },
@@ -283,8 +281,7 @@ describe("spawnModalAgentServer", () => {
       {
         harnessPath,
         slug: "named",
-        workerCode: WORKER,
-        workerSha256: SHA,
+        worker: { kind: "inline", code: WORKER, sha256: SHA },
         agentEnv: {},
         name: "agent-deadbeef-v3",
       },
@@ -317,8 +314,7 @@ describe("spawnModalAgentServer", () => {
       {
         harnessPath,
         slug: "pinned",
-        workerCode: WORKER,
-        workerSha256: SHA,
+        worker: { kind: "inline", code: WORKER, sha256: SHA },
         agentEnv: {},
         name: "agent-pinned-v1",
         imageTag: "aai-guest-harness:cafebabe",
@@ -344,8 +340,7 @@ describe("spawnModalAgentServer", () => {
         {
           harnessPath,
           slug: "crashes",
-          workerCode: WORKER,
-          workerSha256: SHA,
+          worker: { kind: "inline", code: WORKER, sha256: SHA },
           agentEnv: {},
           name: "agent-crashes-v1",
         },
@@ -366,8 +361,7 @@ describe("spawnModalAgentServer", () => {
         {
           harnessPath,
           slug: "untunneled",
-          workerCode: WORKER,
-          workerSha256: SHA,
+          worker: { kind: "inline", code: WORKER, sha256: SHA },
           agentEnv: {},
           name: "agent-untunneled-v1",
         },

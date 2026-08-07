@@ -37,8 +37,11 @@ async function spawnAgent(overrides: { workerSha256?: string } = {}): Promise<Ag
   const handle = await spawnSubprocessAgentServer({
     harnessPath: resolveHarnessPath(),
     slug: "server-mode-agent",
-    workerCode: WORKER_CODE,
-    workerSha256: overrides.workerSha256 ?? (await sha256(WORKER_CODE)),
+    worker: {
+      kind: "inline",
+      code: WORKER_CODE,
+      sha256: overrides.workerSha256 ?? (await sha256(WORKER_CODE)),
+    },
     agentEnv: { SOME_KEY: "some-value" },
   });
   handles.push(handle);

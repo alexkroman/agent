@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { inlineWorker } from "./_sandbox-vm-test-utils.ts";
 import { sleep } from "./_sleep.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import { createSandbox, type SandboxOptions } from "./sandbox.ts";
@@ -54,7 +55,7 @@ const TEST_AGENT_CONFIG: IsolateConfig = {
 
 function makeSandboxOptions(overrides?: Partial<SandboxOptions>): SandboxOptions {
   return {
-    workerCode: 'export default { name: "test" };',
+    worker: inlineWorker(),
     env: { AAI_ENV_TEST: "1" },
     slug: "test-agent",
     version: 1,
@@ -88,7 +89,7 @@ describe("createSandbox", () => {
     expect(mockSpawnAgentServer).toHaveBeenCalledWith(
       expect.objectContaining({
         slug: "test-agent",
-        workerCode: opts.workerCode,
+        worker: opts.worker,
         env: opts.env,
         imageTag: "aai-guest-harness:abcd1234",
       }),

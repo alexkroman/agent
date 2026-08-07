@@ -50,7 +50,7 @@ import {
 } from "aai-server/storage-handler";
 import type { BundleStore } from "aai-server/store-types";
 import type { WorkspaceStore } from "aai-server/workspace-store";
-import { getWorkspace, mutateWorkspace, type StudioWorkspace } from "./studio-workspace.ts";
+import { getWorkspace, type StudioWorkspace, stampWorkspaceMeta } from "./studio-workspace.ts";
 
 /** The two agents one studio project deploys. */
 export const PROJECT_ENVIRONMENTS = ["production", "preview"] as const;
@@ -186,11 +186,10 @@ export async function setProjectDatabase(
   params: SetProjectDatabaseParams,
 ): Promise<SetProjectDatabaseResult | null> {
   const { scope, project, apiKey, enabled } = params;
-  const workspace = await mutateWorkspace(env.workspaces, scope, project, (current) => {
-    const next = { ...current };
-    if (enabled) next.databaseEnabled = true;
-    else delete next.databaseEnabled;
-    return next;
+  const workspace = await stampWorkspaceMeta(env.workspaces, scope, project, {
+    // Absent means off (see StudioWorkspace.databaseEnabled), so disabling
+    // REMOVES the field rather than storing `false`.
+    databaseEnabled: enabled ? true : undefined,
   });
   if (!workspace) return null;
 
@@ -217,11 +216,7 @@ export async function setProjectDatabase(
   // wait for an unrelated edit to pick this up. Clearing the stamp is what
   // makes the deploy run at all (it no-ops on a matching files hash).
   if (params.schedulePreview && workspace.previewSlug !== undefined) {
-    await mutateWorkspace(env.workspaces, scope, project, (current) => {
-      const next = { ...current };
-      delete next.previewHash;
-      return next;
-    });
+    await stampWorkspaceMeta(env.workspaces, scope, project, { previewHash: undefined });
     params.schedulePreview();
   }
 

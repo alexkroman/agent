@@ -14,12 +14,13 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
 import { resolveHarnessPath } from "./constants.ts";
-import { spawnAgentServer } from "./sandbox-vm.ts";
+import { spawnAgentServer, type WorkerSource } from "./sandbox-vm.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────
 
 export type SandboxOptions = {
-  workerCode: string;
+  /** The bundle bytes, or a signed URL the guest pulls them from. */
+  worker: WorkerSource;
   env: Record<string, string>;
   slug: string;
   /**
@@ -86,12 +87,12 @@ export type Sandbox = {
 // ── Public API ──────────────────────────────────────────────────────────
 
 export function createSandbox(opts: SandboxOptions): Sandbox {
-  const { workerCode, env, slug } = opts;
+  const { worker, env, slug } = opts;
 
   const vmReady = spawnAgentServer({
     slug,
     version: opts.version,
-    workerCode,
+    worker,
     env,
     harnessPath: resolveHarnessPath(),
     imageTag: opts.imageTag,
@@ -104,9 +105,10 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
   //
   // Read the callback into a local rather than closing over `opts`: capturing
   // the options object would context-allocate it into the scope every returned
-  // closure shares, so a resident sandbox would pin `opts.workerCode` — the
-  // whole ~8 MB deploy bundle — in host heap for its entire life, long after
-  // boot delivery shipped it to the guest.
+  // closure shares, so a resident sandbox would pin an INLINE `opts.worker` —
+  // the whole ~8 MB deploy bundle — in host heap for its entire life, long
+  // after boot delivery shipped it to the guest. (A `url` source is a few
+  // hundred bytes, but the trap is the same shape and the fix costs nothing.)
   const onSandboxLost = opts.onSandboxLost;
   let lost = false;
   const markLost = (err?: unknown): void => {

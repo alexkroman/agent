@@ -29,11 +29,24 @@
 import type { Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { StudioHonoEnv } from "./studio-context.ts";
-import { createSsePusher, projectPayload } from "./studio-sse.ts";
-import { getWorkspace, listProjects } from "./studio-workspace.ts";
+import { createSharedReads, createSsePusher, type Frame, projectPayload } from "./studio-sse.ts";
+import { getWorkspace, listProjects, projectKey } from "./studio-workspace.ts";
 
-/** An SSE frame, or null to end the stream (the watched row vanished). */
-type Frame = { event: string; data: string } | null;
+/**
+ * One reader per watched row, shared by every stream watching it (see
+ * `createSharedReads`). Module-level for the same reason the workspace
+ * mutation lock is: every stream in this process reads the same rows through
+ * the same store, so one registry covers them, and a per-request one would
+ * coalesce nothing.
+ *
+ * Three registries rather than one keyed by a composite: the three read
+ * different rows on different keys (project vs scope), and merging them would
+ * put a "which kind of frame is this" tag into a key whose whole job is to be
+ * the identity of the thing read.
+ */
+const projectReads = createSharedReads();
+const chatReads = createSharedReads();
+const scopeReads = createSharedReads();
 
 export function registerEventRoutes(
   studio: Hono<StudioHonoEnv>,
@@ -48,13 +61,17 @@ export function registerEventRoutes(
     const scope = requestScope(c);
     return streamSSE(c, async (stream) => {
       const sse = createSsePusher(stream);
-      const frame = async (): Promise<Frame> => ({
+      const reads = scopeReads.acquire(scope, async () => ({
         event: "projects",
         data: JSON.stringify(await listProjects(c.env.workspaces, scope)),
-      });
+      }));
+      const frame = (): Promise<Frame> => reads.trigger();
       const unwatch = c.env.events.watchScopeProjects(scope, () => sse.push(frame));
       sse.push(frame);
-      await sse.wait(unwatch);
+      await sse.wait(() => {
+        unwatch();
+        reads.release();
+      });
     });
   });
 
@@ -71,17 +88,21 @@ export function registerEventRoutes(
     }
     return streamSSE(c, async (stream) => {
       const sse = createSsePusher(stream);
-      const projectFrame = async (): Promise<Frame> => {
+      const key = projectKey(scope, project);
+      const projectReader = projectReads.acquire(key, async () => {
         const current = await getWorkspace(c.env.workspaces, scope, project);
         // A vanished workspace (project deleted) ends the stream; the client's
-        // other queries surface the 404.
+        // other queries surface the 404. Shared, so it ends EVERY stream on
+        // this project — which is what deleting a project should do.
         if (!current) return null;
         return { event: "project", data: JSON.stringify(projectPayload(current)) };
-      };
-      const chatFrame = async (): Promise<Frame> => ({
+      });
+      const chatReader = chatReads.acquire(key, async () => ({
         event: "chat",
         data: JSON.stringify((await c.env.chats.getChat(scope, project)) ?? []),
-      });
+      }));
+      const projectFrame = (): Promise<Frame> => projectReader.trigger();
+      const chatFrame = (): Promise<Frame> => chatReader.trigger();
       const unwatchWorkspace = c.env.events.watchWorkspace(scope, project, () =>
         sse.push(projectFrame),
       );
@@ -90,6 +111,8 @@ export function registerEventRoutes(
       await sse.wait(() => {
         unwatchWorkspace();
         unwatchChat();
+        projectReader.release();
+        chatReader.release();
       });
     });
   });

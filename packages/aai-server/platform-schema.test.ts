@@ -29,6 +29,20 @@ function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 }
 
+/**
+ * Drop SQL comments (`--` to end of line, and block comments), so a migration
+ * that DESCRIBES a hazard is not mistaken for committing it. The RLS
+ * migration writes `grant select … to authenticated` in prose to explain what
+ * it guards against.
+ *
+ * Does not attempt to respect string literals: no migration here contains a
+ * `--` inside one, and a stripper that parsed SQL properly would be a bigger
+ * thing to trust than the tests it serves.
+ */
+function stripSqlComments(sql: string): string {
+  return sql.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--.*$/gm, "");
+}
+
 /** Every `aai_platform.<table>` the platform's own source queries. */
 function referencedTables(): Set<string> {
   const dirs = [
@@ -87,6 +101,70 @@ describe("platform schema migrations", () => {
     }
     expect(sql).toContain("grant usage on schema aai_platform to service_role");
     expect(sql).toContain("grant select on");
+  });
+
+  /**
+   * Deny-all RLS on every platform table (20260807000000_platform_rls.sql).
+   *
+   * These three assertions exist because NO EXTERNAL TOOL WILL EVER MAKE
+   * THEM. Supabase's own linter (splinter rule 0013,
+   * `rls_disabled_in_public`) and the RLS-disabled email alerts both key on
+   * the `public` schema; `aai_platform` is not public and is not
+   * PostgREST-exposed, so a table added here without RLS is invisible to
+   * every check Supabase runs on the project. `supabase db lint` is
+   * plpgsql_check and inspects functions, of which this schema has none.
+   *
+   * What they guard is the accidental grant: today the only thing between a
+   * browser and every tenant's workspace is that `anon`/`authenticated` hold
+   * no privilege here. With RLS on and no policies, that mistake yields zero
+   * rows instead of every row.
+   */
+  describe("row-level security", () => {
+    /** Tables the migrations declare, derived so a new one is covered. */
+    function declaredTables(sql: string): string[] {
+      return [...sql.matchAll(/create table if not exists aai_platform\.([a-z_]+)/g)]
+        .map(([, table]) => table)
+        .filter((table): table is string => table !== undefined)
+        .sort((a, b) => a.localeCompare(b));
+    }
+
+    test("every declared table has it enabled", () => {
+      const sql = migrationSql();
+      const tables = declaredTables(sql);
+      expect(tables.length).toBeGreaterThan(0);
+      // Soft, so adding several tables at once names all of them rather than
+      // reporting the first and hiding the rest.
+      for (const table of tables) {
+        expect
+          .soft(sql, `aai_platform.${table} has no RLS`)
+          .toContain(`alter table aai_platform.${table} enable row level security`);
+      }
+    });
+
+    test("nothing is granted to anon, authenticated, or public", () => {
+      // Comments are stripped FIRST, and the RLS migration is why: it
+      // explains the hazard by writing `grant select … to authenticated` in
+      // prose, and prose is not a grant. (Same reasoning as
+      // `referencedTables`, different comment syntax.)
+      const sql = stripSqlComments(migrationSql());
+      const grants = [...sql.matchAll(/grant[\s\S]*?to\s+([a-z_, ]+)/gi)].map(([, roles]) =>
+        (roles ?? "").trim(),
+      );
+      expect(grants.length).toBeGreaterThan(0);
+      const exposed = grants.filter((roles) => /\b(anon|authenticated|public)\b/.test(roles));
+      // A grant to one of these is not automatically wrong — but it makes RLS
+      // load-bearing rather than belt-and-braces, so it has to arrive with
+      // policies and a deliberate update to this test.
+      expect(exposed).toEqual([]);
+    });
+
+    test("never FORCEs it — that would lock the platform out of its own tables", () => {
+      // The platform connects as the tables' OWNER, and owners bypass
+      // policies; `force row level security` removes that exemption, so with
+      // no policies declared every platform query would return nothing. The
+      // trap is that it reads like the stricter, safer option.
+      expect(stripSqlComments(migrationSql())).not.toMatch(/force\s+row\s+level\s+security/i);
+    });
   });
 
   test("are idempotent, so re-applying is safe", () => {

@@ -34,14 +34,31 @@ export const HARNESS_ORPHAN_POLL_MS = 30_000;
 
 /**
  * Version of the AGENT-MODE guest contract: the exec-env boot convention
- * (AAI_GUEST_MODE / AAI_BUNDLE_PATH / AAI_BUNDLE_SHA256 / AAI_AGENT_ENV_PATH)
- * plus the token-gated `/manage/*` HTTP surface. Reported by
- * `GET /manage/status`. Agent sandboxes run the harness image PINNED at
+ * (AAI_GUEST_MODE / AAI_BUNDLE_PATH | AAI_BUNDLE_URL / AAI_BUNDLE_SHA256 /
+ * AAI_AGENT_ENV_PATH) plus the token-gated `/manage/*` HTTP surface. Reported
+ * by `GET /manage/status`. Agent sandboxes run the harness image PINNED at
  * deploy time, so the host may be newer than this harness — bump this on any
  * change to the surface, and keep host-side consumers tolerant of older
  * versions (additive changes only).
+ *
+ * v2 added `AAI_BUNDLE_URL` beside `AAI_BUNDLE_PATH` — the guest fetches its
+ * own bundle from a signed Storage URL instead of the platform reading it and
+ * writing it into the sandbox. Additive, but a v1 harness reads only the path
+ * and would fail boot on a URL, and NOTHING can ask a guest its version
+ * before exec. So the host decides by comparing the deploy's pinned harness
+ * image against the one it builds (`guestUnderstandsBundleUrl` in
+ * aai-server/sandbox-vm.ts) — this constant is the record of why that check
+ * exists, not the mechanism.
  */
-export const GUEST_CONTRACT_VERSION = 1;
+export const GUEST_CONTRACT_VERSION = 2;
+
+/**
+ * Wall-clock cap on fetching the worker bundle from `AAI_BUNDLE_URL`. Bounded
+ * well under the host's own readiness budget (`AGENT_HEALTH_TIMEOUT_MS`, 120s)
+ * so a stalled fetch reports ITSELF on stderr rather than surfacing as an
+ * anonymous readiness timeout on the host side.
+ */
+export const BUNDLE_FETCH_TIMEOUT_MS = 60_000;
 
 /**
  * Agent-mode idle self-exit: with zero live sessions for this long the guest

@@ -142,6 +142,17 @@ end $$;
 -- grants, so without these every filtered subscribe fails server-side with
 -- `invalid column for filter <col>` (P0001) and realtime-js retries the join
 -- forever.
+--
+-- THE GRANT IS ALSO THE SECURITY BOUNDARY: these tables carry no RLS
+-- policies, so what stops a browser subscribing to every tenant's workspace is
+-- that `anon`/`authenticated` are granted nothing here (and `aai_platform` is
+-- not a PostgREST-exposed schema). Supabase's docs assume RLS is that gate and
+-- their linter only inspects `public`, so nothing outside this repository
+-- would report a mistake — `20260807000000_platform_rls.sql` enables deny-all
+-- RLS behind this grant so that such a mistake returns zero rows instead of
+-- every row, and `platform-schema.test.ts` fails on a grant added here to
+-- `anon`, `authenticated`, or `public`. Adding one is a design change that
+-- arrives with its own policies.
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'service_role') then

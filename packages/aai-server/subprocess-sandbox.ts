@@ -61,7 +61,7 @@ import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
 import { parseSandboxLimitsFromEnv } from "./modal-sandbox-env.ts";
 import { SandboxUnavailableError } from "./sandbox-errors.ts";
 import { resolveSandboxRole, type SpawnIdentity } from "./sandbox-role.ts";
-import type { WarmHarness } from "./sandbox-vm.ts";
+import type { WarmHarness, WorkerSource } from "./sandbox-vm.ts";
 import {
   type AgentServerHandle,
   agentBootEnv,
@@ -266,8 +266,7 @@ export async function spawnSubprocessAgentServer(
   opts: {
     harnessPath: string;
     slug: string;
-    workerCode: string;
-    workerSha256: string;
+    worker: WorkerSource;
     agentEnv: Record<string, string>;
   },
   ctx: SubprocessSpawnContext = realContext(),
@@ -279,7 +278,12 @@ export async function spawnSubprocessAgentServer(
     const dir = await mkdtemp(join(tmpdir(), "aai-agent-boot-"));
     const bundlePath = join(dir, "bundle.mjs");
     const envPath = join(dir, "env.json");
-    await writeFile(bundlePath, opts.workerCode, "utf-8");
+    // Always `inline` in practice — this backend is local dev, whose blob
+    // store is a Map with no URL to hand out. The branch is here because the
+    // boot env, not this spawner, is what tells the guest where to look.
+    if (opts.worker.kind === "inline") {
+      await writeFile(bundlePath, opts.worker.code, "utf-8");
+    }
     await writeFile(envPath, JSON.stringify(opts.agentEnv), "utf-8");
 
     const port = await getFreePort();
@@ -294,8 +298,8 @@ export async function spawnSubprocessAgentServer(
       extraEnv: agentBootEnv({
         token,
         port,
-        bundlePath,
-        bundleSha256: opts.workerSha256,
+        bundle: opts.worker.kind === "url" ? { url: opts.worker.url } : { path: bundlePath },
+        bundleSha256: opts.worker.sha256,
         envPath,
       }),
     });

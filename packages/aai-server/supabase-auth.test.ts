@@ -37,46 +37,181 @@ describe("isJwtShaped", () => {
 
 describe("createSupabaseAuth", () => {
   const user = { id: "uid-1", email: "a@b.c" };
+  const JWKS_PATH = "/auth/v1/.well-known/jwks.json";
 
-  function fakeSupabase(status: number, body?: unknown) {
-    const fetchFn = vi.fn(
-      async () => new Response(body === undefined ? "{}" : JSON.stringify(body), { status }),
+  /**
+   * A fresh project URL per test. auth-js caches a project's JWKS
+   * PROCESS-WIDE, keyed by URL — which is exactly what makes local
+   * verification cheap in production, and what makes tests sharing one URL
+   * verify against whichever key the first test happened to publish.
+   */
+  let projectCount = 0;
+  const nextProjectUrl = () => {
+    projectCount += 1;
+    return `https://proj-${projectCount}.supabase.co`;
+  };
+
+  /** A signing key plus the JWKS a project would publish for it. */
+  async function signingKey(kid = "kid-1") {
+    const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, [
+      "sign",
+      "verify",
+    ]);
+    const jwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
+    return {
+      privateKey: pair.privateKey,
+      kid,
+      jwks: { keys: [{ ...jwk, kid, alg: "ES256", use: "sig" }] },
+    };
+  }
+
+  /**
+   * A real ES256-signed access token, the shape Supabase issues on a project
+   * with asymmetric JWT signing keys. Signed for real so the verification
+   * under test is real: a stub would pass whatever it was handed.
+   */
+  async function signToken(
+    key: Awaited<ReturnType<typeof signingKey>>,
+    claims: Record<string, unknown>,
+    issuer = "https://proj.supabase.co",
+  ): Promise<string> {
+    const seg = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+    const now = Math.floor(Date.now() / 1000);
+    const input = `${seg({ alg: "ES256", typ: "JWT", kid: key.kid })}.${seg({
+      iss: `${issuer}/auth/v1`,
+      aud: "authenticated",
+      role: "authenticated",
+      iat: now,
+      exp: now + 3600,
+      ...claims,
+    })}`;
+    const signature = await crypto.subtle.sign(
+      { name: "ECDSA", hash: "SHA-256" },
+      key.privateKey,
+      new TextEncoder().encode(input),
     );
+    return `${input}.${Buffer.from(signature).toString("base64url")}`;
+  }
+
+  /** Routes the two endpoints auth-js may reach: JWKS discovery, and /user. */
+  function fakeSupabase(opts: {
+    jwks?: unknown;
+    userStatus?: number;
+    userBody?: unknown;
+    jwksStatus?: number;
+    jwksThrows?: boolean;
+    url?: string;
+  }) {
+    const fetchFn = vi.fn(async (input: unknown) => {
+      const requested = String(input);
+      if (requested.includes(".well-known/jwks.json")) {
+        if (opts.jwksThrows) throw new TypeError("fetch failed");
+        return new Response(JSON.stringify(opts.jwks ?? { keys: [] }), {
+          status: opts.jwksStatus ?? 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(opts.userBody === undefined ? "{}" : JSON.stringify(opts.userBody), {
+        status: opts.userStatus ?? 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    const url = opts.url ?? nextProjectUrl();
     const auth = createSupabaseAuth({
-      supabaseUrl: "https://proj.supabase.co/",
+      supabaseUrl: `${url}/`,
       supabasePublishableKey: "sb_publishable_test",
       fetchFn: fetchFn as unknown as typeof fetch,
     });
-    return { auth, fetchFn };
+    return { auth, fetchFn, url };
   }
 
-  test("resolves a valid token to its user and caches the answer", async () => {
-    const { auth, fetchFn } = fakeSupabase(200, user);
-    expect(await auth.verifyAccessToken("tok")).toEqual(user);
-    expect(await auth.verifyAccessToken("tok")).toEqual(user);
-    expect(fetchFn).toHaveBeenCalledTimes(1);
-    // Trailing slash is stripped; the publishable key and bearer both ride along.
+  const requestedUser = (fetchFn: { mock: { calls: unknown[][] } }) =>
+    fetchFn.mock.calls.filter(([input]) => String(input).endsWith("/auth/v1/user"));
+
+  // ── The hot path: local signature verification ────────────────────────────
+
+  test("verifies a token's signature against the project JWKS, no /user call", async () => {
+    const key = await signingKey();
+    const { auth, fetchFn, url } = fakeSupabase({ jwks: key.jwks });
+    const token = await signToken(key, { sub: user.id, email: user.email }, url);
+
+    expect(await auth.verifyAccessToken(token)).toEqual(user);
+    // The whole point of preferring getClaims: the Auth server is never asked.
+    expect(requestedUser(fetchFn)).toEqual([]);
+    expect(fetchFn.mock.calls.some(([input]) => String(input).endsWith(JWKS_PATH))).toBe(true);
+  });
+
+  test("rejects a token signed by a key the project does not publish", async () => {
+    // The assertion that makes the one above mean something: the verification
+    // is a real signature check, not a decode.
+    const projectKey = await signingKey();
+    const attackerKey = await signingKey(projectKey.kid);
+    const { auth, url } = fakeSupabase({ jwks: projectKey.jwks });
+    const forged = await signToken(attackerKey, { sub: "someone-else" }, url);
+
+    expect(await auth.verifyAccessToken(forged)).toBeNull();
+  });
+
+  test("rejects an expired token", async () => {
+    const key = await signingKey();
+    const { auth, url } = fakeSupabase({ jwks: key.jwks });
+    const past = Math.floor(Date.now() / 1000) - 60;
+    const token = await signToken(key, { sub: user.id, exp: past, iat: past - 3600 }, url);
+
+    expect(await auth.verifyAccessToken(token)).toBeNull();
+  });
+
+  test("caches both answers, so a repeat costs no verification at all", async () => {
+    const key = await signingKey();
+    const { auth, fetchFn, url } = fakeSupabase({ jwks: key.jwks });
+    const token = await signToken(key, { sub: user.id, email: user.email }, url);
+
+    expect(await auth.verifyAccessToken(token)).toEqual(user);
+    const afterFirst = fetchFn.mock.calls.length;
+    expect(await auth.verifyAccessToken(token)).toEqual(user);
+    expect(await auth.verifyAccessToken("not.a.jwt")).toBeNull();
+    expect(await auth.verifyAccessToken("not.a.jwt")).toBeNull();
+    expect(fetchFn.mock.calls.length).toBe(afterFirst);
+  });
+
+  test("an unreachable Supabase throws rather than signing the user out", async () => {
+    // A rejected token and an unreachable JWKS endpoint are opposite answers,
+    // and only one of them should end a session. This is also the one failure
+    // that must not be cached as a rejection.
+    const key = await signingKey();
+    const { auth, url } = fakeSupabase({ jwks: key.jwks, jwksThrows: true });
+    const token = await signToken(key, { sub: user.id }, url);
+
+    await expect(auth.verifyAccessToken(token)).rejects.toThrow(/Supabase auth verification/);
+  });
+
+  // ── The account routes: server-verified, uncached ─────────────────────────
+
+  test("the fresh check asks the Auth server every time", async () => {
+    // Pinned URL: this test asserts the exact endpoint and headers.
+    const { auth, fetchFn } = fakeSupabase({ userBody: user, url: "https://proj.supabase.co" });
+    expect(await auth.verifyAccessTokenFresh("tok")).toEqual(user);
+    expect(await auth.verifyAccessTokenFresh("tok")).toEqual(user);
+    // Uncached on purpose: its whole job is to see a revoked session at once.
+    expect(requestedUser(fetchFn)).toHaveLength(2);
     const [url, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+    // Trailing slash is stripped; the publishable key and bearer both ride along.
     expect(url).toBe("https://proj.supabase.co/auth/v1/user");
     expect(new Headers(init.headers).get("Authorization")).toBe("Bearer tok");
     expect(new Headers(init.headers).get("apikey")).toBe("sb_publishable_test");
   });
 
-  test("401 resolves null (expired session), and negative answers cache too", async () => {
-    const { auth, fetchFn } = fakeSupabase(401);
-    expect(await auth.verifyAccessToken("expired")).toBeNull();
-    expect(await auth.verifyAccessToken("expired")).toBeNull();
-    expect(fetchFn).toHaveBeenCalledTimes(1);
-  });
-
-  test("a 5xx throws — Supabase being down is not a sign-out", async () => {
-    const { auth } = fakeSupabase(503);
-    await expect(auth.verifyAccessToken("tok")).rejects.toThrow(/503/);
-  });
-
-  test("a 200 with no user id resolves null", async () => {
-    const { auth } = fakeSupabase(200, { email: "a@b.c" });
-    expect(await auth.verifyAccessToken("tok")).toBeNull();
+  test("the fresh check reports 401 as null and 5xx as a throw", async () => {
+    expect(
+      await fakeSupabase({ userStatus: 401 }).auth.verifyAccessTokenFresh("expired"),
+    ).toBeNull();
+    await expect(
+      fakeSupabase({ userStatus: 503 }).auth.verifyAccessTokenFresh("tok"),
+    ).rejects.toThrow(/503/);
+    // A 200 naming no user is not a session either.
+    expect(
+      await fakeSupabase({ userBody: { email: "a@b.c" } }).auth.verifyAccessTokenFresh("tok"),
+    ).toBeNull();
   });
 });
 
