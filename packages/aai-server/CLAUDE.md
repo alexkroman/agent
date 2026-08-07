@@ -36,7 +36,9 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   `packages/aai-guest/CLAUDE.md`
 - `modal_deploy.py` — Modal deployment of the agent service
   (`@modal.web_server` wrapping the node process);
-  `pnpm --filter aai-server deploy:modal`
+  `pnpm --filter aai-server deploy:modal`. The image recipe itself is
+  `scripts/modal_image.py` — see "The image is layered dependencies-first"
+  below
 - `platform-lock.ts` — cross-replica per-slug mutation lock (see "Stateless
   server" below): a Postgres ADVISORY lock on a reserved connection in
   production, the in-process keyed lock in dev/tests
@@ -1145,6 +1147,51 @@ stored env at sandbox creation time and kept host-side only.
   studio project creation seeds it from the creating chat prompt
   (`projectBaseFromPrompt`); an unusable base falls back to `human-id`
   words. Clients never generate names — creation always hits the server.
+
+### The image is layered dependencies-first (`scripts/modal_image.py`)
+
+The service image installs, then builds, and the two halves have deliberately
+different cache keys:
+
+1. **Install inputs only** — the lockfile, `pnpm-workspace.yaml`, `.npmrc`,
+   and every workspace manifest, staged into a temp dir by
+   `_stage_install_inputs`.
+2. `pnpm install --frozen-lockfile`.
+3. **The source tree** (`add_local_dir(REPO_ROOT, …)`), which merges into the
+   installed `/app` rather than replacing it — `BUILD_IGNORE` keeps
+   `node_modules` out of the copy. `ASSERT_INSTALL_SURVIVED` runs before the
+   build so that assumption fails as one sentence at image build, not as a
+   missing module twelve steps later.
+4. `BUILD_COMMAND`.
+
+It used to be one `add_local_dir` for the whole repo followed by install and
+build in a single step, so **any** file change — a test, a doc — invalidated
+the install and refetched the entire dependency tree. The win is not deploy
+latency (`modal deploy` builds before any traffic moves, and under Modal's
+rolling strategy the old containers serve throughout); it is the **cold
+start**, where a container on a worker that already holds the install layer
+pulls only what changed.
+
+**The manifests are NORMALIZED, and without that the split would be pure
+ceremony.** A layer's cache key is the bytes that go into it, and a
+package.json's `version` moves on every changeset release — which is exactly
+and only when a deploy happens (`deploy.yml` fires on a version bump). Copied
+verbatim, the install layer would therefore miss on every production deploy.
+`INSTALL_MANIFEST_FIELDS` is a whitelist of the fields install actually reads;
+`version` and `scripts` are dropped, so the layer survives a release and
+misses only on a real dependency change. The full manifests still land in the
+source layer, so the built image carries each package's true version.
+
+Dropping `version` is safe **because every workspace dependency here is
+`workspace:*`**, which matches any version. A `workspace:^` anywhere would
+silently break that, so `modal-image-inputs.test.ts` asserts it — along with
+the two other ways this drifts: a workspace glob added to
+`pnpm-workspace.yaml` but not to `WORKSPACE_MANIFEST_GLOBS`, and a manifest
+that grows a dependency-declaring field (`overrides`, `resolutions`,
+`optionalDependencies`) the whitelist does not carry. The first fails loudly
+at image build as a lockfile mismatch; the second does **not** — the install
+succeeds and merely resolves a different tree than the source layer expects,
+which is why it needs a test rather than a comment.
 
 ### No warm pool — every spawn boots from the snapshot image
 

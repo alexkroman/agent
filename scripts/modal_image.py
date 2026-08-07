@@ -20,9 +20,12 @@ back.
 
 import atexit
 import contextlib
+import json
 import os
+import shutil
 import signal
 import subprocess
+import tempfile
 from pathlib import Path
 
 import modal
@@ -65,6 +68,95 @@ BUILD_COMMAND = (
 )
 
 GUEST_HARNESS_PATH = "/app/packages/aai-guest/dist/harness.mjs"
+
+# ── The install layer's inputs ───────────────────────────────────────────────
+#
+# `pnpm install` needs the lockfile, the workspace globs, and every workspace
+# manifest — and nothing else in the repo. Copying it AHEAD of the source is
+# what lets Modal reuse the installed `node_modules` across deploys instead of
+# refetching the whole dependency tree every time a `.ts` file changes.
+#
+# The manifests are NORMALIZED rather than copied verbatim, and that is the
+# part that makes the split worth anything. This layer's cache key is the
+# content of what goes into it, and a package.json's `version` moves on EVERY
+# release — which is precisely when a deploy happens, since
+# `.github/workflows/deploy.yml` fires on a version bump and nothing else. Copied
+# as-is, the install layer would therefore miss on every single production
+# deploy and the split would be pure ceremony. Stripped to the fields install
+# actually reads, the layer survives a release and misses only when a
+# DEPENDENCY really changed.
+#
+# Dropping `version` is safe here because every workspace dependency in this
+# repo is `workspace:*` — a spec that matches any version, so nothing resolves
+# differently without it. A `workspace:^` anywhere would break that assumption.
+# The real manifests land in the source layer below, so the built image still
+# has each package's true version; only the cache key is normalized.
+INSTALL_MANIFEST_FIELDS = (
+    "name",
+    "private",
+    "packageManager",
+    "engines",
+    "dependencies",
+    "devDependencies",
+    "peerDependencies",
+    "peerDependenciesMeta",
+    "optionalDependencies",
+    "pnpm",
+)
+
+# Copied byte-for-byte: these ARE the dependency graph (and `.npmrc` carries
+# `verify-deps-before-run=false`, which the build commands below rely on once
+# the source layer replaces the normalized manifests).
+INSTALL_ROOT_FILES = ("pnpm-lock.yaml", "pnpm-workspace.yaml", ".npmrc")
+
+# Workspace members, mirroring `pnpm-workspace.yaml`. A new glob there needs a
+# matching entry here or its package is missing at install time — which
+# `--frozen-lockfile` reports as a lockfile mismatch, loudly, at image build.
+WORKSPACE_MANIFEST_GLOBS = ("packages/*/package.json", "docs/package.json")
+
+
+def _stage_install_inputs() -> Path:
+    """Materialize the normalized install inputs into a temp dir.
+
+    Returned as a directory rather than a list of files because Modal's
+    `add_local_dir` preserves relative layout, and pnpm needs each manifest at
+    its real workspace path. The directory has to outlive this call — Modal
+    builds the image lazily, at `modal deploy`, not here — so it is cleaned up
+    at process exit instead of by a context manager.
+    """
+    staged = Path(tempfile.mkdtemp(prefix="aai-modal-install-"))
+    atexit.register(shutil.rmtree, staged, True)
+
+    for name in INSTALL_ROOT_FILES:
+        shutil.copyfile(REPO_ROOT / name, staged / name)
+
+    manifests = [Path("package.json")]
+    for pattern in WORKSPACE_MANIFEST_GLOBS:
+        manifests.extend(sorted(p.relative_to(REPO_ROOT) for p in REPO_ROOT.glob(pattern)))
+
+    for rel in manifests:
+        source = json.loads((REPO_ROOT / rel).read_text())
+        kept = {k: source[k] for k in INSTALL_MANIFEST_FIELDS if k in source}
+        destination = staged / rel
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        # Sorted keys and a fixed indent: the layer's cache key is this file's
+        # bytes, so reordering a manifest by hand must not invalidate it.
+        destination.write_text(f"{json.dumps(kept, indent=2, sort_keys=True)}\n")
+
+    return staged
+
+
+# Between the source copy and the build: `add_local_dir` is a COPY into an
+# existing `/app`, so the installed tree merges rather than being replaced (the
+# source copy carries no `node_modules` — see BUILD_IGNORE). If that ever stops
+# holding, the build fails a dozen confusing steps later on a missing module;
+# this turns it into one sentence, at image build time, where production has
+# not moved yet.
+ASSERT_INSTALL_SURVIVED = (
+    "test -d /app/node_modules/.pnpm || "
+    '{ echo "The source layer clobbered the install layer — see _stage_install_inputs" >&2; '
+    "exit 1; }"
+)
 
 # How long a container stop waits for the node child to finish its own
 # shutdown before force-killing it. Shutdown is retire-and-exit (one drain
@@ -173,12 +265,16 @@ def build_image(*, port: int, extra_env: dict[str, str] | None = None):
         # harness image already depends on that (see the `RUN npm install` in
         # aai-server/modal-harness-image.ts), so this adds no new assumption.
         .run_commands(f"npm install --global --no-audit --no-fund pnpm@{PNPM_VERSION}")
-        .add_local_dir(REPO_ROOT, remote_path="/app", copy=True, ignore=BUILD_IGNORE)
+        # Dependencies BEFORE source, so an ordinary code change reuses the
+        # installed tree instead of refetching it — see _stage_install_inputs.
+        # The win is on the cold start, not the deploy: `modal deploy` builds
+        # the image before any traffic moves, but a container starting on a
+        # worker that already holds this layer pulls only what changed.
+        .add_local_dir(_stage_install_inputs(), remote_path="/app", copy=True)
         .workdir("/app")
-        .run_commands(
-            "pnpm install --frozen-lockfile --ignore-scripts --prod=false",
-            BUILD_COMMAND,
-        )
+        .run_commands("pnpm install --frozen-lockfile --ignore-scripts --prod=false")
+        .add_local_dir(REPO_ROOT, remote_path="/app", copy=True, ignore=BUILD_IGNORE)
+        .run_commands(ASSERT_INSTALL_SURVIVED, BUILD_COMMAND)
         .env(
             {
                 "NODE_ENV": "production",
