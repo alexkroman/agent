@@ -157,7 +157,14 @@ segmented control switches between — `preview.tsx`, `code-view.tsx`,
   asks the unauthenticated agent health route (existence only — a booting
   sandbox is the framed page's own business, its client re-brokers) and
   keeps its own "Starting your preview" screen up until the page is really
-  there, re-probing every few seconds. Readiness is LATCHED per slug:
+  there, re-probing every few seconds. **The probe carries its own deadline**
+  (`AGENT_PAGE_PROBE_TIMEOUT_MS`), for the same reason the gate reads do and
+  with a failure mode they don't have: the loop re-arms its timer from the
+  *settled* promise, so a request that hangs rather than fails doesn't miss
+  one tick — it ends the polling for good, and the pane sits on "Starting
+  your preview" forever even after the preview deployed. It is short (5s)
+  because nobody waits on a liveness probe: a timeout already means "not
+  ready yet", which is the path that re-arms. Readiness is LATCHED per slug:
   nothing re-probes a page that answered once, because dropping back to the
   placeholder would unmount the iframe and kill any voice session inside it
   — a new deploy still reaches the frame through the `previewVersion` key.
@@ -195,6 +202,23 @@ segmented control switches between — `preview.tsx`, `code-view.tsx`,
   comes back); and a **failed turn drains the same way**, because an `error`
   status never flushes while every submit joins a non-empty queue — parking it
   there wedges the composer permanently.
+
+- **Requests are deadlined; the SSE streams deliberately are NOT.** Every
+  one-shot request that a screen waits on carries `AbortSignal.timeout` (the
+  gate reads above, the broker call, the preview probe), because a browser
+  fetch has none of its own and a hung request is not a failure — it never
+  settles, so no error path, retry, or backoff ever runs. `watchEventStream`
+  (`event-stream.ts`) is the one place that must not have one: a healthy
+  stream IS a request that stays open indefinitely and says nothing for
+  minutes, so no duration separates it from a hung one. Its liveness comes
+  from the other end — the server pings, a dead connection surfaces as the
+  read ending, and that reaches `onDown` → backoff resubscribe.
+- **`api.ts` is REST plumbing only.** The SSE transport lives in
+  `event-stream.ts` and `ApiError` in `api-error.ts` (its own module so the
+  stream can throw it without importing `api.ts`, which imports the stream
+  back); `api.ts` re-exports both, so importers are unaffected. The split
+  was forced by the 500-line source cap and is the right seam anyway —
+  `use-event-stream.ts` already paired with the stream half alone.
 
 ## Surviving a platform deploy (`stale-build.ts`)
 

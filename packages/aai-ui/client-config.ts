@@ -35,6 +35,36 @@ export function buildAgentUrl(platformUrl: string, endpointPath: string): URL {
 const AGENT_DEFAULT: ClientConfigResponse = {};
 
 /**
+ * Per-attempt deadline for the `client-config` lookup.
+ *
+ * A request issued while the platform is restarting or saturated can HANG
+ * rather than fail — the proxy holds the socket open — and a browser fetch
+ * has no timeout of its own. Every other failure here is already handled
+ * (`null`, then the same-origin fallback), but a hang is not a failure: the
+ * promise simply never settles.
+ *
+ * That is unrecoverable rather than merely slow, because this lookup runs
+ * inside the session's WebSocket URL *provider*. partysocket awaits the
+ * provider under `_connectLock` and arms its own `connectionTimeout` only
+ * AFTER the URL resolves, so a hung lookup means no socket is ever
+ * constructed, no `error`/`close` ever fires, and none of the 10 reconnect
+ * attempts ever happen — the session sits on "connecting" forever, and stays
+ * there long after the server is back. Reproduced: zero sockets opened.
+ *
+ * A timed-out attempt therefore degrades exactly like any other failed one —
+ * `null`, so `serverIsBroker` stays unlatched and the attempt falls through
+ * to the same-origin `websocket` path, whose failure re-enters the normal
+ * backoff and re-fetches this on the next attempt.
+ *
+ * Sized well above the real work (one same-origin JSON GET that reads the
+ * agent's row) and well under a user's patience — the same 10s the studio's
+ * gating reads use for the identical hazard.
+ *
+ * @internal
+ */
+export const CLIENT_CONFIG_ATTEMPT_TIMEOUT_MS = 10_000;
+
+/**
  * Fetch the agent's client config, reporting `null` when the lookup did not
  * produce an answer (network error, non-2xx, unparsable body).
  *
@@ -57,7 +87,11 @@ export async function loadClientConfig(
   const doFetch =
     fetchFn ?? ((input: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(input, init));
   try {
-    const resp = await doFetch(buildAgentUrl(platformUrl, CLIENT_CONFIG_PATH).href);
+    const resp = await doFetch(buildAgentUrl(platformUrl, CLIENT_CONFIG_PATH).href, {
+      // Without this a hung lookup wedges the session permanently — see
+      // CLIENT_CONFIG_ATTEMPT_TIMEOUT_MS.
+      signal: AbortSignal.timeout(CLIENT_CONFIG_ATTEMPT_TIMEOUT_MS),
+    });
     if (!resp.ok) return null;
     const parsed = ClientConfigResponseSchema.safeParse(await resp.json());
     return parsed.success ? parsed.data : null;

@@ -139,6 +139,35 @@ floor) and reports once via `VoiceIOOptions.onMicSilent`. It disarms on the
 first real sample, so it costs nothing after the window and cannot fire
 mid-session.
 
+## Surviving a platform restart (`client-config.ts`)
+
+**Every request the session makes needs a deadline of its own, because a
+hang is not a failure.** A request issued while the platform is restarting or
+saturated can hang rather than fail — the proxy holds the socket open — and a
+browser fetch has no timeout of its own, so the promise simply never settles.
+Every *failure* path in `loadClientConfig` was already handled (`null`, then
+the same-origin fallback); a hang reached none of them.
+
+That is unrecoverable rather than merely slow, and the reason is the call
+site: the lookup runs inside the session's WebSocket **URL provider**
+(`currentWsUrl`, re-evaluated per attempt so reconnects land on the
+replacement sandbox). partysocket awaits that provider under `_connectLock`
+and arms its own `connectionTimeout` only AFTER the URL resolves — so a hung
+lookup means no socket is ever constructed, no `error`/`close` ever fires,
+and none of the 10 reconnect attempts ever happen. Measured with a hung
+`client-config`: **zero sockets opened**, session pinned on "connecting"
+forever, staying there long after the server came back. Nothing downstream
+can time it out, and the state it wedges in is the one that looks healthy.
+
+So `CLIENT_CONFIG_ATTEMPT_TIMEOUT_MS` (10s — the same figure the studio's
+gating reads use for the identical hazard) makes a timed-out attempt degrade
+exactly like every other failed one: `null`, so `serverIsBroker` stays
+unlatched (see `loadClientConfig`'s doc for why latching on a failure is its
+own bug) and the attempt falls through to the same-origin `websocket` path,
+whose failure re-enters the normal backoff and re-fetches on the next
+attempt. `fetchClientConfig` inherits it, which also keeps a hung lookup off
+the default client's pre-connection name/greeting render.
+
 ## Fuzz harnesses
 
 `packages/aai-ui/fuzz-*.test.ts` drive the browser session's four

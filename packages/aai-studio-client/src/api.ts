@@ -104,6 +104,16 @@ export const ACCOUNT_ATTEMPT_TIMEOUT_MS = 10_000;
  */
 export const AUTH_CONFIG_ATTEMPT_TIMEOUT_MS = 10_000;
 
+/**
+ * Per-attempt deadline for the Preview pane's agent-page probe. The same
+ * hang as above, with a failure mode the others don't have: the probe is a
+ * POLL that re-arms its timer from the SETTLED promise, so a request that
+ * never settles doesn't miss one tick — it ends the loop, leaving the pane
+ * on "Starting your preview" forever. Short, because a timeout already means
+ * "not ready yet" (the rejection path), which is what re-arms the poll.
+ */
+export const AGENT_PAGE_PROBE_TIMEOUT_MS = 5000;
+
 /** Throw an {@link ApiError} on non-2xx responses, else parse the JSON body. */
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -217,10 +227,14 @@ export const api = {
    * sandbox is the page's own business — its client re-brokers).
    *
    * A rejected fetch reads as "not there" rather than throwing: the caller
-   * polls, and there is nothing to do about an offline browser here.
+   * polls, and there is nothing to do about an offline browser here — a hung
+   * one must reach that same path or it takes the poll loop with it (see
+   * {@link AGENT_PAGE_PROBE_TIMEOUT_MS}).
    */
   agentPageReady: (slug: string): Promise<boolean> =>
-    fetch(`/${encodeURIComponent(slug)}/health`).then(
+    fetch(`/${encodeURIComponent(slug)}/health`, {
+      signal: AbortSignal.timeout(AGENT_PAGE_PROBE_TIMEOUT_MS),
+    }).then(
       (res) => res.ok,
       () => false,
     ),
