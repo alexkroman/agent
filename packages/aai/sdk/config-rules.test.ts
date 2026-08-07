@@ -140,37 +140,40 @@ describe("toAgentConfig — pipeline voice tuning", () => {
       ...pipelineFields,
       minBargeInWords: 3,
       interruptionMinDurationMs: 500,
-      holdPhrase: "Just a sec.",
+      deadAirCoverMs: 2500,
       errorPhrase: "My brain went offline.",
-      falseInterruptionTimeoutMs: 1500,
+      resumeFalseInterruption: false,
+      preemptiveGeneration: true,
     });
+    expect(parsed.preemptiveGeneration).toBe(true);
     expect(parsed.minBargeInWords).toBe(3);
     expect(parsed.interruptionMinDurationMs).toBe(500);
-    expect(parsed.holdPhrase).toBe("Just a sec.");
+    expect(parsed.deadAirCoverMs).toBe(2500);
     expect(parsed.errorPhrase).toBe("My brain went offline.");
-    expect(parsed.falseInterruptionTimeoutMs).toBe(1500);
+    expect(parsed.resumeFalseInterruption).toBe(false);
   });
 
   test("accepts the documented 'disable' values (0 timers, empty phrases)", () => {
     const parsed = config({
       ...pipelineFields,
       interruptionMinDurationMs: 0,
-      holdPhrase: "",
+      deadAirCoverMs: 0,
       errorPhrase: "",
-      falseInterruptionTimeoutMs: 0,
+      resumeFalseInterruption: false,
     });
     expect(parsed.interruptionMinDurationMs).toBe(0);
-    expect(parsed.holdPhrase).toBe("");
+    expect(parsed.deadAirCoverMs).toBe(0);
     expect(parsed.errorPhrase).toBe("");
-    expect(parsed.falseInterruptionTimeoutMs).toBe(0);
+    expect(parsed.resumeFalseInterruption).toBe(false);
   });
 
   test.each([
     ["minBargeInWords", 2],
     ["interruptionMinDurationMs", 500],
-    ["holdPhrase", "One sec."],
+    ["deadAirCoverMs", 2500],
     ["errorPhrase", "Something broke."],
-    ["falseInterruptionTimeoutMs", 1500],
+    ["resumeFalseInterruption", false],
+    ["preemptiveGeneration", true],
   ])("rejects %s in s2s mode", (field, value) => {
     expect(() => config({ s2s: assemblyAIS2s(), [field]: value })).toThrow(
       new RegExp(`${field} requires pipeline mode`),

@@ -215,6 +215,70 @@ describe("PipelineTransport", () => {
       expect(llm.calls.length).toBe(1);
       await t.stop();
     });
+
+    // Hitting the cap used to end the turn wherever it landed — including
+    // straight after a tool result, with nothing said. The reply then
+    // completed "successfully" with an empty transcript, so `errorPhrase`
+    // never fired either and the caller just heard the agent stop. `maxSteps`
+    // now bounds TOOL steps, and the step after the budget is forced to
+    // `toolChoice: "none"` so the model has to speak. This is what makes a low
+    // default (3) safe; the two must not be changed apart.
+    test("a turn that exhausts maxSteps spends one more step answering, tools off", async () => {
+      const toolStep: ScriptedPart[] = [
+        {
+          type: "tool-call",
+          toolCallId: "tc-1",
+          toolName: "get_weather",
+          input: JSON.stringify({ city: "SF" }),
+        },
+      ];
+      const llm = createFakeLanguageModel({
+        // Three tool-calling steps offered, but only two are affordable at
+        // maxSteps=2 — the model would keep going if nothing stopped it.
+        steps: [toolStep, toolStep, toolStep, [{ type: "text", text: "It's sunny." }]],
+      });
+      const { opts, stt, callbacks } = makeOpts({
+        llm,
+        maxSteps: 2,
+        executeTool: vi.fn(async () => "sunny"),
+        toolSchemas: [
+          {
+            type: "function" as const,
+            name: "get_weather",
+            description: "Look up the weather.",
+            parameters: { type: "object" as const, properties: {} },
+          },
+        ],
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+      stt.last()?.fireFinal("how's the weather?");
+      await vi.waitFor(() => {
+        expect(callbacks.onReplyDone).toHaveBeenCalled();
+      });
+      // Two tool steps, then exactly one forced answer step — not a third
+      // tool step, and not silence.
+      expect(llm.calls.length).toBe(3);
+      expect(llm.calls[0]?.toolChoice).not.toEqual({ type: "none" });
+      expect(llm.calls[1]?.toolChoice).not.toEqual({ type: "none" });
+      expect(llm.calls[2]?.toolChoice).toEqual({ type: "none" });
+      await t.stop();
+    });
+
+    test("a turn well inside the budget never reaches the forced answer step", async () => {
+      // p50 is one step, so the common case must pay nothing for the above.
+      const llm = createFakeLanguageModel({ script: [{ type: "text", text: "Sure." }] });
+      const { opts, stt, callbacks } = makeOpts({ llm, maxSteps: 3 });
+      const t = createPipelineTransport(opts);
+      await t.start();
+      stt.last()?.fireFinal("hi");
+      await vi.waitFor(() => {
+        expect(callbacks.onReplyDone).toHaveBeenCalled();
+      });
+      expect(llm.calls.length).toBe(1);
+      expect(llm.calls[0]?.toolChoice).not.toEqual({ type: "none" });
+      await t.stop();
+    });
   });
 
   describe("stop()", () => {

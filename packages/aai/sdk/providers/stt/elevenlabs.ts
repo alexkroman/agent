@@ -47,3 +47,22 @@ export type ElevenLabsProvider = SttProvider & {
 export function elevenlabs(opts: ElevenLabsOptions = {}): ElevenLabsProvider {
   return { kind: ELEVENLABS_KIND, options: { ...opts } };
 }
+
+/** Streaming model used when the descriptor names none. */
+export const ELEVENLABS_DEFAULT_MODEL = "scribe_v2_realtime";
+
+/**
+ * The settings this stage will actually run with — the descriptor's own
+ * options with every host-side default filled in. Shared by the opener and
+ * the runtime's "Session mode resolved" log.
+ */
+export function resolveElevenLabsSettings(opts: ElevenLabsOptions): {
+  model: string;
+  languageCode?: string;
+} {
+  return {
+    model: opts.model ?? ELEVENLABS_DEFAULT_MODEL,
+    // Omitted unless set: absent means auto-detect, which is not "English".
+    ...(opts.languageCode ? { languageCode: opts.languageCode } : {}),
+  };
+}

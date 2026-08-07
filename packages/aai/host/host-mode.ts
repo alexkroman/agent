@@ -42,6 +42,18 @@ import { type SessionWebSocket, safeSend } from "./ws-handler.ts";
 const DEFAULT_HOST_MAX_STEPS = 30;
 
 /**
+ * Translate `HostConfig.audioLeadMs` into the session-start override.
+ *
+ * Absent means "leave the pacer's own default alone", so the field is OMITTED
+ * rather than set to a number here — passing one would fork the default.
+ */
+function hostAudioLead(declared: number | null | undefined): { audioLeadMs?: number } {
+  if (declared === null) return { audioLeadMs: UNPACED_AUDIO_LEAD_MS };
+  if (declared === undefined) return {};
+  return { audioLeadMs: declared };
+}
+
+/**
  * Whether host mode is permitted for this environment.
  *
  * Opt-in: host mode is enabled only by an explicit `AAI_ALLOW_HOST` of
@@ -366,16 +378,24 @@ export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOpt
     });
 
     log.info("host-mode session starting", { tools: host.tools.length });
-    // A host-mode client is programmatic by construction — it supplies the
-    // agent definition and executes the tools, and browsers cannot even open
-    // one (the platform requires an `Authorization` header on the upgrade). It
-    // therefore owns its own playback clock, so relaying audio at the wall
-    // clock's pace only starves it: a harness whose timeline advances per
-    // processed tick sees the agent trail off mid-sentence and answers as if
-    // the line went quiet. Overridable — a caller that really does play in real
-    // time can set its own lead.
+    // Pacing is the CLIENT'S declaration, and it defaults to PACED.
+    //
+    // Unpaced used to be the blanket default, reasoning that a host-mode client
+    // is programmatic and therefore keeps its own clock. That conflates two
+    // things: being programmatic does not mean consuming FASTER than the wall
+    // clock, and only a client whose timeline runs ahead is starved by pacing.
+    // For one that drains at 1x it is destructive — in S2S mode the service
+    // synthesises a whole reply server-side and it arrives in one burst, so
+    // unpaced relay grew the tau2 harness's backlog to MINUTES, and that
+    // harness discards its buffer on barge-in: 36% of all agent speech was
+    // destroyed unheard. Pacing keeps the backlog on this side, where
+    // `PacedAudioSink.clear()` drops it on barge-in instead.
+    //
+    // So the client says. Omitted means the pacer's own real-time default (the
+    // field is omitted rather than set, so nothing forks that default); `null`
+    // means unpaced, for a harness that genuinely steps faster than real time.
     runtime.startSession(ws, {
-      audioLeadMs: UNPACED_AUDIO_LEAD_MS,
+      ...hostAudioLead(host.audioLeadMs),
       ...opts.startOpts,
     });
   }

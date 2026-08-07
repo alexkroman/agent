@@ -18,7 +18,7 @@
  * export default agent({
  *   name: "Jane",
  *   stt: assemblyAIStt({ model: "universal-3-5-pro" }),
- *   llm: assemblyAILlm({ model: "gpt-5.5" }),
+ *   llm: assemblyAILlm({ model: "gpt-5.6-terra" }),
  *   tts: assemblyAITts({ voice: "jane" }),
  * });
  * ```
@@ -109,16 +109,29 @@ export function assemblyAIPipeline(opts: AssemblyAIPipelineOptions = {}): {
     // content with no tool call yet, so the wait was the model thinking, not
     // work being done.
     //
-    // Nothing in the pipeline can cover that window: `holdPhrase` fires when a
-    // turn OPENS with a tool call and the dead-air cover measures tool
-    // execution, so both sit downstream of the first token. One of those gaps
-    // was the hold phrase itself ("One moment.") arriving 10.9s late.
+    // The dead-air cover does reach that window — it is armed as the turn's
+    // stream opens, not at the first tool call — but cover is not a substitute
+    // for a low time-to-first-token, it is a way of not sounding hung up while
+    // one elapses. The illustration is in the same run: one of those gaps was
+    // the filler itself ("One moment.", the hold phrase of the day) arriving
+    // 10.9s late.
     //
     // Safe as a default because the preset's descriptor carries the factory's
-    // own `gpt-5.5`, a GPT-5-family model that accepts the parameter; an agent
-    // overriding `llm` replaces this descriptor whole, so the parameter never
-    // reaches a model that would reject it. An agent that wants thinking depth
-    // declares its own stage (`assemblyAILlm({ model, reasoningEffort })`).
+    // own default model, which accepts the parameter; an agent overriding
+    // `llm` replaces this descriptor whole, so the parameter never reaches a
+    // model that would reject it. An agent that wants thinking depth declares
+    // its own stage (`assemblyAILlm({ model, reasoningEffort })`).
+    //
+    // On the current default (`gpt-5.6-terra`) the factory would fill in the
+    // same `"none"` on its own — terra is in TOOLS_REQUIRE_NO_REASONING, where
+    // the value is a tool-calling REQUIREMENT rather than a latency choice —
+    // so this argument is currently a backstop rather than the only thing
+    // turning reasoning off. **Keep it anyway.** That agreement is a property
+    // of the id, not of the pipeline: the default has been `gpt-5.5` and
+    // `qwen3-next-80b-a3b`, both outside the set, and under either of those
+    // this line is the whole latency guarantee — 1786ms p50 time-to-first-token
+    // on gpt-5.5's server-side reasoning default against 999ms with it off.
+    // Deleting it as redundant makes the next id change a silent regression.
     llm: assemblyAILlm({ reasoningEffort: "none", ...(region ? { region } : {}) }),
     tts: assemblyAITts(voice ? { voice } : {}),
   };

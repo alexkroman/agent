@@ -25,7 +25,7 @@
     "dev:aai-server": "pnpm --filter aai-studio-server dev",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
-    "lint:fix": "biome check --write packages/",
+    "lint:fix": "biome check --write .",
     "check": "bash scripts/check.sh",
     "docs:api": "pnpm --filter aai-docs docs",
     "check:local": "bash scripts/check.sh --local",
@@ -50,7 +50,8 @@
     "sync:guest-toolchain": "node scripts/sync-guest-toolchain.mjs",
     "release": "turbo run build && changeset publish",
     "prepare": "[ \"$(git rev-parse --git-dir 2>/dev/null)\" != \"$(git rev-parse --git-common-dir 2>/dev/null)\" ] || lefthook install --force",
-    "test:aai-studio-server": "pnpm --filter aai-studio-server test"
+    "test:aai-studio-server": "pnpm --filter aai-studio-server test",
+    "lint:scripts": "biome check scripts/"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
@@ -60,7 +61,7 @@
     "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/node": "^26.1.1",
     "@vitest/coverage-v8": "^4.1.10",
-    "citty": "^0.2.2",
+    "eventsource-parser": "^3.1.0",
     "knip": "^6.29.0",
     "lefthook": "^2.1.10",
     "markdownlint-cli2": "^0.23.1",
@@ -68,7 +69,6 @@
     "react": "^19.2.8",
     "sherif": "1.13.0",
     "syncpack": "^15.3.2",
-    "toxiproxy-node-client": "^4.1.0",
     "turbo": "^2.10.6",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
@@ -76,20 +76,5 @@
   "packageManager": "pnpm@10.29.3",
   "engines": {
     "node": ">=26 <27"
-  },
-  "pnpm": {
-    "ignoredBuiltDependencies": [
-      "esbuild",
-      "lefthook"
-    ],
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "lefthook",
-      "protobufjs"
-    ],
-    "patchedDependencies": {},
-    "overrides": {
-      "unrun": "0.2.39"
-    }
   }
 }

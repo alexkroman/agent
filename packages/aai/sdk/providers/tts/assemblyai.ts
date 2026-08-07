@@ -270,3 +270,24 @@ export function assemblyAITts(opts: AssemblyAITtsOptions = {}): AssemblyAITtsPro
     options: { ...opts, voice: opts.voice ?? ASSEMBLYAI_TTS_DEFAULT_VOICE },
   };
 }
+
+/**
+ * The settings this stage will actually run with — the descriptor's own
+ * options with every host-side default filled in. Shared by the opener and
+ * the runtime's "Session mode resolved" log.
+ *
+ * A wrong voice id is rejected IN BAND after the socket opens, so the agent
+ * reports ready and is permanently silent — which is exactly the failure that
+ * wants the resolved voice printed once at startup.
+ */
+export function resolveAssemblyAITtsSettings(opts: AssemblyAITtsOptions): {
+  voice: string;
+  language?: string;
+} {
+  return {
+    voice: opts.voice ?? ASSEMBLYAI_TTS_DEFAULT_VOICE,
+    // Omitted unless set: every voice speaks one language, so the server
+    // infers it, and a mismatched pair is worse than no hint.
+    ...(opts.language ? { language: opts.language } : {}),
+  };
+}

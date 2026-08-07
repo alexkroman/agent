@@ -48,3 +48,30 @@ export function toVercelTools(
   }
   return out;
 }
+
+/**
+ * The same tool declarations with NO `execute`, for a speculative LLM stream
+ * (preemptive generation — see `transports/pipeline-speculation.ts`).
+ *
+ * **The ABSENCE of the property is the guardrail, not a flag.** A speculation
+ * runs from an interim transcript the caller may still be revising, so it must
+ * never have a side effect; making that a runtime check would put the whole
+ * guarantee on a branch someone can invert. The AI SDK cannot continue past a
+ * tool call it has no way to execute, so a speculation is at most one step and
+ * ends at the tool boundary — there is no code path from here to
+ * {@link ExecuteTool}.
+ *
+ * The declarations must still be present and identical: the tool set is part of
+ * the request, and a speculation run without tools would be a different request
+ * from the real one, which is exactly what makes adoption illegitimate.
+ */
+export function toDeclaredTools(schemas: readonly ToolSchema[]): Record<string, Tool> {
+  const out: Record<string, Tool> = {};
+  for (const schema of schemas) {
+    out[schema.name] = tool({
+      description: schema.description,
+      inputSchema: jsonSchema(schema.parameters),
+    });
+  }
+  return out;
+}

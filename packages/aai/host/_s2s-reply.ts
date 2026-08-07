@@ -26,15 +26,41 @@
  * `interactive` diagram shows neither tool-turn reply emitting it. The service
  * matches the latter.
  *
- * `transcript.agent.delta` is documented in the events reference but **is not
- * implemented** — zero frames arrive even for a plain greeting reply that does
- * send `transcript.agent`, and it appears nowhere on the canonical page. An
- * accumulator for it was added and removed again; do not re-add one on the
- * strength of the docs alone.
+ * **`transcript.agent.delta` DOES arrive**, and it is how the tool-turn replies
+ * above get text after all. This module used to assert the opposite — "zero
+ * frames arrive even for a plain greeting reply" — and instruct against adding
+ * an accumulator. Re-measured 2026-08-06 against the live service with a
+ * standalone WebSocket client (`tau2-bench/scripts/vaapi_delta_probe.py`): a
+ * bare greeting reply, the exact case named as producing none, emits one frame
+ * per word with `start_ms`/`end_ms`. Over one 215s retail session, 511 frames
+ * across 20 replies — and **5 of those 20 replies sent deltas and never a
+ * final `transcript.agent`**, 116 words that were otherwise unrecoverable
+ * ("Let me pull up those order details for you right now."). Those are the
+ * tool-preamble turns.
+ *
+ * Two properties decide how they are used, and neither matches the docs'
+ * description of "streaming ... useful for live captioning in sync with
+ * playback":
+ *
+ * - **They arrive in a BATCH, not progressively.** Every delta for a reply
+ *   lands within 0.000-0.031s. So they are word-timing metadata for a
+ *   reply the service has already composed, not a caption feed.
+ * - **They arrive BEFORE the final** `transcript.agent` — 0.4s to 7.7s earlier.
+ *   So they are the earliest text available, which is why they are forwarded as
+ *   a partial rather than held.
+ *
+ * The accumulated text is committed as the reply's transcript only when the
+ * reply COMPLETED without a final. Never on an interrupted reply: the batch
+ * covers the whole composed reply, while `transcript.agent` with
+ * `interrupted: true` is trimmed to what was actually spoken, so committing the
+ * accumulation would put words in history the caller never heard.
  */
 
-/** How much of the agent's reply text arrived over the wire. */
-export type AgentTextKind = "final" | "none";
+/**
+ * How much of the agent's reply text arrived over the wire. `delta` means no
+ * final `transcript.agent` came, but the word deltas were accumulated into one.
+ */
+export type AgentTextKind = "final" | "delta" | "none";
 
 /** Mutable per-reply tally. Reset by {@link resetReplyAudit} on reply.started. */
 export type ReplyAudit = {
@@ -42,10 +68,18 @@ export type ReplyAudit = {
   audioBytes: number;
   sawFinal: boolean;
   sawToolCall: boolean;
+  /** Words from `transcript.agent.delta`, joined in arrival order. */
+  deltaText: string;
 };
 
 export function createReplyAudit(): ReplyAudit {
-  return { audioChunks: 0, audioBytes: 0, sawFinal: false, sawToolCall: false };
+  return {
+    audioChunks: 0,
+    audioBytes: 0,
+    sawFinal: false,
+    sawToolCall: false,
+    deltaText: "",
+  };
 }
 
 export function resetReplyAudit(audit: ReplyAudit): void {
@@ -53,6 +87,7 @@ export function resetReplyAudit(audit: ReplyAudit): void {
   audit.audioBytes = 0;
   audit.sawFinal = false;
   audit.sawToolCall = false;
+  audit.deltaText = "";
 }
 
 export function countReplyAudio(audit: ReplyAudit, byteLength: number): void {
@@ -60,8 +95,22 @@ export function countReplyAudio(audit: ReplyAudit, byteLength: number): void {
   audit.audioBytes += byteLength;
 }
 
+/**
+ * Append one word delta, returning the reply's accumulated text.
+ *
+ * Deltas are whole words with punctuation attached (`"calling."`) and carry no
+ * spacing of their own, so a single space joins them. An empty delta is ignored
+ * rather than allowed to introduce a double space.
+ */
+export function appendReplyDelta(audit: ReplyAudit, delta: string): string {
+  if (delta === "") return audit.deltaText;
+  audit.deltaText = audit.deltaText === "" ? delta : `${audit.deltaText} ${delta}`;
+  return audit.deltaText;
+}
+
 function agentTextKind(audit: ReplyAudit): AgentTextKind {
-  return audit.sawFinal ? "final" : "none";
+  if (audit.sawFinal) return "final";
+  return audit.deltaText === "" ? "none" : "delta";
 }
 
 /** Log fields describing what the finished reply actually delivered. */
@@ -88,5 +137,9 @@ export function replyAuditFields(audit: ReplyAudit): {
 export function replyAnomaly(audit: ReplyAudit, status: string): string | undefined {
   if (status === "interrupted" || audit.sawToolCall) return;
   if (audit.audioChunks === 0) return "S2S reply completed with no audio";
+  // A reply covered by deltas alone is NOT an anomaly — that is the ordinary
+  // shape of a tool-preamble turn, and the text was recovered. It is still
+  // distinguished in the log (`agentText: "delta"`) so the two cases stay
+  // tellable apart from each other, which is the whole point of this audit.
   if (agentTextKind(audit) === "none") return "S2S reply delivered audio with no transcript";
 }

@@ -2,7 +2,7 @@
 /**
  * Turn-acknowledgement accounting for the AssemblyAI streaming TTS adapter.
  *
- * The adapter flushes per sentence, so one turn spans several `Flush` frames
+ * The adapter flushes per segment, so one turn spans several `Flush` frames
  * and the turn ends only when the LAST one is acknowledged — see the module
  * doc in `assemblyai.ts`. This module owns that bookkeeping: how many flushes
  * are outstanding, whether the pipeline has closed the turn, and the one
@@ -52,6 +52,13 @@ export interface TurnTracker {
   cancel(): boolean;
   /** Unexpected server-side close: release the turn unconditionally. */
   forceDone(): void;
+  /**
+   * Is a turn still open (text arrived, `done` not yet emitted)? The same fact
+   * {@link cancel} returns, exposed as a query so the adapter can DROP a frame
+   * that arrives once the turn is over — a late `WordBoundaries` would
+   * otherwise be attributed to the next reply.
+   */
+  inFlight(): boolean;
 }
 
 /**
@@ -124,5 +131,9 @@ export function createTurnTracker(emitDone: () => void): TurnTracker {
     },
 
     forceDone: emitDoneOnce,
+
+    inFlight(): boolean {
+      return !doneEmitted;
+    },
   };
 }

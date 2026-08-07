@@ -16,6 +16,7 @@ import {
   PLAYBACK_CONCEAL_FADE_MS,
   PLAYBACK_CONCEAL_FLOOR,
   PLAYBACK_JITTER_MS,
+  PLAYBACK_PROGRESS_INTERVAL_MS,
   PLAYBACK_REFILL_MS,
 } from "../types.ts";
 import { workletModuleUrl } from "./_module-url.ts";
@@ -48,6 +49,11 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     // playing instead of writing past the end and going silent.
     this.capacity = rate * ${PLAYBACK_BUFFER_SECONDS};
     this.samples = new Float32Array(this.capacity);
+    // Cadence for the 'progress' report in process(), counted in samples so
+    // the hot path never reads a clock. Survives resetTurn(): the host clamps
+    // upward only, so a stale count costs at most one extra report.
+    this.reportIntervalSamples = Math.floor((rate * ${PLAYBACK_PROGRESS_INTERVAL_MS}) / 1000);
+    this.sinceReportSamples = 0;
     // Platform endianness probe: the wire format is PCM16 little-endian, so
     // the Int16Array fast path in ingestBytes is only valid on LE hosts
     // (every shipping browser target; the DataView path is the fallback).
@@ -254,6 +260,26 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     if (!outputs[0] || !outputs[0][0]) return true;
     const out = outputs[0][0];
     const avail = this.writePos - this.readPos;
+
+    // Report the unplayed backlog to the host (\`playback_progress\`). This IS
+    // the closed-loop signal: the host otherwise models playback open-loop —
+    // every forwarded chunk assumed to start playing on arrival at exactly
+    // 1.0x — and cannot see a buffer that has run ahead of the wall clock.
+    // Measured against a client draining at 0.6x, the host declared the line
+    // silent while it still held seconds of the reply, and then opened the
+    // speaking-edge gate over speech the caller had not heard.
+    //
+    // Sent from process() rather than a timer because this is the only place
+    // that sees the buffer on the audio thread; the counter is in QUANTA, so
+    // it costs an integer compare per render and no clock read. Silence is not
+    // reported: an empty buffer is what the host already assumes.
+    this.sinceReportSamples += out.length;
+    if (this.sinceReportSamples >= this.reportIntervalSamples) {
+      this.sinceReportSamples = 0;
+      if (avail > 0) {
+        this.port.postMessage({ event: 'progress', bufferedMs: (avail / sampleRate) * 1000 });
+      }
+    }
 
     // Filling: wait for the target. 'done' short-circuits it — what is
     // buffered is all there will be, so there is nothing left to wait for.

@@ -3,7 +3,7 @@
  * Summarize starter-eval runs: a table per starter, and failure excerpts
  * grouped by signature so a recurring error is obvious at a glance.
  *
- *   node scripts/starter-eval-report.mjs <run.json> [baseline.json]
+ *   node scripts/starter-eval/report.mjs <run.json> [baseline.json]
  *
  * With two files it diffs them, which is how a prompt or SDK change is
  * judged — a change is kept only if the numbers move.
@@ -40,7 +40,7 @@ function summarize(rows) {
 }
 
 const [file, baseFile] = process.argv.slice(2);
-if (!file) throw new Error("usage: starter-eval-report.mjs <run.json> [baseline.json]");
+if (!file) throw new Error("usage: starter-eval/report.mjs <run.json> [baseline.json]");
 const rows = load(file);
 const base = baseFile ? load(baseFile) : undefined;
 const baseBy = new Map((base ?? []).map((r) => [r.label, r]));
@@ -65,15 +65,22 @@ for (const r of rows) {
     continue;
   }
   const b = baseBy.get(r.label);
-  const delta = (now, was) => (was === undefined ? "" : now === was ? " (=)" : ` (${was}→${now})`);
+  const delta = (now, was) => {
+    if (was === undefined) return "";
+    return now === was ? " (=)" : ` (${was}→${now})`;
+  };
+  const verdict = (row) => {
+    if (row.shippable) return "SHIP";
+    return row.endedGreen ? "built" : "RED";
+  };
   console.log(
     pad(r.label.slice(0, 44), 46),
-    pad(r.shippable ? "SHIP" : r.endedGreen ? "built" : "RED", 8),
+    pad(verdict(r), 8),
     pad(`${r.toolCalls}${delta(r.toolCalls, b?.toolCalls)}`, 7),
     pad(`${r.redChecks ?? 0}${delta(r.redChecks, b?.redChecks)}`, 6),
     pad(`${r.failedTestAgentRuns}${delta(r.failedTestAgentRuns, b?.failedTestAgentRuns)}`, 9),
     r.seconds,
-    (r.reasons ?? []).length ? ` [${r.reasons.join(" ")}]` : "",
+    (r.reasons ?? []).length > 0 ? ` [${r.reasons.join(" ")}]` : "",
   );
 }
 
@@ -153,10 +160,16 @@ function printSignatures(title, groups) {
   }
 }
 
-printSignatures("FAILURE SIGNATURES", groupSignatures((r) => r.failures));
+printSignatures(
+  "FAILURE SIGNATURES",
+  groupSignatures((r) => r.failures),
+);
 
 // Red verifications, which FAILURE SIGNATURES cannot show: it reads only
 // test_agent failures, so a healthy run prints an empty section while the
 // agent fixed a dozen type errors on the way there. Those are now where the
 // cost is, so they get their own grouping.
-printSignatures("RED VERIFICATION SIGNATURES", groupSignatures((r) => r.redExcerpts));
+printSignatures(
+  "RED VERIFICATION SIGNATURES",
+  groupSignatures((r) => r.redExcerpts),
+);

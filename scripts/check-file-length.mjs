@@ -59,6 +59,11 @@ const files = execFileSync(
     "--exclude-standard",
     "packages/**/*.ts",
     "packages/**/*.tsx",
+    // Repo tooling is held to the same cap as shipped source. It is not
+    // exempt just because it is not published: `scripts/` is where an
+    // unreviewed 900-line harness hides, and two of them were exactly that.
+    "scripts/**/*.mjs",
+    "scripts/**/*.ts",
   ],
   { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
 )
@@ -133,6 +138,4 @@ if (staleAllowlist.length > 0) {
   process.exit(1);
 }
 
-console.log(
-  `check-file-length: all files within caps (source ${SOURCE_MAX}, test ${TEST_MAX}). ✓`,
-);
+console.log(`check-file-length: all files within caps (source ${SOURCE_MAX}, test ${TEST_MAX}). ✓`);

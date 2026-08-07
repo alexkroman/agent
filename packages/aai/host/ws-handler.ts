@@ -125,6 +125,9 @@ function dispatchMessage(data: unknown, session: SessionCore, log: Logger, sid: 
     case "reset":
       session.onReset();
       break;
+    case "playback_progress":
+      session.onPlaybackProgress(result.data.bufferedMs);
+      break;
     case "history":
       session.onHistory(result.data.messages);
       break;

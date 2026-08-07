@@ -32,9 +32,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^4.1.10
         version: 4.1.10(vitest@4.1.10)
-      citty:
-        specifier: ^0.2.2
-        version: 0.2.2
+      eventsource-parser:
+        specifier: ^3.1.0
+        version: 3.1.0
       knip:
         specifier: ^6.29.0
         version: 6.29.0
@@ -56,9 +56,6 @@ importers:
       syncpack:
         specifier: ^15.3.2
         version: 15.3.2
-      toxiproxy-node-client:
-        specifier: ^4.1.0
-        version: 4.1.0
       turbo:
         specifier: ^2.10.6
         version: 2.10.7
@@ -5359,10 +5356,6 @@ packages:
   tough-cookie@6.0.2:
     resolution: {integrity: sha512-exgYmnmL/sJpR3upZfXG5PoatXQii55xAiXGXzY+sROLZ/Y+SLcp9PgJNI9Vz37HpQ74WvDcLT8eqm+kV3FzrA==}
     engines: {node: '>=16'}
-
-  toxiproxy-node-client@4.1.0:
-    resolution: {integrity: sha512-hdCvgbS6fUtzxPzrbvvE7MZ7dl5dt+c4c0d4T2G1I+clz3QEmjEvIpzObyojUY3WNdDuoYI7sT4kcTqgUVyXAQ==}
-    engines: {node: '>=18'}
 
   tr46@0.0.3:
     resolution: {integrity: sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw==}
@@ -10767,8 +10760,6 @@ snapshots:
   tough-cookie@6.0.2:
     dependencies:
       tldts: 7.4.8
-
-  toxiproxy-node-client@4.1.0: {}
 
   tr46@0.0.3: {}
 

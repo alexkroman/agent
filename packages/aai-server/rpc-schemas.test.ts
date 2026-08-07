@@ -29,12 +29,12 @@ describe("IsolateConfigSchema — provider triple", () => {
     expect(result.error?.issues[0]?.message).toMatch(/stt, llm, and tts must be set together/);
   });
 
-  test("holdPhrase is valid with a complete pipeline triple", () => {
+  test("deadAirCoverMs is valid with a complete pipeline triple", () => {
     const result = IsolateConfigSchema.safeParse({
       name: "x",
       ...pipelineFields,
       tts: { kind: "cartesia", options: { voice: "v" } },
-      holdPhrase: "One sec.",
+      deadAirCoverMs: 2500,
     });
     expect(result.success).toBe(true);
   });

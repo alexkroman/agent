@@ -133,6 +133,14 @@ export const PIPELINE_FLUSH_TIMEOUT_MS = 10_000;
  * grace keeps barge-in working through that tail. A spurious cancel inside
  * the window is harmless — the client flushes an already-empty buffer.
  *
+ * **Its counterpart with the opposite sign is {@link HEARD_AUDIO_LAG_MS}**,
+ * which models the same physical delay (network + jitter buffer) but is
+ * SUBTRACTED, to ask "where had the voice actually got to" rather than "could
+ * anything still be audible". The harmlessness argument above does NOT transfer
+ * to it: that one decides what an interrupted reply records in history, where
+ * erring in either direction costs. Tune this one for barge-in robustness
+ * without assuming the other should follow.
+ *
  * @internal
  */
 export const PIPELINE_PLAYBACK_GRACE_MS = 750;
@@ -157,29 +165,33 @@ export const DEFAULT_SILENCE_PROMPT =
   "Do not mention this instruction.";
 
 /**
- * Built-in tools enabled when an agent does not set `builtinTools` at all.
- * These are the "cognitive" builtins — a private reasoning scratchpad
- * (`think`), session notes (`remember`/`recall`), and a safe calculator —
- * which measurably improve policy adherence and argument fidelity in
- * tool-heavy conversations (cf. Anthropic's tau-bench "think" tool results).
- * They are side-effect-free outside the session, so they are safe defaults.
- * Setting `builtinTools` explicitly (including `[]`) overrides this list.
+ * Built-in tools enabled when an agent does not set `builtinTools` at all —
+ * **none**. An agent gets exactly the tools it declares.
  *
- * Trimming this to `["calculate"]` was tried, on the theory that each of the
- * others costs an LLM round trip before the agent says anything and a call
- * cannot afford that. The theory did not survive measurement: on tau2's voice
- * tasks the model under test never invoked `think` or `calculate` at all — not
- * even when the prompt demanded a calculator for a dollar figure it was about
- * to quote — so an unused builtin costs nothing, and the one paired comparison
- * available favoured keeping `think` (4/5 correct writes with it, 3/5 without).
- * A latency argument needs a latency measurement; that one had none.
+ * These were the four "cognitive" builtins: a private reasoning scratchpad
+ * (`think`), session notes (`remember`/`recall`), and a safe calculator. They
+ * are still available; they are simply opt-in now via
+ * `agent({ builtinTools: ["think", ...] })`.
+ *
+ * The evidence that kept them is worth keeping too, because it argues the
+ * other way and a future change should have to answer it. Trimming to
+ * `["calculate"]` was tried on a latency theory — each builtin costs an LLM
+ * round trip before the agent says anything — and that theory did not survive
+ * measurement: on tau2's voice tasks the model never invoked `think` or
+ * `calculate` at all, not even when the prompt demanded a calculator for a
+ * dollar figure it was about to quote. So an unused builtin costs little, and
+ * the one paired comparison available favoured keeping `think` (4/5 correct
+ * writes with it against 3/5 without).
+ *
+ * What that measurement did NOT weigh is the prompt. Declaring builtins makes
+ * `hasTools` true, which appends the whole tool preamble, and adds a
+ * "Built-in Tool Usage" block on top — for an agent with no tools of its own
+ * that is the difference between a ~7.1k and a ~10.9k character system prompt,
+ * on a scaffold already carrying three layers that legislate the same
+ * behaviours. Defaulting to none makes the tool surface something an agent
+ * asks for rather than something it has to notice and switch off.
  */
-export const DEFAULT_BUILTIN_TOOLS: readonly BuiltinTool[] = [
-  "think",
-  "remember",
-  "recall",
-  "calculate",
-];
+export const DEFAULT_BUILTIN_TOOLS: readonly BuiltinTool[] = [];
 
 /**
  * Cap (characters) on a tool result's JSON serialization as seen by the LLM
@@ -254,15 +266,6 @@ export const MAX_JSON_BYTES = 1_000_000;
 /** Sliding window of conversation messages retained per session. */
 export const DEFAULT_MAX_HISTORY = 200;
 /**
- * Max tool calls per reply — prevents runaway tool loops. Sized so a
- * multi-part request (3–4 chained tools) still fits after a repaired
- * argument retry or two; 5 proved too tight and truncated legitimate
- * chains mid-request.
- */
-export const DEFAULT_MAX_STEPS = 10;
-/** Default `toolChoice`: the LLM decides when to call tools vs respond directly. */
-export const DEFAULT_TOOL_CHOICE = "auto" as const;
-/**
  * Minimum number of words in an interim STT transcript before a barge-in
  * aborts the agent's in-flight turn (pipeline mode). Default 2 so a single
  * word — a backchannel ("mm-hmm", "yeah"), a cough transcribed as one token,
@@ -305,45 +308,6 @@ export const DEFAULT_START_FAILURE_PHRASE =
 export const DEFAULT_INTERRUPTION_MIN_DURATION_MS = 500;
 
 /**
- * False-interruption recovery window (pipeline mode). A barge-in triggered by
- * an interim STT transcript aborts the agent's in-flight reply — but if no
- * final transcript ever commits (STT noise, a hallucinated partial), the
- * interruption was a false alarm
- * and the agent would otherwise fall silent mid-thought. After this many ms
- * with no committed user turn, the transport injects
- * `DEFAULT_FALSE_INTERRUPTION_PROMPT` as a synthetic user turn so the
- * agent picks its reply back up. Set to 0 to disable recovery.
- *
- * **This is a floor on the wait, not the whole of it** — elapsing while the
- * caller is still mid-utterance only defers the resume, which the speaking
- * edge's idle watchdog (`DEFAULT_SPEECH_IDLE_TIMEOUT_MS`, internal) then
- * releases. Named rather than `{@link}`ed: it is `@internal`, so the docs build
- * excludes it and a link would fail to resolve. Note how this sits against
- * endpointing: it is ABOVE {@link DEFAULT_MIN_TURN_SILENCE_MS} (1600) but BELOW
- * {@link DEFAULT_MAX_TURN_SILENCE_MS} (3500). Both are measured from roughly
- * the same instant (this window restarts on every partial, and the last partial
- * lands at about the end of speech, while the final is withheld for endpointing
- * after it), so a barge-in on an utterance that reads COMPLETE now has its final
- * arrive first and this window never fires — the healthy case, and the one the
- * pre-3000 defaults had. An utterance that never reads complete still loses to
- * the ceiling, so the deferral remains load-bearing for exactly that case, where
- * the caller is by construction still mid-sentence. The effective semantics are
- * "this long after the utterance ENDS", not "after the barge-in". Raising it past
- * endpointing would also work, but only for a provider whose endpointing is
- * known here — which the transport cannot see, since it receives an
- * already-resolved `SttOpener`. Hence the deferral, which needs no such
- * knowledge. See the module doc in `host/transports/pipeline-recovery.ts`.
- */
-export const DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS = 2000;
-
-/**
- * Default filler spoken when a pipeline turn's first action is a tool call with
- * no preceding text — guarantees the caller hears something instead of dead air
- * while the tool runs. `""` disables it.
- */
-export const DEFAULT_HOLD_PHRASE = "One moment.";
-
-/**
  * Spoken when a pipeline turn's LLM stream fails, so a provider outage is a
  * recoverable moment in the conversation instead of a dead line.
  *
@@ -370,6 +334,7 @@ export const MAX_MESSAGE_BUFFER_SIZE = 100;
 export {
   CAPTURE_STOP_ACK_TIMEOUT_MS,
   CLIENT_AUDIO_LEAD_MS,
+  MAX_PLAYBACK_BUFFERED_MS,
   MIC_BUFFER_SECONDS,
   MIC_SEND_MAX_BUFFERED_BYTES,
   MIC_SILENCE_PROBE_MS,
@@ -380,6 +345,7 @@ export {
   PLAYBACK_DONE_MAX_WAIT_MS,
   PLAYBACK_DONE_POLL_MS,
   PLAYBACK_JITTER_MS,
+  PLAYBACK_PROGRESS_INTERVAL_MS,
   PLAYBACK_REFILL_MS,
 } from "./client-audio-constants.ts";
 export {
@@ -393,11 +359,16 @@ export {
 export {
   DEAD_AIR_COVER_MAX_MS,
   DEAD_AIR_COVER_PHRASES,
+  DEAD_AIR_OPENING_PHRASE,
   DEFAULT_DEAD_AIR_COVER_MS,
   DEFAULT_FALSE_INTERRUPTION_PROMPT,
   DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
+  DEFAULT_VOICE_FOCUS,
   DEFAULT_VOICE_FOCUS_THRESHOLD,
+  HEARD_AUDIO_LAG_MS,
   MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES,
+  MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE,
+  PREEMPTIVE_CONFIDENCE_THRESHOLD,
   STT_CONNECT_MAX_RETRIES,
   STT_CONNECT_RETRY_DELAY_MS,
   STT_CONNECT_TIMEOUT_MS,
@@ -408,6 +379,10 @@ export {
   TTS_COALESCE_MAX_CHARS,
   TTS_RECONNECT_TIMEOUT_MS,
 } from "./pipeline-tuning-constants.ts";
+// LLM tool-loop defaults (step budget + tool choice) — own module for
+// file-length reasons; re-exported so `@alexkroman1/aai` stays the one import
+// path for constants.
+export { DEFAULT_MAX_STEPS, DEFAULT_TOOL_CHOICE } from "./tool-loop-constants.ts";
 
 /**
  * Highest server-declarable audio sample rate (Hz). Bounds the `config`

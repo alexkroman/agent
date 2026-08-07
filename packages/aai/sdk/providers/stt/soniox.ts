@@ -48,3 +48,24 @@ export type SonioxProvider = SttProvider & {
 export function soniox(opts: SonioxOptions = {}): SonioxProvider {
   return { kind: SONIOX_KIND, options: { ...opts } };
 }
+
+/** Streaming model used when the descriptor names none. */
+export const SONIOX_DEFAULT_MODEL = "stt-rt-v3";
+
+/**
+ * The settings this stage will actually run with — the descriptor's own
+ * options with every host-side default filled in. Shared by the opener and
+ * the runtime's "Session mode resolved" log.
+ */
+export function resolveSonioxSettings(opts: SonioxOptions): {
+  model: string;
+  languageHints?: readonly string[];
+} {
+  return {
+    model: opts.model ?? SONIOX_DEFAULT_MODEL,
+    // Omitted unless set: absent means auto-detect, which is not "English".
+    ...(opts.languageHints && opts.languageHints.length > 0
+      ? { languageHints: opts.languageHints }
+      : {}),
+  };
+}

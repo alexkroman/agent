@@ -15,10 +15,11 @@
 import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
 import { normalizeAgentConveniences } from "./_author-conveniences.ts";
-import { DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./agent-defaults.ts";
+import { DEFAULT_GREETING } from "./agent-defaults.ts";
 import { assertPipelineTuning, assertProviderTriple, assertSilencePolicy } from "./config-rules.ts";
 import { defaultProviders } from "./providers/_default-providers.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
+import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
 import type { Message } from "./types.ts";
 import { BuiltinToolSchema, ToolChoiceSchema } from "./types.ts";
 
@@ -87,10 +88,11 @@ export const AgentConfigSchema = z.object({
   silencePrompt: z.string().optional(),
   minBargeInWords: z.number().int().min(1).optional(),
   interruptionMinDurationMs: z.number().int().nonnegative().optional(),
-  holdPhrase: z.string().optional(),
+  deadAirCoverMs: z.number().int().nonnegative().optional(),
   errorPhrase: z.string().optional(),
   startFailurePhrase: z.string().optional(),
-  falseInterruptionTimeoutMs: z.number().int().nonnegative().optional(),
+  resumeFalseInterruption: z.boolean().optional(),
+  preemptiveGeneration: z.boolean().optional(),
   stt: ProviderDescriptorSchema.optional(),
   llm: ProviderDescriptorSchema.optional(),
   tts: ProviderDescriptorSchema.optional(),

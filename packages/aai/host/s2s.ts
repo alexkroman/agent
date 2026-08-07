@@ -4,19 +4,24 @@
  */
 
 import type { ToolSchema } from "../sdk/_internal-types.ts";
-import { LOG_PREVIEW_CHARS, WS_NORMAL_CLOSURE, WS_OPEN } from "../sdk/constants.ts";
+import {
+  DEFAULT_VOICE_FOCUS,
+  DEFAULT_VOICE_FOCUS_THRESHOLD,
+  LOG_PREVIEW_CHARS,
+  WS_NORMAL_CLOSURE,
+  WS_OPEN,
+} from "../sdk/constants.ts";
 import { errorMessage, safeJsonParse } from "../sdk/utils.ts";
 import { createAudioSendGate } from "./_audio-gate.ts";
 import { base64ToUint8, uint8ToBase64 } from "./_base64.ts";
-import { parseS2sMessage, type S2sServerMessage } from "./_s2s-messages.ts";
 import {
-  countReplyAudio,
-  createReplyAudit,
-  type ReplyAudit,
-  replyAnomaly,
-  replyAuditFields,
-  resetReplyAudit,
-} from "./_s2s-reply.ts";
+  type DispatchContext,
+  type DispatchState,
+  dispatchS2sMessage,
+  type S2sCallbacks,
+} from "./_s2s-dispatch.ts";
+import { parseS2sMessage } from "./_s2s-messages.ts";
+import { countReplyAudio, createReplyAudit } from "./_s2s-reply.ts";
 import {
   type CreateHeaderWebSocket,
   createWsOpenRace,
@@ -35,153 +40,86 @@ const pcmAudio = (sample_rate: number) => ({
   format: { encoding: "audio/pcm", sample_rate },
 });
 
+/**
+ * Voice-focus block for the S2S `input`, pinned to the SAME numbers the pipeline
+ * STT stage pins — one constant, both transports.
+ *
+ * Sent because the S2S default is the service's 0.7, and the interferer that
+ * matters is background SPEECH: a television or a second conversation, which
+ * only the pre-model filter can suppress (a frame gate cannot tell "a voice"
+ * from "the caller's voice"). Measured on tau2-bench retail — see
+ * {@link DEFAULT_VOICE_FOCUS_THRESHOLD} for the numbers and for why raising
+ * `vad_threshold` instead is a regression in both directions.
+ *
+ * This closes half of a transport asymmetry: every transcription-side knob the
+ * pipeline pins after measurement (`language_codes`, `voice_focus`,
+ * `transcription_prompt`, `keyterms`) was unreachable in S2S, so an S2S agent
+ * ran on service defaults for all of them. `turn_detection` is deliberately NOT
+ * pinned here — its default is adaptive and entity-aware, and setting
+ * `min_silence`/`max_silence` turns both off for the rest of the session.
+ */
+const voiceFocusInput = () => ({
+  voice_focus: DEFAULT_VOICE_FOCUS,
+  voice_focus_threshold: DEFAULT_VOICE_FOCUS_THRESHOLD,
+});
+
+/**
+ * Documented cap on `input.transcription_prompt`. Trimmed here rather than left
+ * to the service, for the same reason `agent_context` is trimmed in the STT
+ * opener: an over-long value is a rejected `session.update` field on a session
+ * that otherwise looks healthy, and the failure would surface as unbiased
+ * transcription rather than as a config error.
+ */
+const TRANSCRIPTION_PROMPT_MAX_CHARS = 1750;
+
+/**
+ * `input.transcription_prompt` block, or nothing when there is no prompt.
+ *
+ * Keeps the HEAD, unlike `agent_context`'s tail-keeping trim: this is a
+ * standing description of the call's vocabulary written by the agent author, so
+ * its opening sentences are the substantive part. `agent_context` keeps the tail
+ * because it carries the agent's last reply, whose trailing question is the
+ * whole point.
+ */
+const transcriptionPromptInput = (sttPrompt: string | undefined) => {
+  if (sttPrompt === undefined || sttPrompt.trim().length === 0) return {};
+  return { transcription_prompt: sttPrompt.slice(0, TRANSCRIPTION_PROMPT_MAX_CHARS) };
+};
+
 export type S2sWebSocket = HeaderWebSocket;
 export type CreateS2sWebSocket = CreateHeaderWebSocket;
 export const defaultCreateS2sWebSocket: CreateS2sWebSocket = defaultCreateHeaderWebSocket;
-
-/**
- * Per-connection dispatch state. Used to dedup events that the upstream S2S
- * service may emit more than once for a single logical turn (e.g. repeated
- * `input.speech.stopped` after the VAD flips).
- */
-type DispatchState = { speechActive: boolean; reply: ReplyAudit };
-
-type DispatchContext = {
-  log: Logger;
-  sid?: string;
-};
-
-function sidFields(ctx: DispatchContext): { sid?: string } {
-  return ctx.sid !== undefined ? { sid: ctx.sid } : {};
-}
-
-/**
- * Report what the finished reply actually delivered, then advance the session.
- *
- * The audit fields are what make an empty-looking reply diagnosable: without
- * them a reply that streamed audio and sent no transcript is identical in the
- * log to one that produced nothing. See `_s2s-reply.ts`.
- */
-function dispatchReplyDone(
-  callbacks: S2sCallbacks,
-  status: string,
-  state: DispatchState,
-  ctx: DispatchContext,
-): void {
-  // Logged before the client-facing dedup in SessionCore, so a stalled session
-  // can be checked against the raw arrivals.
-  const audit = replyAuditFields(state.reply);
-  ctx.log.info("S2S << reply.done", { ...sidFields(ctx), status, ...audit });
-  const anomaly = replyAnomaly(state.reply, status);
-  if (anomaly !== undefined) ctx.log.warn(anomaly, { ...sidFields(ctx), ...audit });
-  // A reply that sent no `transcript.agent` commits nothing to history: there
-  // is no salvage path. Reconstructing the text from `transcript.agent.delta`
-  // was tried and removed — the service sends no deltas either, so the
-  // accumulator was always empty (see `_s2s-reply.ts`).
-  if (status === "interrupted") callbacks.onCancelled();
-  else callbacks.onReplyDone();
-}
-
-function dispatchS2sMessage(
-  callbacks: S2sCallbacks,
-  msg: S2sServerMessage,
-  state: DispatchState,
-  ctx: DispatchContext,
-): void {
-  switch (msg.type) {
-    case "session.ready":
-      callbacks.onSessionReady(msg.session_id);
-      break;
-    case "session.updated":
-      // The S2S API conveys the session id via `config.id` in the success
-      // path (no separate `session.ready` is emitted); capturing it here is
-      // required for resume on transient close.
-      if (msg.config?.id !== undefined) callbacks.onSessionReady(msg.config.id);
-      break;
-    case "input.speech.started":
-      if (!state.speechActive) {
-        state.speechActive = true;
-        callbacks.onSpeechStarted();
-      }
-      break;
-    case "input.speech.stopped":
-      if (state.speechActive) {
-        state.speechActive = false;
-        callbacks.onSpeechStopped();
-      }
-      break;
-    case "transcript.user":
-      callbacks.onUserTranscript(msg.text);
-      break;
-    case "transcript.user.delta":
-      callbacks.onUserTranscriptPartial(msg.text);
-      break;
-    case "reply.started":
-      // A new reply supersedes the last one's tally.
-      resetReplyAudit(state.reply);
-      callbacks.onReplyStarted(msg.reply_id);
-      break;
-    case "transcript.agent":
-      state.reply.sawFinal = true;
-      callbacks.onAgentTranscript(msg.text, msg.interrupted);
-      break;
-    case "tool.call":
-      state.reply.sawToolCall = true;
-      callbacks.onToolCall(msg.call_id, msg.name, msg.args);
-      break;
-    case "reply.done":
-      dispatchReplyDone(callbacks, msg.status ?? "completed", state, ctx);
-      break;
-    case "session.error":
-      ctx.log.warn("S2S << session.error", {
-        ...sidFields(ctx),
-        code: msg.code,
-        message: msg.message,
-      });
-      if (msg.code === "session_not_found" || msg.code === "session_forbidden") {
-        callbacks.onSessionExpired();
-      } else {
-        callbacks.onError(new Error(msg.message));
-      }
-      break;
-    case "error":
-      // Logged here with its message because `logIncoming` prints the type
-      // only, and the transport now forwards in-band errors as NON-fatal (see
-      // its `onError` mapping) — which session-core logs at debug. Without this
-      // line, demoting the client-facing severity would also have made the
-      // service's own complaint invisible in a default-logger deployment.
-      ctx.log.warn("S2S << error", { ...sidFields(ctx), message: msg.message });
-      callbacks.onError(new Error(msg.message));
-      break;
-    default:
-      break;
-  }
-}
 
 export type S2sSessionConfig = {
   systemPrompt: string;
   tools: ToolSchema[];
   greeting?: string;
+  /**
+   * Contextual biasing for transcription — the agent's `sttPrompt`, sent as
+   * `input.transcription_prompt`.
+   *
+   * It used to be pipeline-only, which made it a SILENT config drop: `agent({
+   * sttPrompt })` and host mode's `host.sttPrompt` both reached the agent
+   * definition, and only `pipeline-transport.ts` ever read it, so an S2S agent
+   * that set one got unbiased transcription and no warning. That is the
+   * dropped-field bug class the SDK guide warns about — a working agent quietly
+   * ignoring part of its own config.
+   *
+   * It earns its place: the caller's spelled name and ZIP are what gate a task,
+   * and on tau2-bench retail adding a transcription prompt took the
+   * authenticating first name from 1 of 6 attempts correct to 6 of 6.
+   */
+  sttPrompt?: string;
 };
 
-/** Callbacks fired into the owning session at construction time. */
-export type S2sCallbacks = {
-  onSessionReady(sessionId: string): void;
-  onReplyStarted(replyId: string): void;
-  onReplyDone(): void;
-  onCancelled(): void;
-  onAudio(bytes: Uint8Array): void;
-  onUserTranscript(text: string): void;
-  /** Live partial of the user's current utterance; replaces, never appends. */
-  onUserTranscriptPartial(text: string): void;
-  onAgentTranscript(text: string, interrupted: boolean): void;
-  onToolCall(callId: string, name: string, args: Record<string, unknown>): void;
-  onSpeechStarted(): void;
-  onSpeechStopped(): void;
-  onSessionExpired(): void;
-  onError(err: Error): void;
-  onClose(code: number, reason: string): void;
-};
+/**
+ * Callbacks fired into the owning session at construction time.
+ *
+ * Defined in `_s2s-dispatch.ts` (it is that module's contract — the set of
+ * things a wire message can cause) and re-exported here, which is where every
+ * consumer already imports it from.
+ */
+export type { S2sCallbacks } from "./_s2s-dispatch.ts";
 
 export type S2sHandle = {
   sendAudio(audio: Uint8Array): void;
@@ -295,7 +233,10 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     },
 
     updateSession(sessionConfig: S2sSessionConfig): void {
-      const { systemPrompt, ...rest } = sessionConfig;
+      // Both are destructured OUT rather than left to the spread: they are SDK
+      // field names, and `rest` goes onto the wire verbatim, so leaving either
+      // in would send an unknown key the service rejects.
+      const { systemPrompt, sttPrompt, ...rest } = sessionConfig;
       send({
         type: "session.update",
         session: {
@@ -308,7 +249,11 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
           // A declaration the audio does not match at least earns a 1011, which
           // the close path already handles. The transport resamples to exactly
           // this rate, so the number and the bytes cannot drift apart.
-          input: pcmAudio(config.inputSampleRate),
+          input: {
+            ...pcmAudio(config.inputSampleRate),
+            ...voiceFocusInput(),
+            ...transcriptionPromptInput(sttPrompt),
+          },
           output: pcmAudio(config.outputSampleRate),
         },
       });

@@ -505,7 +505,7 @@ documented in that package's guide, not here:
 | --- | --- |
 | Pipeline-transport interleaving fuzz, fixture replay (`host/fixtures/`) | `packages/aai/CLAUDE.md` |
 | Browser session / audio fuzz harnesses (`fuzz-*.test.ts`, worklet stress) | `packages/aai-ui/CLAUDE.md` |
-| Studio starter evals (`scripts/starter-eval.mjs`), studio concurrency fuzz | `packages/aai-studio-server/CLAUDE.md` |
+| Studio starter evals (`scripts/starter-eval/`), studio concurrency fuzz | `packages/aai-studio-server/CLAUDE.md` |
 | Sandbox/SSRF boundary tests, and why there is no load or chaos tier | `packages/aai-server/CLAUDE.md` |
 
 #### Vitest config differences per package

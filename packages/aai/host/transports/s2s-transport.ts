@@ -186,9 +186,13 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
       onAgentTranscript: whileLive((text: string, interrupted: boolean) =>
         opts.callbacks.onAgentTranscript(text, interrupted),
       ),
-      // No agent-partial forwarding: S2S emits no incremental agent transcript
-      // (`transcript.agent.delta` is unimplemented — see `_s2s-reply.ts`), so
-      // `onAgentTranscriptPartial` has a pipeline-mode producer only.
+      // `transcript.agent.delta` DOES arrive — re-measured against the live
+      // service, see `_s2s-reply.ts`. It is the only carrier of text for a reply
+      // that sends no final `transcript.agent`, which is the ordinary shape of a
+      // tool-preamble turn.
+      onAgentTranscriptPartial: whileLive((text: string) =>
+        opts.callbacks.onAgentTranscriptPartial?.(text),
+      ),
       onToolCall: whileLive((callId: string, name: string, args: Record<string, unknown>) =>
         opts.callbacks.onToolCall(callId, name, args),
       ),

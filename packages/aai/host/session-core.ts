@@ -71,6 +71,13 @@ export type SessionCore = {
   onAudioReady(): void;
   onCancel(): void;
   onReset(): void;
+  /**
+   * The client reports how much forwarded agent audio it still holds unplayed
+   * — the protocol's one closed-loop signal. Forwarded to the transport, which
+   * is where the playback estimate lives; a transport that keeps no such
+   * estimate (S2S, where the service owns turn-taking) simply omits the hook.
+   */
+  onPlaybackProgress(bufferedMs: number): void;
   onHistory(messages: readonly Message[]): void;
   /** Inbound relayed tool result (host mode): settles the pending relay call. */
   onToolResult(toolCallId: string, result: string, error?: string): void;
@@ -82,7 +89,7 @@ export type SessionCore = {
   onAudioDone(): void;
   onUserTranscript(text: string): void;
   /** Interim user transcript — forwarded to the client, never added to history. */
-  onUserTranscriptPartial(text: string): void;
+  onUserTranscriptPartial(text: string, eotConfidence?: number): void;
   onAgentTranscript(text: string, interrupted: boolean): void;
   /**
    * The in-progress reply transcript — forwarded to the client so its captions
@@ -120,6 +127,9 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
   let history: Message[] = [];
   let turnPromise: Promise<void> | null = null;
   let stopped = false;
+  // Has this client ever sent `playback_progress`? Gates the one-time log in
+  // onPlaybackProgress — see there for why the distinction is worth a line.
+  let sawPlaybackReport = false;
   function emit(event: ClientEvent): void {
     opts.client.event(event);
   }
@@ -248,6 +258,23 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       opts.transport.cancelReply();
       emit({ type: "cancelled" });
     },
+    onPlaybackProgress(bufferedMs) {
+      // Logged ONCE per session, because "is this client closed-loop?" changes
+      // how every playback-derived number in the session should be read — the
+      // barge-in floor, the heard cursor, the speaking-edge gate. A session
+      // with no such line ran on the open-loop estimate, and the absence is
+      // indistinguishable from a client that simply never buffers unless it is
+      // stated somewhere. Once, not per report: these arrive every few hundred
+      // ms for the whole of every reply.
+      if (!sawPlaybackReport) {
+        sawPlaybackReport = true;
+        log.info("Client reports playback progress", { sid: opts.id, bufferedMs });
+      }
+      // Deliberately does NOT re-arm the idle timer: this frame reports the
+      // agent's own audio playing back, which is not evidence the caller is
+      // still there — `resetIdle` measures silence from the user.
+      opts.transport.onPlaybackProgress?.(bufferedMs);
+    },
     onReset() {
       cancelReply();
       history = [];
@@ -270,7 +297,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     onReplyStarted(replyId) {
       // A turn beginning is progress, and a tool-chaining turn can run for a
       // while before any audio: without this the agent could be reaped
-      // mid-work when `holdPhrase`/dead-air cover are disabled.
+      // mid-work when the dead-air cover is disabled (`deadAirCoverMs: 0`).
       resetIdle();
       // stop() aborts the current reply and then awaits transport.stop() — an
       // async drain during which the transport can still dispatch a trailing
@@ -356,12 +383,16 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       emit({ type: "user_transcript", text });
       pushMessages({ role: "user", content: text });
     },
-    onUserTranscriptPartial(text) {
+    onUserTranscriptPartial(text, eotConfidence) {
       // Partials too, not just the committed turn: one long utterance would
       // otherwise only count at its `speech_started`, and could be reaped
       // mid-sentence.
       resetIdle();
-      emit({ type: "user_transcript_partial", text });
+      emit({
+        type: "user_transcript_partial",
+        text,
+        ...(eotConfidence === undefined ? {} : { eotConfidence }),
+      });
     },
     onAgentTranscript(text, interrupted) {
       resetIdle();

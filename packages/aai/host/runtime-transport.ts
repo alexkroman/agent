@@ -127,12 +127,13 @@ export function createTransportFactory(
       silencePrompt: agentConfig.silencePrompt,
       minBargeInWords: agentConfig.minBargeInWords,
       interruptionMinDurationMs: agentConfig.interruptionMinDurationMs,
-      holdPhrase: agentConfig.holdPhrase,
+      deadAirCoverMs: agentConfig.deadAirCoverMs,
       // errorPhrase used to be missing here, so an agent that set it (including
       // to "" to disable) silently got the default instead.
       errorPhrase: agentConfig.errorPhrase,
       startFailurePhrase: agentConfig.startFailurePhrase,
-      falseInterruptionTimeoutMs: agentConfig.falseInterruptionTimeoutMs,
+      resumeFalseInterruption: agentConfig.resumeFalseInterruption,
+      preemptiveGeneration: agentConfig.preemptiveGeneration,
       skipGreeting: sessionOpts.skipGreeting ?? false,
       logger,
     });
@@ -179,6 +180,9 @@ export function createTransportFactory(
         systemPrompt,
         tools: toolSchemas,
         ...(agentConfig.greeting !== undefined ? { greeting: agentConfig.greeting } : {}),
+        // Forwarded on its own presence, like the pipeline branch above. Omitting
+        // it here is what made `sttPrompt` a silent no-op for every S2S agent.
+        ...(agentConfig.sttPrompt !== undefined ? { sttPrompt: agentConfig.sttPrompt } : {}),
       },
       callbacks,
       sid: sessionOpts.id,

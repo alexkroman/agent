@@ -2,6 +2,7 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "./agent-config.ts";
+import { DEFAULT_MAX_STEPS } from "./constants.ts";
 import { agent, tool } from "./define.ts";
 import { assemblyAIPipeline } from "./providers/assemblyai-pipeline.ts";
 import { anthropic } from "./providers/llm/anthropic.ts";
@@ -62,15 +63,25 @@ describe("agent()", () => {
   });
 
   test("the default pipeline turns reasoning OFF", () => {
-    // Time-to-first-token IS the quality on a voice line, and nothing in the
-    // pipeline can cover the wait before the first token (holdPhrase needs a
-    // turn that opened with a tool call; the dead-air cover measures tool
-    // execution). Pinned as a test because the symptom of losing it is seconds
-    // of silence rather than an error.
+    // Time-to-first-token IS the quality on a voice line. The dead-air cover
+    // does reach the pre-first-token window, but cover is not a substitute for
+    // a low TTFT — it only keeps the line from sounding hung up while one
+    // elapses. Pinned as a test because the symptom of losing it is seconds of
+    // silence rather than an error.
     const { llm } = assemblyAIPipeline();
     expect(llm.options.reasoningEffort).toBe("none");
-    // Only valid on the GPT-5 family, so the descriptor must carry such a model.
-    expect(llm.options.model).toBe("gpt-5.5");
+    // The descriptor must carry a model that accepts the parameter. Pinned
+    // alongside the effort because the two are coupled: the current default
+    // (`gpt-5.6-terra`) is INSIDE TOOLS_REQUIRE_NO_REASONING, so the factory
+    // fills the same `"none"` and the preset's argument agrees with it rather
+    // than carrying the whole weight. That agreement is a property of the id,
+    // not of the pipeline — under `gpt-5.5` or `qwen3-next-80b-a3b`, both
+    // outside the set, the preset's explicit `"none"` is the only thing
+    // standing between the default pipeline and per-turn thinking latency
+    // (measured 1786ms p50 time-to-first-token on gpt-5.5's server-side
+    // default against 999ms with reasoning off). This pair is what makes a
+    // change to either fail loudly.
+    expect(llm.options.model).toBe("gpt-5.6-terra");
 
     // An agent with no providers at all gets the same treatment. Asserted
     // through toAgentConfig, not agent(): the default fill runs at the
@@ -95,7 +106,7 @@ describe("agent()", () => {
     expect(def.name).toBe("Test Agent");
     expect(def.systemPrompt).toContain("voice agent");
     expect(def.greeting).toContain("Hey there");
-    expect(def.maxSteps).toBe(10);
+    expect(def.maxSteps).toBe(DEFAULT_MAX_STEPS);
     expect(def.tools).toEqual({});
   });
 

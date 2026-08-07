@@ -28,6 +28,11 @@
  * audio:<base64 PCM16 LE>}` frames and ends the turn with `FlushDone` (or an
  * `Audio` frame flagged `is_final`). `Warning` frames are informational;
  * `Error` frames carry `error_code` + `error`. `Terminate` closes cleanly.
+ * `WordBoundaries` frames carry per-word audio offsets; they are parsed and
+ * re-emitted as the `words` TtsEvent (see `assemblyai-words.ts`, which owns the
+ * tolerant parse and the rebase onto the turn's timeline). They are NOT
+ * acknowledgements — routing one into the turn tracker would end the reply
+ * mid-synthesis.
  *
  * **Flush is what starts synthesis, so this adapter flushes per sentence.**
  * `Generate` only buffers: measured against production, a turn's Generate
@@ -36,24 +41,17 @@
  * (`flushTtsAndWait`, once per reply — after every LLM step *and* every tool
  * call), so relaying deltas verbatim makes time-to-first-audio the length of
  * the entire turn: a tool-chaining reply is total silence for its whole
- * duration, with `holdPhrase` and the dead-air cover mute too, since they are
+ * duration, with the dead-air cover mute too, since it is
  * just more buffered text. Cartesia has no equivalent — `continue: true`
  * synthesizes on arrival — so this is the adapter's job, not the pipeline's.
  *
- * The segment size is a measured tradeoff, since each flushed segment is
- * synthesized as its own utterance with its own prosody and padding. For one
- * fixed text: end-of-turn flush only = 5.44s of audio but no sound until the
- * stream ended; flushing every word-granularity delta = 94ms to first audio
- * but 14.16s of audio (2.6x, audibly disjointed); flushing per *sentence* =
- * 6.48s vs 6.24s for the same three sentences, i.e. ~4%. Hence
- * {@link SEGMENT_BOUNDARY_RE} — sentence-terminal punctuation only, never the
- * commas the pipeline's own coalescer breaks on. {@link MIN_SEGMENT_WORDS}
- * then holds off on single-token segments, which are the abbreviation false
- * positives ("Dr. ", "e.g. ") that measured 25% longer audio; they simply wait
- * for the rest of the sentence. Two words is the floor rather than a character
- * count because every hold/cover phrase ("One moment.", "Almost there.") is a
- * short two-word sentence that *must* still flush — being audible mid-turn is
- * the only reason those phrases exist.
+ * Where those segments are cut — a sentence end, or a character budget when no
+ * sentence end is in sight — is one measured rule with a sharp cliff either
+ * side of it, and lives in `assemblyai-segment.ts` (`splitSegment`). Read it
+ * before changing the cadence: segments that are too long make
+ * time-to-first-audio the length of the reply's first sentence, and segments
+ * that are too short are each padded into a ~800ms slot, which is how per-delta
+ * "continuous" streaming reaches 3.1x the audio for the same words.
  *
  * Text is therefore buffered host-side and `Generate` is only ever sent as the
  * head of a `Generate`+`Flush` pair, which has two consequences worth keeping.
@@ -98,11 +96,11 @@ import WebSocket from "ws";
 import { TTS_RECONNECT_TIMEOUT_MS } from "../../../sdk/constants.ts";
 import {
   ASSEMBLYAI_TTS_API_KEY_ENV,
-  ASSEMBLYAI_TTS_DEFAULT_VOICE,
   ASSEMBLYAI_TTS_HOST,
   type AssemblyAITtsOptions,
   assemblyAITtsLanguageCodes,
   resolveAssemblyAITtsLanguage,
+  resolveAssemblyAITtsSettings,
 } from "../../../sdk/providers/tts/assemblyai.ts";
 import {
   makeTtsError,
@@ -115,7 +113,6 @@ import { errorMessage, safeJsonParse } from "../../../sdk/utils.ts";
 import { base64ToUint8 } from "../../_base64.ts";
 import { bytesToPcm16 } from "../../_pcm.ts";
 import { PROVIDER_WS_OPTIONS } from "../../_ws.ts";
-import { hasMinWords } from "../../transports/pipeline-text.ts";
 import {
   assertPcm16Rate,
   closeOnAbort,
@@ -126,7 +123,9 @@ import {
   requireApiKey,
   waitForOpen,
 } from "../_utils.ts";
+import { splitSegment } from "./assemblyai-segment.ts";
 import { createTurnTracker, type SynthesisAck } from "./assemblyai-turn.ts";
+import { createWordTimeline, readWordBoundaries } from "./assemblyai-words.ts";
 
 export interface AssemblyAITtsSession extends TtsSession {
   /** @internal Test-only: exposes the underlying raw WebSocket. */
@@ -134,9 +133,11 @@ export interface AssemblyAITtsSession extends TtsSession {
 }
 
 interface AssemblyAITtsMessage {
-  type: "Begin" | "Audio" | "FlushDone" | "Warning" | "Error" | string;
+  type: "Begin" | "Audio" | "FlushDone" | "Warning" | "Error" | "WordBoundaries" | string;
   /** Base64 PCM16 LE payload on `Audio` frames. */
   audio?: string;
+  /** Word timings on `WordBoundaries` frames — shape read defensively. */
+  words?: unknown;
   /** Set on the last `Audio` frame of a synthesis by some server versions. */
   is_final?: boolean;
   error?: string;
@@ -150,51 +151,13 @@ function errorDetail(msg: AssemblyAITtsMessage): string {
   return `(${msg.error_code ?? ""}): ${reason}`;
 }
 
-/**
- * A sentence end anywhere in the buffered text: terminal punctuation, optional
- * closing quotes/brackets, then whitespace or the end of the buffer. The
- * trailing-whitespace requirement is what keeps "3.5" and "v1.2" from matching.
- *
- * Deliberately narrower than the pipeline coalescer's CLAUSE_BOUNDARY_RE, which
- * also breaks on `,;:` — a comma is mid-sentence, and flushing there hands the
- * server a fragment to synthesize with a falling final intonation.
- */
-const SEGMENT_BOUNDARY_RE = /[.!?…]["')\]]*(?:\s|$)/g;
-
-/**
- * Words a segment needs before sentence-terminal punctuation flushes it — see
- * the module doc. Single-token segments are abbreviations far more often than
- * sentences.
- */
-const MIN_SEGMENT_WORDS = 2;
-
-/**
- * Split `buffered` at the LAST sentence boundary whose head is a big enough
- * utterance, returning the text to synthesize now and the remainder to hold.
- *
- * The *last* boundary rather than the first: when several sentences arrive
- * before a flush, one larger segment sounds better than several small ones and
- * costs fewer round trips. Word count only grows with prefix length, so the
- * last boundary's head qualifies exactly when any boundary's head does — one
- * early-exit word scan replaces a per-boundary count (this runs on every
- * coalesced chunk of every reply).
- */
-function splitSegment(buffered: string): { head: string; tail: string } | undefined {
-  let end: number | undefined;
-  // matchAll clones the regex, so the shared `lastIndex` is never mutated here.
-  for (const m of buffered.matchAll(SEGMENT_BOUNDARY_RE)) end = m.index + m[0].length;
-  if (end === undefined) return;
-  if (!hasMinWords(buffered.slice(0, end), MIN_SEGMENT_WORDS)) return;
-  return { head: buffered.slice(0, end), tail: buffered.slice(end) };
-}
-
 function buildUrl(
   opts: AssemblyAITtsOptions,
   sampleRate: number,
   fail: (message: string) => Error,
 ): string {
   const params = new URLSearchParams({
-    voice: opts.voice ?? ASSEMBLYAI_TTS_DEFAULT_VOICE,
+    voice: resolveAssemblyAITtsSettings(opts).voice,
     sample_rate: String(sampleRate),
   });
   // Omitted unless set: every voice speaks one language, so the server infers
@@ -228,6 +191,7 @@ function handleMessage(
   emitter: Emitter<TtsEvents>,
   onSynthesisComplete: (ack: SynthesisAck) => void,
   streamError: (message: string) => void,
+  onWords: (msg: AssemblyAITtsMessage) => void,
 ): void {
   const msg = safeJsonParse(typeof raw === "string" ? raw : raw.toString()) as
     | AssemblyAITtsMessage
@@ -246,6 +210,10 @@ function handleMessage(
     }
     case "FlushDone":
       onSynthesisComplete("flush_done");
+      return;
+    case "WordBoundaries":
+      // Deliberately NOT an acknowledgement — see the module doc.
+      onWords(msg);
       return;
     case "Error":
       streamError(`AssemblyAI TTS ${errorDetail(msg)}`);
@@ -328,10 +296,20 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
 
       const onSynthesisComplete = (ack: SynthesisAck): void => turn.onAck(ack);
 
+      // Word timings, rebased onto the turn's own audio timeline. A frame that
+      // lands once the turn is over belongs to no reply — dropping it is what
+      // keeps a late frame from being attributed to the next one.
+      const timeline = createWordTimeline();
+      const onWords = (msg: AssemblyAITtsMessage): void => {
+        if (!turn.inFlight()) return;
+        const words = timeline.rebase(readWordBoundaries(msg));
+        if (words.length > 0) emitter.emit("words", words);
+      };
+
       const attach = (socket: WebSocket): void => {
         socket.on("message", (raw: WebSocket.Data) => {
           if (shell.isClosed()) return;
-          handleMessage(raw, emitter, onSynthesisComplete, shell.streamError);
+          handleMessage(raw, emitter, onSynthesisComplete, shell.streamError, onWords);
         });
         socket.on("error", (err: Error) => shell.onSocketError(err));
         socket.on("close", (code: number) => {
@@ -406,15 +384,21 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
       const session: AssemblyAITtsSession = {
         sendText(text: string) {
           if (text.length === 0 || shell.isClosed()) return;
-          // First text of a new turn — nothing from the last one carries over.
+          // First text of a new turn — nothing from the last one carries over,
+          // the word timeline included (it re-anchors this turn's first frame
+          // at zero).
+          if (!turn.inFlight()) timeline.reset();
           turn.onTurnText();
           buffered += text;
-          // Synthesize each complete sentence as it lands rather than waiting
-          // for the end of the turn — see the module doc.
-          const split = splitSegment(buffered);
-          if (!split) return;
-          buffered = split.tail;
-          if (send({ type: "Generate", text: split.head }) && send({ type: "Flush" })) {
+          // Synthesize each segment as it lands rather than waiting for the end
+          // of the turn — see the module doc. Loops because one delta can carry
+          // more than one segment's worth: the budget split takes ~40 chars at a
+          // time, so a burst (a whole buffered sentence, a cover phrase arriving
+          // alongside the reply's opening) would otherwise dribble out one segment per
+          // later delta and stall completely if no delta followed.
+          for (let split = splitSegment(buffered); split; split = splitSegment(buffered)) {
+            buffered = split.tail;
+            if (!(send({ type: "Generate", text: split.head }) && send({ type: "Flush" }))) return;
             turn.onFlushSent();
           }
         },
@@ -443,6 +427,7 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
           // `done` is emitted synchronously — the orchestrator's state machine
           // advances on it, and barge-in must not be microtask-deferred.
           buffered = "";
+          timeline.reset();
           const turnInFlight = turn.cancel();
           // Idempotent: nothing sent since the last done means nothing is
           // buffered server-side and no audio is in flight.

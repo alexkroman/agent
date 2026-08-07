@@ -20,7 +20,8 @@ import { buildSystemPrompt } from "../sdk/system-prompt.ts";
 import type { AgentDef } from "../sdk/types.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import { createPostgresDb } from "./postgres-db.ts";
-import { descriptorKind, resolveLlm, resolveStt, resolveTts } from "./providers/resolve.ts";
+import { describeResolvedProviders } from "./providers/_provider-settings.ts";
+import { resolveLlm, resolveStt, resolveTts } from "./providers/resolve.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "./runtime-config.ts";
 import { setupTools } from "./runtime-tools.ts";
 import {
@@ -172,8 +173,9 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // Providers may arrive as runtime options rather than on the agent object,
   // and reading `agent` alone once resolved mode "s2s" for every deployed
   // pipeline agent, so `assertPipelineTuning` rejected all six voice tuning
-  // knobs at session start — a deployed agent with `holdPhrase` died with
-  // "holdPhrase requires pipeline mode (stt, llm, and tts all set)" while
+  // knobs at session start — a deployed agent with `holdPhrase` (a tuning
+  // field since removed) died with "holdPhrase requires pipeline mode (stt,
+  // llm, and tts all set)" while
   // listing all three providers — and left `agentConfig.mode` wrong for
   // everything downstream that reads it.
   const agentConfig = toAgentConfig({
@@ -189,16 +191,15 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // flip it ran a perfectly healthy S2S session instead — so "which transport
   // is this agent on" has to be answerable from one log line rather than
   // inferred from the shape of the message stream.
+  //
+  // Each stage reports its EFFECTIVE settings, not just its kind: almost every
+  // one of them is a default nobody wrote down (endpointing window, Voice
+  // Focus threshold, gateway model id, TTS voice), and those are the values a
+  // misbehaving session gets blamed on. See _provider-settings.ts.
   logger.info("Session mode resolved", {
     slug,
     mode: effectiveProviders.mode,
-    ...(effectiveProviders.mode === "pipeline"
-      ? {
-          stt: descriptorKind(effectiveProviders.stt),
-          llm: descriptorKind(effectiveProviders.llm),
-          tts: descriptorKind(effectiveProviders.tts),
-        }
-      : { s2s: descriptorKind(agent.s2s) ?? "assemblyai" }),
+    ...describeResolvedProviders(effectiveProviders),
   });
   // Owned maps because teardown is async on both: a reconnect resuming the
   // same session id re-claims the key while the old session's stop() drains,

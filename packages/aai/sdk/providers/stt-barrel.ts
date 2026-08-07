@@ -21,6 +21,10 @@ export type {
   SttOpenOptions,
   SttProvider,
   SttSession,
+  // Exported because `SttEvents.partial`/`final` name it in their signatures.
+  // TypeDoc runs with `treatWarningsAsErrors`, so a type reachable from a
+  // documented signature but absent from an entry point FAILS the docs build.
+  SttTurnMeta,
   Unsubscribe,
 } from "../providers.ts";
 export {

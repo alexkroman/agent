@@ -11,6 +11,8 @@
  * not providers.
  */
 
+import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
+
 /**
  * Session mode derived from which provider triple is set.
  *
@@ -93,15 +95,21 @@ export function assertSilencePolicy(
  * and `assertPipelineTuning` derive from, so a new pipeline-only field
  * cannot be added to the type but skip validation (which is how
  * `startFailurePhrase` once slipped through).
+ *
+ * The `satisfies` closes the other half of that gap: it makes the object
+ * TOTAL over {@link PipelineVoiceTuning}, so a field added to the authoring
+ * interface and not to this table is a compile error here rather than a knob
+ * an S2S agent can set and never have honoured.
  */
 const PIPELINE_ONLY_TUNING = {
   minBargeInWords: "number",
   interruptionMinDurationMs: "number",
-  holdPhrase: "string",
+  deadAirCoverMs: "number",
   errorPhrase: "string",
   startFailurePhrase: "string",
-  falseInterruptionTimeoutMs: "number",
-} as const;
+  resumeFalseInterruption: "boolean",
+  preemptiveGeneration: "boolean",
+} as const satisfies Record<keyof PipelineVoiceTuning, "number" | "string" | "boolean">;
 
 type PipelineTuningField = keyof typeof PIPELINE_ONLY_TUNING;
 
@@ -118,7 +126,11 @@ const PIPELINE_ONLY_TUNING_FIELDS = Object.keys(
  */
 export type PipelineTuning = {
   [K in PipelineTuningField]?:
-    | ((typeof PIPELINE_ONLY_TUNING)[K] extends "number" ? number : string)
+    | ((typeof PIPELINE_ONLY_TUNING)[K] extends "number"
+        ? number
+        : (typeof PIPELINE_ONLY_TUNING)[K] extends "boolean"
+          ? boolean
+          : string)
     | undefined;
 };
 

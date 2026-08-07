@@ -32,7 +32,20 @@ const PATTERNS = [
   { label: "@ts-nocheck", re: "@ts-nocheck" },
   { label: "biome-ignore", re: "biome-ignore" },
   { label: "eslint-disable", re: "eslint-disable" },
-  { label: "as any", re: "\\bas any\\b" },
+  // NOTE the boundaries: `(^|[^A-Za-z0-9_])` / `([^A-Za-z0-9_]|$)`, not `\b`.
+  //
+  // `\b` is a GNU extension, not POSIX ERE, and git's own matcher does not
+  // implement it — on Apple Git 2.50.1 these two patterns matched NOTHING and
+  // the gate cheerfully reported `as any base=0 now=0` and `as unknown as
+  // base=0 now=0` while the tree held 8 and 110 of them. Both had been dead
+  // since the day they were added, so the halving of `as unknown as` that
+  // this file's comment celebrates was being enforced by nobody, and a branch
+  // adding three more passed clean. Verified by A/B: with `\b`, 0 matches;
+  // without it, 110.
+  //
+  // Do not "simplify" these back to `\b`, and do not drop the boundaries
+  // either — a bare `as any` substring would also match `as anything`.
+  { label: "as any", re: "(^|[^A-Za-z0-9_])as any([^A-Za-z0-9_]|$)" },
   // The double-cast that launders a value past the type checker without
   // tripping `as any` above. Being uncounted for so long is exactly why it
   // became the dominant hatch idiom here: it peaked at 210 under `packages/`
@@ -56,11 +69,23 @@ const PATTERNS = [
   // commits ahead charges that branch for every cast those commits added (+47
   // when this was first tried). Land such a change directly on top of
   // origin/main, as this one was.
-  { label: "as unknown as", re: "\\bas unknown as\\b" },
+  { label: "as unknown as", re: "(^|[^A-Za-z0-9_])as unknown as([^A-Za-z0-9_]|$)" },
 ];
 
-// Only count source under packages/, never built output.
-const PATHSPECS = ["packages", ":!packages/**/dist/**"];
+// Only count source under packages/ and scripts/, never built output.
+// `scripts/` is included for the same reason it is linted: a `biome-ignore`
+// added to repo tooling is the same debt as one added to shipped source, and
+// leaving it uncounted makes `scripts/` the cheapest place to hide one.
+// This file is excluded from its own scan — not as an exemption, but because
+// it is the only file whose SOURCE is a list of the patterns. Counting it
+// makes the gate self-referential: the six pattern strings in PATTERNS above
+// are scored as six hatches, and editing this comment moves the ratchet.
+const PATHSPECS = [
+  "packages",
+  "scripts",
+  ":!packages/**/dist/**",
+  ":!scripts/check-escape-hatches.mjs",
+];
 
 /** Run git, returning stdout. Throws on real failure (not "no matches"). */
 function git(args, { allowNoMatch = false } = {}) {
@@ -103,9 +128,7 @@ function resolveBase() {
 
 const base = resolveBase();
 if (!base) {
-  console.log(
-    "check-hatches: no origin/main to compare against — skipping ratchet.",
-  );
+  console.log("check-hatches: no origin/main to compare against — skipping ratchet.");
   process.exit(0);
 }
 

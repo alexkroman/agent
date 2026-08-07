@@ -3,10 +3,9 @@
 exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
 [
   "builtinTools",
+  "deadAirCoverMs",
   "errorPhrase",
-  "falseInterruptionTimeoutMs",
   "greeting",
-  "holdPhrase",
   "idleTimeoutMs",
   "interruptionMinDurationMs",
   "llm",
@@ -14,7 +13,9 @@ exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
   "minBargeInWords",
   "mode",
   "name",
+  "preemptiveGeneration",
   "requiredEnv",
+  "resumeFalseInterruption",
   "s2s",
   "silencePrompt",
   "silenceTimeoutMs",
@@ -91,6 +92,7 @@ exports[`protocol schema shapes > ClientEventSchema option shapes 1`] = `
     "type",
   ],
   "user_transcript_partial": [
+    "eotConfidence",
     "text",
     "type",
   ],
@@ -107,6 +109,10 @@ exports[`protocol schema shapes > ClientMessageSchema option shapes 1`] = `
   ],
   "history": [
     "messages",
+    "type",
+  ],
+  "playback_progress": [
+    "bufferedMs",
     "type",
   ],
   "reset": [
@@ -194,6 +200,7 @@ exports[`protocol schema shapes > ServerMessageSchema option shapes 1`] = `
     "type",
   ],
   "user_transcript_partial": [
+    "eotConfidence",
     "text",
     "type",
   ],

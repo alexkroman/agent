@@ -1,3 +1,25 @@
 packages:
   - "packages/*"
   - "docs"
+
+# pnpm 10.x reads these here, NOT from package.json's "pnpm" field — that
+# field is still accepted silently by some tools but pnpm itself only warns
+# ("The 'pnpm' field in package.json is no longer read") and IGNORES it. The
+# failure mode is quiet: `overrides` stops pinning, and `onlyBuiltDependencies`
+# stops being an allowlist, so postinstall scripts are decided by the prompt
+# (or by whatever `ignoredBuiltDependencies` was last written) rather than by
+# this list. https://pnpm.io/settings
+
+# Packages allowed to run install scripts. Everything else is blocked, so a
+# transitive dependency cannot execute code at install time.
+onlyBuiltDependencies:
+  - esbuild
+  - lefthook
+  - protobufjs
+
+ignoredBuiltDependencies:
+  - esbuild
+  - lefthook
+
+overrides:
+  unrun: 0.2.39

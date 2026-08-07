@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { normalizeAgentConveniences } from "./_author-conveniences.ts";
+import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
 import { DEFAULT_MAX_STEPS } from "./constants.ts";
 import type { AssemblyAITtsVoice } from "./providers/tts/assemblyai.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
@@ -127,22 +128,26 @@ export type ProviderField = "stt" | "llm" | "tts" | "s2s";
  * The {@link AgentDef} fields that only do anything in pipeline mode. On an
  * S2S agent each is typed as a {@link PipelineOnlyMisuse} message, so
  * setting one is a compile error naming the rule instead of a silent no-op.
+ *
+ * The voice-UX knobs are DERIVED from {@link PipelineVoiceTuning} rather than
+ * re-listed, so a field added to that interface gets this compile error for
+ * free. The three hand-listed names are the ones that are not voice-UX tuning:
+ * the two silence-nudge fields, and `sttPrompt` — which is visibly odd here,
+ * because S2S has forwarded it as `input.transcription_prompt` since
+ * 2026-08-06 (see packages/aai/CLAUDE.md). That membership is a pre-existing
+ * inconsistency, flagged deliberately rather than quietly resolved: removing it
+ * is a behaviour change for authors and belongs in its own change.
  */
 export type PipelineOnlyField =
+  | keyof PipelineVoiceTuning
   | "sttPrompt"
   | "silenceTimeoutMs"
-  | "silencePrompt"
-  | "minBargeInWords"
-  | "interruptionMinDurationMs"
-  | "holdPhrase"
-  | "errorPhrase"
-  | "startFailurePhrase"
-  | "falseInterruptionTimeoutMs";
+  | "silencePrompt";
 
 /**
  * The "type" a pipeline-only field has on an S2S agent — a message, so the
- * compile error for `agent({ s2s: ..., holdPhrase: "..." })` reads
- * *"Type 'string' is not assignable to type '`holdPhrase` is pipeline-mode
+ * compile error for `agent({ s2s: ..., deadAirCoverMs: 5000 })` reads
+ * *"Type 'number' is not assignable to type '`deadAirCoverMs` is pipeline-mode
  * only …'"* instead of the bare `undefined` mismatch that explains nothing
  * (the lesson `client()`'s ComponentTier already recorded).
  */

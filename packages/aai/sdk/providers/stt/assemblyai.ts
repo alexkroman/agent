@@ -18,10 +18,23 @@
  * ```
  */
 
+import {
+  DEFAULT_MAX_TURN_SILENCE_MS,
+  DEFAULT_MIN_TURN_SILENCE_MS,
+} from "../../endpointing-constants.ts";
+import {
+  DEFAULT_VOICE_FOCUS,
+  DEFAULT_VOICE_FOCUS_THRESHOLD,
+  STT_CONNECT_MAX_RETRIES,
+  STT_CONNECT_TIMEOUT_MS,
+} from "../../pipeline-tuning-constants.ts";
 import type { SttProvider } from "../../providers.ts";
 
 /** Kind tag recognised by the host-side resolver. */
 export const ASSEMBLYAI_KIND = "assemblyai" as const;
+
+/** Streaming model used when the descriptor names none. */
+export const ASSEMBLYAI_STT_DEFAULT_MODEL = "universal-3-5-pro";
 
 /** Agent-env variable holding the AssemblyAI API key. */
 export const ASSEMBLYAI_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
@@ -115,7 +128,7 @@ export interface AssemblyAIOptions {
    * content, sent as the `max_turn_silence` connection parameter. This is the
    * pause-tolerance knob: it bounds only utterances that never read as
    * complete, so raising it costs an ordinary finished sentence nothing.
-   * Defaults to `DEFAULT_MAX_TURN_SILENCE_MS` (3500); the service's own default
+   * Defaults to `DEFAULT_MAX_TURN_SILENCE_MS` (3000); the service's own default
    * is 1536. Raise it for callers who dictate confirmation numbers or
    * addresses, and keep it above {@link minTurnSilenceMs}.
    */
@@ -171,4 +184,48 @@ export type AssemblyAIProvider = SttProvider & {
  */
 export function assemblyAIStt(opts: AssemblyAIOptions = {}): AssemblyAIProvider {
   return { kind: ASSEMBLYAI_KIND, options: { ...opts } };
+}
+
+/**
+ * The settings this stage will actually run with — the descriptor's own
+ * options with every host-side default filled in.
+ *
+ * Shared by the opener (which maps these onto the SDK's parameter names) and
+ * by the runtime's "Session mode resolved" log, so what is reported is by
+ * construction what goes on the wire. A second copy of these `??` chains for
+ * the log would be a copy that drifts, and every one of these knobs has a
+ * measured value behind it (see the constants' docs) — "which endpointing
+ * window is this session on" has to be answerable without re-deriving it.
+ */
+export function resolveAssemblyAISttSettings(opts: AssemblyAIOptions): {
+  model: string;
+  minTurnSilenceMs: number;
+  maxTurnSilenceMs: number;
+  voiceFocus: string;
+  voiceFocusThreshold: number;
+  connectTimeoutMs: number;
+  maxConnectRetries: number;
+  languages?: string[];
+  streamingUrl?: string;
+  region?: "us" | "eu";
+} {
+  // "off" is spelled as the empty string on the wire; normalize here so the
+  // log and the connection parameter agree on what "disabled" looks like.
+  const requestedVoiceFocus = opts.voiceFocus ?? DEFAULT_VOICE_FOCUS;
+  return {
+    model: opts.model ?? ASSEMBLYAI_STT_DEFAULT_MODEL,
+    minTurnSilenceMs: opts.minTurnSilenceMs ?? DEFAULT_MIN_TURN_SILENCE_MS,
+    maxTurnSilenceMs: opts.maxTurnSilenceMs ?? DEFAULT_MAX_TURN_SILENCE_MS,
+    voiceFocus: requestedVoiceFocus === "off" ? "" : requestedVoiceFocus,
+    voiceFocusThreshold: opts.voiceFocusThreshold ?? DEFAULT_VOICE_FOCUS_THRESHOLD,
+    connectTimeoutMs: opts.connectTimeoutMs ?? STT_CONNECT_TIMEOUT_MS,
+    maxConnectRetries: opts.maxConnectRetries ?? STT_CONNECT_MAX_RETRIES,
+    // Absent means "detect per turn" — a defaulted ["en"] here would silently
+    // disable multilingual transcription for every agent, so it stays unset.
+    ...(opts.languages !== undefined && opts.languages.length > 0
+      ? { languages: opts.languages }
+      : {}),
+    ...(opts.streamingUrl ? { streamingUrl: opts.streamingUrl } : {}),
+    ...(opts.region ? { region: opts.region } : {}),
+  };
 }

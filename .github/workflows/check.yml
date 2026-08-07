@@ -78,11 +78,21 @@ jobs:
       - run: |
           pnpm exec turbo run check:publint check:attw check:typecheck docs
           pnpm run check:knip
+          # `turbo run lint` above is per-PACKAGE, and scripts/ is not a
+          # package — so until this line it was the one source directory in
+          # the repo that no lint job touched.
+          pnpm run lint:scripts
           pnpm run check:syncpack
           pnpm run check:sherif
           pnpm run check:markdown
           pnpm run check:publish-names
           pnpm run check:doc-examples
+          # In scripts/check.sh since it was written, but missing here — the
+          # same CI-never-invokes-check.sh gap the ratchets below document.
+          # It type-checks the templates under the SCAFFOLD's tsconfig, which
+          # is looser than the repo's, so `turbo run typecheck` passing above
+          # says nothing about it.
+          pnpm run check:template-types
       # The quality ratchets. They lived only in scripts/check.sh, which CI
       # never invokes, so they were enforced solely by the pre-push hook — and
       # `git push --no-verify` skipped them entirely. All are pure git/fs

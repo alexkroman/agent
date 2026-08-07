@@ -10,8 +10,8 @@ import { DeepgramClient, type listen } from "@deepgram/sdk";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import {
   DEEPGRAM_API_KEY_ENV,
-  DEFAULT_DEEPGRAM_ENDPOINTING_MS,
   type DeepgramOptions,
+  resolveDeepgramSettings,
 } from "../../../sdk/providers/stt/deepgram.ts";
 import {
   makeSttError,
@@ -71,17 +71,18 @@ export function openDeepgram(opts: DeepgramOptions = {}): SttOpener {
       );
       const connectError = (msg: string) => makeSttError("stt_connect_failed", msg);
 
+      const settings = resolveDeepgramSettings(opts);
       const client = new DeepgramClient({ apiKey });
       const connection = await connectOrThrow("Deepgram STT", connectError, () =>
         client.listen.v1.connect({
-          model: opts.model ?? "nova-3",
-          language: opts.language ?? "en",
+          model: settings.model,
+          language: settings.language,
           encoding: "linear16",
           sample_rate: openOpts.sampleRate,
           channels: 1,
           interim_results: "true",
           smart_format: "true",
-          endpointing: opts.endpointing ?? DEFAULT_DEEPGRAM_ENDPOINTING_MS,
+          endpointing: settings.endpointingMs,
           utterance_end_ms: "1000",
           // Pass the API key explicitly as the Authorization header so the
           // WebSocket connection authenticates even without env var fallback.

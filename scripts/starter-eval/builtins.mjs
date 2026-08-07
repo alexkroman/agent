@@ -13,7 +13,7 @@
  * that the capability is generally wanted — and adding it by default would
  * merely make an eval check pass while changing nothing for users.
  *
- *   node scripts/starter-eval-builtins.mjs run.json [more.json ...]
+ *   node scripts/starter-eval/builtins.mjs run.json [more.json ...]
  *
  * Reads the workspaces the harness captured. It captures them for EVERY run,
  * shippable or not, which is what makes these totals rather than a lower
@@ -22,12 +22,12 @@
  */
 
 import { readFileSync } from "node:fs";
-import { EXPECTATIONS } from "./starter-expectations.mjs";
+import { EXPECTATIONS } from "./expectations.mjs";
 
 const OPT_IN = ["web_search", "visit_webpage", "get_page_design", "fetch_json", "run_code"];
 
 const files = process.argv.slice(2);
-if (files.length === 0) throw new Error("usage: starter-eval-builtins.mjs run.json [...]");
+if (files.length === 0) throw new Error("usage: starter-eval/builtins.mjs run.json [...]");
 
 const rows = files.flatMap((f) => JSON.parse(readFileSync(f, "utf-8")));
 

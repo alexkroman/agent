@@ -128,7 +128,9 @@ function drift(label, path, pick) {
   const problems = [];
   for (const [name, version] of Object.entries(versions)) {
     if (declared[name] !== version) {
-      problems.push(`${label} has ${name}@${declared[name] ?? "(absent)"}, installed is ${version}`);
+      problems.push(
+        `${label} has ${name}@${declared[name] ?? "(absent)"}, installed is ${version}`,
+      );
     }
   }
   for (const name of Object.keys(declared)) {

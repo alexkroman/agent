@@ -13,6 +13,7 @@
  */
 
 import fc from "fast-check";
+import type { ScriptedPart } from "../_pipeline-test-fakes.ts";
 
 /** Scripted LLM steps available to a run; far more than any run consumes. */
 export const SCRIPT_LENGTH = 2000;
@@ -25,7 +26,9 @@ export type ActionKind =
   | "cancelReply"
   | "reset"
   | "sendUserAudio"
-  | "armBargeInFromTool";
+  | "armBargeInFromTool"
+  | "noiseBargeIn"
+  | "highConfidencePartial";
 
 export const ACTION_KINDS: readonly ActionKind[] = [
   "sttPartial",
@@ -35,6 +38,8 @@ export const ACTION_KINDS: readonly ActionKind[] = [
   "reset",
   "sendUserAudio",
   "armBargeInFromTool",
+  "noiseBargeIn",
+  "highConfidencePartial",
 ];
 
 /** Utterance openers — "wait stop that" is the one that reads as a barge-in. */
@@ -56,6 +61,25 @@ export type FuzzStep = {
   opener: number;
   pauseMs: number | null;
 };
+
+/**
+ * Quiet gap forced after a `noiseBargeIn` step, comfortably clear of the short
+ * `speechIdleTimeoutMs` the suite runs the transport at.
+ */
+const NOISE_QUIET_MS = 3;
+
+/**
+ * How long to pause after a step, or `null` for no pause at all.
+ *
+ * A `noiseBargeIn` only becomes a FALSE interruption once the transcript
+ * stream goes QUIET — that is what closes the speaking edge, and closing the
+ * edge is what fires the resume. So that one action carries a floor under the
+ * generated pause; every other step pauses by exactly what was generated.
+ */
+export function stepPauseMs(step: FuzzStep): number | null {
+  if (step.action !== "noiseBargeIn") return step.pauseMs;
+  return Math.max(step.pauseMs ?? 0, NOISE_QUIET_MS);
+}
 
 export const stepArb: fc.Arbitrary<FuzzStep> = fc.record({
   action: fc.constantFrom(...ACTION_KINDS),
@@ -116,6 +140,13 @@ export type RunInput = {
    * report the turn's failure non-fatally.
    */
   refusals: readonly boolean[];
+  /**
+   * The author's `preemptiveGeneration`, generated so BOTH arms run in one
+   * property. Off is the shipped default and the arm every pre-existing oracle
+   * was written against; on adds a second, speculative `streamText` per
+   * utterance that must never reach TTS, a tool, or history.
+   */
+  preemptiveGeneration: boolean;
 };
 
 export const shortRunArb: fc.Arbitrary<RunInput> = fc.record({
@@ -133,4 +164,39 @@ export const shortRunArb: fc.Arbitrary<RunInput> = fc.record({
     ),
     { minLength: 4, maxLength: 12 },
   ),
+  preemptiveGeneration: fc.boolean(),
 });
+
+/**
+ * Build the LLM script: text-only turns interleaved with tool-call turns.
+ *
+ * `pattern` says which script steps call a tool and is CYCLED — a run can
+ * consume any number of steps, so the generated pattern is short enough to read
+ * in a counterexample rather than one entry per step.
+ */
+export function buildScript(
+  pattern: readonly ScriptTurn[],
+  runId: string,
+): { steps: ScriptedPart[][]; stepText: string[] } {
+  const steps: ScriptedPart[][] = [];
+  const stepText: string[] = [];
+  for (let i = 0; i < SCRIPT_LENGTH; i++) {
+    const turn = pattern[i % pattern.length];
+    if (turn === "fail") {
+      // A provider that fails mid-turn — a rate limit, a content filter, a
+      // dropped upstream connection.
+      steps.push([{ type: "error", error: new Error(`llm blew up on step ${i}`) }]);
+      stepText.push("");
+    } else if (turn === "tool") {
+      steps.push([
+        { type: "tool-call", toolCallId: `c${runId}-${i}`, toolName: "lookup", input: "{}" },
+      ]);
+      stepText.push("");
+    } else {
+      const words = Array.from({ length: 5 }, (_, w) => `s${i}w${w} `);
+      steps.push(words.map((text) => ({ type: "text" as const, text })));
+      stepText.push(words.join(""));
+    }
+  }
+  return { steps, stepText };
+}

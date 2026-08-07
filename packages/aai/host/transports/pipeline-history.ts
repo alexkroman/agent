@@ -15,6 +15,7 @@
 
 import type { ModelMessage } from "ai";
 import { DEFAULT_MAX_HISTORY } from "../../sdk/constants.ts";
+import { createEpoch, type Epoch } from "../../sdk/epoch.ts";
 import type { Message } from "../../sdk/types.ts";
 import { toModelMessage } from "./pipeline-stream.ts";
 
@@ -48,6 +49,15 @@ export interface PipelineHistory {
   seed(msgs: readonly Message[]): void;
   /** Clear both views. */
   reset(): void;
+  /**
+   * Bumped by every mutator above. The gate on adopting a preemptive
+   * speculation (`pipeline-speculation.ts`): a speculation is launched against
+   * a snapshot of `llm`, and anything that mutates the conversation in between
+   * — a chained turn landing, a reset, a reconnect seed — makes the request it
+   * is running no longer the request the real turn would assemble. Comparing
+   * the revision is the cheap total check; comparing message arrays is not.
+   */
+  readonly revision: Pick<Epoch, "current" | "isCurrent">;
 }
 
 function cap(arr: unknown[]): void {
@@ -125,9 +135,26 @@ function withoutReasoning(m: ModelMessage): ModelMessage | null {
  * Two things must survive the abort: the response messages of every COMPLETED
  * LLM step (assistant tool calls + their `tool` results — dropping them makes
  * the next turn's LLM repeat calls it already made or deny results it already
- * has), and the spoken-so-far text, marked `[interrupted]` so the model knows
- * it was cut off. The LLM view only receives the text tail that is not
- * already inside a persisted step message.
+ * has), and the text the caller actually HEARD, marked `[interrupted]` so the
+ * model knows it was cut off. The LLM view only receives the text tail that is
+ * not already inside a persisted step message.
+ *
+ * **`heard` is a prefix of what the model generated, and the difference is
+ * deliberate.** This function used to record the whole of `accumulated`, on the
+ * reasoning that "the model needs to know what it had committed to saying".
+ * That is REVERSED, for two reasons: the caller provably did not hear the tail
+ * (TTS runs behind the text, and a barge-in discards everything still in the
+ * provider's buffer), and a model reasoning from a record that says it
+ * delivered information the caller never got will not repeat it — which is the
+ * failure the repetition measurement on `buildTailResumePrompt` describes from
+ * the other side. Where the prefix ends is the heard cursor's answer
+ * (`pipeline-heard.ts`), the same one the resume prompt's anchor comes from, so
+ * the two can never disagree. This is LiveKit's rule.
+ *
+ * A consequence worth stating: the client's committed transcript for this reply
+ * is now deliberately LONGER than the history entry (it still shows everything
+ * that reached TTS). That divergence CANNOT be closed by emitting a corrected
+ * final — doing so is the measured double-transcript bug below.
  *
  * **Nothing is emitted to the CLIENT here.** This runs when the aborted stream
  * settles, which is necessarily after the barge-in's `cancelled` frame, and the
@@ -143,37 +170,47 @@ function withoutReasoning(m: ModelMessage): ModelMessage | null {
  * reached TTS was already published as an interim `agent_transcript` by
  * `sendTtsText`.
  *
- * Those interim snapshots are not a superset of `spoken`, and that is the point:
- * they carry what reached the TTS provider, while `accumulated` carries every
- * model delta — including whatever was still inside the TTS batch coalescer
- * (`TTS_COALESCE_MAX_CHARS`) when the abort discarded it. So the client now shows
+ * Those interim snapshots are not a superset of `heard`, and that is the point:
+ * they carry what reached the TTS provider, while the model's own text also
+ * includes whatever was still inside the TTS batch coalescer
+ * (`TTS_COALESCE_MAX_CHARS`) when the abort discarded it. So the client shows
  * what the caller actually heard, where the removed frame replaced it with words
- * that were never synthesized. History deliberately keeps the fuller
- * `accumulated` text: the model needs to know what it had committed to saying.
+ * that were never synthesized.
  */
 export function persistInterruptedTurn(args: {
   history: PipelineHistory;
-  /** Full text generated before the abort (best proxy for what was spoken). */
-  accumulated: string;
-  /** Length of `accumulated` already covered by persisted step messages. */
+  /** The prefix of the generated text the caller is estimated to have HEARD. */
+  heard: string;
+  /** Length of the generated text already covered by persisted step messages. */
   persistedLen: number;
   /** Response messages of the turn's completed steps. */
   stepMessages: readonly ModelMessage[];
   /** Seed the STT provider with the agent's side of the dialog. */
   updateAgentContext: (text: string) => void;
 }): void {
-  const { history, accumulated, persistedLen, stepMessages } = args;
+  const { history, heard, stepMessages } = args;
+  // Pushed unconditionally, BEFORE the empty-heard return: a turn whose tools
+  // ran left a real trace even if the caller heard nothing, and dropping the
+  // steps would make the next turn re-call tools it already ran.
   if (stepMessages.length > 0) history.pushLlm(...stepMessages);
-  // `accumulated` is model text only — the hold phrase and dead-air cover are
-  // spoken but never recorded (see emitText's `record` flag), so an interrupted
-  // turn that got no further than its filler leaves nothing to persist.
-  const spoken = accumulated.trim();
+  // Nothing audible reached the caller — the reply may as well not have
+  // happened, so no assistant message is written at all (LiveKit's rule). This
+  // also covers a turn that got no further than its dead-air filler: filler is
+  // audible but never recordable (see emitText's `record` flag).
+  const spoken = heard.trim();
   if (spoken.length === 0) return;
   history.pushConversation({ role: "assistant", content: `${spoken} [interrupted]` });
-  const tail = accumulated.slice(persistedLen).trim();
+  // Clamped: the persisted-step snapshot indexes the GENERATED text, which the
+  // heard prefix is shorter than, so an unclamped slice would run past the end
+  // (a negative-length tail) rather than yielding nothing.
+  const tail = heard.slice(Math.min(args.persistedLen, heard.length)).trim();
   if (tail.length > 0) {
     history.pushLlm({ role: "assistant", content: `${tail} [interrupted]` });
   }
+  // Seeded with the HEARD text, not the generated text: the STT bias is
+  // fighting the agent's own voice echoing back, so what was in the air is the
+  // right hint. (Judgement call — the fuller text might bias vocabulary
+  // better; no measurement either way.)
   args.updateAgentContext(spoken);
 }
 
@@ -181,13 +218,18 @@ export function persistInterruptedTurn(args: {
 export function createPipelineHistory(seed?: readonly Message[]): PipelineHistory {
   const conversation: Message[] = seed ? [...seed] : [];
   const llm: ModelMessage[] = conversation.map(toModelMessage);
+  // The existing primitive rather than a hand-rolled counter — see
+  // `PipelineHistory.revision`.
+  const revision = createEpoch();
 
   return {
     conversation,
     llm,
+    revision: { current: revision.current, isCurrent: revision.isCurrent },
     pushConversation(...msgs: Message[]): void {
       conversation.push(...msgs);
       cap(conversation);
+      revision.bump();
     },
     pushLlm(...msgs: ModelMessage[]): void {
       for (const m of msgs) {
@@ -195,12 +237,14 @@ export function createPipelineHistory(seed?: readonly Message[]): PipelineHistor
         if (cleaned) llm.push(cleaned);
       }
       capLlm(llm);
+      revision.bump();
     },
     dropTrailingUser(content: string): void {
       const last = conversation.at(-1);
       if (last?.role === "user" && last.content === content) conversation.pop();
       const lastLlm = llm.at(-1);
       if (lastLlm?.role === "user" && lastLlm.content === content) llm.pop();
+      revision.bump();
     },
     seed(msgs: readonly Message[]): void {
       if (msgs.length === 0) return;
@@ -208,10 +252,12 @@ export function createPipelineHistory(seed?: readonly Message[]): PipelineHistor
       cap(conversation);
       llm.push(...msgs.map(toModelMessage));
       capLlm(llm);
+      revision.bump();
     },
     reset(): void {
       conversation.length = 0;
       llm.length = 0;
+      revision.bump();
     },
   };
 }

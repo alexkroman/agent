@@ -182,21 +182,67 @@ present in the `agent()` config:
   tools changes nothing; calling one does. So a tool-using agent renders blank
   reply text for exactly the turns that do the work, `reply.done` logs
   `agentText: "none"`, and `replyAnomaly` warns "delivered audio with no
-  transcript" once per tool turn. There is no client-side remedy —
-  `transcript.agent` is the only event in the protocol carrying agent text.
-  Anything reading reply text (history, evals, a tau2-style harness scoring
-  what the agent *said*) sees silence for a turn the user heard answered.
+  transcript" once per tool turn. Anything reading reply text (history, evals, a
+  tau2-style harness scoring what the agent *said*) sees silence for a turn the
+  user heard answered.
 
-  Two traps here. The docs contradict each other on whether it is intended:
-  the canonical message-sequence page shows `transcript.agent` inside its
-  `opt tool call` branch and calls it "Per agent reply", while the
-  execution-modes page's `interactive` diagram shows neither tool-turn reply
-  emitting it — the service matches the latter. And
-  `transcript.agent.delta` is documented in the events reference but **is not
-  implemented**: zero frames arrive even for a plain greeting reply that does
-  send `transcript.agent`, and it appears nowhere on the canonical page. An
-  accumulator for it was added (#a42cdbd3) and removed again once measurement
-  showed it could never fire; do not re-add one on the strength of the docs.
+  The docs contradict each other on whether that is intended: the canonical
+  message-sequence page shows `transcript.agent` inside its `opt tool call`
+  branch and calls it "Per agent reply", while the execution-modes page's
+  `interactive` diagram shows neither tool-turn reply emitting it — the service
+  matches the latter.
+
+  **`transcript.agent.delta` DOES arrive, and it is the remedy.** This guide said
+  the opposite — "not implemented: zero frames arrive even for a plain greeting
+  reply", with an instruction not to re-add the accumulator removed in #a42cdbd3.
+  Re-measured 2026-08-06 against the live service with a standalone client
+  (`tau2-bench/scripts/vaapi_delta_probe.py`, no SDK): a bare greeting reply —
+  the exact case named as producing none — emits one frame per word carrying
+  `start_ms`/`end_ms`. Over one 215s retail session, 511 frames across 20
+  replies, of which **5 sent deltas and never a final `transcript.agent`** (116
+  words, all tool-preamble turns, otherwise unrecoverable). Two properties decide
+  how they are consumed, and neither matches the docs' "streaming ... useful for
+  live captioning in sync with playback": they arrive in a **batch** (every delta
+  for a reply within 0.000-0.031s), and they arrive **before** the final
+  `transcript.agent` (0.4-7.7s earlier). So `s2s.ts` forwards the accumulation as
+  a partial and, on a COMPLETED reply that never sent a final, commits it as the
+  reply's transcript. Never on an interrupted reply: the batch covers the whole
+  composed reply while `transcript.agent` with `interrupted: true` is trimmed to
+  what was spoken, so committing it would put words in history the caller never
+  heard.
+
+  **S2S sends Voice Focus and `sttPrompt`; `languages`, `keyterms` and `voice`
+  are still unreachable.** `updateSession` pins
+  `input.voice_focus`/`voice_focus_threshold` from the same
+  `DEFAULT_VOICE_FOCUS`/`DEFAULT_VOICE_FOCUS_THRESHOLD` constants the pipeline
+  STT stage reads (the S2S default is the service's 0.7, and the interferer that
+  matters is background speech), and forwards `sttPrompt` as
+  `input.transcription_prompt`, trimmed to that field's documented 1750-char cap
+  — keeping the HEAD, unlike `agent_context`'s tail-keeping trim, because this is
+  a standing vocabulary description rather than a trailing question.
+
+  `sttPrompt` was pipeline-only until 2026-08-06, which made it a SILENT config
+  drop of exactly the class this guide warns about: `agent({ sttPrompt })` and
+  `host.sttPrompt` both reached the agent definition and only
+  `pipeline-transport.ts` read it, so an S2S agent that set one got unbiased
+  transcription and no warning. `runtime-transport.test.ts` pins the forwarding
+  at the point it was missing (verified to fail when reverted).
+
+  What remains unreachable is `input.language_codes`, `input.keyterms` and
+  `output.voice`, because `assemblyAIS2s()` takes no options at all — so an S2S
+  agent cannot pick its voice either, and the claim elsewhere in this guide that
+  "S2S mode's voice rides on the `s2s` descriptor" is wrong: `voice` is a compile
+  error on `agent()` and there is no descriptor field to put it on. Note
+  `languages` must stay AUTHOR-controlled rather than defaulted here — an unset
+  value means "detect per turn", and a host-side `["en"]` would silently disable
+  multilingual transcription for every agent, the mirror-image bug.
+
+  Measured on tau2 retail (2 runs per arm, identical audio and pacing):
+  `language_codes: ["en"]` + voice focus 0.9 + a `transcription_prompt` took the
+  authenticating caller's first name from 1 of 6 attempts correct to 6 of 6, and
+  word recall 0.892/0.913 → 0.931/0.924. `turn_detection` is deliberately NOT
+  pinned: its default is adaptive and entity-aware (it waits out a spelled
+  value), and setting `min_silence`/`max_silence` disables both for the session.
 
   **An in-band service error is NOT the end of the session, and a fatal frame
   is not a banner.** `SessionCore.onError` defaults to `fatal: true`, and
@@ -402,6 +448,85 @@ Reference providers shipped today:
     failed" *after* the reply has streamed — the wrapper rewrites that null to
     `[]` (an absent `choices` stays absent). Every other byte passes through.
     Remove each repair once the gateway emits conformant frames.
+
+    **The default model is `gpt-5.6-terra`.** It has been `gpt-5.5`,
+    `gpt-5.6-luna` and `qwen3-next-80b-a3b` in between; the id is a one-line
+    change, but it moves WHERE reasoning gets turned off, so read the two
+    blocks below together before changing it again. **And check the guide
+    against the constant before trusting either** — this block described luna
+    as the default for a stretch when `ASSEMBLYAI_LLM_DEFAULT_MODEL` said
+    `gpt-5.5`, because the id was reverted in code and not here.
+    `sdk/providers/llm/assemblyai.ts` is the answer; a prose default is a
+    claim about it.
+
+    **On the `gpt-5.6` family `reasoning_effort: "none"` is REQUIRED for tool
+    use — not a tuning knob.** The default is now one of them, so this is the
+    live path rather than a rule about a model an author might select. With
+    `tools` present and any other effort — INCLUDING the model's own
+    server-side default, i.e.
+    sending no `reasoning_effort` at all — the gateway rejects the request:
+    *"Function tools with reasoning_effort are not supported for gpt-5.6-luna
+    in /v1/chat/completions. To use function tools, use /v1/responses or set
+    reasoning_effort to 'none'."* Measured 2026-08-06 against the live gateway,
+    4/4 attempts on both `-luna` and `-terra`. **`gpt-5.5` and
+    `qwen3-next-80b-a3b` are both unaffected**, measured the same day: `"none"`,
+    `"low"`, and no `reasoning_effort` at all each return a normal tool-calling
+    completion, streaming included.
+
+    **That message is not what this SDK would see.** The pipeline streams, and
+    streaming turns the same rejection into a bare
+    `{"message":"something went wrong","code":500}` with the explanation
+    stripped — the diagnosis exists only in the non-streaming reply, which
+    nothing in the pipeline sends. And since `DEFAULT_BUILTIN_TOOLS` puts four
+    tools on every agent that does not opt out, an unguarded descriptor fails
+    on *every* turn while reading as a gateway outage. So the constraint is
+    encoded rather than documented: `TOOLS_REQUIRE_NO_REASONING` in
+    `sdk/providers/llm/assemblyai.ts` makes the factory default
+    `reasoningEffort` to `"none"` for those model ids, covering all three ways
+    a descriptor is built — `assemblyAILlm()` bare, the `llm: "gpt-5.6-terra"`
+    string shorthand (`from-string.ts`), and an explicit `model`. An explicit
+    `reasoningEffort` is still honoured, same rule as `gatewayUrl` winning over
+    `region`. Add a model id to that set when the gateway adds one that shares
+    the constraint; the generated catalog (`gateway-models.ts`) cannot carry it
+    — its flags come from `supported_parameters`, which does not list
+    `reasoning_effort` for ANY model, including ones that plainly honour it
+    (a bogus value 400s naming the supported ones).
+
+    **`assemblyAIPipeline()`'s explicit `reasoningEffort: "none"` is a
+    backstop on the current default, and must stay anyway.** Because
+    `gpt-5.6-terra` IS in `TOOLS_REQUIRE_NO_REASONING`, the factory now fills
+    the same value and the preset's argument
+    (`sdk/providers/assemblyai-pipeline.ts`) agrees with it rather than
+    carrying the whole weight. That agreement is a property of the id, not of
+    the pipeline: under `gpt-5.5` or `qwen3-next-80b-a3b` — two earlier
+    defaults, both outside the set — the preset's argument is the only
+    thing turning reasoning off, and deleting it as redundant costs every
+    default pipeline **1786ms p50 time-to-first-token against 999ms with
+    reasoning off**, with seconds of pre-first-token silence rather than a
+    failure as the symptom. So the two settings are pinned TOGETHER in
+    `define.test.ts` (effort and model id in one test): the preset's `"none"`
+    is what makes the next id change safe, and the pin is what makes an id
+    change that needs a second look fail loudly.
+
+    **The measured case is for `gpt-5.6-luna`, terra's sibling, and does not
+    transfer.** What is known about terra directly is narrow: the gateway
+    advertises it with tools, streaming, 270k context and a live probe
+    (`gateway-models.ts`), and it shares luna's tool/reasoning constraint 4/4
+    (measured 2026-08-06). It has **no paired latency numbers and no price
+    comparison here at all**. Luna's, kept because they bound the family:
+    $1/$6 per M against `gpt-5.5`'s $5/$30, and on time-to-first-token
+    (2026-08-06, 18 paired tool-calling turns, `reasoning_effort: "none"` on
+    both) p50 **832ms vs 999ms** — ~17%, not the multiple an early n=1 probe
+    suggested. `claude-opus-4-8` is 1217ms and `claude-sonnet-5` 1568ms at the
+    same settings. The 5x-looking gaps in the first measurements were an
+    ARTIFACT of comparing luna-with-`none` against `gpt-5.5` on its reasoning
+    DEFAULT (1786ms) — most of what looked like a model difference was the
+    reasoning setting, which this pipeline turns off regardless of model.
+
+    **No default here has been chosen on answer quality**, which is the axis
+    that should decide one — a tau2 run is what would settle it. Qwen has no
+    paired latency numbers at all, and terra has neither those nor a quality
+    run. Treat the current default as unverified on both axes.
 - **TTS**: one of
   - `cartesia({ voice })` — `CARTESIA_API_KEY`
   - `rime({ voice })` — `RIME_API_KEY`
@@ -422,17 +547,37 @@ Reference providers shipped today:
     flushing once makes time-to-first-audio the length of the whole turn, since
     the pipeline's only provider-level flush is the end-of-turn drain
     (`flushTtsAndWait`, once per reply — after every LLM step *and* tool call).
-    A tool-chaining reply was silent for its entire duration, `holdPhrase` and
-    the dead-air cover included, as those are just more buffered text. The
-    adapter therefore buffers host-side and emits `Generate`+`Flush` per
-    *sentence*: measured, that is ~350ms to first audio instead of the full
-    turn, for ~4% more total audio, where flushing every word-granularity delta
-    costs 2.6x and sounds disjointed. Two invariants come with it — only the
+    A tool-chaining reply was silent for its entire duration, the dead-air
+    cover included, as filler is just more buffered text. The
+    adapter therefore buffers host-side and emits `Generate`+`Flush` **per
+    segment** — a sentence end, or **40 characters** when no sentence end is in
+    sight (`splitSegment` in `host/providers/tts/assemblyai-segment.ts`).
+
+    **Segment LENGTH is the knob, not flush count, and it has a cliff on both
+    sides.** Sentence-only segmentation makes time-to-first-audio the length of
+    the reply's FIRST SENTENCE, which a long opening clause easily stretches
+    past half a second. Measured 2026-08-06 against production on such a reply
+    (medians of 3 runs): sentence-only 538ms to first audio / 12.64s of audio,
+    adding the 40-char budget **286ms / 14.00s** — half the latency for ~11%
+    more audio. But going finer collapses: same text, 15 flushes (per-3-word)
+    produced **21.20s** and per-delta 3.1x. The service's `WordBoundaries`
+    frames name the mechanism — under per-delta flushing their `audio_start_ms`
+    steps 0, 880, 1680, 2400, i.e. **every flush is padded into a ~800ms slot
+    however little text it carries**. So "stream continuously" is not available
+    on this protocol at any useful quality; the budget is a floor-BREAKER (a
+    buffer already holding whole sentences still flushes as one large segment),
+    and a per-clause boundary was measured and buys nothing, because clause
+    marks cluster near sentence marks anyway.
+
+    Two invariants come with segmenting — only the
     turn's **last** acknowledgement may emit `done` (`flushTtsAndWait` resolves
     on it, so a segment's `FlushDone` leaking through advances the orchestrator
     mid-reply), and the end-of-turn flush is never sent empty, so `done` never
-    depends on the service acking a contentless `Flush`. See the module doc in
-    `host/providers/tts/assemblyai.ts` for the measurements.
+    depends on the service acking a contentless `Flush`. A third is local to
+    segmentation: `sendText` must drain **every** segment a delta carries, since
+    a budget split consumes only its own — emitting one and waiting for the next
+    delta reintroduces the whole-turn lag whenever no next delta comes. See the
+    module doc in `host/providers/tts/assemblyai-segment.ts` for the full curve.
 
 The provider SDKs (`ai`, `assemblyai`, `@cartesia/cartesia-js`,
 `@ai-sdk/*`, …) are regular dependencies of `@alexkroman1/aai`, but they
@@ -583,6 +728,113 @@ The residual risk in a container is prompt injection steering the model at an
 internal endpoint; accepted, because the sandbox has nothing internal worth
 reaching and an author who wants that can already write it.
 
+## History records what was HEARD, not what was generated
+
+An interrupted reply lands in history as the words the caller is estimated to
+have actually heard, marked `[interrupted]` — not everything the model produced.
+A reply cut before anything was audible records **nothing at all** (its
+completed tool steps still do). That is LiveKit's rule, and it exists because
+TTS runs behind the text: a barge-in discards whatever is still in the
+provider's buffer, so the old record told the model it had delivered
+information the caller never got, and the model then never repeated it.
+
+**One cursor, one owner** — `host/transports/pipeline-heard.ts`
+(`createHeardTracker`). It answers exactly one question: given this reply's TTS
+text and its forwarded audio, which characters did the caller hear? History
+truncation and the false-interruption resume anchor (`buildTailResumePrompt`)
+are two READERS of that one answer, which is what keeps the resume prompt from
+quoting words the record denies. It also owns the playback clock, so the
+barge-in gate reads the same object.
+
+Two tiers of accuracy, decided at RUNTIME rather than by a capability flag:
+
+| provider | timings | cursor |
+| --- | --- | --- |
+| AssemblyAI TTS | `WordBoundaries` frames, parsed in `providers/tts/assemblyai-words.ts` | last word whose audio WHOLLY elapsed |
+| Cartesia | `add_timestamps` exists in the SDK, not wired up | proportional estimate, snapped to a word |
+| Rime | a `timestamps` frame exists, unmodelled | proportional estimate, snapped to a word |
+
+A provider that reports nothing degrades to exactly the estimate that was there
+before, so nothing regresses; the zero case needs no timings at all. Both
+roundings err toward UNDER-keeping, deliberately: over-keeping is the measured
+failure, while under-keeping costs a word or two of redundancy that the resume
+prompt's "without repeating what they already heard" absorbs.
+
+**The lag is `HEARD_AUDIO_LAG_MS` (750) and it is DERIVED, not measured** —
+`PLAYBACK_JITTER_MS` (400, real) plus an assumed sub-second network hop. It is
+the counterpart of `PIPELINE_PLAYBACK_GRACE_MS` with the opposite sign, and a
+separate constant on purpose: the grace errs late because a spurious cancel is
+harmless, while this one is subtracted from a position where erring either way
+costs. See both constants' docs.
+
+**The client's committed transcript and the history entry now diverge on
+purpose.** The caption still shows everything that reached TTS, because it was
+published as interims while the audio was being synthesized. It CANNOT be
+corrected after the fact to match the shorter record: emitting an
+`agent_transcript` after `cancelled` is the measured 19-of-73 double-transcript
+bug (`persistInterruptedTurn` in `pipeline-history.ts` — read it there).
+
+Two mechanisms this leans on: the audio gate (a cancelled turn's late audio AND
+its late word timings are both dropped by it, so no second epoch was invented),
+and `emitText`'s `record` flag, which now decides what may be truncated into
+history as well as what reaches `onDelta` — filler is audible, so it moves the
+heard POSITION, and is never recordable. The TTS coalescer flushes when that
+flag flips so no batched send ever mixes the two.
+
+**Not covered: a barge-in during the TTS drain.** `runTurn` has already
+committed the full text by then, so that case keeps `buildTailResumePrompt` as
+its only mitigation (which this change makes word-truthful). Fixing it means
+deferring the history commit until after the drain — a change to `runReply`'s
+body contract, deliberately separate.
+
+## `speech_started` means "the agent is yielding", on BOTH transports
+
+The two transports derive this event differently and a client cannot tell them
+apart, so pipeline mode holds it back to match S2S rather than emitting what it
+happens to know. In S2S the service fires its speech-started the moment it stops
+generating, so the event coincides with a real interruption. Pipeline mode has
+no VAD and derives the edge from the STT transcript stream, where the FIRST
+non-empty partial opened it — one word of a cough, a backchannel, or a phrase
+the caller addressed to someone else in the room. `minBargeInWords` and
+`interruptionMinDurationMs` correctly declined to abort the reply for those, so
+the agent kept talking; the client had been told it stopped.
+
+**That divergence is not cosmetic, because clients act on it.** tau2-bench's
+harness DISCARDS its entire agent playout buffer on `speech_started` and has no
+`cancelled` handler at all — so the one event that really means "the agent
+stopped" is ignored, and the one that did not is treated as authoritative. A
+reply still being spoken was thrown away mid-sentence. `aai-ui` reads the same
+event as informational (it only clears the caption; playback stops on
+`cancelled`), which is why this never showed up in the browser.
+
+Measured by replaying the benchmark's own recorded caller audio against a live
+pipeline agent (the `scripts/voice-replay/` harness, since removed), on the
+run's 10 conversations richest
+in these signals: **184 `speech_started` against 87 `cancelled` — 53% of the
+events the client acted on were not interruptions at all.** The agent yielded
+to non-directed speech on 12 of 12 occasions and then sat silent a median 5.9s
+(these are real barge-outs, not inter-sentence gaps: only 2.5% of natural gaps
+between agent segments are ≤0.6s).
+
+So while the agent holds the floor the edge is HELD, and released only when a
+barge-in really fires (alongside `cancelled`) or when the agent stops speaking
+on its own — `createGatedSpeechEdges` in `pipeline-user-speech.ts`. While the
+agent is silent it passes straight through: there is no floor to yield and the
+event just means "listening". Live captions are unaffected either way, because
+`user_transcript_partial` is emitted independently of the gate.
+
+The property to preserve — and what the specs in `pipeline-voice-events.test.ts`
+pin — is that **the score no longer depends on how the client reads the event**.
+Across the panel, the spread between a client that truncates on
+`speech_started` and one that truncates on `cancelled` collapsed from up to
+**66.7 points** (R_Y 89.7% vs 46.7%; S_BC 33.3% vs 100%) to **≤2.7 points**
+(R_Y 44.1% both ways). Note which direction R_Y moved: the benchmark's
+flattering 90% yield rate was an ARTIFACT of the same bug that wrecked
+selectivity — truncating on a signal that arrives ~470ms after the first partial
+makes yields look instant. A correct client's yield rate against the old code
+was already 46.7%. Do not read the drop as a regression, and do not "fix" it by
+reverting the gate.
+
 ## Data flow
 
 On the platform, the browser's session WebSocket connects DIRECTLY to the
@@ -606,7 +858,12 @@ server locally. Audio path depends on the session mode (see above):
   the client WebSocket → interrupts cancel the in-flight LLM stream and
   TTS playback. A barge-in that never commits a user turn is treated as a
   false interruption and the reply resumes (see
-  `falseInterruptionTimeoutMs`).
+  `resumeFalseInterruption`). `preemptiveGeneration` (OFF by default,
+  measured) opens a
+  branch one step earlier: a high-confidence STT INTERIM
+  starts a speculative LLM stream that reaches no TTS, no tool and no
+  history, and the committed final either adopts that running stream or
+  discards it — see the row below.
 
 ## Default values and magic numbers
 
@@ -617,19 +874,20 @@ defaults that affect agent behavior:
 
 | Default | Value | Where applied | Notes |
 | --- | --- | --- | --- |
-| `maxSteps` | 10 (`DEFAULT_MAX_STEPS`) | `constants.ts` | Max tool calls per reply. Prevents runaway tool loops; sized so multi-tool chains plus a repair retry fit. **Measured and left alone**: across 815 replies in two tau2-bench retail runs, 28-33% of replies called a tool at all, and among those the count was p50 **1**, p90 3, p99 5-6. Exactly **one reply of 815 reached the cap**, and it still scored reward 1.0. So the cap is binding on ~0.1% of replies and is not what limits chain length. Do not lower it on the strength of that thin tail: dropping to 5 would truncate ~0.4% of replies, and a truncated chain is strictly worse than a slow one — the agent stops holding a half-answer instead of finishing. Do not raise it either; nothing measurable is waiting on steps 11+, and the real constraint on a long chain is caller patience, not step count. That capped reply is the illustration: after its preamble it made **7 consecutive tool calls with no speech at all**, so what the caller experienced was dead air (see `DEFAULT_DEAD_AIR_COVER_MS`), not a step limit. Tune the silence, not the cap. |
+| `maxSteps` | 10 (`DEFAULT_MAX_STEPS`) | `constants.ts` | Max **tool-calling** steps per reply, LiveKit's `max_tool_steps` analog. **The cap and the forced final answer are ONE change and must not be separated, whatever the number is.** `stopWhen: stepCountIs(n)` alone ends the turn wherever the budget runs out — including straight after a tool result with nothing said — and that reply completes *successfully* with an empty transcript, so `errorPhrase` never fires and the caller simply hears the agent stop. So the `stopWhen` budget is `maxSteps + 1` and `prepareStep` forces `toolChoice: "none"` on that extra step (`forceFinalAnswer`, `pipeline-llm-stream.ts`): every tool result is still in context and the model's only remaining move is to speak. The override also beats an agent-level `toolChoice: "required"`, which would otherwise demand a tool call on the one step where tools are off. **The measurement says the cap barely shapes ordinary turns in either direction**: across 815 replies in two tau2-bench retail runs, 28-33% of replies called a tool at all, and among those p50 **1**, p90 3, p99 5-6 — exactly **one reply of 815** ever reached 10. A cap of 3 was tried on the strength of that p90 and reverted: what it truncates is the chain-heavy tail, where a step limit turns a completable task into a half-answer, and the forced final step makes that degradation quiet rather than absent. That one 10-step reply is the real lesson — after its preamble it made **7 consecutive tool calls with no speech at all**, so what the caller experienced was dead air (see `DEFAULT_DEAD_AIR_COVER_MS`), not a step limit. Tune the silence, not the cap — and note S2S enforces the same cap service-side by refusing tool calls past it (`session-core.ts`), where no forced final step is possible. |
 | `toolChoice` | `"auto"` | runtime resolution | LLM decides when to use tools vs respond directly. Full AI SDK set: `"auto"`, `"required"`, `"none"`, `{ type: "tool", toolName }`. |
 | `idleTimeoutMs` | 300,000 (5 min) | `constants.ts:26` | `0` or non-finite disables the timer entirely. Re-armed on every inbound audio frame (`resetIdle`), so it measures silence, not call length. On expiry session-core emits `idle_timeout` **and closes the socket** — the event alone retires nothing (clients treat it as informational and wait for the close), so for a long time an idle session lingered and only Modal's 300s input cap reaped it. |
 | `silenceTimeoutMs` | unset (disabled) | `pipeline-silence.ts` | Pipeline only: assistant proactively takes a turn after this much user silence. Capped at `MAX_CONSECUTIVE_SILENCE_NUDGES` (3) back-to-back nudges until the user speaks again. `silencePrompt` customizes the injected instruction (default `DEFAULT_SILENCE_PROMPT`); it is kept in LLM history but never emitted as a user transcript. |
 | `minBargeInWords` | 2 (`DEFAULT_MIN_BARGE_IN_WORDS`) | `constants.ts` | Pipeline only: interim-transcript words before user speech interrupts the in-flight reply. 2 keeps one-word backchannels from cutting the agent off; sub-threshold finals are answered after the reply. |
 | `interruptionMinDurationMs` | 500 (`DEFAULT_INTERRUPTION_MIN_DURATION_MS`) | `constants.ts` | Pipeline only: sustained speech (ms since the utterance's first partial) required before an interim-triggered barge-in fires — LiveKit's `min_interruption_duration` analog. Non-zero by default: room noise and echo of the agent's own voice produce short interim transcripts, and each one used to abandon a reply mid-word. Finals are never gated. 0 disables. |
-| AssemblyAI `min_turn_silence` / `max_turn_silence` | 1600 / 3500 (`DEFAULT_MIN_TURN_SILENCE_MS`, `DEFAULT_MAX_TURN_SILENCE_MS`) | `host/providers/stt/assemblyai.ts` | **Two knobs, not one, and the pause-tolerance one is the MAX.** On Universal-3.5 Pro the minimum is when the model runs its end-of-turn CHECK: the turn ends only if it READS as complete, otherwise a partial is emitted and the turn stays open. The maximum force-ends regardless of content. So the minimum is the latency floor on every finished utterance, while the maximum is paid only by utterances that never read complete. Both are always sent, because the service defaults them independently (min from the `mode` preset — 128/128/800 for `min_latency`/`balanced`/`max_accuracy` — and max to **1536**), and sending only one is how they invert. That inversion is the bug this pair replaced: the minimum was raised 1500 -> 2000 -> 3000 chasing Full-Duplex-Bench v3's hesitation recording while the maximum was never set, so from 2000 on the check could not fire before the content-blind force-end at 1536 had closed the turn — every ending came from the acoustic fallback, which is the mechanism that splits utterances, and the 3000 step changed nothing while taxing every complete utterance ~3s. The two knobs guard opposite splits, so the minimum must clear the pause BETWEEN sentences and BETWEEN dictated characters, while the maximum clears the pause WITHIN one continuous thought. **1600 is measured**: at 1000 tau2-bench retail regressed DB reward 1.00 -> 0.40 while NL assertions rose 0.60 -> 0.80 (the agent talked better and acted worse — it was authenticating against truncated spelled names, so no auth, no returns, unchanged DB). Pauses inside a single failing utterance measured 856-1455ms, nine of eighteen clearing 1000 and none clearing 1536. `pipeline-transport-options.test.ts` pins a 1000 floor, which is a floor and not a target. Note the max still EXCEEDS `DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS` (2000) though the min no longer does, so the recovery-window coupling survives in narrowed form — safe for the same reason, a fired window whose utterance is still open DEFERS the resume. Override via `assemblyAIStt({ minTurnSilenceMs, maxTurnSilenceMs })`. **1600 has since been re-confirmed by a direct sweep** with Voice Focus at 0.9 (600/800/1200/1400/1600/1800/2000 ms x 4 replayed sessions): below 1600 the transcript over-segments (1.02-1.08x turns per gold utterance) and an auth field is lost — at 1200 the completeness check fires mid-surname, `Last name K-O-V-A-C-S` becomes two fragments, and `kovacs` never lands; at and above 1600 it is 0.99x and 12/12 auth fields survive. 1800 scores marginally better on every axis except p50 latency and is inside the noise for n=4 — 1600 is the knee, which is structural, and 1800 would be a sample maximum. **Do not tune this knob from a pause histogram.** The intra-utterance pause distribution in those same runs is p99 **593 ms**, with 1 gap in 1037 above 1200 ms, which argues 800 would do — and is the wrong instrument: percentiles describe what an ACOUSTIC endpointer needs, while on U3.5 Pro this is where the SEMANTIC completeness check runs, so the failures are "the check fired mid-spelling and the fragment read complete", which no pause distribution predicts. Latency behaves accordingly: 600 -> 2000 is a nominal 1400 ms but moves p50 endpoint latency only ~910 ms, and p90 is flat ~4.0-4.6s at every setting because the tail is content-driven. **`vad_threshold` is measured and deliberately LEFT ALONE** — see the Voice Focus row. **`interruption_delay` and `mode` are measured NO-OPS here**, which is worth knowing because the docs actively suggest reaching for the first: `interruption_delay=0`, `mode=min_latency` and `mode=max_accuracy` all leave first-partial latency at p50 0.47-0.52s, identical to unset, with no error frame and the parameter accepted. ~470 ms to first partial is a model floor, not a knob, so the only remaining lever on barge-in latency is our own `interruptionMinDurationMs`. |
+| AssemblyAI `min_turn_silence` / `max_turn_silence` | 1600 / 3500 (`DEFAULT_MIN_TURN_SILENCE_MS`, `DEFAULT_MAX_TURN_SILENCE_MS`) | `host/providers/stt/assemblyai.ts` | **Two knobs, not one, and the pause-tolerance one is the MAX.** On Universal-3.5 Pro the minimum is when the model runs its end-of-turn CHECK: the turn ends only if it READS as complete, otherwise a partial is emitted and the turn stays open. The maximum force-ends regardless of content. So the minimum is the latency floor on every finished utterance, while the maximum is paid only by utterances that never read complete. Both are always sent, because the service defaults them independently (min from the `mode` preset — 128/128/800 for `min_latency`/`balanced`/`max_accuracy` — and max to **1536**), and sending only one is how they invert. That inversion is the bug this pair replaced: the minimum was raised 1500 -> 2000 -> 3000 chasing Full-Duplex-Bench v3's hesitation recording while the maximum was never set, so from 2000 on the check could not fire before the content-blind force-end at 1536 had closed the turn — every ending came from the acoustic fallback, which is the mechanism that splits utterances, and the 3000 step changed nothing while taxing every complete utterance ~3s. The two knobs guard opposite splits, so the minimum must clear the pause BETWEEN sentences and BETWEEN dictated characters, while the maximum clears the pause WITHIN one continuous thought. **1600 is RE-CONFIRMED against AssemblyAI's new endpointer**, which ships on the `sandbox` runs and not the `default` ones — so the two archived retail runs A/B the models at an identical 1600, offline, by aligning every committed STT final to its gold utterance (`user_labels.txt`) over 549 substantive utterances: old 72% clean / **12.5% split** / 8.6% merged (balance +10, split-heavy), new 73% clean / **9.9% split** / 8.9% merged (balance +3, balanced). The new model splits 21% less at the same window and its error is now SYMMETRIC, which is the signature of sitting at the knee: it moved DOWN (the old model wanted a longer window at 1600, this one does not) but only modestly. **800 was then shipped anyway and REVERTED ON REWARD**, which is the strongest measurement this row carries: tau2-bench retail, same 25 tasks and seed, differing only in this pair — 1600/3500 scored **0.68** (mis-heard 43%, split/merged 23/14, 15 of 294 utterances corrupting a tool argument) against 800/1600's **0.12** (52%, 27/8, 26 of 264). A second run at 1600/3500 also scored 0.68, so 0.12 is a 5.7x regression, and the predicted signature held exactly: splits up ~30% per utterance, merges down ~37%, tool-argument corruption nearly doubled. On the wire the cancel ratio doubled too (`cancelled`/`reply_done` 0.41 -> 0.82, user turns with no reply 94 -> 139) — fragment finals make the agent answer half an utterance, and the rest of that breath then reads as a barge-in. So: splits are the expensive direction, truncating a spelled identifier so the tool call authenticates against a fragment, where a merge keeps every word and costs only latency. Do not raise it either; the symmetry is already there. **The MAX is 3500 again — a 3000 trim was shipped and REVERTED on its own stated signature.** The measured configuration has always been 1600/**3500** (reward 0.68, twice, on two independent runs); 3000 was never measured alone, and carried an explicit revert condition: *splits reappearing on hesitant, non-spelling utterances while spelled identifiers stay intact*, the asymmetry that distinguishes the ceiling from the floor. A retail run at 3000 produced exactly that (`scripts/stt_errors.py`, 40 of 56 utterances mis-heard), and every split landed on a non-speech event mid-sentence: `…on your online store right now? And second, I need to change all my pending [sneeze][sneeze][sneeze] T-shirts to purple…` committed after "right now?", dropping the second request entirely and re-attaching it to the FRONT of the caller's next, unrelated turn; `Yes—confirm. [sneeze][sneeze][sneeze] Go ahead.` became two finals and therefore two independent replies to one act of confirming. Spelled identifiers came through whole in the same run, which is the other half of the signature. So a split does not merely delay a turn — it makes the agent answer half a request and treat the other half as a new one. **The revert is TWO constants.** The ordering it has to keep is that the ceiling stays BELOW `DEFAULT_SPEECH_IDLE_TIMEOUT_MS` less final-emission latency, so an utterance force-ended here still delivers its final before the speaking edge goes idle — and the idle edge is what fires a false-interruption resume, so crossing that line lets the agent resume a reply the caller really did interrupt (recorded in the old shape as: at a ceiling of 1600 the force-end landed first and the resume proceeded instead, a behaviour change rather than a tuning change). Raising the ceiling to 3500 therefore moved the idle deadline 3500 → **4000** to keep the same 500 ms margin; `assemblyai.test.ts` asserts the pair. **Two reusable instruments, both in tau2-bench:** `scripts/stt_errors.py` IS the gold-utterance alignment tool described here (greedy 1:1/1:2/2:1, reports cardinality, so a split is a named finding) and `scripts/failure_report.py` covers the wire side — do not rewrite either. And confirm the window was LIVE before trusting a null result: audio time is `tick x 0.2` and `user_labels.txt` shares that timeline, so gold-utterance-end to `user_transcript` measured median 2.00s at 1600/3500 against 1.20s at 800/1600 (p90 3.8s vs 2.2s). A dev-server restart is what loads a changed constant and `watchDirectory` ignores `node_modules`, where the linked SDK lives — which is why that run is a clean A/B despite three unrelated SDK commits landing inside its window, and why a run can silently measure the PREVIOUS value. Note a turn-taking-only replay harness CANNOT settle this knob (no tools, no database, so the truncated-auth regression is invisible to it) — use gold-utterance alignment over an archived run's `task.log`, or reward. Historical, against the old endpointer: **1600 was measured**: at 1000 tau2-bench retail regressed DB reward 1.00 -> 0.40 while NL assertions rose 0.60 -> 0.80 (the agent talked better and acted worse — it was authenticating against truncated spelled names, so no auth, no returns, unchanged DB). Pauses inside a single failing utterance measured 856-1455ms, nine of eighteen clearing 1000 and none clearing 1536. `pipeline-transport-options.test.ts` pins a 1000 floor, which is a floor and not a target. Override via `assemblyAIStt({ minTurnSilenceMs, maxTurnSilenceMs })`. **1600 has since been re-confirmed by a direct sweep** with Voice Focus at 0.9 (600/800/1200/1400/1600/1800/2000 ms x 4 replayed sessions): below 1600 the transcript over-segments (1.02-1.08x turns per gold utterance) and an auth field is lost — at 1200 the completeness check fires mid-surname, `Last name K-O-V-A-C-S` becomes two fragments, and `kovacs` never lands; at and above 1600 it is 0.99x and 12/12 auth fields survive. 1800 scores marginally better on every axis except p50 latency and is inside the noise for n=4 — 1600 is the knee, which is structural, and 1800 would be a sample maximum. **Do not tune this knob from a pause histogram.** The intra-utterance pause distribution in those same runs is p99 **593 ms**, with 1 gap in 1037 above 1200 ms, which argues 800 would do — and is the wrong instrument: percentiles describe what an ACOUSTIC endpointer needs, while on U3.5 Pro this is where the SEMANTIC completeness check runs, so the failures are "the check fired mid-spelling and the fragment read complete", which no pause distribution predicts. Latency behaves accordingly: 600 -> 2000 is a nominal 1400 ms but moves p50 endpoint latency only ~910 ms, and p90 is flat ~4.0-4.6s at every setting because the tail is content-driven. **`vad_threshold` is measured and deliberately LEFT ALONE** — see the Voice Focus row. **`interruption_delay` and `mode` are measured NO-OPS here**, which is worth knowing because the docs actively suggest reaching for the first: `interruption_delay=0`, `mode=min_latency` and `mode=max_accuracy` all leave first-partial latency at p50 0.47-0.52s, identical to unset, with no error frame and the parameter accepted. ~470 ms to first partial is a model floor, not a knob, so the only remaining lever on barge-in latency is our own `interruptionMinDurationMs`. |
 | AssemblyAI `voice_focus` / `voice_focus_threshold` | `near-field` / 0.9 (`DEFAULT_VOICE_FOCUS_THRESHOLD`) | `host/providers/stt/assemblyai.ts` | **Both are always sent together; the threshold is above the service's own 0.7.** The interferer this tunes for is background SPEECH — a television, a radio, another conversation — and that is why no VAD setting substitutes: Voice Focus suppresses background audio BEFORE the model sees it while `vad_threshold` gates frames after, and those frames legitimately *are* speech, so a frame gate cannot tell "a voice" from "the caller's voice". The symptom reads as a hallucinating model and is not one: fluent, well-formed English the caller never said, in the register of whatever was playing behind them, prepended to their real utterance. **0.9 is measured** — tau2-bench retail, four sessions replayed byte-identical through the live service at 8 kHz telephony with a TV news bed at 15 dB SNR (`medium_size_room_tv_news_iphone_mic.wav`): against the service default, background words fell 32% -> 18% of all words heard, caller-speech recall rose 51% -> 70%, and the name/ZIP gating authentication survived 12/12 utterances against 9/12. At the default one authentication turn came back as "And we're getting that live look from the estuary here in Chaplin" and the tool call built from it was garbage. **`vad_threshold` was swept in the same harness and loses in BOTH directions**, which is why it stays unset: 0.6 cut leakage to 15% but collapsed recall to 51% and took key facts *below* baseline (8/12), because the caller's quiet spelled letters are exactly what a stricter gate discards; 0.05-0.20 left recall flat at 70-71% (voice focus had already saturated it) while leakage rose 19% -> 27%, buying one recovered utterance — the content-free "Still waiting." — for five words of traffic report. `far-field` is much worse here (44% leakage; it amplifies the room, which is where the interfering speech is), and disabling Voice Focus is catastrophic rather than a fallback: recall collapsed to 4% with ONE end-of-turn in 232 s, because continuous background speech never leaves enough silence to endpoint — so a suppression regression surfaces as a turn-taking failure, not a transcription one. Override via `assemblyAIStt({ voiceFocus, voiceFocusThreshold })`; the threshold is omitted entirely when voice focus is off. |
 | Deepgram `endpointing` | 1500 (`DEFAULT_DEEPGRAM_ENDPOINTING_MS`) | `sdk/providers/stt/deepgram.ts` | Same role as `min_turn_silence` above — the provider owns end-of-turn; override via `deepgram({ endpointing })`. |
-| `holdPhrase` | `"One moment."` (`DEFAULT_HOLD_PHRASE`) | `pipeline-stream.ts` | Pipeline only: spoken when a turn opens with a tool call and no speech. `""` disables. |
 | `errorPhrase` | `"Sorry, I had a problem just then. Could you say that again?"` (`DEFAULT_ERROR_PHRASE`) | `pipeline-turn-outcome.ts` | Pipeline only: spoken when the turn's LLM stream fails, so a provider outage hands the conversation back instead of going silent. A failed turn produces no text, so nothing would otherwise reach TTS and the only trace is a `llm` session error the browser surfaces without a sound. `""` disables. |
-| dead-air cover | 5000 ms (`DEFAULT_DEAD_AIR_COVER_MS`) | `pipeline-stream.ts` | Pipeline only: tool execution that sends nothing to TTS for this long gets a `DEAD_AIR_COVER_PHRASES` filler — unlike `holdPhrase` this is time-based, so it still fires after the model has spoken, and repeats across a tool chain with the wait doubling each time. `holdPhrase: ""` disables both. **Must stay above the MEDIAN tool turn**: this is cover for the long-chain outlier, and at 2000 it sat under the ordinary case and fired on 93% of tool turns (EVA airline run, `pretoolspeech_rate` 0.933, tool turns averaging 6.24s), twice on the longest — converting a latency problem into `verbosity_or_filler_rate` 0.38 and `redundant_statements_rate` 0.60. **Cover phrases must also be purely declarative**, never a request for patience: filler goes into an open mic, so "Still working on that." drew "All right, I'll hold" from the caller, which barged in, and the agent was still answering it two turns later after the caller had said goodbye. |
-| `falseInterruptionTimeoutMs` | 2000 (`DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS`) | `constants.ts` | Pipeline only: a partial-triggered barge-in that never commits a user turn (STT noise) resumes the interrupted reply via a synthetic continuation turn after this window. A mid-turn cut resumes from the `[interrupted]` history marker (`DEFAULT_FALSE_INTERRUPTION_PROMPT`); a cut during the client playback tail — the reply finished server-side but was still playing out — resumes with a prompt quoting the estimated last-heard words (`buildTailResumePrompt`), unless less than `TAIL_RESUME_MIN_UNHEARD_MS` of audio was unheard. 0 disables. |
+| `deadAirCoverMs` (dead-air cover) | 5000 ms (`DEFAULT_DEAD_AIR_COVER_MS`) | `pipeline-stream-parts.ts` | Pipeline only, **ON by default**: a turn that sends nothing to TTS for this long gets a short filler — `DEAD_AIR_OPENING_PHRASE` when nothing has reached the caller yet this turn, then `DEAD_AIR_COVER_PHRASES` cycled, with the wait doubling each time up to `DEAD_AIR_COVER_MAX_MS`. Armed as the turn's stream opens and re-armed across every tool call, so it covers the pre-first-token gap as well as the chain; `deadAirCoverMs: 0` disables it. **It used to be silently disabled in the shipped default**: the enable was `holdPhrase.length > 0` and `holdPhrase` had been defaulted to `""`, so one knob turned off two mechanisms and no spec noticed (the harness named a phrase, the fuzz set `""`). **The long-chain findings govern this knob, not the TTFT one.** Cover pays out only after measured silence, so it is justified by the gaps that actually happen: 15-24s tool chains on tau2-bench retail, and 31.4s of silence after a committed user turn with gpt-5.5 ended only by the first tool call. LLM time-to-first-text (p50 **1.10s** / mean 1.42s, tau2 retail) is the reason nothing is spoken at t=0 instead — the ordinary opening gap is a pause, not dead air, and covering it would cost the eight-word first sentence the voice rules reserve for the answer (interruption rate 17% under 10 words rising to 59% past 35). **Must stay above the MEDIAN tool turn**: at 2000 it sat under the ordinary case and fired on 93% of tool turns (EVA airline run, `pretoolspeech_rate` 0.933, tool turns averaging 6.24s), twice on the longest — converting a latency problem into `verbosity_or_filler_rate` 0.38 and `redundant_statements_rate` 0.60. There is no measured value between 2000 and 5000. **Cover phrases must also be purely declarative**, never a request for patience: filler goes into an open mic, so "Still working on that." drew "All right, I'll hold" from the caller, which barged in, and the agent was still answering it two turns later after the caller had said goodbye. `DEAD_AIR_OPENING_PHRASE`'s wording is a judgement call satisfying that rule, not a measurement — which is why "One moment." was not simply moved here. The fillers are emitted `record: false`: they reach TTS and the INTERIM transcript so the caption matches the audio, and never `onDelta`, so they stay out of history, `ctx.messages`, resume and the STT agent-context hint. That flag has a SECOND consumer now — the heard cursor (`pipeline-heard.ts`) carries it through to the TTS send so filler moves the heard position (it is audible) without ever being truncatable into the record; see "History records what was HEARD". **The prompt no longer asks for a holding line either** — see `PROMPT_TOOLS`, which records the 15% -> 43% -> 29% measurement that retired it. |
+| `resumeFalseInterruption` | `true` | `pipeline-transport-options.ts` | Pipeline only: a partial-triggered barge-in that never commits a user turn (STT noise) resumes the interrupted reply via a synthetic continuation turn. `false` disables. **It is a boolean because the WAIT cannot be an author knob.** The resume fires when the transcript stream goes quiet with no committed final — the speaking edge's idle watchdog, `DEFAULT_SPEECH_IDLE_TIMEOUT_MS` (4000, internal) — and nothing shorter is safe: this was a `falseInterruptionTimeoutMs: number` defaulting to 2000, measured from roughly the same instant as the STT's `min_turn_silence`, so EVERY genuine barge-in raced its own resume and the resume won often enough to be the common case. Each one cost a billed LLM turn, put "the user did not actually say anything" in history directly ahead of the real user turn, and (TTS time-to-first-audio ~350ms) made the caller hear the agent continue the reply they had just interrupted. The floor on the deadline is the STT's endpointing plus final-emission latency, which the transport cannot see — it receives an already-resolved `SttOpener` — and the ceiling is patience (at 5000 a reply cut by noise resumed almost six seconds later, which reads as a dropped call), so there is no useful range to expose. The old number never governed anything anyway: a probe at `falseInterruptionTimeoutMs: 3` resumed at ~3500ms. A mid-turn cut resumes from the `[interrupted]` history marker (`DEFAULT_FALSE_INTERRUPTION_PROMPT`) only when no cut point is known; otherwise, and always for a cut during the client playback tail, the prompt quotes the estimated last-heard words (`buildTailResumePrompt`) — measured, resuming from the marker instead repeated 60%+ of the words in 10% of consecutive agent utterances, because TTS runs behind the text. That anchor is now the SAME cursor history is truncated with (`pipeline-heard.ts`), so it can never name words the record denies, and it is word-accurate wherever the TTS provider reports timings. A tail cut with less than `TAIL_RESUME_MIN_UNHEARD_MS` unheard arms nothing. |
+| `preemptiveGeneration` | `false` | `pipeline-speculation.ts` | Pipeline only, **OFF by default because it was finally measured.** Starts the reply from a high-confidence STT INTERIM (`SttTurnMeta.endOfTurnConfidence` >= `PREEMPTIVE_CONFIDENCE_THRESHOLD`, 0.9) and ADOPTS that running stream when the committed final says the same thing. It shipped ON and unmeasured, and this row used to name the two measurements owed. The first — the `headStartMs`/adoption-rate log (`Pipeline speculation adopted` at info, discards at debug) — was collected over a tau2-bench retail run and settles it: **16 speculations started, 14 adopted at a p50 0.44s head start, and 5 of those 14 (36%) POISONED AFTER ADOPTION** by a tool call, which is unusable whole, so `consumeLlmStream` discards the generation and reissues the request — each having burned p50 0.69s (p90 1.34s) first. Netted out that is 9 turns at +0.44s against 5 at -0.69s: **+0.51s across 68 caller turns, +8ms each**, beside a p50 first word of ~1.0s and a p90 of 6.6s. For that it issued 16 requests and threw away 7 (**44%**), and it widens the turn-serialization bound since a speculation runs outside the turn chain. The 36% that lose are the TOOL-CALLING turns, already the slow ones. **A `hasText()` adoption gate was tried and reverted the same day**, and the reason generalises: the head start (0.44s) is SHORTER than LLM time-to-first-token (p50 1.10s), so at `take()` the speculation has generated *nothing* and such a gate rejects essentially every adoption — the wasted request with none of the benefit, strictly worse than off. Whether the first part is text or a tool call is not knowable at adoption time; that is the shape of the feature. The two structural guardrails are unchanged and are what made ON survivable: no speculative speech (`createStreamPartHandler` is the only path to `sendTtsText` and is built only inside `consumeLlmStream`) and no speculative tool execution (`toDeclaredTools` omits `execute`, so a speculation reaching a tool call is discarded WHOLE, preamble included). Match rule `normalizeUtterance(final) === normalizeUtterance(partial)`; an extension, truncation or revision all discard. Sawtooth rules: a differing partial aborts at once, identical text at rising confidence never re-fires, at most `MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE` (2) per utterance. Inert unless `toolChoice` is `"auto"`/`"none"`. **Turning it back on wants a case where the arithmetic differs** — a text-heavy agent (36% poison is a tool-calling agent's number) or a longer head start from later endpointing — plus the second measurement still owed: a tau2-bench run at the same tasks and seed showing no reward regression. The default is pinned twice (`pipeline-transport-options.test.ts` at the resolver, `pipeline-preemption.test.ts` end-to-end) so a flip either way is a deliberate edit. A speculation must never call `emitError` — it has no reply the client knows about. |
+| `HEARD_AUDIO_LAG_MS` | 750 ms | `pipeline-heard.ts` | Pipeline only, internal (no agent field; the transport takes a `heardLagMs` for tests). How far behind the "audio forwarded" bookkeeping the caller's ear is — subtracted from the estimated playback position to get the cursor that decides what an interrupted reply records and where the resume anchor sits. **DERIVED, not measured**: `PLAYBACK_JITTER_MS` (400) plus an assumed sub-second network hop, the same decomposition `PIPELINE_PLAYBACK_GRACE_MS` states for the same delay with the opposite sign. It is a second constant precisely so tuning the grace for barge-in robustness (where erring late is harmless) cannot silently drop more words from the record (where erring either way costs). See "History records what was HEARD". |
 | `maxHistory` | 200 | `constants.ts:52` | Sliding window of conversation messages retained. **The LLM view is trimmed by `capLlm`, not `cap`** (`pipeline-history.ts`): that view holds tool-call/result PAIRS, and an index trim can land between an assistant `tool-call` message and the `tool` message answering it. Both providers reject an unmatched tool result outright (OpenAI: "messages with role 'tool' must be a response to a preceding message with 'tool_calls'"), so every remaining turn of the call failed at the provider and the caller heard `errorPhrase` instead of a reply. Turn sizes vary — 2 messages for a text-only turn, 4 for one tool call, more for a chain — so the window drifts out of alignment with turn boundaries on its own; nothing about the conversation has to be unusual. Only the FRONT is trimmed, so dropping leading `tool` messages is sufficient. A uniform turn size hides the whole class: 4 divides 200, so every trim lands on a turn boundary. |
 | resume grace | 120,000 (`SESSION_RESUME_GRACE_MS`) | `constants.ts` | How long a disconnected session's per-session tool state (`ctx.state`) survives awaiting a `?sessionId=<id>` resume — the runtime's stateMap sweep (in-guest on the platform, in-process under `aai dev`) waits it out, cancelled when the session resumes. Sized above the browser client's worst-case automatic-reconnect span (~105s); the client reconnects with the sessionId from the `config` frame, so the resumed session finds its state under the same key. |
 | `builtinTools` | `DEFAULT_BUILTIN_TOOLS` (`think`, `remember`, `recall`, `calculate`) | `constants.ts` | Cognitive built-ins on by default: private reasoning scratchpad, session notes, safe calculator. Set `builtinTools` explicitly (including `[]`) to override. `web_search`/`visit_webpage`/`get_page_design`/`fetch_json`/`run_code` remain opt-in. A custom or relayed tool with the same name wins — the built-in is dropped. |
@@ -727,6 +985,33 @@ both are fail-closed:
   STT, the LLM gateway and TTS. The stale comment had a real cost: it is what
   made a placeholder `agent()` look mandatory on every host server.
 
+- **Host-mode audio pacing is the CLIENT'S declaration, and it defaults to
+  paced** (`HostConfig.audioLeadMs`: omitted = the pacer's real-time
+  `CLIENT_AUDIO_LEAD_MS`, a number = that lead, `null` = unpaced).
+
+  Unpaced used to be the blanket default, on the reasoning that a host-mode
+  client is programmatic and therefore keeps its own clock. That conflates two
+  different things: being programmatic does not mean consuming FASTER than the
+  wall clock, and only a client whose timeline runs ahead is starved by pacing.
+  For a client that drains at 1x it is destructive, because in S2S mode the
+  service synthesises a whole reply server-side and it arrives in one burst
+  (measured: up to 1118 audio frames in one tau2 tick, against 205 on the
+  pipeline transport, whose per-sentence TTS flush paces it inherently). tau2
+  plays 200ms per tick and buffers the rest, so the backlog grew to MINUTES — and
+  it DISCARDS that buffer on barge-in, so 36% of all agent audio was destroyed
+  unheard, p99 181s and max 272s per barge-in on a 215s call, against 18-23% and
+  a 15s max for the pipeline arms. The caller heard a fraction of the replies and
+  kept asking "are you still there?"; the S2S arm completed a reply for 0.53 of
+  caller turns where the pipeline managed 1.00, and 18% of its sessions completed
+  no reply at all. Pacing keeps the backlog on OUR side, where
+  `PacedAudioSink.clear()` drops it on barge-in instead of handing it over to be
+  thrown away.
+
+  So tau2 is not the case unpaced was written for: its `_async_run_tick` enforces
+  a MINIMUM tick duration, so it never runs ahead of the wall clock (measured
+  mean 315ms per 200ms tick — 0.63x real time). Reach for `null` only for a
+  harness that genuinely steps faster than real time.
+
 ## Pipeline-transport interleaving fuzz
 
 **`aai` has a randomized interleaving fuzz over the pipeline transport**
@@ -756,8 +1041,10 @@ steps getting the session past `start()` and shorter scripts finish before a
 reply ever completes.
 
 - Its generated world (`_pipeline-fuzz-input.ts`) is split from the spec, and
-  its request-payload validator from `_pipeline-fuzz-model.ts`, so the spec
-  file is the ORACLES and the driver. Note biome's `noSecrets` rule is off for
+  the MODEL — the request-payload validator, the `Monitor`, and
+  `createCallbacks`, which is every client-visible callback wired to its oracle
+  — from `_pipeline-fuzz-model.ts`, so the spec file is the properties, the
+  driver and the coverage floors. Note biome's `noSecrets` rule is off for
   `**/_*-fuzz-*.ts` alongside test files (`biome.json`): a camelCase action
   name like `armBargeInFromTool` reads as high-entropy to it, and mangling a
   domain identifier to satisfy a false positive is the wrong trade.
@@ -771,6 +1058,24 @@ reply ever completes.
   the floors on `error:llm`, `llmRefused`, and `nonFatal:llm`: the first two
   keep the state reachable, the third turns a regression to `fatal` into a
   failure rather than a silent gap.
+- **`preemptiveGeneration` is part of the generated world**, so both arms run in
+  one property. It ADDS guardrail 1 as a global oracle (nothing may reach TTS
+  between a cleanly completed reply and the next `onReplyStarted` — exactly the
+  idle window a speculation runs in) and floors on speculations started /
+  discarded-by-reason. It also COSTS two things, and both are stated in the code
+  rather than quietly absorbed: the exact-text reply-integrity oracle is skipped
+  in the ON arm (a speculation's text cannot be attributed to a reply at the
+  moment it is served, and guessing is how a harness invents findings), which is
+  why `replyIntegrityChecked`'s floor is the one floor in the file that has ever
+  moved DOWN; and the turn-serialization bound widens, since a speculation is
+  deliberately outside the turn chain. Two rules this suite does NOT guard,
+  despite looking like it might: the per-utterance BUDGET (deleting the check
+  leaves it green — only one speculation is ever held, and the 1 ms
+  `speechIdleTimeoutMs` restores the budget before a third could fire) and
+  ADOPTION (reached 0-6 times per run, too rare to floor, on the `resumeMooted`
+  precedent). `transports/pipeline-speculation.test.ts` and
+  `transports/pipeline-preemption.test.ts` own those. `PIPELINE_FUZZ_COVERAGE=1`
+  prints the counter table, as `S2S_FUZZ_COVERAGE=1` does for the S2S property.
 
 ## S2S property test
 
@@ -916,6 +1221,37 @@ config whose pipeline providers didn't resolve (the pre-flip legacy fallback
 to `buildAssemblyS2sTransport` was removed). Two rules keep mode
 diagnosable: forward providers based on their own presence (above), and
 `createRuntime` logs `"Session mode resolved"` once per runtime with the mode
-and provider kinds — "which transport is this agent on" must be answerable
-from one log line rather than inferred from the shape of the message stream
-(`S2S <<` prefixes).
+and each stage's EFFECTIVE SETTINGS — "which transport is this agent on" must
+be answerable from one log line rather than inferred from the shape of the
+message stream (`S2S <<` prefixes).
+
+**Settings, not just kinds** (`host/providers/_provider-settings.ts`). The
+kind alone (`stt: "assemblyai"`) names the vendor and nothing that decides
+behaviour, and on this codebase almost every such value is a DEFAULT nobody
+wrote down: the endpointing pair, the Voice Focus threshold, the connect
+budget, the gateway model id and its `reasoningEffort`, the TTS voice. Those
+are exactly what a bad session gets blamed on — a split utterance, a mute
+agent, background speech in the transcript — and none of them appeared
+anywhere at startup, so confirming one meant re-deriving the `??` chains by
+hand against a build you hope is deployed. A default pipeline now prints:
+
+```text
+Session mode resolved {
+  slug: 'tau2-pipeline', mode: 'pipeline',
+  stt: { kind: 'assemblyai', model: 'universal-3-5-pro', minTurnSilenceMs: 1600,
+         maxTurnSilenceMs: 3000, voiceFocus: 'near-field',
+         voiceFocusThreshold: 0.9, connectTimeoutMs: 2500, maxConnectRetries: 2 },
+  llm: { kind: 'assemblyai', reasoningEffort: 'none', model: 'gpt-5.6-terra' },
+  tts: { kind: 'assemblyai', voice: 'jane' }
+}
+```
+
+The defaults come from the SAME `resolve*Settings` function the stage's
+opener dials with (`sdk/providers/**` — pure descriptor data, so this costs
+none of the vendor-SDK load time `lazyOpener` defers), never a second copy of
+the `??` chains: **a settings log that can drift from the wire is worse than
+no log, because it is believed.** A new provider adds its resolver there and
+one entry in the stage table; the tables are per-stage because
+`ASSEMBLYAI_KIND`, `ASSEMBLYAI_TTS_KIND`, `ASSEMBLYAI_LLM_KIND` and
+`ASSEMBLYAI_S2S_KIND` are four different constants all equal to
+`"assemblyai"`.

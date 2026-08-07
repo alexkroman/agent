@@ -1,119 +1,66 @@
 // Copyright 2026 the AAI authors. MIT license.
-// User-speech handling for the pipeline transport: speaking-edge detection
-// (pipeline mode has no VAD, so speech_started/speech_stopped derive from the
-// STT transcript stream) and the STT partial/final handlers that drive it —
-// including when to arm false-interruption recovery (whose timer, tail
-// tracker, and resume prompts live in pipeline-recovery.ts).
+// User-speech handling for the pipeline transport: the STT partial/final
+// handlers that turn the transcript stream into barge-in decisions and
+// committed turns, and the wiring of the machinery they drive — including
+// when to arm false-interruption recovery (whose latch, tail tracker, and
+// resume prompts live in pipeline-recovery.ts). The speaking edges those
+// handlers emit through live in pipeline-speech-edges.ts.
 
 import {
   DEFAULT_FALSE_INTERRUPTION_PROMPT,
   DEFAULT_SILENCE_PROMPT,
   MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES,
 } from "../../sdk/constants.ts";
-import { createRestartableTimer } from "../_timer.ts";
-import type { Logger } from "../runtime-config.ts";
+import type { SttTurnMeta } from "../../sdk/providers.ts";
+import { debugPartialsEnabled, type Logger } from "../runtime-config.ts";
 import {
   createFalseInterruptionRecovery,
   type FalseInterruptionRecovery,
 } from "./pipeline-recovery.ts";
 import { createSilenceNudger, type SilenceNudger } from "./pipeline-silence.ts";
+import type { SpeculationController } from "./pipeline-speculation.ts";
+import {
+  createGatedSpeechEdges,
+  createSpeechEdgeTracker,
+  type GatedSpeechEdges,
+  type SpeechEdgeTracker,
+} from "./pipeline-speech-edges.ts";
 import { hasMinWords, scanWords } from "./pipeline-text.ts";
 import type { TransportCallbacks } from "./types.ts";
 
 /**
- * Edge-detect "user is speaking" from the STT transcript stream: the first
- * partial/final of an utterance fires `onSpeechStarted`, and the utterance
- * committing (or resolving as a false interruption) fires `onSpeechStopped`.
+ * One line per interim is the noisiest thing in a voice session — one per
+ * ~200ms of speech, each a revision of the last — so it is opt-in via
+ * `AAI_DEBUG_PARTIALS=1` rather than plain `AAI_DEBUG`. Hoisted out of
+ * `onSttPartial` to keep that handler under the complexity cap; the branch is
+ * real logic, not noise to suppress.
+ *
+ * This gate deliberately does NOT cover the provider's own turn trace, which
+ * carries the same text plus `end_of_turn` and the end-of-turn confidence —
+ * that is the raw material for measuring an endpointing policy, and silencing
+ * the redundant copy must not lose it.
  */
-export interface SpeechEdgeTracker {
-  /**
-   * A non-empty partial or final arrived — open the speaking edge (the
-   * `onSpeechStarted` emit is idempotent) and restart the idle watchdog.
-   */
-  speechStarted(): void;
-  /** The utterance resolved (commit / false-alarm) — close the edge (idempotent). */
-  speechEnded(): void;
-  /**
-   * How long the current utterance has been running (ms since the edge
-   * opened), or 0 when the user is not speaking. Drives the
-   * `interruptionMinDurationMs` barge-in gate.
-   */
-  durationMs(): number;
-  /** Forget the current edge without emitting (session reset / teardown). */
-  reset(): void;
+function tracePartial(log: Logger, sid: string, text: string, meta?: SttTurnMeta): void {
+  if (!debugPartialsEnabled) return;
+  log.debug("Pipeline STT partial", { sid, text, eot: meta?.endOfTurnConfidence });
 }
 
 /**
- * Create a {@link SpeechEdgeTracker} bound to the transport callbacks.
- *
- * `idleTimeoutMs` is a watchdog, not the primary close path: a genuine
- * utterance closes the edge when its final commits. But an STT partial
- * that never reaches a non-empty final (noise, a hallucinated interim) would
- * otherwise leave the edge open for the rest of the session — `speech_stopped`
- * never firing, and a stale `startedAtMs` making {@link durationMs} grow
- * without bound so the `interruptionMinDurationMs` gate always passes. The
- * watchdog restarts on every partial, so it only fires once the transcript
- * stream has actually gone quiet.
- *
- * That makes the watchdog the transport's one signal for "this utterance
- * produced no final and never will", which is why `onIdle` exists: it is what
- * releases a deferred false-interruption resume (see pipeline-recovery.ts).
- * `onIdle` fires ONLY from the watchdog — never from the commit path's
- * `speechEnded()`, where a turn did commit and a resume must not run.
+ * The part of {@link SpeculationController} the speech handlers drive. Narrowed
+ * by subtraction so this module cannot reach `take`/`discard`, which belong to
+ * turn orchestration.
  */
-export function createSpeechEdgeTracker(
-  callbacks: {
-    onSpeechStarted(): void;
-    onSpeechStopped(): void;
-  },
-  opts: {
-    idleTimeoutMs: number;
-    /** The open edge went quiet without committing a turn. */
-    onIdle?: (() => void) | undefined;
-  },
-): SpeechEdgeTracker {
-  let speaking = false;
-  let startedAtMs = 0;
-  const idleWatchdog = createRestartableTimer(() => {
-    if (!speaking) return;
-    endSpeech();
-    opts.onIdle?.();
-  });
-
-  function endSpeech(): void {
-    idleWatchdog.clear();
-    if (!speaking) return;
-    speaking = false;
-    callbacks.onSpeechStopped();
-  }
-
-  return {
-    speechStarted(): void {
-      // Restart the watchdog on every partial, including ones that don't open
-      // the edge — quiet, not "no longer the first partial", is what ends it.
-      idleWatchdog.arm(opts.idleTimeoutMs);
-      if (speaking) return;
-      speaking = true;
-      startedAtMs = Date.now();
-      callbacks.onSpeechStarted();
-    },
-    speechEnded: endSpeech,
-    durationMs(): number {
-      return speaking ? Date.now() - startedAtMs : 0;
-    },
-    reset(): void {
-      idleWatchdog.clear();
-      speaking = false;
-    },
-  };
-}
+export type SpeculationHooks = Pick<
+  SpeculationController,
+  "onPartial" | "onFinal" | "onUtteranceIdle"
+>;
 
 /** STT transcript-stream handlers. See {@link createSttEventHandlers}. */
 export interface SttEventHandlers {
   /** An interim transcript arrived. */
-  onSttPartial(text: string): void;
+  onSttPartial(text: string, meta?: SttTurnMeta): void;
   /** A committed transcript arrived. */
-  onSttFinal(text: string): void;
+  onSttFinal(text: string, meta?: SttTurnMeta): void;
 }
 
 /**
@@ -148,19 +95,24 @@ function createSttEventHandlers(deps: {
    * Resume prompt for a barge-in on the client playback tail — the reply
    * finished server-side but its audio was still playing out. `undefined` when
    * the caller had essentially heard it all (then a cut costs nothing worth a
-   * resume turn). Read BEFORE the abort: aborting resets the playback clock
-   * this estimate is built from.
+   * resume turn). Ordering-independent: the abort LATCHES the cut position
+   * before resetting the playback clock (see `HeardTracker.cut`), so this
+   * reads the same answer either side of it.
    */
   tailResumePrompt: () => string | undefined;
   speechEdges: SpeechEdgeTracker;
+  /** Outward speaking-edge gate — see {@link createGatedSpeechEdges}. */
+  edgeGate: GatedSpeechEdges;
   recovery: FalseInterruptionRecovery;
   nudger: SilenceNudger;
   callbacks: {
     onCancelled(): void;
-    onUserTranscriptPartial?: ((text: string) => void) | undefined;
+    onUserTranscriptPartial?: ((text: string, eotConfidence?: number) => void) | undefined;
   };
   /** Commit a user turn: emit the transcript and run the chained reply. */
   commitUserTurn: (text: string) => void;
+  /** Preemptive generation, or a no-op controller when the flag is off. */
+  speculation: SpeculationHooks;
   /** Interim words required to barge in. */
   minBargeInWords: number;
   /** Sustained-speech gate for interim-triggered barge-in; 0 disables. */
@@ -191,30 +143,31 @@ function createSttEventHandlers(deps: {
     deps.isPlaybackPending() || (deps.isTurnInFlight() && deps.hasTurnSpoken());
 
   /**
-   * Decide, BEFORE the abort, how a partial-triggered barge-in recovers from a
-   * false alarm, returning the arm to run after it. Both barge-in shapes can
-   * recover, each with its own resume prompt: an aborted in-flight turn
-   * continues from its `[interrupted]` history marker, while a turn that
-   * already finished server-side (client playback tail) has its full text in
-   * history with no marker, so its prompt embeds the estimated cut point —
-   * captured here because the abort resets the playback clock that estimate
-   * reads. A fully-heard tail (`undefined`) arms nothing: there is nothing
-   * left to resume.
+   * Arm false-interruption recovery for the partial-triggered barge-in that is
+   * about to fire, with the resume prompt that fits the shape of the cut.
+   *
+   * Runs before `abortInFlightTurn`, but no longer HAS to: the abort latches
+   * the cut position before resetting the playback clock it is read from (see
+   * `HeardTracker.cut`), and the latch starts no timer of its own.
+   *
+   * "In flight" alone is the wrong classifier: the turn controller stays
+   * non-null through the TTS drain, which for a sentence-flushing adapter lasts
+   * as long as the remaining synthesis. A turn in that window already persisted
+   * its FULL text with no `[interrupted]` marker, so the mid-turn prompt would
+   * tell the model to continue past an ending it produced — it repeats itself
+   * or rambles. Only a turn whose body is still streaming can resume from the
+   * marker; everything else is a playback cut. Either way the CUT-POINT prompt
+   * wins when one is available (see `buildTailResumePrompt` in
+   * pipeline-recovery.ts for the repetition measurement behind that), and a
+   * fully-heard tail arms nothing: there is nothing left to resume.
    */
-  function bargeInRecoveryArm(): () => void {
-    // "In flight" alone is the wrong classifier: the turn controller stays
-    // non-null through the TTS drain, which for a sentence-flushing adapter
-    // lasts as long as the remaining synthesis. A turn in that window already
-    // persisted its FULL text with no [interrupted] marker, so the mid-turn
-    // prompt would tell the model to continue past an ending it produced —
-    // it repeats itself or rambles. Only a turn whose body is still streaming
-    // resumes from the marker; everything else is a playback cut.
+  function armBargeInRecovery(): void {
+    const cutPrompt = deps.tailResumePrompt();
     if (deps.isTurnInFlight() && !deps.isTurnDraining()) {
-      return () => recovery.arm(DEFAULT_FALSE_INTERRUPTION_PROMPT);
+      recovery.arm(cutPrompt ?? DEFAULT_FALSE_INTERRUPTION_PROMPT);
+      return;
     }
-    const tailPrompt = deps.tailResumePrompt();
-    if (tailPrompt === undefined) return () => undefined;
-    return () => recovery.arm(tailPrompt);
+    if (cutPrompt !== undefined) recovery.arm(cutPrompt);
   }
 
   /** Should this interim transcript interrupt the agent right now? */
@@ -229,12 +182,12 @@ function createSttEventHandlers(deps: {
   }
 
   return {
-    onSttPartial(text: string): void {
+    onSttPartial(text: string, meta?: SttTurnMeta): void {
       if (deps.isTerminated()) return;
       // Debug trace (AAI_DEBUG=1): partials are the only record of a word STT
       // heard mid-utterance and then dropped from its final, which otherwise
       // looks like the LLM inventing a tool argument out of nowhere.
-      log.debug("Pipeline STT partial", { sid: deps.sid, text });
+      tracePartial(log, deps.sid, text, meta);
       // User speech proves presence: reset the nudge budget, restart the window.
       nudger.onUserSpeech();
       // Counted once, with a bounded scan: every consumer here is a threshold
@@ -249,29 +202,37 @@ function createSttEventHandlers(deps: {
       // clears userTranscript — emitting first would blank the caption it just
       // set.
       const emitPartial = (): void => {
-        if (words >= 1) callbacks.onUserTranscriptPartial?.(text);
+        if (words >= 1) callbacks.onUserTranscriptPartial?.(text, meta?.endOfTurnConfidence);
       };
-      if (words >= 1) {
-        speechEdges.speechStarted();
-        // Still talking through a pending recovery window: push the deadline out
-        // so the resume can't fire over a user who barged in and kept going.
-        // With providers that only emit a final at end-of-turn (AssemblyAI), the
-        // window would otherwise elapse mid-utterance.
-        if (recovery.pending()) recovery.arm();
-      }
+      // Opens the speaking edge and restarts its idle watchdog — which is also
+      // what holds an armed resume back while the user keeps talking, since the
+      // watchdog is the only thing that releases one.
+      if (words >= 1) speechEdges.speechStarted();
       if (!partialTriggersBargeIn(words)) {
+        // The agent may have finished its reply while this utterance ran; a
+        // held edge then has no floor left to protect and is released here
+        // rather than on a timer. Cheap, and partials keep arriving for as
+        // long as the user is talking.
+        if (!agentIsSpeaking()) deps.edgeGate.release();
         emitPartial();
+        // Preemptive generation (on by default) reads the confidence here and
+        // nowhere else — the non-barge-in branch IS the idle-ish case it is
+        // allowed to fire in, and one call site keeps this handler under the
+        // cognitive-complexity cap it already sits near.
+        deps.speculation.onPartial(text, meta?.endOfTurnConfidence);
         return;
       }
       log.info("Pipeline barge-in", { sid: deps.sid });
-      const armRecovery = bargeInRecoveryArm();
+      armBargeInRecovery();
       deps.abortInFlightTurn();
+      // Ordered before `cancelled`: this is the moment the agent yields, which
+      // is what `speech_started` promises the client in S2S mode too.
+      deps.edgeGate.release();
       callbacks.onCancelled();
       emitPartial();
-      armRecovery();
     },
 
-    onSttFinal(text: string): void {
+    onSttFinal(text: string, _meta?: SttTurnMeta): void {
       if (deps.isTerminated()) return;
       const trimmed = text.trim();
       if (trimmed.length === 0) return;
@@ -279,14 +240,20 @@ function createSttEventHandlers(deps: {
       // Finals that differ from the commit locate a loss in aggregation; a
       // commit that matches the finals locates it in STT instead.
       log.debug("Pipeline STT final", { sid: deps.sid, text: trimmed });
+      // Before anything else this handler does: a speculation this final cannot
+      // match is billed for as long as it runs, so it is aborted at the
+      // earliest possible instant rather than when the turn chain drains.
+      deps.speculation.onFinal(trimmed);
       // Real speech reached a final — whatever barge-in preceded it was not a
       // false interruption; a genuine turn commits below. Restores the
       // consecutive-resume budget too: the user is demonstrably present.
       recovery.onUserTurn();
-      // The recovery window may have already fired (a short utterance whose
-      // only STT event is this final loses the race to the timer): a resume
-      // turn is then in flight covering an "interruption" this final just
-      // proved genuine. Abort it while it is still silent — otherwise the
+      // The resume may have already fired: the speaking edge went idle before
+      // this final landed, which happens whenever the STT's endpointing plus
+      // final-emission latency exceeds `speechIdleTimeoutMs` — the transport
+      // cannot see that window, so this is the backstop for it. A resume turn
+      // is then in flight covering an "interruption" this final just proved
+      // genuine. Abort it while it is still silent — otherwise the
       // agent first speaks a full continuation of the interrupted reply and
       // only then answers the user. A resume that already spoke falls through
       // to the ordinary barge-in rules below. This cannot starve replies the
@@ -310,6 +277,7 @@ function createSttEventHandlers(deps: {
       if (agentIsSpeaking() && hasMinWords(trimmed, deps.minBargeInWords)) {
         log.info("Pipeline replacing in-flight turn", { sid: deps.sid });
         deps.abortInFlightTurn();
+        deps.edgeGate.release();
         callbacks.onCancelled();
       }
       // Commit the turn immediately: endpointing (aggregating a disfluent
@@ -354,17 +322,20 @@ export function createUserActivity(deps: {
   silenceTimeoutMs: number | undefined;
   /** Synthetic user message a nudge injects; defaults to DEFAULT_SILENCE_PROMPT. */
   silencePrompt: string | undefined;
-  /** False-interruption recovery window (ms); 0 disables. */
-  falseInterruptionTimeoutMs: number;
+  /** Resume a barged-in reply when the interruption commits no user turn. */
+  resumeFalseInterruption: boolean;
   /**
-   * Speaking-edge idle watchdog (ms). Also the deferred-resume release, so it
-   * bounds false-interruption recovery latency — see DEFAULT_SPEECH_IDLE_TIMEOUT_MS.
+   * Speaking-edge idle watchdog (ms), and with it THE false-interruption
+   * resume deadline — the watchdog is what fires the resume, so 0 disables
+   * recovery outright. See DEFAULT_SPEECH_IDLE_TIMEOUT_MS.
    */
   speechIdleTimeoutMs: number;
   /** Interim words required to barge in. */
   minBargeInWords: number;
   /** Sustained-speech gate for interim-triggered barge-in; 0 disables. */
   interruptionMinDurationMs: number;
+  /** Preemptive generation, or a no-op controller when the flag is off. */
+  speculation: SpeculationHooks;
   isTerminated(): boolean;
   /** False once the transport terminated or the session aborted (nudger gate). */
   isSessionActive(): boolean;
@@ -393,15 +364,32 @@ export function createUserActivity(deps: {
 }): UserActivity {
   const { log, sid, callbacks } = deps;
   const isBusy = (): boolean => deps.isTurnInFlight() || deps.isPlaybackPending();
+  // Same predicate the barge-in rules use — see `agentIsSpeaking` in
+  // createSttEventHandlers for why it is "has audio been emitted" rather than
+  // "is a turn in flight".
+  const agentIsSpeaking = (): boolean =>
+    deps.isPlaybackPending() || (deps.isTurnInFlight() && deps.hasTurnSpoken());
+
+  // Hold `speech_started` back while the agent has the floor, so the event
+  // means "the agent is yielding" on both transports — see createGatedSpeechEdges.
+  const edgeGate = createGatedSpeechEdges({ callbacks, agentIsSpeaking });
 
   // Pipeline mode has no VAD: speech_started/speech_stopped derive from the
   // STT transcript stream (see createSpeechEdgeTracker above). `onIdle` — the
-  // utterance going quiet with no final — is what releases a deferred resume;
-  // `recovery` is declared below and bound late, so the reference resolves when
-  // the watchdog fires rather than at construction.
-  const speechEdges = createSpeechEdgeTracker(callbacks, {
+  // utterance going quiet with no final — IS the false-interruption recovery
+  // signal, the only one the transport can observe; `recovery` is declared
+  // below and bound late, so the reference resolves when the watchdog fires
+  // rather than at construction.
+  const speechEdges = createSpeechEdgeTracker(edgeGate, {
     idleTimeoutMs: deps.speechIdleTimeoutMs,
-    onIdle: () => recovery.onUtteranceEnded(),
+    onIdle: () => {
+      // The same edge that arms a false-interruption resume also retires any
+      // speculation: this utterance produced no final, so nothing can ever
+      // adopt it — and a resume turn must never be allowed to pick one up (its
+      // prompt is a synthetic continuation, not the words this was built from).
+      deps.speculation.onUtteranceIdle();
+      recovery.onUtteranceEnded();
+    },
   });
 
   // Silence nudge: `silencePrompt` becomes a synthetic user message (in LLM
@@ -418,17 +406,16 @@ export function createUserActivity(deps: {
   });
 
   // Resume a barged-in reply when the interruption never commits a user turn.
-  // The prompt was chosen when the window was armed: the default continuation
-  // prompt for an aborted in-flight turn (its spoken-so-far text is in history
-  // marked `[interrupted]`), the cut-point prompt for a playback-tail cut.
+  // The prompt was chosen when the latch was armed: the cut-point prompt where
+  // one is known, otherwise the default continuation prompt for an aborted
+  // in-flight turn (its spoken-so-far text is in history marked
+  // `[interrupted]`). The latch holds no deadline of its own — `speechEdges`'
+  // idle watchdog above fires it.
   const recovery = createFalseInterruptionRecovery({
-    timeoutMs: deps.falseInterruptionTimeoutMs,
+    enabled: deps.resumeFalseInterruption,
     maxConsecutive: MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES,
     isActive: () => !deps.isTerminated(),
     isBusy,
-    // An open speaking edge means STT may still be holding a final back for its
-    // endpointing window; resuming into that races the caller's real turn.
-    isUtteranceInProgress: () => speechEdges.durationMs() > 0,
     onResume: (resumePrompt) => {
       log.info("Pipeline false-interruption resume", { sid });
       speechEdges.speechEnded();
@@ -449,9 +436,11 @@ export function createUserActivity(deps: {
     abortInFlightTurn: deps.abortInFlightTurn,
     tailResumePrompt: deps.tailResumePrompt,
     speechEdges,
+    edgeGate,
     recovery,
     nudger,
     callbacks,
+    speculation: deps.speculation,
     commitUserTurn(text: string): void {
       // Debug trace (AAI_DEBUG=1): this is verbatim the text the turn prompts
       // the LLM with, so it is the ground truth for "did the model see it?".

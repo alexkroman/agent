@@ -1,32 +1,35 @@
 // Copyright 2026 the AAI authors. MIT license.
-// Unit specs for the pure stream helpers in pipeline-stream.ts. Turn-level
-// behavior (settle window, aggregation) lives in pipeline-turn.test.ts.
+// Unit specs for the pure TTS-side helpers in pipeline-stream.ts. The
+// `streamText` specs moved to pipeline-llm-stream.test.ts with the code; the
+// turn-level behavior (settle window, aggregation) lives in pipeline-turn.test.ts.
 
-import { APICallError, RetryError } from "ai";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import {
-  DEAD_AIR_COVER_MAX_MS,
-  DEAD_AIR_COVER_PHRASES,
-  DEFAULT_DEAD_AIR_COVER_MS,
-  DEFAULT_HOLD_PHRASE,
-  PIPELINE_FLUSH_TIMEOUT_MS,
-  TTS_COALESCE_MAX_CHARS,
-} from "../../sdk/constants.ts";
-import { createFakeLanguageModel } from "../_pipeline-test-fakes.ts";
-import { makeLogger, silentLogger } from "../_test-utils.ts";
-import { consumeLlmStream, createTtsTextCoalescer, flushTtsAndWait } from "./pipeline-stream.ts";
-import { createStreamPartHandler } from "./pipeline-stream-parts.ts";
+import { describe, expect, test, vi } from "vitest";
+import { PIPELINE_FLUSH_TIMEOUT_MS, TTS_COALESCE_MAX_CHARS } from "../../sdk/constants.ts";
+import { silentLogger } from "../_test-utils.ts";
+import { createTtsTextCoalescer, flushTtsAndWait } from "./pipeline-stream.ts";
 
 describe("createTtsTextCoalescer", () => {
-  function collect(): { sent: string[]; send: (text: string) => void } {
+  function collect(): {
+    sent: string[];
+    records: boolean[];
+    send: (text: string, opts: { record: boolean }) => void;
+  } {
     const sent: string[] = [];
-    return { sent, send: (text) => sent.push(text) };
+    const records: boolean[] = [];
+    return {
+      sent,
+      records,
+      send: (text, opts) => {
+        sent.push(text);
+        records.push(opts.record);
+      },
+    };
   }
 
   test("forwards the first chunk immediately (time-to-first-byte)", () => {
     const { sent, send } = collect();
     const c = createTtsTextCoalescer(send);
-    c.send("Hello ");
+    c.send("Hello ", true);
     expect(sent).toEqual(["Hello "]);
   });
 
@@ -36,8 +39,8 @@ describe("createTtsTextCoalescer", () => {
     // A turn that opens with speech, then calls a tool: "let me" is short and
     // unpunctuated, so batching would hold it for the whole tool-execution
     // window — the caller hears "Sure," then dead air.
-    c.send("Sure, ");
-    c.send("let me");
+    c.send("Sure, ", true);
+    c.send("let me", true);
     expect(sent).toEqual(["Sure, "]);
     c.boundary();
     expect(sent).toEqual(["Sure, ", "let me"]);
@@ -46,15 +49,15 @@ describe("createTtsTextCoalescer", () => {
   test("boundary() re-arms the immediate first chunk for the post-tool reply", () => {
     const { sent, send } = collect();
     const c = createTtsTextCoalescer(send);
-    c.send("Checking. ");
+    c.send("Checking. ", true);
     c.boundary();
     // Time-to-first-audio matters again after the tool gap, so the next
     // segment's opening words must not wait on a clause boundary.
-    c.send("I ");
+    c.send("I ", true);
     expect(sent).toEqual(["Checking. ", "I "]);
     // ...and batching resumes from there.
-    c.send("found ");
-    c.send("three ");
+    c.send("found ", true);
+    c.send("three ", true);
     expect(sent).toEqual(["Checking. ", "I "]);
     c.flush();
     expect(sent).toEqual(["Checking. ", "I ", "found three "]);
@@ -71,7 +74,7 @@ describe("createTtsTextCoalescer", () => {
     const { sent, send } = collect();
     const c = createTtsTextCoalescer(send);
     for (const word of ["Sure, ", "I ", "can ", "help, ", "what's ", "up? ", "Ask ", "away."]) {
-      c.send(word);
+      c.send(word, true);
     }
     // First word immediate; then batches flush at each trailing punctuation mark.
     expect(sent).toEqual(["Sure, ", "I can help, ", "what's up? ", "Ask away."]);
@@ -81,10 +84,10 @@ describe("createTtsTextCoalescer", () => {
   test("flushes once the pending batch reaches TTS_COALESCE_MAX_CHARS without punctuation", () => {
     const { sent, send } = collect();
     const c = createTtsTextCoalescer(send);
-    c.send("first ");
+    c.send("first ", true);
     const word = "aaaa "; // 5 chars, no punctuation
     const wordsToCap = Math.ceil(TTS_COALESCE_MAX_CHARS / word.length);
-    for (let i = 0; i < wordsToCap; i++) c.send(word);
+    for (let i = 0; i < wordsToCap; i++) c.send(word, true);
     expect(sent.length).toBe(2); // first chunk + one size-capped batch
     expect(sent[1]?.length).toBeGreaterThanOrEqual(TTS_COALESCE_MAX_CHARS);
   });
@@ -92,9 +95,9 @@ describe("createTtsTextCoalescer", () => {
   test("flush() sends any trailing fragment and is a no-op when empty", () => {
     const { sent, send } = collect();
     const c = createTtsTextCoalescer(send);
-    c.send("One ");
-    c.send("more ");
-    c.send("thing");
+    c.send("One ", true);
+    c.send("more ", true);
+    c.send("thing", true);
     c.flush();
     expect(sent.join("")).toBe("One more thing");
     const count = sent.length;
@@ -105,393 +108,29 @@ describe("createTtsTextCoalescer", () => {
   test("empty deltas are ignored and do not consume the immediate first send", () => {
     const { sent, send } = collect();
     const c = createTtsTextCoalescer(send);
-    c.send("");
-    c.send("Hi ");
+    c.send("", true);
+    c.send("Hi ", true);
     expect(sent).toEqual(["Hi "]);
   });
-});
 
-describe("LLM stream error reporting", () => {
-  function apiError(): APICallError {
-    return new APICallError({
-      message: "Internal Server Error",
-      url: "https://llm-gateway.assemblyai.com/v1/chat/completions",
-      requestBodyValues: { model: "claude-sonnet-4-6" },
-      statusCode: 500,
-      responseHeaders: { "x-request-id": "06ad6271" },
-      responseBody: '{"request_id":"06ad6271","message":"something went wrong","code":500}',
-      isRetryable: true,
+  test("flushes before `record` flips, so no send mixes model text with filler", () => {
+    const { sent, records } = collect();
+    const c = createTtsTextCoalescer((text, opts) => {
+      sent.push(text);
+      records.push(opts.record);
     });
-  }
-
-  test("an error part logs the HTTP diagnostics, not just the message", () => {
-    const log = makeLogger();
-    const handler = createStreamPartHandler({
-      onDelta: () => undefined,
-      sendTtsText: () => undefined,
-      onToolCall: () => undefined,
-      emitError: () => undefined,
-      log,
-      sid: "sid-1",
-    });
-    handler.handle({ type: "error", error: apiError() });
-    expect(log.error).toHaveBeenCalledWith("LLM stream error", {
-      message: "Internal Server Error",
-      sid: "sid-1",
-      statusCode: 500,
-      url: "https://llm-gateway.assemblyai.com/v1/chat/completions",
-      requestId: "06ad6271",
-      responseBody: '{"request_id":"06ad6271","message":"something went wrong","code":500}',
-    });
-  });
-
-  test("unwraps a RetryError so exhausted retries still report the last status", () => {
-    const log = makeLogger();
-    const handler = createStreamPartHandler({
-      onDelta: () => undefined,
-      sendTtsText: () => undefined,
-      onToolCall: () => undefined,
-      emitError: () => undefined,
-      log,
-      sid: "sid-2",
-    });
-    const last = apiError();
-    handler.handle({
-      type: "error",
-      error: new RetryError({
-        message: "Failed after 3 attempts. Last error: Internal Server Error",
-        reason: "maxRetriesExceeded",
-        errors: [last, last, last],
-      }),
-    });
-    expect(log.error).toHaveBeenCalledWith(
-      "LLM stream error",
-      expect.objectContaining({ statusCode: 500, requestId: "06ad6271" }),
-    );
-  });
-
-  test("streamText never dumps the raw error object to the console", async () => {
-    // The SDK's default onError is `console.error(error)`. For a retried API
-    // failure that is ~100 lines (three nested stack traces plus the whole
-    // request body) — enough to evict every other line from a host's log
-    // buffer, which is how this went unnoticed in production.
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const log = makeLogger();
-    await consumeLlmStream({
-      llm: createFakeLanguageModel({ script: [{ type: "error", error: apiError() }] }),
-      systemPrompt: "s",
-      messages: [{ role: "user", content: "hi" }],
-      tools: {},
-      toolChoice: "auto",
-      temperature: undefined,
-      repairToolCall: async () => null,
-      maxSteps: 1,
-      sendTtsText: () => undefined,
-      callbacks: { onToolCall: () => undefined },
-      emitError: () => undefined,
-      log,
-      sid: "sid-3",
-      signal: new AbortController().signal,
-      onDelta: () => undefined,
-    });
-    expect(consoleError).not.toHaveBeenCalled();
-    expect(log.error).toHaveBeenCalledWith(
-      "LLM stream error",
-      expect.objectContaining({ statusCode: 500 }),
-    );
-  });
-
-  // A TURN failing is not the SESSION failing, and `onError` defaults to fatal —
-  // which aai-ui answers by calling `cleanupAudio()` and ending the call. So the
-  // three turn-level reporters below must all pass `{ fatal: false }`, or the
-  // transport speaks `errorPhrase` ("Could you say that again?") into a
-  // microphone it just had switched off. Found by the pipeline fuzz once its LLM
-  // script could fail a turn; the terminal paths (`onProviderError`, the
-  // provider-open rejection) stay fatal, and both call `terminate()`.
-  test("an error part reports the turn failure NON-fatally", () => {
-    const emitError = vi.fn();
-    const handler = createStreamPartHandler({
-      onDelta: () => undefined,
-      sendTtsText: () => undefined,
-      onToolCall: () => undefined,
-      emitError,
-      log: makeLogger(),
-      sid: "sid-1",
-    });
-    handler.handle({ type: "error", error: apiError() });
-    expect(emitError).toHaveBeenCalledWith("llm", "Internal Server Error", { fatal: false });
-  });
-
-  test("a thrown LLM stream reports the turn failure NON-fatally", async () => {
-    const emitError = vi.fn();
-    const llm = createFakeLanguageModel({ script: [{ type: "text", text: "hi" }] });
-    (llm as unknown as { doStream: () => Promise<never> }).doStream = () =>
-      Promise.reject(new Error("connection reset"));
-    const result = await consumeLlmStream({
-      llm,
-      systemPrompt: "s",
-      messages: [{ role: "user", content: "hi" }],
-      tools: {},
-      toolChoice: "auto",
-      temperature: undefined,
-      repairToolCall: async () => null,
-      maxSteps: 1,
-      sendTtsText: () => undefined,
-      callbacks: { onToolCall: () => undefined },
-      emitError,
-      log: silentLogger,
-      sid: "sid-5",
-      signal: new AbortController().signal,
-      onDelta: () => undefined,
-    });
-    expect(result.failed).toBe(true);
-    expect(emitError).toHaveBeenCalledWith("llm", "connection reset", { fatal: false });
-  });
-
-  test("reports failed: true so the caller can speak a recovery phrase", async () => {
-    // A failed turn produces no text, so nothing reaches TTS and the caller
-    // hears silence. The transport speaks `errorPhrase` instead — but it can
-    // only do that if it can tell a failed turn from an empty successful one,
-    // which the message array alone cannot express.
-    const result = await consumeLlmStream({
-      llm: createFakeLanguageModel({ script: [{ type: "error", error: apiError() }] }),
-      systemPrompt: "s",
-      messages: [{ role: "user", content: "hi" }],
-      tools: {},
-      toolChoice: "auto",
-      temperature: undefined,
-      repairToolCall: async () => null,
-      maxSteps: 1,
-      sendTtsText: () => undefined,
-      callbacks: { onToolCall: () => undefined },
-      emitError: () => undefined,
-      log: silentLogger,
-      sid: "sid-4",
-      signal: new AbortController().signal,
-      onDelta: () => undefined,
-    });
-    expect(result.failed).toBe(true);
-  });
-
-  test("reports failed: false for a turn that completed", async () => {
-    const result = await consumeLlmStream({
-      llm: createFakeLanguageModel({ script: [{ type: "text", text: "all good" }] }),
-      systemPrompt: "s",
-      messages: [{ role: "user", content: "hi" }],
-      tools: {},
-      toolChoice: "auto",
-      temperature: undefined,
-      repairToolCall: async () => null,
-      maxSteps: 1,
-      sendTtsText: () => undefined,
-      callbacks: { onToolCall: () => undefined },
-      emitError: () => undefined,
-      log: silentLogger,
-      sid: "sid-5",
-      signal: new AbortController().signal,
-      onDelta: () => undefined,
-    });
-    expect(result.failed).toBe(false);
-  });
-
-  test("an aborted turn is not a failure", async () => {
-    // Barge-in already has its own recovery path (persistInterruptedTurn); an
-    // apology on top of a deliberate interruption would be wrong.
-    const ctl = new AbortController();
-    ctl.abort();
-    const result = await consumeLlmStream({
-      llm: createFakeLanguageModel({ script: [{ type: "text", text: "hi" }] }),
-      systemPrompt: "s",
-      messages: [{ role: "user", content: "hi" }],
-      tools: {},
-      toolChoice: "auto",
-      temperature: undefined,
-      repairToolCall: async () => null,
-      maxSteps: 1,
-      sendTtsText: () => undefined,
-      callbacks: { onToolCall: () => undefined },
-      emitError: () => undefined,
-      log: silentLogger,
-      sid: "sid-6",
-      signal: ctl.signal,
-      onDelta: () => undefined,
-    });
-    expect(result.failed).toBe(false);
+    c.send("Let me ", true);
+    // Sub-threshold model text is buffered...
+    c.send("check ", true);
+    expect(sent).toEqual(["Let me "]);
+    // ...and released by the filler rather than batched together with it: the
+    // heard cursor slices history out of the recordable spans, so a mixed send
+    // would put filler in the record (or drop model text from it).
+    c.send("One moment.", false);
+    expect(sent).toEqual(["Let me ", "check ", "One moment."]);
+    expect(records).toEqual([true, true, false]);
   });
 });
-
-describe("createStreamPartHandler dead-air cover", () => {
-  function harness(overrides: { holdPhrase?: string; signal?: AbortSignal } = {}) {
-    const spoken: string[] = [];
-    const handler = createStreamPartHandler({
-      onDelta: () => undefined,
-      // Route through a real coalescer: a filler that only reaches the batch
-      // buffer is not speech, and the tool window is exactly when nothing
-      // arrives to flush it.
-      sendTtsText: createTtsTextCoalescer((t) => spoken.push(t)).send,
-      onTtsBoundary: () => undefined,
-      onToolCall: () => undefined,
-      emitError: () => undefined,
-      log: silentLogger,
-      sid: "t",
-      ...overrides,
-    });
-    const toolCall = (id: string): void =>
-      handler.handle({ type: "tool-call", toolCallId: id, toolName: "lookup", input: {} });
-    return { spoken, handler, toolCall };
-  }
-
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  test("covers the turn's opening gap, before any tool call exists", () => {
-    // The failure this exists for: the cover was armed only by a `tool-call`
-    // part, so the window between the committed user turn and the model's FIRST
-    // stream part was uncovered and unbounded — a slow first token, or a
-    // reasoning phase that emits no text, is silence the caller cannot
-    // distinguish from a dropped call. Measured on tau2-bench retail with
-    // gpt-5.5: 31.4s, ended only by the first tool call finally reaching the
-    // hold phrase.
-    const { spoken } = harness();
-    expect(spoken).toEqual([]);
-    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS);
-    // The hold phrase, not a cover phrase: "Still working on that." as the
-    // first words of a turn describes work the caller never heard start.
-    expect(spoken.join("")).toContain(DEFAULT_HOLD_PHRASE);
-  });
-
-  test("a turn that answers promptly pays nothing for the opening cover", () => {
-    const { spoken, handler } = harness();
-    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS - 1);
-    handler.handle({ type: "text-delta", text: "Sure, here you go. " });
-    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 10);
-    expect(spoken.join("")).toBe("Sure, here you go. ");
-  });
-
-  test("an opening filler is not said twice when the first tool call lands", () => {
-    // Both triggers emit the hold phrase; `holdEmitted` is what keeps the
-    // caller from hearing "One moment. One moment." a beat apart.
-    const { spoken, toolCall } = harness();
-    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS);
-    toolCall("tc-1");
-    expect(spoken.join("").split(DEFAULT_HOLD_PHRASE).length - 1).toBe(1);
-  });
-
-  test("covers a tool window that opens after the model has already spoken", () => {
-    // The failure this exists for: the model says "Let me check that", then
-    // chains tool calls for 15+ seconds. holdPhrase is state-gated on "has the
-    // model spoken this turn", so it stays suppressed and the caller hears
-    // nothing until the chain ends — by which point they have hung up.
-    const { spoken, toolCall, handler } = harness();
-    handler.handle({ type: "text-delta", text: "Let me check that for you. " });
-    handler.handle({ type: "text-end" });
-    toolCall("tc-1");
-    expect(spoken.join("")).toBe("Let me check that for you. ");
-    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS);
-    expect(spoken.join("")).toContain(DEAD_AIR_COVER_PHRASES[0]);
-  });
-
-  test("keeps covering a long tool chain, backing off between fillers", () => {
-    const { spoken, toolCall } = harness();
-    toolCall("tc-1"); // opens with a tool call: holdPhrase fires immediately
-    const covers = (): number =>
-      DEAD_AIR_COVER_PHRASES.filter((p) => spoken.join("").includes(p)).length;
-    // The hold phrase counts toward the backoff, so the first cover is one
-    // step out rather than a single base window after it — under a second of
-    // silence between two fillers reads as chatter.
-    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS);
-    expect(covers()).toBe(0);
-    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS);
-    expect(covers()).toBe(1);
-    // Backoff: the second cover is not due at another single window.
-    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS);
-    expect(covers()).toBe(1);
-    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 8);
-    expect(covers()).toBeGreaterThanOrEqual(2);
-  });
-
-  test("the backoff flattens at DEAD_AIR_COVER_MAX_MS instead of drifting silent", () => {
-    // Uncapped doubling put a 90s chain's fillers 16s and then 32s apart — the
-    // dead air the cover exists to prevent, at the tail of exactly the long
-    // chains it exists for. Measured on the tau2-bench retail runs, whose 45s
-    // tool chains ended in a silent 15s stretch.
-    const { spoken, toolCall } = harness();
-    toolCall("tc-1");
-    // Ramp past the doubling phase (hold + two covers gets the wait to the cap).
-    vi.advanceTimersByTime(DEAD_AIR_COVER_MAX_MS * 4);
-    const before = spoken.length;
-    // From here every window is the cap, so N more windows means N more fillers.
-    vi.advanceTimersByTime(DEAD_AIR_COVER_MAX_MS * 3);
-    expect(spoken.length - before).toBe(3);
-  });
-
-  test("the hold phrase does not consume a cover phrase's turn in the cycle", () => {
-    // Sharing one counter between the backoff and the phrase index made the
-    // caller hear "One moment." and then skip to the second cover phrase.
-    const { spoken, toolCall } = harness();
-    toolCall("tc-1");
-    vi.advanceTimersByTime(DEAD_AIR_COVER_MAX_MS * 2);
-    expect(spoken.join("")).toContain(DEAD_AIR_COVER_PHRASES[0]);
-  });
-
-  test("speech cancels a pending cover", () => {
-    const { spoken, toolCall, handler } = harness();
-    toolCall("tc-1");
-    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS - 1);
-    handler.handle({ type: "text-delta", text: "Found it. " });
-    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 10);
-    for (const phrase of DEAD_AIR_COVER_PHRASES) {
-      expect(spoken.join("")).not.toContain(phrase);
-    }
-  });
-
-  test("dispose() stops a cover from firing into the silence after the turn", () => {
-    const { spoken, toolCall, handler } = harness();
-    toolCall("tc-1");
-    handler.dispose();
-    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 10);
-    for (const phrase of DEAD_AIR_COVER_PHRASES) {
-      expect(spoken.join("")).not.toContain(phrase);
-    }
-  });
-
-  test("a barge-in abort stops a pending cover from firing", () => {
-    // Barge-in during a tool execution: dispose() waits on the parked
-    // fullStream read, so the abort signal is what must kill the timer —
-    // otherwise the filler is spoken into post-cancel silence AND appended
-    // to `accumulated`, polluting the interrupted-turn history.
-    const ctl = new AbortController();
-    const { spoken, toolCall } = harness({ signal: ctl.signal });
-    toolCall("tc-1");
-    ctl.abort();
-    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 10);
-    for (const phrase of DEAD_AIR_COVER_PHRASES) {
-      expect(spoken.join("")).not.toContain(phrase);
-    }
-  });
-
-  test("an unaborted signal leaves the cover working", () => {
-    const ctl = new AbortController();
-    const { spoken, toolCall } = harness({ signal: ctl.signal });
-    toolCall("tc-1");
-    // Two base windows: the hold phrase counts toward the backoff.
-    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 2);
-    expect(spoken.join("")).toContain(DEAD_AIR_COVER_PHRASES[0]);
-  });
-
-  test("holdPhrase '' disables the dead-air cover too", () => {
-    // One kill switch for filler speech, not two.
-    const { spoken, toolCall } = harness({ holdPhrase: "" });
-    toolCall("tc-1");
-    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 10);
-    expect(spoken).toEqual([]);
-  });
-});
-
 describe("flushTtsAndWait", () => {
   /** A TTS session whose `done` fires (or never fires) on demand. */
   function fakeTts(opts: { emitDone: boolean }) {

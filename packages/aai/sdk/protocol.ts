@@ -16,6 +16,7 @@ import {
   MAX_AUDIO_SAMPLE_RATE,
   MAX_CLIENT_EVENT_NAME_LENGTH,
   MAX_ERROR_MESSAGE_CHARS,
+  MAX_PLAYBACK_BUFFERED_MS,
   MAX_TOOL_RESULT_CHARS,
   MAX_TRANSCRIPT_CHARS,
 } from "./constants.ts";
@@ -137,6 +138,18 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("user_transcript_partial"),
     text: z.string().max(MAX_TRANSCRIPT_CHARS),
+    /**
+     * The STT service's confidence that the user's turn has ENDED as of this
+     * interim, 0..1, when the provider reports one (AssemblyAI's
+     * `end_of_turn_confidence`). Absent means "no opinion", never zero.
+     *
+     * Carried on the wire so an endpointing policy can be MEASURED before it
+     * is built: pairing each interim's confidence and text against the final
+     * that follows gives the lead time a speculative turn-start would buy and
+     * the rate at which the transcript would still have been correct. Nothing
+     * acts on it.
+     */
+    eotConfidence: z.number().min(0).max(1).optional(),
   }),
   /**
    * The current reply's transcript so far — a **full-replacement snapshot**, and
@@ -150,11 +163,11 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
    * Snapshot, NOT an append-only or monotonically growing string: a pipeline
    * reply's final snapshot can be SHORTER than the one before it, and can differ
    * in the middle rather than only at the end. The interim snapshots are built
-   * from everything handed to TTS, which includes the hold phrase and the
-   * dead-air cover fillers the caller hears; the reply's closing snapshot is the
-   * model's own words, with that filler removed — so "One moment. Thanks, I
-   * found your account. Still working on that. Here it is." is followed by
-   * "Thanks, I found your account. Here it is.". That is deliberate: the
+   * from everything handed to TTS, which includes the dead-air cover fillers
+   * the caller hears; the reply's closing snapshot is the model's own words,
+   * with that filler removed — so "I'm checking on this. Thanks, I found your
+   * account. I'm still on it. Here it is." is followed by "Thanks, I found your
+   * account. Here it is.". That is deliberate: the
    * committed message should read as dialogue, while the live caption should
    * match the audio. A client that diffs against the previous snapshot, renders
    * incrementally, or assumes a common prefix will corrupt — replace the text.
@@ -279,6 +292,41 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   ev("cancel"),
   ev("reset"),
   z.object({
+    /**
+     * How much forwarded agent audio the client still holds UNPLAYED.
+     *
+     * The one closed-loop signal in the protocol. Without it the host models
+     * playback open-loop — `pipeline-heard.ts` assumes every forwarded chunk
+     * begins playing the instant it is sent, at exactly 1.0x, plus a fixed
+     * grace — and nothing anywhere can detect a client that drains slower than
+     * real time. Such a client accrues a backlog that grows across a reply and
+     * is invisible to the host, which then believes the line is silent while
+     * the caller is still listening.
+     *
+     * Five things ride that estimate, and all five fail the same way: the
+     * outward `speech_started` gate (opens early, so a client that truncates
+     * on that event throws away speech the caller had not heard), the heard
+     * cursor (records unheard words as delivered, so the model never repeats
+     * them), the barge-in floor, the false-interruption resume anchor, and the
+     * silence nudger. Measured against a harness draining at **0.60-0.67x**:
+     * the host declared playback finished while the client still held 3.8-7.3s
+     * of the reply, and 39.5s of agent speech — 41% of all audio it lost — was
+     * destroyed on edges the barge-in gates had explicitly ruled were not
+     * interruptions.
+     *
+     * **Advisory and monotonic in one direction only.** The host clamps
+     * UPWARD (`max(existing, now + bufferedMs)`), never down, so a client that
+     * never sends this, sends it late, or under-reports degrades to exactly
+     * the open-loop behaviour — there is no way for this frame to make the
+     * host think less audio is outstanding than it already believes, and no
+     * existing client regresses by not adopting it. Send it while audio is
+     * queued (aai-ui sends one every `PLAYBACK_PROGRESS_INTERVAL_MS`); stop
+     * when the buffer empties.
+     */
+    type: z.literal("playback_progress"),
+    bufferedMs: z.number().min(0).max(MAX_PLAYBACK_BUFFERED_MS),
+  }),
+  z.object({
     type: z.literal("history"),
     messages: z
       .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(100_000) }))
@@ -334,8 +382,12 @@ export const HostConfigSchema = z.object({
    * product codes, passport numbers — and steering the LLM alone leaves those
    * identifiers transcribed unbiased, where a formatted final turn can revise
    * a spelled code out of the transcript entirely. Omit it to keep whatever
-   * the deployed agent configures. No effect on S2S transports, which have no
-   * separate STT stage.
+   * the deployed agent configures.
+   *
+   * Honoured by BOTH transports: the pipeline passes it to its STT stage, and
+   * S2S sends it as `input.transcription_prompt` (trimmed to that field's
+   * documented 1750-char cap). It used to be pipeline-only, which made it a
+   * silent no-op for every S2S agent rather than a documented limitation.
    */
   sttPrompt: z.string().optional(),
   /**
@@ -355,6 +407,28 @@ export const HostConfigSchema = z.object({
    * client set `DATABASE_URL` and point `ctx.db` at a server it controls.
    */
   credentials: z.record(z.string(), z.string().min(1)).optional(),
+  /**
+   * How much agent audio the host may keep in flight, in ms — the client
+   * declaring its own playback behaviour, because it is the only party that
+   * knows it.
+   *
+   * Omitted means real-time pacing (`CLIENT_AUDIO_LEAD_MS`), which is right for
+   * anything that plays audio at one second per second. `null` disables pacing
+   * entirely, for a client whose timeline runs FASTER than the wall clock (a
+   * simulation stepping per processed tick); metering to the wall clock starves
+   * that client, and it does so invisibly.
+   *
+   * The default is paced because the opposite default was measured to be
+   * destructive for the far more common case: a client that drains at 1x. In
+   * S2S mode the service synthesises a whole reply server-side and it arrives
+   * in one burst, so unpaced relay handed the tau2 harness a backlog that grew
+   * to MINUTES — and that harness discards its buffered audio on barge-in, so
+   * 36% of all agent speech was destroyed unheard (p99 181s per barge-in,
+   * against 15s max on the pipeline transport, whose per-sentence TTS flush
+   * paces it inherently). Pacing keeps the backlog on this side, where
+   * `PacedAudioSink.clear()` drops it on barge-in instead.
+   */
+  audioLeadMs: z.union([z.number().positive(), z.null()]).optional(),
 });
 
 /** Host-provided agent configuration for a host-mode connection. */

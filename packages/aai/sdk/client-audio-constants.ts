@@ -147,3 +147,34 @@ export const CAPTURE_STOP_ACK_TIMEOUT_MS = 250;
  * @internal
  */
 export const MIC_SEND_MAX_BUFFERED_BYTES = 64 * 1024;
+
+/**
+ * How often a client reports its unplayed agent-audio backlog to the host
+ * (`playback_progress`), while it holds any.
+ *
+ * The host clamps upward only, so this interval sets how STALE the host's view
+ * may be, not how accurate: between reports the estimate decays toward the
+ * open-loop model it replaces. 500 ms is comfortably under
+ * `PLAYBACK_JITTER_MS` plus a network hop — the scale at which the
+ * open-loop model is already wrong — while costing one small text frame per
+ * half-second of agent speech, which is nothing beside the PCM16 flowing the
+ * other way.
+ *
+ * There is no point reporting when the buffer is empty: "nothing outstanding"
+ * is what the host already assumes, and a clamp-upward consumer would ignore
+ * it anyway.
+ */
+export const PLAYBACK_PROGRESS_INTERVAL_MS = 500;
+
+/**
+ * Upper bound (ms) accepted on a `playback_progress` report.
+ *
+ * A validation bound, not a tuning knob. The value feeds a clock the host
+ * treats as "audio may still be playing", which gates barge-in and the
+ * speaking edge — so an absurd report (a buggy client, a hostile one) would
+ * pin the agent as permanently speaking and make the session deaf to
+ * interruption. Ten minutes is far past any real jitter buffer and still
+ * finite. Zod rejects anything above it, and a rejected client message is
+ * dropped, which degrades to the open-loop estimate.
+ */
+export const MAX_PLAYBACK_BUFFERED_MS = 600_000;

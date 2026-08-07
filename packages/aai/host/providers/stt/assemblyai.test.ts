@@ -10,6 +10,7 @@ import {
   DEFAULT_MAX_TURN_SILENCE_MS,
   DEFAULT_MIN_TURN_SILENCE_MS,
   DEFAULT_SESSION_START_TIMEOUT_MS,
+  DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
   DEFAULT_STT_PROMPT,
   DEFAULT_VOICE_FOCUS_THRESHOLD,
   STT_CONNECT_MAX_RETRIES,
@@ -101,6 +102,92 @@ function fakeOf(session: AssemblyAISession): FakeTranscriber {
   return session._transcriber as unknown as FakeTranscriber;
 }
 
+describe("assemblyAIStt STT adapter — end_of_turn_confidence", () => {
+  /**
+   * A caller dictating a phone number, as the service actually reports it.
+   * The point of the sequence is that confidence is NOT monotonic: it climbs
+   * while a prefix settles, then RESETS to 0 when the caller speaks the next
+   * group. Any consumer that treats a rise as "they are done" fires mid-number
+   * — which is the truncation the silence-window knobs already struggle with.
+   */
+  const DICTATED_NUMBER = [
+    { transcript: "3 of", end_of_turn_confidence: 0 },
+    { transcript: "302.", end_of_turn_confidence: 0 },
+    { transcript: "302.", end_of_turn_confidence: 0.25 },
+    { transcript: "302-746-", end_of_turn_confidence: 0 },
+    { transcript: "302-743-", end_of_turn_confidence: 0.175 },
+    { transcript: "302-743-", end_of_turn_confidence: 0.275 },
+    { transcript: "302-743-", end_of_turn_confidence: 0.425 },
+    { transcript: "302-743-", end_of_turn_confidence: 0 },
+    { transcript: "302-743-9958.", end_of_turn_confidence: 0 },
+    { transcript: "302-743-9958.", end_of_turn_confidence: 0.25 },
+    { transcript: "302-743-9958.", end_of_turn_confidence: 0.4 },
+    { transcript: "302-743-9958.", end_of_turn_confidence: 0.55 },
+    { transcript: "302-743-9958.", end_of_turn_confidence: 0.7 },
+    { transcript: "302-743-9958.", end_of_turn_confidence: 0.8 },
+    { transcript: "302-743-9958.", end_of_turn_confidence: 0.95 },
+    { transcript: "302-743-9958.", end_of_turn_confidence: 1 },
+  ];
+
+  test("forwards the per-turn confidence onto the partial/final meta", async () => {
+    const session = await openSession({ model: "universal-3-5-pro" });
+    const seen: Array<number | undefined> = [];
+    session.on("partial", (_t, meta) => seen.push(meta?.endOfTurnConfidence));
+    const fake = fakeOf(session);
+
+    for (const turn of DICTATED_NUMBER) {
+      fake._fire("turn", { ...turn, end_of_turn: false });
+    }
+    await flush();
+
+    expect(seen).toEqual(DICTATED_NUMBER.map((t) => t.end_of_turn_confidence));
+    // The sawtooth is the property worth pinning: TWO drops back to 0 from a
+    // non-zero reading (after 0.25, and after 0.425), each one the caller
+    // resuming mid-identifier. A consumer that reads a rising value as "they
+    // have finished" fires at both and truncates the number.
+    const resets = seen.filter((c, i) => i > 0 && c === 0 && (seen[i - 1] ?? 0) > 0);
+    expect(resets).toHaveLength(2);
+    // And it only reaches 1.0 once, on the last frame — the genuine end.
+    expect(seen.filter((c) => c === 1)).toHaveLength(1);
+    expect(seen.at(-1)).toBe(1);
+
+    await session.close();
+  });
+
+  test("omits the field entirely when the service does not report it", async () => {
+    const session = await openSession({ model: "universal-3-5-pro" });
+    const metas: Array<Record<string, unknown> | undefined> = [];
+    session.on("final", (_t, meta) => metas.push(meta));
+    const fake = fakeOf(session);
+
+    fake._fire("turn", { transcript: "done.", end_of_turn: true } as TurnEvent);
+    await flush();
+
+    // Absent, not `undefined` — "the provider said nothing" must be
+    // distinguishable from "the provider reported zero confidence".
+    expect(metas).toHaveLength(1);
+    expect(metas[0]).not.toHaveProperty("endOfTurnConfidence");
+
+    await session.close();
+  });
+
+  test("a zero reading survives as 0, not as absent", async () => {
+    const session = await openSession({ model: "universal-3-5-pro" });
+    const seen: Array<number | undefined> = [];
+    session.on("partial", (_t, meta) => seen.push(meta?.endOfTurnConfidence));
+    const fake = fakeOf(session);
+
+    // No cast: `_fire` takes `...args: unknown[]`, so the extra field the
+    // SDK type does not declare needs no laundering to reach the adapter.
+    fake._fire("turn", { transcript: "3 of", end_of_turn: false, end_of_turn_confidence: 0 });
+    await flush();
+
+    expect(seen).toEqual([0]);
+
+    await session.close();
+  });
+});
+
 describe("assemblyAIStt STT adapter — fixture replay", () => {
   test("maps turn events onto partial/final SttEvents", async () => {
     const fixture = JSON.parse(
@@ -171,6 +258,7 @@ describe("assemblyAIStt STT adapter — raw turn trace (AAI_DEBUG)", () => {
     await flush();
 
     expect(debugSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       "AssemblyAI STT turn",
       expect.objectContaining({
         transcript: "track my order T-O-999",
@@ -178,6 +266,7 @@ describe("assemblyAIStt STT adapter — raw turn trace (AAI_DEBUG)", () => {
       }),
     );
     expect(debugSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       "AssemblyAI STT turn",
       expect.objectContaining({
         transcript: "I've been waiting on that one.",
@@ -205,6 +294,7 @@ describe("assemblyAIStt STT adapter — raw turn trace (AAI_DEBUG)", () => {
     await flush();
 
     expect(debugSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       "AssemblyAI STT turn",
       expect.objectContaining({ transcript: "", endOfTurn: true }),
     );
@@ -384,6 +474,10 @@ describe("assemblyAIStt STT adapter — endpointing (min/max_turn_silence)", () 
     expect(fake.params.minTurnSilence).toBe(DEFAULT_MIN_TURN_SILENCE_MS);
     expect(fake.params.minTurnSilence).toBe(1600);
     expect(fake.params.maxTurnSilence).toBe(DEFAULT_MAX_TURN_SILENCE_MS);
+    // 3500 is the measured half of the pair (tau2-bench retail reward 0.68,
+    // twice); the 3000 trim was reverted when the asymmetry its own doc named
+    // as the revert condition showed up — splits on hesitant, non-spelling
+    // utterances while spelled identifiers stayed whole.
     expect(fake.params.maxTurnSilence).toBe(3500);
     await session.close();
   });
@@ -396,6 +490,20 @@ describe("assemblyAIStt STT adapter — endpointing (min/max_turn_silence)", () 
     // from the acoustic fallback — the very mechanism that splits utterances.
     // An inverted pair is silently wrong on the wire, so assert it here.
     expect(DEFAULT_MIN_TURN_SILENCE_MS).toBeLessThan(DEFAULT_MAX_TURN_SILENCE_MS);
+  });
+
+  test("the speaking-edge idle deadline stays ABOVE the endpointing ceiling", () => {
+    // The coupling the false-interruption rework made explicit. The idle
+    // watchdog closing the speaking edge is what fires a false-interruption
+    // resume, so an utterance force-ended by `max_turn_silence` must deliver
+    // its final BEFORE that deadline — otherwise the agent resumes a reply the
+    // caller really did interrupt. The transport cannot check this itself: it
+    // receives an already-resolved SttOpener and never sees the endpointing
+    // window. It used to be pinned only in prose, in the opposite direction
+    // (max_turn_silence above the old 2000 ms recovery window), which is how
+    // it stayed invisible. Note the margin covers final-emission latency, so
+    // an agent raising maxTurnSilenceMs must raise `speechIdleTimeoutMs` too.
+    expect(DEFAULT_SPEECH_IDLE_TIMEOUT_MS).toBeGreaterThan(DEFAULT_MAX_TURN_SILENCE_MS);
   });
 
   test("each override is independent", async () => {

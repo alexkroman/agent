@@ -22,7 +22,7 @@ export type TransportCallbacks = {
    * forwards STT partials so the client can render live captions; S2S
    * transports never call it (their providers only surface committed turns).
    */
-  onUserTranscriptPartial?(text: string): void;
+  onUserTranscriptPartial?(text: string, eotConfidence?: number): void;
   onAgentTranscript(text: string, interrupted: boolean): void;
   /**
    * The reply's transcript *so far*, cumulative — called each time more of it
@@ -30,8 +30,8 @@ export type TransportCallbacks = {
    * of landing in one lump when the reply ends.
    *
    * Pipeline mode calls this as text reaches TTS. It matters most for a reply
-   * that spends 10+ seconds in a tool chain: the hold phrase and the dead-air
-   * cover are spoken minutes before `onAgentTranscript` fires, and a client
+   * that spends 10+ seconds in a tool chain: the dead-air cover
+   * fillers are spoken minutes before `onAgentTranscript` fires, and a client
    * pairing text with audio has already played that audio by then. S2S
    * transports leave it unset — their providers surface a reply's transcript
    * once, when it is complete.
@@ -105,4 +105,11 @@ export interface Transport {
    * clears its message list; S2S has no client-side history to drop.
    */
   reset?(): void;
+  /**
+   * The client's unplayed agent-audio backlog, in ms — the closed-loop
+   * counterpart of the pipeline's open-loop playback estimate. Pipeline mode
+   * feeds it to the heard cursor's clock; S2S omits it, because the service
+   * owns turn-taking there and the host keeps no playback model to correct.
+   */
+  onPlaybackProgress?(bufferedMs: number): void;
 }

@@ -45,7 +45,17 @@ export type LogFn = (msg: string, ctx?: LogContext) => void;
 export type Logger = Record<LogLevel, LogFn>;
 
 function consoleLog(fn: typeof console.log): LogFn {
-  return (msg, ctx) => (ctx ? fn(msg, ctx) : fn(msg));
+  // ISO-8601 prefix on every line. Without it these logs answer "what
+  // happened" but not "when", and the questions worth asking of a voice
+  // session are all timing ones — how long endpointing took, how much lead an
+  // end-of-turn confidence threshold would buy, where a stall sat. Cheap
+  // enough for the debug hot path: one `toISOString` per emitted line, and
+  // `debug` is a no-op unless AAI_DEBUG is set.
+  return (msg, ctx) => {
+    const at = new Date().toISOString();
+    if (ctx) fn(at, msg, ctx);
+    else fn(at, msg);
+  };
 }
 
 /**
@@ -69,6 +79,22 @@ export function isDebugEnv(value: string | undefined): boolean {
  */
 export const debugLoggingEnabled: boolean =
   isDebugEnv(process.env.AAI_DEBUG) || process.env.LOG_LEVEL === "DEBUG";
+
+/**
+ * Whether the per-interim STT logs are wanted (`AAI_DEBUG_PARTIALS=1`).
+ *
+ * Separate from {@link debugLoggingEnabled} because interims are the highest
+ * volume line in a voice session by an order of magnitude — one per ~200ms of
+ * speech, each a revision of the last — and they drown the turn-level events
+ * that debugging usually needs. Off even when `AAI_DEBUG=1`.
+ *
+ * Note this does NOT gate the AssemblyAI turn trace, which carries
+ * `endOfTurnConfidence` and is the raw material for measuring an end-of-turn
+ * policy. Silencing the redundant copy is the point; losing the data is not.
+ *
+ * @internal
+ */
+export const debugPartialsEnabled: boolean = isDebugEnv(process.env.AAI_DEBUG_PARTIALS);
 
 const noopLog: LogFn = () => undefined;
 

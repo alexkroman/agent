@@ -7,6 +7,7 @@ import type { ClientEvent } from "../sdk/protocol.ts";
 import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeConfig, makeLogger, silentLogger } from "./_test-utils.ts";
+import { UNPACED_AUDIO_LEAD_MS } from "./audio-pacer.ts";
 import {
   buildHostAgent,
   isHostAllowed,
@@ -229,6 +230,85 @@ describe("startHostSession (deferred host handshake)", () => {
     // Session started on the fresh per-connection runtime, deferred to the frame.
     expect(startSession).toHaveBeenCalledTimes(1);
     expect(startSession.mock.calls[0]?.[0]).toBe(ws);
+  });
+
+  /**
+   * Audio pacing is the CLIENT'S declaration, and it defaults to paced.
+   *
+   * Unpaced used to be the blanket default here, reasoning that a host-mode
+   * client is programmatic and therefore keeps its own clock. Being programmatic
+   * does not imply consuming faster than real time: in S2S mode the service
+   * synthesises a whole reply server-side and it arrives in one burst, so
+   * unpaced relay handed the tau2 harness a backlog that grew to MINUTES — and
+   * that harness discards buffered audio on barge-in, so 36% of all agent speech
+   * was destroyed unheard (p99 181s per barge-in, against 15s max on the
+   * pipeline transport). Only a timeline running AHEAD of the wall clock is
+   * starved by pacing, and it now has to say so.
+   */
+  describe("audio pacing is client-declared", () => {
+    /** Start a host session with the given host block; report the start options. */
+    async function startOptsFor(
+      host: Record<string, unknown>,
+    ): Promise<{ calls: number; audioLeadMs: unknown }> {
+      const ws = openMockWs();
+      let startSession: ReturnType<typeof vi.fn> = vi.fn();
+      startHostSession(asSessionWs(ws), {
+        env: { AAI_ALLOW_HOST: "1" },
+        logger: silentLogger,
+        createRuntime: (o) => {
+          const fake = makeFakeRuntime(o);
+          startSession = fake.startSession;
+          return fake.runtime;
+        },
+      });
+      ws.simulateMessage(
+        hostConfigFrame({
+          host: { systemPrompt: "You are a host agent.", tools: [TOOL_SCHEMA], ...host },
+        }),
+      );
+      await Promise.resolve();
+      const opts = startSession.mock.calls[0]?.[1] as { audioLeadMs?: unknown } | undefined;
+      return { calls: startSession.mock.calls.length, audioLeadMs: opts?.audioLeadMs };
+    }
+
+    test("an omitted audioLeadMs leaves the pacer's real-time default in place", async () => {
+      // Unset rather than a number: the pacer owns the default lead, so passing
+      // one here would fork it.
+      const { calls, audioLeadMs } = await startOptsFor({});
+      expect(calls).toBe(1);
+      expect(audioLeadMs).toBeUndefined();
+    });
+
+    test("null opts out of pacing entirely", async () => {
+      const { calls, audioLeadMs } = await startOptsFor({ audioLeadMs: null });
+      expect(calls).toBe(1);
+      expect(audioLeadMs).toBe(UNPACED_AUDIO_LEAD_MS);
+    });
+
+    test("a number sets that lead", async () => {
+      const { calls, audioLeadMs } = await startOptsFor({ audioLeadMs: 250 });
+      expect(calls).toBe(1);
+      expect(audioLeadMs).toBe(250);
+    });
+
+    // Zero and negatives are rejected by the schema rather than silently
+    // becoming "unpaced" — a lead of 0 would hold every frame forever.
+    test("a non-positive audioLeadMs is refused at the handshake", async () => {
+      const ws = openMockWs();
+      const createRuntime = vi.fn();
+      startHostSession(asSessionWs(ws), {
+        env: { AAI_ALLOW_HOST: "1" },
+        logger: silentLogger,
+        createRuntime,
+      });
+      ws.simulateMessage(
+        hostConfigFrame({
+          host: { systemPrompt: "s", tools: [], audioLeadMs: 0 },
+        }),
+      );
+      await Promise.resolve();
+      expect(createRuntime).not.toHaveBeenCalled();
+    });
   });
 
   /**

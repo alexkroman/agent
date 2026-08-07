@@ -607,7 +607,7 @@ there is no platform database — dev and tests are a single process with no
 peers. The agent path needs no such identity: a NAME answers "does this
 exist", never "who made it".
 
-## Studio starter evals (scripts/starter-eval.mjs)
+## Studio starter evals (scripts/starter-eval/)
 
 The LLM-judge codegen suite (`studio-eval.test.ts`, vitest-evals) was
 removed in favour of a harness that drives the studio's REAL surface —
@@ -615,8 +615,8 @@ create project, broker a sandbox session, stream a chat turn to the guest —
 rather than calling the codegen path directly:
 
 ```sh
-node scripts/starter-eval.mjs [--only <substring>] [--repeat N] [--out f.json]
-node scripts/starter-eval-report.mjs run.json [baseline.json]
+node scripts/starter-eval/run.mjs [--only <substring>] [--repeat N] [--out f.json]
+node scripts/starter-eval/report.mjs run.json [baseline.json]
 ```
 
 It spends real tokens on the caller's own key, so it is not in CI. Three
@@ -625,7 +625,7 @@ things it measures that the judge suite did not:
 - **Shippable, not just green.** The agent writes its own tests, so "the
   tests passed" is a measure it can satisfy by weakening an assertion. The
   primary verdict is instead whether the built agent covers the capabilities
-  the PROMPT enumerated (`scripts/starter-expectations.mjs`), checked
+  the PROMPT enumerated (`scripts/starter-eval/expectations.mjs`), checked
   against the loaded config and agent.ts — neither of which the agent can
   edit to make the check pass.
 - **Cost**: tool calls, repair rounds (failed `test_agent` runs), wall

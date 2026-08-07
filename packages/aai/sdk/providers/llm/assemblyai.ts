@@ -45,8 +45,23 @@ export const ASSEMBLYAI_LLM_GATEWAY_EU_URL = "https://llm-gateway.eu.assemblyai.
  * 400 that only appears at the first session — so "invent a plausible model
  * name" is a failure mode with no compile-time or deploy-time guard, and one
  * that a code-generating agent falls into readily.
+ *
+ * **Changing this id changes more than the model**, because
+ * `TOOLS_REQUIRE_NO_REASONING` is keyed by model id: a default inside
+ * that set makes the bare `assemblyAILlm()` carry an implicit
+ * `reasoningEffort: "none"`, and one outside it carry none at all.
+ * `gpt-5.6-terra` is INSIDE the set, so a bare `assemblyAILlm()` — and every
+ * unset pipeline stage, and the `llm: "<id>"` string shorthand — now carries
+ * that fill. Without it the descriptor 500s on every tool-calling turn, which
+ * is why the fill and this id must be read together: `gpt-5.5` (the previous
+ * default, and the one before `gpt-5.6-luna`) is OUTSIDE the set and needs no
+ * switch flipped for it.
+ *
+ * Only the raw factory is affected either way: `assemblyAIPipeline()` passes
+ * `"none"` explicitly, for latency rather than for that constraint, so the
+ * pipeline behaves identically whichever side of the set the default sits on.
  */
-export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "gpt-5.5";
+export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "gpt-5.6-terra";
 
 /**
  * Reasoning effort accepted by the gateway's GPT-5-family models, including
@@ -54,6 +69,34 @@ export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "gpt-5.5";
  * original `gpt-5`/`-mini`/`-nano`, whose lowest setting that is).
  */
 export type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
+
+/**
+ * Gateway models that REJECT a tool-carrying request unless reasoning is
+ * explicitly off — the factory defaults {@link AssemblyAILlmOptions.reasoningEffort}
+ * to `"none"` for these, because on this SDK "unset" is not a usable state.
+ *
+ * The gateway says so itself: with `tools` present and any non-`none`
+ * reasoning effort (including the model's own server-side default, i.e.
+ * sending no `reasoning_effort` at all), `/v1/chat/completions` answers
+ * *"Function tools with reasoning_effort are not supported for gpt-5.6-luna
+ * in /v1/chat/completions. To use function tools, use /v1/responses or set
+ * reasoning_effort to 'none'."* Measured 2026-08-06 against the live
+ * gateway, 4/4 attempts per model.
+ *
+ * **It does not surface as that 400 on the path this SDK uses.** The pipeline
+ * streams, and streaming converts the same rejection into a bare HTTP 500
+ * (`{"message":"something went wrong","code":500}`) with the explanation
+ * stripped — so the diagnosis only exists in the non-streaming reply. Any
+ * agent that declares a tool — every host-mode session, and every agent that
+ * names a built-in now that `DEFAULT_BUILTIN_TOOLS` is empty — would therefore
+ * 500 on *every* turn under an unguarded descriptor, and read as a gateway
+ * outage rather than a request this SDK built wrong.
+ *
+ * An EXPLICIT `reasoningEffort` is left alone — same rule as `gatewayUrl`
+ * winning over `region`: naming a value is deliberate. Naming a non-`none`
+ * one here is a 500 on the first tool call, which is the author's to make.
+ */
+const TOOLS_REQUIRE_NO_REASONING: ReadonlySet<string> = new Set(["gpt-5.6-luna", "gpt-5.6-terra"]);
 
 export {
   ASSEMBLYAI_GATEWAY_MODELS,
@@ -105,7 +148,23 @@ export interface AssemblyAILlmOptions {
    * on its own server-side default. Set `"none"` (gpt-5.1 and later) or
    * `"minimal"` (the original `gpt-5`/`-mini`/`-nano`) to turn reasoning
    * off, e.g. when a voice turn's time-to-first-token matters more than
-   * thinking depth. Only GPT-5-family models accept the parameter.
+   * thinking depth.
+   *
+   * The GPT-5 family is not the only one that accepts it — `qwen3-next-80b-a3b`
+   * is a hybrid-thinking model and takes it too (measured 2026-08-06 against
+   * the live gateway: `"none"` and `"low"` both return a normal tool-calling
+   * completion, streaming included). Models that do not accept it reject a
+   * bogus value with a 400 naming the ones they do.
+   *
+   * **Exception: on the `gpt-5.6` models unset is not a usable state, so the
+   * factory fills in `"none"`** — they reject a tool-carrying request at any
+   * other effort, and streaming reports that as a bare 500. Setting a
+   * non-`none` effort on one of them is honoured, and breaks tool calls. See
+   * `TOOLS_REQUIRE_NO_REASONING`. The default model
+   * ({@link ASSEMBLYAI_LLM_DEFAULT_MODEL}) IS one of them, so this exception is
+   * the live path: a bare `assemblyAILlm()` carries `"none"`, and the rule
+   * above ("unset sends no parameter") applies only once a model outside the
+   * set is named.
    */
   reasoningEffort?: AssemblyAIReasoningEffort;
   /**
@@ -140,8 +199,18 @@ export type AssemblyAILlmProvider = LlmProvider & {
  * imported side by side without aliasing.
  */
 export function assemblyAILlm(opts: AssemblyAILlmOptions = {}): AssemblyAILlmProvider {
+  const model = opts.model ?? ASSEMBLYAI_LLM_DEFAULT_MODEL;
+  // See TOOLS_REQUIRE_NO_REASONING: for these models, leaving reasoning on
+  // the server-side default is a 500 on every tool-calling turn, so the
+  // descriptor carries "none" unless the author named an effort themselves.
+  const reasoningEffort =
+    opts.reasoningEffort ?? (TOOLS_REQUIRE_NO_REASONING.has(model) ? "none" : undefined);
   return {
     kind: ASSEMBLYAI_LLM_KIND,
-    options: { ...opts, model: opts.model ?? ASSEMBLYAI_LLM_DEFAULT_MODEL },
+    options: {
+      ...opts,
+      model,
+      ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
+    },
   };
 }

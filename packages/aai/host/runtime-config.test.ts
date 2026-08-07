@@ -28,7 +28,12 @@ describe("createConsoleLogger", () => {
     const spy = vi.spyOn(console, "debug").mockImplementation(() => undefined);
     const log = createConsoleLogger(true);
     log.debug("hot-path message", { payload: "big" });
-    expect(spy).toHaveBeenCalledWith("hot-path message", { payload: "big" });
+    // Every line is timestamped — see consoleLog.
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      "hot-path message",
+      { payload: "big" },
+    );
   });
 
   test("info/warn/error stay live regardless of the debug flag", () => {
@@ -39,8 +44,8 @@ describe("createConsoleLogger", () => {
     log.info("i");
     log.warn("w");
     log.error("e");
-    expect(info).toHaveBeenCalledWith("i");
-    expect(warn).toHaveBeenCalledWith("w");
-    expect(error).toHaveBeenCalledWith("e");
+    expect(info).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/), "i");
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/), "w");
+    expect(error).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/), "e");
   });
 });

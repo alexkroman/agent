@@ -28,6 +28,7 @@ function makeStubCore(overrides: Partial<SessionCore> = {}): SessionCore {
     onAudio: vi.fn(),
     onAudioReady: vi.fn(),
     onCancel: vi.fn(),
+    onPlaybackProgress: vi.fn(),
     onReset: vi.fn(),
     onHistory: vi.fn(),
     onToolResult: vi.fn(),

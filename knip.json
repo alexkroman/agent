@@ -23,11 +23,13 @@
   "workspaces": {
     ".": {
       "entry": [
-        "scripts/*.{mjs,ts}",
+        // Recursive: standalone tools live in their own subdirectory when they
+        // ship more than one file (scripts/starter-eval/), and each file there
+        // is run directly rather than imported.
+        "scripts/**/*.{mjs,ts}",
         "stryker*.config.mjs"
       ],
       "ignoreDependencies": [
-        "ws",
         "@stryker-mutator/api"
       ]
     },

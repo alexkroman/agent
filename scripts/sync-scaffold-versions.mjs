@@ -21,10 +21,7 @@ import { join } from "node:path";
 
 const checkOnly = process.argv.includes("--check");
 const root = new URL("..", import.meta.url).pathname;
-const scaffoldPath = join(
-  root,
-  "packages/aai-templates/scaffold/package.json",
-);
+const scaffoldPath = join(root, "packages/aai-templates/scaffold/package.json");
 
 /** Workspace packages whose *own* version the scaffold must track. */
 const pkgMap = {
@@ -123,7 +120,7 @@ if (changed) {
     process.exit(1);
   }
   try {
-    writeFileSync(scaffoldPath, JSON.stringify(scaffold, null, 2) + "\n");
+    writeFileSync(scaffoldPath, `${JSON.stringify(scaffold, null, 2)}\n`);
   } catch (err) {
     console.error(`sync-scaffold-versions: failed to write ${scaffoldPath}: ${err.message}`);
     process.exit(1);

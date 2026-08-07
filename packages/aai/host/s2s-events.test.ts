@@ -244,19 +244,59 @@ describe("connectS2s partial transcripts", () => {
     expect(callbacks.onUserTranscript).not.toHaveBeenCalled();
   });
 
-  // `transcript.agent.delta` is documented but unimplemented by the service, so
-  // it is not in the union. It therefore takes the unrecognised-type path like
-  // any other unknown frame — asserted here so its removal stays deliberate
-  // rather than looking like the drift that hid it in the first place.
-  test("transcript.agent.delta is dropped as unrecognised (service never sends it)", async () => {
-    const callbacks = makeMockCallbacks();
-    const { raw, logger } = await setupHandle(callbacks);
+  // `transcript.agent.delta` DOES arrive from the live service — this suite
+  // previously asserted the opposite (that it was dropped as unrecognised).
+  // See `_s2s-reply.ts` for the re-measurement.
+  test("transcript.agent.delta is not logged as an unrecognised message type", async () => {
+    const { raw, logger } = await setupHandle();
 
     emitMessage(raw, { type: "reply.started", reply_id: "r1" });
-    emitMessage(raw, { type: "transcript.agent.delta", delta: "It's", reply_id: "r1" });
+    emitMessage(raw, { type: "transcript.agent.delta", delta: "Thank", reply_id: "r1" });
 
-    expect(droppedTypes(logger)).toContain("transcript.agent.delta");
+    expect(droppedTypes(logger)).not.toContain("transcript.agent.delta");
+  });
+
+  // Unlike `transcript.user.delta`, whose `text` is cumulative, these really are
+  // increments — one word each, punctuation attached, no spacing of their own.
+  // They must be APPENDED, and the partial carries the accumulation so the
+  // callback keeps its replace-not-append contract.
+  test("transcript.agent.delta accumulates words into the reply's text so far", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
+
+    emitMessage(raw, { type: "reply.started", reply_id: "r1" });
+    emitMessage(raw, { type: "transcript.agent.delta", delta: "Thank", reply_id: "r1" });
+    emitMessage(raw, { type: "transcript.agent.delta", delta: "you", reply_id: "r1" });
+    emitMessage(raw, { type: "transcript.agent.delta", delta: "for", reply_id: "r1" });
+    emitMessage(raw, { type: "transcript.agent.delta", delta: "calling.", reply_id: "r1" });
+
+    expect(callbacks.onAgentTranscriptPartial).toHaveBeenLastCalledWith("Thank you for calling.");
+    // A partial never reaches history; the final (or reply.done) owns that.
     expect(callbacks.onAgentTranscript).not.toHaveBeenCalled();
+  });
+
+  test("a new reply.started resets the delta accumulation", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
+
+    emitMessage(raw, { type: "reply.started", reply_id: "r1" });
+    emitMessage(raw, { type: "transcript.agent.delta", delta: "First", reply_id: "r1" });
+    emitMessage(raw, { type: "reply.started", reply_id: "r2" });
+    emitMessage(raw, { type: "transcript.agent.delta", delta: "Second", reply_id: "r2" });
+
+    expect(callbacks.onAgentTranscriptPartial).toHaveBeenLastCalledWith("Second");
+  });
+
+  // `text` as an alias for `delta`, for the same reason `tool.call` accepts
+  // `arguments`/`args`: a silent name mismatch drops the frame entirely.
+  test("transcript.agent.delta accepts `text` as an alias for `delta`", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
+
+    emitMessage(raw, { type: "reply.started", reply_id: "r1" });
+    emitMessage(raw, { type: "transcript.agent.delta", text: "Hello", reply_id: "r1" });
+
+    expect(callbacks.onAgentTranscriptPartial).toHaveBeenCalledWith("Hello");
   });
 });
 
@@ -386,13 +426,10 @@ describe("connectS2s reply accounting", () => {
 // transcript pushes the assistant turn into history — so reply.done commits
 // the accumulated delta text when no final ever came.
 describe("connectS2s transcript-less replies", () => {
-  // This is the live tool-call turn: audio streams, `transcript.agent` never
-  // arrives. There is nothing to commit and nothing to reconstruct from — an
-  // accumulated-delta salvage path was tried and removed, because the service
-  // sends no deltas either (see `_s2s-reply.ts`). So the turn settles with no
-  // assistant text rather than a synthesised one; inventing text here would put
-  // words the agent never said into history.
-  test("a reply with audio but no transcript.agent commits no assistant text", async () => {
+  // Audio, no `transcript.agent`, and no deltas either: nothing to commit and
+  // nothing to reconstruct from, so the turn settles with no assistant text.
+  // Inventing text here would put words the agent never said into history.
+  test("a reply with audio but no transcript at all commits no assistant text", async () => {
     const callbacks = makeMockCallbacks();
     const { raw } = await setupHandle(callbacks);
 
@@ -405,5 +442,57 @@ describe("connectS2s transcript-less replies", () => {
 
     expect(callbacks.onAgentTranscript).not.toHaveBeenCalled();
     expect(callbacks.onReplyDone).toHaveBeenCalledOnce();
+  });
+
+  // The live tool-preamble turn: audio streams, deltas arrive, `transcript.agent`
+  // never does. Measured at 5 of 20 replies in one retail session — 116 words
+  // that are otherwise unrecoverable, since deltas are their only carrier. The
+  // accumulation is committed on reply.done, BEFORE onReplyDone, so it lands in
+  // the turn it belongs to.
+  test("a completed reply with deltas but no final commits the accumulated text", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
+
+    emitMessage(raw, { type: "reply.started", reply_id: "r1" });
+    emitMessage(raw, { type: "transcript.agent.delta", delta: "Let", reply_id: "r1" });
+    emitMessage(raw, { type: "transcript.agent.delta", delta: "me", reply_id: "r1" });
+    emitMessage(raw, { type: "transcript.agent.delta", delta: "check.", reply_id: "r1" });
+    emitMessage(raw, { type: "reply.done", status: "completed" });
+
+    expect(callbacks.onAgentTranscript).toHaveBeenCalledOnce();
+    expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("Let me check.", false);
+    expect(callbacks.onReplyDone).toHaveBeenCalledOnce();
+  });
+
+  test("a reply whose final arrives does not also commit the accumulation", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
+
+    emitMessage(raw, { type: "reply.started", reply_id: "r1" });
+    emitMessage(raw, { type: "transcript.agent.delta", delta: "Let", reply_id: "r1" });
+    emitMessage(raw, { type: "transcript.agent", text: "Let me check.", reply_id: "r1" });
+    emitMessage(raw, { type: "reply.done", status: "completed" });
+
+    expect(callbacks.onAgentTranscript).toHaveBeenCalledOnce();
+    expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("Let me check.", false);
+  });
+
+  // The delta batch covers the WHOLE composed reply, while a real
+  // `transcript.agent` with `interrupted: true` is trimmed to what was actually
+  // spoken. Committing the accumulation on a barge-in would therefore credit the
+  // agent with words the caller talked over and never heard.
+  test("an INTERRUPTED reply never commits the accumulated deltas", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
+
+    emitMessage(raw, { type: "reply.started", reply_id: "r1" });
+    emitMessage(raw, { type: "transcript.agent.delta", delta: "Your", reply_id: "r1" });
+    emitMessage(raw, { type: "transcript.agent.delta", delta: "order", reply_id: "r1" });
+    emitMessage(raw, { type: "transcript.agent.delta", delta: "shipped.", reply_id: "r1" });
+    emitMessage(raw, { type: "reply.done", status: "interrupted" });
+
+    expect(callbacks.onAgentTranscript).not.toHaveBeenCalled();
+    expect(callbacks.onCancelled).toHaveBeenCalledOnce();
+    expect(callbacks.onReplyDone).not.toHaveBeenCalled();
   });
 });

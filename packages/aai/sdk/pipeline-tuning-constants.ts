@@ -12,8 +12,8 @@
 /**
  * Fillers cycled through while a tool chain keeps the line silent, in order.
  *
- * Distinct from {@link DEFAULT_HOLD_PHRASE} and from each other because the
- * gap they cover repeats: "One moment." six times reads as a stuck loop, which
+ * Distinct from {@link DEAD_AIR_OPENING_PHRASE} and from each other because the
+ * gap they cover repeats: one phrase six times reads as a stuck loop, which
  * is its own kind of broken. The wait between them backs off exponentially, so
  * a long chain thins out rather than chattering.
  *
@@ -40,16 +40,50 @@ export const DEAD_AIR_COVER_PHRASES: readonly string[] = [
 ];
 
 /**
- * How long a pipeline turn may send nothing to TTS while tools run before the
- * transport speaks a {@link DEAD_AIR_COVER_PHRASES} filler.
+ * The filler spoken when the gap being covered is the turn's OPENING one —
+ * nothing has reached the caller yet this turn.
  *
- * {@link DEFAULT_HOLD_PHRASE} only covers a turn whose *first* action is a
- * tool call: once the model has spoken a word it is suppressed for the rest of
- * the turn. A model that says "Let me look that up" and then chains six tool
- * calls therefore goes silent for as long as the chain takes — measured at
- * 15-24s against the tau2-bench retail tasks, well past the point a caller
- * assumes the line is dead. Cover is time-based instead: any gap this long
- * gets filler, whether or not the model already spoke.
+ * A distinct phrase rather than element 0 of {@link DEAD_AIR_COVER_PHRASES}
+ * because that one is "I'm still checking on this.", which implies work the
+ * caller already heard narrated, and here it would be the very first words of
+ * the turn. Every later gap in the turn follows something the model said, so
+ * the cycle's wording fits there and not here.
+ *
+ * **The wording is a JUDGEMENT CALL, not a measurement.** What is measured is
+ * the constraint it satisfies: the phrase must be purely declarative and never
+ * a request for patience (see {@link DEAD_AIR_COVER_PHRASES} for the EVA 1.1.2
+ * record of what a request costs). "One moment." — the incumbent hold phrase,
+ * retired with that mechanism — reads as a request for patience by that same
+ * rule, which is why this is not simply that string moved. A measurement
+ * comparing openers is worth running and has not been.
+ *
+ * @internal
+ */
+export const DEAD_AIR_OPENING_PHRASE = "I'm checking on this.";
+
+/**
+ * How long a pipeline turn may send nothing to TTS before the transport speaks
+ * filler — {@link DEAD_AIR_OPENING_PHRASE} for the turn's opening gap,
+ * {@link DEAD_AIR_COVER_PHRASES} for every gap after the model has spoken.
+ *
+ * The gap this exists for is the LONG one. A model that says "Let me look that
+ * up" and then chains six tool calls goes silent for as long as the chain takes
+ * — measured at 15-24s against the tau2-bench retail tasks, well past the point
+ * a caller assumes the line is dead — and a turn can be silent before its first
+ * token too: 31.4s after a committed user turn on tau2-bench retail with
+ * gpt-5.5, ended only by the first tool call (see the construction-time arm in
+ * `pipeline-stream-parts.ts`). Cover is time-based, so both are the same case:
+ * any gap this long gets filler, whether or not the model already spoke.
+ *
+ * **Nothing is spoken at t=0, and that is the other half of the design.** A
+ * structural bet — "this turn opened with a tool call, so silence is coming" —
+ * pays on every such turn regardless of how long the tool actually takes, and
+ * the ordinary opening gap is about a second: LLM time-to-first-text measured
+ * p50 **1.10s** / mean 1.42s on a tau2-bench retail run. That is a pause, not
+ * dead air, and covering it costs the FIRST SENTENCE, which the voice rules
+ * spend deliberately (eight words, carrying the answer, because interruption
+ * rate climbs with reply length — 17% under 10 words to 59% past 35). Waiting
+ * for 5s of MEASURED silence costs a fast turn nothing.
  *
  * **Must stay above the MEDIAN tool turn, not below it.** This is cover for the
  * long-chain outlier; at 2000 it was under the ordinary case and fired on
@@ -60,7 +94,10 @@ export const DEAD_AIR_COVER_PHRASES: readonly string[] = [
  * `redundant_statements_rate` 0.60) and, once, derailing the call outright (see
  * {@link DEAD_AIR_COVER_PHRASES}). 5000 sits below the 6.24s mean but above the
  * turns that complete normally, so a routine single tool call now finishes
- * unaccompanied and only a genuine chain draws cover.
+ * unaccompanied and only a genuine chain draws cover. There is no measured
+ * value between 2000 and 5000; do not split the difference by feel.
+ *
+ * Authors override it with `deadAirCoverMs`; 0 disables cover entirely.
  *
  * @internal
  */
@@ -89,9 +126,11 @@ export const DEAD_AIR_COVER_MAX_MS = 8000;
 
 /**
  * Instruction injected as a synthetic user turn when a barge-in turns out to
- * be a false interruption (see {@link DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS}).
- * The interrupted reply's spoken-so-far text is already in history, marked
- * `[interrupted]`, so the model knows where it was cut off.
+ * be a false interruption (see {@link DEFAULT_SPEECH_IDLE_TIMEOUT_MS}, which
+ * decides when that is recognised). The interrupted reply's spoken-so-far text
+ * is already in history, marked `[interrupted]`, so the model knows where it
+ * was cut off. Used only when no cut-point estimate is available —
+ * `buildTailResumePrompt` is preferred, see its doc for why.
  *
  * @internal
  */
@@ -121,11 +160,42 @@ export const DEFAULT_FALSE_INTERRUPTION_PROMPT =
 export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;
 
 /**
+ * How far BEHIND the server's "audio forwarded" bookkeeping the caller's ear
+ * actually is (pipeline mode). Subtracted from the estimated playback position
+ * to get the heard cursor — the character of the reply the caller had heard
+ * when a barge-in cut it — which decides both what an interrupted turn records
+ * in history and where the resume prompt's anchor sits (`pipeline-heard.ts`).
+ *
+ * **This value is DERIVED, not measured.** It is
+ * {@link PLAYBACK_JITTER_MS} (400 — the cushion the client's playback worklet
+ * fills before a turn starts speaking, which is real) plus an assumed
+ * sub-second one-way network hop, which is the same decomposition
+ * `PIPELINE_PLAYBACK_GRACE_MS`'s own doc states for the same physical quantity.
+ * On a fast LAN it over-subtracts and on a slow link it under-subtracts; it is
+ * the one number in the heard cursor without direct evidence.
+ *
+ * **It is a SECOND constant rather than a reuse of that grace, deliberately.**
+ * The grace is added to a deadline where erring late is harmless (a spurious
+ * barge-in cancel flushes an already-empty client buffer), so it may be tuned
+ * generously for barge-in robustness. This one is SUBTRACTED from a position
+ * where erring either way costs — too large drops words the caller really
+ * heard, too small records words they never did — so tuning the grace must not
+ * silently change what the record says. Both docs name each other.
+ *
+ * @internal
+ */
+export const HEARD_AUDIO_LAG_MS = 750;
+
+/**
  * Cap on back-to-back false-interruption resumes (pipeline mode) before the
  * user must speak again, mirroring {@link MAX_CONSECUTIVE_SILENCE_NUDGES}.
  * Without it, persistent cross-talk loops barge-in → resume → barge-in every
- * {@link DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS}, each cycle burning a full
- * LLM+TTS turn. A committed user turn restores the budget.
+ * {@link DEFAULT_SPEECH_IDLE_TIMEOUT_MS}, each cycle burning a full LLM+TTS
+ * turn. A committed user turn restores the budget. That such an environment
+ * exists is measured rather than imagined: in the TV-news-bed corpus behind
+ * {@link DEFAULT_VOICE_FOCUS_THRESHOLD}, with Voice Focus off, continuous
+ * background speech produced ONE end-of-turn in 232s — partials without finals
+ * is precisely the shape that loops this.
  *
  * @internal
  */
@@ -227,6 +297,21 @@ export const STT_CONNECT_RETRY_DELAY_MS = 500;
 export const DEFAULT_VOICE_FOCUS_THRESHOLD = 0.9;
 
 /**
+ * Voice Focus model both transports pin — the near-field one, matching a caller
+ * speaking into a handset or headset.
+ *
+ * `far-field` amplifies the room, and the room is where the interfering speech
+ * is: measured on the same corpus it more than doubled background leakage (44%
+ * against 18%). Named here rather than written as a literal at each call site so
+ * the pipeline STT stage and the S2S `session.update` cannot drift — they were
+ * two different code paths sending two different configurations, which is how
+ * S2S ended up on the service's 0.7 default while the pipeline ran at 0.9.
+ *
+ * @internal
+ */
+export const DEFAULT_VOICE_FOCUS = "near-field";
+
+/**
  * Deadline for the TTS replacement socket opened after a mid-turn cancel
  * (barge-in drops the whole connection — see the AssemblyAI TTS module doc).
  *
@@ -252,19 +337,117 @@ export const TTS_RECONNECT_TIMEOUT_MS = 8000;
  * final latency); this only bounds the leak for noise partials that never
  * commit.
  *
- * **It is also what releases a deferred false-interruption resume**, so it sets
- * how long a genuinely false interruption leaves the agent silent before it
- * picks its reply back up (this window, then the resume turn's own
- * time-to-first-audio). That is why it is 3500 rather than the 5000 it was while
- * nothing depended on it: at 5000 a reply cut by STT noise resumed almost six
- * seconds later, which a caller reads as a dropped call. The floor is the
- * endpointing delay plus final-emission latency — below `min_turn_silence` the
- * edge would close while a real final is still in flight, putting back the race
- * that {@link DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS} documents. 3500 clears the
- * 2000 default by 1.5s; an agent raising `minTurnSilenceMs` past ~3000 should
- * raise this with it (the transport's `speechIdleTimeoutMs` option), and the
- * mooted-resume abort in pipeline-user-speech.ts is the backstop if it does not.
+ * **It is also THE false-interruption resume deadline** — the sole one. A
+ * barge-in that commits no user turn arms a latch (`pipeline-recovery.ts`) with
+ * no clock of its own, and this watchdog firing is what releases it, so this
+ * number is how long a genuinely false interruption leaves the agent silent
+ * before it picks its reply back up (this window, then the resume turn's own
+ * time-to-first-audio). 0 disables the watchdog and with it recovery outright.
+ *
+ * **Why the resume owns no deadline of its own — the race.** It did until
+ * 2026-08, as `falseInterruptionTimeoutMs` (default 2000), and that window and
+ * `min_turn_silence` are measured from roughly the same instant: the window
+ * restarted on every partial, and the last partial lands at about the end of
+ * speech, after which the STT provider withholds a genuine barge-in's final for
+ * its endpointing window ({@link DEFAULT_MIN_TURN_SILENCE_MS}, 1600 today; 2000
+ * when this was written — then exactly the recovery window's default). The two
+ * deadlines were therefore separated only by the difference between partial and
+ * final latency, a few hundred ms in either direction: EVERY genuine barge-in
+ * raced its own resume, and the resume won often enough to be the common case
+ * rather than an edge case. Every such resume cost a billed LLM turn, left "the
+ * user did not actually say anything" in history directly ahead of the real user
+ * turn, and — when it got audio out before the final landed, TTS
+ * time-to-first-audio being ~350ms at the time this was diagnosed (a different
+ * and earlier measurement than the 286ms segmented-AssemblyAI figure in
+ * `host/providers/tts/assemblyai-segment.ts`; keep both attributions) — made
+ * the caller hear the agent continue the reply they had just interrupted before
+ * answering them.
+ *
+ * The fix at the time was to DEFER a fired window until the edge closed, which
+ * made this watchdog the effective deadline in every shipped configuration
+ * while a second constant went on claiming to be it. The deferral itself was
+ * never measured post-hoc: the PR that added it (6ca79e05) records the problem
+ * as observed and the deferral as reasoned. What is measured is that the wait
+ * was already this one — a probe at `falseInterruptionTimeoutMs: 3` with this
+ * at 3500 resumed at ~3500ms, not ~3ms. So the window was deleted rather than
+ * retuned, and the boolean `resumeFalseInterruption` replaced it.
+ *
+ * **Why the deadline is not an author knob.** Its floor is the STT's
+ * endpointing delay plus final-emission latency, which the transport cannot
+ * see: it receives an already-resolved `SttOpener`, and the field that carries
+ * the ceiling differs per provider (AssemblyAI `maxTurnSilenceMs`, Deepgram
+ * `endpointing`, Soniox/ElevenLabs neither). Below that floor the edge closes
+ * while a real final is still in flight and the race above comes back. Its
+ * ceiling is patience: 3500 rather than the 5000 it was while nothing depended
+ * on it, because at 5000 a reply cut by STT noise resumed almost six seconds
+ * later, which a caller reads as a dropped call. Floor and ceiling are close
+ * enough together that there is no useful range to expose.
+ *
+ * 4000 clears {@link DEFAULT_MAX_TURN_SILENCE_MS} (3500) by 500ms. **It moved
+ * from 3500 because that ceiling did**, and the pair is the change: at
+ * 3500/3500 an utterance force-ended by the STT ceiling delivers its final at
+ * exactly the moment the speaking edge goes idle, and the idle edge is what
+ * fires a false-interruption resume — so the loser of that race is not a slow
+ * turn, it is the agent resuming a reply the caller really did interrupt. The
+ * ceiling's own doc records the same constraint from the other side.
+ *
+ * The patience argument that sets the upper bound is unchanged and is what
+ * keeps this at 4000 rather than further out: at 5000 a reply cut by STT noise
+ * resumed almost six seconds later, which a caller reads as a dropped call.
+ * 4000 is inside that, and the 500 ms margin over the ceiling is the same
+ * margin the pair has always carried, not a new one.
+ *
+ * An agent raising `minTurnSilenceMs`/`maxTurnSilenceMs` must raise this with
+ * it (the transport's `speechIdleTimeoutMs` option) — `assemblyai.test.ts`
+ * asserts the default ordering, and the mooted-resume abort in
+ * pipeline-user-speech.ts is the backstop when a live config breaks it anyway.
  *
  * @internal
  */
-export const DEFAULT_SPEECH_IDLE_TIMEOUT_MS = 3500;
+export const DEFAULT_SPEECH_IDLE_TIMEOUT_MS = 4000;
+
+/**
+ * `SttTurnMeta.endOfTurnConfidence` at or above which preemptive generation
+ * starts a speculative reply from an INTERIM transcript (`preemptiveGeneration`;
+ * see `host/transports/pipeline-speculation.ts`).
+ *
+ * **A JUDGEMENT CALL, not a measurement.** What is real is the SHAPE of the
+ * signal, recorded verbatim on `SttTurnMeta.endOfTurnConfidence` in
+ * `sdk/providers.ts` — read it there rather than trusting a restatement here;
+ * a duplicated measurement is the one that drifts. 0.9 is chosen because that
+ * recorded sawtooth separates cleanly at it: the false peaks partway through a
+ * dictated identifier top out at 0.25, while the settled utterance runs
+ * 0.7 → 0.8 → 0.95 → 1. One trace is not a distribution, so treat this as the
+ * value to VARY once the `headStartMs` log exists — a lower threshold trades
+ * head start for adoption rate and both come out of the same log — and not as
+ * a number anything has confirmed.
+ *
+ * It is deliberately not an author knob, on the `resumeFalseInterruption`
+ * precedent: its useful range is set by provider endpointing behaviour the
+ * transport cannot see.
+ *
+ * @internal
+ */
+export const PREEMPTIVE_CONFIDENCE_THRESHOLD = 0.9;
+
+/**
+ * How many speculative generations one utterance may start before preemption
+ * gives up on it and waits for the final.
+ *
+ * **A JUDGEMENT CALL.** The bound exists because confidence SAWTOOTHS rather
+ * than ramps (again: the trace on `SttTurnMeta.endOfTurnConfidence`), so a
+ * caller dictating an identifier can cross the threshold repeatedly on
+ * successive revisions of the same prefix. Two other rules already cut most of
+ * that — a partial whose normalized text differs from the live speculation
+ * aborts it immediately, so a mid-identifier peak dies on the next digit, and
+ * an identical text at rising confidence never re-fires, which is what the
+ * recorded terminal `0.95 → 1` re-emission would otherwise cost. This is the
+ * backstop under both, and it is what caps the worst case at ~2 extra billed
+ * LLM requests per utterance.
+ *
+ * 2 rather than 1 because the common shape is one false peak followed by the
+ * real one; 2 rather than 3+ because nothing has measured that a third pays.
+ *
+ * @internal
+ */
+export const MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE = 2;

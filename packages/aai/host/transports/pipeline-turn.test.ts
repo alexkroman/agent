@@ -1,11 +1,17 @@
 // Copyright 2026 the AAI authors. MIT license.
 // Turn-processing behaviors of the pipeline transport (STT final → LLM stream →
-// TTS): transcript/TTS fan-out, mid-turn tool calls, hold phrase, cross-turn
+// TTS): transcript/TTS fan-out, mid-turn tool calls, dead-air cover, cross-turn
 // tool memory, and flush. Lifecycle/config/error specs live in
 // pipeline-transport.test.ts.
 
 import { describe, expect, test, vi } from "vitest";
-import { createFakeLanguageModel, type ScriptedPart } from "../_pipeline-test-fakes.ts";
+import { DEAD_AIR_OPENING_PHRASE } from "../../sdk/constants.ts";
+import {
+  createFakeLanguageModel,
+  createTestClock,
+  type ScriptedPart,
+  speakFor,
+} from "../_pipeline-test-fakes.ts";
 import { sleep } from "../_test-utils.ts";
 import {
   firstCallArg,
@@ -91,8 +97,8 @@ describe("PipelineTransport — STT → LLM turn", () => {
   test("speaks a sub-threshold pre-tool fragment before the tool runs", async () => {
     // Regression: TTS text is coalesced, and "let me" is short and unpunctuated,
     // so it used to sit in the batch buffer for the whole tool-execution window
-    // — the caller heard "Sure," then dead air (holdPhrase is suppressed once
-    // the model has spoken). The segment boundary must release it.
+    // — the caller heard "Sure," then dead air. The segment boundary must
+    // release it.
     const toolStarted = Promise.withResolvers<void>();
     const { opts, stt, tts, callbacks } = makeOpts({
       llm: createFakeLanguageModel({
@@ -204,13 +210,17 @@ describe("PipelineTransport — STT → LLM turn", () => {
     await t.stop();
   });
 
-  test("guarantees a hold phrase when the turn opens with a tool call (no speech)", async () => {
+  test("covers a silent tool-first turn before the model's reply lands", async () => {
     const { opts, stt, tts } = makeOpts({
+      // A 1ms window so the cover fires inside the 20ms the fake LLM spends
+      // before its first part; the shipped 5000 would outlast the whole spec.
+      deadAirCoverMs: 1,
       llm: createFakeLanguageModel({
         steps: [
           [{ type: "tool-call", toolCallId: "tc-1", toolName: "lookup", input: "{}" }],
           [{ type: "text", text: "Here you go." }],
         ],
+        delayMs: 20,
       }),
       executeTool: vi.fn(async () => "ok"),
       toolSchemas: [noopToolSchema],
@@ -223,12 +233,12 @@ describe("PipelineTransport — STT → LLM turn", () => {
     });
     const spoken = tts.last()?.textChunks.join("") ?? "";
     // Filler is spoken before the model's reply — no dead air during the tool.
-    expect(spoken).toContain("One moment.");
-    expect(spoken.indexOf("One moment.")).toBeLessThan(spoken.indexOf("Here you go."));
+    expect(spoken).toContain(DEAD_AIR_OPENING_PHRASE);
+    expect(spoken.indexOf(DEAD_AIR_OPENING_PHRASE)).toBeLessThan(spoken.indexOf("Here you go."));
     await t.stop();
   });
 
-  test("does not inject a hold phrase when the model speaks before the tool call", async () => {
+  test("does not inject filler when the model speaks before the tool call", async () => {
     const { opts, stt, tts } = makeOpts({
       llm: createFakeLanguageModel({
         steps: [
@@ -248,7 +258,7 @@ describe("PipelineTransport — STT → LLM turn", () => {
     await vi.waitFor(() => {
       expect(tts.last()?.textChunks.join("")).toContain("Done.");
     });
-    expect(tts.last()?.textChunks.join("")).not.toContain("One moment.");
+    expect(tts.last()?.textChunks.join("")).not.toContain(DEAD_AIR_OPENING_PHRASE);
     await t.stop();
   });
 
@@ -269,8 +279,9 @@ describe("PipelineTransport — STT → LLM turn", () => {
     await t.start();
     const llm = llmCalls(opts);
 
-    // Turn 1 — runs the tool and finishes speaking. (A hold phrase precedes the
-    // reply because the turn opens with a tool call, so match by substring.)
+    // Turn 1 — runs the tool and finishes speaking. (Matched by substring: at
+    // the shipped cover window nothing precedes the reply, but the spec is
+    // about the tool context surviving into turn 2, not about the exact text.)
     stt.last()?.fireFinal("look me up");
     await vi.waitFor(() => {
       expect(callbacks.onAgentTranscript).toHaveBeenCalledWith(
@@ -321,9 +332,23 @@ describe("PipelineTransport — STT → LLM turn", () => {
 });
 
 describe("interrupted-speech persistence", () => {
+  /** The reply both barge-in specs below script, as one string. */
+  const REPLY = "Your balance is five hundred dollars.";
+
+  /** The text recorded for the interrupted turn, read out of an LLM prompt. */
+  function interruptedText(prompt: string): string {
+    return prompt.match(/"text":"([^"]*) \[interrupted\]"/)?.[1] ?? "";
+  }
+
   test("barge-in persists spoken-so-far text with an [interrupted] marker", async () => {
+    // History records what the caller HEARD, so this spec has to make them
+    // hear it: audio is forwarded AND allowed to play out on the injected
+    // clock. With no elapsed playback it would be the zero case below instead.
+    const clock = createTestClock();
     const { opts, stt, tts, callbacks } = makeOpts({
       minBargeInWords: 1, // pin so the one-word "stop" barge-in fires (default is now 2)
+      heardLagMs: 0,
+      heardNow: clock.now,
       llm: createFakeLanguageModel({
         // Turn 1 streams slowly so we can barge in mid-stream; turn 2 is a plain reply.
         steps: [
@@ -347,7 +372,7 @@ describe("interrupted-speech persistence", () => {
     await vi.waitFor(() => {
       expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
     });
-    tts.last()?.fireAudio(new Int16Array(2400)); // speaking → interruptible
+    speakFor(tts, clock, 2000); // spoken, heard in full → interruptible
     stt.last()?.firePartial("stop");
 
     // The caller already has the spoken text: every chunk handed to TTS was
@@ -359,7 +384,7 @@ describe("interrupted-speech persistence", () => {
     });
     // Only what reached TTS is published — the coalescer was still batching the
     // rest, which the abort discarded, so the caller heard exactly this much.
-    // History below keeps the fuller `accumulated` text on purpose.
+    // History below records that same heard prefix, never the buffered tail.
     expect(partialTranscriptSpy(callbacks)).toHaveBeenCalledWith(expect.stringContaining("Your "));
     const callsAfterTurn1 = llm.calls.length;
 
@@ -370,15 +395,21 @@ describe("interrupted-speech persistence", () => {
     });
     const turn2Prompt = JSON.stringify(llm.calls[callsAfterTurn1]?.prompt);
     expect(turn2Prompt).toContain("[interrupted]");
-    expect(turn2Prompt).toContain("Your balance");
+    // What is recorded is a PREFIX of what the model generated — as far as the
+    // caller's ear had got — never the tail still sitting in the TTS coalescer
+    // when the abort discarded it.
+    const recorded = interruptedText(turn2Prompt);
+    expect(recorded.length).toBeGreaterThan(0);
+    expect(REPLY.startsWith(recorded)).toBe(true);
     await t.stop();
   });
 
   test("an abort before any text is generated persists nothing", async () => {
     // `streamScript` awaits `delayMs` BEFORE the first delta, so an abort
     // inside that window leaves `accumulated` empty — the guard's no-op case.
-    // (Note: a tool-first turn would NOT work here — the guaranteed hold
-    // phrase "One moment." feeds onDelta/accumulated, so it would persist.)
+    // (The dead-air cover cannot interfere: its filler is emitted
+    // `record: false`, so it never reaches onDelta/accumulated — and at the
+    // shipped 5000ms window it would not have fired inside this spec anyway.)
     //
     // Aborted via cancelReply() rather than a barge-in: with no text there is
     // no audio either, and barge-in now requires the agent to be audibly
@@ -412,7 +443,10 @@ describe("interrupted-speech persistence", () => {
   });
 
   test("final-replace path: interrupted text is persisted before the replacing user turn and visible to it", async () => {
+    const clock = createTestClock();
     const { opts, stt, tts } = makeOpts({
+      heardLagMs: 0,
+      heardNow: clock.now,
       llm: createFakeLanguageModel({
         steps: [
           [
@@ -435,7 +469,7 @@ describe("interrupted-speech persistence", () => {
     await vi.waitFor(() => {
       expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
     });
-    tts.last()?.fireAudio(new Int16Array(2400)); // speaking → interruptible
+    speakFor(tts, clock, 2000); // spoken, heard in full → interruptible
     const callsAfterTurn1 = llm.calls.length;
 
     // Replace via a >=3-word final (above threshold → interrupts).
@@ -448,7 +482,9 @@ describe("interrupted-speech persistence", () => {
     // ordered before the replacing user message.
     const prompt = JSON.stringify(llm.calls[callsAfterTurn1]?.prompt);
     expect(prompt).toContain("[interrupted]");
-    expect(prompt).toContain("Your balance");
+    const recorded = interruptedText(prompt);
+    expect(recorded.length).toBeGreaterThan(0);
+    expect(REPLY.startsWith(recorded)).toBe(true);
     const interruptedIdx = prompt.indexOf("[interrupted]");
     const replacingUserIdx = prompt.indexOf("actually never mind please");
     expect(interruptedIdx).toBeGreaterThanOrEqual(0);
@@ -491,8 +527,8 @@ describe("interrupted-speech persistence", () => {
       expect(executeTool).toHaveBeenCalled();
       expect(llm.calls.length).toBeGreaterThanOrEqual(2);
     });
-    // The hold phrase has been spoken by this point in production, so the turn
-    // holds the floor and is interruptible.
+    // The reply is audible by this point in production, so the turn holds the
+    // floor and is interruptible.
     tts.last()?.fireAudio(new Int16Array(2400));
     stt.last()?.firePartial("stop");
     await vi.waitFor(() => {
@@ -514,8 +550,11 @@ describe("interrupted-speech persistence", () => {
     await t.stop();
   });
 
-  test("barge-in during the hold phrase (no real text yet) persists nothing", async () => {
+  test("barge-in during the cover filler (no real text yet) persists nothing", async () => {
     const { opts, stt, tts, callbacks } = makeOpts({
+      // A 1ms window so the filler lands in the 20ms before the model's first
+      // part — this is now the turn's OPENING gap rather than a tool-call bet.
+      deadAirCoverMs: 1,
       minBargeInWords: 1, // pin so the one-word "stop" barge-in fires (default is now 2)
       llm: createFakeLanguageModel({
         steps: [
@@ -534,12 +573,12 @@ describe("interrupted-speech persistence", () => {
     await t.start();
 
     stt.last()?.fireFinal("look it up");
-    // Wait until the hold phrase has been emitted (accumulated === "One moment."),
-    // then barge in during the tool await, before any real model text.
+    // Wait until the filler has been emitted, then barge in during the tool
+    // await, before any real model text.
     await vi.waitFor(() => {
-      expect(tts.last()?.textChunks.join("")).toContain("One moment.");
+      expect(tts.last()?.textChunks.join("")).toContain(DEAD_AIR_OPENING_PHRASE);
     });
-    tts.last()?.fireAudio(new Int16Array(2400)); // hold phrase audible → interruptible
+    tts.last()?.fireAudio(new Int16Array(2400)); // filler audible → interruptible
     stt.last()?.firePartial("stop");
 
     await vi.waitFor(() => {
@@ -550,7 +589,7 @@ describe("interrupted-speech persistence", () => {
     // the abort-path persist logic has actually had a chance to run before we
     // assert on it, instead of racing it.
     await t.stop();
-    // Only the hold phrase was accumulated → nothing persisted as interrupted.
+    // Only the filler was accumulated → nothing persisted as interrupted.
     expect(callbacks.onAgentTranscript).not.toHaveBeenCalledWith(expect.anything(), true);
   });
 });

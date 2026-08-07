@@ -20,6 +20,7 @@ export type {
   TtsOpenOptions,
   TtsProvider,
   TtsSession,
+  TtsWordTiming,
   Unsubscribe,
 } from "../providers.ts";
 export {

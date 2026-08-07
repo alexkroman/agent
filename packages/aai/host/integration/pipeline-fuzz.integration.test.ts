@@ -44,43 +44,56 @@
  * Everything a seeded PRNG used to decide, as one structured value per run, so a
  * failure shrinks instead of reporting a seed: the step script (action + the
  * utterance opener + the pause after it), the LLM script pattern (which turns
- * call a tool), and each tool call's behaviour. The last two are SHORT lists
- * consumed cyclically rather than one entry per possible call — a run may
- * consume thousands of script steps, and generating that many would print a wall
- * of a counterexample and shrink to nothing readable.
+ * call a tool), each tool call's behaviour, and `preemptiveGeneration`. The
+ * middle two are SHORT lists consumed cyclically rather than one entry per
+ * possible call — a run may consume thousands of script steps, and generating
+ * that many would print a wall of a counterexample and shrink to nothing
+ * readable.
+ *
+ * ## The `preemptiveGeneration` arm
+ *
+ * The flag is generated rather than pinned off, so both arms run in one
+ * property and a counterexample names which one it came from. Two things move
+ * with it, and both are honest limits rather than tidiness:
+ *
+ * - The exact-text reply-integrity oracle is SKIPPED in the ON arm, because a
+ *   speculation's generated text cannot be attributed to a reply at the moment
+ *   it is served. See `checkReplyIntegrity` for the full reasoning; the adopted
+ *   reply's text is pinned deterministically in
+ *   `transports/pipeline-preemption.test.ts` instead.
+ * - The turn-serialization bound widens by the speculation budget, because a
+ *   speculation is deliberately outside the turn chain.
+ *
+ * What the arm ADDS is guardrail 1 as a global property — nothing may reach TTS
+ * between a cleanly completed reply and the next `onReplyStarted`, which is
+ * exactly the idle window a speculation runs in.
  */
 
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
+import { MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE } from "../../sdk/constants.ts";
 import {
   createFakeLanguageModel,
   createFakeSttProvider,
   createFakeTtsProvider,
   type FakeSttProvider,
   type FakeTtsProvider,
-  type ScriptedPart,
 } from "../_pipeline-test-fakes.ts";
 import { sleep } from "../_test-utils.ts";
 import type { Logger } from "../runtime-config.ts";
 import { createPipelineTransport } from "../transports/pipeline-transport.ts";
-import type { TransportCallbacks } from "../transports/types.ts";
 import {
   type ActionKind,
+  buildScript,
   type FuzzStep,
   OPENERS,
   type RunInput,
-  SCRIPT_LENGTH,
-  type ScriptTurn,
   scriptPatternArb,
   shortRunArb,
+  stepPauseMs,
   type ToolBehavior,
 } from "./_pipeline-fuzz-input.ts";
-import {
-  norm,
-  type PromptMsg,
-  promptProblems,
-  trackStreamLifetime,
-} from "./_pipeline-fuzz-model.ts";
+import { createCallbacks, GREETING, instrumentLlm, type Monitor } from "./_pipeline-fuzz-model.ts";
 
 /** Runs of the short session property (structural + integrity invariants). */
 const SHORT_RUNS = 120;
@@ -91,216 +104,8 @@ const LONG_STEPS = 200;
 
 const noop = (): void => undefined;
 const silentLogger: Logger = { info: noop, warn: noop, error: noop, debug: noop };
-const GREETING = "hello there friend";
 
 type Coverage = Record<string, number>;
-
-/** Per-reply record backing the integrity and truncation oracles. */
-interface ReplyRecord {
-  id: string;
-  /** `tts.textChunks` length when this reply started. */
-  ttsOffset: number;
-  /** Text the model produced for it, accumulated per consumed script step. */
-  expected: string;
-  /** An abort touched it, so its text may legitimately be short. */
-  disturbed: boolean;
-  /** Its LLM stream reported a failure. */
-  failed: boolean;
-  done: boolean;
-}
-
-/** Mutable state the oracles and the generator share. */
-interface Monitor {
-  current: ReplyRecord | null;
-  stopped: boolean;
-  /**
-   * The session was reported DEAD to the client: an `onError` without
-   * `fatal: false`. aai-ui answers that by calling `cleanupAudio()`, bumping the
-   * connection generation and setting `running: false` — the microphone is
-   * RELEASED and the call ends — so nothing conversational may follow it.
-   */
-  declaredDead: string | null;
-  toolInFlight: number;
-  liveStreams: number;
-  maxLiveStreams: number;
-  consumedSteps: number;
-  flag: (what: string) => void;
-  hit: (key: string) => void;
-  /** Mark the in-flight reply as disturbed (an abort is about to touch it). */
-  disturb: () => void;
-}
-
-/**
- * Build the LLM script: text-only turns interleaved with tool-call turns.
- *
- * `pattern` says which script steps call a tool and is CYCLED — a run can
- * consume any number of steps, so the generated pattern is short enough to read
- * in a counterexample rather than one entry per step.
- */
-function buildScript(
-  pattern: readonly ScriptTurn[],
-  runId: string,
-): { steps: ScriptedPart[][]; stepText: string[] } {
-  const steps: ScriptedPart[][] = [];
-  const stepText: string[] = [];
-  for (let i = 0; i < SCRIPT_LENGTH; i++) {
-    const turn = pattern[i % pattern.length];
-    if (turn === "fail") {
-      // A provider that fails mid-turn — a rate limit, a content filter, a
-      // dropped upstream connection.
-      steps.push([{ type: "error", error: new Error(`llm blew up on step ${i}`) }]);
-      stepText.push("");
-    } else if (turn === "tool") {
-      steps.push([
-        { type: "tool-call", toolCallId: `c${runId}-${i}`, toolName: "lookup", input: "{}" },
-      ]);
-      stepText.push("");
-    } else {
-      const words = Array.from({ length: 5 }, (_, w) => `s${i}w${w} `);
-      steps.push(words.map((text) => ({ type: "text" as const, text })));
-      stepText.push(words.join(""));
-    }
-  }
-  return { steps, stepText };
-}
-
-/** Assert an undisturbed turn spoke exactly the text the model produced. */
-function checkReplyIntegrity(reply: ReplyRecord, tts: FakeTtsProvider, mon: Monitor): void {
-  if (reply.disturbed || reply.failed) return;
-  const spoken = norm((tts.last()?.textChunks ?? []).slice(reply.ttsOffset).join(""));
-  const expected = norm(reply.expected);
-  if (spoken !== expected) {
-    mon.flag(
-      `reply ${reply.id} spoke ${JSON.stringify(spoken.slice(0, 80))} but the model produced ` +
-        `${JSON.stringify(expected.slice(0, 80))}`,
-    );
-    return;
-  }
-  if (expected.length > 0) mon.hit("replyIntegrityChecked");
-}
-
-function createCallbacks(mon: Monitor, tts: FakeTtsProvider): TransportCallbacks {
-  const replyIds = new Set<string>();
-  let started = 0;
-  let doneCount = 0;
-  const afterStop = (name: string): void => {
-    if (mon.stopped) mon.flag(`${name} fired after stop() resolved`);
-    // A fatal error frame is not a banner: the client has released the
-    // microphone and ended the call (aai-ui's `handleErrorEvent`), so the session
-    // going on to speak, listen or call tools means the two ends disagree about
-    // whether it is alive. Only the paths that really terminate may report
-    // fatally — in pipeline mode the provider open/error ones, which call
-    // `terminate()`, never a turn-level LLM or TTS failure.
-    if (mon.declaredDead !== null) {
-      mon.flag(`${name} fired after a fatal [${mon.declaredDead}]`);
-    }
-  };
-  return {
-    onReplyStarted: (id: string) => {
-      mon.hit("replyStarted");
-      afterStop("onReplyStarted");
-      if (replyIds.has(id)) mon.flag(`duplicate reply id ${id}`);
-      replyIds.add(id);
-      started++;
-      mon.current = {
-        id,
-        ttsOffset: tts.last()?.textChunks.length ?? 0,
-        expected: id.startsWith("pipeline-greeting") ? GREETING : "",
-        disturbed: false,
-        failed: false,
-        done: false,
-      };
-    },
-    onReplyDone: () => {
-      mon.hit("replyDone");
-      afterStop("onReplyDone");
-      doneCount++;
-      if (doneCount > started) mon.flag("onReplyDone without a matching onReplyStarted");
-      const reply = mon.current;
-      if (reply === null) {
-        mon.flag("onReplyDone with no reply in flight");
-        return;
-      }
-      reply.done = true;
-      checkReplyIntegrity(reply, tts, mon);
-    },
-    onCancelled: () => {
-      mon.hit("cancelled");
-      if (mon.toolInFlight > 0) mon.hit("cancelledWhileToolInFlight");
-      mon.disturb();
-      afterStop("onCancelled");
-    },
-    onAudioChunk: () => {
-      afterStop("onAudioChunk");
-      // session-core emits audio_done together with reply_done, so a chunk
-      // after this reply's own replyDone is audio the client never plays — an
-      // audibly clipped turn in a session that reports itself healthy.
-      if (mon.current?.done === true) {
-        mon.flag(`audio chunk after replyDone for ${mon.current.id}`);
-      }
-    },
-    onAudioDone: noop,
-    onUserTranscript: () => afterStop("onUserTranscript"),
-    onUserTranscriptPartial: () => afterStop("onUserTranscriptPartial"),
-    onAgentTranscript: () => afterStop("onAgentTranscript"),
-    onAgentTranscriptPartial: () => afterStop("onAgentTranscriptPartial"),
-    onToolCall: () => afterStop("onToolCall"),
-    onToolCallDone: noop,
-    onError: (code: string, _message: string, errOpts?: { fatal?: boolean }) => {
-      mon.hit(`error:${code}`);
-      if (errOpts?.fatal === false) mon.hit(`nonFatal:${code}`);
-      else mon.declaredDead ??= code;
-      const reply = mon.current;
-      if (reply === null) return;
-      if (code === "llm") reply.failed = true;
-      if (code === "tts") reply.disturbed = true;
-    },
-    onSpeechStarted: () => afterStop("onSpeechStarted"),
-    onSpeechStopped: noop,
-    onSessionReady: noop,
-  };
-}
-
-/** Wrap the fake model so every request is validated and every stream tracked. */
-function instrumentLlm(
-  llm: ReturnType<typeof createFakeLanguageModel>,
-  stepText: readonly string[],
-  mon: Monitor,
-  refusals: readonly boolean[],
-): void {
-  const llmObj = llm as unknown as { doStream: (o: unknown) => Promise<unknown> };
-  const rawDoStream = llmObj.doStream;
-  let requests = 0;
-  llmObj.doStream = async (o) => {
-    const opts = o as { prompt?: unknown; abortSignal?: AbortSignal };
-    mon.hit("llmRequest");
-    // A request that never produces a stream at all. Reported by the catch in
-    // `consumeLlmStream` rather than the stream-part handler — a separate
-    // reporter, and the other half of what the fatality oracle checks: both end
-    // the TURN, neither ends the session.
-    if (refusals[requests++ % refusals.length] === true) {
-      mon.hit("llmRefused");
-      throw new Error("provider refused the connection");
-    }
-    if (Array.isArray(opts.prompt)) {
-      if (opts.prompt.some((m) => (m as PromptMsg).role === "tool")) mon.hit("llmRequestWithTool");
-      // Past DEFAULT_MAX_HISTORY the cap trims on every push — the state the
-      // orphan-tool-result oracle exists for.
-      if (opts.prompt.length >= 201) mon.hit("llmRequestAtHistoryCap");
-    }
-    for (const problem of promptProblems(opts.prompt)) mon.flag(`LLM request: ${problem}`);
-    if (mon.current !== null) mon.current.expected += stepText[mon.consumedSteps] ?? "";
-    mon.consumedSteps++;
-
-    mon.liveStreams++;
-    mon.maxLiveStreams = Math.max(mon.maxLiveStreams, mon.liveStreams);
-    const result = (await rawDoStream.call(llm, o)) as { stream: ReadableStream<unknown> };
-    const stream = trackStreamLifetime(result.stream, opts.abortSignal, () => {
-      mon.liveStreams--;
-    });
-    return { ...result, stream };
-  };
-}
 
 interface SeedOptions {
   /** Commit turns steadily and never reset, so history reaches the cap. */
@@ -324,12 +129,46 @@ function buildActions(
     utterance: (opener: number) => string;
     longSession: boolean;
     armBargeInFromTool: () => void;
+    /**
+     * The text a `highConfidencePartial` last spoke, so the NEXT `sttFinal`
+     * commits the same words. Without it every final revises its partial and the
+     * match rule discards 100% of speculations — the adoption path would be
+     * generated and never entered.
+     */
+    speculated: { text: string | null };
+    /** Does the step being dispatched pause afterwards? See highConfidencePartial. */
+    lastPauseWasNull(): boolean;
   },
 ): Record<ActionKind, (opener: number) => void> {
-  const { stt, tts, transport, utterance } = deps;
+  const { stt, tts, transport, utterance, speculated, lastPauseWasNull } = deps;
   return {
     sttPartial: (opener) => stt.last()?.firePartial(utterance(opener)),
-    sttFinal: (opener) => stt.last()?.fireFinal(utterance(opener)),
+    sttFinal: (opener) => {
+      const text = speculated.text ?? utterance(opener);
+      speculated.text = null;
+      stt.last()?.fireFinal(text);
+    },
+    // A confident interim — what a real STT emits as an utterance completes
+    // (`SttTurnMeta.endOfTurnConfidence`); 1 clears the threshold however it is
+    // retuned. Biased toward the speculating state the way `armBargeInFromTool`
+    // is biased toward a barge-in inside a tool call, and everything it fires is
+    // something a real session does.
+    //
+    // The two shapes it has to reach are opposite, so the step's OWN generated
+    // pause chooses between them — no extra field, and it reads the way the
+    // audio does. No pause at all means the caller stopped dead on that word, so
+    // the final lands with it and the speculation is ADOPTED (zero head start,
+    // which is the harder path: the tape is claimed before its request has even
+    // been issued). A pause means the utterance is still open, so the text is
+    // handed to the next `sttFinal` and the speculation has to survive whatever
+    // the walk does in between — usually nothing, because at this suite's 1 ms
+    // `speechIdleTimeoutMs` the watchdog reaps it, which is the DISCARD side.
+    highConfidencePartial: (opener) => {
+      const text = utterance(opener);
+      stt.last()?.firePartial(text, { endOfTurnConfidence: 1 });
+      if (lastPauseWasNull()) stt.last()?.fireFinal(text);
+      else speculated.text = text;
+    },
     ttsAudio: () => {
       // A real TTS provider emits audio only while a turn's synthesis is in
       // flight, never after signalling `done` for it (TtsEvents in
@@ -353,6 +192,21 @@ function buildActions(
     },
     sendUserAudio: () => transport.sendUserAudio(new Uint8Array(320)),
     armBargeInFromTool: () => deps.armBargeInFromTool(),
+    // Bias toward FALSE-INTERRUPTION RECOVERY, the way `armBargeInFromTool`
+    // biases toward a barge-in inside a tool call. A uniform walk reaches it
+    // almost never: the shape needs a partial to land while the agent is
+    // AUDIBLY speaking (measured: 8 such barge-ins in a whole property run,
+    // of which 1 resumed), then a quiet transcript stream with no final ever
+    // arriving. This composes it — audio for the live turn, then a noise
+    // partial — and `runOne`'s step loop supplies the quiet gap. Every part of
+    // it is something a real session does; nothing here is illegal for a
+    // provider to emit.
+    noiseBargeIn: () => {
+      // Same contract as `ttsAudio`: a real provider emits no audio outside a
+      // turn's synthesis window.
+      if (mon.current !== null && !mon.current.done) tts.last()?.fireAudio(new Int16Array(2400));
+      stt.last()?.firePartial("uh what");
+    },
   };
 }
 
@@ -369,21 +223,38 @@ async function runOne(
   const runId = String(++runCounter);
   const violations: string[] = [];
   let step = 0;
+  /** The pause the step being dispatched will take afterwards, or null. */
+  let currentPause: number | null = null;
 
   const mon: Monitor = {
     current: null,
     stopped: false,
     declaredDead: null,
     toolInFlight: 0,
+    audioTotal: 0,
     liveStreams: 0,
     maxLiveStreams: 0,
     consumedSteps: 0,
+    speculating: input.preemptiveGeneration,
+    ttsAccountedFor: 0,
     flag: (what) => violations.push(`step ${step}: ${what}`),
     hit: (key) => {
       cov[key] = (cov[key] ?? 0) + 1;
     },
     disturb: () => {
-      if (mon.current !== null && !mon.current.done) mon.current.disturbed = true;
+      const reply = mon.current;
+      if (reply === null || reply.done) return;
+      reply.disturbed = true;
+      // Cut with nothing audible ever forwarded for it: the heard cursor's
+      // zero case, where history must record none of what the model produced.
+      // Counted here rather than at `onCancelled` because a barge-in requires
+      // audible speech by definition — the reachable zero cases are the client
+      // cancel and the reset.
+      // Only counted when the model actually produced words — those are the
+      // replies whose record the new rule changes.
+      if (reply.audioChunks === 0 && reply.expected.length > 0) {
+        mon.hit("interruptedWithNothingHeard");
+      }
     },
   };
 
@@ -441,13 +312,66 @@ async function runOne(
         parameters: { type: "object", properties: {}, required: [] },
       },
     ],
-    logger: silentLogger,
-    falseInterruptionTimeoutMs: 3,
+    // Counts the false-interruption outcomes and every speculation off the
+    // transport's own log lines — none of them has a callback, and the
+    // speculation ones are the very instrument the flag's doc names as what
+    // would justify flipping the default, so reading them here also pins that
+    // they are emitted at all.
+    logger: {
+      ...silentLogger,
+      info: (msg: string) => {
+        if (msg === "Pipeline false-interruption resume") mon.hit("falseInterruptionResumed");
+        else if (msg === "Pipeline resume mooted by committed user turn") mon.hit("resumeMooted");
+        else if (msg === "Pipeline speculation adopted") mon.hit("speculationAdopted");
+      },
+      debug: (msg: string, meta?: unknown) => {
+        if (msg === "Pipeline speculation started") {
+          mon.hit("speculationStarted");
+          // BOUNDED PER UTTERANCE, read straight off the start log's running
+          // total. **This suite is NOT the guard for that rule** — say so rather
+          // than let the next reader assume it. Deleting the budget check from
+          // `mayFire` leaves this suite entirely green, measured, because two
+          // other conditions bind first: only one speculation is ever HELD (a
+          // new partial supersedes the last), and at this harness's 1 ms
+          // `speechIdleTimeoutMs` the utterance ends — restoring the budget —
+          // long before a third could fire. So the concurrency bound above does
+          // not enforce the budget and neither does this. The rule is pinned
+          // deterministically in `transports/pipeline-speculation.test.ts`
+          // ("bounded per utterance however the confidence sawtooths"); this
+          // stays as a cheap net for an interleaving that does reach it.
+          const spent = (meta as { spent?: number } | undefined)?.spent ?? 0;
+          if (spent > MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE) {
+            mon.flag(`speculation ${spent} of one utterance exceeds the per-utterance budget`);
+          }
+        } else if (msg === "Pipeline speculation discarded") {
+          mon.hit("speculationDiscarded");
+          const reason = (meta as { reason?: string } | undefined)?.reason;
+          if (reason !== undefined) mon.hit(`speculationDiscarded:${reason}`);
+        }
+      },
+    },
+    preemptiveGeneration: input.preemptiveGeneration,
+    // Zero: a run lasts ~250 ms of wall clock, so at the shipped lag every
+    // reply is the heard-nothing case. PARTIAL truncation is deliberately NOT
+    // covered here for the same reason (the heard position is always near
+    // zero, so a floor on it would flake) —
+    // `pipeline-transport-barge-in.test.ts` owns that case.
+    heardLagMs: 0,
+    resumeFalseInterruption: true,
+    // The resume deadline. It has to be set: the resume fires when the
+    // speaking edge goes idle, the shipped deadline is 3500 ms, and a run here
+    // lasts ~250 ms — so at the default the resume state is UNREACHABLE and
+    // the counters below would floor at zero. (This is also why the old
+    // `falseInterruptionTimeoutMs: 3` was decorative: that knob never governed
+    // the wait.)
+    speechIdleTimeoutMs: 1,
     silenceTimeoutMs: 5,
     interruptionMinDurationMs: 0,
     // Disabled so the reply-integrity oracle is exact: with filler enabled,
-    // text reaching TTS that the model never produced is legitimate.
-    holdPhrase: "",
+    // text reaching TTS that the model never produced is legitimate. Worth
+    // recording that this is why the fuzz could never have caught the
+    // holdPhrase/dead-air coupling defect — it runs with cover off.
+    deadAirCoverMs: 0,
     errorPhrase: "",
   });
 
@@ -468,12 +392,28 @@ async function runOne(
     armBargeInFromTool: () => {
       bargeInFromTool = true;
     },
+    speculated: { text: null },
+    lastPauseWasNull: () => currentPause === null,
   });
 
+  // One in-flight TURN, plus — with preemption on — a ceiling for the
+  // speculations that can be open alongside it. This oracle is about the TURN
+  // CHAIN, and a speculation is deliberately outside it (it occupies no turn
+  // precisely so it cannot block the turn it exists to accelerate), so a second
+  // concurrent request is legal in that arm rather than a serialization break.
+  // The per-utterance BUDGET is not what this checks, and neither is the `spent`
+  // oracle on the logger below — both stay green with the budget check deleted
+  // (measured). `transports/pipeline-speculation.test.ts` owns that rule.
+  const maxConcurrentStreams = input.preemptiveGeneration
+    ? 1 + MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE
+    : 1;
   const checkSerialization = (): void => {
-    if (mon.maxLiveStreams > 1) {
-      mon.flag(`${mon.maxLiveStreams} LLM streams open at once — turns are not serialized`);
-      mon.maxLiveStreams = 1;
+    if (mon.maxLiveStreams > maxConcurrentStreams) {
+      mon.flag(
+        `${mon.maxLiveStreams} LLM streams open at once — more than one turn ` +
+          `plus ${maxConcurrentStreams - 1} speculation(s)`,
+      );
+      mon.maxLiveStreams = maxConcurrentStreams;
     }
   };
 
@@ -502,9 +442,11 @@ async function runOne(
       tts: tts.last()?.textChunks.length ?? 0,
     };
     const fuzzStep = input.steps[step % input.steps.length] as FuzzStep;
+    const pauseMs = stepPauseMs(fuzzStep);
+    currentPause = pauseMs;
     actions[fuzzStep.action](fuzzStep.opener);
-    if (fuzzStep.pauseMs !== null) {
-      await sleep(fuzzStep.pauseMs ?? 0);
+    if (pauseMs !== null) {
+      await sleep(pauseMs);
     }
     checkClosedSessionWrites(before);
     checkSerialization();
@@ -578,24 +520,90 @@ describe("pipeline transport — randomized interleaving", () => {
     // is here to catch a generator that stopped reaching a state, never to pin a
     // count.
     const { cov } = harness;
-    expect(cov.replyStarted ?? 0, "no reply ever started").toBeGreaterThan(120); // ~350
-    expect(cov.replyDone ?? 0, "no reply ever completed").toBeGreaterThan(25); // ~95
-    expect(cov.replyIntegrityChecked ?? 0, "reply text never checked").toBeGreaterThan(25); // ~95
-    expect(cov.toolExecuted ?? 0, "no tool ever ran").toBeGreaterThan(18); // ~62
-    expect(cov.llmRequestWithTool ?? 0, "no request carried a tool result").toBeGreaterThan(18); // ~65
-    expect(cov.bargeInFromInsideTool ?? 0, "never barged in during a tool").toBeGreaterThan(12); // ~35
+    // `PIPELINE_FUZZ_COVERAGE=1` prints the whole table, the way
+    // `S2S_FUZZ_COVERAGE=1` does for the S2S property. It is how the actuals
+    // quoted below were taken, and how the next person re-takes them.
+    if (process.env.PIPELINE_FUZZ_COVERAGE === "1") console.log(JSON.stringify(cov, null, 2));
+    // One reader for the counters: a `?? 0` at every call site is most of this
+    // function's cognitive-complexity budget.
+    const count = (key: string): number => cov[key] ?? 0;
+    expect(count("replyStarted"), "no reply ever started").toBeGreaterThan(120); // ~350
+    expect(count("replyDone"), "no reply ever completed").toBeGreaterThan(25); // ~95
+    // LOWERED from 25 when `preemptiveGeneration` joined the generated world,
+    // and this is the one floor in the file that has ever moved DOWN. Roughly
+    // half the runs now have the flag on, and those runs skip the exact-text
+    // check entirely (see checkReplyIntegrity), so the same generator that
+    // measured ~95 now measures 30-50 over five runs. The floor is 3x below that
+    // minimum, on the same rule as every other one here.
+    expect(count("replyIntegrityChecked"), "reply text never checked").toBeGreaterThan(10); // 30-50
+    expect(count("toolExecuted"), "no tool ever ran").toBeGreaterThan(18); // ~62
+    expect(count("llmRequestWithTool"), "no request carried a tool result").toBeGreaterThan(18); // ~65
+    expect(count("bargeInFromInsideTool"), "never barged in during a tool").toBeGreaterThan(12); // ~35
     // Barge-in needs the turn to have SPOKEN, so this is the most
     // timing-sensitive counter of the set.
-    expect(cov.cancelled ?? 0, "no reply was ever cancelled").toBeGreaterThan(7); // ~33
+    expect(count("cancelled"), "no reply was ever cancelled").toBeGreaterThan(7); // ~33
     // Both ways a turn's LLM can fail, because they are separate reporters: an
     // `error` stream part, and a request that never streams at all. Each keeps
     // the fatality oracle in `createCallbacks` reachable — it passed on arrival
     // precisely because nothing here could fail a turn.
-    expect(cov["error:llm"] ?? 0, "no turn's LLM stream ever failed").toBeGreaterThan(8);
-    expect(cov.llmRefused ?? 0, "no LLM request was ever refused").toBeGreaterThan(2);
+    expect(count("error:llm"), "no turn's LLM stream ever failed").toBeGreaterThan(8);
+    expect(count("llmRefused"), "no LLM request was ever refused").toBeGreaterThan(2);
     // And every one of them was reported NON-fatally, so a regression to the
     // `onError` default is a failure here rather than a silent gap.
-    expect(cov["nonFatal:llm"] ?? 0).toBe(cov["error:llm"] ?? 0);
+    expect(count("nonFatal:llm")).toBe(count("error:llm"));
+    // False-interruption recovery. Both states were unreachable here until the
+    // resume deadline was shortened (see `speechIdleTimeoutMs` in runOne), so
+    // an all-green run said nothing about resumes at all. The mooted one is
+    // the more interesting oracle — it is where `dropTrailingUser`, the
+    // unspoken-turn abort and the turn gate meet — and it is much rarer, so it
+    // gets the lower floor rather than a generator nudge.
+    // False-interruption recovery, which this suite could not reach at all
+    // until the `noiseBargeIn` action and the short `speechIdleTimeoutMs` in
+    // `runOne`: the resume fires when the speaking edge goes idle, the shipped
+    // deadline is 3500 ms, and a run here lasts ~250 ms. Measured over six
+    // runs: partial barge-ins 51-71 (8 before the nudge), resumes 10-31 (0-1
+    // before it).
+    expect(count("falseInterruptionResumed"), "no reply was ever resumed").toBeGreaterThan(3);
+    // The heard cursor's zero case — a reply that produced words and forwarded
+    // no audio, so history records none of it. Keeps `checkPrompt`'s
+    // no-audio-no-record oracle reachable.
+    expect(count("interruptedWithNothingHeard"), "nothing was cut pre-audio").toBeGreaterThan(60); // ~192-243
+    // `resumeMooted` — a committed final killing a still-silent resume turn —
+    // is DELIBERATELY counted but NOT floored. It is the more interesting
+    // oracle (dropTrailingUser, the unspoken-turn abort and the turn gate all
+    // meet there), and it is reached: 1-8 times per run over the same six runs.
+    // But its window is the resume turn's time-to-first-audio, ~1 ms with this
+    // fake LLM, so a floor even at 1 would flake, and widening it means
+    // distorting the generator for one counter. `pipeline-voice-events.test.ts`
+    // pins the behaviour deterministically instead. What it CAN carry is an
+    // invariant rather than a floor: a resume can only be mooted if one fired,
+    // and each fired resume can be mooted at most once.
+    expect(count("resumeMooted")).toBeLessThanOrEqual(count("falseInterruptionResumed"));
+
+    // PREEMPTIVE GENERATION. The flag is generated, so roughly half the runs
+    // carry it and these counters come off the transport's own log lines — the
+    // same lines the feature's doc names as the instrument that would justify
+    // flipping the default, so flooring them also pins that they are emitted.
+    // Measured over five runs: started 41-68, discarded 38-65.
+    expect(count("speculationStarted"), "no speculation ever started").toBeGreaterThan(13);
+    expect(count("speculationDiscarded"), "no speculation was ever discarded").toBeGreaterThan(12);
+    // The two rules the recorded confidence sawtooth dictated, each floored on
+    // its own so a policy that stopped applying one is a failure rather than a
+    // shift in the totals. Measured: superseded 5-10, mismatch 6-13.
+    expect(count("speculationDiscarded:superseded"), "no partial ever revised").toBeGreaterThan(1);
+    expect(count("speculationDiscarded:mismatch"), "no final ever mismatched").toBeGreaterThan(1);
+    // ADOPTION is counted and DELIBERATELY NOT floored, on the `resumeMooted`
+    // precedent above. It needs the transport IDLE at the instant a confident
+    // interim lands, and this harness is busy by construction — a 5 ms
+    // `silenceTimeoutMs` keeps nudge turns running and the generator keeps audio
+    // playing out — so it lands 0-6 times per run over five runs, and a floor
+    // even at 1 would flake. Widening it means distorting the generator for one
+    // counter. `transports/pipeline-preemption.test.ts` pins adoption
+    // deterministically instead. What this CAN carry is the accounting
+    // invariant: every speculation is claimed at most once, either way.
+    expect(count("speculationAdopted") + count("speculationDiscarded")).toBeLessThanOrEqual(
+      count("speculationStarted"),
+    );
   }, 60_000);
 
   test("global invariants hold across a long session past the history cap", async () => {
@@ -614,7 +622,16 @@ describe("pipeline transport — randomized interleaving", () => {
               // the cap, and a refused request contributes no turn to it. The
               // `fail` turns the shared pattern can carry are fine — they commit
               // the user's side and exercise the fatality oracle here too.
-              { steps: [], script, tools: [{ kind: "ok" }], refusals: [false] },
+              // Preemption off: this property fires only finals, so nothing
+              // would ever speculate, and leaving it off keeps the exact-text
+              // integrity oracle live here (see checkReplyIntegrity).
+              {
+                steps: [],
+                script,
+                tools: [{ kind: "ok" }],
+                refusals: [false],
+                preemptiveGeneration: false,
+              },
               LONG_STEPS,
               harness.cov,
               { longSession: true, seedHistory },

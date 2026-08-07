@@ -11,11 +11,11 @@
  * capability coverage, which reads the agent source. Mode, UI, and build
  * verdicts are taken as recorded.
  *
- *   node scripts/starter-eval-regrade.mjs /tmp/eval-iter5.json /tmp/eval-iter6.json
+ *   node scripts/starter-eval/regrade.mjs /tmp/eval-iter5.json /tmp/eval-iter6.json
  */
 
 import { readFileSync } from "node:fs";
-import { checkCapabilities, checkMode, checkUi, EXPECTATIONS } from "./starter-expectations.mjs";
+import { checkCapabilities, checkMode, checkUi, EXPECTATIONS } from "./expectations.mjs";
 
 /** Reasons this script recomputes; anything else is carried through as-is. */
 const RECOMPUTED = /^missing:|^no client\.tsx|shows no live state|^mode=|^pipeline missing/;
@@ -58,5 +58,5 @@ function summarize(file) {
 }
 
 const files = process.argv.slice(2);
-if (files.length === 0) throw new Error("usage: starter-eval-regrade.mjs <results.json>...");
+if (files.length === 0) throw new Error("usage: starter-eval/regrade.mjs <results.json>...");
 for (const f of files) summarize(f);

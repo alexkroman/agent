@@ -2,15 +2,21 @@
 /**
  * What the pipeline transport says outside a model turn, and what it records.
  *
- * Two cases sharing one question — is this speech, or is it plumbing? The hold
- * phrase and dead-air cover are audible but must not enter the conversation
- * record; the interim transcript must reach the client as the words become
- * audible rather than all at once when the reply ends.
+ * Two cases sharing one question — is this speech, or is it plumbing? The
+ * dead-air cover is audible but must not enter the conversation record; the
+ * interim transcript must reach the client as the words become audible rather
+ * than all at once when the reply ends.
+ *
+ * These specs drive the cover with a tiny `deadAirCoverMs` and a slowed LLM,
+ * so the filler lands in the turn's opening gap. They used to drive it with
+ * `holdPhrase: "One moment."`, which fired at t=0 on the turn's shape; there is
+ * no such mechanism now — filler follows MEASURED silence.
  *
  * Split out of `pipeline-transport.test.ts` for file length.
  */
 
 import { describe, expect, test, vi } from "vitest";
+import { DEAD_AIR_OPENING_PHRASE } from "../../sdk/constants.ts";
 import {
   createFakeLanguageModel,
   createFakeTtsProvider,
@@ -21,11 +27,11 @@ import { createPipelineTransport } from "./pipeline-transport.ts";
 
 describe("PipelineTransport speech vs. record", () => {
   describe("interim agent transcript", () => {
-    test("publishes the hold phrase before the model's answer exists", async () => {
-      // A reply that opens with a tool call speaks its hold phrase seconds (or,
-      // on a long chain, minutes) before `onAgentTranscript` fires with the
-      // whole reply. A client that pairs text with audio has played that audio
-      // by then, so the words have to go out when they become audible.
+    test("publishes the cover filler before the model's answer exists", async () => {
+      // A reply that stalls speaks its filler seconds (or, on a long chain,
+      // minutes) before `onAgentTranscript` fires with the whole reply. A
+      // client that pairs text with audio has played that audio by then, so the
+      // words have to go out when they become audible.
       const script: ScriptedPart[] = [
         {
           type: "tool-call",
@@ -37,8 +43,8 @@ describe("PipelineTransport speech vs. record", () => {
         { type: "text", text: "It's sunny." },
       ];
       const { opts, stt, callbacks } = makeOpts({
-        llm: createFakeLanguageModel({ script }),
-        holdPhrase: "One moment.",
+        llm: createFakeLanguageModel({ script, delayMs: 15 }),
+        deadAirCoverMs: 1,
         executeTool: vi.fn(async () => "sunny"),
         toolSchemas: [{ ...noopToolSchema, name: "get_weather" }],
       });
@@ -47,7 +53,7 @@ describe("PipelineTransport speech vs. record", () => {
       stt.last()?.fireFinal("how's the weather?");
 
       await vi.waitFor(() => {
-        expect(callbacks.onAgentTranscriptPartial).toHaveBeenCalledWith("One moment.");
+        expect(callbacks.onAgentTranscriptPartial).toHaveBeenCalledWith(DEAD_AIR_OPENING_PHRASE);
       });
       // Still cumulative, and still one final transcript for history.
       await vi.waitFor(() => {
@@ -57,7 +63,7 @@ describe("PipelineTransport speech vs. record", () => {
         );
       });
       const lastPartial = partialTranscriptSpy(callbacks).mock.lastCall?.[0];
-      expect(lastPartial).toContain("One moment.");
+      expect(lastPartial).toContain(DEAD_AIR_OPENING_PHRASE);
       expect(lastPartial).toContain("It's sunny.");
       await t.stop();
     });
@@ -91,8 +97,8 @@ describe("PipelineTransport speech vs. record", () => {
   });
 
   describe("filler is spoken but not recorded", () => {
-    test("the hold phrase reaches TTS but not the recorded transcript", async () => {
-      // "One moment." is a timing artifact, not something the agent said. Left in
+    test("the cover filler reaches TTS but not the recorded transcript", async () => {
+      // The filler is a timing artifact, not something the agent said. Left in
       // the record it costs context on every later turn and shows the model its
       // own filler as an example of what its turns look like.
       const script: ScriptedPart[] = [
@@ -106,8 +112,8 @@ describe("PipelineTransport speech vs. record", () => {
         { type: "text", text: "It's sunny." },
       ];
       const { opts, stt, tts, callbacks } = makeOpts({
-        llm: createFakeLanguageModel({ script }),
-        holdPhrase: "One moment.",
+        llm: createFakeLanguageModel({ script, delayMs: 15 }),
+        deadAirCoverMs: 1,
         executeTool: vi.fn(async () => "sunny"),
         toolSchemas: [{ ...noopToolSchema, name: "get_weather" }],
       });
@@ -119,10 +125,12 @@ describe("PipelineTransport speech vs. record", () => {
         expect(callbacks.onReplyDone).toHaveBeenCalled();
       });
       // Heard by the caller...
-      expect(tts.last()?.textChunks.join("")).toContain("One moment.");
+      expect(tts.last()?.textChunks.join("")).toContain(DEAD_AIR_OPENING_PHRASE);
       // ...and shown live, since the caption is built from what reaches TTS.
       expect(
-        partialTranscriptSpy(callbacks).mock.calls.some(([text]) => text.includes("One moment")),
+        partialTranscriptSpy(callbacks).mock.calls.some(([text]) =>
+          text.includes(DEAD_AIR_OPENING_PHRASE),
+        ),
       ).toBe(true);
       // ...but absent from the reply's final transcript, which is what history,
       // ctx.messages, resume, and the STT agent-context hint are built from.
@@ -131,14 +139,14 @@ describe("PipelineTransport speech vs. record", () => {
         .mock.calls.filter(([, interrupted]) => interrupted === false)
         .map(([text]) => text);
       expect(finals.some((text) => text.includes("It's sunny."))).toBe(true);
-      for (const text of finals) expect(text).not.toContain("One moment.");
+      for (const text of finals) expect(text).not.toContain(DEAD_AIR_OPENING_PHRASE);
       await t.stop();
     });
   });
 });
 
 describe("filler never talks over the caller", () => {
-  test("the hold phrase is suppressed while an utterance is open", async () => {
+  test("the cover filler is suppressed while an utterance is open", async () => {
     // Filler is silence-cover. Playing it across a live utterance is worse than
     // the silence it hides — EVA's turn-taking metric scores it as an agent
     // interruption (1.5s of simultaneous speech measured 0.13 out of 1). This is
@@ -158,7 +166,7 @@ describe("filler never talks over the caller", () => {
     const { opts, stt } = makeOpts(
       {
         llm: createFakeLanguageModel({ script, delayMs: 15 }),
-        holdPhrase: "One moment.",
+        deadAirCoverMs: 1,
         tts,
         executeTool: vi.fn(async () => "sunny"),
         toolSchemas: [{ ...noopToolSchema, name: "get_weather" }],
@@ -176,7 +184,7 @@ describe("filler never talks over the caller", () => {
     await vi.waitFor(() => {
       expect(tts.last()?.textChunks.join("")).toContain("It's sunny.");
     });
-    expect(tts.last()?.textChunks.join("")).not.toContain("One moment.");
+    expect(tts.last()?.textChunks.join("")).not.toContain(DEAD_AIR_OPENING_PHRASE);
     await t.stop();
   });
 });

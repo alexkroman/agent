@@ -50,3 +50,37 @@ export function hasMinWords(text: string, min: number): boolean {
   if (min <= 0) return true;
   return scanWords(text, min) >= min;
 }
+
+/**
+ * Canonical form for comparing two transcripts of the same utterance:
+ * lowercased, every non-alphanumeric character collapsed to a single space,
+ * trimmed.
+ *
+ * This IS the preemptive-generation match rule (`pipeline-speculation.ts`): a
+ * speculation started from an interim is adopted only when the committed final
+ * normalizes to the same string. Byte equality would be the safer default and
+ * is deliberately not used, because a partial and its final routinely differ in
+ * FORMATTING alone — the AssemblyAI adapter traces `turn_is_formatted` per turn
+ * (`host/providers/stt/assemblyai.ts`), so "my order is 1 2 3 4" and "My order
+ * is 1234." are the same utterance twice. That is a provider PROPERTY visible in
+ * the adapter, not a measurement.
+ *
+ * Note what this deliberately does NOT normalize away: word order, added words,
+ * dropped words. A final that merely EXTENDS the partial is a mismatch, and must
+ * stay one — answering half an utterance is the failure the endpointing
+ * measurement on `DEFAULT_MIN_TURN_SILENCE_MS` paid 5.7x reward for.
+ */
+export function normalizeUtterance(text: string): string {
+  let out = "";
+  let pendingSpace = false;
+  for (const ch of text.toLowerCase()) {
+    if (/[\p{L}\p{N}]/u.test(ch)) {
+      if (pendingSpace && out.length > 0) out += " ";
+      pendingSpace = false;
+      out += ch;
+    } else {
+      pendingSpace = true;
+    }
+  }
+  return out;
+}

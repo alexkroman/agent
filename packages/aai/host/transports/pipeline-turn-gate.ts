@@ -53,6 +53,44 @@ export function createTurnGate(): TurnGate {
   };
 }
 
+/** Serializes turns behind one promise chain — see {@link createTurnChain}. */
+export interface TurnChain {
+  /** Enqueue `start` behind the active turn (if any). */
+  chain(start: () => Promise<void>): void;
+  /** Await the tail of the chain, swallowing rejections. `stop()`'s drain. */
+  settled(): Promise<void>;
+}
+
+/**
+ * The turn serializer this module's doc opens by describing — a single promise
+ * chain plus the {@link TurnGate} epoch check that strands a queued turn the
+ * session has moved past.
+ */
+export function createTurnChain(deps: {
+  gate: TurnGate;
+  /** The transport terminated: nothing queued may still start. */
+  isTerminated(): boolean;
+}): TurnChain {
+  let turnPromise: Promise<void> | null = null;
+  return {
+    chain(start: () => Promise<void>): void {
+      // Captured at enqueue, re-checked at run: a reset/stop/cancelReply landing
+      // while this turn waits behind an active one strands it — otherwise it
+      // would run a full billed streamText turn after the session moved on.
+      const epoch = deps.gate.queueEpoch();
+      // Chain past a rejected predecessor: every call site attaches its own
+      // .catch, but one that slips through must cost that turn, not wedge the
+      // serializer (a rejected turnPromise would mean no turn ever runs again).
+      turnPromise = (turnPromise ?? Promise.resolve())
+        .catch(() => undefined)
+        .then(() => (deps.isTerminated() || !deps.gate.queueCurrent(epoch) ? undefined : start()));
+    },
+    async settled(): Promise<void> {
+      if (turnPromise !== null) await turnPromise.catch(() => undefined);
+    },
+  };
+}
+
 /**
  * Build the transport's turn-crash handler factory. Throw-safe: the logger is
  * caller-injectable, and a throw from a `.catch` handler would reject the

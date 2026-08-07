@@ -3,19 +3,15 @@
 import { AssemblyAI, type StreamingTranscriber } from "assemblyai";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import {
-  DEFAULT_MAX_TURN_SILENCE_MS,
-  DEFAULT_MIN_TURN_SILENCE_MS,
   DEFAULT_STT_PROMPT,
-  DEFAULT_VOICE_FOCUS_THRESHOLD,
-  STT_CONNECT_MAX_RETRIES,
   STT_CONNECT_RETRY_DELAY_MS,
-  STT_CONNECT_TIMEOUT_MS,
   STT_FRAME_FLOOR_MS,
 } from "../../../sdk/constants.ts";
 import {
   ASSEMBLYAI_API_KEY_ENV,
   ASSEMBLYAI_STREAMING_EU_URL,
   type AssemblyAIOptions,
+  resolveAssemblyAISttSettings,
 } from "../../../sdk/providers/stt/assemblyai.ts";
 import {
   makeSttError,
@@ -157,57 +153,38 @@ function resolveStreamingUrl(opts: AssemblyAIOptions): string | undefined {
   return opts.region === "eu" ? ASSEMBLYAI_STREAMING_EU_URL : undefined;
 }
 
-/**
- * The endpointing pair, resolved together because they are only correct
- * together.
- *
- * BOTH halves are always sent. The service defaults them independently — the
- * minimum from the `mode` preset, the maximum to 1536 — so sending only the
- * minimum is how it ends up ABOVE the maximum, at which point the completeness
- * check can never fire before the content-blind force-end has closed the turn
- * and every ending comes from the acoustic fallback that splits utterances.
- * That is exactly the regression this function exists to make un-writable; see
- * both constants' docs in sdk/constants.ts.
- */
-function resolveEndpointing(opts: AssemblyAIOptions): {
-  minTurnSilence: number;
-  maxTurnSilence: number;
-} {
-  return {
-    minTurnSilence: opts.minTurnSilenceMs ?? DEFAULT_MIN_TURN_SILENCE_MS,
-    maxTurnSilence: opts.maxTurnSilenceMs ?? DEFAULT_MAX_TURN_SILENCE_MS,
-  };
-}
-
 function buildTranscriberParams(
   opts: AssemblyAIOptions,
   openOpts: SttOpenOptions,
 ): { params: Record<string, unknown>; agentContextCapable: boolean } {
-  const speechModel = opts.model ?? "universal-3-5-pro";
-  const agentContextCapable = supportsAgentContext(speechModel);
+  // Every default lives in resolveAssemblyAISttSettings, which the runtime's
+  // "Session mode resolved" log also reads — so the settings reported at
+  // startup are the ones dialled here, not a second copy of the same `??`
+  // chains. This function only maps them onto the SDK's parameter names.
+  const settings = resolveAssemblyAISttSettings(opts);
+  const agentContextCapable = supportsAgentContext(settings.model);
   const initialAgentContext = agentContextCapable
     ? normalizeAgentContext(openOpts.agentContext ?? "")
     : undefined;
-  // Voice focus (voice isolation); defaults to near-field. "off"/"" disables.
-  const requestedVoiceFocus = opts.voiceFocus ?? "near-field";
-  const voiceFocus = requestedVoiceFocus === "off" ? "" : requestedVoiceFocus;
-  // Above the service's own 0.7, because the interferer that matters here is
-  // background SPEECH and only the pre-model filter can suppress it — see
-  // DEFAULT_VOICE_FOCUS_THRESHOLD for the measurement, including why raising
-  // `vad_threshold` instead is a regression.
-  const voiceFocusThreshold = opts.voiceFocusThreshold ?? DEFAULT_VOICE_FOCUS_THRESHOLD;
   const params: Record<string, unknown> = {
     sampleRate: openOpts.sampleRate,
-    speechModel,
+    speechModel: settings.model,
     // Always set: the SDK's 1000 ms default covers socket open *plus* the
     // server's `Begin`, and a healthy handshake can exceed it — see the
     // connect-budget note in sdk/constants.ts. `??` (not `||`) so an
     // explicit 0 survives as "no deadline".
-    connectTimeout: opts.connectTimeoutMs ?? STT_CONNECT_TIMEOUT_MS,
-    maxConnectionRetries: opts.maxConnectRetries ?? STT_CONNECT_MAX_RETRIES,
+    connectTimeout: settings.connectTimeoutMs,
+    maxConnectionRetries: settings.maxConnectRetries,
     connectionRetryDelay: STT_CONNECT_RETRY_DELAY_MS,
-    // Endpointing lives here, not in the transport — see resolveEndpointing.
-    ...resolveEndpointing(opts),
+    // BOTH endpointing halves are always sent. The service defaults them
+    // independently — the minimum from the `mode` preset, the maximum to 1536
+    // — so sending only the minimum is how it ends up ABOVE the maximum, at
+    // which point the completeness check can never fire before the
+    // content-blind force-end has closed the turn and every ending comes from
+    // the acoustic fallback that splits utterances. Resolving them together is
+    // what makes that regression un-writable; see both constants' docs.
+    minTurnSilence: settings.minTurnSilenceMs,
+    maxTurnSilence: settings.maxTurnSilenceMs,
   };
   const streamingUrl = resolveStreamingUrl(opts);
   if (streamingUrl) params.websocketBaseUrl = streamingUrl;
@@ -215,8 +192,8 @@ function buildTranscriberParams(
   // `language_codes` keeps the model's native code-switching, which is the
   // right default for a multilingual line and the wrong one for a monolingual
   // one (see the option's doc).
-  if (opts.languages !== undefined && opts.languages.length > 0) {
-    params.languageCodes = opts.languages;
+  if (settings.languages) {
+    params.languageCodes = settings.languages;
   }
   // Contextual biasing is opt-in: DEFAULT_STT_PROMPT is empty, so an agent
   // that sets no sttPrompt sends no `prompt` at all — as does `sttPrompt: ""`.
@@ -224,9 +201,11 @@ function buildTranscriberParams(
   const sttPrompt = openOpts.sttPrompt ?? DEFAULT_STT_PROMPT;
   if (sttPrompt) params.prompt = sttPrompt;
   if (initialAgentContext !== undefined) params.agentContext = initialAgentContext;
-  if (voiceFocus) {
-    params.voiceFocus = voiceFocus;
-    params.voiceFocusThreshold = voiceFocusThreshold;
+  // The threshold is omitted entirely when voice focus is off — it tunes that
+  // filter, and sending it alone reads as if suppression were active.
+  if (settings.voiceFocus) {
+    params.voiceFocus = settings.voiceFocus;
+    params.voiceFocusThreshold = settings.voiceFocusThreshold;
   }
   return { params, agentContextCapable };
 }
@@ -261,6 +240,22 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
         teardown: () => transcriber.close(),
       });
 
+      /**
+       * `end_of_turn_confidence` off the turn event.
+       *
+       * Read defensively because the `assemblyai` SDK does not yet declare the
+       * field on its turn type — it is on the wire and absent from the `.d.ts`
+       * — so a direct property access does not type-check. A narrow `as` to a
+       * shape with one `unknown` member keeps that local and honest: nothing is
+       * laundered past the checker beyond this field's existence, and the
+       * `typeof` guard is what actually admits the value. Delete the cast once
+       * the SDK types it.
+       */
+      const readEndOfTurnConfidence = (event: object): number | undefined => {
+        const raw = (event as { end_of_turn_confidence?: unknown }).end_of_turn_confidence;
+        return typeof raw === "number" ? raw : undefined;
+      };
+
       transcriber.on("turn", (event) => {
         if (shell.isClosed()) return;
         const text = event.transcript ?? "";
@@ -269,13 +264,21 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
         // so a word that appears in an interim turn and is then revised out of
         // the final one is attributable to STT rather than to the transport's
         // turn aggregation (see pipeline-user-speech.ts's matching trace).
+        const endOfTurnConfidence = readEndOfTurnConfidence(event);
         consoleLogger.debug("AssemblyAI STT turn", {
           transcript: text,
           endOfTurn: event.end_of_turn,
           formatted: event.turn_is_formatted,
+          endOfTurnConfidence,
         });
         if (text.length === 0) return;
-        emitter.emit(event.end_of_turn ? "final" : "partial", text);
+        // The key is OMITTED rather than set to undefined: `exactOptionalPropertyTypes`
+        // distinguishes the two, and "the provider said nothing" is the absent case.
+        emitter.emit(
+          event.end_of_turn ? "final" : "partial",
+          text,
+          endOfTurnConfidence === undefined ? {} : { endOfTurnConfidence },
+        );
       });
 
       transcriber.on("error", (err) => shell.onSocketError(err));

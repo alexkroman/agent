@@ -9,24 +9,31 @@
 
 import type { SttError, TtsError } from "../../sdk/providers.ts";
 import type { Message } from "../../sdk/types.ts";
+import { normalizeSpeechText } from "../../sdk/utils.ts";
 import { bytesToPcm16, pcm16ToBytes } from "../_pcm.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
 import { createEmitError } from "./pipeline-error.ts";
+import { createHeardTracker } from "./pipeline-heard.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
+import { createTurnLlmRunner } from "./pipeline-llm-stream.ts";
 import { createPipelineProviderSessions } from "./pipeline-providers.ts";
-import { createReplyTailTracker } from "./pipeline-recovery.ts";
-import { createPlaybackClock, createTurnLlmRunner, flushTtsAndWait } from "./pipeline-stream.ts";
+import { createPipelineSpeculation } from "./pipeline-speculation.ts";
+import { flushTtsAndWait } from "./pipeline-stream.ts";
 import {
   type PipelineTransportOptions,
   resolvePipelineOptions,
 } from "./pipeline-transport-options.ts";
-import { createTurnGate, turnCrashLogger } from "./pipeline-turn-gate.ts";
+import { createTurnBody } from "./pipeline-turn-body.ts";
+import { createTurnChain, createTurnGate, turnCrashLogger } from "./pipeline-turn-gate.ts";
 import { createTurnOutcome } from "./pipeline-turn-outcome.ts";
 import { createTurnMachine } from "./pipeline-turn-state.ts";
 import { createUserActivity } from "./pipeline-user-speech.ts";
 import type { Transport } from "./types.ts";
 
 export type { PipelineTransportOptions } from "./pipeline-transport-options.ts";
+
+/** `sendTtsText` options — see its definition below. */
+type SendTtsOptions = { publishTranscript?: boolean; record?: boolean };
 
 /** Create a pipeline-mode Transport (STT → LLM → TTS). @internal */
 export function createPipelineTransport(opts: PipelineTransportOptions): Transport {
@@ -37,10 +44,12 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     maxSteps,
     minBargeInWords,
     interruptionMinDurationMs,
-    holdPhrase,
+    deadAirCoverMs,
+    heardLagMs,
     errorPhrase,
     startFailurePhrase,
-    falseInterruptionTimeoutMs,
+    resumeFalseInterruption,
+    preemptiveGeneration,
     speechIdleTimeoutMs,
     toolChoice,
     toolSchemas,
@@ -53,7 +62,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const emitError = createEmitError(callbacks);
 
   const sessionAbort = new AbortController();
-  // Turn-crash handler for chainTurn call sites — see turnCrashLogger.
+  // Turn-crash handler for turnChain.chain call sites — see turnCrashLogger.
   const logTurnCrash = turnCrashLogger(log, opts.sid);
   let audioReady = false;
   let terminated = false;
@@ -82,32 +91,51 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // pipeline mode): a text view (client/resume/tool-context) and a
   // ModelMessage view (what the LLM sees, incl. tool calls/results).
   const history = createPipelineHistory(sessionConfig.history);
-  let turnPromise: Promise<void> | null = null;
+  // Turn serializer + its queued-turn epoch check — see createTurnChain.
+  const turnChain = createTurnChain({ gate, isTerminated: () => terminated });
   // The in-flight providers.open() from start(). stop() awaits it so a
   // disconnect mid-connect tears the just-opened provider sockets down
   // deterministically instead of leaving fire-and-forget opens to pile up.
   let startPromise: Promise<"ok" | "failed"> | null = null;
-  // Tracks when the client is estimated to finish playing forwarded TTS audio,
-  // so barge-in keeps working after the server-side turn is done but buffered
-  // audio is still playing client-side (see createPlaybackClock).
-  const playbackClock = createPlaybackClock(ttsSampleRate);
-  // What the current reply handed to TTS (cumulative transcript + audio
-  // duration), which is also where a playback-tail barge-in's cut point comes
-  // from — see createReplyTailTracker.
-  const replyTail = createReplyTailTracker({
+  // What the caller has actually HEARD of the current reply: the barge-in
+  // gate, the cut point history is truncated to, and the resume anchor, all
+  // from one cursor — see createHeardTracker.
+  const heard = createHeardTracker({
     sampleRate: ttsSampleRate,
-    remainingMs: () => playbackClock.remainingMs(),
+    lagMs: heardLagMs,
+    now: opts.heardNow,
   });
 
-  // Silence nudger, false-interruption recovery, speaking edges and the STT
-  // handlers that drive them — see createUserActivity.
+  // PREEMPTIVE GENERATION (on by default). Constructed before the speech
+  // handlers because they drive it, and deliberately NOT wired into `turns` or
+  // the turn chain: a speculation occupies no turn, so every barge-in gate
+  // below behaves exactly as it does with the flag off. See
+  // pipeline-speculation.ts.
+  const speculation = createPipelineSpeculation({
+    enabled: preemptiveGeneration,
+    toolChoice,
+    toolSchemas,
+    llm: opts.llm,
+    systemPrompt,
+    temperature: opts.temperature,
+    maxSteps,
+    history,
+    sessionSignal: sessionAbort.signal,
+    // "The floor is free": no turn running and nothing still playing out.
+    isIdle: () => !(turns.inFlight() || heard.pending()),
+    log,
+    sid: opts.sid,
+  });
+
+  // Nudger, recovery, speaking edges and STT handlers — see createUserActivity.
   const { nudger, recovery, speechEdges, sttEvents } = createUserActivity({
     log,
     sid: opts.sid,
     callbacks,
     silenceTimeoutMs: opts.silenceTimeoutMs,
     silencePrompt: opts.silencePrompt,
-    falseInterruptionTimeoutMs,
+    resumeFalseInterruption,
+    speculation,
     speechIdleTimeoutMs,
     minBargeInWords,
     interruptionMinDurationMs,
@@ -117,9 +145,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     isTurnDraining: () => turnDraining,
     isResumeTurnInFlight: () => resumeTurnScope && turns.inFlight(),
     hasTurnSpoken: () => turns.spoke(),
-    isPlaybackPending: () => playbackClock.pending(),
+    isPlaybackPending: () => heard.pending(),
     abortInFlightTurn: () => abortInFlightTurn(),
-    tailResumePrompt: () => replyTail.resumePrompt(),
+    tailResumePrompt: () => heard.resumePrompt(),
     runChainedTurn,
   });
 
@@ -144,9 +172,15 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       onTtsAudio: (pcm) => {
         if (!turns.audioGateOpen()) return;
         turns.markSpoke();
-        replyTail.onAudio(pcm);
-        playbackClock.onChunk(pcm);
+        heard.onAudio(pcm);
         callbacks.onAudioChunk(pcm16ToBytes(pcm));
+      },
+      // Word timings ride the SAME audio gate as the audio itself, the proven
+      // guard for "output from a cancelled turn must not count" — no second
+      // epoch.
+      onTtsWords: (words) => {
+        if (!turns.audioGateOpen()) return;
+        heard.onWords(words);
       },
     },
     onAudioReady,
@@ -163,25 +197,12 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     messages: () => history.conversation,
   });
 
-  function chainTurn(start: () => Promise<void>): void {
-    // Captured at enqueue, re-checked at run: a reset/stop/cancelReply landing
-    // while this turn waits behind an active one strands it — otherwise it
-    // would run a full billed streamText turn after the session moved on.
-    const epoch = gate.queueEpoch();
-    // Chain past a rejected predecessor: every call site attaches its own
-    // .catch, but one that slips through must cost that turn, not wedge the
-    // serializer (a rejected turnPromise would mean no turn ever runs again).
-    turnPromise = (turnPromise ?? Promise.resolve())
-      .catch(() => undefined)
-      .then(() => (terminated || !gate.queueCurrent(epoch) ? undefined : start()));
-  }
-
   function runChainedTurn(
     text: string,
     crashLabel: string,
     kind?: { isResume?: boolean; synthetic?: boolean },
   ): void {
-    chainTurn(async () => {
+    turnChain.chain(async () => {
       resumeTurnScope = kind?.isResume === true;
       try {
         await runTurn(text, { synthetic: kind?.synthetic === true }).catch(
@@ -195,12 +216,12 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
 
   /** Abort the in-flight turn (if any) and cancel TTS playback. */
   function abortInFlightTurn(): void {
+    // FIRST: latch where the caller's ear had got to, before anything resets
+    // the playback clock that position is read from. The persistence below runs
+    // when the aborted stream settles, long after this — see HeardTracker.cut.
+    heard.cut();
     turns.interrupt();
     providers.tts?.cancel();
-    // Every abort path ends with the client flushing its playback buffer
-    // (`cancelled` for barge-in/client cancel, `reset` for reset, teardown
-    // for terminate), so the estimated-playback clock restarts from zero.
-    playbackClock.reset();
   }
 
   // Idempotent teardown after an unrecoverable provider error.
@@ -211,6 +232,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     nudger.clear();
     recovery.clear();
     speechEdges.reset();
+    speculation.discard("reset");
     abortInFlightTurn();
     callbacks.onCancelled();
     sessionAbort.abort();
@@ -238,10 +260,12 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
    * tool chain speaks filler long before the answer exists. `publishTranscript:
    * false` skips it for the greeting/start-failure lines, which publish their own
    * final. The tail advances either way: it feeds the tail-resume estimate. */
-  function sendTtsText(text: string, opts?: { publishTranscript?: boolean }): void {
+  function sendTtsText(text: string, opts?: SendTtsOptions): void {
     turns.openAudioGate();
-    providers.tts?.sendText(text);
-    const tail = replyTail.onText(text);
+    // ASCII-fold typographic quotes for the engine; length-preserving, so the
+    // heard cursor below still indexes the same positions (normalizeSpeechText).
+    providers.tts?.sendText(normalizeSpeechText(text));
+    const tail = heard.onText(text, opts?.record !== false);
     if (opts?.publishTranscript !== false) callbacks.onAgentTranscriptPartial?.(tail);
   }
 
@@ -266,7 +290,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     toolChoice,
     temperature: opts.temperature,
     maxSteps,
-    holdPhrase,
+    deadAirCoverMs,
     // An open speech edge means an utterance is in progress (0 when not).
     callerSpeaking: () => speechEdges.durationMs() > 0,
     sendTtsText,
@@ -293,6 +317,11 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     idPrefix: string,
     body: (signal: AbortSignal) => Promise<boolean /* spoke */>,
   ): Promise<void> {
+    // A turn is taking the floor: whatever speculation is still standing was
+    // not claimed by it (`runTurn` claims BEFORE calling in), so it belongs to
+    // an utterance this turn has moved past. Discarded here rather than left to
+    // be adopted later by a turn that never spoke the words it was built on.
+    speculation.discard("turn-started");
     callbacks.onReplyStarted(`${idPrefix}-${++nextReplyId}`);
 
     const ctl = new AbortController();
@@ -303,7 +332,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     // session-lifetime signal.
     const signal = AbortSignal.any([sessionAbort.signal, ctl.signal]);
     turns.begin(ctl);
-    replyTail.reset();
+    heard.startReply();
 
     try {
       const spoke = await body(signal);
@@ -327,51 +356,17 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     }
   }
 
-  function runTurn(userText: string, kind?: { synthetic?: boolean }): Promise<void> {
-    // An injected prompt (resume / silence nudge) this turn never got to use is
-    // rolled back rather than left standing as something the user said — see
-    // persistBargeIn.
-    const syntheticPrompt = kind?.synthetic === true ? userText : undefined;
-    return runReply("pipeline", async (signal) => {
-      // reset() bumps this before clearing history — the persistence below
-      // runs asynchronously after the abort and must not write the
-      // interrupted tail into (or emit a transcript over) a fresh conversation.
-      const historyEpoch = gate.historyEpoch();
-      history.pushConversation({ role: "user", content: userText });
-      history.pushLlm({ role: "user", content: userText });
-
-      let accumulated = "";
-      // Portion of `accumulated` already inside persisted step messages.
-      let persistedLen = 0;
-      const onDelta = (delta: string): void => {
-        accumulated += delta;
-      };
-      const { messages: responseMessages, failed } = await consumeLlmStream(signal, onDelta, () => {
-        persistedLen = accumulated.length;
-      });
-
-      if (signal.aborted) {
-        outcome.persistBargeIn({
-          historyEpoch,
-          accumulated,
-          persistedLen,
-          stepMessages: responseMessages,
-          syntheticPrompt,
-        });
-        return false;
-      }
-
-      // Persist the assistant tool-call message(s) and their `tool` results so
-      // the next turn retains tool context, not just the spoken transcript.
-      if (responseMessages.length > 0) history.pushLlm(...responseMessages);
-
-      if (outcome.speakRecovery(failed)) return true;
-
-      if (accumulated.length === 0) return false;
-      outcome.finishSpokenTurn(accumulated);
-      return true;
-    });
-  }
+  // The ordinary turn body (user message → LLM stream → outcome) — see
+  // createTurnBody. Declared after `runReply` because it wraps it.
+  const runTurn = createTurnBody({
+    gate,
+    history,
+    heard,
+    outcome,
+    consumeLlmStream,
+    speculation,
+    runReply,
+  });
 
   function runGreeting(text: string): Promise<void> {
     return runReply("pipeline-greeting", async () => {
@@ -392,7 +387,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     if (opts.skipGreeting) return;
     const greeting = sessionConfig.greeting;
     if (!greeting) return;
-    chainTurn(() => runGreeting(greeting).catch(logTurnCrash("Pipeline greeting failed")));
+    turnChain.chain(() => runGreeting(greeting).catch(logTurnCrash("Pipeline greeting failed")));
   }
 
   return {
@@ -434,6 +429,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       nudger.clear();
       recovery.clear();
       speechEdges.reset();
+      speculation.discard("reset");
       sessionAbort.abort();
       turns.abortCurrent();
       providers.unsubscribe();
@@ -441,7 +437,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       // opened mid-connect is adopted-then-closed (openSide) before we close
       // below — otherwise a slow socket lands after stop() and lingers.
       if (startPromise !== null) await startPromise.catch(() => undefined);
-      if (turnPromise !== null) await turnPromise.catch(() => undefined);
+      await turnChain.settled();
       await providers.close();
     },
 
@@ -462,6 +458,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       // "Stop responding": strand turns already queued behind the cancelled
       // one. History persistence stays valid — the conversation continues.
       gate.invalidateQueued();
+      speculation.discard("reset");
       abortInFlightTurn();
       // Silence after a client-initiated cancel should still nudge.
       nudger.arm();
@@ -476,6 +473,16 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       history.seed(messages);
     },
 
+    onPlaybackProgress(bufferedMs: number): void {
+      // The one closed-loop input to a playback estimate that is otherwise
+      // bytes-sent times 1.0x — see the `playback_progress` doc in
+      // sdk/protocol.ts for what it costs when the client drains slower, and
+      // `PlaybackClock.onClientReport` for why it may only ever clamp upward.
+      // Ignored after teardown: the clock belongs to a session that is gone.
+      if (terminated) return;
+      heard.onClientPlaybackReport(bufferedMs);
+    },
+
     reset(): void {
       // Bumped before the abort/history.reset below so the aborted turn's
       // deferred persistence and any queued turns see the change.
@@ -483,6 +490,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       // A reset is user activity: restore the resume budget as well.
       recovery.onUserTurn();
       speechEdges.reset();
+      speculation.discard("reset");
       abortInFlightTurn();
       history.reset();
       // A reset is user activity: restore the budget, restart the window.
