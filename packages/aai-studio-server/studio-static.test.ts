@@ -231,6 +231,25 @@ describe("studio client handlers", () => {
       expect(res.headers.get("content-security-policy")).toContain("default-src 'none'");
     });
 
+    // The shell names content-hashed assets that live only in the image it
+    // was built into, and those are served `immutable`. Cached, it pins a
+    // browser to a build whose `/studio-assets/*` 404 the moment a Modal
+    // deploy retires that image — a white page with no JS left to recover.
+    it("is never cached, unlike the assets it names", async () => {
+      await build("index.html", "<!doctype html><title>built shell</title>");
+      const res = await (await app()).get("/");
+
+      expect(res.headers.get("cache-control")).toBe("no-store");
+    });
+
+    it("is uncacheable on the not-built fallback too", async () => {
+      // Same reasoning, and the path a partially-built server actually
+      // serves — caching "not built" outlasts the build that fixes it.
+      const res = await (await app()).get("/");
+
+      expect(res.headers.get("cache-control")).toBe("no-store");
+    });
+
     it("serves the same shell on a repeat request", async () => {
       // The decoded shell is cached by buffer identity; a second request must
       // still get the page rather than a stale or empty body.

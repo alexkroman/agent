@@ -545,6 +545,20 @@ voice agents without the CLI:
   the studio routes. Enforced in `validateSlug`, `DeployBodySchema`, and
   the deploy core.
 
+- **The app shell is `no-store`; its assets are `immutable`. Those two go
+  together** (`studio-static.ts`). `index.html` names content-hashed assets
+  that exist only in the container image it was built into, so a cached
+  shell pins a browser to a build whose `/studio-assets/*` 404 the moment
+  that image stops running — a white page, with the entry script missing and
+  no JS left to recover from it. A Modal deploy is exactly that event, and
+  it is not instantaneous: the default rolling strategy keeps old containers
+  serving beside new ones (up to `scaledown_window`) and load-balances every
+  request independently. The shell carried NO cache headers for a long time,
+  which is weaker than it sounds — with no `Cache-Control` and no validator,
+  a heuristically caching intermediary may reuse it. The client half of the
+  same problem (a tab whose lazy chunks were deleted by the rollout) is
+  `stale-build.ts` — see `packages/aai-studio-client/CLAUDE.md`.
+
 ## One studio sandbox per project, fleet-wide
 
 The same problem hit the studio harder, and the fix is shaped differently

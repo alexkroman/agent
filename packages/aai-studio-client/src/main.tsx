@@ -37,7 +37,13 @@ import { clearCliLinkCode, consumeCliLinkCode, linkConfirmationCode } from "./cl
 import { GateCard, GateProblem, gateProblem, queryFailure } from "./gate-card.tsx";
 import { queryKeys } from "./query-keys.ts";
 import { isEnterSubmit } from "./send-button.tsx";
+import { installStaleBuildRecovery } from "./stale-build.ts";
 import "./styles.css";
+
+// Before anything renders: a chunk this build names can stop existing under
+// a running tab (see stale-build.ts). Vite reports the modulepreload half of
+// that as `vite:preloadError`, which throws if nobody claims it.
+installStaleBuildRecovery();
 
 const queryClient = new QueryClient();
 

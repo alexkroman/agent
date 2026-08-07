@@ -119,16 +119,38 @@ function clientDir(): string {
 // Cached, containment-checked reads over the studio client build.
 const readClientFile = createCachedDirReader(clientDir);
 
+/**
+ * The shell is the ONE response that must never outlive the build it names.
+ *
+ * `index.html` references content-hashed assets that exist only in the
+ * container image it was built into, and those assets are served
+ * `immutable` — so the shell is the exact inverse: cache it and a browser
+ * pins itself to a build whose `/studio-assets/*` are gone the moment that
+ * image stops running. A Modal deploy is precisely that event, and it is
+ * not instantaneous: the default rolling strategy keeps old containers
+ * serving alongside new ones (they linger up to `scaledown_window`, 300s in
+ * `aai-server/modal_deploy.py`), and Modal load-balances every request
+ * independently. A cached shell therefore turns into a hard 404 on the
+ * entry script — a white page with no JS running to recover from it.
+ *
+ * It carried NO cache headers at all, which is not the same as "not
+ * cached": with no `Cache-Control` and no validator, a heuristically
+ * caching intermediary is free to reuse it. `no-store` says the quiet part
+ * out loud, and costs one ~2 kB revalidation-free fetch per navigation.
+ */
+const SHELL_CACHE_CONTROL = "no-store";
+
 // Both are fixed for the process lifetime (the sandbox backend, the auth
 // binding, and the build output don't change under a running server), and
 // `GET /` is the shell's hot path.
-let _pageHeaders: { "Content-Security-Policy": string } | undefined;
+let _pageHeaders: { "Content-Security-Policy": string; "Cache-Control": string } | undefined;
 let _pageHtml: { buf: Buffer; str: string } | undefined;
 
 /** `GET /` — the studio app shell (or the not-built fallback). */
 export async function handleStudioPage(c: AppContext): Promise<Response> {
   _pageHeaders ??= {
     "Content-Security-Policy": studioCsp(process.env, c.env.auth?.clientConfig),
+    "Cache-Control": SHELL_CACHE_CONTROL,
   };
   const html = await readClientFile("index.html");
   if (!html) return c.html(FALLBACK_HTML, 200, _pageHeaders);
