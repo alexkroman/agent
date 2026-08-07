@@ -4,10 +4,15 @@
 import { describe, expect, it } from "vitest";
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL, assemblyAILlm } from "./assemblyai.ts";
 
+// Mirrors the module-private TOOLS_REQUIRE_NO_REASONING. Duplicated rather
+// than exported: the set is an implementation detail of the factory, and the
+// spec only needs to know which side of it the default falls on.
+const TOOLS_REQUIRE_NO_REASONING_IDS = ["gpt-5.6-luna", "gpt-5.6-terra"];
+
 describe("assemblyAILlm (LLM factory)", () => {
-  it("defaults the model to gpt-5.6-luna", () => {
-    expect(ASSEMBLYAI_LLM_DEFAULT_MODEL).toBe("gpt-5.6-luna");
-    expect(assemblyAILlm().options.model).toBe("gpt-5.6-luna");
+  it("defaults the model to gpt-5.5", () => {
+    expect(ASSEMBLYAI_LLM_DEFAULT_MODEL).toBe("gpt-5.5");
+    expect(assemblyAILlm().options.model).toBe("gpt-5.5");
   });
 
   it("keeps an explicit model", () => {
@@ -33,8 +38,16 @@ describe("assemblyAILlm (LLM factory)", () => {
     // too — `assemblyAILlm()` with no arguments has to be a descriptor that can
     // call tools, since that is what the string shorthand and every unset
     // pipeline stage resolve to.
-    it("covers the bare factory, since the default model is one of them", () => {
-      expect(assemblyAILlm().options.reasoningEffort).toBe("none");
+    it("leaves the bare factory tool-capable, whichever side of the set the default sits", () => {
+      // The invariant, not the incidental fact: `assemblyAILlm()` with no
+      // arguments must be able to call tools, because that is what the string
+      // shorthand and every unset pipeline stage resolve to. Two ways to
+      // satisfy it — a default INSIDE the set with `"none"` filled in, or one
+      // OUTSIDE it that needs no switch. Pinned this way so changing the
+      // default id cannot silently produce the third, broken combination.
+      const { model, reasoningEffort } = assemblyAILlm().options;
+      const requiresNone = TOOLS_REQUIRE_NO_REASONING_IDS.includes(model as string);
+      expect(requiresNone ? reasoningEffort : "none").toBe("none");
     });
 
     it("leaves an explicit effort alone — naming a value is deliberate", () => {

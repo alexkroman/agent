@@ -473,7 +473,7 @@ describe("assemblyAIStt STT adapter — endpointing (min/max_turn_silence)", () 
     expect(fake.params.minTurnSilence).toBe(DEFAULT_MIN_TURN_SILENCE_MS);
     expect(fake.params.minTurnSilence).toBe(1600);
     expect(fake.params.maxTurnSilence).toBe(DEFAULT_MAX_TURN_SILENCE_MS);
-    expect(fake.params.maxTurnSilence).toBe(2500);
+    expect(fake.params.maxTurnSilence).toBe(3500);
     await session.close();
   });
 

@@ -70,14 +70,14 @@ describe("agent()", () => {
     const { llm } = assemblyAIPipeline();
     expect(llm.options.reasoningEffort).toBe("none");
     // The descriptor must carry a model that accepts the parameter. Pinned
-    // alongside the effort because the two are coupled: on the current default
-    // the factory fills the same `"none"` (gpt-5.6-luna is in
-    // TOOLS_REQUIRE_NO_REASONING, where it is a tool-calling requirement), so
-    // the preset's argument is a backstop — but under a default outside that
-    // set it is the only thing standing between the default pipeline and
-    // per-turn thinking latency, and this pair is what makes a change to
-    // either fail loudly.
-    expect(llm.options.model).toBe("gpt-5.6-luna");
+    // alongside the effort because the two are coupled: the current default
+    // (`gpt-5.5`) is OUTSIDE TOOLS_REQUIRE_NO_REASONING, so the factory fills
+    // nothing and the preset's explicit `"none"` is the only thing standing
+    // between the default pipeline and per-turn thinking latency — measured
+    // 1786ms p50 time-to-first-token on gpt-5.5's server-side default against
+    // 999ms with reasoning off. This pair is what makes a change to either
+    // fail loudly.
+    expect(llm.options.model).toBe("gpt-5.5");
 
     // An agent with no providers at all gets the same treatment. Asserted
     // through toAgentConfig, not agent(): the default fill runs at the

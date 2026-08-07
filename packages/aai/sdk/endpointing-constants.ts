@@ -163,31 +163,28 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
  * number the hesitation failures were actually measured against, and moving
  * 1536 -> 3500 is the whole of the split fix.
  *
- * **CURRENTLY 2500, down from 3500 — a deliberate trim, and the one number in
- * this pair with no measurement of its own.** 1600 was tried alongside a
- * minimum of 800 and reverted; see that constant's doc for the run. Since the
- * two moved together there, that run cannot apportion the damage between them,
- * so what is known is only that 1600/800 loses to 3500/1600 — not that a
- * ceiling of 2500 is safe on its own.
+ * **Trimmed to 2500 and put back.** That trim was the one number in this pair
+ * with no measurement of its own: it was reasoned from the 800/1600 run, but
+ * the minimum and the maximum moved together there, so that run can only show
+ * that 1600/800 loses to 3500/1600 — never that a ceiling of 2500 is safe
+ * alone. 1600/3500 is the configuration with a measured 0.68 (twice, on two
+ * independent runs); 2500 never had one.
  *
- * What 2500 does buy is the ORDERING, which 1600 broke. It exceeds
- * {@link DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS} (2000) again, so a barge-in on
- * an utterance that never reads complete still finds that utterance OPEN when
- * the 2000 ms recovery window fires, and the deferral in
- * `host/transports/pipeline-recovery.ts` is reached rather than skipped. At
- * 1600 the force-end landed first and the resume proceeded instead — a
- * behaviour change, not a tuning change, and the reason that value could not
- * simply be kept for its latency. It also stays clear of the service's own 1536
- * default, so the ceiling is ours rather than silently the service's, which is
- * the state this constant was introduced to escape.
+ * The ordering the trim was protecting still holds at 3500, with more room:
+ * it exceeds {@link DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS} (2000), so a
+ * barge-in on an utterance that never reads complete still finds that
+ * utterance OPEN when the 2000 ms recovery window fires, and the deferral in
+ * `host/transports/pipeline-recovery.ts` is reached rather than skipped. At a
+ * ceiling of 1600 the force-end landed first and the resume proceeded instead
+ * — a behaviour change, not a tuning change. 3500 also stays well clear of the
+ * service's own 1536 default, so the ceiling is ours rather than silently the
+ * service's, which is the state this constant was introduced to escape.
  *
- * What it costs is ~1s of pause tolerance for hesitant speech against 3500 —
- * paid only by utterances that never read complete, which is the whole reason
- * this is the knob to trim rather than the minimum. The measured tail is
- * content-driven and long (p90 endpoint latency ~4.0-4.6s at every setting
- * swept), so a hesitation that used to be held to 3500 now force-ends ~1s
- * earlier and splits. If splits reappear on hesitant, non-spelling utterances
- * while spelled identifiers stay intact, this is the value to put back to 3500 —
- * that asymmetry is the signature that distinguishes it from the minimum.
+ * What 3500 costs is ~1s of extra pause tolerance for hesitant speech, paid
+ * ONLY by utterances that never read as complete — which is the whole reason
+ * this is the knob to trim rather than the minimum, and equally the reason
+ * trimming it buys so little. The measured tail is content-driven and long
+ * (p90 endpoint latency ~4.0-4.6s at every setting swept), so the ceiling is
+ * not what makes a slow turn slow.
  */
-export const DEFAULT_MAX_TURN_SILENCE_MS = 2500;
+export const DEFAULT_MAX_TURN_SILENCE_MS = 3500;
