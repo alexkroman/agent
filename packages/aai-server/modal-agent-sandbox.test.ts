@@ -30,6 +30,7 @@ import {
   makeFakeSandbox,
   makeHarnessFile,
 } from "./_sandbox-vm-test-utils.ts";
+import { sleep } from "./_sleep.ts";
 import {
   AGENT_BUNDLE_REMOTE_PATH,
   AGENT_ENV_REMOTE_PATH,
@@ -77,17 +78,39 @@ function execEnv(sb: Awaited<ReturnType<typeof spawn>>["sb"]): Record<string, st
 }
 
 describe("spawnModalAgentServer", () => {
-  it("writes both boot artifacts before exec'ing the harness", async () => {
-    // The ordering IS the contract: agent mode reads its bundle and env from
-    // disk at boot, so an exec that raced the writes would boot a guest with
-    // no agent. Nothing arrives afterwards — there is no control channel.
+  it("writes both boot artifacts CONCURRENTLY, and both before exec'ing the harness", async () => {
+    // Two properties in one sequence, because they constrain each other.
+    //
+    // BEFORE is the correctness half and the contract: agent mode reads its
+    // bundle and env from disk at boot, so an exec that raced the writes would
+    // boot a guest with no agent. Nothing arrives afterwards — there is no
+    // control channel.
+    //
+    // CONCURRENTLY is the latency half, and it needs its own assertion because
+    // the obvious one cannot see it: the writes are issued in array order
+    // either way, so a `write, write, exec` transcript reads identically
+    // whether the second write waited for the first or not. Serialized, the
+    // tiny env write paid a full Modal round trip queued behind the ~8 MB
+    // bundle's, on the critical path of every cold session.
     const order: string[] = [];
+    let writesInFlight = 0;
+    let maxWritesInFlight = 0;
     const fake = makeFakeProc();
     const sb = makeFakeSandbox(fake);
     const write = sb.filesystem.writeText.bind(sb.filesystem);
     sb.filesystem.writeText = async (data, remotePath) => {
       order.push(`write:${remotePath}`);
-      await write(data, remotePath);
+      writesInFlight += 1;
+      maxWritesInFlight = Math.max(maxWritesInFlight, writesInFlight);
+      try {
+        // A macrotask, not a microtask: a serialized caller resumes on the
+        // first write's resolution, so only a real gap lets the second write
+        // start while this one is still counted in flight.
+        await sleep(0);
+        await write(data, remotePath);
+      } finally {
+        writesInFlight -= 1;
+      }
     };
     const exec = sb.exec.bind(sb);
     sb.exec = async (command, params) => {
@@ -113,6 +136,88 @@ describe("spawnModalAgentServer", () => {
       `write:${AGENT_ENV_REMOTE_PATH}`,
       "exec",
     ]);
+    expect(maxWritesInFlight).toBe(2);
+  });
+
+  it("starts the tunnel lookup before the boot-artifact writes", async () => {
+    // The lookup needs nothing but the sandbox, so it belongs ahead of the
+    // ~8 MB bundle write rather than beside the exec that follows it — that
+    // way its round trip runs inside the write's window instead of after it.
+    // Asserted on the SEQUENCE rather than on wall-clock: the win is entirely
+    // in where the call is issued, and a timing assertion would only measure
+    // the fake.
+    const order: string[] = [];
+    const fake = makeFakeProc();
+    const sb = makeFakeSandbox(fake);
+    const tunnels = sb.tunnels.bind(sb);
+    sb.tunnels = async () => {
+      order.push("tunnels");
+      return await tunnels();
+    };
+    const write = sb.filesystem.writeText.bind(sb.filesystem);
+    sb.filesystem.writeText = async (data, remotePath) => {
+      order.push(`write:${remotePath}`);
+      await write(data, remotePath);
+    };
+
+    const harnessPath = await makeHarnessFile();
+    await spawnModalAgentServer(
+      {
+        harnessPath,
+        slug: "tunnel-first",
+        workerCode: WORKER,
+        workerSha256: SHA,
+        agentEnv: {},
+        name: "agent-tunnel-first-v1",
+      },
+      makeCtx(sb),
+    );
+
+    expect(order[0]).toBe("tunnels");
+  });
+
+  it("does not leave the tunnel lookup unhandled when a boot write fails", async () => {
+    // The lookup is started before the writes and awaited after the exec, so a
+    // write that throws skips the await entirely. Without the containing
+    // `.catch`, a tunnel lookup that rejects afterwards takes the process down
+    // via unhandledRejection — a spawn failure turning into a server crash.
+    const fake = makeFakeProc();
+    const sb = makeFakeSandbox(fake);
+    const { promise: tunnelFailure, reject: failTunnels } =
+      Promise.withResolvers<Record<number, { host: string; port: number }>>();
+    sb.tunnels = () => tunnelFailure;
+    sb.filesystem.writeText = () => Promise.reject(new Error("write refused"));
+
+    const unhandled: unknown[] = [];
+    const onUnhandled = (err: unknown): void => {
+      unhandled.push(err);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const harnessPath = await makeHarnessFile();
+      await expect(
+        spawnModalAgentServer(
+          {
+            harnessPath,
+            slug: "write-fails",
+            workerCode: WORKER,
+            workerSha256: SHA,
+            agentEnv: {},
+            name: "agent-write-fails-v1",
+          },
+          makeCtx(sb),
+        ),
+      ).rejects.toThrow("write refused");
+      failTunnels(new Error("tunnel lookup failed"));
+      // Unhandled rejections are reported a macrotask after the fact.
+      await sleep(0);
+      await sleep(0);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+
+    expect(unhandled).toEqual([]);
+    expect(sb.terminate).toHaveBeenCalled();
   });
 
   it("delivers the worker bundle and the agent env as files", async () => {

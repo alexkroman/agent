@@ -100,10 +100,25 @@ export async function spawnModalAgentServer(
     opts.imageTag,
   );
   try {
+    // The tunnel lookup depends on nothing but the sandbox existing, so it
+    // starts HERE rather than beside the exec below. The ~8 MB bundle write is
+    // the longest single step of an agent spawn, and starting the lookup ahead
+    // of it runs that round trip INSIDE the write's window instead of after
+    // it. Contained immediately: the await is several statements away, and on
+    // the write-failure path nothing ever awaits this — a rejection then must
+    // not surface as unhandled.
+    const tunnelsPromise = sb.tunnels();
+    tunnelsPromise.catch(() => undefined);
+
     // Boot artifacts land on the sandbox filesystem BEFORE exec — the guest
     // reads (and hash-verifies) them at boot; nothing arrives over a channel.
-    await sb.filesystem.writeText(opts.workerCode, AGENT_BUNDLE_REMOTE_PATH);
-    await sb.filesystem.writeText(JSON.stringify(opts.agentEnv), AGENT_ENV_REMOTE_PATH);
+    // The two writes target different paths and neither reads the other, so
+    // they go together: serialized, the tiny env write paid a full round trip
+    // queued behind the bundle's.
+    await Promise.all([
+      sb.filesystem.writeText(opts.workerCode, AGENT_BUNDLE_REMOTE_PATH),
+      sb.filesystem.writeText(JSON.stringify(opts.agentEnv), AGENT_ENV_REMOTE_PATH),
+    ]);
 
     const token = randomBytes(32).toString("hex");
     const [proc, tunnels] = await Promise.all([
@@ -122,7 +137,7 @@ export async function spawnModalAgentServer(
           ...guestExecBaseEnv(),
         },
       }),
-      sb.tunnels(),
+      tunnelsPromise,
     ]);
     // Before the readiness poll: a bundle that throws at load exits here, and
     // its stderr IS the diagnosis (see startGuestLogging).

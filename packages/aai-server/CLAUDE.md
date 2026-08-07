@@ -790,6 +790,34 @@ down, like the file-length allowlist.
   race a readiness wait burns its whole budget and then blames the network.
   The host-side `pollGuestHealth` remains for the subprocess backend, which
   has no probes.
+
+  **The probe INTERVAL is dead time on every spawn**, which is why it is 100ms
+  and not Modal's more conversational default: the harness binds its port
+  somewhere between two evaluations, so a spawn waits half an interval on
+  average after the guest can already serve. The probe is a TCP connect to a
+  listening localhost port inside an otherwise-idle container, so the interval
+  buys nothing to offset that. It stops at 100ms rather than going lower
+  because the probe's RESULT still crosses Modal's control plane to reach the
+  host, and below ~100ms that propagation is what dominates. Was 250ms
+  (~125ms average waste).
+- **An agent spawn's steps are ordered by what they actually depend on**, not
+  by the order they read in. Two of them are only incidentally sequential and
+  must not be re-serialized (`modal-agent-sandbox.ts`):
+  - The bundle write and the env write target different paths and neither
+    reads the other, so they go together. Serialized, the tiny env write paid
+    a full Modal round trip queued behind the ~8 MB bundle's.
+  - `sb.tunnels()` needs nothing but the sandbox to exist, so it is issued
+    BEFORE the writes rather than beside the exec that follows them — its
+    round trip then runs inside the bundle write's window instead of after it.
+    It is `.catch`-contained at the point it is issued, because the await is
+    several statements away: a write that throws skips the await entirely, and
+    a tunnel lookup rejecting afterwards would be an unhandled rejection —
+    a failed spawn turning into a dead server process.
+
+  Both are pinned by tests that fail against the serialized shape, which they
+  have to be: the calls are ISSUED in the same order either way, so a
+  `write, write, exec` transcript reads identically whether or not anything
+  waited. The concurrency test asserts on writes in flight, not on sequence.
 - **Transport**: STUDIO/INSPECT guests get a WebSocket control channel the
   host dials through the sandbox's Modal tunnel (`encryptedPorts: [8080]`;
   JSON-RPC on `/ws`) once the probe reports ready — the dial's retry
