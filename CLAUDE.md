@@ -87,7 +87,13 @@ was the pre-push hook — and `git push --no-verify` skipped them entirely.
   `as unknown as`) across `packages/` and fails on any **net-new** total
   versus the merge base. The baseline only ratchets down — removing a hatch
   lowers the bar for the next branch, and you can't silently add one. Fix the
-  underlying type/lint error instead of suppressing it.
+  underlying type/lint error instead of suppressing it. On failure it **names
+  the new occurrences** (`file:line` plus the source line) under each pattern
+  that grew, so you don't have to re-diff against the merge base by hand to
+  find the line you just added. They are paired against the base by file +
+  line CONTENT, never by line number — inserting an import above an existing
+  hatch shifts every hatch below it, and reporting those as new would bury the
+  one line that is.
 
   **`as unknown as` is the one to watch, and the reason it is counted.** It
   launders a value past the checker without tripping `as any`, and while it

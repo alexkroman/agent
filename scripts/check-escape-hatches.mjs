@@ -98,16 +98,63 @@ function git(args, { allowNoMatch = false } = {}) {
   }
 }
 
-/** Count lines matching `re`, optionally at a committed ref instead of the work tree. */
-function countMatches(re, ref) {
-  const args = ["grep", "-hIE"];
+/**
+ * Split one `git grep -n` output line into `{ file, line, text }`.
+ *
+ * With a ref the format is `<ref>:<file>:<line>:<text>`; without one it is
+ * `<file>:<line>:<text>`. Slice off the prefixes positionally rather than
+ * splitting on ":" — the matched source line very often contains colons.
+ */
+function parseMatch(raw, ref) {
+  const rest = ref ? raw.slice(ref.length + 1) : raw;
+  const fileEnd = rest.indexOf(":");
+  const lineEnd = rest.indexOf(":", fileEnd + 1);
+  return {
+    file: rest.slice(0, fileEnd),
+    line: Number(rest.slice(fileEnd + 1, lineEnd)),
+    text: rest.slice(lineEnd + 1).trim(),
+  };
+}
+
+/** List lines matching `re`, optionally at a committed ref instead of the work tree. */
+function listMatches(re, ref) {
+  const args = ["grep", "-nIE"];
   if (!ref) args.push("--untracked");
   args.push("-e", re);
   if (ref) args.push(ref);
   args.push("--", ...PATHSPECS);
   const out = git(args, { allowNoMatch: true });
-  if (out === "") return 0;
-  return out.split("\n").filter((line) => line.length > 0).length;
+  if (out === "") return [];
+  return out
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => parseMatch(line, ref));
+}
+
+/**
+ * Work-tree matches that aren't accounted for by a base match.
+ *
+ * Matched as a MULTISET keyed on `file` + trimmed line text, never on line
+ * number: adding an import above an existing hatch shifts every line below it,
+ * and reporting those as new would bury the one line that is. Pairing by
+ * content means a hatch that only MOVED within its file cancels out, and a
+ * second identical hatch in the same file still surfaces (the first claims the
+ * base entry, the second has nothing left to pair with).
+ */
+function newOccurrences(baseMatches, workMatches) {
+  const unclaimed = new Map();
+  for (const m of baseMatches) {
+    const key = `${m.file}\t${m.text}`;
+    unclaimed.set(key, (unclaimed.get(key) ?? 0) + 1);
+  }
+  const added = [];
+  for (const m of workMatches) {
+    const key = `${m.file}\t${m.text}`;
+    const left = unclaimed.get(key) ?? 0;
+    if (left > 0) unclaimed.set(key, left - 1);
+    else added.push(m);
+  }
+  return added;
 }
 
 function resolveBase() {
@@ -136,11 +183,19 @@ let baseTotal = 0;
 let workTotal = 0;
 const rows = [];
 for (const { label, re } of PATTERNS) {
-  const baseN = countMatches(re, base);
-  const workN = countMatches(re, null);
+  const baseMatches = listMatches(re, base);
+  const workMatches = listMatches(re, null);
+  const baseN = baseMatches.length;
+  const workN = workMatches.length;
   baseTotal += baseN;
   workTotal += workN;
-  rows.push({ label, baseN, workN, delta: workN - baseN });
+  rows.push({
+    label,
+    baseN,
+    workN,
+    delta: workN - baseN,
+    added: newOccurrences(baseMatches, workMatches),
+  });
 }
 
 const width = Math.max(...PATTERNS.map((p) => p.label.length));
@@ -151,12 +206,34 @@ for (const { label, baseN, workN, delta } of rows) {
 }
 console.log(`  ${"TOTAL".padEnd(width)}  base=${baseTotal}  now=${workTotal}`);
 
+// Cap the per-pattern listing. A branch that trips this by hundreds does not
+// need hundreds of lines to know what it did, and the count above already
+// carries the magnitude.
+const MAX_SHOWN = 20;
+const MAX_TEXT = 100;
+
 if (workTotal > baseTotal) {
-  const added = rows.filter((r) => r.delta > 0).map((r) => `${r.label} (+${r.delta})`);
+  const grown = rows.filter((r) => r.delta > 0);
+  const added = grown.map((r) => `${r.label} (+${r.delta})`);
   console.error(
     `\ncheck-hatches: ${workTotal - baseTotal} net-new escape hatch(es) ` +
-      `introduced: ${added.join(", ")}.\n` +
-      "Remove the new suppression(s), or fix the underlying type/lint error " +
+      `introduced: ${added.join(", ")}.`,
+  );
+  // Counts alone leave you diffing against the merge base by hand to find the
+  // line you just added, which is the whole of the work this gate asks for.
+  for (const { label, added: occurrences } of grown) {
+    if (occurrences.length === 0) continue;
+    console.error(`\n  ${label}:`);
+    for (const { file, line, text } of occurrences.slice(0, MAX_SHOWN)) {
+      const shown = text.length > MAX_TEXT ? `${text.slice(0, MAX_TEXT - 1)}…` : text;
+      console.error(`    ${file}:${line}  ${shown}`);
+    }
+    if (occurrences.length > MAX_SHOWN) {
+      console.error(`    … and ${occurrences.length - MAX_SHOWN} more`);
+    }
+  }
+  console.error(
+    "\nRemove the new suppression(s), or fix the underlying type/lint error " +
       "instead of silencing it. The baseline only ratchets down.",
   );
   process.exit(1);
