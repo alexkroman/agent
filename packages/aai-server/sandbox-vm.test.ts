@@ -8,8 +8,8 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { baseOpts, makeHarnessFile } from "./_sandbox-vm-test-utils.ts";
+import { DEFAULT_SANDBOX_IMAGE } from "./modal-context.ts";
 import { localHarnessImageTag } from "./modal-harness-image.ts";
-import { DEFAULT_SANDBOX_IMAGE } from "./modal-sandbox.ts";
 import { agentSandboxName } from "./sandbox-directory.ts";
 import { describeBundle, guestUnderstandsBundleUrl, spawnAgentServer } from "./sandbox-vm.ts";
 import * as subprocessSandbox from "./subprocess-sandbox.ts";
