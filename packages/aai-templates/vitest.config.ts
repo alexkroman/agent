@@ -19,6 +19,7 @@ export default defineConfig({
       "templates.test.ts",
       "template-api-coverage.test.ts",
       "claude-md-limit.test.ts",
+      "escape-hatch-scope.test.ts",
       "templates/*/*.test.ts",
     ],
     coverage: {

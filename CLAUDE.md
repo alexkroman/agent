@@ -95,6 +95,17 @@ was the pre-push hook — and `git push --no-verify` skipped them entirely.
   hatch shifts every hatch below it, and reporting those as new would bury the
   one line that is.
 
+  **Markdown is not scanned**, and the reason is worth keeping: the patterns
+  are plain substrings with no notion of code versus prose, so any doc that
+  *discusses* a hatch scores as one. `CHANGELOG.md` is the sharp edge —
+  changesets generates it from changeset summaries, so a summary describing
+  this script's own `as any` / `as unknown as` patterns rendered into
+  `packages/aai/CHANGELOG.md` and failed the **Version Packages PR**, on a
+  file no human wrote and with nothing an author could see at review time.
+  A changeset summary may name a pattern freely. `escape-hatch-scope.test.ts`
+  guards the exclusion, and asserts the patterns really do match prose so the
+  test can't pass by the patterns quietly becoming narrower.
+
   **`as unknown as` is the one to watch, and the reason it is counted.** It
   launders a value past the checker without tripping `as any`, and while it
   went uncounted it became the dominant idiom here: 210 of them against 3

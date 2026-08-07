@@ -80,11 +80,32 @@ const PATTERNS = [
 // it is the only file whose SOURCE is a list of the patterns. Counting it
 // makes the gate self-referential: the six pattern strings in PATTERNS above
 // are scored as six hatches, and editing this comment moves the ratchet.
+//
+// MARKDOWN IS EXCLUDED FOR THAT SAME REASON, and learning it cost a blocked
+// release. These patterns are plain substrings with no notion of code versus
+// prose, so any doc that *discusses* a hatch is scored as one. `CHANGELOG.md`
+// is the sharp edge: changesets renders it from changeset summaries, so the
+// summary for #996 — which described fixing this very script's `as any` and
+// `as unknown as` patterns — became `packages/aai/CHANGELOG.md:47` and failed
+// the Version Packages PR with `+1 as any, +1 as unknown as`. Nothing an
+// author could see at review time, on a file no human wrote, blocking every
+// release whose changesets happen to name a pattern. The scaffold guide had
+// the milder version of the same bug: "the same way as any secret" sat in the
+// baseline as a phantom `as any` (which is why this change drops the total by
+// one).
+//
+// The trade-off: a genuine `@ts-expect-error` inside a ```ts doc fence is no
+// longer counted. That is deliberate and much the smaller risk — those fences
+// are prose examples compiled separately by `check:doc-examples`, whereas the
+// false positives above are demonstrated, release-blocking, and unfixable by
+// the author who trips them.
 const PATHSPECS = [
   "packages",
   "scripts",
   ":!packages/**/dist/**",
   ":!scripts/check-escape-hatches.mjs",
+  ":!packages/**/*.md",
+  ":!scripts/**/*.md",
 ];
 
 /** Run git, returning stdout. Throws on real failure (not "no matches"). */
