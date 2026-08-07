@@ -6,8 +6,20 @@ The `aai` CLI (`@alexkroman1/aai-cli`). Repo-wide conventions live in the root
 
 ## Commands and exports
 
-Binary: `aai` — subcommands: init, dev, test, build, list, pull, push,
+Binary: `aai` — subcommands: init, dev, test, build, eject, list, pull, push,
 publish, delete, login, secret, storage, templates.
+
+**`aai eject` is a retrofit, not the self-hosting path.** Self-hosting is the
+DEFAULT now: the scaffold ships `server.mjs` and a `start` script, so every
+project `aai init`/`aai pull` produces already runs with `npm start` — no CLI
+at run time, no bundler, no platform account (see
+`packages/aai-templates/CLAUDE.md`). `eject` exists only for projects that
+predate that and are missing the two files. It COPIES `server.mjs` out of the
+resolved scaffold rather than writing its own contents: two definitions of the
+entrypoint would drift, and the one nobody runs locally is the one that would
+rot. An existing `scripts.start` is left alone even under `--force` — that flag
+is about replacing the entrypoint file, and silently rewriting the command a
+project boots with is a larger act.
 
 **`bin.mjs` is the bin in BOTH layouts** — the source checkout (where it loads
 `cli.ts`) and the published tarball (where only `dist/` ships, so it loads

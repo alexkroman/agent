@@ -16,10 +16,12 @@ import { type ChildProcess, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { ofetch } from "ofetch";
 import type { Browser } from "playwright";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import {
   aai,
+  aaiEnv,
   buildCli,
   detachedCli,
   dir,
@@ -119,6 +121,76 @@ describe("pack + build: template workflows", () => {
     }
     aai(aaiBin, ["test"], projectDir);
     aai(aaiBin, ["build", "--skip-tests"], projectDir);
+  });
+});
+
+describe("self-hosted server: npm start", () => {
+  /**
+   * The scaffold ships `server.mjs` and a `start` script, so every project can
+   * be run on its own without the CLI, the platform, or a bundler. This is the
+   * only tier that can prove it: the entrypoint resolves `@alexkroman1/aai-ui`'s
+   * prebuilt client through a real INSTALL, imports `agent.ts` through Node's
+   * own type stripping, and boots a real HTTP + WebSocket server.
+   *
+   * `math-buddy` rather than `simple`, because its `agent.ts` imports
+   * `./system-prompt.md?raw` — a Vite convention Node cannot resolve on its
+   * own, and the reason `server.mjs` registers module hooks before importing
+   * the agent. On `simple` that whole mechanism would go unexercised, and it
+   * covers 9 of the shipped templates.
+   */
+  test.for(["math-buddy"])("boots a scaffolded %s project and serves it", async (template, ctx) => {
+    const projectDir = path.join(tmpDir, "_self-hosted");
+    aai(aaiBin, ["init", projectDir, "-t", template, "--skip-deploy"], tmpDir);
+    try {
+      installDeps(registry, projectDir);
+    } catch (err) {
+      if (!isRegistryProxyFailure(err)) throw err;
+      ctx.skip(`pnpm install failed (registry proxy issue): ${String(err).slice(0, 200)}`);
+    }
+
+    // PORT=0 lets the OS assign one — the suite runs concurrently with other
+    // servers, and a fixed port is an EADDRINUSE flake waiting to happen.
+    const child = spawn("npm", ["start"], {
+      cwd: projectDir,
+      env: { ...aaiEnv(), PORT: "0" },
+      stdio: "pipe",
+    });
+    try {
+      const port = await new Promise<number>((resolve, reject) => {
+        let buf = "";
+        child.stdout?.on("data", (chunk: Buffer) => {
+          buf += chunk.toString();
+          // The line server.mjs prints on listen: "<name> listening on <url>".
+          const match = buf.match(/listening on http:\/\/[^:]+:(\d+)/);
+          if (match) resolve(Number(match[1]));
+        });
+        child.on("error", reject);
+        child.on("exit", (code) =>
+          reject(new Error(`npm start exited with code ${code} before listening`)),
+        );
+      });
+
+      await waitForHealth(`http://127.0.0.1:${port}/health`, child);
+      const health = await ofetch<{ status: string; name: string }>(
+        `http://127.0.0.1:${port}/health`,
+      );
+      expect(health).toMatchObject({ status: "ok", name: "Math Buddy" });
+
+      // The greeting proves createAgentServer read it off the agent rather
+      // than the caller restating it — the silent-drop bug that command exists
+      // to prevent. The page proves defaultClientDir() resolved from the
+      // installed package, which no in-tree test can check.
+      const config = await ofetch<{ name: string; greeting?: string }>(
+        `http://127.0.0.1:${port}/client-config`,
+      );
+      expect(config.greeting).toBeTruthy();
+      expect(await ofetch(`http://127.0.0.1:${port}/`, { responseType: "text" })).toContain(
+        "<!DOCTYPE html>",
+      );
+    } finally {
+      child.kill();
+      await waitForExit(child);
+    }
   });
 });
 

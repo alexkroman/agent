@@ -145,6 +145,19 @@ async function readJsonFile(file: string): Promise<Manifest | null> {
 }
 
 /**
+ * Directory holding the base scaffold — the files every project gets
+ * underneath its template (package.json, tsconfig, `server.mjs`, …).
+ *
+ * Exported so `aai eject` can copy one file out of it rather than carrying a
+ * second copy of that file's contents: the scaffold is the single definition
+ * of the self-hosted entrypoint, and a project retrofitted with `eject` gets
+ * byte-identical output to one `aai init` scaffolded.
+ */
+export function scaffoldDir(): string {
+  return path.join(resolveTemplatesDir(), "scaffold");
+}
+
+/**
  * Layer the base scaffold (package.json, tsconfig, …) into targetDir
  * WITHOUT overwriting anything already there. Shared by `aai init`
  * (underneath a template) and `aai pull` (underneath the studio workspace
@@ -156,10 +169,10 @@ async function readJsonFile(file: string): Promise<Manifest | null> {
  * {@link layerScaffoldManifest}.
  */
 export async function layerScaffold(targetDir: string): Promise<void> {
-  const scaffoldDir = path.join(resolveTemplatesDir(), "scaffold");
-  if (!existsSync(scaffoldDir)) return;
-  await fs.cp(scaffoldDir, targetDir, { recursive: true, force: false, errorOnExist: false });
-  await layerScaffoldManifest(scaffoldDir, targetDir);
+  const dir = scaffoldDir();
+  if (!existsSync(dir)) return;
+  await fs.cp(dir, targetDir, { recursive: true, force: false, errorOnExist: false });
+  await layerScaffoldManifest(dir, targetDir);
 }
 
 /**

@@ -6,6 +6,7 @@
   },
   "scripts": {
     "dev": "aai dev",
+    "start": "node server.mjs",
     "build": "aai build",
     "test": "aai test",
     "publish:agent": "aai publish"
