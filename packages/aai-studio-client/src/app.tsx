@@ -397,7 +397,7 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
             // the panel in its loading state.
             chatHistory={chat.data ?? (chat.isError ? [] : undefined)}
             chatSession={chatSession.data}
-            sessionError={chatSession.isError}
+            sessionError={chatSession.error}
             toolLabels={toolLabels.data}
             onSessionStale={() =>
               void queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions })

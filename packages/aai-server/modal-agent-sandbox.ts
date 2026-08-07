@@ -29,6 +29,7 @@ import {
   DEFAULT_SANDBOX_TIMEOUT_MS,
   guestSandboxResources,
 } from "./modal-sandbox-env.ts";
+import { SandboxUnavailableError } from "./sandbox-errors.ts";
 import { resolveSandboxRole, sandboxTags } from "./sandbox-role.ts";
 import {
   type AgentServerHandle,
@@ -151,6 +152,8 @@ export async function spawnModalAgentServer(
   } catch (err) {
     // Never leak a sandbox whose agent server failed to come up.
     await sb.terminate().catch(() => undefined);
-    throw new Error(`Modal agent-server spawn failed: ${errorMessage(err)}`, { cause: err });
+    throw new SandboxUnavailableError(`Modal agent-server spawn failed: ${errorMessage(err)}`, {
+      cause: err,
+    });
   }
 }

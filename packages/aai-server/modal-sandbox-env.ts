@@ -159,15 +159,22 @@ export function parseSandboxLimitsFromEnv(
  * Parses guest-sandbox region pinning from `MODAL_SANDBOX_REGION`
  * (comma-separated for multiple acceptable regions, e.g. `"us-east-1"`).
  *
- * Unpinned, Modal places sandboxes wherever it finds capacity — including a
- * different continent and cloud than the platform server (observed:
- * server in us-east-1/AWS, sandboxes in uk-london-1/OCI). The host↔guest
- * WebSocket link over the Modal tunnel is a network hop, so every
- * every host↔guest exchange pays
- * that RTT — serialized inside the LLM loop of a latency-budgeted voice
- * turn. `modal_deploy.py` sets this variable to the same region constant
- * that pins the web server, so production host and guests are co-located
- * by construction; local dev stays unpinned.
+ * **Production leaves this UNSET on purpose** — an operator override, not a
+ * deployed default. Pinning trades placement capacity for locality, and
+ * capacity is the scarcer of the two: a spawn Modal cannot schedule in the
+ * ~50s `sandbox.tunnels()` waits fails the whole session with
+ * `Sandbox operation timed out`, which is what pinning every guest to the
+ * web server's single region produced under load.
+ *
+ * The locality it bought is real but narrower than it looks. Unpinned, Modal
+ * places sandboxes wherever it finds capacity — including a different
+ * continent and cloud than the platform server (observed: server in
+ * us-east-1/AWS, sandboxes in uk-london-1/OCI). But AGENT guests hold no
+ * host channel at all: voice clients dial the sandbox tunnel directly, so a
+ * voice turn crosses the host↔guest hop zero times. Only the STUDIO's
+ * control-channel RPCs pay the RTT, and those are not inside a latency
+ * budget the way a voice turn is. Set it (comma-separated for several
+ * acceptable regions) when an environment wants locality back.
  */
 export function parseSandboxRegionsFromEnv(
   env: Record<string, string | undefined>,
