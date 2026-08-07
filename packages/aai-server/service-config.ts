@@ -22,7 +22,7 @@ import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./chat-store.ts";
 import { resolveHarnessPath } from "./constants.ts";
 import { endLiveStreams } from "./live-streams.ts";
-import { isModalConfigured, modalRequiredError, prewarmModal } from "./modal-sandbox.ts";
+import { isModalConfigured, modalRequiredError, prewarmModal } from "./modal-context.ts";
 import { createModalSandboxDirectory } from "./modal-sandbox-directory.ts";
 import type { OrchestratorOpts } from "./orchestrator.ts";
 import { schedulePlatformSweeps } from "./pg-cron.ts";

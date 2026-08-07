@@ -26,10 +26,15 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
 - `sandbox-slots.ts` — the per-slug slot cache: `{ slug, version?, sandbox? }`
   plus the slug lock. NO idle machinery — idleness is the guest's own job
   (agent-mode self-exit), and its exit detaches the slot via `onSandboxLost`
-- `modal-sandbox.ts` — Modal Sandbox backend: creates remote sandboxes from
-  a harness-baked snapshot image (built once per harness version, published
-  under a content-addressed tag), execs the Node harness with a per-sandbox
-  bearer token, and dials its WebSocket through the sandbox's Modal tunnel
+- `modal-context.ts` — the shared Modal context every spawn path needs
+  first: the client, the App, the harness-baked snapshot image (built once
+  per harness version, published under a content-addressed tag), and the
+  harness bytes that tag is keyed on. All memoized, so a spawn racing the
+  boot-time prewarm joins it
+- `modal-sandbox.ts` — Modal Sandbox backend, CONTROL-CHANNEL guest (studio,
+  inspect): creates the sandbox, execs the Node harness with a per-sandbox
+  bearer token, and dials its WebSocket through the sandbox's Modal tunnel.
+  The deployed-agent spawn is `modal-agent-sandbox.ts`
 - `packages/aai-guest/` — the guest the two backends spawn; its own private
   workspace package, resolved here only as a built artifact
   (`aai-guest/harness` → `dist/harness.mjs`). See
@@ -785,7 +790,7 @@ down, like the file-length allowlist.
   opt-in from the slug's shape would NOT have fixed it: a production Publish
   of such a project passes exactly that slug.
 - **The guest snapshot image is resolved AT BOOT, not on the first spawn**
-  (`prewarmModal(harnessPath)` in modal-sandbox.ts, called from
+  (`prewarmModal(harnessPath)` in modal-context.ts, called from
   `assertSandboxBackendOrWarn`). Two memoized stages otherwise charged to
   whoever spawns first: the Modal app lookup (a gRPC round trip), and the
   harness image — reading the ~13 MB harness, the synchronous SHA-256 that
@@ -800,7 +805,7 @@ down, like the file-length allowlist.
   `images.fromName(tag)` first). Fire-and-forget: a failure only warns and
   the memo resets, exactly as when the first spawn was the first caller.
 - **Readiness is Modal's readiness PROBE**, not host-side polling
-  (`GUEST_READINESS_PROBE` in modal-sandbox.ts): every guest sandbox is
+  (`GUEST_READINESS_PROBE` in modal-context.ts): every guest sandbox is
   created with `readinessProbe: Probe.withTcp(8080)` and the spawn awaits
   `sandbox.waitUntilReady()`. A TCP probe is exactly equivalent to the
   `/health` 200 it replaced, and that equivalence is a property of the

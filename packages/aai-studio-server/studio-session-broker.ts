@@ -29,19 +29,13 @@
  * (the client re-brokers on a dead chat URL).
  */
 
-import { randomBytes } from "node:crypto";
-import { errorMessage } from "@alexkroman1/aai";
 import { createOwnedMap } from "@alexkroman1/aai/internal";
-import { resolveHarnessPath } from "aai-server/constants";
 import { createKeyedLock, withLock } from "aai-server/platform-barrel";
-import { SandboxNameTakenError, studioSandboxName } from "aai-server/sandbox-directory";
 import { spawnWarmHarness, type WarmHarness } from "aai-server/sandbox-vm";
-import { MAX_CHAT_STEPS } from "./studio-limits.ts";
-import { studioLlmModelId } from "./studio-llm.ts";
 import { createPreviewDeployer, type PreviewOrigin, type PreviewTarget } from "./studio-preview.ts";
 import { createMemoryPreviewQueue, type PreviewQueue } from "./studio-preview-queue.ts";
-import { studioSystemPrompt } from "./studio-prompt.ts";
 import type { adoptPeerSession } from "./studio-session-adopt.ts";
+import { createSessionInstaller } from "./studio-session-ensure.ts";
 import type { SessionEntry } from "./studio-session-entry.ts";
 import { createSessionFleet, soloFleet } from "./studio-session-fleet.ts";
 import { createSessionReaper } from "./studio-session-idle.ts";
@@ -52,11 +46,8 @@ import {
   type WorkspaceDeployTarget,
 } from "./studio-session-publish.ts";
 import { STUDIO_SESSION_IDLE_MS, type StudioSessionRegistry } from "./studio-session-registry.ts";
-import { chatUrlForGuest, wireGuest } from "./studio-session-wire.ts";
-import { getWorkspace, projectKey } from "./studio-workspace.ts";
-
-/** Deadline for installing a session in the guest (workspace transfer). */
-const SESSION_INIT_TIMEOUT_MS = 60_000;
+import { wireGuest } from "./studio-session-wire.ts";
+import { projectKey } from "./studio-workspace.ts";
 
 // Deploy shapes live with the deploy path (studio-session-publish.ts) and
 // are re-exported here because this module is the broker's public face.
@@ -224,216 +215,18 @@ export function createStudioSessionBroker(
     );
   }
 
-  /**
-   * Install (or refresh) the session in the guest. Resolves the freshly
-   * minted chat-surface bearer, or null when the project doesn't exist.
-   *
-   * The token — not the caller's AssemblyAI key — is what the browser
-   * presents on the guest's public chat surface: browser sessions
-   * authenticate to the platform with a Supabase session and never hold the
-   * key, and a random per-session token on the public tunnel URL beats a
-   * long-lived credential there anyway. The broker response carries it to
-   * the client.
-   *
-   * Minted once per SANDBOX: a re-init passes the sandbox's existing token
-   * back, so refreshing the workspace never invalidates a token another tab
-   * is holding (see {@link SessionEntry.chatToken}).
-   */
-  /**
-   * The install payload minus the chat token, spelled once: the owner sends
-   * it over the control channel, a peer POSTs it to the guest. Two copies
-   * would be two definitions of what a session IS — and the drift would show
-   * up as a coding agent running on a different model or prompt depending on
-   * which replica the browser happened to hit.
-   */
-  function sessionParams(
-    scope: string,
-    project: string,
-    apiKey: string,
-    files: Record<string, string>,
-  ) {
-    return {
-      // The guest pins (scope, project) on its first install and refuses any
-      // later one naming a different pair — so a mis-keyed registry row is a
-      // 409, not one tenant's workspace in another tenant's sandbox.
-      scope,
-      project,
-      files,
-      apiKey,
-      system: studioSystemPrompt(),
-      model: studioLlmModelId(env),
-      ...(env.STUDIO_LLM_REGION === "eu" ? { region: "eu" as const } : {}),
-      maxSteps: MAX_CHAT_STEPS,
-    };
-  }
-
-  async function initSession(
-    warm: WarmHarness,
-    scope: string,
-    project: string,
-    apiKey: string,
-    /** Pre-read workspace; the cold path reads it BEFORE spawning a sandbox. */
-    known?: Awaited<ReturnType<typeof getWorkspace>>,
-    /** This sandbox's existing token; absent on a cold spawn. */
-    existingToken?: string,
-  ): Promise<string | null> {
-    const workspace = known ?? (await getWorkspace(options.workspaces, scope, project));
-    if (!workspace) return null;
-    const chatToken = existingToken ?? randomBytes(32).toString("base64url");
-    await warm.conn.sendRequest(
-      "studio/session-init",
-      { ...sessionParams(scope, project, apiKey, workspace.files), chatToken },
-      SESSION_INIT_TIMEOUT_MS,
-    );
-    return chatToken;
-  }
-
-  /**
-   * Reuse the project's live sandbox, re-installing the session so a fresh
-   * page never sees a stale tree. Resolves `null` when there is no live
-   * sandbox to reuse (absent, or dead and now disposed) — the caller then
-   * takes the cold path.
-   */
-  async function reuseSession(
-    key: string,
-    scope: string,
-    project: string,
-    apiKey: string,
-    preview?: PreviewOrigin,
-  ): Promise<{ url: string; token: string } | null> {
-    const existing = sessions.get(key);
-    if (!existing) return null;
-    try {
-      const token = await initSession(
-        existing.warm,
-        scope,
-        project,
-        apiKey,
-        undefined,
-        existing.chatToken,
-      );
-      if (token === null) return null;
-      existing.lastUsed = Date.now();
-      if (preview) existing.previewTarget = { ...preview, apiKey };
-      return { url: existing.url, token };
-    } catch (err) {
-      // Dead sandbox (idle-killed, crashed) — drop it so the caller respawns.
-      console.warn("Studio session: re-init failed; respawning sandbox", {
-        project,
-        error: errorMessage(err),
-      });
-      await disposeEntry(existing);
-      return null;
-    }
-  }
-
-  /**
-   * Spawn this project's guest under its fleet-wide name, or null when a peer
-   * won the name race — Modal refuses a duplicate name, so two replicas
-   * racing the cold path cannot both spawn even if the registry read missed
-   * (see `studioSandboxName`). Null means "adopt the winner": failing the
-   * broker instead would make the mechanism that prevents a duplicate spawn
-   * cost the user a failed call, healed only by the client's re-broker.
-   *
-   * Tagged with the project name so the Modal dashboard shows WHICH studio
-   * session a sandbox serves, not a shared "studio-session" blob.
-   */
-  async function spawnNamed(scope: string, project: string): Promise<WarmHarness | null> {
-    try {
-      return await spawn({
-        harnessPath: options.harnessPath ?? resolveHarnessPath(),
-        slug: project,
-        role: "studio",
-        name: studioSandboxName(scope, project),
-      });
-    } catch (err) {
-      if (err instanceof SandboxNameTakenError) return null;
-      throw err;
-    }
-  }
-
-  /** Install into a freshly spawned guest, disposing it on any failure — an
-   *  un-installed sandbox that nothing references is a billed orphan. */
-  async function installOrDispose(
-    warm: WarmHarness,
-    key: string,
-    scope: string,
-    project: string,
-    apiKey: string,
-    workspace: Awaited<ReturnType<typeof getWorkspace>>,
-  ): Promise<string | null> {
-    try {
-      wire(warm, key, scope, project);
-      const token = await initSession(warm, scope, project, apiKey, workspace);
-      if (token !== null) return token;
-    } catch (err) {
-      await warm[Symbol.asyncDispose]();
-      throw err;
-    }
-    await warm[Symbol.asyncDispose]();
-    return null;
-  }
-
-  /** Reuse-or-adopt-or-spawn for one project. Runs under the session lock. */
-  async function ensureSessionLocked(
-    key: string,
-    scope: string,
-    project: string,
-    apiKey: string,
-    opts: { preview?: PreviewOrigin | undefined; allowSpawn?: boolean } = {},
-  ): Promise<{ url: string; token: string } | null> {
-    const { preview, allowSpawn = true } = opts;
-    const reused = await reuseSession(key, scope, project, apiKey, preview);
-    if (reused) return reused;
-
-    // Check the project exists BEFORE taking a sandbox. Spawning first and
-    // discovering the 404 inside initSession burned a full Modal spawn +
-    // teardown per bogus project id.
-    const workspace = await getWorkspace(options.workspaces, scope, project);
-    if (!workspace) return null;
-
-    // Cold HERE is not cold everywhere: another replica may already be
-    // running this project's guest. Checked after the workspace read so a
-    // bogus project never reaches the registry, and before the spawn because
-    // the spawn is exactly the duplicate this prevents.
-    const adopt = (): Promise<{ url: string; token: string } | null> =>
-      fleet.adopt(scope, project, sessionParams(scope, project, apiKey, workspace.files));
-    const adopted = await adopt();
-    if (adopted) return adopted;
-
-    // A refresh stops here: reuse or adopt is the whole job, and booting a
-    // coding-agent sandbox nobody asked for is not one.
-    if (!allowSpawn) return null;
-    const warm = await spawnNamed(scope, project);
-    // A peer created this project's sandbox between the adopt above and the
-    // create — adopt the winner (see spawnNamed).
-    if (!warm) return await adopt();
-
-    const token = await installOrDispose(warm, key, scope, project, apiKey, workspace);
-    if (token === null) return null;
-    const url = chatUrlForGuest(warm.guestOrigin);
-    const entry: SessionEntry = {
-      warm,
-      url,
-      scope,
-      project,
-      lastUsed: Date.now(),
-      chatToken: token,
-      ...(preview ? { previewTarget: { ...preview, apiKey } } : {}),
-      release: () => false,
-    };
-    entry.release = sessions.claim(key, entry);
-    // Announce it to the fleet. Best-effort inside, and deliberately AFTER
-    // the local claim so a concurrent local dispose cannot release a row
-    // that does not exist yet.
-    await fleet.claim(scope, project, {
-      chatUrl: url,
-      chatToken: token,
-      guestOrigin: warm.guestOrigin,
-      sandboxToken: warm.token,
-    });
-    return { url, token };
-  }
+  // Reuse → adopt → spawn, and what an install IS (studio-session-ensure.ts).
+  // Every call below runs under `sessionLock`.
+  const { ensureSessionLocked } = createSessionInstaller({
+    workspaces: options.workspaces,
+    env,
+    spawn,
+    harnessPath: options.harnessPath,
+    sessions,
+    fleet,
+    disposeEntry,
+    wire,
+  });
 
   const deployWorkspaceImpl = createWorkspacePublisher({
     spawn,

@@ -2,7 +2,8 @@
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { jsonResponse, settle, sseResponse, stubFetch } from "./_test-utils.ts";
-import { ApiError, api, isTransientError, parseSecrets } from "./api.ts";
+import { api, parseSecrets } from "./api.ts";
+import { ApiError, isTransientError } from "./api-error.ts";
 
 describe("parseSecrets", () => {
   test("parses KEY=value lines", () => {

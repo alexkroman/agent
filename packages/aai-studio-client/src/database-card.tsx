@@ -16,7 +16,8 @@
 // their data.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type DatabaseEnvironment, type DatabaseState, errorText } from "./api.ts";
+import { api, type DatabaseEnvironment, type DatabaseState } from "./api.ts";
+import { errorText } from "./api-error.ts";
 import { queryKeys } from "./query-keys.ts";
 import { Card } from "./settings-card.tsx";
 

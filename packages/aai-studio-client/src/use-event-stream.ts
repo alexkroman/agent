@@ -12,7 +12,7 @@
 // and nothing here asked for a new token.
 
 import { useEffect } from "react";
-import type { StreamDownReason } from "./api.ts";
+import type { StreamDownReason } from "./api-events.ts";
 
 /** First backoff before resubscribing a dropped event stream, then doubling. */
 const EVENTS_RETRY_MS = 3000;

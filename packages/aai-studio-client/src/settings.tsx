@@ -16,7 +16,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { api, errorText, parseSecrets } from "./api.ts";
+import { api, parseSecrets } from "./api.ts";
+import { errorText } from "./api-error.ts";
 import { CliCommands } from "./cli-commands.tsx";
 import { DatabaseCard } from "./database-card.tsx";
 import { queryKeys } from "./query-keys.ts";

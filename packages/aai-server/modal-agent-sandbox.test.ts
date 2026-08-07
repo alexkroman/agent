@@ -36,7 +36,7 @@ import {
   AGENT_ENV_REMOTE_PATH,
   spawnModalAgentServer,
 } from "./modal-agent-sandbox.ts";
-import { GUEST_PORT, type ModalSpawnContext } from "./modal-sandbox.ts";
+import { GUEST_PORT, type ModalSpawnContext } from "./modal-context.ts";
 
 const WORKER = 'export default { name: "deployed" };';
 /** Any 64-hex value: the host forwards it, the guest is what verifies it. */

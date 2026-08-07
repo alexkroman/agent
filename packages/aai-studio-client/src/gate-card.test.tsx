@@ -8,7 +8,7 @@
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { ApiError } from "./api.ts";
+import { ApiError } from "./api-error.ts";
 import { GateProblem, gateProblem, loadFailureText, SERVER_BUSY_MESSAGE } from "./gate-card.tsx";
 
 afterEach(cleanup);

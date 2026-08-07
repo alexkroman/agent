@@ -15,7 +15,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { api, errorText } from "./api.ts";
+import { api } from "./api.ts";
+import { errorText } from "./api-error.ts";
 import { useDismissablePanel } from "./dismissable.ts";
 import { queryKeys } from "./query-keys.ts";
 import { isEnterSubmit } from "./send-button.tsx";

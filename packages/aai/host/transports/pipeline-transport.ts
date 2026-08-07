@@ -7,7 +7,6 @@
 // which is S2S-only). `sendToolResult` is a no-op because results are
 // already handled by streamText.
 
-import type { SttError, TtsError } from "../../sdk/providers.ts";
 import type { Message } from "../../sdk/types.ts";
 import { normalizeSpeechText } from "../../sdk/utils.ts";
 import { bytesToPcm16, pcm16ToBytes } from "../_pcm.ts";
@@ -19,6 +18,7 @@ import { createTurnLlmRunner } from "./pipeline-llm-stream.ts";
 import { createPipelineProviderSessions } from "./pipeline-providers.ts";
 import { createPipelineSpeculation } from "./pipeline-speculation.ts";
 import { flushTtsAndWait } from "./pipeline-stream.ts";
+import { createPipelineLifecycle } from "./pipeline-transport-lifecycle.ts";
 import {
   type PipelineTransportOptions,
   resolvePipelineOptions,
@@ -64,7 +64,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const sessionAbort = new AbortController();
   // Turn-crash handler for turnChain.chain call sites — see turnCrashLogger.
   const logTurnCrash = turnCrashLogger(log, opts.sid);
-  let audioReady = false;
   let terminated = false;
   let nextReplyId = 0;
   // Invalidation epochs for queued turns and an aborted turn's deferred
@@ -93,10 +92,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const history = createPipelineHistory(sessionConfig.history);
   // Turn serializer + its queued-turn epoch check — see createTurnChain.
   const turnChain = createTurnChain({ gate, isTerminated: () => terminated });
-  // The in-flight providers.open() from start(). stop() awaits it so a
-  // disconnect mid-connect tears the just-opened provider sockets down
-  // deterministically instead of leaving fire-and-forget opens to pile up.
-  let startPromise: Promise<"ok" | "failed"> | null = null;
   // What the caller has actually HEARD of the current reply: the barge-in
   // gate, the cut point history is truncated to, and the resume anchor, all
   // from one cursor — see createHeardTracker.
@@ -167,8 +162,11 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     handlers: {
       onSttPartial: sttEvents.onSttPartial,
       onSttFinal: sttEvents.onSttFinal,
-      onSttError: (err) => onProviderError("stt", err),
-      onTtsError: (err) => onProviderError("tts", err),
+      // `lifecycle` is constructed further down (it needs `outcome` and
+      // `runReply`), so these two reach it lazily. Both fire only after
+      // `providers.open()`, which `lifecycle.start` is what calls.
+      onSttError: (err) => lifecycle.onProviderError("stt", err),
+      onTtsError: (err) => lifecycle.onProviderError("tts", err),
       onTtsAudio: (pcm) => {
         if (!turns.audioGateOpen()) return;
         turns.markSpoke();
@@ -183,7 +181,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
         heard.onWords(words);
       },
     },
-    onAudioReady,
+    onAudioReady: () => lifecycle.onAudioReady(),
     emitError,
     log,
   });
@@ -222,37 +220,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     heard.cut();
     turns.interrupt();
     providers.tts?.cancel();
-  }
-
-  // Idempotent teardown after an unrecoverable provider error.
-  function terminate(): void {
-    if (terminated) return;
-    terminated = true;
-    gate.invalidateAll();
-    nudger.clear();
-    recovery.clear();
-    speechEdges.reset();
-    speculation.discard("reset");
-    abortInFlightTurn();
-    callbacks.onCancelled();
-    sessionAbort.abort();
-    // Close whatever was adopted before the failure (e.g. TTS went live,
-    // then STT's open failed) — it must not outlive the terminate.
-    providers.close().catch(() => {
-      // Best-effort teardown; a failed close is not actionable here.
-    });
-  }
-
-  /** Either provider failing is unrecoverable: surface it and tear the session down. */
-  function onProviderError(kind: "stt" | "tts", err: SttError | TtsError): void {
-    if (terminated) return;
-    log.error(`${kind.toUpperCase()} error`, {
-      code: err.code,
-      message: err.message,
-      sid: opts.sid,
-    });
-    emitError(kind, err.message);
-    terminate();
   }
 
   /** Forward turn text to TTS, reopening the audio gate for the new turn.
@@ -368,81 +335,45 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     runReply,
   });
 
-  function runGreeting(text: string): Promise<void> {
-    return runReply("pipeline-greeting", async () => {
-      callbacks.onAgentTranscript(text, false);
-      history.pushConversation({ role: "assistant", content: text });
-      history.pushLlm({ role: "assistant", content: text });
-      sendTtsText(text, { publishTranscript: false });
-      // Push the greeting mid-stream too (it was already seeded at STT connect
-      // time) — covers providers that only support the mid-stream hook.
-      providers.stt?.updateAgentContext?.(text);
-      return true;
-    });
-  }
-
-  function onAudioReady(): void {
-    if (audioReady || terminated) return;
-    audioReady = true;
-    if (opts.skipGreeting) return;
-    const greeting = sessionConfig.greeting;
-    if (!greeting) return;
-    turnChain.chain(() => runGreeting(greeting).catch(logTurnCrash("Pipeline greeting failed")));
-  }
+  // Session lifecycle: open/greet/teardown — see
+  // pipeline-transport-lifecycle.ts. Built last because it wraps `runReply`
+  // and `outcome`; `providers` reaches back into it through the two lazy
+  // handlers above.
+  const lifecycle = createPipelineLifecycle({
+    sid: opts.sid,
+    log,
+    callbacks,
+    emitError,
+    sessionAbort,
+    greeting: sessionConfig.greeting,
+    skipGreeting: opts.skipGreeting,
+    gate,
+    turns,
+    turnChain,
+    history,
+    outcome,
+    speculation,
+    nudger,
+    recovery,
+    speechEdges,
+    providers: () => providers,
+    isTerminated: () => terminated,
+    markTerminated: () => {
+      terminated = true;
+    },
+    abortInFlightTurn,
+    sendTtsText,
+    runReply,
+    logTurnCrash,
+  });
 
   return {
-    async start(): Promise<void> {
-      // STT and TTS open concurrently; a failed side (with the session still
-      // live) tears the whole transport down.
-      startPromise = providers.open();
-      if ((await startPromise) === "failed") {
-        // The greeting turn may already be running (onAudioReady fires the
-        // moment TTS is adopted, before open() settles). Silence it — strand
-        // the queued copy and abort a running one — so the failure phrase is
-        // the sole speaker instead of interleaving with the greeting and
-        // racing its TTS drain.
-        gate.invalidateQueued();
-        abortInFlightTurn();
-        // Say something first, while the socket is still up and TTS may still
-        // be live — see speakStartFailure. terminate() then emits `cancelled`
-        // and aborts the session; do NOT go on to signal session-ready, which
-        // would hand the runtime a "started" session that is actually dead,
-        // holding it open until the idle timeout.
-        await outcome.speakStartFailure();
-        terminate();
-        return;
-      }
-      // S2S fires onSessionReady when the provider acks; in pipeline mode the
-      // equivalent "ready" signal is providers having opened.
-      callbacks.onSessionReady?.(opts.sid);
-      onAudioReady();
-      // Covers the no-greeting case; a greeting in flight defers the nudge.
-      nudger.arm();
-    },
+    start: () => lifecycle.start(),
 
-    async stop(): Promise<void> {
-      if (sessionAbort.signal.aborted) return;
-      // Gate late inbound work (sendUserAudio into a closing STT session)
-      // the same way a provider-error teardown does.
-      terminated = true;
-      gate.invalidateAll();
-      nudger.clear();
-      recovery.clear();
-      speechEdges.reset();
-      speculation.discard("reset");
-      sessionAbort.abort();
-      turns.abortCurrent();
-      providers.unsubscribe();
-      // Let an in-flight start() settle after the abort so any provider that
-      // opened mid-connect is adopted-then-closed (openSide) before we close
-      // below — otherwise a slow socket lands after stop() and lingers.
-      if (startPromise !== null) await startPromise.catch(() => undefined);
-      await turnChain.settled();
-      await providers.close();
-    },
+    stop: () => lifecycle.stop(),
 
     sendUserAudio(bytes: Uint8Array): void {
-      if (terminated || !audioReady) return;
+      if (terminated || !lifecycle.audioReady()) return;
       providers.stt?.sendAudio(bytesToPcm16(bytes));
     },
 

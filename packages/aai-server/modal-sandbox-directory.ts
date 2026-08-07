@@ -3,8 +3,8 @@
  * The Modal-backed {@link SandboxDirectory} — the fleet-wide "is some replica
  * already serving this deploy?" lookup.
  *
- * Split from modal-sandbox.ts (spawning) because it is a pure READ of Modal's
- * control plane and shares nothing with a spawn but the client. See
+ * Split from the spawn paths because it is a pure READ of Modal's control
+ * plane and shares nothing with a spawn but the client (modal-context.ts). See
  * sandbox-directory.ts for why a sandbox NAME replaced a heartbeated lease
  * table.
  */
@@ -12,7 +12,7 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
-import { GUEST_PORT, type ModalSpawnContext, modalContext } from "./modal-sandbox.ts";
+import { GUEST_PORT, type ModalSpawnContext, modalContext } from "./modal-context.ts";
 import { agentSandboxName, type SandboxDirectory } from "./sandbox-directory.ts";
 
 /**
