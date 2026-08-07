@@ -227,6 +227,83 @@ describe("session-core automatic reconnection (partysocket)", () => {
   });
 });
 
+// A completed WebSocket handshake is not a session. The server builds the
+// session synchronously from its own upgrade callback and sends `config` at
+// zero RTT, so an open socket with nothing on it means the peer is not a
+// healthy agent server — a tunnel answering the 101 while the guest behind it
+// is wedged. partysocket cannot see this: its connectionTimeout is cleared
+// the instant `open` fires. Untreated, the session reached "ready" — the same
+// live indicator the UI paints for "listening" — and stayed there forever,
+// with no mic (no `config` means no initAudioCapture), no error and no retry.
+describe("session-core handshake deadline", () => {
+  let core: SessionCore;
+  let audio: ReturnType<typeof installAudioMocks>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    resetLastSocket();
+    created = [];
+    // The healthy case below receives a real `config`, which starts the audio
+    // path — without the mocks it would fail on getUserMedia and error for a
+    // reason that has nothing to do with the handshake.
+    audio = installAudioMocks();
+    vi.stubGlobal("WebSocket", TrackingWebSocket);
+    core = createSessionCore({ platformUrl: "ws://localhost:3000" });
+  });
+
+  afterEach(() => {
+    core.disconnect();
+    audio.restore();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("re-dials a peer that opens the socket and never sends config", async () => {
+    core.connect();
+    await vi.advanceTimersByTimeAsync(0);
+    created[0]?.simulateOpen();
+    expect(core.getSnapshot().state).toBe("ready");
+
+    // Nothing arrives. The deadline turns an apparently-healthy socket into a
+    // failed attempt — the sandbox behind the endpoint may have been
+    // replaced, and the next attempt re-brokers.
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(core.getSnapshot().state).toBe("connecting");
+    const socket = await waitForNextSocket(1);
+    expect(socket).toBeDefined();
+  });
+
+  it("gives up with a real error rather than re-dialing a wedged peer forever", async () => {
+    core.connect();
+    await vi.advanceTimersByTimeAsync(0);
+    for (let i = 0; i < 4 && core.getSnapshot().state !== "error"; i++) {
+      created.at(-1)?.simulateOpen();
+      await vi.advanceTimersByTimeAsync(10_000);
+      if (core.getSnapshot().state === "error") break;
+      await waitForNextSocket(created.length);
+    }
+
+    expect(core.getSnapshot().state).toBe("error");
+    expect(core.getSnapshot().error?.code).toBe("connection");
+    // Bounded: forceReconnect restarts partysocket's own budget, so without a
+    // cap of our own a wedged peer would be re-dialed every ~10s forever.
+    const settled = created.length;
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(created).toHaveLength(settled);
+  });
+
+  it("a config frame disarms the deadline, so a healthy session is left alone", async () => {
+    core.connect();
+    await vi.advanceTimersByTimeAsync(0);
+    created[0]?.simulateOpen();
+    created[0]?.simulateMessage(makeConfig());
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(core.getSnapshot().state).not.toBe("error");
+    expect(created).toHaveLength(1);
+  });
+});
+
 // --- partysocket internals guard ---
 
 describe("partysocket internals used by reconnectPending", () => {

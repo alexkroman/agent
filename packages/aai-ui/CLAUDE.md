@@ -168,6 +168,43 @@ whose failure re-enters the normal backoff and re-fetches on the next
 attempt. `fetchClientConfig` inherits it, which also keeps a hung lookup off
 the default client's pre-connection name/greeting render.
 
+## A handshake is not a session (`session-core-handshake.ts`)
+
+**An open socket proves the peer answered `101`, nothing more.** The server
+builds the session synchronously from its own upgrade callback and sends
+`config` at zero RTT, so a socket that has been open for seconds carrying
+nothing is not slow — its peer is not a healthy agent server. A tunnel or
+proxy answering the `101` while the guest behind it is wedged looks exactly
+like this, as does a host that dies between accepting and building the
+session.
+
+Nothing else catches it. partysocket's `connectionTimeout` covers only the
+handshake and is cleared the instant `open` fires. So the session went to
+`state: "ready"` — which `console-shell.tsx` paints with the SAME live
+indicator as "listening" — and **stayed there permanently**: no `config`
+means `initAudioCapture` never runs, so there is no mic, no error, no retry,
+and nothing on screen to say so. Driven against a server that accepts and
+then says nothing: `ready` at 34ms, still `ready` and errorless when the
+probe gave up. A dead session that looks connected is worse than a visibly
+failed one.
+
+`createHandshakeGuard` arms a deadline on every `open` (re-armed per attempt,
+since `open` fires again on each partysocket retry) and disarms it on the
+`config` frame or the close. On expiry it re-dials — the sandbox behind the
+endpoint may have been replaced, and the URL provider re-brokers — and after
+`MAX_HANDSHAKE_TIMEOUTS` it surfaces a real `connection` error. Two things
+make it correct rather than merely present:
+
+- **The budget is its own.** `forceReconnect` calls partysocket's
+  `reconnect()`, which resets `_retryCount` to -1 — so `RECONNECT_OPTIONS.
+  maxRetries` cannot bound this failure mode, and without a separate cap a
+  wedged peer would be re-dialed every ~10s forever.
+- **The timer is a bare `setTimeout`, so it does NOT come off with the
+  connection's `AbortSignal`** the way the socket listeners do. It has to
+  disarm on `abort` explicitly, or an explicit disconnect leaves it armed and
+  it re-dials a session the user already closed — caught by the existing
+  "user disconnect does not reconnect" spec.
+
 ## Fuzz harnesses
 
 `packages/aai-ui/fuzz-*.test.ts` drive the browser session's four

@@ -37,6 +37,19 @@ export function openReconnectingSocket(urlProvider: () => Promise<string>): Reco
  * *before* dispatching `close`, so `retryCount` already names the attempt
  * just scheduled — at `maxRetries` it has given up.
  */
+/**
+ * Force a fresh connection attempt on a reconnecting socket, reporting
+ * whether it was one. Used for a failure partysocket cannot see: a socket it
+ * considers open and healthy, whose peer never completed OUR handshake.
+ * Returns false for an injected `options.WebSocket` (tests), which has no
+ * reconnect machinery — the caller then treats the failure as terminal.
+ */
+export function forceReconnect(socket: unknown): boolean {
+  if (!(socket instanceof ReconnectingWebSocket)) return false;
+  socket.reconnect();
+  return true;
+}
+
 export function reconnectPending(socket: unknown): boolean {
   return (
     socket instanceof ReconnectingWebSocket &&

@@ -208,17 +208,24 @@ segmented control switches between — `preview.tsx`, `code-view.tsx`,
   gate reads above, the broker call, the preview probe), because a browser
   fetch has none of its own and a hung request is not a failure — it never
   settles, so no error path, retry, or backoff ever runs. `watchEventStream`
-  (`event-stream.ts`) is the one place that must not have one: a healthy
+  (`api-events.ts`) is the one place that must not have one: a healthy
   stream IS a request that stays open indefinitely and says nothing for
   minutes, so no duration separates it from a hung one. Its liveness comes
   from the other end — the server pings, a dead connection surfaces as the
   read ending, and that reaches `onDown` → backoff resubscribe.
-- **`api.ts` is REST plumbing only.** The SSE transport lives in
-  `event-stream.ts` and `ApiError` in `api-error.ts` (its own module so the
-  stream can throw it without importing `api.ts`, which imports the stream
-  back); `api.ts` re-exports both, so importers are unaffected. The split
-  was forced by the 500-line source cap and is the right seam anyway —
-  `use-event-stream.ts` already paired with the stream half alone.
+- **The SSE backoff resets on a stream that SERVED, not one that opened**
+  (`EVENTS_MIN_UPTIME_MS` in `use-event-stream.ts`). Accepting a request is
+  not the same as serving it: a server that answers `200` and then ends the
+  body immediately — a crash-looping container, a Modal instance being
+  replaced mid-rollout, a proxy that upgrades and drops — has "opened" the
+  stream by every test the hook can apply, so resetting on `onOpen` reset the
+  counter on EVERY attempt and the backoff never grew. Driven against a
+  server in exactly that state: a flat attempt **every 3.0s indefinitely**,
+  versus the correct 3s/6s/12s when the same server refused outright. Two
+  subscriptions per tab makes that ~40 requests a minute, forever, aimed at a
+  server already unhealthy enough to be dropping streams — the transport-side
+  twin of the 401 storm the module header describes. A stream that stayed up
+  10s still resets, so the promptness the reset exists for is intact.
 
 ## Surviving a platform deploy (`stale-build.ts`)
 
