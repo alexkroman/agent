@@ -1,5 +1,13 @@
 # aai-studio-client
 
+## 0.4.6
+
+### Patch Changes
+
+- 6b4a6d8: Run the platform on Node 26: the Modal service image, the guest sandbox base image, the repo's pinned toolchain, and CI all move from 24 to 26, matching the `@types/node` major the workspace already type-checks against. Published SDK packages keep `engines.node: >=24` so consumers on the previous LTS are unaffected.
+- Updated dependencies [1c5056f]
+  - @alexkroman1/aai-ui@5.10.0
+
 ## 0.4.5
 
 ### Patch Changes

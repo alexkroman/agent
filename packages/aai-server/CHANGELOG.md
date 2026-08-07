@@ -1,5 +1,52 @@
 # @alexkroman1/aai-server
 
+## 3.4.6
+
+### Patch Changes
+
+- 6b4a6d8: Run the platform on Node 26: the Modal service image, the guest sandbox base image, the repo's pinned toolchain, and CI all move from 24 to 26, matching the `@types/node` major the workspace already type-checks against. Published SDK packages keep `engines.node: >=24` so consumers on the previous LTS are unaffected.
+- Updated dependencies [b125465]
+- Updated dependencies [1731876]
+- Updated dependencies [b125465]
+- Updated dependencies [b125465]
+- Updated dependencies [4b6e064]
+- Updated dependencies [b125465]
+- Updated dependencies [b125465]
+- Updated dependencies [fb7b545]
+- Updated dependencies [b125465]
+- Updated dependencies [c7617df]
+- Updated dependencies [b125465]
+- Updated dependencies [520900f]
+- Updated dependencies [b125465]
+- Updated dependencies [c524b76]
+- Updated dependencies [b125465]
+- Updated dependencies [4b6e064]
+- Updated dependencies [b125465]
+- Updated dependencies [b125465]
+- Updated dependencies [b125465]
+- Updated dependencies [6b4a6d8]
+- Updated dependencies [ae9fd19]
+- Updated dependencies [b125465]
+- Updated dependencies [6ca79e0]
+- Updated dependencies [b125465]
+- Updated dependencies [fee8ece]
+- Updated dependencies [ae9fd19]
+- Updated dependencies [d8e34d8]
+- Updated dependencies [a90296e]
+- Updated dependencies [b125465]
+- Updated dependencies [a82e54d]
+- Updated dependencies [4b6e064]
+- Updated dependencies [1c5056f]
+- Updated dependencies [4b6e064]
+- Updated dependencies [b125465]
+- Updated dependencies [b125465]
+- Updated dependencies [b125465]
+- Updated dependencies [b125465]
+- Updated dependencies [ae9fd19]
+  - @alexkroman1/aai@5.10.0
+  - aai-guest@0.4.7
+  - @alexkroman1/aai-ui@5.10.0
+
 ## 3.4.5
 
 ### Patch Changes
