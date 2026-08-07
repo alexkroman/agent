@@ -54,6 +54,29 @@ The scaffold's `package.json` exposes `dev`, `build`, `test`, and `deploy`
 as `pnpm <name>` shortcuts. Other commands (`init`, `templates`, `delete`, `secret`)
 are CLI-only.
 
+## Running it yourself (`npm start`)
+
+`server.mjs` serves this agent from a plain Node process — no CLI, no
+bundler, no platform account. It is the deployment counterpart of `aai dev`:
+
+```sh
+npm start                          # http://127.0.0.1:3000
+PORT=8080 HOST=0.0.0.0 npm start   # bind every interface, e.g. in a container
+```
+
+Secrets work the same as everywhere else: `ctx.env` holds the keys declared
+in `.env` (or `.env.example`), and a real environment variable of that name
+wins — so `docker run -e MY_API_KEY=…` needs no `.env` in the image.
+
+Two things to know. It binds **loopback by default**, because this server has
+no request authentication of its own; set `HOST=0.0.0.0` only behind your own
+proxy or auth. And with a custom `client.tsx`, run `npm run build` first —
+otherwise it serves the default UI and says so at startup.
+
+Deleting `server.mjs` costs nothing: `aai dev`, `aai publish` and the managed
+platform never read it. `run_code` is the one feature that does not follow —
+it needs the platform's sandbox and refuses outside one.
+
 ## Project structure
 
 ```text

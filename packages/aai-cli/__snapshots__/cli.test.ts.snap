@@ -2,12 +2,13 @@
 
 exports[`cli usage snapshots > aai --help 1`] = `
 "Voice agent development kit (aai vX.X.X)
-USAGE aai init|dev|test|build|list|pull|push|publish|delete|login|secret|storage|templates
+USAGE aai init|dev|test|build|eject|list|pull|push|publish|delete|login|secret|storage|templates
 COMMANDS
        init    Scaffold a new agent project
         dev    Start a local development server
        test    Run agent tests
       build    Bundle agent without deploying
+      eject    Add the self-hosted server.mjs entrypoint to an older project
        list    List your studio projects
        pull    Pull a studio project into a local directory
        push    Sync this project's source to its studio workspace

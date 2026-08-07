@@ -33,3 +33,48 @@ documentation for this repo.
     with no `pnpm-workspace.yaml` above it for that reason, and `aaiEnv()`
     deliberately sets no `AAI_TEMPLATES_DIR` — that override used to pin
     every e2e run to the workspace sources.
+
+## Self-hosting is the scaffold's default
+
+`scaffold/server.mjs` plus `"start": "node server.mjs"` ship in every project,
+so **any** project runs on its own with `npm start`: no CLI at run time, no
+bundler, no platform account. It is deliberately a FILE rather than a CLI
+command — a command is something you have to know exists, and the whole gap it
+closes was that `createAgentServer` already made self-hosting one call and
+nothing put that call in front of anyone. `aai eject` (see
+`packages/aai-cli/CLAUDE.md`) copies this same file into projects that predate
+it; that command must never grow its own copy of the contents.
+
+Three things in it are load-bearing, and all three were found by running it:
+
+- **The agent is imported DYNAMICALLY.** Static `import` statements are hoisted
+  and evaluated before any statement in the file, so an
+  `import agent from "./agent.ts"` at the top would load the agent — and every
+  `?raw` import inside it — before `registerHooks` had run.
+- **It registers module hooks for `?raw` and attribute-less `.json`.** Those
+  are bundler conventions Node does not implement: `?raw` is a Vite thing (Node
+  looks for a file literally named `system-prompt.md?raw`) and a bare JSON
+  import needs `with { type: "json" }` (TypeScript's `resolveJsonModule` does
+  not). Nine templates import `./system-prompt.md?raw` and `retail/store.ts`
+  imports `./seed.json` bare, so without the hooks `npm start` worked for four
+  templates out of fourteen. An import that DOES carry the attribute is passed
+  to Node, whose own handling is correct. **`.ts` needs no hook** — Node strips
+  the types itself, which is why there is no build step and no second copy of
+  the agent in JavaScript.
+- **`ctx.env` and provider credentials come from different places, on purpose.**
+  `env` is declared keys only (`.env`, plus `.env.example` as a declaration so a
+  container with no `.env` still works, with real environment variables winning
+  per key) — the same rule `aai dev` follows, so an agent cannot come to depend
+  on a `PATH`-style variable that will not exist after deploy. Provider
+  credentials go through `withHostCredentialFallback`, which is what lets
+  `docker run -e ASSEMBLYAI_API_KEY=…` work without the key becoming `ctx.env`.
+  An empty declared value is DROPPED rather than passed through: a provider
+  would authenticate with `""` instead of reporting the credential absent, and
+  `.env.example` is full of empty values by design.
+
+`packages/aai-cli/e2e.test.ts` boots `npm start` against a real installed
+project (`math-buddy`, chosen for its `?raw` import) and probes
+`/health`, `/client-config` and `/`. That tier is the only one that can prove
+it: the entrypoint resolves `@alexkroman1/aai-ui`'s prebuilt client through a
+real INSTALL and imports `agent.ts` through Node's own type stripping, neither
+of which an in-tree test exercises.
