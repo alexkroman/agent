@@ -45,10 +45,9 @@ export function applyPlatformMiddleware<E extends HonoEnv>(
       // SAMEORIGIN (not DENY) so the studio's live preview can iframe agent
       // pages. Cross-origin framing (real clickjacking) stays blocked;
       // same-origin tenants can already script against each other's public
-      // pages, so this does not widen the tenant boundary. The split
-      // deployment preserves same-origin by routing both services through
-      // one public origin (the agent service proxies /studio — see
-      // studio-proxy.ts).
+      // pages, so this does not widen the tenant boundary. Same-origin holds
+      // structurally: both surfaces are served by one process on one hostname
+      // (see studio-paths.ts for the boundary between them).
       xFrameOptions: "SAMEORIGIN",
     }),
   );

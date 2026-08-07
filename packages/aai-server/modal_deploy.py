@@ -9,11 +9,10 @@ Agent guest sandboxes are ALSO Modal Sandboxes (see modal-sandbox.ts), created
 by the server at runtime under the ``aai-server`` Modal App using the
 ``MODAL_TOKEN_ID``/``MODAL_TOKEN_SECRET`` from the ``aai-server`` Secret.
 
-Studio builds run in the STUDIO app's ``studio_build`` function (see
-packages/aai-studio-server/modal_deploy.py) — deployed with the package
-that owns the build-entry code, so the two can't skew. In combined mode
-(no ``STUDIO_UPSTREAM_URL``) this server invokes it there too, so the
-studio app must be deployed alongside this one.
+This is the ONLY Modal app the platform deploys, and it serves BOTH surfaces
+(``AAI_SERVICE=combined``) from one container — see "One app, both surfaces"
+below. Studio builds and Publish run inside the tenant's own guest sandbox
+through the aai CLI, not in a Modal Function here.
 
 Deploy (from the repo root, with the Python `modal` CLI authed via
 `modal token new`):
@@ -62,33 +61,52 @@ from modal_image import build_image, run_node  # noqa: E402
 
 PORT = 8080
 
-# The web server's region. GUEST SANDBOXES ARE NOT PINNED TO IT — Modal
-# places them wherever it has capacity, which is the whole supply of regions
-# rather than this one's (see build_image in scripts/modal_image.py). The
-# studio app pins the same value for its own containers.
-REGION = "us-east-2"
+# ── Region: deliberately UNPINNED ────────────────────────────────────────────
+#
+# The web server is placed by Modal for CAPACITY, the same trade guest
+# sandboxes already make (see build_image in scripts/modal_image.py). It was
+# pinned to ``us-east-2``, which confines an always-warm replica to one
+# region's spare capacity — and when that runs dry Modal places NOTHING.
+#
+# That outage is worth describing, because none of its symptoms name a region:
+# the app sits at ``deployed`` with ZERO tasks despite MIN_CONTAINERS=1 below,
+# every request hangs until the client times out having received zero bytes,
+# and — because no container is ever created — there are NO logs whatsoever,
+# not even a crash. ``modal app logs`` replays the last image build and then
+# streams silence, which reads as a wedged control plane rather than a
+# placement failure. Nothing recovers it: a redeploy or ``modal app rollover``
+# only re-asks for a container that still cannot be placed.
+#
+# The locality this cost is small and shrinking: voice clients dial the guest
+# sandbox's tunnel directly, so no session traffic passes through here at all,
+# and the Supabase round trips that remain are not inside a latency budget.
+# Re-pin per environment (Modal's ``region`` takes a list, so prefer a
+# FALLBACK list over a single value) if a measurement ever justifies it — but
+# never for a service holding a warm floor.
 
-# ── Split services ───────────────────────────────────────────────────────────
+# ── One app, both surfaces ───────────────────────────────────────────────────
 #
-# The node app serves one of three surfaces (AAI_SERVICE): the agent backend,
-# the studio backend, or both combined. This deployment runs the split:
+# ``server`` below runs ``AAI_SERVICE=combined``: one container serving the
+# agent surface (voice brokering, the platform API) and the studio surface
+# (``/``, ``/studio/*``, ``/studio-assets/*``) behind one path dispatcher, from
+# the aai-studio-server entry. That entry is the composition root for both
+# apps; this package is a library to it.
 #
-# - ``server`` (below) is the AGENT service and the single public origin.
-#   When ``STUDIO_UPSTREAM_URL`` is present in the ``aai-server`` Secret it
-#   boots as ``AAI_SERVICE=agent`` and reverse-proxies the studio surface
-#   (``/``, ``/studio/*``, ``/studio-assets/*``) to that URL; when absent it
-#   boots combined — same behavior as before the split, so a fresh
-#   deployment works before the operator wires the studio URL.
-# - ``studio`` (below) is the STUDIO service. After the first deploy, copy
-#   its printed web URL into the Secret as ``STUDIO_UPSTREAM_URL`` and
-#   redeploy — one-time setup. It is internal-only in spirit (browsers go
-#   through the agent origin), scaled for bursty LLM-bound chat turns
-#   rather than long-lived voice sessions.
+# A SPLIT deployment used to live here — a second Modal app (``aai-studio-web``)
+# for the studio, with this app booting ``AAI_SERVICE=agent`` and
+# reverse-proxying the studio surface to it via a ``STUDIO_UPSTREAM_URL`` in
+# the Secret. It is removed rather than left dormant: the upstream was never
+# wired, so production always took the combined branch and the split half was
+# unreachable code that nonetheless constrained the design (a proxy hop that
+# had to re-resolve the public origin, forward SSE gracefully, and keep a
+# studio-path predicate agreeing with the combined dispatcher).
 #
-# Cross-service coordination needs no wiring here: both services share the
-# Supabase Postgres (locks, rate limits, workspaces), and a studio Publish
-# reaches the agent service's resident sandboxes via the agents row's
-# Supabase Realtime change stream (see sandbox-resolve.ts).
+# The reason to bring it back would be that the two workloads want different
+# autoscaling — studio chat turns are LLM-bound and bursty, agent brokering is
+# light and latency-sensitive. Git history has the whole thing (the proxy,
+# ``gracefulEventStream``, the agent-only entry). Note that reviving it means
+# ONE public origin again: agent pages set ``X-Frame-Options: SAMEORIGIN``, so
+# the studio must share their origin or the preview iframe breaks.
 
 # ── Web-service autoscaling ──────────────────────────────────────────────────
 #
@@ -177,7 +195,7 @@ app = modal.App("aai-server-web")
 @app.function(
     image=image,
     secrets=[modal.Secret.from_name("aai-server")],
-    region=REGION,
+    # No region= — see "Region: deliberately UNPINNED" above.
     cpu=1,
     memory=2048,
     # Autoscaler bounds — see the "Web-service autoscaling" block above.
@@ -205,15 +223,11 @@ def server() -> None:
     # that doesn't serve it ("connect ENOENT /run/modal.sock"). Strip it so
     # the SDK uses api.modal.com with the tokens from the aai-server Secret.
     env.pop("MODAL_SERVER_URL", None)
-    # Agent service when the studio upstream is wired (see "Split services"
-    # above); the combined single-process entry (aai-studio-server package)
-    # otherwise, so a fresh deployment works pre-wiring.
-    if env.get("STUDIO_UPSTREAM_URL"):
-        entry = "packages/aai-server/dist/index.mjs"
-    else:
-        env["AAI_SERVICE"] = "combined"
-        entry = "packages/aai-studio-server/dist/index.mjs"
+    # Both surfaces in one process — see "One app, both surfaces" above. The
+    # entry lives in aai-studio-server because that package is the composition
+    # root for both apps; this one ships no entry of its own.
+    env["AAI_SERVICE"] = "combined"
     # run_node (not a bare Popen) so container stop signals reach the node
     # process — its SIGTERM handler is what retires this replica's guest
     # sandboxes (see modal_image.run_node).
-    run_node(entry, env)
+    run_node("packages/aai-studio-server/dist/index.mjs", env)

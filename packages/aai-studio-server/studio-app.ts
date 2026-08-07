@@ -1,18 +1,17 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The browser studio as a standalone service.
+ * The browser studio as its own HTTP app.
  *
- * `createOrchestrator` mounts these same routes in-process (the combined
- * mode `aai dev` and single-service deployments use). This module serves
- * them as their own HTTP app so the studio can run as a separate service
- * from the agent backend: studio chat turns are LLM-bound and bursty, voice
- * sessions are latency-sensitive and long-lived, and splitting them keeps
- * one workload's scaling and failures away from the other's.
+ * The orchestrator does NOT mount these routes — it serves the agent surface
+ * only. This app is a peer to it, and `index.ts` (the composition root every
+ * deployment runs) dispatches between the two by path: `/`, `/favicon.ico`,
+ * `/studio/*`, and `/studio-assets/*` here, everything else there. Keeping the
+ * two as separate Hono apps rather than one route tree is what lets each carry
+ * its own bindings injection, and it is the seam a future split deployment
+ * would cut along.
  *
- * The public origin stays single: the agent service proxies `/`,
- * `/favicon.ico`, `/studio-assets/*`, and `/studio/*` here (see
- * studio-proxy.ts), so the preview iframe's same-origin framing keeps
- * working and browser clients see one host.
+ * Both run in ONE process on one hostname, so the preview iframe's same-origin
+ * framing works and browser clients see a single host.
  *
  * Everything the studio shares with the agent service goes through
  * Supabase: workspaces/chats, the agents table + blob store, Vault secrets,

@@ -20,9 +20,7 @@
     "test:coverage": "vitest run --coverage",
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check .",
-    "predeploy:modal": "node ../../scripts/ensure-guest-harness.mjs",
-    "deploy:modal": "modal deploy modal_deploy.py"
+    "lint": "biome check ."
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",

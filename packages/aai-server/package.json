@@ -3,14 +3,9 @@
   "version": "3.4.8",
   "private": true,
   "type": "module",
-  "main": "dist/index.mjs",
   "scripts": {
-    "predev": "node -e \"const [maj] = process.versions.node.split('.').map(Number); if (maj < 26) { console.error('Node >=26 required (got ' + process.version + '). Run: fnm use 26'); process.exit(1); }\" && node ../../scripts/ensure-guest-harness.mjs",
-    "dev": "node --conditions=@dev/source index.ts",
-    "start": "node dist/index.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "test:integration": "VITEST_INCLUDE=**/*.integration.test.ts vitest run -c ../../vitest.slow.config.ts",
@@ -49,7 +44,6 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@types/ws": "^8.18.1",
-    "tsdown": "^0.22.13",
     "typescript": "^7.0.2",
     "vite": "^8.1.5",
     "vitest": "^4.1.10"
@@ -58,10 +52,6 @@
     "node": ">=26"
   },
   "exports": {
-    ".": {
-      "@dev/source": "./index.ts",
-      "import": "./dist/index.mjs"
-    },
     "./app-database": "./app-database.ts",
     "./chat-store": "./chat-store.ts",
     "./secret-store": "./secret-store.ts",
@@ -84,7 +74,7 @@
     "./public-origin": "./public-origin.ts",
     "./serve-lifecycle": "./serve-lifecycle.ts",
     "./service-config": "./service-config.ts",
-    "./studio-proxy": "./studio-proxy.ts",
+    "./studio-paths": "./studio-paths.ts",
     "./constants": "./constants.ts",
     "./delete": "./delete.ts",
     "./guest-routes": "./guest-routes.ts",

@@ -59,7 +59,6 @@ import {
   handleStorageStatus,
 } from "./storage-handler.ts";
 import type { BundleStore } from "./store-types.ts";
-import { createStudioProxy, isStudioPath } from "./studio-proxy.ts";
 import type { StudioAuth } from "./supabase-auth.ts";
 import {
   handleAgentFavicon,
@@ -100,14 +99,6 @@ export type OrchestratorOpts = {
   /** Allowed CORS origins. Defaults to `["*"]` (any origin). */
   allowedOrigins?: string[];
   /**
-   * Split deployment: base URL of the standalone studio service. When set,
-   * the studio surface is reverse-proxied there (see studio-proxy.ts)
-   * instead of mounted in-process, keeping one public origin.
-   */
-  studioUpstream?: string;
-  /** Test seam for the studio proxy's outbound fetch. */
-  studioProxyFetch?: typeof globalThis.fetch;
-  /**
    * Test seam for the client-config broker's proxy fetch of the guest's own
    * `/client-config` (name/greeting come from the GUEST, never the stored
    * config — see client-config-handler.ts).
@@ -143,23 +134,14 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
 
   addHealthRoute(app, opts.isDraining);
 
-  // The studio surface. This app never serves it in-process anymore — the
-  // studio is its own package/service (aai-studio-server). Two modes here:
-  // reverse-proxy to the studio service (split deployment, `studioUpstream`
-  // set — keeps ONE public origin, which the preview iframe's SAMEORIGIN
-  // framing requires), or agent-only (no studio surface; the combined
-  // single-process composition lives in aai-studio-server's entry, which
-  // dispatches between this app and the studio app). `studio` and
-  // `studio-assets` are reserved slugs (RESERVED_SLUGS) so no agent route
-  // can shadow the namespace in any mode.
-  if (opts.studioUpstream) {
-    const proxy = createStudioProxy(opts.studioUpstream, opts.studioProxyFetch);
-    // Registered from the shared predicate, so this list can never drift
-    // from the combined dispatcher's.
-    app.use("*", (c, next) => (isStudioPath(c.req.path) ? proxy(c) : next()));
-  } else {
-    app.get("/", (c) => c.json({ service: "aai-agent", studio: "not served by this deployment" }));
-  }
+  // This app never serves the studio surface itself — the studio is its own
+  // package, and the combined composition (aai-studio-server's entry, what
+  // production runs) dispatches studio paths to it by `isStudioPath` before
+  // this app ever sees them. So `/` here is only reached when the orchestrator
+  // runs alone, which in practice means tests. `studio` and `studio-assets`
+  // are still reserved slugs (RESERVED_SLUGS) so no agent route can shadow the
+  // namespace — see studio-paths.ts.
+  app.get("/", (c) => c.json({ service: "aai-agent", studio: "not served by this app" }));
 
   // Cap the on-the-wire deploy body (compressed or not) before anything
   // buffers it. gzipRequestMw separately caps the DECOMPRESSED size, so a
