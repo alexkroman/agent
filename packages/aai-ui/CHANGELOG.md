@@ -1,5 +1,48 @@
 # @alexkroman1/aai-ui
 
+## 5.10.0
+
+### Patch Changes
+
+- 1c5056f: Fix two playback-drain races found by fuzzing aai-ui: a session torn down (hang up, fatal error, reconnect) mid-reply no longer has its dead state overwritten with "listening" when the drain settles, and a stale turn's worklet drain-stop can no longer settle the live turn early.
+- Updated dependencies [b125465]
+- Updated dependencies [1731876]
+- Updated dependencies [b125465]
+- Updated dependencies [b125465]
+- Updated dependencies [4b6e064]
+- Updated dependencies [b125465]
+- Updated dependencies [b125465]
+- Updated dependencies [fb7b545]
+- Updated dependencies [b125465]
+- Updated dependencies [c7617df]
+- Updated dependencies [b125465]
+- Updated dependencies [520900f]
+- Updated dependencies [b125465]
+- Updated dependencies [c524b76]
+- Updated dependencies [b125465]
+- Updated dependencies [4b6e064]
+- Updated dependencies [b125465]
+- Updated dependencies [b125465]
+- Updated dependencies [b125465]
+- Updated dependencies [ae9fd19]
+- Updated dependencies [b125465]
+- Updated dependencies [6ca79e0]
+- Updated dependencies [b125465]
+- Updated dependencies [fee8ece]
+- Updated dependencies [ae9fd19]
+- Updated dependencies [d8e34d8]
+- Updated dependencies [a90296e]
+- Updated dependencies [b125465]
+- Updated dependencies [a82e54d]
+- Updated dependencies [4b6e064]
+- Updated dependencies [4b6e064]
+- Updated dependencies [b125465]
+- Updated dependencies [b125465]
+- Updated dependencies [b125465]
+- Updated dependencies [b125465]
+- Updated dependencies [ae9fd19]
+  - @alexkroman1/aai@5.10.0
+
 ## 5.9.0
 
 ### Patch Changes
