@@ -1140,7 +1140,7 @@ agent, background speech in the transcript — and none of them appeared
 anywhere at startup, so confirming one meant re-deriving the `??` chains by
 hand against a build you hope is deployed. A default pipeline now prints:
 
-```
+```text
 Session mode resolved {
   slug: 'tau2-pipeline', mode: 'pipeline',
   stt: { kind: 'assemblyai', model: 'universal-3-5-pro', minTurnSilenceMs: 1600,

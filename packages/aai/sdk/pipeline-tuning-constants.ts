@@ -293,7 +293,7 @@ export const DEFAULT_SPEECH_IDLE_TIMEOUT_MS = 3500;
  * rather than dead air. Two measurements retired that. The silence it covers is
  * now about a second — LLM time-to-first-text measured p50 **1.10s** / mean
  * 1.42s on a tau2-bench retail run — which is a pause, not dead air, and
- * {@link DEFAULT_DEAD_AIR_COVER_MS} still covers the long tool chains this was
+ * `DEFAULT_DEAD_AIR_COVER_MS` still covers the long tool chains this was
  * really protecting against. Against that, it costs the FIRST SENTENCE, and the
  * voice rules spend that slot deliberately: the opener is capped at eight words
  * and must carry the answer or the next question, because interruption rate

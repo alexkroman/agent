@@ -47,7 +47,7 @@ export const ASSEMBLYAI_LLM_GATEWAY_EU_URL = "https://llm-gateway.eu.assemblyai.
  * that a code-generating agent falls into readily.
  *
  * **Changing this id changes more than the model**, because
- * {@link TOOLS_REQUIRE_NO_REASONING} is keyed by model id: a default inside
+ * `TOOLS_REQUIRE_NO_REASONING` is keyed by model id: a default inside
  * that set makes the bare `assemblyAILlm()` carry an implicit
  * `reasoningEffort: "none"`, and one outside it carry none at all. `gpt-5.5`
  * is OUTSIDE the set, which is correct — it accepts tool-carrying requests at
