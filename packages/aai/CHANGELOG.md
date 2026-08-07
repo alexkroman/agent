@@ -1,5 +1,140 @@
 # @alexkroman1/aai
 
+## 5.10.0
+
+### Minor Changes
+
+- b125465: Require `reasoning_effort: "none"` on the `gpt-5.6` gateway models so their tool calls work. Those models reject a tool-carrying request at any other effort — including the server-side default, i.e. sending no `reasoning_effort` at all — and streaming reports that as a bare 500 with the explanation stripped, so an agent selecting one failed on every turn while reading as a gateway outage. `TOOLS_REQUIRE_NO_REASONING` makes the factory fill in `"none"` for those ids, covering the bare factory, the model-id string shorthand, and an explicit `model`; an explicit `reasoningEffort` is still honoured.
+- 1731876: Make S2S a provider registry like STT/TTS/LLM: credential derivation, the withHostCredentialFallback allowlist, and transport dispatch now share one `S2S_REGISTRY` instead of three hand-written kind comparisons that disagreed on unknown kinds. S2S descriptors also honour `apiKeyEnv` per-stage overrides, and each S2S module exports its own `*_API_KEY_ENV` constant.
+- 4b6e064: The default AssemblyAI pipeline now sends `reasoningEffort: "none"` — on a voice line, time-to-first-token is the quality, and nothing downstream can cover the wait before the first token.
+- b125465: Turn preemptive generation ON by default: a high-confidence STT interim starts the reply and the committed final adopts that running stream. Still unmeasured — what makes it safe is structural (a speculation never speaks, never executes a tool, never enters history), so the worst case is one wasted LLM request and a turn identical to the old path. Set preemptiveGeneration: false to opt out.
+- fb7b545: Add `assemblyAIStt({ streamingUrl })` to override the STT streaming endpoint (staging clusters, A/B against the default host). Takes precedence over `region`.
+- c7617df: Add per-stage endpoint and credential overrides for the AssemblyAI stages, and make aai dev file watching opt-in. assemblyAITts gains host, assemblyAILlm gains gatewayUrl (winning over region, as assemblyAIStt streamingUrl already does over its own), and all three AssemblyAI descriptors accept apiKeyEnv to name the env var holding that stage's credential. The keys are strictly environment-scoped — measured, a production key is rejected by the sandbox STT cluster with 1008 and a staging key is rejected by production STT and TTS — so running one stage against a staging cluster needs both credentials live at once, which the single shared ASSEMBLYAI_API_KEY could not express. apiKeyEnv names a variable rather than carrying a key, so descriptors stay secret-free and serializable. Separately, aai dev no longer watches for file changes unless AAI_DEV_WATCH=1: a restart ends in-flight voice sessions, so a stray save during a long benchmark run surfaced as a provider failure several records deep.
+- b125465: Collapse false-interruption recovery onto the utterance-idle signal: `falseInterruptionTimeoutMs` (a number that never governed the wait) becomes `resumeFalseInterruption` (boolean, default true), and the resume fires when the transcript stream goes quiet with no committed final.
+- b125465: Replace `holdPhrase` with `deadAirCoverMs`, and turn the dead-air cover ON by default. Two audible changes. (1) The cover had no enable of its own — it was gated on `holdPhrase.length > 0`, and `holdPhrase` defaulted to `""`, so no default pipeline agent had any dead-air cover at all. It is now its own knob, defaulting to 5000 ms; a turn that sends nothing to the caller for that long hears a short filler (a distinct opening phrase before the model has said anything, then a cycled one), and `deadAirCoverMs: 0` disables it. (2) The per-turn holding line is gone, from both the transport and the default prompt: it fired at t=0 on the turn's shape rather than on real silence, and the prompt rule that produced it drove filler-opening replies to 29% of turns. Cover now waits for measured silence, so a turn that answers promptly pays nothing, and the filler never enters history. `holdPhrase` is removed from `agent()`; an already-deployed config carrying it is ignored.
+- b125465: Default the pipeline LLM to gpt-5.6-luna (was gpt-5.5). It is $1/$6 per M against gpt-5.5's $5/$30 and p50 832ms vs 999ms time-to-first-token over 18 paired tool-calling turns with reasoning off on both. Because luna is in TOOLS_REQUIRE_NO_REASONING, the bare assemblyAILlm() now carries an implicit reasoningEffort: "none" — that value is a tool-calling requirement on the gpt-5.6 models, not a tuning knob. assemblyAIPipeline()'s explicit "none" stays: it agrees with the factory on this id but is the only latency guarantee under a default outside that set, and define.test.ts pins the effort and the model id together.
+- 4b6e064: Split AssemblyAI endpointing into min/max_turn_silence and stop the dead-air cover firing on ordinary tool turns. min_turn_silence had been raised 1500 -> 2000 -> 3000 to stop utterances splitting, but max_turn_silence was never set and sat at the service default 1536 — so from 2000 on the minimum exceeded the maximum, the completeness check could never fire, and every turn ended on the content-blind acoustic force-end that splits utterances in the first place. Both halves are now always sent (1600 / 3500), assemblyAIStt takes maxTurnSilenceMs, and a test pins min < max. Separately, DEFAULT_DEAD_AIR_COVER_MS moves 2000 -> 5000 (it sat under the 6.24s mean tool turn and fired on 93% of them) and the cover phrases are reworded to be purely declarative, because 'Still working on that.' reads as a request for patience and callers answer it.
+
+  The minimum is 1600 rather than 1000 on measurement: at 1000, tau2-bench retail regressed DB reward 1.00 -> 0.40 while NL assertions rose 0.60 -> 0.80 — the agent talked better and acted worse, authenticating against spelled names truncated mid-entity. Pauses inside a single failing utterance ran 856-1455ms; nine of eighteen cleared 1000 and none cleared 1536.
+
+- b125465: Close the playback loop, fix the dead-air cover, and default preemptive generation off
+
+  Four changes to the pipeline transport, each measured on tau2-bench retail:
+
+  - **`playback_progress` (new client->server frame).** The host modelled
+    playback open-loop — every forwarded chunk assumed to start playing on
+    arrival at exactly 1.0x — so a client draining slower accrued a backlog it
+    could not see, and then released `speech_started` over speech the caller
+    had not heard. Clients that discard buffered audio on that edge lost ~35s
+    per run; with the frame it is ~2s. The clock clamps UPWARD ONLY, so a client
+    that never sends it behaves exactly as before. aai-ui's playback worklet
+    emits one every 500ms while audio is queued.
+  - **Dead-air cover re-arm.** The `tool-call` branch re-armed the cover
+    unconditionally, and `RestartableTimer.arm` clears-and-resets — so a chain
+    of calls each returning inside the window pushed the deadline out forever
+    and the cover never fired at all. Now only armed when none is pending.
+  - **`preemptiveGeneration` defaults to false.** Finally measured: 14
+    adoptions bought a p50 0.44s head start, but 36% were poisoned after
+    adoption by a tool call and restarted the turn, having burned p50 0.69s
+    first. Net +8ms per caller turn for 44% of its LLM requests discarded.
+  - **Endpointing back to the measured 1600/3500 pair** (the 3000 trim was never
+    measured alone and its own doc named the revert condition, which a run then
+    showed), with `speechIdleTimeoutMs` moved 3500 -> 4000 to keep the margin.
+
+  Also: a per-turn LLM timing line so a stalled turn is attributable at all, and
+  a system prompt that no longer contradicts itself on repeat-asks.
+
+- b125465: Thread AssemblyAI's end_of_turn_confidence through the STT provider API: SttEvents partial/final now carry an optional SttTurnMeta whose endOfTurnConfidence is the service's 0..1 confidence that the user's turn has ended. Nothing acts on it yet; it is plumbed so a confidence-aware endpointing policy can be measured against the current time-based one. Also fixes the escape-hatch ratchet, whose 'as any' and 'as unknown as' patterns used a GNU-only word boundary that git's matcher ignores — both had been counting zero while the tree held 8 and 110.
+- d8e34d8: Add `createHostServer` and let host-mode callers bring their own provider credentials — a self-hosted multi-tenant voice server that ships with no agent.
+
+  The handshake's `host` block accepts a `credentials` record keyed by env var name (`{ ASSEMBLYAI_API_KEY: "…" }`), merged over the server's env for that connection and winning on conflict. A server can therefore hold no provider keys at all and let every session run on its caller's, so an unauthenticated caller has no operator credential to spend. Names are bounded by `ALL_PROVIDER_ENV_VARS` — the allowlist that already bounds `withHostCredentialFallback` — and an unlisted name rejects the handshake by name, since the record reaches the env the per-connection runtime is built from, where an unbounded one could set `DATABASE_URL`.
+
+  `createHostServer` (exported from `@alexkroman1/aai/runtime`) is that server in one call: no agent, no `AAI_ALLOW_HOST` flag to remember, no credentials required. It declines plain `/websocket` sessions instead of demanding a placeholder agent and a hand-rolled runtime facade, and `defaults` carries the provider triple and any operator policy every tenant should inherit. New `examples/host-server`.
+
+  Also corrects `buildHostAgent`'s docs: a host session with no base agent gets the default all-AssemblyAI pipeline, not the S2S path — that comment predated the pipeline-by-default flip.
+
+  Also adds `createAgentServer` for the single-agent case — the mirror of `createHostServer`. `createRuntime` + `createServer` stay exported and unchanged (an embedder wiring `runtime.startSession(ws)` into an existing stack, or the guest harness whose runtime does not exist until the bundle arrives, still needs them), but the ordinary "I have an agent, serve it" path no longer re-states `name` and `greeting` from the agent it just passed. That duplication had a silent failure mode: omitting `greeting` raised nothing and `GET /client-config` simply served none. `decliningRuntime` is exported alongside it — the `SessionRuntime` that turns sessions away with a protocol error, previously hand-rolled in `createHostServer`.
+
+  New `@alexkroman1/aai-ui/client-dir` subpath exports `defaultClientDir()`, the path of the prebuilt browser client, replacing the three-line `require.resolve` dance that `aai-cli`'s dev server and every self-hosted example each carried.
+
+- 4b6e064: Add `assemblyAIStt({ languages })` to pin STT language(s) via `language_codes`. Universal-3.5 Pro code-switches across 18 languages when unset, which returns English as transliterated non-Latin script on a monolingual line.
+- 4b6e064: Raise DEFAULT_MIN_TURN_SILENCE_MS 2000 -> 3000. At 2000 a hesitant utterance still split mid-sentence, and the agent answered the fragment.
+- b125465: Rewrite the default system prompt as non-overlapping sections, spend the step after the tool budget on a forced final answer (so a capped turn answers with what it has instead of going silent mid-chain), and report each provider stage's effective settings at startup
+
+### Patch Changes
+
+- b125465: Split stopping the noise from abandoning the turn: the pipeline now ducks its outgoing audio the moment the caller speaks over it, and only a barge-in that sustains aborts the reply. An aside (a cough, "hold on a second" said to the room) is indistinguishable from a real interruption at its first partial — thresholds cannot separate them, and a stricter word gate measured -12.7 points of yield rate for no selectivity gain — but an aside STOPS and an interruption CONTINUES, so the reply resumes with nothing re-spoken. Also resumes a mid-turn barge-in from the estimated cut point rather than the [interrupted] marker, and rewrites the voice prompt around reply length: a short first sentence, a hard word budget, results instead of narrated intentions, no re-asking for the same identifier, and contractions allowed.
+- b125465: Pipeline mode: hold `speech_started` back while the agent is speaking, so the event means "the user took the floor and the agent is yielding" on both transports instead of "STT saw a word". Previously any one-word partial — a cough, a backchannel, a phrase addressed to someone else in the room — announced an interruption the barge-in gates then correctly declined to make, leaving clients that act on the event (tau2-bench discards its whole agent playout buffer on it, and has no `cancelled` handler) silencing a reply the agent was still speaking.
+- b125465: Trim the pipeline STT `max_turn_silence` default 3500 -> 3000 ms; `min_turn_silence` stays 1600 ms.
+
+  This branch briefly set the pair to 800 / 1600 and reverted it on measurement, so the net change against the last release is the ceiling alone. The reverted arm is recorded because it is the strongest evidence this pair has: on tau2-bench retail (same 25 tasks, same seed, differing only in these two values) 1600 / 3500 scored reward 0.68 and 800 / 1600 scored 0.12, with splits up ~30% per utterance, merges down ~37%, and the share of mis-hearings that corrupted a tool argument nearly doubled (5.1% -> 9.8% of utterances) — the agent authenticating against truncated spelled names, exactly the failure the recorded pause measurements predicted.
+
+  3000 keeps `max_turn_silence` below the speaking edge's idle deadline (`DEFAULT_SPEECH_IDLE_TIMEOUT_MS`, 3500) less final-emission latency, so an utterance force-ended by the ceiling still delivers its final before the edge goes idle — and the idle edge is what fires a false-interruption resume, so crossing that line lets the agent resume a reply the caller really did interrupt. It costs ~0.5s of pause tolerance for hesitant speech against 3500 and is the one value in the pair with no measurement of its own — if splits reappear on hesitant, non-spelling utterances while spelled identifiers stay intact, put it back to 3500 (and raise the idle deadline with it).
+
+- b125465: An interrupted reply now records only the words the caller is estimated to have heard, and a reply cut before anything was audible records nothing at all (its tool steps still do). The false-interruption resume anchor reads the same cursor, and AssemblyAI TTS word timings make it word-accurate.
+- 520900f: Disable permessage-deflate on provider WebSockets. The `ws` package enables it by default on clients, so every outbound STT/TTS/S2S socket offered compression; a provider that accepted cost a zlib context per socket (+321 KiB RSS and ~4.5x CPU per socket, measured) to compress PCM16 audio, which does not compress.
+- c524b76: Stop reporting recoverable voice-session errors as fatal, in both session modes, and close the provider socket when a session is retired. A fatal error frame makes the browser client release the microphone and end the call, so it must mean the session is over — but six reporters used it for conditions the session survives: S2S in-band `session.error`/`error` frames (and OpenAI Realtime's `error` event), which close nothing, and pipeline mode's three turn-level failures — an `error` part in the LLM stream, a thrown `streamText`, and a TTS flush timeout. The first two pipeline cases are the worst: the transport's next act is to speak `errorPhrase` ("Could you say that again?") and invite another turn, so the caller was asked to repeat themselves into a microphone that had just been switched off. Session death is now reported only by the paths that end the session. Two S2S leaks go with it: retiring a session now closes its socket (an in-band `session_not_found` rejection of a `session.resume` left a live provider socket relaying frames to a client already told the call was over), and `stop()` now abandons a resume handshake that has not completed, which nothing could close before.
+- b125465: Remove the provisional-yield audio duck. It was built to stop the agent barging out on non-directed speech, and never earned its place: the selectivity gain stayed inside the harness's noise floor across every run, while the cost was concrete — roughly 37 false ducks per benchmark run inserting 400ms of silence mid-reply, and a re-arming backstop that deadlocked into a permanently mute agent. The speech_started gate and the cut-point resume, which came in alongside it and are independently validated, stay.
+- b125465: Fix preemptive generation killing any turn whose model called a tool after the speculation was adopted. `SpeculativeStream.poisoned()` was consulted once, at the adoption instant, but the speculation is still streaming then — a `tool-call` arriving afterwards reached a tool set built by `toDeclaredTools`, which has no `execute`, so the request died with "Tool result is missing for tool call <id>" and the caller heard `errorPhrase` for a reply the model could have given. An adopted run that turns out to hold a tool call is now abandoned whole and the turn restarts with executable tools; the head start is lost but the turn works.
+- ae9fd19: Pin AssemblyAI S2S sessions to the Voice Agent API's only supported sample rate (24 kHz), declare it on the wire, and reject a host-mode handshake that asks for another — a mismatch previously left the agent permanently deaf with no error.
+- b125465: Put max_turn_silence back to 3500 and the default gateway model back to gpt-5.5. The 2500 ceiling was the one number in the endpointing pair with no measurement of its own — it was reasoned from a run where the minimum and maximum moved together, which cannot apportion the damage between them; 1600/3500 is the pair with a measured 0.68 on two independent runs. The ordering it protected still holds at 3500, with more margin over the false-interruption window.
+- 6ca79e0: Pipeline: cover the turn's opening dead air, stop the post-cancel transcript that duplicated interrupted replies, cap the dead-air filler backoff, and defer a false-interruption resume until the caller's utterance ends
+- fee8ece: Point the storage-disabled guidance at the studio's Settings → Database switch, which now enables a project's ctx.db database for both its preview and production agents.
+- ae9fd19: Voice prompt fixes measured on tau2-bench: scope the tool preamble to once per TURN (not per tool call), tell the model a not-found lookup on spelled input is probably a mis-hearing, and stop the false-interruption resume restarting the sentence it was mid-way through.
+- a90296e: Fix pipeline history cap orphaning a tool result: the LLM-view trim is index-based, so its boundary could split an assistant tool-call from the `tool` message answering it. Both Anthropic and OpenAI reject an unmatched tool result, so every turn past ~200 messages in a long tool-using call failed at the provider and the caller heard the error phrase instead of a reply.
+- b125465: Timestamp every log line, put the STT end-of-turn confidence on the wire, and move per-interim STT logs behind AAI_DEBUG_PARTIALS. (This release also turned `holdPhrase` off by default; the field has since been removed outright in favour of `deadAirCoverMs` — see the dead-air cover entry.)
+- a82e54d: Trim AssemblyAI agent_context at the documented 1500-character cap instead of 1750, so the host-side tail-preserving trim decides what to drop rather than the service.
+- b125465: Default the AssemblyAI LLM Gateway model to `gpt-5.6-terra` (was `gpt-5.5`).
+
+  `ASSEMBLYAI_LLM_DEFAULT_MODEL` is what a bare `assemblyAILlm()`, every unset stage of a partial provider triple, and `assemblyAIPipeline()` all resolve to, so this moves the default pipeline's LLM for every agent that does not name one.
+
+  It also moves the default across `TOOLS_REQUIRE_NO_REASONING`: `gpt-5.6-terra` rejects a tool-carrying request at any effort other than `"none"` — including the model's own server-side default — so the factory now fills `reasoningEffort: "none"` for the bare descriptor where under `gpt-5.5` it filled nothing. Without that fill the descriptor would fail on every turn of every agent (`DEFAULT_BUILTIN_TOOLS` puts four tools on each one), and because the pipeline streams, the gateway's explanatory 400 arrives as a bare `{"message":"something went wrong","code":500}` — a config error wearing an outage's clothes. `assemblyAIPipeline()`'s own explicit `"none"` now agrees with the factory rather than carrying the whole weight, and stays as the backstop for the next id change.
+
+  Terra is advertised by the gateway with tools, streaming, a 270k context and a passing liveness probe, and shares `gpt-5.6-luna`'s reasoning constraint 4/4. It has no paired latency numbers, no price comparison, and no quality run of its own — the measured case in the guide is luna's. Treat the new default as unverified on latency and quality; `assemblyAILlm({ model })` pins any catalog id.
+
+- b125465: Split the S2S wire-message dispatch out of s2s.ts into \_s2s-dispatch.ts; S2sCallbacks moves with it and is re-exported, so no import changes
+- b125465: Fix three S2S defects that left most of the agent's speech unheard, each measured
+  against tau2-bench retail with a bare Voice Agent API client (no SDK) as control.
+
+  **Host-mode audio pacing is now the client's declaration, defaulting to paced**
+  (`HostConfig.audioLeadMs`: omitted = real time, a number = that lead, `null` =
+  unpaced). Unpaced was the blanket default, reasoning that a programmatic client
+  keeps its own clock — but being programmatic does not mean consuming faster than
+  the wall clock, and only a client whose timeline runs ahead is starved by pacing.
+  In S2S the service synthesises a whole reply server-side and it arrives in one
+  burst (up to 1118 frames in one tau2 tick, against 205 on the pipeline
+  transport), so a client draining at 1x accumulated a backlog of MINUTES — and
+  tau2 discards its buffer on barge-in, so 36% of all agent audio was destroyed
+  unheard (p99 181s, max 272s per barge-in on a 215s call, against 18-23% and a
+  15s max for the pipeline arms). The S2S arm completed a reply for 0.53 of caller
+  turns where the pipeline managed 1.00, with 18% of sessions completing none.
+
+  **`transcript.agent.delta` is accepted.** It was left out of the S2S message
+  union on a measurement saying the service never sends it; re-measured, a bare
+  greeting reply emits one frame per word, and one session carried 511 frames
+  across 20 replies — 5 of which sent deltas and never a final `transcript.agent`,
+  116 words of agent speech otherwise unrecoverable. Those are the tool-preamble
+  turns that used to render blank. The accumulation is forwarded as a partial and
+  committed as the reply's transcript when a COMPLETED reply sent no final — never
+  on an interrupted one, where the batch covers more than was actually spoken.
+
+  **S2S pins Voice Focus** (`near-field` / 0.9) from the same constants the
+  pipeline STT stage reads, rather than inheriting the service's 0.7. The
+  interferer that matters is background speech, which only the pre-model filter can
+  suppress. `turn_detection` is deliberately left unset — its default is adaptive
+  and entity-aware, and pinning `min_silence` disables that for the session.
+
+  **`sttPrompt` is honoured in S2S mode**, sent as `input.transcription_prompt`
+  (trimmed to that field's documented 1750-char cap, keeping the head). It was
+  pipeline-only, which made it a silent config drop: `agent({ sttPrompt })` and
+  host mode's `host.sttPrompt` both reached the agent definition and only
+  `pipeline-transport.ts` ever read it, so an S2S agent that set one got unbiased
+  transcription with no warning. Measured on tau2-bench retail, a transcription
+  prompt took the authenticating caller's spelled first name from 1 of 6 attempts
+  correct to 6 of 6.
+
+- ae9fd19: Send AssemblyAI voice_focus_threshold, defaulting to 0.9 (above the service's 0.7), so background speech stops reaching the transcript. Adds assemblyAIStt({ voiceFocusThreshold }).
+
 ## 5.9.0
 
 ## 5.8.1

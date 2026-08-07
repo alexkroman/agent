@@ -1,5 +1,52 @@
 # @alexkroman1/aai-cli
 
+## 5.10.0
+
+### Patch Changes
+
+- b037dd6: Enable the V8 compile cache for the aai bin and drop the redundant --experimental-strip-types NODE_OPTIONS from aai test; pass --singleThreaded to project typechecks (~2x faster under a one-core reservation).
+- d569226: Serialize global-config updates across processes so a concurrent command can no longer discard the API key `aai login` just saved, and surface `aai dev` rebuild failures on stderr instead of silencing them when stdout is a pipe.
+- fbccb3e: Forward an optional retryDelay through DeleteOpts so retry-path tests don't sleep real wall-clock time
+- Updated dependencies [b125465]
+- Updated dependencies [1731876]
+- Updated dependencies [b125465]
+- Updated dependencies [b125465]
+- Updated dependencies [4b6e064]
+- Updated dependencies [b125465]
+- Updated dependencies [b125465]
+- Updated dependencies [fb7b545]
+- Updated dependencies [b125465]
+- Updated dependencies [c7617df]
+- Updated dependencies [b125465]
+- Updated dependencies [520900f]
+- Updated dependencies [b125465]
+- Updated dependencies [c524b76]
+- Updated dependencies [b125465]
+- Updated dependencies [4b6e064]
+- Updated dependencies [b125465]
+- Updated dependencies [b125465]
+- Updated dependencies [b125465]
+- Updated dependencies [ae9fd19]
+- Updated dependencies [b125465]
+- Updated dependencies [6ca79e0]
+- Updated dependencies [b125465]
+- Updated dependencies [fee8ece]
+- Updated dependencies [ae9fd19]
+- Updated dependencies [d8e34d8]
+- Updated dependencies [a90296e]
+- Updated dependencies [b125465]
+- Updated dependencies [a82e54d]
+- Updated dependencies [4b6e064]
+- Updated dependencies [1c5056f]
+- Updated dependencies [4b6e064]
+- Updated dependencies [b125465]
+- Updated dependencies [b125465]
+- Updated dependencies [b125465]
+- Updated dependencies [b125465]
+- Updated dependencies [ae9fd19]
+  - @alexkroman1/aai@5.10.0
+  - @alexkroman1/aai-ui@5.10.0
+
 ## 5.9.0
 
 ### Minor Changes

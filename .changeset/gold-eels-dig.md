@@ -1,5 +1,0 @@
----
-"@alexkroman1/aai": minor
----
-
-Add per-stage endpoint and credential overrides for the AssemblyAI stages, and make aai dev file watching opt-in. assemblyAITts gains host, assemblyAILlm gains gatewayUrl (winning over region, as assemblyAIStt streamingUrl already does over its own), and all three AssemblyAI descriptors accept apiKeyEnv to name the env var holding that stage's credential. The keys are strictly environment-scoped — measured, a production key is rejected by the sandbox STT cluster with 1008 and a staging key is rejected by production STT and TTS — so running one stage against a staging cluster needs both credentials live at once, which the single shared ASSEMBLYAI_API_KEY could not express. apiKeyEnv names a variable rather than carrying a key, so descriptors stay secret-free and serializable. Separately, aai dev no longer watches for file changes unless AAI_DEV_WATCH=1: a restart ends in-flight voice sessions, so a stray save during a long benchmark run surfaced as a provider failure several records deep.
