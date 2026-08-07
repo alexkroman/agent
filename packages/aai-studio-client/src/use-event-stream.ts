@@ -22,6 +22,28 @@ const EVENTS_RETRY_MS = 3000;
  */
 const EVENTS_RETRY_MAX_MS = 60_000;
 
+/**
+ * How long a stream must STAY open to count as one that worked, and so to
+ * earn the backoff reset.
+ *
+ * Accepting the request is not the same as serving it. A server that answers
+ * `200` and then ends the body immediately — a crash-looping container, a
+ * Modal instance being replaced mid-rollout, a proxy that upgrades and drops
+ * — opened the stream by every test this hook can apply, so resetting on
+ * `onOpen` reset the counter on EVERY attempt and the backoff never grew.
+ * Measured against a server in exactly that state: a flat attempt every 3.0s
+ * indefinitely (8 in 22s), versus the correct 3s/6s/12s when the same server
+ * refused the connection outright. Two subscriptions per tab makes that ~40
+ * requests a minute, forever, aimed at a server already unhealthy enough to
+ * be dropping streams — the transport-side twin of the 401 storm above.
+ *
+ * Comfortably over the server's 25s SSE heartbeat would be stricter than
+ * needed: a stream that carried even one heartbeat is demonstrably serving.
+ * 10s is past every instant-drop failure while still treating a stream that
+ * survived a plausible restart window as healthy.
+ */
+const EVENTS_MIN_UPTIME_MS = 10_000;
+
 export type StreamHandlers = {
   onOpen: () => void;
   onDown: (reason: StreamDownReason) => void;
@@ -50,14 +72,22 @@ export function useEventStream(
     let retry: ReturnType<typeof setTimeout> | undefined;
     let failures = 0;
     const start = () => {
+      // Per attempt: when this stream opened, so `onDown` can tell a stream
+      // that SERVED from one that was merely accepted.
+      let openedAt: number | undefined;
       unsubscribe = subscribe({
         onOpen: () => {
-          failures = 0;
+          openedAt = Date.now();
         },
         onDown: (reason) => {
           if (stopped) return;
           if (reason === "auth") void onAuthFailure();
-          failures += 1;
+          // A stream that stayed up long enough to be working starts the
+          // backoff over (a long-lived subscription that drops once must
+          // reconnect promptly). One that died immediately is a FAILURE, no
+          // matter that the server accepted it — see EVENTS_MIN_UPTIME_MS.
+          const served = openedAt !== undefined && Date.now() - openedAt >= EVENTS_MIN_UPTIME_MS;
+          failures = served ? 1 : failures + 1;
           const delay = Math.min(EVENTS_RETRY_MS * 2 ** (failures - 1), EVENTS_RETRY_MAX_MS);
           retry = setTimeout(start, delay);
         },

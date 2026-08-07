@@ -18,6 +18,7 @@ import { createEpoch } from "@alexkroman1/aai/internal";
 import type { ClientMessage } from "@alexkroman1/aai/protocol";
 import { loadClientConfig } from "./client-config.ts";
 import { initAudioCapture, loadAudioModules } from "./session-core-audio-setup.ts";
+import { createHandshakeGuard, HANDSHAKE_ERROR } from "./session-core-handshake.ts";
 import {
   CLEARED_SESSION_STATE,
   createMessageHandlers,
@@ -316,10 +317,31 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     // connection error instead of a plain disconnect.
     let socketErrored = false;
 
+    // A socket that opened but never became a session (session-core-handshake.ts).
+    const handshake = createHandshakeGuard({
+      socket,
+      signal: sig,
+      onRetry: () => {
+        cleanupAudio();
+        conn.generation.bump();
+        updateState({ state: "connecting", recording: false });
+      },
+      onExhausted: () => {
+        cleanupAudio();
+        // Abort first so these listeners are detached and the close below
+        // cannot re-enter them with a contradicting state.
+        controller.abort();
+        socket.close();
+        conn.ws = null;
+        updateState({ state: "error", error: HANDSHAKE_ERROR, running: false, recording: false });
+      },
+    });
+
     socket.addEventListener(
       "open",
       () => {
         updateState({ state: "ready" });
+        handshake.arm();
       },
       { signal: sig },
     );
@@ -328,7 +350,9 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
       "message",
       (event: MessageEvent) => {
         const config = handleMessage(event.data);
-        if (config) onServerConfig(config);
+        if (!config) return;
+        handshake.disarm();
+        onServerConfig(config);
       },
       { signal: sig },
     );
@@ -347,6 +371,9 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
         if (sig.aborted) {
           return;
         }
+        // Whatever ends this socket, its handshake is no longer pending —
+        // a survivor would fire against the NEXT attempt's open window.
+        handshake.disarm();
         cleanupAudio();
         if (!conn.retiredByServer && reconnectPending(socket)) {
           // partysocket retries with backoff. Keep the listeners attached

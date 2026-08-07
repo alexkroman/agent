@@ -31,7 +31,9 @@ describe("fetchClientConfig", () => {
       name: "a",
       greeting: "hi",
     });
-    expect(fetchFn).toHaveBeenCalledWith("http://h/a/client-config");
+    // The init carries the deadline signal (see loadClientConfig); the URL is
+    // what this case is about.
+    expect(fetchFn).toHaveBeenCalledWith("http://h/a/client-config", expect.anything());
   });
 
   it("ignores unknown fields from an older server", async () => {
@@ -88,6 +90,34 @@ describe("loadClientConfig", () => {
 
   it("reports null on a malformed body", async () => {
     const fetchFn = vi.fn(async () => jsonResponse({ name: 42 }));
+    await expect(loadClientConfig("http://h/", fetchFn)).resolves.toBeNull();
+  });
+
+  // A hang is not a failure — the promise simply never settles — and this
+  // lookup runs inside the session's WebSocket URL provider, which
+  // partysocket awaits under `_connectLock` before it arms any timeout of
+  // its own. Without a deadline here NO socket is ever constructed, so none
+  // of the 10 reconnect attempts happen and the session sits on "connecting"
+  // forever, long after the server is back.
+  it("deadlines the request, so a server that hangs can't wedge the URL provider", async () => {
+    let signal: AbortSignal | null | undefined;
+    const fetchFn = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      signal = init?.signal;
+      return jsonResponse({ name: "a" });
+    });
+    await loadClientConfig("http://h/", fetchFn);
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(signal?.aborted).toBe(false);
+  });
+
+  it("reports null when that deadline fires, degrading like any other failure", async () => {
+    // What a real fetch does when its timeout signal aborts. It has to reach
+    // the same `null` as a network error: `serverIsBroker` must stay
+    // unlatched so the attempt falls through to the same-origin path and the
+    // NEXT attempt re-fetches this.
+    const fetchFn = vi.fn(async () => {
+      throw new DOMException("signal timed out", "TimeoutError");
+    });
     await expect(loadClientConfig("http://h/", fetchFn)).resolves.toBeNull();
   });
 

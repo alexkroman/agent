@@ -254,6 +254,24 @@ describe("api.agentPageReady", () => {
     );
     await expect(api.agentPageReady("p-preview")).resolves.toBe(false);
   });
+
+  test("the probe is deadlined — a hung one would stop the poll loop for good", async () => {
+    // The pane re-arms its timer from the settled promise, so a request that
+    // never settles doesn't miss a tick, it ends the polling: "Starting your
+    // preview" stays up even after the preview deployed.
+    const fetchMock = stubFetch({ "/p-preview/health": () => jsonResponse({ status: "ok" }) });
+    await api.agentPageReady("p-preview");
+    const signal = fetchMock.mock.calls[0]?.[1]?.signal;
+    expect(signal).toBeInstanceOf(AbortSignal);
+  });
+
+  test("a timed-out probe reads as not-ready, which is what re-arms the poll", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.reject(new DOMException("signal timed out", "TimeoutError"))),
+    );
+    await expect(api.agentPageReady("p-preview")).resolves.toBe(false);
+  });
 });
 
 describe("isTransientError", () => {
