@@ -1,5 +1,21 @@
 # @alexkroman1/aai-cli
 
+## 5.11.0
+
+### Minor Changes
+
+- 678acea: Scaffold a self-hosted `server.mjs` and an `npm start` script into every
+  project, so any agent runs on your own infrastructure without the CLI, a
+  bundler, or a platform account. Adds `aai eject` to retrofit both into
+  projects created before this.
+
+### Patch Changes
+
+- f06e2b7: Print the visible project list when `aai pull` finds no such studio project, so a login scoped to the wrong account names itself instead of looking like a missing project.
+- Updated dependencies [e8d5e15]
+  - @alexkroman1/aai@5.11.0
+  - @alexkroman1/aai-ui@5.11.0
+
 ## 5.10.1
 
 ### Patch Changes
