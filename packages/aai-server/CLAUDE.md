@@ -181,12 +181,20 @@ differ, and each is a decision rather than an oversight:
   REPLICAS, not users, so we are orders of magnitude below it. The documented
   direction if this ever moves, and worth knowing before adding a fourth
   watched table.
-- **Realtime is protected by the GRANT, not by RLS.** The three published
-  tables have no policies; what stops a browser subscribing is that
-  `anon`/`authenticated` hold no `select` on `aai_platform` (and it is not a
-  PostgREST-exposed schema). That is sound and doubly covered, but Supabase's
-  docs — and their linter, which only inspects `public` — assume RLS is the
-  gate, so nothing external would ever flag a mistake here.
+- **RLS is enabled and DENY-ALL, which is not what RLS is usually for.**
+  Access is really controlled by the grant: `anon`/`authenticated` hold no
+  privilege on `aai_platform`, and it is not a PostgREST-exposed schema.
+  Policies would add nothing on top — the platform connects as the tables'
+  OWNER (owners bypass RLS) and Realtime subscribes as `service_role`
+  (BYPASSRLS), so every real reader is exempt anyway. What
+  `20260807000000_platform_rls.sql` buys is the failure mode of a mistake:
+  add a grant to `authenticated`, or expose the schema, and the result is zero
+  rows rather than every tenant's workspace. **ENABLE, never FORCE** — forcing
+  applies policies to the owner too, i.e. to every query the platform makes.
+  Three guards in `platform-schema.test.ts` hold all of this, and they exist
+  because NOTHING EXTERNAL WILL: splinter's `rls_disabled_in_public` (0013)
+  and the RLS-disabled email alerts both key on `public`, so a table added
+  here without RLS is invisible to every check Supabase runs on the project.
 - **Per-app Postgres roles instead of RLS.** "Generally you wouldn't use
   these roles for your own application… use Row Level Security" does not
   apply: RLS presumes a trusted client presenting a user JWT, and ours is
