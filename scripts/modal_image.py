@@ -27,6 +27,9 @@ import modal
 # Repo root (this file lives at scripts/modal_image.py).
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
+# Keep in lockstep with the root package.json ``packageManager`` field. Drift is
+# self-healing but not free: pnpm 10 manages its own version, so a mismatched
+# global install silently downloads the declared one on first invocation.
 PNPM_VERSION = "10.29.3"
 
 # Build artifacts and local state must not leak into the image build context —
@@ -154,7 +157,15 @@ def build_image(*, port: int, extra_env: dict[str, str] | None = None):
         # server (see "Dev/prod parity" in CLAUDE.md).
         modal.Image.from_registry("node:26-slim", add_python="3.13")
         .apt_install("ca-certificates")
-        .run_commands(f"corepack enable && corepack prepare pnpm@{PNPM_VERSION} --activate")
+        # pnpm comes from npm, NOT corepack. Node stopped shipping corepack in
+        # its official distributions at 25 (TSC vote; it remains bundled only
+        # in 24 and earlier), so the `corepack enable` this line replaced —
+        # untouched by the 24 → 26 bump — failed the image build outright:
+        # `/bin/sh: 1: corepack: not found`, container exit status 127, before
+        # a single package was fetched. npm is still bundled, and the guest
+        # harness image already depends on that (see the `RUN npm install` in
+        # aai-server/modal-harness-image.ts), so this adds no new assumption.
+        .run_commands(f"npm install --global --no-audit --no-fund pnpm@{PNPM_VERSION}")
         .add_local_dir(REPO_ROOT, remote_path="/app", copy=True, ignore=BUILD_IGNORE)
         .workdir("/app")
         .run_commands(
