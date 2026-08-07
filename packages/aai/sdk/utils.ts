@@ -119,3 +119,58 @@ export function isTextAssetPath(assetPath: string): boolean {
   if (dot === -1) return false;
   return TEXT_ASSET_EXTENSIONS.has(assetPath.slice(dot + 1).toLowerCase());
 }
+
+/**
+ * Typographic characters that a text-to-speech engine should never see, mapped
+ * to their ASCII equivalents.
+ *
+ * **Every entry must be a single UTF-16 code unit mapping to a single code
+ * unit.** The heard cursor indexes a reply's TTS text by `text.length`
+ * (`spans.push({ len: text.length })` in `host/transports/pipeline-heard.ts`),
+ * and that index is what decides which words history records as heard and
+ * where a false-interruption resume picks up. A substitution that changed
+ * length would silently shift both. That rules out the tempting additions —
+ * an ellipsis to three dots, a dash to a spelled word — and they are unwanted
+ * anyway: `—` and `…` carry PROSODY, and TTS engines already render them as
+ * pauses.
+ *
+ * Scoped to the quote/apostrophe family for that reason: those characters
+ * carry no prosody, and they are what an LLM actually emits. Model output is
+ * full of them — `You’re`, `I’ll`, `don’t` — because the training data is
+ * typeset prose, and a curly apostrophe is a different codepoint from the
+ * straight one every pronunciation lexicon is keyed on.
+ */
+const SPEECH_CHAR_MAP: ReadonlyMap<string, string> = new Map([
+  ["‘", "'"], // ‘ left single quote
+  ["’", "'"], // ’ right single quote — the apostrophe LLMs emit
+  ["‚", "'"], // ‚ single low-9 quote
+  ["‛", "'"], // ‛ single high-reversed-9 quote
+  ["ʼ", "'"], // ʼ modifier letter apostrophe
+  ["′", "'"], // ′ prime
+  ["“", '"'], // “ left double quote
+  ["”", '"'], // ” right double quote
+  ["„", '"'], // „ double low-9 quote
+  ["″", '"'], // ″ double prime
+  ["‟", '"'], // ‟ double high-reversed-9 quote
+]);
+
+/** Character class matching every key of {@link SPEECH_CHAR_MAP}. */
+const SPEECH_CHARS = /[‘’‚‛ʼ′“”„″‟]/g;
+
+/**
+ * Normalize text on its way to a TTS engine: typographic quotes and
+ * apostrophes become their ASCII equivalents.
+ *
+ * Applied at the single point where the pipeline hands text to the provider,
+ * so it covers model output, the greeting, the error phrase and the dead-air
+ * filler alike. **Length-preserving by construction** — see
+ * {@link SPEECH_CHAR_MAP} for why that is load-bearing rather than incidental.
+ *
+ * Returns the input unchanged (same reference) when there is nothing to
+ * replace, which is the common case for a reply with no contractions.
+ */
+export function normalizeSpeechText(text: string): string {
+  SPEECH_CHARS.lastIndex = 0;
+  if (!SPEECH_CHARS.test(text)) return text;
+  return text.replace(SPEECH_CHARS, (c) => SPEECH_CHAR_MAP.get(c) ?? c);
+}

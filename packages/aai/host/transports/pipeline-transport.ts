@@ -9,6 +9,7 @@
 
 import type { SttError, TtsError } from "../../sdk/providers.ts";
 import type { Message } from "../../sdk/types.ts";
+import { normalizeSpeechText } from "../../sdk/utils.ts";
 import { bytesToPcm16, pcm16ToBytes } from "../_pcm.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
 import { createEmitError } from "./pipeline-error.ts";
@@ -261,7 +262,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
    * final. The tail advances either way: it feeds the tail-resume estimate. */
   function sendTtsText(text: string, opts?: SendTtsOptions): void {
     turns.openAudioGate();
-    providers.tts?.sendText(text);
+    // ASCII-fold typographic quotes for the engine; length-preserving, so the
+    // heard cursor below still indexes the same positions (normalizeSpeechText).
+    providers.tts?.sendText(normalizeSpeechText(text));
     const tail = heard.onText(text, opts?.record !== false);
     if (opts?.publishTranscript !== false) callbacks.onAgentTranscriptPartial?.(tail);
   }

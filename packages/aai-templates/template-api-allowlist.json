@@ -133,6 +133,7 @@
     "errorDetail",
     "errorMessage",
     "isTextAssetPath",
+    "normalizeSpeechText",
     "safeJsonParse",
     "toArgsRecord",
     "toolError"
