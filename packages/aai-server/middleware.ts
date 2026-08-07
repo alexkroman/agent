@@ -55,8 +55,9 @@ export function invalidateUserApiKey(secrets: SecretStore, userId: string): void
   userKeyCaches.get(secrets)?.delete(userId);
 }
 
-// Reverse lookup for RAW-key bearers: which studio user stored this key via
-// the account route (`key-user:<sha256(key)>`)? It rides every CLI request,
+// Reverse lookup for RAW-key bearers: which studio user owns this key
+// (`key-user:<sha256(key)>`, written by the account route and by the
+// `aai login` approval)? It rides every CLI request,
 // so it is cached like the user→key lookup above — including negatives ("")
 // since most raw keys (evals, programmatic callers, pre-login CLIs) have no
 // owner and would otherwise pay a Vault round trip per request. A stale
@@ -104,8 +105,8 @@ async function lookupApiKeyOwner(
  * (`user-key:<uid>`), so every downstream consumer (ownership hashes, the
  * gateway LLM, deploy env seeding) sees the real key either way.
  *
- * Raw keys additionally resolve a `userId` when the key was stored as some
- * account's key (the `key-user:` reverse mapping) — that is what puts a
+ * Raw keys additionally resolve a `userId` when some account owns the key
+ * (the `key-user:` reverse mapping) — that is what puts a
  * linked CLI in the same studio scope as the browser session. An unmapped
  * key keeps the legacy key-derived scope.
  */

@@ -196,6 +196,34 @@ describe("executePull", () => {
     });
   });
 
+  // The 404's hint is the only place the two causes are distinguishable: a
+  // typo has neighbours, while an empty list means this login is scoped to a
+  // different account than the studio the project lives in.
+  test("names the visible projects on a 404 — or that there are none", async () => {
+    await withTempDir(async (dir) => {
+      routeApi({
+        "GET /studio/projects/ghost": null,
+        "GET /studio/projects": { projects: ["pizza", "support-bot"] },
+      });
+      await expect(executePull({ cwd: dir, project: "ghost" })).rejects.toMatchObject({
+        code: "not_found",
+        hint: "Your projects: pizza, support-bot.",
+      });
+
+      routeApi({ "GET /studio/projects/ghost": null, "GET /studio/projects": { projects: [] } });
+      await expect(executePull({ cwd: dir, project: "ghost" })).rejects.toMatchObject({
+        hint: expect.stringContaining("linked to a different account"),
+      });
+
+      // The list is a second request on an already-failing path: its failure
+      // must not replace the 404.
+      routeApi({ "GET /studio/projects/ghost": null });
+      await expect(executePull({ cwd: dir, project: "ghost" })).rejects.toMatchObject({
+        hint: "Run `aai list` to see your projects.",
+      });
+    });
+  });
+
   test("rejects pulled paths that escape the target directory", async () => {
     await withTempDir(async (dir) => {
       routeApi({

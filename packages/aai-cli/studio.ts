@@ -59,6 +59,32 @@ async function materializeFiles(dir: string, files: Record<string, string>): Pro
   }
 }
 
+/**
+ * The hint for a pull that found nothing, which is where the two causes have
+ * to be told apart — and only the project LIST can do it. A typo has other
+ * projects beside it; an empty list means this login sees no projects at all,
+ * i.e. the CLI is authenticated as a different account than the browser the
+ * project was created in (the account's key is what decides studio scope —
+ * see `resolveBearer` server-side). Naming the visible projects is also the
+ * answer to a typo, so the round trip pays for itself either way. Best
+ * effort: the list is a second request on an already-failing path, and its
+ * own failure must not replace the 404 the user needs to see.
+ */
+async function notFoundHint(serverUrl: string, apiKey: string): Promise<string> {
+  const projects = await listStudioProjects(serverUrl, apiKey).catch(() => null);
+  if (projects === null) return "Run `aai list` to see your projects.";
+  if (projects.length === 0) {
+    return (
+      "This login has no studio projects at all. If yours are in the studio, the CLI is " +
+      "linked to a different account — run `aai login` again, approve it in a browser " +
+      "signed in to the account that owns the project, then `aai list`."
+    );
+  }
+  const shown = projects.slice(0, 10).join(", ");
+  const rest = projects.length > 10 ? `, and ${projects.length - 10} more` : "";
+  return `Your projects: ${shown}${rest}.`;
+}
+
 export async function executePull(opts: {
   cwd: string;
   project: string;
@@ -72,7 +98,7 @@ export async function executePull(opts: {
     throw new CliError(
       "not_found",
       `No studio project named "${opts.project}".`,
-      "Run `aai list` to see your projects.",
+      await notFoundHint(serverUrl, apiKey),
     );
   }
 
