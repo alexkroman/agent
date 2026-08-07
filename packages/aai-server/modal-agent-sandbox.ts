@@ -16,14 +16,14 @@ import { performance } from "node:perf_hooks";
 import { errorMessage } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
 import { GUEST_READY_TIMEOUT_MS, raceGuestExit } from "./guest-readiness.ts";
-import { guestExecBaseEnv, HARNESS_REMOTE_PATH } from "./modal-harness-image.ts";
 import {
   GUEST_PORT,
   GUEST_READINESS_PROBE,
   harnessCode,
   type ModalSpawnContext,
   modalContext,
-} from "./modal-sandbox.ts";
+} from "./modal-context.ts";
+import { guestExecBaseEnv, HARNESS_REMOTE_PATH } from "./modal-harness-image.ts";
 import {
   DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
   DEFAULT_SANDBOX_TIMEOUT_MS,

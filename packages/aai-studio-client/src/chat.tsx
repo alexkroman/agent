@@ -10,7 +10,8 @@ import { DefaultChatTransport, type UIMessage } from "ai";
 import clsx from "clsx";
 import { memo, useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { StickToBottom } from "use-stick-to-bottom";
-import { type ChatSession, errorText, type StudioStatus } from "./api.ts";
+import type { ChatSession, StudioStatus } from "./api.ts";
+import { errorText } from "./api-error.ts";
 import {
   drainText,
   EMPTY_QUEUE,

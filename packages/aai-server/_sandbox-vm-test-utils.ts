@@ -15,8 +15,8 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { vi } from "vitest";
-import type { ModalProcLike, ModalSandboxLike, ModalSpawnContext } from "./modal-sandbox.ts";
-import { GUEST_PORT } from "./modal-sandbox.ts";
+import type { ModalProcLike, ModalSandboxLike, ModalSpawnContext } from "./modal-context.ts";
+import { GUEST_PORT } from "./modal-context.ts";
 import type { RpcWebSocket } from "./rpc-transport.ts";
 import type { AgentSpawnOptions } from "./sandbox-vm.ts";
 

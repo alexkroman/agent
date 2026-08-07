@@ -10,9 +10,12 @@ workspaces, previews, and Publish. Its front-end is in
 The browser studio's server side (documented below):
 
   `studio-routes.ts` (HTTP surface), `studio-session-broker.ts` (per-project
-  coding-agent sandboxes: boot via the shared `spawnWarmHarness` machinery, session
-  install, guest RPC handlers, `buildWorkspace` for Publish, idle
-  eviction), `studio-session-registry.ts` (the cross-replica row that makes
+  coding-agent sandboxes: the collaborators, the per-project lock, and the
+  public surface), `studio-session-ensure.ts` (the reuse -> adopt -> spawn
+  ladder and what a session install IS — everything in it runs under that
+  lock), `studio-session-idle.ts` (teardown + idle eviction),
+  `studio-session-publish.ts` (`buildWorkspace` for Publish),
+  `studio-session-registry.ts` (the cross-replica row that makes
   a project's sandbox one fleet-wide, not one per replica),
   `studio-session-adopt.ts` (installing a session into a PEER's guest over
   HTTP), `studio-llm.ts` (gateway model config; the key is always the

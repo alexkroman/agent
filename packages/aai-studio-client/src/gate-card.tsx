@@ -9,7 +9,7 @@
  * trying again cannot change.
  */
 
-import { ApiError, errorText, isTransientError } from "./api.ts";
+import { ApiError, errorText, isTransientError } from "./api-error.ts";
 import logoUrl from "./assets/assemblyai-logomark.svg";
 
 export function GateCard({ children }: { children: React.ReactNode }) {

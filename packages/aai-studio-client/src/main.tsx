@@ -30,7 +30,8 @@
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { ApiError, api, errorText, isTransientError } from "./api.ts";
+import { api } from "./api.ts";
+import { ApiError, errorText, isTransientError } from "./api-error.ts";
 import { App } from "./app.tsx";
 import { useStudioAuth } from "./auth.tsx";
 import { clearCliLinkCode, consumeCliLinkCode, linkConfirmationCode } from "./cli-link.ts";

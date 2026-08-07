@@ -1,98 +1,24 @@
 // Copyright 2026 the AAI authors. MIT license.
+/**
+ * The studio session broker's lifecycle: boot, reuse, refresh, evict, and the
+ * cross-replica adopt ladder. The `workspace/deploy` (Publish) path is
+ * studio-session-publish.test.ts; both share the fakes in
+ * _studio-session-test-utils.ts.
+ */
 
 import { createMemoryChatStore } from "aai-server/chat-store";
-import type { GuestConnection } from "aai-server/rpc-schemas";
-import type { WarmHarness } from "aai-server/sandbox-vm";
 import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
 import { describe, expect, test, vi } from "vitest";
-import { createMemoryPreviewQueue, type PreviewJob } from "./studio-preview-queue.ts";
+import {
+  type FakeGuest,
+  fakeGuest,
+  makeBroker,
+  PROJECT,
+  SCOPE,
+} from "./_studio-session-test-utils.ts";
 import { chatUrlForGuest, createStudioSessionBroker } from "./studio-session-broker.ts";
 import { createMemoryStudioSessionRegistry } from "./studio-session-registry.ts";
 import { createWorkspace, getWorkspace } from "./studio-workspace.ts";
-
-const SCOPE = "scope";
-const PROJECT = "proj";
-
-type FakeGuest = {
-  warm: WarmHarness;
-  requests: { method: string; params: unknown }[];
-  handlers: Map<string, (params: unknown) => unknown>;
-  disposed: () => boolean;
-};
-
-function fakeGuest(guestOrigin = "wss://tunnel.example:443"): FakeGuest {
-  const requests: FakeGuest["requests"] = [];
-  const handlers = new Map<string, (params: unknown) => unknown>();
-  let disposed = false;
-  const conn = {
-    sendRequest: async (method: string, params?: unknown) => {
-      if (disposed) throw new Error("Connection disposed");
-      requests.push({ method, params });
-      if (method === "workspace/deploy") {
-        return {
-          ok: true,
-          slug: "proj",
-          url: "https://platform.example/proj",
-          output: "Deployed https://platform.example/proj",
-        };
-      }
-      return { ok: true };
-    },
-    sendNotification: () => undefined,
-    onRequest: (method: string, handler: (params: unknown) => unknown) => {
-      handlers.set(method, handler);
-    },
-    onNotification: () => undefined,
-    listen: () => undefined,
-    dispose: () => {
-      disposed = true;
-    },
-  } as unknown as GuestConnection;
-  const warm = {
-    conn,
-    guestOrigin,
-    token: "sandbox-token",
-    sessionUrl: `${guestOrigin}/websocket`,
-    [Symbol.asyncDispose]: async () => {
-      disposed = true;
-    },
-  } as unknown as WarmHarness;
-  return { warm, requests, handlers, disposed: () => disposed };
-}
-
-async function makeBroker(
-  guests: FakeGuest[],
-  extra: Partial<Parameters<typeof createStudioSessionBroker>[0]> = {},
-) {
-  const workspaces = createMemoryWorkspaceStore();
-  const chats = createMemoryChatStore();
-  await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
-  let spawned = 0;
-  const spawn = vi.fn(async () => {
-    const guest = guests[spawned];
-    spawned += 1;
-    if (!guest) throw new Error("no more fake guests");
-    return guest.warm;
-  });
-  // Every preview job enqueued: the ROW is what a redelivery elsewhere sees.
-  const enqueued: PreviewJob[] = [];
-  const inner = createMemoryPreviewQueue();
-  const broker = createStudioSessionBroker({
-    workspaces,
-    chats,
-    spawn: spawn as never,
-    harnessPath: "/fake/harness.mjs",
-    previewQueue: {
-      ...inner,
-      enqueue: (job) => {
-        enqueued.push(job);
-        return inner.enqueue(job);
-      },
-    },
-    ...extra,
-  });
-  return { broker, workspaces, chats, spawn, enqueued };
-}
 
 describe("studio session broker", () => {
   test("boots a sandbox, installs the session, and returns the public chat URL", async () => {
@@ -469,113 +395,6 @@ describe("chatUrlForGuest", () => {
       "https://h.modal.host:12345/studio/chat",
     );
     expect(chatUrlForGuest("ws://127.0.0.1:8080")).toBe("http://127.0.0.1:8080/studio/chat");
-  });
-});
-
-describe("studio publish (workspace/deploy)", () => {
-  // Publish output is posted into the chat for the coding agent to read, so a
-  // sandbox that dies mid-build (an OOM at the bundler's peak is the
-  // realistic one) has to come back as deploy OUTPUT. Thrown, it reached the
-  // route as a bare 500 with nothing anyone could act on.
-  test("a sandbox that dies mid-publish returns failure output, not a throw", async () => {
-    const guest = fakeGuest();
-    // No live chat session for this project, so Publish spawns its own
-    // sandbox — the path that had no error handling at all.
-    guest.warm.conn.dispose();
-    const { broker } = await makeBroker([guest]);
-
-    const outcome = await broker.deployWorkspace(
-      SCOPE,
-      PROJECT,
-      { "agent.ts": "// v1" },
-      {
-        serverUrl: "https://platform.example",
-        apiKey: "caller-key",
-      },
-    );
-
-    expect(outcome.ok).toBe(false);
-    expect(outcome.output).toMatch(/stopped responding/i);
-    expect(outcome.output).toMatch(/out of memory/i);
-    await broker.dispose();
-  });
-
-  // The other half of the same path: killing the sandbox early enough means
-  // the SPAWN fails (the dial times out) rather than the deploy RPC. Same
-  // user-visible situation, and it took the same unhandled route to a 500.
-  test("a sandbox that never starts returns failure output, not a throw", async () => {
-    const workspaces = createMemoryWorkspaceStore();
-    const chats = createMemoryChatStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
-    const broker = createStudioSessionBroker({
-      workspaces,
-      chats,
-      spawn: (async () => {
-        throw new Error("guest WebSocket not dialable after 30000ms");
-      }) as never,
-      harnessPath: "/fake/harness.mjs",
-    });
-
-    const outcome = await broker.deployWorkspace(
-      SCOPE,
-      PROJECT,
-      { "agent.ts": "// v1" },
-      {
-        serverUrl: "https://platform.example",
-        apiKey: "caller-key",
-      },
-    );
-
-    expect(outcome.ok).toBe(false);
-    expect(outcome.output).toMatch(/could not start a build sandbox/i);
-    expect(outcome.output).toMatch(/nothing was deployed/i);
-    await broker.dispose();
-  });
-
-  // `afterDeploy` is what lets a per-deploy consequence — the studio uses it
-  // to give a newly claimed slug the database its project asked for — be
-  // wired ONCE for both deploy paths (Publish and the auto preview) instead
-  // of into one and forgotten in the other.
-  test("afterDeploy runs with the claimed slug, on success only", async () => {
-    const afterDeploy = vi.fn(async () => undefined);
-    const { broker } = await makeBroker([fakeGuest(), fakeGuest()], { afterDeploy });
-    const target = { serverUrl: "https://platform.example", apiKey: "caller-key" };
-
-    await broker.deployWorkspace(SCOPE, PROJECT, { "agent.ts": "// v1" }, target);
-    expect(afterDeploy).toHaveBeenCalledWith(SCOPE, PROJECT, "proj");
-
-    // A failed deploy claimed nothing, so there is nothing to reconcile.
-    afterDeploy.mockClear();
-    const dead = fakeGuest();
-    dead.warm.conn.dispose();
-    const failing = await makeBroker([dead], { afterDeploy });
-    const outcome = await failing.broker.deployWorkspace(
-      SCOPE,
-      PROJECT,
-      { "agent.ts": "// v1" },
-      target,
-    );
-    expect(outcome.ok).toBe(false);
-    expect(afterDeploy).not.toHaveBeenCalled();
-    await broker.dispose();
-    await failing.broker.dispose();
-  });
-
-  test("a failing afterDeploy never turns a shipped deploy into an error", async () => {
-    // The CLI output is already on its way to the chat; reporting a transport
-    // failure over a follow-up would be a lie about what happened.
-    const afterDeploy = vi.fn(async () => {
-      throw new Error("vault unavailable");
-    });
-    const { broker } = await makeBroker([fakeGuest()], { afterDeploy });
-    const outcome = await broker.deployWorkspace(
-      SCOPE,
-      PROJECT,
-      { "agent.ts": "// v1" },
-      { serverUrl: "https://platform.example", apiKey: "caller-key" },
-    );
-    expect(outcome.ok).toBe(true);
-    await broker.dispose();
   });
 });
 

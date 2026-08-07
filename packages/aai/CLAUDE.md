@@ -26,7 +26,11 @@ boundary** — this split is critical for sandbox security:
   `tool-executor.ts`, `session-core.ts`, `s2s.ts`, `ws-handler.ts`,
   `transports/` (S2S / pipeline / OpenAI Realtime `Transport`
   implementations, including `pipeline-turn-outcome.ts` — the three ways a
-  pipeline turn ends: interrupted by barge-in, failed, or spoken), `to-vercel-tools.ts`,
+  pipeline turn ends: interrupted by barge-in, failed, or spoken — and
+  `pipeline-transport-lifecycle.ts`, the once-per-CALL half of pipeline mode
+  (provider open, greeting, the two unrecoverable provider failures, and both
+  teardowns), split from the turn orchestration on exactly the line "a failing
+  TURN is not a failing SESSION" draws), `to-vercel-tools.ts`,
   `providers/` (STT/TTS openers + descriptor→instance resolvers),
   `builtin-tools.ts`, `postgres-db.ts`.
 

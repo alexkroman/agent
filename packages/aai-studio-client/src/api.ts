@@ -3,7 +3,8 @@
 
 import type { UIMessage } from "ai";
 import { parse } from "dotenv";
-import { createParser } from "eventsource-parser";
+import { ApiError } from "./api-error.ts";
+import { type StreamDownReason, watchEventStream } from "./api-events.ts";
 
 export type ProjectData = {
   files: Record<string, string>;
@@ -64,14 +65,6 @@ export type StudioStatus = {
   model?: string;
 };
 
-export class ApiError extends Error {
-  readonly status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
-
 /**
  * Per-attempt deadline for the session broker call. A broker request issued
  * while the server is restarting can HANG rather than fail — the proxy holds
@@ -111,32 +104,6 @@ export const ACCOUNT_ATTEMPT_TIMEOUT_MS = 10_000;
  */
 export const AUTH_CONFIG_ATTEMPT_TIMEOUT_MS = 10_000;
 
-/**
- * Should a failed attempt be retried? A 4xx is a real answer from a live
- * server (bad key, missing project) that retrying cannot change — except
- * 408/429, which are the transient kind. Everything else — a rejected fetch
- * (connection refused mid-restart), a timed-out attempt, a 5xx — means the
- * server or sandbox wasn't ready, so the query keeps retrying with backoff
- * and a chat (or an account read) opened during a restart lands once the
- * server is back instead of wedging on the first failure.
- *
- * This is also the busy/broken split the gate screens word themselves from
- * (`loadFailureText`): the same errors that are worth retrying are the ones
- * that say the server is busy rather than something about this user.
- */
-export function isTransientError(err: unknown): boolean {
-  if (err instanceof ApiError && err.status >= 400 && err.status < 500) {
-    return err.status === 408 || err.status === 429;
-  }
-  return true;
-}
-
-/** A query/mutation error as displayable text; undefined when there is none. */
-export function errorText(err: unknown): string | undefined {
-  if (!err) return;
-  return err instanceof Error ? err.message : String(err);
-}
-
 /** Throw an {@link ApiError} on non-2xx responses, else parse the JSON body. */
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -157,86 +124,6 @@ async function handleResponse<T>(res: Response): Promise<T> {
     throw new ApiError(res.status, "Server returned an invalid response");
   }
   return parsed as T;
-}
-
-type SseFrame = { event: string; data: string };
-
-/**
- * Read the stream to its end, delivering each complete named frame.
- * Parsing is `eventsource-parser` (the incremental parser the AI SDK
- * ecosystem runs on) rather than hand-rolled line splitting, so spec
- * corners — comments, CR line endings, multi-line data, fields split
- * across chunk boundaries by a re-chunking proxy — are its problem, not
- * ours. Unnamed or empty events (pings) are dropped; callers dispatch on
- * the event name.
- */
-async function drainEventStream(
-  body: ReadableStream<Uint8Array>,
-  onFrame: (frame: SseFrame) => void,
-): Promise<void> {
-  const parser = createParser({
-    onEvent: (message) => {
-      if (message.event && message.data) onFrame({ event: message.event, data: message.data });
-    },
-  });
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) return;
-    parser.feed(decoder.decode(value, { stream: true }));
-  }
-}
-
-/**
- * Why an event stream went down. The distinction is load-bearing: a
- * `transport` failure (server restart, preempted container, flaky network)
- * is fixed by reconnecting, while `auth` means THIS bearer is dead and
- * reconnecting with it can only loop. Retrying an expired session token
- * every few seconds is exactly how one backgrounded tab produced 4,300
- * `401`s in three hours, each one re-verified against Supabase.
- */
-export type StreamDownReason = "auth" | "transport";
-
-/**
- * Fetch-streamed SSE subscription against a studio events route — a reader
- * rather than EventSource because the studio authenticates with a bearer
- * header, which EventSource cannot send. Returns an abort function.
- * `onOpen` fires once the server accepted the stream (the caller's signal to
- * reset its backoff); `onDown` fires when the stream ends or fails, with the
- * reason — but never on the caller's own abort.
- */
-function watchEventStream(
-  key: string,
-  path: string,
-  handlers: {
-    onFrame: (frame: SseFrame) => void;
-    onOpen?: () => void;
-    onDown: (reason: StreamDownReason) => void;
-  },
-): () => void {
-  const controller = new AbortController();
-  void (async () => {
-    let reason: StreamDownReason = "transport";
-    try {
-      const res = await fetch(path, {
-        headers: { Authorization: `Bearer ${key}`, Accept: "text/event-stream" },
-        signal: controller.signal,
-      });
-      // A session token expires after ~1h and supabase-js pauses its refresh
-      // ticker on hidden tabs, so a long-open studio tab reconnects with a
-      // token the server rejects. That needs a new token, not another try.
-      if (res.status === 401 || res.status === 403) reason = "auth";
-      if (!(res.ok && res.body)) throw new ApiError(res.status, "Event stream unavailable");
-      handlers.onOpen?.();
-      await drainEventStream(res.body, handlers.onFrame);
-    } catch {
-      // Aborted (caller unsubscribed) or failed — the finally decides.
-    } finally {
-      if (!controller.signal.aborted) handlers.onDown(reason);
-    }
-  })();
-  return () => controller.abort();
 }
 
 /**
