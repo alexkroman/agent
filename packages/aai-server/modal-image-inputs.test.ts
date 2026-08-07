@@ -129,3 +129,59 @@ describe("modal image install inputs", () => {
     expect(lock).not.toMatch(/specifier: workspace:[~^]/);
   });
 });
+
+/**
+ * The image bakes a V8 compile cache for the SERVER entry the same way the
+ * guest snapshot bakes one for the harness (~600ms → ~395ms measured on the
+ * built bundle). Three things have to agree across three files, and two of the
+ * three disagreements are SILENT — the image builds, the container boots, and
+ * the cache is merely empty or unread, costing ~200ms on every cold start
+ * forever:
+ *
+ * - the warm-up must run the entry `BUILD_COMMAND` actually produces;
+ * - the mode flag it sets must be the one the entry checks;
+ * - the runtime env must point at the directory the build warmed.
+ *
+ * The remaining half — "the entry really exits 0 in warm-up mode" — is
+ * deliberately NOT a test here: the warm-up is a fatal step of the image
+ * build, so a broken guard fails `modal deploy` loudly rather than shipping a
+ * cold cache. `dist/` is also not available to this suite (`test` depends on
+ * `^build`, not its own build), so a spawn test would have to skip itself.
+ */
+describe("modal image compile cache", () => {
+  const studioServerDir = path.join(REPO_ROOT, "packages/aai-studio-server");
+
+  test("warms the entry the build produces, after the build", () => {
+    expect(modalImagePy).toContain(
+      'SERVER_ENTRY = "/app/packages/aai-studio-server/dist/index.mjs"',
+    );
+    // The path above is only correct while the studio-server build still emits
+    // `dist/index.mjs` from `index.ts` — the one place that decides it.
+    const tsdown = readFileSync(path.join(studioServerDir, "tsdown.config.ts"), "utf-8");
+    expect(tsdown).toContain('entry: ["index.ts"]');
+    expect(tsdown).toContain('outDir: "dist"');
+    // Ordering is the whole point: warming before the build would cache a
+    // stale bundle, or none at all.
+    expect(modalImagePy).toContain(
+      ".run_commands(ASSERT_INSTALL_SURVIVED, BUILD_COMMAND, WARM_COMPILE_CACHE)",
+    );
+  });
+
+  test("sets the mode flag the entry checks", () => {
+    expect(modalImagePy).toMatch(/WARM_COMPILE_CACHE = \([\s\S]*?AAI_SERVER_WARMUP=1/);
+    const entry = readFileSync(path.join(studioServerDir, "index.ts"), "utf-8");
+    expect(entry).toContain('process.env.AAI_SERVER_WARMUP === "1"');
+    // Exiting is what makes it a warm-up rather than a boot: the build step
+    // would otherwise hang on a listening server until Modal killed it.
+    expect(entry).toMatch(/AAI_SERVER_WARMUP === "1"\)\s*{\s*process\.exit\(0\);/);
+  });
+
+  test("points the runtime at the directory it warmed", () => {
+    // Warming a cache the container never consults is the silent failure this
+    // pins: both sides must name the same constant, not the same literal.
+    expect(modalImagePy).toMatch(
+      /WARM_COMPILE_CACHE = \(\s*f"NODE_COMPILE_CACHE=\{SERVER_COMPILE_CACHE\}/,
+    );
+    expect(modalImagePy).toContain('"NODE_COMPILE_CACHE": SERVER_COMPILE_CACHE');
+  });
+});

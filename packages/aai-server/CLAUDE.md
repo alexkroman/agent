@@ -276,6 +276,29 @@ constraints survive any revival: **one public origin** (agent pages set
 preview iframe), and the studio service would need the event streams' timeout
 raised — see the note under "A long-lived connection is ONE Modal input".
 
+**aai-server is COMPILED IN to that entry, and the bundler pattern must match
+its SUBPATHS.** `aai-studio-server/tsdown.config.ts` lists it under
+`deps.alwaysBundle`; `alwaysBundle` matches the SPECIFIER, not the package, and
+every import here is a subpath (`aai-server/orchestrator`, …), so the
+`/^aai-server$/` this replaced matched nothing and the whole package stayed
+external. Nothing said so — the build succeeds and the entry runs; `dist/
+index.mjs` is merely 150 KB of import statements rather than a 3.7 MB bundle.
+The cost is paid at every container COLD START, because this package's exports
+resolve to `.ts` SOURCE (it has no build): an externalized entry made every
+boot resolve, read, type-strip and compile ~72 TypeScript modules before
+serving a request, and left the image's compile cache (below) keyed on 72 files
+instead of one. `bundled-deps.test.ts` holds the pattern to the specifiers the
+entry really imports — the built file cannot be the guard, since `test` depends
+on `^build`, not on this package's own build.
+
+One consequence to keep in mind when adding code to aai-server: **the module's
+own location is no longer where its source lives.** `createRequire(import.meta
+.url)` resolves from `packages/aai-studio-server/dist/`, whose pnpm
+`node_modules` has no `aai-guest` above it — which is why `guestPackageDir`
+(modal-harness-image.ts) falls back to deriving that package root from the
+harness path. Anything else that resolves a workspace sibling by module
+location owes the same fallback.
+
 **The shared core is the `exports` map, and nothing else.** It is an
 explicit list of 31 subpaths, grouped by role (stores, coordination, sandbox
 machinery, schemas, app composition, the routes the studio reuses), and
@@ -1209,6 +1232,21 @@ verbatim, the install layer would therefore miss on every production deploy.
 `version` and `scripts` are dropped, so the layer survives a release and
 misses only on a real dependency change. The full manifests still land in the
 source layer, so the built image carries each package's true version.
+
+**The image also bakes the SERVER's V8 compile cache**, the same trick the
+guest snapshot bakes for the harness. After `BUILD_COMMAND`, a build step runs
+the built entry once in warm-up mode (`AAI_SERVER_WARMUP=1`, honored at the top
+of `aai-studio-server/index.ts` — it evaluates the module graph and exits 0,
+opening no port, socket, or database connection) under `NODE_COMPILE_CACHE`,
+and the resulting `/app/.compile-cache` ships in the layer; `.env()` points the
+container's node at the same directory, which is the half that is silent when
+it drifts — a warmed cache nothing consults costs exactly what no cache costs.
+Measured on the built bundle: **~600ms → ~395ms**, i.e. ~200ms off every cold
+start, for ~3.6 MB in the image. Unlike the harness's warm-up this one is
+deliberately FATAL to the build: it runs the real entry, so a non-zero exit
+means the artifact production is about to run cannot be evaluated at all.
+`modal-image-inputs.test.ts` pins the three things that must agree (entry path,
+flag name, cache directory) across the recipe and the entry.
 
 Dropping `version` is safe **because every workspace dependency here is
 `workspace:*`**, which matches any version. A `workspace:^` anywhere would

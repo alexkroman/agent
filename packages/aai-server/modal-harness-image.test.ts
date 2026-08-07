@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -86,6 +87,27 @@ describe("readToolchainLock", () => {
     for (const [name, version] of Object.entries(manifest.dependencies)) {
       expect.soft(version, name).toMatch(/^\d+\.\d+\.\d+/);
     }
+  });
+
+  /**
+   * Everything above is read relative to the aai-guest package root, which
+   * this module locates two different ways (see `guestPackageDir`). The
+   * fallback — the one the DEPLOYED, bundled build takes, where
+   * `createRequire` cannot see `aai-guest` at all — derives that root from the
+   * harness path by walking up twice. That only holds while the `./harness`
+   * export stays exactly one directory deep, and moving it would break the
+   * production path alone: every test and every local run resolves through
+   * `createRequire` and would stay green.
+   */
+  test("the harness export is one directory below the package root", () => {
+    const exports = JSON.parse(
+      readFileSync(
+        path.join(path.dirname(path.dirname(resolveHarnessPath())), "package.json"),
+        "utf-8",
+      ),
+    ) as { name?: string; exports?: Record<string, string> };
+    expect(exports.name).toBe("aai-guest");
+    expect(exports.exports?.["./harness"]).toMatch(/^\.\/[^/]+\/[^/]+$/);
   });
 });
 
