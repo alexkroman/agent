@@ -114,6 +114,38 @@ segmented control switches between — `preview.tsx`, `code-view.tsx`,
   the page loads and `GET /studio/auth` succeeds (both `'self'`), so
   everything looks healthy until the button is clicked.
 
+- **A gate screen never sits on an unexplained wait** (`gate-card.tsx`, the
+  pre-app cards in `main.tsx` and the `unavailable` phase in `auth.tsx`). A
+  gate has no app behind it to degrade into — it either resolves or it IS the
+  page — so "Loading…" must always end somewhere the user can act. Two
+  mechanisms, and both are needed:
+  - **The two reads that gate the app carry per-attempt deadlines**
+    (`ACCOUNT_ATTEMPT_TIMEOUT_MS`, `AUTH_CONFIG_ATTEMPT_TIMEOUT_MS` — the same
+    hazard `CHAT_SESSION_ATTEMPT_TIMEOUT_MS` covers for the broker). A request
+    issued while the server is restarting or saturated can HANG rather than
+    fail, and a browser fetch has no timeout of its own, so the studio sat on
+    "Loading…" (or, for the auth config, a BLANK page) indefinitely. The
+    deadline is also what makes a retry button possible rather than merely
+    faster: TanStack Query folds a `refetch` into the in-flight promise, so
+    while the fetch never settles there is nothing a button can start.
+  - **The card appears after ONE failed attempt, not when the query gives
+    up** (`gateProblem`). A failure mid-retry lives in `failureReason` and
+    leaves `error` NULL, so a gate reading `error` alone shows the same
+    "Loading…" through the whole backoff. The automatic retries keep running
+    behind the card, so whichever lands first — a retry or the user's click —
+    opens the app; while one is in flight the button says "Retrying…" and is
+    disabled, because a press then would fold into it and appear to do
+    nothing.
+
+  Wording splits on `isTransientError` (`loadFailureText`): a 5xx, a rejected
+  fetch, or a timed-out attempt says nothing about this user, so it reads as
+  "AssemblyAI Build is busy right now" with the server's own answer quoted
+  only when it gave one (a timeout's "signal timed out" reads as a bug in the
+  page). Anything else will refuse again, so it is quoted verbatim — that text
+  is what distinguishes a rejected key from a missing account. A failure with
+  no retry at all is deliberate in exactly one case: a server that answers
+  "sign-in is not configured here" will answer that again.
+
 - **The pane probes before it frames** (`useAgentPageReady` in
   `preview.tsx`): a stamped `previewSlug` is not proof the platform serves
   `/:slug/`. The stamp outlives the deploy behind it (the swept-agent case the

@@ -80,22 +80,51 @@ export class ApiError extends Error {
  * this the chat panel showed "Starting sandbox…" forever, long after the
  * server was back. Sized above the cold path's real work: a Modal sandbox
  * spawn, the guest dial (30s cap server-side), and the session install
- * (60s cap). A timed-out attempt is retried (see isTransientSessionError);
+ * (60s cap). A timed-out attempt is retried (see isTransientError);
  * the server keeps brokering after the abort, so the retry usually reuses
  * the sandbox the aborted attempt booted.
  */
 export const CHAT_SESSION_ATTEMPT_TIMEOUT_MS = 120_000;
 
 /**
- * Should a failed chat-session broker attempt be retried? A 4xx is a real
- * answer from a live server (bad key, missing project) that retrying cannot
- * change — except 408/429, which are the transient kind. Everything else — a
- * rejected fetch (connection refused mid-restart), a timed-out attempt, a
- * 5xx — means the server or sandbox wasn't ready, so the query keeps
- * retrying with backoff and a chat opened during a restart connects once
- * the server is back instead of wedging on the first failure.
+ * Per-attempt deadline for the account read that gates the whole app.
+ *
+ * Same hazard as the broker call above, with a worse symptom: a request
+ * issued while the server is restarting or saturated can HANG rather than
+ * fail — the proxy holds the socket open — and a browser fetch has no
+ * timeout of its own, so the studio sat on "Loading…" forever with no way
+ * out but a reload. The deadline is also what makes a Try again button
+ * possible at all rather than merely sooner: TanStack Query folds a
+ * `refetch` into the in-flight promise, so while the fetch never settles the
+ * button cannot start a new attempt.
+ *
+ * Sized well above the real work (verify the session token, read one row)
+ * and well under a user's patience.
  */
-export function isTransientSessionError(err: unknown): boolean {
+export const ACCOUNT_ATTEMPT_TIMEOUT_MS = 10_000;
+
+/**
+ * Per-attempt deadline for the public auth-config read, which runs before
+ * anything is rendered. It hangs for the same reasons and strands the page
+ * on an empty screen — a worse place to sit than the loading card, since
+ * there is nothing on it to explain the wait.
+ */
+export const AUTH_CONFIG_ATTEMPT_TIMEOUT_MS = 10_000;
+
+/**
+ * Should a failed attempt be retried? A 4xx is a real answer from a live
+ * server (bad key, missing project) that retrying cannot change — except
+ * 408/429, which are the transient kind. Everything else — a rejected fetch
+ * (connection refused mid-restart), a timed-out attempt, a 5xx — means the
+ * server or sandbox wasn't ready, so the query keeps retrying with backoff
+ * and a chat (or an account read) opened during a restart lands once the
+ * server is back instead of wedging on the first failure.
+ *
+ * This is also the busy/broken split the gate screens word themselves from
+ * (`loadFailureText`): the same errors that are worth retrying are the ones
+ * that say the server is busy rather than something about this user.
+ */
+export function isTransientError(err: unknown): boolean {
   if (err instanceof ApiError && err.status >= 400 && err.status < 500) {
     return err.status === 408 || err.status === 429;
   }
@@ -237,10 +266,19 @@ export const api = {
 
   /** Public: which login flow to render. */
   authConfig: (): Promise<AuthConfig> =>
-    fetch("/studio/auth").then((res) => handleResponse<AuthConfig>(res)),
+    fetch("/studio/auth", { signal: AbortSignal.timeout(AUTH_CONFIG_ATTEMPT_TIMEOUT_MS) }).then(
+      (res) => handleResponse<AuthConfig>(res),
+    ),
 
-  /** Session-authed (works before an AssemblyAI key is stored). */
-  getAccount: (key: string) => request<Account>(key, "/account"),
+  /**
+   * Session-authed (works before an AssemblyAI key is stored). Deadlined so
+   * a hung read reaches the gate as a failure it can offer to retry — see
+   * {@link ACCOUNT_ATTEMPT_TIMEOUT_MS}.
+   */
+  getAccount: (key: string) =>
+    request<Account>(key, "/account", {
+      signal: AbortSignal.timeout(ACCOUNT_ATTEMPT_TIMEOUT_MS),
+    }),
 
   /** Store the user's AssemblyAI API key — the one-time onboarding step. */
   putAccountKey: (key: string, apiKey: string) =>
