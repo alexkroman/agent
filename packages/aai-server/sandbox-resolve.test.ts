@@ -47,13 +47,11 @@ const TEST_AGENT_CONFIG: IsolateConfig = {
   builtinTools: [],
 };
 
-/** Yield until the emitted change event's async handler has settled. */
-async function settleEvents(): Promise<void> {
-  for (let i = 0; i < 20; i += 1) await Promise.resolve();
-}
-
 async function seedAgent(slug: string) {
   const memory = createMemoryPlatformEvents();
+  // The real signal that a change event has been delivered AND its handler
+  // has finished — this file used to spin 20 microtasks and hope.
+  const settleEvents = (): Promise<void> => memory.settled();
   const store = createTestStore(undefined, memory);
   const put = (worker: string) =>
     store.putAgent({
@@ -75,6 +73,14 @@ async function seedAgent(slug: string) {
     ...deps,
     invalidate,
     unwatch,
+    settleEvents,
+    /**
+     * Write a new deploy's row WITHOUT waiting for the change event to be
+     * handled. Separate from `redeploy` because the handler queues on the
+     * slug lock: a caller holding that lock must commit, release, and only
+     * then settle — awaiting settlement first deadlocks.
+     */
+    commitDeploy: () => put('export default { name: "t2" };'),
     redeploy: async () => {
       await put('export default { name: "t2" };');
       await settleEvents();
@@ -190,27 +196,26 @@ describe("agents-row change stream drives sandbox invalidation", () => {
     };
 
     const resolving = resolveSandbox("mid-rebuild", deps);
-    await settleEvents();
-    // The slot is claimed before any read, so the event pre-filter sees it
-    // even though no sandbox is attached yet.
-    expect(deps.slots.get("mid-rebuild")).toBeDefined();
+    // NOT an event wait — nothing has been emitted yet. This waits for the
+    // parked rebuild to reach its slot claim, which happens before any read,
+    // so the event pre-filter below sees a slot with no sandbox attached.
+    await vi.waitFor(() => expect(deps.slots.get("mid-rebuild")).toBeDefined());
     expect(deps.slots.get("mid-rebuild")?.sandbox).toBeUndefined();
 
     // A deploy elsewhere commits while the rebuild is in flight. Its change
-    // event queues behind the rebuild's slug lock instead of being skipped.
-    await deps.redeploy();
+    // event queues behind the rebuild's slug lock instead of being skipped —
+    // so the commit cannot be settled until the rebuild releases the lock.
+    await deps.commitDeploy();
     release();
     const stale = await resolving;
     expect(stale).not.toBeNull();
 
     // The queued handler ran after the attach: version mismatch → blue-green
     // handover to a replacement at the row's current version.
-    await vi.waitFor(() => {
-      const current = deps.slots.get("mid-rebuild")?.sandbox;
-      expect(current).toBeDefined();
-      expect(current).not.toBe(stale);
-    });
+    await deps.settleEvents();
     const fresh = deps.slots.get("mid-rebuild")?.sandbox;
+    expect(fresh).toBeDefined();
+    expect(fresh).not.toBe(stale);
     await expect(resolveSandbox("mid-rebuild", deps)).resolves.toBe(fresh);
     await (fresh as Sandbox).shutdown();
     deps.unwatch();
@@ -230,7 +235,7 @@ describe("agents-row change stream drives sandbox invalidation", () => {
 
     // Secret mutations write Vault, not the agents row: no change event.
     await deps.store.putEnv("secretly-updated", { NEW_KEY: "v" });
-    await settleEvents();
+    await deps.settleEvents();
 
     await expect(resolveSandbox("secretly-updated", deps)).resolves.toBe(first);
     await first?.shutdown();

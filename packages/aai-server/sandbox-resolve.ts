@@ -269,7 +269,14 @@ export function watchAgentInvalidation(events: PlatformEvents, opts: ResolveSand
     // the slug lock below, the handler runs after the rebuild attaches
     // and the version comparison reconciles.
     if (!opts.slots.get(slug)) return;
-    void withSlugLock(slug, async () => {
+    // RETURNED, not `void`-discarded. Nothing in production awaits it — a
+    // change stream has no caller — but the memory emitter collects it, which
+    // is the only way a test can know this handler has finished rather than
+    // spinning microtasks and hoping. The catch is what makes returning it
+    // safe: production drops the value, so a rejection escaping here would be
+    // an unhandled rejection (the `void` form had the same hole — the lock
+    // acquisition itself sits outside the inner try/catch below).
+    return withSlugLock(slug, async () => {
       const slot = opts.slots.get(slug);
       if (!slot?.sandbox) return;
       opts.store.invalidate?.(slug);
@@ -294,6 +301,10 @@ export function watchAgentInvalidation(events: PlatformEvents, opts: ResolveSand
         // next change event (or a redeploy) retries.
         console.warn(`Change-event invalidation failed for ${slug}: ${errorMessage(err)}`);
       }
+    }).catch((err: unknown) => {
+      // Only reachable from the lock acquisition itself — the body above
+      // catches its own. Logged rather than rethrown: see the return comment.
+      console.warn(`Change-event invalidation could not lock ${slug}: ${errorMessage(err)}`);
     });
   });
 }
