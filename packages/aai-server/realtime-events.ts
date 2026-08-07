@@ -51,6 +51,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import { createOwnedMap } from "@alexkroman1/aai/internal";
 import { RealtimeClient } from "@supabase/realtime-js";
 import type { PlatformEvents, Unwatch } from "./platform-events.ts";
 
@@ -118,8 +119,9 @@ function logSubscribeStatus(topic: string): (status: string, err?: Error) => voi
 /**
  * Refcounted keyed channels: one Realtime channel per distinct key, shared
  * by its watchers and released (unsubscribed) when the last one unwatches.
- * Entries are dropped by identity so a late unwatch can never tear down a
- * successor channel for the same key.
+ * Entries are dropped by identity — the pool is an {@link createOwnedMap}, so
+ * a late unwatch releases its own claim and can never tear down a successor
+ * channel for the same key.
  *
  * **A (re)join is itself a signal.** `subscribe()` only SENDS the join; the
  * server-side `postgres_changes` binding does not exist until the push is
@@ -132,8 +134,13 @@ function logSubscribeStatus(topic: string): (status: string, err?: Error) => voi
  * a reconnect outage cost a redundant read instead of a silently stale client.
  */
 function createChannelPool(client: RealtimeClientLike) {
-  type Entry = { channel: RealtimeChannelLike; watchers: Set<() => void> };
-  const entries = new Map<string, Entry>();
+  type Entry = {
+    channel: RealtimeChannelLike;
+    watchers: Set<() => void>;
+    /** This entry's claim on its key; a no-op once a successor has claimed it. */
+    release?: () => boolean;
+  };
+  const entries = createOwnedMap<string, Entry>();
 
   return {
     watch(
@@ -151,7 +158,7 @@ function createChannelPool(client: RealtimeClientLike) {
       const current = created;
       current.watchers.add(onChange);
       if (!existing) {
-        entries.set(key, current);
+        current.release = entries.claim(key, current);
         // Snapshot before dispatch: a watcher is free to unwatch (or another
         // watcher may subscribe) from inside its own callback, and mutating
         // the set mid-iteration decides who runs by insertion order.
@@ -174,7 +181,7 @@ function createChannelPool(client: RealtimeClientLike) {
       return () => {
         current.watchers.delete(onChange);
         if (current.watchers.size > 0) return;
-        if (entries.get(key) === current) entries.delete(key);
+        current.release?.();
         void current.channel.unsubscribe().catch(() => undefined);
       };
     },

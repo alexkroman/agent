@@ -64,7 +64,7 @@ import type {
 } from "../../sdk/providers.ts";
 import type { LlmRegistryEntry } from "./_llm-registry.ts";
 import { LLM_REGISTRY } from "./_llm-registry.ts";
-import { requireApiKey } from "./_utils.ts";
+import { options, requireApiKey } from "./_utils.ts";
 
 /**
  * Look up a provider credential in the agent's own env (set via
@@ -80,10 +80,6 @@ import { requireApiKey } from "./_utils.ts";
  */
 export function resolveApiKey(envVar: string, env: ProviderEnv): string {
   return env[envVar] ?? "";
-}
-
-function options<T>(descriptor: { options: Record<string, unknown> }): T {
-  return descriptor.options as unknown as T;
 }
 
 /**

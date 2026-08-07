@@ -49,14 +49,22 @@ export async function executeList(opts: {
 
 /** Write a pulled file map under `dir`, refusing paths that escape it. */
 async function materializeFiles(dir: string, files: Record<string, string>): Promise<void> {
-  for (const [rel, content] of Object.entries(files)) {
+  // Resolve and screen EVERY path before writing any: a pull that turns out to
+  // contain an escaping path leaves nothing behind rather than a half-written
+  // tree. The writes themselves are independent, so they run concurrently.
+  const targets = Object.entries(files).map(([rel, content]) => {
     const abs = path.resolve(dir, rel);
     if (abs !== dir && !abs.startsWith(dir + path.sep)) {
       throw new Error(`Pulled file path escapes the project directory: ${rel}`);
     }
-    await mkdir(path.dirname(abs), { recursive: true });
-    await writeFile(abs, content, "utf-8");
-  }
+    return { abs, content };
+  });
+  await Promise.all(
+    targets.map(async ({ abs, content }) => {
+      await mkdir(path.dirname(abs), { recursive: true });
+      await writeFile(abs, content, "utf-8");
+    }),
+  );
 }
 
 /**

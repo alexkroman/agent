@@ -35,6 +35,7 @@
  * store: pgmq in production, an in-memory array in dev/tests.
  */
 
+import { safeJsonParse } from "@alexkroman1/aai";
 import type { SqlExec } from "aai-server/secret-store";
 
 /** The pgmq queue name. Also the prefix of its archive table. */
@@ -94,15 +95,6 @@ export type PreviewQueue = {
   archive(id: string): Promise<void>;
 };
 
-/** Non-JSON text is a genuinely unreadable payload, not a crash. */
-function tryParseJson(raw: string): unknown {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Shape a queue row's `message` must have to be worth running.
  *
@@ -117,7 +109,9 @@ function tryParseJson(raw: string): unknown {
  * reported only by one `console.warn` per job.
  */
 function parseJob(raw: unknown): PreviewJob | null {
-  const value = typeof raw === "string" ? tryParseJson(raw) : raw;
+  // Non-JSON text is a genuinely unreadable payload, not a crash — `safeJsonParse`
+  // returns undefined, which the object check below rejects like any other shape.
+  const value = typeof raw === "string" ? safeJsonParse(raw) : raw;
   if (typeof value !== "object" || value === null) return null;
   const { scope, project, serverUrl, userId } = value as Record<string, unknown>;
   if (typeof scope !== "string" || typeof project !== "string") return null;

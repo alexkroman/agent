@@ -12,6 +12,18 @@ const PCM16_RATES = [
 ] as const satisfies readonly number[];
 export type Pcm16Rate = (typeof PCM16_RATES)[number];
 
+/**
+ * Read a descriptor's typed options bag.
+ *
+ * The one narrowing seam every registry goes through: a descriptor carries its
+ * options as `Record<string, unknown>` on the wire, and each provider entry
+ * knows the shape its own factory declared. Keeping it here means ONE cast
+ * rather than one per registry (see the escape-hatch ratchet in CLAUDE.md).
+ */
+export function options<T>(descriptor: { options: Record<string, unknown> }): T {
+  return descriptor.options as unknown as T;
+}
+
 /** Assert `rate` is a supported PCM16 rate, else throw via `makeError`. */
 export function assertPcm16Rate(
   rate: number,

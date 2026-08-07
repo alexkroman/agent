@@ -38,10 +38,7 @@ function makeGatedStt(): {
   inner: ReturnType<typeof createFakeSttProvider>;
 } {
   const inner = createFakeSttProvider();
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
+  const { promise: gate, resolve: release } = Promise.withResolvers<void>();
   const opener: SttOpener = {
     name: "gated-stt",
     async open(o: SttOpenOptions): Promise<SttSession> {
@@ -90,10 +87,7 @@ describe("PipelineTransport — provider-open latency", () => {
   });
 
   test("greeting audio still stops when STT subsequently fails to open", async () => {
-    let reject!: (e: Error) => void;
-    const gate = new Promise<never>((_resolve, rej) => {
-      reject = rej;
-    });
+    const { promise: gate, reject } = Promise.withResolvers<never>();
     const stt: SttOpener = {
       name: "failing-gated-stt",
       async open(): Promise<SttSession> {

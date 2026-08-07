@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { expect, test } from "vitest";
 import {
+  authHeaders,
   createTestOrchestrator,
   deployAgent,
   deployBody,
@@ -64,7 +65,7 @@ test("deploy rejects different owner for claimed slug", async () => {
   });
   const res = await fetch("/deploy", {
     method: "POST",
-    headers: { Authorization: "Bearer key2", "Content-Type": "application/json" },
+    headers: authHeaders("key2"),
     body: deployBody({ slug: "my-agent" }),
   });
   expect(res.status).toBe(403);
@@ -75,7 +76,7 @@ test("deploy succeeds and stores agent", async () => {
   const { verifyApiKeyHash } = await import("./secrets.ts");
   const res = await fetch("/deploy", {
     method: "POST",
-    headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+    headers: authHeaders(),
     body: deployBody({ slug: "my-agent" }),
   });
   expect(res.status).toBe(200);
@@ -90,7 +91,7 @@ test("deploy can redeploy same slug", async () => {
   await deployAgent(fetch);
   const res = await fetch("/deploy", {
     method: "POST",
-    headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+    headers: authHeaders(),
     body: deployBody({ slug: "my-agent" }),
   });
   expect(res.status).toBe(200);
@@ -102,7 +103,7 @@ test("storage enable on an unclaimed (undeployed) slug is rejected", async () =>
   // not be able to provision storage the eventual owner would inherit.
   const res = await fetch("/never-deployed/storage", {
     method: "POST",
-    headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+    headers: authHeaders(),
   });
   expect(res.status).toBe(404);
 });
@@ -155,7 +156,7 @@ test("agent page serves default aai-ui when deployed without client files", asyn
   const { fetch } = await createTestOrchestrator();
   const res = await fetch("/deploy", {
     method: "POST",
-    headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+    headers: authHeaders(),
     body: deployBody({ slug: "no-client", clientFiles: {} }),
   });
   expect(res.status).toBe(200);
@@ -172,7 +173,7 @@ test("default aai-ui serves JS assets for agents without custom client", async (
   const { fetch } = await createTestOrchestrator();
   await fetch("/deploy", {
     method: "POST",
-    headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+    headers: authHeaders(),
     body: deployBody({ slug: "default-assets", clientFiles: {} }),
   });
 
@@ -218,7 +219,7 @@ test("client asset falls back to octet-stream for unknown extension", async () =
   const { fetch } = await createTestOrchestrator();
   await fetch("/deploy", {
     method: "POST",
-    headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+    headers: authHeaders(),
     body: deployBody({
       slug: "my-agent",
       clientFiles: { "index.html": "<html></html>", "assets/data.xyz123": "binary stuff" },
@@ -244,7 +245,7 @@ test("agent favicon serves a custom client's stored favicon", async () => {
   const icoBytes = Buffer.from([0x00, 0x00, 0x01, 0x00, 0xff, 0xfe]);
   await fetch("/deploy", {
     method: "POST",
-    headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+    headers: authHeaders(),
     body: deployBody({
       slug: "my-agent",
       clientFiles: { "index.html": "<html></html>", "favicon.ico": icoBytes.toString("base64") },

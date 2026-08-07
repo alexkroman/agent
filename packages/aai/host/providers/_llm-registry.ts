@@ -48,11 +48,7 @@ import {
 import { XAI_API_KEY_ENV, XAI_KIND } from "../../sdk/providers/llm/xai.ts";
 import type { LlmProvider } from "../../sdk/providers.ts";
 import { repairOpenAiStream } from "./_openai-stream-repair.ts";
-
-/** Read a descriptor's typed options bag. */
-function options<T>(descriptor: { options: Record<string, unknown> }): T {
-  return descriptor.options as unknown as T;
-}
+import { options } from "./_utils.ts";
 
 /** One registry entry per LLM provider kind — adding a provider is one entry here. */
 export type LlmRegistryEntry = {

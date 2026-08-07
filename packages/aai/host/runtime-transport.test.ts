@@ -19,7 +19,7 @@ async function buildS2sSessionConfig(agentOverrides: Record<string, unknown>) {
     resumeSession: vi.fn(),
     close: vi.fn(),
   };
-  const connect = vi.spyOn(_internals, "connectS2s").mockResolvedValue(handle);
+  vi.spyOn(_internals, "connectS2s").mockResolvedValue(handle);
   const agent = makeAgent({ s2s: assemblyAIS2s(), ...agentOverrides });
   const build = createTransportFactory({
     agent,
@@ -42,7 +42,6 @@ async function buildS2sSessionConfig(agentOverrides: Record<string, unknown>) {
   });
   // The connect is async — `updateSession` runs once it resolves, not at build.
   await transport.start();
-  connect.mockRestore();
   return handle;
 }
 

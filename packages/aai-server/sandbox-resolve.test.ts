@@ -182,10 +182,7 @@ describe("agents-row change stream drives sandbox invalidation", () => {
   it("a deploy landing mid-rebuild is not dropped: the event queues on the slug lock and retires the stale build", async () => {
     const deps = await seedAgent("mid-rebuild");
     // Park the rebuild between its record read and the sandbox attach.
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const { promise: gate, resolve: release } = Promise.withResolvers<void>();
     const realGetWorkerCode = deps.store.getWorkerCode.bind(deps.store);
     deps.store.getWorkerCode = async (slug) => {
       await gate;

@@ -317,12 +317,14 @@ export function createFixtureSession(
   let capturedCallbacks: S2sCallbacks | null = null;
   const fakeHandle = makeMockHandle();
 
-  const connectSpy = vi
-    .spyOn(s2sTransportInternals, "connectS2s")
-    .mockImplementation(async (connectOpts: ConnectS2sOptions) => {
+  // No teardown to return: vitest's `restoreMocks` restores every spy before
+  // each test (see vitest.shared.ts).
+  vi.spyOn(s2sTransportInternals, "connectS2s").mockImplementation(
+    async (connectOpts: ConnectS2sOptions) => {
       capturedCallbacks = connectOpts.callbacks;
       return fakeHandle;
-    });
+    },
+  );
 
   const client = makeTrackingClient();
   const executor = createRuntime({
@@ -368,10 +370,6 @@ export function createFixtureSession(
       for (const msg of loadFixture(fixtureName)) {
         fireFixtureMessage(cbs, msg as Record<string, unknown>);
       }
-    },
-    /** Restore the connectS2s spy. Call in afterEach. */
-    cleanup() {
-      connectSpy.mockRestore();
     },
   };
 }
