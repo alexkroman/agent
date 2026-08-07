@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { jsonResponse, settle, sseResponse, stubFetch } from "./_test-utils.ts";
-import { ApiError, api, isTransientSessionError, parseSecrets } from "./api.ts";
+import { ApiError, api, isTransientError, parseSecrets } from "./api.ts";
 
 describe("parseSecrets", () => {
   test("parses KEY=value lines", () => {
@@ -156,6 +156,26 @@ describe("api", () => {
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 
+  test("the two reads that gate the whole app carry a per-attempt timeout", async () => {
+    // Both can HANG rather than fail when the server is restarting or
+    // saturated, and a hung fetch cannot be retried away: the query layer
+    // folds a refetch into the in-flight promise, so a Try again button is a
+    // no-op until the attempt settles. Without these the studio sits on
+    // "Loading…" (or, for the auth config, an empty page) forever.
+    const fetchMock = stubFetch({
+      "/studio/auth": () => jsonResponse({ mode: "dev" }),
+      "/studio/account": () => jsonResponse({ hasKey: true }),
+    });
+    await api.authConfig();
+    await api.getAccount("k");
+    for (const call of fetchMock.mock.calls) {
+      const [, init] = call as [string, RequestInit | undefined];
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+      expect(init?.signal?.aborted).toBe(false);
+    }
+    expect(fetchMock.mock.calls).toHaveLength(2);
+  });
+
   test("secret endpoints hit the platform's own agent routes", async () => {
     const fetchMock = stubFetch(() => jsonResponse({ ok: true, vars: ["A"], keys: ["A"] }));
     await api.listSecrets("k", "my-agent");
@@ -235,22 +255,22 @@ describe("api.agentPageReady", () => {
   });
 });
 
-describe("isTransientSessionError", () => {
+describe("isTransientError", () => {
   test("4xx answers are final — a bad key or missing project can't be retried away", () => {
-    expect(isTransientSessionError(new ApiError(401, "unauthorized"))).toBe(false);
-    expect(isTransientSessionError(new ApiError(404, "Project not found"))).toBe(false);
+    expect(isTransientError(new ApiError(401, "unauthorized"))).toBe(false);
+    expect(isTransientError(new ApiError(404, "Project not found"))).toBe(false);
   });
 
   test("408/429 are the transient 4xx", () => {
-    expect(isTransientSessionError(new ApiError(408, "request timeout"))).toBe(true);
-    expect(isTransientSessionError(new ApiError(429, "rate limited"))).toBe(true);
+    expect(isTransientError(new ApiError(408, "request timeout"))).toBe(true);
+    expect(isTransientError(new ApiError(429, "rate limited"))).toBe(true);
   });
 
   test("5xx and settled-without-a-response failures retry (a restarting server)", () => {
-    expect(isTransientSessionError(new ApiError(503, "service unavailable"))).toBe(true);
+    expect(isTransientError(new ApiError(503, "service unavailable"))).toBe(true);
     // A rejected fetch (connection refused) and a timed-out attempt.
-    expect(isTransientSessionError(new TypeError("Failed to fetch"))).toBe(true);
-    expect(isTransientSessionError(new DOMException("timed out", "TimeoutError"))).toBe(true);
+    expect(isTransientError(new TypeError("Failed to fetch"))).toBe(true);
+    expect(isTransientError(new DOMException("timed out", "TimeoutError"))).toBe(true);
   });
 });
 

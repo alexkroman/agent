@@ -14,7 +14,7 @@ import {
   api,
   type ChatSession,
   errorText,
-  isTransientSessionError,
+  isTransientError,
   type ProjectData,
   type StudioStatus,
 } from "./api.ts";
@@ -170,7 +170,7 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
     staleTime: Number.POSITIVE_INFINITY,
     refetchOnWindowFocus: false,
     retry: (failureCount, error) =>
-      failureCount < CHAT_SESSION_MAX_RETRIES && isTransientSessionError(error),
+      failureCount < CHAT_SESSION_MAX_RETRIES && isTransientError(error),
   });
 
   // Friendly tool labels, served by the sandbox (single source of truth —

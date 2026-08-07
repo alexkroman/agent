@@ -32,13 +32,25 @@
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { type AuthConfig, api, errorText } from "./api.ts";
+import { type AuthConfig, api } from "./api.ts";
+import { loadFailureText } from "./gate-card.tsx";
 
 const DEV_TOKEN_STORAGE = "aai-studio-dev-token";
 
 export type StudioAuthState =
   | { phase: "loading" }
-  | { phase: "unavailable"; message: string }
+  | {
+      phase: "unavailable";
+      message: string;
+      /** The server's own words, when it managed to say any. */
+      detail?: string;
+      /**
+       * Re-read the config, when the failure was ours to retry. Absent when
+       * the server answered that login is not configured at all — there is
+       * nothing a second read can change about that.
+       */
+      retry?: () => void;
+    }
   | {
       phase: "signedOut";
       mode: "supabase" | "dev";
@@ -88,27 +100,48 @@ function mintDevToken(email: string): string {
 
 export function useStudioAuth(): StudioAuthState {
   const [config, setConfig] = useState<AuthConfig | null>(null);
-  const [configError, setConfigError] = useState<string | null>(null);
+  const [configError, setConfigError] = useState<unknown>(null);
   const [token, setToken] = useState<string | null>(null);
   const supabaseRef = useRef<SupabaseClient | null>(null);
   // One shared refresh for concurrent callers — every open event stream can
   // report the same dead token within the same tick.
   const refreshing = useRef<Promise<void> | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  // Which config read is current. Bumped per read and on unmount, so a
+  // response that lands after a retry started — or after the tab moved on —
+  // cannot overwrite newer state.
+  const configRead = useRef(0);
+
+  /**
+   * Read the auth config. Also the retry the unavailable gate offers: nothing
+   * else in this hook runs until this lands, so a page opened while the server
+   * was busy would otherwise be a dead end — and a reload is not the same
+   * offer, since it asks that same busy server to serve the page again.
+   */
+  const loadConfig = useCallback(() => {
+    const read = ++configRead.current;
+    setConfigError(null);
     api.authConfig().then(
       (cfg) => {
-        if (!cancelled) setConfig(cfg);
+        if (configRead.current === read) setConfig(cfg);
       },
       (err: unknown) => {
-        if (!cancelled) setConfigError(errorText(err) ?? "Could not reach the server");
+        // The raw error, not its text: the gate words itself from the error's
+        // KIND (a busy server reads differently from a broken one), and a
+        // string has already thrown that away.
+        if (configRead.current === read) {
+          setConfigError(err ?? new Error("Could not reach the server"));
+        }
       },
     );
-    return () => {
-      cancelled = true;
-    };
   }, []);
+
+  useEffect(() => {
+    loadConfig();
+    return () => {
+      configRead.current++;
+    };
+  }, [loadConfig]);
 
   // Supabase wiring, once the config resolves: restore any stored session
   // (including the one `detectSessionInUrl` extracts when the GitHub OAuth
@@ -212,7 +245,13 @@ export function useStudioAuth(): StudioAuthState {
     setToken(null);
   }, [mode]);
 
-  if (configError) return { phase: "unavailable", message: configError };
+  if (configError) {
+    return {
+      ...loadFailureText(configError, "Could not reach the server"),
+      phase: "unavailable",
+      retry: loadConfig,
+    };
+  }
   if (!config) return { phase: "loading" };
   if (config.mode === "none") {
     return {

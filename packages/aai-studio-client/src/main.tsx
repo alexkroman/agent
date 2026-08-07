@@ -30,30 +30,26 @@
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { ApiError, api, errorText } from "./api.ts";
+import { ApiError, api, errorText, isTransientError } from "./api.ts";
 import { App } from "./app.tsx";
-import logoUrl from "./assets/assemblyai-logomark.svg";
 import { useStudioAuth } from "./auth.tsx";
 import { clearCliLinkCode, consumeCliLinkCode, linkConfirmationCode } from "./cli-link.ts";
+import { GateCard, GateProblem, gateProblem, queryFailure } from "./gate-card.tsx";
 import { queryKeys } from "./query-keys.ts";
 import { isEnterSubmit } from "./send-button.tsx";
 import "./styles.css";
 
 const queryClient = new QueryClient();
 
-function GateCard({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex h-full items-center justify-center bg-cream">
-      <div className="flex w-[420px] flex-col gap-3.5 rounded-lg border border-line bg-panel p-10 shadow-sm">
-        <div className="flex items-center gap-2.5">
-          <img src={logoUrl} alt="AssemblyAI" className="h-5 w-5" />
-          <span className="font-serif text-[16px]">AssemblyAI Build</span>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
+/**
+ * How many transient account-read failures to ride out before the retries
+ * stop. Kept SHORT — a fifth of the broker query's budget (app.tsx) even
+ * though the failure is the same kind — because this query gates the entire
+ * app and the screen behind it is a card with a Try again button on it: a
+ * long automatic budget only delays the point where pressing it does
+ * anything, and the user is already being told the server is busy.
+ */
+const ACCOUNT_MAX_RETRIES = 2;
 
 function SignInGate({
   mode,
@@ -306,10 +302,12 @@ function AccountGate({
   const account = useQuery({
     queryKey: queryKeys.account(bearer),
     queryFn: () => api.getAccount(bearer),
-    retry: (count, err) => !(err instanceof ApiError && err.status < 500) && count < 3,
+    retry: (count, err) => count < ACCOUNT_MAX_RETRIES && isTransientError(err),
   });
 
-  if (account.error instanceof ApiError && account.error.status === 401) {
+  const failure = queryFailure(account);
+
+  if (failure instanceof ApiError && failure.status === 401) {
     // The server rejected this bearer. Refresh rather than sign out: this
     // query refetches on window focus, and an access token that expired while
     // the tab sat in the background is REFRESHABLE — signing out here raced
@@ -319,23 +317,12 @@ function AccountGate({
     void refreshAuth();
     return null;
   }
-  if (account.isError) {
-    return (
-      <GateCard>
-        <p className="m-0 text-[15px] text-err">
-          Could not load your account: {errorText(account.error)}
-        </p>
-        <button
-          type="button"
-          className="btn h-10 self-start px-5"
-          onClick={() => void account.refetch()}
-        >
-          Try again
-        </button>
-      </GateCard>
-    );
+  // Nothing to show the user yet: either still loading, or loading is not
+  // going to happen and the card says so (see `gateProblem`).
+  if (!account.data) {
+    const problem = gateProblem(account, "Could not load your account");
+    return problem ? <GateProblem {...problem} /> : <GateCard>Loading…</GateCard>;
   }
-  if (!account.data) return <GateCard>Loading…</GateCard>;
   if (!account.data.hasKey) {
     return (
       <KeyGate
@@ -375,9 +362,11 @@ function Root() {
   if (auth.phase === "loading") return null;
   if (auth.phase === "unavailable") {
     return (
-      <GateCard>
-        <p className="m-0 text-[15px] text-err">{auth.message}</p>
-      </GateCard>
+      <GateProblem
+        message={auth.message}
+        detail={auth.detail}
+        {...(auth.retry && { onRetry: auth.retry })}
+      />
     );
   }
   if (auth.phase === "signedOut") {
