@@ -10,6 +10,8 @@
  * pre-auth on WebSocket upgrades, making p-lock's leak attacker-growable.
  */
 
+import { createOwnedMap } from "@alexkroman1/aai/internal";
+
 export type KeyedLock = ((key: string) => Promise<() => void>) & {
   /** Number of keys currently held or queued. Exposed for tests. */
   readonly size: number;
@@ -17,18 +19,17 @@ export type KeyedLock = ((key: string) => Promise<() => void>) & {
 
 export function createKeyedLock(): KeyedLock {
   // Tail of each key's chain: resolves when the most recent acquirer releases.
-  const tails = new Map<string, Promise<void>>();
+  // Owned by claim so a drained tail can only ever drop its OWN entry, never a
+  // newer acquirer's.
+  const tails = createOwnedMap<string, Promise<void>>();
 
   const lock = (key: string): Promise<() => void> => {
     const prev = tails.get(key) ?? Promise.resolve();
     const { promise: released, resolve } = Promise.withResolvers<void>();
     const tail = prev.then(() => released);
-    tails.set(key, tail);
-    void tail.then(() => {
-      // Drop the entry once the chain drains — unless a newer acquirer
-      // already replaced the tail.
-      if (tails.get(key) === tail) tails.delete(key);
-    });
+    const dropTail = tails.claim(key, tail);
+    // Drop the entry once the chain drains.
+    void tail.then(dropTail);
     return prev.then(() => {
       let done = false;
       return () => {

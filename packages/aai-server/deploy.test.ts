@@ -4,6 +4,7 @@ import { deployAgentBundle } from "./deploy.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import { hashApiKey, verifyApiKeyHash } from "./secrets.ts";
 import {
+  authHeaders,
   createTestOrchestrator,
   createTestStore,
   deployAgent,
@@ -26,7 +27,7 @@ describe("POST /deploy body handling", () => {
     const { fetch } = await createTestOrchestrator();
     const res = await fetch("/deploy", {
       method: "POST",
-      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: "not json",
     });
     expect(res.status).toBe(400);
@@ -37,7 +38,7 @@ describe("POST /deploy body handling", () => {
     const { fetch } = await createTestOrchestrator();
     const res = await fetch("/deploy", {
       method: "POST",
-      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({ worker: "" }),
     });
     expect(res.status).toBe(400);
@@ -49,7 +50,7 @@ describe("POST /deploy body handling", () => {
     const esmWorker = `import{z as e}from"/app/_zod.mjs";var s={name:"test-agent",systemPrompt:"Test"};export{s as default};`;
     const res = await fetch("/deploy", {
       method: "POST",
-      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({
         slug: "my-agent",
         env: { MY_SECRET: "value", ...VALID_ENV },
@@ -70,7 +71,7 @@ describe("POST /deploy body handling", () => {
     });
     const res = await fetch("/deploy", {
       method: "POST",
-      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: deployBody({ slug: "my-agent", env: { ...VALID_ENV, EXISTING: "new-value" } }),
     });
     expect(res.status).toBe(200);
@@ -84,7 +85,7 @@ describe("POST /deploy body handling", () => {
     await deployAgent(fetch);
     const res = await fetch("/deploy", {
       method: "POST",
-      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: deployBody({ slug: "my-agent" }),
     });
     expect(res.status).toBe(200);
@@ -105,7 +106,7 @@ describe("POST /deploy body handling", () => {
     });
     const res = await fetch("/deploy", {
       method: "POST",
-      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({
         slug: "pre-stored",
         worker:
@@ -318,7 +319,7 @@ describe("POST /deploy", () => {
     const { fetch } = await createTestOrchestrator();
     const res = await fetch("/deploy", {
       method: "POST",
-      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: deployBody(),
     });
     expect(res.status).toBe(200);
@@ -335,7 +336,7 @@ describe("POST /deploy", () => {
     const { fetch } = await createTestOrchestrator();
     const res = await fetch("/deploy", {
       method: "POST",
-      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: deployBody({ slug: "my-custom-slug" }),
     });
     expect(res.status).toBe(200);
@@ -347,7 +348,7 @@ describe("POST /deploy", () => {
     const { fetch } = await createTestOrchestrator();
     const res = await fetch("/deploy", {
       method: "POST",
-      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: deployBody({ slug: "INVALID SLUG!" }),
     });
     expect(res.status).toBe(400);
@@ -367,7 +368,7 @@ describe("POST /deploy", () => {
     const { fetch, store } = await createTestOrchestrator();
     const res = await fetch("/deploy", {
       method: "POST",
-      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: deployBody({ slug: "test-agent" }),
     });
     expect(res.status).toBe(200);
@@ -382,7 +383,7 @@ describe("POST /deploy", () => {
     // First deploy by key1
     const first = await fetch("/deploy", {
       method: "POST",
-      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: deployBody({ slug: "stolen-agent" }),
     });
     expect(first.status).toBe(200);
@@ -393,7 +394,7 @@ describe("POST /deploy", () => {
     // Second deploy attempt by a different key (key2)
     const second = await fetch("/deploy", {
       method: "POST",
-      headers: { Authorization: "Bearer key2", "Content-Type": "application/json" },
+      headers: authHeaders("key2"),
       body: deployBody({ slug: "stolen-agent" }),
     });
     expect(second.status).toBe(403);
@@ -415,7 +416,7 @@ describe("POST /deploy", () => {
 
     const res = await fetch("/deploy", {
       method: "POST",
-      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      headers: authHeaders(),
       // A client-supplied agentConfig must be ignored — the sandbox
       // extraction is the only source.
       body: deployBody({ slug: "config-test", agentConfig: { name: "attacker-config" } }),
@@ -430,7 +431,7 @@ describe("POST /deploy", () => {
     const { fetch } = await createTestOrchestrator({ inspect: async () => undefined });
     const res = await fetch("/deploy", {
       method: "POST",
-      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: deployBody({ slug: "no-config" }),
     });
     expect(res.status).toBe(400);
@@ -446,7 +447,7 @@ describe("POST /deploy", () => {
     });
     const res = await fetch("/deploy", {
       method: "POST",
-      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: deployBody({ slug: "bad-bundle" }),
     });
     expect(res.status).toBe(400);
@@ -461,7 +462,7 @@ describe("POST /deploy", () => {
     });
     const res = await fetch("/deploy", {
       method: "POST",
-      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: deployBody({ slug: "invalid-config" }),
     });
     expect(res.status).toBe(400);
@@ -475,14 +476,14 @@ describe("POST /deploy", () => {
     // First deploy
     await fetch("/deploy", {
       method: "POST",
-      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: deployBody({ slug: "owned-agent" }),
     });
 
     // Second deploy by same key
     const res = await fetch("/deploy", {
       method: "POST",
-      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: deployBody({ slug: "owned-agent" }),
     });
     expect(res.status).toBe(200);

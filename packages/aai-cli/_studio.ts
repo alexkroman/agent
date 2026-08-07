@@ -94,20 +94,32 @@ export async function collectSourceFiles(
       `Project has ${paths.length} files; only the first ${MAX_STUDIO_FILES} sync to the studio.`,
     );
   }
-  for (const rel of paths.slice(0, MAX_STUDIO_FILES)) {
-    const abs = path.join(dir, rel);
-    const st = await stat(abs);
-    if (st.size > MAX_STUDIO_FILE_BYTES) {
-      warnings.push(`${rel} is ${st.size} bytes (max ${MAX_STUDIO_FILE_BYTES}) — not synced.`);
-      continue;
-    }
-    const content = decodeUtf8(await readFile(abs));
-    if (content === null) {
-      warnings.push(`${rel} is not valid UTF-8 (binary file?) — not synced.`);
+  // Read concurrently — the files are independent, and a push walks up to
+  // MAX_STUDIO_FILES of them. Results are consumed in `paths` order, so the
+  // warning list and the file map stay deterministic.
+  type Read = { ok: true; rel: string; content: string } | { ok: false; warning: string };
+  const read = await Promise.all(
+    paths.slice(0, MAX_STUDIO_FILES).map(async (rel): Promise<Read> => {
+      const abs = path.join(dir, rel);
+      const st = await stat(abs);
+      if (st.size > MAX_STUDIO_FILE_BYTES) {
+        const warning = `${rel} is ${st.size} bytes (max ${MAX_STUDIO_FILE_BYTES}) — not synced.`;
+        return { ok: false, warning };
+      }
+      const content = decodeUtf8(await readFile(abs));
+      if (content === null) {
+        return { ok: false, warning: `${rel} is not valid UTF-8 (binary file?) — not synced.` };
+      }
+      return { ok: true, rel, content };
+    }),
+  );
+  for (const entry of read) {
+    if (!entry.ok) {
+      warnings.push(entry.warning);
       continue;
     }
     // Workspace paths are POSIX; keep pushes from Windows checkouts valid.
-    files[rel.split(path.sep).join("/")] = content;
+    files[entry.rel.split(path.sep).join("/")] = entry.content;
   }
   return { files, warnings };
 }

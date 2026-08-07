@@ -383,14 +383,8 @@ describe("cache invalidation fences in-flight row reads", () => {
    */
   test("a row read parked across a deploy does not repopulate the row cache", async () => {
     const agents = createMemoryAgentRows();
-    let entered!: () => void;
-    let release!: () => void;
-    const atFetch = new Promise<void>((r) => {
-      entered = r;
-    });
-    const held = new Promise<void>((r) => {
-      release = r;
-    });
+    const { promise: atFetch, resolve: entered } = Promise.withResolvers<void>();
+    const { promise: held, resolve: release } = Promise.withResolvers<void>();
     let park = false;
 
     const originalGet = agents.get.bind(agents);

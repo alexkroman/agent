@@ -369,7 +369,7 @@ export function createServer(options: ServerOptions): AgentServer {
           }),
           logger,
         );
-        (ws as unknown as { close?: (code?: number) => void }).close?.(1008);
+        ws.close(1008);
         return;
       }
 

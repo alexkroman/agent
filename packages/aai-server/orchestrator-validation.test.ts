@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import { MAX_WORKER_SIZE } from "./constants.ts";
-import { createTestOrchestrator, deployAgent } from "./test-utils.ts";
+import { authHeaders, createTestOrchestrator, deployAgent } from "./test-utils.ts";
 
 // ── E2E HTTP Malformed Payload Rejection ───────────────────────────────
 
@@ -11,10 +11,7 @@ describe("e2e HTTP malformed payload rejection", () => {
 
     const res = await fetch("/deploy", {
       method: "POST",
-      headers: {
-        Authorization: "Bearer key1",
-        "Content-Type": "application/json",
-      },
+      headers: authHeaders(),
       body: "this is not json",
     });
     expect(res.status).toBe(400);
@@ -26,10 +23,7 @@ describe("e2e HTTP malformed payload rejection", () => {
 
     const res = await fetch("/my-agent/secret", {
       method: "PUT",
-      headers: {
-        Authorization: "Bearer key1",
-        "Content-Type": "application/json",
-      },
+      headers: authHeaders(),
       body: "not json",
     });
     expect(res.status).toBe(400);
@@ -40,10 +34,7 @@ describe("e2e HTTP malformed payload rejection", () => {
 
     const res = await fetch("/deploy", {
       method: "POST",
-      headers: {
-        Authorization: "Bearer key1",
-        "Content-Type": "application/json",
-      },
+      headers: authHeaders(),
       body: JSON.stringify([{ worker: "code" }]),
     });
     expect(res.status).toBe(400);
@@ -55,10 +46,7 @@ describe("e2e HTTP malformed payload rejection", () => {
     // MAX_WORKER_SIZE is enforced by the schema
     const res = await fetch("/deploy", {
       method: "POST",
-      headers: {
-        Authorization: "Bearer key1",
-        "Content-Type": "application/json",
-      },
+      headers: authHeaders(),
       body: JSON.stringify({
         env: { MY_SECRET: "value" },
         worker: "x".repeat(MAX_WORKER_SIZE + 1),
@@ -77,10 +65,7 @@ describe("HTTP endpoint schema validation", () => {
 
     const res = await fetch("/deploy", {
       method: "POST",
-      headers: {
-        Authorization: "Bearer key1",
-        "Content-Type": "application/json",
-      },
+      headers: authHeaders(),
       body: JSON.stringify({ invalid: true }),
     });
     expect(res.status).toBe(400);
@@ -92,10 +77,7 @@ describe("HTTP endpoint schema validation", () => {
 
     const res = await fetch("/my-agent/secret", {
       method: "PUT",
-      headers: {
-        Authorization: "Bearer key1",
-        "Content-Type": "application/json",
-      },
+      headers: authHeaders(),
       body: JSON.stringify({ "invalid-key-name!": "value" }),
     });
     expect(res.status).toBe(400);

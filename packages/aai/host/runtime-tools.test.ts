@@ -33,10 +33,7 @@ function recordingSink(events: ClientEvent[]): ClientSink {
  * reconnect can land mid-call.
  */
 function parkedToolRuntime(agentOverrides: Partial<AgentDef>) {
-  let release!: () => void;
-  const parked = new Promise<void>((resolve) => {
-    release = resolve;
-  });
+  const { promise: parked, resolve: release } = Promise.withResolvers<void>();
   const sinkMap = createOwnedMap<string, ClientSink>();
   const agent = makeAgent({
     state: () => ({ count: 0 }),

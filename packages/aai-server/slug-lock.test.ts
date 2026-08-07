@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expect, test } from "vitest";
-import { createTestOrchestrator, deployAgent, deployBody } from "./test-utils.ts";
+import { authHeaders, createTestOrchestrator, deployAgent, deployBody } from "./test-utils.ts";
 
 test("concurrent deploy and delete are serialized", async () => {
   const { fetch, store } = await createTestOrchestrator();
@@ -14,7 +14,7 @@ test("concurrent deploy and delete are serialized", async () => {
   const [deployResp, deleteResp] = await Promise.all([
     fetch("/deploy", {
       method: "POST",
-      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: deployBody({ slug: "my-agent" }),
     }),
     fetch("/my-agent", {

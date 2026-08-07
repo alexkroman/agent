@@ -110,10 +110,7 @@ describe("createPreviewDeployer", () => {
   test("schedules during a deploy coalesce into one trailing re-deploy", async () => {
     const workspaces = makeStore();
     await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const { promise: gate, resolve: release } = Promise.withResolvers<void>();
     const deploy = vi.fn(
       async (
         _scope: string,

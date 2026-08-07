@@ -12,7 +12,7 @@ import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
 import { resolveAllBuiltins } from "@alexkroman1/aai/runtime";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { createTestOrchestrator } from "./test-utils.ts";
+import { authHeaders, createTestOrchestrator } from "./test-utils.ts";
 
 /**
  * Build a deploy body from an SDK-defined agent, mimicking what the CLI does.
@@ -62,7 +62,7 @@ describe("cross-package smoke: SDK → server deploy", () => {
     const body = buildDeployBodyFromAgent("smoke-test", agent);
     const res = await fetch("/deploy", {
       method: "POST",
-      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      headers: authHeaders(),
       body,
     });
     expect(res.status).toBe(200);
@@ -80,7 +80,7 @@ describe("cross-package smoke: SDK → server deploy", () => {
 
     await fetch("/deploy", {
       method: "POST",
-      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: buildDeployBodyFromAgent("accessible-agent", agent),
     });
 

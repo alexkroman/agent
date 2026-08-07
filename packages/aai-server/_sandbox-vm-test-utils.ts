@@ -112,10 +112,7 @@ export function makeFakeProc(): FakeProc {
       c.close();
     },
   });
-  let resolveWait!: (code: number) => void;
-  const waitPromise = new Promise<number>((resolve) => {
-    resolveWait = resolve;
-  });
+  const { promise: waitPromise, resolve: resolveWait } = Promise.withResolvers<number>();
   return {
     proc: { stdout, stderr, wait: () => waitPromise },
     pushStderr: (text) => stderrController.enqueue(encoder.encode(text)),

@@ -208,7 +208,7 @@ function rejectHandshake(ws: SessionWebSocket, log: Logger, message: string): vo
   // Give the frame a tick to flush before closing.
   setTimeout(() => {
     try {
-      (ws as unknown as { close?: (code?: number) => void }).close?.(1008);
+      ws.close?.(1008);
     } catch {
       // ignore
     }
@@ -438,7 +438,7 @@ export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOpt
       .catch((err: unknown) => {
         console.error(`host-mode: handshake failed: ${errorMessage(err)}`);
         try {
-          (ws as unknown as { close?: (code?: number) => void }).close?.(1011);
+          ws.close?.(1011);
         } catch {
           // socket may already be closed
         }
