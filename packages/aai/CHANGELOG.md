@@ -1,5 +1,11 @@
 # @alexkroman1/aai
 
+## 5.11.0
+
+### Patch Changes
+
+- e8d5e15: Share the provider registries' options() narrowing seam and drop three redundant WebSocket close casts; read and write studio project files concurrently in push/pull.
+
 ## 5.10.1
 
 ## 5.10.0
