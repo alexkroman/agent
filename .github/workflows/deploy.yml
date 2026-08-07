@@ -1,9 +1,14 @@
-# Deploys each platform service to Modal — but ONLY when that service's
-# package version changed in the push. Versions only move via changesets
-# (the merged "Version Packages" PR), so a changeset for aai-server ships
-# the agent app, a changeset for aai-studio-server ships the studio app,
-# and a docs-only merge ships nothing. workflow_dispatch is the manual
-# escape hatch to ship a service outside a changeset release.
+# Deploys the platform to Modal — but ONLY when the code it ships actually
+# changed in the push. Versions only move via changesets (the merged "Version
+# Packages" PR), so a docs-only merge ships nothing. workflow_dispatch is the
+# manual escape hatch to ship outside a changeset release.
+#
+# There is ONE Modal app (`aai-server-web`, from packages/aai-server/
+# modal_deploy.py) and it serves both surfaces from the aai-studio-server entry
+# — see "One app, both surfaces" in that file. So a bump to EITHER package is a
+# reason to deploy: aai-server is the platform core the app is built from, and
+# aai-studio-server is the entry it actually runs. Gating on aai-server alone
+# would silently strand every studio-only release.
 name: Deploy
 
 on:
@@ -11,12 +16,8 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      agent:
-        description: Deploy aai-server to Modal
-        type: boolean
-        default: false
-      studio:
-        description: Deploy aai-studio-server to Modal
+      deploy:
+        description: Deploy the platform to Modal
         type: boolean
         default: false
 
@@ -28,8 +29,7 @@ jobs:
   changed:
     runs-on: ubuntu-latest
     outputs:
-      agent: ${{ steps.diff.outputs.agent }}
-      studio: ${{ steps.diff.outputs.studio }}
+      deploy: ${{ steps.diff.outputs.deploy }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -38,8 +38,7 @@ jobs:
         name: Detect changeset version bumps
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "agent=${{ inputs.agent }}" >> "$GITHUB_OUTPUT"
-            echo "studio=${{ inputs.studio }}" >> "$GITHUB_OUTPUT"
+            echo "deploy=${{ inputs.deploy }}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           bumped() {
@@ -47,31 +46,25 @@ jobs:
             # the changesets release commit is the only thing that moves it.
             git diff HEAD^ HEAD -- "packages/$1/package.json" | grep -q '^+.*"version":'
           }
-          echo "agent=$(bumped aai-server && echo true || echo false)" >> "$GITHUB_OUTPUT"
-          echo "studio=$(bumped aai-studio-server && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          if bumped aai-server || bumped aai-studio-server; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
 
   deploy:
     needs: changed
-    if: needs.changed.outputs.agent == 'true' || needs.changed.outputs.studio == 'true'
+    if: needs.changed.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     environment: production
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - service: aai-server
-            changed: agent
-          - service: aai-studio-server
-            changed: studio
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
       - run: pip install modal
-      - name: Deploy ${{ matrix.service }}
-        if: needs.changed.outputs[matrix.changed] == 'true'
+      - name: Deploy platform
         env:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
-        run: modal deploy packages/${{ matrix.service }}/modal_deploy.py
+        run: modal deploy packages/aai-server/modal_deploy.py

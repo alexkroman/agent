@@ -182,7 +182,7 @@ Eight workspace packages under `packages/`:
 | `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, list, pull, push, publish, delete, login, secret, storage, templates (`deploy` is hidden/internal — the mechanism in-guest Publish runs) |
 | `packages/aai-guest/` | `aai-guest` | Guest sandbox harness (private): the Node entrypoint that runs the complete agent inside each Modal Sandbox, built into one self-contained `dist/harness.mjs` |
 | `packages/aai-server/` | `aai-server` | Agent service + shared platform core (private): sandbox, auth, SSRF, stores, locks |
-| `packages/aai-studio-server/` | `aai-studio-server` | Studio service (private): browser coding agent, workspace builds, combined entry |
+| `packages/aai-studio-server/` | `aai-studio-server` | Studio service (private): browser coding agent, workspace builds. Also the composition root — its entry is the one every deployment runs |
 | `packages/aai-studio-client/` | `aai-studio-client` | The studio's browser front-end (private): Vite React app served by aai-server |
 | `packages/aai-templates/` | `aai-templates` | Agent templates + scaffold (private): starter templates |
 
@@ -217,7 +217,7 @@ rather than here:
 | `packages/aai-ui/CLAUDE.md` | Browser session, client audio path (capture/playback worklets, pacing, jitter buffer), components, fuzz harnesses |
 | `packages/aai-cli/CLAUDE.md` | Subcommands, the studio round-trip (`push`/`pull`/`publish`/`delete`), bundling + Vite rules, credential destinations |
 | `packages/aai-guest/CLAUDE.md` | The guest harness: one binary / three modes, user-shipped runtime, dev-prod parity, agent guests as servers |
-| `packages/aai-server/CLAUDE.md` | Platform: sandboxes + Modal backends, stateless server, split services, security architecture, auth, stores/locks |
+| `packages/aai-server/CLAUDE.md` | Platform: sandboxes + Modal backends, stateless server, the two-package/one-deployment composition, security architecture, auth, stores/locks |
 | `packages/aai-studio-server/CLAUDE.md` | Browser studio: workspaces, coding agent, previews, Publish, LLM selection, studio evals |
 | `packages/aai-studio-client/CLAUDE.md` | Studio front-end: panes, composer queue, CSP, preview probing |
 | `packages/aai-templates/CLAUDE.md` | Templates + scaffold packaging. Note `scaffold/CLAUDE.md` is a product artifact, not repo docs |
@@ -394,10 +394,10 @@ you only need to list one package.
   (`^build`, or `aai-guest#build`), never built at test time.
 
   The same script also runs as
-  `predev` in aai-server and aai-studio-server (so `pnpm dev:aai-server`
-  always boots with a fresh harness for local-dev sandboxes) and
-  as `predeploy:modal` in both server packages (a fail-fast before the
-  remote Modal image build, which rebuilds the harness itself). Also
+  `predev` in aai-studio-server (the entry `pnpm dev:aai-server` runs, so dev
+  always boots with a fresh harness for local-dev sandboxes) and as
+  `predeploy:modal` in aai-server, which owns the Modal deploy (a fail-fast
+  before the remote image build, which rebuilds the harness itself). Also
   runnable directly: `node scripts/ensure-guest-harness.mjs`.
 - **`predev` also rebuilds the studio front-end**: aai-studio-server's
   `predev` ends with `pnpm --filter aai-studio-client build`, so

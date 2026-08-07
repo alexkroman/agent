@@ -1,20 +1,21 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Node.js entry point for the STUDIO service — and for the combined
- * single-process composition that local dev and pre-split deployments run.
+ * Node.js entry point for the whole platform — the composition root for BOTH
+ * apps, and the only entry any deployment runs.
  *
- * `AAI_SERVICE` selects the surface:
- * - `combined` (default) — one process serving both apps behind one fetch
- *   dispatcher: studio paths (`/`, `/favicon.ico`, `/studio*`,
- *   `/studio-assets/*`) go to the studio app, everything else (including
- *   `/health` and the WebSocket upgrades) to the agent orchestrator. Both
- *   apps share one ServiceConfig, so they also share the slot cache, warm
- *   and stores — exactly the pre-split behavior.
- * - `studio` — the standalone studio service: no voice sessions, no
- *   WebSocket upgrades; chat turns are bounded HTTP/SSE requests, so
- *   shutdown is flip-health-and-close rather than a session drain.
+ * One process serves both surfaces behind one fetch dispatcher: studio paths
+ * (`/`, `/favicon.ico`, `/studio*`, `/studio-assets/*` — `isStudioPath`) go to
+ * the studio app, everything else (including `/health` and the WebSocket
+ * upgrades) to the agent orchestrator. Both apps share one ServiceConfig, so
+ * they share the slot cache and stores too.
  *
- * The agent-only service is the aai-server package's own entry.
+ * `AAI_SERVICE` used to select between this and two split-deployment modes (a
+ * standalone `studio` service here, an agent-only service with a reverse proxy
+ * in aai-server). Production never ran the split, so both are gone; the env var
+ * is still SET to `combined` by modal_deploy.py and read for nothing, which is
+ * deliberate — it documents the shape at the deploy boundary and is the hook a
+ * revived split would branch on. See "One app, both surfaces" in
+ * packages/aai-server/modal_deploy.py.
  */
 
 import { DEFAULT_PORT } from "aai-server/constants";
@@ -27,7 +28,7 @@ import {
   installProcessSafetyNets,
   type ServiceConfig,
 } from "aai-server/service-config";
-import { isStudioPath } from "aai-server/studio-proxy";
+import { isStudioPath } from "aai-server/studio-paths";
 import { teardownSandboxes } from "aai-server/teardown-sandboxes";
 import { createStudioApp, type StudioAppOpts } from "./studio-app.ts";
 import { createPgPreviewQueue } from "./studio-preview-queue.ts";
@@ -38,15 +39,6 @@ import {
   type StudioRateLimiters,
 } from "./studio-rate-limit.ts";
 import { createPgStudioSessionRegistry } from "./studio-session-registry.ts";
-
-function resolveServiceMode(env: NodeJS.ProcessEnv): "combined" | "studio" {
-  const raw = env.AAI_SERVICE ?? "combined";
-  if (raw === "combined" || raw === "studio") return raw;
-  throw new Error(
-    `Invalid AAI_SERVICE "${raw}" for aai-studio-server — expected combined | studio ` +
-      "(the agent service is the aai-server package's entry)",
-  );
-}
 
 /** Postgres rate limiters when the platform database is configured; else memory defaults apply. */
 function buildRateLimiters(base: ServiceConfig): StudioRateLimiters | undefined {
@@ -86,15 +78,11 @@ function studioAppOpts(base: ServiceConfig, isDraining: () => boolean): StudioAp
   };
 }
 
-// The studio-surface predicate lives beside the proxy in aai-server —
-// one definition for the split-mode proxy and this combined dispatcher.
-
 async function main(): Promise<void> {
   installProcessSafetyNets();
 
   const env = process.env;
   const port = resolvePort(env.PORT, DEFAULT_PORT);
-  const mode = resolveServiceMode(env);
 
   let draining = false;
   const base = buildServiceConfig(env);
@@ -105,45 +93,17 @@ async function main(): Promise<void> {
   );
   // The broker's per-project coding-agent sandboxes are this process's to
   // release: without the dispose they outlive it and burn their orphan
-  // timeout (billed, on Modal) on every scale-in. Shared by both modes so
-  // the two shutdown paths cannot drift.
-  const teardown = async (graceMs?: number): Promise<void> => {
-    await teardownSandboxes({
-      slots: base.slots,
-      broker: { dispose: disposeStudio },
-      ...(graceMs !== undefined && { graceMs }),
-    });
+  // timeout (billed, on Modal) on every scale-in.
+  const teardown = async (): Promise<void> => {
+    await teardownSandboxes({ slots: base.slots, broker: { dispose: disposeStudio } });
     await base.events.close();
   };
 
-  if (mode === "studio") {
-    await startService({
-      label: "AAI studio service",
-      fetch: studioApp.fetch,
-      port,
-      // No session drain here, unlike the agent and combined entries: this
-      // service serves no voice sessions, and chat turns are bounded HTTP/SSE
-      // requests, so there is nothing long-lived to wait out.
-      onShutdown: async () => {
-        draining = true;
-        console.info("Studio service shutting down...");
-        // No grace wait: this service brokers no agent sandboxes (its slot
-        // cache is always empty), so there is no window in which a late
-        // request could spawn one and orphan it. Its own studio guests are
-        // useless without this process's control channel, so delaying their
-        // disposal only bills them for longer.
-        await teardown(0);
-      },
-    });
-    return;
-  }
-
-  // Combined: both apps in one process, dispatched by path. Each app carries
+  // Both apps in one process, dispatched by path. Each app carries
   // its own bindings via its wrapped fetch, so no route mounting (which
   // would bypass the studio app's bindings injection) is involved.
   // `base.events` rides into the orchestrator, which wires the agents-row
-  // change stream to sandbox invalidation (the studio-only mode has no
-  // orchestrator and an always-empty slot cache — nothing to invalidate).
+  // change stream to sandbox invalidation.
   const orchestrator = createOrchestrator({ ...base, isDraining: () => draining });
   const combinedFetch = (req: Request): Response | Promise<Response> =>
     isStudioPath(new URL(req.url).pathname) ? studioApp.fetch(req) : orchestrator.app.fetch(req);
@@ -153,10 +113,9 @@ async function main(): Promise<void> {
     fetch: combinedFetch,
     port,
     injectWebSocket: (server) => orchestrator.injectWebSocket(server),
-    // Same shutdown posture as the agent service's entry — and literally the
-    // same code path, so the two can no longer drift: agent guests are
-    // RETIRED (they finish their calls and exit on their own clock — see
-    // teardown-sandboxes.ts), studio guests go down with the broker.
+    // Agent guests are RETIRED (they finish their calls and exit on their own
+    // clock — see teardown-sandboxes.ts); studio guests go down with the
+    // broker, being useless without this process's control channel.
     onShutdown: async () => {
       draining = true;
       console.info("Shutting down (retiring guests)...");

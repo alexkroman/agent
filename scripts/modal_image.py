@@ -1,18 +1,21 @@
 # Copyright 2026 the AAI authors. MIT license.
-"""The monorepo container image, shared by both service deployments.
+"""The monorepo container image for the platform deployment.
 
-The agent app (packages/aai-server/modal_deploy.py) and the studio app
-(packages/aai-studio-server/modal_deploy.py) must run the EXACT same
-dependency tree — the same clean-tree install and the same workspace build the
-tests exercised. That invariant used to be asserted by a comment in the studio
-script ("Mirrors the agent app's image") and enforced by nothing: the build
-command enumerates seven workspace packages, so adding one meant editing two
-Python files, and a miss produced two services running different trees with no
-build failure to catch it.
+Built from a clean-tree install plus the same workspace build the tests
+exercised, so the deployed container cannot run a dependency tree the suite
+never saw. `build_image` is parameterized only by per-app env (`extra_env`) and
+port; the deploy *policy* — Modal app name, autoscaling numbers, resources —
+stays in the deploy script.
 
-What stays per-app is the deploy *policy* — Modal app name, autoscaling
-numbers, region, and any extra env — because that is precisely what the split
-into two services exists to let diverge.
+There is one deployment now (packages/aai-server/modal_deploy.py, serving both
+surfaces). This module stays a separate, parameterized recipe rather than being
+inlined into it: it exists because there used to be TWO deploy scripts whose
+"same image" invariant was asserted by a comment ("Mirrors the agent app's
+image") and enforced by nothing — the build command enumerates workspace
+packages, so adding one meant editing two Python files and a miss produced two
+services on different trees with no build failure to catch it. Keeping the
+recipe in one place is what makes a second deployment cheap and safe to add
+back.
 """
 
 import atexit
@@ -46,14 +49,18 @@ BUILD_IGNORE = [
 ]
 
 # SDK + UI (default client) + CLI (client bundler) + guest harness + studio
-# client + both servers. Order matters: each depends on the ones before it.
+# client + the server entry. Order matters: each depends on the ones before it.
+#
+# aai-server is deliberately absent: it has no build. Its subpath exports point
+# at `.ts` source, so aai-studio-server — the composition root for both apps and
+# the only entry any deployment runs — bundles it directly. (`pnpm --filter
+# aai-server build` would fail outright now, not no-op.)
 BUILD_COMMAND = (
     "pnpm --filter aai build"
     " && pnpm --filter aai-ui build"
     " && pnpm --filter @alexkroman1/aai-cli build"
     " && pnpm --filter aai-guest build"
     " && pnpm --filter aai-studio-client build"
-    " && pnpm --filter aai-server build"
     " && pnpm --filter aai-studio-server build"
 )
 

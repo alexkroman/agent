@@ -10,7 +10,7 @@
 import type { ChatStore } from "aai-server/chat-store";
 import type { OrchestratorOpts } from "aai-server/orchestrator";
 import { createMemorySecretStore } from "aai-server/secret-store";
-import { isStudioPath } from "aai-server/studio-proxy";
+import { isStudioPath } from "aai-server/studio-paths";
 import { createTestOrchestrator, type TestFetch } from "aai-server/test-utils";
 import type { WorkspaceStore } from "aai-server/workspace-store";
 import { createStudioApp, type StudioAppOpts } from "./studio-app.ts";

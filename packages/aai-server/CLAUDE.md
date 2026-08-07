@@ -44,7 +44,7 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   dev/tests): one row per agent — slug, credential hashes, the bundle's
   self-described config, content hashes of the worker/client blobs, and a
   deploy `version` that doubles as the cross-replica invalidation signal
-  (see "Split services" below)
+  (see "Two packages, ONE deployment" below)
 - `sandbox-resolve.ts` — slot-based slug→sandbox resolution +
   `watchAgentInvalidation`, the event-driven sandbox invalidation (split
   from sandbox.ts, which owns one sandbox's lifecycle)
@@ -72,9 +72,10 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   unscheduled, so `PLATFORM_CRON_JOBS` is the whole truth about what the
   platform runs and retiring one cannot be forgotten (the hand-maintained
   retired list this replaced had exactly one failure mode — omission)
-- `studio-proxy.ts` / `app-middleware.ts` — the split deployment (see
-  "Split services" below): the agent service's reverse proxy to the studio
-  service, and the apps' shared base middleware
+- `studio-paths.ts` — `isStudioPath`, the studio/agent surface boundary the
+  combined entry dispatches on. Must agree with `RESERVED_SLUGS`
+- `app-middleware.ts` — the two apps' shared base middleware, so they can't
+  drift on CORS/framing policy
 - `rpc-transport.ts` — WebSocket JSON-RPC transport for host↔guest RPC.
   Connections are typed by a per-direction method map (`RpcSchema`); the
   sandbox link's concrete map is `GuestRpcSchema` in `rpc-schemas.ts`, so
@@ -234,19 +235,44 @@ What deliberately stays in-process, and why it doesn't break statelessness:
   mechanisms so local writer fan-out doesn't burn the cross-replica
   retry/lease on itself.
 
-## Split services (aai-server / aai-studio-server)
+## Two packages, ONE deployment (aai-server / aai-studio-server)
 
-Two packages, one surface each. `aai-server` is the AGENT service plus the
-shared platform core (stores, locks, epochs, sandbox machinery);
-`platform-barrel.ts` is the sanctioned path to its `_`-internal utilities.
-`aai-studio-server` is the
-STUDIO service; its entry also hosts the `combined` composition
-(`AAI_SERVICE` combined|studio — a path dispatcher over both apps, which is
-what `pnpm dev:aai-server` and pre-split deployments run). Deploys are
-per-service Modal apps (`aai-server-web`, `aai-studio-web`, each package's
-`modal_deploy.py`). The split exists because the two workloads scale
-differently — studio chat turns are LLM-bound and bursty, the agent
-service's control work is light — and one container served both badly.
+Two packages, one surface each, composed into a single process.
+
+`aai-server` is the agent surface plus the shared platform core (stores,
+locks, epochs, sandbox machinery); `platform-barrel.ts` is the sanctioned path
+to its `_`-internal utilities. **It ships no entry point** — it is a library,
+consumed through its `exports` map, and has no `build` (its subpaths resolve to
+`.ts` source, which its consumer bundles).
+
+`aai-studio-server` is the studio surface AND the composition root: its entry
+is the only one any deployment runs, dispatching studio paths (`isStudioPath`,
+`aai-server/studio-paths.ts`) to the studio app and everything else — including
+`/health` and the WebSocket upgrades — to the agent orchestrator. Both apps
+share one `ServiceConfig`, so they share the slot cache and stores. That entry
+is what `pnpm dev:aai-server` runs too, so local dev and production are the
+same composition.
+
+There is ONE Modal app: `aai-server-web`, from `packages/aai-server/
+modal_deploy.py`. Note the asymmetry — the deploy script lives in the package
+that does NOT provide the entry; it is the platform's deploy policy, and it
+launches `packages/aai-studio-server/dist/index.mjs`.
+
+**A SPLIT deployment used to live here** — a second Modal app (`aai-studio-web`,
+its own `modal_deploy.py`), with the agent app booting `AAI_SERVICE=agent` and
+reverse-proxying the studio surface to a `STUDIO_UPSTREAM_URL`. The motivation
+was real (studio chat turns are LLM-bound and bursty; agent brokering is light
+and latency-sensitive, and one container serves both imperfectly), but the
+upstream was never wired in production, so the combined branch was the only one
+that ever ran and the split half was unreachable code that still constrained
+the design: a proxy hop that had to re-resolve the public origin, forward SSE
+endably, and keep a path predicate agreeing with the combined dispatcher.
+
+It is removed rather than left dormant. Git history has the whole thing. Two
+constraints survive any revival: **one public origin** (agent pages set
+`X-Frame-Options: SAMEORIGIN`, so a studio on a second hostname breaks the
+preview iframe), and the studio service would need the event streams' timeout
+raised — see the note under "A long-lived connection is ONE Modal input".
 
 **The shared core is the `exports` map, and nothing else.** It is an
 explicit list of 31 subpaths, grouped by role (stores, coordination, sandbox
@@ -262,23 +288,19 @@ now an edit to package.json rather than a side effect of typing an import
 path. When a coupling goes away, delete the entry — this list only ratchets
 down, like the file-length allowlist.
 
-- **One public origin.** Browsers only ever talk to the agent service; in
-  `agent` mode it reverse-proxies `/`, `/favicon.ico`, `/studio-assets/*`,
-  and `/studio/*` to `STUDIO_UPSTREAM_URL` (`studio-proxy.ts` — streaming
-  passthrough, SSE included). This is what keeps the preview iframe working:
-  agent pages are served `X-Frame-Options: SAMEORIGIN`, so the studio must
-  share their origin. The proxy forwards identity-encoded (drops
-  `accept-encoding`) because undici's fetch decompresses bodies but leaves
-  `content-encoding` headers in place. Shared base middleware lives in
-  `app-middleware.ts` so the two apps can't drift on CORS/framing policy.
+- **One public origin**, now structurally rather than by proxying: both
+  surfaces are served by one process on one hostname. This is what keeps the
+  preview iframe working — agent pages are served `X-Frame-Options:
+  SAMEORIGIN`, so the studio must share their origin. Shared base middleware
+  lives in `app-middleware.ts` so the two apps can't drift on CORS/framing
+  policy.
 - **Never derive the public scheme from the request URL** — use
   `resolvePublicOrigin` (`aai-server/public-origin.ts`). Modal terminates TLS
   at its edge and forwards plain HTTP to the container (its ASGI proxy adds
   only `X-Forwarded-For`, never `X-Forwarded-Proto`), so `new URL(c.req.url)`
   is **always** `http:` in a handler, whatever the browser used. Resolution
   order: `AAI_PUBLIC_ORIGIN` → `x-forwarded-host`/`-proto` (a real proxy in
-  front, including this platform's own studio proxy, which sets both *from
-  this resolver*) → infer, loopback being the only `http`.
+  front) → infer, loopback being the only `http`.
 
   Both places that had rolled their own cost real outages. Studio **Publish
   died on `401 Missing Authorization header` from its own platform**: the
@@ -286,8 +308,9 @@ down, like the file-length allowlist.
   308-redirected to `https://`, and `fetch` strips `Authorization` across a
   scheme change (different origin per the Fetch spec). The request arrived
   unauthenticated, so the CLI reported an invalid API key it had in fact sent
-  correctly — and the studio proxy's own `x-forwarded-proto: http` propagated
-  the same wrong answer into split mode. The bare-slug redirect
+  correctly. (The since-removed studio proxy propagated the same wrong answer a
+  second way, forwarding its own `x-forwarded-proto: http`.) The bare-slug
+  redirect
   (`/:slug` → `/:slug/`) separately echoed the cleartext URL back as an
   absolute `Location`, bouncing https browsers through `http://`; it is now
   relative, which no scheme can taint.
@@ -403,10 +426,12 @@ down, like the file-length allowlist.
   unretrieved-task `ClientPayloadError: Response payload is not completed:
   <TransferEncodingError: 400, 'Not enough data to satisfy transfer length
   header.'>` on `GET /studio/projects/<x>/events`, with nothing tying it to a
-  replica scale-in. Both ends of the hop register: the studio's SSE pusher
-  (`studio-sse.ts`) and the agent service's PROXIED passthrough of it
-  (`gracefulEventStream` in `studio-proxy.ts` — `text/event-stream` only, so
-  assets and JSON stay zero-copy). Ending them is also what lets
+  replica scale-in. The studio's SSE pusher (`studio-sse.ts`) registers; with
+  both surfaces in one process that is the only place a stream is owned. (The
+  split deployment additionally relayed proxied streams through one it owned —
+  `gracefulEventStream`, `text/event-stream` only so assets and JSON stayed
+  zero-copy — because the browser's connection terminated at the agent replica;
+  reviving the split owes that back.) Ending them is also what lets
   `server.close()` complete, so shutdown stops hitting the fallback timer at
   all. The client sees a clean stream end and resubscribes on its existing
   backoff (`useEventStream`). Any future long-lived response owes the same
@@ -433,29 +458,27 @@ down, like the file-length allowlist.
     `service-config.ts`): `uncaughtException` → `process.exit(1)` destroys
     sockets exactly as a scale-in does.
 - **A long-lived connection is ONE Modal input, so the function `timeout`
-  bounds CALL DURATION** — not request latency. Both services therefore set it
-  explicitly (`FUNCTION_TIMEOUT_SECS` = 4h on the agent app, matching
-  `DEFAULT_SANDBOX_TIMEOUT_MS`; 30 min on the studio app, whose longest input
-  is a cold-sandbox Publish). Left unset, Modal's default is **300s**, and it
+  bounds CALL DURATION** — not request latency. The app therefore sets it
+  explicitly (`FUNCTION_TIMEOUT_SECS` = 4h, matching
+  `DEFAULT_SANDBOX_TIMEOUT_MS`). Left unset, Modal's default is **300s**, and it
   severed every in-process session (the old `?host=1` host mode, since
   removed) at exactly five minutes, mid-word — the client saw a bare "not
   connected" and the server logged nothing, because nothing in our code did
   it. No session runs in the server process anymore — browser voice sessions
   dial the guest sandbox's tunnel directly, and `/:slug/websocket` upgrades
-  are handshake redirects — but SSE streams through the studio proxy sit
-  under the same cap, so it stays pinned rather than inherited. The sandbox
-  layer hit the same trap first and documents it in `modal-sandbox-env.ts`.
+  are handshake redirects — but the studio's SSE streams sit under the same
+  cap, so it stays pinned rather than inherited. The sandbox layer hit the same
+  trap first and documents it in `modal-sandbox-env.ts`.
 
-  **`STUDIO_FUNCTION_TIMEOUT_SECS` (30 min) is a latent split-mode hazard, not
-  a live one.** It was reasoned as headroom for a cold-sandbox Publish, on the
-  premise that "nothing here is long-lived by design" — true of WebSockets
-  (chat streams browser→guest directly) and false of the event streams a
-  browser holds open for as long as a project is on screen, which did not exist
-  when the value was set. Both `GET /studio/events` and
-  `GET /studio/projects/:project/events` are open for hours. It does not bite
-  today only because production runs `combined`, so those routes are served by
-  the agent app under its 4h. Deploying split without raising it would start
-  reaping them.
+  **The 4h ceiling is load-bearing for the studio's event streams, which is a
+  trap for anyone re-splitting the deployment.** The removed studio app set 30
+  min, reasoned as headroom for a cold-sandbox Publish on the premise that
+  "nothing here is long-lived by design" — true of WebSockets (chat streams
+  browser→guest directly) and false of `GET /studio/events` and
+  `GET /studio/projects/:project/events`, which a browser holds open for as long
+  as a project is on screen and which did not exist when that value was set. It
+  never bit, because combined mode serves those routes under the 4h. A revived
+  studio service would start reaping them at 30 minutes.
 
   **Most `TransferEncodingError`s in the log are NOT truncation we caused.**
   Measured over 6h of production `aai-server-web` logs (2026-08-05): 38 SSE
@@ -476,8 +499,9 @@ down, like the file-length allowlist.
   **Capping the streams' own lifetime was considered and rejected.** It cannot
   reduce the above — a tab close still aborts whatever stream is open — while
   `projectPayload` carries `files: workspace.files`, so every forced recycle
-  re-sends the whole workspace file map to every open tab. If split mode ever
-  ships, raise the ceiling rather than adding a cap under it.
+  re-sends the whole workspace file map to every open tab. If a split studio
+  service ever ships, raise its function timeout rather than adding a cap under
+  it.
 
 ## Modal sandbox notes
 
