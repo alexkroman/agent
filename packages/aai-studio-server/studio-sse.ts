@@ -5,6 +5,7 @@
  * the stream lifecycle helper.
  */
 
+import { createCoalescingRunner } from "@alexkroman1/aai/internal";
 import { registerLiveStream } from "aai-server/live-streams";
 import type { SSEStreamingApi } from "hono/streaming";
 import {
@@ -42,6 +43,73 @@ export function projectPayload(workspace: StudioWorkspace): Record<string, unkno
     ...(workspace.previewHash && { previewVersion: workspace.previewHash }),
     previewStale: hasPreviewChanges(workspace),
     ...(workspace.previewError && { previewError: workspace.previewError }),
+  };
+}
+
+/** An SSE frame, or null to end the stream (the watched row vanished). */
+export type Frame = { event: string; data: string } | null;
+
+/**
+ * One shared read per watched row, however many streams are watching it.
+ *
+ * Every frame is produced by re-reading the row (events are signals, never
+ * payloads — see the module header of studio-events-routes.ts), and the row a
+ * `project` frame re-reads is the WHOLE workspace document, file map included.
+ * Per stream, that is right; per TAB it is waste, and tabs are exactly what
+ * multiply: the same project open on a laptop and a phone, or two windows
+ * side by side, each held a stream that answered the same change event with
+ * its own full-document query. A burst — a turn's file sync, then the preview
+ * stamp — multiplied again.
+ *
+ * The frames are identical by construction (a pure function of the row), so
+ * sharing costs nothing in correctness and saves the serialization too.
+ * `createCoalescingRunner` is the exact semantics needed: a trigger arriving
+ * during a run cannot be answered by that run — it may predate the change —
+ * so it gets ONE shared trailing read started after the current one settles.
+ *
+ * Entries are REFCOUNTED, not merely cached: this is a per-process map keyed
+ * by project, and a studio serves unboundedly many over its life, so a
+ * runner outliving its last stream is a leak of exactly the kind that never
+ * looks like one.
+ */
+export type SharedReads = {
+  /**
+   * Join the reader for `key`, creating it from `read` if this is the first
+   * caller. Later callers reuse the FIRST `read` — legitimate here because
+   * the key fully determines it (scope + project, over the one store this
+   * process has), and worth knowing before keying one on anything less.
+   */
+  acquire(key: string, read: () => Promise<Frame>): { trigger(): Promise<Frame>; release(): void };
+  /** Live entry count — for tests asserting the refcount really drains. */
+  size(): number;
+};
+
+export function createSharedReads(): SharedReads {
+  const entries = new Map<string, { trigger(): Promise<Frame>; refs: number }>();
+  return {
+    acquire(key, read) {
+      let entry = entries.get(key);
+      if (!entry) {
+        entry = { ...createCoalescingRunner(read), refs: 0 };
+        entries.set(key, entry);
+      }
+      entry.refs += 1;
+      const held = entry;
+      let released = false;
+      return {
+        trigger: () => held.trigger(),
+        release() {
+          // Idempotent, and identity-checked on the way out: a stream's
+          // cleanup runs once, but making it safe to run twice costs one
+          // boolean and removes a whole class of "who released it" question.
+          if (released) return;
+          released = true;
+          held.refs -= 1;
+          if (held.refs === 0 && entries.get(key) === held) entries.delete(key);
+        },
+      };
+    },
+    size: () => entries.size,
   };
 }
 

@@ -239,6 +239,16 @@ export function createBundleStore(
       return readBlobCached(record.worker_hash);
     },
 
+    async getWorkerUrl(slug, ttlSeconds) {
+      const record = await getAgentCached(slug);
+      if (!record) return null;
+      // No retryOnTransient wrapper, unlike readBlob: signing moves no bytes
+      // and the guest's own fetch is where a transient failure would actually
+      // show up. A throw here fails the spawn, which is retried by the caller
+      // re-brokering — the shape every other spawn failure takes.
+      return storage.signedUrl(blobKey(record.worker_hash), ttlSeconds);
+    },
+
     async getClientFile(slug, filePath) {
       const record = await getAgentCached(slug);
       const fileHash = record?.client_files[filePath];

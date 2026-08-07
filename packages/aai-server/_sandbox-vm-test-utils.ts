@@ -11,6 +11,7 @@
  * copy of the fakes would let them drift apart.
  */
 
+import { hash } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,7 +19,7 @@ import { vi } from "vitest";
 import type { ModalProcLike, ModalSandboxLike, ModalSpawnContext } from "./modal-context.ts";
 import { GUEST_PORT } from "./modal-context.ts";
 import type { RpcWebSocket } from "./rpc-transport.ts";
-import type { AgentSpawnOptions } from "./sandbox-vm.ts";
+import type { AgentSpawnOptions, WorkerSource } from "./sandbox-vm.ts";
 
 /** A fake guest endpoint: what the host sent, plus a way to answer. */
 export type FakeGuestSocket = {
@@ -78,11 +79,21 @@ export function createFakeGuestSocket(): FakeGuestSocket {
   };
 }
 
+/** An `inline` {@link WorkerSource} with a matching hash, as a spawner sees it. */
+export function inlineWorker(code = 'export default { name: "test" };'): WorkerSource {
+  return { kind: "inline", code, sha256: hash("sha256", code) };
+}
+
+/** A `url` {@link WorkerSource} — the guest fetches its own bundle. */
+export function urlWorker(url = "https://blobs.example/signed", sha256 = "deadbeef"): WorkerSource {
+  return { kind: "url", url, sha256 };
+}
+
 export function baseOpts(overrides?: Partial<AgentSpawnOptions>): AgentSpawnOptions {
   return {
     slug: "test-agent",
     version: 1,
-    workerCode: 'export default { name: "test" };',
+    worker: inlineWorker(),
     env: { FOO: "bar" },
     harnessPath: "/tmp/harness.mjs",
     ...overrides,

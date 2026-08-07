@@ -10,8 +10,9 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
+import type { AgentRecord } from "./agent-store.ts";
 import { type AppDatabases, type AppDbMeta, parseAppDbMeta } from "./app-database.ts";
-import { BROKER_READY_TIMEOUT_MS } from "./constants.ts";
+import { BROKER_READY_TIMEOUT_MS, resolveHarnessPath } from "./constants.ts";
 import type { PlatformEvents, Unwatch } from "./platform-events.ts";
 import { createSandbox, type Sandbox } from "./sandbox.ts";
 import type { SandboxDirectory } from "./sandbox-directory.ts";
@@ -25,6 +26,7 @@ import {
   terminateSlot,
   withSlugLock,
 } from "./sandbox-slots.ts";
+import { guestUnderstandsBundleUrl, type WorkerSource } from "./sandbox-vm.ts";
 import { appDbSecretName, type SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
 
@@ -86,7 +88,7 @@ export type ResolveSandboxOpts = {
 };
 
 type BundleParts = {
-  workerCode: string;
+  worker: WorkerSource;
   env: Record<string, string>;
   appDbMeta: AppDbMeta | null;
   /** Harness image the agent was deployed against (per-deploy pinning). */
@@ -96,33 +98,84 @@ type BundleParts = {
 };
 
 /**
- * Read the slug's stored bundle artifacts, all reads in flight at once.
- * Resolves null when the bundle is incomplete (deleted mid-read). Each read
- * gets a no-op rejection handler immediately so one rejecting early doesn't
- * surface as unhandled while its siblings are still in flight —
- * `Promise.all` still observes the originals.
+ * How long a guest has to fetch its own bundle before the signed URL lapses.
+ *
+ * Sized against the BOOT budget, not the URL's usefulness: the guest fetches
+ * within a second of exec, but exec is preceded by sandbox creation and
+ * scheduling, and the host waits up to `AGENT_HEALTH_TIMEOUT_MS` (120s) for
+ * readiness. A URL that expires inside that window turns a slow SCHEDULE into
+ * a boot failure — a failure mode that only appears under Modal capacity
+ * pressure, i.e. exactly when it is hardest to read. Five minutes clears it
+ * with margin and is still short enough that a leaked URL is worthless by the
+ * time anyone could use it; the blob behind it is one immutable, already-
+ * public-to-its-own-agent bundle either way.
+ */
+const WORKER_URL_TTL_SECONDS = 300;
+
+/**
+ * Where the guest gets its bundle from: a signed Storage URL it fetches
+ * itself, or the bytes read here and shipped into the sandbox.
+ *
+ * The URL is the production path and the reason this function exists — it
+ * takes ~8 MB out of BOTH directions of a cold spawn (Storage → this process,
+ * this process → sandbox). The byte path remains for the two cases that
+ * cannot use it, neither of which is a fallback for a failure:
+ *
+ * - the memory blob store (local dev, tests) has no URL to hand out;
+ * - a guest pinned to an older harness image does not read `AAI_BUNDLE_URL`
+ *   (see {@link guestUnderstandsBundleUrl}) — so the win lands per deploy,
+ *   as agents are redeployed onto a harness that understands it.
+ *
+ * A signing FAILURE is not caught here: it fails the spawn, like any other.
+ */
+async function loadWorkerSource(
+  slug: string,
+  agent: AgentRecord,
+  store: BundleStore,
+): Promise<WorkerSource | null> {
+  const sha256 = agent.worker_hash;
+  if (await guestUnderstandsBundleUrl(resolveHarnessPath(), agent.harness_image_tag ?? undefined)) {
+    const url = await store.getWorkerUrl(slug, WORKER_URL_TTL_SECONDS);
+    if (url !== null) return { kind: "url", url, sha256 };
+  }
+  const code = await store.getWorkerCode(slug);
+  return code === null ? null : { kind: "inline", code, sha256 };
+}
+
+/**
+ * Read the slug's stored bundle artifacts, every read that CAN be in flight
+ * at once in flight at once. Resolves null when the bundle is incomplete
+ * (deleted mid-read). Each read gets a no-op rejection handler immediately so
+ * one rejecting early doesn't surface as unhandled while its siblings are
+ * still in flight — `Promise.all` still observes the originals.
+ *
+ * The worker source is the one read that must WAIT: it is chosen from the
+ * row's `worker_hash` and `harness_image_tag`, so it cannot start until the
+ * row lands. That is not a new round trip — `getWorkerCode` always read the
+ * row first internally, and reading it once here means one `agents.get` on a
+ * cold cache where there were two.
  */
 function loadBundleParts(slug: string, opts: ResolveSandboxOpts): Promise<BundleParts | null> {
   const { store } = opts;
-  const workerCodeP = store.getWorkerCode(slug);
-  // The full row — for the pinned harness image tag and the deploy version.
-  // The stored config is NOT read: it is opaque to the host (agent-store.ts).
+  // The full row — for the worker blob's hash, the pinned harness image tag,
+  // and the deploy version. The stored config is NOT read: it is opaque to
+  // the host (agent-store.ts).
   const agentP = store.getAgent(slug);
+  const workerP = agentP.then((agent) => (agent ? loadWorkerSource(slug, agent, store) : null));
   const envP = store.getEnv(slug).then((e) => e ?? {});
   // Storage ("app db") credentials, when the platform can open them.
   const appDbMetaP = readAppDbMeta(slug, opts);
-  for (const p of [workerCodeP, agentP, envP, appDbMetaP]) p.catch(() => undefined);
-  return Promise.all([workerCodeP, agentP, envP, appDbMetaP]).then(
-    ([workerCode, agent, env, appDbMeta]) =>
-      workerCode && agent
-        ? {
-            workerCode,
-            env,
-            appDbMeta,
-            imageTag: agent.harness_image_tag ?? null,
-            version: agent.version,
-          }
-        : null,
+  for (const p of [workerP, agentP, envP, appDbMetaP]) p.catch(() => undefined);
+  return Promise.all([workerP, agentP, envP, appDbMetaP]).then(([worker, agent, env, appDbMeta]) =>
+    worker && agent
+      ? {
+          worker,
+          env,
+          appDbMeta,
+          imageTag: agent.harness_image_tag ?? null,
+          version: agent.version,
+        }
+      : null,
   );
 }
 
@@ -160,7 +213,7 @@ function buildSandboxFromParts(
       ? { ...parts.env, DATABASE_URL: opts.appDb.connectionUrl(parts.appDbMeta) }
       : parts.env;
   const sandbox: Sandbox = createSandbox({
-    workerCode: parts.workerCode,
+    worker: parts.worker,
     env,
     slug,
     // The deploy version is half the fleet-wide sandbox NAME, which is what

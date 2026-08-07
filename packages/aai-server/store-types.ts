@@ -40,6 +40,19 @@ export type BundleStore = {
    */
   getAgentVersion(slug: string): Promise<number | null>;
   getWorkerCode(slug: string): Promise<string | null>;
+  /**
+   * A time-boxed read URL for the slug's worker blob, for a guest to fetch
+   * its own bundle with (see `BlobStorage.signedUrl`). Null for an unknown
+   * agent, or a blob backend that cannot sign (the memory store — local dev
+   * and tests, where {@link getWorkerCode} is the only path); a signing
+   * FAILURE throws.
+   *
+   * Deliberately NOT cached: the URL expires, so a cached one is a boot
+   * failure waiting for the TTL to lapse. The blob it points at is immutable,
+   * which is what makes minting a fresh URL per spawn cheap (one API call, no
+   * bytes).
+   */
+  getWorkerUrl(slug: string, ttlSeconds: number): Promise<string | null>;
   getClientFile(slug: string, filePath: string): Promise<string | null>;
   deleteAgent(slug: string): Promise<void>;
   getEnv(slug: string): Promise<Record<string, string> | null>;

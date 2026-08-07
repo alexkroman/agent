@@ -94,7 +94,7 @@ describe("agentBootEnv", () => {
   const boot = {
     token: "tok",
     port: 8080,
-    bundlePath: "/b/bundle.mjs",
+    bundle: { path: "/b/bundle.mjs" },
     bundleSha256: "abc",
     envPath: "/b/env.json",
   };
@@ -108,6 +108,18 @@ describe("agentBootEnv", () => {
       AAI_BUNDLE_SHA256: "abc",
       AAI_AGENT_ENV_PATH: "/b/env.json",
     });
+  });
+
+  // The two bundle shapes are mutually exclusive on the wire, not merely
+  // preferred one over the other: a guest handed both a path that was never
+  // written and a URL would have a precedence rule to get wrong, and a v1
+  // harness reading the dead path would boot nothing at all.
+  it("names the bundle URL instead of a path when the guest fetches its own", () => {
+    const env = agentBootEnv({ ...boot, bundle: { url: "https://blobs.test/signed" } }, {});
+    expect(env.AAI_BUNDLE_URL).toBe("https://blobs.test/signed");
+    expect(env).not.toHaveProperty("AAI_BUNDLE_PATH");
+    // The hash rides along either way — it is what makes the URL safe.
+    expect(env.AAI_BUNDLE_SHA256).toBe("abc");
   });
 
   // The guest documents AAI_GUEST_IDLE_EXIT_MS as its idle-exit override, but

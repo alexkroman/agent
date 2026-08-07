@@ -36,9 +36,40 @@ export class WorkspaceConflictError extends Error {
   }
 }
 
+/**
+ * A shallow edit to a stored document's top-level keys: `set` merges, `remove`
+ * deletes. Everything not named is left exactly as stored — which is the
+ * point, since the key NOT named is `files`.
+ */
+export type WorkspacePatch = {
+  set?: Record<string, unknown>;
+  remove?: string[];
+};
+
 export type WorkspaceStore = {
   /** The stored document and its version, or null when absent. */
   get(scope: string, project: string): Promise<WorkspaceRecord | null>;
+  /**
+   * Apply a shallow patch to an existing document's top-level keys, bumping
+   * the version. Resolves the resulting record, or null when there is no row
+   * (a project deleted mid-flight is never resurrected — same rule as the
+   * versioned put).
+   *
+   * This exists because METADATA STAMPS dominate workspace writes and none of
+   * them touch the file map. Every settled edit is followed by a preview
+   * deploy stamping `previewSlug`/`previewHash`, Publish stamps
+   * `deployedSlug`/`deployedHash`, the database switch stamps
+   * `databaseEnabled` — and each of those went through a read-modify-write of
+   * the WHOLE document, so recording a 64-character hash read and rewrote
+   * every file in the project. Twice, counting the read.
+   *
+   * It is also the stronger concurrency primitive for that job, not merely
+   * the cheaper one. A versioned RMW can only be correct by DETECTING that
+   * the files moved under it and retrying; a patch cannot clobber them,
+   * because it never carries them. The version bump is kept because it is
+   * what the change stream — and so the studio's SSE push — is driven by.
+   */
+  patch(scope: string, project: string, patch: WorkspacePatch): Promise<WorkspaceRecord | null>;
   /**
    * Versioned write. `expectedVersion: null` creates the row and conflicts
    * when one already exists; a number replaces exactly that version.
@@ -106,6 +137,22 @@ export function createPgWorkspaceStore(sql: SqlExec): WorkspaceStore {
       return Number(version);
     },
 
+    async patch(scope, project, { set = {}, remove = [] }) {
+      // `doc - text[]` drops keys, `||` merges — so removals apply first and
+      // a key in both wins as a set. One statement, so it is atomic against
+      // every other writer without holding a version: there is nothing read
+      // here that a concurrent write could invalidate.
+      const rows = await sql(
+        `update ${TABLE} set doc = (doc - $4::text[]) || $3::jsonb,
+           version = version + 1, updated_at = now()
+         where scope = $1 and project = $2 returning doc, version`,
+        [scope, project, JSON.stringify(set), remove],
+      );
+      const row = rows[0];
+      if (!row) return null;
+      return { doc: parseDoc(row.doc), version: Number(row.version) };
+    },
+
     async delete(scope, project) {
       await sql(`delete from ${TABLE} where scope = $1 and project = $2`, [scope, project]);
     },
@@ -149,6 +196,25 @@ export function createMemoryWorkspaceStore(): WorkspaceStore {
       const version = existing.version + 1;
       rows.set(k, { doc: structuredClone(doc), version });
       return Promise.resolve(version);
+    },
+
+    patch(scope, project, { set = {}, remove = [] }) {
+      const k = key(scope, project);
+      const existing = rows.get(k);
+      if (!existing) return Promise.resolve(null);
+      // Removals first, then the merge — matching the SQL's `(doc - keys) ||
+      // set`, so a key named in both is a set in either implementation.
+      const doc = structuredClone(existing.doc) as Record<string, unknown>;
+      for (const name of remove) delete doc[name];
+      // Round-tripped through JSON like the jsonb bind, so an `undefined`
+      // among the values disappears here exactly as it would there rather
+      // than becoming a stored key with no value.
+      const record = {
+        doc: { ...doc, ...(JSON.parse(JSON.stringify(set)) as Record<string, unknown>) },
+        version: existing.version + 1,
+      };
+      rows.set(k, record);
+      return Promise.resolve(structuredClone(record));
     },
 
     delete(scope, project) {

@@ -12,7 +12,7 @@
 
 import type { WorkspaceStore } from "aai-server/workspace-store";
 import type { StudioSessionBroker } from "./studio-session-broker.ts";
-import { currentFilesHash, getWorkspace, mutateWorkspace } from "./studio-workspace.ts";
+import { currentFilesHash, getWorkspace, stampWorkspaceMeta } from "./studio-workspace.ts";
 
 export type StudioDeployResult =
   | { ok: true; slug: string; url: string; output: string }
@@ -57,17 +57,16 @@ export async function deployStudioProject(
   // the preview whether the running agent still matches the editor, so a
   // redeploy to the same slug has to refresh it too.
   //
-  // Re-read and stamp only the deploy metadata: the CLI run above takes
-  // seconds, and writing the pre-deploy `files` snapshot back would
-  // silently revert anything edited meanwhile. `hash` is of the snapshot
-  // that was actually deployed, so mid-deploy edits still show as
-  // unpublished. Deleted mid-deploy → mutateWorkspace finds no row and
-  // never resurrects the project just to record a slug; the metadata stamp
-  // is re-derivable, so a cross-replica conflict retries cleanly.
-  await mutateWorkspace(deps.workspaces, params.scope, params.project, (current) => ({
-    ...current,
+  // Stamp only the deploy metadata: the CLI run above takes seconds, and
+  // writing the pre-deploy `files` snapshot back would silently revert
+  // anything edited meanwhile — which `stampWorkspaceMeta` now makes
+  // impossible rather than merely intended, since its patch carries no files
+  // at all. `hash` is of the snapshot that was actually deployed, so
+  // mid-deploy edits still show as unpublished. Deleted mid-deploy → no row,
+  // and the project is never resurrected just to record a slug.
+  await stampWorkspaceMeta(deps.workspaces, params.scope, params.project, {
     deployedSlug: slug,
     deployedHash: hash,
-  }));
+  });
   return { ok: true, slug, url: `/${slug}/`, output: result.output };
 }

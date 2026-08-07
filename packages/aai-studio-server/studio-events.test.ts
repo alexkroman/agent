@@ -230,3 +230,70 @@ test("another caller's projects never leak into the list stream", async () => {
   const [initial] = await readFrames(res, "projects", 1);
   expect(initial).toEqual([]);
 });
+
+/**
+ * Tabs on one project cost a FIXED number of reads per change, not one each.
+ *
+ * Every frame re-reads the row (events are signals), and a `project` frame's
+ * row is the whole workspace document — file map included. Per stream that is
+ * correct; per TAB it is pure duplication, and tabs are what multiply: a
+ * laptop and a phone on the same project, two windows side by side, a reload
+ * racing its predecessor's still-open stream. A change burst multiplies it
+ * again.
+ *
+ * The fixed number is TWO, and the second one is the coalescing runner's
+ * correctness rule rather than a miss: a run that started before a trigger
+ * cannot vouch for that trigger's change, and the runner cannot tell that
+ * these triggers all came from the one event dispatch it is already reading
+ * for. So the first watcher's read runs, every other watcher coalesces into a
+ * single trailing read, and the total stays 2 whether 2 tabs are open or 20.
+ * Asserting the constant with THREE streams is what makes that a claim about
+ * growth rather than a coincidence of the two-stream case.
+ */
+test("streams on one project share a fixed number of reads per change", async () => {
+  const base = await createTestCombined();
+  let reads = 0;
+  const harness = await createTestCombined({
+    workspaces: {
+      ...base.workspaces,
+      get: (s, p) => {
+        reads += 1;
+        return base.workspaces.get(s, p);
+      },
+    },
+    chats: base.chats,
+    events: base.events,
+  });
+  await harness.fetch("/studio/projects", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ name: "proj" }),
+  });
+
+  // Drain both initial frames first, so no read is in flight when the change
+  // lands — otherwise the count would depend on which reads happened to
+  // overlap, and the assertion below would be about scheduling, not sharing.
+  const streams = await Promise.all([
+    openEvents(harness.fetch, "proj"),
+    openEvents(harness.fetch, "proj"),
+    openEvents(harness.fetch, "proj"),
+  ]);
+  const pending = streams.map((res) => readFrames(res, "project", 2));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  reads = 0;
+  // Written straight to the underlying store — so `reads` counts what the
+  // STREAMS did, not the write's own read-modify-write.
+  await mutateWorkspace(base.workspaces, studioScope("key1"), "proj", (current) => ({
+    ...current,
+    previewSlug: "proj-preview",
+  }));
+
+  // Every stream sees the change...
+  for (const frames of await Promise.all(pending)) {
+    expect(frames.at(-1)).toMatchObject({ previewSlug: "proj-preview" });
+  }
+  // ...off two queries between the three of them, where they used to make
+  // three — one each.
+  expect(reads).toBe(2);
+});

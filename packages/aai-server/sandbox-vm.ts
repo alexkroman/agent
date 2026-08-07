@@ -17,7 +17,6 @@
  * describe-mode exec, not a channel.
  */
 
-import { hash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { keyedMemoAsync } from "./_memo.ts";
 import { spawnModalAgentServer } from "./modal-agent-sandbox.ts";
@@ -70,11 +69,32 @@ export type WarmHarness = {
   [Symbol.asyncDispose](): Promise<void>;
 };
 
+/**
+ * How the worker bundle reaches the guest — either the bytes themselves, or a
+ * URL the guest fetches them from.
+ *
+ * `url` is the production path: the platform used to read ~8 MB out of Storage
+ * and push the same bytes into the sandbox, so the bundle crossed this process
+ * twice per cold spawn. A time-boxed signed Storage URL (see
+ * `BlobStorage.signedUrl`) removes both hops. `inline` covers everything that
+ * cannot sign — the memory blob store behind local dev and tests — and guests
+ * pinned to a harness image that predates URL delivery (see
+ * {@link guestUnderstandsBundleUrl}).
+ *
+ * `sha256` rides along in BOTH shapes and is the agents row's `worker_hash` —
+ * the deploy's own record of what it published, not a digest of whatever
+ * arrived. The guest refuses to load a bundle that does not match it, so the
+ * delivery path is trusted in neither shape.
+ */
+export type WorkerSource =
+  | { kind: "inline"; code: string; sha256: string }
+  | { kind: "url"; url: string; sha256: string };
+
 export type AgentSpawnOptions = {
   slug: string;
   /** Deploy version — half the fleet-wide sandbox name (sandbox-directory.ts). */
   version: number;
-  workerCode: string;
+  worker: WorkerSource;
   env: Record<string, string>;
   harnessPath: string;
   /**
@@ -93,9 +113,8 @@ export type AgentSpawnOptions = {
 export type BackendAgentSpawn = {
   harnessPath: string;
   slug: string;
-  workerCode: string;
-  /** Content hash the guest verifies the bundle against before loading. */
-  workerSha256: string;
+  /** The bundle itself, or a URL the guest pulls it from. */
+  worker: WorkerSource;
   agentEnv: Record<string, string>;
   /** Modal only — the harness snapshot image this deploy is pinned to. */
   imageTag?: string | undefined;
@@ -152,8 +171,7 @@ const SANDBOX_BACKENDS: Record<SandboxBackend, SandboxBackendOps> = {
       spawnSubprocessAgentServer({
         harnessPath: opts.harnessPath,
         slug: opts.slug,
-        workerCode: opts.workerCode,
-        workerSha256: opts.workerSha256,
+        worker: opts.worker,
         agentEnv: opts.agentEnv,
       }),
     describeBundle: describeSubprocessBundle,
@@ -222,6 +240,35 @@ export function currentHarnessImageTag(harnessPath: string): Promise<string | nu
   return currentTagMemo(harnessPath, () => activeBackend().harnessImageTag(harnessPath));
 }
 
+/**
+ * Whether a spawn pinned to `imageTag` will run the harness THIS process
+ * built — the only harness known to understand a `url` {@link WorkerSource}.
+ *
+ * Deployed agents spawn from the image recorded on their row at deploy time,
+ * so the guest can be arbitrarily older than the platform. URL delivery is an
+ * ADDITIVE boot-env change (`AAI_BUNDLE_URL` beside `AAI_BUNDLE_PATH`), and an
+ * older harness reads neither — it fails boot with "agent mode requires
+ * AAI_BUNDLE_PATH". Handing every pinned guest a URL would therefore have
+ * broken every already-deployed agent on the next platform deploy, so the
+ * caller asks first and falls back to shipping the bytes.
+ *
+ * The three ways the answer is yes: no pin at all (the current image), the
+ * operator forced pins aside (`SANDBOX_IGNORE_IMAGE_PINS`, which
+ * `resolveSpawnImage` honours by substituting the current image — this must
+ * agree with it), and a pin that IS the current tag. The tag hashes the
+ * harness bundle's content, so "same tag" means "same harness", exactly the
+ * question being asked.
+ */
+export async function guestUnderstandsBundleUrl(
+  harnessPath: string,
+  imageTag: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<boolean> {
+  if (!imageTag) return true;
+  if (env.SANDBOX_IGNORE_IMAGE_PINS === "1") return true;
+  return imageTag === (await currentHarnessImageTag(harnessPath));
+}
+
 // ── Bundle inspection ────────────────────────────────────────────────────────
 
 /**
@@ -268,10 +315,10 @@ export async function spawnAgentServer(
   )({
     harnessPath: opts.harnessPath,
     slug: opts.slug,
-    workerCode: opts.workerCode,
-    // The blob store is content-addressed; carrying the hash to the guest
-    // (which verifies before loading) extends that property end-to-end.
-    workerSha256: hash("sha256", opts.workerCode),
+    // The blob store is content-addressed and the hash rides on the source
+    // (see WorkerSource); the guest verifies before loading, which extends
+    // that property end-to-end whichever way the bytes travelled.
+    worker: opts.worker,
     agentEnv: opts.env,
     imageTag: opts.imageTag,
     name: agentSandboxName(opts.slug, opts.version),

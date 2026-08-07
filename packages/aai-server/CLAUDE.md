@@ -98,8 +98,9 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
 - `blob-storage.ts` — where those blobs live: Supabase Storage through
   `@supabase/storage-js` in production (authenticated with the SAME
   `SUPABASE_SERVICE_ROLE_KEY` as Realtime — Storage has no credential of its
-  own), memory in dev/tests. The surface is deliberately `getItem`/`setItem`
-  and nothing else. It replaced unstorage's generic S3 driver plus a local
+  own), memory in dev/tests. The surface is `getItem`/`setItem`/`signedUrl`
+  and nothing else (see "The guest fetches its own bundle" for the third).
+  It replaced unstorage's generic S3 driver plus a local
   override of that driver's `getKeys` (which lists the whole bucket and reads
   only the first 1000-key page): once workspaces moved to Postgres NOTHING
   lists keys, so the override guarded a call no longer made, and the
@@ -155,6 +156,14 @@ through it at all). Everything durable lives in Supabase (bundles and
 client files in Storage, agent env + app-db credentials in Vault, studio
 workspaces/chats and per-app data in Postgres), and cross-replica
 coordination lives in the same Postgres over `SUPABASE_DB_URL`.
+
+**Being stateless does not mean everything has to flow THROUGH the replica.**
+Two of the largest byte paths deliberately don't: `ctx.db` connects from the
+guest directly on the app's own scoped role, and a guest fetches its own worker
+bundle from a signed Storage URL (see "The guest fetches its own bundle"). The
+pattern both follow is the same — hand out a narrowly scoped capability and
+verify the result (a per-app Postgres role; a content hash) rather than proxy
+the bytes to keep the platform's credential out of reach.
 
 **The schema is DECLARED, in `supabase/migrations`** — not created lazily by
 the store that reads it. Every `aai_platform` store used to call a memoized
@@ -1263,6 +1272,52 @@ that grows a dependency-declaring field (`overrides`, `resolutions`,
 at image build as a lockfile mismatch; the second does **not** — the install
 succeeds and merely resolves a different tree than the source layer expects,
 which is why it needs a test rather than a comment.
+
+### The guest fetches its own bundle (signed Storage URL)
+
+A cold agent spawn used to move the worker bundle — ~8 MB typical, 30 MB cap —
+through this process **twice**: `loadBundleParts` read the blob out of Supabase
+Storage into the replica's heap, and `spawnModalAgentServer` wrote those same
+bytes into the sandbox with `filesystem.writeText`. Neither hop bought
+anything. The guest now fetches the bundle itself from a time-boxed signed
+Storage URL (`BlobStorage.signedUrl` → `BundleStore.getWorkerUrl` →
+`WorkerSource` in `sandbox-vm.ts` → `AAI_BUNDLE_URL` in the exec env), and both
+transfers disappear.
+
+**The hash is the whole security argument, and it predates this.** Agent mode
+already refused to load a bundle whose sha-256 did not match `AAI_BUNDLE_SHA256`
+(`readAgentBoot`), so the guest trusts the HASH, never the transport. What
+changed is where that hash comes from: the agents row's `worker_hash` — the
+deploy's own record of what it published — rather than a digest of the bytes
+the host happened to be holding, which made the check a tautology on the file
+path. The URL grants read of exactly one immutable blob, carries no
+service-role key, and expires (`WORKER_URL_TTL_SECONDS`, 5 min — sized against
+the 120s readiness budget plus scheduling, because a URL expiring inside it
+turns slow Modal scheduling into a boot failure that only appears under
+capacity pressure).
+
+**There is no fallback for a failure.** Signing throws and fails the spawn,
+like every other spawn failure; the client re-brokers. `signedUrl` resolving
+`null` means something else entirely — *this backend cannot sign* — which is
+true only of the memory blob store behind local dev and tests, and puts them on
+the byte path. Conflating the two would silently put production back on the
+byte path with nothing reporting it.
+
+**A pinned guest may be too old to understand it, and that is checked**
+(`guestUnderstandsBundleUrl`). Deployed agents spawn from the harness image
+pinned on their row, so the guest can be arbitrarily older than the platform,
+and a `GUEST_CONTRACT_VERSION` 1 harness reads only `AAI_BUNDLE_PATH` — handed
+a URL it fails boot outright. Nothing can ask a guest its version *before*
+exec, so the host compares images instead: no pin, or `SANDBOX_IGNORE_IMAGE_PINS`
+(which must agree with `resolveSpawnImage` substituting the current image), or a
+pin equal to the tag this process builds. The tag hashes the harness content, so
+"same tag" means "same harness". **So the saving lands per deploy**, as agents
+are redeployed onto a harness that understands the URL — not all at once when
+this ships.
+
+One side effect worth knowing: `loadBundleParts` now reads the agents row ONCE
+and derives the worker source from it, where it previously issued `getAgent`
+and `getWorkerCode` concurrently and each read the row.
 
 ### No warm pool — every spawn boots from the snapshot image
 

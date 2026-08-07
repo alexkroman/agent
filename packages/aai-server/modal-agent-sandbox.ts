@@ -31,6 +31,7 @@ import {
 } from "./modal-sandbox-env.ts";
 import { SandboxUnavailableError } from "./sandbox-errors.ts";
 import { resolveSandboxRole, sandboxTags } from "./sandbox-role.ts";
+import type { WorkerSource } from "./sandbox-vm.ts";
 import {
   type AgentServerHandle,
   agentBootEnv,
@@ -46,7 +47,9 @@ export const AGENT_ENV_REMOTE_PATH = "/tmp/aai-agent-env.json";
 /**
  * Spawn one DEPLOYED AGENT as a server in a fresh Modal sandbox: create from
  * the deploy's pinned image (falling back to current — see
- * `createGuestSandbox`), write the bundle and agent env into the sandbox,
+ * `createGuestSandbox`), put the bundle and agent env where the guest will
+ * look for them (the env always as a file; the bundle as a file only when the
+ * caller holds the bytes rather than a URL — see {@link WorkerSource}),
  * exec the harness in agent mode, and wait for its public `/health` — a 200
  * means the bundle is loaded and sessions can be served. No control channel
  * is dialed; the returned handle's whole surface is HTTP + terminate.
@@ -55,8 +58,8 @@ export async function spawnModalAgentServer(
   opts: {
     harnessPath: string;
     slug: string;
-    workerCode: string;
-    workerSha256: string;
+    /** The bundle bytes, or the URL the guest pulls them from. */
+    worker: WorkerSource;
     agentEnv: Record<string, string>;
     imageTag?: string | undefined;
     /**
@@ -81,7 +84,7 @@ export async function spawnModalAgentServer(
   const t0 = performance.now();
   // No inner function may reference `opts`: doing so context-allocates it into
   // the scope every closure below shares, and `terminate` outlives the spawn —
-  // so the ~8 MB worker bundle in `opts.workerCode` would stay reachable for
+  // so an inline ~8 MB worker bundle in `opts.worker` would stay reachable for
   // the sandbox's whole life. Same trap sandbox.ts documents; a `.catch` here
   // reintroduced it once. The name goes into a local for that reason.
   const sandboxName = opts.name;
@@ -101,10 +104,11 @@ export async function spawnModalAgentServer(
   );
   try {
     // The tunnel lookup depends on nothing but the sandbox existing, so it
-    // starts HERE rather than beside the exec below. The ~8 MB bundle write is
-    // the longest single step of an agent spawn, and starting the lookup ahead
-    // of it runs that round trip INSIDE the write's window instead of after
-    // it. Contained immediately: the await is several statements away, and on
+    // starts HERE rather than beside the exec below, running its round trip
+    // inside the boot writes' window instead of after them. That mattered most
+    // when the ~8 MB bundle write was the longest single step of a spawn; a
+    // `url` source removes that write, and this is still free.
+    // Contained immediately: the await is several statements away, and on
     // the write-failure path nothing ever awaits this — a rejection then must
     // not surface as unhandled.
     const tunnelsPromise = sb.tunnels();
@@ -115,8 +119,15 @@ export async function spawnModalAgentServer(
     // The two writes target different paths and neither reads the other, so
     // they go together: serialized, the tiny env write paid a full round trip
     // queued behind the bundle's.
+    //
+    // And the BUNDLE write happens only when we hold the bytes at all. A `url`
+    // source means the guest pulls it from Storage itself, which is the whole
+    // point: those ~8 MB otherwise came out of Storage into this process and
+    // straight back out over this write, for one cold spawn.
     await Promise.all([
-      sb.filesystem.writeText(opts.workerCode, AGENT_BUNDLE_REMOTE_PATH),
+      ...(opts.worker.kind === "inline"
+        ? [sb.filesystem.writeText(opts.worker.code, AGENT_BUNDLE_REMOTE_PATH)]
+        : []),
       sb.filesystem.writeText(JSON.stringify(opts.agentEnv), AGENT_ENV_REMOTE_PATH),
     ]);
 
@@ -130,8 +141,11 @@ export async function spawnModalAgentServer(
           ...agentBootEnv({
             token,
             port: GUEST_PORT,
-            bundlePath: AGENT_BUNDLE_REMOTE_PATH,
-            bundleSha256: opts.workerSha256,
+            bundle:
+              opts.worker.kind === "url"
+                ? { url: opts.worker.url }
+                : { path: AGENT_BUNDLE_REMOTE_PATH },
+            bundleSha256: opts.worker.sha256,
             envPath: AGENT_ENV_REMOTE_PATH,
           }),
           ...guestExecBaseEnv(),

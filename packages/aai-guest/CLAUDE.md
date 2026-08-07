@@ -127,13 +127,24 @@ guest side in `aai-guest/harness-agent-mode.ts`). The whole
 platform↔deployed-agent contract, frozen per deploy by the harness image
 pin and versioned by `GUEST_CONTRACT_VERSION` (additive changes only):
 
-- **Boot**: the spawner writes the worker bundle and the agent env as
-  FILES into the fresh sandbox (`sb.filesystem.writeText` on Modal, a
-  scratch dir on the subprocess backend), then execs the harness with
-  `AAI_GUEST_MODE=agent` + the artifact paths + the bundle's sha-256. The
-  guest hash-verifies the bundle (a mismatch is a hard boot failure, never
-  a silently different agent), loads it BEFORE listening, and scrubs the
-  env file. Readiness is the guest's public `/health` answering 200 —
+- **Boot**: the spawner writes the agent env as a FILE into the fresh sandbox
+  (`sb.filesystem.writeText` on Modal, a scratch dir on the subprocess
+  backend), then execs the harness with `AAI_GUEST_MODE=agent` + the artifact
+  locations + the bundle's sha-256. The BUNDLE arrives one of two ways and the
+  spawner picks by naming one env var or the other — `AAI_BUNDLE_PATH` for a
+  file written the same way, or **`AAI_BUNDLE_URL` for a time-boxed signed
+  Storage URL the guest fetches itself**, which is production's path and keeps
+  ~8 MB from crossing the platform twice per cold spawn (see
+  `packages/aai-server/CLAUDE.md`, "The guest fetches its own bundle"). The
+  guest hash-verifies the bundle either way against `AAI_BUNDLE_SHA256` — the
+  agents row's own record of what the deploy published — so it trusts the HASH
+  and never the transport, and a mismatch is a hard boot failure rather than a
+  silently different agent. It then loads the bundle BEFORE listening, and
+  scrubs the env file. The two shapes are mutually exclusive on the wire on
+  purpose: there is no precedence rule for either side to get wrong, and no way
+  to point a guest at a path nobody wrote.
+
+  Readiness is the guest's public `/health` answering 200 —
   polled by the host, raced against guest-process exit so a boot crash
   fails the spawn immediately with the guest's stderr in the host log
   (relayed from the moment the process exists — see `startGuestLogging`;

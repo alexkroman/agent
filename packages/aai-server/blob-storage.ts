@@ -46,6 +46,27 @@ export type BlobStorage = {
    * hashes, so a rewrite is byte-identical to what is already there.
    */
   setItem(key: string, value: string): Promise<void>;
+  /**
+   * A time-boxed, object-scoped read URL for one blob, or null when this
+   * backend cannot mint one (the memory store) — the caller then falls back
+   * to reading the bytes itself.
+   *
+   * This exists so a guest sandbox can pull its own worker bundle instead of
+   * the platform reading ~8 MB out of Storage and pushing the same bytes into
+   * the sandbox — the bundle crossed the platform twice for no reason. The
+   * URL carries no service-role key, grants read of exactly this key, and
+   * expires; the guest hash-verifies what it gets against the agents row's
+   * `worker_hash` before loading it, so nothing about the delivery path is
+   * trusted (see aai-guest/harness-agent-mode.ts).
+   *
+   * Null means **this backend cannot sign at all** (the memory store, which
+   * has no server in front of it), not "signing failed" — a failure THROWS
+   * and fails the spawn, like every other Storage error here. There is no
+   * quiet downgrade to reading the bytes: that would make the byte path
+   * reachable in production without anything reporting it, which is how a
+   * regression in the fast path stays invisible.
+   */
+  signedUrl(key: string, ttlSeconds: number): Promise<string | null>;
 };
 
 export type SupabaseBlobStorageOptions = {
@@ -104,6 +125,17 @@ export function createSupabaseBlobStorage(opts: SupabaseBlobStorageOptions): Blo
         throw new Error(`blob write failed for ${key}: ${errorMessage(error)}`, { cause: error });
       }
     },
+
+    async signedUrl(key, ttlSeconds) {
+      // Unlike getItem, a 404 is NOT special-cased to null: null is reserved
+      // for "this backend cannot sign", and a signing call for a key the row
+      // says exists is a broken deploy either way.
+      const { data, error } = await bucket.createSignedUrl(key, ttlSeconds);
+      if (error || !data?.signedUrl) {
+        throw new Error(`blob signing failed for ${key}: ${errorMessage(error)}`, { cause: error });
+      }
+      return data.signedUrl;
+    },
   };
 }
 
@@ -128,5 +160,9 @@ export function createMemoryBlobStorage(): BlobStorage {
       blobs.set(key, value);
       return Promise.resolve();
     },
+    // No URL to hand out: there is no server in front of this Map. Callers
+    // read the bytes, which is exactly the pre-signing behaviour and the only
+    // path local dev and tests ever take.
+    signedUrl: () => Promise.resolve(null),
   };
 }

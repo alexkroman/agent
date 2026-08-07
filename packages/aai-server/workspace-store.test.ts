@@ -50,6 +50,21 @@ function createFakeSql(opts: { failEnsures?: number } = {}) {
     rows.set(k, { doc: String(doc), version });
     return [{ version }];
   };
+  // `(doc - $4::text[]) || $3::jsonb` — removals, then the merge, matching
+  // the statement's own evaluation order. Distinguished from the versioned
+  // update by a longer prefix (both statements begin `update <table> set doc
+  // =`), and listed FIRST so that longer prefix is the one that matches.
+  const patchRow: Handler = ([scope, project, set, remove]) => {
+    const k = key(scope, project);
+    const row = rows.get(k);
+    if (!row) return [];
+    const doc = JSON.parse(row.doc) as Record<string, unknown>;
+    for (const name of remove as string[]) delete doc[name];
+    const merged = { ...doc, ...(JSON.parse(String(set)) as Record<string, unknown>) };
+    const version = row.version + 1;
+    rows.set(k, { doc: JSON.stringify(merged), version });
+    return [{ doc: JSON.stringify(merged), version }];
+  };
   const deleteRow: Handler = ([scope, project]) => {
     rows.delete(key(scope, project));
     return [];
@@ -66,6 +81,7 @@ function createFakeSql(opts: { failEnsures?: number } = {}) {
     ["create table", ddl],
     ["select doc, version", selectRow],
     ["insert into", insertRow],
+    ["update aai_platform.studio_workspaces set doc = (doc -", patchRow],
     ["update", updateRow],
     ["delete", deleteRow],
     ["select project", listRows],
@@ -138,6 +154,58 @@ describe.each(implementations)("WorkspaceStore parity: %s", (_name, make) => {
     await store.delete("s", "p");
     expect(await store.get("s", "p")).toBeNull();
     await store.delete("s", "p"); // no throw
+  });
+
+  test("patch merges named keys and leaves every other one alone", async () => {
+    const store = make();
+    await store.put("s", "p", { files: { "a.ts": "1" }, deployedSlug: "old" }, null);
+    const patched = await store.patch("s", "p", { set: { deployedSlug: "new" } });
+    // The file map is untouched WITHOUT having been read or rewritten — the
+    // whole reason this operation exists.
+    expect(patched).toEqual({
+      doc: { files: { "a.ts": "1" }, deployedSlug: "new" },
+      version: 2,
+    });
+  });
+
+  test("patch removes keys, and a key in both set and remove is set", async () => {
+    const store = make();
+    await store.put("s", "p", { files: {}, previewHash: "h", previewError: "boom" }, null);
+    const patched = await store.patch("s", "p", {
+      set: { previewHash: "fresh" },
+      remove: ["previewError", "previewHash"],
+    });
+    // Removals apply first, then the merge — so naming a key in both is a
+    // SET in either implementation, never an accidental delete.
+    expect(patched?.doc).toEqual({ files: {}, previewHash: "fresh" });
+  });
+
+  test("patch bumps the version — it is what drives the change stream", async () => {
+    const store = make();
+    await store.put("s", "p", { files: {} }, null);
+    expect((await store.patch("s", "p", { set: { a: 1 } }))?.version).toBe(2);
+    expect((await store.patch("s", "p", { set: { b: 2 } }))?.version).toBe(3);
+    // And it takes no expected version, so two stamps of different fields
+    // both land — where the versioned put made one of them retry.
+    expect((await store.get("s", "p"))?.doc).toEqual({ files: {}, a: 1, b: 2 });
+  });
+
+  test("patch of a missing row resolves null and never creates one", async () => {
+    const store = make();
+    expect(await store.patch("s", "ghost", { set: { a: 1 } })).toBeNull();
+    expect(await store.get("s", "ghost")).toBeNull();
+  });
+
+  test("patch cannot clobber a write that landed after it was composed", async () => {
+    // The concurrency property the versioned read-modify-write could only get
+    // by DETECTING the race and retrying: a patch carries no files, so a file
+    // write landing between composing the stamp and applying it survives.
+    const store = make();
+    await store.put("s", "p", { files: { "a.ts": "before" } }, null);
+    const stamp = { set: { deployedSlug: "x" } };
+    await store.put("s", "p", { files: { "a.ts": "after" } }, 1);
+    const patched = await store.patch("s", "p", stamp);
+    expect(patched?.doc).toEqual({ files: { "a.ts": "after" }, deployedSlug: "x" });
   });
 
   test("list is scoped and sorted", async () => {
@@ -218,6 +286,31 @@ describe("createPgWorkspaceStore SQL", () => {
       query: expect.stringContaining("order by project"),
       params: ["sc"],
     });
+  });
+
+  test("patch binds no document — the file map never crosses the wire", async () => {
+    const { sql, log } = createFakeSql();
+    const store = createPgWorkspaceStore(sql);
+    const files = { "agent.ts": "x".repeat(5000) };
+    await store.put("s", "p", { files, deployedSlug: "old" }, null);
+    log.length = 0;
+
+    await store.patch("s", "p", { set: { deployedSlug: "new" }, remove: ["previewError"] });
+
+    const [statement] = log;
+    // The measurable claim: recording a slug sends the slug, not the project.
+    // A `doc` bind here would mean the read-modify-write came back in
+    // disguise, which is exactly the regression this operation exists to
+    // prevent and the one that no behavioural assertion can see.
+    expect(JSON.stringify(statement?.params)).not.toContain("agent.ts");
+    expect(statement?.params).toEqual([
+      "s",
+      "p",
+      JSON.stringify({ deployedSlug: "new" }),
+      ["previewError"],
+    ]);
+    // ...and it reads nothing first.
+    expect(log.filter((entry) => entry.query.includes("select"))).toEqual([]);
   });
 
   test("reads accept a jsonb doc that arrives pre-parsed", async () => {

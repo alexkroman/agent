@@ -41,7 +41,12 @@ import {
   type PreviewQueue,
 } from "./studio-preview-queue.ts";
 import type { StudioSessionBroker } from "./studio-session-broker.ts";
-import { currentFilesHash, getWorkspace, mutateWorkspace, projectKey } from "./studio-workspace.ts";
+import {
+  currentFilesHash,
+  getWorkspace,
+  projectKey,
+  stampWorkspaceMeta,
+} from "./studio-workspace.ts";
 
 /** Cap on the stored preview failure output (it renders in a banner). */
 const MAX_PREVIEW_ERROR = 16_000;
@@ -167,11 +172,7 @@ export function wakeProjectPreview(options: {
         // no-op on the matching hash, so drop the stamp first. `previewSlug`
         // stays: the redeploy re-claims the same slug, so the pane's URL
         // never rots.
-        await mutateWorkspace(workspaces, scope, project, (current) => {
-          const next = { ...current };
-          delete next.previewHash;
-          return next;
-        });
+        await stampWorkspaceMeta(workspaces, scope, project, { previewHash: undefined });
       }
       options.schedule(scope, project, target);
     })
@@ -306,17 +307,14 @@ export function createPreviewDeployer(
     // pre-deploy files back would revert anything edited meanwhile. `hash`
     // is of the snapshot that was deployed, so mid-deploy edits still read
     // as preview-stale — and the job the edit enqueued deploys them next.
-    await mutateWorkspace(options.workspaces, scope, project, (current) => {
-      const next = { ...current };
-      if (outcome.ok) {
-        next.previewSlug = outcome.slug ?? slug;
-        next.previewHash = hash;
-        delete next.previewError;
-      } else {
-        next.previewError = outcome.output.slice(0, MAX_PREVIEW_ERROR);
-      }
-      return next;
-    });
+    await stampWorkspaceMeta(
+      options.workspaces,
+      scope,
+      project,
+      outcome.ok
+        ? { previewSlug: outcome.slug ?? slug, previewHash: hash, previewError: undefined }
+        : { previewError: outcome.output.slice(0, MAX_PREVIEW_ERROR) },
+    );
     if (!outcome.ok) {
       console.warn("Studio preview deploy failed", { project, output: outcome.output });
     }

@@ -72,6 +72,65 @@ describe("readAgentBoot", () => {
     await readAgentBoot(bootEnv);
     expect(await readFile(bootEnv.AAI_BUNDLE_PATH as string, "utf-8")).toBe("keep-me");
   });
+
+  // ── AAI_BUNDLE_URL: the guest fetches its own bundle ──────────────────────
+  //
+  // The platform hands a signed, expiring Storage URL instead of writing ~8 MB
+  // into the sandbox. Everything that makes that safe is the hash check the
+  // file path already had — so these tests are mostly about the hash still
+  // being enforced when the bytes arrived over the network, where they could
+  // have come from anywhere.
+
+  test("fetches the bundle from AAI_BUNDLE_URL and verifies the same hash", async () => {
+    const code = 'export default { name: "fetched" };';
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(code));
+    const boot = await readAgentBoot({
+      AAI_BUNDLE_URL: "https://blobs.test/signed",
+      AAI_BUNDLE_SHA256: sha256(code),
+    });
+    expect(boot.code).toBe(code);
+    expect(fetchMock).toHaveBeenCalledWith("https://blobs.test/signed", expect.anything());
+  });
+
+  test("a fetched bundle whose hash does not match refuses to load", async () => {
+    // The whole security argument for URL delivery: the guest trusts the
+    // hash, never whoever served the bytes.
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("not the bundle"));
+    await expect(
+      readAgentBoot({
+        AAI_BUNDLE_URL: "https://blobs.test/signed",
+        AAI_BUNDLE_SHA256: sha256("export default {}"),
+      }),
+    ).rejects.toThrow(/hash mismatch/);
+  });
+
+  test("a rejected fetch fails the boot without echoing the URL", async () => {
+    // The URL IS the read capability for the blob, and a boot failure's whole
+    // job is to be printed to stderr and shipped to the host log.
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("gone", { status: 400 }));
+    const message = await readAgentBoot({
+      AAI_BUNDLE_URL: "https://blobs.test/signed?token=secret",
+      AAI_BUNDLE_SHA256: sha256("x"),
+    }).then(
+      () => "resolved without throwing",
+      (err: unknown) => (err instanceof Error ? err.message : String(err)),
+    );
+    // The first assertion is what keeps the second from passing vacuously.
+    expect(message).toMatch(/HTTP 400/);
+    expect(message).not.toContain("secret");
+  });
+
+  test("the URL wins over a path, so a v2 guest never reads a file nobody wrote", async () => {
+    const code = "from-the-url";
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(code));
+    const { bootEnv } = await writeBoot({ code: "from-the-file" });
+    const boot = await readAgentBoot({
+      ...bootEnv,
+      AAI_BUNDLE_URL: "https://blobs.test/signed",
+      AAI_BUNDLE_SHA256: sha256(code),
+    });
+    expect(boot.code).toBe(code);
+  });
 });
 
 // ── Manage surface ─────────────────────────────────────────────────────────

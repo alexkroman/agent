@@ -5,10 +5,11 @@
  * In agent mode (`AAI_GUEST_MODE=agent`) the guest receives EVERYTHING at
  * exec time and holds no host connection at all:
  *
- * - the worker bundle and the agent env arrive as files written into the
- *   sandbox before exec (`AAI_BUNDLE_PATH` + `AAI_BUNDLE_SHA256`,
- *   `AAI_AGENT_ENV_PATH`) — {@link readAgentBoot} loads and hash-verifies
- *   them;
+ * - the agent env arrives as a file written into the sandbox before exec
+ *   (`AAI_AGENT_ENV_PATH`), and the worker bundle either as a file
+ *   (`AAI_BUNDLE_PATH`) or as a signed URL the guest fetches for itself
+ *   (`AAI_BUNDLE_URL`) — {@link readAgentBoot} loads it and hash-verifies it
+ *   against `AAI_BUNDLE_SHA256` either way;
  * - the platform's remaining needs are a token-gated HTTP surface —
  *   {@link createManageHandler}: `GET /manage/status` (the idle-eviction and
  *   retire-drain probe) and `POST /manage/drain` (stop accepting sessions,
@@ -28,7 +29,7 @@ import { hash } from "node:crypto";
 import { readFile, rm } from "node:fs/promises";
 import type http from "node:http";
 import { verifyBearer } from "./harness-auth.ts";
-import { GUEST_CONTRACT_VERSION } from "./limits.ts";
+import { BUNDLE_FETCH_TIMEOUT_MS, GUEST_CONTRACT_VERSION } from "./limits.ts";
 
 // ---- Boot artifacts ----------------------------------------------------------
 
@@ -40,46 +41,104 @@ export type AgentBoot = {
 };
 
 /**
- * Read the boot artifacts the spawner delivered into the sandbox. The bundle
- * hash is verified against `AAI_BUNDLE_SHA256` — the blob store is
- * content-addressed, so this extends "a wrong blob is structurally
- * impossible" through the delivery path; a mismatch is a hard boot failure
- * (exit, respawn), never a silently different agent. The env file is
- * best-effort deleted after reading so the secrets live in process memory
- * rather than on the sandbox disk.
+ * Read the boot artifacts the spawner delivered into the sandbox.
+ *
+ * The bundle arrives one of two ways, and the spawner picks by naming one env
+ * var or the other: `AAI_BUNDLE_PATH` for a file written into the sandbox
+ * before exec, `AAI_BUNDLE_URL` for a time-boxed signed Storage URL the guest
+ * FETCHES ITSELF. The second is the platform's path — it stops the ~8 MB
+ * bundle from crossing the platform twice on every cold spawn — and it is
+ * safe for exactly one reason: the hash below. `AAI_BUNDLE_SHA256` is the
+ * agents row's own record of what the deploy published, so the guest trusts
+ * the HASH and never the transport, the URL, or whoever served it. A mismatch
+ * is a hard boot failure (exit, respawn), never a silently different agent.
+ *
+ * The env file is best-effort deleted after reading so the secrets live in
+ * process memory rather than on the sandbox disk.
  */
 export async function readAgentBoot(
   env: Record<string, string | undefined> = process.env,
 ): Promise<AgentBoot> {
-  const bundlePath = env.AAI_BUNDLE_PATH;
   const expected = env.AAI_BUNDLE_SHA256;
-  if (!(bundlePath && expected)) {
-    throw new Error("agent mode requires AAI_BUNDLE_PATH and AAI_BUNDLE_SHA256");
+  const source = bundleSource(env);
+  if (!(expected && source)) {
+    throw new Error("agent mode requires AAI_BUNDLE_SHA256 and one of AAI_BUNDLE_PATH/_URL");
   }
-  const code = await readFile(bundlePath, "utf-8");
+  const code =
+    "url" in source ? await fetchBundle(source.url) : await readFile(source.path, "utf-8");
   const actual = hash("sha256", code);
   if (actual !== expected.toLowerCase()) {
     throw new Error(
       `bundle hash mismatch: expected sha256 ${expected}, got ${actual} — refusing to load`,
     );
   }
+  return { code, env: await readAgentEnvFile(env.AAI_AGENT_ENV_PATH) };
+}
 
-  const agentEnv: Record<string, string> = {};
-  const envPath = env.AAI_AGENT_ENV_PATH;
-  if (envPath) {
-    const raw = JSON.parse(await readFile(envPath, "utf-8")) as unknown;
-    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
-      throw new Error("agent env file must contain a JSON object");
-    }
-    for (const [key, value] of Object.entries(raw)) {
-      if (typeof value !== "string") {
-        throw new Error(`agent env value for ${key} must be a string`);
-      }
-      agentEnv[key] = value;
-    }
-    await rm(envPath, { force: true }).catch(() => undefined);
+/**
+ * Where the spawner said the bundle is. Mirrors its own union (`agentBootEnv`
+ * in aai-server/warm-harness.ts): the SHAPE decides where to look, so there is
+ * no precedence rule for either side to get wrong — and no way to be pointed
+ * at a path that was never written.
+ */
+function bundleSource(
+  env: Record<string, string | undefined>,
+): { url: string } | { path: string } | null {
+  const url = env.AAI_BUNDLE_URL;
+  if (url) return { url };
+  const path = env.AAI_BUNDLE_PATH;
+  return path ? { path } : null;
+}
+
+/**
+ * The agent's env, best-effort deleted after reading so the secrets live in
+ * process memory rather than on the sandbox disk. An absent path is a legal
+ * boot with an empty env; a malformed file is not.
+ */
+async function readAgentEnvFile(envPath: string | undefined): Promise<Record<string, string>> {
+  if (!envPath) return {};
+  const raw = JSON.parse(await readFile(envPath, "utf-8")) as unknown;
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error("agent env file must contain a JSON object");
   }
-  return { code, env: agentEnv };
+  const agentEnv: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value !== "string") {
+      throw new Error(`agent env value for ${key} must be a string`);
+    }
+    agentEnv[key] = value;
+  }
+  await rm(envPath, { force: true }).catch(() => undefined);
+  return agentEnv;
+}
+
+/**
+ * Fetch the worker bundle from the signed URL the spawner handed us.
+ *
+ * Two things it deliberately does not do. It does not RETRY: the caller of a
+ * failed boot is the platform's spawn path, which fails the spawn and lets
+ * the client re-broker onto a fresh sandbox — a retry loop here would only
+ * make a dead URL take longer to report. And it never puts the URL in an
+ * error: the URL *is* the read capability for this blob, and a boot failure's
+ * whole job is to be printed to stderr and shipped to the host log
+ * (`startGuestLogging`). The status and the byte count are what diagnose it.
+ */
+async function fetchBundle(url: string): Promise<string> {
+  const res = await fetch(url, {
+    signal: AbortSignal.timeout(BUNDLE_FETCH_TIMEOUT_MS),
+  }).catch((err: unknown) => {
+    throw new Error(`bundle fetch failed: ${err instanceof Error ? err.message : String(err)}`);
+  });
+  if (!res.ok) {
+    // A 400 here is very likely an EXPIRED signature rather than a bad
+    // request, since the URL was minted seconds ago by the spawner; say so,
+    // because the alternative reading sends a reader looking for a bug in the
+    // request this code does not build.
+    throw new Error(
+      `bundle fetch rejected with HTTP ${res.status} (an expired signed URL looks like this)`,
+    );
+  }
+  return await res.text();
 }
 
 // ---- Manage surface ----------------------------------------------------------

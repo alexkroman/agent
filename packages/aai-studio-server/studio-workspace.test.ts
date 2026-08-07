@@ -22,6 +22,7 @@ import {
   listProjects,
   mutateWorkspace,
   type StudioWorkspace,
+  stampWorkspaceMeta,
   studioScope,
   syncWorkspaceSource,
 } from "./studio-workspace.ts";
@@ -442,5 +443,79 @@ describe("filesHash", () => {
 
   test("changes when content changes", () => {
     expect(filesHash({ a: "1" })).not.toBe(filesHash({ a: "2" }));
+  });
+});
+
+/**
+ * Metadata stamps — the writes that dominate a project's life. Every settled
+ * edit is followed by a preview deploy stamping `previewSlug`/`previewHash`;
+ * Publish stamps the deploy pair; the database switch stamps
+ * `databaseEnabled`. None of them touches the file map, and each used to
+ * read and rewrite the whole document anyway.
+ */
+describe("stampWorkspaceMeta", () => {
+  const files = { "agent.ts": "v1" };
+
+  async function seeded(): Promise<WorkspaceStore> {
+    const store = createMemoryWorkspaceStore();
+    await createWorkspace(store, "scope", "proj", { files });
+    return store;
+  }
+
+  test("records metadata and leaves the files and their hash alone", async () => {
+    const store = await seeded();
+    const before = await getWorkspace(store, "scope", "proj");
+    const stamped = await stampWorkspaceMeta(store, "scope", "proj", {
+      deployedSlug: "proj-x7k2",
+      deployedHash: filesHash(files),
+    });
+    expect(stamped?.files).toEqual(files);
+    // `hash` is the files' hash, so a stamp that disturbed it would make a
+    // published project read as unpublished for ever after.
+    expect(stamped?.hash).toBe(before?.hash);
+    expect(hasUnpublishedChanges(stamped as StudioWorkspace)).toBe(false);
+  });
+
+  test("an undefined field REMOVES it — the shape the call sites had", async () => {
+    const store = await seeded();
+    await stampWorkspaceMeta(store, "scope", "proj", {
+      previewHash: "h",
+      previewError: "boom",
+    });
+    const cleared = await stampWorkspaceMeta(store, "scope", "proj", {
+      previewSlug: "proj-preview",
+      previewError: undefined,
+    });
+    expect(cleared).toMatchObject({ previewSlug: "proj-preview", previewHash: "h" });
+    // Absent, not `undefined`-valued: `previewError` present at all is what
+    // the Preview pane renders its failure banner from.
+    expect(cleared && "previewError" in cleared).toBe(false);
+  });
+
+  test("cannot revert a file edit that lands mid-deploy", async () => {
+    // The reason a stamp is a patch rather than a read-modify-write. A
+    // Publish takes seconds; an agent turn syncing files inside that window
+    // used to be protected only by the versioned put NOTICING and retrying.
+    const store = await seeded();
+    const stale = await getWorkspace(store, "scope", "proj");
+    await syncWorkspaceSource(store, "scope", "proj", { "agent.ts": "v2" });
+
+    // Stamped from the pre-deploy snapshot, exactly as studio-deploy.ts does.
+    const stamped = await stampWorkspaceMeta(store, "scope", "proj", {
+      deployedSlug: "proj-x7k2",
+      deployedHash: currentFilesHash(stale as StudioWorkspace),
+    });
+
+    expect(stamped?.files).toEqual({ "agent.ts": "v2" });
+    // And the mid-deploy edit correctly reads as unpublished: what shipped
+    // was the older snapshot.
+    expect(hasUnpublishedChanges(stamped as StudioWorkspace)).toBe(true);
+  });
+
+  test("a deleted project is not resurrected to record a slug", async () => {
+    const store = await seeded();
+    await deleteWorkspace(store, "scope", "proj");
+    expect(await stampWorkspaceMeta(store, "scope", "proj", { deployedSlug: "x" })).toBeNull();
+    expect(await getWorkspace(store, "scope", "proj")).toBeNull();
   });
 });

@@ -44,7 +44,25 @@ voice agents without the CLI:
   optimistic `version`: writes go through `createWorkspace` /
   `mutateWorkspace` (`studio-workspace.ts`), which retry a conflicted write
   once — the in-process keyed lock (`studio-workspace-lock.ts`) still
-  serializes local writers, so a conflict means another replica. `scope` is
+  serializes local writers, so a conflict means another replica.
+
+  **METADATA STAMPS do not go through that read-modify-write** — they use
+  `stampWorkspaceMeta` over `WorkspaceStore.patch`, a single
+  `doc = (doc - remove) || set` statement. Stamps dominate a project's writes
+  (every settled edit is followed by a preview deploy stamping
+  `previewSlug`/`previewHash`; Publish stamps the deploy pair; the database
+  switch stamps `databaseEnabled`) and none of them touches the file map, so
+  recording a 64-character hash was reading and rewriting every file in the
+  project. It is also the STRONGER primitive for the job, not just the cheaper
+  one: a versioned RMW could only avoid reverting a mid-deploy edit by
+  DETECTING the race and retrying, while a patch carries no files and so
+  cannot clobber them — the call sites used to spell that hazard out one by
+  one, and `WorkspaceStamp` (which omits `files` and `hash` by construction)
+  now says it in the type. The version bump stays, because it is what drives
+  the change stream and so the SSE push; the workspace lock stays too, so an
+  unlocked stamp can't spend a local file write's single conflict retry.
+
+  `scope` is
   a *deterministic* SHA-256 (`studioScope`) — stable so a caller can find
   its projects again. Browser sessions scope by the studio USER id
   (`user:<uid>` — stable across AssemblyAI key rotation); a raw-key caller
@@ -367,6 +385,21 @@ voice agents without the CLI:
   project open / while signed in — there is NO polling loop — and keys the
   iframe by `previewVersion`, so a fresh preview reloads the frame exactly
   once; a dropped stream resubscribes with a fixed backoff.
+
+  **Every stream watching one row SHARES its reads** (`createSharedReads` in
+  `studio-sse.ts`). A frame is always produced by re-reading the row (events
+  are signals), and a `project` frame's row is the whole workspace document —
+  correct per stream, pure duplication per TAB, and tabs are what multiply: a
+  laptop and a phone on one project, two windows side by side, a reload racing
+  its predecessor's still-open stream. The frames are a pure function of the
+  row, so one read serves all of them, serialization included. The count per
+  change is **two, not one**, and the second is `createCoalescingRunner`'s
+  correctness rule rather than a miss — a run that started before a trigger
+  cannot vouch for that trigger's change, and nothing tells the runner that
+  these triggers are the one event it is already reading for. What matters is
+  that it does not grow with the tab count. Entries are refcounted and dropped
+  on the last release: this is a per-process map keyed by project, and a studio
+  serves unboundedly many.
 
   **Both routes SUBSCRIBE BEFORE READING, and send their initial frame
   THROUGH the push chain** (`studio-events-routes.ts`). With no polling loop
