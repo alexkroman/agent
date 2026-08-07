@@ -323,7 +323,26 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
         ttsBoundary();
         // The execution window is open: from here until the model speaks
         // again, nothing reaches TTS on its own.
-        armCover();
+        //
+        // **Only when no window is already running.** `RestartableTimer.arm`
+        // clears and re-sets, so an unconditional call here RESTARTS the
+        // countdown on every tool call — and the deadline is measured from the
+        // last one rather than from the last thing the caller HEARD. A chain
+        // whose calls each return inside `coverMs` therefore pushes the
+        // deadline out indefinitely and the cover never fires at all, which is
+        // the exact silence it exists to break. Measured on tau2-bench retail:
+        // the cover fired ZERO times in two tasks while the caller sat through
+        // 13.0s and 6.0s of dead air mid-authentication and re-prompted with
+        // "Hello?"; across the run, dropped caller turns had gone from 0 in 130
+        // to 6.4% of 499 when the prompt's holding-line mandate was retired in
+        // favour of this mechanism — which was not covering the case.
+        //
+        // The re-arm is still needed and still happens: a `text-delta` CLEARS
+        // the timer (the caller heard something, so the clock restarts from
+        // there), which leaves `pending()` false and lets the next tool call
+        // re-open the window. This only declines to move a deadline that is
+        // already counting down toward silence the caller is already in.
+        if (!deadAir.pending()) armCover();
         // Observability only — actual execution happens inline via toVercelTools.
         // An invalid tool call carries raw-string input; coerce it so the
         // `tool_call` frame stays schema-valid (a non-record args drops it).

@@ -94,10 +94,80 @@ describe("buildSystemPrompt", () => {
 
   test("tells the model a not-found lookup may be a mis-hearing", () => {
     const result = buildSystemPrompt(makeConfig(), { hasTools: true });
-    expect(result).toContain("a mis-hearing is the most\n  likely cause");
+    expect(result).toContain("MIS-HEARING until proven");
     // The re-ask must vary: repeating the request replays the same audio and
     // yields the same mis-transcription.
     expect(result).toContain("ask for something DIFFERENT");
+  });
+
+  // REMOVED, and recorded so it is not re-added on intuition. A rule telling
+  // the agent to mine what the caller had already said (a name inside
+  // `mei_kovacs_8020`) was written three times — plain, with a sharpened
+  // carve-out, then with an instruction-scope clause — to fix three tasks that
+  // dead-ended without a single tool call. Measured at 3 trials x 10 tasks it
+  // moved NOTHING: 0.333 +/- 0.086 with it, 0.333 +/- 0.086 without, and the
+  // target tasks stayed 0/3 while only ever calling transfer_to_human_agents.
+  // The prompt is a shared budget — this file's own history is three
+  // contradictory repeat-ask rules — so an unvalidated rule is a cost, not a
+  // neutral addition. Re-add only with a measurement.
+
+  // The step task 2 of a tau2-bench retail run skipped: the caller had already
+  // spelled the surname correctly, and the agent had read it back, when the
+  // lookup on a later mis-heard fragment failed. It asked a fourth time
+  // instead of retrying a value sitting in its own context, and the call ran
+  // out before the actual task was touched. Searching the transcript must be
+  // step ONE of the retry ladder, ahead of the letter-confusion guesses.
+  test("the mis-hearing retry ladder searches the conversation first", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: true });
+    const ladder = result.slice(result.indexOf("MIS-HEARING until proven"));
+    const reread = ladder.indexOf("Re-read the conversation");
+    const confusions = ladder.indexOf("plausible confusions");
+    const askAgain = ladder.indexOf("Only now ask the caller");
+    expect(reread).toBeGreaterThan(-1);
+    expect(confusions).toBeGreaterThan(reread);
+    expect(askAgain).toBeGreaterThan(confusions);
+  });
+
+  // Three sections used to carry a repeat-ask budget in three different units
+  // ("at most once" / "never" / "two attempts"), which is both a violation of
+  // this file's one-rule-one-section invariant and the reason an injected
+  // "ALWAYS ask them to spell it" had nothing crisp to contradict. TOOLS owns
+  // the whole procedure; nothing else may license a repeat.
+  test("only one section carries a repeat-ask budget", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: true });
+    expect(result).not.toContain("Ask the caller to repeat at\n  most once");
+    expect(result).not.toContain("stuck after two attempts");
+    expect(result).toContain("stuck after exhausting the retries above");
+  });
+
+  // A later instruction decides WHAT the agent does, never how a spoken
+  // channel behaves. Unscoped precedence is what let tau2-bench's generic
+  // voice preamble ("ALWAYS explicitly ask the customer to SPELL THINGS OUT")
+  // delete the rule that keeps a call from deadlocking on a re-ask loop.
+  test("precedence is scoped away from channel mechanics", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: true });
+    expect(result).toContain("They do not change how this channel works");
+    expect(result).not.toContain("where they\nconflict, the agent-specific instructions win");
+  });
+
+  // A count answers the question that was asked. Reporting the collection size
+  // plus an exclusion ("twelve options, two unavailable") makes the caller do
+  // the subtraction, and a tau2-bench NL judge scored exactly that as a miss.
+  test("SPEAKING requires the asked-for count, not the collection size", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: false });
+    expect(result).toContain("When the caller asks HOW MANY");
+    expect(result).toContain("never make the caller do the subtraction");
+  });
+
+  // Counting records that meet a condition is arithmetic. Both this rule and
+  // the `calculate` builtin's own description used to enumerate only currency
+  // operations, and the model read them that way: on one run it called the
+  // calculator for a price delta and then, 1.1s later, spoke a hand-estimated
+  // count that was wrong by one.
+  test("TOOLS treats a count as arithmetic and forbids agreeing with itself", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: true });
+    expect(result).toContain("Counting how many records meet a condition is arithmetic");
+    expect(result).toContain("Your own previous reply is not a source");
   });
 
   // The dominant failure across all three voice benchmarks: the agent says

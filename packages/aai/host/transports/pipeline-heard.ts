@@ -44,6 +44,12 @@ import { buildTailResumePrompt, tailResumeWorthRunning } from "./pipeline-recove
 type PlaybackClock = {
   /** Advance the clock by one forwarded PCM16 chunk's duration. */
   onChunk(pcm: Int16Array): void;
+  /**
+   * The client's own report of unplayed backlog (`playback_progress`).
+   * Clamps upward only — see the implementation for why that direction is the
+   * safety property and not merely a convenience.
+   */
+  onClientReport(bufferedMs: number): void;
   /** Restart the clock (the client just flushed its playback buffer). */
   reset(): void;
   /** True while the client may still be playing already-forwarded audio. */
@@ -75,6 +81,24 @@ function createPlaybackClock(sampleRateHz: number, now: () => number): PlaybackC
     onChunk(pcm) {
       const chunkMs = (pcm.length / sampleRateHz) * 1000;
       endsAtMs = Math.max(endsAtMs, now()) + chunkMs;
+    },
+    onClientReport(bufferedMs) {
+      // CLAMP UPWARD ONLY, and that is the whole safety argument for putting a
+      // client-supplied number into the barge-in floor. The model above is a
+      // LOWER bound — it assumes playback starts the instant a chunk is
+      // forwarded and runs at exactly 1.0x, which no real client beats — so a
+      // report can only ever reveal audio the host did not know was still
+      // outstanding. Taking the max means a client that never reports, reports
+      // late, drops a frame, or under-reports degrades to exactly the
+      // open-loop estimate, and one that over-reports (or lies) can only make
+      // the agent harder to interrupt, never easier: it cannot shorten the
+      // window, retire audio early, or make the host believe words were heard
+      // that were not.
+      //
+      // A downward clamp would be the useful-looking version and is the unsafe
+      // one — it would let a buggy client retire a reply's tail from the heard
+      // cursor, writing words into history the caller never received.
+      endsAtMs = Math.max(endsAtMs, now() + bufferedMs);
     },
     reset() {
       endsAtMs = 0;
@@ -226,6 +250,13 @@ export interface HeardTracker {
   onText(text: string, record: boolean): string;
   /** One forwarded PCM16 chunk of the current reply's TTS audio. */
   onAudio(pcm: Int16Array): void;
+  /**
+   * The client's report of how much forwarded audio it still holds unplayed
+   * (`playback_progress`). Corrects the open-loop estimate every reader here
+   * depends on — see {@link PlaybackClock.onClientReport} for why it may only
+   * ever move the clock later.
+   */
+  onClientPlaybackReport(bufferedMs: number): void;
   /** Word timings for this reply's audio, already rebased by the adapter. */
   onWords(words: readonly TtsWordTiming[]): void;
   /**
@@ -349,6 +380,13 @@ export function createHeardTracker(opts: {
     onAudio(pcm: Int16Array): void {
       audioMs += (pcm.length / opts.sampleRate) * 1000;
       clock.onChunk(pcm);
+    },
+    onClientPlaybackReport(bufferedMs: number): void {
+      // Only the CLOCK moves. `audioMs` is how much audio this reply produced,
+      // which the client cannot tell us anything about — conflating the two
+      // would let a report inflate the reply's own length and push the heard
+      // cursor past text that was never synthesized.
+      clock.onClientReport(bufferedMs);
     },
     onWords(incoming: readonly TtsWordTiming[]): void {
       words.push(...incoming);

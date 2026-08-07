@@ -383,15 +383,28 @@ export const TTS_RECONNECT_TIMEOUT_MS = 8000;
  * later, which a caller reads as a dropped call. Floor and ceiling are close
  * enough together that there is no useful range to expose.
  *
- * 3500 clears {@link DEFAULT_MAX_TURN_SILENCE_MS} (3000) by 500ms. An agent
- * raising `minTurnSilenceMs`/`maxTurnSilenceMs` must raise this with it (the
- * transport's `speechIdleTimeoutMs` option) — `assemblyai.test.ts` asserts the
- * default ordering, and the mooted-resume abort in pipeline-user-speech.ts is
- * the backstop when a live config breaks it anyway.
+ * 4000 clears {@link DEFAULT_MAX_TURN_SILENCE_MS} (3500) by 500ms. **It moved
+ * from 3500 because that ceiling did**, and the pair is the change: at
+ * 3500/3500 an utterance force-ended by the STT ceiling delivers its final at
+ * exactly the moment the speaking edge goes idle, and the idle edge is what
+ * fires a false-interruption resume — so the loser of that race is not a slow
+ * turn, it is the agent resuming a reply the caller really did interrupt. The
+ * ceiling's own doc records the same constraint from the other side.
+ *
+ * The patience argument that sets the upper bound is unchanged and is what
+ * keeps this at 4000 rather than further out: at 5000 a reply cut by STT noise
+ * resumed almost six seconds later, which a caller reads as a dropped call.
+ * 4000 is inside that, and the 500 ms margin over the ceiling is the same
+ * margin the pair has always carried, not a new one.
+ *
+ * An agent raising `minTurnSilenceMs`/`maxTurnSilenceMs` must raise this with
+ * it (the transport's `speechIdleTimeoutMs` option) — `assemblyai.test.ts`
+ * asserts the default ordering, and the mooted-resume abort in
+ * pipeline-user-speech.ts is the backstop when a live config breaks it anyway.
  *
  * @internal
  */
-export const DEFAULT_SPEECH_IDLE_TIMEOUT_MS = 3500;
+export const DEFAULT_SPEECH_IDLE_TIMEOUT_MS = 4000;
 
 /**
  * `SttTurnMeta.endOfTurnConfidence` at or above which preemptive generation

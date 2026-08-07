@@ -120,6 +120,42 @@ describe("createStreamPartHandler dead-air cover", () => {
     expect(spoken.join("")).toContain(DEAD_AIR_COVER_PHRASES[0]);
   });
 
+  test("a chain of fast tool calls cannot push the deadline out forever", () => {
+    // The bug: `RestartableTimer.arm` clears and re-sets, so re-arming the
+    // cover on every `tool-call` measured the deadline from the last CALL
+    // rather than from the last thing the caller HEARD. A chain whose calls
+    // each return inside the window therefore reset the countdown every time
+    // and the cover never fired — precisely the silence it exists to break.
+    // Measured on tau2-bench retail: zero fillers across 13.0s and 6.0s of
+    // mid-authentication dead air, both ending in the caller asking "Hello?".
+    const { spoken, toolCall } = harness();
+    const step = DEFAULT_DEAD_AIR_COVER_MS - 1;
+    toolCall("tc-1");
+    // Six calls, each landing just inside the window and none preceded by
+    // speech: 5x longer than the window in total, and under the re-arm this
+    // stayed perfectly silent.
+    for (let i = 2; i <= 6; i++) {
+      vi.advanceTimersByTime(step);
+      toolCall(`tc-${i}`);
+    }
+    expect(spoken.join("")).toContain(DEAD_AIR_OPENING_PHRASE);
+  });
+
+  test("a tool call still re-opens the window after the model has spoken", () => {
+    // The other half of the guard: a `text-delta` CLEARS the timer, so the
+    // next tool call must be free to arm a fresh one. Declining to re-arm
+    // while a window is already pending must not turn into never re-arming.
+    const { spoken, toolCall, handler } = harness();
+    toolCall("tc-1");
+    handler.handle({ type: "text-delta", text: "Found it. " });
+    handler.handle({ type: "text-end" });
+    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 4);
+    expect(spoken.join("")).toBe("Found it. ");
+    toolCall("tc-2");
+    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 4);
+    expect(spoken.join("")).not.toBe("Found it. ");
+  });
+
   test("keeps covering a long tool chain, backing off between fillers", () => {
     const { spoken, toolCall } = harness();
     toolCall("tc-1");

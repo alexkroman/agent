@@ -98,14 +98,40 @@ export interface PipelineTransportOptions {
   resumeFalseInterruption?: boolean | undefined;
   /**
    * Start generating the reply from a high-confidence STT interim and adopt
-   * that stream when the committed final matches. Defaults to `true`;
-   * `false` disables speculation entirely.
+   * that stream when the committed final matches. **Defaults to `false`.**
    *
-   * STILL UNMEASURED here — see `AgentDef.preemptiveGeneration` for the two
-   * logs that would quantify what it saves, and for what the two structural
-   * guardrails make impossible regardless. Inert unless `toolChoice` is
-   * `"auto"` or `"none"`: a pinned or required tool means every speculation
-   * ends at the tool boundary and is discarded whole, so it would be pure cost.
+   * **It is off because it was finally measured, and it buys ~8ms per caller
+   * turn.** The `headStartMs` / adoption-rate log this constant's doc had been
+   * asking for since it shipped was collected over a tau2-bench retail run
+   * (`Pipeline speculation adopted` at info, the discards at debug):
+   *
+   * - 16 speculations started, 14 adopted, head start p50 **0.44s**
+   * - **5 of the 14 (36%) were POISONED after adoption** — a tool call arrived
+   *   in the adopted stream, which is unusable whole, so `consumeLlmStream`
+   *   discards the generation and reissues the request. Each had burned p50
+   *   0.69s (p90 1.34s) first.
+   *
+   * Netted out: 9 turns at +0.44s against 5 at -0.69s is **+0.51s across 68
+   * caller turns, +8ms each** — nothing beside a p50 first word of ~1.0s and a
+   * p90 of 6.6s. For that it issued 16 LLM requests of which **7 (44%) were
+   * thrown away**, and it widens the turn-serialization bound, since a
+   * speculation runs outside the turn chain. The 36% that lose also lose on
+   * the TOOL-CALLING turns, which are already the slow ones.
+   *
+   * **Do not try to fix it by gating adoption on "has it produced text yet".**
+   * That was tried and reverted the same day: the head start (0.44s) is
+   * SHORTER than LLM time-to-first-token (p50 1.10s), so at the moment `take()`
+   * runs the speculation has generated nothing at all and such a gate rejects
+   * essentially every adoption — leaving the wasted request and none of the
+   * benefit, which is strictly worse than off. Whether the first part will be
+   * text or a tool call is simply not knowable at adoption time; that is the
+   * shape of the feature, not a defect in the gate.
+   *
+   * Turning it back on wants a case where the arithmetic differs: a
+   * text-heavy agent (the 36% poison rate is a tool-calling agent's number),
+   * or a longer head start from later endpointing. Also inert unless
+   * `toolChoice` is `"auto"` or `"none"` — a pinned or required tool ends every
+   * speculation at the tool boundary, so it would be pure cost.
    */
   preemptiveGeneration?: boolean | undefined;
   /**
@@ -192,7 +218,7 @@ export function resolvePipelineOptions(opts: PipelineTransportOptions): Resolved
     errorPhrase: opts.errorPhrase ?? DEFAULT_ERROR_PHRASE,
     startFailurePhrase: opts.startFailurePhrase ?? DEFAULT_START_FAILURE_PHRASE,
     resumeFalseInterruption: opts.resumeFalseInterruption ?? true,
-    preemptiveGeneration: opts.preemptiveGeneration ?? true,
+    preemptiveGeneration: opts.preemptiveGeneration ?? false,
     speechIdleTimeoutMs: opts.speechIdleTimeoutMs ?? DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
     toolChoice: opts.toolChoice ?? DEFAULT_TOOL_CHOICE,
     toolSchemas: opts.toolSchemas ?? [],

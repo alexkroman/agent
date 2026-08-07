@@ -86,10 +86,11 @@ export type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | 
  * **It does not surface as that 400 on the path this SDK uses.** The pipeline
  * streams, and streaming converts the same rejection into a bare HTTP 500
  * (`{"message":"something went wrong","code":500}`) with the explanation
- * stripped — so the diagnosis only exists in the non-streaming reply. Since
- * `DEFAULT_BUILTIN_TOOLS` puts four tools on every agent that does not opt
- * out, an unguarded descriptor would 500 on *every* turn, and read as a
- * gateway outage rather than a request this SDK built wrong.
+ * stripped — so the diagnosis only exists in the non-streaming reply. Any
+ * agent that declares a tool — every host-mode session, and every agent that
+ * names a built-in now that `DEFAULT_BUILTIN_TOOLS` is empty — would therefore
+ * 500 on *every* turn under an unguarded descriptor, and read as a gateway
+ * outage rather than a request this SDK built wrong.
  *
  * An EXPLICIT `reasoningEffort` is left alone — same rule as `gatewayUrl`
  * winning over `region`: naming a value is deliberate. Naming a non-`none`

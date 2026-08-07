@@ -27,6 +27,7 @@ import type { ToolChoice } from "../../sdk/types.ts";
 import { errorMessage } from "../../sdk/utils.ts";
 import type { Logger } from "../runtime-config.ts";
 import { drainEntries, partsAsEntries } from "./pipeline-llm-drain.ts";
+import { createTurnTrace } from "./pipeline-llm-trace.ts";
 import { createToolCallRepair } from "./pipeline-repair.ts";
 import { smoothTextStream } from "./pipeline-smooth.ts";
 import { createTtsTextCoalescer } from "./pipeline-stream.ts";
@@ -403,12 +404,15 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
       // only repair: the preamble cannot be spliced onto a fresh request (that
       // is the same request-parity argument that makes adoption legitimate in
       // the first place), so the run is abandoned whole.
+      const trace = createTurnTrace({ log, sid, adopted: useAdopted !== undefined });
       const { lateToolCall, spokeBeforeRestart } = await drainEntries(entries, handler, {
         adopted: useAdopted !== undefined,
         signal,
         collected,
         onStepPersisted,
+        trace,
       });
+      trace.done({ steps: collected.length, aborted: signal.aborted });
       if (lateToolCall && useAdopted && !signal.aborted) {
         handler.dispose();
         useAdopted.abandon();

@@ -206,6 +206,77 @@ describe("createHeardTracker — the clock is session-scoped", () => {
   });
 });
 
+// The clock above is OPEN-LOOP: it assumes a forwarded chunk starts playing on
+// arrival at exactly 1.0x. A client that drains slower accrues a backlog the
+// host cannot see, and every consumer of the estimate then fails together —
+// measured against a harness draining at 0.60-0.67x, the host called the line
+// silent while the client still held 3.8-7.3s of the reply. `playback_progress`
+// is the one closed-loop input that corrects it.
+describe("createHeardTracker — the client's playback report", () => {
+  test("extends a clock that ran ahead of a slow client", () => {
+    const { heard, clock } = setup();
+    heard.startReply();
+    heard.onText(REPLY, true);
+    heard.onAudio(chunk(1000));
+    clock.advance(1000);
+    // Open-loop: one second of audio, one second elapsed, so the host believes
+    // playback finished and the whole reply was heard.
+    expect(heard.heard().text).toBe(REPLY);
+    // The client says otherwise — it is still holding 800ms of it.
+    heard.onClientPlaybackReport(800);
+    expect(heard.heard().text).not.toBe(REPLY);
+    expect(heard.pending()).toBe(true);
+    clock.advance(800);
+    expect(heard.heard().text).toBe(REPLY);
+  });
+
+  test("clamps upward only, so a low or stale report cannot retire audio early", () => {
+    const { heard, clock } = setup();
+    heard.startReply();
+    heard.onText(REPLY, true);
+    heard.onAudio(chunk(1000));
+    // The host's own estimate says a full second is outstanding. A report of
+    // 10ms — a lagging client, a dropped frame, a buggy one — must not shorten
+    // it: the downward direction is what would write unheard words into
+    // history as delivered.
+    heard.onClientPlaybackReport(10);
+    expect(heard.heard().text).toBe("");
+    expect(heard.pending()).toBe(true);
+    clock.advance(1000);
+    expect(heard.heard().text).toBe(REPLY);
+  });
+
+  test("a client that never reports behaves exactly as before", () => {
+    const quiet = setup();
+    const reporting = setup();
+    for (const { heard } of [quiet, reporting]) {
+      heard.startReply();
+      heard.onText(REPLY, true);
+      heard.onAudio(chunk(1000));
+    }
+    // A report matching what the host already believes is a no-op, which is
+    // what makes the frame safe to adopt incrementally: an old client and a
+    // new one on a real-time link land in the same place.
+    reporting.heard.onClientPlaybackReport(1000);
+    quiet.clock.advance(400);
+    reporting.clock.advance(400);
+    expect(reporting.heard.heard().text).toBe(quiet.heard.heard().text);
+  });
+
+  test("a report never inflates the reply's own length", () => {
+    const { heard, clock } = setup();
+    heard.startReply();
+    heard.onText(REPLY, true);
+    heard.onAudio(chunk(1000));
+    // Absurd backlog: only the CLOCK may move. If it fed the reply's audio
+    // length too, the cursor could run past text that was never synthesized.
+    heard.onClientPlaybackReport(60_000);
+    clock.advance(120_000);
+    expect(heard.heard().text).toBe(REPLY);
+    expect(heard.pending()).toBe(false);
+  });
+});
+
 describe("createHeardTracker — the resume prompt", () => {
   test("quotes the heard text, which is what history records", () => {
     const { heard, clock } = setup();

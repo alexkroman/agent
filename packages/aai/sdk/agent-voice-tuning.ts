@@ -107,14 +107,26 @@ export interface PipelineVoiceTuning {
    * this buys nothing and costs one extra billed LLM request per speculating
    * utterance; at most 2 speculations per utterance is the cap.
    *
-   * Two measurements are still OWED, and they are now what would justify
-   * turning it back OFF rather than on: (a) the `headStartMs`/adoption-rate log
-   * over a caller-audio replay run showing the head start is real — if
-   * adoption is rare or the head start is ~0, this is pure cost on the 67-72%
-   * of replies it can reach — and (b) a tau2-bench retail run at the same 25
-   * tasks and seed showing no reward regression. (The in-repo
-   * `scripts/voice-replay/` harness that produced these logs has been removed;
-   * (a) needs an equivalent instrument first.)
+   * **Measurement (a) has now been taken, and it turned the default OFF.** The
+   * `headStartMs`/adoption-rate log over a tau2-bench retail run: 16
+   * speculations started, 14 adopted at a p50 **0.44s** head start, and **5 of
+   * those 14 (36%) poisoned after adoption** by a tool call — unusable whole,
+   * so the generation is discarded and the request reissued, each having
+   * burned p50 0.69s first. Net **+8ms per caller turn** against a p50 first
+   * word of ~1.0s, for 44% of its LLM requests thrown away.
+   *
+   * Note what the head start does NOT survive: it is 0.44s against a p50
+   * time-to-first-token of 1.10s, so at adoption the speculation has generated
+   * nothing, and whether its first part will be text or a tool call cannot be
+   * known then. A gate on "has it produced text" was tried and reverted —
+   * it rejects essentially every adoption, keeping the wasted request and
+   * losing the benefit.
+   *
+   * Set `true` where the arithmetic plausibly differs — a text-heavy agent,
+   * since 36% poison is a tool-calling agent's number, or a longer head start
+   * from later endpointing. Measurement (b), a tau2-bench run at the same
+   * tasks and seed showing no reward regression, is still owed before it goes
+   * back on by default.
    */
   preemptiveGeneration?: boolean;
 }

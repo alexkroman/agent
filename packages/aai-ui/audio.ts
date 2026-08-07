@@ -54,6 +54,16 @@ export type VoiceIOOptions = {
    */
   onPlaybackStats?: ((stats: PlaybackStats) => void) | undefined;
   /**
+   * Called every {@link PLAYBACK_PROGRESS_INTERVAL_MS} while the playback
+   * buffer holds unplayed agent audio, with its depth in ms. Wire it to the
+   * session's `playback_progress` frame: it is the host's only closed-loop
+   * view of playback, and without it the host assumes every chunk it forwards
+   * starts playing on arrival at exactly 1.0x — so a client whose buffer runs
+   * ahead of the wall clock is told the line is silent while the caller is
+   * still listening. Unwired, the host degrades to that estimate.
+   */
+  onPlaybackProgress?: ((bufferedMs: number) => void) | undefined;
+  /**
    * Called once if the microphone delivers nothing but digital silence for
    * the first {@link MIC_SILENCE_PROBE_MS} of capture — a muted or wrong input
    * device, which otherwise looks exactly like a user who hasn't spoken.
@@ -193,6 +203,7 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
     onMicData,
     onError,
     onPlaybackStats,
+    onPlaybackProgress,
     onMicSilent,
   } = opts;
 
@@ -325,6 +336,7 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
     node.connect(ctx.destination);
     node.port.onmessage = (e: MessageEvent) => {
       if (e.data.event === "stop") onWorkletStop(e.data as WorkletStopMessage);
+      else if (e.data.event === "progress") onPlaybackProgress?.(e.data.bufferedMs as number);
     };
     // A dead processor never posts 'stop' — settle any pending done() wait so
     // session state can't hang in "speaking", then surface the failure.

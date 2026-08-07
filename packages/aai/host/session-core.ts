@@ -71,6 +71,13 @@ export type SessionCore = {
   onAudioReady(): void;
   onCancel(): void;
   onReset(): void;
+  /**
+   * The client reports how much forwarded agent audio it still holds unplayed
+   * — the protocol's one closed-loop signal. Forwarded to the transport, which
+   * is where the playback estimate lives; a transport that keeps no such
+   * estimate (S2S, where the service owns turn-taking) simply omits the hook.
+   */
+  onPlaybackProgress(bufferedMs: number): void;
   onHistory(messages: readonly Message[]): void;
   /** Inbound relayed tool result (host mode): settles the pending relay call. */
   onToolResult(toolCallId: string, result: string, error?: string): void;
@@ -120,6 +127,9 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
   let history: Message[] = [];
   let turnPromise: Promise<void> | null = null;
   let stopped = false;
+  // Has this client ever sent `playback_progress`? Gates the one-time log in
+  // onPlaybackProgress — see there for why the distinction is worth a line.
+  let sawPlaybackReport = false;
   function emit(event: ClientEvent): void {
     opts.client.event(event);
   }
@@ -247,6 +257,23 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       reply.abort.abort();
       opts.transport.cancelReply();
       emit({ type: "cancelled" });
+    },
+    onPlaybackProgress(bufferedMs) {
+      // Logged ONCE per session, because "is this client closed-loop?" changes
+      // how every playback-derived number in the session should be read — the
+      // barge-in floor, the heard cursor, the speaking-edge gate. A session
+      // with no such line ran on the open-loop estimate, and the absence is
+      // indistinguishable from a client that simply never buffers unless it is
+      // stated somewhere. Once, not per report: these arrive every few hundred
+      // ms for the whole of every reply.
+      if (!sawPlaybackReport) {
+        sawPlaybackReport = true;
+        log.info("Client reports playback progress", { sid: opts.id, bufferedMs });
+      }
+      // Deliberately does NOT re-arm the idle timer: this frame reports the
+      // agent's own audio playing back, which is not evidence the caller is
+      // still there — `resetIdle` measures silence from the user.
+      opts.transport.onPlaybackProgress?.(bufferedMs);
     },
     onReset() {
       cancelReply();

@@ -470,6 +470,16 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       history.seed(messages);
     },
 
+    onPlaybackProgress(bufferedMs: number): void {
+      // The one closed-loop input to a playback estimate that is otherwise
+      // bytes-sent times 1.0x — see the `playback_progress` doc in
+      // sdk/protocol.ts for what it costs when the client drains slower, and
+      // `PlaybackClock.onClientReport` for why it may only ever clamp upward.
+      // Ignored after teardown: the clock belongs to a session that is gone.
+      if (terminated) return;
+      heard.onClientPlaybackReport(bufferedMs);
+    },
+
     reset(): void {
       // Bumped before the abort/history.reset below so the aborted turn's
       // deferred persistence and any queued turns see the change.

@@ -280,35 +280,34 @@ describe("preemptive generation — recovery cannot resume a speculation", () =>
   });
 });
 
-describe("preemptive generation — ON by default", () => {
-  test("a transport that configures NOTHING speculates on a high-confidence partial", async () => {
+describe("preemptive generation — OFF by default", () => {
+  test("a transport that configures NOTHING does not speculate", async () => {
     // The shipped default, end to end: `pipeline-transport-options.test.ts`
     // pins the resolver, this pins that the resolved value actually reaches the
     // speculation controller. `preemptiveGeneration: undefined` is written
     // explicitly because it is the state a real agent that sets no tuning field
-    // arrives in — the resolver's `?? true` is the only thing deciding here.
-    const { opts, stt, tts, callbacks } = makeOpts({
+    // arrives in — the resolver's `?? false` is the only thing deciding here.
+    // Measured off: +8ms per caller turn, 44% of its LLM requests discarded.
+    const { opts, stt, callbacks } = makeOpts({
       preemptiveGeneration: undefined,
       llm: createFakeLanguageModel({ script: [{ type: "text", text: "Your order shipped." }] }),
     });
     const t = createPipelineTransport(opts);
     await t.start();
 
+    // A high-confidence partial buys no request on the default path.
     stt.last()?.firePartial(UTTERANCE, CERTAIN);
-    await vi.waitFor(() => {
-      expect(llmCalls(opts).calls).toHaveLength(1);
-    });
-    // Guardrail 1 still holds on the default path: generated, nothing spoken.
-    expect(tts.last()?.sendText).not.toHaveBeenCalled();
+    await flush();
+    expect(llmCalls(opts).calls).toHaveLength(0);
     expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
 
-    // And the matching final ADOPTS it, so the caller's turn costs one request.
+    // The turn still costs exactly one request — issued by the FINAL, not
+    // before it, which is the whole difference the default makes.
     stt.last()?.fireFinal(UTTERANCE);
     await vi.waitFor(() => {
       expect(callbacks.onReplyDone).toHaveBeenCalledTimes(1);
     });
     expect(llmCalls(opts).calls).toHaveLength(1);
-    expect((tts.last()?.textChunks ?? []).join("")).toContain("Your order shipped.");
     await t.stop();
   });
 

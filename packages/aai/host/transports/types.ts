@@ -105,4 +105,11 @@ export interface Transport {
    * clears its message list; S2S has no client-side history to drop.
    */
   reset?(): void;
+  /**
+   * The client's unplayed agent-audio backlog, in ms — the closed-loop
+   * counterpart of the pipeline's open-loop playback estimate. Pipeline mode
+   * feeds it to the heard cursor's clock; S2S omits it, because the service
+   * owns turn-taking there and the host keeps no playback model to correct.
+   */
+  onPlaybackProgress?(bufferedMs: number): void;
 }

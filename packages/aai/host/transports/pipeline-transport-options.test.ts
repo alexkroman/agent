@@ -54,14 +54,19 @@ describe("pipeline defaults", () => {
     expect(resolved.deadAirCoverMs).toBe(DEFAULT_DEAD_AIR_COVER_MS);
   });
 
-  test("preemptive generation is ON in the shipped default", () => {
-    // The one assertion that pins the shipped state of this feature. It is on
-    // by author decision rather than by the two logs named on
-    // `AgentDef.preemptiveGeneration` (still unwritten), so what makes the
-    // choice safe is structural — no speculative speech, no speculative tool
-    // execution — not this default. An explicit `false` still opts out.
-    expect(resolveBare().preemptiveGeneration).toBe(true);
-    expect(resolveBare({ preemptiveGeneration: false }).preemptiveGeneration).toBe(false);
+  test("preemptive generation is OFF in the shipped default", () => {
+    // The one assertion that pins the shipped state of this feature. It was ON
+    // by author decision; the adoption log it shipped without was finally
+    // collected over a tau2-bench retail run and the feature buys **+8ms per
+    // caller turn** — 14 adoptions at a p50 0.44s head start, of which 5 (36%)
+    // were poisoned after adoption by a tool call and restarted the turn,
+    // having burned p50 0.69s each. For that it threw away 44% of the LLM
+    // requests it issued. See `preemptiveGeneration` in
+    // pipeline-transport-options.ts for the full arithmetic and for why
+    // gating adoption on "has it produced text" cannot rescue it.
+    // An explicit `true` still opts in.
+    expect(resolveBare().preemptiveGeneration).toBe(false);
+    expect(resolveBare({ preemptiveGeneration: true }).preemptiveGeneration).toBe(true);
   });
 
   test("an utterance's tail can still finish inside the STT silence window", () => {

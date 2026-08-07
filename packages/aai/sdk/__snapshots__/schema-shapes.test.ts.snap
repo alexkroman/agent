@@ -111,6 +111,10 @@ exports[`protocol schema shapes > ClientMessageSchema option shapes 1`] = `
     "messages",
     "type",
   ],
+  "playback_progress": [
+    "bufferedMs",
+    "type",
+  ],
   "reset": [
     "type",
   ],

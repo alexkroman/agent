@@ -26,9 +26,10 @@ import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
  * - `"recall"` — Read back facts saved with `remember`.
  * - `"calculate"` — Safely evaluate an arithmetic expression (no code execution).
  *
- * When `builtinTools` is not set, the cognitive defaults
- * ({@link DEFAULT_BUILTIN_TOOLS}: think, remember, recall, calculate) are
- * enabled. Set `builtinTools` explicitly — including `[]` — to override.
+ * When `builtinTools` is not set, NONE are enabled
+ * ({@link DEFAULT_BUILTIN_TOOLS} is empty) — a built-in is something an agent
+ * asks for rather than something it has to notice and switch off. Name the
+ * ones you want; `[]` and omitting the field mean the same thing.
  *
  * @public
  */

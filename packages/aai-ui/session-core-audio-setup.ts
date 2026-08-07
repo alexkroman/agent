@@ -99,6 +99,23 @@ export async function initAudioCapture(
           console.debug("[aai-ui] sendAudio dropped: connection closed");
         }
       },
+      // Close the host's playback loop. Without this the host models playback
+      // open-loop — every forwarded chunk assumed to start playing on arrival
+      // at exactly 1.0x — so a buffer that has run ahead of the wall clock is
+      // invisible to it, and it opens the speaking-edge gate, retires the
+      // barge-in floor, and records words as heard while the caller is still
+      // listening to them. Dropped silently on a closed socket: the report is
+      // advisory (the host clamps upward only) and a missed one costs at most
+      // one interval of staleness, so it is not worth a log line per half
+      // second of teardown.
+      onPlaybackProgress: (bufferedMs: number) => {
+        if (!conn.generation.isCurrent(gen)) return;
+        try {
+          deps.sendJson({ type: "playback_progress", bufferedMs });
+        } catch {
+          /* connection closed — the host falls back to its own estimate */
+        }
+      },
       // A worklet processor crash after setup: the audio path is dead even
       // though the socket is fine, so surface it instead of staying in a
       // healthy-looking listening/speaking state forever.

@@ -163,21 +163,41 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
  * failures were actually measured against, and moving 1536 -> 3000 is the whole
  * of the split fix.
  *
- * **Read this before trimming it further.** The measured configuration is
+ * **Back at its measured 3500, because the signature the trim was told to
+ * watch for showed up.** The measured configuration has always been
  * 1600/**3500** — reward 0.68, twice, on two independent tau2-bench retail
- * runs. 3000 is a 500 ms trim off that, chosen deliberately and NOT measured on
- * its own, so treat it the way the previous trim to 2500 should have been
- * treated. That one was reverted for exactly this reason: it was reasoned from
- * the 800/1600 run, where the minimum and the maximum moved together, so the
- * run can only show that 1600/800 loses to 3500/1600 — it can never show that
- * some particular ceiling is safe alone. The failure signature to watch for is
- * specific: splits reappearing on hesitant, non-spelling utterances while
- * spelled identifiers stay intact. That asymmetry is what distinguishes the
- * ceiling from the floor; if it shows up, put this back to 3500 rather than
- * touching {@link DEFAULT_MIN_TURN_SILENCE_MS}.
+ * runs. 3000 was a 500 ms trim off that, deliberate but never measured on its
+ * own, carrying an explicit revert condition: *splits reappearing on hesitant,
+ * non-spelling utterances while spelled identifiers stay intact*, the asymmetry
+ * that distinguishes this ceiling from {@link DEFAULT_MIN_TURN_SILENCE_MS}.
  *
- * The two orderings this has to keep both hold at 3000. It stays BELOW
- * `DEFAULT_SPEECH_IDLE_TIMEOUT_MS` (3500, internal) less final-emission
+ * That is precisely what the retail run at 3000 produced (aligning every
+ * committed final against its gold utterance with `scripts/stt_errors.py`, 40
+ * of 56 utterances mis-heard). Every split landed on a hesitation, and every
+ * one of those hesitations was a non-speech event mid-sentence:
+ *
+ * - *"…how many T-shirt options are on your online store right now? And second,
+ *   I need to change all my pending [sneeze][sneeze][sneeze] T-shirts to
+ *   purple…"* — committed after "right now?", the entire second request
+ *   dropped, then re-attached to the FRONT of the caller's next, unrelated
+ *   turn.
+ * - *"Yes—confirm. [sneeze][sneeze][sneeze] Go ahead."* — two finals, so two
+ *   independent replies to one act of confirming.
+ *
+ * Meanwhile the spelled identifiers the floor protects came through whole
+ * ("first name Y-U-S-U-F, last name R-O-S-S-I"), which is the other half of the
+ * signature and the reason this is the knob that moves rather than the
+ * minimum — raising that one would tax every finished utterance for a fault
+ * that only hesitant ones have.
+ *
+ * The revert restores the measured pair; it does not claim 3500 is optimal.
+ * What is now also recorded is the shape of the cost when it is too low, which
+ * the trim was reasoned without: a split does not merely delay a turn, it makes
+ * the agent answer half a request and then treat the other half as a new one.
+ *
+ * The two orderings this has to keep both still hold, but only because the idle
+ * deadline moved with it. It stays BELOW
+ * `DEFAULT_SPEECH_IDLE_TIMEOUT_MS` (4000, internal) less final-emission
  * latency, so an utterance force-ended by this ceiling still delivers its
  * final before the speaking edge goes idle — and the idle edge is what fires a
  * false-interruption resume (`host/transports/pipeline-recovery.ts`), so
@@ -185,9 +205,11 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
  * reply the caller really did interrupt. The same fact was recorded the other
  * way round when the resume had a window of its own: at a ceiling of 1600 the
  * force-end landed first and the resume proceeded instead, a behaviour change
- * rather than a tuning change. 500 ms of margin is thin — if this ceiling ever
- * goes back to its measured 3500, the idle deadline must move with it. And it
- * stays clear of the service's own 1536 default, so the ceiling is ours rather
+ * rather than a tuning change. 500 ms of margin is thin, and it is the reason
+ * this revert is TWO constants: raising this to 3500 without moving
+ * `DEFAULT_SPEECH_IDLE_TIMEOUT_MS` to 4000 would put a force-ended final at
+ * exactly the idle deadline, which is the resume-over-a-real-interruption bug,
+ * not a slower turn. And it stays clear of the service's own 1536 default, so the ceiling is ours rather
  * than silently the service's, which is the state this constant was introduced
  * to escape.
  *
@@ -198,4 +220,4 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
  * latency ~4.0-4.6s at every setting swept), so the ceiling is not what makes
  * a slow turn slow.
  */
-export const DEFAULT_MAX_TURN_SILENCE_MS = 3000;
+export const DEFAULT_MAX_TURN_SILENCE_MS = 3500;

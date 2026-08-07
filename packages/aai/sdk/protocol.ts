@@ -16,6 +16,7 @@ import {
   MAX_AUDIO_SAMPLE_RATE,
   MAX_CLIENT_EVENT_NAME_LENGTH,
   MAX_ERROR_MESSAGE_CHARS,
+  MAX_PLAYBACK_BUFFERED_MS,
   MAX_TOOL_RESULT_CHARS,
   MAX_TRANSCRIPT_CHARS,
 } from "./constants.ts";
@@ -290,6 +291,41 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   ev("audio_ready"),
   ev("cancel"),
   ev("reset"),
+  z.object({
+    /**
+     * How much forwarded agent audio the client still holds UNPLAYED.
+     *
+     * The one closed-loop signal in the protocol. Without it the host models
+     * playback open-loop — `pipeline-heard.ts` assumes every forwarded chunk
+     * begins playing the instant it is sent, at exactly 1.0x, plus a fixed
+     * grace — and nothing anywhere can detect a client that drains slower than
+     * real time. Such a client accrues a backlog that grows across a reply and
+     * is invisible to the host, which then believes the line is silent while
+     * the caller is still listening.
+     *
+     * Five things ride that estimate, and all five fail the same way: the
+     * outward `speech_started` gate (opens early, so a client that truncates
+     * on that event throws away speech the caller had not heard), the heard
+     * cursor (records unheard words as delivered, so the model never repeats
+     * them), the barge-in floor, the false-interruption resume anchor, and the
+     * silence nudger. Measured against a harness draining at **0.60-0.67x**:
+     * the host declared playback finished while the client still held 3.8-7.3s
+     * of the reply, and 39.5s of agent speech — 41% of all audio it lost — was
+     * destroyed on edges the barge-in gates had explicitly ruled were not
+     * interruptions.
+     *
+     * **Advisory and monotonic in one direction only.** The host clamps
+     * UPWARD (`max(existing, now + bufferedMs)`), never down, so a client that
+     * never sends this, sends it late, or under-reports degrades to exactly
+     * the open-loop behaviour — there is no way for this frame to make the
+     * host think less audio is outstanding than it already believes, and no
+     * existing client regresses by not adopting it. Send it while audio is
+     * queued (aai-ui sends one every `PLAYBACK_PROGRESS_INTERVAL_MS`); stop
+     * when the buffer empties.
+     */
+    type: z.literal("playback_progress"),
+    bufferedMs: z.number().min(0).max(MAX_PLAYBACK_BUFFERED_MS),
+  }),
   z.object({
     type: z.literal("history"),
     messages: z
