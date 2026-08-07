@@ -128,7 +128,7 @@ describe("executeInit", () => {
         await useFakeTemplates(dir);
         await addDepsTemplate(dir);
         const target = path.join(dir, "with-deps");
-        // corepack enable ok, safe-chain missing, pnpm install ok
+        // corepack enable ok (Node 24 only; absent on 25+), safe-chain missing, pnpm install ok
         execaMock.mockImplementation((cmd: string) =>
           Promise.resolve({ failed: cmd === "safe-chain" }),
         );

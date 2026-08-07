@@ -33,10 +33,13 @@ async function promptProjectName(yes?: boolean): Promise<string> {
   return result || DEFAULT_PROJECT_NAME;
 }
 
-/** Enable corepack so pnpm is available (scaffold declares packageManager: pnpm). */
+/** Best-effort corepack enable so pnpm is available (scaffold declares packageManager: pnpm). */
 async function ensurePnpm(): Promise<void> {
-  // Failure is fine (corepack missing or already enabled) — pnpm install
-  // will fail with a clear error if pnpm isn't available.
+  // Failure is fine (already enabled, or — on Node >= 25, half the range the
+  // scaffold's engines allow — corepack is not installed at all, since Node
+  // stopped shipping it in its official distributions). This only ever helps
+  // the Node 24 end of the range; `pnpm install` fails with a clear error
+  // otherwise, and the warning below says how to get pnpm without corepack.
   await execa("corepack", ["enable"], { reject: false });
 }
 
@@ -93,7 +96,7 @@ async function installDeps(cwd: string, silent?: boolean): Promise<boolean> {
   } catch (err: unknown) {
     s?.stop("Dependency install failed");
     log.warn(`pnpm install failed: ${errorMessage(err)}`);
-    log.warn("Run `corepack enable && pnpm install` manually in the project directory.");
+    log.warn("Install pnpm (`npm install -g pnpm`), then run `pnpm install` in the project.");
     return false;
   }
 }
