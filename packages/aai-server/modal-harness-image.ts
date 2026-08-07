@@ -56,6 +56,7 @@ import type { App, Image, ModalClient, Sandbox } from "modal";
 import pTimeout from "p-timeout";
 import { debug } from "./_debug-log.ts";
 import { keyedMemoAsync } from "./_memo.ts";
+import { resolveHarnessPath } from "./constants.ts";
 
 /** Root the guest toolchain and harness live under inside the baked image. */
 export const GUEST_ROOT = "/opt/aai";
@@ -128,10 +129,53 @@ export type ToolchainLock = {
   lock: string;
 };
 
-/** The aai-guest package root — the anchor for everything read off disk here. */
+/**
+ * The aai-guest package root — the anchor for everything read off disk here.
+ *
+ * Two resolutions, because this module has two module identities. Run from
+ * source (dev, tests, the subprocess backend) it sits inside `aai-server`,
+ * whose `node_modules` links `aai-guest`, so `createRequire` answers directly.
+ * BUNDLED into the service entry — which is how every deployment runs it, see
+ * `packages/aai-studio-server/tsdown.config.ts` — `import.meta.url` is
+ * `packages/aai-studio-server/dist/index.mjs`, and pnpm's strict layout has no
+ * `aai-guest` above it: the require throws, and the harness image can never be
+ * built. So the fallback anchors on the HARNESS path instead
+ * (`<root>/dist/harness.mjs` — the `aai-guest/harness` export), which the
+ * deploy image sets explicitly and which is the same package by construction.
+ *
+ * The fallback VERIFIES the package it lands on rather than trusting the
+ * layout: `GUEST_HARNESS_PATH` promises only "a built harness.mjs", so an
+ * operator pointing it somewhere else must fail here by name and not by a
+ * confusing missing-lockfile error two calls later.
+ */
 function guestPackageDir(): string {
+  // Kept as a named `require` rather than inlined: it is also how knip sees
+  // that aai-server depends on aai-guest at all (nothing here imports it), and
+  // an inlined `createRequire(...).resolve(...)` reads to it as an unused
+  // dependency — which `pnpm check:knip` then offers to remove.
   const require = createRequire(import.meta.url);
-  return path.dirname(require.resolve("aai-guest/package.json"));
+  try {
+    return path.dirname(require.resolve("aai-guest/package.json"));
+  } catch (err) {
+    const dir = path.dirname(path.dirname(resolveHarnessPath()));
+    let name: string | undefined;
+    try {
+      name = (
+        JSON.parse(readFileSync(path.join(dir, "package.json"), "utf-8")) as { name?: string }
+      ).name;
+    } catch {
+      // Reported as the wrong-package error below — the path is the diagnosis.
+    }
+    if (name !== "aai-guest") {
+      throw new Error(
+        "cannot locate the aai-guest package: it does not resolve from this module, and " +
+          `the harness path points at ${dir}, which is not it — set GUEST_HARNESS_PATH to ` +
+          "the aai-guest package's own dist/harness.mjs",
+        { cause: err },
+      );
+    }
+    return dir;
+  }
 }
 
 /**

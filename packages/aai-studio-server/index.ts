@@ -124,6 +124,26 @@ async function main(): Promise<void> {
   });
 }
 
+/**
+ * Compile-cache warm-up: evaluate the module graph and exit 0, opening
+ * nothing.
+ *
+ * The deploy image runs the built entry once in this mode under
+ * `NODE_COMPILE_CACHE` and snapshots the result into the image
+ * (`scripts/modal_image.py`), so every container boot reads a populated V8
+ * cache instead of recompiling the bundle — the same trick the guest harness
+ * uses (`AAI_GUEST_WARMUP`, ~570ms → ~345ms there). Static imports are
+ * evaluated BEFORE this line, so the whole graph — the bundle plus every npm
+ * dependency it imports statically — is compiled by the time we exit.
+ *
+ * It doubles as a build-time smoke test of the bundle, which is why a failure
+ * here is deliberately fatal to the image build: a graph that cannot be
+ * evaluated cannot serve a request either.
+ */
+if (process.env.AAI_SERVER_WARMUP === "1") {
+  process.exit(0);
+}
+
 // Only boot when executed as an entry (not when imported by tests).
 if (process.env.VITEST === undefined) {
   main().catch((err: unknown) => {

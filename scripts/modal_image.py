@@ -69,6 +69,37 @@ BUILD_COMMAND = (
 
 GUEST_HARNESS_PATH = "/app/packages/aai-guest/dist/harness.mjs"
 
+# The service entry every deployment runs. Built by BUILD_COMMAND's last step;
+# named here because the compile-cache warm-up below has to run the same file
+# the container will.
+SERVER_ENTRY = "/app/packages/aai-studio-server/dist/index.mjs"
+
+# ── The server's V8 compile cache ────────────────────────────────────────────
+#
+# The entry is one ~3.7 MB bundle (aai-server is compiled in — see that
+# package's tsdown.config.ts) plus its npm imports, and every container boots
+# it cold, so V8 pays the same parse+compile on every cold start. Populating
+# the cache once HERE, in a build layer, turns that into a cache read for the
+# life of the image — the same trick the guest harness bakes into its snapshot
+# (`warmCompileCache` in packages/aai-server/modal-harness-image.ts).
+#
+# Three properties make it safe to bake. A missing or stale entry is a silent
+# MISS, never an error (the cache keys on Node version + file content, so a
+# bumped base image simply misses); the directory lives under the writable
+# `/app`, so a runtime miss can still write; and the warm-up runs the entry in
+# a mode that evaluates the module graph and exits 0 without opening a port,
+# a socket, or a database connection (`AAI_SERVER_WARMUP`, honored at the top
+# of packages/aai-studio-server/index.ts).
+#
+# Deliberately NOT best-effort, unlike the harness's: this runs the real entry,
+# so a non-zero exit means the built bundle cannot even be evaluated. Failing
+# the image build is the right answer to that, and it is a free smoke test of
+# the artifact production is about to run.
+SERVER_COMPILE_CACHE = "/app/.compile-cache"
+WARM_COMPILE_CACHE = (
+    f"NODE_COMPILE_CACHE={SERVER_COMPILE_CACHE} AAI_SERVER_WARMUP=1 node {SERVER_ENTRY}"
+)
+
 # ── The install layer's inputs ───────────────────────────────────────────────
 #
 # `pnpm install` needs the lockfile, the workspace globs, and every workspace
@@ -274,12 +305,17 @@ def build_image(*, port: int, extra_env: dict[str, str] | None = None):
         .workdir("/app")
         .run_commands("pnpm install --frozen-lockfile --ignore-scripts --prod=false")
         .add_local_dir(REPO_ROOT, remote_path="/app", copy=True, ignore=BUILD_IGNORE)
-        .run_commands(ASSERT_INSTALL_SURVIVED, BUILD_COMMAND)
+        .run_commands(ASSERT_INSTALL_SURVIVED, BUILD_COMMAND, WARM_COMPILE_CACHE)
         .env(
             {
                 "NODE_ENV": "production",
                 "PORT": str(port),
                 "GUEST_HARNESS_PATH": GUEST_HARNESS_PATH,
+                # Points the container's node at the cache warmed above. Set
+                # here rather than in the RUN line so the RUNTIME process reads
+                # it too — warming a cache nothing consults is the whole
+                # failure mode, and it is silent.
+                "NODE_COMPILE_CACHE": SERVER_COMPILE_CACHE,
                 **(extra_env or {}),
             }
         )
