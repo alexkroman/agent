@@ -10,6 +10,7 @@ import {
   DEFAULT_MAX_TURN_SILENCE_MS,
   DEFAULT_MIN_TURN_SILENCE_MS,
   DEFAULT_SESSION_START_TIMEOUT_MS,
+  DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
   DEFAULT_STT_PROMPT,
   DEFAULT_VOICE_FOCUS_THRESHOLD,
   STT_CONNECT_MAX_RETRIES,
@@ -485,6 +486,20 @@ describe("assemblyAIStt STT adapter — endpointing (min/max_turn_silence)", () 
     // from the acoustic fallback — the very mechanism that splits utterances.
     // An inverted pair is silently wrong on the wire, so assert it here.
     expect(DEFAULT_MIN_TURN_SILENCE_MS).toBeLessThan(DEFAULT_MAX_TURN_SILENCE_MS);
+  });
+
+  test("the speaking-edge idle deadline stays ABOVE the endpointing ceiling", () => {
+    // The coupling the false-interruption rework made explicit. The idle
+    // watchdog closing the speaking edge is what fires a false-interruption
+    // resume, so an utterance force-ended by `max_turn_silence` must deliver
+    // its final BEFORE that deadline — otherwise the agent resumes a reply the
+    // caller really did interrupt. The transport cannot check this itself: it
+    // receives an already-resolved SttOpener and never sees the endpointing
+    // window. It used to be pinned only in prose, in the opposite direction
+    // (max_turn_silence above the old 2000 ms recovery window), which is how
+    // it stayed invisible. Note the margin covers final-emission latency, so
+    // an agent raising maxTurnSilenceMs must raise `speechIdleTimeoutMs` too.
+    expect(DEFAULT_SPEECH_IDLE_TIMEOUT_MS).toBeGreaterThan(DEFAULT_MAX_TURN_SILENCE_MS);
   });
 
   test("each override is independent", async () => {

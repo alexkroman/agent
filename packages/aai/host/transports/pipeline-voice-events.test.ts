@@ -2,11 +2,12 @@
 // Voice-UX event specs for the pipeline transport: user-speaking edge events
 // (speech_started/speech_stopped derived from the STT transcript stream),
 // interim-transcript forwarding, false-interruption recovery, and the
-// configurable hold phrase. Barge-in mechanics live in
+// dead-air cover's enable. Barge-in mechanics live in
 // pipeline-transport-barge-in.test.ts; shared helpers in
 // _pipeline-transport-harness.ts.
 
 import { describe, expect, test, vi } from "vitest";
+import { DEAD_AIR_OPENING_PHRASE } from "../../sdk/constants.ts";
 import { createFakeLanguageModel, type ScriptedPart } from "../_pipeline-test-fakes.ts";
 import { sleep, tick } from "../_test-utils.ts";
 import { inFlightReplyScript, makeOpts, noopToolSchema } from "./_pipeline-transport-harness.ts";
@@ -171,11 +172,11 @@ describe("PipelineTransport", () => {
           steps: [script, [{ type: "text", text: "As I was saying…" }]],
           delayMs: 20,
         }),
-        falseInterruptionTimeoutMs: 40,
-        // The resume is deferred until the speaking edge closes (the noise
-        // partial opens it and no final ever arrives), so the watchdog is what
-        // releases it — shortened here to keep the spec inside vi.waitFor's
-        // window. The specs asserting NO resume keep the shipped value.
+        // The speaking edge going idle (the noise partial opens it and no
+        // final ever arrives) IS the resume — shortened here to keep the spec
+        // inside vi.waitFor's window. Every spec in this describe sets it,
+        // including the ones asserting NO resume: at the shipped 3500 nothing
+        // could resume inside their sleep, so they would pass vacuously.
         speechIdleTimeoutMs: 60,
       });
       const t = createPipelineTransport(opts);
@@ -192,7 +193,7 @@ describe("PipelineTransport", () => {
       stt.last()?.firePartial("uh what");
       expect(callbacks.onCancelled).toHaveBeenCalled();
 
-      // The recovery window elapses with no committed turn → resume turn runs.
+      // The edge goes idle with no committed turn → resume turn runs.
       await vi.waitFor(() => {
         expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(2);
       });
@@ -212,7 +213,7 @@ describe("PipelineTransport", () => {
           steps: [script, [{ type: "text", text: "ok" }]],
           delayMs: 20,
         }),
-        falseInterruptionTimeoutMs: 40,
+        speechIdleTimeoutMs: 40,
       });
       const t = createPipelineTransport(opts);
       await t.start();
@@ -231,16 +232,23 @@ describe("PipelineTransport", () => {
         expect(callbacks.onUserTranscript).toHaveBeenCalledWith("wait actually cancel it.");
       });
 
-      // Let the (cancelled) recovery window pass — no third reply appears.
-      await sleep(80);
+      // A stray sub-threshold partial afterwards opens a fresh speaking edge
+      // and lets it go idle — the one thing that fires a resume. The latch has
+      // no self-expiry, so this is what proves the committed final consumed it
+      // rather than leaving it to fire against an unrelated utterance.
+      stt.last()?.firePartial("hm");
+      await sleep(120);
       expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(2);
       await t.stop();
     });
 
-    test("falseInterruptionTimeoutMs 0 disables recovery", async () => {
+    test("resumeFalseInterruption false arms nothing", async () => {
       const { opts, stt, tts, callbacks } = makeOpts({
         llm: createFakeLanguageModel({ script, delayMs: 20 }),
-        falseInterruptionTimeoutMs: 0,
+        resumeFalseInterruption: false,
+        // Short enough that a resume would have fired well inside the sleep
+        // below if anything had been armed.
+        speechIdleTimeoutMs: 40,
       });
       const t = createPipelineTransport(opts);
       await t.start();
@@ -255,7 +263,7 @@ describe("PipelineTransport", () => {
       stt.last()?.firePartial("uh what");
       expect(callbacks.onCancelled).toHaveBeenCalled();
 
-      await sleep(60);
+      await sleep(120);
       expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(1);
       await t.stop();
     });
@@ -273,11 +281,6 @@ describe("PipelineTransport", () => {
       });
       const { opts, stt, tts, callbacks } = makeOpts({
         llm,
-        falseInterruptionTimeoutMs: 40,
-        // The resume is deferred until the speaking edge closes (the noise
-        // partial opens it and no final ever arrives), so the watchdog is what
-        // releases it — shortened here to keep the spec inside vi.waitFor's
-        // window. The specs asserting NO resume keep the shipped value.
         speechIdleTimeoutMs: 60,
       });
       const t = createPipelineTransport(opts);
@@ -293,7 +296,7 @@ describe("PipelineTransport", () => {
       stt.last()?.firePartial("uh what");
       expect(callbacks.onCancelled).toHaveBeenCalled();
 
-      // The window elapses with no committed turn → the reply resumes.
+      // The edge goes idle with no committed turn → the reply resumes.
       await vi.waitFor(() => {
         expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(2);
       });
@@ -310,7 +313,10 @@ describe("PipelineTransport", () => {
     test("a barge-in on a playback tail the caller has essentially heard does not resume", async () => {
       const { opts, stt, tts, callbacks } = makeOpts({
         llm: createFakeLanguageModel({ script: [{ type: "text", text: "Sure." }] }),
-        falseInterruptionTimeoutMs: 40,
+        // Short: at the shipped 3500 nothing could resume inside the sleep
+        // below, so this spec would pass without arming anything. Proven —
+        // raising the audio to 10s (which DOES arm a tail prompt) still passed.
+        speechIdleTimeoutMs: 40,
       });
       const t = createPipelineTransport(opts);
       await t.start();
@@ -327,18 +333,21 @@ describe("PipelineTransport", () => {
       stt.last()?.firePartial("uh what");
       expect(callbacks.onCancelled).toHaveBeenCalled();
 
-      await sleep(80);
+      await sleep(120);
       expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(1);
       await t.stop();
     });
 
-    test("a user who keeps talking is not resumed over — partials re-arm the window", async () => {
+    test("a user who keeps talking is not resumed over — partials restart the watchdog", async () => {
       const { opts, stt, tts, callbacks } = makeOpts({
         llm: createFakeLanguageModel({
           steps: [script, [{ type: "text", text: "As I was saying…" }]],
           delayMs: 20,
         }),
-        falseInterruptionTimeoutMs: 40,
+        // Longer than the ~25 ms between the partials below (so a watchdog
+        // that restarts never fires) but well under their ~125 ms total (so
+        // one that failed to restart would resume over the caller).
+        speechIdleTimeoutMs: 80,
       });
       const t = createPipelineTransport(opts);
       await t.start();
@@ -350,7 +359,7 @@ describe("PipelineTransport", () => {
       // Barge-in requires the agent to be audibly speaking, not merely mid-turn.
       tts.last()?.fireAudio(new Int16Array(2400));
 
-      // Barge in, then keep speaking well past the recovery window. Providers
+      // Barge in, then keep speaking well past the resume deadline. Providers
       // that only emit a final at end-of-turn (AssemblyAI) produce exactly this
       // shape: a long run of partials with no final in sight.
       stt.last()?.firePartial("wait actually");
@@ -360,7 +369,8 @@ describe("PipelineTransport", () => {
         stt.last()?.firePartial(`wait actually hold on ${i}`);
       }
 
-      // ~125 ms > 40 ms window, but the agent must not have resumed over them.
+      // ~125 ms > the 80 ms deadline, but the agent must not have resumed
+      // over them: every partial restarts the watchdog that fires the resume.
       expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(1);
 
       // The utterance finally commits as the real turn it always was.
@@ -376,7 +386,7 @@ describe("PipelineTransport", () => {
     test("a barge-in partial's caption survives the cancel that follows it", async () => {
       const { opts, stt, tts, callbacks } = makeOpts({
         llm: createFakeLanguageModel({ script, delayMs: 20 }),
-        falseInterruptionTimeoutMs: 0,
+        resumeFalseInterruption: false,
       });
       const t = createPipelineTransport(opts);
       await t.start();
@@ -402,7 +412,7 @@ describe("PipelineTransport", () => {
     test("a final-triggered barge-in re-emits the caption after the cancel", async () => {
       const { opts, stt, tts, callbacks } = makeOpts({
         llm: createFakeLanguageModel({ script, delayMs: 20 }),
-        falseInterruptionTimeoutMs: 0,
+        resumeFalseInterruption: false,
       });
       const t = createPipelineTransport(opts);
       await t.start();
@@ -445,7 +455,6 @@ describe("PipelineTransport", () => {
           steps: [script, script, [{ type: "text", text: "ok" }]],
           delayMs: 400,
         }),
-        falseInterruptionTimeoutMs: 40,
         speechIdleTimeoutMs: 60,
       });
       const llm = opts.llm as ReturnType<typeof createFakeLanguageModel>;
@@ -458,8 +467,7 @@ describe("PipelineTransport", () => {
       });
       tts.last()?.fireAudio(new Int16Array(2400));
 
-      // Noise partial → barge-in → the window elapses and the edge closes, so
-      // the resume turn starts.
+      // Noise partial → barge-in → the edge goes idle, so the resume starts.
       stt.last()?.firePartial("uh what");
       await vi.waitFor(() => {
         expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(2);
@@ -481,10 +489,68 @@ describe("PipelineTransport", () => {
       await t.stop();
     });
 
-    test("client-initiated cancelReply never resumes", async () => {
+    test("a resume that generated text but played none leaves NO trace at all", async () => {
+      // The trace the truthful-truncation rule turns on. The resume turn
+      // produced words, the caller heard none of them (no audio ever reached
+      // the ear), so no assistant message is written — and its synthetic
+      // prompt must therefore be rolled back too. Left standing, "the user did
+      // not actually say anything…" sits unanswered directly ahead of the next
+      // real user turn: the two-contradictory-user-messages failure again.
+      // The resume's own script cannot finish on its own either: the cut has
+      // to land while it is still streaming, which is the only window
+      // persistBargeIn runs in (a turn that COMPLETES commits its full text —
+      // the drain case, deliberately out of scope).
+      const resumeScript: ScriptedPart[] = Array.from({ length: 100 }, (_, i) => ({
+        type: "text",
+        text: `resumed${i} `,
+      }));
+      const { opts, stt, tts, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({
+          steps: [script, resumeScript, [{ type: "text", text: "ok" }]],
+          delayMs: 20,
+        }),
+        speechIdleTimeoutMs: 60,
+      });
+      const llm = opts.llm as ReturnType<typeof createFakeLanguageModel>;
+      const t = createPipelineTransport(opts);
+      await t.start();
+
+      stt.last()?.fireFinal("where is my order");
+      await vi.waitFor(() => {
+        expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
+      });
+      tts.last()?.fireAudio(new Int16Array(2400));
+      stt.last()?.firePartial("uh what");
+
+      // The resume runs and streams text into TTS — but no audio is forwarded
+      // for it, so nothing of it was ever audible.
+      await vi.waitFor(() => {
+        expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(2);
+      });
+      await vi.waitFor(() => {
+        expect(tts.last()?.textChunks.join("")).toContain("resumed0");
+      });
+      t.cancelReply();
+
+      stt.last()?.fireFinal("never mind then");
+      await vi.waitFor(() => {
+        expect(callbacks.onUserTranscript).toHaveBeenCalledWith("never mind then");
+      });
+      await vi.waitFor(() => {
+        if (llm.calls.length < 3) throw new Error("follow-up turn not started");
+      });
+
+      const request = JSON.stringify(llm.calls.at(-1));
+      expect(request).toContain("never mind then");
+      expect(request).not.toContain("resumed");
+      expect(request).not.toContain("did not actually say anything");
+      await t.stop();
+    });
+
+    test("client-initiated cancelReply discards an armed resume", async () => {
       const { opts, stt, tts, callbacks } = makeOpts({
         llm: createFakeLanguageModel({ script, delayMs: 20 }),
-        falseInterruptionTimeoutMs: 40,
+        speechIdleTimeoutMs: 40,
       });
       const t = createPipelineTransport(opts);
       await t.start();
@@ -496,24 +562,34 @@ describe("PipelineTransport", () => {
       // Barge-in requires the agent to be audibly speaking, not merely mid-turn.
       tts.last()?.fireAudio(new Int16Array(2400));
 
+      // Barge in first, so a resume IS armed and the cancel has something to
+      // discard — the version of this spec that only called cancelReply could
+      // not fail, since nothing was ever armed.
+      stt.last()?.firePartial("uh what");
+      expect(callbacks.onCancelled).toHaveBeenCalled();
       t.cancelReply();
-      await sleep(80);
+
+      // The noise partial's speaking edge now goes idle, which is what would
+      // fire the resume. A client-initiated cancel is intentional: it doesn't.
+      await sleep(120);
       expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(1);
       await t.stop();
     });
   });
 
-  describe("holdPhrase configuration", () => {
+  describe("deadAirCoverMs configuration", () => {
     const toolFirstScript: ScriptedPart[] = [
       { type: "tool-call", toolCallId: "c1", toolName: "lookup", input: "{}" },
     ];
 
-    test("a custom holdPhrase is spoken when the turn opens with a tool call", async () => {
+    test("a silent turn draws the cover filler through the whole transport", async () => {
       const { opts, stt, tts } = makeOpts({
         llm: createFakeLanguageModel({
           steps: [toolFirstScript, [{ type: "text", text: "Done." }]],
+          delayMs: 20,
         }),
-        holdPhrase: "Un momento.",
+        // 1ms so the window elapses inside the spec; the shipped 5000 would not.
+        deadAirCoverMs: 1,
         toolSchemas: [noopToolSchema],
         executeTool: async () => "{}",
       });
@@ -522,18 +598,19 @@ describe("PipelineTransport", () => {
 
       stt.last()?.fireFinal("look it up");
       await vi.waitFor(() => {
-        expect(tts.last()?.textChunks.join("")).toContain("Un momento.");
+        expect(tts.last()?.textChunks.join("")).toContain(DEAD_AIR_OPENING_PHRASE);
       });
       await tick();
       await t.stop();
     });
 
-    test("holdPhrase '' disables the filler entirely", async () => {
+    test("deadAirCoverMs 0 disables the filler entirely", async () => {
       const { opts, stt, tts, callbacks } = makeOpts({
         llm: createFakeLanguageModel({
           steps: [toolFirstScript, [{ type: "text", text: "Done." }]],
+          delayMs: 20,
         }),
-        holdPhrase: "",
+        deadAirCoverMs: 0,
         toolSchemas: [noopToolSchema],
         executeTool: async () => "{}",
       });
@@ -544,7 +621,7 @@ describe("PipelineTransport", () => {
       await vi.waitFor(() => {
         expect(callbacks.onReplyDone).toHaveBeenCalled();
       });
-      expect(tts.last()?.textChunks.join("")).not.toContain("One moment");
+      expect(tts.last()?.textChunks.join("")).toBe("Done.");
       await t.stop();
     });
   });

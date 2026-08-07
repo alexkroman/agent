@@ -173,8 +173,9 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // Providers may arrive as runtime options rather than on the agent object,
   // and reading `agent` alone once resolved mode "s2s" for every deployed
   // pipeline agent, so `assertPipelineTuning` rejected all six voice tuning
-  // knobs at session start — a deployed agent with `holdPhrase` died with
-  // "holdPhrase requires pipeline mode (stt, llm, and tts all set)" while
+  // knobs at session start — a deployed agent with `holdPhrase` (a tuning
+  // field since removed) died with "holdPhrase requires pipeline mode (stt,
+  // llm, and tts all set)" while
   // listing all three providers — and left `agentConfig.mode` wrong for
   // everything downstream that reads it.
   const agentConfig = toAgentConfig({

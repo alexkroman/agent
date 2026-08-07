@@ -5,9 +5,9 @@
 // shared helpers in _pipeline-transport-harness.ts.
 
 import { describe, expect, test, vi } from "vitest";
-import { createFakeLanguageModel } from "../_pipeline-test-fakes.ts";
+import { createFakeLanguageModel, createTestClock, speakFor } from "../_pipeline-test-fakes.ts";
 import { sleep } from "../_test-utils.ts";
-import { inFlightReplyScript, makeOpts } from "./_pipeline-transport-harness.ts";
+import { inFlightReplyScript, llmCalls, makeOpts } from "./_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
 
 describe("PipelineTransport", () => {
@@ -425,10 +425,13 @@ describe("PipelineTransport", () => {
 
     test("cancelReply() still records the interrupted reply", async () => {
       // Contrast with reset(): a client cancel means "stop responding", not
-      // "forget the conversation" — the spoken-so-far text stays in history, so
-      // the next turn's LLM request carries it marked `[interrupted]`.
+      // "forget the conversation" — the text the caller HEARD stays in history,
+      // so the next turn's LLM request carries it marked `[interrupted]`. The
+      // reply has to actually reach the caller's ear for that: audio forwarded
+      // and played out on the injected clock.
+      const clock = createTestClock();
       const llm = createFakeLanguageModel({ script: inFlightReplyScript(), delayMs: 20 });
-      const { opts, stt, tts } = makeOpts({ llm });
+      const { opts, stt, tts } = makeOpts({ llm, heardLagMs: 0, heardNow: clock.now });
       const t = createPipelineTransport(opts);
       await t.start();
 
@@ -436,6 +439,7 @@ describe("PipelineTransport", () => {
       await vi.waitFor(() => {
         expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
       });
+      speakFor(tts, clock, 2000);
 
       t.cancelReply();
       stt.last()?.fireFinal("follow up question");
@@ -444,6 +448,100 @@ describe("PipelineTransport", () => {
       });
       expect(JSON.stringify(llm.calls.at(-1))).toContain("[interrupted]");
       await t.stop();
+    });
+
+    describe("history records what was HEARD", () => {
+      // The reply the specs below script, streamed one word at a time and
+      // padded so it cannot run to completion before the barge-in lands (a
+      // COMPLETED turn commits its full text — the same race
+      // `inFlightReplyScript` exists for).
+      const replyWords = [
+        ..."Your balance is five hundred dollars and change today.".split(" "),
+        ...Array.from({ length: 100 }, (_, i) => `filler${i}`),
+      ];
+      const REPLY = replyWords.map((w) => `${w} `).join("");
+      const replyScript = replyWords.map((w) => ({ type: "text" as const, text: `${w} ` }));
+
+      /**
+       * Run one interrupted turn: `heardMs` of the four seconds of forwarded
+       * audio plays out, then a barge-in cuts it. Returns the text that reached
+       * TTS and the assistant text the NEXT turn's LLM request carries for the
+       * interrupted one (empty when none was recorded).
+       *
+       * `settleDelayMs` advances the clock between the abort and the aborted
+       * stream settling — the window the cut position has to survive.
+       */
+      async function interruptedRecord(
+        heardMs: number,
+        settleDelayMs = 0,
+      ): Promise<{ recorded: string; spoken: string }> {
+        const clock = createTestClock();
+        const { opts, stt, tts } = makeOpts({
+          heardLagMs: 0,
+          heardNow: clock.now,
+          minBargeInWords: 1,
+          llm: createFakeLanguageModel({
+            steps: [replyScript, [{ type: "text", text: "Sure." }]],
+            delayMs: 5,
+          }),
+        });
+        const t = createPipelineTransport(opts);
+        await t.start();
+        const llm = llmCalls(opts);
+
+        stt.last()?.fireFinal("what is my balance");
+        await vi.waitFor(() => {
+          if ((tts.last()?.textChunks ?? []).join("").length <= 30) {
+            throw new Error("not enough text reached TTS yet");
+          }
+        });
+        // Four seconds of synthesized audio in the client's buffer, of which
+        // `heardMs` has actually played.
+        speakFor(tts, clock, 4000, heardMs);
+        const callsBefore = llm.calls.length;
+        const spoken = (tts.last()?.textChunks ?? []).join("");
+        stt.last()?.firePartial("stop");
+        clock.advance(settleDelayMs);
+
+        stt.last()?.fireFinal("never mind");
+        await vi.waitFor(() => {
+          if (llm.calls.length <= callsBefore) throw new Error("follow-up turn not started");
+        });
+        const prompt = JSON.stringify(llm.calls.at(-1)?.prompt);
+        await t.stop();
+        return { spoken, recorded: prompt.match(/"text":"([^"]*) \[interrupted\]"/)?.[1] ?? "" };
+      }
+
+      test("a partly heard reply records the prefix the caller heard, not the tail", async () => {
+        // A quarter of the forwarded audio played, so about a quarter of the
+        // words did.
+        const { recorded, spoken } = await interruptedRecord(1000);
+        expect(recorded.length).toBeGreaterThan(0);
+        // A real prefix of what the model generated...
+        expect(REPLY.startsWith(recorded)).toBe(true);
+        // ...and well short of everything that reached the synthesizer.
+        expect(recorded.length).toBeLessThan(spoken.length / 2);
+      });
+
+      test("a reply cut before anything was audible records nothing at all", async () => {
+        // Audio was forwarded — so the agent counts as speaking and the barge-in
+        // fires — but none of it had reached the ear. LiveKit's rule: the reply
+        // may as well not have happened.
+        const { recorded, spoken } = await interruptedRecord(0);
+        expect(spoken.length).toBeGreaterThan(30);
+        expect(recorded).toBe("");
+      });
+
+      test("THE LATCH: the cut position survives the abort that resets the clock", async () => {
+        // persistInterruptedTurn runs when the aborted stream settles, well
+        // after `abortInFlightTurn` restarted the playback clock. Without
+        // `heard.cut()` latching the position first, that read sees a clock with
+        // nothing left to play and reports the reply as fully heard — today's
+        // behaviour, which every other spec in this file still passes.
+        const { recorded, spoken } = await interruptedRecord(500, 30_000);
+        expect(recorded.length).toBeGreaterThan(0);
+        expect(recorded.length).toBeLessThan(spoken.length / 2);
+      });
     });
 
     test("no agent_transcript is emitted after the barge-in's cancelled frame", async () => {

@@ -1,167 +1,119 @@
 // Copyright 2026 the AAI authors. MIT license.
-// False-interruption recovery for the pipeline transport: the recovery window
-// timer that resumes a barged-in reply when the interruption never commits a
-// user turn, and the reply-tail tracker that locates where a playback-tail
-// barge-in cut the caller off so the resume prompt can say so. Split out of
-// `pipeline-user-speech.ts` for file length; the STT handlers there decide
-// WHEN to arm this machinery.
+// False-interruption recovery for the pipeline transport: the latch that
+// resumes a barged-in reply when the interruption never commits a user turn,
+// and the prompt that tells the resumed turn where the caller stopped hearing.
+// Split out of `pipeline-user-speech.ts` for file length; the STT handlers
+// there decide WHEN to arm this machinery. WHERE the caller stopped hearing is
+// answered by `pipeline-heard.ts`, which owns that one cursor for both this
+// prompt and history truncation.
 
-import {
-  DEFAULT_FALSE_INTERRUPTION_PROMPT,
-  TAIL_RESUME_MIN_UNHEARD_MS,
-} from "../../sdk/constants.ts";
-import { createRestartableTimer } from "../_timer.ts";
+import { TAIL_RESUME_MIN_UNHEARD_MS } from "../../sdk/constants.ts";
 
 /**
- * False-interruption recovery timer. A partial-triggered barge-in aborts the
- * in-flight reply, but STT noise or a hallucinated partial may never produce
- * a final — no turn ever commits and the agent falls silent
- * mid-thought. `arm()` starts the recovery window after such a barge-in;
- * `clear()` cancels it when real speech commits (or the client cancels). If
- * the window elapses while the transport is idle, `onResume` runs the
- * continuation turn.
+ * False-interruption recovery latch. A partial-triggered barge-in aborts the
+ * in-flight reply, but STT noise or a hallucinated partial may never produce a
+ * final — no turn ever commits and the agent falls silent mid-thought.
+ * `arm(prompt)` latches a resume after such a barge-in, `clear()` drops it when
+ * the client cancels or the session ends, and {@link onUserTurn} drops it when
+ * real speech commits. {@link onUtteranceEnded} is what fires it.
  *
- * **The window elapsing is not sufficient on its own — the utterance must also
- * be over.** Endpointing lives in the STT provider, so a genuine barge-in's
- * final is withheld for `min_turn_silence` after the caller stops speaking
- * (`DEFAULT_MIN_TURN_SILENCE_MS`, 1600 today; 2000 when this was written) —
- * then exactly the 2000 the recovery window
- * defaulted to, measured from the same instant (the window restarts on every
- * partial, and the last partial lands at roughly the end of speech). The two
- * deadlines were therefore separated only by the difference between partial
- * and final latency, a few hundred ms in either direction: EVERY genuine
- * barge-in raced its own resume, and the resume won often enough to be the
- * common case rather than an edge case. Every such resume cost a billed
- * LLM turn, left "the user did not actually say anything" in history directly
- * ahead of the real user turn, and — when it got audio out before the final
- * landed, TTS time-to-first-audio being ~350ms — made the caller hear the agent
- * continue the reply they had just interrupted before answering them.
+ * **There is no timer here, and that is the whole design.** The transport
+ * cannot pick a deadline of its own, because a genuine barge-in's final is
+ * withheld by the STT provider for its endpointing window and the transport
+ * receives an already-resolved `SttOpener` — it does not know that window. Any
+ * shorter deadline therefore RACES the caller's real turn: with the recovery
+ * window at its old 2000 ms default and `min_turn_silence` at 1600-2000,
+ * measured from roughly the same instant, every genuine barge-in raced its own
+ * resume and the resume won often enough to be the common case. The account of
+ * that race, and of the one deadline that replaced it, lives on
+ * `DEFAULT_SPEECH_IDLE_TIMEOUT_MS` in `sdk/pipeline-tuning-constants.ts`, which
+ * now owns the resume latency outright.
  *
- * So a fired window whose utterance is still open only DEFERS the resume;
- * {@link FalseInterruptionRecovery.onUtteranceEnded} releases it once the
- * speaking edge closes with no committed turn, which is the signal that proves
- * no final is coming. A committed final clears the deferral through
- * {@link FalseInterruptionRecovery.onUserTurn} instead, so it can never resume
+ * So the resume fires on the one signal the transport can actually observe: the
+ * transcript stream going quiet with no committed final, which the speaking
+ * edge's idle watchdog reports through {@link onUtteranceEnded}. A committed
+ * final gets there first through {@link onUserTurn}, so a resume can never run
  * over a real turn.
+ *
+ * The latch has no self-expiry, which is the one invariant a reader must hold:
+ * every path that closes the speaking edge has to consume or clear it. Today
+ * that is a committed final (`onUserTurn`), the watchdog (`onUtteranceEnded`),
+ * and reset/stop/terminate/cancelReply (`clear`) — a future path that closes
+ * the edge through none of them would fire a stale resume on an unrelated later
+ * utterance. `pipeline-user-speech.test.ts` pins all three.
  */
 export interface FalseInterruptionRecovery {
   /**
-   * Start (or restart) the recovery window. No-op when the timeout is 0 or the
-   * consecutive-resume budget is spent. `resumePrompt` sets what the resume
-   * turn is told when the window fires (a mid-turn barge-in uses the default
-   * continuation prompt; a playback-tail barge-in embeds the estimated cut
-   * point); omitted, the stored prompt is kept — the deadline-extension re-arm
-   * on continued partials must not clobber the barge-in's prompt.
+   * Latch a resume for the barge-in that just fired. No-op when recovery is
+   * disabled or the consecutive-resume budget is spent. `resumePrompt` is what
+   * the resume turn is told: a mid-turn barge-in uses the cut-point prompt (or
+   * the default continuation prompt when no cut point is known), a
+   * playback-tail barge-in embeds the estimated cut point.
    */
-  arm(resumePrompt?: string): void;
-  /**
-   * Cancel a pending recovery window — including a resume deferred by an open
-   * utterance — keeping the consecutive-resume budget.
-   */
+  arm(resumePrompt: string): void;
+  /** Drop an armed latch, keeping the consecutive-resume budget. */
   clear(): void;
   /**
-   * Is a recovery outstanding (window pending, or a resume deferred awaiting
-   * the utterance's end)? Drives re-arming on continued speech.
-   */
-  pending(): boolean;
-  /**
    * The utterance went quiet without committing a turn (the speaking edge's
-   * idle watchdog closed it) — no final is coming, so release a resume the
-   * window deferred while speech was still in progress. No-op otherwise.
+   * idle watchdog closed it) — no final is coming, so run the armed resume.
+   * No-op when nothing is armed; an armed latch is consumed exactly once.
    */
   onUtteranceEnded(): void;
   /**
    * A real user turn committed (STT final) — the barge-in that preceded it was
-   * genuine. Cancel the window and restore the budget.
+   * genuine. Drop the latch and restore the budget.
    */
   onUserTurn(): void;
 }
 
 /** Create a {@link FalseInterruptionRecovery}. */
 export function createFalseInterruptionRecovery(opts: {
-  /** Recovery window in ms; 0 (or negative) disables recovery entirely. */
-  timeoutMs: number;
+  /** `resumeFalseInterruption`; false disables recovery entirely. */
+  enabled: boolean;
   /** Max back-to-back resumes before the user must speak again. */
   maxConsecutive: number;
-  /** False once the transport terminated — a fired timer then does nothing. */
+  /** False once the transport terminated — a released latch then does nothing. */
   isActive: () => boolean;
   /**
    * True while a turn is in flight or client audio may still be playing —
    * something else took the floor, so the interruption resolved itself.
    */
   isBusy: () => boolean;
-  /**
-   * True while an utterance is still open (the speaking edge has not closed and
-   * no turn has committed). A final may yet arrive — the STT provider holds it
-   * back for its endpointing window — so a resume now would race it. See the
-   * interface doc.
-   */
-  isUtteranceInProgress: () => boolean;
   /** Run the resume turn with the armed prompt. Only called when active and not busy. */
   onResume: (resumePrompt: string) => void;
 }): FalseInterruptionRecovery {
   let consecutive = 0;
-  // The window elapsed while the caller was still mid-utterance; the resume is
-  // owed, and onUtteranceEnded() delivers it.
-  let deferred = false;
-  let resumePrompt = DEFAULT_FALSE_INTERRUPTION_PROMPT;
-  const window = createRestartableTimer(() => fire());
+  // The prompt a resume owed to a barge-in will run with, or null for "nothing
+  // is owed". There is no deadline alongside it — see the interface doc.
+  let armed: string | null = null;
 
-  function arm(prompt?: string): void {
-    // Budget spent: persistent cross-talk must not loop barge-in → resume →
-    // barge-in indefinitely, each cycle costing a full LLM+TTS turn and
-    // another copy of the continuation prompt in history.
-    if (consecutive >= opts.maxConsecutive) return;
-    if (prompt !== undefined) resumePrompt = prompt;
-    window.arm(opts.timeoutMs);
-  }
-
-  /** Shared gate for both resume paths (window elapsed / deferral released). */
-  function canResume(): boolean {
-    if (!opts.isActive()) return false;
-    if (opts.isBusy()) return false;
-    return consecutive < opts.maxConsecutive;
-  }
-
-  function resume(): void {
-    deferred = false;
-    consecutive++;
-    opts.onResume(resumePrompt);
-  }
-
-  function fire(): void {
-    if (!canResume()) return;
-    // Still mid-utterance: hold the resume rather than spending it against a
-    // final that endpointing has not released yet.
-    if (opts.isUtteranceInProgress()) {
-      deferred = true;
-      return;
-    }
-    resume();
-  }
-
-  function clear(): void {
-    deferred = false;
-    window.clear();
-  }
+  /** Budget guard, shared by arming and releasing. */
+  const spent = (): boolean => consecutive >= opts.maxConsecutive;
 
   return {
-    arm,
-    clear,
-    // Deferred counts as pending: a recovery is still outstanding, so continued
-    // partials keep extending the window rather than treating it as resolved.
-    pending: (): boolean => window.pending() || deferred,
+    arm(resumePrompt: string): void {
+      // Budget spent: persistent cross-talk must not loop barge-in → resume →
+      // barge-in indefinitely, each cycle costing a full LLM+TTS turn and
+      // another copy of the continuation prompt in history.
+      if (!opts.enabled || spent()) return;
+      armed = resumePrompt;
+    },
+    clear(): void {
+      armed = null;
+    },
     onUtteranceEnded(): void {
-      if (!deferred) return;
-      if (!canResume()) {
-        deferred = false;
-        return;
-      }
-      resume();
+      const resumePrompt = armed;
+      if (resumePrompt === null) return;
+      // Consumed whether or not it runs: a latch the transport declined to
+      // spend must not linger into the next utterance.
+      armed = null;
+      if (!opts.isActive() || opts.isBusy() || spent()) return;
+      consecutive++;
+      opts.onResume(resumePrompt);
     },
     onUserTurn(): void {
       consecutive = 0;
-      clear();
+      armed = null;
     },
   };
 }
@@ -179,18 +131,28 @@ const TAIL_RESUME_ANCHOR_CHARS = 80;
  * a word boundary; the estimate is proportional, not sample-exact) so the
  * model can pick the reply up from there.
  *
- * `heardFraction` is the estimated fraction of the reply's audio the client
- * played before the cut, in [0, 1]. An estimate of ~0 means the caller heard
- * none of it, and the prompt asks for the reply again instead of quoting an
- * empty anchor.
+ * **A MID-TURN barge-in prefers this prompt too**, which is why it is not named
+ * for the tail. The `[interrupted]` marker records what the model GENERATED,
+ * but the caller only heard as far as the audio actually got — TTS runs behind
+ * the text — so "continue from where it was cut off" points at the wrong place
+ * and the gap gets re-spoken. Measured: 10% of consecutive agent utterances
+ * repeated 60%+ of their words. Quoting the last words the caller actually
+ * heard names the real boundary, and `DEFAULT_FALSE_INTERRUPTION_PROMPT` is
+ * only the fallback for when no estimate is available (nothing audible yet, or
+ * essentially all of it heard), where plain continuation is already correct.
+ *
+ * That measurement names TTS running behind the text as the CAUSE, and the
+ * direct fix for it is that `heardText` is now the same cursor history is
+ * truncated with (`pipeline-heard.ts`) rather than a second, independent
+ * estimate: the anchor cannot name words the record denies.
+ *
+ * `heardText` is the reply text the caller is estimated to have heard. Empty
+ * means they heard none of it, and the prompt asks for the reply again instead
+ * of quoting an empty anchor.
  */
-export function buildTailResumePrompt(spoken: string, heardFraction: number): string {
-  const bounded = Math.min(1, Math.max(0, heardFraction));
-  const cut = Math.round(spoken.length * bounded);
-  const head = spoken.slice(0, cut);
-  const boundary = head.lastIndexOf(" ");
-  const anchorEnd = boundary > 0 ? boundary : head.length;
-  const anchor = spoken.slice(Math.max(0, anchorEnd - TAIL_RESUME_ANCHOR_CHARS), anchorEnd).trim();
+export function buildTailResumePrompt(heardText: string): string {
+  const anchorEnd = heardText.length;
+  const anchor = heardText.slice(Math.max(0, anchorEnd - TAIL_RESUME_ANCHOR_CHARS)).trim();
   if (anchor.length === 0) {
     return (
       "Your last reply's audio was cut off by a false interruption before the " +
@@ -207,52 +169,15 @@ export function buildTailResumePrompt(spoken: string, heardFraction: number): st
 }
 
 /**
- * Per-reply record of what was handed to TTS — the transcript text and the
- * duration of the forwarded audio — plus the playback clock's estimate of how
- * much the client has left to play. Together they locate a playback-tail
- * barge-in's cut point inside the reply text for {@link buildTailResumePrompt}.
+ * Is a barge-in on this reply worth a resume turn at all?
+ *
+ * `audioMs` is the reply's forwarded audio and `unheardMs` the part of it the
+ * client had not played. Below {@link TAIL_RESUME_MIN_UNHEARD_MS} the caller
+ * heard essentially everything and a resume would only append a fragment to a
+ * reply that already landed. This is a question about WHETHER a resume is
+ * worth running, not about where the cut fell — the cut point comes from the
+ * heard cursor in `pipeline-heard.ts`.
  */
-export interface ReplyTailTracker {
-  /** Text handed to TTS for the current reply; returns the cumulative transcript. */
-  onText(text: string): string;
-  /** One forwarded PCM16 chunk of the current reply's TTS audio. */
-  onAudio(pcm: Int16Array): void;
-  /** A new reply started — nothing from the last one carries over. */
-  reset(): void;
-  /**
-   * Cut-point resume prompt for a barge-in on the current reply's playback
-   * tail, or `undefined` when the caller had heard essentially all of it
-   * (then a resume turn would only append a fragment to a reply that already
-   * landed). Must be read BEFORE the abort resets the playback clock.
-   */
-  resumePrompt(): string | undefined;
-}
-
-/** Create a {@link ReplyTailTracker}. */
-export function createReplyTailTracker(opts: {
-  /** Sample rate of the forwarded PCM16 (Hz), to convert chunks to duration. */
-  sampleRate: number;
-  /** Estimated ms of forwarded audio the client has not played yet. */
-  remainingMs: () => number;
-}): ReplyTailTracker {
-  let spoken = "";
-  let audioMs = 0;
-  return {
-    onText(text: string): string {
-      spoken += text;
-      return spoken;
-    },
-    onAudio(pcm: Int16Array): void {
-      audioMs += (pcm.length / opts.sampleRate) * 1000;
-    },
-    reset(): void {
-      spoken = "";
-      audioMs = 0;
-    },
-    resumePrompt(): string | undefined {
-      const unheardMs = opts.remainingMs();
-      if (audioMs <= 0 || unheardMs < TAIL_RESUME_MIN_UNHEARD_MS) return;
-      return buildTailResumePrompt(spoken, 1 - unheardMs / audioMs);
-    },
-  };
+export function tailResumeWorthRunning(audioMs: number, unheardMs: number): boolean {
+  return audioMs > 0 && unheardMs >= TAIL_RESUME_MIN_UNHEARD_MS;
 }

@@ -13,6 +13,34 @@
  * Split out of `pipeline-transport.ts` so the turn body reads as those three
  * branches rather than their bodies inline; each needs the same handful of
  * session-scoped collaborators, which is what the factory closes over.
+ *
+ * ## The two kinds of phrase the transport speaks on its own
+ *
+ * `errorPhrase` and `startFailurePhrase` — both here — are **failure
+ * recovery**, not latency cover, and the distinction decides how they are
+ * emitted. Keeping them apart matters because they look interchangeable with
+ * the third mechanism and are not:
+ *
+ * | | dead-air cover (`pipeline-stream-parts.ts`) | failure phrases (here) |
+ * | --- | --- | --- |
+ * | why | the turn is taking a long time | the turn, or the session, failed |
+ * | client transcript | INTERIM only (`record: false`) | FINAL |
+ * | history / `ctx.messages` | never | never |
+ *
+ * The cover is a timing artifact the caller hears, so it must match the audio
+ * in the live caption and vanish from the committed message; that is the whole
+ * point of `emitText(phrase, false)`. A failure phrase is the turn's actual
+ * outcome — it IS what the agent said — so it reaches the final transcript.
+ *
+ * **Neither kind enters history, for the same measured reason stated twice
+ * over**: teaching the model that its own replies open with apologies (or with
+ * filler) is how it starts producing them unprompted. That asymmetry — same
+ * history rule, opposite transcript rule — is what a future attempt to unify
+ * the three into one helper would get wrong, so they stay separate. The two
+ * failure phrases stay separate from EACH OTHER too: their lifecycles really
+ * do differ (one inside a reply, one outside any reply, with its own drain and
+ * `publishTranscript: false`), and merging them would erase the difference
+ * that is the point.
  */
 
 import type { ModelMessage } from "ai";
@@ -43,11 +71,12 @@ export interface TurnOutcomeDeps {
 
 export interface TurnOutcome {
   /**
-   * Barge-in mid-turn: keep the completed tool steps and the spoken-so-far
-   * text. Skipped when the conversation has since been reset, so an interrupted
-   * tail never lands in a fresh conversation. Emits nothing to the client — the
-   * `cancelled` frame already ended this reply there, and the interim
-   * transcripts already carried its text (see `persistInterruptedTurn`).
+   * Barge-in mid-turn: keep the completed tool steps and the text the caller
+   * actually HEARD. Skipped when the conversation has since been reset, so an
+   * interrupted tail never lands in a fresh conversation. Emits nothing to the
+   * client — the `cancelled` frame already ended this reply there, and the
+   * interim transcripts already carried its text (see
+   * `persistInterruptedTurn`).
    *
    * `syntheticPrompt` — the turn's own user text, set only when that text was
    * INJECTED (a false-interruption resume prompt, a silence nudge) — is dropped
@@ -56,7 +85,14 @@ export interface TurnOutcome {
    */
   persistBargeIn(args: {
     historyEpoch: number;
+    /** Everything the model generated before the abort. */
     accumulated: string;
+    /**
+     * How much of `accumulated` the caller is estimated to have heard, in
+     * characters — the heard cursor (`pipeline-heard.ts`). Only this prefix is
+     * recorded.
+     */
+    heardChars: number;
     persistedLen: number;
     stepMessages: ModelMessage[];
     syntheticPrompt?: string | undefined;
@@ -78,7 +114,8 @@ export interface TurnOutcome {
    * Emitted as a transcript so the UI matches what was heard, but deliberately
    * NOT pushed into `history.llm`: teaching the model that its own replies open
    * with apologies is how it starts producing them unprompted. Same reasoning
-   * as keeping the hold phrase and dead-air cover out of the record.
+   * as keeping the dead-air cover out of the record — see the module doc for
+   * why the transcript rule nonetheless goes the other way.
    */
   speakRecovery(failed: boolean): boolean;
   /** Announce and persist a turn that produced speech. */
@@ -105,13 +142,22 @@ export function createTurnOutcome(deps: TurnOutcomeDeps): TurnOutcome {
   return {
     persistBargeIn(args) {
       if (!gate.historyCurrent(args.historyEpoch)) return;
+      const heard = args.accumulated.slice(0, args.heardChars);
       // Computed before persisting, while the synthetic prompt is still the
       // trailing message: nothing was persisted exactly when there are no
-      // completed steps and no spoken text.
-      const leftNoTrace = args.stepMessages.length === 0 && args.accumulated.trim().length === 0;
+      // completed steps and nothing the caller heard.
+      //
+      // It MUST read the same `heard` string that decides whether a message is
+      // written, not `accumulated`. A resume turn that generated text but
+      // played none writes no assistant message, so reading `accumulated` here
+      // would leave its synthetic prompt ("the user did not actually say
+      // anything…") standing unanswered directly ahead of the next real user
+      // turn — the two-contradictory-user-messages failure `dropTrailingUser`
+      // exists for.
+      const leftNoTrace = args.stepMessages.length === 0 && heard.trim().length === 0;
       persistInterruptedTurn({
         history,
-        accumulated: args.accumulated,
+        heard,
         persistedLen: args.persistedLen,
         stepMessages: args.stepMessages,
         updateAgentContext: (text) => providers.stt?.updateAgentContext?.(text),

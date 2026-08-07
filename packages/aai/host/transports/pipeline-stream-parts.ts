@@ -11,8 +11,8 @@ import { APICallError, RetryError } from "ai";
 import {
   DEAD_AIR_COVER_MAX_MS,
   DEAD_AIR_COVER_PHRASES,
+  DEAD_AIR_OPENING_PHRASE,
   DEFAULT_DEAD_AIR_COVER_MS,
-  DEFAULT_HOLD_PHRASE,
 } from "../../sdk/constants.ts";
 
 import { capToolResult, errorMessage, toArgsRecord } from "../../sdk/utils.ts";
@@ -35,8 +35,8 @@ export type StreamPart = {
 type StreamPartHandlerDeps = {
   /** Receives each assistant text delta (accumulated into the transcript). */
   onDelta: (delta: string) => void;
-  /** Forwards text to the active TTS session (no-op if none). */
-  sendTtsText: (text: string) => void;
+  /** Forwards text to the active TTS session (no-op if none), carrying `record`. */
+  sendTtsText: (text: string, record: boolean) => void;
   /**
    * A speech segment ended — see {@link TtsTextCoalescer.boundary}. Omitted when
    * `sendTtsText` does no batching, in which case there is nothing to release.
@@ -49,13 +49,12 @@ type StreamPartHandlerDeps = {
   /** Report an LLM-stream error. */
   emitError: EmitError;
   /**
-   * Spoken when the model's first action in a turn is a tool call with no
-   * preceding text — guarantees the caller hears something instead of dead
-   * air while the tool runs, even if the model skips the prompt's preamble.
-   * Defaults to {@link DEFAULT_HOLD_PHRASE}; set `""` to disable, which also
-   * disables the time-based dead-air cover ({@link DEAD_AIR_COVER_PHRASES}).
+   * How long the turn may send nothing to TTS before filler is spoken —
+   * {@link DEAD_AIR_OPENING_PHRASE} for the turn's opening gap,
+   * {@link DEAD_AIR_COVER_PHRASES} thereafter. Defaults to
+   * {@link DEFAULT_DEAD_AIR_COVER_MS}; `0` disables the cover outright.
    */
-  holdPhrase?: string | undefined;
+  deadAirCoverMs?: number | undefined;
   /**
    * The owning turn's abort signal. The dead-air cover is a real timer, and a
    * barge-in can abort the turn while a tool execution has the `fullStream`
@@ -73,7 +72,7 @@ type StreamPartHandlerDeps = {
    *
    * This is the case `interruptionMinDurationMs` deliberately leaves open: a
    * continuation too short to count as a barge-in does not cancel the reply, so
-   * without this check the hold phrase talks over it. Omitted by callers with no
+   * without this check the filler talks over it. Omitted by callers with no
    * speech tracking, which keeps the filler unconditional as before.
    */
   callerSpeaking?: (() => boolean) | undefined;
@@ -143,41 +142,43 @@ export type StreamPartHandler = {
  */
 export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPartHandler {
   const { onDelta, sendTtsText, onToolCall, onToolCallDone, emitError, signal, log, sid } = deps;
-  const holdPhrase = deps.holdPhrase ?? DEFAULT_HOLD_PHRASE;
+  const coverMs = deps.deadAirCoverMs ?? DEFAULT_DEAD_AIR_COVER_MS;
   const callerSpeaking = deps.callerSpeaking ?? ((): boolean => false);
   const ttsBoundary = deps.onTtsBoundary ?? ((): void => undefined);
   let pendingSeparator = false;
   let lastChar = "";
-  // Track whether the model has spoken any text this turn, and whether we've
-  // already injected the hold phrase — so it fires at most once, only when the
-  // turn opens with a tool call and no speech.
+  // Has the model spoken any text this turn? Set by the first `text-delta`,
+  // and what decides which filler fits the next gap (see the timer body).
   let spokeText = false;
   // An `error` part arrived — see StreamPartHandler.errored.
   let errored = false;
-  let holdEmitted = false;
   // Dead-air cover, tracked as two separate counts. `coverCount` is every filler
   // spoken this turn and drives the backoff; `coverPhraseCount` is only the
   // DEAD_AIR_COVER_PHRASES ones and picks the next phrase. Sharing one counter
-  // meant the hold phrase consumed a phrase slot, so the caller heard "One
-  // moment." and then skipped straight to "Just a moment longer.".
+  // meant the opening phrase consumed a phrase slot, so the caller heard the
+  // opening filler and then skipped straight to the second cover phrase.
   let coverCount = 0;
   let coverPhraseCount = 0;
-  const coverEnabled = holdPhrase.length > 0;
 
   /**
    * Send text to the caller.
    *
-   * `record: false` marks filler — the hold phrase and the dead-air cover. Those
-   * are timing artifacts, not dialogue: they exist so a tool chain doesn't sound
-   * like a dropped call. They still go to TTS (the caller hears them) and to the
-   * interim transcript built from what reaches TTS (the caption matches the
-   * audio), but they are kept out of `onDelta`, which accumulates the turn's
-   * text for the conversation history, `ctx.messages`, session resume, and the
-   * STT provider's agent-context hint.
+   * `record: false` marks filler — the opening phrase and the dead-air cover
+   * cycle. Those are timing artifacts, not dialogue: they exist so a tool chain
+   * doesn't sound like a dropped call. They still go to TTS (the caller hears
+   * them) and to the interim transcript built from what reaches TTS (the caption
+   * matches the audio), but they are kept out of `onDelta`, which accumulates the
+   * turn's text for the conversation history, `ctx.messages`, session resume, and
+   * the STT provider's agent-context hint.
    *
    * Recording them cost twice: context spent restating "Still working on that.
    * Just a moment longer." across every later turn, and a model shown its own
    * filler as an example of what its turns look like.
+   *
+   * The flag is load-bearing in a SECOND place now: it rides through to the TTS
+   * send, where the heard cursor uses it to decide which characters of what the
+   * caller heard may be truncated into history (`pipeline-heard.ts`). Filler is
+   * audible — so it moves the heard POSITION — and still never recorded.
    */
   function emitText(delta: string, record = true): void {
     if (delta.length === 0) return;
@@ -189,7 +190,7 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
     }
     lastChar = out.slice(-1);
     if (record) onDelta(out);
-    sendTtsText(out);
+    sendTtsText(out, record);
   }
 
   /**
@@ -211,21 +212,22 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
       return;
     }
     // Nothing has reached the caller yet, so this is the turn's OPENING gap
-    // rather than a gap between things the model said. The hold phrase is the
-    // filler that fits it — "I'm still checking on this." implies work already
-    // narrated, and is what the caller would otherwise hear as the very first
-    // words of the turn. Marks holdEmitted so the `tool-call` branch below
-    // cannot say it a second time.
-    const opening = !(spokeText || holdEmitted);
-    if (opening) holdEmitted = true;
-    let phrase = holdPhrase;
+    // rather than a gap between things the model said, and it needs its own
+    // phrase — the cycle opens with "I'm still checking on this.", which
+    // implies work already narrated and would be the very first words of the
+    // turn. `coverCount === 0` is the test rather than a flag of its own: only
+    // the FIRST filler of a turn can precede any speech.
+    const opening = !spokeText && coverCount === 0;
+    let phrase = DEAD_AIR_OPENING_PHRASE;
     if (!opening) {
       phrase = DEAD_AIR_COVER_PHRASES[coverPhraseCount % DEAD_AIR_COVER_PHRASES.length] ?? "";
       coverPhraseCount += 1;
     }
     // Counted either way: it drives the backoff, so an opening filler must
-    // still push the next one out (a hold phrase followed 5s later by "I'm
-    // still checking on this." is the stuck-loop cadence the backoff avoids).
+    // still push the next one out. Left uncounted, the next cover came one base
+    // window (2s, the base at the time) after the opening phrase — net of its
+    // own ~1.3s of audio, under a second of silence between two fillers, which
+    // reads as chatter at the very start of the wait.
     coverCount += 1;
     emitText(phrase, false);
     pendingSeparator = true;
@@ -238,10 +240,15 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
    * chain does not chatter — then flattens at {@link DEAD_AIR_COVER_MAX_MS} so a
    * long one keeps a steady heartbeat instead of drifting back into the silence
    * this exists to cover. See that constant for the measured cadence.
+   *
+   * The ceiling is `max(DEAD_AIR_COVER_MAX_MS, coverMs)` rather than the
+   * constant, because the base is now the author's: a `deadAirCoverMs` above
+   * 8000 would otherwise be clamped BELOW its own base, so an agent asking for
+   * one filler every 20s would get the first at 8s.
    */
   function armCover(): void {
-    if (!coverEnabled || signal?.aborted) return;
-    deadAir.arm(Math.min(DEFAULT_DEAD_AIR_COVER_MS * 2 ** coverCount, DEAD_AIR_COVER_MAX_MS));
+    if (coverMs <= 0 || signal?.aborted) return;
+    deadAir.arm(Math.min(coverMs * 2 ** coverCount, Math.max(DEAD_AIR_COVER_MAX_MS, coverMs)));
   }
 
   // Kill the armed cover the moment the turn aborts rather than at dispose(),
@@ -254,14 +261,14 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
   // timer itself, which left the window between the committed user turn and the
   // model's FIRST stream part uncovered — and unbounded. A slow first token, or
   // a long reasoning phase (which emits reasoning deltas and no text), is then
-  // pure dead air for however long it lasts, with `holdPhrase` waiting on a
-  // `tool-call` part that has not arrived yet. Measured on tau2-bench retail
-  // with gpt-5.5 through the gateway: 31.4s of silence after a committed user
-  // turn, ended only by the first tool call finally triggering the hold phrase,
-  // while the client kept streaming mic audio into a session that looked
-  // healthy from both ends. This handler is constructed as the turn's stream
-  // opens, and the first `text-delta` clears the timer, so a turn that answers
-  // promptly pays nothing.
+  // pure dead air for however long it lasts, while the only other filler
+  // mechanism waited on a `tool-call` part that had not arrived yet. Measured
+  // on tau2-bench retail with gpt-5.5 through the gateway: 31.4s of silence
+  // after a committed user turn, ended only by the first tool call finally
+  // triggering that filler, while the client kept streaming mic audio into a
+  // session that looked healthy from both ends. This handler is constructed as
+  // the turn's stream opens, and the first `text-delta` clears the timer, so a
+  // turn that answers promptly pays nothing.
   armCover();
 
   function dispose(): void {
@@ -303,22 +310,16 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
         ttsBoundary();
         return;
       case "tool-call": {
-        // Guarantee the caller hears a hold phrase if the model jumps straight
-        // to a tool call without speaking. Fire once per turn; separate it from
-        // the model's later reply so they don't fuse.
-        if (!(spokeText || holdEmitted) && holdPhrase.length > 0 && !callerSpeaking()) {
-          holdEmitted = true;
-          // Counted like any other filler. Left uncounted, the next cover was
-          // one base window (2s) after this phrase — net of its own ~1.3s of
-          // audio, under a second of silence between two fillers, which reads
-          // as chatter at the very start of the wait.
-          coverCount += 1;
-          emitText(holdPhrase, false);
-          pendingSeparator = true;
-        }
+        // A tool call speaks NO filler of its own. It used to: an immediate
+        // hold phrase on the structural bet that a turn opening with a tool
+        // call means silence is coming. That bet is paid on every such turn
+        // however fast the tool returns, and the case it covers is a strict
+        // subset of "nothing audible for `coverMs`" — which the window armed at
+        // construction already covers, and covers better. All this branch does
+        // now is re-open that window across the execution.
+        //
         // Belt-and-braces for a tool call not preceded by `text-end`: the
-        // execution window must never start with speech still buffered. Also
-        // releases the hold phrase just emitted above.
+        // execution window must never start with speech still buffered.
         ttsBoundary();
         // The execution window is open: from here until the model speaks
         // again, nothing reaches TTS on its own.

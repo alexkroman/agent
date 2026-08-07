@@ -28,6 +28,11 @@
  * audio:<base64 PCM16 LE>}` frames and ends the turn with `FlushDone` (or an
  * `Audio` frame flagged `is_final`). `Warning` frames are informational;
  * `Error` frames carry `error_code` + `error`. `Terminate` closes cleanly.
+ * `WordBoundaries` frames carry per-word audio offsets; they are parsed and
+ * re-emitted as the `words` TtsEvent (see `assemblyai-words.ts`, which owns the
+ * tolerant parse and the rebase onto the turn's timeline). They are NOT
+ * acknowledgements — routing one into the turn tracker would end the reply
+ * mid-synthesis.
  *
  * **Flush is what starts synthesis, so this adapter flushes per sentence.**
  * `Generate` only buffers: measured against production, a turn's Generate
@@ -36,7 +41,7 @@
  * (`flushTtsAndWait`, once per reply — after every LLM step *and* every tool
  * call), so relaying deltas verbatim makes time-to-first-audio the length of
  * the entire turn: a tool-chaining reply is total silence for its whole
- * duration, with `holdPhrase` and the dead-air cover mute too, since they are
+ * duration, with the dead-air cover mute too, since it is
  * just more buffered text. Cartesia has no equivalent — `continue: true`
  * synthesizes on arrival — so this is the adapter's job, not the pipeline's.
  *
@@ -120,6 +125,7 @@ import {
 } from "../_utils.ts";
 import { splitSegment } from "./assemblyai-segment.ts";
 import { createTurnTracker, type SynthesisAck } from "./assemblyai-turn.ts";
+import { createWordTimeline, readWordBoundaries } from "./assemblyai-words.ts";
 
 export interface AssemblyAITtsSession extends TtsSession {
   /** @internal Test-only: exposes the underlying raw WebSocket. */
@@ -127,9 +133,11 @@ export interface AssemblyAITtsSession extends TtsSession {
 }
 
 interface AssemblyAITtsMessage {
-  type: "Begin" | "Audio" | "FlushDone" | "Warning" | "Error" | string;
+  type: "Begin" | "Audio" | "FlushDone" | "Warning" | "Error" | "WordBoundaries" | string;
   /** Base64 PCM16 LE payload on `Audio` frames. */
   audio?: string;
+  /** Word timings on `WordBoundaries` frames — shape read defensively. */
+  words?: unknown;
   /** Set on the last `Audio` frame of a synthesis by some server versions. */
   is_final?: boolean;
   error?: string;
@@ -183,6 +191,7 @@ function handleMessage(
   emitter: Emitter<TtsEvents>,
   onSynthesisComplete: (ack: SynthesisAck) => void,
   streamError: (message: string) => void,
+  onWords: (msg: AssemblyAITtsMessage) => void,
 ): void {
   const msg = safeJsonParse(typeof raw === "string" ? raw : raw.toString()) as
     | AssemblyAITtsMessage
@@ -201,6 +210,10 @@ function handleMessage(
     }
     case "FlushDone":
       onSynthesisComplete("flush_done");
+      return;
+    case "WordBoundaries":
+      // Deliberately NOT an acknowledgement — see the module doc.
+      onWords(msg);
       return;
     case "Error":
       streamError(`AssemblyAI TTS ${errorDetail(msg)}`);
@@ -283,10 +296,20 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
 
       const onSynthesisComplete = (ack: SynthesisAck): void => turn.onAck(ack);
 
+      // Word timings, rebased onto the turn's own audio timeline. A frame that
+      // lands once the turn is over belongs to no reply — dropping it is what
+      // keeps a late frame from being attributed to the next one.
+      const timeline = createWordTimeline();
+      const onWords = (msg: AssemblyAITtsMessage): void => {
+        if (!turn.inFlight()) return;
+        const words = timeline.rebase(readWordBoundaries(msg));
+        if (words.length > 0) emitter.emit("words", words);
+      };
+
       const attach = (socket: WebSocket): void => {
         socket.on("message", (raw: WebSocket.Data) => {
           if (shell.isClosed()) return;
-          handleMessage(raw, emitter, onSynthesisComplete, shell.streamError);
+          handleMessage(raw, emitter, onSynthesisComplete, shell.streamError, onWords);
         });
         socket.on("error", (err: Error) => shell.onSocketError(err));
         socket.on("close", (code: number) => {
@@ -361,14 +384,17 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
       const session: AssemblyAITtsSession = {
         sendText(text: string) {
           if (text.length === 0 || shell.isClosed()) return;
-          // First text of a new turn — nothing from the last one carries over.
+          // First text of a new turn — nothing from the last one carries over,
+          // the word timeline included (it re-anchors this turn's first frame
+          // at zero).
+          if (!turn.inFlight()) timeline.reset();
           turn.onTurnText();
           buffered += text;
           // Synthesize each segment as it lands rather than waiting for the end
           // of the turn — see the module doc. Loops because one delta can carry
           // more than one segment's worth: the budget split takes ~40 chars at a
-          // time, so a burst (a whole buffered sentence, a hold phrase arriving
-          // with the reply's opening) would otherwise dribble out one segment per
+          // time, so a burst (a whole buffered sentence, a cover phrase arriving
+          // alongside the reply's opening) would otherwise dribble out one segment per
           // later delta and stall completely if no delta followed.
           for (let split = splitSegment(buffered); split; split = splitSegment(buffered)) {
             buffered = split.tail;
@@ -401,6 +427,7 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
           // `done` is emitted synchronously — the orchestrator's state machine
           // advances on it, and barge-in must not be microtask-deferred.
           buffered = "";
+          timeline.reset();
           const turnInFlight = turn.cancel();
           // Idempotent: nothing sent since the last done means nothing is
           // buffered server-side and no audio is in flight.

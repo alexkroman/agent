@@ -10,7 +10,10 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { ANTHROPIC_KIND } from "../../sdk/providers/llm/anthropic.ts";
-import { ASSEMBLYAI_LLM_KIND } from "../../sdk/providers/llm/assemblyai.ts";
+import {
+  ASSEMBLYAI_LLM_DEFAULT_MODEL,
+  ASSEMBLYAI_LLM_KIND,
+} from "../../sdk/providers/llm/assemblyai.ts";
 import { GATEWAY_KIND } from "../../sdk/providers/llm/gateway.ts";
 import { GOOGLE_KIND } from "../../sdk/providers/llm/google.ts";
 import { GROQ_KIND } from "../../sdk/providers/llm/groq.ts";
@@ -162,12 +165,12 @@ describe("resolveLlm", () => {
       expect(model).toHaveProperty("specificationVersion");
     });
 
-    it("defaults to gpt-5.5 when the descriptor names no model", () => {
+    it("defaults to gpt-5.6-terra when the descriptor names no model", () => {
       const model = resolveLlm(
         { kind: ASSEMBLYAI_LLM_KIND, options: {} },
         { ASSEMBLYAI_API_KEY: "fake-key" },
       );
-      expect(model).toMatchObject({ modelId: "gpt-5.5" });
+      expect(model).toMatchObject({ modelId: ASSEMBLYAI_LLM_DEFAULT_MODEL });
     });
 
     // `reasoningEffort` is forwarded as `reasoning_effort` only when the
@@ -222,7 +225,12 @@ describe("resolveLlm", () => {
 
     it("still defaults the model id for a descriptor that names none", async () => {
       const parsed = JSON.parse(await requestBodyFor({})) as Record<string, unknown>;
-      expect(parsed).toMatchObject({ model: "gpt-5.5" });
+      expect(parsed).toMatchObject({ model: ASSEMBLYAI_LLM_DEFAULT_MODEL });
+      // Raw descriptor, so the factory's per-model fill never ran: the
+      // resolver defaults the id and nothing else, even though this id is in
+      // TOOLS_REQUIRE_NO_REASONING. Every real path builds the descriptor
+      // through `assemblyAILlm()`, which is where the `"none"` comes from.
+      expect(parsed).not.toHaveProperty("reasoning_effort");
     });
 
     it('turns reasoning off when the descriptor sets reasoningEffort: "none"', async () => {

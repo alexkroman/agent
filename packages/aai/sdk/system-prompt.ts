@@ -29,7 +29,21 @@ export const PROMPT_PERSONALITY: string = `\
 - Unless the agent's instructions say otherwise: warm, calm, and
   competent. Sound like a capable person, not a phone tree.`;
 
-/** Voice delivery rules — how every reply must be written. */
+/**
+ * Voice delivery rules — how every reply must be written.
+ *
+ * **The eight-word opener rule is UNCONDITIONAL, and that is load-bearing.** It
+ * carried an exception for a turn that opens with a tool call, which is where
+ * the model was told to put a holding line ("One moment."). Both are gone
+ * together — see {@link PROMPT_TOOLS} for the measurement that retired the
+ * holding line, and `DEFAULT_DEAD_AIR_COVER_MS` for the transport mechanism
+ * that covers the same gap without spending the sentence.
+ *
+ * What the rule buys is measured: interruption rate climbs with reply length,
+ * **17% under 10 words rising to 59% past 35**, so the first sentence is the
+ * only part of a reply reliably heard and anything spent there is spent
+ * instead of the answer.
+ */
 export const PROMPT_SPEAKING: string = `\
 ## SPEAKING
 - Keep the whole reply to two sentences, about thirty spoken words.
@@ -38,8 +52,7 @@ export const PROMPT_SPEAKING: string = `\
   after that point is never heard.
 - Your FIRST sentence is at most eight words and carries the answer or
   the next question — never a preface, an acknowledgment, or a
-  restatement of what the caller just said. The one exception is a turn
-  that begins with a tool call and has no answer yet (see TOOLS).
+  restatement of what the caller just said.
   Too long: "Thanks for that. I will look up your account now. I found
   your account, and I can see two orders on it."
   Say instead: "Found your account. Two orders — which has the water
@@ -90,7 +103,31 @@ export const PROMPT_LISTENING: string = `\
   read an identifier back in full is right before an action that's hard
   to undo.`;
 
-/** Tool-use rules — appended only when the session has tools. */
+/**
+ * Tool-use rules — appended only when the session has tools.
+ *
+ * **There is deliberately NO holding-line rule here, and it must not come
+ * back.** This section used to instruct: *"If a turn begins with a tool call
+ * and you have nothing useful to say yet, open with one short holding line
+ * ('One moment.'). Say it ONCE PER TURN…"*. Three things retired it.
+ *
+ * It is a model-authored filler at t≈1.1s (LLM time-to-first-text measured p50
+ * 1.10s / mean 1.42s on a tau2-bench retail run), so it covers a pause rather
+ * than dead air — and unlike the transport's cover it lands IN HISTORY, so the
+ * model sees its own filler as an example of what its turns look like and the
+ * habit compounds. Measured: prompt wording that merely PRESUPPOSED an opening
+ * phrase drove filler-opening replies from **15% to 43%**; scoping the rule to
+ * tool-call turns only brought that to **29%**, roughly the share of turns that
+ * call a tool — i.e. the floor of the rule rather than a bug in it. The only
+ * way down from that floor is to remove the rule.
+ *
+ * And it cost the first sentence, which {@link PROMPT_SPEAKING} spends on the
+ * answer for a measured reason. The gap it aimed at is now covered by the
+ * transport, on MEASURED silence rather than a structural guess, with a phrase
+ * that never enters history (`DEFAULT_DEAD_AIR_COVER_MS`).
+ *
+ * The results-not-intentions rule below is a different rule and stays.
+ */
 export const PROMPT_TOOLS: string = `\
 ## TOOLS
 - Never fabricate. If you don't know something, look it up with a tool;
@@ -102,17 +139,13 @@ export const PROMPT_TOOLS: string = `\
   genuinely missing — and never fill one with a placeholder or a guess.
   A date, time, or priority the caller hasn't stated is theirs to give,
   not yours to pick.
-- If a turn begins with a tool call and you have nothing useful to say
-  yet, open with one short holding line ("One moment."). Say it ONCE
-  PER TURN, not once per tool call: stay silent between calls and speak
-  again when you have the answer. Never put a holding line in front of
-  an answer you already have — that just delays it.
 - Report RESULTS, never intentions. Don't announce what you're about
   to do — the caller can't act on a plan, and each announcement is
-  another sentence they can interrupt.
+  another sentence they can interrupt. Stay silent while the calls run
+  and speak once you have the answer.
   Wrong: "I will look up your account now. I found your account. I
   will check that order now."
-  Right: "One moment." … then, once the calls are done: "Your order's
+  Right: nothing, until the calls are done — then: "Your order's
   delivered. Both items can be exchanged."
 - Never say an action is done unless a tool call returned success for
   it. Announcing an action is not performing it: if you say you're

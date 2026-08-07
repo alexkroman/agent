@@ -57,8 +57,15 @@ describe("createSpeechEdgeTracker", () => {
   });
 
   test("continued partials restart the watchdog instead of letting it fire mid-utterance", async () => {
+    // This is the SINGLE home of the not-resumed-over property. The recovery
+    // latch has no deadline of its own, so a user who barges in and keeps
+    // talking is held off by exactly one mechanism: every partial restarts
+    // this watchdog, and only the watchdog fires `onIdle`. (It used to be two
+    // mechanisms writing the same rule twice — the recovery window re-armed on
+    // continued partials as well, and never governed the wait.)
     const cb = makeEdgeCallbacks();
-    const t = createSpeechEdgeTracker(cb, { idleTimeoutMs: 50 });
+    const onIdle = vi.fn();
+    const t = createSpeechEdgeTracker(cb, { idleTimeoutMs: 50, onIdle });
 
     t.speechStarted();
     // Keep "speaking" across more than one watchdog window.
@@ -68,6 +75,13 @@ describe("createSpeechEdgeTracker", () => {
     }
     expect(cb.onSpeechStopped).not.toHaveBeenCalled();
     expect(cb.onSpeechStarted).toHaveBeenCalledTimes(1);
+    // ...and no resume could have fired over them.
+    expect(onIdle).not.toHaveBeenCalled();
+
+    // Once they stop, it does.
+    await vi.waitFor(() => {
+      expect(onIdle).toHaveBeenCalledTimes(1);
+    });
   });
 
   test("idleTimeoutMs 0 disables the watchdog", async () => {
@@ -111,6 +125,8 @@ function makeActivity(overrides: Partial<ActivityDeps> = {}): {
   const deps: ActivityDeps = {
     log: silentLogger,
     sid: "t",
+    // Preemption is off in every spec here; the transport passes a real one.
+    speculation: { onPartial: vi.fn(), onFinal: vi.fn(), onUtteranceIdle: vi.fn() },
     callbacks: {
       onCancelled: () => {
         calls.cancelled++;
@@ -122,10 +138,10 @@ function makeActivity(overrides: Partial<ActivityDeps> = {}): {
     },
     silenceTimeoutMs: undefined,
     silencePrompt: undefined,
-    falseInterruptionTimeoutMs: 20,
-    // The resume is deferred until the speaking edge closes, so the watchdog is
-    // what releases it — short here, since a barge-in opens the edge and these
-    // specs never commit the final that would close it.
+    resumeFalseInterruption: true,
+    // The watchdog IS the resume: an armed latch fires when the speaking edge
+    // goes idle. Short here, since a barge-in opens the edge and these specs
+    // never commit the final that would close it.
     speechIdleTimeoutMs: 40,
     minBargeInWords: 2,
     interruptionMinDurationMs: 0,
@@ -223,5 +239,72 @@ describe("resume mooted by a committed user turn", () => {
     // Aborted via the agentIsSpeaking() barge-in path (>= minBargeInWords).
     expect(calls.aborts).toBe(1);
     expect(calls.chained).toEqual([{ text: "what about tuesday", isResume: false }]);
+  });
+});
+
+// ─── The latch has no self-expiry ──────────────────────────────────────────
+//
+// A recovery window used to expire on its own, so a stale one was harmless.
+// The latch waits for the next close of the speaking edge instead, which makes
+// "every path that closes the edge either consumes or clears it" a real
+// invariant rather than a description. These pin the three that exist today; a
+// future path that closes the edge through none of them would fire a resume
+// against an unrelated later utterance.
+describe("no path leaves a stale resume armed", () => {
+  /** Drive a later, unrelated noise utterance to its idle close. */
+  async function laterUtteranceGoesIdle(
+    activity: ReturnType<typeof createUserActivity>,
+  ): Promise<void> {
+    activity.sttEvents.onSttPartial("some later noise");
+    await sleep(80);
+  }
+
+  const resumes = (calls: { chained: { isResume: boolean }[] }): number =>
+    calls.chained.filter((c) => c.isResume).length;
+
+  test("a committed final consumes the latch armed by the barge-in", async () => {
+    const { activity, calls } = makeActivity();
+    activity.sttEvents.onSttPartial("stop right there");
+    expect(calls.aborts).toBe(1);
+
+    // The barge-in was genuine after all: the final commits.
+    activity.sttEvents.onSttFinal("stop right there, cancel it.");
+    await laterUtteranceGoesIdle(activity);
+    expect(resumes(calls)).toBe(0);
+  });
+
+  test("the reset teardown leaves nothing armed", async () => {
+    // The sequence pipeline-transport.ts's reset() runs.
+    const { activity, calls } = makeActivity();
+    activity.sttEvents.onSttPartial("stop right there");
+    activity.recovery.onUserTurn();
+    activity.speechEdges.reset();
+
+    await laterUtteranceGoesIdle(activity);
+    expect(resumes(calls)).toBe(0);
+  });
+
+  test("the stop/terminate/cancelReply teardown leaves nothing armed", async () => {
+    // The sequence pipeline-transport.ts's stop(), terminate() and
+    // cancelReply() all run (the first two also reset the edges).
+    const { activity, calls } = makeActivity();
+    activity.sttEvents.onSttPartial("stop right there");
+    activity.recovery.clear();
+    activity.speechEdges.reset();
+
+    await laterUtteranceGoesIdle(activity);
+    expect(resumes(calls)).toBe(0);
+  });
+
+  test("but a barge-in nobody resolved DOES resume — the control", async () => {
+    // Without this the three above pass on a latch that never arms.
+    const { activity, calls } = makeActivity();
+    activity.sttEvents.onSttPartial("stop right there");
+    await vi.waitFor(() => {
+      expect(resumes(calls)).toBe(1);
+    });
+    // ...and exactly once: the released latch is not still armed.
+    await laterUtteranceGoesIdle(activity);
+    expect(resumes(calls)).toBe(1);
   });
 });

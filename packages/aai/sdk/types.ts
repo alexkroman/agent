@@ -3,6 +3,7 @@
  * Core type definitions for the AAI agent SDK.
  */
 
+import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
 import type { Db } from "./db.ts";
 import type { GenerateFn } from "./generate.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
@@ -273,6 +274,7 @@ export type InferToolOutput<T extends ToolDef<ToolInputSchema, DefaultSessionSta
 export type InferAgentState<A> = A extends AgentDef<infer S> ? S : never;
 
 export { DEFAULT_GREETING } from "./agent-defaults.ts";
+export type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
 export { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
 
 /**
@@ -283,9 +285,14 @@ export { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
  * (`sttPrompt`, the tuning knobs, the provider descriptors, etc.) remain
  * optional — `undefined` means "not configured."
  *
+ * The pipeline-only voice-UX knobs live on {@link PipelineVoiceTuning}, which
+ * this extends: they share one rule (pipeline transport or nothing), and
+ * `define.ts`/`config-rules.ts` derive their field lists from that interface so
+ * a new one cannot skip either gate.
+ *
  * @public
  */
-export type AgentDef<S = DefaultSessionState> = {
+export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
   /** Display name shown by the default client UI. */
   name: string;
   /**
@@ -314,7 +321,7 @@ export type AgentDef<S = DefaultSessionState> = {
   sttPrompt?: string;
   /**
    * Max TOOL-CALLING steps per reply — bounds runaway tool loops. Defaults to
-   * {@link DEFAULT_MAX_STEPS} (3). On reaching the cap the pipeline spends one
+   * {@link DEFAULT_MAX_STEPS} (10). On reaching the cap the pipeline spends one
    * more step with `toolChoice: "none"`, so a capped turn still answers rather
    * than stopping mid-chain in silence.
    */
@@ -404,52 +411,6 @@ export type AgentDef<S = DefaultSessionState> = {
    */
   silencePrompt?: string;
   /**
-   * Pipeline mode only. Minimum words in an interim transcript before user
-   * speech barges in on (aborts) the agent's in-flight reply. Defaults to
-   * {@link DEFAULT_MIN_BARGE_IN_WORDS} (2) so one-word backchannels ("yeah",
-   * "mm-hmm") don't cut the agent off; set 1 to interrupt on any word.
-   */
-  minBargeInWords?: number;
-  /**
-   * Pipeline mode only. Minimum sustained speech (ms since the utterance's
-   * first interim transcript) before an interim-triggered barge-in aborts the
-   * agent's reply — a duration gate alongside `minBargeInWords`, mirroring
-   * LiveKit's `min_interruption_duration`. Committed turns (STT finals) are
-   * never gated. Defaults to {@link DEFAULT_INTERRUPTION_MIN_DURATION_MS}
-   * (500); set 0 to disable the gate.
-   */
-  interruptionMinDurationMs?: number;
-  /**
-   * Pipeline mode only. Phrase spoken when the model's first action in a
-   * turn is a tool call with no preceding speech, so the caller never hears
-   * dead air. Defaults to `"One moment."`; set `""` to disable.
-   */
-  holdPhrase?: string;
-  /**
-   * Pipeline mode only. Phrase spoken when the turn's LLM stream fails, so a
-   * provider outage hands the conversation back instead of going silent — a
-   * failed turn produces no text, so nothing would otherwise reach TTS.
-   * Defaults to {@link DEFAULT_ERROR_PHRASE}; set `""` to disable.
-   */
-  errorPhrase?: string;
-  /**
-   * Pipeline mode only. Phrase spoken when a provider fails to open, so a
-   * session that cannot start says so instead of holding an open line in
-   * silence. Only reachable when TTS itself came up — which is the usual case,
-   * since STT and TTS open independently. Defaults to
-   * {@link DEFAULT_START_FAILURE_PHRASE}; set `""` to disable.
-   */
-  startFailurePhrase?: string;
-  /**
-   * Pipeline mode only. False-interruption recovery window (ms): when a
-   * barge-in aborts the agent's reply but no user turn commits within this
-   * window (STT noise, hallucinated partial), the agent resumes the
-   * interrupted reply. Defaults to
-   * {@link DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS} (2000); 0 disables
-   * recovery.
-   */
-  falseInterruptionTimeoutMs?: number;
-  /**
    * Pluggable STT provider for pipeline mode. Unset (with no `s2s`), the
    * stage defaults to AssemblyAI STT — each pipeline stage is individually
    * optional, and unset stages are filled from the all-AssemblyAI pipeline
@@ -488,7 +449,7 @@ export type AgentDef<S = DefaultSessionState> = {
    * tool call.
    */
   requiredEnv?: readonly string[];
-};
+}
 
 // ─── Zod schemas ────────────────────────────────────────────────────────────
 

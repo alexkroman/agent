@@ -270,7 +270,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     onReplyStarted(replyId) {
       // A turn beginning is progress, and a tool-chaining turn can run for a
       // while before any audio: without this the agent could be reaped
-      // mid-work when `holdPhrase`/dead-air cover are disabled.
+      // mid-work when the dead-air cover is disabled (`deadAirCoverMs: 0`).
       resetIdle();
       // stop() aborts the current reply and then awaits transport.stop() — an
       // async drain during which the transport can still dispatch a trailing

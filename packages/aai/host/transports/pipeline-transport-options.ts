@@ -8,9 +8,8 @@
 import type { LanguageModel } from "ai";
 import type { ExecuteTool, ToolSchema } from "../../sdk/_internal-types.ts";
 import {
+  DEFAULT_DEAD_AIR_COVER_MS,
   DEFAULT_ERROR_PHRASE,
-  DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS,
-  DEFAULT_HOLD_PHRASE,
   DEFAULT_INTERRUPTION_MIN_DURATION_MS,
   DEFAULT_MAX_STEPS,
   DEFAULT_MIN_BARGE_IN_WORDS,
@@ -19,6 +18,7 @@ import {
   DEFAULT_STT_SAMPLE_RATE,
   DEFAULT_TOOL_CHOICE,
   DEFAULT_TTS_SAMPLE_RATE,
+  HEARD_AUDIO_LAG_MS,
 } from "../../sdk/constants.ts";
 import type { SttOpener, TtsOpener } from "../../sdk/providers.ts";
 import type { ToolChoice } from "../../sdk/types.ts";
@@ -74,10 +74,11 @@ export interface PipelineTransportOptions {
    */
   interruptionMinDurationMs?: number | undefined;
   /**
-   * Phrase spoken when the model's first action in a turn is a tool call with
-   * no preceding speech. Defaults to DEFAULT_HOLD_PHRASE; `""` disables.
+   * How long a turn may send nothing to TTS before the transport speaks a short
+   * filler. Defaults to {@link DEFAULT_DEAD_AIR_COVER_MS}; `0` disables the
+   * cover outright. The phrases are not configurable — see that constant.
    */
-  holdPhrase?: string | undefined;
+  deadAirCoverMs?: number | undefined;
   /**
    * Phrase spoken when the turn's LLM stream fails. Defaults to
    * `DEFAULT_ERROR_PHRASE`; `""` disables.
@@ -89,19 +90,31 @@ export interface PipelineTransportOptions {
    */
   startFailurePhrase?: string | undefined;
   /**
-   * False-interruption recovery window (ms): when a barge-in aborts the
-   * in-flight reply but no user turn commits within this window, the agent
-   * resumes the interrupted reply via a synthetic continuation turn.
-   * Defaults to DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS; 0 disables.
+   * Resume the interrupted reply via a synthetic continuation turn when a
+   * barge-in aborts it and no user turn ever commits (STT noise, a
+   * hallucinated partial). Defaults to true. The WAIT is not configurable
+   * here: it is the speaking edge going idle — see `speechIdleTimeoutMs`.
    */
-  falseInterruptionTimeoutMs?: number | undefined;
+  resumeFalseInterruption?: boolean | undefined;
+  /**
+   * Start generating the reply from a high-confidence STT interim and adopt
+   * that stream when the committed final matches. Defaults to `true`;
+   * `false` disables speculation entirely.
+   *
+   * STILL UNMEASURED here — see `AgentDef.preemptiveGeneration` for the two
+   * logs that would quantify what it saves, and for what the two structural
+   * guardrails make impossible regardless. Inert unless `toolChoice` is
+   * `"auto"` or `"none"`: a pinned or required tool means every speculation
+   * ends at the tool boundary and is discarded whole, so it would be pure cost.
+   */
+  preemptiveGeneration?: boolean | undefined;
   /**
    * How long after the last STT partial to force `speech_stopped` when no
-   * non-empty final ever arrives. Also the release for a deferred
-   * false-interruption resume, so it bounds recovery latency — see
-   * {@link DEFAULT_SPEECH_IDLE_TIMEOUT_MS}, which it defaults to. Exposed for
-   * tests, which need a window shorter than the shipped one; 0 disables the
-   * watchdog (and with it deferred-resume release).
+   * non-empty final ever arrives — and, because that is the signal a false
+   * interruption is recognised by, the false-interruption resume deadline
+   * itself. See {@link DEFAULT_SPEECH_IDLE_TIMEOUT_MS}, which it defaults to.
+   * Exposed for tests, which need a window shorter than the shipped one; 0
+   * disables the watchdog, and with it recovery outright.
    */
   speechIdleTimeoutMs?: number | undefined;
   /**
@@ -115,6 +128,24 @@ export interface PipelineTransportOptions {
   logger?: Logger | undefined;
   /** Skip the initial greeting (used for session resume). */
   skipGreeting?: boolean | undefined;
+  /**
+   * How far behind the server's "audio forwarded" bookkeeping the caller's ear
+   * is, in ms — subtracted from the estimated playback position to get the
+   * heard cursor. Defaults to {@link HEARD_AUDIO_LAG_MS}.
+   *
+   * Transport-only and NOT an agent field (same precedent as
+   * `speechIdleTimeoutMs`): it exists for testability. Specs run in
+   * milliseconds of wall clock, where the shipped 750 makes every interrupted
+   * reply the "heard nothing" case, so a spec about PARTIAL truncation cannot
+   * be written without lowering it.
+   */
+  heardLagMs?: number | undefined;
+  /**
+   * Clock source for the heard cursor and the playback estimate. Defaults to
+   * `Date.now`. Test-only seam: a spec that wants "the caller heard 1.2
+   * seconds" would otherwise have to sleep for 1.2 real seconds.
+   */
+  heardNow?: (() => number) | undefined;
   /** Take an unprompted turn after this many ms of user silence. Unset/non-positive disables. */
   silenceTimeoutMs?: number | undefined;
   /** Instruction injected on silence timeout. Defaults to DEFAULT_SILENCE_PROMPT. */
@@ -134,10 +165,12 @@ export interface ResolvedPipelineOptions {
   maxSteps: number;
   minBargeInWords: number;
   interruptionMinDurationMs: number;
-  holdPhrase: string;
+  deadAirCoverMs: number;
+  heardLagMs: number;
   errorPhrase: string;
   startFailurePhrase: string;
-  falseInterruptionTimeoutMs: number;
+  resumeFalseInterruption: boolean;
+  preemptiveGeneration: boolean;
   speechIdleTimeoutMs: number;
   toolChoice: ToolChoice;
   toolSchemas: readonly ToolSchema[];
@@ -154,11 +187,12 @@ export function resolvePipelineOptions(opts: PipelineTransportOptions): Resolved
     minBargeInWords: opts.minBargeInWords ?? DEFAULT_MIN_BARGE_IN_WORDS,
     interruptionMinDurationMs:
       opts.interruptionMinDurationMs ?? DEFAULT_INTERRUPTION_MIN_DURATION_MS,
-    holdPhrase: opts.holdPhrase ?? DEFAULT_HOLD_PHRASE,
+    deadAirCoverMs: opts.deadAirCoverMs ?? DEFAULT_DEAD_AIR_COVER_MS,
+    heardLagMs: opts.heardLagMs ?? HEARD_AUDIO_LAG_MS,
     errorPhrase: opts.errorPhrase ?? DEFAULT_ERROR_PHRASE,
     startFailurePhrase: opts.startFailurePhrase ?? DEFAULT_START_FAILURE_PHRASE,
-    falseInterruptionTimeoutMs:
-      opts.falseInterruptionTimeoutMs ?? DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS,
+    resumeFalseInterruption: opts.resumeFalseInterruption ?? true,
+    preemptiveGeneration: opts.preemptiveGeneration ?? true,
     speechIdleTimeoutMs: opts.speechIdleTimeoutMs ?? DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
     toolChoice: opts.toolChoice ?? DEFAULT_TOOL_CHOICE,
     toolSchemas: opts.toolSchemas ?? [],

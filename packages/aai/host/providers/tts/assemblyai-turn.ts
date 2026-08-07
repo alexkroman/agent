@@ -52,6 +52,13 @@ export interface TurnTracker {
   cancel(): boolean;
   /** Unexpected server-side close: release the turn unconditionally. */
   forceDone(): void;
+  /**
+   * Is a turn still open (text arrived, `done` not yet emitted)? The same fact
+   * {@link cancel} returns, exposed as a query so the adapter can DROP a frame
+   * that arrives once the turn is over — a late `WordBoundaries` would
+   * otherwise be attributed to the next reply.
+   */
+  inFlight(): boolean;
 }
 
 /**
@@ -124,5 +131,9 @@ export function createTurnTracker(emitDone: () => void): TurnTracker {
     },
 
     forceDone: emitDoneOnce,
+
+    inFlight(): boolean {
+      return !doneEmitted;
+    },
   };
 }

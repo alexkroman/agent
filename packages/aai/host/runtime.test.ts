@@ -565,16 +565,17 @@ describe("createRuntime — provider resolution seams", () => {
   };
 
   test.each([
-    ["holdPhrase", { holdPhrase: "One moment." }],
+    ["deadAirCoverMs", { deadAirCoverMs: 2500 }],
     ["minBargeInWords", { minBargeInWords: 3 }],
     ["interruptionMinDurationMs", { interruptionMinDurationMs: 200 }],
-    ["falseInterruptionTimeoutMs", { falseInterruptionTimeoutMs: 1500 }],
+    ["resumeFalseInterruption", { resumeFalseInterruption: false }],
   ])("accepts %s when the providers arrive as runtime options", (_name, tuning) => {
     // The platform strips stt/llm/tts off
     // the agent object and passes them as options, so validating the agent's
     // own fields resolved mode "s2s" and rejected every pipeline tuning knob —
-    // a deployed pipeline agent with `holdPhrase` failed at session start with
-    // "holdPhrase requires pipeline mode (stt, llm, and tts all set)" while
+    // a deployed pipeline agent with a tuning knob (`holdPhrase`, at the time)
+    // failed at session start with "holdPhrase requires pipeline mode (stt,
+    // llm, and tts all set)" while
     // `aai dev`, which does hand over the descriptors, worked fine.
     expect(() =>
       createRuntime({
@@ -660,9 +661,9 @@ describe("createRuntime — provider resolution seams", () => {
     // The assertion must keep firing where it is right: an explicit S2S agent.
     expect(() =>
       createRuntime({
-        agent: { ...baseAgent, s2s: assemblyAIS2s(), holdPhrase: "One moment." },
+        agent: { ...baseAgent, s2s: assemblyAIS2s(), deadAirCoverMs: 2500 },
         env: PROVIDER_KEYS,
       }),
-    ).toThrow(/holdPhrase requires pipeline mode/);
+    ).toThrow(/deadAirCoverMs requires pipeline mode/);
   });
 });

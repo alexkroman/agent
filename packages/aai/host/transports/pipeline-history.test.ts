@@ -4,7 +4,7 @@ import type { ModelMessage } from "ai";
 import { describe, expect, test } from "vitest";
 import { DEFAULT_MAX_HISTORY } from "../../sdk/constants.ts";
 import type { Message } from "../../sdk/types.ts";
-import { createPipelineHistory } from "./pipeline-history.ts";
+import { createPipelineHistory, persistInterruptedTurn } from "./pipeline-history.ts";
 
 describe("createPipelineHistory", () => {
   test("starts empty when unseeded", () => {
@@ -306,5 +306,80 @@ describe("createPipelineHistory — dropTrailingUser", () => {
     h.dropTrailingUser("RESUME_PROMPT");
     expect(h.conversation).toEqual([]);
     expect(h.llm).toEqual([]);
+  });
+});
+
+describe("persistInterruptedTurn — the record is what was HEARD", () => {
+  function setup(): {
+    history: ReturnType<typeof createPipelineHistory>;
+    agentContext: string[];
+  } {
+    const agentContext: string[] = [];
+    return { history: createPipelineHistory(), agentContext };
+  }
+
+  test("writes the heard prefix, marked [interrupted]", () => {
+    const { history, agentContext } = setup();
+    persistInterruptedTurn({
+      history,
+      heard: "Your balance is",
+      persistedLen: 0,
+      stepMessages: [],
+      updateAgentContext: (t) => agentContext.push(t),
+    });
+    expect(history.conversation).toEqual([
+      { role: "assistant", content: "Your balance is [interrupted]" },
+    ]);
+    expect(history.llm).toEqual([{ role: "assistant", content: "Your balance is [interrupted]" }]);
+    // The STT bias hint is the agent's own voice echoing back, so it gets what
+    // was in the air rather than what the model generated.
+    expect(agentContext).toEqual(["Your balance is"]);
+  });
+
+  test("writes NOTHING to either view when the caller heard none of it", () => {
+    const { history, agentContext } = setup();
+    persistInterruptedTurn({
+      history,
+      heard: "",
+      persistedLen: 0,
+      stepMessages: [],
+      updateAgentContext: (t) => agentContext.push(t),
+    });
+    expect(history.conversation).toEqual([]);
+    expect(history.llm).toEqual([]);
+    expect(agentContext).toEqual([]);
+  });
+
+  test("still pushes the completed tool steps when nothing was heard", () => {
+    // A turn whose tools ran left a real trace even if the caller heard no
+    // words; dropping the steps makes the next turn re-call them.
+    const { history } = setup();
+    persistInterruptedTurn({
+      history,
+      heard: "",
+      persistedLen: 0,
+      stepMessages: [toolCallMsg("c1"), toolResultMsg("c1")],
+      updateAgentContext: () => undefined,
+    });
+    expect(history.llm).toHaveLength(2);
+    expect(history.conversation).toEqual([]);
+  });
+
+  test("a persistedLen past the heard prefix produces no LLM tail, not a bad slice", () => {
+    // `persistedLen` indexes the GENERATED text, which the heard prefix is
+    // shorter than — an unclamped slice would run off the end.
+    const { history } = setup();
+    persistInterruptedTurn({
+      history,
+      heard: "Your balance",
+      persistedLen: 999,
+      stepMessages: [],
+      updateAgentContext: () => undefined,
+    });
+    expect(history.conversation).toEqual([
+      { role: "assistant", content: "Your balance [interrupted]" },
+    ]);
+    // The step message already carried it, so the LLM view gets no duplicate.
+    expect(history.llm).toEqual([]);
   });
 });

@@ -71,15 +71,25 @@ describe("buildSystemPrompt", () => {
     expect(result).not.toContain("## TOOLS");
   });
 
-  // Measured against tau2-bench retail: 42/815 replies stacked two or more
-  // preambles and 12 stacked three or more, because the old wording ("ALWAYS
-  // say a brief natural phrase BEFORE the tool call") scopes per CALL and
-  // `maxSteps` allows ten of them in one turn. The caller then hears a
-  // play-by-play of the tool loop. These pin the scoping, not the phrasing.
-  test("scopes the holding line to once per TURN, not once per tool call", () => {
+  // The prompt asks for NO holding line at all, and this is the guard on that
+  // — the rule drifted back once already. It is the third and largest of three
+  // measurements against a model-authored opener. Wording that merely
+  // PRESUPPOSED one drove filler-opening replies 15% -> 43%; scoping the rule
+  // to tool-call turns only reached 29%, roughly the share of turns that call
+  // a tool, i.e. the rule's floor rather than a bug in it. (The earlier
+  // scoping fix was itself measured on tau2-bench retail: 42/815 replies
+  // stacked two or more preambles, 12 stacked three or more, because "ALWAYS
+  // say a brief natural phrase BEFORE the tool call" scopes per CALL.) The gap
+  // is now covered by the transport's dead-air cover, on measured silence,
+  // with a phrase that never enters history.
+  test("states no holding-line rule at all", () => {
     const result = buildSystemPrompt(makeConfig(), { hasTools: true });
-    expect(result).toContain("PER TURN, not once per tool call");
-    expect(result).toContain("stay silent between calls");
+    expect(result).not.toContain("holding line");
+    expect(result).not.toContain("One moment.");
+    // And the opener rule it used to carve an exception out of is now
+    // unconditional: no "one exception" clause survives in SPEAKING.
+    expect(result).toContain("FIRST sentence is at most eight words");
+    expect(result).not.toContain("The one exception is a turn");
   });
 
   test("tells the model a not-found lookup may be a mis-hearing", () => {

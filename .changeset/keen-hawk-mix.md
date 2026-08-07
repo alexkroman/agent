@@ -1,0 +1,5 @@
+---
+"@alexkroman1/aai": minor
+---
+
+Replace `holdPhrase` with `deadAirCoverMs`, and turn the dead-air cover ON by default. Two audible changes. (1) The cover had no enable of its own — it was gated on `holdPhrase.length > 0`, and `holdPhrase` defaulted to `""`, so no default pipeline agent had any dead-air cover at all. It is now its own knob, defaulting to 5000 ms; a turn that sends nothing to the caller for that long hears a short filler (a distinct opening phrase before the model has said anything, then a cycled one), and `deadAirCoverMs: 0` disables it. (2) The per-turn holding line is gone, from both the transport and the default prompt: it fired at t=0 on the turn's shape rather than on real silence, and the prompt rule that produced it drove filler-opening replies to 29% of turns. Cover now waits for measured silence, so a turn that answers promptly pays nothing, and the filler never enters history. `holdPhrase` is removed from `agent()`; an already-deployed config carrying it is ignored.

@@ -7,6 +7,7 @@ import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
 import { makeAgent, silentLogger } from "./_test-utils.ts";
 import { DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
 import { createTransportFactory } from "./runtime-transport.ts";
+import * as pipelineTransport from "./transports/pipeline-transport.ts";
 import { _internals } from "./transports/s2s-transport.ts";
 import type { TransportCallbacks } from "./transports/types.ts";
 
@@ -63,5 +64,48 @@ describe("createTransportFactory (S2S)", () => {
     const handle = await buildS2sSessionConfig({});
     const sent = handle.updateSession.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(sent).not.toHaveProperty("sttPrompt");
+  });
+});
+
+/**
+ * The same dropped-field class on the pipeline branch: `errorPhrase` reached
+ * the agent definition and this builder never read it, so an agent that set one
+ * (including `""` to disable) silently got the default. Every pipeline-only
+ * field needs an assertion at this exact seam.
+ */
+describe("createTransportFactory (pipeline)", () => {
+  test.each([
+    ["preemptiveGeneration", true],
+    ["errorPhrase", ""],
+    ["resumeFalseInterruption", false],
+  ])("forwards %s into createPipelineTransport", async (field, value) => {
+    const build = vi
+      .spyOn(pipelineTransport, "createPipelineTransport")
+      .mockReturnValue({} as never);
+    const agent = makeAgent({ [field]: value });
+    const factory = createTransportFactory({
+      agent,
+      agentConfig: agent as never,
+      toolSchemas: [],
+      executeTool: vi.fn(),
+      env: { ASSEMBLYAI_API_KEY: "k" },
+      s2sConfig: DEFAULT_S2S_CONFIG,
+      pipelineProviders: {
+        stt: { opener: { name: "s", open: vi.fn() }, apiKey: "k" },
+        tts: { opener: { name: "t", open: vi.fn() }, apiKey: "k" },
+        llm: {} as never,
+      },
+      logger: silentLogger,
+    } as never);
+    factory({
+      sessionOpts: {
+        id: "s1",
+        agent: "a",
+        client: { send: vi.fn(), sendAudio: vi.fn() } as never,
+      },
+      systemPrompt: "sp",
+      callbacks: {} as TransportCallbacks,
+    });
+    expect(build).toHaveBeenCalledWith(expect.objectContaining({ [field]: value }));
   });
 });

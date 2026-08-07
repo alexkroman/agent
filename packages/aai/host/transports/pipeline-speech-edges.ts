@@ -50,10 +50,13 @@ export interface SpeechEdgeTracker {
  * stream has actually gone quiet.
  *
  * That makes the watchdog the transport's one signal for "this utterance
- * produced no final and never will", which is why `onIdle` exists: it is what
- * releases a deferred false-interruption resume (see pipeline-recovery.ts).
- * `onIdle` fires ONLY from the watchdog — never from the commit path's
- * `speechEnded()`, where a turn did commit and a resume must not run.
+ * produced no final and never will", which is why `onIdle` exists: it IS the
+ * false-interruption recovery signal (see pipeline-recovery.ts), not merely
+ * the release for a resume some other timer decided on. So `idleTimeoutMs` is
+ * the resume deadline as well as the edge-leak bound, and 0 disables recovery
+ * along with the watchdog. `onIdle` fires ONLY from the watchdog — never from
+ * the commit path's `speechEnded()`, where a turn did commit and a resume must
+ * not run.
  */
 export function createSpeechEdgeTracker(
   callbacks: {

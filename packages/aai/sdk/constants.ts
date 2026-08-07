@@ -133,6 +133,14 @@ export const PIPELINE_FLUSH_TIMEOUT_MS = 10_000;
  * grace keeps barge-in working through that tail. A spurious cancel inside
  * the window is harmless — the client flushes an already-empty buffer.
  *
+ * **Its counterpart with the opposite sign is {@link HEARD_AUDIO_LAG_MS}**,
+ * which models the same physical delay (network + jitter buffer) but is
+ * SUBTRACTED, to ask "where had the voice actually got to" rather than "could
+ * anything still be audible". The harmlessness argument above does NOT transfer
+ * to it: that one decides what an interrupted reply records in history, where
+ * erring in either direction costs. Tune this one for barge-in robustness
+ * without assuming the other should follow.
+ *
  * @internal
  */
 export const PIPELINE_PLAYBACK_GRACE_MS = 750;
@@ -300,38 +308,6 @@ export const DEFAULT_START_FAILURE_PHRASE =
 export const DEFAULT_INTERRUPTION_MIN_DURATION_MS = 500;
 
 /**
- * False-interruption recovery window (pipeline mode). A barge-in triggered by
- * an interim STT transcript aborts the agent's in-flight reply — but if no
- * final transcript ever commits (STT noise, a hallucinated partial), the
- * interruption was a false alarm
- * and the agent would otherwise fall silent mid-thought. After this many ms
- * with no committed user turn, the transport injects
- * `DEFAULT_FALSE_INTERRUPTION_PROMPT` as a synthetic user turn so the
- * agent picks its reply back up. Set to 0 to disable recovery.
- *
- * **This is a floor on the wait, not the whole of it** — elapsing while the
- * caller is still mid-utterance only defers the resume, which the speaking
- * edge's idle watchdog (`DEFAULT_SPEECH_IDLE_TIMEOUT_MS`, internal) then
- * releases. Named rather than `{@link}`ed: it is `@internal`, so the docs build
- * excludes it and a link would fail to resolve. Note how this sits against
- * endpointing: it is ABOVE {@link DEFAULT_MIN_TURN_SILENCE_MS} (1600) but BELOW
- * {@link DEFAULT_MAX_TURN_SILENCE_MS} (2500). Both are measured from roughly
- * the same instant (this window restarts on every partial, and the last partial
- * lands at about the end of speech, while the final is withheld for endpointing
- * after it), so a barge-in on an utterance that reads COMPLETE now has its final
- * arrive first and this window never fires — the healthy case, and the one the
- * pre-3000 defaults had. An utterance that never reads complete still loses to
- * the ceiling, so the deferral remains load-bearing for exactly that case, where
- * the caller is by construction still mid-sentence. The effective semantics are
- * "this long after the utterance ENDS", not "after the barge-in". Raising it past
- * endpointing would also work, but only for a provider whose endpointing is
- * known here — which the transport cannot see, since it receives an
- * already-resolved `SttOpener`. Hence the deferral, which needs no such
- * knowledge. See the module doc in `host/transports/pipeline-recovery.ts`.
- */
-export const DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS = 2000;
-
-/**
  * Spoken when a pipeline turn's LLM stream fails, so a provider outage is a
  * recoverable moment in the conversation instead of a dead line.
  *
@@ -381,13 +357,16 @@ export {
 export {
   DEAD_AIR_COVER_MAX_MS,
   DEAD_AIR_COVER_PHRASES,
+  DEAD_AIR_OPENING_PHRASE,
   DEFAULT_DEAD_AIR_COVER_MS,
   DEFAULT_FALSE_INTERRUPTION_PROMPT,
-  DEFAULT_HOLD_PHRASE,
   DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
   DEFAULT_VOICE_FOCUS,
   DEFAULT_VOICE_FOCUS_THRESHOLD,
+  HEARD_AUDIO_LAG_MS,
   MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES,
+  MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE,
+  PREEMPTIVE_CONFIDENCE_THRESHOLD,
   STT_CONNECT_MAX_RETRIES,
   STT_CONNECT_RETRY_DELAY_MS,
   STT_CONNECT_TIMEOUT_MS,

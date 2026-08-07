@@ -121,9 +121,20 @@ export type SttTurnMeta = {
    * cannot tell "paused between digits" from "finished", which is the
    * mechanism that truncates a spelled identifier mid-entity.
    *
-   * Nothing in the pipeline acts on it yet — it is plumbed so that a
-   * confidence-aware endpointing or barge-in policy can be measured against
-   * the current time-based one rather than guessed at.
+   * One policy reads it today: PREEMPTIVE GENERATION
+   * (`AgentDef.preemptiveGeneration`, on by default), which starts a
+   * speculative LLM stream from an interim whose confidence clears
+   * `PREEMPTIVE_CONFIDENCE_THRESHOLD`. The sawtooth above is not
+   * background for that policy — it DICTATED two of its rules, and both are
+   * only defensible while the trace stays here. (1) A partial whose normalized
+   * text differs from the live speculation's prompt aborts it immediately, so a
+   * false peak partway through a dictated identifier dies on the next digit
+   * instead of being billed in full. (2) An identical text at rising confidence
+   * never re-fires, which is what the terminal `0.95 → 1` re-emission above
+   * would otherwise cost on every completed utterance. Endpointing itself is
+   * still time-based and unchanged; a confidence-aware endpointing or barge-in
+   * policy remains unbuilt, and this field is still what would let one be
+   * measured against the current one rather than guessed at.
    */
   endOfTurnConfidence?: number;
 };
@@ -198,10 +209,44 @@ export function makeTtsError(code: TtsError["code"], message: string): TtsError 
   return Object.assign(new Error(message), { code }) as TtsError;
 }
 
+/**
+ * One synthesized word and where its audio sits in the current turn.
+ *
+ * Offsets are milliseconds into THIS TURN's synthesized audio (the first
+ * sample the provider produced for the turn is 0), not into the session, so
+ * they line up with the transport's per-reply audio accounting. Providers that
+ * report per-socket or per-flush clocks are rebased by their own adapter before
+ * the event is emitted.
+ */
+export interface TtsWordTiming {
+  /** The word as the provider synthesized it (may be normalized: "$5.00" → "five dollars"). */
+  readonly text: string;
+  /** Start offset of the word's audio, ms into the turn. */
+  readonly startMs: number;
+  /** End offset of the word's audio, ms into the turn. */
+  readonly endMs: number;
+}
+
 /** Events emitted by an open {@link TtsSession}. */
 export type TtsEvents = {
   /** One PCM16 audio chunk. Orchestrator forwards to the client. */
   audio: (pcm: Int16Array) => void;
+  /**
+   * Word timings for audio this turn has produced, when the provider reports
+   * them. Required in the type but OPTIONAL in practice: every adapter builds
+   * a `createNanoEvents<TtsEvents>()` emitter, so a provider with no timings
+   * simply never emits it, and a consumer must treat their absence as the
+   * ordinary case (the pipeline transport falls back to a proportional
+   * estimate). Whether a given reply has timings is a RUNTIME fact — a
+   * provider may report them for some segments and not others — so there is no
+   * capability flag to check.
+   *
+   * **Carries no turn id**, exactly like {@link TtsEvents.done}: the transport
+   * cannot filter a stale one itself and gates the event on its own turn state
+   * (the audio gate in `pipeline-transport.ts`). An adapter must not emit
+   * timings for a cancelled turn.
+   */
+  words: (words: readonly TtsWordTiming[]) => void;
   /**
    * Synthesis drained after flush() or cancel(). Emitted exactly once per
    * turn, and never after `cancel()` for the cancelled turn: `cancel()` must

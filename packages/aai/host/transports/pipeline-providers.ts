@@ -12,6 +12,7 @@ import type {
   TtsError,
   TtsOpener,
   TtsSession,
+  TtsWordTiming,
   Unsubscribe,
 } from "../../sdk/providers.ts";
 import { errorMessage } from "../../sdk/utils.ts";
@@ -44,6 +45,8 @@ export interface PipelineProviderOptions {
     onSttError(err: SttError): void;
     onTtsError(err: TtsError): void;
     onTtsAudio(pcm: Int16Array): void;
+    /** Word timings for the current turn's audio, when the provider reports them. */
+    onTtsWords(words: readonly TtsWordTiming[]): void;
   };
   /**
    * Fires the moment TTS is live — lets the greeting start without waiting
@@ -101,6 +104,9 @@ export function createPipelineProviderSessions(
   function adoptTts(session: TtsSession): void {
     ttsSession = session;
     ttsSubs.push(session.on("audio", (pcm) => handlers.onTtsAudio(pcm)));
+    // Subscribed beside `audio` so it is released by the same unsubscribe()
+    // path; providers that report no timings simply never emit it.
+    ttsSubs.push(session.on("words", (words) => handlers.onTtsWords(words)));
     // `done` is intentionally NOT subscribed persistently — flushTtsAndWait
     // attaches a one-shot listener per-turn to avoid double-firing audio_done.
     ttsSubs.push(session.on("error", (err) => handlers.onTtsError(err)));

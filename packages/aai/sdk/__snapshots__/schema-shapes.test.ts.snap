@@ -3,10 +3,9 @@
 exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
 [
   "builtinTools",
+  "deadAirCoverMs",
   "errorPhrase",
-  "falseInterruptionTimeoutMs",
   "greeting",
-  "holdPhrase",
   "idleTimeoutMs",
   "interruptionMinDurationMs",
   "llm",
@@ -14,7 +13,9 @@ exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
   "minBargeInWords",
   "mode",
   "name",
+  "preemptiveGeneration",
   "requiredEnv",
+  "resumeFalseInterruption",
   "s2s",
   "silencePrompt",
   "silenceTimeoutMs",

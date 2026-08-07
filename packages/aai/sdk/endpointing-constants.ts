@@ -101,8 +101,8 @@
  * content (spelled emails and names); moving this knob only chooses which one
  * you get.
  *
- * `scripts/voice-replay/` CANNOT settle this knob — it declares no tools and
- * scores no database, so the regression (truncated auth arguments: NL
+ * A turn-taking-only replay harness CANNOT settle this knob — it declares no
+ * tools and scores no database, so the regression (truncated auth arguments: NL
  * assertions rise while DB match collapses) is invisible to it. The instrument
  * that produced the table above is gold-utterance alignment over an archived
  * run's `task.log`; reach for that, or for reward.
@@ -176,16 +176,20 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
  * ceiling from the floor; if it shows up, put this back to 3500 rather than
  * touching {@link DEFAULT_MIN_TURN_SILENCE_MS}.
  *
- * The two orderings this has to keep both hold at 3000. It exceeds
- * {@link DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS} (2000), so a barge-in on an
- * utterance that never reads complete still finds that utterance OPEN when the
- * 2000 ms recovery window fires, and the deferral in
- * `host/transports/pipeline-recovery.ts` is reached rather than skipped — at a
- * ceiling of 1600 the force-end landed first and the resume proceeded instead,
- * a behaviour change rather than a tuning change, and 1000 ms of margin is
- * thinner than 1500 but still clears it. And it stays clear of the service's
- * own 1536 default, so the ceiling is ours rather than silently the service's,
- * which is the state this constant was introduced to escape.
+ * The two orderings this has to keep both hold at 3000. It stays BELOW
+ * `DEFAULT_SPEECH_IDLE_TIMEOUT_MS` (3500, internal) less final-emission
+ * latency, so an utterance force-ended by this ceiling still delivers its
+ * final before the speaking edge goes idle — and the idle edge is what fires a
+ * false-interruption resume (`host/transports/pipeline-recovery.ts`), so
+ * crossing that line does not merely delay a turn, it lets the agent resume a
+ * reply the caller really did interrupt. The same fact was recorded the other
+ * way round when the resume had a window of its own: at a ceiling of 1600 the
+ * force-end landed first and the resume proceeded instead, a behaviour change
+ * rather than a tuning change. 500 ms of margin is thin — if this ceiling ever
+ * goes back to its measured 3500, the idle deadline must move with it. And it
+ * stays clear of the service's own 1536 default, so the ceiling is ours rather
+ * than silently the service's, which is the state this constant was introduced
+ * to escape.
  *
  * What the ceiling costs is pause tolerance for hesitant speech, paid ONLY by
  * utterances that never read as complete — which is the whole reason this is

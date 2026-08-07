@@ -89,7 +89,7 @@ export default agent({
   sttPrompt?: string;                        // STT guidance for jargon/acronyms
   builtinTools?: BuiltinTool[];              // see built-in tools table
   tools?: Record<string, ToolDef>;
-  maxSteps?: number;                         // default: 3 — max tool calls per turn
+  maxSteps?: number;                         // default: 10 — max tool calls per turn
   toolChoice?: ToolChoice;                   // "auto" (default) | "required" | "none"
                                              // | { type: "tool", toolName }
   idleTimeoutMs?: number;                    // disconnect after inactivity (ms)
@@ -97,8 +97,9 @@ export default agent({
   silencePrompt?: string;                    // instruction injected on silence timeout (requires silenceTimeoutMs)
   minBargeInWords?: number;                  // pipeline only — words before user speech interrupts the reply (default 2)
   interruptionMinDurationMs?: number;        // pipeline only — sustained speech (ms) before an interim barge-in interrupts (default 500; 0 disables)
-  holdPhrase?: string;                       // pipeline only — spoken before a silent tool-call turn (default "One moment."; "" disables)
-  falseInterruptionTimeoutMs?: number;       // pipeline only — resume an interrupted reply if no user turn commits (default 2000; 0 disables)
+  deadAirCoverMs?: number;                   // pipeline only — speak a short filler after this much silence in a turn (default 5000; 0 disables)
+  resumeFalseInterruption?: boolean;         // pipeline only — resume an interrupted reply if no user turn commits (default true)
+  preemptiveGeneration?: boolean;            // pipeline only — start the reply from a high-confidence interim (default true; false opts out)
   state?: () => S;                           // per-session mutable state, exposed as ctx.state
                                              // (S is inferred; see "Typing ctx.state")
   syncState?: (state: S) => unknown;         // push a projection of state to the client
@@ -250,9 +251,26 @@ land). End-of-turn detection (how long a pause ends the user's turn)
 belongs to the STT provider: `assemblyAIStt({ minTurnSilenceMs })` (default
 2000 ms) / `deepgram({ endpointing })` (default 1500 ms), so mid-utterance
 pauses don't split a request.
-`holdPhrase` is spoken when a turn opens with a tool call and no speech.
-`falseInterruptionTimeoutMs` resumes an interrupted reply when a barge-in
-turns out to be noise (no user turn commits within the window).
+`deadAirCoverMs` is how long a turn may go silent before the transport speaks
+a short filler, so a long tool chain doesn't sound like a dropped call. It is
+measured silence, not a guess about the turn's shape, so a reply that arrives
+promptly pays nothing; `0` disables it. The wording is not yours to set — the
+filler must be purely declarative and never a request for patience, or the
+caller answers it and the answer barges in.
+`resumeFalseInterruption` (default `true`) resumes an interrupted reply when
+a barge-in turns out to be noise — no user turn ever commits. The wait is not
+configurable: the resume fires once the transcript stream goes quiet with no
+final, so it can never race a real turn the STT is still endpointing.
+`preemptiveGeneration` (default `true`) starts generating the reply as soon
+as transcription is confident the caller has finished, and uses that
+already-running answer if the committed transcript matches. It can shorten the
+pause before the agent speaks, and **how much is unmeasured** — nobody has
+shown the size of the saving. What bounds the downside is that a speculation
+never speaks, calls a tool, or enters history until the real turn adopts it, so
+the worst case is a wasted request and a turn that behaves exactly as it would
+with the flag off. Set `preemptiveGeneration: false` to opt out — worth doing
+on a tool-heavy agent, where a speculation that reaches a tool call is thrown
+away, so it is cost with no upside.
 
 ## Providers
 
@@ -1007,8 +1025,8 @@ Common mistakes when working in aai projects:
 - Agent code runs in a sandboxed worker — use `fetch` for HTTP, `ctx.env`
   for secrets
 - Tool execution timeout: 30 seconds
-- `maxSteps` limits tool calls per turn (default 3) — increase for
-  multi-tool workflows. On reaching the cap the agent spends one more LLM
+- `maxSteps` limits tool calls per turn (default 10) — lower it for a
+  latency-sensitive agent. On reaching the cap the agent spends one more LLM
   step with tools switched off, so it answers with what it has instead of
   going silent mid-chain
 - Tool returns `undefined` if execute function has no return statement —

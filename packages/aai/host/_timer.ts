@@ -1,8 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * Restartable one-shot timer — the clear/arm bookkeeping that the endpoint
- * settler, the silence nudger, the speaking-edge watchdog, the
- * false-interruption recovery and Rime's quiescence timers each hand-rolled.
+ * settler, the silence nudger, the speaking-edge watchdog and Rime's
+ * quiescence timers each hand-rolled.
  *
  * The `timer !== null` sentinel doubles as "is a window currently open?" at
  * several of those call sites, so {@link RestartableTimer.pending} is part of

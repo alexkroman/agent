@@ -140,12 +140,20 @@ test("s2s cannot be combined with pipeline providers or pipeline-only tuning", (
   expectTypeOf<{
     name: string;
     s2s: S2sProvider;
-    holdPhrase: string;
+    deadAirCoverMs: number;
   }>().not.toExtend<AgentParams>();
   expectTypeOf<{
     name: string;
     s2s: S2sProvider;
     silenceTimeoutMs: number;
+  }>().not.toExtend<AgentParams>();
+  // `PipelineOnlyField` derives its voice-UX half from `PipelineVoiceTuning`,
+  // so this holds for a field added to that interface without touching
+  // define.ts — which is the point of deriving it.
+  expectTypeOf<{
+    name: string;
+    s2s: S2sProvider;
+    preemptiveGeneration: boolean;
   }>().not.toExtend<AgentParams>();
   // Shared fields stay declarable on an s2s agent.
   expectTypeOf<{ name: string; s2s: S2sProvider; idleTimeoutMs: number }>().toExtend<AgentParams>();

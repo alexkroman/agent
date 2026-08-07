@@ -162,11 +162,11 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
    * Snapshot, NOT an append-only or monotonically growing string: a pipeline
    * reply's final snapshot can be SHORTER than the one before it, and can differ
    * in the middle rather than only at the end. The interim snapshots are built
-   * from everything handed to TTS, which includes the hold phrase and the
-   * dead-air cover fillers the caller hears; the reply's closing snapshot is the
-   * model's own words, with that filler removed — so "One moment. Thanks, I
-   * found your account. Still working on that. Here it is." is followed by
-   * "Thanks, I found your account. Here it is.". That is deliberate: the
+   * from everything handed to TTS, which includes the dead-air cover fillers
+   * the caller hears; the reply's closing snapshot is the model's own words,
+   * with that filler removed — so "I'm checking on this. Thanks, I found your
+   * account. I'm still on it. Here it is." is followed by "Thanks, I found your
+   * account. Here it is.". That is deliberate: the
    * committed message should read as dialogue, while the live caption should
    * match the audio. A client that diffs against the previous snapshot, renders
    * incrementally, or assumes a common prefix will corrupt — replace the text.

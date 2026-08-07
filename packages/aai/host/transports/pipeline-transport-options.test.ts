@@ -11,7 +11,7 @@
 
 import { describe, expect, test } from "vitest";
 import {
-  DEFAULT_HOLD_PHRASE,
+  DEFAULT_DEAD_AIR_COVER_MS,
   DEFAULT_INTERRUPTION_MIN_DURATION_MS,
   DEFAULT_MIN_BARGE_IN_WORDS,
   DEFAULT_MIN_TURN_SILENCE_MS,
@@ -22,9 +22,12 @@ import {
   createFakeTtsProvider,
 } from "../_pipeline-test-fakes.ts";
 import { makeCallbacks } from "./_pipeline-transport-harness.ts";
-import { resolvePipelineOptions } from "./pipeline-transport-options.ts";
+import {
+  type PipelineTransportOptions,
+  resolvePipelineOptions,
+} from "./pipeline-transport-options.ts";
 
-function resolveBare() {
+function resolveBare(extra?: Partial<PipelineTransportOptions>) {
   return resolvePipelineOptions({
     sid: "test-sid",
     stt: createFakeSttProvider(),
@@ -36,6 +39,7 @@ function resolveBare() {
     },
     sessionConfig: { systemPrompt: "s" },
     providerKeys: { stt: "k", tts: "k" },
+    ...extra,
   });
 }
 
@@ -44,7 +48,20 @@ describe("pipeline defaults", () => {
     const resolved = resolveBare();
     expect(resolved.interruptionMinDurationMs).toBe(DEFAULT_INTERRUPTION_MIN_DURATION_MS);
     expect(resolved.minBargeInWords).toBe(DEFAULT_MIN_BARGE_IN_WORDS);
-    expect(resolved.holdPhrase).toBe(DEFAULT_HOLD_PHRASE);
+    // The shipped dead-air cover default, pinned at the resolver. It was for a
+    // while unreachable: the cover's enable was `holdPhrase.length > 0` and
+    // `holdPhrase` defaulted to `""`, so no default agent had cover at all.
+    expect(resolved.deadAirCoverMs).toBe(DEFAULT_DEAD_AIR_COVER_MS);
+  });
+
+  test("preemptive generation is ON in the shipped default", () => {
+    // The one assertion that pins the shipped state of this feature. It is on
+    // by author decision rather than by the two logs named on
+    // `AgentDef.preemptiveGeneration` (still unwritten), so what makes the
+    // choice safe is structural — no speculative speech, no speculative tool
+    // execution — not this default. An explicit `false` still opts out.
+    expect(resolveBare().preemptiveGeneration).toBe(true);
+    expect(resolveBare({ preemptiveGeneration: false }).preemptiveGeneration).toBe(false);
   });
 
   test("an utterance's tail can still finish inside the STT silence window", () => {

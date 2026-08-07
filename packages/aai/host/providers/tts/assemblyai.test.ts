@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { DEAD_AIR_OPENING_PHRASE } from "../../../sdk/constants.ts";
 import type { AssemblyAITtsLanguage } from "../../../sdk/providers/tts/assemblyai.ts";
 import type { TtsError } from "../../../sdk/providers.ts";
 import { tick } from "../../_test-utils.ts";
@@ -336,12 +337,12 @@ describe("AssemblyAI TTS adapter", () => {
       expect(done).toBe(1);
     });
 
-    test("flushes the hold phrase, which must be audible during tool execution", async () => {
-      // DEFAULT_HOLD_PHRASE is "One moment." — two words. Its entire purpose is
-      // to break silence while a tool runs, so it cannot wait for the turn's
-      // end-of-turn flush.
+    test("flushes a short cover phrase, which must be audible during tool execution", async () => {
+      // DEAD_AIR_OPENING_PHRASE is "I'm checking on this." — four words. Its
+      // entire purpose is to break silence while a tool runs, so it cannot wait
+      // for the turn's end-of-turn flush.
       const { session, ws } = await openSession();
-      session.sendText("One moment.");
+      session.sendText(DEAD_AIR_OPENING_PHRASE);
       expect(ws._frames()).toContainEqual({ type: "Flush" });
     });
 
@@ -550,6 +551,87 @@ describe("AssemblyAI TTS adapter", () => {
     expect(errors).toHaveLength(1); // ...and the session fails loudly
     expect(errors[0]?.code).toBe("tts_stream_error");
     expect(errors[0]?.message).toContain("1000");
+  });
+
+  describe("word boundaries", () => {
+    /** Collect the `words` event for one open session. */
+    function collectWords(session: { on: (e: "words", fn: (w: unknown) => void) => void }): {
+      seen: unknown[];
+    } {
+      const seen: unknown[] = [];
+      session.on("words", (w) => seen.push(w));
+      return { seen };
+    }
+
+    test("a WordBoundaries frame is re-emitted as `words`, rebased onto the turn", async () => {
+      const { session, ws } = await openSession();
+      const { seen } = collectWords(session);
+      session.sendText("Your balance. ");
+      ws._msg({
+        type: "WordBoundaries",
+        words: [
+          { text: "Your", audio_start_ms: 4000, audio_end_ms: 4200 },
+          { text: "balance", audio_start_ms: 4200, audio_end_ms: 4640 },
+        ],
+      });
+      expect(seen).toEqual([
+        [
+          { text: "Your", startMs: 0, endMs: 200 },
+          { text: "balance", startMs: 200, endMs: 640 },
+        ],
+      ]);
+    });
+
+    test("an unreadable frame emits nothing and does not error the session", async () => {
+      const { session, ws } = await openSession();
+      const { seen } = collectWords(session);
+      const errors: TtsError[] = [];
+      session.on("error", (err) => errors.push(err));
+      session.sendText("Your balance. ");
+      ws._msg({ type: "WordBoundaries", words: "not a list" });
+      expect(seen).toEqual([]);
+      expect(errors).toEqual([]);
+    });
+
+    test("a WordBoundaries frame is NOT an acknowledgement", async () => {
+      // The contract guard: routing it into the turn tracker would retire an
+      // outstanding flush, so `done` — and the client's audio_done — would
+      // overtake the reply's remaining audio and cut it off mid-sentence.
+      const { session, ws } = await openSession();
+      let done = 0;
+      session.on("done", () => {
+        done += 1;
+      });
+      session.sendText("One thing. ");
+      session.sendText("Two things. ");
+      session.flush();
+      ws._msg({ type: "FlushDone" });
+      ws._msg({ type: "WordBoundaries", words: [{ text: "One", audio_start_ms: 0 }] });
+      expect(done).toBe(0);
+      ws._msg({ type: "FlushDone" });
+      expect(done).toBe(1);
+    });
+
+    test("a frame for a cancelled turn cannot reach the next one", async () => {
+      const { session, ws } = await openSession();
+      const { seen } = collectWords(session);
+      session.sendText("Your balance. ");
+      session.cancel();
+      // The cancelled socket's listeners are detached before it closes, so its
+      // late frames are unobservable — the same guarantee its late audio has.
+      ws._msg({ type: "WordBoundaries", words: [{ text: "Your", audio_start_ms: 0 }] });
+      expect(seen).toEqual([]);
+    });
+
+    test("a frame arriving after the turn is done is dropped", async () => {
+      const { session, ws } = await openSession();
+      const { seen } = collectWords(session);
+      session.sendText("Your balance. ");
+      session.flush();
+      ws._msg({ type: "FlushDone" }); // turn over
+      ws._msg({ type: "WordBoundaries", words: [{ text: "Your", audio_start_ms: 0 }] });
+      expect(seen).toEqual([]);
+    });
   });
 
   test("close sends Terminate and closes the socket", async () => {
