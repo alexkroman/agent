@@ -155,7 +155,7 @@ export const MIC_SEND_MAX_BUFFERED_BYTES = 64 * 1024;
  * The host clamps upward only, so this interval sets how STALE the host's view
  * may be, not how accurate: between reports the estimate decays toward the
  * open-loop model it replaces. 500 ms is comfortably under
- * {@link PLAYBACK_JITTER_MS} plus a network hop — the scale at which the
+ * `PLAYBACK_JITTER_MS` plus a network hop — the scale at which the
  * open-loop model is already wrong — while costing one small text frame per
  * half-second of agent speech, which is nothing beside the PCM16 flowing the
  * other way.
