@@ -77,20 +77,5 @@
   "packageManager": "pnpm@10.29.3",
   "engines": {
     "node": ">=26 <27"
-  },
-  "pnpm": {
-    "ignoredBuiltDependencies": [
-      "esbuild",
-      "lefthook"
-    ],
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "lefthook",
-      "protobufjs"
-    ],
-    "patchedDependencies": {},
-    "overrides": {
-      "unrun": "0.2.39"
-    }
   }
 }

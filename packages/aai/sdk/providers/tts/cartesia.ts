@@ -49,3 +49,27 @@ export function cartesia(opts: CartesiaOptions = {}): CartesiaProvider {
     options: { ...opts, voice: opts.voice ?? CARTESIA_DEFAULT_VOICE },
   };
 }
+
+/** Synthesis model used when the descriptor names none. */
+export const CARTESIA_DEFAULT_MODEL = "sonic-2";
+
+/** Synthesis language used when the descriptor names none. */
+export const CARTESIA_DEFAULT_LANGUAGE = "en";
+
+/**
+ * The settings this stage will actually run with — the descriptor's own
+ * options with every host-side default filled in. Shared by the opener and
+ * the runtime's "Session mode resolved" log, so the reported settings are by
+ * construction the ones dialled.
+ */
+export function resolveCartesiaSettings(opts: CartesiaOptions): {
+  voice: string;
+  model: string;
+  language: string;
+} {
+  return {
+    voice: opts.voice ?? CARTESIA_DEFAULT_VOICE,
+    model: opts.model ?? CARTESIA_DEFAULT_MODEL,
+    language: opts.language ?? CARTESIA_DEFAULT_LANGUAGE,
+  };
+}

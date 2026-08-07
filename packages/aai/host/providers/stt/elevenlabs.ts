@@ -22,6 +22,7 @@ import { createNanoEvents, type Emitter } from "nanoevents";
 import {
   ELEVENLABS_API_KEY_ENV,
   type ElevenLabsOptions,
+  resolveElevenLabsSettings,
 } from "../../../sdk/providers/stt/elevenlabs.ts";
 import {
   makeSttError,
@@ -70,6 +71,7 @@ export function openElevenLabs(opts: ElevenLabsOptions = {}): SttOpener {
         (msg) => makeSttError("stt_auth_failed", msg),
       );
 
+      const settings = resolveElevenLabsSettings(opts);
       const client = new ElevenLabsClient({ apiKey });
 
       const connection = await connectOrThrow(
@@ -77,11 +79,11 @@ export function openElevenLabs(opts: ElevenLabsOptions = {}): SttOpener {
         (msg) => makeSttError("stt_connect_failed", msg),
         () =>
           client.speechToText.realtime.connect({
-            modelId: opts.model ?? "scribe_v2_realtime",
+            modelId: settings.model,
             audioFormat: audioFormatFor(openOpts.sampleRate),
             sampleRate: openOpts.sampleRate,
             commitStrategy: CommitStrategy.VAD,
-            ...(opts.languageCode ? { languageCode: opts.languageCode } : {}),
+            ...(settings.languageCode ? { languageCode: settings.languageCode } : {}),
           }),
       );
 

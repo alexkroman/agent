@@ -27,8 +27,8 @@ import { TTSWS } from "@cartesia/cartesia-js/resources/tts/ws";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import {
   CARTESIA_API_KEY_ENV,
-  CARTESIA_DEFAULT_VOICE,
   type CartesiaOptions,
+  resolveCartesiaSettings,
 } from "../../../sdk/providers/tts/cartesia.ts";
 import {
   makeTtsError,
@@ -69,9 +69,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
       const sampleRate: Pcm16Rate = assertPcm16Rate(openOpts.sampleRate, "Cartesia TTS", (msg) =>
         makeTtsError("tts_connect_failed", msg),
       );
-      const model = opts.model ?? "sonic-2";
-      const language = opts.language ?? "en";
-      const voice = opts.voice ?? CARTESIA_DEFAULT_VOICE;
+      const { model, language, voice } = resolveCartesiaSettings(opts);
 
       const client = new Cartesia({ apiKey });
 

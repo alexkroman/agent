@@ -60,3 +60,26 @@ export function rime(opts: RimeOptions = {}): RimeProvider {
     options: { ...opts, voice: opts.voice ?? RIME_DEFAULT_VOICE },
   };
 }
+
+/** Synthesis model used when the descriptor names none. */
+export const RIME_DEFAULT_MODEL = "mistv2";
+
+/** Synthesis language used when the descriptor names none. */
+export const RIME_DEFAULT_LANGUAGE = "eng";
+
+/**
+ * The settings this stage will actually run with — the descriptor's own
+ * options with every host-side default filled in. Shared by the opener and
+ * the runtime's "Session mode resolved" log.
+ */
+export function resolveRimeSettings(opts: RimeOptions): {
+  voice: string;
+  model: string;
+  language: string;
+} {
+  return {
+    voice: opts.voice ?? RIME_DEFAULT_VOICE,
+    model: opts.model ?? RIME_DEFAULT_MODEL,
+    language: opts.language ?? RIME_DEFAULT_LANGUAGE,
+  };
+}

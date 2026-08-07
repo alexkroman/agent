@@ -156,35 +156,42 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
  * hesitant speech alone and costs an ordinary finished sentence nothing —
  * unlike {@link DEFAULT_MIN_TURN_SILENCE_MS}, which taxes every turn.
  *
- * 3500 keeps the ~3s of pause tolerance the 3000 `min_turn_silence` was
- * reaching for, with headroom, and applies it where it actually lands. The
- * service default is 1536, which is what silently governed every turn while
- * the minimum sat above it — so this, not the minimum's nominal 3000, is the
- * number the hesitation failures were actually measured against, and moving
- * 1536 -> 3500 is the whole of the split fix.
+ * 3000 keeps the ~3s of pause tolerance the 3000 `min_turn_silence` was
+ * reaching for, and applies it where it actually lands. The service default is
+ * 1536, which is what silently governed every turn while the minimum sat above
+ * it — so this, not the minimum's nominal 3000, is the number the hesitation
+ * failures were actually measured against, and moving 1536 -> 3000 is the whole
+ * of the split fix.
  *
- * **Trimmed to 2500 and put back.** That trim was the one number in this pair
- * with no measurement of its own: it was reasoned from the 800/1600 run, but
- * the minimum and the maximum moved together there, so that run can only show
- * that 1600/800 loses to 3500/1600 — never that a ceiling of 2500 is safe
- * alone. 1600/3500 is the configuration with a measured 0.68 (twice, on two
- * independent runs); 2500 never had one.
+ * **Read this before trimming it further.** The measured configuration is
+ * 1600/**3500** — reward 0.68, twice, on two independent tau2-bench retail
+ * runs. 3000 is a 500 ms trim off that, chosen deliberately and NOT measured on
+ * its own, so treat it the way the previous trim to 2500 should have been
+ * treated. That one was reverted for exactly this reason: it was reasoned from
+ * the 800/1600 run, where the minimum and the maximum moved together, so the
+ * run can only show that 1600/800 loses to 3500/1600 — it can never show that
+ * some particular ceiling is safe alone. The failure signature to watch for is
+ * specific: splits reappearing on hesitant, non-spelling utterances while
+ * spelled identifiers stay intact. That asymmetry is what distinguishes the
+ * ceiling from the floor; if it shows up, put this back to 3500 rather than
+ * touching {@link DEFAULT_MIN_TURN_SILENCE_MS}.
  *
- * The ordering the trim was protecting still holds at 3500, with more room:
- * it exceeds {@link DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS} (2000), so a
- * barge-in on an utterance that never reads complete still finds that
- * utterance OPEN when the 2000 ms recovery window fires, and the deferral in
- * `host/transports/pipeline-recovery.ts` is reached rather than skipped. At a
- * ceiling of 1600 the force-end landed first and the resume proceeded instead
- * — a behaviour change, not a tuning change. 3500 also stays well clear of the
- * service's own 1536 default, so the ceiling is ours rather than silently the
- * service's, which is the state this constant was introduced to escape.
+ * The two orderings this has to keep both hold at 3000. It exceeds
+ * {@link DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS} (2000), so a barge-in on an
+ * utterance that never reads complete still finds that utterance OPEN when the
+ * 2000 ms recovery window fires, and the deferral in
+ * `host/transports/pipeline-recovery.ts` is reached rather than skipped — at a
+ * ceiling of 1600 the force-end landed first and the resume proceeded instead,
+ * a behaviour change rather than a tuning change, and 1000 ms of margin is
+ * thinner than 1500 but still clears it. And it stays clear of the service's
+ * own 1536 default, so the ceiling is ours rather than silently the service's,
+ * which is the state this constant was introduced to escape.
  *
- * What 3500 costs is ~1s of extra pause tolerance for hesitant speech, paid
- * ONLY by utterances that never read as complete — which is the whole reason
- * this is the knob to trim rather than the minimum, and equally the reason
- * trimming it buys so little. The measured tail is content-driven and long
- * (p90 endpoint latency ~4.0-4.6s at every setting swept), so the ceiling is
- * not what makes a slow turn slow.
+ * What the ceiling costs is pause tolerance for hesitant speech, paid ONLY by
+ * utterances that never read as complete — which is the whole reason this is
+ * the knob to trim rather than the minimum, and equally the reason trimming it
+ * buys so little. The measured tail is content-driven and long (p90 endpoint
+ * latency ~4.0-4.6s at every setting swept), so the ceiling is not what makes
+ * a slow turn slow.
  */
-export const DEFAULT_MAX_TURN_SILENCE_MS = 3500;
+export const DEFAULT_MAX_TURN_SILENCE_MS = 3000;

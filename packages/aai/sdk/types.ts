@@ -272,7 +272,8 @@ export type InferToolOutput<T extends ToolDef<ToolInputSchema, DefaultSessionSta
  */
 export type InferAgentState<A> = A extends AgentDef<infer S> ? S : never;
 
-export { DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./agent-defaults.ts";
+export { DEFAULT_GREETING } from "./agent-defaults.ts";
+export { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
 
 /**
  * Fully resolved agent definition.
@@ -312,8 +313,10 @@ export type AgentDef<S = DefaultSessionState> = {
    */
   sttPrompt?: string;
   /**
-   * Max tool calls per reply — bounds runaway tool loops. Defaults to
-   * {@link DEFAULT_MAX_STEPS} (10).
+   * Max TOOL-CALLING steps per reply — bounds runaway tool loops. Defaults to
+   * {@link DEFAULT_MAX_STEPS} (3). On reaching the cap the pipeline spends one
+   * more step with `toolChoice: "none"`, so a capped turn still answers rather
+   * than stopping mid-chain in silence.
    */
   maxSteps: number;
   /**

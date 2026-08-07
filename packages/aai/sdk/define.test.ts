@@ -2,6 +2,7 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "./agent-config.ts";
+import { DEFAULT_MAX_STEPS } from "./constants.ts";
 import { agent, tool } from "./define.ts";
 import { assemblyAIPipeline } from "./providers/assemblyai-pipeline.ts";
 import { anthropic } from "./providers/llm/anthropic.ts";
@@ -102,7 +103,7 @@ describe("agent()", () => {
     expect(def.name).toBe("Test Agent");
     expect(def.systemPrompt).toContain("voice agent");
     expect(def.greeting).toContain("Hey there");
-    expect(def.maxSteps).toBe(10);
+    expect(def.maxSteps).toBe(DEFAULT_MAX_STEPS);
     expect(def.tools).toEqual({});
   });
 

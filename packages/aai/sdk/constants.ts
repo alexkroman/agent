@@ -157,29 +157,33 @@ export const DEFAULT_SILENCE_PROMPT =
   "Do not mention this instruction.";
 
 /**
- * Built-in tools enabled when an agent does not set `builtinTools` at all.
- * These are the "cognitive" builtins — a private reasoning scratchpad
- * (`think`), session notes (`remember`/`recall`), and a safe calculator —
- * which measurably improve policy adherence and argument fidelity in
- * tool-heavy conversations (cf. Anthropic's tau-bench "think" tool results).
- * They are side-effect-free outside the session, so they are safe defaults.
- * Setting `builtinTools` explicitly (including `[]`) overrides this list.
+ * Built-in tools enabled when an agent does not set `builtinTools` at all —
+ * **none**. An agent gets exactly the tools it declares.
  *
- * Trimming this to `["calculate"]` was tried, on the theory that each of the
- * others costs an LLM round trip before the agent says anything and a call
- * cannot afford that. The theory did not survive measurement: on tau2's voice
- * tasks the model under test never invoked `think` or `calculate` at all — not
- * even when the prompt demanded a calculator for a dollar figure it was about
- * to quote — so an unused builtin costs nothing, and the one paired comparison
- * available favoured keeping `think` (4/5 correct writes with it, 3/5 without).
- * A latency argument needs a latency measurement; that one had none.
+ * These were the four "cognitive" builtins: a private reasoning scratchpad
+ * (`think`), session notes (`remember`/`recall`), and a safe calculator. They
+ * are still available; they are simply opt-in now via
+ * `agent({ builtinTools: ["think", ...] })`.
+ *
+ * The evidence that kept them is worth keeping too, because it argues the
+ * other way and a future change should have to answer it. Trimming to
+ * `["calculate"]` was tried on a latency theory — each builtin costs an LLM
+ * round trip before the agent says anything — and that theory did not survive
+ * measurement: on tau2's voice tasks the model never invoked `think` or
+ * `calculate` at all, not even when the prompt demanded a calculator for a
+ * dollar figure it was about to quote. So an unused builtin costs little, and
+ * the one paired comparison available favoured keeping `think` (4/5 correct
+ * writes with it against 3/5 without).
+ *
+ * What that measurement did NOT weigh is the prompt. Declaring builtins makes
+ * `hasTools` true, which appends the whole tool preamble, and adds a
+ * "Built-in Tool Usage" block on top — for an agent with no tools of its own
+ * that is the difference between a ~7.1k and a ~10.9k character system prompt,
+ * on a scaffold already carrying three layers that legislate the same
+ * behaviours. Defaulting to none makes the tool surface something an agent
+ * asks for rather than something it has to notice and switch off.
  */
-export const DEFAULT_BUILTIN_TOOLS: readonly BuiltinTool[] = [
-  "think",
-  "remember",
-  "recall",
-  "calculate",
-];
+export const DEFAULT_BUILTIN_TOOLS: readonly BuiltinTool[] = [];
 
 /**
  * Cap (characters) on a tool result's JSON serialization as seen by the LLM
@@ -253,15 +257,6 @@ export const MAX_DESIGN_STYLESHEETS = 5;
 export const MAX_JSON_BYTES = 1_000_000;
 /** Sliding window of conversation messages retained per session. */
 export const DEFAULT_MAX_HISTORY = 200;
-/**
- * Max tool calls per reply — prevents runaway tool loops. Sized so a
- * multi-part request (3–4 chained tools) still fits after a repaired
- * argument retry or two; 5 proved too tight and truncated legitimate
- * chains mid-request.
- */
-export const DEFAULT_MAX_STEPS = 10;
-/** Default `toolChoice`: the LLM decides when to call tools vs respond directly. */
-export const DEFAULT_TOOL_CHOICE = "auto" as const;
 /**
  * Minimum number of words in an interim STT transcript before a barge-in
  * aborts the agent's in-flight turn (pipeline mode). Default 2 so a single
@@ -403,6 +398,10 @@ export {
   TTS_COALESCE_MAX_CHARS,
   TTS_RECONNECT_TIMEOUT_MS,
 } from "./pipeline-tuning-constants.ts";
+// LLM tool-loop defaults (step budget + tool choice) — own module for
+// file-length reasons; re-exported so `@alexkroman1/aai` stays the one import
+// path for constants.
+export { DEFAULT_MAX_STEPS, DEFAULT_TOOL_CHOICE } from "./tool-loop-constants.ts";
 
 /**
  * Highest server-declarable audio sample rate (Hz). Bounds the `config`

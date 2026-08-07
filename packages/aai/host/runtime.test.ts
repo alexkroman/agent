@@ -6,7 +6,14 @@
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "../sdk/_internal-types.ts";
-import { ASSEMBLYAI_S2S_SAMPLE_RATE, DEFAULT_BUILTIN_TOOLS } from "../sdk/constants.ts";
+import {
+  ASSEMBLYAI_S2S_SAMPLE_RATE,
+  DEFAULT_BUILTIN_TOOLS,
+  DEFAULT_MAX_TURN_SILENCE_MS,
+  DEFAULT_MIN_TURN_SILENCE_MS,
+  DEFAULT_VOICE_FOCUS,
+  DEFAULT_VOICE_FOCUS_THRESHOLD,
+} from "../sdk/constants.ts";
 import type { Db } from "../sdk/db.ts";
 import { anthropic } from "../sdk/providers/llm/anthropic.ts";
 import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
@@ -431,7 +438,7 @@ describe("executeToolCall", () => {
 });
 
 describe("createRuntime sandbox mode", () => {
-  test("uses provided executeTool and merges default builtins into toolSchemas", async () => {
+  test("uses provided executeTool and adds no builtins by default", async () => {
     const mockExecuteTool = vi.fn(async () => "mocked-result");
     const mockToolSchemas = [
       { type: "function" as const, name: "mock_tool", description: "A mock tool", parameters: {} },
@@ -444,25 +451,23 @@ describe("createRuntime sandbox mode", () => {
       toolSchemas: mockToolSchemas,
     });
 
-    // Relay/host-mode path: the agent has no explicit builtinTools, so the
-    // defaults are resolved here and appended to the relayed schemas.
-    expect(runtime.toolSchemas.map((s) => s.name)).toEqual([
-      "mock_tool",
-      "think",
-      "remember",
-      "recall",
-      "calculate",
-    ]);
+    // Relay/host-mode path. DEFAULT_BUILTIN_TOOLS is empty, so an agent that
+    // sets no `builtinTools` gets exactly the tools it declared — nothing is
+    // appended behind its back.
+    expect(runtime.toolSchemas.map((s) => s.name)).toEqual(["mock_tool"]);
     const result = await runtime.executeTool("any_tool", {}, "s1", []);
     expect(result).toBe("mocked-result");
     // The wrapper forwards a 5th `callOpts` arg (undefined when omitted).
     expect(mockExecuteTool).toHaveBeenCalledWith("any_tool", {}, "s1", [], undefined);
   });
 
-  test("default builtins execute host-side, not via the relay", async () => {
+  test("an ENABLED builtin executes host-side, not via the relay", async () => {
+    // Builtins are opt-in now, but the routing they rely on is unchanged: a
+    // builtin runs in this process rather than being relayed to the client,
+    // which has no implementation for it.
     const mockExecuteTool = vi.fn(async () => "relayed");
     const runtime = createRuntime({
-      agent: makeAgent(),
+      agent: makeAgent({ builtinTools: ["calculate"] }),
       env: {},
       executeTool: mockExecuteTool,
       toolSchemas: [],
@@ -599,9 +604,9 @@ describe("createRuntime — provider resolution seams", () => {
       "Session mode resolved",
       expect.objectContaining({
         mode: "pipeline",
-        stt: "assemblyai",
-        llm: "anthropic",
-        tts: "cartesia",
+        stt: expect.objectContaining({ kind: "assemblyai" }),
+        llm: expect.objectContaining({ kind: "anthropic", model: "claude-haiku-4-5" }),
+        tts: expect.objectContaining({ kind: "cartesia" }),
       }),
     );
   });
@@ -611,8 +616,35 @@ describe("createRuntime — provider resolution seams", () => {
     createRuntime({ agent: baseAgent, env: PROVIDER_KEYS, logger });
     expect(logger.info).toHaveBeenCalledWith(
       "Session mode resolved",
-      expect.objectContaining({ mode: "pipeline", stt: "assemblyai", llm: "assemblyai" }),
+      expect.objectContaining({
+        mode: "pipeline",
+        stt: expect.objectContaining({ kind: "assemblyai" }),
+        llm: expect.objectContaining({ kind: "assemblyai" }),
+      }),
     );
+  });
+
+  // The kind alone was the whole log for a long time, and it is the least
+  // useful half: every value that decides how a session behaves is a DEFAULT
+  // nobody wrote down, so a split utterance or a mute agent could not be tied
+  // to a setting without re-deriving the `??` chains by hand.
+  test("logs each stage's effective settings, defaults included", () => {
+    const logger = makeLogger();
+    createRuntime({ agent: baseAgent, env: PROVIDER_KEYS, logger });
+    const settings = vi
+      .mocked(logger.info)
+      .mock.calls.find(([msg]) => msg === "Session mode resolved")?.[1] as
+      | Record<string, Record<string, unknown>>
+      | undefined;
+    expect(settings?.stt).toMatchObject({
+      model: "universal-3-5-pro",
+      minTurnSilenceMs: DEFAULT_MIN_TURN_SILENCE_MS,
+      maxTurnSilenceMs: DEFAULT_MAX_TURN_SILENCE_MS,
+      voiceFocus: DEFAULT_VOICE_FOCUS,
+      voiceFocusThreshold: DEFAULT_VOICE_FOCUS_THRESHOLD,
+    });
+    expect(settings?.llm).toMatchObject({ model: expect.any(String) });
+    expect(settings?.tts).toMatchObject({ voice: expect.any(String) });
   });
 
   test("logs s2s mode for an agent that opts in via the s2s descriptor", () => {

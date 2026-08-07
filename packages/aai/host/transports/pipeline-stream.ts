@@ -278,6 +278,38 @@ export interface LlmStreamResult {
 }
 
 /**
+ * Spend the step after the tool budget on an answer the caller can hear.
+ *
+ * `stopWhen: stepCountIs(n)` alone stops the turn the moment the budget runs
+ * out — including mid-chain, right after a tool result, with no text emitted.
+ * Nothing downstream can repair that: the reply completes "successfully" with
+ * an empty transcript, so `errorPhrase` does not fire either, and the caller
+ * hears the agent simply stop. The lower the cap, the more often that happens,
+ * which is why it and this function are one change (see DEFAULT_MAX_STEPS).
+ *
+ * So the budget passed to `stopWhen` is `maxSteps + 1`, and this forces
+ * `toolChoice: "none"` on that extra step: the model still has every tool
+ * result in context, but its only remaining move is to speak. Same shape as
+ * LiveKit's behaviour on `max_tool_steps` since 1.4.5.
+ *
+ * It costs nothing in the ordinary case — p50 is one step, so a turn that
+ * never approaches the cap never reaches this callback. The override also
+ * wins over an agent-level `toolChoice: "required"`, which would otherwise
+ * demand a tool call on the one step where tools are unavailable.
+ */
+function forceFinalAnswer(
+  maxSteps: number,
+  log: Logger,
+  sid: string,
+): (opts: { stepNumber: number }) => { toolChoice: "none" } | undefined {
+  return ({ stepNumber }) => {
+    if (stepNumber < maxSteps) return;
+    log.info("maxSteps reached; forcing a final answer with no tools", { maxSteps, sid });
+    return { toolChoice: "none" };
+  };
+}
+
+/**
  * Run one `streamText` turn against the LLM, fan its stream parts out via
  * {@link createStreamPartHandler}, and return the accumulated response
  * messages plus whether the stream failed.
@@ -322,7 +354,10 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
       // Word-coalesce text for TTS, keeping thinking signatures (see pipeline-smooth.ts).
       experimental_transform: smoothTextStream(),
       experimental_repairToolCall: repairToolCall,
-      stopWhen: stepCountIs(maxSteps),
+      // `maxSteps` bounds TOOL-CALLING steps; the budget is one larger so the
+      // forced answer step below has somewhere to run. See forceFinalAnswer.
+      stopWhen: stepCountIs(maxSteps + 1),
+      prepareStep: forceFinalAnswer(maxSteps, log, sid),
       abortSignal: signal,
       onStepFinish: (step) => {
         collected.push(...step.response.messages);

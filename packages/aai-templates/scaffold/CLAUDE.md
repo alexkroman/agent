@@ -89,7 +89,7 @@ export default agent({
   sttPrompt?: string;                        // STT guidance for jargon/acronyms
   builtinTools?: BuiltinTool[];              // see built-in tools table
   tools?: Record<string, ToolDef>;
-  maxSteps?: number;                         // default: 10 — max tool calls per turn
+  maxSteps?: number;                         // default: 3 — max tool calls per turn
   toolChoice?: ToolChoice;                   // "auto" (default) | "required" | "none"
                                              // | { type: "tool", toolName }
   idleTimeoutMs?: number;                    // disconnect after inactivity (ms)
@@ -1007,7 +1007,9 @@ Common mistakes when working in aai projects:
 - Agent code runs in a sandboxed worker — use `fetch` for HTTP, `ctx.env`
   for secrets
 - Tool execution timeout: 30 seconds
-- `maxSteps` limits tool calls per turn (default 10) — increase for
-  multi-tool workflows
+- `maxSteps` limits tool calls per turn (default 3) — increase for
+  multi-tool workflows. On reaching the cap the agent spends one more LLM
+  step with tools switched off, so it answers with what it has instead of
+  going silent mid-chain
 - Tool returns `undefined` if execute function has no return statement —
   always return a value

@@ -20,8 +20,8 @@ import WebSocket from "ws";
 import { WS_OPEN } from "../../../sdk/constants.ts";
 import {
   RIME_API_KEY_ENV,
-  RIME_DEFAULT_VOICE,
   type RimeOptions,
+  resolveRimeSettings,
 } from "../../../sdk/providers/tts/rime.ts";
 import {
   makeTtsError,
@@ -107,9 +107,7 @@ export function openRime(opts: RimeOptions): TtsOpener {
       const connectError = (msg: string) => makeTtsError("tts_connect_failed", msg);
 
       const sampleRate = assertPcm16Rate(openOpts.sampleRate, "Rime TTS", connectError);
-      const model = opts.model ?? "mistv2";
-      const lang = opts.language ?? "eng";
-      const voice = opts.voice ?? RIME_DEFAULT_VOICE;
+      const { model, language: lang, voice } = resolveRimeSettings(opts);
 
       const url = `wss://users-ws.rime.ai/ws2?speaker=${encodeURIComponent(voice)}&modelId=${encodeURIComponent(model)}&audioFormat=pcm&samplingRate=${sampleRate}&lang=${encodeURIComponent(lang)}`;
 

@@ -63,3 +63,27 @@ export type DeepgramProvider = SttProvider & {
 export function deepgram(opts: DeepgramOptions = {}): DeepgramProvider {
   return { kind: DEEPGRAM_KIND, options: { ...opts } };
 }
+
+/** Streaming model used when the descriptor names none. */
+export const DEEPGRAM_DEFAULT_MODEL = "nova-3";
+
+/** Transcription language used when the descriptor names none. */
+export const DEEPGRAM_DEFAULT_LANGUAGE = "en";
+
+/**
+ * The settings this stage will actually run with — the descriptor's own
+ * options with every host-side default filled in. Shared by the opener and
+ * the runtime's "Session mode resolved" log, so the reported settings are by
+ * construction the ones dialled.
+ */
+export function resolveDeepgramSettings(opts: DeepgramOptions): {
+  model: string;
+  language: string;
+  endpointingMs: number;
+} {
+  return {
+    model: opts.model ?? DEEPGRAM_DEFAULT_MODEL,
+    language: opts.language ?? DEEPGRAM_DEFAULT_LANGUAGE,
+    endpointingMs: opts.endpointing ?? DEFAULT_DEEPGRAM_ENDPOINTING_MS,
+  };
+}

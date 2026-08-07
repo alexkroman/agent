@@ -2,7 +2,11 @@
 
 import { createNanoEvents, type Emitter } from "nanoevents";
 import WebSocket from "ws";
-import { SONIOX_API_KEY_ENV, type SonioxOptions } from "../../../sdk/providers/stt/soniox.ts";
+import {
+  resolveSonioxSettings,
+  SONIOX_API_KEY_ENV,
+  type SonioxOptions,
+} from "../../../sdk/providers/stt/soniox.ts";
 import {
   makeSttError,
   type SttEvents,
@@ -65,15 +69,16 @@ function buildConfigFrame(
   opts: SonioxOptions,
   sampleRate: number,
 ): Record<string, unknown> {
+  const settings = resolveSonioxSettings(opts);
   const config: Record<string, unknown> = {
     api_key: apiKey,
-    model: opts.model ?? "stt-rt-v3",
+    model: settings.model,
     audio_format: "pcm_s16le",
     sample_rate: sampleRate,
     num_channels: 1,
   };
-  if (opts.languageHints && opts.languageHints.length > 0) {
-    config.language_hints = [...opts.languageHints];
+  if (settings.languageHints) {
+    config.language_hints = [...settings.languageHints];
   }
   return config;
 }

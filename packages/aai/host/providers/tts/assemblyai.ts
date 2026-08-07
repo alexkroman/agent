@@ -91,11 +91,11 @@ import WebSocket from "ws";
 import { TTS_RECONNECT_TIMEOUT_MS } from "../../../sdk/constants.ts";
 import {
   ASSEMBLYAI_TTS_API_KEY_ENV,
-  ASSEMBLYAI_TTS_DEFAULT_VOICE,
   ASSEMBLYAI_TTS_HOST,
   type AssemblyAITtsOptions,
   assemblyAITtsLanguageCodes,
   resolveAssemblyAITtsLanguage,
+  resolveAssemblyAITtsSettings,
 } from "../../../sdk/providers/tts/assemblyai.ts";
 import {
   makeTtsError,
@@ -149,7 +149,7 @@ function buildUrl(
   fail: (message: string) => Error,
 ): string {
   const params = new URLSearchParams({
-    voice: opts.voice ?? ASSEMBLYAI_TTS_DEFAULT_VOICE,
+    voice: resolveAssemblyAITtsSettings(opts).voice,
     sample_rate: String(sampleRate),
   });
   // Omitted unless set: every voice speaks one language, so the server infers
