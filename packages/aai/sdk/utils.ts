@@ -163,8 +163,15 @@ const SPEECH_CHARS = /[‘’‚‛ʼ′“”„″‟]/g;
  *
  * Applied at the single point where the pipeline hands text to the provider,
  * so it covers model output, the greeting, the error phrase and the dead-air
- * filler alike. **Length-preserving by construction** — see
- * {@link SPEECH_CHAR_MAP} for why that is load-bearing rather than incidental.
+ * filler alike.
+ *
+ * **Length-preserving by construction, and that is load-bearing.** The heard
+ * cursor indexes a reply's TTS text by `text.length`
+ * (`host/transports/pipeline-heard.ts`), and that index decides which words
+ * history records as heard and where a false-interruption resume picks up, so
+ * a substitution that changed length would silently shift both. Scoped to the
+ * quote/apostrophe family for the same reason: `—` and `…` would break the
+ * invariant, and they carry PROSODY that engines already render as pauses.
  *
  * Returns the input unchanged (same reference) when there is nothing to
  * replace, which is the common case for a reply with no contractions.
