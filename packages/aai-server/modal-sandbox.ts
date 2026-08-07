@@ -157,8 +157,8 @@ const DEFAULT_MODAL_APP_NAME = "aai-server";
 /** Container port the harness WebSocket server listens on (tunneled). */
 export const GUEST_PORT = 8080;
 
-/** How often Modal evaluates the readiness probe inside the container. */
-const READINESS_PROBE_INTERVAL_MS = 250;
+/** Probe evaluation interval — half of it is dead spawn time; see CLAUDE.md. */
+const READINESS_PROBE_INTERVAL_MS = 100;
 
 /**
  * Readiness, as Modal evaluates it: is the harness's port open?
