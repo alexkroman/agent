@@ -774,12 +774,26 @@ down, like the file-length allowlist.
   spawn and delivered via the EXEC's env (never the sandbox's). The tunnel
   URL is public; the token is what keeps the managed surfaces from being an
   open door.
-- **Guest sandboxes are NOT region-pinned — capacity beats locality.**
-  `MODAL_SANDBOX_REGION` (comma-separated for multiple) still pins placement
-  via Modal's `regions` create param, but it is an operator override that
-  production leaves unset; `build_image` (scripts/modal_image.py) deliberately
-  bakes no value, and each app's `REGION` constant now pins only its own
-  containers.
+- **Nothing is region-pinned — not guest sandboxes, and not the services
+  themselves. Capacity beats locality.** `MODAL_SANDBOX_REGION`
+  (comma-separated for multiple) still pins SANDBOX placement via Modal's
+  `regions` create param, but it is an operator override that production
+  leaves unset; `build_image` (scripts/modal_image.py) deliberately bakes no
+  value, and neither app's `@app.function` passes `region=`.
+
+  The WEB service's pin (once `us-east-2`) was removed after it took
+  production down, and it is worth knowing the shape because no symptom names
+  a region: the app sits at `deployed` with **zero tasks** despite
+  `MIN_CONTAINERS=1`, requests hang until the client times out having received
+  **zero bytes**, and there are **no container logs at all** — not a crash,
+  because no container is ever created, so `modal app logs` replays the last
+  image build and then streams silence. Everything that normally localizes a
+  fault says healthy: the image builds, the secrets resolve, and booting the
+  entry by hand inside the function's own spec (`modal shell <file>::server
+  -c 'node …'`) serves fine. Neither a redeploy nor `modal app rollover`
+  helps — both only re-ask for a container that still cannot be placed. A
+  warm floor is what makes a pin dangerous, so if a measurement ever justifies
+  re-pinning, prefer Modal's region LIST (a fallback order) over one value.
 
   It used to be exported as `MODAL_SANDBOX_REGION` too, so every guest was
   confined to one region's spare capacity. The failure that buys is a spawn

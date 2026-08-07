@@ -31,7 +31,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "scripts"
 from modal_image import build_image, run_node  # noqa: E402
 
 PORT = 8080
-REGION = "us-east-2"  # co-located with the agent app; guest sandboxes are unpinned
+
+# Region is deliberately UNPINNED, matching the agent app — placement follows
+# capacity. See the "Region: deliberately UNPINNED" block in
+# packages/aai-server/modal_deploy.py for the failure a pin buys; this service
+# idles to zero (STUDIO_MIN_CONTAINERS below), so a pinned region strands it on
+# a COLD START rather than at deploy, which is the same outage arriving later.
 
 # Chat turns are bounded HTTP/SSE requests — heavier per request than a voice
 # relay but with no per-connection pinning, so the studio scales on fewer,
@@ -109,7 +114,7 @@ app = modal.App("aai-studio-web")
 @app.function(
     image=image,
     secrets=[modal.Secret.from_name("aai-server")],
-    region=REGION,
+    # No region= — see the region note above.
     cpu=1,
     memory=2048,
     min_containers=STUDIO_MIN_CONTAINERS,

@@ -62,11 +62,28 @@ from modal_image import build_image, run_node  # noqa: E402
 
 PORT = 8080
 
-# The web server's region. GUEST SANDBOXES ARE NOT PINNED TO IT — Modal
-# places them wherever it has capacity, which is the whole supply of regions
-# rather than this one's (see build_image in scripts/modal_image.py). The
-# studio app pins the same value for its own containers.
-REGION = "us-east-2"
+# ── Region: deliberately UNPINNED ────────────────────────────────────────────
+#
+# The web server is placed by Modal for CAPACITY, the same trade guest
+# sandboxes already make (see build_image in scripts/modal_image.py). It was
+# pinned to ``us-east-2``, which confines an always-warm replica to one
+# region's spare capacity — and when that runs dry Modal places NOTHING.
+#
+# That outage is worth describing, because none of its symptoms name a region:
+# the app sits at ``deployed`` with ZERO tasks despite MIN_CONTAINERS=1 below,
+# every request hangs until the client times out having received zero bytes,
+# and — because no container is ever created — there are NO logs whatsoever,
+# not even a crash. ``modal app logs`` replays the last image build and then
+# streams silence, which reads as a wedged control plane rather than a
+# placement failure. Nothing recovers it: a redeploy or ``modal app rollover``
+# only re-asks for a container that still cannot be placed.
+#
+# The locality this cost is small and shrinking: voice clients dial the guest
+# sandbox's tunnel directly, so no session traffic passes through here at all,
+# and the Supabase round trips that remain are not inside a latency budget.
+# Re-pin per environment (Modal's ``region`` takes a list, so prefer a
+# FALLBACK list over a single value) if a measurement ever justifies it — but
+# never for a service holding a warm floor.
 
 # ── Split services ───────────────────────────────────────────────────────────
 #
@@ -177,7 +194,7 @@ app = modal.App("aai-server-web")
 @app.function(
     image=image,
     secrets=[modal.Secret.from_name("aai-server")],
-    region=REGION,
+    # No region= — see "Region: deliberately UNPINNED" above.
     cpu=1,
     memory=2048,
     # Autoscaler bounds — see the "Web-service autoscaling" block above.
