@@ -10,7 +10,7 @@ import { DefaultChatTransport, type UIMessage } from "ai";
 import clsx from "clsx";
 import { memo, useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { StickToBottom } from "use-stick-to-bottom";
-import type { ChatSession, StudioStatus } from "./api.ts";
+import { type ChatSession, errorText, type StudioStatus } from "./api.ts";
 import {
   drainText,
   EMPTY_QUEUE,
@@ -35,8 +35,14 @@ type ChatPanelProps = {
   llmStatus: StudioStatus | undefined;
   /** The project's brokered sandbox; undefined while booting. */
   chatSession: ChatSession | undefined;
-  /** Booting the sandbox failed — show a retryable error state. */
-  sessionError?: boolean;
+  /**
+   * The error that ended the broker's retries, or null/undefined while the
+   * session is loading or live. The ERROR itself rather than a boolean: the
+   * platform answers a sandbox that would not start with a 503 whose body
+   * says which way it failed, and that sentence is the only thing that tells
+   * a user whether to press "Try again" now or come back later.
+   */
+  sessionError?: unknown;
   /** Tool name → friendly label, served by the sandbox. */
   toolLabels?: Record<string, string> | undefined;
   /** The sandbox went away mid-session — re-broker. */
@@ -443,9 +449,15 @@ export function ChatPanel(props: ChatPanelProps) {
       <div className="flex items-center justify-between gap-2 px-6 pt-5">
         <span className="eyebrow">Agent</span>
       </div>
-      {props.sessionError && (
+      {props.sessionError != null && (
         <div className="flex flex-1 flex-col items-start justify-center gap-3 px-6 py-5">
           <p className="m-0 text-[13px] text-err">Could not start the project's sandbox.</p>
+          {/* The server's own reason, when it gave one — a capacity/boot
+              timeout reads very differently from a bad key, and the generic
+              line above cannot tell them apart. */}
+          {errorText(props.sessionError) && (
+            <p className="m-0 text-[13px] text-subtle">{errorText(props.sessionError)}</p>
+          )}
           {/* Re-broker in place — the retries behind "Starting sandbox…"
               already gave up, so recovery must not require a page reload. */}
           <button type="button" className="btn" onClick={props.onSessionStale}>
@@ -453,7 +465,7 @@ export function ChatPanel(props: ChatPanelProps) {
           </button>
         </div>
       )}
-      {!props.sessionError &&
+      {props.sessionError == null &&
         (props.chatHistory === undefined || props.chatSession === undefined) && (
           // History or sandbox still loading: hold the panel rather than
           // flashing an empty "new chat" the restored conversation replaces.

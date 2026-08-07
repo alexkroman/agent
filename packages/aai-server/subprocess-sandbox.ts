@@ -59,6 +59,7 @@ import { mintDescribeNonce, readDescribeResult } from "./describe-exec.ts";
 import { pollGuestHealth } from "./guest-readiness.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
 import { parseSandboxLimitsFromEnv } from "./modal-sandbox-env.ts";
+import { SandboxUnavailableError } from "./sandbox-errors.ts";
 import { resolveSandboxRole, type SpawnIdentity } from "./sandbox-role.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
 import {
@@ -245,7 +246,9 @@ export async function spawnSubprocessWarm(
       throw err;
     }
   } catch (err) {
-    throw new Error(`Subprocess sandbox spawn failed: ${errorMessage(err)}`, { cause: err });
+    throw new SandboxUnavailableError(`Subprocess sandbox spawn failed: ${errorMessage(err)}`, {
+      cause: err,
+    });
   }
 }
 
@@ -328,7 +331,10 @@ export async function spawnSubprocessAgentServer(
       throw err;
     }
   } catch (err) {
-    throw new Error(`Subprocess agent-server spawn failed: ${errorMessage(err)}`, { cause: err });
+    throw new SandboxUnavailableError(
+      `Subprocess agent-server spawn failed: ${errorMessage(err)}`,
+      { cause: err },
+    );
   }
 }
 

@@ -492,6 +492,25 @@ down, like the file-length allowlist.
   loudly without `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET` (or a `~/.modal.toml`
   profile) rather than degrading. There is **no fallback between backends at
   spawn time**: a failed spawn is a failed spawn.
+- **Every spawn failure is a `SandboxUnavailableError`** (`sandbox-errors.ts`)
+  — both Modal spawners, both subprocess spawners. It is a marker class, not a
+  message: the message stays the backend's technical one (`Modal sandbox spawn
+  failed: Sandbox operation timed out`), and `createErrorHandler` turns the
+  class into a **retryable 503** carrying one authored sentence
+  (`SANDBOX_UNAVAILABLE_MESSAGE`), logged at `warn` with the full `cause`
+  chain. Keeping the two apart is what lets the log stay specific while the
+  wire body leaks nothing.
+
+  The agent path always had this taxonomy — `brokerSessionUrl` answers 503 for
+  any spawn failure — but the STUDIO path had none, so a Modal capacity
+  timeout reached the shared handler as a bare `Error`: logged
+  `Unhandled error on /studio/projects/<x>/session`, answered
+  `500 Internal server error`. Both halves were wrong. The platform was not
+  broken, and the studio client (which retries 5xx) left the user staring at
+  "Internal server error" once its retries ran out, with no way to tell
+  "try again in a minute" from "this project is broken". `SandboxNameTakenError`
+  is deliberately NOT one of these — it is a routing signal the broker
+  catches, never an answer to a client.
 - **Two tiers, and deliberately no middle one.** A local-container backend
   (Apple's `container` CLI) sat between these and was removed. The reasoning
   is worth keeping, because "run a real container locally" keeps sounding
@@ -755,14 +774,27 @@ down, like the file-length allowlist.
   spawn and delivered via the EXEC's env (never the sandbox's). The tunnel
   URL is public; the token is what keeps the managed surfaces from being an
   open door.
-- **Region pinning**: `MODAL_SANDBOX_REGION` (comma-separated for multiple)
-  pins sandbox placement via Modal's `regions` create param. Unpinned, Modal
-  places for capacity — it once put the server in us-east-1/AWS and guest
-  sandboxes in uk-london-1/OCI, so every host↔guest exchange paid a
-  transatlantic RTT inside voice turns. `modal_deploy.py` pins its
-  functions to one `REGION` constant and
-  exports it as `MODAL_SANDBOX_REGION`, so production host and guests are
-  co-located by construction; local dev stays unpinned.
+- **Guest sandboxes are NOT region-pinned — capacity beats locality.**
+  `MODAL_SANDBOX_REGION` (comma-separated for multiple) still pins placement
+  via Modal's `regions` create param, but it is an operator override that
+  production leaves unset; `build_image` (scripts/modal_image.py) deliberately
+  bakes no value, and each app's `REGION` constant now pins only its own
+  containers.
+
+  It used to be exported as `MODAL_SANDBOX_REGION` too, so every guest was
+  confined to one region's spare capacity. The failure that buys is a spawn
+  Modal cannot schedule inside the ~50s `sandbox.tunnels()` waits, surfacing
+  as `SandboxTimeoutError: Sandbox operation timed out` — the whole session
+  fails, and the more regions are available the less often it happens.
+
+  The locality it bought was narrower than the original note claimed
+  ("every host↔guest exchange paid a transatlantic RTT inside voice turns",
+  after an unpinned server in us-east-1/AWS met guests in uk-london-1/OCI).
+  AGENT guests have no host channel at all — voice clients dial the sandbox
+  tunnel directly, so a voice turn crosses that hop **zero** times. Only the
+  studio's control-channel RPCs pay it, outside any latency budget. Re-pin
+  per environment if that ever stops being true; don't re-bake it into the
+  shared image.
 - **Orphan cleanup differs per mode.** STUDIO/INSPECT guests: the host's
   WebSocket IS the liveness signal — a host that dies without teardown
   drops its sockets, and the harness self-exits after

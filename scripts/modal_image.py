@@ -128,13 +128,21 @@ def run_node(entry: str, env: dict[str, str]) -> subprocess.Popen:
     return proc
 
 
-def build_image(*, port: int, region: str, extra_env: dict[str, str] | None = None):
+def build_image(*, port: int, extra_env: dict[str, str] | None = None):
     """The shared image, parameterized only by per-app env.
 
-    ``region`` is baked in as ``MODAL_SANDBOX_REGION`` so guest sandboxes are
-    co-located with the service that spawns them (an unpinned sandbox once
-    landed on another continent, putting a transatlantic RTT inside voice
-    turns).
+    Deliberately does NOT bake ``MODAL_SANDBOX_REGION``: guest sandboxes are
+    placed by Modal for CAPACITY. Pinning them to the service's own region
+    (once ``us-east-2``) bought co-location at the cost of restricting every
+    spawn to one region's free capacity, and a spawn that cannot be scheduled
+    in ~50s fails with ``Sandbox operation timed out`` out of ``tunnels()`` —
+    a studio chat or voice session that never starts. The RTT the pin was
+    added for is the smaller cost: agent guests hold no host channel at all
+    (clients dial the sandbox tunnel directly), so only the studio's
+    control-channel round trips pay it.
+
+    ``MODAL_SANDBOX_REGION`` is still read by ``modal-sandbox-env.ts``, so an
+    operator can pin placement per environment without a code change.
     """
     return (
         # ``add_python`` layers the Modal runtime's Python next to Node — the
@@ -158,7 +166,6 @@ def build_image(*, port: int, region: str, extra_env: dict[str, str] | None = No
                 "NODE_ENV": "production",
                 "PORT": str(port),
                 "GUEST_HARNESS_PATH": GUEST_HARNESS_PATH,
-                "MODAL_SANDBOX_REGION": region,
                 **(extra_env or {}),
             }
         )

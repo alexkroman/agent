@@ -62,9 +62,10 @@ from modal_image import build_image, run_node  # noqa: E402
 
 PORT = 8080
 
-# One region for the web server AND the guest sandboxes it creates (see the
-# co-location rationale in CLAUDE.md's Modal notes). The studio app pins the
-# same value in its own modal_deploy.py.
+# The web server's region. GUEST SANDBOXES ARE NOT PINNED TO IT — Modal
+# places them wherever it has capacity, which is the whole supply of regions
+# rather than this one's (see build_image in scripts/modal_image.py). The
+# studio app pins the same value for its own containers.
 REGION = "us-east-2"
 
 # ── Split services ───────────────────────────────────────────────────────────
@@ -160,8 +161,6 @@ SANDBOX_MEMORY_LIMIT_MB = 4096  # hard per-guest memory cap (Modal memoryLimitMi
 
 image = build_image(
     port=PORT,
-    # Guest sandboxes are pinned to the web server's region (above).
-    region=REGION,
     extra_env={
         # A cap without its reservation throws at spawn (Modal rejects a bare
         # cap), so these four move together — see modal-sandbox-env.ts.

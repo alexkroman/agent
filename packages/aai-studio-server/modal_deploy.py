@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "scripts"
 from modal_image import build_image, run_node  # noqa: E402
 
 PORT = 8080
-REGION = "us-east-2"  # co-located with the agent app and guest sandboxes
+REGION = "us-east-2"  # co-located with the agent app; guest sandboxes are unpinned
 
 # Chat turns are bounded HTTP/SSE requests — heavier per request than a voice
 # relay but with no per-connection pinning, so the studio scales on fewer,
@@ -91,7 +91,6 @@ SANDBOX_MEMORY_LIMIT_MB = 4096  # hard per-guest memory cap (Modal memoryLimitMi
 # dependency tree the tests exercised.
 image = build_image(
     port=PORT,
-    region=REGION,
     extra_env={
         # Guest-sandbox burst range — see the block above. Values in the
         # aai-server Secret override these (secrets layer over image env).

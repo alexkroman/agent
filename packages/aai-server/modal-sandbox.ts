@@ -58,6 +58,7 @@ import {
 } from "./modal-sandbox-env.ts";
 import type { RpcWebSocket } from "./rpc-transport.ts";
 import { SandboxNameTakenError } from "./sandbox-directory.ts";
+import { SandboxUnavailableError } from "./sandbox-errors.ts";
 import { resolveSandboxRole, type SpawnIdentity, sandboxTags } from "./sandbox-role.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
 import { type DialGuest, dialGuest, startGuestLogging, warmFromGuest } from "./warm-harness.ts";
@@ -480,7 +481,9 @@ export async function spawnModalWarm(
   } catch (err) {
     // Never leak a sandbox whose harness failed to start.
     await sb.terminate().catch(() => undefined);
-    throw new Error(`Modal sandbox spawn failed: ${errorMessage(err)}`, { cause: err });
+    throw new SandboxUnavailableError(`Modal sandbox spawn failed: ${errorMessage(err)}`, {
+      cause: err,
+    });
   }
 }
 

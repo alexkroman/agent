@@ -6,7 +6,7 @@
 import type { UIMessage } from "ai";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
-import { Composer, notifyDispatch } from "./chat.tsx";
+import { ChatPanel, Composer, notifyDispatch } from "./chat.tsx";
 import { toBlocks } from "./tool-row.tsx";
 
 function message(parts: Record<string, unknown>[]): UIMessage {
@@ -125,6 +125,37 @@ describe("Composer", () => {
     expect(html).toContain("fix lint");
     expect(html).toContain('aria-label="Remove queued message 1"');
     expect(html).toContain('aria-label="Remove queued message 2"');
+  });
+});
+
+describe("ChatPanel session failure", () => {
+  const panelProps = {
+    chatHistory: [] as UIMessage[],
+    llmStatus: { llm: true },
+    chatSession: undefined,
+    onSessionStale: noop,
+    initialPrompt: null,
+    onInitialPromptSent: noop,
+    onWorkspaceChanged: noop,
+  };
+
+  test("shows the server's reason, not just the generic line", () => {
+    // The platform answers a sandbox that would not start with a 503 whose
+    // body says why (capacity, boot timeout). Dropping it left every failure
+    // reading as "Could not start the project's sandbox." — the one string
+    // that tells the user nothing about whether retrying will help.
+    const html = renderToStaticMarkup(
+      <ChatPanel {...panelProps} sessionError={new Error("the platform is at capacity")} />,
+    );
+    expect(html).toContain("Could not start the project&#x27;s sandbox.");
+    expect(html).toContain("the platform is at capacity");
+    expect(html).toContain("Try again");
+  });
+
+  test("no error means the booting state, not the failure state", () => {
+    const html = renderToStaticMarkup(<ChatPanel {...panelProps} sessionError={null} />);
+    expect(html).toContain("Starting sandbox…");
+    expect(html).not.toContain("Try again");
   });
 });
 
