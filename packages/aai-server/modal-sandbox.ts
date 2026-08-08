@@ -39,7 +39,7 @@ import { GUEST_READY_TIMEOUT_MS, raceGuestExit } from "./guest-readiness.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
 import {
   GUEST_PORT,
-  GUEST_READINESS_PROBE,
+  guestSandboxCreateParams,
   harnessCode,
   type ModalProcLike,
   type ModalSandboxLike,
@@ -48,14 +48,9 @@ import {
   resetModalContext,
 } from "./modal-context.ts";
 import { guestExecBaseEnv, HARNESS_REMOTE_PATH } from "./modal-harness-image.ts";
-import {
-  DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
-  DEFAULT_SANDBOX_TIMEOUT_MS,
-  guestSandboxResources,
-} from "./modal-sandbox-env.ts";
 import type { RpcWebSocket } from "./rpc-transport.ts";
 import { SandboxUnavailableError } from "./sandbox-errors.ts";
-import { resolveSandboxRole, type SpawnIdentity, sandboxTags } from "./sandbox-role.ts";
+import { resolveSandboxRole, type SpawnIdentity } from "./sandbox-role.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
 import { type DialGuest, dialGuest, startGuestLogging, warmFromGuest } from "./warm-harness.ts";
 
@@ -102,26 +97,12 @@ export async function spawnModalWarm(
     harnessCode(opts.harnessPath),
     ctx ? Promise.resolve(ctx) : modalContext(),
   ]);
-  const { limits, resourceParams } = guestSandboxResources(process.env);
   const role = resolveSandboxRole(opts);
 
   const t0 = performance.now();
   const sb = await context.createGuestSandbox(
     code,
-    {
-      // Explicit idle entrypoint: the exec'd harness is what holds the sandbox
-      // active, so its exit is what starts the idle timer.
-      command: ["sleep", "infinity"],
-      ...(opts.name && { name: opts.name }),
-      // The host dials in through this tunnel; the harness's bearer-token
-      // check is what keeps the public tunnel URL from being an open door.
-      encryptedPorts: [GUEST_PORT],
-      readinessProbe: GUEST_READINESS_PROBE,
-      timeoutMs: limits.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
-      idleTimeoutMs: limits.idleTimeoutMs ?? DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
-      ...resourceParams,
-      tags: sandboxTags(role, opts.slug),
-    },
+    guestSandboxCreateParams({ role, slug: opts.slug, name: opts.name }),
     opts.imageTag,
   );
   try {

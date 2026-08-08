@@ -16,8 +16,6 @@ type DeployData = { slug: string; url: string; warnings?: string[] };
 export async function executeDeploy(opts: {
   cwd: string;
   server?: string | undefined;
-  /** See DeployOpts.allowMissingSecrets (`--allow-missing-secrets`). */
-  allowMissingSecrets?: boolean | undefined;
   /** See DeployOpts.allowPreviewSlug (`--allow-preview-slug`; studio-internal). */
   allowPreviewSlug?: boolean | undefined;
   /** `--skipTypecheck`: deploy without the tsc gate. */
@@ -72,7 +70,6 @@ export async function executeDeploy(opts: {
     // must win — matching the server's own defaultEnv merge semantics.
     env: uploadEnv,
     ...(slug ? { slug } : {}),
-    ...(opts.allowMissingSecrets ? { allowMissingSecrets: true } : {}),
     ...(opts.allowPreviewSlug ? { allowPreviewSlug: true } : {}),
     apiKey,
   });

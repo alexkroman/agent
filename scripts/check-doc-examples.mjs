@@ -27,9 +27,8 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { REPO_ROOT as repo, runScaffoldTsc } from "./_scaffold-tsc.mjs";
 
-const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // Inside aai-templates so bare imports (`@alexkroman1/aai`, `zod`, react)
 // resolve by the normal node_modules walk-up, exactly as templates do.
 const scratch = path.join(repo, `packages/aai-templates/.doc-examples-scratch-${process.pid}`);
@@ -197,41 +196,31 @@ examples.forEach((ex, i) => {
   writeFileSync(path.join(scratch, name), `${ex.code}\nexport {};\n`);
 });
 
-const scaffoldDir = path.join(repo, "packages/aai-templates/scaffold");
-const scaffold = JSON.parse(readFileSync(path.join(scaffoldDir, "tsconfig.json"), "utf-8"));
-
-/**
- * The scaffold config, exactly as check-template-types derives it, so an
- * example holds to the same compiler a scaffolded project runs. `types`
- * swaps in `node` only (examples never use vitest globals).
- */
-const config = {
-  compilerOptions: {
-    ...scaffold.compilerOptions,
-    types: ["node"],
-    noEmit: true,
-    // Examples routinely end on an import or a declaration the prose picks
-    // up — unused-symbol strictness would fight the medium.
-    noUnusedLocals: false,
-    noUnusedParameters: false,
-  },
-  include: [path.join(scratch, "*.ts"), path.join(scratch, "*.tsx")],
-};
-
-// Root-level for the same reason as check-template-types: `types` resolves
-// relative to the tsconfig's own directory.
-const configPath = path.join(repo, `tsconfig.doc-examples-${process.pid}.json`);
-writeFileSync(configPath, JSON.stringify(config, null, 2));
-
+let result;
 try {
-  execFileSync(path.join(repo, "node_modules/.bin/tsc"), ["-p", configPath], {
-    encoding: "utf-8",
-    stdio: "pipe",
+  result = runScaffoldTsc({
+    // Per-pid, because two doc-example runs may overlap; the templates gate
+    // has no such concurrency and keeps a fixed name.
+    name: `doc-examples-${process.pid}`,
+    overrides: {
+      // `node` only — examples never use vitest globals.
+      types: ["node"],
+      // Examples routinely end on an import or a declaration the prose picks
+      // up — unused-symbol strictness would fight the medium.
+      noUnusedLocals: false,
+      noUnusedParameters: false,
+    },
+    include: [path.join(scratch, "*.ts"), path.join(scratch, "*.tsx")],
   });
+} finally {
+  rmSync(scratch, { recursive: true, force: true });
+}
+
+if (result.ok) {
   console.log(`check-doc-examples: all ${examples.length} doc examples compile. ✓`);
-} catch (err) {
+} else {
   // Rewrite scratch paths in diagnostics back to the doc that owns the fence.
-  const out = String(err.stdout ?? "").replace(
+  const out = result.output.replace(
     /[^\s(]*\.doc-examples-scratch-\d+\/(example-\d+\.tsx?)/g,
     (_, name) => {
       const ex = manifest.get(name);
@@ -245,7 +234,4 @@ try {
       "is deliberately a fragment opts out with `no-check`: ```ts no-check",
   );
   process.exitCode = 1;
-} finally {
-  rmSync(configPath, { force: true });
-  rmSync(scratch, { recursive: true, force: true });
 }

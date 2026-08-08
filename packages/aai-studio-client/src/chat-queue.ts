@@ -81,11 +81,11 @@ export function queueReducer(state: MessageQueue, action: QueueAction): MessageQ
  */
 export function nextToFlush(
   queue: MessageQueue,
-  ctx: { readonly status: ChatStatus; readonly llmReady: boolean },
+  ctx: { readonly status: ChatStatus; readonly chatReady: boolean },
 ): string | null {
   const [next] = queue.items;
   if (next === undefined || queue.dispatched) return null;
-  return ctx.llmReady && ctx.status === "ready" ? next.text : null;
+  return ctx.chatReady && ctx.status === "ready" ? next.text : null;
 }
 
 /**

@@ -11,7 +11,12 @@ import {
   MAX_STUDIO_CHAT_STORE_BYTES,
   trimChatToByteBudget,
 } from "./chat-store.ts";
-import type { SqlExec } from "./secret-store.ts";
+import {
+  createDispatchingSql,
+  createRecordingSql,
+  refusingDdl,
+  type SqlHandler,
+} from "./test-utils.ts";
 
 function msg(id: string, text = "hi"): Record<string, unknown> {
   return { id, role: "user", parts: [{ type: "text", text }] };
@@ -24,52 +29,30 @@ function msg(id: string, text = "hi"): Record<string, unknown> {
  * string-column parse branch.
  */
 function createFakeSql(opts: { failEnsures?: number } = {}) {
-  type Handler = (params: unknown[]) => Record<string, unknown>[];
   const rows = new Map<string, string>();
-  const log: { query: string; params: unknown[] }[] = [];
-  let ensureFailures = opts.failEnsures ?? 0;
   const key = (scope: unknown, project: unknown) => `${scope} ${project}`;
 
-  const ddl: Handler = () => {
-    if (ensureFailures > 0) {
-      ensureFailures -= 1;
-      throw new Error("ddl refused");
-    }
-    return [];
-  };
-  const selectRow: Handler = ([scope, project]) => {
+  const ddl = refusingDdl(opts.failEnsures);
+  const selectRow: SqlHandler = ([scope, project]) => {
     const row = rows.get(key(scope, project));
     return row === undefined ? [] : [{ messages: row }];
   };
-  const upsertRow: Handler = ([scope, project, messages]) => {
+  const upsertRow: SqlHandler = ([scope, project, messages]) => {
     rows.set(key(scope, project), String(messages));
     return [];
   };
-  const deleteRow: Handler = ([scope, project]) => {
+  const deleteRow: SqlHandler = ([scope, project]) => {
     rows.delete(key(scope, project));
     return [];
   };
-  const handlers: [string, Handler][] = [
+
+  return createDispatchingSql([
     ["create schema", ddl],
     ["create table", ddl],
     ["select messages", selectRow],
     ["insert into", upsertRow],
     ["delete", deleteRow],
-  ];
-
-  const sql: SqlExec = (query, params = []) => {
-    log.push({ query, params });
-    const q = query.replace(/\s+/g, " ").trim().toLowerCase();
-    const handler = handlers.find(([prefix]) => q.startsWith(prefix))?.[1];
-    if (!handler) return Promise.reject(new Error(`Unexpected query: ${query}`));
-    try {
-      return Promise.resolve(handler(params));
-    } catch (err) {
-      return Promise.reject(err);
-    }
-  };
-
-  return { sql, log };
+  ]);
 }
 
 // ── Behavioral parity: both implementations must agree ─────────────────────
@@ -211,14 +194,16 @@ describe("createPgChatStore SQL", () => {
   });
 
   test("reads accept a jsonb column that arrives pre-parsed", async () => {
-    const sql: SqlExec = (query) =>
-      Promise.resolve(query.includes("select messages") ? [{ messages: [msg("m1")] }] : []);
+    const { sql } = createRecordingSql((query) =>
+      query.includes("select messages") ? [{ messages: [msg("m1")] }] : [],
+    );
     expect(await createPgChatStore(sql).getChat("s", "p")).toEqual([msg("m1")]);
   });
 
   test("a malformed stored value reads as null, not a crash", async () => {
-    const sql: SqlExec = (query) =>
-      Promise.resolve(query.includes("select messages") ? [{ messages: { not: "an array" } }] : []);
+    const { sql } = createRecordingSql((query) =>
+      query.includes("select messages") ? [{ messages: { not: "an array" } }] : [],
+    );
     expect(await createPgChatStore(sql).getChat("s", "p")).toBeNull();
   });
 });

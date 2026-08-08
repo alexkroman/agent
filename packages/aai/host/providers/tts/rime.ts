@@ -41,7 +41,7 @@ import {
   connectOrThrow,
   createDoneLatch,
   createGuardedWs,
-  createSessionShell,
+  createTtsSessionShell,
   dropSocket,
   requireApiKey,
   waitForOpen,
@@ -139,9 +139,8 @@ export function openRime(opts: RimeOptions): TtsOpener {
       // deadline as soon as audio starts flowing.
       const quiescence = createRestartableTimer(() => emitDoneOnce());
 
-      const shell = createSessionShell({
-        makeStreamError: (msg) => makeTtsError("tts_stream_error", msg),
-        emitError: (err) => emitter.emit("error", err),
+      const shell = createTtsSessionShell({
+        emitter,
         teardown: () => {
           quiescence.clear();
           // Detach and close, leaving a zero-listener error guard so a late

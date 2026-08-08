@@ -22,9 +22,13 @@
  */
 
 import type { AgentDef } from "../sdk/types.ts";
-import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
-import { type AgentServer, createServer, decliningRuntime, type ServerOptions } from "./server.ts";
+import {
+  type AgentServer,
+  createServer,
+  decliningRuntime,
+  type PassthroughServerOptions,
+} from "./server.ts";
 
 /**
  * Session settings every tenant inherits, minus the four the handshake owns.
@@ -40,7 +44,8 @@ export type HostSessionDefaults = Omit<
 >;
 
 /** Configuration for {@link createHostServer}. */
-export type HostServerOptions = {
+// An interface, not an intersection — see the note on `AgentServerOptions`.
+export interface HostServerOptions extends PassthroughServerOptions {
   /**
    * What every tenant session inherits. Omit for the default all-AssemblyAI
    * pipeline — one caller-supplied `ASSEMBLYAI_API_KEY` then covers STT, the
@@ -58,13 +63,7 @@ export type HostServerOptions = {
   env?: Record<string, string>;
   /** Display name served by `GET /client-config`. Defaults to `"host"`. */
   name?: string;
-  /** Structured logger. Defaults to the console logger. */
-  logger?: Logger;
-  /** First look at every WebSocket upgrade — see {@link ServerOptions.upgrade}. */
-  upgrade?: ServerOptions["upgrade"];
-  /** First look at every HTTP request — see {@link ServerOptions.request}. */
-  request?: ServerOptions["request"];
-};
+}
 
 /** Plain `/websocket` sessions have no agent to run on a host-only server. */
 const HOST_ONLY = "This server serves host-mode sessions only — connect with ?host=1.";

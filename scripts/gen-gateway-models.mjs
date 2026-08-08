@@ -25,22 +25,13 @@
  * working are different claims.
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import path from "node:path";
+import { writeFileSync } from "node:fs";
+import { apiKey } from "./_api-key.mjs";
 
 const US = "https://llm-gateway.assemblyai.com/v1/models";
 const EU = "https://llm-gateway.eu.assemblyai.com/v1/models";
 const CHAT = "https://llm-gateway.assemblyai.com/v1/chat/completions";
 const TARGET = new URL("../packages/aai/sdk/providers/llm/gateway-models.ts", import.meta.url);
-
-function apiKey() {
-  if (process.env.ASSEMBLYAI_API_KEY) return process.env.ASSEMBLYAI_API_KEY;
-  const cfg = path.join(homedir(), ".config", "aai", "config.json");
-  const key = JSON.parse(readFileSync(cfg, "utf-8")).apiKey;
-  if (!key) throw new Error("no apiKey in ~/.config/aai/config.json");
-  return key;
-}
 
 async function models(url, key) {
   const res = await fetch(url, { headers: { Authorization: `Bearer ${key}` } });

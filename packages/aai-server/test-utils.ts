@@ -14,7 +14,7 @@ import {
   withWorkspaceEvents,
 } from "./platform-events.ts";
 import { type AgentSlot, createSlotCache } from "./sandbox-slots.ts";
-import { createMemorySecretStore, type SecretStore } from "./secret-store.ts";
+import { createMemorySecretStore, type SecretStore, type SqlExec } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
 import { createMemoryWorkspaceStore, type WorkspaceStore } from "./workspace-store.ts";
 
@@ -122,4 +122,74 @@ export async function deployAgent(
     headers: authHeaders(key),
     body: deployBody({ slug }),
   });
+}
+
+// ── SqlExec fakes ────────────────────────────────────────────────────────────
+
+/** One statement's behaviour in a {@link createDispatchingSql} fake. */
+export type SqlHandler = (params: unknown[]) => Record<string, unknown>[];
+
+/** A statement issued against a fake `SqlExec`, in the order it was issued. */
+export type SqlCall = { query: string; params: unknown[] };
+
+/**
+ * A fake `SqlExec` that dispatches each statement to the FIRST handler whose
+ * prefix matches, logging every call for shape assertions.
+ *
+ * Matching is on the whitespace-collapsed, lower-cased statement, so handler
+ * prefixes read like the SQL they stand for. Order matters where one prefix
+ * extends another — the workspace store's metadata patch and its versioned
+ * update both begin `update <table> set doc =`, so the longer prefix has to
+ * be listed first. An unmatched statement REJECTS rather than returning `[]`:
+ * a store that grows a statement its fake does not model must fail loudly,
+ * not read as an empty result set.
+ */
+export function createDispatchingSql(handlers: readonly [string, SqlHandler][]): {
+  sql: SqlExec;
+  log: SqlCall[];
+} {
+  const log: SqlCall[] = [];
+  const sql: SqlExec = (query, params = []) => {
+    log.push({ query, params });
+    const q = query.replace(/\s+/g, " ").trim().toLowerCase();
+    const handler = handlers.find(([prefix]) => q.startsWith(prefix))?.[1];
+    if (!handler) return Promise.reject(new Error(`Unexpected query: ${query}`));
+    try {
+      return Promise.resolve(handler(params));
+    } catch (err) {
+      return Promise.reject(err);
+    }
+  };
+  return { sql, log };
+}
+
+/**
+ * A DDL handler that refuses its first `failures` calls, then succeeds — for
+ * the stores' "a failed `create table` must not wedge the store" specs.
+ */
+export function refusingDdl(failures = 0): SqlHandler {
+  let remaining = failures;
+  return () => {
+    if (remaining > 0) {
+      remaining -= 1;
+      throw new Error("ddl refused");
+    }
+    return [];
+  };
+}
+
+/**
+ * A fake `SqlExec` that records every statement and answers from one
+ * `respond` function — for stores whose specs assert on the statements
+ * issued rather than on state accumulated across them.
+ */
+export function createRecordingSql(
+  respond: (query: string, params: unknown[]) => Record<string, unknown>[] = () => [],
+): { sql: SqlExec; calls: SqlCall[] } {
+  const calls: SqlCall[] = [];
+  const sql: SqlExec = (query, params = []) => {
+    calls.push({ query, params });
+    return Promise.resolve(respond(query, params));
+  };
+  return { sql, calls };
 }

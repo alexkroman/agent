@@ -44,7 +44,7 @@ import {
   closeOnAbort,
   connectOrThrow,
   createDoneLatch,
-  createSessionShell,
+  createTtsSessionShell,
   type Pcm16Rate,
   requireApiKey,
 } from "../_utils.ts";
@@ -98,9 +98,8 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
       );
 
       const emitter: Emitter<TtsEvents> = createNanoEvents<TtsEvents>();
-      const shell = createSessionShell({
-        makeStreamError: (msg) => makeTtsError("tts_stream_error", msg),
-        emitError: (err) => emitter.emit("error", err),
+      const shell = createTtsSessionShell({
+        emitter,
         teardown: () => ws.close({ code: 1000, reason: "client close" }),
       });
 

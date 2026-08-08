@@ -95,6 +95,7 @@ export {
   DEFAULT_LISTEN_HOST,
   decliningRuntime,
   isPathInside,
+  type PassthroughServerOptions,
   type ServerOptions,
   type SessionRuntime,
 } from "./server.ts";

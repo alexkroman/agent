@@ -2,7 +2,7 @@
 /**
  * HTTP surface of the browser studio, mounted at `/studio`:
  *
- * - `GET  /studio/status`                     — is the chat LLM configured?
+ * - `GET  /studio/status`                     — which LLM chat runs on
  * - `GET  /studio/projects`                   — list the caller's projects
  * - `POST /studio/projects`                   — create a project (starter files;
  *   the server generates the name from the creating `prompt` unless an
@@ -175,8 +175,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
 
   const limits = createRouteLimits(options.rateLimiters);
 
-  // `llm: true` is legacy shape — chat always runs now, on the caller's key.
-  studio.get("/status", (c) => c.json({ llm: true, ...studioLlmInfo() }));
+  studio.get("/status", (c) => c.json(studioLlmInfo()));
 
   // /auth, /account, /account/key, /cli-link/* — the browser-session
   // account surface (key onboarding, `aai login` device link).

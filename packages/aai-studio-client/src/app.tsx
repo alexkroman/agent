@@ -404,7 +404,7 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
             onSessionStale={() =>
               void queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions })
             }
-            llmStatus={status.data}
+            chatStatus={status.data}
             initialPrompt={pendingPrompt}
             onInitialPromptSent={() => setPendingPrompt(null)}
             onWorkspaceChanged={invalidateWorkspace}

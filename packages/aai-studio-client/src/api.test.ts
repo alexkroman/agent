@@ -199,8 +199,8 @@ describe("api", () => {
   });
 
   test("status is unauthenticated and returns the body", async () => {
-    const fetchMock = stubFetch(() => jsonResponse({ llm: true, provider: "assemblyai" }));
-    await expect(api.status()).resolves.toEqual({ llm: true, provider: "assemblyai" });
+    const fetchMock = stubFetch(() => jsonResponse({ provider: "assemblyai" }));
+    await expect(api.status()).resolves.toEqual({ provider: "assemblyai" });
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit | undefined];
     expect(url).toBe("/studio/status");
     expect(init).toBeUndefined();

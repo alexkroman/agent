@@ -1,16 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
-import { describe, expect, test, vi } from "vitest";
-import { createMemorySecretStore, createVaultSecretStore, type SqlExec } from "./secret-store.ts";
-
-/** Fake SqlExec that records every statement and returns scripted rows. */
-function fakeSql(respond: (query: string, params?: unknown[]) => Record<string, unknown>[]) {
-  const calls: { query: string; params?: unknown[] | undefined }[] = [];
-  const sql: SqlExec = vi.fn(async (query, params) => {
-    calls.push({ query, params });
-    return respond(query, params);
-  });
-  return { sql, calls };
-}
+import { describe, expect, test } from "vitest";
+import { createMemorySecretStore, createVaultSecretStore } from "./secret-store.ts";
+import { createRecordingSql as fakeSql } from "./test-utils.ts";
 
 describe("createVaultSecretStore", () => {
   test("get reads decrypted_secrets by name", async () => {

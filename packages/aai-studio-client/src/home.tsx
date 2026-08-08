@@ -6,7 +6,7 @@
 
 import { useState } from "react";
 import type { StudioStatus } from "./api.ts";
-import { LlmStatusNote } from "./llm-status-note.tsx";
+import { ChatStatusNote } from "./chat-status-note.tsx";
 import { isEnterSubmit, SendButton } from "./send-button.tsx";
 import { sampleStarters } from "./starters.ts";
 
@@ -62,8 +62,10 @@ export function HomeHero({ status, creating, onStart }: HomeHeroProps) {
   const [input, setInput] = useState("");
   // Sampled once per mount — a fresh random five on every page load.
   const [starters] = useState(() => sampleStarters(STARTER_SAMPLE_SIZE));
-  const llmReady = status?.llm === true;
-  const disabled = creating || !llmReady;
+  // Nothing is submittable until `/studio/status` lands: a project created
+  // against a server we haven't reached yet has nowhere to send its prompt.
+  const ready = status !== undefined;
+  const disabled = creating || !ready;
   const submit = () => {
     const text = input.trim();
     if (!text || disabled) return;
@@ -102,7 +104,7 @@ export function HomeHero({ status, creating, onStart }: HomeHeroProps) {
           <SendButton className="h-9 w-9" onClick={submit} disabled={disabled} />
         </div>
       </div>
-      {llmReady && (
+      {ready && (
         <div className="flex flex-col items-center gap-3">
           <span className="text-xs text-subtle">Or try one of these</span>
           <div className="flex w-full max-w-3xl flex-wrap justify-center gap-2">
@@ -120,7 +122,7 @@ export function HomeHero({ status, creating, onStart }: HomeHeroProps) {
           </div>
         </div>
       )}
-      <LlmStatusNote status={status} className="max-w-md text-center" />
+      <ChatStatusNote status={status} />
     </main>
   );
 }

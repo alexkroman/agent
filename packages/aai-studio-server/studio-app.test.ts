@@ -64,7 +64,7 @@ describe("createStudioApp", () => {
     // /studio/status is unauthenticated and answers regardless of LLM config.
     const status = await fetch("/studio/status");
     expect(status.status).toBe(200);
-    await expect(status.json()).resolves.toMatchObject({ llm: expect.any(Boolean) });
+    await expect(status.json()).resolves.toMatchObject({ model: expect.any(String) });
   });
 
   it("scopes projects to the caller's bearer key", async () => {

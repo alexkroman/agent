@@ -58,7 +58,7 @@ afterEach(() => {
 describe("App auth handling", () => {
   test("a 401 on the project list signs the user out", async () => {
     stubFetch({
-      "/studio/status": () => jsonResponse({ llm: false }),
+      "/studio/status": () => jsonResponse({ provider: "assemblyai", model: "gpt-5.5" }),
       "/studio/events": sseResponse,
       "/studio/projects": () => jsonResponse({ error: "unauthorized" }, 401),
     });
@@ -73,7 +73,7 @@ describe("App auth handling", () => {
     // refresh a hidden tab — so without this the stream polls a token nobody
     // will accept, forever, at the floor backoff.
     stubFetch({
-      "/studio/status": () => jsonResponse({ llm: true }),
+      "/studio/status": () => jsonResponse({ provider: "assemblyai", model: "gpt-5.5" }),
       "/studio/events": () => jsonResponse({ error: "unauthorized" }, 401),
       "/studio/projects": () => jsonResponse({ projects: [] }),
     });
@@ -84,7 +84,7 @@ describe("App auth handling", () => {
 
   test("an authorized empty project list renders the hero prompt box, no sign-out", async () => {
     stubFetch({
-      "/studio/status": () => jsonResponse({ llm: true }),
+      "/studio/status": () => jsonResponse({ provider: "assemblyai", model: "gpt-5.5" }),
       "/studio/events": sseResponse,
       "/studio/projects/demo/events": sseResponse,
       "/studio/projects": () => jsonResponse({ projects: [] }),
@@ -98,7 +98,7 @@ describe("App auth handling", () => {
 
   test("a failed workspace fetch surfaces an error banner instead of an empty project", async () => {
     stubFetch({
-      "/studio/status": () => jsonResponse({ llm: true }),
+      "/studio/status": () => jsonResponse({ provider: "assemblyai", model: "gpt-5.5" }),
       "/studio/events": sseResponse,
       "/studio/projects/demo/events": sseResponse,
       "/studio/projects": () => jsonResponse({ projects: ["demo"] }),
@@ -118,7 +118,7 @@ describe("App auth handling", () => {
 
 describe("chat history hydration", () => {
   const demoRoutes = {
-    "/studio/status": () => jsonResponse({ llm: true }),
+    "/studio/status": () => jsonResponse({ provider: "assemblyai", model: "gpt-5.5" }),
     "/studio/events": sseResponse,
     "/studio/projects/demo/events": sseResponse,
     "/studio/projects": () => jsonResponse({ projects: ["demo"] }),

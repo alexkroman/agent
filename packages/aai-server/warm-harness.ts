@@ -11,7 +11,9 @@
  * per backend candidate: exit listeners fire exactly once (and immediately
  * for late registrations), cleanup is memoized so concurrent callers wait
  * for the same teardown, and a dropped socket counts as death because the
- * host never redials.
+ * host never redials. They live in `createGuestLiveness` — ONE copy, shared
+ * by both handle shapes; a second hand-rolled latch is how they drifted
+ * before.
  */
 
 import { createServer } from "node:net";
@@ -144,6 +146,76 @@ export async function dialGuest(url: string, token: string): Promise<RpcWebSocke
   }
 }
 
+// ── Guest liveness ───────────────────────────────────────────────────────────
+
+/**
+ * The exit/teardown semantics every guest handle shares, as one object: a
+ * one-shot death latch with fan-out, and a memoized best-effort terminate.
+ *
+ * Both handle constructors below need exactly this and differ only in what
+ * ELSE counts as death (an agent guest has no host socket to drop), so the
+ * extra signal is wired by the caller against the returned `kill`.
+ */
+type GuestLiveness = {
+  alive(): boolean;
+  /** One-shot exit listener; fires immediately when already dead. */
+  onExit(cb: () => void): void;
+  /** Mark the guest dead and fan out to the listeners. Idempotent. */
+  kill(): void;
+  /** Terminate the backend's sandbox. Memoized, best-effort, never throws. */
+  cleanup(): Promise<void>;
+};
+
+function createGuestLiveness(
+  proc: GuestProcLike,
+  terminate: () => Promise<unknown>,
+): GuestLiveness {
+  const exitListeners: (() => void)[] = [];
+  let dead = false;
+  const fire = (cb: () => void): void => {
+    try {
+      cb();
+    } catch {
+      // Listener errors must not crash the host.
+    }
+  };
+  const kill = (): void => {
+    if (dead) return;
+    dead = true;
+    for (const cb of exitListeners) fire(cb);
+  };
+  // The harness process ending — clean exit, sandbox timeout, OOM kill,
+  // terminate() — all settle wait().
+  proc.wait().then(kill, kill);
+
+  let cleanupPromise: Promise<void> | null = null;
+  return {
+    alive: () => !dead,
+    onExit(cb) {
+      // A harness can die between spawn resolution and this registration —
+      // `kill` walks the listener list exactly once, so a listener added
+      // afterwards would never fire, so its holder would never learn the
+      // harness is unusable. Fire it now.
+      if (dead) fire(cb);
+      else exitListeners.push(cb);
+    },
+    kill,
+    cleanup() {
+      // Memoized: a concurrent second caller must wait for the sandbox to
+      // actually be terminated, not return before the first caller finished.
+      cleanupPromise ??= (async () => {
+        kill();
+        try {
+          await terminate();
+        } catch {
+          // Best-effort — the sandbox may already be gone (timeout, crash).
+        }
+      })();
+      return cleanupPromise;
+    },
+  };
+}
+
 // ── Agent-server guests (the HTTP-only contract) ─────────────────────────────
 
 /** Injectable fetch for the health poll and manage surface (tests). */
@@ -272,20 +344,9 @@ export function agentServerFromGuest(opts: {
   const { proc, origin, token } = opts;
   const fetchFn = opts.fetchFn ?? fetch;
 
-  const exitListeners: (() => void)[] = [];
-  let dead = false;
-  const notifyExit = (): void => {
-    if (dead) return;
-    dead = true;
-    for (const cb of exitListeners) {
-      try {
-        cb();
-      } catch {
-        // Listener errors must not crash the host
-      }
-    }
-  };
-  proc.wait().then(notifyExit, notifyExit);
+  // Process exit is the ONLY death signal here — there is no host connection
+  // to drop.
+  const life = createGuestLiveness(proc, opts.terminate);
 
   const manage = (
     route: (typeof GUEST_ROUTES)["manageStatus" | "manageDrain"],
@@ -297,8 +358,6 @@ export function agentServerFromGuest(opts: {
       headers: { authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(MANAGE_REQUEST_TIMEOUT_MS),
     });
-
-  let cleanupPromise: Promise<void> | null = null;
 
   return {
     sessionUrl: guestWsUrl(origin, GUEST_ROUTES.session),
@@ -326,31 +385,9 @@ export function agentServerFromGuest(opts: {
       if (!res.ok) throw new Error(`manage/drain answered HTTP ${res.status}`);
     },
 
-    alive: () => !dead,
-
-    onExit: (cb) => {
-      if (dead) {
-        try {
-          cb();
-        } catch {
-          // Listener errors must not crash the host
-        }
-        return;
-      }
-      exitListeners.push(cb);
-    },
-
-    shutdown() {
-      cleanupPromise ??= (async () => {
-        notifyExit();
-        try {
-          await opts.terminate();
-        } catch {
-          // Best-effort — the sandbox may already be gone (timeout, crash).
-        }
-      })();
-      return cleanupPromise;
-    },
+    alive: life.alive,
+    onExit: life.onExit,
+    shutdown: life.cleanup,
   };
 }
 
@@ -373,69 +410,26 @@ export function warmFromGuest(opts: {
   const { proc, ws, origin, token } = opts;
   const conn = createRpcConnection<GuestRpcSchema>(ws);
 
-  const exitListeners: (() => void)[] = [];
-  let dead = false;
-  const notifyExit = (): void => {
-    if (dead) return;
-    dead = true;
-    for (const cb of exitListeners) {
-      try {
-        cb();
-      } catch {
-        // Listener errors must not crash the host
-      }
-    }
-  };
-  // The harness process ending — clean exit, sandbox timeout, OOM kill,
-  // terminate() — all settle wait(). A dropped socket means the same thing
-  // from the host's perspective: this harness is unusable (the host never
-  // redials) and its guest self-exits on the orphan timeout.
-  proc.wait().then(notifyExit, notifyExit);
-  ws.on("close", notifyExit);
-
-  let cleanupPromise: Promise<void> | null = null;
-  const cleanup = (): Promise<void> => {
-    // Memoized: a concurrent second caller must wait for the sandbox to
-    // actually be terminated, not return before the first caller finished.
-    cleanupPromise ??= (async () => {
-      notifyExit();
-      try {
-        await opts.terminate();
-      } catch {
-        // Best-effort — the sandbox may already be gone (timeout, crash).
-      }
-    })();
-    return cleanupPromise;
-  };
+  const life = createGuestLiveness(proc, opts.terminate);
+  // A dropped socket means the same thing as a dead process from the host's
+  // perspective: this harness is unusable (the host never redials) and its
+  // guest self-exits on the orphan timeout.
+  ws.on("close", life.kill);
 
   return {
     conn,
     guestOrigin: origin,
     sessionUrl: guestWsUrl(origin, GUEST_ROUTES.session),
     token,
-    cleanup,
-    alive: () => !dead,
-    onExit: (cb) => {
-      // A harness can die between spawn resolution and this registration —
-      // notifyExit walks the listener list exactly once, so a listener added
-      // afterwards would never fire, so its holder would never learn the
-      // harness is unusable. Fire it now.
-      if (dead) {
-        try {
-          cb();
-        } catch {
-          // Listener errors must not crash the host
-        }
-        return;
-      }
-      exitListeners.push(cb);
-    },
+    cleanup: life.cleanup,
+    alive: life.alive,
+    onExit: life.onExit,
     async [Symbol.asyncDispose]() {
       // Best-effort: on a dead guest the notification is dropped, and
       // terminate() may find the sandbox already gone — both fine.
       void conn.sendNotification("shutdown");
       conn.dispose();
-      await cleanup().catch(() => undefined);
+      await life.cleanup().catch(() => undefined);
     },
   };
 }

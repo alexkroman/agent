@@ -5,16 +5,16 @@
  * The studio's Publish button is `aai deploy`, literally: the workspace is
  * materialized like a project, a config home carries the caller's own API
  * key, and the toolchain's CLI entry is spawned with `--server <origin>
- * --json --allow-missing-secrets`. Building, config extraction, ownership,
- * reserved slugs, the ASSEMBLYAI_API_KEY floor, and the credential
- * preflight all happen exactly as they do for a laptop deploy — one path.
- * The CLI's output (success, build diagnostics, deploy errors, warnings)
- * is returned verbatim-ish for the chat, so the coding agent can act on
- * failures.
+ * --json`. Building, config extraction, ownership, reserved slugs, the
+ * ASSEMBLYAI_API_KEY floor, and the credential preflight all happen exactly
+ * as they do for a laptop deploy — one path. The CLI's output (success,
+ * build diagnostics, deploy errors, warnings) is returned verbatim-ish for
+ * the chat, so the coding agent can act on failures.
  *
- * `--allow-missing-secrets` because the studio's Secrets panel needs a
- * DEPLOYED slug to attach secrets to — a hard preflight failure would
- * deadlock first publishes of agents that need third-party keys.
+ * Missing provider credentials only ever WARN, which is what a first publish
+ * needs: the studio's Secrets panel has nowhere to attach a secret until a
+ * slug is deployed, so a hard preflight failure would deadlock every agent
+ * that needs a third-party key.
  */
 
 import { readFile } from "node:fs/promises";
@@ -161,7 +161,6 @@ export async function deployWorkspaceDir(
         "--server",
         opts.serverUrl,
         "--json",
-        "--allow-missing-secrets",
         ...(opts.allowPreviewSlug ? ["--allow-preview-slug"] : []),
       ],
       {

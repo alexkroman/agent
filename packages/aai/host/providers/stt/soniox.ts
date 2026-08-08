@@ -23,7 +23,7 @@ import {
   closeOnAbort,
   connectOrThrow,
   createGuardedWs,
-  createSessionShell,
+  createSttSessionShell,
   dropSocket,
   requireApiKey,
   waitForOpen,
@@ -163,11 +163,8 @@ export function openSoniox(opts: SonioxOptions = {}): SttOpener {
         armFlush: () => flushTimer.arm(SONIOX_FINAL_FLUSH_MS),
       };
 
-      const shell = createSessionShell({
-        makeStreamError: (msg) => makeSttError("stt_stream_error", msg),
-        emitError: (err) => emitter.emit("error", err),
-        // A provider-initiated close ends the transcript stream — see the option doc.
-        cleanCloseIsFatal: true,
+      const shell = createSttSessionShell({
+        emitter,
         teardown: () => {
           flushTimer.clear();
           // Flush any batched finals so the last utterance isn't dropped. This

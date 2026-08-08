@@ -13,12 +13,11 @@
  * Not wired into CI: it spends real tokens on the caller's own key.
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { homedir } from "node:os";
-import path from "node:path";
 import { parseArgs } from "node:util";
 import { EventSourceParserStream } from "eventsource-parser/stream";
+import { apiKey } from "../_api-key.mjs";
 import {
   checkCapabilities,
   checkMode,
@@ -95,14 +94,6 @@ const TEST_AGENT_PREAMBLE =
 /** One failed test_agent run, reduced to what actually failed. */
 function failureExcerpt(out) {
   return out.replace(TEST_AGENT_PREAMBLE, "").replace(/\s+/g, " ").trim().slice(0, MAX_RED_EXCERPT);
-}
-
-function apiKey() {
-  if (process.env.ASSEMBLYAI_API_KEY) return process.env.ASSEMBLYAI_API_KEY;
-  const cfg = path.join(homedir(), ".config", "aai", "config.json");
-  const key = JSON.parse(readFileSync(cfg, "utf-8")).apiKey;
-  if (!key) throw new Error("no apiKey in ~/.config/aai/config.json");
-  return key;
 }
 
 /**

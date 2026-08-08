@@ -131,7 +131,7 @@ describe("Composer", () => {
 describe("ChatPanel session failure", () => {
   const panelProps = {
     chatHistory: [] as UIMessage[],
-    llmStatus: { llm: true },
+    chatStatus: { provider: "assemblyai", model: "gpt-5.5" },
     chatSession: undefined,
     onSessionStale: noop,
     initialPrompt: null,
@@ -160,7 +160,7 @@ describe("ChatPanel session failure", () => {
 });
 
 describe("notifyDispatch", () => {
-  const ready = { busy: false, llmReady: true };
+  const ready = { busy: false, chatReady: true };
 
   test("a plain note is appended, never a turn", () => {
     // Publish success and secret changes: visible in the transcript and
@@ -177,7 +177,7 @@ describe("notifyDispatch", () => {
   test("falls back to appending rather than dropping the message", () => {
     // A turn mid-flight or an LLM that isn't up must not lose a publish
     // failure — an appended message still reaches the agent next turn.
-    expect(notifyDispatch({ respond: true }, { busy: true, llmReady: true })).toBe("append");
-    expect(notifyDispatch({ respond: true }, { busy: false, llmReady: false })).toBe("append");
+    expect(notifyDispatch({ respond: true }, { busy: true, chatReady: true })).toBe("append");
+    expect(notifyDispatch({ respond: true }, { busy: false, chatReady: false })).toBe("append");
   });
 });

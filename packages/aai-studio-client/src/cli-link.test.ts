@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 // Copyright 2026 the AAI authors. MIT license.
+import { linkConfirmationCode as sharedLinkConfirmationCode } from "@alexkroman1/aai/utils";
 import { afterEach, describe, expect, test } from "vitest";
 import { clearCliLinkCode, consumeCliLinkCode, linkConfirmationCode } from "./cli-link.ts";
 
@@ -49,11 +50,12 @@ describe("clearCliLinkCode", () => {
 });
 
 describe("linkConfirmationCode", () => {
-  // The exact fixture is mirrored in aai-cli's login.test.ts — the CLI
-  // prints this value and this gate displays it, so the two derivations
-  // must never drift.
-  test("matches the CLI's derivation: first 8 chars, uppercased, hyphenated", () => {
+  // The derivation itself is specced in aai's sdk/cli-link.test.ts — one
+  // definition, one spec. This only pins that the gate re-exports THAT one,
+  // so a local reimplementation here would fail rather than silently drift
+  // from what the terminal prints.
+  test("is the shared derivation, not a local copy", () => {
+    expect(linkConfirmationCode).toBe(sharedLinkConfirmationCode);
     expect(linkConfirmationCode(CODE)).toBe("ABCD-EF12");
-    expect(linkConfirmationCode("zzzzyyyy-rest-ignored-0000000000000000000")).toBe("ZZZZ-YYYY");
   });
 });

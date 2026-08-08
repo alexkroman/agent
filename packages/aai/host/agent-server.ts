@@ -27,11 +27,13 @@
 import type { Db } from "../sdk/db.ts";
 import type { AgentEnv, ProviderEnv } from "../sdk/env-types.ts";
 import { createRuntime, type RuntimeOptions } from "./runtime.ts";
-import type { Logger } from "./runtime-config.ts";
-import { type AgentServer, createServer, type ServerOptions } from "./server.ts";
+import { type AgentServer, createServer, type PassthroughServerOptions } from "./server.ts";
 
 /** Configuration for {@link createAgentServer}. */
-export type AgentServerOptions = {
+// An interface rather than an intersection: TypeDoc documents inherited
+// members of an interface, and cannot resolve a `{@link X.member}` into one
+// side of an `A & B` alias — which is how the `providerEnv` link below broke.
+export interface AgentServerOptions extends PassthroughServerOptions {
   /**
    * The agent to serve. Its `name` and `greeting` feed `GET /client-config`.
    *
@@ -59,13 +61,7 @@ export type AgentServerOptions = {
   clientDir?: string;
   /** SQL handle exposed to tool code as `ctx.db` — see `RuntimeOptions.db`. */
   db?: Db | undefined;
-  /** Structured logger. Defaults to the console logger. */
-  logger?: Logger;
-  /** First look at every WebSocket upgrade — see {@link ServerOptions.upgrade}. */
-  upgrade?: ServerOptions["upgrade"];
-  /** First look at every HTTP request — see {@link ServerOptions.request}. */
-  request?: ServerOptions["request"];
-};
+}
 
 /**
  * Create an HTTP + WebSocket server running one agent — the self-hosting entry
