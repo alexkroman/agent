@@ -13,7 +13,6 @@ import {
   SafePathSchema,
   SecretUpdatesSchema,
 } from "./schemas.ts";
-import { TEST_AGENT_CONFIG } from "./test-utils.ts";
 
 // ── DeployBodySchema ───────────────────────────────────────────────────
 
@@ -36,16 +35,12 @@ describe("DeployBodySchema", () => {
       },
       true,
     ],
-    ["missing worker field", { clientFiles: {}, agentConfig: TEST_AGENT_CONFIG }, false],
-    ["empty worker string", { worker: "", clientFiles: {}, agentConfig: TEST_AGENT_CONFIG }, false],
-    ["non-string worker", { worker: 42, clientFiles: {}, agentConfig: TEST_AGENT_CONFIG }, false],
-    ["missing clientFiles", { worker: "code", agentConfig: TEST_AGENT_CONFIG }, false],
-    ["body without agentConfig (derived server-side)", { worker: "code", clientFiles: {} }, true],
-    [
-      "env with non-string values",
-      { env: { KEY: 123 }, worker: "code", clientFiles: {}, agentConfig: TEST_AGENT_CONFIG },
-      false,
-    ],
+    ["missing worker field", { clientFiles: {} }, false],
+    ["empty worker string", { worker: "", clientFiles: {} }, false],
+    ["non-string worker", { worker: 42, clientFiles: {} }, false],
+    ["missing clientFiles", { worker: "code" }, false],
+    ["body with only the required fields", { worker: "code", clientFiles: {} }, true],
+    ["env with non-string values", { env: { KEY: 123 }, worker: "code", clientFiles: {} }, false],
     [
       "clientFiles with path traversal keys",
       {

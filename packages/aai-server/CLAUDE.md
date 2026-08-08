@@ -1090,7 +1090,11 @@ Both are better served elsewhere — the warning by the CLI, the slug by the
 word generator that already backed every unusable base.
 
 So the sandbox spawn, the describe mode, the nonce protocol, the `inspect`
-role, `IsolateConfigSchema`, and the column are all gone. Three consequences
+role, and `IsolateConfigSchema` are all gone. The COLUMN is only unwritten so
+far: dropping it is the contract half of an expand/contract and waits for a
+later deploy (see the migration's header). Nothing detects that it never
+lands — `schema-drift.integration.test.ts` compares relations, not columns —
+so treat the drop as owed work, not as done. Three consequences
 worth knowing:
 
 - **The credential preflight moved to the CLI** (`aai-cli/_preflight.ts`).

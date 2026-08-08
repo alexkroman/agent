@@ -33,15 +33,6 @@ vi.mock("./sandbox-vm.ts", async (importOriginal) => ({
   spawnAgentServer: mockSpawnAgentServer,
 }));
 
-const _TEST_AGENT_CONFIG = {
-  name: "test-agent",
-  systemPrompt: "You are a test agent",
-  greeting: "Hello!",
-  maxSteps: 3,
-  toolSchemas: [],
-  builtinTools: [],
-};
-
 /**
  * Which way the worker bundle reaches the guest. The URL path is the reason
  * this choice exists: the ~8 MB bundle used to be read out of Storage into

@@ -75,11 +75,11 @@ const MAX_STREAM_LOG_BYTES = 64 * 1024;
 /**
  * Consume a guest stream chunk-by-chunk to the end. NEVER stops early — a
  * guest blocked on a full pipe wedges on its next write — and swallows
- * mid-read errors (peer death is the exit paths' business). The one loop
- * both the log drain and the describe-exec collector are built on, so the
- * keep-consuming invariant lives in one place.
+ * mid-read errors (peer death is the exit paths' business). Kept separate from
+ * its one caller below so the keep-consuming invariant reads as the rule it
+ * is rather than as an incidental loop body.
  */
-export async function consumeProcStream(
+async function consumeProcStream(
   stream: ReadableStream<Uint8Array>,
   onChunk: (chunk: Uint8Array) => void,
 ): Promise<void> {

@@ -278,7 +278,7 @@ describe("executeDeploy end to end", { timeout: 120_000 }, () => {
     );
   }
 
-  test("persists the server-returned slug to .aai/project.json", async () => {
+  test("names a first deploy after the directory and records the slug", async () => {
     await withTempDir(
       silenced(async (dir) => {
         await writeAgentProject(dir);
@@ -287,9 +287,11 @@ describe("executeDeploy end to end", { timeout: 120_000 }, () => {
 
         expect(result.ok).toBe(true);
         if (!result.ok) return;
-        // First deploy: no slug sent, server generated one…
-        expect(result.data.slug).toMatch(/^generated-/);
-        // …and it MUST be recorded, or the next deploy would mint a fresh
+        // First deploy: the directory names the agent, through the same
+        // `projectNameFromDir` rule `aai push` uses for a project name —
+        // which lowercases, so the assertion has to as well.
+        expect(result.data.slug).toBe(path.basename(dir).toLowerCase());
+        // It MUST be recorded, or the next deploy would mint a fresh
         // slug and orphan this agent.
         const config = await readProjectConfig(dir);
         expect(config?.slug).toBe(result.data.slug);

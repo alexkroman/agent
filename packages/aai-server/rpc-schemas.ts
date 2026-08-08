@@ -28,7 +28,7 @@ import type { RpcConnection } from "./rpc-transport.ts";
  * `agentServerFromGuest`), pinned per deploy via the harness image and
  * versioned by GUEST_CONTRACT_VERSION. That HTTP surface must stay BACKWARD
  * compatible (additive changes only): the host may be newer than a pinned
- * agent's harness. THIS map is the studio/inspect side — those sandboxes
+ * agent's harness. THIS map is the studio side — those sandboxes
  * always spawn from the current image, so it changes atomically with the
  * server.
  */

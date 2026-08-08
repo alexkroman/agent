@@ -43,15 +43,6 @@ vi.mock("./sandbox-vm.ts", async (importOriginal) => {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-const _TEST_AGENT_CONFIG = {
-  name: "test-agent",
-  systemPrompt: "You are a test agent",
-  greeting: "Hello!",
-  maxSteps: 3,
-  toolSchemas: [],
-  builtinTools: [],
-};
-
 function makeSandboxOptions(overrides?: Partial<SandboxOptions>): SandboxOptions {
   return {
     worker: inlineWorker(),

@@ -32,6 +32,16 @@ import { requiredProviderEnvVars } from "@alexkroman1/aai/runtime";
  * `requiredEnv`. Deliberately structural rather than the SDK's `AgentConfig` —
  * the export comes from the USER's installed SDK, which may be older or newer
  * than this CLI's, so anything beyond these is not ours to assume.
+ *
+ * **The `__aaiConfig` export, not the bundle's default export.** They look
+ * interchangeable — `evalWorkerBundle` already returns the `AgentDef`, and
+ * `agentEnvWarnings` (`_dev-server.ts`) derives the same key set from one —
+ * but `__aaiConfig` is `toAgentConfig(def)`, which has run
+ * `normalizeAgentConveniences` and `defaultProviders`. A def written with an
+ * author shorthand (`llm: "gpt-5"`) still carries a STRING there, and
+ * `descriptorKind` reads a string as no kind at all, so deriving from the raw
+ * def silently omits that provider's key. The normalized config is what the
+ * runtime will actually resolve against, so it is what the preflight checks.
  */
 export type PreflightConfig = Parameters<typeof requiredProviderEnvVars>[0] & {
   requiredEnv?: readonly string[] | undefined;

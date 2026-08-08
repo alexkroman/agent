@@ -11,13 +11,12 @@
  *
  * The URL shape is safe for exactly one reason — the HASH. The guest verifies
  * the bytes against a sha-256 the spawner names, so it trusts the hash and
- * never the transport, the URL, or whoever served it. That makes the rule
- * below unconditional: a URL without an expected hash is refused rather than
- * loaded, because there would be nothing left to trust.
+ * never the transport, the URL, or whoever served it. The hash is therefore
+ * REQUIRED, for both shapes: "a bundle is never loaded unverified" holds by
+ * type rather than by each caller remembering to check.
  *
- * Agent mode (`harness-agent-mode.ts`) and describe mode
- * (`harness-describe.ts`) both go through here; the env var NAMES differ per
- * mode, so callers pass values rather than reading `process.env` here.
+ * The env var NAMES belong to the mode, so the caller passes values rather
+ * than reading `process.env` here.
  */
 
 import { hash } from "node:crypto";
@@ -42,20 +41,11 @@ export function bundleSourceOf(
 
 /**
  * Read a bundle from either delivery shape and verify it against `expected`
- * (sha-256 hex). A URL source REQUIRES the hash — see the module doc; a file
- * the spawner wrote into this sandbox may omit it, and is then loaded as
- * written.
+ * (sha-256 hex).
  */
-export async function readVerifiedBundle(
-  source: BundleSource,
-  expected: string | undefined,
-): Promise<string> {
-  if ("url" in source && !expected) {
-    throw new Error("a bundle URL requires its sha-256 — refusing to load unverifiable bytes");
-  }
+export async function readVerifiedBundle(source: BundleSource, expected: string): Promise<string> {
   const code =
     "url" in source ? await fetchBundle(source.url) : await readFile(source.path, "utf-8");
-  if (!expected) return code;
   const actual = hash("sha256", code);
   if (actual !== expected.toLowerCase()) {
     throw new Error(

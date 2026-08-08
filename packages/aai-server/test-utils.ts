@@ -48,14 +48,6 @@ export function makeSlot(overrides?: Partial<AgentSlot>): AgentSlot {
   };
 }
 
-/** Default agent config for tests. */
-export const TEST_AGENT_CONFIG = {
-  name: "test-agent",
-  systemPrompt: "Test",
-  greeting: "",
-  toolSchemas: [],
-};
-
 export function deployBody(overrides?: Record<string, unknown>): string {
   return JSON.stringify({
     env: VALID_ENV,

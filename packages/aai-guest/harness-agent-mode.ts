@@ -64,9 +64,6 @@ export async function readAgentBoot(
   if (!(expected && source)) {
     throw new Error("agent mode requires AAI_BUNDLE_SHA256 and one of AAI_BUNDLE_PATH/_URL");
   }
-  // Agent mode requires the hash for BOTH shapes (the shared reader only
-  // forces it for a URL): a deployed agent's bundle is named by the agents
-  // row's `worker_hash`, so there is never a reason to load one unverified.
   const code = await readVerifiedBundle(source, expected);
   return { code, env: await readAgentEnvFile(env.AAI_AGENT_ENV_PATH) };
 }

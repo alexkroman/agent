@@ -192,7 +192,7 @@ export async function spawnSubprocessWarm(
   ctx: SubprocessSpawnContext = realContext(),
   dial: DialGuest = dialGuest,
 ): Promise<WarmHarness> {
-  const slug = opts.slug ?? "pool";
+  const slug = opts.slug ?? "(none)";
   const role = resolveSandboxRole(opts);
   const t0 = performance.now();
   try {

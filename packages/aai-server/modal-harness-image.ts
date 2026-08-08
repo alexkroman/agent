@@ -77,7 +77,7 @@ export const HARNESS_COMPILE_CACHE_PATH = `${GUEST_ROOT}/.compile-cache`;
  * during the image build and snapshotting it (see `warmCompileCache`) turns
  * that into a cache read. Measured on the real bundle: **~545ms without,
  * ~343ms with** — ~200ms off every cold voice session, every studio broker
- * call, and every `describeBundle`, for ~1.5 MB in the image. A missing or
+ * call, for ~1.5 MB in the image. A missing or
  * stale entry is a silent MISS, never an error (a cache written by a different
  * Node version, or for different file content, is simply ignored), which is
  * what makes it safe to bake in. Modal-only on purpose: the cache is a
@@ -436,7 +436,7 @@ export function createHarnessImageResolver(deps: {
   // the same value every time. Computing it per call meant SHA-256 over the
   // ~12.8 MB harness bundle (13-15ms, synchronous, so it stalls the event
   // loop) plus a handful of readFileSync+JSON.parse on EVERY spawn: every cold
-  // session, every studio broker call, every describeBundle. Cache it by
+  // session and every studio broker call. Cache it by
   // harness code instead.
   const tagMemo = new Map<string, string>();
   const tagOnce = (code: string): string => {

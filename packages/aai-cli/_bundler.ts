@@ -23,8 +23,8 @@ export type DirectoryBundleOutput = {
  *
  * agent.ts is the single entry point: `export default agent({...})`. The
  * worker self-describes (it exports `__aaiConfig` — see `worker-bundler.ts`),
- * so nothing here evaluates the bundle: the server extracts the config inside
- * a guest sandbox at deploy time.
+ * which is what `evalWorkerConfig` reads back: the platform stores no agent
+ * config and evaluates nothing, so every read of one happens here.
  */
 export async function buildAgentBundle(
   cwd: string,

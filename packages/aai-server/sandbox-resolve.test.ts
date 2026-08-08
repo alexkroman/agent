@@ -37,15 +37,6 @@ vi.mock("./sandbox-vm.ts", async (importOriginal) => ({
   spawnAgentServer: mockSpawnAgentServer,
 }));
 
-const _TEST_AGENT_CONFIG = {
-  name: "test-agent",
-  systemPrompt: "You are a test agent",
-  greeting: "Hello!",
-  maxSteps: 3,
-  toolSchemas: [],
-  builtinTools: [],
-};
-
 async function seedAgent(slug: string) {
   const memory = createMemoryPlatformEvents();
   // The real signal that a change event has been delivered AND its handler
