@@ -461,6 +461,16 @@ you only need to list one package.
   `...sharedConfig.test` REPLACES that object rather than extending it, which
   is how every package silently lost `reporters` while each re-declared
   `restoreMocks` by hand.
+- **Snapshots are pinned to CI semantics (`update: "none"`), so an obsolete
+  one FAILS locally.** Vitest otherwise resolves this from `process.env.CI`:
+  `new` locally (write what is missing, merely REPORT what is obsolete) and
+  `none` in CI (write nothing, fail on obsolete). That split is a green
+  `pnpm check` beside a red CI job, and it produced one — a stale `aai-ui`
+  export snapshot, left by a test that stopped taking one mid-edit, printed
+  "1 obsolete" locally and failed `test (aai-ui)` with all 340 tests passing.
+  The cost is that adding or changing a snapshot needs an explicit
+  `vitest -u`, which was already true of any change that has to survive CI;
+  `--update` still wins, since a CLI flag overrides config.
 - **Those two options mean tests must NOT hand-roll teardown for spies or env
   vars.** `restoreMocks` restores every `vi.spyOn` and `unstubEnvs` undoes
   every `vi.stubEnv`, both BEFORE EACH TEST — so a trailing

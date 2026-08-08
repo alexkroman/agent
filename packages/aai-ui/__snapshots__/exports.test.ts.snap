@@ -32,38 +32,6 @@ exports[`aai-ui export surface > @alexkroman1/aai-ui main export 1`] = `
 ]
 `;
 
-exports[`aai-ui export surface > @alexkroman1/aai-ui main exports no underscore-prefixed name 1`] = `
-[
-  "ApiUrlChip",
-  "Button",
-  "ChatView",
-  "Controls",
-  "Markdown",
-  "MessageList",
-  "SessionProvider",
-  "SessionUrlChips",
-  "SidebarLayout",
-  "StartScreen",
-  "ThemeProvider",
-  "ToolCallRow",
-  "ToolConfigContext",
-  "UiUrlChip",
-  "VOICE_CAPTURE_CONSTRAINTS",
-  "buildAgentUrl",
-  "client",
-  "createSessionCore",
-  "fetchClientConfig",
-  "loadClientConfig",
-  "useAgentState",
-  "useEvent",
-  "useSession",
-  "useSessionSelector",
-  "useTheme",
-  "useToolCallStart",
-  "useToolResult",
-]
-`;
-
 exports[`aai-ui export surface > @alexkroman1/aai-ui/client-dir export 1`] = `
 [
   "defaultClientDir",

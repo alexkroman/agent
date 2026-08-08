@@ -21,6 +21,21 @@ export const sharedConfig = {
     // default; a helper or fast-check harness that needs a SUB-test boundary
     // still calls `vi.unstubAllEnvs()` itself.
     unstubEnvs: true,
+    // Snapshots behave the same locally as they do in CI.
+    //
+    // Vitest resolves this from `process.env.CI` by default: 'new' locally
+    // (write anything missing, merely REPORT anything obsolete) and 'none' in
+    // CI (write nothing, FAIL on obsolete). That split is a green local
+    // `pnpm check` alongside a red CI job — which is exactly what happened:
+    // a stale `aai-ui` export snapshot, left behind by a test that stopped
+    // taking one mid-edit, printed "1 obsolete" locally and failed the
+    // `test (aai-ui)` job with all 340 tests passing.
+    //
+    // Pinning it to 'none' costs one thing and it is the right cost: adding
+    // or changing a snapshot now needs an explicit `vitest -u`, which is
+    // already true of every change that has to survive CI. `--update` still
+    // wins, since a CLI flag overrides config.
+    update: "none" as const,
   },
 };
 
