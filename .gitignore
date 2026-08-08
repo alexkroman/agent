@@ -44,3 +44,7 @@ tsconfig.doc-examples-*.json
 # directory: config.toml and migrations/ are checked in and load-bearing —
 # the platform schema is applied from there before every deploy.
 supabase/.temp/
+# Local-stack scratch state, written by `supabase start` (the Tier 1 rig for
+# realtime-rls.integration.test.ts). Not link state and not checked in: a
+# developer who has never run the local stack should see a clean tree.
+supabase/.branches/
