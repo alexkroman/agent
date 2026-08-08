@@ -84,6 +84,9 @@ export function storageEndpoint(url: string): string {
   return `${url.replace(/\/+$/, "")}/storage/v1`;
 }
 
+/** One year, the ceiling `max-age` is meaningful at (RFC 9111). */
+const BLOB_MAX_AGE_SECONDS = 31_536_000;
+
 /**
  * Blobs are UTF-8 JavaScript/CSS/HTML text, so they go up as `text/plain`
  * with `upsert`. Upsert rather than insert because a redeploy of unchanged
@@ -91,7 +94,23 @@ export function storageEndpoint(url: string): string {
  * deploy, and treating "already exists" as success by inspecting the error
  * string is exactly the kind of check that breaks when a message is reworded.
  */
-const UPLOAD_OPTIONS = { contentType: "text/plain;charset=utf-8", upsert: true } as const;
+const UPLOAD_OPTIONS = {
+  contentType: "text/plain;charset=utf-8",
+  // Seconds, rendered by Storage as the object's `Cache-Control: max-age`.
+  // A year is correct BY CONSTRUCTION rather than as a guess: the key is the
+  // content hash, so an object's bytes can never change under its own name —
+  // the same reasoning that lets the asset routes serve `immutable`.
+  //
+  // It changes nothing today, and that is the point of setting it now: every
+  // read is either an authenticated `download()` (which Supabase's CDN will
+  // not cache) or a per-call signed URL (a fresh token, so a fresh cache key).
+  // Storage stamps this at UPLOAD time and never revisits it, so leaving it at
+  // the client's 3600 default would mean every blob already written carries
+  // the wrong directive on the day anything is served through the CDN — a
+  // migration to fix, in exchange for nothing saved by omitting it.
+  cacheControl: `${BLOB_MAX_AGE_SECONDS}`,
+  upsert: true,
+} as const;
 
 /** Supabase Storage-backed blob storage (production). */
 export function createSupabaseBlobStorage(opts: SupabaseBlobStorageOptions): BlobStorage {

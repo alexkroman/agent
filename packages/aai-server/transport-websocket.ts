@@ -32,19 +32,44 @@ export async function handleAgentHealth(c: AppContext): Promise<Response> {
   return c.json({ status: "ok", slug });
 }
 
+/**
+ * The agent shell must never outlive the deploy it names — the same rule the
+ * studio shell follows (`aai-studio-server/studio-static.ts`), reached by a
+ * different route.
+ *
+ * `index.html` references content-hashed assets, and `getClientFile` resolves
+ * a path through the agents row's `client_files` map. A redeploy REPLACES that
+ * map, so the previous build's asset paths stop resolving and 404 — the blobs
+ * themselves survive (they are content-addressed and orphans are kept), but
+ * nothing maps a name to them anymore. A browser holding a cached shell is
+ * therefore pinned to a build whose entry script is gone: a white page, with
+ * no JS running to recover from it and no stale-build reload on this surface
+ * to force one.
+ *
+ * It carried NO cache headers at all, which is weaker than it sounds: with no
+ * `Cache-Control` and no validator, a heuristically caching intermediary is
+ * free to reuse it. `no-store` says it outright, and costs one small
+ * revalidation-free fetch per navigation. The hashed assets under it stay
+ * `immutable` — that pairing is the point.
+ */
+const SHELL_CACHE_CONTROL = "no-store";
+
 export async function handleAgentPage(c: AppContext): Promise<Response> {
   const slug = c.var.slug;
-  const cspHeaders = { "Content-Security-Policy": AGENT_CSP };
+  const pageHeaders = {
+    "Content-Security-Policy": AGENT_CSP,
+    "Cache-Control": SHELL_CACHE_CONTROL,
+  };
 
   const page = await c.env.store.getClientFile(slug, "index.html");
-  if (page) return c.html(page, 200, cspHeaders);
+  if (page) return c.html(page, 200, pageHeaders);
 
   const record = await c.env.store.getAgent(slug);
   if (!record) throw new HTTPException(404, { message: "HTML not found" });
   const html = await readDefaultClient("index.html");
   if (!html) throw new HTTPException(500, { message: "Default client not built" });
   return c.body(new Uint8Array(html), 200, {
-    ...cspHeaders,
+    ...pageHeaders,
     "Content-Type": "text/html; charset=UTF-8",
   });
 }

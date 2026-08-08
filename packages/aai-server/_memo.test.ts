@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
-import { keyedMemoAsync, memoAsync } from "./_memo.ts";
+import { createSingleFlight, keyedMemoAsync, memoAsync } from "./_memo.ts";
 
 describe("memoAsync", () => {
   test("builds once and memoizes the result", async () => {
@@ -58,5 +58,97 @@ describe("keyedMemoAsync", () => {
     await memo("a", () => Promise.resolve("first"));
     memo.clear();
     await expect(memo("a", () => Promise.resolve("second"))).resolves.toBe("second");
+  });
+});
+
+describe("createSingleFlight", () => {
+  /** A load whose settlement the test controls. */
+  function gate<T>() {
+    const { promise, resolve, reject } = Promise.withResolvers<T>();
+    return { load: () => promise, resolve, reject };
+  }
+
+  test("concurrent callers share ONE load and all see its value", async () => {
+    const flight = createSingleFlight<string>();
+    const { load, resolve } = gate<string>();
+    const loader = vi.fn(load);
+
+    const calls = [flight.run("k", loader), flight.run("k", loader), flight.run("k", loader)];
+    resolve("value");
+
+    await expect(Promise.all(calls)).resolves.toEqual(["value", "value", "value"]);
+    expect(loader).toHaveBeenCalledTimes(1);
+  });
+
+  test("nothing is retained: a caller after settlement loads again", async () => {
+    const flight = createSingleFlight<string>();
+    const loader = vi.fn(async () => "value");
+
+    await flight.run("k", loader);
+    await flight.run("k", loader);
+
+    expect(loader).toHaveBeenCalledTimes(2);
+    expect(flight.size()).toBe(0);
+  });
+
+  test("keys are independent", async () => {
+    const flight = createSingleFlight<string>();
+    const { load: loadA, resolve: resolveA } = gate<string>();
+    const { load: loadB, resolve: resolveB } = gate<string>();
+
+    const a = flight.run("a", loadA);
+    const b = flight.run("b", loadB);
+    expect(flight.size()).toBe(2);
+    resolveA("a-value");
+    resolveB("b-value");
+
+    await expect(a).resolves.toBe("a-value");
+    await expect(b).resolves.toBe("b-value");
+  });
+
+  test("a rejection reaches every joiner and leaves nothing behind", async () => {
+    const flight = createSingleFlight<string>();
+    const { load, reject } = gate<string>();
+
+    const first = flight.run("k", load);
+    const joiner = flight.run("k", load);
+    reject(new Error("boom"));
+
+    await expect(first).rejects.toThrow("boom");
+    await expect(joiner).rejects.toThrow("boom");
+    expect(flight.size()).toBe(0);
+    await expect(flight.run("k", () => Promise.resolve("retried"))).resolves.toBe("retried");
+  });
+
+  test("drop() makes the NEXT caller start a fresh load", async () => {
+    const flight = createSingleFlight<string>();
+    const { load, resolve } = gate<string>();
+
+    const before = flight.run("k", load);
+    flight.drop("k");
+    const after = flight.run("k", () => Promise.resolve("fresh"));
+    resolve("stale");
+
+    await expect(before).resolves.toBe("stale");
+    await expect(after).resolves.toBe("fresh");
+  });
+
+  test("a dropped load settling later cannot evict its successor", async () => {
+    const flight = createSingleFlight<string>();
+    const dropped = gate<string>();
+    const successor = gate<string>();
+
+    const first = flight.run("k", dropped.load);
+    flight.drop("k");
+    const second = flight.run("k", successor.load);
+    // The dropped load settles AFTER the successor claimed the key.
+    dropped.resolve("stale");
+    await expect(first).resolves.toBe("stale");
+
+    // The successor is still joinable — its entry survived the other's release.
+    const joiner = flight.run("k", () => Promise.reject(new Error("must not load")));
+    successor.resolve("fresh");
+    await expect(second).resolves.toBe("fresh");
+    await expect(joiner).resolves.toBe("fresh");
   });
 });

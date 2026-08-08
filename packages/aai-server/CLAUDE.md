@@ -89,12 +89,50 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   method names and outgoing request params are compile-checked at every
   call site while results/incoming params stay `unknown` (untrusted wire
   data — Zod at the receiving site is the contract)
-- `transport-websocket.ts` — WebSocket transport layer
+- `transport-websocket.ts` — WebSocket transport layer, plus the agent's own
+  client surface (`GET /:slug/`, `/:slug/assets/*`, `/:slug/favicon.ico`).
+
+  **The agent shell is `no-store`; its hashed assets are `immutable`.** Same
+  pairing as the studio shell (`aai-studio-server/CLAUDE.md`), reached by a
+  different route: `getClientFile` resolves a path through the agents row's
+  `client_files` map, and a redeploy REPLACES that map — so the previous
+  build's asset names stop resolving and 404, even though their blobs survive
+  (content-addressed, orphans kept). A browser holding a cached shell is
+  pinned to a build whose entry script is gone, and unlike the studio there is
+  no `stale-build.ts` on this surface to force the recovering reload. It
+  carried NO cache headers for a long time, which is weaker than it sounds:
+  absent a directive and a validator, a heuristically caching intermediary may
+  reuse the response.
 - `auth.ts` — authentication/authorization
 - `credentials.ts` — credential derivation
 - `bundle-store.ts` — deploy persistence: content-addressed, immutable
   blobs (`blobs/<sha256>` — worker + client files) committed
   by the agents-row upsert, which is the deploy's ATOMIC publish point.
+
+  **Its caches are read-through, and read-through has a hole a TTL cannot
+  close: the burst that arrives while the FIRST read is in flight.** Every
+  cache here serves a read that already happened, so a cold replica — the
+  normal state after a scale-out, since Modal load-balances every request
+  independently — answered N concurrent requests for one deploy with N
+  identical Postgres reads and N identical Storage downloads. Measured
+  against the real orchestrator with 40 ms of injected backend latency, 20
+  browsers each fetching the shell plus one asset: **61 backend round trips,
+  against 3** with the row/version/blob reads behind `createSingleFlight`
+  (`_memo.ts`). It is deliberately NOT a memo — it retains nothing, because
+  the caches above already own the settled value; it only collapses the
+  window.
+
+  Two properties are load-bearing. `invalidate` **drops the row and version
+  flights**, so a caller arriving after a mutation cannot be served a read
+  that started before it — the same hazard the read epoch guards one step
+  later (the epoch fences the cache WRITE; the drop fences the JOIN), and the
+  mutation lock's whole premise is that the handler reads its merge base
+  after invalidating. Blobs need neither, being content-addressed. And the
+  release runs **out of band** (`then(release, release)`, never a `.finally`
+  chain the caller awaits): wrapping the returned promise costs a microtask
+  turn per read, and settling one turn later is observable — it pushed the
+  change stream's blue-green handover past the fixed 20-microtask drain
+  `sandbox-resolve.test.ts` settles events with.
 - `blob-storage.ts` — where those blobs live: Supabase Storage through
   `@supabase/storage-js` in production (authenticated with the SAME
   `SUPABASE_SERVICE_ROLE_KEY` as Realtime — Storage has no credential of its
@@ -109,6 +147,17 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   while any other failure throws — the bundle store caches misses under a
   sentinel and retries failures, so conflating them makes a live deploy read
   as absent.
+
+  **Uploads carry a one-year `cacheControl`, and it is inert on purpose.**
+  Nothing reads a blob through a cache today — every read is either an
+  authenticated `download()` (which Supabase's CDN will not cache) or a
+  per-call signed URL (fresh token, fresh cache key). It is set anyway because
+  Storage stamps the directive at UPLOAD time and never revisits it: left at
+  storage-js's 3600 default, every blob already written would carry the wrong
+  one on the day anything IS served through the CDN, and fixing it then means
+  re-uploading the bucket. A year is correct by construction rather than as a
+  guess — the key is the content hash, the same reasoning that lets the asset
+  routes serve `immutable`.
 
   **`SUPABASE_SERVICE_ROLE_KEY` must be a SECRET key (`sb_secret_…`), and boot
   refuses a publishable one** (`assertServiceRoleKey` in `_boot.ts`, called
