@@ -1,0 +1,22 @@
+-- The platform no longer records what a deployed agent IS.
+--
+-- `aai_platform.agents.config` held the bundle's self-described config,
+-- extracted at deploy time by loading the bundle in a throwaway guest
+-- sandbox. Nothing ever read a field of it: host mode (the one path where
+-- the server's own SDK interpreted a stored config) is gone, and the broker
+-- proxies name/greeting from the guest's own /client-config. The column was
+-- write-only, and the sandbox spawn that filled it bought nothing — so both
+-- are removed. See "The platform stores no agent config" in
+-- packages/aai-server/CLAUDE.md.
+--
+-- This is the EXPAND half of an expand/contract. Migrations run before the
+-- deploy and Modal's rolling strategy keeps old containers serving beside
+-- new ones, so the column cannot be dropped in the same step: a container
+-- still running the previous build names `config` in its insert, and would
+-- start failing every deploy for the length of the rollout. A default lets
+-- the new build's insert — which omits the column — succeed while the old
+-- one still supplies a value.
+--
+-- The CONTRACT half (`alter table aai_platform.agents drop column config;`)
+-- belongs in a later migration, once no serving container writes the column.
+alter table aai_platform.agents alter column config set default '{}'::jsonb;

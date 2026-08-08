@@ -14,7 +14,6 @@ import {
   createTestStore,
   deployAgent,
   deployBody,
-  TEST_AGENT_CONFIG,
 } from "./test-utils.ts";
 
 // ── Cross-Agent Storage Isolation ──────────────────────────────────────
@@ -137,7 +136,6 @@ describe("platform credential handling", () => {
       credential_hashes: [await hashApiKey("key1")],
       worker: "console.log('w');",
       clientFiles: {},
-      agentConfig: TEST_AGENT_CONFIG,
     });
 
     // Verify getEnv returns everything including ASSEMBLYAI_API_KEY

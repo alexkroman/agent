@@ -40,11 +40,11 @@ export const DeployBodySchema = z.object({
     .refine((s) => !RESERVED_SLUGS.has(s), "Reserved slug")
     .optional(),
   env: z.record(z.string(), z.string()).optional(),
-  // "warn" downgrades the missing-credential preflight to warnings in the
-  // response (`aai deploy --allow-missing-secrets`) — the caller's own
-  // agent, so letting them opt into a not-yet-startable deploy is safe;
-  // secrets attach to the slug afterwards via `aai secret put`.
-  credentialPolicy: z.enum(["require", "warn"]).optional(),
+  // Display-name HINT, used only to seed a GENERATED slug (see
+  // DeployParams.name). Advisory: the platform acts on nothing in it, and a
+  // generated slug carries a random suffix regardless. Capped because it is
+  // client-supplied and only ever slugified.
+  name: z.string().max(200).optional(),
   // Opt in to a `-preview`-suffixed slug (`aai deploy --allow-preview-slug`).
   // That suffix is owned by the studio's auto-preview deploys and reaped by
   // the orphan-preview sweep; deployAgentBundle rejects it otherwise, so a CLI
@@ -55,9 +55,9 @@ export const DeployBodySchema = z.object({
   clientFiles: z
     .record(SafePathSchema, z.string().max(MAX_WORKER_SIZE))
     .refine((files) => Object.keys(files).length <= 100, "Too many client files (max 100)"),
-  // No agentConfig field: the server derives the config from the worker
-  // bundle's own `__aaiConfig` export inside a guest sandbox (see
-  // `extractAgentConfig` in deploy.ts). A client-sent config is ignored.
+  // No agentConfig field, and no server-side extraction behind it either:
+  // the platform stores artifacts and ownership, never a description of what
+  // the bundle IS. See "The platform stores no agent config" in CLAUDE.md.
 });
 
 export type DeployBody = z.infer<typeof DeployBodySchema>;

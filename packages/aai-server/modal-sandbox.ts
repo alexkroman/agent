@@ -165,7 +165,7 @@ export async function spawnModalWarm(
     debug("Modal sandbox spawned", {
       sandboxId: sb.sandboxId,
       role,
-      slug: opts.slug ?? "inspect",
+      slug: opts.slug ?? "(none)",
       ms: Math.round(performance.now() - t0),
     });
 

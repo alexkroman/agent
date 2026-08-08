@@ -5,24 +5,16 @@ The Node entrypoint that runs the complete agent inside each Modal Sandbox
 `packages/aai-server/CLAUDE.md`; the studio coding agent that runs in studio
 mode is in `packages/aai-studio-server/CLAUDE.md`.
 
-## The harness: one binary, three modes
+## The harness: one binary, two modes
 
 The Node guest entry point (runs inside a Modal Sandbox) runs the COMPLETE
-agent. ONE BINARY, THREE MODES, selected by the spawner via `AAI_GUEST_MODE`
+agent. ONE BINARY, TWO MODES, selected by the spawner via `AAI_GUEST_MODE`
 (behavior selection, never a security boundary — capability is what the host
 delivers):
   **agent mode** (deployed agents — see "Agent guests are servers") boots
   from files delivered at exec time and serves only the public session
   surfaces plus the token-gated `/manage/status` + `/manage/drain` pair
-  (`harness-agent-mode.ts`); a third ONE-SHOT **describe mode**
-  (`AAI_DESCRIBE_BUNDLE_PATH`) imports a bundle and prints its
-  self-described config as the last stdout line CARRYING THIS EXEC'S NONCE
-  (`AAI_DESCRIBE_NONCE`; "last line" alone is not a defense — the bundle is
-  imported into that process, so a `process.on("exit")` handler prints after
-  the harness. The harness deletes the nonce from `process.env` before
-  importing, so bundle code cannot read the value it would have to forge) —
-  deploy-time config
-  extraction with no server, no token, no channel; **studio mode** serves
+  (`harness-agent-mode.ts`); **studio mode** serves
   `/ws` (bearer-token host control channel — JSON-RPC
   `workspace/deploy` (Publish's in-guest `aai deploy`), `status`,
   `studio/session-init`; guest→host
@@ -75,12 +67,15 @@ harness wraps the same `createServer` (`aai/host/server.ts`) that `aai dev`
 runs — health, `client-config`, and `/websocket` sessions — adding (per
 mode) the `/manage/*` request hook or the `/ws` control channel, plus a
 lazy runtime facade (`lazyRuntime` in `aai-guest/harness.ts`: the runtime
-is built on the first session — inspection loads carry an empty env).
+is built on the first session — a `test_agent` load carries an empty env).
 The runtime itself comes from the BUNDLE (see "User-shipped runtime"
 below), so dev and prod run the identical SDK version: the one in the
-user's lockfile. In agent and describe modes the bundle is read from a
-file delivered at exec time (hash-verified in agent mode); the studio's
-test_agent loads its build in-guest through the same loader. Either way it
+user's lockfile. In agent mode the bundle arrives at exec time — a file or
+a signed URL, hash-verified either way (`harness-bundle-source.ts`); the
+studio's test_agent loads its build in-guest through the same loader.
+There is **no deploy-time inspection mode**: the platform stores no agent
+config and never asks a bundle to describe itself (see "The platform stores
+no agent config" in `packages/aai-server/CLAUDE.md`). Either way it
 loads from a temp-file `file:` URL.
 
 ## User-shipped runtime

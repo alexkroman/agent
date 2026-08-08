@@ -11,6 +11,14 @@ export type DeployOpts = {
   env: Record<string, string>;
   /** Existing slug for redeployment. Omit for first deploy — server generates one. */
   slug?: string;
+  /**
+   * The agent's display name, seeding a SERVER-generated slug. Advisory: the
+   * platform slugifies it and appends a random suffix, and acts on nothing
+   * else in it. Omitted for a redeploy (the slug is already fixed) and by
+   * bundles too old to self-describe, where the server falls back to random
+   * words.
+   */
+  name?: string;
   apiKey: string;
   /**
    * Ask the server to WARN (in `warnings`) instead of rejecting when the
@@ -46,6 +54,9 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
   const body = gzipSync(
     JSON.stringify({
       ...(opts.slug ? { slug: opts.slug } : {}),
+      ...(opts.name ? { name: opts.name } : {}),
+      // Kept for OLDER servers only: the current one runs no credential
+      // preflight (the CLI does — see _preflight.ts) and strips this field.
       ...(opts.allowMissingSecrets ? { credentialPolicy: "warn" } : {}),
       ...(opts.allowPreviewSlug ? { allowPreviewSlug: true } : {}),
       env: opts.env,

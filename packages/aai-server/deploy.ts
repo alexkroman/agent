@@ -1,13 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { errorMessage } from "@alexkroman1/aai";
-import { requiredProviderEnvVars } from "@alexkroman1/aai/runtime";
 import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/utils";
 import { debug } from "./_debug-log.ts";
 import type { AgentRecord } from "./agent-store.ts";
 import type { ValidatedAppContext } from "./context.ts";
 import { localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
-import { type IsolateConfig, IsolateConfigSchema } from "./rpc-schemas.ts";
 import type { DeployBody } from "./schemas.ts";
 import { EnvSchema, RESERVED_SLUGS } from "./schemas.ts";
 import { hashApiKey, matchAnyHash } from "./secrets.ts";
@@ -39,16 +36,20 @@ export type DeployParams = {
   worker: string;
   clientFiles: Record<string, string>;
   env?: Record<string, string> | undefined;
-  agentConfig: IsolateConfig;
   /**
-   * What to do when the agent's config requires a credential the merged env
-   * doesn't hold (see {@link missingCredentials}). `"require"` (the default)
-   * rejects the deploy with a 400 naming the keys — the fix is one `.env`
-   * edit away for CLI callers. `"warn"` deploys anyway and returns the names
-   * in `DeployOutcome.warnings`: the studio uses this because it has no
-   * secrets UI, so a hard failure would leave its user with no path forward.
+   * The agent's display name, used ONLY to seed a GENERATED slug (see
+   * `slugBaseFromName`). Advisory and client-supplied on purpose: it names
+   * nothing the platform acts on, and a generated slug carries a random
+   * suffix either way, so a wrong or absent value costs a nicer default and
+   * nothing else. Absent — or unusable after slugification — falls back to
+   * random words inside the generator.
+   *
+   * It is deliberately the ONLY thing the platform learns about a bundle.
+   * What an agent IS — providers, tools, prompts — is the bundle's business,
+   * interpreted by the SDK it shipped with, inside its own sandbox. See
+   * "The platform stores no agent config" in packages/aai-server/CLAUDE.md.
    */
-  credentialPolicy?: "require" | "warn" | undefined;
+  name?: string | undefined;
   /**
    * Permit a requested slug ending in {@link PREVIEW_SLUG_SUFFIX}. That suffix
    * is owned by the studio's auto-preview deploys, and the orphan-preview
@@ -63,57 +64,8 @@ export type DeployParams = {
 };
 
 export type DeployOutcome =
-  | { ok: true; slug: string; message: string; warnings?: string[] }
+  | { ok: true; slug: string; message: string }
   | { ok: false; status: 400 | 403 | 409; error: string };
-
-/**
- * Extracts an agent's config from its worker bundle — in production, by
- * loading the bundle in a throwaway guest sandbox (`describeBundle`) and
- * returning its `__aaiConfig` self-description. Never evaluates tenant code
- * on the host.
- */
-export type BundleInspector = (workerCode: string) => Promise<unknown>;
-
-export type ConfigExtraction = { ok: true; config: IsolateConfig } | { ok: false; error: string };
-
-/**
- * Validate a bundle-extracted raw config. The raw value always comes from
- * evaluating the bundle inside a guest sandbox — via `describeBundle` on
- * the HTTP deploy path, or riding back with the artifacts from the guest's
- * `workspace/deploy` on the studio path — never from anything a client sent.
- */
-export function validateAgentConfig(raw: unknown): ConfigExtraction {
-  if (raw === undefined) {
-    return {
-      ok: false,
-      error:
-        "Worker bundle does not self-describe its config — rebuild it with a current @alexkroman1/aai-cli",
-    };
-  }
-  const parsed = IsolateConfigSchema.safeParse(raw);
-  if (!parsed.success) {
-    const issues = parsed.error.issues.map((i) => i.message).join("; ");
-    return { ok: false, error: `Invalid agent config: ${issues}` };
-  }
-  return { ok: true, config: parsed.data };
-}
-
-/**
- * Derive and validate an agent's config from its worker bundle by loading
- * it in a throwaway guest sandbox (the HTTP deploy route's path).
- */
-export async function extractAgentConfig(
-  inspect: BundleInspector,
-  worker: string,
-): Promise<ConfigExtraction> {
-  let raw: unknown;
-  try {
-    raw = await inspect(worker);
-  } catch (err) {
-    return { ok: false, error: `Agent bundle failed to load: ${errorMessage(err)}` };
-  }
-  return validateAgentConfig(raw);
-}
 
 /**
  * Deploy an agent bundle: claim (or re-claim) the slug under its lock,
@@ -143,11 +95,11 @@ export function deployAgentBundle(deps: DeployDeps, params: DeployParams): Promi
       error: `The "${PREVIEW_SLUG_SUFFIX}" suffix is reserved for studio previews`,
     });
   }
-  // No requested slug: generate one from the agent's own display name (its
-  // bundle-described config) plus a random suffix — the same generator the
-  // studio uses for prompt-derived project names. An unusable name (empty
-  // after slugification) falls back to random words inside the generator.
-  const slug = requested ?? generatedSlug(slugBaseFromName(params.agentConfig.name));
+  // No requested slug: generate one from the agent's display name plus a
+  // random suffix — the same generator the studio uses for prompt-derived
+  // project names. The name is a client-supplied hint (see DeployParams.name);
+  // an absent or unusable one falls back to random words in the generator.
+  const slug = requested ?? generatedSlug(slugBaseFromName(params.name ?? ""));
   const lock = deps.slugLock ?? localSlugLock;
   return lock(slug, async () => {
     // Ownership is checked whether the slug was requested or generated. A
@@ -171,32 +123,6 @@ export function deployAgentBundle(deps: DeployDeps, params: DeployParams): Promi
     // no second read.
     return deployLocked(deps, params, { slug, existing, matchedHash, keyHash });
   });
-}
-
-/**
- * Env var names the agent needs but the merged env doesn't supply (empty
- * values count as missing — an empty credential authenticates nothing).
- *
- * Two sources, both from the bundle's self-described config so a client
- * can't understate them: provider credentials derived from the
- * stt/llm/tts/s2s descriptors (the same registry-backed derivation the
- * runtime resolves keys with), and the agent's own declared `requiredEnv`.
- * This is what turns "works locally, dies at first session after deploy" —
- * an agent that ran on shell-exported keys `aai dev` falls back to but the
- * platform never will — into a deploy-time message naming the key.
- */
-export function missingCredentials(config: IsolateConfig, env: Record<string, string>): string[] {
-  const required = new Set([...requiredProviderEnvVars(config), ...(config.requiredEnv ?? [])]);
-  return [...required].filter((name) => !env[name]);
-}
-
-function missingCredentialMessage(missing: string[]): string {
-  const plural = missing.length > 1;
-  return (
-    `Missing credential${plural ? "s" : ""} the agent needs to start: ${missing.join(", ")}. ` +
-    `Declare ${plural ? "them" : "it"} in .env and redeploy ` +
-    "(an already-deployed agent can also be updated with `aai secret put`)."
-  );
 }
 
 /** Persist the bundle for a slug the caller is entitled to. Runs under the slug lock. */
@@ -226,14 +152,6 @@ async function deployLocked(
     return { ok: false, status: 400, error: `Invalid platform config: ${envParsed.error.message}` };
   }
 
-  // Credential preflight: the config is the bundle's own self-description,
-  // so the required set can't be understated by the client. Checked before
-  // any side effect — a rejected deploy must leave the live sandbox running.
-  const missing = missingCredentials(params.agentConfig, env);
-  if (missing.length > 0 && (params.credentialPolicy ?? "require") === "require") {
-    return { ok: false, status: 400, error: missingCredentialMessage(missing) };
-  }
-
   // Preserve multi-user ownership: append the deployer's hash only when no
   // stored hash already matches their key.
   const existingHashes = existing?.credential_hashes ?? [];
@@ -252,7 +170,6 @@ async function deployLocked(
     worker: params.worker,
     clientFiles: params.clientFiles,
     credential_hashes: mergedHashes,
-    agentConfig: params.agentConfig,
     harnessImageTag,
   });
 
@@ -264,37 +181,27 @@ async function deployLocked(
 
   debug("Deploy received", { slug });
 
-  return {
-    ok: true,
-    slug,
-    message: `Deployed ${slug}`,
-    ...(missing.length > 0 ? { warnings: [missingCredentialMessage(missing)] } : {}),
-  };
+  return { ok: true, slug, message: `Deployed ${slug}` };
 }
 
 // ── HTTP handlers ────────────────────────────────────────────────────────────
 
 function outcomeToResponse(c: ValidatedAppContext<DeployBody>, outcome: DeployOutcome): Response {
   if (!outcome.ok) return c.json({ error: outcome.error }, outcome.status);
-  return c.json({
-    ok: true,
-    slug: outcome.slug,
-    message: outcome.message,
-    ...(outcome.warnings ? { warnings: outcome.warnings } : {}),
-  });
+  return c.json({ ok: true, slug: outcome.slug, message: outcome.message });
 }
 
 /**
  * `POST /deploy` — deploy to the body's slug, or a server-generated one.
  *
- * The agent config is derived from the uploaded worker inside a guest
- * sandbox (`inspect`), never taken from the request: a client-supplied
- * config would let a caller deploy a bundle whose declared capabilities
- * (providers, tools) disagree with the code that runs.
+ * The platform learns nothing about the bundle beyond an optional display
+ * name for slug generation: it stores the artifacts and the ownership
+ * hashes, and the bundle describes itself to its own SDK inside its own
+ * sandbox. See "The platform stores no agent config" in CLAUDE.md for what
+ * that replaced and why the guest-side extraction went away with it.
  */
 export async function handleDeployNew(
   c: ValidatedAppContext<DeployBody>,
-  inspect: BundleInspector,
   harnessImageTag?: () => Promise<string | null>,
 ): Promise<Response> {
   const deps = {
@@ -303,16 +210,13 @@ export async function handleDeployNew(
     harnessImageTag,
   };
   const body = c.req.valid("json");
-  const extraction = await extractAgentConfig(inspect, body.worker);
-  if (!extraction.ok) return c.json({ error: extraction.error }, 400);
   const outcome = await deployAgentBundle(deps, {
     slug: body.slug,
     apiKey: c.var.apiKey,
     worker: body.worker,
     clientFiles: body.clientFiles,
     env: body.env,
-    agentConfig: extraction.config,
-    credentialPolicy: body.credentialPolicy,
+    name: body.name,
     allowPreviewSlug: body.allowPreviewSlug,
   });
   return outcomeToResponse(c, outcome);

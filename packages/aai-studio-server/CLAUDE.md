@@ -541,17 +541,17 @@ voice agents without the CLI:
     `studio-project-shape.test.ts`; a dir-local `AAI_CONFIG_DIR` carries
     the caller's key; `.aai/project.json` pins the slug) and runs
     `aai deploy --server <origin> --json --allow-missing-secrets`. Build,
-    upload, config extraction (`describeBundle` on the platform's standard
-    `POST /deploy` route), ownership, reserved slugs, the
-    ASSEMBLYAI_API_KEY env floor,
-    and the credential preflight are therefore byte-for-byte the laptop
-    path. The CLI's output — success, build diagnostics, deploy errors,
+    upload, the credential preflight (CLI-side now — see "The platform
+    stores no agent config" in `packages/aai-server/CLAUDE.md`), ownership,
+    reserved slugs, and the ASSEMBLYAI_API_KEY env floor are therefore
+    byte-for-byte the laptop path. The CLI's output — success, build diagnostics, deploy errors,
     preflight warnings — returns to the client, which **posts it into the
     chat** so the coding agent sees and can fix failures.
-    `--allow-missing-secrets` (new CLI flag → `credentialPolicy: "warn"`
-    in the deploy body) exists because the Secrets panel needs a deployed
-    slug to attach secrets to — a hard preflight failure would deadlock
-    first publishes. The public origin comes from `requestPublicOrigin`
+    `--allow-missing-secrets` exists because the Secrets panel needs a
+    deployed slug to attach secrets to — a hard preflight failure would
+    deadlock first publishes. It is now belt-and-braces: the CLI's preflight
+    only ever warns (it cannot see secrets already stored against the slug),
+    so nothing blocks a first publish anyway. The public origin comes from `requestPublicOrigin`
     (studio-context.ts — beside the context type, not in studio-routes.ts, so
     route modules under it can resolve the origin without importing their own
     parent) → `resolvePublicOrigin` (aai-server/public-origin.ts).

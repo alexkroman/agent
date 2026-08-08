@@ -55,7 +55,6 @@ import { performance } from "node:perf_hooks";
 import { Readable } from "node:stream";
 import { errorMessage } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
-import { mintDescribeNonce, readDescribeResult } from "./describe-exec.ts";
 import { pollGuestHealth } from "./guest-readiness.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
 import { parseSandboxLimitsFromEnv } from "./modal-sandbox-env.ts";
@@ -339,44 +338,6 @@ export async function spawnSubprocessAgentServer(
       `Subprocess agent-server spawn failed: ${errorMessage(err)}`,
       { cause: err },
     );
-  }
-}
-
-// ── One-shot bundle describe ─────────────────────────────────────────────────
-
-/**
- * Extract a bundle's self-described config via a ONE-SHOT harness exec (the
- * guest's describe mode — `AAI_DESCRIBE_BUNDLE_PATH`): write the bundle to a
- * scratch file, run the harness, parse the last stdout line. No server, no
- * channel, no token — the process exit is the whole lifecycle.
- */
-export async function describeSubprocessBundle(
-  opts: { harnessPath: string; workerCode: string },
-  ctx: SubprocessSpawnContext = realContext(),
-): Promise<unknown> {
-  try {
-    const [, dir] = await Promise.all([
-      access(opts.harnessPath),
-      mkdtemp(join(tmpdir(), "aai-describe-")),
-    ]);
-    const bundlePath = join(dir, "bundle.mjs");
-    await writeFile(bundlePath, opts.workerCode, "utf-8");
-    const limits = parseSandboxLimitsFromEnv(process.env);
-    const nonce = mintDescribeNonce();
-    // No port, no token: describe mode opens no server and answers nothing.
-    const proc = ctx.runGuestProcess({
-      harnessPath: opts.harnessPath,
-      memoryLimitMiB: limits.memoryLimitMiB,
-      extraEnv: { AAI_DESCRIBE_BUNDLE_PATH: bundlePath, AAI_DESCRIBE_NONCE: nonce },
-    });
-    try {
-      return await readDescribeResult(proc, `describe:${opts.harnessPath}`, nonce);
-    } finally {
-      proc.kill();
-      await rm(dir, { recursive: true, force: true }).catch(() => undefined);
-    }
-  } catch (err) {
-    throw new Error(`Subprocess bundle describe failed: ${errorMessage(err)}`, { cause: err });
   }
 }
 

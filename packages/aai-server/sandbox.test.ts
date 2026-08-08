@@ -3,7 +3,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { inlineWorker } from "./_sandbox-vm-test-utils.ts";
 import { sleep } from "./_sleep.ts";
-import type { IsolateConfig } from "./rpc-schemas.ts";
 import { createSandbox, type SandboxOptions } from "./sandbox.ts";
 import { resolveSandbox } from "./sandbox-resolve.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
@@ -44,7 +43,7 @@ vi.mock("./sandbox-vm.ts", async (importOriginal) => {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-const TEST_AGENT_CONFIG: IsolateConfig = {
+const _TEST_AGENT_CONFIG = {
   name: "test-agent",
   systemPrompt: "You are a test agent",
   greeting: "Hello!",
@@ -296,7 +295,6 @@ describe("createSandbox", () => {
         worker: 'export default { name: "t" };',
         clientFiles: {},
         credential_hashes: ["hash"],
-        agentConfig: TEST_AGENT_CONFIG,
       });
       return {
         slots: createSlotCache(),

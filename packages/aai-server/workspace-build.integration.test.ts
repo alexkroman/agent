@@ -27,7 +27,7 @@ import { resolveHarnessPath } from "./constants.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
-import { createTestStore, TEST_AGENT_CONFIG } from "./test-utils.ts";
+import { createTestStore } from "./test-utils.ts";
 import { dialGuest, getFreePort, startGuestLogging, warmFromGuest } from "./warm-harness.ts";
 
 const AGENT_TS = `import { agent } from "@alexkroman1/aai";
@@ -101,7 +101,6 @@ describe("guest workspace/deploy (Publish = aai deploy in the sandbox)", () => {
     const { app } = createOrchestrator({
       slots: createSlotCache(),
       store,
-      inspect: async () => TEST_AGENT_CONFIG,
     });
     const port = await new Promise<number>((resolve) => {
       server = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" }, (info: AddressInfo) =>

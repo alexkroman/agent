@@ -11,7 +11,7 @@ import { baseOpts, makeHarnessFile } from "./_sandbox-vm-test-utils.ts";
 import { DEFAULT_SANDBOX_IMAGE } from "./modal-context.ts";
 import { localHarnessImageTag } from "./modal-harness-image.ts";
 import { agentSandboxName } from "./sandbox-directory.ts";
-import { describeBundle, guestUnderstandsBundleUrl, spawnAgentServer } from "./sandbox-vm.ts";
+import { guestUnderstandsBundleUrl, spawnAgentServer } from "./sandbox-vm.ts";
 import * as subprocessSandbox from "./subprocess-sandbox.ts";
 import type { AgentServerHandle } from "./warm-harness.ts";
 
@@ -129,35 +129,5 @@ describe("guestUnderstandsBundleUrl", () => {
     // `true` above is a real comparison rather than a short circuit that would
     // hand every pinned guest a URL.
     expect(await guestUnderstandsBundleUrl(harnessPath, `${currentTag}x`, {})).toBe(false);
-  });
-});
-
-// ── describeBundle ───────────────────────────────────────────────────────────
-
-describe("describeBundle", () => {
-  it("dispatches to the backend's one-shot describe exec", async () => {
-    const opts = { harnessPath: "/tmp/harness.mjs", workerCode: "export default {};" };
-    const subprocess = vi.fn(async () => ({ name: "studio-agent" }));
-    const modal = vi.fn(async () => undefined);
-
-    // Test env resolves the subprocess backend (no SUPABASE_STORAGE_BUCKET).
-    const config = await describeBundle(opts, { modal, subprocess });
-
-    expect(config).toEqual({ name: "studio-agent" });
-    expect(modal).not.toHaveBeenCalled();
-    expect(subprocess).toHaveBeenCalledWith(opts);
-  });
-
-  it("propagates a failed describe (a broken bundle must fail the deploy)", async () => {
-    const subprocess = vi.fn(async () => {
-      throw new Error("bundle failed to load: boom");
-    });
-    const modal = vi.fn(async () => undefined);
-    await expect(
-      describeBundle(
-        { harnessPath: "/tmp/harness.mjs", workerCode: "throw 1" },
-        { modal, subprocess },
-      ),
-    ).rejects.toThrow(/bundle failed to load/);
   });
 });

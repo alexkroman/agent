@@ -134,7 +134,6 @@ describeIfPg("the platform migration applies and the stores work against it", ()
     await rows.put({
       slug: "round-trip",
       credential_hashes: ["sha256:abc"],
-      config: { name: "round-trip", nested: { deep: true } },
       worker_hash: "wh-1",
       client_files: { "index.html": "ch-1" },
       harness_image_tag: "aai-guest-harness:deadbeef",
@@ -145,7 +144,6 @@ describeIfPg("the platform migration applies and the stores work against it", ()
       slug: "round-trip",
       credential_hashes: ["sha256:abc"],
       // jsonb, so the nested object has to survive the driver both ways.
-      config: { name: "round-trip", nested: { deep: true } },
       worker_hash: "wh-1",
       client_files: { "index.html": "ch-1" },
       harness_image_tag: "aai-guest-harness:deadbeef",
@@ -158,7 +156,6 @@ describeIfPg("the platform migration applies and the stores work against it", ()
     const base = {
       slug: "versioned",
       credential_hashes: ["sha256:one"],
-      config: {},
       worker_hash: "w1",
       client_files: {},
     };
@@ -183,7 +180,6 @@ describeIfPg("the platform migration applies and the stores work against it", ()
     await rows.put({
       slug: "unpinned",
       credential_hashes: [],
-      config: {},
       worker_hash: "w",
       client_files: {},
     });
@@ -195,7 +191,6 @@ describeIfPg("the platform migration applies and the stores work against it", ()
     await rows.put({
       slug: "doomed",
       credential_hashes: [],
-      config: {},
       worker_hash: "w",
       client_files: {},
     });

@@ -6,7 +6,6 @@ import {
 } from "@alexkroman1/aai/protocol";
 import { describe, expect, test } from "vitest";
 import { MAX_WORKER_SIZE } from "./constants.ts";
-import { IsolateConfigSchema } from "./rpc-schemas.ts";
 import {
   DeployBodySchema,
   EnvSchema,
@@ -25,7 +24,6 @@ describe("DeployBodySchema", () => {
       {
         worker: "console.log('hello');",
         clientFiles: { "index.html": "<html></html>" },
-        agentConfig: TEST_AGENT_CONFIG,
       },
       true,
     ],
@@ -35,7 +33,6 @@ describe("DeployBodySchema", () => {
         env: { MY_SECRET: "value" },
         worker: "console.log('hello');",
         clientFiles: {},
-        agentConfig: TEST_AGENT_CONFIG,
       },
       true,
     ],
@@ -54,7 +51,6 @@ describe("DeployBodySchema", () => {
       {
         worker: "code",
         clientFiles: { "../../etc/passwd": "malicious" },
-        agentConfig: TEST_AGENT_CONFIG,
       },
       false,
     ],
@@ -63,7 +59,6 @@ describe("DeployBodySchema", () => {
       {
         worker: "code",
         clientFiles: { "/etc/passwd": "malicious" },
-        agentConfig: TEST_AGENT_CONFIG,
       },
       false,
     ],
@@ -72,7 +67,6 @@ describe("DeployBodySchema", () => {
       {
         worker: "code",
         clientFiles: { "file\0.html": "malicious" },
-        agentConfig: TEST_AGENT_CONFIG,
       },
       false,
     ],
@@ -81,48 +75,11 @@ describe("DeployBodySchema", () => {
       {
         worker: "code",
         clientFiles: { "dir\\file.html": "content" },
-        agentConfig: TEST_AGENT_CONFIG,
       },
       false,
     ],
   ] as const)("rejects/accepts %s → %s", (_label: string, input: unknown, expected: boolean) => {
     expect(DeployBodySchema.safeParse(input).success).toBe(expected);
-  });
-
-  // The config itself is validated by IsolateConfigSchema at extraction
-  // time (see extractAgentConfig in deploy.ts), no longer via the body.
-  test("extracted config without systemPrompt gets the default", () => {
-    const result = IsolateConfigSchema.safeParse({ name: "minimal-agent" });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.systemPrompt).toBeTypeOf("string");
-      expect(result.data.systemPrompt.length).toBeGreaterThan(0);
-    }
-  });
-
-  test("extracted config preserves the s2s descriptor through validation", () => {
-    const result = IsolateConfigSchema.safeParse({
-      name: "agent",
-      s2s: { kind: "openai-realtime", options: { model: "gpt-realtime-2" } },
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.s2s).toEqual({
-        kind: "openai-realtime",
-        options: { model: "gpt-realtime-2" },
-      });
-    }
-  });
-
-  test("rejects extracted config with s2s and pipeline triple set together", () => {
-    const result = IsolateConfigSchema.safeParse({
-      name: "agent",
-      s2s: { kind: "openai-realtime", options: {} },
-      stt: { kind: "assemblyai", options: {} },
-      llm: { kind: "openai", options: {} },
-      tts: { kind: "cartesia", options: {} },
-    });
-    expect(result.success).toBe(false);
   });
 
   test("rejects non-object body", () => {
@@ -138,7 +95,6 @@ describe("DeployBodySchema", () => {
         slug,
         worker: "code",
         clientFiles: {},
-        agentConfig: TEST_AGENT_CONFIG,
       });
       expect(result.success).toBe(false);
     },
@@ -160,7 +116,6 @@ describe("DeployBodySchema", () => {
     const result = DeployBodySchema.safeParse({
       worker: "code",
       clientFiles: tooMany,
-      agentConfig: TEST_AGENT_CONFIG,
     });
     expect(result.success).toBe(false);
   });
@@ -169,7 +124,6 @@ describe("DeployBodySchema", () => {
     const result = DeployBodySchema.safeParse({
       worker: "code",
       clientFiles: { "huge.js": "x".repeat(MAX_WORKER_SIZE + 1) },
-      agentConfig: TEST_AGENT_CONFIG,
     });
     expect(result.success).toBe(false);
   });

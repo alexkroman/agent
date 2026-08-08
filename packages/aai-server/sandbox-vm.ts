@@ -13,26 +13,19 @@
  * The control-channel machinery below ({@link spawnWarmHarness}) remains for
  * the STUDIO side — coding-agent sessions and Publish — which always runs
  * the CURRENT harness image and may change atomically with the server.
- * Deploy-time bundle inspection ({@link describeBundle}) is a one-shot
- * describe-mode exec, not a channel.
  */
 
 import { readFile } from "node:fs/promises";
 import { keyedMemoAsync } from "./_memo.ts";
 import { spawnModalAgentServer } from "./modal-agent-sandbox.ts";
 import { DEFAULT_SANDBOX_IMAGE } from "./modal-context.ts";
-import { describeModalBundle } from "./modal-describe.ts";
 import { localHarnessImageTag } from "./modal-harness-image.ts";
 import { spawnModalWarm } from "./modal-sandbox.ts";
 import type { GuestConnection } from "./rpc-schemas.ts";
 import { resolveSandboxBackend, type SandboxBackend } from "./sandbox-backend.ts";
 import { agentSandboxName } from "./sandbox-directory.ts";
 import type { SpawnIdentity } from "./sandbox-role.ts";
-import {
-  describeSubprocessBundle,
-  spawnSubprocessAgentServer,
-  spawnSubprocessWarm,
-} from "./subprocess-sandbox.ts";
+import { spawnSubprocessAgentServer, spawnSubprocessWarm } from "./subprocess-sandbox.ts";
 import type { AgentServerHandle } from "./warm-harness.ts";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -139,7 +132,6 @@ export type BackendAgentSpawn = {
 export type SandboxBackendOps = {
   spawnWarm(opts: { harnessPath: string } & SpawnIdentity): Promise<WarmHarness>;
   spawnAgentServer(opts: BackendAgentSpawn): Promise<AgentServerHandle>;
-  describeBundle(opts: { harnessPath: string; workerCode: string }): Promise<unknown>;
   /**
    * The content-addressed harness image tag new sandboxes spawn from, or null
    * for a backend with no image (nothing to pin).
@@ -151,7 +143,6 @@ const SANDBOX_BACKENDS: Record<SandboxBackend, SandboxBackendOps> = {
   modal: {
     spawnWarm: spawnModalWarm,
     spawnAgentServer: spawnModalAgentServer,
-    describeBundle: describeModalBundle,
     // Pure computation — base tag from env, harness code from disk, toolchain
     // specs from package.json — so it needs no Modal credentials and never
     // dials out.
@@ -174,7 +165,6 @@ const SANDBOX_BACKENDS: Record<SandboxBackend, SandboxBackendOps> = {
         worker: opts.worker,
         agentEnv: opts.agentEnv,
       }),
-    describeBundle: describeSubprocessBundle,
     harnessImageTag: async () => null,
   },
 };
@@ -267,28 +257,6 @@ export async function guestUnderstandsBundleUrl(
   if (!imageTag) return true;
   if (env.SANDBOX_IGNORE_IMAGE_PINS === "1") return true;
   return imageTag === (await currentHarnessImageTag(harnessPath));
-}
-
-// ── Bundle inspection ────────────────────────────────────────────────────────
-
-/**
- * Load a worker bundle in a throwaway ONE-SHOT sandbox exec (the guest's
- * describe mode — see the harness's `mainDescribe`) and return the agent
- * config the bundle extracted about itself (its `__aaiConfig` export). The
- * bundle is *evaluated in the sandbox*, never on the host, so this is safe
- * to run on untrusted studio-authored code; there is no control channel, no
- * token, and no server — the process's last stdout line is the whole
- * protocol. The result is guest-asserted wire data; the caller validates
- * `config` with IsolateConfigSchema.
- *
- * Returns `undefined` when the bundle does not self-describe (e.g. a plain
- * CLI-built worker, which ships its config separately).
- */
-export async function describeBundle(
-  opts: { harnessPath: string; workerCode: string },
-  describers?: BackendMap<"describeBundle">,
-): Promise<unknown> {
-  return opFor("describeBundle", describers)(opts);
 }
 
 // ── Agent-server spawning ─────────────────────────────────────────────────────

@@ -12,7 +12,6 @@ import {
   createTestStore,
   deployAgent,
   deployBody,
-  TEST_AGENT_CONFIG,
 } from "./test-utils.ts";
 
 describe("handleAgentHealth", () => {
@@ -243,7 +242,6 @@ async function startServerWithOrchestrator(opts: HarnessOpts = {}): Promise<{
     worker: "w",
     clientFiles: { "index.html": "<html></html>" },
     credential_hashes: ["h"],
-    agentConfig: TEST_AGENT_CONFIG,
   });
 
   const { injectWebSocket } = createOrchestrator({ slots, store });

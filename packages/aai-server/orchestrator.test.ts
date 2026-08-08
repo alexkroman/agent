@@ -4,13 +4,7 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { expect, test } from "vitest";
-import {
-  authHeaders,
-  createTestOrchestrator,
-  deployAgent,
-  deployBody,
-  TEST_AGENT_CONFIG,
-} from "./test-utils.ts";
+import { authHeaders, createTestOrchestrator, deployAgent, deployBody } from "./test-utils.ts";
 
 test("returns health check", async () => {
   const { fetch } = await createTestOrchestrator();
@@ -61,7 +55,6 @@ test("deploy rejects different owner for claimed slug", async () => {
     worker: "w",
     clientFiles: { "index.html": "<html></html>" },
     credential_hashes: [await hashApiKey("key1")],
-    agentConfig: TEST_AGENT_CONFIG,
   });
   const res = await fetch("/deploy", {
     method: "POST",

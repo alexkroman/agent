@@ -1,10 +1,15 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { resolveDeployTarget } from "./_agent.ts";
-import { buildAgentBundle } from "./_bundler.ts";
+import { buildAgentBundle, evalWorkerConfig } from "./_bundler.ts";
 import { updateProjectConfig } from "./_config.ts";
 import { runDeploy } from "./_deploy.ts";
 import { type CommandResult, ok } from "./_output.ts";
+import {
+  missingCredentialMessage,
+  missingCredentials,
+  type PreflightConfig,
+} from "./_preflight.ts";
 import { resolveServerEnv } from "./_server-common.ts";
 import { assertTypechecks } from "./_typecheck-gate.ts";
 import { fmtUrl, log } from "./_ui.ts";
@@ -31,6 +36,17 @@ export async function executeDeploy(opts: {
   const slug = projectConfig?.slug;
 
   const env = await resolveServerEnv(cwd);
+  // The login key is the same floor the upload applies below, so the
+  // preflight sees exactly the env the agent will start with.
+  const uploadEnv = { ASSEMBLYAI_API_KEY: apiKey, ...env };
+
+  // Import the bundle we just built: proves it loads (a top-level throw fails
+  // HERE, not as a sandbox that never becomes ready) and yields the config the
+  // preflight and the slug hint read. The platform evaluates nothing, so this
+  // is the only place either happens — see _preflight.ts.
+  const config = (await evalWorkerConfig(bundle.worker)) as PreflightConfig | undefined;
+  const missing = config ? missingCredentials(config, uploadEnv) : [];
+  if (missing.length > 0) log.warn(missingCredentialMessage(missing));
 
   log.step(`Deploying${slug ? ` ${slug}` : ""}…`);
   const deployed = await runDeploy({
@@ -39,8 +55,9 @@ export async function executeDeploy(opts: {
     // The login key is a FLOOR, not an override: an ASSEMBLYAI_API_KEY the
     // user declared in .env deliberately targets a different account and
     // must win — matching the server's own defaultEnv merge semantics.
-    env: { ASSEMBLYAI_API_KEY: apiKey, ...env },
+    env: uploadEnv,
     ...(slug ? { slug } : {}),
+    ...(typeof config?.name === "string" ? { name: config.name } : {}),
     ...(opts.allowMissingSecrets ? { allowMissingSecrets: true } : {}),
     ...(opts.allowPreviewSlug ? { allowPreviewSlug: true } : {}),
     apiKey,

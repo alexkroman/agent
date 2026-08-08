@@ -14,9 +14,8 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   holds NO channel to them (see `packages/aai-guest/CLAUDE.md`, "Agent guests
   are servers")
 - `sandbox-vm.ts` — `spawnAgentServer` (the agent-server dispatch over the
-  two backends), `describeBundle` (deploy-time bundle inspection as a
-  ONE-SHOT describe-mode exec — no channel), and the studio-side
-  `spawnWarmHarness` control-channel machinery
+  two backends) and the studio-side `spawnWarmHarness` control-channel
+  machinery
 - `sandbox-backend.ts` — backend selection policy (`SANDBOX_BACKEND` override,
   production → `modal`, local dev → `subprocess`) plus the reason string
   the boot log prints, so "which backend am I on, and why" is one log line
@@ -31,8 +30,8 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   per harness version, published under a content-addressed tag), and the
   harness bytes that tag is keyed on. All memoized, so a spawn racing the
   boot-time prewarm joins it
-- `modal-sandbox.ts` — Modal Sandbox backend, CONTROL-CHANNEL guest (studio,
-  inspect): creates the sandbox, execs the Node harness with a per-sandbox
+- `modal-sandbox.ts` — Modal Sandbox backend, CONTROL-CHANNEL guest (studio):
+  creates the sandbox, execs the Node harness with a per-sandbox
   bearer token, and dials its WebSocket through the sandbox's Modal tunnel.
   The deployed-agent spawn is `modal-agent-sandbox.ts`
 - `packages/aai-guest/` — the guest the two backends spawn; its own private
@@ -48,10 +47,11 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   server" below): a Postgres ADVISORY lock on a reserved connection in
   production, the in-process keyed lock in dev/tests
 - `agent-store.ts` — the agents table (`aai_platform.agents`; memory in
-  dev/tests): one row per agent — slug, credential hashes, the bundle's
-  self-described config, content hashes of the worker/client blobs, and a
-  deploy `version` that doubles as the cross-replica invalidation signal
-  (see "Two packages, ONE deployment" below)
+  dev/tests): one row per agent — slug, credential hashes, content hashes of
+  the worker/client blobs, and a deploy `version` that doubles as the
+  cross-replica invalidation signal (see "Two packages, ONE deployment"
+  below). NO description of the agent — see "The platform stores no agent
+  config"
 - `sandbox-resolve.ts` — slot-based slug→sandbox resolution +
   `watchAgentInvalidation`, the event-driven sandbox invalidation (split
   from sandbox.ts, which owns one sandbox's lifecycle)
@@ -568,7 +568,7 @@ down, like the file-length allowlist.
   mutation cores' local sandbox teardowns are deliberate no-ops there,
   while the deploy's row-version bump does the real work. It shares
   everything else through Supabase and spawns its own Modal sandboxes for
-  `test_agent`/config extraction.
+  `test_agent` and Publish.
 - **The web service autoscales** (constants block in `modal_deploy.py`),
   bounded by `MIN_CONTAINERS`/`MAX_CONTAINERS`. Scale-in is FREE for voice
   sessions: a replica going down RETIRES its agent guests instead of
@@ -814,7 +814,7 @@ down, like the file-length allowlist.
   current image is exactly the untested-environment drift pinning exists to
   prevent; the operator kill switch `SANDBOX_IGNORE_IMAGE_PINS=1` forces
   the current image for every spawn when a registry loss makes that trade
-  explicitly. Studio/inspect sandboxes always run the current image.
+  explicitly. Studio sandboxes always run the current image.
 - **The harness's V8 COMPILE CACHE is baked into the same snapshot.** The
   harness is one ~13 MB bundle and every sandbox boots it cold, so V8 paid the
   same parse+compile on every spawn. The builder sandbox now runs the harness
@@ -822,8 +822,8 @@ down, like the file-length allowlist.
   nothing, exits 0) under `NODE_COMPILE_CACHE`, before `snapshotFilesystem()`,
   and `guestExecBaseEnv()` points every guest exec at the resulting
   `/opt/aai/.compile-cache`. Measured on the real bundle: **~570ms → ~345ms**,
-  i.e. ~200ms off every cold voice session, studio broker call, and
-  `describeBundle`, for ~1.5 MB in the image. Three things make it safe: a
+  i.e. ~200ms off every cold voice session and studio broker call, for
+  ~1.5 MB in the image. Three things make it safe: a
   missing or stale entry is a silent MISS (the cache keys on Node version +
   file content, so a bumped base image simply misses), the warm-up is
   best-effort (a failure logs and still publishes — the cache is an
@@ -911,17 +911,16 @@ down, like the file-length allowlist.
   **BOTH Modal apps set the burst range in their image env** — the agent
   app's guest-sandbox resources block (`aai-server/modal_deploy.py`) and
   the studio app's (`aai-studio-server/modal_deploy.py`). The studio spawns
-  its own sandboxes (coding-agent sessions, Publish, config extraction),
+  its own sandboxes (coding-agent sessions, Publish),
   whose `test_agent`/Publish builds are exactly the workload the cap exists
   for — for a while only the agent app set the range, so studio-spawned
   sandboxes ran on Modal defaults. Keep the two blocks' values in lockstep
   unless the divergence is deliberate.
 - **Every sandbox is tagged with a `role`** (`sandbox-role.ts`: `agent`,
-  `preview`, `studio`, `studio-publish`, `inspect`) plus the `slug`
+  `preview`, `studio`, `studio-publish`) plus the `slug`
   (studio sandboxes carry the project name), so the Modal dashboard can tell
-  a production voice agent from a preview deploy, a studio coding-agent
-  session, or a bundle inspection. Every spawn knows its identity at
-  creation. Observability only: nothing
+  a production voice agent from a preview deploy or a studio coding-agent
+  session. Every spawn knows its identity at creation. Observability only: nothing
   may gate on these tags, and the `preview` role is inferred from the
   `-preview` slug suffix (`PREVIEW_SLUG_SUFFIX`, defined once in the SDK's
   slug contract — `aai/sdk/slug.ts`, reachable as `@alexkroman1/aai/utils` —
@@ -999,7 +998,7 @@ down, like the file-length allowlist.
   have to be: the calls are ISSUED in the same order either way, so a
   `write, write, exec` transcript reads identically whether or not anything
   waited. The concurrency test asserts on writes in flight, not on sequence.
-- **Transport**: STUDIO/INSPECT guests get a WebSocket control channel the
+- **Transport**: STUDIO guests get a WebSocket control channel the
   host dials through the sandbox's Modal tunnel (`encryptedPorts: [8080]`;
   JSON-RPC on `/ws`) once the probe reports ready — the dial's retry
   (`GUEST_DIAL_TIMEOUT_MS`) stays as a backstop rather than the discovery
@@ -1044,7 +1043,7 @@ down, like the file-length allowlist.
   studio's control-channel RPCs pay it, outside any latency budget. Re-pin
   per environment if that ever stops being true; don't re-bake it into the
   shared image.
-- **Orphan cleanup differs per mode.** STUDIO/INSPECT guests: the host's
+- **Orphan cleanup differs per mode.** STUDIO guests: the host's
   WebSocket IS the liveness signal — a host that dies without teardown
   drops its sockets, and the harness self-exits after
   `HARNESS_ORPHAN_TIMEOUT_MS` with no host connected (constants in
@@ -1066,24 +1065,53 @@ down, like the file-length allowlist.
   `pnpm --filter aai-server deploy:modal`) — there is no Docker image or
   Fly.io deployment anymore.
 
-## Deploy-time credential preflight
+## The platform stores no agent config
 
-**`missingCredentials` in `deploy.ts`.** The classic dev/prod credential
-failure — an agent that ran locally on shell-exported keys dies at first
-session start after deploy with what looks like a provider outage — is caught
-at the deploy boundary instead. The required key set is derived from the
-bundle's
-self-described config (never from anything a client sent):
-`requiredProviderEnvVars` over the stt/llm/tts/s2s descriptors (the same
-registry-backed derivation the runtime resolves keys with) plus the agent's
-declared `requiredEnv` (an `agent()` field for custom keys tools read from
-`ctx.env`, which no static derivation can see). A key whose merged stored
-value is absent or empty fails `POST /deploy` with a 400 naming the keys
-(`credentialPolicy: "require"`, the default). The studio deploys with
-`credentialPolicy: "warn"` instead — it has no secrets UI, so a hard failure
-would leave its user with no path to publish at all; the warning rides back
-on the deploy response. The check runs before any side effect, so a rejected
-deploy leaves the live sandbox untouched.
+**The deploy boundary learns one thing about a bundle: an optional display
+name, used to seed a generated slug.** No config is extracted, validated, or
+stored. `POST /deploy` takes artifacts (worker, client files, env), ownership
+(the caller's key), and `name`; the bundle describes itself to its own SDK
+inside its own sandbox, and nowhere else.
+
+**What this replaced, and why it went.** A deploy used to spawn a THROWAWAY
+guest sandbox per call (`describeBundle`, the guest's one-shot describe mode)
+to load the bundle and read its `__aaiConfig` self-description, defended by a
+per-exec nonce so a bundle's own `process.on("exit")` handler could not forge
+the answer. That was load-bearing when the host interpreted a stored config:
+platform host mode ran sessions through the server's own `createRuntime`, and
+the broker read name/greeting off the row. Both went away — host mode is
+deleted, `/client-config` is proxied from the guest — and the extraction
+outlived its consumers, because the changes that removed them had no reason to
+revisit it. By the end the stored `config` column was write-only and the
+extracted value decided exactly two things: a default slug and a warning.
+
+So the sandbox spawn, the describe mode, the nonce protocol, the `inspect`
+role, `IsolateConfigSchema`, and the column are all gone. Three consequences
+worth knowing:
+
+- **The credential preflight moved to the CLI** (`aai-cli/_preflight.ts`).
+  It is the same derivation — `requiredProviderEnvVars` over the provider
+  descriptors, plus the agent's declared `requiredEnv` — run where the config
+  is authored. It WARNS rather than rejecting, and that is not a softening
+  for its own sake: the CLI sees the env it is uploading but not what is
+  already stored against the slug from an earlier `aai secret put`, so a
+  rejection could block a deploy that would have worked. Studio Publish runs
+  the same CLI in-guest, so it inherits the check.
+- **The import smoke test moved with it.** `aai deploy` imports the worker it
+  just built, so a bundle whose top level throws fails in the project
+  directory rather than as a sandbox that never becomes ready. This is why
+  the deploy path now evaluates the built bundle locally — see the note in
+  `packages/aai-cli/CLAUDE.md`.
+- **A client-sent config is still ignored, and now there is nothing to
+  poison.** `DeployBodySchema` has no such field, and `name` is advisory: it
+  is slugified, gets a random suffix, and gates nothing.
+
+**Re-adding a host-side view of what an agent is means re-adding trusted
+extraction.** Nothing in the platform can answer "which providers does this
+agent use" any more, so a future quota, provider block, or agents list needs
+that decided first. If it is only a NAME that is wanted, note the asymmetry:
+adding a column is easy, backfilling one is not — existing agents would carry
+nothing until redeployed.
 
 ## Security architecture
 
@@ -1493,7 +1521,7 @@ and `getWorkerCode` concurrently and each read the row.
 There is NO warm sandbox pool (`sandbox-pool.ts`, `SANDBOX_POOL_SIZE`, the
 `pool` role, and the `setTags` retag plumbing were all deleted). Production
 always ran with the pool disabled, so it was pure complexity: every spawn —
-agent, studio, inspect — now boots directly from the published
+agent, studio — now boots directly from the published
 content-addressed harness snapshot image, one code path per backend, and
 every sandbox knows its identity (role/slug tags) at creation. When Modal's
 JS SDK exposes sandbox MEMORY snapshots (today it exposes only

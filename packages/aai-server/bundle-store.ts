@@ -240,7 +240,6 @@ export function createBundleStore(
       await agents.put({
         slug: bundle.slug,
         credential_hashes: bundle.credential_hashes,
-        config: bundle.agentConfig,
         worker_hash: workerHash,
         client_files: clientFiles,
         harness_image_tag: bundle.harnessImageTag ?? null,

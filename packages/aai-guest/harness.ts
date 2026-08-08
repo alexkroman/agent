@@ -17,14 +17,10 @@
  *   `/manage/*` pair, and lifecycle is guest-owned (see
  *   harness-agent-mode.ts). Deployed agents run this mode, on the harness
  *   image PINNED at deploy time.
- * - **default (studio/inspect/pool)** — the control-channel mode below,
+ * - **default (studio)** — the control-channel mode below,
  *   platform-versioned (always the current image), serving:
  *
- * A third one-shot mode, DESCRIBE (`AAI_DESCRIBE_BUNDLE_PATH`), imports a
- * bundle and prints its self-described config to stdout — deploy-time
- * config extraction with no server and no channel (see {@link mainDescribe}).
- *
- * A fourth, WARM-UP (`AAI_GUEST_WARMUP`), exists only for the image build: it
+ * A third mode, WARM-UP (`AAI_GUEST_WARMUP`), exists only for the image build: it
  * evaluates this module and exits 0 immediately, so a `NODE_COMPILE_CACHE`
  * populated by that run can be snapshotted INTO the harness image (see
  * aai-server/modal-harness-image.ts). It opens nothing, reads no bundle, and
@@ -41,8 +37,9 @@
  *   `status`, and the `shutdown` notification; guest→host requests exist
  *   only for studio sessions (workspace sync, chat persistence). Bundle
  *   loading and tool trials are NOT RPC anymore: the studio's test_agent
- *   drives this harness's own loader/executor in-guest, and deploy-time
- *   inspection is the one-shot describe mode above.
+ *   drives this harness's own loader/executor in-guest. There is no
+ *   deploy-time inspection mode: the platform stores no agent config, so
+ *   nothing ever asks a bundle to describe itself outside its own session.
  * - `/websocket` — PUBLIC client voice sessions, connected DIRECTLY by
  *   browsers (the same path `aai dev` serves). Each upgrade starts a
  *   runtime session: STT/LLM/TTS provider streams, the LLM loop, tool
@@ -84,7 +81,6 @@ import {
   loadBundle,
 } from "./harness-bundle.ts";
 import { installCrashGuards } from "./harness-crash-guards.ts";
-import { mainDescribe, takeDescribeNonce } from "./harness-describe.ts";
 import {
   handleHostResponse,
   rejectAllPendingHostRequests,
@@ -310,13 +306,6 @@ function main(): void {
   if (process.env.AAI_GUEST_WARMUP) {
     console.error("harness warm-up complete");
     process.exit(0);
-  }
-  // Describe mode runs before the token requirement: it opens no server and
-  // answers no requests, so there is nothing for a token to gate.
-  const describePath = process.env.AAI_DESCRIBE_BUNDLE_PATH;
-  if (describePath) {
-    void mainDescribe(describePath, takeDescribeNonce());
-    return;
   }
   const token = process.env.AAI_GUEST_TOKEN;
   if (!token) {

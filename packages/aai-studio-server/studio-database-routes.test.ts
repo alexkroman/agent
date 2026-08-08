@@ -6,7 +6,7 @@
 
 import { hashApiKey } from "aai-server/secrets";
 import type { BundleStore } from "aai-server/store-types";
-import { authFetch, TEST_AGENT_CONFIG, type TestFetch } from "aai-server/test-utils";
+import { authFetch, type TestFetch } from "aai-server/test-utils";
 import { describe, expect, test, vi } from "vitest";
 import { createTestCombined } from "./_test-combined.ts";
 import type { StudioSessionBroker, StudioSessionBrokerOptions } from "./studio-session-broker.ts";
@@ -69,7 +69,6 @@ describe("project database routes", () => {
       worker: "export default {}",
       clientFiles: {},
       credential_hashes: [hashApiKey("key1")],
-      agentConfig: { ...TEST_AGENT_CONFIG, name: slug },
     });
   }
 

@@ -12,7 +12,7 @@
 import { afterAll, describe, expect, test } from "vitest";
 import { resolveHarnessPath } from "./constants.ts";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";
-import { describeSubprocessBundle, spawnSubprocessAgentServer } from "./subprocess-sandbox.ts";
+import { spawnSubprocessAgentServer } from "./subprocess-sandbox.ts";
 import type { AgentServerHandle } from "./warm-harness.ts";
 
 // A minimal but REAL bundle: the harness contract demands the
@@ -104,25 +104,5 @@ describe("agent-server contract (real harness, no mocks)", () => {
     await expect(spawnAgent({ workerSha256: "0".repeat(64) })).rejects.toThrow(
       /not ready|spawn failed/i,
     );
-  }, 60_000);
-});
-
-describe("describe mode (real harness one-shot exec)", () => {
-  test("extracts the bundle's self-described config from stdout", async () => {
-    const config = await describeSubprocessBundle({
-      harnessPath: resolveHarnessPath(),
-      // Top-level stdout noise must not corrupt the result (last-line rule).
-      workerCode: `console.log("bundle top-level noise");\n${WORKER_CODE}`,
-    });
-    expect(config).toEqual({ name: "server-mode-agent" });
-  }, 60_000);
-
-  test("a broken bundle fails the describe with the load error", async () => {
-    await expect(
-      describeSubprocessBundle({
-        harnessPath: resolveHarnessPath(),
-        workerCode: "throw new Error('top-level boom')",
-      }),
-    ).rejects.toThrow(/top-level boom/);
   }, 60_000);
 });

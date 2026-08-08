@@ -64,12 +64,6 @@ describe("verifySlugOwner", () => {
       worker: "code",
       clientFiles: {},
       credential_hashes: [hashApiKey("owner-key")],
-      agentConfig: {
-        name: "test",
-        systemPrompt: "test",
-        greeting: "",
-        toolSchemas: [],
-      },
     });
     const result = await verifySlugOwner("owner-key", {
       slug: "my-agent",
@@ -86,12 +80,6 @@ describe("verifySlugOwner", () => {
       worker: "code",
       clientFiles: {},
       credential_hashes: [hashApiKey("owner-key")],
-      agentConfig: {
-        name: "test",
-        systemPrompt: "test",
-        greeting: "",
-        toolSchemas: [],
-      },
     });
     const result = await verifySlugOwner("intruder-key", {
       slug: "my-agent",
