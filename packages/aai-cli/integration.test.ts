@@ -16,6 +16,7 @@ import { readProjectConfig, writeProjectConfig } from "./_config.ts";
 import { runDeploy } from "./_deploy.ts";
 import type { MockApi } from "./_mock-api.ts";
 import { startMockApi } from "./_mock-api.ts";
+import { projectNameFromDir } from "./_studio.ts";
 import { linkSdkNodeModules, makeBundle, silenced, withTempDir } from "./_test-utils.ts";
 import { runDelete } from "./delete.ts";
 import { executeSecretDelete, executeSecretList, executeSecretPut } from "./secret.ts";
@@ -288,9 +289,12 @@ describe("executeDeploy end to end", { timeout: 120_000 }, () => {
         expect(result.ok).toBe(true);
         if (!result.ok) return;
         // First deploy: the directory names the agent, through the same
-        // `projectNameFromDir` rule `aai push` uses for a project name —
-        // which lowercases, so the assertion has to as well.
-        expect(result.data.slug).toBe(path.basename(dir).toLowerCase());
+        // `projectNameFromDir` rule `aai push` uses for a project name. That
+        // is the platform's slugifier, so the assertion goes through it too
+        // rather than re-deriving the transform — the temp dir is
+        // `aai_test_<random>`, and its `_`s collapse to `-`.
+        expect(result.data.slug).toBe(projectNameFromDir(dir));
+        expect(result.data.slug).toBe(path.basename(dir).toLowerCase().replaceAll("_", "-"));
         // It MUST be recorded, or the next deploy would mint a fresh
         // slug and orphan this agent.
         const config = await readProjectConfig(dir);

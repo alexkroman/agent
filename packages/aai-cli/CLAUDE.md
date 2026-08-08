@@ -142,6 +142,17 @@ would claim a slug the orphan-preview sweep reaps hourly — taking the agent,
 its app-database schema, and its secrets with it. See the `-preview` note in
 `packages/aai-server/CLAUDE.md` for the matching deploy-boundary rule.
 
+**The directory name is normalized by the PLATFORM's slugifier**
+(`slugifyName`, `@alexkroman1/aai/slugify`), not a local regex. It was a local
+`[^a-z0-9-_]` strip for a long time because the studio's copy lived in the
+private `aai-server`, which the CLI may not import — and the two disagreed on
+exactly the names people give agents: `Café Ordering/` pushed as
+`caf-ordering` while typing the same name into the studio produced
+`cafe-ordering`, so one human name made two projects depending on which path
+created it. The visible change from adopting it is that `_` now collapses to
+`-` (`my_agent/` → `my-agent`); the slug GRAMMAR still permits `_`, so a slug
+the user requests outright is unaffected.
+
 ## Key files
 
 - `cli.ts` — arg parsing, subcommand dispatch

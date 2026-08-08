@@ -104,6 +104,9 @@ importers:
       '@elevenlabs/elevenlabs-js':
         specifier: ^2.59.0
         version: 2.59.0
+      '@sindresorhus/slugify':
+        specifier: ^3.0.0
+        version: 3.0.0
       ai:
         specifier: ^7.0.41
         version: 7.0.41(zod@4.4.3)
@@ -326,9 +329,6 @@ importers:
       '@hono/zod-validator':
         specifier: ^0.9.0
         version: 0.9.0(hono@4.12.32)(zod@4.4.3)
-      '@sindresorhus/slugify':
-        specifier: ^3.0.0
-        version: 3.0.0
       '@supabase/auth-js':
         specifier: ^2.112.2
         version: 2.112.2
@@ -496,9 +496,6 @@ importers:
       '@hono/zod-validator':
         specifier: ^0.9.0
         version: 0.9.0(hono@4.12.32)(zod@4.4.3)
-      '@sindresorhus/slugify':
-        specifier: ^3.0.0
-        version: 3.0.0
       aai-server:
         specifier: workspace:*
         version: link:../aai-server

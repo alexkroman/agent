@@ -20,7 +20,6 @@
 
 import { randomInt } from "node:crypto";
 import { VALID_SLUG_RE } from "@alexkroman1/aai/utils";
-import slugifyLib from "@sindresorhus/slugify";
 import { humanId } from "human-id";
 
 export const SLUG_SUFFIX_LENGTH = 6;
@@ -55,18 +54,4 @@ export function generatedSlug(base?: string): string {
 
 function humanWords(): string {
   return humanId({ separator: "-", capitalize: false }).slice(0, MAX_BASE_LENGTH);
-}
-
-/**
- * Normalize a human-given name into the slug grammar, capped at `maxLen`.
- *
- * THE slugifier for typed names — the studio's project names build on it.
- * Delegated to `@sindresorhus/slugify` rather than a local
- * regex so non-ASCII transliterates properly ("Café Ordering" →
- * `cafe-ordering`, where a plain `[^a-z0-9]` strip would produce
- * `caf-ordering`), and `decamelize: false` keeps "MyAgent" as one word: the
- * name is an identifier the user typed, not a symbol to prettify.
- */
-export function slugifyBase(input: string, maxLen: number): string {
-  return slugifyLib(input, { decamelize: false }).slice(0, maxLen).replace(/-+$/, "");
 }

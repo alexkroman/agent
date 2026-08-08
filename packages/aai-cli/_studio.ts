@@ -9,7 +9,8 @@
  */
 
 import path from "node:path";
-import { PREVIEW_SLUG_SUFFIX, VALID_SLUG_RE } from "@alexkroman1/aai/utils";
+import { slugifyName } from "@alexkroman1/aai/slugify";
+import { MAX_SLUG_LENGTH, PREVIEW_SLUG_SUFFIX, VALID_SLUG_RE } from "@alexkroman1/aai/utils";
 import {
   isLocalOnlyFile,
   MAX_WORKSPACE_FILE_BYTES,
@@ -43,6 +44,13 @@ export function collectSourceFiles(dir: string): Promise<WorkspaceSnapshot> {
 /**
  * A studio project name derived from a directory name, or null if unusable.
  *
+ * The normalization is the platform's own (`slugifyName`), not a local
+ * regex. This used to strip `[^a-z0-9-_]` by hand, which differs from the
+ * studio's slugifier on exactly the names people give agents: `Café
+ * Ordering` reduced to `caf-ordering` here and `cafe-ordering` there, so the
+ * same directory produced a different project depending on whether it was
+ * created by `aai push` or by typing the name into the studio.
+ *
  * A `-preview` suffix is deliberately unusable. Publishing a project deploys
  * it under the project's own name, so a `*-preview` project would claim a
  * slug the studio's orphan-preview sweep reaps hourly — deleting the agent,
@@ -51,13 +59,7 @@ export function collectSourceFiles(dir: string): Promise<WorkspaceSnapshot> {
  * a published agent to the reaper is not.
  */
 export function projectNameFromDir(dir: string): string | null {
-  const name = path
-    .basename(dir)
-    .toLowerCase()
-    .replace(/[^a-z0-9-_]+/g, "-")
-    .replace(/-{2,}/g, "-")
-    .replace(/^[-_]+|[-_]+$/g, "")
-    .slice(0, 64);
+  const name = slugifyName(path.basename(dir), MAX_SLUG_LENGTH);
   if (name.endsWith(PREVIEW_SLUG_SUFFIX)) return null;
   return VALID_SLUG_RE.test(name) ? name : null;
 }

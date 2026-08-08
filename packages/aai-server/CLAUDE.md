@@ -1421,6 +1421,16 @@ stored env at sandbox creation time and kept host-side only.
   who wants their agent's name in the URL requests the slug. Clients never
   generate names — creation always hits the server.
 
+  **How a human name is REDUCED to the grammar is a separate, shared thing**
+  (`slugifyName`, `@alexkroman1/aai/slugify`) and does not live here. This
+  file used to own it as `slugifyBase`, which put it out of the CLI's reach —
+  the CLI must not import a private package — so `projectNameFromDir` grew a
+  hand-rolled `[^a-z0-9-_]` strip instead, and the two disagreed on the names
+  people actually give agents: a `Café Ordering` directory pushed as
+  `caf-ordering` while the studio's own field made `cafe-ordering`. Generation
+  stays here (it needs `human-id` and the suffix format); normalization is in
+  the SDK because all three sides need it.
+
 ### The image is layered dependencies-first (`scripts/modal_image.py`)
 
 The service image installs, then builds, and the two halves have deliberately
