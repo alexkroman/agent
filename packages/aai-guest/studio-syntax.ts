@@ -68,11 +68,6 @@ function loadTransformer(dir: string): Promise<OxcTransformer | null> {
   return transformer;
 }
 
-/** Reset the memoized parser (tests). */
-export function resetSyntaxChecker(): void {
-  transformer = null;
-}
-
 /** oxc renders a boxed, ANSI-coloured diagnostic; keep the useful lines. */
 function tidy(message: string): string {
   const plain = stripVTControlCharacters(message);

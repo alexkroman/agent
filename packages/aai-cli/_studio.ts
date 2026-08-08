@@ -13,17 +13,10 @@ import { slugifyName } from "@alexkroman1/aai/slugify";
 import { MAX_SLUG_LENGTH, PREVIEW_SLUG_SUFFIX, VALID_SLUG_RE } from "@alexkroman1/aai/utils";
 import {
   isLocalOnlyFile,
-  MAX_WORKSPACE_FILE_BYTES,
-  MAX_WORKSPACE_FILES,
   snapshotWorkspaceFiles,
   type WorkspaceSnapshot,
 } from "@alexkroman1/aai/workspace-files";
 import { apiRequest } from "./_api-client.ts";
-
-// The workspace caps under this package's own names, for the CLI modules and
-// specs that read them. One definition, in the SDK.
-export const MAX_STUDIO_FILE_BYTES = MAX_WORKSPACE_FILE_BYTES;
-export const MAX_STUDIO_FILES = MAX_WORKSPACE_FILES;
 
 /**
  * Snapshot the local project into a workspace file map.

@@ -57,14 +57,6 @@ import {
 } from "./studio-project-slugs.ts";
 import { getWorkspace, type StudioWorkspace, stampWorkspaceMeta } from "./studio-workspace.ts";
 
-/**
- * The two agents one studio project deploys. Re-exported for the callers
- * (routes, the client contract test) that already read them from here; the
- * definition lives in studio-project-slugs.ts, with everything else that
- * knows a project is a pair.
- */
-export { PROJECT_ENVIRONMENTS, type ProjectEnvironment } from "./studio-project-slugs.ts";
-
 /** What this module needs from the studio's request bindings. */
 export type ProjectDatabaseEnv = {
   workspaces: WorkspaceStore;

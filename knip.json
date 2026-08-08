@@ -7,15 +7,24 @@
     "safe-chain"
   ],
   "ignoreExportsUsedInFile": true,
-  // "exports" and "types" stay excluded for now: enabling them (with
-  // `"tags": ["-internal"]` to skip @internal-tagged exports) reported
-  // 174 unused exports, most of them the genuinely public SDK surface
-  // (aai-ui components/hooks, createRuntime, provider factories) whose
-  // only consumers are templates/user projects knip cannot see. Revisit
-  // once the @internal tagging pass settles and the public barrels are
-  // explicit lists — then enable both checks plus the tags filter.
+  // The "exports" check is ON. It was off repo-wide for a long time because
+  // enabling it reported 174 unused exports — but that number came from
+  // `includeEntryExports` on the three PUBLISHED packages, which made knip
+  // report their entry files' exports (the aai-ui components, createRuntime,
+  // the provider factories) as unused. Those are the API: their consumers are
+  // templates and user projects knip cannot see, so reporting them is knip
+  // being asked the wrong question, not a finding.
+  //
+  // So `includeEntryExports` is set only on the PRIVATE packages, where every
+  // importer is inside this repo and knip therefore sees the whole picture.
+  // The published packages keep the check for everything that is NOT reachable
+  // from a subpath export — internal helpers that lost their last caller,
+  // which is exactly what the check is for and what "exports": excluded was
+  // hiding. First run of the split found 8, including a re-export of the
+  // project-environment pair that its comment claimed callers were using.
+  //
+  // "types" stays excluded pending the @internal tagging pass.
   "exclude": [
-    "exports",
     "types",
     "optionalPeerDependencies",
     "duplicates"
@@ -39,15 +48,13 @@
         "host/integration/**/*.integration.test.ts",
         "**/*.test.ts",
         "**/*.test-d.ts"
-      ],
-      "includeEntryExports": true
+      ]
     },
     "packages/aai-ui": {
       "entry": [
         "**/*.test.{ts,tsx}",
         "_react-test-utils.ts"
-      ],
-      "includeEntryExports": true
+      ]
     },
     "packages/aai-cli": {
       "entry": [
@@ -90,14 +97,6 @@
         "modal"
       ]
     },
-    "docs": {
-      "ignoreDependencies": [
-        "typedoc"
-      ],
-      "ignoreBinaries": [
-        "typedoc"
-      ]
-    },
     "packages/aai-studio-client": {
       "entry": [
         "**/*.test.{ts,tsx}"
@@ -114,9 +113,6 @@
         "react",
         "react-dom",
         "tailwindcss"
-      ],
-      "ignoreBinaries": [
-        "modal"
       ]
     }
   }
