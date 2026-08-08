@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
+import { fakeFetch } from "./_test-utils.ts";
 import { createWebSearch } from "./web-search.ts";
 
 /** A minimal primary-endpoint (html.duckduckgo.com) results page. */
@@ -38,7 +39,7 @@ function fetchByHost(html: MockResponse, lite: MockResponse) {
 describe("web_search fallback", () => {
   test("primary results are returned without touching the lite endpoint", async () => {
     const mockFetch = fetchByHost(new Response(htmlResults), new Response(liteResults));
-    const tool = createWebSearch(mockFetch as typeof globalThis.fetch);
+    const tool = createWebSearch(fakeFetch(mockFetch));
     const result = await tool.execute({ query: "q" }, {} as never);
     expect(result).toEqual([
       { title: "Result 1", url: "https://example.com/1", description: "Desc & 1" },
@@ -50,7 +51,7 @@ describe("web_search fallback", () => {
 
   test("a primary bot challenge falls back to the lite endpoint", async () => {
     const mockFetch = fetchByHost(new Response(challenge), new Response(liteResults));
-    const tool = createWebSearch(mockFetch as typeof globalThis.fetch);
+    const tool = createWebSearch(fakeFetch(mockFetch));
     const result = await tool.execute({ query: "q", max_results: 2 }, {} as never);
     expect(result).toEqual([
       { title: "Lite 1", url: "https://lite.example/1", description: "Lite desc & 1" },
@@ -62,7 +63,7 @@ describe("web_search fallback", () => {
 
   test("the anomaly interstitial counts as a challenge", async () => {
     const mockFetch = fetchByHost(new Response(anomaly), new Response(liteResults));
-    const tool = createWebSearch(mockFetch as typeof globalThis.fetch);
+    const tool = createWebSearch(fakeFetch(mockFetch));
     const result = await tool.execute({ query: "q" }, {} as never);
     expect(Array.isArray(result)).toBe(true);
     expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -73,7 +74,7 @@ describe("web_search fallback", () => {
       new Response("", { status: 429, statusText: "Too Many Requests" }),
       new Response(liteResults),
     );
-    const tool = createWebSearch(mockFetch as typeof globalThis.fetch);
+    const tool = createWebSearch(fakeFetch(mockFetch));
     const result = await tool.execute({ query: "q" }, {} as never);
     expect(Array.isArray(result)).toBe(true);
   });
@@ -84,14 +85,14 @@ describe("web_search fallback", () => {
         ? Promise.resolve(new Response(liteResults))
         : Promise.reject(new Error("socket hang up")),
     );
-    const tool = createWebSearch(mockFetch as typeof globalThis.fetch);
+    const tool = createWebSearch(fakeFetch(mockFetch));
     const result = await tool.execute({ query: "q" }, {} as never);
     expect(Array.isArray(result)).toBe(true);
   });
 
   test("both endpoints challenged returns the primary's error", async () => {
     const mockFetch = fetchByHost(new Response(challenge), new Response(anomaly));
-    const tool = createWebSearch(mockFetch as typeof globalThis.fetch);
+    const tool = createWebSearch(fakeFetch(mockFetch));
     const result = await tool.execute({ query: "q" }, {} as never);
     expect(result).toMatchObject({ error: expect.stringContaining("bot-detection") });
   });
@@ -101,7 +102,7 @@ describe("web_search fallback", () => {
       new Response("", { status: 500, statusText: "Internal Server Error" }),
       new Response("", { status: 403, statusText: "Forbidden" }),
     );
-    const tool = createWebSearch(mockFetch as typeof globalThis.fetch);
+    const tool = createWebSearch(fakeFetch(mockFetch));
     const result = await tool.execute({ query: "q" }, {} as never);
     expect(result).toEqual({ error: "Search request failed: 500 Internal Server Error" });
   });
@@ -115,7 +116,7 @@ describe("web_search fallback", () => {
         <a class="result__snippet" href="#">It&rsquo;s &copy; 2026 &mdash; really</a>
       </div>`;
     const mockFetch = fetchByHost(new Response(page), new Response(liteResults));
-    const tool = createWebSearch(mockFetch as typeof globalThis.fetch);
+    const tool = createWebSearch(fakeFetch(mockFetch));
     const result = await tool.execute({ query: "q" }, {} as never);
     expect(result).toEqual([
       {
@@ -128,7 +129,7 @@ describe("web_search fallback", () => {
 
   test("requests carry browser-like headers", async () => {
     const mockFetch = fetchByHost(new Response(htmlResults), new Response(liteResults));
-    const tool = createWebSearch(mockFetch as typeof globalThis.fetch);
+    const tool = createWebSearch(fakeFetch(mockFetch));
     await tool.execute({ query: "q" }, {} as never);
     const init = mockFetch.mock.calls[0]?.[1] as RequestInit | undefined;
     const headers = init?.headers as Record<string, string>;

@@ -19,6 +19,15 @@ import pTimeout from "p-timeout";
 import { Agent, fetch as undiciFetch } from "undici";
 
 const BLOCKED_TLDS = [".internal", ".local", ".localhost"];
+/**
+ * Named metadata endpoints, kept as belt-and-braces beside {@link
+ * BLOCKED_TLDS}. Note both current entries end in `.internal`, so the TLD
+ * rule already catches them — mutation testing flags emptying this Set as
+ * surviving, and that is accurate rather than a missing test. It earns its
+ * place only for a future metadata hostname that does NOT sit under a blocked
+ * TLD; add such a host here, and a spec with it, rather than assuming this
+ * list is what is doing the work today.
+ */
 const BLOCKED_HOSTS = new Set(["metadata.google.internal", "instance-data.ec2.internal"]);
 
 /** Thrown when a URL is rejected by SSRF policy (vs. an incidental failure). */
@@ -144,13 +153,35 @@ type FetchDispatcher = NonNullable<RequestInit["dispatcher"]>;
  * Injected fetch implementations that aren't undici-backed (test doubles)
  * simply ignore the dispatcher.
  */
-function pinnedDispatcher(resolvedIp: string): FetchDispatcher {
+/**
+ * The pin itself: a `lookup` that ignores the hostname and answers with the
+ * address already screened. Split out of {@link pinnedDispatcher} because it
+ * is the whole security content of that function and was untestable inside
+ * it — `pinnedDispatcher` is reached only through a DNS-resolved hostname, so
+ * every mutation of the address and family survived the suite while
+ * `ssrf-dispatcher.test.ts` exercised an Agent it built itself.
+ *
+ * The family is derived rather than passed: undici rejects a v4 address
+ * announced as family 6 (and vice versa) at connect time, which surfaces as
+ * an opaque fetch failure rather than as anything naming DNS.
+ *
+ * @internal
+ */
+export function pinnedLookup(resolvedIp: string) {
   const family = resolvedIp.includes(":") ? 6 : 4;
+  return (
+    _hostname: string,
+    _options: unknown,
+    callback: (err: Error | null, addresses: { address: string; family: number }[]) => void,
+  ): void => {
+    callback(null, [{ address: resolvedIp, family }]);
+  };
+}
+
+function pinnedDispatcher(resolvedIp: string): FetchDispatcher {
   const agent = new Agent({
     connect: {
-      lookup: (_hostname, _options, callback) => {
-        callback(null, [{ address: resolvedIp, family }]);
-      },
+      lookup: pinnedLookup(resolvedIp),
     },
     // One Agent is created per request, so it must not hold sockets open
     // after the response body is consumed. We deliberately do NOT call

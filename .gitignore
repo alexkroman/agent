@@ -22,6 +22,8 @@ coverage/
 reports/
 .stryker-tmp/
 .stryker-incremental*.json
+# Dropped in the repo root by @stryker-mutator/vitest-runner on every run.
+stryker-setup-*.js
 .worktrees/
 .turbo/
 __pycache__/

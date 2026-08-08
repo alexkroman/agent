@@ -164,6 +164,23 @@ export const silentLogger = {
   debug: () => undefined,
 };
 
+/**
+ * Narrow a test double to `fetch`'s type, in ONE place.
+ *
+ * A fake fetch never matches `typeof globalThis.fetch` structurally — the real
+ * signature takes `RequestInfo | URL`, returns a full `Response`, and carries
+ * `preconnect` — so every call site was laundering its double through a
+ * double-cast to get there. That is the concentration of identical casts the
+ * root guide names as a missing typed seam: 27 of them across four suites
+ * here. The narrowing happens once, below, and the call sites read as what
+ * they are.
+ */
+export function fakeFetch(
+  fn: (url: string, init: RequestInit) => Promise<Response>,
+): typeof globalThis.fetch {
+  return fn as unknown as typeof globalThis.fetch;
+}
+
 /** Fresh logger with per-call `vi.fn()` spies. Use whenever you assert on log output. */
 export function makeLogger() {
   return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };

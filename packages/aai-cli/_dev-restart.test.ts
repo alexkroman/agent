@@ -256,6 +256,105 @@ describe("createRestartSupervisor", () => {
     expect(h.closed()).toEqual(["v0"]);
   });
 
+  // ── Mutation-test findings ─────────────────────────────────────────────────
+  // Four mutants survived the suite above at 94.37%. Each is a real gap, not a
+  // scoring artifact: the assertions were about the OUTCOME of a path without
+  // pinning the mechanism that produces it.
+
+  test("the injected sleep is what the listen backoff waits on", async () => {
+    // Killed mutant: `ops.sleep ?? sleep` -> `ops.sleep && sleep`, which
+    // silently falls back to the REAL 250ms timer whenever a sleep is
+    // injected. Every retry spec still passed — just slower — because none
+    // asserted the injected one was ever called.
+    const sleep = vi.fn(async () => undefined);
+    const listen = vi
+      .fn<(server: Server) => Promise<void>>()
+      .mockRejectedValueOnce(new Error("EADDRINUSE"))
+      .mockResolvedValue(undefined);
+    const h = makeHarness({ listen, sleep });
+    started(h);
+
+    h.supervisor.request();
+    await vi.waitFor(() => expect(h.messages("success")).toEqual(["Restarted"]));
+
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledWith(expect.any(Number));
+  });
+
+  test("a request during an in-flight restart queues rather than building twice at once", async () => {
+    // Killed mutant: `restarting = true` -> `false` in request(). The
+    // in-flight-change spec only waited for a SECOND build, which a mutant
+    // that starts two concurrent restarts satisfies just as well. What must
+    // hold is that the second build does not begin until the first settles.
+    const gate = Promise.withResolvers<void>();
+    let inFlight = 0;
+    let maxConcurrent = 0;
+    const h = makeHarness({
+      build: vi.fn(async () => {
+        inFlight++;
+        maxConcurrent = Math.max(maxConcurrent, inFlight);
+        await gate.promise;
+        inFlight--;
+        return { id: "v1" };
+      }),
+    });
+    started(h);
+
+    h.supervisor.request();
+    await vi.waitFor(() => expect(h.build).toHaveBeenCalledTimes(1));
+    h.supervisor.request();
+    h.supervisor.request();
+    // Still exactly one build in flight, however many events land.
+    expect(h.build).toHaveBeenCalledTimes(1);
+
+    gate.resolve();
+    await settled(h, 2);
+    expect(maxConcurrent).toBe(1);
+  });
+
+  test("a restart after a failed listen closes nothing that is not there", async () => {
+    // Killed mutant: `if (current !== undefined)` -> `if (true)`. Reachable
+    // only after listen exhausts its retries, which leaves no live server —
+    // the mutant then hands `undefined` to ops.close.
+    const listen = vi
+      .fn<(server: Server) => Promise<void>>()
+      .mockRejectedValue(new Error("EADDRINUSE"));
+    const h = makeHarness({ listen });
+    started(h);
+
+    h.supervisor.request();
+    await vi.waitFor(() => expect(h.messages("error")).toHaveLength(1));
+    expect(h.supervisor.current()).toBeUndefined();
+
+    // A later save must rebuild cleanly rather than close a phantom server.
+    listen.mockResolvedValue(undefined);
+    h.supervisor.request();
+    await vi.waitFor(() => expect(h.messages("success")).toEqual(["Restarted"]));
+
+    for (const [server] of h.close.mock.calls) expect(server).toBeDefined();
+    expect(h.closed()).toEqual(["v0", "v1"]);
+  });
+
+  test("close works with no teardown hook supplied", async () => {
+    // Killed mutant: `ops.teardown?.()` -> `ops.teardown()`. `teardown` is
+    // optional in RestartOps and every spec happened to pass one, so the
+    // optional call was never exercised — a supervisor without one would
+    // have thrown on close.
+    // Built directly rather than through makeHarness: `exactOptionalPropertyTypes`
+    // forbids passing `teardown: undefined`, and OMITTING it is the case.
+    const close = vi.fn(async (_server: Server): Promise<void> => undefined);
+    const supervisor = createRestartSupervisor<Server>({
+      build: async () => ({ id: "v1" }),
+      listen: async () => undefined,
+      close,
+      notify: vi.fn(),
+    });
+    supervisor.adopt({ id: "v0" });
+
+    await expect(supervisor.close()).resolves.toBeUndefined();
+    expect(close.mock.calls.map(([s]) => s.id)).toEqual(["v0"]);
+  });
+
   test("close before adopt tears down without a server to close", async () => {
     const h = makeHarness();
 

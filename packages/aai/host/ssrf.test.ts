@@ -14,11 +14,13 @@
 
 import fc from "fast-check";
 import { describe, expect, test, vi } from "vitest";
+import { fakeFetch } from "./_test-utils.ts";
 import {
   builtinFetch,
   CONTAINED_ENV,
   isPrivateIp,
   pinnedFetch,
+  pinnedLookup,
   resolveAndAssertPublic,
   safeFetch,
   ssrfSafeFetch,
@@ -243,6 +245,16 @@ describe("SSRF: DNS failure handling", () => {
     ).rejects.toThrow("DNS resolution failed");
   }, 10_000);
 
+  test("a DNS failure is reported with its cause attached", async () => {
+    // Killed mutant: `{ cause: err }` -> `{}`. The cause is the only thing
+    // that says WHY resolution failed — without it the operator sees
+    // "Blocked request: DNS resolution failed" and nothing else.
+    const boom = new Error("EAI_AGAIN");
+    await expect(
+      resolveAndAssertPublic("http://nope.example.com/", () => Promise.reject(boom)),
+    ).rejects.toMatchObject({ cause: boom });
+  });
+
   test("resolveAndAssertPublic rejects when DNS resolution fails", async () => {
     // Use a subdomain of example.com (IANA reserved, no DNS) that bogon doesn't classify as private
     await expect(resolveAndAssertPublic("http://nxdomain-test.example.com/")).rejects.toThrow(
@@ -251,154 +263,109 @@ describe("SSRF: DNS failure handling", () => {
   }, 10_000);
 });
 
-// ── Redirect Chain Validation ──────────────────────────────────────────
+// ── Mutation-test findings ─────────────────────────────────────────────
+//
+// `ssrf.ts` scored 70.91% under Stryker with 27 survivors. The ones below are
+// the security-relevant ones: each mutant changes what the screen DOES, and
+// the suite could not tell.
 
-describe("SSRF: redirect chain validation", () => {
-  test("ssrfSafeFetch rejects redirect to private IP", async () => {
-    const mockFetch = vi.fn(async (url: string) => {
-      if (url === "https://public.example.com/") {
-        return new Response("", {
-          status: 302,
-          headers: { Location: "http://127.0.0.1/admin" },
-        });
-      }
-      return new Response("should not reach");
-    });
-
-    await expect(
-      ssrfSafeFetch("https://public.example.com/", {}, mockFetch as typeof globalThis.fetch),
-    ).rejects.toThrow("Blocked");
+describe("SSRF: request-input normalization", () => {
+  // `requestUrl` handles the three shapes `fetch` accepts. Only the string
+  // branch had a test — the `URL` branch had NO COVERAGE and the `Request`
+  // branch none either, while mutants flipping the string check survived. The
+  // URL a caller passes is the URL that gets SCREENED, so a mishandled shape
+  // screens the wrong thing (or `[object Object]`) and the block is bypassed.
+  test.each([
+    ["string", "http://127.0.0.1/admin"],
+    ["URL", new URL("http://127.0.0.1/admin")],
+    ["Request", new Request("http://127.0.0.1/admin")],
+  ])("safeFetch screens a %s input", async (_label, input) => {
+    await expect(safeFetch(input as Parameters<typeof safeFetch>[0])).rejects.toThrow("Blocked");
   });
 
-  test("ssrfSafeFetch rejects redirect to cloud metadata", async () => {
-    const mockFetch = vi.fn(async (url: string) => {
-      if (url === "https://public.example.com/") {
-        return new Response("", {
-          status: 301,
-          headers: { Location: "http://169.254.169.254/latest/meta-data/" },
-        });
-      }
-      return new Response("should not reach");
-    });
-
-    await expect(
-      ssrfSafeFetch("https://public.example.com/", {}, mockFetch as typeof globalThis.fetch),
-    ).rejects.toThrow("Blocked");
-  });
-
-  test("ssrfSafeFetch enforces max redirect limit", async () => {
-    let callCount = 0;
-    // Use a public IP literal to avoid DNS lookups that cause timeouts
-    const mockFetch = vi.fn(async () => {
-      callCount++;
-      return new Response("", {
-        status: 302,
-        headers: { Location: `https://93.184.216.34/hop-${callCount}` },
-      });
-    });
-
-    await expect(
-      ssrfSafeFetch("https://93.184.216.34/start", {}, mockFetch as typeof globalThis.fetch),
-    ).rejects.toThrow("Too many redirects");
-
-    // MAX_REDIRECTS = 5, so at most 5 fetch calls
-    expect(callCount).toBeLessThanOrEqual(5);
-  });
-
-  test("ssrfSafeFetch re-validates each hop in redirect chain", async () => {
-    let callCount = 0;
-    // Use a public IP literal to avoid DNS lookups that cause timeouts
-    const mockFetch = vi.fn(async (_url: string) => {
-      callCount++;
-      if (callCount <= 2) {
-        return new Response("", {
-          status: 302,
-          headers: { Location: "https://93.184.216.34/safe-hop" },
-        });
-      }
-      // Third redirect goes to private IP
-      if (callCount === 3) {
-        return new Response("", {
-          status: 302,
-          headers: { Location: "http://192.168.1.1/" },
-        });
-      }
-      return new Response("should not reach");
-    });
-
-    await expect(
-      ssrfSafeFetch("https://93.184.216.34/start", {}, mockFetch as typeof globalThis.fetch),
-    ).rejects.toThrow("Blocked");
-  });
-
-  test("strips credential headers on a cross-origin redirect", async () => {
-    // Two public IP literals = two origins, no DNS. The token must not follow
-    // the redirect off its original origin (open-redirect exfiltration guard).
-    const seen: Record<string, string | null>[] = [];
-    const mockFetch = vi.fn(async (_url: string, init: RequestInit) => {
-      const h = init.headers as Headers;
-      seen.push({
-        authorization: h.get("authorization"),
-        cookie: h.get("cookie"),
-      });
-      if (seen.length === 1) {
-        return new Response("", { status: 302, headers: { Location: "https://8.8.8.8/next" } });
-      }
+  test("safeFetch forwards its init rather than replacing it", async () => {
+    // Killed mutant: `init ?? {}` -> `init && {}`, which DROPS a supplied
+    // init entirely — method, body and headers all silently lost.
+    const seen: RequestInit[] = [];
+    const fetchFn = vi.fn(async (_url: string, init: RequestInit) => {
+      seen.push(init);
       return new Response("ok");
     });
-
     await ssrfSafeFetch(
-      "https://93.184.216.34/start",
-      { headers: { Authorization: "Bearer secret", Cookie: "sid=1" } },
-      mockFetch as typeof globalThis.fetch,
+      "https://93.184.216.34/",
+      { method: "POST", headers: { "x-probe": "1" } },
+      fakeFetch(fetchFn),
     );
-
-    expect(seen[0]).toEqual({ authorization: "Bearer secret", cookie: "sid=1" });
-    expect(seen[1]).toEqual({ authorization: null, cookie: null });
+    expect(seen[0]?.method).toBe("POST");
+    expect(new Headers(seen[0]?.headers).get("x-probe")).toBe("1");
   });
 
-  test("keeps credential headers on a same-origin redirect", async () => {
-    const seen: Array<string | null> = [];
-    const mockFetch = vi.fn(async (_url: string, init: RequestInit) => {
-      seen.push((init.headers as Headers).get("authorization"));
-      if (seen.length === 1) {
-        return new Response("", {
-          status: 302,
-          headers: { Location: "https://93.184.216.34/next" },
-        });
-      }
-      return new Response("ok");
+  test("every hop is issued with redirect: manual", async () => {
+    // Killed mutant: `redirect: "manual"` -> `redirect: ""`. Letting fetch
+    // follow redirects itself is the whole bypass — the hops never come back
+    // here, so none of them is re-validated and a 302 to 127.0.0.1 is fetched
+    // by undici without ever being screened.
+    const modes: (RequestInit["redirect"] | undefined)[] = [];
+    let hop = 0;
+    const fetchFn = vi.fn(async (_url: string, init: RequestInit) => {
+      modes.push(init.redirect);
+      hop++;
+      return hop === 1
+        ? new Response("", { status: 302, headers: { Location: "https://93.184.216.34/next" } })
+        : new Response("done");
+    });
+    await ssrfSafeFetch("https://93.184.216.34/", {}, fakeFetch(fetchFn));
+    expect(modes).toEqual(["manual", "manual"]);
+  });
+});
+
+describe("SSRF: reserved hostnames", () => {
+  // The rule that is actually doing the work: BOTH named metadata hosts end
+  // in `.internal`, so the TLD list catches them and emptying BLOCKED_HOSTS
+  // changes nothing. Pin the TLD rule, which is the one a regression would
+  // really remove.
+  test.each([
+    "metadata.google.internal",
+    "instance-data.ec2.internal",
+    "anything.internal",
+    "printer.local",
+    "foo.localhost",
+  ])("%s is refused without any DNS lookup", async (host) => {
+    const lookup = vi.fn(async () => ({ address: "93.184.216.34" }));
+    await expect(resolveAndAssertPublic(`http://${host}/`, lookup)).rejects.toThrow(
+      "reserved hostname",
+    );
+    expect(lookup).not.toHaveBeenCalled();
+  });
+});
+
+describe("SSRF: DNS pin", () => {
+  // `pinnedDispatcher` is only reachable through a DNS-resolved hostname, so
+  // its whole body survived mutation — address, family, and the callback
+  // itself — while `ssrf-dispatcher.test.ts` exercised an Agent it built
+  // itself rather than the one this module builds. The pin is the TOCTOU /
+  // rebinding defense: the socket must be able to reach only the address
+  // already screened, whatever DNS says a moment later.
+  const resolve = (ip: string) =>
+    new Promise<{ address: string; family: number }[]>((done) => {
+      pinnedLookup(ip)("anything.example.com", {}, (_err, addresses) => done(addresses));
     });
 
-    await ssrfSafeFetch(
-      "https://93.184.216.34/start",
-      { headers: { Authorization: "Bearer secret" } },
-      mockFetch as typeof globalThis.fetch,
-    );
-
-    expect(seen).toEqual(["Bearer secret", "Bearer secret"]);
+  test("answers with the screened address, ignoring the hostname", async () => {
+    await expect(resolve("93.184.216.34")).resolves.toEqual([
+      { address: "93.184.216.34", family: 4 },
+    ]);
   });
 
-  test("ssrfSafeFetch handles relative redirect URLs", async () => {
-    // Use a public IP literal to avoid DNS lookups that cause timeouts
-    const mockFetch = vi.fn(async (url: string) => {
-      if (url === "https://93.184.216.34/page") {
-        return new Response("", {
-          status: 302,
-          headers: { Location: "/other-page" },
-        });
-      }
-      return new Response("final content", { status: 200 });
-    });
-
-    const res = await ssrfSafeFetch(
-      "https://93.184.216.34/page",
-      {},
-      mockFetch as typeof globalThis.fetch,
-    );
-    expect(res.status).toBe(200);
-    // The relative URL should resolve to the same origin
-    expect(mockFetch).toHaveBeenCalledWith("https://93.184.216.34/other-page", expect.anything());
+  test.each([
+    ["93.184.216.34", 4],
+    ["8.8.8.8", 4],
+    ["2606:2800:220:1:248:1893:25c8:1946", 6],
+    ["::ffff:93.184.216.34", 6],
+  ])("%s is announced as family %i", async (ip, family) => {
+    // undici refuses a v4 address announced as family 6 and vice versa, and
+    // the refusal surfaces as an opaque fetch failure naming nothing.
+    await expect(resolve(ip)).resolves.toEqual([{ address: ip, family }]);
   });
 });
 

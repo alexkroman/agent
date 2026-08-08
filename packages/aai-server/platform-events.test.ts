@@ -183,6 +183,69 @@ describe("store decorators", () => {
     expect(after).toHaveBeenCalledWith("a");
   });
 
+  test("settled waits out a handler that yields to a TIMER, not just microtasks", async () => {
+    // Killed mutant: `Promise.all([...inFlight])` -> `Promise.all([])`, which
+    // turns `settled` into a microtask busy-loop. Every existing spec still
+    // passed because their handlers settle on microtasks; a handler that
+    // needs a macrotask starves the loop forever.
+    const memory = createMemoryPlatformEvents();
+    let done = false;
+    memory.events.watchAgents(async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      done = true;
+    });
+
+    memory.emitAgent("a");
+    await memory.settled();
+
+    expect(done).toBe(true);
+  });
+
+  test("emitting for a key nobody watches is a no-op", async () => {
+    // Killed mutant: `if (!set) return` -> `if (false) return`. This is the
+    // ORDINARY production case — a workspace write while no browser is
+    // subscribed — and nothing exercised it.
+    const memory = createMemoryPlatformEvents();
+    const seen = vi.fn();
+    memory.events.watchWorkspace("s", "watched", seen);
+
+    memory.emitWorkspace("s", "unwatched");
+    memory.emitChat("s", "unwatched");
+    await expect(memory.settled()).resolves.toBeUndefined();
+
+    expect(seen).not.toHaveBeenCalled();
+  });
+
+  test("unwatching the last watcher drops the key rather than leaking it", async () => {
+    // Killed mutant: `if (set.size === 0) watchers.delete(key)` -> `if (false)`.
+    // The map is keyed by (scope, project), so without the cleanup every
+    // project ever opened stays in it for the process lifetime. Observed
+    // through behaviour: after the key is dropped, a later emit takes the
+    // no-watchers path above rather than iterating an empty set.
+    const memory = createMemoryPlatformEvents();
+    const first = vi.fn();
+    const unwatch = memory.events.watchWorkspace("s", "p", first);
+    unwatch();
+
+    const second = vi.fn();
+    memory.events.watchWorkspace("s", "p", second);
+    memory.emitWorkspace("s", "p");
+    await memory.settled();
+
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
+  test("close returns a promise, matching the PlatformEvents contract", async () => {
+    // Killed mutant: `() => Promise.resolve()` -> `() => undefined`. Callers
+    // `await events.close()` in teardown; a non-thenable works by accident
+    // there and breaks anything chaining `.then`/`.finally` off it.
+    const memory = createMemoryPlatformEvents();
+    const result = memory.events.close();
+    expect(result).toBeInstanceOf(Promise);
+    await expect(result).resolves.toBeUndefined();
+  });
+
   test("settled resolves immediately when nothing was emitted", async () => {
     const memory = createMemoryPlatformEvents();
     await expect(memory.settled()).resolves.toBeUndefined();

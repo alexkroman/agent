@@ -9,6 +9,7 @@ export default {
     "packages/aai-server/secrets.ts",
     "packages/aai-server/middleware.ts",
     "packages/aai-server/bundle-store.ts",
+    "packages/aai-server/platform-events.ts",
   ],
   htmlReporter: { fileName: "reports/mutation/server/index.html" },
   thresholds: { high: 70, low: 50, break: 40 },

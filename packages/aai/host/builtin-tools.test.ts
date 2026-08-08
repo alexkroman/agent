@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { describe, expect, test, vi } from "vitest";
-import { createMockToolContext } from "./_test-utils.ts";
+import { createMockToolContext, fakeFetch } from "./_test-utils.ts";
 import { resolveAllBuiltins } from "./builtin-tools.ts";
 
 /** Mirrors the module-private SESSION_NOTES_TTL_MS in builtin-tools.ts. */
@@ -104,7 +104,7 @@ describe("resolveAllBuiltins defs", () => {
     const mockData = { name: "test", value: 42 };
     const mockFetch = () => Promise.resolve(new Response(JSON.stringify(mockData)));
     const { defs } = resolveAllBuiltins(["fetch_json"], {
-      fetch: mockFetch as typeof globalThis.fetch,
+      fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
     const result = await defs.fetch_json?.execute({ url: "https://api.example.com/data" }, ctx);
@@ -115,7 +115,7 @@ describe("resolveAllBuiltins defs", () => {
     const mockFetch = () =>
       Promise.resolve(new Response("", { status: 500, statusText: "Internal Server Error" }));
     const { defs } = resolveAllBuiltins(["fetch_json"], {
-      fetch: mockFetch as typeof globalThis.fetch,
+      fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
     const result = await defs.fetch_json?.execute({ url: "https://api.example.com/fail" }, ctx);
@@ -128,7 +128,7 @@ describe("resolveAllBuiltins defs", () => {
   test("fetch_json returns error for invalid JSON response", async () => {
     const mockFetch = () => Promise.resolve(new Response("not-json"));
     const { defs } = resolveAllBuiltins(["fetch_json"], {
-      fetch: mockFetch as typeof globalThis.fetch,
+      fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
     const result = await defs.fetch_json?.execute({ url: "https://api.example.com/text" }, ctx);
@@ -141,7 +141,7 @@ describe("resolveAllBuiltins defs", () => {
   test("fetch_json passes allowed custom headers to fetch", async () => {
     const mockFetch = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ ok: true }))));
     const { defs } = resolveAllBuiltins(["fetch_json"], {
-      fetch: mockFetch as typeof globalThis.fetch,
+      fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
     await defs.fetch_json?.execute(
@@ -160,7 +160,7 @@ describe("resolveAllBuiltins defs", () => {
   test("fetch_json blocks dangerous headers like Authorization", async () => {
     const mockFetch = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ ok: true }))));
     const { defs } = resolveAllBuiltins(["fetch_json"], {
-      fetch: mockFetch as typeof globalThis.fetch,
+      fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
     await defs.fetch_json?.execute(
@@ -179,7 +179,7 @@ describe("resolveAllBuiltins defs", () => {
   test("fetch_json delegates fetch without SSRF checks — platform adapter handles it", async () => {
     const mockFetch = vi.fn(async () => new Response(JSON.stringify({ ok: true })));
     const { defs } = resolveAllBuiltins(["fetch_json"], {
-      fetch: mockFetch as typeof globalThis.fetch,
+      fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
     // SDK tools pass through — SSRF is enforced by the network adapter in
@@ -204,7 +204,7 @@ describe("resolveAllBuiltins defs", () => {
   test("web_search needs no API key", async () => {
     const mockFetch = vi.fn(() => Promise.resolve(new Response(ddgHtml)));
     const { defs } = resolveAllBuiltins(["web_search"], {
-      fetch: mockFetch as typeof globalThis.fetch,
+      fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext({ env: {} });
     const result = await defs.web_search?.execute({ query: "test" }, ctx);
@@ -215,7 +215,7 @@ describe("resolveAllBuiltins defs", () => {
     const mockFetch = () =>
       Promise.resolve(new Response("", { status: 500, statusText: "Internal Server Error" }));
     const { defs } = resolveAllBuiltins(["web_search"], {
-      fetch: mockFetch as typeof globalThis.fetch,
+      fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
     const result = await defs.web_search?.execute({ query: "test" }, ctx);
@@ -225,7 +225,7 @@ describe("resolveAllBuiltins defs", () => {
   test("web_search parses DDG results, decoding redirect URLs and entities", async () => {
     const mockFetch = vi.fn(() => Promise.resolve(new Response(ddgHtml)));
     const { defs } = resolveAllBuiltins(["web_search"], {
-      fetch: mockFetch as typeof globalThis.fetch,
+      fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
     const result = await defs.web_search?.execute({ query: "aai sdk", max_results: 2 }, ctx);
@@ -246,7 +246,7 @@ describe("resolveAllBuiltins defs", () => {
     ).join("\n");
     const mockFetch = () => Promise.resolve(new Response(many));
     const { defs } = resolveAllBuiltins(["web_search"], {
-      fetch: mockFetch as typeof globalThis.fetch,
+      fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
     const result = (await defs.web_search?.execute(
@@ -260,7 +260,7 @@ describe("resolveAllBuiltins defs", () => {
     const challenge = '<form id="challenge-form">are you a human</form>';
     const mockFetch = () => Promise.resolve(new Response(challenge));
     const { defs } = resolveAllBuiltins(["web_search"], {
-      fetch: mockFetch as typeof globalThis.fetch,
+      fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
     const result = await defs.web_search?.execute({ query: "q" }, ctx);
@@ -273,7 +273,7 @@ describe("resolveAllBuiltins defs", () => {
     const html = "<html><body><p>Hello World</p></body></html>";
     const mockFetch = () => Promise.resolve(new Response(html));
     const { defs } = resolveAllBuiltins(["visit_webpage"], {
-      fetch: mockFetch as typeof globalThis.fetch,
+      fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
     const result = (await defs.visit_webpage?.execute(
@@ -289,7 +289,7 @@ describe("resolveAllBuiltins defs", () => {
     const mockFetch = () =>
       Promise.resolve(new Response("", { status: 404, statusText: "Not Found" }));
     const { defs } = resolveAllBuiltins(["visit_webpage"], {
-      fetch: mockFetch as typeof globalThis.fetch,
+      fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
     const result = await defs.visit_webpage?.execute({ url: "https://example.com/missing" }, ctx);
@@ -306,7 +306,7 @@ describe("resolveAllBuiltins defs", () => {
     const html = `<html><body><p>${longText}</p></body></html>`;
     const mockFetch = () => Promise.resolve(new Response(html));
     const { defs } = resolveAllBuiltins(["visit_webpage"], {
-      fetch: mockFetch as typeof globalThis.fetch,
+      fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
     const result = (await defs.visit_webpage?.execute(
@@ -430,7 +430,7 @@ describe("resolveAllBuiltins defs", () => {
       return new Response("", { status: 404 });
     });
     const { defs } = resolveAllBuiltins(["visit_webpage"], {
-      fetch: mockFetch as typeof globalThis.fetch,
+      fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
     const result = await defs.visit_webpage?.execute({ url: "https://evil.com/redirect" }, ctx);

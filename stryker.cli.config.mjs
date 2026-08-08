@@ -10,6 +10,7 @@ export default {
     "packages/aai-cli/_deploy.ts",
     "packages/aai-cli/_init.ts",
     "packages/aai-cli/_dev-server.ts",
+    "packages/aai-cli/_dev-restart.ts",
     "packages/aai-cli/_templates.ts",
     "packages/aai-cli/secret.ts",
   ],
