@@ -250,12 +250,15 @@ async function syncEnvSecrets(
   cwd: string,
   serverUrl: string,
   apiKey: string,
-  slug: string,
+  project: string,
 ): Promise<string[]> {
   const env = await resolveServerEnv(cwd);
   const names = Object.keys(env);
   if (names.length === 0) return [];
-  await apiRequest(`${serverUrl}/${slug}/secret`, {
+  // The PROJECT route, not the deployed slug's: a project has a preview agent
+  // too — one this very command created — and a `.env` synced to production
+  // alone leaves it failing at its first session. The server fans out.
+  await apiRequest(`${serverUrl}/studio/projects/${encodeURIComponent(project)}/secret`, {
     apiKey,
     action: "secret",
     method: "PUT",
@@ -290,7 +293,7 @@ export async function executePublish(opts: {
   // Secrets merge into the agent env at deploy time — sync them first when
   // the slug already exists so this publish picks them up.
   const hadSlug = pushed.slug !== undefined;
-  if (pushed.slug) await syncEnvSecrets(opts.cwd, serverUrl, apiKey, pushed.slug);
+  if (pushed.slug) await syncEnvSecrets(opts.cwd, serverUrl, apiKey, project);
 
   log.step(`Publishing ${project} (builds in the project's sandbox)…`);
   const result = await publishStudioProject(serverUrl, apiKey, project);

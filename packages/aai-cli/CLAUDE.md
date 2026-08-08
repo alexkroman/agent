@@ -228,6 +228,15 @@ are unaffected). Passing `--server` is what approves an origin (it is user
 intent, not repo content) and is remembered for later commands. Never widen
 this to trust `serverUrl` directly.
 
+**`aai secret` follows the project when the directory is linked**
+(`secretRequest` in `_slug-api.ts`): a studio project deploys a preview agent
+as well as a production one, so a secret set against the deployed slug alone
+left the preview — one this CLI's own `aai publish` created — failing at its
+first session. A linked directory therefore targets
+`/studio/projects/:project/secret`, which fans out server-side; an unlinked
+one keeps the per-slug route, which is the platform primitive. `aai publish`'s
+`.env` sync does the same.
+
 The `slug` from the same file is validated against the platform's slug shape
 (`VALID_SLUG_RE`, shared with aai-server via `@alexkroman1/aai/utils` —
 `sdk/slug.ts` is the single definition) before it is ever

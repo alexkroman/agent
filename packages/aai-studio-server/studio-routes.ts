@@ -22,9 +22,13 @@
  *   preview). See studio-database.ts: per-slug provisioning is the platform
  *   primitive (`aai storage enable`), and a project is two slugs.
  *
- * Deployed-agent SECRETS stay off this surface: the client manages them
- * against the platform's own `/:slug/secret` routes, the exact ones
- * `aai secret` uses.
+ * - `GET/PUT/DELETE /studio/projects/:project/secret` — the project's
+ *   secrets, written to BOTH deployed agents. The per-slug `/:slug/secret`
+ *   routes `aai secret` drives stay the platform primitive underneath; this
+ *   is the project-level switch over them, exactly as the database routes
+ *   are for `ctx.db`. The fan-out used to live in the browser, which made
+ *   "a project is two agents" a property of the studio CLIENT — see
+ *   studio-project-slugs.ts.
  * - `POST /studio/projects/:project/session`  — boot the project's coding-agent
  *   sandbox; the browser then streams chat turns DIRECTLY to the sandbox's
  *   public `/studio/chat` (see studio-session-broker.ts)
@@ -73,6 +77,7 @@ import {
   StudioFileSchema,
   SyncSourceSchema,
 } from "./studio-schemas.ts";
+import { registerSecretRoutes } from "./studio-secret-routes.ts";
 import { createStudioSessionBroker, type StudioSessionBroker } from "./studio-session-broker.ts";
 import type { StudioSessionRegistry } from "./studio-session-registry.ts";
 import { onSettledEdit, previewOrigin } from "./studio-settled-edit.ts";
@@ -395,6 +400,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   // (production and preview). See studio-database.ts for why intent is
   // stamped on the workspace rather than provisioned for unclaimed slugs.
   registerDatabaseRoutes(studio, ensureBroker);
+  registerSecretRoutes(studio);
 
   // Boot (or refresh) the project's coding-agent sandbox and return its
   // public chat URL — the browser talks to the sandbox directly from here

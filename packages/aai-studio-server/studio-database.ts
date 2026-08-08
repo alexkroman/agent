@@ -41,7 +41,6 @@
 import type { AppDatabases } from "aai-server/app-database";
 import type { SlugMutationLock } from "aai-server/platform-lock";
 import type { SecretStore } from "aai-server/secret-store";
-import { verifySlugOwner } from "aai-server/secrets";
 import {
   disableStorage,
   enableStorage,
@@ -50,12 +49,21 @@ import {
 } from "aai-server/storage-handler";
 import type { BundleStore } from "aai-server/store-types";
 import type { WorkspaceStore } from "aai-server/workspace-store";
+import {
+  ownsProjectSlug,
+  PROJECT_ENVIRONMENTS,
+  type ProjectEnvironment,
+  projectSlugFor,
+} from "./studio-project-slugs.ts";
 import { getWorkspace, type StudioWorkspace, stampWorkspaceMeta } from "./studio-workspace.ts";
 
-/** The two agents one studio project deploys. */
-export const PROJECT_ENVIRONMENTS = ["production", "preview"] as const;
-
-export type ProjectEnvironment = (typeof PROJECT_ENVIRONMENTS)[number];
+/**
+ * The two agents one studio project deploys. Re-exported for the callers
+ * (routes, the client contract test) that already read them from here; the
+ * definition lives in studio-project-slugs.ts, with everything else that
+ * knows a project is a pair.
+ */
+export { PROJECT_ENVIRONMENTS, type ProjectEnvironment } from "./studio-project-slugs.ts";
 
 /** What this module needs from the studio's request bindings. */
 export type ProjectDatabaseEnv = {
@@ -89,34 +97,18 @@ function storageEnvOf(env: ProjectDatabaseEnv): StorageEnv {
   return { secrets: env.secrets, appDb: env.appDb, slugLock: env.slugLock };
 }
 
-/** The slug an environment's agent runs under, once it has one. */
-function slugFor(workspace: StudioWorkspace, environment: ProjectEnvironment): string | undefined {
-  return environment === "production" ? workspace.deployedSlug : workspace.previewSlug;
-}
-
-/**
- * Ownership of a slug the workspace names, checked against the agents row's
- * credential hashes rather than project scope alone — the same rule the
- * project delete cascade follows, for the same reason: a workspace naming a
- * slug the caller does not own (however it got there) must not become an
- * oracle for, or a lever on, someone else's agent.
- */
-async function ownsSlug(env: ProjectDatabaseEnv, apiKey: string, slug: string): Promise<boolean> {
-  const owner = await verifySlugOwner(apiKey, { slug, store: env.store });
-  return owner.status === "owned";
-}
-
 async function environmentState(
   env: ProjectDatabaseEnv,
   apiKey: string,
   workspace: StudioWorkspace,
   environment: ProjectEnvironment,
 ): Promise<ProjectDatabaseEnvironmentState> {
-  const slug = slugFor(workspace, environment);
+  const slug = projectSlugFor(workspace, environment);
   if (slug === undefined) return { environment, enabled: false };
   // A foreign slug reads as "no database here" rather than reporting whether
   // someone else's agent has one.
-  if (!(await ownsSlug(env, apiKey, slug))) return { environment, slug, enabled: false };
+  if (!(await ownsProjectSlug(env.store, apiKey, slug)))
+    return { environment, slug, enabled: false };
   const { enabled } = await storageStatus(storageEnvOf(env), slug);
   return { environment, slug, enabled };
 }
@@ -197,11 +189,11 @@ export async function setProjectDatabase(
   let switched = 0;
   let lastFailure: unknown;
   for (const environment of PROJECT_ENVIRONMENTS) {
-    const slug = slugFor(workspace, environment);
+    const slug = projectSlugFor(workspace, environment);
     // No agent yet: the flag above is the whole answer — its first deploy
     // provisions through reconcileProjectDatabase.
     if (slug === undefined) continue;
-    if (!(await ownsSlug(env, apiKey, slug))) continue;
+    if (!(await ownsProjectSlug(env.store, apiKey, slug))) continue;
     try {
       await applyToSlug(env, slug, enabled);
       switched += 1;
