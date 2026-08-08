@@ -836,4 +836,37 @@ back to the host's `process.env`.
 
 - **Type-level tests**: Cover public entry points of `aai` (`.`, `./types`)
   and `aai-ui` (`.`). Subpath exports (e.g. `./protocol`) are not covered
-  by type tests.
+  by type tests. (Their RUNTIME export lists are pinned — see
+  `sdk/exports.test.ts` — which is a different guarantee.)
+
+### Open testability work
+
+Two known gaps, both found by audit and both deliberately left alone because
+each is a refactor in its own right rather than a fix that rides along with
+something else. Neither is blocked on a decision; they are sized, not stuck.
+
+- **The pipeline transports have no injectable clock**, so 32 assertions
+  across `host/transports/` wait on REAL wall-clock time (`await sleep(60)`,
+  `sleep(120)`, …) to observe a timer that did or did not fire. That is ~2.3s
+  of the unit run, but the cost is flakiness rather than seconds: these are
+  races, and they are exactly the specs that fail first on a contended
+  runner. The timer bookkeeping is already factored (`host/_timer.ts` —
+  `createRestartableTimer` / `createCoalescingTimer`), so the seam is a
+  scheduler parameter on those two factories threaded from
+  `PipelineTransportOptions`, alongside the `heardNow` clock seam that
+  already exists there for the same reason. What makes it a real piece of
+  work rather than a mechanical edit: fake timers have to compose with the
+  fake providers, and `_fake-llm.ts` schedules its own `setTimeout` for
+  `delayMs`, so the providers move onto the injected scheduler too or the
+  suites deadlock.
+
+- **`aai-server` writes to `console.*` directly** — 47 calls, 45 of them
+  outside `_debug-log.ts` — with no logger seam, so 39 of the repo's 86
+  `spyOn(console, …)` calls exist purely to keep test output quiet. The
+  abstraction already exists one package over — `aai/host` has a `Logger`
+  type and `consoleLogger` — and this package has
+  a partial one of its own in `_debug-log.ts`. The work is to give the
+  package a single injected (or module-swappable) logger and convert the call
+  sites, after which the silencing spies delete themselves. It is left out
+  here because it touches ~25 files and changes production log wiring, which
+  should not land inside a test-quality change.
