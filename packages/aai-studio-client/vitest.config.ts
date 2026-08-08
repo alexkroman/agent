@@ -14,6 +14,8 @@ export default defineConfig({
     // `@vitest-environment` pragma.
     include: ["**/*.test.{ts,tsx}"],
     exclude: ["node_modules", "dist"],
+    // Raises Testing Library's 1000ms async-utility ceiling — see the file.
+    setupFiles: ["./src/_test-setup.ts"],
     coverage: {
       // The pane components are browser-heavy (CodeMirror, useChat
       // streaming, the live iframe) and only their extracted logic
@@ -31,8 +33,8 @@ export default defineConfig({
       ],
       // Ratchet: floors only move up. Raise to ~2-3 points below actuals
       // whenever a coverage run shows comfortable headroom.
-      // Actuals (2026-08): lines ~99%, functions ~96%, branches ~95%, statements ~97%.
-      thresholds: { lines: 96, functions: 92, branches: 92, statements: 94 },
+      // Actuals (2026-08): lines 98.86, functions 96.64, branches 95.08, statements 97.42.
+      thresholds: { lines: 96, functions: 94, branches: 93, statements: 95 },
     },
   },
 });

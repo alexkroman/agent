@@ -198,6 +198,15 @@ Coverage measures production source only; test infrastructure
 (`_test-utils.ts`, mocks, fixtures, setup files) is excluded via
 `sharedCoverageExclude` in `vitest.shared.ts`.
 
+**The per-package floors are what gates a PR; the root ones are not.**
+`pnpm test:coverage` is `turbo run test:coverage`, which fans out to each
+package's own config, and CI runs `pnpm --filter ./packages/<pkg>
+test:coverage` per matrix entry — so nothing in the repo or in CI ever
+evaluates the root `vitest.config.ts` thresholds. The only thing that does is
+a direct `pnpm vitest run --coverage` at the root. Keep them anyway: it is the
+only floor that sees the repo as one program. Just don't read them as the
+gate — they had drifted ~4 points under an actual nobody had measured.
+
 ## Architecture
 
 Eight workspace packages under `packages/`:

@@ -116,6 +116,16 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
 ]
 `;
 
+exports[`export surface stability > @alexkroman1/aai/internal export 1`] = `
+[
+  "createCoalescingRunner",
+  "createEpoch",
+  "createOwnedMap",
+  "formatSchemaIssues",
+  "parseWsUpgradeParams",
+]
+`;
+
 exports[`export surface stability > @alexkroman1/aai/llm export 1`] = `
 [
   "ANTHROPIC_API_KEY_ENV",

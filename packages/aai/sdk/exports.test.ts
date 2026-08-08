@@ -35,6 +35,10 @@ const SUBPATH_IMPORTS: ReadonlyArray<readonly [label: string, load: () => Promis
   ["@alexkroman1/aai/tts", () => import("@alexkroman1/aai/tts")],
   ["@alexkroman1/aai/llm", () => import("@alexkroman1/aai/llm")],
   ["@alexkroman1/aai/tools", () => import("@alexkroman1/aai/tools")],
+  // Published and importable, so a leak here is still a leak — being
+  // "not public API, not semver-covered" is a promise to consumers, not a
+  // reason to leave the surface unpinned.
+  ["@alexkroman1/aai/internal", () => import("@alexkroman1/aai/internal")],
 ];
 
 describe("export surface stability", { timeout: IMPORT_TIMEOUT_MS }, () => {
