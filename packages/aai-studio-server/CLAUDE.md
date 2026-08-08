@@ -434,8 +434,10 @@ voice agents without the CLI:
   staleness — returned as `unpublished` for the pane's Publish nudge. A
   hash rather than a timestamp for two reasons: deploys themselves write
   the workspace (which bumps `updatedAt`), and editing a file then undoing
-  it should not leave the project permanently "stale". **Secrets are a PROJECT switch, not a per-slug
-  one** (`studio-secrets.ts` + `studio-secret-routes.ts`): a project deploys
+  it should not leave the project permanently "stale".
+
+  **Secrets are a PROJECT switch, not a per-slug one**
+  (`studio-secrets.ts` + `studio-secret-routes.ts`): a project deploys
   two agents, so `GET/PUT/DELETE /studio/projects/:project/secret` writes
   both, exactly as the database routes do. The fan-out used to live in the
   BROWSER — the panel PUT the production slug then mirrored to the preview
@@ -443,7 +445,9 @@ voice agents without the CLI:
   so `aai secret put` and `aai publish`'s `.env` sync reached production
   alone and the preview agent failed at its first session. The per-slug
   `/:slug/secret` routes remain the platform primitive underneath, and the
-  only surface for an agent belonging to no project. **Landing on a project wakes its preview**
+  only surface for an agent belonging to no project.
+
+  **Landing on a project wakes its preview**
   (`wakeProjectPreview` in studio-preview.ts, hung off the once-per-open
   session broker call): the embedded agent's sandbox is warmed through the
   platform's public client-config broker (`warmPreviewSandbox`) so a preview
