@@ -69,6 +69,15 @@ describe("built exports do not import devDependency-only packages", () => {
     }
   }, 60_000);
 
+  // `entries` is derived by filtering the exports map for a string `import`
+  // condition, and this package's exports deliberately change shape between
+  // dev (`@dev/source` → .ts) and publish (.js). If that filter ever matched
+  // nothing, `test.each` would register zero cases and the leak guarantee for
+  // all ten subpaths would vanish from a green run.
+  test("every published subpath is covered", () => {
+    expect(entries.length).toBeGreaterThan(0);
+  });
+
   test.each(entries)("$subpath bundle has no devDependency import", ({ dist }) => {
     const file = resolve(PKG_DIR, dist);
     const src = readFileSync(file, "utf-8");

@@ -53,13 +53,33 @@ function isLiteralIp(hostname: string): boolean {
 }
 
 /**
+ * The DNS resolution this module screens. Injectable so the rebinding defense
+ * below can be tested for what it DOES rather than for what the test host's
+ * resolver happens to answer.
+ *
+ * @internal
+ */
+export type DnsLookup = (hostname: string) => Promise<{ address: string }>;
+
+/**
  * Single-pass validation: checks hostname rules, resolves DNS if needed,
  * validates the resolved IP, and returns the resolved IP for pinning.
  * Returns null if the hostname is already a literal IP (already validated).
  *
+ * `lookupFn` exists for tests, like `ssrfSafeFetch`'s `fetchFn` — production
+ * callers leave it unset. Without it the one branch that IS the DNS-rebinding
+ * defense ("hostname resolves to a private address") had no deterministic
+ * test: the only way to control `node:dns/promises` was a module mock, which
+ * had to live in a separate file so it would not leak into the rest of the
+ * suite, and the decimal-encoded-localhost spec instead hedged across both
+ * outcomes and so could not fail at all.
+ *
  * @internal
  */
-export async function resolveAndAssertPublic(url: string): Promise<string | null> {
+export async function resolveAndAssertPublic(
+  url: string,
+  lookupFn: DnsLookup = lookup,
+): Promise<string | null> {
   const parsed = new URL(url);
   const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
 
@@ -77,7 +97,7 @@ export async function resolveAndAssertPublic(url: string): Promise<string | null
   }
   // Hostname is not a literal IP — resolve DNS and validate the result
   try {
-    const { address } = await pTimeout(lookup(hostname), {
+    const { address } = await pTimeout(lookupFn(hostname), {
       milliseconds: 2000,
       message: "DNS lookup timed out",
     });

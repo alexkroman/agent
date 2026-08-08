@@ -27,19 +27,24 @@ import {
 // ── IP Encoding Bypass Attempts ────────────────────────────────────────
 
 describe("SSRF: IP encoding bypass attempts", () => {
-  test("blocks decimal-encoded localhost (2130706433 = 127.0.0.1)", async () => {
-    // Some URL parsers resolve http://2130706433/ to 127.0.0.1
-    // Our implementation uses URL.hostname which keeps the numeric form,
-    // so this may or may not resolve depending on the URL parser.
-    // The important thing is it doesn't slip through as "public".
-    try {
-      await resolveAndAssertPublic("http://2130706433/");
-      // If it doesn't throw, the hostname wasn't parsed as an IP
-      // This is acceptable — URL parser keeps "2130706433" as hostname,
-      // and DNS resolution would fail or return a public IP
-    } catch (err) {
-      expect((err as Error).message).toContain("Blocked");
-    }
+  // This spec used to wrap the call in a try/catch that asserted only in the
+  // catch, above a comment explaining that the outcome "may or may not"
+  // depend on the URL parser — so a regression letting decimal-encoded
+  // localhost through as PUBLIC kept it green. In the SSRF suite, of all
+  // places. And the premise was simply false: the comment claimed
+  // "URL.hostname keeps the numeric form", but the WHATWG parser normalizes
+  // `2130706433` to `127.0.0.1` before this module ever sees it, so the
+  // behaviour is deterministic AND stronger than claimed — rejected as a
+  // literal private address, with DNS never consulted, so no resolver answer
+  // could let it through.
+  test("blocks decimal-encoded localhost outright (2130706433 = 127.0.0.1)", async () => {
+    expect(new URL("http://2130706433/").hostname).toBe("127.0.0.1");
+
+    const lookup = vi.fn(async () => ({ address: "93.184.216.34" }));
+    await expect(resolveAndAssertPublic("http://2130706433/", lookup)).rejects.toThrow(
+      "Blocked request to private address: 127.0.0.1",
+    );
+    expect(lookup).not.toHaveBeenCalled();
   });
 
   test("blocks IPv6 compact notation for loopback", async () => {
@@ -180,7 +185,64 @@ describe("SSRF: protocol validation", () => {
 
 // ── DNS Failure Handling ───────────────────────────────────────────────
 
+// ── DNS Rebinding ──────────────────────────────────────────────────────
+//
+// The defense this module's header lists first, and until the resolver became
+// injectable it had NO deterministic test: the branch is only reachable by
+// controlling what a hostname resolves to, which meant a `node:dns/promises`
+// module mock — parked in its own file (`ssrf-pinning.test.ts`) precisely so
+// it would not leak into this suite, where it tests resolution COUNT rather
+// than the private-address rejection.
+
+describe("SSRF: DNS rebinding", () => {
+  test("a public-looking hostname resolving to a private address is blocked", async () => {
+    await expect(
+      resolveAndAssertPublic("http://rebind.example.com/", async () => ({
+        address: "169.254.169.254",
+      })),
+    ).rejects.toThrow("rebind.example.com resolves to private address 169.254.169.254");
+  });
+
+  test.each(["127.0.0.1", "10.0.0.1", "192.168.1.1", "172.16.0.1", "::1", "::ffff:127.0.0.1"])(
+    "a hostname resolving to %s is blocked",
+    async (address) => {
+      await expect(
+        resolveAndAssertPublic("http://attacker.example.com/", async () => ({ address })),
+      ).rejects.toThrow("Blocked");
+    },
+  );
+
+  test("a hostname resolving to a public address returns that address for pinning", async () => {
+    // The pin is what closes the TOCTOU window — the caller dials the address
+    // this returned, not the name, so a second resolution cannot redirect it.
+    await expect(
+      resolveAndAssertPublic("http://ok.example.com/", async () => ({ address: "93.184.216.34" })),
+    ).resolves.toBe("93.184.216.34");
+  });
+
+  test("a hostname is resolved exactly once", async () => {
+    const lookup = vi.fn(async () => ({ address: "93.184.216.34" }));
+    await resolveAndAssertPublic("http://ok.example.com/", lookup);
+    expect(lookup).toHaveBeenCalledTimes(1);
+    expect(lookup).toHaveBeenCalledWith("ok.example.com");
+  });
+
+  test("a literal IP is never resolved at all", async () => {
+    const lookup = vi.fn(async () => ({ address: "127.0.0.1" }));
+    // Returns null (nothing to pin) and must not consult DNS — a lookup here
+    // would be a second chance for the answer to change.
+    await expect(resolveAndAssertPublic("http://93.184.216.34/", lookup)).resolves.toBeNull();
+    expect(lookup).not.toHaveBeenCalled();
+  });
+});
+
 describe("SSRF: DNS failure handling", () => {
+  test("a resolver that hangs past the deadline is blocked, not awaited", async () => {
+    await expect(
+      resolveAndAssertPublic("http://slow.example.com/", () => new Promise(() => undefined)),
+    ).rejects.toThrow("DNS resolution failed");
+  }, 10_000);
+
   test("resolveAndAssertPublic rejects when DNS resolution fails", async () => {
     // Use a subdomain of example.com (IANA reserved, no DNS) that bogon doesn't classify as private
     await expect(resolveAndAssertPublic("http://nxdomain-test.example.com/")).rejects.toThrow(

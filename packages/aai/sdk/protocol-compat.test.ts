@@ -45,6 +45,17 @@ const fixtureFiles = readdirSync(FIXTURE_DIR)
   })
   .sort();
 
+// `describe.each([])` registers NOTHING and passes. Every test below hangs off
+// this discovery — a directory that moved, or a fixture shape that stopped
+// matching the filter, would delete the repo's entire backward-compatibility
+// guarantee from a green run with nothing to see. So the discovery is itself
+// asserted, outside the `.each`.
+describe("compat fixture discovery", () => {
+  test("finds the pinned fixtures", () => {
+    expect(fixtureFiles.length).toBeGreaterThan(0);
+  });
+});
+
 function compatError(fixture: string, schema: string, msg: unknown, zodError: string): string {
   return [
     `PROTOCOL COMPATIBILITY BREAK (${fixture}, ${schema}):`,
@@ -96,6 +107,12 @@ describe.each(fixtureFiles)("compat fixture: %s", (filename) => {
 
   for (const { label, schema, messages, discriminant } of groups) {
     describe(`${label} backward compat`, () => {
+      // Same reason as the discovery above, one level down: an empty group
+      // makes `test.each` register no cases at all.
+      test(`the ${label} fixture carries messages`, () => {
+        expect(messages.length).toBeGreaterThan(0);
+      });
+
       test.each(messages.map((m, i) => [`${m[discriminant] as string}#${i}`, m]))(
         "%s parses against current schema",
         (_label, msg) => {
@@ -140,6 +157,9 @@ describe.each(fixtureFiles)("compat fixture: %s", (filename) => {
 
     test("SessionErrorCodes is superset of fixture", () => {
       const currentCodes = new Set<string>(SessionErrorCodeSchema.options);
+      // The loop below is the whole test; over an empty list it asserts
+      // nothing and reports a pass.
+      expect(fixture.constants.SessionErrorCodes.length).toBeGreaterThan(0);
       for (const code of fixture.constants.SessionErrorCodes) {
         expect(currentCodes.has(code), `SessionErrorCode "${code}" was removed`).toBe(true);
       }
