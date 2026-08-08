@@ -100,9 +100,11 @@ describe.each(fixtureFiles)("compat fixture: %s", (filename) => {
         "%s parses against current schema",
         (_label, msg) => {
           const result = schema.safeParse(msg);
-          if (!result.success) {
-            throw new Error(compatError(filename, label, msg, result.error.message));
-          }
+          // `expect.fail`, not a bare `throw`: same authored message, but the
+          // failure is registered as an assertion. A raw throw reads as an
+          // assertion-free test to anything counting them — and it counts a
+          // test that accidentally stopped reaching this line as a pass.
+          if (!result.success) expect.fail(compatError(filename, label, msg, result.error.message));
         },
       );
     });

@@ -104,6 +104,7 @@ jobs:
       - run: |
           pnpm run check:hatches
           pnpm run check:file-length
+          pnpm run check:test-assertions
           pnpm run check:claude-md
           pnpm run check:guest-toolchain
 

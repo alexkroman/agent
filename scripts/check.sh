@@ -48,6 +48,10 @@ run_ratchets() {
   local failed=0
   pnpm run check:hatches || failed=1
   pnpm run check:file-length || failed=1
+  # A test with no assertion passes whatever the code does, while counting in
+  # the suite total and in coverage — indistinguishable from real coverage at
+  # every level anyone looks at. Pure source scan, so it runs with the fs gates.
+  pnpm run check:test-assertions || failed=1
   # A CLAUDE.md past ~150k characters is silently truncated in an agent's
   # context, so the guide is half-absent with nothing saying so. Cheap
   # read-and-count, hence up here with the other fs gates.

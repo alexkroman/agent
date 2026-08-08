@@ -518,12 +518,40 @@ describe("createSessionCore — idle timeout", () => {
 });
 
 describe("createSessionCore — history", () => {
+  // History is private state, but it is not unobservable: every tool call is
+  // handed a snapshot of it (`executeTool`'s 4th argument), which is the same
+  // view the agent's own tools get. Asserting through that seam is what makes
+  // "appends" and "pushes" claims rather than a sequence of calls that merely
+  // did not throw.
   test("onHistory appends and onUserTranscript pushes user messages", async () => {
-    const { core } = makeCore();
+    const executeTool = vi.fn<ExecuteTool>(async () => "ok");
+    const { core } = makeCore({ executeTool });
     await core.start();
+
     core.onHistory([{ role: "user", content: "prior" }]);
     core.onUserTranscript("now");
+
+    core.onReplyStarted("r1");
+    core.onToolCall("c1", "lookup", {});
+    await vi.waitFor(() => expect(executeTool).toHaveBeenCalled());
+    expect(executeTool.mock.calls[0]?.[3]).toEqual([
+      { role: "user", content: "prior" },
+      { role: "user", content: "now" },
+    ]);
+  });
+
+  test("onReset clears the history the next tool call sees", async () => {
+    const executeTool = vi.fn<ExecuteTool>(async () => "ok");
+    const { core } = makeCore({ executeTool });
+    await core.start();
+    core.onHistory([{ role: "user", content: "prior" }]);
+
     core.onReset();
+
+    core.onReplyStarted("r1");
+    core.onToolCall("c1", "lookup", {});
+    await vi.waitFor(() => expect(executeTool).toHaveBeenCalled());
+    expect(executeTool.mock.calls[0]?.[3]).toEqual([]);
   });
 });
 

@@ -296,8 +296,12 @@ describe("wireSessionSocket lifecycle", () => {
     ws.send = () => {
       throw new Error("socket closed");
     };
-    capturedClient.event({ type: "speech_started" });
-    capturedClient.playAudioChunk(new Uint8Array([1]));
+    // A send that throws must be contained — a closed socket is the normal
+    // end of every session, and an escaping throw from the sink takes out
+    // whatever transport callback was writing. Stated as an assertion rather
+    // than left to the test merely not failing.
+    expect(() => capturedClient.event({ type: "speech_started" })).not.toThrow();
+    expect(() => capturedClient.playAudioChunk(new Uint8Array([1]))).not.toThrow();
     capturedClient.playAudioDone();
   });
 

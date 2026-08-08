@@ -185,9 +185,20 @@ describe("connectS2s event dispatch", () => {
   });
 
   test("reply.content_part events are silently ignored (no dispatch)", async () => {
-    const { raw } = await setupHandle();
+    const callbacks = makeMockCallbacks();
+    const { raw, logger } = await setupHandle(callbacks);
+
     emitMessage(raw, { type: "reply.content_part.started" });
     emitMessage(raw, { type: "reply.content_part.done" });
+
+    // "Silently" and "ignored" are two separate claims, and the body checked
+    // neither — it only proved the emits did not throw. Ignored: no callback
+    // ran. Silently: the parser RECOGNISES them, so they are absent from the
+    // dropped list rather than warning twice per reply. Asserting the second
+    // half is what revealed they were NOT recognised at all.
+    for (const cb of Object.values(callbacks)) expect(cb).not.toHaveBeenCalled();
+    expect(droppedTypes(logger)).not.toContain("reply.content_part.started");
+    expect(droppedTypes(logger)).not.toContain("reply.content_part.done");
   });
 });
 

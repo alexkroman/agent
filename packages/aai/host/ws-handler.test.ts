@@ -418,14 +418,24 @@ describe("wireSessionSocket", () => {
 
   test("messages before session is created (no open yet) are ignored", () => {
     const ws = openSocket(MockWebSocket.CONNECTING);
+    const core = makeMockCore();
+    const createSession = vi.fn(() => core);
 
     wireSessionSocket(ws, {
       sessions: createOwnedMap(),
-      createSession: () => makeMockCore(),
+      createSession,
       readyConfig: defaultConfig,
       logger: silentLogger,
     });
 
     simulateTextFrame(ws, JSON.stringify({ type: "audio_ready" }));
+
+    // "Ignored" has to be asserted against something. A frame arriving before
+    // 'open' must neither conjure a session nor reach one: not-throwing is
+    // what this used to check, and it would hold just as well if the frame
+    // were being dispatched into a half-built session.
+    expect(createSession).not.toHaveBeenCalled();
+    expect(core.onAudioReady).not.toHaveBeenCalled();
+    expect(ws.sent).toEqual([]);
   });
 });

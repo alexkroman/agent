@@ -31,10 +31,19 @@ describe("createKeyedLock", () => {
   it("does not block different keys on each other", async () => {
     const lock = createKeyedLock();
     const releaseA = await lock("a");
-    // "b" acquires immediately even while "a" is held.
-    const releaseB = await lock("b");
-    releaseB();
+
+    // "b" must acquire while "a" is held. Raced against a real timer rather
+    // than plainly awaited: a regression that made keys block each other
+    // would hang this `await` until the suite timeout fired on a test whose
+    // name explains nothing, instead of failing here with the reason.
+    const releaseB = await Promise.race([lock("b"), sleep(50).then(() => null)]);
+    expect(releaseB, '"b" blocked behind the "a" lock').not.toBeNull();
+
+    expect(lock.size).toBe(2);
+    releaseB?.();
     releaseA();
+    await flushMicrotasks();
+    expect(lock.size).toBe(0);
   });
 
   it("empties the map after all locks release (no per-key leak)", async () => {

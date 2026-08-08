@@ -379,7 +379,15 @@ describe("createVoiceIO", () => {
   test("close is idempotent", async () => {
     const io = await createVoiceIO(voiceOpts());
     await io.close();
-    await io.close();
+    const afterFirst = audio.contexts().length;
+
+    // The second close must resolve rather than reject on an already-closed
+    // AudioContext, and must not open anything new — a page that unmounts
+    // while disconnecting calls this twice.
+    await expect(io.close()).resolves.toBeUndefined();
+
+    expect(audio.contexts()).toHaveLength(afterFirst);
+    expect(audio.contexts().every((c) => c.closed)).toBe(true);
   });
 
   test("done() resolves immediately when nothing was ever enqueued", async () => {

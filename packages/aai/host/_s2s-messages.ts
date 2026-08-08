@@ -84,6 +84,16 @@ const S2sMessageSchema = z.discriminatedUnion("type", [
       args: m.arguments ?? m.args ?? {},
     })),
   z.object({ type: z.literal("reply.done"), status: z.string().optional() }),
+  // Recognised on purpose and dispatched nowhere (the dispatcher's `default`
+  // arm). The service brackets every reply with these, and while they were
+  // absent from the union each one took the unrecognised path and logged a
+  // warning — two per reply, for frames there is nothing to do about. That
+  // matters beyond noise: this warning is the ONLY signal that a frame the
+  // service really sends is not being handled (the missing live captions this
+  // module's header describes), and a stream of known-benign entries is what
+  // makes such a signal stop being read.
+  z.object({ type: z.literal("reply.content_part.started") }).passthrough(),
+  z.object({ type: z.literal("reply.content_part.done") }).passthrough(),
   z.object({ type: z.literal("session.error"), code: z.string(), message: z.string() }),
   z.object({ type: z.literal("error"), message: z.string() }),
 ]);

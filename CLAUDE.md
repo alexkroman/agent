@@ -75,11 +75,12 @@ for packages changed since the default branch.
 ### Quality ratchets
 
 Beyond lint/typecheck/test, `scripts/check.sh` **and the CI check job** run
-three **gates** (all also runnable standalone) that hold the line on technical
-debt; the first two work by comparing the branch against its merge-base with
-`origin/main`. They must stay wired into BOTH: for a long time they lived
-only in `check.sh`, which CI never invokes, so the only thing enforcing them
-was the pre-push hook — and `git push --no-verify` skipped them entirely.
+four **gates** (all also runnable standalone) that hold the line on technical
+debt; the first works by comparing the branch against its merge-base with
+`origin/main`, while the rest are absolute. They must stay wired into BOTH:
+for a long time they lived only in `check.sh`, which CI never invokes, so the
+only thing enforcing them was the pre-push hook — and `git push --no-verify`
+skipped them entirely.
 
 - **`pnpm check:hatches`** (`scripts/check-escape-hatches.mjs`) — counts
   static-analysis escape hatches (`@ts-expect-error`, `@ts-ignore`,
@@ -135,6 +136,32 @@ was the pre-push hook — and `git push --no-verify` skipped them entirely.
   grow past its ceiling, and ceilings should only ever be lowered as files
   are split up. New files must come in under the cap. Templates under
   `packages/aai-templates/templates/` are exempt.
+- **`pnpm check:test-assertions`** (`scripts/check-test-assertions.mjs`) —
+  fails on any `test()`/`it()` body containing no `expect` / `expectTypeOf` /
+  `assert`. A test with no assertion still runs the code, still counts in the
+  green total, and still shows up in COVERAGE, while checking nothing but "did
+  not throw synchronously" — indistinguishable from real coverage at every
+  level anyone looks at. Nine were found: `"/health returns ok JSON"` never
+  sent a request (a real version lived 30 lines below it),
+  `"onHistory appends and onUserTranscript pushes user messages"` checked none
+  of its three claims, and `"does not block different keys on each other"`
+  encoded its invariant as a bare `await`, so a regression would HANG to the
+  suite timeout rather than fail. **"Does not throw" is legitimate — it just
+  has to be said**: `expect(fn).not.toThrow()`,
+  `await expect(p).resolves.toBeUndefined()`, `expect.fail(msg)` in place of a
+  bare `throw`.
+
+  There is deliberately **no allowlist**: an entry would assert that some test
+  rightly checks nothing, which is never true. Two things the gate needs to
+  stay trustworthy, both learned by getting them wrong: it masks comments and
+  string literals before scanning (a JSDoc paragraph *about* `test()` is not a
+  test, and three files here have one), and it excludes
+  `RegExp.prototype.test` via a lookbehind — `/re/.test(x)` produced five of
+  the first run's eight reported offenders. Its own parser is specced in
+  `packages/aai-templates/test-assertion-gate.test.ts`, because a gate whose
+  entire success output is a count fails SILENTLY: a parser that stopped
+  recognising `test(` would print "all 0 test(s) assert something ✓", which is
+  the same shape as the bug it exists to catch.
 - **`pnpm check:claude-md`** (`scripts/check-claude-md.mjs`) — caps every
   `CLAUDE.md` (the scaffold's included) at **120,000 characters**, 20% under
   the ~150k ceiling past which an agent's context silently drops the rest of
@@ -157,7 +184,7 @@ fail fast. To tighten quality over time, lower the entries in the
 file-length allowlist and delete escape hatches — both baselines are
 designed to only move one direction.
 
-A fourth ratchet lives in the vitest configs: **coverage thresholds**.
+A fifth ratchet lives in the vitest configs: **coverage thresholds**.
 Every package has floors — `aai-templates` was for a while the one that did
 not, so CI measured its coverage and threw the number away. Each package's
 `vitest.config.ts` declares per-package coverage floors
