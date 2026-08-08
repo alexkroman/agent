@@ -416,7 +416,7 @@ right control:
   into the chat — when you see a failed deploy there, fix what it reports
   and ask the user to publish again.
 - The **Secrets panel** (top bar, after the first publish) manages the
-  deployed agent's env keys (mirrored to the preview agent).
+  project's env keys, on both the published and preview agents.
 - The **Settings pane → Database** switches \`ctx.db\` on for the project,
   across both the preview and published agents. It reaches an agent when
   that agent next deploys: the preview redeploys itself, production needs

@@ -31,7 +31,7 @@ import {
  * The secrets core's bindings, read off the REQUEST env — never closed over
  * the Context, matching `databaseEnvFor`'s reasoning.
  */
-export function secretsEnvFor(c: Context<StudioHonoEnv>): ProjectSecretsEnv {
+function secretsEnvFor(c: Context<StudioHonoEnv>): ProjectSecretsEnv {
   return {
     workspaces: c.env.workspaces,
     store: c.env.store,
