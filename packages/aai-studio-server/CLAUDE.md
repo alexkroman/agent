@@ -540,7 +540,8 @@ voice agents without the CLI:
     the baked toolchain (`@alexkroman1/aai-cli/dist/scaffold`) when absent,
     so the guest holds no second copy to drift — only the two deliberate
     deltas are code (`workspaceTsconfig`, the exact dependency pins); a
-    dir-local `AAI_CONFIG_DIR` carries the caller's key; `.aai/project.json` pins the slug) and runs
+    dir-local `AAI_CONFIG_DIR` carries the caller's key; `.aai/project.json`
+    pins the slug) and runs
     `aai deploy --server <origin> --json --allow-missing-secrets`. Build,
     upload, the credential preflight (CLI-side now — see "The platform
     stores no agent config" in `packages/aai-server/CLAUDE.md`), ownership,
