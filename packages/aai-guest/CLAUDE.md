@@ -40,8 +40,11 @@ delivers):
   `studio-chat.ts`/`studio-tools.ts`/`studio-edit.ts`/`studio-grep.ts`
   (the in-guest coding agent), `studio-build.ts` (in-guest workspace
   builds through the aai CLI bundlers), `studio-publish.ts` (Publish =
-  the literal `aai deploy` CLI, run in-sandbox), `limits.ts` (import-free constants
-  mirroring the SDK's). The harness embeds NO agent runtime — every worker
+  the literal `aai deploy` CLI, run in-sandbox), `limits.ts` (constants —
+  import-free except the workspace caps, re-exported from
+  `@alexkroman1/aai/workspace-files` so the CLI's push, this sync and
+  the platform's validation cannot disagree). The harness embeds NO agent
+  runtime — every worker
   bundle ships its own (`__aaiCreateRuntime`, see "User-shipped runtime"
   below) — and tsdown bundles the harness (server shell + studio coding
   agent) into the single `dist/harness.mjs` the server resolves via

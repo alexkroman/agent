@@ -9,11 +9,18 @@
  * React/Tailwind plugins.
  *
  * Files the workspace already has always win — the coding agent may edit
- * any of these, exactly as a CLI user would. The contents mirror the
- * scaffold (guarded by studio-project-shape.test.ts against drift), with
- * one deliberate difference: the tsconfig omits vitest types and excludes
- * test files, so a drifted test fails `test_agent` rather than blocking the
- * build and Publish typecheck gate — see WORKSPACE_TSCONFIG below.
+ * any of these, exactly as a CLI user would.
+ *
+ * **The contents are COPIED from the scaffold, not retyped.** The same
+ * scaffold `aai init` writes ships inside the CLI tarball baked into this
+ * image (`@alexkroman1/aai-cli/dist/scaffold`), so the guest reads the real
+ * files. It used to hold its own string constants for each one, labelled
+ * "mirrors the scaffold" and guarded by a drift TEST — ~500 lines whose whole
+ * job was to notice when two copies of one file disagreed. Copying makes the
+ * drift impossible rather than detectable, and leaves only the deltas as
+ * code: the tsconfig's (vitest types out, test files excluded from the
+ * typecheck gate — see {@link workspaceTsconfig}) and the manifest's (exact
+ * installed pins rather than the scaffold's carets).
  *
  * The one exception to "existing files win" is an existing package.json's
  * toolchain PINS, which are reconciled against what is installed — see
@@ -34,48 +41,39 @@ export function fileExists(p: string): Promise<boolean> {
   );
 }
 
-/** Mirrors packages/aai-templates/scaffold/vite.config.ts (drift-guarded). */
-export const WORKSPACE_VITE_CONFIG = `import react from "@vitejs/plugin-react";
-import tailwindcss from "@tailwindcss/vite";
-import { defineConfig } from "vite";
-
-export default defineConfig({
-  plugins: [react(), tailwindcss()],
-  build: {
-    target: "es2022",
-    minify: true,
-  },
-  ssr: {
-    noExternal: true,
-  },
-});
-`;
-
 /**
- * Mirrors packages/aai-templates/scaffold/vitest.config.ts (drift-guarded).
+ * The scaffold shipped inside the baked toolchain's CLI tarball, or null when
+ * the toolchain is not resolvable.
  *
- * Separate from the vite config on purpose — see that file. Vitest prefers
- * this one, so the test run stops depending on the client build's plugin
- * imports resolving, and `globals: true` makes an un-imported `describe`
- * work. Five of the seven repairs in one measured arm were test suites that
- * failed to LOAD (zero assertion failures), which cost a build round each
- * and taught the agent nothing about its own code.
+ * Absence is a degraded mode this module already lives with — see
+ * {@link resolveWorkspaceDependencies}. It is also not a state worth guarding
+ * against here: every consumer of a shaped workspace (the bundlers, the
+ * typecheck gate, Publish's `aai deploy`) loads out of that same toolchain, so
+ * a workspace missing its shape is one nothing could have built anyway, and
+ * the build's own error names the real cause.
  */
-export const WORKSPACE_VITEST_CONFIG = `import { defineConfig } from "vitest/config";
+export function scaffoldDir(modulesDir: string | null = toolchainModules()): string | null {
+  return modulesDir === null
+    ? null
+    : path.join(modulesDir, "@alexkroman1", "aai-cli", "dist", "scaffold");
+}
 
-export default defineConfig({
-  test: {
-    globals: true,
-  },
-});
-`;
-
-/** Mirrors the scaffold's global.d.ts (drift-guarded). */
-export const WORKSPACE_GLOBAL_DTS = `/// <reference types="vite/client" />
-`;
+/** Read one scaffold file, or null when it (or the scaffold) isn't there. */
+async function readScaffoldFile(root: string | null, rel: string): Promise<string | null> {
+  if (root === null) return null;
+  try {
+    return await readFile(path.join(root, rel), "utf-8");
+  } catch {
+    return null;
+  }
+}
 
 /**
- * The scaffold tsconfig, minus vitest types and with test files excluded.
+ * The scaffold tsconfig with this workspace's two deltas applied.
+ *
+ * `types` becomes `["node"]` — the guest builds and typechecks server-side
+ * agent code, and vitest's globals are not what a build gate should assert
+ * against — and test files leave the typecheck.
  *
  * Tests DO run here (the toolchain carries vitest, and the coding agent is
  * told to write an `agent.test.ts`) — they are kept out of the *typecheck*
@@ -102,34 +100,24 @@ export const WORKSPACE_GLOBAL_DTS = `/// <reference types="vite/client" />
  * cheaper than the ceremony, and `errorMessage()` from the SDK handles it for
  * anyone who cares.
  */
-export const WORKSPACE_TSCONFIG = `${JSON.stringify(
-  {
-    compilerOptions: {
-      target: "ES2024",
-      module: "ESNext",
-      moduleResolution: "bundler",
-      strict: true,
-      noImplicitAny: false,
-      useUnknownInCatchVariables: false,
-      verbatimModuleSyntax: true,
-      allowImportingTsExtensions: true,
-      noEmit: true,
-      skipLibCheck: true,
-      types: ["node"],
-      resolveJsonModule: true,
-      jsx: "react-jsx",
-      jsxImportSource: "react",
-      lib: ["ES2024", "DOM", "DOM.Iterable"],
+export function workspaceTsconfig(scaffoldTsconfig: string): string {
+  const parsed = JSON.parse(scaffoldTsconfig) as {
+    compilerOptions?: Record<string, unknown>;
+  } & Record<string, unknown>;
+  return `${JSON.stringify(
+    {
+      ...parsed,
+      compilerOptions: { ...parsed.compilerOptions, types: ["node"] },
+      exclude: ["node_modules", "dist", ".aai", "**/*.test.ts"],
     },
-    exclude: ["node_modules", "dist", ".aai", "**/*.test.ts"],
-  },
-  null,
-  2,
-)}\n`;
+    null,
+    2,
+  )}\n`;
+}
 
 /**
  * The runtime packages a workspace writes against — the `dependencies` half
- * of the scaffold's package.json, drift-guarded against it.
+ * of the scaffold's package.json.
  *
  * These already resolve from the toolchain node_modules above the workspace,
  * so declaring them changes no build. They are here to be READ: package.json
@@ -149,6 +137,26 @@ export const WORKSPACE_DEPENDENCIES = [
 ] as const;
 
 /**
+ * The dependency NAMES the scaffold declares, or the constant above when the
+ * scaffold cannot be read. Names rather than versions: the versions come from
+ * what is installed (see {@link resolveWorkspaceDependencies}), so this is the
+ * one thing worth reading off the scaffold — a package added there reaches a
+ * workspace manifest without a second edit here.
+ */
+function scaffoldDependencyNames(scaffoldManifest: string | null): readonly string[] {
+  if (scaffoldManifest === null) return WORKSPACE_DEPENDENCIES;
+  try {
+    const { dependencies } = JSON.parse(scaffoldManifest) as {
+      dependencies?: Record<string, string>;
+    };
+    const names = Object.keys(dependencies ?? {});
+    return names.length > 0 ? names : WORKSPACE_DEPENDENCIES;
+  } catch {
+    return WORKSPACE_DEPENDENCIES;
+  }
+}
+
+/**
  * Pin each dependency to the version actually installed in the toolchain.
  *
  * Exact versions, not the scaffold's carets: `add_dependency` runs
@@ -162,10 +170,11 @@ export const WORKSPACE_DEPENDENCIES = [
  */
 export function resolveWorkspaceDependencies(
   modulesDir: string | null = toolchainModules(),
+  names: readonly string[] = WORKSPACE_DEPENDENCIES,
 ): Record<string, string> {
   if (modulesDir === null) return {};
   const deps: Record<string, string> = {};
-  for (const name of WORKSPACE_DEPENDENCIES) {
+  for (const name of names) {
     try {
       const raw = readFileSync(path.join(modulesDir, name, "package.json"), "utf-8");
       const { version } = JSON.parse(raw) as { version?: string };
@@ -244,16 +253,31 @@ async function reconcileWorkspacePins(
  * against what is installed (see {@link reconcileWorkspacePins}).
  */
 export async function ensureProjectShape(dir: string): Promise<void> {
+  const scaffold = scaffoldDir();
+  // The scaffold reads are independent; so is every write below.
+  const [manifest, tsconfig, globalDts, viteConfig, vitestConfig] = await Promise.all([
+    readScaffoldFile(scaffold, "package.json"),
+    readScaffoldFile(scaffold, "tsconfig.json"),
+    readScaffoldFile(scaffold, "global.d.ts"),
+    readScaffoldFile(scaffold, "vite.config.ts"),
+    readScaffoldFile(scaffold, "vitest.config.ts"),
+  ]);
   // One resolution pass for both consumers below — it is a handful of
   // readFileSync + JSON.parse over the toolchain, and every settled write
   // burst reaches here.
-  const installed = resolveWorkspaceDependencies();
-  const shapeFiles: Record<string, string> = {
+  const installed = resolveWorkspaceDependencies(
+    toolchainModules(),
+    scaffoldDependencyNames(manifest),
+  );
+  // COPIED verbatim, except where a delta is documented. A file the scaffold
+  // does not supply is skipped rather than invented: see {@link scaffoldDir}
+  // for why an unshaped workspace is not a state worth papering over.
+  const shapeFiles: Record<string, string | null> = {
     "package.json": workspacePackageJson(installed),
-    "tsconfig.json": WORKSPACE_TSCONFIG,
-    "global.d.ts": WORKSPACE_GLOBAL_DTS,
-    "vite.config.ts": WORKSPACE_VITE_CONFIG,
-    "vitest.config.ts": WORKSPACE_VITEST_CONFIG,
+    "tsconfig.json": tsconfig === null ? null : workspaceTsconfig(tsconfig),
+    "global.d.ts": globalDts,
+    "vite.config.ts": viteConfig,
+    "vitest.config.ts": vitestConfig,
   };
   await Promise.all(
     Object.entries(shapeFiles).map(async ([rel, content]) => {
@@ -262,7 +286,7 @@ export async function ensureProjectShape(dir: string): Promise<void> {
         if (rel === "package.json") await reconcileWorkspacePins(abs, installed);
         return;
       }
-      await writeFile(abs, content, "utf-8");
+      if (content !== null) await writeFile(abs, content, "utf-8");
     }),
   );
 }

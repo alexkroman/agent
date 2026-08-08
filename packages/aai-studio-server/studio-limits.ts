@@ -3,16 +3,23 @@
  * Studio size limits, in their own dependency-free module — the single
  * home for the studio's workspace/chat caps. Kept import-free so any
  * consumer (schemas, the workspace store, the session broker) can load
- * them without dragging zod along, and because `aai-guest/limits.ts`
- * deliberately mirrors the workspace caps by value (asserted against this
- * file's source in `aai-guest/limits.test.ts` rather than imported — the
- * guest harness bundles no host packages).
+ * them without dragging zod along. The workspace FILE caps are no longer
+ * declared here: they belong to the shared workspace contract in the SDK and
+ * are re-exported below, so the three sides that must agree on them read one
+ * definition.
  */
 
-/** Max files per studio project workspace. */
-export const MAX_STUDIO_FILES = 100;
-/** Max bytes for a single workspace file. */
-export const MAX_STUDIO_FILE_BYTES = 256_000;
+/**
+ * The workspace file caps — RE-EXPORTED from the SDK
+ * (`@alexkroman1/aai/workspace-files`), which also owns the walk and skip
+ * rules the CLI's push and the guest's sync share. Validation here has to
+ * accept exactly what those two produce, so it reads the same constants
+ * rather than restating them.
+ */
+export {
+  MAX_WORKSPACE_FILE_BYTES as MAX_STUDIO_FILE_BYTES,
+  MAX_WORKSPACE_FILES as MAX_STUDIO_FILES,
+} from "@alexkroman1/aai/workspace-files";
 /** Max total bytes across a workspace (guards the single-doc storage model). */
 export const MAX_STUDIO_WORKSPACE_BYTES = 50_000_000;
 /** Max messages accepted per chat turn (client resends full history). */

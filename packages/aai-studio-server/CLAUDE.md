@@ -228,8 +228,8 @@ voice agents without the CLI:
 - **The workspace manifest declares what the agent may import.**
   `ensureProjectShape` writes a `package.json` whose `dependencies` mirror
   the scaffold's runtime set (`@alexkroman1/aai`, `aai-ui`, `react`,
-  `react-dom`, `tailwindcss`, `zod` — drift-guarded against the scaffold in
-  `studio-project-shape.test.ts`). It used to declare none, on the reasoning
+  `react-dom`, `tailwindcss`, `zod` — read from the scaffold's own
+  manifest). It used to declare none, on the reasoning
   that they resolve from the toolchain anyway — true for the *build*, and
   exactly backwards for the *reader*: package.json is the first place a
   coding agent looks to learn what it can import, and an empty one asserted
@@ -536,10 +536,11 @@ voice agents without the CLI:
     else an ephemeral spawn torn down after). The guest completes the
     workspace into a REAL project (`ensureProjectShape` in
     `aai-guest/studio-project-shape.ts`: package.json, tsconfig.json,
-    global.d.ts, and vite.config.ts filled in from scaffold-mirroring
-    copies when absent — drift-guarded against the scaffold by
-    `studio-project-shape.test.ts`; a dir-local `AAI_CONFIG_DIR` carries
-    the caller's key; `.aai/project.json` pins the slug) and runs
+    global.d.ts, and vite.config.ts COPIED from the real scaffold shipped in
+    the baked toolchain (`@alexkroman1/aai-cli/dist/scaffold`) when absent,
+    so the guest holds no second copy to drift — only the two deliberate
+    deltas are code (`workspaceTsconfig`, the exact dependency pins); a
+    dir-local `AAI_CONFIG_DIR` carries the caller's key; `.aai/project.json` pins the slug) and runs
     `aai deploy --server <origin> --json --allow-missing-secrets`. Build,
     upload, the credential preflight (CLI-side now — see "The platform
     stores no agent config" in `packages/aai-server/CLAUDE.md`), ownership,

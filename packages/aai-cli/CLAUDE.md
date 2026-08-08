@@ -152,7 +152,9 @@ its app-database schema, and its secrets with it. See the `-preview` note in
   `secret.ts` — subcommand entry points
 - `studio.ts` / `_studio.ts` — the studio round-trip: pull/push/publish
   executors over the `/studio/projects` routes, the local source walk
-  (guest-snapshot ignore rules + cap mirrors, `.env`/lockfiles never sync)
+  (the walk, caps, skip rules and strict UTF-8 decode all come from
+  `@alexkroman1/aai/workspace-files`, shared with the guest's end-of-turn
+  sync; `.env`/lockfiles never sync — the one rule this side adds)
 - `_init.ts` / `_deploy.ts` / `_delete.ts` / `_bundler.ts` — internal logic
 - `_dev-server.ts` — dev server for directory-based agents: loads `agent.ts`,
   builds runtime, watches for file changes, optionally runs Vite for client HMR

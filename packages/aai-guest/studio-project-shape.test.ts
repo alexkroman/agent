@@ -7,11 +7,13 @@ import { afterEach, describe, expect, test } from "vitest";
 import {
   ensureProjectShape,
   resolveWorkspaceDependencies,
-  WORKSPACE_GLOBAL_DTS,
-  WORKSPACE_TSCONFIG,
-  WORKSPACE_VITE_CONFIG,
-  WORKSPACE_VITEST_CONFIG,
+  scaffoldDir,
+  workspaceTsconfig,
 } from "./studio-project-shape.ts";
+
+/** The scaffold's real files, read from the templates package in-repo. */
+const scaffold = (file: string) =>
+  readFile(path.resolve(import.meta.dirname, "../aai-templates/scaffold", file), "utf-8");
 
 let dir: string;
 
@@ -146,8 +148,8 @@ describe("ensureProjectShape", () => {
     });
   });
 
-  test("tsconfig excludes tests and pins node types (studio variant)", () => {
-    const parsed = JSON.parse(WORKSPACE_TSCONFIG) as {
+  test("tsconfig excludes tests and pins node types (studio variant)", async () => {
+    const parsed = JSON.parse(workspaceTsconfig(await scaffold("tsconfig.json"))) as {
       compilerOptions: Record<string, unknown> & { types: string[] };
       exclude: string[];
     };
@@ -161,39 +163,27 @@ describe("ensureProjectShape", () => {
   });
 });
 
-describe("scaffold parity (drift guard)", () => {
-  const scaffold = (file: string) =>
-    readFile(path.resolve(import.meta.dirname, "../aai-templates/scaffold", file), "utf-8");
-
-  test("vite.config.ts matches the scaffold's byte for byte", async () => {
-    await expect(scaffold("vite.config.ts")).resolves.toBe(WORKSPACE_VITE_CONFIG);
+/**
+ * The workspace's two deliberate DELTAS from the scaffold. There is no drift
+ * guard any more and no need for one: `ensureProjectShape` copies the
+ * scaffold's real files out of the baked toolchain, so the only thing that
+ * can differ is what this module changes on purpose.
+ */
+describe("scaffold deltas", () => {
+  test("keeps every compiler option the scaffold sets, except `types`", async () => {
+    type Opts = Record<string, unknown>;
+    const of = (text: string) => (JSON.parse(text) as { compilerOptions: Opts }).compilerOptions;
+    const theirs = of(await scaffold("tsconfig.json"));
+    const mine = of(workspaceTsconfig(await scaffold("tsconfig.json")));
+    // Soft: a scaffold change usually moves several options at once, and one
+    // hard failure would hide the rest behind a second run.
+    for (const key of Object.keys(theirs)) {
+      if (key === "types") continue;
+      expect.soft(mine[key], key).toEqual(theirs[key]);
+    }
+    expect(mine.types).toEqual(["node"]);
   });
 
-  test("global.d.ts matches the scaffold's byte for byte", async () => {
-    await expect(scaffold("global.d.ts")).resolves.toBe(WORKSPACE_GLOBAL_DTS);
-  });
-
-  /**
-   * Compared on the config body, not byte for byte: the scaffold's copy
-   * carries a long doc comment explaining why the test config is separate
-   * from the vite one, which a generated workspace does not need.
-   */
-  test("vitest config enables globals, in both copies", async () => {
-    const body = (text: string) => text.slice(text.indexOf("export default"));
-    expect(body(WORKSPACE_VITEST_CONFIG)).toBe(body(await scaffold("vitest.config.ts")));
-    expect(WORKSPACE_VITEST_CONFIG).toContain("globals: true");
-    // It must not import the client build's plugins — that is the whole
-    // reason it exists apart from vite.config.ts.
-    expect(WORKSPACE_VITEST_CONFIG).not.toContain("plugin-react");
-    expect(WORKSPACE_VITEST_CONFIG).not.toContain("tailwindcss");
-  });
-
-  /**
-   * The tsconfigs differ deliberately (`types`, `exclude`), so they cannot be
-   * compared byte for byte — but the settings that decide whether a given file
-   * type-checks must agree, or a workspace that builds in the studio fails
-   * `aai build` on the user's laptop after they export it.
-   */
   test("declares exactly the scaffold's runtime dependencies", async () => {
     const { dependencies = {} } = JSON.parse(await scaffold("package.json")) as {
       dependencies?: Record<string, string>;
@@ -207,24 +197,12 @@ describe("scaffold parity (drift guard)", () => {
     );
   });
 
-  test("tsconfig strictness matches the scaffold's", async () => {
-    type Opts = Record<string, unknown>;
-    const of = (text: string) => (JSON.parse(text) as { compilerOptions: Opts }).compilerOptions;
-    const mine = of(WORKSPACE_TSCONFIG);
-    const theirs = of(await scaffold("tsconfig.json"));
-    const shared = [
-      "strict",
-      "noImplicitAny",
-      "useUnknownInCatchVariables",
-      "verbatimModuleSyntax",
-      "target",
-      "lib",
-      "jsx",
-    ];
-    // Soft: drift usually moves several options at once, and one hard failure
-    // would hide the rest behind a second run.
-    for (const key of shared) {
-      expect.soft(mine[key], key).toEqual(theirs[key]);
-    }
+  test("resolves the scaffold shipped inside the CLI tarball", () => {
+    // The path the guest reads in production. Null when the toolchain is
+    // absent — a degraded mode nothing downstream survives anyway.
+    expect(scaffoldDir("/opt/aai/node_modules")).toBe(
+      "/opt/aai/node_modules/@alexkroman1/aai-cli/dist/scaffold",
+    );
+    expect(scaffoldDir(null)).toBeNull();
   });
 });

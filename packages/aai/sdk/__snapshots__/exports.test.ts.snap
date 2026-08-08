@@ -313,3 +313,16 @@ exports[`export surface stability > @alexkroman1/aai/utils export 1`] = `
   "toolError",
 ]
 `;
+
+exports[`export surface stability > @alexkroman1/aai/workspace-files export 1`] = `
+[
+  "IGNORED_WORKSPACE_DIRS",
+  "LOCAL_ONLY_FILES",
+  "MAX_WORKSPACE_FILES",
+  "MAX_WORKSPACE_FILE_BYTES",
+  "decodeWorkspaceText",
+  "isLocalOnlyFile",
+  "snapshotWorkspaceFiles",
+  "walkWorkspaceFiles",
+]
+`;

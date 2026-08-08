@@ -88,11 +88,13 @@ export const STORAGE_DISABLED_MESSAGE =
   "project .env.";
 
 /**
- * Studio workspace caps, mirroring `studio-limits.ts` in aai-studio-server
- * (same asserted-not-imported arrangement as the SDK constants above): the
- * guest materializes and syncs workspaces and must enforce the same shape
- * the host store accepts, without importing server code.
+ * Studio workspace caps. Unlike the constants above — asserted rather than
+ * imported so this module stays dependency-free — these are RE-EXPORTED from
+ * the SDK, which the harness bundles anyway: they are the same caps the CLI's
+ * push and the platform's validation enforce, and three hand-kept copies of a
+ * number that must agree is exactly what a mirror costs.
  */
-export const MAX_STUDIO_FILES = 100;
-/** Max bytes for a single workspace file. */
-export const MAX_STUDIO_FILE_BYTES = 256_000;
+export {
+  MAX_WORKSPACE_FILE_BYTES as MAX_STUDIO_FILE_BYTES,
+  MAX_WORKSPACE_FILES as MAX_STUDIO_FILES,
+} from "@alexkroman1/aai/workspace-files";

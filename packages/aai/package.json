@@ -23,6 +23,11 @@
       "types": "./dist/host/runtime-barrel.d.ts",
       "import": "./dist/host/runtime-barrel.js"
     },
+    "./workspace-files": {
+      "@dev/source": "./host/workspace-files.ts",
+      "types": "./dist/host/workspace-files.d.ts",
+      "import": "./dist/host/workspace-files.js"
+    },
     "./manifest": {
       "@dev/source": "./sdk/manifest-barrel.ts",
       "types": "./dist/sdk/manifest-barrel.d.ts",

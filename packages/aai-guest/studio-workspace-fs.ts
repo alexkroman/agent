@@ -7,12 +7,13 @@
  * end-of-turn sync).
  */
 
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_FILES } from "./limits.ts";
-
-/** Directories never listed, grepped, or synced back to the workspace. */
-const IGNORED_DIRS = new Set(["node_modules", ".git", "dist", ".aai"]);
+import {
+  snapshotWorkspaceFiles,
+  type WorkspaceSnapshot,
+  walkWorkspaceFiles,
+} from "@alexkroman1/aai/workspace-files";
 
 /** Resolve a workspace-relative path, refusing escapes from the root. */
 export function resolveInside(dir: string, rel: string): string {
@@ -23,92 +24,28 @@ export function resolveInside(dir: string, rel: string): string {
   return abs;
 }
 
-/** Workspace-relative paths of all non-ignored files under `dir`. */
-export async function walkWorkspace(dir: string): Promise<string[]> {
-  const out: string[] = [];
-  async function walk(current: string): Promise<void> {
-    const entries = await readdir(current, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isSymbolicLink()) continue;
-      if (entry.isDirectory()) {
-        if (!IGNORED_DIRS.has(entry.name)) await walk(path.join(current, entry.name));
-        continue;
-      }
-      if (entry.isFile()) out.push(path.relative(dir, path.join(current, entry.name)));
-    }
-  }
-  await walk(dir);
-  return out.sort((a, b) => a.localeCompare(b));
+/**
+ * Workspace-relative paths of all non-ignored files under `dir`.
+ *
+ * Backs the coding agent's `list_files`/`grep` as well as the sync, which is
+ * why it applies no per-file skip: a `.env` the agent wrote itself must stay
+ * visible to the tools that read it. The CLI's push adds that rule on its
+ * own side (`isLocalOnlyFile`).
+ */
+export function walkWorkspace(dir: string): Promise<string[]> {
+  return walkWorkspaceFiles(dir);
 }
 
 /**
- * Decode `buf` as UTF-8, or null when it isn't valid UTF-8.
+ * Snapshot the session's scratch tree into a workspace file map.
  *
- * `fatal` turns an invalid sequence into a throw rather than U+FFFD: the
- * workspace row is a JSON path→string map, so a lossy read would sync a
- * mangled copy of a real binary back as the project's own source. `bash`
- * makes that reachable (a curl'd image, a stray build artifact).
- * `ignoreBOM` keeps a leading U+FEFF instead of silently dropping it.
- *
- * Mirrors `decodeUtf8` in aai-cli/_studio.ts — the two snapshot the same
- * shape from opposite ends and their skip rules must agree.
+ * Same walk, caps, skip rules and strict decode `aai push` uses — one
+ * definition in the SDK (`@alexkroman1/aai/workspace-files`), because the two
+ * write the same map from opposite ends and a disagreement between them is a
+ * file silently dropped on one path and resurrected on the other.
  */
-const UTF8_STRICT = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
-function decodeUtf8(buf: Buffer): string | null {
-  try {
-    return UTF8_STRICT.decode(buf);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Snapshot the workspace as a path→content record — the shape builds and
- * the host sync speak. Files over the store's byte cap, and files that
- * aren't valid UTF-8, are skipped with a warning entry so a
- * `bash`-generated artifact can't wedge every sync or corrupt the project.
- */
-export async function snapshotWorkspace(
-  dir: string,
-): Promise<{ files: Record<string, string>; warnings: string[] }> {
-  const files: Record<string, string> = {};
-  const warnings: string[] = [];
-  const paths = await walkWorkspace(dir);
-  if (paths.length > MAX_STUDIO_FILES) {
-    warnings.push(
-      `Workspace has ${paths.length} files; only the first ${MAX_STUDIO_FILES} sync to the project ` +
-        "(delete extras, and keep generated artifacts out of the workspace root).",
-    );
-  }
-  // Concurrent reads, order-stable results: this runs after every mutating
-  // tool step and at every turn settle, so serial stat+read round trips are
-  // hot-path latency.
-  const read = await Promise.all(
-    paths.slice(0, MAX_STUDIO_FILES).map(async (rel) => {
-      const st = await stat(path.join(dir, rel));
-      if (st.size > MAX_STUDIO_FILE_BYTES) {
-        return {
-          rel,
-          content: null,
-          warning: `${rel} is ${st.size} bytes (max ${MAX_STUDIO_FILE_BYTES}) — not synced.`,
-        };
-      }
-      const content = decodeUtf8(await readFile(path.join(dir, rel)));
-      if (content === null) {
-        return {
-          rel,
-          content: null,
-          warning: `${rel} is not valid UTF-8 (binary file?) — not synced.`,
-        };
-      }
-      return { rel, content, warning: null };
-    }),
-  );
-  for (const entry of read) {
-    if (entry.content === null) warnings.push(entry.warning ?? "");
-    else files[entry.rel] = entry.content;
-  }
-  return { files, warnings };
+export function snapshotWorkspace(dir: string): Promise<WorkspaceSnapshot> {
+  return snapshotWorkspaceFiles(dir);
 }
 
 /** Materialize a files record into `dir`, replacing whatever was there. */
