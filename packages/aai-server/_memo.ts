@@ -8,7 +8,12 @@
  * for the process lifetime. One implementation so new call sites can't
  * re-derive the pattern without the reset — used by the Modal spawn context
  * and the harness code/image caches.
+ *
+ * {@link createSingleFlight} below is the same shape with the opposite
+ * retention: it dedupes concurrent loads and keeps nothing once they settle.
  */
+
+import { createOwnedMap } from "@alexkroman1/aai/internal";
 
 export type MemoizedAsync<T> = (() => Promise<T>) & {
   /** Drop the memo so the next call rebuilds (tests, explicit invalidation). */
@@ -29,6 +34,67 @@ export function memoAsync<T>(build: () => Promise<T>): MemoizedAsync<T> {
     memo = null;
   };
   return fn;
+}
+
+export type SingleFlight<T> = {
+  /**
+   * Join the load already running for `key`, or start one. The entry lives
+   * only for the load's own duration — this dedupes the WINDOW, never the
+   * result.
+   */
+  run(key: string, load: () => Promise<T>): Promise<T>;
+  /**
+   * Stop later callers joining the load running for `key`. For a key whose
+   * underlying value may have changed since that load started — the joiner
+   * would otherwise be served a read that predates the change.
+   */
+  drop(key: string): void;
+  /** In-flight count — for tests asserting entries really drain. */
+  size(): number;
+};
+
+/**
+ * Dedupe CONCURRENT loads of the same key, without retaining the result.
+ *
+ * The distinction from {@link keyedMemoAsync} is the whole point: a memo keeps
+ * the settled promise, so it IS the cache. This keeps nothing — it exists for
+ * call sites that already have a cache (a TTL row cache, a byte-budgeted blob
+ * LRU) and are missing only the window between "N callers miss" and "the first
+ * one populates it". On a cold replica that window is where a burst turns into
+ * N identical Postgres reads or N identical Storage downloads, which is the
+ * one case a cache is there for.
+ *
+ * Entries are removed by ownership token rather than by key, so a load
+ * settling after {@link SingleFlight.drop} replaced its entry cannot evict the
+ * successor's.
+ */
+export function createSingleFlight<T>(): SingleFlight<T> {
+  const inFlight = createOwnedMap<string, Promise<T>>();
+  return {
+    run(key, load) {
+      const joined = inFlight.get(key);
+      if (joined) return joined;
+      const pending = load();
+      const release = inFlight.claim(key, pending);
+      // Released OUT OF BAND, so every caller receives the load's own promise
+      // rather than a `.finally` chain over it. That chain costs a microtask
+      // turn per read, and settling one turn later is observable: it pushed
+      // the change-stream handler's blue-green handover past the fixed
+      // 20-microtask drain the sandbox-resolve specs settle events with. A
+      // read on this path should be indistinguishable from an unwrapped one.
+      //
+      // `then(release, release)` rather than `finally(release)` because a
+      // `finally` rejects onward, and nothing awaits THIS promise — it would
+      // be an unhandled rejection on every failed read. The load's rejection
+      // still reaches callers through the promise they were handed.
+      void pending.then(release, release);
+      return pending;
+    },
+    drop(key) {
+      inFlight.delete(key);
+    },
+    size: () => inFlight.size,
+  };
 }
 
 export type KeyedAsyncMemo<T> = ((key: string, build: () => Promise<T>) => Promise<T>) & {

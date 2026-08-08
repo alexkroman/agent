@@ -7,9 +7,11 @@ import { createOrchestrator } from "./orchestrator.ts";
 import type { Sandbox } from "./sandbox.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import {
+  authHeaders,
   createTestOrchestrator,
   createTestStore,
   deployAgent,
+  deployBody,
   TEST_AGENT_CONFIG,
 } from "./test-utils.ts";
 
@@ -131,6 +133,41 @@ describe("handleAgentPage", () => {
     expect(csp).toContain("object-src 'none'");
     const body = await res.text();
     expect(body).toContain("<!DOCTYPE html>");
+  });
+
+  /**
+   * The shell names content-hashed assets that only resolve through the
+   * CURRENT agents row, so a cached one 404s its entry script after the next
+   * deploy — and there is no stale-build reload on this surface to recover.
+   * `no-store` rather than nothing at all: absent a directive and a validator,
+   * a heuristically caching intermediary may reuse the response.
+   */
+  test("the shell is no-store, while its hashed assets stay immutable", async () => {
+    const { fetch } = await createTestOrchestrator();
+    await deployAgent(fetch, "my-agent");
+
+    const shell = await fetch("/my-agent/");
+    expect(shell.headers.get("Cache-Control")).toBe("no-store");
+
+    const asset = await fetch("/my-agent/assets/index.js");
+    expect(asset.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
+  });
+
+  test("the default-client fallback shell is no-store too", async () => {
+    const { fetch } = await createTestOrchestrator();
+    // An agent that shipped no client of its own falls back to aai-ui's
+    // built default client — served from the container image, so a cached
+    // shell outlives its assets across a rollout the same way.
+    await fetch("/deploy", {
+      method: "POST",
+      headers: authHeaders("key1"),
+      body: deployBody({ slug: "bare-agent", clientFiles: {} }),
+    });
+
+    const res = await fetch("/bare-agent/");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(res.headers.get("Content-Security-Policy")).toContain("default-src 'self'");
   });
 });
 

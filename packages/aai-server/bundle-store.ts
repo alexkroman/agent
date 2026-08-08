@@ -23,6 +23,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import { createEpoch } from "@alexkroman1/aai/internal";
 import { LRUCache } from "lru-cache";
 import { createKeyedLock, withLock } from "./_keyed-lock.ts";
+import { createSingleFlight } from "./_memo.ts";
 import { retryOnTransient } from "./_retry.ts";
 import { TtlCache } from "./_ttl-cache.ts";
 import type { AgentRecord, AgentRows } from "./agent-store.ts";
@@ -125,10 +126,36 @@ export function createBundleStore(
    */
   const readEpoch = createEpoch();
 
+  /**
+   * Single-flight over the three reads that miss together.
+   *
+   * Every cache above serves a read that already happened; none of them helps
+   * the burst that arrives while the FIRST read is still in flight, and that
+   * burst is the normal shape of a cold replica. A scale-out container taking
+   * a page load issues one row read plus one blob read per asset the page
+   * references, and a slug's assets are requested by the browser in parallel —
+   * so N requests for one deploy became N identical Postgres reads and N
+   * identical Storage downloads, precisely when the process has the least to
+   * spare.
+   *
+   * The row flights are DROPPED by `invalidate`, and that is what keeps them
+   * safe: a caller arriving after a mutation must not be served a read that
+   * started before it — the same hazard the epoch guard exists for, one step
+   * earlier. (The epoch still guards the cache WRITE; a joiner that predates
+   * the mutation is no worse off than it is today.) Blobs need neither: a
+   * content-addressed key cannot go stale, so joining any in-flight read of it
+   * is always correct.
+   */
+  const rowFlight = createSingleFlight<AgentRecord | null>();
+  const versionFlight = createSingleFlight<number | null>();
+  const blobFlight = createSingleFlight<string | null>();
+
   function invalidate(slug: string): void {
     readEpoch.bump();
     rowCache.delete(slug);
     versionCache.delete(slug);
+    rowFlight.drop(slug);
+    versionFlight.drop(slug);
   }
 
   function readBlob(contentHashHex: string): Promise<string | null> {
@@ -142,23 +169,27 @@ export function createBundleStore(
     });
   }
 
-  async function readBlobCached(contentHashHex: string): Promise<string | null> {
+  function readBlobCached(contentHashHex: string): Promise<string | null> {
     const cached = blobCache.get(contentHashHex);
-    if (cached !== undefined) return cached === BLOB_MISS ? null : cached;
-    const value = await readBlob(contentHashHex);
-    // Cache misses too (BLOB_MISS): a hash referenced by a row either exists
-    // or the deploy that wrote the row failed mid-blob-write — both stable.
-    blobCache.set(contentHashHex, value ?? BLOB_MISS);
-    return value;
+    if (cached !== undefined) return Promise.resolve(cached === BLOB_MISS ? null : cached);
+    return blobFlight.run(contentHashHex, async () => {
+      const value = await readBlob(contentHashHex);
+      // Cache misses too (BLOB_MISS): a hash referenced by a row either exists
+      // or the deploy that wrote the row failed mid-blob-write — both stable.
+      blobCache.set(contentHashHex, value ?? BLOB_MISS);
+      return value;
+    });
   }
 
-  async function getAgentCached(slug: string): Promise<AgentRecord | null> {
+  function getAgentCached(slug: string): Promise<AgentRecord | null> {
     const cached = rowCache.get(slug);
-    if (cached !== undefined) return cached;
-    const gen = readEpoch.current();
-    const value = await agents.get(slug);
-    if (readEpoch.isCurrent(gen)) rowCache.set(slug, value);
-    return value;
+    if (cached !== undefined) return Promise.resolve(cached);
+    return rowFlight.run(slug, async () => {
+      const gen = readEpoch.current();
+      const value = await agents.get(slug);
+      if (readEpoch.isCurrent(gen)) rowCache.set(slug, value);
+      return value;
+    });
   }
 
   /**
@@ -224,13 +255,15 @@ export function createBundleStore(
       return getAgentCached(slug);
     },
 
-    async getAgentVersion(slug) {
+    getAgentVersion(slug) {
       const cached = versionCache.get(slug);
-      if (cached !== undefined) return cached;
-      const gen = readEpoch.current();
-      const value = await agents.getVersion(slug);
-      if (readEpoch.isCurrent(gen)) versionCache.set(slug, value);
-      return value;
+      if (cached !== undefined) return Promise.resolve(cached);
+      return versionFlight.run(slug, async () => {
+        const gen = readEpoch.current();
+        const value = await agents.getVersion(slug);
+        if (readEpoch.isCurrent(gen)) versionCache.set(slug, value);
+        return value;
+      });
     },
 
     async getWorkerCode(slug) {

@@ -422,3 +422,110 @@ describe("cache invalidation fences in-flight row reads", () => {
     expect(await store.getWorkerCode("a")).toBe("v2");
   });
 });
+
+describe("single-flight over cold reads", () => {
+  /**
+   * The caches above only serve a read that already happened. On a cold
+   * replica a burst for one deploy misses together — a page load fetches its
+   * assets in parallel — and each miss used to become its own Postgres read
+   * and its own Storage download.
+   */
+  test("concurrent row misses for one slug issue ONE read", async () => {
+    const agents = createMemoryAgentRows();
+    const store = createBundleStore(createMemoryBlobStorage(), {
+      secrets: createMemorySecretStore(),
+      agents,
+    });
+    await store.putAgent({ ...BASE_BUNDLE, slug: "a" });
+    store.invalidate?.("a");
+
+    const get = vi.spyOn(agents, "get");
+    const rows = await Promise.all([store.getAgent("a"), store.getAgent("a"), store.getAgent("a")]);
+
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(rows.map((r) => r?.slug)).toEqual(["a", "a", "a"]);
+  });
+
+  test("concurrent blob misses for one hash issue ONE download", async () => {
+    const storage = createMemoryBlobStorage();
+    const store = createBundleStore(storage, {
+      secrets: createMemorySecretStore(),
+      agents: createMemoryAgentRows(),
+    });
+    await store.putAgent({
+      ...BASE_BUNDLE,
+      slug: "a",
+      clientFiles: { "index.html": "<html></html>", "assets/index.js": "console.log(1);" },
+    });
+    store.invalidate?.("a");
+
+    const getItem = vi.spyOn(storage, "getItem");
+    const files = await Promise.all([
+      store.getClientFile("a", "assets/index.js"),
+      store.getClientFile("a", "assets/index.js"),
+    ]);
+
+    expect(files).toEqual(["console.log(1);", "console.log(1);"]);
+    expect(getItem).toHaveBeenCalledTimes(1);
+  });
+
+  test("version misses coalesce too", async () => {
+    const agents = createMemoryAgentRows();
+    const store = createBundleStore(createMemoryBlobStorage(), {
+      secrets: createMemorySecretStore(),
+      agents,
+    });
+    await store.putAgent({ ...BASE_BUNDLE, slug: "a" });
+    store.invalidate?.("a");
+
+    const getVersion = vi.spyOn(agents, "getVersion");
+    await Promise.all([store.getAgentVersion("a"), store.getAgentVersion("a")]);
+
+    expect(getVersion).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The dangerous half. Sharing a read is only safe while the row cannot have
+   * changed under it: a caller arriving AFTER a mutation must not be served a
+   * read that started before it — that is the mutation lock's whole premise
+   * (`createMutationLock` invalidates, then the handler reads its merge base).
+   */
+  test("a caller after invalidate() does not join the pre-invalidate read", async () => {
+    const agents = createMemoryAgentRows();
+    const { promise: atFetch, resolve: entered } = Promise.withResolvers<void>();
+    const { promise: held, resolve: release } = Promise.withResolvers<void>();
+    let park = false;
+
+    const originalGet = agents.get.bind(agents);
+    agents.get = async (slug: string) => {
+      const value = await originalGet(slug);
+      if (park) {
+        park = false;
+        entered();
+        await held;
+      }
+      return value;
+    };
+
+    const store = createBundleStore(createMemoryBlobStorage(), {
+      secrets: createMemorySecretStore(),
+      agents,
+    });
+    await store.putAgent({ ...BASE_BUNDLE, slug: "a", worker: "v1" });
+    store.invalidate?.("a");
+
+    // A cold read parks holding the v1 row.
+    park = true;
+    const parked = store.getAgent("a");
+    await atFetch;
+
+    // A deploy lands (its putAgent invalidates), then a fresh caller arrives
+    // while the parked read is STILL in flight.
+    await store.putAgent({ ...BASE_BUNDLE, slug: "a", worker: "v2" });
+    const after = store.getAgent("a");
+
+    release();
+    expect((await parked)?.worker_hash).toBe(contentHash("v1"));
+    expect((await after)?.worker_hash).toBe(contentHash("v2"));
+  });
+});

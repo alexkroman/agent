@@ -110,6 +110,21 @@ describe("createSupabaseBlobStorage", () => {
     expect(call?.headers["x-upsert"]).toBe("true");
   });
 
+  /**
+   * Storage stamps `Cache-Control` at UPLOAD time and never revisits it, so a
+   * blob written today carries whatever was set today — forever. Content
+   * hashes are the keys, so a year is correct by construction; leaving the
+   * client's 3600 default in place would mean re-uploading the bucket the day
+   * anything is served through the CDN.
+   */
+  test("writes a max-age matching the immutability the key already guarantees", async () => {
+    const { store, calls } = storage(
+      () => new Response(JSON.stringify({ Key: "ok" }), { status: 200 }),
+    );
+    await store.setItem("blobs/abc", "worker code");
+    expect(calls[0]?.headers["cache-control"]).toBe("max-age=31536000");
+  });
+
   test("throws when a write fails", async () => {
     const { store } = storage(() => new Response("nope", { status: 503 }));
     await expect(store.setItem("blobs/abc", "code")).rejects.toThrow(
