@@ -8,7 +8,6 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { TEST_AGENT_CONFIG } from "./test-utils.ts";
 
 async function createRealOrchestrator() {
   const { createMemoryBlobStorage } = await import("./blob-storage.ts");
@@ -45,7 +44,6 @@ describe("deploy serves client files", () => {
         "assets/index.js": 'console.log("app");',
       },
       credential_hashes: ["h"],
-      agentConfig: TEST_AGENT_CONFIG,
     });
 
     const htmlRes = await fetch("/rt-agent/");
@@ -68,7 +66,6 @@ describe("deploy serves client files", () => {
       worker: "w",
       clientFiles: { "index.html": "<!DOCTYPE html><html>v1</html>" },
       credential_hashes: ["h"],
-      agentConfig: TEST_AGENT_CONFIG,
     });
 
     const v1 = await fetch("/update-agent/");
@@ -81,7 +78,6 @@ describe("deploy serves client files", () => {
       worker: "w",
       clientFiles: { "index.html": "<!DOCTYPE html><html>v2</html>" },
       credential_hashes: ["h"],
-      agentConfig: TEST_AGENT_CONFIG,
     });
 
     const v2 = await fetch("/update-agent/");

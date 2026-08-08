@@ -43,24 +43,31 @@ function stripSqlComments(sql: string): string {
   return sql.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--.*$/gm, "");
 }
 
+/**
+ * Every platform source file as `[repo-relative path, source]`, comments
+ * STRIPPED: several modules discuss tables the platform used to have
+ * (`slug_locks`, `slug_epochs`) as part of explaining why they are gone, and
+ * prose is not a query.
+ */
+function platformSources(): [path: string, source: string][] {
+  const dirs = ["packages/aai-server", "packages/aai-studio-server"];
+  return dirs.flatMap((dir) =>
+    readdirSync(path.join(repoRoot, dir))
+      .filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts"))
+      .map((name): [string, string] => [
+        `${dir}/${name}`,
+        stripComments(readFileSync(path.join(repoRoot, dir, name), "utf-8")),
+      ]),
+  );
+}
+
 /** Every `aai_platform.<table>` the platform's own source queries. */
 function referencedTables(): Set<string> {
-  const dirs = [
-    path.join(repoRoot, "packages/aai-server"),
-    path.join(repoRoot, "packages/aai-studio-server"),
-  ];
   const tables = new Set<string>();
-  for (const dir of dirs) {
-    for (const name of readdirSync(dir)) {
-      if (!name.endsWith(".ts") || name.endsWith(".test.ts")) continue;
-      // Comments are stripped first: several modules discuss tables the
-      // platform used to have (`slug_locks`, `slug_epochs`) as part of
-      // explaining why they are gone, and prose is not a query.
-      const source = stripComments(readFileSync(path.join(dir, name), "utf-8"));
-      for (const match of source.matchAll(/aai_platform\.([a-z_]+)/g)) {
-        const table = match[1];
-        if (table) tables.add(table);
-      }
+  for (const [, source] of platformSources()) {
+    for (const match of source.matchAll(/aai_platform\.([a-z_]+)/g)) {
+      const table = match[1];
+      if (table) tables.add(table);
     }
   }
   return tables;
@@ -164,6 +171,56 @@ describe("platform schema migrations", () => {
       // no policies declared every platform query would return nothing. The
       // trap is that it reads like the stricter, safer option.
       expect(stripSqlComments(migrationSql())).not.toMatch(/force\s+row\s+level\s+security/i);
+    });
+  });
+
+  /**
+   * Columns that are declared and deliberately no longer written — the
+   * EXPAND half of an expand/contract, waiting on their `drop column`.
+   *
+   * The waiting is the problem this guards. A contract migration cannot ride
+   * the same release as the expand: `supabase db push` runs BEFORE the
+   * deploy and Modal's rolling strategy keeps the previous build serving
+   * beside the new one, so a column dropped in the same step is a column the
+   * still-serving old containers name in their insert — every deploy through
+   * one fails for the length of the rollout. So the drop is owed to a LATER
+   * release, and an owed thing recorded only in prose is an owed thing
+   * forgotten: the whole reason `agents.config` reached this state is that
+   * the changes retiring its consumers had no reason to revisit it.
+   *
+   * Each entry is checked two ways, and the second is what makes the ledger
+   * self-clearing: the column must still be declared, so once the drop
+   * lands, the entry has to be deleted or this fails. Removing the last
+   * entry is the point — this is not a list anything should live on.
+   */
+  const RETIRED_COLUMNS: { table: string; column: string; why: string }[] = [
+    {
+      table: "agents",
+      column: "config",
+      why: "the platform stores no agent config (20260808120000_agents_config_default.sql)",
+    },
+  ];
+
+  describe.each(RETIRED_COLUMNS)("retired column $table.$column", ({ table, column, why }) => {
+    test(`is still declared — drop it and delete this entry (${why})`, () => {
+      expect(stripSqlComments(migrationSql())).toMatch(
+        new RegExp(`create table if not exists aai_platform\\.${table}[^;]*\\b${column}\\b`),
+      );
+    });
+
+    test("is written by no platform source file", () => {
+      // A write reintroduced here is invisible until the drop finally lands,
+      // at which point it fails in production rather than in CI. Scanning
+      // whole files rather than parsing SQL: these modules are the platform's
+      // own, comments are stripped, and a false positive is cheap to resolve
+      // (rename the local) next to a missed write that breaks a deploy. Only
+      // files that name the TABLE are scanned — `config` is a common word and
+      // every module has a ServiceConfig somewhere.
+      const offenders = platformSources()
+        .filter(([, source]) => source.includes(`aai_platform.${table}`))
+        .filter(([, source]) => new RegExp(`\\b${column}\\b`).test(source))
+        .map(([file]) => file);
+      expect(offenders).toEqual([]);
     });
   });
 

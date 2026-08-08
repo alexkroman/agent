@@ -35,7 +35,7 @@ import { createAgentClientConfigHandler } from "./client-config-handler.ts";
 import { resolveHarnessPath } from "./constants.ts";
 import type { HonoEnv } from "./context.ts";
 import { handleDelete } from "./delete.ts";
-import { type BundleInspector, handleDeployNew } from "./deploy.ts";
+import { handleDeployNew } from "./deploy.ts";
 import { gzipRequestMw, MAX_INFLATED_BODY_BYTES } from "./gzip-request.ts";
 import { authMw, existingOwnerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
@@ -44,7 +44,7 @@ import { createMutationLock, localSlugLock, type SlugMutationLock } from "./plat
 import type { SandboxDirectory } from "./sandbox-directory.ts";
 import { type ResolveSandboxOpts, watchAgentInvalidation } from "./sandbox-resolve.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
-import { currentHarnessImageTag, describeBundle } from "./sandbox-vm.ts";
+import { currentHarnessImageTag } from "./sandbox-vm.ts";
 import {
   DeployBodySchema,
   SecretKeySchema,
@@ -105,11 +105,6 @@ export type OrchestratorOpts = {
    */
   guestConfigFetch?: typeof globalThis.fetch;
   /**
-   * Extracts an agent config from an uploaded worker bundle. Defaults to
-   * sandboxed `describeBundle`; injectable so tests don't need Modal.
-   */
-  inspect?: BundleInspector;
-  /**
    * True once shutdown has begun. Fails `/health` so the platform's proxy
    * stops routing here. (Upgrades on `/:slug/websocket` are pure handshake
    * redirects to the sandbox — nothing long-lived starts here, so there is
@@ -151,13 +146,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     onError: (c) => c.json({ error: "Request body too large" }, 413),
   });
 
-  // Config extraction loads the uploaded worker in a throwaway guest
-  // sandbox and reads its `__aaiConfig` self-description — tenant code
-  // never runs on the host.
-  const inspect: BundleInspector =
-    opts.inspect ??
-    ((workerCode) => describeBundle({ harnessPath: resolveHarnessPath(), workerCode }));
-
   // Deploys record the harness image they ran against (per-deploy image
   // pinning — see currentHarnessImageTag in sandbox-vm.ts).
   const harnessImageTag = (): Promise<string | null> =>
@@ -169,7 +157,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     deployBodyLimit,
     gzipRequestMw,
     zValidator("json", DeployBodySchema),
-    (c) => handleDeployNew(c, inspect, harnessImageTag),
+    (c) => handleDeployNew(c, harnessImageTag),
   );
 
   // Bare-slug redirect — registered before sub-router so it takes priority.

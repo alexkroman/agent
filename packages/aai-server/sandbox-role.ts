@@ -27,9 +27,7 @@ export type SandboxRole =
   /** A studio project's coding-agent session sandbox (chat + tools). */
   | "studio"
   /** An ephemeral sandbox spawned for one studio Publish, torn down after. */
-  | "studio-publish"
-  /** A throwaway bundle-inspection sandbox (`describeBundle`). */
-  | "inspect";
+  | "studio-publish";
 
 // `PREVIEW_SLUG_SUFFIX` lives in the SDK's slug contract
 // (`@alexkroman1/aai/utils`) rather than here: the CLI needs it too — to
@@ -49,17 +47,19 @@ export type SpawnIdentity = {
    * Fleet-wide Modal sandbox NAME, when this spawn must be unique across
    * replicas (see sandbox-directory.ts). Modal refuses a duplicate, so two
    * replicas racing to spawn for the same thing cannot both succeed. Omitted
-   * by spawns that are legitimately per-caller (bundle inspection).
+   * by spawns that are legitimately per-caller (an ephemeral Publish).
    */
   name?: string | undefined;
 };
 
 /**
  * Resolve the effective role for a spawn: an explicit role wins, else it is
- * inferred from the slug (bundle inspection passes no slug).
+ * inferred from the slug. A spawn carrying neither is a control-channel
+ * guest, which is a studio one — the only other roleless spawn was bundle
+ * inspection, and the platform no longer inspects bundles.
  */
 export function resolveSandboxRole(opts: SpawnIdentity): SandboxRole {
-  return opts.role ?? (opts.slug ? roleForSlug(opts.slug) : "inspect");
+  return opts.role ?? (opts.slug ? roleForSlug(opts.slug) : "studio");
 }
 
 /** The tag set attached to every guest sandbox at creation. */

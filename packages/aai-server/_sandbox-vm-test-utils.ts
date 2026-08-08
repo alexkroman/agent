@@ -84,11 +84,6 @@ export function inlineWorker(code = 'export default { name: "test" };'): WorkerS
   return { kind: "inline", code, sha256: hash("sha256", code) };
 }
 
-/** A `url` {@link WorkerSource} — the guest fetches its own bundle. */
-export function urlWorker(url = "https://blobs.example/signed", sha256 = "deadbeef"): WorkerSource {
-  return { kind: "url", url, sha256 };
-}
-
 export function baseOpts(overrides?: Partial<AgentSpawnOptions>): AgentSpawnOptions {
   return {
     slug: "test-agent",

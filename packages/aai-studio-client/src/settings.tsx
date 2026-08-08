@@ -42,13 +42,6 @@ type SettingsPaneProps = {
   project: string;
   /** The project's published slug; undefined until the first publish. */
   slug: string | undefined;
-  /**
-   * The project's auto-deployed preview slug, when one exists. Secrets are
-   * MIRRORED to it best-effort so the preview agent runs with the same
-   * third-party keys as production — the pane itself reads/attaches to the
-   * production slug.
-   */
-  previewSlug?: string | undefined;
   /** Post a note into the chat so the coding agent knows what changed. */
   onNotifyChat: (text: string) => void;
   /** Delete the project (workspace + chat). The app navigates home after. */
@@ -60,7 +53,6 @@ export function SettingsPane({
   bearer,
   project,
   slug,
-  previewSlug,
   onNotifyChat,
   onDeleteProject,
   deleting,
@@ -70,29 +62,23 @@ export function SettingsPane({
   /** Managed key names the last save refused (see PLATFORM_MANAGED_SECRETS). */
   const [rejected, setRejected] = useState<string[]>([]);
 
+  // Keyed by PROJECT: one secret set spans both of its deployed agents, and
+  // the server writes both (studio-secrets.ts). Still gated on a published
+  // slug — a project that has deployed nothing has no agent to carry a
+  // secret, so the panel keeps its publish-first gate rather than accepting
+  // a write that would reach no one.
   const secrets = useQuery({
-    queryKey: queryKeys.secrets(slug),
-    queryFn: () => api.listSecrets(bearer, slug as string),
+    queryKey: queryKeys.secrets(project),
+    queryFn: () => api.listSecrets(bearer, project),
     enabled: slug != null,
   });
 
   const invalidate = () => {
-    if (slug) void queryClient.invalidateQueries({ queryKey: queryKeys.secrets(slug) });
-  };
-
-  // Best-effort mirror to the preview agent: a missing preview (not yet
-  // deployed, or the preview slug 404s) must never fail the real write.
-  const mirrorToPreview = async (fn: (mirror: string) => Promise<unknown>): Promise<void> => {
-    if (!previewSlug || previewSlug === slug) return;
-    await fn(previewSlug).catch(() => undefined);
+    void queryClient.invalidateQueries({ queryKey: queryKeys.secrets(project) });
   };
 
   const save = useMutation({
-    mutationFn: async (updates: Record<string, string>) => {
-      const result = await api.putSecrets(bearer, slug as string, updates);
-      await mirrorToPreview((mirror) => api.putSecrets(bearer, mirror, updates));
-      return result;
-    },
+    mutationFn: (updates: Record<string, string>) => api.putSecrets(bearer, project, updates),
     onSuccess: (_data, updates) => {
       invalidate();
       setDraft("");
@@ -106,11 +92,7 @@ export function SettingsPane({
   });
 
   const remove = useMutation({
-    mutationFn: async (name: string) => {
-      const result = await api.deleteSecret(bearer, slug as string, name);
-      await mirrorToPreview((mirror) => api.deleteSecret(bearer, mirror, name));
-      return result;
-    },
+    mutationFn: (name: string) => api.deleteSecret(bearer, project, name),
     onSuccess: (_data, name) => {
       invalidate();
       onNotifyChat(`I deleted the secret ${name} from the deployed agent via the Secrets panel.`);

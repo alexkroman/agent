@@ -364,23 +364,28 @@ export const api = {
       method: "DELETE",
     }),
 
-  // Deployed-agent secrets — the same platform routes `aai secret` uses.
+  // PROJECT secrets — written to both of the project's deployed agents
+  // (production and preview) by the server. This panel used to PUT the
+  // production slug's platform route and then mirror to the preview one
+  // itself, which made "a project is two agents" a fact only this client
+  // knew: `aai secret put` and `aai publish`'s .env sync reached production
+  // alone. The per-slug routes are still the platform primitive underneath.
 
-  listSecrets: (key: string, slug: string) =>
-    agentRequest<{ vars: string[] }>(key, `/${encodeURIComponent(slug)}/secret`).then(
+  listSecrets: (key: string, project: string) =>
+    request<{ vars: string[] }>(key, `/projects/${encodeURIComponent(project)}/secret`).then(
       (r) => r.vars,
     ),
 
-  putSecrets: (key: string, slug: string, updates: Record<string, string>) =>
-    agentRequest<{ ok: true; keys: string[] }>(key, `/${encodeURIComponent(slug)}/secret`, {
+  putSecrets: (key: string, project: string, updates: Record<string, string>) =>
+    request<{ vars: string[] }>(key, `/projects/${encodeURIComponent(project)}/secret`, {
       method: "PUT",
       body: JSON.stringify(updates),
     }),
 
-  deleteSecret: (key: string, slug: string, name: string) =>
-    agentRequest<{ ok: true }>(
+  deleteSecret: (key: string, project: string, name: string) =>
+    request<{ vars: string[] }>(
       key,
-      `/${encodeURIComponent(slug)}/secret/${encodeURIComponent(name)}`,
+      `/projects/${encodeURIComponent(project)}/secret/${encodeURIComponent(name)}`,
       { method: "DELETE" },
     ),
 };

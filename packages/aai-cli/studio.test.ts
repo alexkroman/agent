@@ -61,6 +61,15 @@ describe("projectNameFromDir", () => {
     expect(projectNameFromDir("/x/!!!")).toBeNull();
   });
 
+  test("normalizes the way the studio does, transliteration included", () => {
+    // The platform's own slugifier, not a local strip — a regex over
+    // `[^a-z0-9-_]` reduces this directory to `caf-ordering` while typing
+    // the same name into the studio gives `cafe-ordering`, so one human
+    // name produced two projects depending on which path created it.
+    expect(projectNameFromDir("/x/Café Ordering")).toBe("cafe-ordering");
+    expect(projectNameFromDir("/x/my_agent")).toBe("my-agent");
+  });
+
   test("refuses a `-preview` name, which the studio's reaper owns", () => {
     // Publishing such a project would claim `<name>` as a production slug
     // ending in `-preview` — swept hourly by the orphan-preview job, taking

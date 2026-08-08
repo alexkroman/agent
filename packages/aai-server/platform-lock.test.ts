@@ -14,7 +14,6 @@ import {
   SlugLockTimeoutError,
 } from "./platform-lock.ts";
 import { createMemorySecretStore } from "./secret-store.ts";
-import { TEST_AGENT_CONFIG } from "./test-utils.ts";
 
 /** The Postgres error a statement that hit `lock_timeout` raises. */
 class LockTimeout extends Error {
@@ -288,7 +287,6 @@ describe("createMutationLock", () => {
       worker: "w",
       clientFiles: {},
       credential_hashes: ["h"],
-      agentConfig: TEST_AGENT_CONFIG,
     });
 
     const lockA = createMutationLock(localSlugLock, a);

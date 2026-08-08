@@ -1,10 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 // Zod schemas + limits for the browser studio (coding agent) HTTP surface.
 
+import { slugifyName } from "@alexkroman1/aai/slugify";
 import { MAX_SLUG_LENGTH } from "@alexkroman1/aai/utils";
-import slugifyLib from "@sindresorhus/slugify";
 import { RESERVED_SLUGS, SafePathSchema, VALID_SLUG_RE } from "aai-server/schemas";
-import { slugifyBase } from "aai-server/slug-generate";
 import { z } from "zod";
 import { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_MESSAGE_BYTES } from "./studio-limits.ts";
 
@@ -32,12 +31,12 @@ const MAX_TYPED_PROJECT_NAME = 100;
  *
  * People type "My Agent"; the name doubles as the deploy slug and appears in
  * the agent's URL, so it has to reduce to `VALID_SLUG_RE`. Built on the
- * platform's shared `slugifyBase` (see slug-generate.ts for the
- * transliteration/`decamelize` posture) so typed project names and
- * config-derived deploy-slug bases can't normalize differently.
+ * platform's shared `slugifyName` (`@alexkroman1/aai/slugify` — see it for
+ * the transliteration/`decamelize` posture) so a typed project name, a
+ * prompt-derived base, and a CLI directory name can't normalize differently.
  */
 function slugifyProjectName(input: string): string {
-  return slugifyBase(input, MAX_SLUG_LENGTH);
+  return slugifyName(input, MAX_SLUG_LENGTH);
 }
 
 /** Upper bound on the prompt excerpt a generated name derives from. */
@@ -56,7 +55,7 @@ const MAX_PROMPT_BASE = 30;
  * Empty in, empty out — the generator falls back to word-triple names.
  */
 export function projectBaseFromPrompt(prompt: string): string {
-  const words = slugifyLib(prompt.slice(0, MAX_NAME_PROMPT), { decamelize: false })
+  const words = slugifyName(prompt.slice(0, MAX_NAME_PROMPT), MAX_NAME_PROMPT)
     .split("-")
     .filter((word) => word.length > 0 && !PROMPT_FILLER_WORDS.has(word));
   let base = "";

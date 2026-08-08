@@ -48,14 +48,6 @@ export function makeSlot(overrides?: Partial<AgentSlot>): AgentSlot {
   };
 }
 
-/** Default agent config for tests. */
-export const TEST_AGENT_CONFIG = {
-  name: "test-agent",
-  systemPrompt: "Test",
-  greeting: "",
-  toolSchemas: [],
-};
-
 export function deployBody(overrides?: Record<string, unknown>): string {
   return JSON.stringify({
     env: VALID_ENV,
@@ -93,9 +85,6 @@ export async function createTestOrchestrator(
     slots: createSlotCache(),
     store,
     events: memoryEvents.events,
-    // The real default spins a Modal sandbox to read the worker's
-    // `__aaiConfig` self-description; tests answer with the standard config.
-    inspect: async () => TEST_AGENT_CONFIG,
     ...overrides,
   });
   const fetch: TestFetch = async (input, init) => app.request(input, init);

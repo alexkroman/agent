@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Export surface snapshot tests for all ten aai subpath exports.
+ * Export surface snapshot tests for every aai subpath export.
  *
  * These tests catch accidental export additions or removals. If a snapshot
  * breaks, it signals a potentially breaking API change that should be
@@ -37,8 +37,11 @@ const SUBPATH_IMPORTS: ReadonlyArray<readonly [label: string, load: () => Promis
   ["@alexkroman1/aai/tools", () => import("@alexkroman1/aai/tools")],
   // Published and importable, so a leak here is still a leak — being
   // "not public API, not semver-covered" is a promise to consumers, not a
-  // reason to leave the surface unpinned.
+  // reason to leave the surface unpinned. Same for `/workspace-files`, which
+  // exists for the workspace packages (CLI push, guest sync, platform
+  // validation) rather than for SDK users.
   ["@alexkroman1/aai/internal", () => import("@alexkroman1/aai/internal")],
+  ["@alexkroman1/aai/workspace-files", () => import("@alexkroman1/aai/workspace-files")],
 ];
 
 describe("export surface stability", { timeout: IMPORT_TIMEOUT_MS }, () => {

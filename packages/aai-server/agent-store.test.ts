@@ -2,12 +2,10 @@
 import { describe, expect, test } from "vitest";
 import { createMemoryAgentRows, createPgAgentRows } from "./agent-store.ts";
 import type { SqlExec } from "./secret-store.ts";
-import { TEST_AGENT_CONFIG } from "./test-utils.ts";
 
 const RECORD = {
   slug: "my-agent",
   credential_hashes: ["h1"],
-  config: { ...TEST_AGENT_CONFIG },
   worker_hash: "abc123",
   client_files: { "index.html": "def456" },
 };
@@ -57,9 +55,8 @@ describe("createPgAgentRows", () => {
       rows.set(slug, {
         slug,
         credential_hashes: params[1],
-        config: params[2],
-        worker_hash: params[3],
-        client_files: params[4],
+        worker_hash: params[2],
+        client_files: params[3],
         version: existing ? Number(existing.version) + 1 : 1,
       });
     }
@@ -70,7 +67,6 @@ describe("createPgAgentRows", () => {
       return {
         ...row,
         credential_hashes: JSON.parse(row.credential_hashes as string),
-        config: JSON.parse(row.config as string),
         client_files: JSON.parse(row.client_files as string),
       };
     }
@@ -104,7 +100,6 @@ describe("createPgAgentRows", () => {
       const record = await store.get("my-agent");
       expect(record?.slug).toBe("my-agent");
       expect(record?.credential_hashes).toEqual(["h1"]);
-      expect(record?.config.name).toBe(TEST_AGENT_CONFIG.name);
       expect(record?.client_files).toEqual({ "index.html": "def456" });
       expect(record?.version).toBe(1);
 
@@ -130,52 +125,13 @@ describe("createPgAgentRows", () => {
   test("a corrupt row throws rather than reading as missing", async () => {
     // "Missing" reaches verifySlugOwner as "unclaimed" — the one state where
     // any API key may claim the slug — so a corrupt row must fail closed.
-    // The config itself is FULLY opaque (no field is asserted — the guest is
-    // the only interpreter), so "corrupt" means not-even-an-object.
+    // The row carries no agent description at all now, so the corruptible
+    // columns are the structural ones the host really reads.
     const { sql, rows } = fakeSql();
     const store = createPgAgentRows(sql);
     await store.put(RECORD);
     const row = rows.get("my-agent");
-    if (row) row.config = JSON.stringify("not an object");
+    if (row) row.credential_hashes = JSON.stringify("not an array");
     await expect(store.get("my-agent")).rejects.toThrow("Corrupt agent record");
-  });
-
-  test("a config with arbitrary unknown fields reads back untouched", async () => {
-    // No host-side reader is left — even name/greeting come from the guest's
-    // own /client-config — so reads must assert nothing about the shape.
-    const { sql } = fakeSql();
-    const store = createPgAgentRows(sql);
-    const config = { anything: { deeply: ["nested"] }, mode: 42 };
-    await store.put({ ...RECORD, config });
-    expect((await store.get("my-agent"))?.config).toEqual(config);
-  });
-
-  // Stored configs are validated strictly ONCE, at deploy time. Reads must
-  // never re-run the current IsolateConfigSchema: a schema tightening would
-  // silently turn every previously-valid deployed agent into a 404. Only
-  // what the host actually consumes (name, greeting) is asserted; the rest —
-  // including shapes today's rules would reject — passes through untouched.
-  test("a stored config the CURRENT strict schema would reject still loads", async () => {
-    const { sql } = fakeSql();
-    const store = createPgAgentRows(sql);
-    await store.put({
-      ...RECORD,
-      config: {
-        name: "old-agent",
-        greeting: "hi",
-        // An incomplete provider triple — IsolateConfigSchema rejects this
-        // ("stt, llm, and tts must be set together"), but a pre-tightening
-        // deploy could legitimately have stored it.
-        stt: { kind: "assemblyai", options: {} },
-        // A field no current schema knows.
-        someFutureOrRemovedField: { nested: true },
-      },
-    });
-    const record = await store.get("my-agent");
-    expect(record).not.toBeNull();
-    expect(record?.config.name).toBe("old-agent");
-    expect(record?.config.greeting).toBe("hi");
-    // Opaque passthrough: unknown/legacy fields survive the round trip.
-    expect(record?.config.someFutureOrRemovedField).toEqual({ nested: true });
   });
 });

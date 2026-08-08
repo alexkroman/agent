@@ -177,19 +177,21 @@ describe("api", () => {
     expect(fetchMock.mock.calls).toHaveLength(2);
   });
 
-  test("secret endpoints hit the platform's own agent routes", async () => {
+  test("secret endpoints hit the PROJECT routes, which write both agents", async () => {
     const fetchMock = stubFetch(() => jsonResponse({ ok: true, vars: ["A"], keys: ["A"] }));
-    await api.listSecrets("k", "my-agent");
-    await api.putSecrets("k", "my-agent", { OPENAI_API_KEY: "x" });
-    await api.deleteSecret("k", "my-agent", "OPENAI_API_KEY");
+    await api.listSecrets("k", "my-project");
+    await api.putSecrets("k", "my-project", { OPENAI_API_KEY: "x" });
+    await api.deleteSecret("k", "my-project", "OPENAI_API_KEY");
     const calls = fetchMock.mock.calls.map((c) => {
       const [url, init] = c as [string, RequestInit | undefined];
       return `${init?.method ?? "GET"} ${url}`;
     });
+    // The per-slug routes stay the platform primitive; this client no longer
+    // knows a project has two agents (see studio-project-slugs.ts).
     expect(calls).toEqual([
-      "GET /my-agent/secret",
-      "PUT /my-agent/secret",
-      "DELETE /my-agent/secret/OPENAI_API_KEY",
+      "GET /studio/projects/my-project/secret",
+      "PUT /studio/projects/my-project/secret",
+      "DELETE /studio/projects/my-project/secret/OPENAI_API_KEY",
     ]);
     // Bearer-authenticated like the studio project routes.
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];

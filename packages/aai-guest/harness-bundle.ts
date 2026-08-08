@@ -47,7 +47,7 @@ export type HarnessState = {
   /**
    * The live runtime, created lazily on the first `/websocket` session upgrade —
    * NEVER at load: runtime construction resolves provider
-   * credentials, and inspection loads (describeBundle, the studio) carry an
+   * credentials, and an inspection load (the studio's test_agent) carries an
    * empty env that must not fail the load.
    */
   runtime: GuestRuntime | null;
@@ -77,9 +77,10 @@ export function emptyHarnessState(): HarnessState {
  * Load an agent ESM bundle delivered as raw JS source code.
  *
  * Bundles export `__aaiConfig` — the agent config extracted *inside* the
- * bundle (by `@alexkroman1/aai/manifest` helpers bundled in). Returning it
- * lets the host obtain the config without ever evaluating user code outside
- * the sandbox.
+ * bundle (by `@alexkroman1/aai/manifest` helpers bundled in). The studio's
+ * `test_agent` reports it back to the coding agent; the platform never asks
+ * for it (see "The platform stores no agent config" in
+ * packages/aai-server/CLAUDE.md).
  *
  * Bundles also export `__aaiCreateRuntime` — the factory over THEIR OWN
  * bundled SDK's `createRuntime` (see the CLI's worker wrapper). The harness

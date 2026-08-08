@@ -13,6 +13,36 @@ import { type ApiRequestOptions, apiRequest, HINT_NOT_DEPLOYED } from "./_api-cl
  * so tests can mock `_agent.ts`/`_api-client.ts` while this composition
  * stays real — an intra-module call would bypass those mocks.
  */
+/**
+ * A SECRET request, routed to the project when this directory is linked to
+ * one and to the bare slug otherwise.
+ *
+ * A studio project deploys TWO agents — production and preview — and a
+ * secret has to reach both or the preview fails at its first session while
+ * production works. The project route fans out server-side
+ * (`aai-studio-server/studio-secrets.ts`); this CLI used to write the
+ * production slug alone, so a key set here was missing from the preview the
+ * user's own `aai publish` had created. An unlinked directory has one agent
+ * and keeps the per-slug route, which is the platform primitive underneath.
+ */
+export async function secretRequest<T = unknown>(
+  cwd: string,
+  resourcePath: string,
+  init: Pick<ApiRequestOptions, "method" | "body" | "action">,
+  server?: string,
+): Promise<{ data: T; target: string }> {
+  const { serverUrl, slug, apiKey, studioProject } = await getServerInfo(cwd, server);
+  const url = studioProject
+    ? `${serverUrl}/studio/projects/${encodeURIComponent(studioProject)}/secret${resourcePath}`
+    : `${serverUrl}/${slug}/secret${resourcePath}`;
+  const data = await apiRequest<T>(url, {
+    ...init,
+    apiKey,
+    hints: { 404: HINT_NOT_DEPLOYED },
+  });
+  return { data, target: studioProject ?? slug };
+}
+
 export async function slugRequest<T = unknown>(
   cwd: string,
   resourcePath: string,

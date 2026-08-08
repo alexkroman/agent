@@ -1,7 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import { deployAgentBundle } from "./deploy.ts";
-import type { IsolateConfig } from "./rpc-schemas.ts";
 import { hashApiKey, verifyApiKeyHash } from "./secrets.ts";
 import {
   authHeaders,
@@ -9,7 +8,6 @@ import {
   createTestStore,
   deployAgent,
   deployBody,
-  TEST_AGENT_CONFIG,
   VALID_ENV,
 } from "./test-utils.ts";
 
@@ -56,7 +54,6 @@ describe("POST /deploy body handling", () => {
         env: { MY_SECRET: "value", ...VALID_ENV },
         worker: esmWorker,
         clientFiles: { "index.html": "<html></html>" },
-        agentConfig: TEST_AGENT_CONFIG,
       }),
     });
     expect(res.status).toBe(200);
@@ -102,7 +99,6 @@ describe("POST /deploy body handling", () => {
       worker: "w",
       clientFiles: { "index.html": "<html></html>" },
       credential_hashes: [await hashApiKey("key1")],
-      agentConfig: TEST_AGENT_CONFIG,
     });
     const res = await fetch("/deploy", {
       method: "POST",
@@ -112,7 +108,6 @@ describe("POST /deploy body handling", () => {
         worker:
           'export default { name: "pre-stored", systemPrompt: "Test", greeting: "", maxSteps: 1, tools: {} };',
         clientFiles: { "index.html": "<html></html>" },
-        agentConfig: TEST_AGENT_CONFIG,
       }),
     });
     expect(res.status).toBe(200);
@@ -137,7 +132,6 @@ describe("deployAgentBundle env merge", () => {
         apiKey: "key1",
         worker: "w",
         clientFiles: {},
-        agentConfig: TEST_AGENT_CONFIG,
         ...(params.env && { env: params.env }),
       },
     );
@@ -151,7 +145,6 @@ describe("deployAgentBundle env merge", () => {
       worker: "w",
       clientFiles: {},
       credential_hashes: [await hashApiKey("key1")],
-      agentConfig: TEST_AGENT_CONFIG,
     });
 
     await deployWith({ store, env: { ASSEMBLYAI_API_KEY: "explicit" } });
@@ -167,7 +160,6 @@ describe("deployAgentBundle env merge", () => {
       worker: "w",
       clientFiles: {},
       credential_hashes: [await hashApiKey("key1")],
-      agentConfig: TEST_AGENT_CONFIG,
     });
 
     await deployWith({ store, env: { ASSEMBLYAI_API_KEY: "explicit" } });
@@ -187,7 +179,6 @@ describe("deployAgentBundle ownership resolution", () => {
     worker: "w",
     clientFiles: {},
     env: VALID_ENV,
-    agentConfig: TEST_AGENT_CONFIG,
   };
 
   test("unclaimed slug: derives and stores a hash that verifies the key", async () => {
@@ -230,7 +221,6 @@ describe("deployAgentBundle ownership resolution", () => {
       worker: "w",
       clientFiles: {},
       credential_hashes: [keyHash],
-      agentConfig: TEST_AGENT_CONFIG,
     });
     const outcome = await deployAgentBundle({ store }, { ...baseParams, slug: "owned-agent" });
     expect(outcome.ok).toBe(true);
@@ -246,7 +236,6 @@ describe("deployAgentBundle ownership resolution", () => {
       worker: "w",
       clientFiles: {},
       credential_hashes: [ownerHash],
-      agentConfig: TEST_AGENT_CONFIG,
     });
     const outcome = await deployAgentBundle(
       { store },
@@ -274,7 +263,6 @@ describe("deployAgentBundle preview-slug guard", () => {
     worker: "w",
     clientFiles: {},
     env: VALID_ENV,
-    agentConfig: TEST_AGENT_CONFIG,
   };
 
   test("a requested -preview slug is rejected with a 400", async () => {
@@ -323,13 +311,10 @@ describe("POST /deploy", () => {
       body: deployBody(),
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { ok: boolean; slug: string };
-    expect(body.ok).toBe(true);
-    expect(body.slug).toBeTruthy();
-    // Server-generated slugs carry the agent's own display name (from its
-    // bundle-described config — deployBody's worker is named "test-agent")
-    // plus the shared random suffix (slug-generate.ts).
-    expect(body.slug).toMatch(/^test-agent-[a-z0-9]{6}$/);
+    const body = (await res.json()) as { slug: string };
+    // Words from human-id plus the shared random suffix (slug-generate.ts) —
+    // nothing about the bundle reaches the name.
+    expect(body.slug).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*-[a-z0-9]{6}$/);
   });
 
   test("uses slug from body when provided", async () => {
@@ -404,70 +389,33 @@ describe("POST /deploy", () => {
     expect(afterRecord?.credential_hashes).toEqual(originalHashes);
   });
 
-  test("stores the config extracted from the worker bundle, ignoring any body config", async () => {
-    const agentConfig: IsolateConfig = {
-      name: "config-agent",
-      systemPrompt: "Be helpful",
-      toolSchemas: [],
-    };
-    const { fetch, store } = await createTestOrchestrator({
-      inspect: async () => agentConfig,
-    });
-
+  test("a generated slug is human-id words plus a suffix", async () => {
+    // The platform derives nothing from the bundle, so a slugless deploy
+    // gets random words rather than the agent's name.
+    const { fetch } = await createTestOrchestrator();
     const res = await fetch("/deploy", {
       method: "POST",
       headers: authHeaders(),
-      // A client-supplied agentConfig must be ignored — the sandbox
-      // extraction is the only source.
+      body: deployBody(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { slug: string };
+    expect(body.slug).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*-[a-z0-9]{6}$/);
+  });
+
+  test("a body-supplied agentConfig is ignored, not stored", async () => {
+    // The platform records no description of the bundle at all, so there is
+    // nothing for a client-sent config to poison.
+    const { fetch, store } = await createTestOrchestrator();
+    const res = await fetch("/deploy", {
+      method: "POST",
+      headers: authHeaders(),
       body: deployBody({ slug: "config-test", agentConfig: { name: "attacker-config" } }),
     });
     expect(res.status).toBe(200);
-
     const stored = await store.getAgent("config-test");
-    expect(stored?.config).toEqual(agentConfig);
-  });
-
-  test("rejects a worker whose bundle does not self-describe", async () => {
-    const { fetch } = await createTestOrchestrator({ inspect: async () => undefined });
-    const res = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders(),
-      body: deployBody({ slug: "no-config" }),
-    });
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toContain("does not self-describe");
-  });
-
-  test("rejects a worker bundle that fails to load in the sandbox", async () => {
-    const { fetch } = await createTestOrchestrator({
-      inspect: async () => {
-        throw new Error("boom at import time");
-      },
-    });
-    const res = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders(),
-      body: deployBody({ slug: "bad-bundle" }),
-    });
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toContain("failed to load");
-    expect(body.error).toContain("boom at import time");
-  });
-
-  test("rejects a worker whose extracted config is invalid", async () => {
-    const { fetch } = await createTestOrchestrator({
-      inspect: async () => ({ systemPrompt: 42 }),
-    });
-    const res = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders(),
-      body: deployBody({ slug: "invalid-config" }),
-    });
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toContain("Invalid agent config");
+    expect(stored).not.toBeNull();
+    expect(stored).not.toHaveProperty("config");
   });
 
   test("redeploy to same slug preserves ownership", async () => {
@@ -493,102 +441,24 @@ describe("POST /deploy", () => {
   });
 });
 
-// ── Credential preflight ───────────────────────────────────────────────────
+// ── Storage on rejection ───────────────────────────────────────────────────
 
-describe("deploy credential preflight", () => {
-  const PIPELINE_CONFIG: IsolateConfig = {
-    name: "pipeline-agent",
-    systemPrompt: "Test",
-    toolSchemas: [],
-    stt: { kind: "assemblyai", options: {} },
-    llm: { kind: "anthropic", options: { model: "claude-sonnet-4-5" } },
-    tts: { kind: "cartesia", options: {} },
-  };
-
-  function deployWith(params: {
-    config?: IsolateConfig;
-    env?: Record<string, string>;
-    credentialPolicy?: "require" | "warn";
-  }) {
-    return deployAgentBundle(
-      { store: createTestStore() },
-      {
-        slug: "my-agent",
-        apiKey: "key1",
-        worker: "w",
-        clientFiles: {},
-        agentConfig: params.config ?? TEST_AGENT_CONFIG,
-        ...(params.env && { env: params.env }),
-        ...(params.credentialPolicy && { credentialPolicy: params.credentialPolicy }),
-      },
-    );
-  }
-
-  test("rejects an S2S agent deployed without its AssemblyAI key", async () => {
-    const outcome = await deployWith({ env: {} });
-    expect(outcome).toMatchObject({ ok: false, status: 400 });
-    if (!outcome.ok) expect(outcome.error).toContain("ASSEMBLYAI_API_KEY");
-  });
-
-  test("rejects a pipeline agent naming every missing provider key", async () => {
-    const outcome = await deployWith({
-      config: PIPELINE_CONFIG,
-      env: { ASSEMBLYAI_API_KEY: "k" },
-    });
-    expect(outcome.ok).toBe(false);
-    if (!outcome.ok) {
-      expect(outcome.error).toContain("ANTHROPIC_API_KEY");
-      expect(outcome.error).toContain("CARTESIA_API_KEY");
-      expect(outcome.error).not.toContain("ASSEMBLYAI_API_KEY");
-    }
-  });
-
-  test("accepts a pipeline agent once every provider key is present", async () => {
-    const outcome = await deployWith({
-      config: PIPELINE_CONFIG,
-      env: { ASSEMBLYAI_API_KEY: "a", ANTHROPIC_API_KEY: "b", CARTESIA_API_KEY: "c" },
-    });
-    expect(outcome).toMatchObject({ ok: true, slug: "my-agent" });
-    if (outcome.ok) expect(outcome.warnings).toBeUndefined();
-  });
-
-  test("an empty-string credential counts as missing", async () => {
-    const outcome = await deployWith({ env: { ASSEMBLYAI_API_KEY: "" } });
-    expect(outcome).toMatchObject({ ok: false, status: 400 });
-  });
-
-  test("enforces the agent's declared requiredEnv keys", async () => {
-    const outcome = await deployWith({
-      config: { ...TEST_AGENT_CONFIG, requiredEnv: ["STRIPE_KEY"] },
-      env: VALID_ENV,
-    });
-    expect(outcome.ok).toBe(false);
-    if (!outcome.ok) expect(outcome.error).toContain("STRIPE_KEY");
-  });
-
-  test("credentialPolicy 'warn' deploys anyway and reports the missing keys", async () => {
-    const outcome = await deployWith({ env: {}, credentialPolicy: "warn" });
-    expect(outcome.ok).toBe(true);
-    if (outcome.ok) {
-      expect(outcome.warnings).toHaveLength(1);
-      expect(outcome.warnings?.[0]).toContain("ASSEMBLYAI_API_KEY");
-    }
-  });
-
+describe("deploy rejection", () => {
   test("a rejected deploy stores nothing", async () => {
+    // Rejection happens before any side effect, so a live agent's artifacts
+    // are untouched by a deploy that never lands.
     const store = createTestStore();
     const outcome = await deployAgentBundle(
       { store },
       {
-        slug: "unstored",
+        slug: "studio", // reserved — would shadow the studio routes
         apiKey: "key1",
         worker: "w",
         clientFiles: {},
-        agentConfig: TEST_AGENT_CONFIG,
       },
     );
-    expect(outcome.ok).toBe(false);
-    expect(await store.getAgent("unstored")).toBeNull();
+    expect(outcome).toMatchObject({ ok: false, status: 400 });
+    expect(await store.getAgent("studio")).toBeNull();
   });
 });
 
@@ -605,7 +475,6 @@ describe("deployAgentBundle version bump", () => {
         worker: "w",
         clientFiles: {},
         env: VALID_ENV,
-        agentConfig: TEST_AGENT_CONFIG,
       },
     );
     await expect(store.getAgentVersion("published-agent")).resolves.toBe(1);
@@ -618,7 +487,6 @@ describe("deployAgentBundle version bump", () => {
         worker: "w2",
         clientFiles: {},
         env: VALID_ENV,
-        agentConfig: TEST_AGENT_CONFIG,
       },
     );
     expect(outcome.ok).toBe(true);
@@ -634,7 +502,6 @@ describe("deployAgentBundle version bump", () => {
       worker: "w",
       clientFiles: {},
       credential_hashes: [ownerHash],
-      agentConfig: TEST_AGENT_CONFIG,
     });
     const outcome = await deployAgentBundle(
       { store },
@@ -643,7 +510,6 @@ describe("deployAgentBundle version bump", () => {
         apiKey: "intruder-key",
         worker: "w",
         clientFiles: {},
-        agentConfig: TEST_AGENT_CONFIG,
       },
     );
     expect(outcome.ok).toBe(false);

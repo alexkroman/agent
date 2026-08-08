@@ -16,6 +16,6 @@ export const queryKeys = {
   /** Prefix key: invalidates every project's chat session at once. */
   chatSessions: ["chat-session"] as const,
   toolLabels: (url: string | undefined) => ["tool-labels", url] as const,
-  secrets: (slug: string | undefined) => ["secrets", slug ?? "unpublished"] as const,
+  secrets: (project: string) => ["secrets", project] as const,
   database: (project: string) => ["database", project] as const,
 };

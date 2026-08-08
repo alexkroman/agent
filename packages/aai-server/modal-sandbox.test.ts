@@ -267,7 +267,7 @@ describe("spawnModalWarm", () => {
     const harnessPath = await makeHarnessFile();
     const spawnOnce = async (identity: {
       slug?: string;
-      role?: "studio" | "inspect";
+      role?: "studio" | "studio-publish";
     }): Promise<Record<string, unknown>> => {
       const fake = makeFakeProc();
       const sb = makeFakeSandbox(fake);
@@ -290,8 +290,8 @@ describe("spawnModalWarm", () => {
       return (createParams[0] as { tags: Record<string, unknown> }).tags;
     };
 
-    // No slug (bundle inspection): role "inspect", no slug tag.
-    expect(await spawnOnce({})).toEqual({ service: "aai-guest", role: "inspect" });
+    // No slug and no role: a control-channel guest, i.e. a studio one.
+    expect(await spawnOnce({})).toEqual({ service: "aai-guest", role: "studio" });
     // A `-preview` slug is a studio preview agent.
     expect(await spawnOnce({ slug: "contact-form-x7k2mq-preview" })).toEqual({
       service: "aai-guest",

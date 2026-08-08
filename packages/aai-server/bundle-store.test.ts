@@ -11,7 +11,6 @@ import {
 } from "./bundle-store.ts";
 import { MAX_ENV_SIZE } from "./constants.ts";
 import { createMemorySecretStore } from "./secret-store.ts";
-import { TEST_AGENT_CONFIG } from "./test-utils.ts";
 
 function makeStore(secrets = createMemorySecretStore()) {
   const storage = createMemoryBlobStorage();
@@ -25,7 +24,6 @@ const BASE_BUNDLE = {
   worker: "console.log('w');",
   clientFiles: {},
   credential_hashes: ["hash1"],
-  agentConfig: TEST_AGENT_CONFIG,
 };
 
 describe("bundle store (agents rows + content-addressed blobs)", () => {
@@ -297,7 +295,6 @@ describe("bundle store (agents rows + content-addressed blobs)", () => {
     await store.putAgent({
       ...BASE_BUNDLE,
       worker: "v1",
-      agentConfig: { ...TEST_AGENT_CONFIG, name: "v1" },
     });
     // Prime caches
     await store.getAgent("test-agent");
@@ -306,18 +303,15 @@ describe("bundle store (agents rows + content-addressed blobs)", () => {
     await store.putAgent({
       ...BASE_BUNDLE,
       worker: "v2",
-      agentConfig: { ...TEST_AGENT_CONFIG, name: "v2" },
     });
 
     expect(await store.getWorkerCode("test-agent")).toBe("v2");
-    expect((await store.getAgent("test-agent"))?.config.name).toBe("v2");
     expect(await store.getAgentVersion("test-agent")).toBe(2);
   });
 
-  test("the stored config rides the agent row opaquely", async () => {
+  test("an unknown slug reads as null", async () => {
     const { store } = makeStore();
     await store.putAgent(BASE_BUNDLE);
-    expect((await store.getAgent("test-agent"))?.config).toEqual(TEST_AGENT_CONFIG);
     expect(await store.getAgent("missing")).toBeNull();
   });
 

@@ -8,7 +8,6 @@
  */
 
 import type { AgentRecord } from "./agent-store.ts";
-import type { IsolateConfig } from "./rpc-schemas.ts";
 
 export type BundleStore = {
   /**
@@ -22,8 +21,6 @@ export type BundleStore = {
     worker: string;
     clientFiles: Record<string, string>;
     credential_hashes: string[];
-    /** Pre-extracted agent config from the CLI build. */
-    agentConfig: IsolateConfig;
     /**
      * The harness snapshot image tag this deploy runs against (see
      * `currentHarnessImageTag` in sandbox-vm.ts). Null outside the Modal
@@ -31,7 +28,7 @@ export type BundleStore = {
      */
     harnessImageTag?: string | null | undefined;
   }): Promise<void>;
-  /** The deploy record: ownership hashes, config, blob hashes, version. */
+  /** The deploy record: ownership hashes, blob hashes, version. */
   getAgent(slug: string): Promise<AgentRecord | null>;
   /**
    * Current deploy version, or null when the agent does not exist. The

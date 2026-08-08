@@ -45,9 +45,10 @@ export async function executeBuild(opts: {
 
   // `aai build` previews the deploy artifact, so build it exactly like deploy.
   const bundle = await buildAgentBundle(cwd, { minify: true });
-  // Evaluate locally to validate the agent export and report its name —
-  // `aai build` runs the developer's own project code, unlike deploy, which
-  // leaves evaluation to the server's guest sandbox.
+  // Evaluate locally to validate the agent export and report its name.
+  // `aai deploy` imports its bundle too (for the credential preflight), so
+  // both commands run the developer's own project code — see the note in
+  // packages/aai-cli/CLAUDE.md.
   const agentDef = await evalWorkerBundle(bundle.worker);
   log.success("Build complete");
 

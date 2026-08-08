@@ -18,6 +18,52 @@
  */
 
 import type { AppContext, ValidatedAppContext, ValidatedParamContext } from "./context.ts";
+import type { SlugMutationLock } from "./platform-lock.ts";
+import type { BundleStore } from "./store-types.ts";
+
+/**
+ * What a secret mutation needs, independent of HTTP.
+ *
+ * The three cores below take this rather than a request Context so the
+ * studio's PROJECT-level routes can drive the same operations across a
+ * project's two agents (production and preview) — see `studio-secrets.ts`.
+ * Two implementations of "merge these updates into the stored env" is how
+ * the two paths came to disagree about which agents a secret reaches.
+ */
+export type SecretEnv = {
+  store: BundleStore;
+  slugLock: SlugMutationLock;
+};
+
+/** The names of a slug's stored secrets (values never leave the platform). */
+export async function listSlugSecrets(env: SecretEnv, slug: string): Promise<string[]> {
+  return Object.keys((await env.store.getEnv(slug)) ?? {});
+}
+
+/** Merge `updates` into a slug's stored env. Returns every name it then holds. */
+export function setSlugSecrets(
+  env: SecretEnv,
+  slug: string,
+  updates: Record<string, string>,
+): Promise<string[]> {
+  return env.slugLock(slug, async () => {
+    const existing = (await env.store.getEnv(slug)) ?? {};
+    const merged = { ...existing, ...updates };
+    await env.store.putEnv(slug, merged);
+    console.info("Secret updated", { slug, keyCount: Object.keys(updates).length });
+    return Object.keys(merged);
+  });
+}
+
+/** Drop one name from a slug's stored env. Absent is a no-op, not an error. */
+export function deleteSlugSecret(env: SecretEnv, slug: string, key: string): Promise<void> {
+  return env.slugLock(slug, async () => {
+    const existing = (await env.store.getEnv(slug)) ?? {};
+    delete existing[key];
+    await env.store.putEnv(slug, existing);
+    console.info("Secret deleted", { slug });
+  });
+}
 
 // Agent existence is existingOwnerMw's decision (it rejects unclaimed slugs
 // before any handler runs), so a null env row here just means "no secrets
@@ -25,34 +71,21 @@ import type { AppContext, ValidatedAppContext, ValidatedParamContext } from "./c
 // used to disagree on what a missing row meant.
 
 export async function handleSecretList(c: AppContext): Promise<Response> {
-  const env = (await c.env.store.getEnv(c.var.slug)) ?? {};
-  return c.json({ vars: Object.keys(env) });
+  return c.json({ vars: await listSlugSecrets(c.env, c.var.slug) });
 }
 
-export function handleSecretSet(c: ValidatedAppContext<Record<string, string>>): Promise<Response> {
-  const slug = c.var.slug;
-  return c.env.slugLock(slug, async () => {
-    const updates = c.req.valid("json");
-
-    const existing = (await c.env.store.getEnv(slug)) ?? {};
-    const merged = { ...existing, ...updates };
-    await c.env.store.putEnv(slug, merged);
-
-    console.info("Secret updated", { slug, keyCount: Object.keys(updates).length });
-    return c.json({ ok: true, keys: Object.keys(merged) });
-  });
+export async function handleSecretSet(
+  c: ValidatedAppContext<Record<string, string>>,
+): Promise<Response> {
+  const keys = await setSlugSecrets(c.env, c.var.slug, c.req.valid("json"));
+  return c.json({ ok: true, keys });
 }
 
 // The `:key` param is validated at the route layer (zValidator("param") in
 // orchestrator.ts), the same altitude as the sibling routes' body schemas.
-export function handleSecretDelete(c: ValidatedParamContext<{ key: string }>): Promise<Response> {
-  const slug = c.var.slug;
-  return c.env.slugLock(slug, async () => {
-    const { key } = c.req.valid("param");
-    const existing = (await c.env.store.getEnv(slug)) ?? {};
-    delete existing[key];
-    await c.env.store.putEnv(slug, existing);
-    console.info("Secret deleted", { slug });
-    return c.json({ ok: true });
-  });
+export async function handleSecretDelete(
+  c: ValidatedParamContext<{ key: string }>,
+): Promise<Response> {
+  await deleteSlugSecret(c.env, c.var.slug, c.req.valid("param").key);
+  return c.json({ ok: true });
 }

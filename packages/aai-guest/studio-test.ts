@@ -108,6 +108,3 @@ export function formatTestRun(result: TestRunResult): string {
   if (result.passed) return `Tests: passed.\n${result.output}`;
   return `Tests: FAILED — fix these or update them to match the agent.\n${result.output}`;
 }
-
-/** Exported for the unit test: the file-detection rule. */
-export const _internals = { testFiles };

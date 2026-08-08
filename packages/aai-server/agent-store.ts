@@ -2,9 +2,10 @@
 /**
  * The agents table — the control-plane record of what is deployed.
  *
- * One row per agent: identity (slug), ownership (credential hashes), the
- * bundle's self-described config, and content hashes pointing at the
- * immutable blobs in Storage (worker code, client files). The row upsert is
+ * One row per agent: identity (slug), ownership (credential hashes), and
+ * content hashes pointing at the immutable blobs in Storage (worker code,
+ * client files). It records NO description of what the agent is — see "The
+ * platform stores no agent config" in CLAUDE.md. The row upsert is
  * the ATOMIC COMMIT POINT of a deploy: blobs are written first under
  * content-addressed keys, then the row flips to reference them, so a
  * half-finished deploy is never visible and in-flight readers of the
@@ -26,36 +27,9 @@
 import { z } from "zod";
 import type { SqlExec } from "./secret-store.ts";
 
-/**
- * The host's read-side view of a STORED agent config — FULLY opaque.
- *
- * A stored config was validated by the FULL `IsolateConfigSchema` once, at
- * deploy time, against the rules current then. Re-validating it against
- * TODAY'S rules on every row read is a cross-version seam: any tightening of
- * the config schema would make previously-valid deployed agents read as
- * "corrupt … missing" (a 404) without anyone touching them. So reads assert
- * nothing beyond "it is an object": the host has NO field-level reader left —
- * even name/greeting come from the guest's own `/client-config` now (see
- * client-config-handler.ts) — and the row's copy exists only to round-trip
- * through storage. The bundle interprets its own config with the SDK it
- * shipped with.
- *
- * Do not add fields here, and never add a refinement: strictness belongs at
- * the deploy boundary (`validateAgentConfig` in deploy.ts), which always
- * runs on the current CLI's freshly extracted config.
- */
-export const StoredAgentConfigSchema = z.record(z.string(), z.unknown());
-
-export type StoredAgentConfig = z.infer<typeof StoredAgentConfigSchema>;
-
 const AgentRecordSchema = z.object({
   slug: z.string(),
   credential_hashes: z.array(z.string()),
-  /**
-   * The bundle's self-described config, extracted guest-side at deploy —
-   * opaque on reads (see StoredAgentConfigSchema).
-   */
-  config: StoredAgentConfigSchema,
   /** Content hash (sha-256 hex) of the worker bundle blob. */
   worker_hash: z.string(),
   /** Client file path → content hash of its blob. */
@@ -86,16 +60,15 @@ export type AgentRows = {
 };
 
 const TABLE = "aai_platform.agents";
-const GET_SQL = `select slug, credential_hashes, config, worker_hash, client_files,
+const GET_SQL = `select slug, credential_hashes, worker_hash, client_files,
   harness_image_tag, version
 from ${TABLE} where slug = $1`;
 
 const PUT_SQL = `insert into ${TABLE} as a
-  (slug, credential_hashes, config, worker_hash, client_files, harness_image_tag, version)
-values ($1, $2::jsonb, $3::jsonb, $4, $5::jsonb, $6, 1)
+  (slug, credential_hashes, worker_hash, client_files, harness_image_tag, version)
+values ($1, $2::jsonb, $3, $4::jsonb, $5, 1)
 on conflict (slug) do update set
   credential_hashes = excluded.credential_hashes,
-  config = excluded.config,
   worker_hash = excluded.worker_hash,
   client_files = excluded.client_files,
   harness_image_tag = excluded.harness_image_tag,
@@ -125,7 +98,6 @@ export function createPgAgentRows(sql: SqlExec): AgentRows {
       const parsed = AgentRecordSchema.safeParse({
         slug: row.slug,
         credential_hashes: jsonColumn(row.credential_hashes),
-        config: jsonColumn(row.config),
         worker_hash: row.worker_hash,
         client_files: jsonColumn(row.client_files),
         harness_image_tag: row.harness_image_tag ?? null,
@@ -148,7 +120,6 @@ export function createPgAgentRows(sql: SqlExec): AgentRows {
       await sql(PUT_SQL, [
         record.slug,
         JSON.stringify(record.credential_hashes),
-        JSON.stringify(record.config),
         record.worker_hash,
         JSON.stringify(record.client_files),
         record.harness_image_tag ?? null,

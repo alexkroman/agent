@@ -12,7 +12,6 @@ import { describe, expect, it, vi } from "vitest";
 import { createMemoryAgentRows } from "./agent-store.ts";
 import { createMemoryBlobStorage } from "./blob-storage.ts";
 import { createBundleStore } from "./bundle-store.ts";
-import type { IsolateConfig } from "./rpc-schemas.ts";
 import { resolveSandbox } from "./sandbox-resolve.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { createMemorySecretStore } from "./secret-store.ts";
@@ -33,15 +32,6 @@ vi.mock("./sandbox-vm.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./sandbox-vm.ts")>()),
   spawnAgentServer: mockSpawnAgentServer,
 }));
-
-const TEST_AGENT_CONFIG: IsolateConfig = {
-  name: "test-agent",
-  systemPrompt: "You are a test agent",
-  greeting: "Hello!",
-  maxSteps: 3,
-  toolSchemas: [],
-  builtinTools: [],
-};
 
 /**
  * Which way the worker bundle reaches the guest. The URL path is the reason
@@ -70,7 +60,6 @@ describe("worker source selection", () => {
         worker,
         clientFiles: {},
         credential_hashes: ["hash"],
-        agentConfig: TEST_AGENT_CONFIG,
       });
     return { store, getItem, deploy, slots: createSlotCache() };
   }
@@ -109,7 +98,6 @@ describe("worker source selection", () => {
       worker: "export default {};",
       clientFiles: {},
       credential_hashes: ["hash"],
-      agentConfig: TEST_AGENT_CONFIG,
     });
     const sandbox = await resolveSandbox("unsigned-agent", {
       store,

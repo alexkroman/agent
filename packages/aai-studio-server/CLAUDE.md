@@ -228,8 +228,8 @@ voice agents without the CLI:
 - **The workspace manifest declares what the agent may import.**
   `ensureProjectShape` writes a `package.json` whose `dependencies` mirror
   the scaffold's runtime set (`@alexkroman1/aai`, `aai-ui`, `react`,
-  `react-dom`, `tailwindcss`, `zod` — drift-guarded against the scaffold in
-  `studio-project-shape.test.ts`). It used to declare none, on the reasoning
+  `react-dom`, `tailwindcss`, `zod` — read from the scaffold's own
+  manifest). It used to declare none, on the reasoning
   that they resolve from the toolchain anyway — true for the *build*, and
   exactly backwards for the *reader*: package.json is the first place a
   coding agent looks to learn what it can import, and an empty one asserted
@@ -434,9 +434,20 @@ voice agents without the CLI:
   staleness — returned as `unpublished` for the pane's Publish nudge. A
   hash rather than a timestamp for two reasons: deploys themselves write
   the workspace (which bumps `updatedAt`), and editing a file then undoing
-  it should not leave the project permanently "stale". The Secrets panel
-  mirrors writes to the preview slug best-effort so previews run with the
-  same third-party keys. **Landing on a project wakes its preview**
+  it should not leave the project permanently "stale".
+
+  **Secrets are a PROJECT switch, not a per-slug one**
+  (`studio-secrets.ts` + `studio-secret-routes.ts`): a project deploys
+  two agents, so `GET/PUT/DELETE /studio/projects/:project/secret` writes
+  both, exactly as the database routes do. The fan-out used to live in the
+  BROWSER — the panel PUT the production slug then mirrored to the preview
+  one — which made "a project is two agents" a property of the studio client,
+  so `aai secret put` and `aai publish`'s `.env` sync reached production
+  alone and the preview agent failed at its first session. The per-slug
+  `/:slug/secret` routes remain the platform primitive underneath, and the
+  only surface for an agent belonging to no project.
+
+  **Landing on a project wakes its preview**
   (`wakeProjectPreview` in studio-preview.ts, hung off the once-per-open
   session broker call): the embedded agent's sandbox is warmed through the
   platform's public client-config broker (`warmPreviewSandbox`) so a preview
@@ -536,22 +547,28 @@ voice agents without the CLI:
     else an ephemeral spawn torn down after). The guest completes the
     workspace into a REAL project (`ensureProjectShape` in
     `aai-guest/studio-project-shape.ts`: package.json, tsconfig.json,
-    global.d.ts, and vite.config.ts filled in from scaffold-mirroring
-    copies when absent — drift-guarded against the scaffold by
-    `studio-project-shape.test.ts`; a dir-local `AAI_CONFIG_DIR` carries
-    the caller's key; `.aai/project.json` pins the slug) and runs
+    global.d.ts, and vite.config.ts COPIED from the real scaffold shipped in
+    the baked toolchain (`@alexkroman1/aai-cli/dist/scaffold`) when absent,
+    so the guest holds no second copy to drift — only the two deliberate
+    deltas are code (`workspaceTsconfig`, the exact dependency pins); a
+    dir-local `AAI_CONFIG_DIR` carries the caller's key; `.aai/project.json`
+    pins the slug — those last two written by the CLI's own writers
+    (`@alexkroman1/aai-cli/project-config`), since the CLI is what parses them
+    back and the 0600 atomic rename and the pin's MERGE are invisible in the
+    JSON) and runs
     `aai deploy --server <origin> --json --allow-missing-secrets`. Build,
-    upload, config extraction (`describeBundle` on the platform's standard
-    `POST /deploy` route), ownership, reserved slugs, the
-    ASSEMBLYAI_API_KEY env floor,
-    and the credential preflight are therefore byte-for-byte the laptop
-    path. The CLI's output — success, build diagnostics, deploy errors,
-    preflight warnings — returns to the client, which **posts it into the
-    chat** so the coding agent sees and can fix failures.
-    `--allow-missing-secrets` (new CLI flag → `credentialPolicy: "warn"`
-    in the deploy body) exists because the Secrets panel needs a deployed
-    slug to attach secrets to — a hard preflight failure would deadlock
-    first publishes. The public origin comes from `requestPublicOrigin`
+    upload, the credential preflight (CLI-side now — see "The platform
+    stores no agent config" in `packages/aai-server/CLAUDE.md`), ownership,
+    reserved slugs, and the ASSEMBLYAI_API_KEY env floor are therefore
+    byte-for-byte the laptop path. The CLI's output — success, build
+    diagnostics, deploy errors, preflight warnings — returns to the client,
+    which **posts it into the chat** so the coding agent sees and can fix
+    failures.
+    `--allow-missing-secrets` exists because the Secrets panel needs a
+    deployed slug to attach secrets to — a hard preflight failure would
+    deadlock first publishes. It is now belt-and-braces: the CLI's preflight
+    only ever warns (it cannot see secrets already stored against the slug),
+    so nothing blocks a first publish anyway. The public origin comes from `requestPublicOrigin`
     (studio-context.ts — beside the context type, not in studio-routes.ts, so
     route modules under it can resolve the origin without importing their own
     parent) → `resolvePublicOrigin` (aai-server/public-origin.ts).

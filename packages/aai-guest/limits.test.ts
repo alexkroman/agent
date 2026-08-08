@@ -18,28 +18,14 @@ describe("guest limits mirror the SDK constants", () => {
     expect(limits.STORAGE_DISABLED_MESSAGE).toBe(STORAGE_DISABLED_MESSAGE);
   });
 
-  // limits.ts claims these mirror aai-studio-server's studio-limits.ts with
-  // "the same asserted-not-imported arrangement" — but nothing asserted them.
-  // Drift is silent in both directions: the guest truncates its end-of-turn
-  // sync at its own cap while the host validates the arriving payload against
-  // its own, so either files vanish or the whole sync is rejected and the
-  // user's turn looks like it wrote nothing.
-  // Read as SOURCE rather than imported: the guest must not take a dependency
-  // on server code (the boundary this package exists to enforce), so the
-  // assertion parses the host's constants out of the file instead.
-  test("studio workspace caps match the host's", async () => {
-    const fs = await import("node:fs/promises");
-    const source = await fs.readFile(
-      new URL("../aai-studio-server/studio-limits.ts", import.meta.url),
-      "utf8",
-    );
-    const hostValue = (name: string): number => {
-      const match = new RegExp(`${name}\\s*=\\s*([0-9_]+)`).exec(source);
-      if (!match?.[1]) throw new Error(`${name} not found in studio-limits.ts`);
-      return Number(match[1].replaceAll("_", ""));
-    };
-    expect(limits.MAX_STUDIO_FILES).toBe(hostValue("MAX_STUDIO_FILES"));
-    expect(limits.MAX_STUDIO_FILE_BYTES).toBe(hostValue("MAX_STUDIO_FILE_BYTES"));
+  // The workspace caps are no longer mirrored — limits.ts re-exports the
+  // SDK's, which the host's studio-limits.ts re-exports too, so the drift
+  // this used to parse the host's source for cannot happen. Assert the shape
+  // that replaced it: one definition, reachable from here.
+  test("studio workspace caps come from the shared SDK contract", async () => {
+    const shared = await import("@alexkroman1/aai/workspace-files");
+    expect(limits.MAX_STUDIO_FILES).toBe(shared.MAX_WORKSPACE_FILES);
+    expect(limits.MAX_STUDIO_FILE_BYTES).toBe(shared.MAX_WORKSPACE_FILE_BYTES);
   });
 
   test("orphan poll fires multiple times within one timeout window", () => {

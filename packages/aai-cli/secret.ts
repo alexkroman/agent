@@ -3,7 +3,7 @@
 import { text } from "node:stream/consumers";
 import * as p from "@clack/prompts";
 import { type CommandResult, fail, ok } from "./_output.ts";
-import { slugRequest } from "./_slug-api.ts";
+import { secretRequest } from "./_slug-api.ts";
 import { log, unwrapCancel } from "./_ui.ts";
 
 /**
@@ -40,13 +40,13 @@ export async function executeSecretPut(
     secretValue = result;
   }
 
-  const { slug } = await slugRequest(
+  const { target } = await secretRequest(
     cwd,
-    "/secret",
+    "",
     { method: "PUT", body: { [name]: secretValue }, action: "secret" },
     server,
   );
-  log.success(`Set ${name} for ${slug}`);
+  log.success(`Set ${name} for ${target}`);
   return ok({ name });
 }
 
@@ -57,13 +57,13 @@ export async function executeSecretDelete(
 ): Promise<CommandResult<SecretDeleteData>> {
   // Encoded so a name containing `/`, `?`, `#`, or `%` can't target a
   // different path (or truncate the request) on the server.
-  const { slug } = await slugRequest(
+  const { target } = await secretRequest(
     cwd,
-    `/secret/${encodeURIComponent(name)}`,
+    `/${encodeURIComponent(name)}`,
     { method: "DELETE", action: "secret" },
     server,
   );
-  log.success(`Deleted ${name} from ${slug}`);
+  log.success(`Deleted ${name} from ${target}`);
   return ok({ name });
 }
 
@@ -73,7 +73,7 @@ export async function executeSecretList(
 ): Promise<CommandResult<SecretListData>> {
   const {
     data: { vars },
-  } = await slugRequest<{ vars: string[] }>(cwd, "/secret", { action: "secret" }, server);
+  } = await secretRequest<{ vars: string[] }>(cwd, "", { action: "secret" }, server);
   if (vars.length === 0) {
     log.info("No secrets set. Use `aai secret put <name>` to add one.");
   } else {

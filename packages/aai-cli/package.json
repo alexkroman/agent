@@ -20,6 +20,11 @@
       "@dev/source": "./typecheck.ts",
       "types": "./dist/typecheck.d.ts",
       "import": "./dist/typecheck.mjs"
+    },
+    "./project-config": {
+      "@dev/source": "./project-config.ts",
+      "types": "./dist/project-config.d.ts",
+      "import": "./dist/project-config.mjs"
     }
   },
   "files": [

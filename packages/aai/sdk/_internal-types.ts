@@ -22,7 +22,6 @@ export {
   type AgentConfigSource,
   type ExecuteTool,
   type ExecuteToolOptions,
-  HOST_ONLY_AGENT_FIELDS,
   type HostOnlyAgentField,
   type ToolSchema,
   ToolSchemaSchema,

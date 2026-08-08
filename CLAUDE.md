@@ -228,12 +228,14 @@ depend on `@alexkroman1/aai` (via `workspace:*`). `aai-server` depends on
 `dist/harness.mjs`, baked into the guest snapshot image) — it never imports
 guest source, and the guest never imports server code; that hard boundary is
 the reason the guest is its own package. The one edge to the CLI is
-`aai-server` → `aai-cli`, and only for its three public build-hook subpaths
-(`/worker-bundler`, `/client-bundler`, `/typecheck`): the studio builds
-workspaces through the CLI's own Vite pipeline (and typechecks them with the
-CLI's own gate) rather than carrying a second bundler. Do not widen it —
-nothing else in the server may import from the CLI, and the CLI must never
-import from the server.
+`aai-guest` → `aai-cli`, and only for its four public subpaths: the three
+build hooks (`/worker-bundler`, `/client-bundler`, `/typecheck`), because the
+studio builds workspaces through the CLI's own Vite pipeline and typechecks
+them with the CLI's own gate rather than carrying a second bundler, plus
+`/project-config`, because Publish materializes a project the CLI then parses
+and the writers for those two files belong to the CLI. Do not widen it —
+nothing else may import from the CLI, and the CLI must never import from the
+server or the guest.
 
 **Publishable packages must use the `@alexkroman1/` scope.** The unscoped
 names `aai`, `aai-ui`, `aai-cli` are taken on npm by other publishers —
@@ -822,6 +824,18 @@ catches the most common issues that historically required follow-up commits:
    deleting code puts your attention on what goes away, not on what the
    removal strands. When a PR deletes a directory, expect a dependency to
    come out with it.
+
+   **It also reports unused EXPORTS, and the setting that makes that useful
+   is `includeEntryExports` — set on the private packages only.** With it on,
+   knip reports a file's exports even when the file is an entry point; that is
+   right where every importer lives in this repo, and wrong for `aai`,
+   `aai-ui`, and `aai-cli`, whose entry exports are the published API and
+   whose consumers (templates, user projects) knip cannot see. Reporting those
+   is what produced the 174-finding run that kept the whole check switched off
+   for so long. The published packages still get the check for everything
+   *not* reachable from a subpath export — an internal helper whose last
+   caller went away, which is the case worth catching. `types` stays excluded
+   pending an `@internal` tagging pass.
 
 ## Security architecture
 

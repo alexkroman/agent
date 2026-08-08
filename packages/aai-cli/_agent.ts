@@ -155,5 +155,12 @@ export async function getServerInfo(cwd: string, explicitServer?: string) {
   // every command rather than only the slug-scoped ones — see
   // `assertValidConfigSlug`. Deliberately not re-checked here: two copies of
   // this guard is what let `publish` ship without one.
-  return { serverUrl, slug: config.slug, apiKey };
+  return {
+    serverUrl,
+    slug: config.slug,
+    apiKey,
+    // Set when this directory is linked to a studio project. Secrets route
+    // by it — see `secretRequest`.
+    studioProject: config.studioProject,
+  };
 }

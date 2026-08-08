@@ -17,7 +17,7 @@
  * deadlock first publishes of agents that need third-party keys.
  */
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { errorMessage } from "@alexkroman1/aai";
@@ -122,19 +122,21 @@ export async function deployWorkspaceDir(
   // studio-project-shape.ts; `aai deploy` typechecks against the tsconfig),
   // the CLI's config home, and the slug pin in .aai/project.json so
   // redeploys keep the agent's URL.
+  //
+  // Both files are written by the CLI'S OWN writers rather than by
+  // `JSON.stringify` here: it is the CLI that parses them back, and the
+  // properties that matter are not visible in the JSON — 0600 through an
+  // atomic rename for the file holding the caller's key, and a MERGE for the
+  // pin. Safe to reach for the toolchain at this point: `resolveCliEntry`
+  // above has already failed the publish cleanly if it is not there.
   await ensureProjectShape(dir);
+  const { updateProjectConfig, writeConfigHome } = await import(
+    "@alexkroman1/aai-cli/project-config"
+  );
   const configHome = path.join(dir, ".aai-home");
-  await mkdir(configHome, { recursive: true });
-  await writeFile(path.join(configHome, "config.json"), JSON.stringify({ apiKey: opts.apiKey }), {
-    mode: 0o600,
-  });
+  await writeConfigHome(configHome, { apiKey: opts.apiKey });
   if (opts.slug) {
-    await mkdir(path.join(dir, ".aai"), { recursive: true });
-    await writeFile(
-      path.join(dir, ".aai", "project.json"),
-      JSON.stringify({ slug: opts.slug, serverUrl: opts.serverUrl }),
-      "utf-8",
-    );
+    await updateProjectConfig(dir, { slug: opts.slug, serverUrl: opts.serverUrl });
   }
 
   let result: SpawnCappedResult;

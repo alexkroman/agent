@@ -35,8 +35,6 @@ export type DeployOpts = {
 
 export type DeployResult = {
   slug: string;
-  /** Server-side deploy warnings (e.g. the missing-credential preflight). */
-  warnings?: string[];
 };
 
 export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
@@ -46,6 +44,8 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
   const body = gzipSync(
     JSON.stringify({
       ...(opts.slug ? { slug: opts.slug } : {}),
+      // Kept for OLDER servers only: the current one runs no credential
+      // preflight (the CLI does — see _preflight.ts) and strips this field.
       ...(opts.allowMissingSecrets ? { credentialPolicy: "warn" } : {}),
       ...(opts.allowPreviewSlug ? { allowPreviewSlug: true } : {}),
       env: opts.env,
@@ -53,7 +53,7 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
       clientFiles: opts.bundle.clientFiles,
     }),
   );
-  const data = await apiRequest<{ slug: string; warnings?: string[] }>(`${opts.url}/deploy`, {
+  const data = await apiRequest<{ slug: string }>(`${opts.url}/deploy`, {
     method: "POST",
     body,
     headers: { "Content-Type": "application/json", "Content-Encoding": "gzip" },
@@ -71,5 +71,5 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
     ...(opts.fetch ? { fetch: opts.fetch } : {}),
   });
 
-  return { slug: data.slug, ...(data.warnings ? { warnings: data.warnings } : {}) };
+  return { slug: data.slug };
 }

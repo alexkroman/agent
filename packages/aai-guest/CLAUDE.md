@@ -5,24 +5,16 @@ The Node entrypoint that runs the complete agent inside each Modal Sandbox
 `packages/aai-server/CLAUDE.md`; the studio coding agent that runs in studio
 mode is in `packages/aai-studio-server/CLAUDE.md`.
 
-## The harness: one binary, three modes
+## The harness: one binary, two modes
 
 The Node guest entry point (runs inside a Modal Sandbox) runs the COMPLETE
-agent. ONE BINARY, THREE MODES, selected by the spawner via `AAI_GUEST_MODE`
+agent. ONE BINARY, TWO MODES, selected by the spawner via `AAI_GUEST_MODE`
 (behavior selection, never a security boundary — capability is what the host
 delivers):
   **agent mode** (deployed agents — see "Agent guests are servers") boots
   from files delivered at exec time and serves only the public session
   surfaces plus the token-gated `/manage/status` + `/manage/drain` pair
-  (`harness-agent-mode.ts`); a third ONE-SHOT **describe mode**
-  (`AAI_DESCRIBE_BUNDLE_PATH`) imports a bundle and prints its
-  self-described config as the last stdout line CARRYING THIS EXEC'S NONCE
-  (`AAI_DESCRIBE_NONCE`; "last line" alone is not a defense — the bundle is
-  imported into that process, so a `process.on("exit")` handler prints after
-  the harness. The harness deletes the nonce from `process.env` before
-  importing, so bundle code cannot read the value it would have to forge) —
-  deploy-time config
-  extraction with no server, no token, no channel; **studio mode** serves
+  (`harness-agent-mode.ts`); **studio mode** serves
   `/ws` (bearer-token host control channel — JSON-RPC
   `workspace/deploy` (Publish's in-guest `aai deploy`), `status`,
   `studio/session-init`; guest→host
@@ -48,8 +40,11 @@ delivers):
   `studio-chat.ts`/`studio-tools.ts`/`studio-edit.ts`/`studio-grep.ts`
   (the in-guest coding agent), `studio-build.ts` (in-guest workspace
   builds through the aai CLI bundlers), `studio-publish.ts` (Publish =
-  the literal `aai deploy` CLI, run in-sandbox), `limits.ts` (import-free constants
-  mirroring the SDK's). The harness embeds NO agent runtime — every worker
+  the literal `aai deploy` CLI, run in-sandbox), `limits.ts` (constants —
+  import-free except the workspace caps, re-exported from
+  `@alexkroman1/aai/workspace-files` so the CLI's push, this sync and
+  the platform's validation cannot disagree). The harness embeds NO agent
+  runtime — every worker
   bundle ships its own (`__aaiCreateRuntime`, see "User-shipped runtime"
   below) — and tsdown bundles the harness (server shell + studio coding
   agent) into the single `dist/harness.mjs` the server resolves via
@@ -68,6 +63,21 @@ after crossing this module's own JSON-RPC boundary, and `errMsg` rendered
 those as `[object Object]`. One name, one import, and the behaviour is
 covered once in `sdk/utils.test.ts`.
 
+**The two files a Publish writes for the CLI come from the CLI'S OWN
+writers** (`@alexkroman1/aai-cli/project-config` — `writeConfigHome` and
+`updateProjectConfig`). `studio-publish.ts` used to `JSON.stringify` both the
+dir-local config home and `.aai/project.json`, so their shapes agreed with the
+schemas the CLI parses them back with only by coincidence — and the two
+properties that matter are not visible in the JSON at all: the config home
+holds the caller's API key and is written **0600 through an atomic rename**
+(which TIGHTENS an older world-readable file rather than leaving it), and the
+project pin is **merged, never replaced** (`.aai/project.json` also carries the
+studio link fields, which a whole-document write drops). Reaching for the
+toolchain is safe on this path specifically because `resolveCliEntry()` runs
+first and has already failed the publish cleanly if it is not there — so the
+dynamic import is deliberately AFTER it. Anything else this package writes for
+the CLI to read belongs in that subpath too, not in a `JSON.stringify` here.
+
 ## Dev/prod parity
 
 **The guest IS the dev server — and the runtime IS the user's.** The
@@ -75,12 +85,15 @@ harness wraps the same `createServer` (`aai/host/server.ts`) that `aai dev`
 runs — health, `client-config`, and `/websocket` sessions — adding (per
 mode) the `/manage/*` request hook or the `/ws` control channel, plus a
 lazy runtime facade (`lazyRuntime` in `aai-guest/harness.ts`: the runtime
-is built on the first session — inspection loads carry an empty env).
+is built on the first session — a `test_agent` load carries an empty env).
 The runtime itself comes from the BUNDLE (see "User-shipped runtime"
 below), so dev and prod run the identical SDK version: the one in the
-user's lockfile. In agent and describe modes the bundle is read from a
-file delivered at exec time (hash-verified in agent mode); the studio's
-test_agent loads its build in-guest through the same loader. Either way it
+user's lockfile. In agent mode the bundle arrives at exec time — a file or
+a signed URL, hash-verified either way (`harness-bundle-source.ts`); the
+studio's test_agent loads its build in-guest through the same loader.
+There is **no deploy-time inspection mode**: the platform stores no agent
+config and never asks a bundle to describe itself (see "The platform stores
+no agent config" in `packages/aai-server/CLAUDE.md`). Either way it
 loads from a temp-file `file:` URL.
 
 ## User-shipped runtime
@@ -116,7 +129,7 @@ version it was built and tested against, the same one `aai dev` ran.
 | --- | --- | --- |
 | Modal memory/CPU limits (`SANDBOX_MEMORY_LIMIT_MB`, `SANDBOX_CPU_LIMIT`) | works in dev, fails in prod | `aai dev` runs tools in the host process with no caps; a memory-hungry tool OOMs only when deployed. |
 | `run_code` | fails in dev, works in prod | The host-side guard refuses rather than evaluating in-process. Fail-closed, so harmless. |
-| `withHostCredentialFallback` (`providers/host-env.ts`) | works in dev, fails in prod | Deliberate ergonomic: an exported `ANTHROPIC_API_KEY` should work for `aai dev`. Two guards keep the cliff visible: the dev server warns when a required key resolved from the shell only (`agentEnvWarnings` in `_dev-server.ts` — it won't survive `aai deploy`, which uploads `.env`), and the deploy core preflights required credentials (`packages/aai-server/CLAUDE.md`), so the failure surfaces at deploy time, not as an auth error at first session. |
+| `withHostCredentialFallback` (`providers/host-env.ts`) | works in dev, fails in prod | Deliberate ergonomic: an exported `ANTHROPIC_API_KEY` should work for `aai dev`. Two guards keep the cliff visible: the dev server warns when a required key resolved from the shell only (`agentEnvWarnings` in `_dev-server.ts` — it won't survive `aai deploy`, which uploads `.env`), and `aai deploy` preflights required credentials against the env it is about to upload (`aai-cli/_preflight.ts`), so the gap surfaces as a deploy-time warning naming the key rather than as an auth error at first session. It WARNS rather than rejects — the CLI cannot see secrets already stored server-side. |
 | `ctx.db` backing (BYO `DATABASE_URL` in dev vs platform-provisioned schema+role) | prod is stricter | Dev connects wherever the developer points it; prod pins search_path + statement_timeout on a per-app role. |
 | Platform sandboxes need Modal credentials in production only | prod is stricter | `aai dev` runs tools in-process; the platform spawns real Modal sandboxes in production (`MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET`), and an isolation-free child process in local dev — see `packages/aai-server/CLAUDE.md`, "Modal sandbox notes". |
 

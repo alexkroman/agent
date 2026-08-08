@@ -2,13 +2,7 @@
 
 import { VALID_SLUG_RE } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
-import {
-  generatedSlug,
-  SLUG_SUFFIX_LENGTH,
-  SLUG_SUFFIX_RE,
-  slugBaseFromName,
-  slugSuffix,
-} from "./slug-generate.ts";
+import { generatedSlug, SLUG_SUFFIX_LENGTH, SLUG_SUFFIX_RE, slugSuffix } from "./slug-generate.ts";
 
 describe("slugSuffix", () => {
   test("is lowercase base36 of the fixed length", () => {
@@ -44,16 +38,13 @@ describe("generatedSlug", () => {
     },
   );
 
-  test.each([
-    // The CLI path: agent({ name }) seeds the slug.
-    ["Dice Roller", "dice-roller"],
-    ["Café Concierge", "cafe-concierge"],
-    ["test-agent", "test-agent"],
-    // Nothing usable → empty; generatedSlug falls back to random words.
-    ["!!!", ""],
-  ])("slugBaseFromName %j → %j", (name, base) => {
-    expect(slugBaseFromName(name)).toBe(base);
-    expect(VALID_SLUG_RE.test(generatedSlug(slugBaseFromName(name)))).toBe(true);
+  test("a slugless deploy gets human-id words, not a name-derived base", () => {
+    // The platform knows nothing about the bundle to derive a base from.
+    const slug = generatedSlug();
+    expect(VALID_SLUG_RE.test(slug)).toBe(true);
+    expect(slug).toMatch(SLUG_SUFFIX_RE);
+    // human-id words: at least one hyphenated word ahead of the suffix.
+    expect(slug.replace(SLUG_SUFFIX_RE, "")).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
   });
 
   test("a long base is trimmed so the slug stays within the 64-char grammar", () => {

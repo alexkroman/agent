@@ -12,7 +12,7 @@ import { localSlugLock } from "aai-server/platform-lock";
 import { createMemorySecretStore, type SecretStore } from "aai-server/secret-store";
 import { hashApiKey } from "aai-server/secrets";
 import type { BundleStore } from "aai-server/store-types";
-import { createTestStore, TEST_AGENT_CONFIG } from "aai-server/test-utils";
+import { createTestStore } from "aai-server/test-utils";
 import { createMemoryWorkspaceStore, type WorkspaceStore } from "aai-server/workspace-store";
 import { describe, expect, test, vi } from "vitest";
 import {
@@ -85,7 +85,6 @@ function claim(store: BundleStore, slug: string, key: string): Promise<void> {
     worker: "export default {}",
     clientFiles: {},
     credential_hashes: [hashApiKey(key)],
-    agentConfig: { ...TEST_AGENT_CONFIG, name: slug },
   });
 }
 

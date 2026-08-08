@@ -12,7 +12,6 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryPlatformEvents } from "./platform-events.ts";
-import type { IsolateConfig } from "./rpc-schemas.ts";
 import type { Sandbox } from "./sandbox.ts";
 import { brokerSessionUrl } from "./sandbox-broker.ts";
 import { createMemorySandboxDirectory, SandboxNameTakenError } from "./sandbox-directory.ts";
@@ -38,15 +37,6 @@ vi.mock("./sandbox-vm.ts", async (importOriginal) => ({
   spawnAgentServer: mockSpawnAgentServer,
 }));
 
-const TEST_AGENT_CONFIG: IsolateConfig = {
-  name: "test-agent",
-  systemPrompt: "You are a test agent",
-  greeting: "Hello!",
-  maxSteps: 3,
-  toolSchemas: [],
-  builtinTools: [],
-};
-
 async function seedAgent(slug: string) {
   const memory = createMemoryPlatformEvents();
   // The real signal that a change event has been delivered AND its handler
@@ -60,7 +50,6 @@ async function seedAgent(slug: string) {
       worker,
       clientFiles: {},
       credential_hashes: ["hash"],
-      agentConfig: TEST_AGENT_CONFIG,
     });
   await put('export default { name: "t" };');
   await settleEvents();
@@ -292,7 +281,6 @@ describe("storage (ctx.db) delivery", () => {
       worker: 'export default { name: "t" };',
       clientFiles: {},
       credential_hashes: ["hash"],
-      agentConfig: TEST_AGENT_CONFIG,
     });
     const appDb = {
       provision: () => Promise.reject(new Error("not expected")),

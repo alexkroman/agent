@@ -5,7 +5,7 @@
 // in aai-server's workspace-build-integration.test.ts); these tests pin the
 // parsing, the project-shape/side-file writes, and the failure surfaces.
 
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
@@ -119,12 +119,48 @@ describe("deployWorkspaceDir", () => {
     });
     // ensureProjectShape ran: the CLI sees a real project.
     await expect(readFile(path.join(dir, "tsconfig.json"), "utf-8")).resolves.toBeTruthy();
-    // The caller's key landed in the dir-local config home, mode-restricted.
-    const config = JSON.parse(await readFile(path.join(dir, ".aai-home", "config.json"), "utf-8"));
+    // The caller's key landed in the dir-local config home, mode-restricted —
+    // a property of the CLI's own writer, and invisible in the JSON, which is
+    // why this asserts the mode rather than trusting the shape.
+    const configPath = path.join(dir, ".aai-home", "config.json");
+    const config = JSON.parse(await readFile(configPath, "utf-8"));
     expect(config).toEqual({ apiKey: "k" });
+    expect((await stat(configPath)).mode & 0o777).toBe(0o600);
     // The slug pin keeps the agent's URL stable across publishes.
     const pin = JSON.parse(await readFile(path.join(dir, ".aai", "project.json"), "utf-8"));
     expect(pin).toEqual({ slug: "demo", serverUrl: "https://x.test" });
+  });
+
+  test("the slug pin MERGES — an existing project.json keeps its other fields", async () => {
+    const dir = await makeDir();
+    const cliEntry = await makeFakeCli({
+      stdout: `${JSON.stringify({ ok: true, data: { slug: "demo", url: "u" } })}\n`,
+    });
+    // A materialized workspace can already carry the studio link fields; a
+    // writer that REPLACES the document silently drops them.
+    await mkdir(path.join(dir, ".aai"), { recursive: true });
+    await writeFile(
+      path.join(dir, ".aai", "project.json"),
+      JSON.stringify({
+        serverUrl: "https://old.test",
+        studioProject: "demo",
+        studioSourceHash: "abc",
+      }),
+      "utf-8",
+    );
+    await deployWorkspaceDir(dir, {
+      serverUrl: "https://x.test",
+      apiKey: "k",
+      slug: "demo",
+      cliEntry,
+    });
+    const pin = JSON.parse(await readFile(path.join(dir, ".aai", "project.json"), "utf-8"));
+    expect(pin).toEqual({
+      studioProject: "demo",
+      studioSourceHash: "abc",
+      slug: "demo",
+      serverUrl: "https://x.test",
+    });
   });
 
   test("no slug means no pin — the CLI generates one", async () => {
