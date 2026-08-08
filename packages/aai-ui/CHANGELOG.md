@@ -1,5 +1,18 @@
 # @alexkroman1/aai-ui
 
+## 5.11.1
+
+### Patch Changes
+
+- 9fded19: Deadline the pre-connection client-config lookup. It runs inside the session's WebSocket URL provider, which partysocket awaits before arming any timeout of its own, so a platform that hung rather than failed meant no socket was ever constructed and none of the reconnect attempts ever ran — the session stayed on "connecting" indefinitely, including after the server recovered. A timed-out lookup now degrades like every other failed one.
+- 9fded19: Fail a session whose socket opened but never received a config frame. The server sends config at zero RTT, so an open-but-silent socket means the peer is not a healthy agent server — but partysocket's connection timeout is cleared once the socket opens, so the session reached "ready" (the same live indicator the UI gives "listening") and stayed there permanently with no mic, no error and no retry. It now re-dials on a deadline and surfaces a connection error once the budget is spent.
+- Updated dependencies [db3fb48]
+- Updated dependencies [db3fb48]
+- Updated dependencies [a91c3bc]
+- Updated dependencies [db3fb48]
+- Updated dependencies [db3fb48]
+  - @alexkroman1/aai@5.11.1
+
 ## 5.11.0
 
 ### Patch Changes

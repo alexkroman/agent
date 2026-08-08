@@ -1,5 +1,15 @@
 # @alexkroman1/aai
 
+## 5.11.1
+
+### Patch Changes
+
+- db3fb48: Make the SSRF DNS resolver injectable so the DNS-rebinding defense can be tested for what it does rather than for what the test host's resolver answers.
+- db3fb48: Stop publishing the s2s-transport connectS2s spy seam from the runtime barrel: a mutable test-patch object was part of the public API and could be overwritten process-wide.
+- a91c3bc: Split the pipeline transport's session lifecycle (provider open, greeting, provider-error teardown, stop) into pipeline-transport-lifecycle.ts, keeping pipeline-transport.ts to turn orchestration. No behaviour change.
+- db3fb48: Recognise the S2S reply.content_part.started/done bracket frames. The service sends them around every reply; absent from the message union each took the unrecognised path and logged a warning, burying the one signal that says a frame the service really sends is going unhandled.
+- db3fb48: Extract the SSRF DNS pin (address plus family) into a testable helper; no behaviour change.
+
 ## 5.11.0
 
 ### Patch Changes
