@@ -47,7 +47,7 @@ export default defineConfig({
       // aai-studio-server package and took its coverage with it).
       // Raise to ~2-3 points below actuals
       // whenever a coverage run shows comfortable headroom.
-      thresholds: { lines: 89, functions: 85, branches: 80, statements: 87 },
+      thresholds: { lines: 92, functions: 88, branches: 84, statements: 90 },
     },
   },
 });

@@ -113,6 +113,29 @@ the stdout contract survives while a human tailing the log still sees the
 failure. Any new post-startup output in a long-running command owes the same
 treatment.
 
+**`aai dev`'s restart state machine lives in `_dev-restart.ts`, behind
+injected `build`/`listen`/`close` operations.** It is the subtlest part of the
+watch loop — an edit saved mid-boot must QUEUE rather than race the initial
+build, a change during an in-flight restart must loop once more with the
+newest files, a failed build must leave the old server serving, the new server
+must be built BEFORE the old one closes (the down-window is the swap, not the
+rebuild), a lost port race must retry, and teardown must be idempotent and win
+against a rebuild in flight. None of that touches chokidar, Vite, or the
+bundler, but while it was inlined in `startDevServer` the only way to reach it
+was through nine module mocks plus a REAL bundler build and the watcher's 300ms
+debounce per assertion — which is why those specs carried 15s `vi.waitFor`
+ceilings, and why four of the races above had no test at all. Keep new
+restart/teardown logic in `_dev-restart.ts` and spec it there
+(`_dev-restart.test.ts`, no mocks); `_dev-server-restart.test.ts` is for
+WIRING only — that a chokidar event reaches the supervisor and that teardown
+closes the watcher with the server.
+
+One rule the split made visible and is worth keeping: **reporting success sits
+outside the `listen` try/catch.** Inside it, a notifier that throws — stderr
+closed by `aai dev | head` — was reported as a failed listen and tore down a
+server that had already bound. Logging must not be able to take the dev server
+down.
+
 **A `*-preview` project name is refused** (`projectNameFromDir` returns
 null). Publishing deploys under the project's own name, so such a project
 would claim a slug the orphan-preview sweep reaps hourly — taking the agent,
@@ -133,6 +156,7 @@ its app-database schema, and its secrets with it. See the `-preview` note in
 - `_init.ts` / `_deploy.ts` / `_delete.ts` / `_bundler.ts` — internal logic
 - `_dev-server.ts` — dev server for directory-based agents: loads `agent.ts`,
   builds runtime, watches for file changes, optionally runs Vite for client HMR
+- `_dev-restart.ts` — the watch loop's restart state machine (see below)
 - `_bundler.ts` — bundles `agent.ts` (and optional `client.tsx`) into
   deployable artifacts
 - `_api-client.ts` — platform API client (`apiRequest`, `apiRequestOrThrow`)

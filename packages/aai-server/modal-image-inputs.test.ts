@@ -68,6 +68,9 @@ describe("modal image install inputs", () => {
     expect(rootFiles).toContain("pnpm-lock.yaml");
     expect(rootFiles).toContain("pnpm-workspace.yaml");
     expect(rootFiles).toContain(".npmrc");
+    // Same reasoning as the `expected.length` guard in the test above: a
+    // parse that returned nothing would make the sweep below vacuous.
+    expect(rootFiles.length).toBeGreaterThan(0);
     for (const file of rootFiles) {
       expect(() => readFileSync(path.join(REPO_ROOT, file))).not.toThrow();
     }

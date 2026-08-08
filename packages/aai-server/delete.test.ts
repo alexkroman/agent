@@ -24,12 +24,9 @@ async function setup() {
     inspect: async () => TEST_AGENT_CONFIG,
   });
   const fetch: TestFetch = async (input, init) => app.request(input, init);
-  return { fetch, store, slots };
-}
-
-/** Yield until the delete's change event has been handled. */
-async function settleEvents(): Promise<void> {
-  for (let i = 0; i < 20; i += 1) await Promise.resolve();
+  // `settleEvents` waits out the delete's change event AND the handler it
+  // runs; see MemoryPlatformEvents.settled.
+  return { fetch, store, slots, settleEvents: () => memoryEvents.settled() };
 }
 
 test("delete returns 200 for deployed agent", async () => {
@@ -72,7 +69,7 @@ test("delete returns 401 without auth", async () => {
 });
 
 test("delete's change event shuts down the resident sandbox", async () => {
-  const { fetch, slots } = await setup();
+  const { fetch, slots, settleEvents } = await setup();
   await deployAgent(fetch);
 
   const shutdown = vi.fn().mockResolvedValue(undefined);
@@ -91,7 +88,7 @@ test("delete's change event shuts down the resident sandbox", async () => {
 
 test("delete succeeds even if sandbox shutdown fails", async () => {
   vi.spyOn(console, "warn").mockImplementation(() => undefined);
-  const { fetch, slots } = await setup();
+  const { fetch, slots, settleEvents } = await setup();
   await deployAgent(fetch);
 
   const shutdown = vi.fn().mockRejectedValue(new Error("shutdown failed"));

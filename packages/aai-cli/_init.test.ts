@@ -94,8 +94,10 @@ describe("runInit", () => {
 describe("patchPackageJsonForWorkspace", () => {
   test("no-ops when package.json does not exist", async () => {
     await withTempDir(async (dir) => {
-      // Should not throw
-      await patchPackageJsonForWorkspace(dir);
+      // "Should not throw" was a comment; now it is the assertion. The patch
+      // must also not CREATE the manifest it found missing.
+      await expect(patchPackageJsonForWorkspace(dir)).resolves.toBeUndefined();
+      await expect(fs.readdir(dir)).resolves.toEqual([]);
     });
   });
 

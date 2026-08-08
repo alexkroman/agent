@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { makeAgent, silentLogger } from "./_test-utils.ts";
+import { makeAgent, makeLogger, silentLogger } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";
 import { createServer } from "./server.ts";
 
@@ -112,16 +112,23 @@ describe("createServer", () => {
     expect(closeMs).toBeLessThan(1500);
   });
 
-  test("/health returns ok JSON", async () => {
-    const { runtime } = makeRuntime({ name: "health-agent" });
-    server = createServer({ runtime, name: "health-agent", logger: silentLogger });
-    await server.listen(0);
-  });
-
-  test("listen and close lifecycle works", async () => {
+  test("listen assigns an ephemeral port and close releases it", async () => {
     const { runtime } = makeRuntime();
     server = createServer({ runtime, logger: silentLogger });
     await server.listen(0);
+
+    // `listen(0)` means "pick a free port", so the assignment is the only
+    // evidence the server is really bound.
+    const { port } = server;
+    expect(port).toBeGreaterThan(0);
+    expect((await get(`http://localhost:${port}/health`)).status).toBe(200);
+
+    await server.close();
+    server = null;
+    // Closed for real: the port is free to bind again.
+    const second = createServer({ runtime, logger: silentLogger });
+    await expect(second.listen(port)).resolves.toBeUndefined();
+    await second.close();
   });
 
   test("/ returns default HTML with escaped agent name", async () => {
@@ -146,18 +153,28 @@ describe("createServer", () => {
   });
 
   test("404 triggers error-level logging", async () => {
+    // A FRESH logger: `silentLogger` is a shared singleton whose `vi.fn()`
+    // call history accumulates across every test in the file (`restoreMocks`
+    // restores spies, not mock call logs). A bare `toHaveBeenCalled()` against
+    // it passes on an error some earlier test logged — which is exactly what
+    // this assertion was doing, and why `makeLogger()` exists.
+    const logger = makeLogger();
     const { runtime } = makeRuntime();
-    server = createServer({ runtime, logger: silentLogger });
+    server = createServer({ runtime, logger });
     await server.listen(0);
 
+    expect(logger.error).not.toHaveBeenCalled();
     await get(`http://localhost:${server.port}/nonexistent-path`);
-    await vi.waitFor(() => expect(silentLogger.error).toHaveBeenCalled());
+    await vi.waitFor(() => expect(logger.error).toHaveBeenCalled());
   });
 
   test("close is safe to call without listen", async () => {
     const { runtime } = makeRuntime();
     server = createServer({ runtime, logger: silentLogger });
-    await server.close();
+    // Stated, not merely survived: SIGINT before the listen resolves must not
+    // reject, and the `afterEach` calling close again must not either.
+    await expect(server.close()).resolves.toBeUndefined();
+    await expect(server.close()).resolves.toBeUndefined();
     server = null;
   });
 

@@ -19,6 +19,15 @@ import pTimeout from "p-timeout";
 import { Agent, fetch as undiciFetch } from "undici";
 
 const BLOCKED_TLDS = [".internal", ".local", ".localhost"];
+/**
+ * Named metadata endpoints, kept as belt-and-braces beside {@link
+ * BLOCKED_TLDS}. Note both current entries end in `.internal`, so the TLD
+ * rule already catches them — mutation testing flags emptying this Set as
+ * surviving, and that is accurate rather than a missing test. It earns its
+ * place only for a future metadata hostname that does NOT sit under a blocked
+ * TLD; add such a host here, and a spec with it, rather than assuming this
+ * list is what is doing the work today.
+ */
 const BLOCKED_HOSTS = new Set(["metadata.google.internal", "instance-data.ec2.internal"]);
 
 /** Thrown when a URL is rejected by SSRF policy (vs. an incidental failure). */
@@ -53,13 +62,33 @@ function isLiteralIp(hostname: string): boolean {
 }
 
 /**
+ * The DNS resolution this module screens. Injectable so the rebinding defense
+ * below can be tested for what it DOES rather than for what the test host's
+ * resolver happens to answer.
+ *
+ * @internal
+ */
+export type DnsLookup = (hostname: string) => Promise<{ address: string }>;
+
+/**
  * Single-pass validation: checks hostname rules, resolves DNS if needed,
  * validates the resolved IP, and returns the resolved IP for pinning.
  * Returns null if the hostname is already a literal IP (already validated).
  *
+ * `lookupFn` exists for tests, like `ssrfSafeFetch`'s `fetchFn` — production
+ * callers leave it unset. Without it the one branch that IS the DNS-rebinding
+ * defense ("hostname resolves to a private address") had no deterministic
+ * test: the only way to control `node:dns/promises` was a module mock, which
+ * had to live in a separate file so it would not leak into the rest of the
+ * suite, and the decimal-encoded-localhost spec instead hedged across both
+ * outcomes and so could not fail at all.
+ *
  * @internal
  */
-export async function resolveAndAssertPublic(url: string): Promise<string | null> {
+export async function resolveAndAssertPublic(
+  url: string,
+  lookupFn: DnsLookup = lookup,
+): Promise<string | null> {
   const parsed = new URL(url);
   const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
 
@@ -77,7 +106,7 @@ export async function resolveAndAssertPublic(url: string): Promise<string | null
   }
   // Hostname is not a literal IP — resolve DNS and validate the result
   try {
-    const { address } = await pTimeout(lookup(hostname), {
+    const { address } = await pTimeout(lookupFn(hostname), {
       milliseconds: 2000,
       message: "DNS lookup timed out",
     });
@@ -124,13 +153,35 @@ type FetchDispatcher = NonNullable<RequestInit["dispatcher"]>;
  * Injected fetch implementations that aren't undici-backed (test doubles)
  * simply ignore the dispatcher.
  */
-function pinnedDispatcher(resolvedIp: string): FetchDispatcher {
+/**
+ * The pin itself: a `lookup` that ignores the hostname and answers with the
+ * address already screened. Split out of {@link pinnedDispatcher} because it
+ * is the whole security content of that function and was untestable inside
+ * it — `pinnedDispatcher` is reached only through a DNS-resolved hostname, so
+ * every mutation of the address and family survived the suite while
+ * `ssrf-dispatcher.test.ts` exercised an Agent it built itself.
+ *
+ * The family is derived rather than passed: undici rejects a v4 address
+ * announced as family 6 (and vice versa) at connect time, which surfaces as
+ * an opaque fetch failure rather than as anything naming DNS.
+ *
+ * @internal
+ */
+export function pinnedLookup(resolvedIp: string) {
   const family = resolvedIp.includes(":") ? 6 : 4;
+  return (
+    _hostname: string,
+    _options: unknown,
+    callback: (err: Error | null, addresses: { address: string; family: number }[]) => void,
+  ): void => {
+    callback(null, [{ address: resolvedIp, family }]);
+  };
+}
+
+function pinnedDispatcher(resolvedIp: string): FetchDispatcher {
   const agent = new Agent({
     connect: {
-      lookup: (_hostname, _options, callback) => {
-        callback(null, [{ address: resolvedIp, family }]);
-      },
+      lookup: pinnedLookup(resolvedIp),
     },
     // One Agent is created per request, so it must not hold sockets open
     // after the response body is consumed. We deliberately do NOT call

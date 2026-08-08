@@ -185,19 +185,36 @@ describe("connectS2s event dispatch", () => {
   });
 
   test("reply.content_part events are silently ignored (no dispatch)", async () => {
-    const { raw } = await setupHandle();
+    const callbacks = makeMockCallbacks();
+    const { raw, logger } = await setupHandle(callbacks);
+
     emitMessage(raw, { type: "reply.content_part.started" });
     emitMessage(raw, { type: "reply.content_part.done" });
+
+    // "Silently" and "ignored" are two separate claims, and the body checked
+    // neither — it only proved the emits did not throw. Ignored: no callback
+    // ran. Silently: the parser RECOGNISES them, so they are absent from the
+    // dropped list rather than warning twice per reply. Asserting the second
+    // half is what revealed they were NOT recognised at all.
+    for (const cb of Object.values(callbacks)) expect(cb).not.toHaveBeenCalled();
+    // The stronger claim, now that the logger is per-session: not merely that
+    // these two types are absent from the dropped list, but that the parser
+    // dropped NOTHING at all.
+    expect(droppedTypes(logger)).toEqual([]);
   });
 });
 
 const UNRECOGNISED_PREFIX = "S2S << unrecognised message type: ";
 
 /**
- * Message types the parser rejected, read back out of its warnings. These specs
- * assert a type is absent from this list rather than that nothing was warned at
- * all: `setupHandle`'s logger is the shared `silentLogger` singleton, whose call
- * history accumulates across tests in the file.
+ * Message types the parser rejected, read back out of its warnings.
+ *
+ * These specs used to assert a type was ABSENT from this list rather than that
+ * nothing was warned at all, because `setupHandle`'s logger was effectively
+ * shared: `createTestS2s` spread `silentLogger`, which copies the same
+ * `vi.fn()` references, so one accumulating call log served every session in
+ * the file. Each session now gets its own `makeLogger()`, so an empty list is
+ * a meaningful assertion and the stronger form is available where it fits.
  */
 function droppedTypes(logger: Awaited<ReturnType<typeof setupHandle>>["logger"]): string[] {
   return logger.warn.mock.calls

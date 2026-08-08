@@ -197,6 +197,36 @@ describe("startDevServer", () => {
     });
   });
 
+  // The backend binds the port before Vite boots, and startDevServer throws
+  // on a Vite failure — so without an explicit close it stays listening with
+  // nothing holding a handle to it. `aai dev` would then report a startup
+  // failure and leave the port occupied against the retry.
+  test("a Vite failure closes the backend that already bound", async () => {
+    await withTempDir(async (dir) => {
+      await writeAgentTs(dir);
+
+      vi.mocked(existsSync).mockImplementation((p: import("node:fs").PathLike) =>
+        String(p).endsWith("client.tsx"),
+      );
+      vi.doMock("vite", () => ({
+        createServer: vi.fn().mockResolvedValue({
+          close: vi.fn().mockResolvedValue(undefined),
+          listen: vi.fn().mockRejectedValue(new Error("vite port taken")),
+        }),
+      }));
+
+      const { startDevServer: freshStart } = await import("./_dev-server.ts");
+      mockClose.mockClear();
+
+      await expect(freshStart({ cwd: dir, port: 3000 })).rejects.toThrow("vite port taken");
+
+      expect(mockListen).toHaveBeenCalled();
+      expect(mockClose).toHaveBeenCalledTimes(1);
+      expect(chokidarState.close).toHaveBeenCalledTimes(1);
+      vi.doUnmock("vite");
+    });
+  });
+
   test("falls back to the logged-in key when .env declares none", async () => {
     await withTempDir(async (dir) => {
       await writeAgentTs(dir);

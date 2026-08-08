@@ -45,12 +45,22 @@ export default defineConfig({
       // Ratchet: these floors only move UP. When a coverage run shows actuals
       // comfortably above a floor, raise the floor to ~2-3 points below the
       // actual so regressions fail fast but routine refactors don't flap.
-      // Actuals (2026-07): lines ~91%, branches ~80%, functions ~87%, statements ~89%.
+      //
+      // These are the WHOLE-REPO floors, and the only thing that runs one is a
+      // direct `pnpm vitest run --coverage` at the root. `pnpm test:coverage`
+      // is `turbo run test:coverage`, which fans out to each package's own
+      // config, and CI runs `pnpm --filter ./packages/<pkg> test:coverage` per
+      // matrix entry — so the PER-PACKAGE floors are what actually gates a PR.
+      // Keep both: this one is the only floor that sees the repo as one
+      // program, and it was sitting ~4 points under a number nothing measured.
+      //
+      // Actuals (2026-08, `pnpm vitest run --coverage`, 4508 tests):
+      // lines 92.25, functions 88.75, branches 84.05, statements 90.27.
       thresholds: {
-        lines: 88,
-        functions: 84,
-        branches: 77,
-        statements: 86,
+        lines: 90,
+        functions: 86,
+        branches: 81,
+        statements: 88,
       },
     },
     projects: [

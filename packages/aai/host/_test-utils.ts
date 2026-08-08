@@ -144,18 +144,44 @@ export function makeClientSink(overrides?: Partial<ClientSink>): ClientSink {
   };
 }
 
+/**
+ * A logger that discards. Shared by 26 suites purely to keep test output
+ * quiet — it is NOT for asserting on.
+ *
+ * Plain no-ops rather than `vi.fn()`, which is the point: as spies these were
+ * a module singleton whose call history accumulated across every test in a
+ * file (`restoreMocks` restores spies, it does not clear a `vi.fn()`'s call
+ * log), so `expect(silentLogger.error).toHaveBeenCalled()` could be satisfied
+ * by an error some earlier test logged. Two suites were asserting on it. The
+ * comment warning against that had been here all along and is what a reader
+ * has to notice; no-ops make the mistake impossible instead — `toHaveBeenCalled`
+ * on a non-mock fails loudly and names the reason.
+ */
 export const silentLogger = {
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
-  debug: vi.fn(),
+  info: () => undefined,
+  warn: () => undefined,
+  error: () => undefined,
+  debug: () => undefined,
 };
 
 /**
- * Fresh logger with per-call `vi.fn()` spies. Use for tests that assert on
- * log output — {@link silentLogger} is a shared singleton and accumulates
- * call history across tests.
+ * Narrow a test double to `fetch`'s type, in ONE place.
+ *
+ * A fake fetch never matches `typeof globalThis.fetch` structurally — the real
+ * signature takes `RequestInfo | URL`, returns a full `Response`, and carries
+ * `preconnect` — so every call site was laundering its double through a
+ * double-cast to get there. That is the concentration of identical casts the
+ * root guide names as a missing typed seam: 27 of them across four suites
+ * here. The narrowing happens once, below, and the call sites read as what
+ * they are.
  */
+export function fakeFetch(
+  fn: (url: string, init: RequestInit) => Promise<Response>,
+): typeof globalThis.fetch {
+  return fn as unknown as typeof globalThis.fetch;
+}
+
+/** Fresh logger with per-call `vi.fn()` spies. Use whenever you assert on log output. */
 export function makeLogger() {
   return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 }

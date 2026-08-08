@@ -7,6 +7,12 @@ export const base = {
   // place mode skips that preprocessor entirely. Stryker restores the
   // working tree from .stryker-tmp/backup-* when the run ends — do not run
   // vitest (or edit source) concurrently with a mutation run.
+  //
+  // That restore is byte-level and NOT mode-level: `packages/aai-cli/bin.mjs`
+  // comes back 644 after every run, so `git status` shows a mode change and
+  // the published bin would lose its executable bit if committed that way.
+  // `chmod +x packages/aai-cli/bin.mjs` after a run, and check `git status`
+  // before committing.
   inPlace: true,
   testRunnerNodeArgs: ["--experimental-vm-modules"],
   reporters: ["html", "clear-text", "progress"],

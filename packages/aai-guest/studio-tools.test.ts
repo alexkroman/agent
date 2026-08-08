@@ -193,6 +193,7 @@ describe("guest workspace tools", () => {
     expect(Object.keys(STUDIO_TOOL_LABELS).sort()).toEqual(names);
     // A file-touching tool missing here loses its edits on a mid-turn crash
     // (the checkpointer never fires for it).
+    expect(MUTATING_TOOLS.size).toBeGreaterThan(0);
     for (const name of MUTATING_TOOLS) expect(names).toContain(name);
   });
 

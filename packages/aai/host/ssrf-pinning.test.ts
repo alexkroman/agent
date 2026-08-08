@@ -17,6 +17,7 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
+import { fakeFetch } from "./_test-utils.ts";
 
 const PINNED_IP = "93.184.216.34";
 
@@ -43,7 +44,7 @@ function okFetch(): {
 } {
   const fn = vi.fn(async () => new Response("body", { status: 200 }));
   return {
-    fetch: fn as unknown as typeof globalThis.fetch,
+    fetch: fakeFetch(fn),
     firstCall: () => fn.mock.calls[0] as unknown as [string, MaybeDispatcher],
   };
 }

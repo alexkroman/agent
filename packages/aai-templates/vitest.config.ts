@@ -20,6 +20,7 @@ export default defineConfig({
       "template-api-coverage.test.ts",
       "claude-md-limit.test.ts",
       "escape-hatch-scope.test.ts",
+      "test-assertion-gate.test.ts",
       "templates/*/*.test.ts",
     ],
     coverage: {
@@ -31,7 +32,7 @@ export default defineConfig({
       // only move up from here. They are lower than every other package's on
       // purpose: templates are example agents whose value is being READ, and
       // each one's tests cover its own tools rather than every branch.
-      thresholds: { lines: 67, functions: 56, branches: 50, statements: 64 },
+      thresholds: { lines: 78, functions: 73, branches: 64, statements: 75 },
     },
   },
 });

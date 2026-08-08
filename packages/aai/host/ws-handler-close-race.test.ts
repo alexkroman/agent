@@ -4,18 +4,10 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { createOwnedMap } from "../sdk/owned-map.ts";
-import { MockWebSocket } from "./_mock-ws.ts";
 import { makeMockCore, silentLogger, tick } from "./_test-utils.ts";
+import { defaultConfig, openSocket } from "./_ws-handler-test-utils.ts";
 import type { SessionCore } from "./session-core.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
-
-const defaultConfig = { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 };
-
-function openSocket(): MockWebSocket {
-  const ws = new MockWebSocket("ws://test");
-  ws.readyState = MockWebSocket.OPEN;
-  return ws;
-}
 
 describe("wireSessionSocket — close during start()", () => {
   test("buffered frames are not dispatched into the stopped session when start() later resolves", async () => {

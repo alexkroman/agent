@@ -9,16 +9,9 @@ import { createOwnedMap } from "../sdk/owned-map.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeLogger, makeMockCore, silentLogger } from "./_test-utils.ts";
+import { defaultConfig, openSocket } from "./_ws-handler-test-utils.ts";
 import type { SessionCore } from "./session-core.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
-
-const defaultConfig = { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 };
-
-function openSocket(readyState: number = MockWebSocket.OPEN): MockWebSocket {
-  const ws = new MockWebSocket("ws://test");
-  ws.readyState = readyState;
-  return ws;
-}
 
 describe("wireSessionSocket lifecycle", () => {
   test("close handler calls session.stop", async () => {
@@ -296,8 +289,12 @@ describe("wireSessionSocket lifecycle", () => {
     ws.send = () => {
       throw new Error("socket closed");
     };
-    capturedClient.event({ type: "speech_started" });
-    capturedClient.playAudioChunk(new Uint8Array([1]));
+    // A send that throws must be contained — a closed socket is the normal
+    // end of every session, and an escaping throw from the sink takes out
+    // whatever transport callback was writing. Stated as an assertion rather
+    // than left to the test merely not failing.
+    expect(() => capturedClient.event({ type: "speech_started" })).not.toThrow();
+    expect(() => capturedClient.playAudioChunk(new Uint8Array([1]))).not.toThrow();
     capturedClient.playAudioDone();
   });
 
@@ -388,6 +385,10 @@ describe("wireSessionSocket lifecycle", () => {
   });
 
   test("session.start() timeout triggers 'Session start failed'", async () => {
+    // Fresh, not the shared `silentLogger`: its call history accumulates
+    // across the file, so an identical call from an earlier test would
+    // satisfy the assertion below on its own.
+    const logger = makeLogger();
     const core = makeMockCore({
       start: vi.fn(
         () =>
@@ -403,7 +404,7 @@ describe("wireSessionSocket lifecycle", () => {
       sessions,
       createSession: () => core,
       readyConfig: defaultConfig,
-      logger: silentLogger,
+      logger,
       sessionStartTimeoutMs: 50,
     });
 
@@ -416,7 +417,7 @@ describe("wireSessionSocket lifecycle", () => {
       { timeout: 500 },
     );
 
-    expect(silentLogger.error).toHaveBeenCalledWith(
+    expect(logger.error).toHaveBeenCalledWith(
       "Session start failed",
       expect.objectContaining({ error: expect.stringContaining("timed out") }),
     );

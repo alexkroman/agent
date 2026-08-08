@@ -65,7 +65,22 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
 - `platform-events.ts` — `PlatformEvents`: cross-replica change
   notifications (`watchAgents`, `watchWorkspace`, `watchChat`,
   `watchScopeProjects`) as SIGNALS (handlers re-read rows, never trust
-  payloads); memory emitter + store decorators for dev/tests
+  payloads); memory emitter + store decorators for dev/tests.
+  **Wait out an emit with `memory.settled()`, never a microtask spin.** An
+  emit is fire-and-forget in both directions — dispatch is deferred a
+  microtask, and a handler like `watchAgentInvalidation` then does async work
+  (row re-read, slot retirement, a replacement boot) that returns to nobody —
+  so three specs hand-rolled `for (let i = 0; i < N; i++) await
+  Promise.resolve()` with N=5 in one file and N=20 in two others. That number
+  is unknowable and silent when wrong: one more `await` in the handover chain
+  and the spin finishes early, so assertions run against half-applied state
+  and either flake or pass while testing nothing. `settled()` collects each
+  handler's returned promise and drains until quiescent (handlers that emit
+  again included), which is why `watchAgentInvalidation` RETURNS its
+  `withSlugLock` promise instead of `void`-ing it. Two consequences: a new
+  watcher whose work must be waitable has to return its promise, and because
+  `settled()` really waits it can DEADLOCK — a test holding the slug lock must
+  commit, release, then settle
 - `realtime-events.ts` — the production `PlatformEvents`: Supabase Realtime
   `postgres_changes` on `aai_platform.agents` / `studio_workspaces` /
   `studio_chats` over `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`, plus

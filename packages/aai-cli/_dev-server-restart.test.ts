@@ -1,4 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
+// Watch-loop WIRING specs: chokidar event → debounce → the restart supervisor
+// → a real rebuild, and the teardown that closes the watcher with the server.
+//
+// The restart state machine itself (queueing during boot, build-before-close
+// ordering, listen retries, the teardown races) is specced directly and
+// mock-free in `_dev-restart.test.ts`. Only assertions that need the real
+// wiring belong here — everything else pays a full bundler build per restart
+// for coverage the supervisor spec gets in microseconds.
 
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
@@ -40,7 +48,6 @@ vi.mock("./_utils.ts", async () => (await import("./_dev-server-test-utils.ts"))
 // ─── Imports under test (after mocks) ───────────────────────────────────────
 
 import { startDevServer } from "./_dev-server.ts";
-import { log } from "./_ui.ts";
 
 // 30s, not the 5s default: sibling suites run multi-second runtime-inlining
 // builds now, and CPU starvation under full-repo parallel runs was flaking
@@ -86,8 +93,8 @@ beforeEach(() => {
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
-describe("startDevServer restart behavior", () => {
-  test("watcher triggers restart on agent file change", async () => {
+describe("startDevServer watch wiring", () => {
+  test("a chokidar change event drives a full rebuild and re-listen", async () => {
     await withTempDir(async (dir) => {
       await writeAgentTs(dir);
 
@@ -116,44 +123,16 @@ describe("startDevServer restart behavior", () => {
     });
   });
 
-  test("builds the new server before closing the old one on restart", async () => {
+  test("the watcher is installed before the initial listen", async () => {
     await withTempDir(async (dir) => {
       await writeAgentTs(dir);
-
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-
-      mockClose.mockClear();
-      mockCreateServer.mockClear();
       mockListen.mockClear();
 
-      fireChange(dir, "agent.ts");
-
-      await vi.waitFor(
-        () => {
-          expect(mockListen).toHaveBeenCalled();
-        },
-        { timeout: 15_000 },
-      );
-
-      // Build (createServer) completes BEFORE the old server closes, so the
-      // down-window is only the close+listen swap — not the whole rebuild.
-      const createOrder = mockCreateServer.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY;
-      const closeOrder = mockClose.mock.invocationCallOrder[0] ?? Number.NEGATIVE_INFINITY;
-      const listenOrder = mockListen.mock.invocationCallOrder[0] ?? Number.NEGATIVE_INFINITY;
-      expect(createOrder).toBeLessThan(closeOrder);
-      expect(closeOrder).toBeLessThan(listenOrder);
-
-      await cleanup();
-    });
-  });
-
-  test("edit saved during startup triggers one restart after startup completes", async () => {
-    await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-      mockCreateServer.mockClear();
-      mockListen.mockClear();
-
-      // Block startup at the initial listen so the change event lands mid-boot.
+      // Block startup at the initial listen and check the watcher is already
+      // up: `ignoreInitial` means an edit saved during boot would otherwise
+      // fire no event at all, and the dev server would serve stale code until
+      // the next save. (That the event is then QUEUED rather than raced is the
+      // supervisor's invariant, specced in _dev-restart.test.ts.)
       let releaseListen!: () => void;
       mockListen.mockImplementationOnce(
         () =>
@@ -163,137 +142,30 @@ describe("startDevServer restart behavior", () => {
       );
 
       const startPromise = startDevServer({ cwd: dir, port: 3000 });
-      // The watcher must exist before the initial build/listen finishes —
-      // otherwise a save during boot never fires an event at all.
-      //
-      // These two were the only waitFors in the file left on vitest's 1s
-      // default, against the 15s ceiling the header explains: reaching the
-      // initial listen runs a REAL bundler build, so 1s holds standalone and
-      // flakes under a contended full-repo run. Measured 2 failures in 5
-      // five-project runs (`expected "vi.fn()" to be called at least once` on
-      // the listen wait) versus 0 in 3 on the same commit's parent.
-      await vi.waitFor(() => expect(chokidarState.allCallback).toBeDefined(), {
-        timeout: 15_000,
-      });
+      // Reaching the initial listen runs a REAL bundler build, so the 1s
+      // default holds standalone but flakes under a contended full-repo run.
+      // Measured 2 failures in 5 five-project runs on the 1s bound versus 0
+      // in 3 on the same commit's parent.
       await vi.waitFor(() => expect(mockListen).toHaveBeenCalled(), { timeout: 15_000 });
-
-      fireChange(dir, "agent.ts");
-      // Let the debounce elapse while startup is still blocked: the event must
-      // be queued, not start a restart racing the initial build.
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      expect(mockCreateServer).toHaveBeenCalledTimes(1);
+      expect(chokidarState.allCallback).toBeDefined();
 
       releaseListen();
-      const cleanup = await startPromise;
-
-      await vi.waitFor(() => expect(mockCreateServer).toHaveBeenCalledTimes(2), {
-        timeout: 15_000,
-      });
-
-      await cleanup();
+      await (await startPromise)();
     });
   });
 
-  test("restart retries listen when the port is momentarily taken", async () => {
-    await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-
-      mockListen.mockClear();
-      vi.mocked(log.success).mockClear();
-      // Two rejected attempts, then the default (resolving) implementation
-      // from beforeEach serves the third — nothing queued leaks past the test.
-      mockListen
-        .mockRejectedValueOnce(new Error("EADDRINUSE"))
-        .mockRejectedValueOnce(new Error("EADDRINUSE"));
-
-      fireChange(dir, "agent.ts");
-
-      await vi.waitFor(() => expect(log.success).toHaveBeenCalledWith("Restarted"), {
-        timeout: 15_000,
-      });
-      expect(mockListen).toHaveBeenCalledTimes(3);
-
-      await cleanup();
-    });
-  });
-
-  test("restart logs a save-to-retry hint when listen fails after all retries", async () => {
-    await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-
-      mockListen.mockClear();
-      vi.mocked(log.error).mockClear();
-      // Exactly three rejected attempts; later calls fall back to the default
-      // resolving implementation so nothing queued leaks past the test.
-      mockListen
-        .mockRejectedValueOnce(new Error("EADDRINUSE"))
-        .mockRejectedValueOnce(new Error("EADDRINUSE"))
-        .mockRejectedValueOnce(new Error("EADDRINUSE"));
-
-      fireChange(dir, "agent.ts");
-
-      await vi.waitFor(
-        () => expect(log.error).toHaveBeenCalledWith(expect.stringContaining("save a file")),
-        { timeout: 15_000 },
-      );
-      expect(mockListen).toHaveBeenCalledTimes(3);
-
-      await cleanup();
-    });
-  });
-
-  // SIGINT then SIGTERM invokes cleanup twice — the teardown must run once.
-  test("cleanup is idempotent: second call joins the in-flight teardown", async () => {
+  test("cleanup closes the watcher alongside the server, once", async () => {
     await withTempDir(async (dir) => {
       await writeAgentTs(dir);
 
       const cleanup = await startDevServer({ cwd: dir, port: 3000 });
       mockClose.mockClear();
 
-      const first = cleanup();
-      const second = cleanup();
-      expect(second).toBe(first);
-      await first;
+      await cleanup();
       await cleanup();
 
       expect(mockClose).toHaveBeenCalledTimes(1);
       expect(chokidarState.close).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  test("restart logs error on failure instead of crashing", async () => {
-    await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-
-      // After initial load, make validation throw on next reload
-      mockValidateAgentExport.mockImplementation(() => {
-        throw new Error("agent broke");
-      });
-
-      mockClose.mockClear();
-
-      // Actually change the file: an unchanged bundle is served from the
-      // eval memo (createWorkerEvaluator) and never re-validated.
-      await writeAgentTs(dir, "test-agent-v2");
-      fireChange(dir, "agent.ts");
-
-      await vi.waitFor(
-        () => {
-          expect(log.error).toHaveBeenCalledWith(expect.stringContaining("Restart failed"));
-        },
-        { timeout: 15_000 },
-      );
-
-      // A failed build must leave the previous server running: no close.
-      expect(mockClose).not.toHaveBeenCalled();
-
-      await cleanup();
     });
   });
 });

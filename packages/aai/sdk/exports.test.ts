@@ -35,10 +35,26 @@ const SUBPATH_IMPORTS: ReadonlyArray<readonly [label: string, load: () => Promis
   ["@alexkroman1/aai/tts", () => import("@alexkroman1/aai/tts")],
   ["@alexkroman1/aai/llm", () => import("@alexkroman1/aai/llm")],
   ["@alexkroman1/aai/tools", () => import("@alexkroman1/aai/tools")],
+  // Published and importable, so a leak here is still a leak — being
+  // "not public API, not semver-covered" is a promise to consumers, not a
+  // reason to leave the surface unpinned.
+  ["@alexkroman1/aai/internal", () => import("@alexkroman1/aai/internal")],
 ];
 
 describe("export surface stability", { timeout: IMPORT_TIMEOUT_MS }, () => {
   test.each(SUBPATH_IMPORTS)("%s export", async (_label, load) => {
     expect(Object.keys(await load()).sort()).toMatchSnapshot();
+  });
+
+  // A RULE alongside the snapshots, because a snapshot absorbs whatever it is
+  // shown the next time someone runs `-u`. `_internals` (s2s-transport's
+  // connectS2s spy seam) rode the runtime barrel this way: a mutable object a
+  // test patches, published as a process-wide behaviour switch on
+  // `@alexkroman1/aai/runtime`, and the snapshot simply recorded it as normal.
+  test.each(SUBPATH_IMPORTS)("%s exports no underscore-prefixed name", async (_label, load) => {
+    const leaked = Object.keys(await load()).filter((name) => name.startsWith("_"));
+    expect(leaked, "`_`-prefixed names are package-internal — import the module directly").toEqual(
+      [],
+    );
   });
 });

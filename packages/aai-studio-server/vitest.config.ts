@@ -18,7 +18,7 @@ export default defineConfig({
       exclude: [...sharedCoverageExclude, "index.ts", "modal_deploy.py"],
       // Ratchet seed for a new package: set just below the first measured
       // actuals; floors only move up from here.
-      thresholds: { lines: 92, functions: 90, branches: 78, statements: 88 },
+      thresholds: { lines: 96, functions: 93, branches: 90, statements: 94 },
     },
   },
 });

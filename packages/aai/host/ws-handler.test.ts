@@ -6,35 +6,16 @@ import { describe, expect, test, vi } from "vitest";
 import { createOwnedMap } from "../sdk/owned-map.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeLogger, makeMockCore, silentLogger } from "./_test-utils.ts";
+import {
+  defaultConfig,
+  openSocket,
+  parseFirstFrame,
+  simulateBinaryFrame,
+  simulateTextFrame,
+  waitForSessionReady,
+} from "./_ws-handler-test-utils.ts";
 import type { SessionCore } from "./session-core.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
-
-const defaultConfig = { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 };
-
-function openSocket(readyState: number = MockWebSocket.OPEN): MockWebSocket {
-  const ws = new MockWebSocket("ws://test");
-  ws.readyState = readyState;
-  return ws;
-}
-
-function simulateBinaryFrame(ws: MockWebSocket, frame: Uint8Array): void {
-  ws.dispatchEvent(new MessageEvent("message", { data: frame }));
-}
-
-function simulateTextFrame(ws: MockWebSocket, text: string): void {
-  ws.dispatchEvent(new MessageEvent("message", { data: text }));
-}
-
-async function waitForSessionReady(logger: { info: ReturnType<typeof vi.fn> }): Promise<void> {
-  await vi.waitFor(() => {
-    const calls = logger.info.mock.calls.map((c: unknown[]) => c[0]);
-    if (!calls.includes("Session ready")) throw new Error("Session not ready yet");
-  });
-}
-
-function parseFirstFrame(ws: MockWebSocket): Record<string, unknown> {
-  return JSON.parse(ws.sent[0] as string);
-}
 
 describe("wireSessionSocket", () => {
   test("'Session ready' is not logged until session.start() resolves", async () => {
@@ -418,14 +399,24 @@ describe("wireSessionSocket", () => {
 
   test("messages before session is created (no open yet) are ignored", () => {
     const ws = openSocket(MockWebSocket.CONNECTING);
+    const core = makeMockCore();
+    const createSession = vi.fn(() => core);
 
     wireSessionSocket(ws, {
       sessions: createOwnedMap(),
-      createSession: () => makeMockCore(),
+      createSession,
       readyConfig: defaultConfig,
       logger: silentLogger,
     });
 
     simulateTextFrame(ws, JSON.stringify({ type: "audio_ready" }));
+
+    // "Ignored" has to be asserted against something. A frame arriving before
+    // 'open' must neither conjure a session nor reach one: not-throwing is
+    // what this used to check, and it would hold just as well if the frame
+    // were being dispatched into a half-built session.
+    expect(createSession).not.toHaveBeenCalled();
+    expect(core.onAudioReady).not.toHaveBeenCalled();
+    expect(ws.sent).toEqual([]);
   });
 });

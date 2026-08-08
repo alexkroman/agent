@@ -75,11 +75,12 @@ for packages changed since the default branch.
 ### Quality ratchets
 
 Beyond lint/typecheck/test, `scripts/check.sh` **and the CI check job** run
-three **gates** (all also runnable standalone) that hold the line on technical
-debt; the first two work by comparing the branch against its merge-base with
-`origin/main`. They must stay wired into BOTH: for a long time they lived
-only in `check.sh`, which CI never invokes, so the only thing enforcing them
-was the pre-push hook — and `git push --no-verify` skipped them entirely.
+four **gates** (all also runnable standalone) that hold the line on technical
+debt; the first works by comparing the branch against its merge-base with
+`origin/main`, while the rest are absolute. They must stay wired into BOTH:
+for a long time they lived only in `check.sh`, which CI never invokes, so the
+only thing enforcing them was the pre-push hook — and `git push --no-verify`
+skipped them entirely.
 
 - **`pnpm check:hatches`** (`scripts/check-escape-hatches.mjs`) — counts
   static-analysis escape hatches (`@ts-expect-error`, `@ts-ignore`,
@@ -135,6 +136,32 @@ was the pre-push hook — and `git push --no-verify` skipped them entirely.
   grow past its ceiling, and ceilings should only ever be lowered as files
   are split up. New files must come in under the cap. Templates under
   `packages/aai-templates/templates/` are exempt.
+- **`pnpm check:test-assertions`** (`scripts/check-test-assertions.mjs`) —
+  fails on any `test()`/`it()` body containing no `expect` / `expectTypeOf` /
+  `assert`. A test with no assertion still runs the code, still counts in the
+  green total, and still shows up in COVERAGE, while checking nothing but "did
+  not throw synchronously" — indistinguishable from real coverage at every
+  level anyone looks at. Nine were found: `"/health returns ok JSON"` never
+  sent a request (a real version lived 30 lines below it),
+  `"onHistory appends and onUserTranscript pushes user messages"` checked none
+  of its three claims, and `"does not block different keys on each other"`
+  encoded its invariant as a bare `await`, so a regression would HANG to the
+  suite timeout rather than fail. **"Does not throw" is legitimate — it just
+  has to be said**: `expect(fn).not.toThrow()`,
+  `await expect(p).resolves.toBeUndefined()`, `expect.fail(msg)` in place of a
+  bare `throw`.
+
+  There is deliberately **no allowlist**: an entry would assert that some test
+  rightly checks nothing, which is never true. Two things the gate needs to
+  stay trustworthy, both learned by getting them wrong: it masks comments and
+  string literals before scanning (a JSDoc paragraph *about* `test()` is not a
+  test, and three files here have one), and it excludes
+  `RegExp.prototype.test` via a lookbehind — `/re/.test(x)` produced five of
+  the first run's eight reported offenders. Its own parser is specced in
+  `packages/aai-templates/test-assertion-gate.test.ts`, because a gate whose
+  entire success output is a count fails SILENTLY: a parser that stopped
+  recognising `test(` would print "all 0 test(s) assert something ✓", which is
+  the same shape as the bug it exists to catch.
 - **`pnpm check:claude-md`** (`scripts/check-claude-md.mjs`) — caps every
   `CLAUDE.md` (the scaffold's included) at **120,000 characters**, 20% under
   the ~150k ceiling past which an agent's context silently drops the rest of
@@ -157,7 +184,7 @@ fail fast. To tighten quality over time, lower the entries in the
 file-length allowlist and delete escape hatches — both baselines are
 designed to only move one direction.
 
-A fourth ratchet lives in the vitest configs: **coverage thresholds**.
+A fifth ratchet lives in the vitest configs: **coverage thresholds**.
 Every package has floors — `aai-templates` was for a while the one that did
 not, so CI measured its coverage and threw the number away. Each package's
 `vitest.config.ts` declares per-package coverage floors
@@ -170,6 +197,15 @@ actual. Never lower a floor to make a PR pass — add tests instead.
 Coverage measures production source only; test infrastructure
 (`_test-utils.ts`, mocks, fixtures, setup files) is excluded via
 `sharedCoverageExclude` in `vitest.shared.ts`.
+
+**The per-package floors are what gates a PR; the root ones are not.**
+`pnpm test:coverage` is `turbo run test:coverage`, which fans out to each
+package's own config, and CI runs `pnpm --filter ./packages/<pkg>
+test:coverage` per matrix entry — so nothing in the repo or in CI ever
+evaluates the root `vitest.config.ts` thresholds. The only thing that does is
+a direct `pnpm vitest run --coverage` at the root. Keep them anyway: it is the
+only floor that sees the repo as one program. Just don't read them as the
+gate — they had drifted ~4 points under an actual nobody had measured.
 
 ## Architecture
 
@@ -425,6 +461,16 @@ you only need to list one package.
   `...sharedConfig.test` REPLACES that object rather than extending it, which
   is how every package silently lost `reporters` while each re-declared
   `restoreMocks` by hand.
+- **Snapshots are pinned to CI semantics (`update: "none"`), so an obsolete
+  one FAILS locally.** Vitest otherwise resolves this from `process.env.CI`:
+  `new` locally (write what is missing, merely REPORT what is obsolete) and
+  `none` in CI (write nothing, fail on obsolete). That split is a green
+  `pnpm check` beside a red CI job, and it produced one — a stale `aai-ui`
+  export snapshot, left by a test that stopped taking one mid-edit, printed
+  "1 obsolete" locally and failed `test (aai-ui)` with all 340 tests passing.
+  The cost is that adding or changing a snapshot needs an explicit
+  `vitest -u`, which was already true of any change that has to survive CI;
+  `--update` still wins, since a CLI flag overrides config.
 - **Those two options mean tests must NOT hand-roll teardown for spies or env
   vars.** `restoreMocks` restores every `vi.spyOn` and `unstubEnvs` undoes
   every `vi.stubEnv`, both BEFORE EACH TEST — so a trailing
@@ -800,4 +846,37 @@ back to the host's `process.env`.
 
 - **Type-level tests**: Cover public entry points of `aai` (`.`, `./types`)
   and `aai-ui` (`.`). Subpath exports (e.g. `./protocol`) are not covered
-  by type tests.
+  by type tests. (Their RUNTIME export lists are pinned — see
+  `sdk/exports.test.ts` — which is a different guarantee.)
+
+### Open testability work
+
+Two known gaps, both found by audit and both deliberately left alone because
+each is a refactor in its own right rather than a fix that rides along with
+something else. Neither is blocked on a decision; they are sized, not stuck.
+
+- **The pipeline transports have no injectable clock**, so 32 assertions
+  across `host/transports/` wait on REAL wall-clock time (`await sleep(60)`,
+  `sleep(120)`, …) to observe a timer that did or did not fire. That is ~2.3s
+  of the unit run, but the cost is flakiness rather than seconds: these are
+  races, and they are exactly the specs that fail first on a contended
+  runner. The timer bookkeeping is already factored (`host/_timer.ts` —
+  `createRestartableTimer` / `createCoalescingTimer`), so the seam is a
+  scheduler parameter on those two factories threaded from
+  `PipelineTransportOptions`, alongside the `heardNow` clock seam that
+  already exists there for the same reason. What makes it a real piece of
+  work rather than a mechanical edit: fake timers have to compose with the
+  fake providers, and `_fake-llm.ts` schedules its own `setTimeout` for
+  `delayMs`, so the providers move onto the injected scheduler too or the
+  suites deadlock.
+
+- **`aai-server` writes to `console.*` directly** — 47 calls, 45 of them
+  outside `_debug-log.ts` — with no logger seam, so 39 of the repo's 86
+  `spyOn(console, …)` calls exist purely to keep test output quiet. The
+  abstraction already exists one package over — `aai/host` has a `Logger`
+  type and `consoleLogger` — and this package has
+  a partial one of its own in `_debug-log.ts`. The work is to give the
+  package a single injected (or module-swappable) logger and convert the call
+  sites, after which the silencing spies delete themselves. It is left out
+  here because it touches ~25 files and changes production log wiring, which
+  should not land inside a test-quality change.

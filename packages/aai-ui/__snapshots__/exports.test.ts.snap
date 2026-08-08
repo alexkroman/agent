@@ -31,3 +31,9 @@ exports[`aai-ui export surface > @alexkroman1/aai-ui main export 1`] = `
   "useToolResult",
 ]
 `;
+
+exports[`aai-ui export surface > @alexkroman1/aai-ui/client-dir export 1`] = `
+[
+  "defaultClientDir",
+]
+`;
