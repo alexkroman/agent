@@ -1,5 +1,27 @@
 # aai-studio-server
 
+## 0.6.1
+
+### Patch Changes
+
+- 7cf76d3: Keep the studio UI alive across a Modal deploy: serve the app shell no-store (it names content-hashed assets that only exist in the image it was built into, and those are served immutable), and recover a tab whose chunks were deleted by the rollout — one guarded reload on a failed lazy import or Vite modulepreload error instead of a blank page.
+- Updated dependencies [9a7916a]
+- Updated dependencies [a7fc229]
+- Updated dependencies [65dca0b]
+- Updated dependencies [db3fb48]
+- Updated dependencies [7cf76d3]
+- Updated dependencies [db3fb48]
+- Updated dependencies [7cf76d3]
+- Updated dependencies [a91c3bc]
+- Updated dependencies [db3fb48]
+- Updated dependencies [9fded19]
+- Updated dependencies [db3fb48]
+- Updated dependencies [9fded19]
+  - aai-server@3.5.1
+  - aai-studio-client@0.4.9
+  - @alexkroman1/aai@5.11.1
+  - @alexkroman1/aai-ui@5.11.1
+
 ## 0.6.0
 
 ### Minor Changes

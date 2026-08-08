@@ -1,5 +1,20 @@
 # @alexkroman1/aai-cli
 
+## 5.11.1
+
+### Patch Changes
+
+- db3fb48: Keep a failed log write from taking the dev server down: reporting a successful restart no longer sits inside the listen try/catch, where a throwing notifier (stderr closed by a piped `aai dev`) was reported as a failed listen and tore down a server that had already bound.
+- Updated dependencies [db3fb48]
+- Updated dependencies [db3fb48]
+- Updated dependencies [a91c3bc]
+- Updated dependencies [db3fb48]
+- Updated dependencies [9fded19]
+- Updated dependencies [db3fb48]
+- Updated dependencies [9fded19]
+  - @alexkroman1/aai@5.11.1
+  - @alexkroman1/aai-ui@5.11.1
+
 ## 5.11.0
 
 ### Minor Changes
