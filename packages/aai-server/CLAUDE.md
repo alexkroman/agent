@@ -1091,11 +1091,22 @@ word generator that already backed every unusable base.
 
 So the sandbox spawn, the describe mode, the nonce protocol, the `inspect`
 role, and `IsolateConfigSchema` are all gone. The COLUMN is only unwritten so
-far: dropping it is the contract half of an expand/contract and waits for a
-later deploy (see the migration's header). Nothing detects that it never
-lands — `schema-drift.integration.test.ts` compares relations, not columns —
-so treat the drop as owed work, not as done. Three consequences
-worth knowing:
+far: dropping it is the contract half of an expand/contract and waits for the
+release AFTER the one carrying the expand migration — `supabase db push` runs
+BEFORE the deploy and old containers keep serving through the rollout, so a
+drop landing beside its own expand is a drop against containers that still
+name the column, failing every deploy that reaches one.
+
+**That wait is now enforced by the `RETIRED_COLUMNS` ledger in
+`platform-schema.test.ts`**, which is where a column in this state goes.
+Each entry asserts two things: that no platform source writes the column
+(a reintroduced write is otherwise invisible until the drop lands, at which
+point it fails in production rather than in CI), and that the column is
+STILL declared — so the entry has to be deleted in the same commit as the
+drop. It replaces a paragraph saying "treat this as owed work", which is
+what the schema drift test cannot say for you (it compares relations, not
+columns). Removing the last entry is the goal; nothing should live there.
+Three consequences worth knowing:
 
 - **The credential preflight moved to the CLI** (`aai-cli/_preflight.ts`).
   It is the same derivation — `requiredProviderEnvVars` over the provider

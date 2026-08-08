@@ -18,5 +18,14 @@
 -- one still supplies a value.
 --
 -- The CONTRACT half (`alter table aai_platform.agents drop column config;`)
--- belongs in a later migration, once no serving container writes the column.
+-- belongs in a later migration, once no serving container writes the column —
+-- which means the release AFTER the one carrying this file, not a later
+-- commit on the same branch. Landing both together is the exact failure the
+-- paragraph above describes.
+--
+-- It is not left to memory: `platform-schema.test.ts` carries a
+-- RETIRED_COLUMNS ledger with an entry for this column, asserting that no
+-- platform source writes it and that it is still declared — so the entry has
+-- to be deleted in the same commit as the drop, and until then it is a
+-- standing item in a test run rather than a paragraph nobody re-reads.
 alter table aai_platform.agents alter column config set default '{}'::jsonb;
