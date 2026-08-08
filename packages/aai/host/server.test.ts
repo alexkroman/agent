@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { makeAgent, silentLogger } from "./_test-utils.ts";
+import { makeAgent, makeLogger, silentLogger } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";
 import { createServer } from "./server.ts";
 
@@ -153,12 +153,19 @@ describe("createServer", () => {
   });
 
   test("404 triggers error-level logging", async () => {
+    // A FRESH logger: `silentLogger` is a shared singleton whose `vi.fn()`
+    // call history accumulates across every test in the file (`restoreMocks`
+    // restores spies, not mock call logs). A bare `toHaveBeenCalled()` against
+    // it passes on an error some earlier test logged — which is exactly what
+    // this assertion was doing, and why `makeLogger()` exists.
+    const logger = makeLogger();
     const { runtime } = makeRuntime();
-    server = createServer({ runtime, logger: silentLogger });
+    server = createServer({ runtime, logger });
     await server.listen(0);
 
+    expect(logger.error).not.toHaveBeenCalled();
     await get(`http://localhost:${server.port}/nonexistent-path`);
-    await vi.waitFor(() => expect(silentLogger.error).toHaveBeenCalled());
+    await vi.waitFor(() => expect(logger.error).toHaveBeenCalled());
   });
 
   test("close is safe to call without listen", async () => {

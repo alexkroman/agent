@@ -4,7 +4,7 @@
 
 import { vi } from "vitest";
 import { errorMessage } from "../sdk/utils.ts";
-import { silentLogger } from "./_test-utils.ts";
+import { makeLogger } from "./_test-utils.ts";
 import type { S2sCallbacks, S2sWebSocket } from "./s2s.ts";
 import { connectS2s } from "./s2s.ts";
 
@@ -73,7 +73,12 @@ export function createTestS2s() {
     }, 0);
     return raw;
   };
-  return { raw, createWebSocket, logger: { ...silentLogger } };
+  // `makeLogger()`, not `{ ...silentLogger }`: the spread LOOKS like a fresh
+  // logger per call and is not — it copies the same `vi.fn()` references, so
+  // every session in a file shared one accumulating call log. That is what
+  // forced `droppedTypes()` in s2s-events.test.ts to assert a type is ABSENT
+  // from the accumulated warnings rather than that nothing was warned at all.
+  return { raw, createWebSocket, logger: makeLogger() };
 }
 
 export async function setupHandle(callbacks?: S2sCallbacks) {

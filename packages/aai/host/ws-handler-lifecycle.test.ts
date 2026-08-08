@@ -385,6 +385,10 @@ describe("wireSessionSocket lifecycle", () => {
   });
 
   test("session.start() timeout triggers 'Session start failed'", async () => {
+    // Fresh, not the shared `silentLogger`: its call history accumulates
+    // across the file, so an identical call from an earlier test would
+    // satisfy the assertion below on its own.
+    const logger = makeLogger();
     const core = makeMockCore({
       start: vi.fn(
         () =>
@@ -400,7 +404,7 @@ describe("wireSessionSocket lifecycle", () => {
       sessions,
       createSession: () => core,
       readyConfig: defaultConfig,
-      logger: silentLogger,
+      logger,
       sessionStartTimeoutMs: 50,
     });
 
@@ -413,7 +417,7 @@ describe("wireSessionSocket lifecycle", () => {
       { timeout: 500 },
     );
 
-    expect(silentLogger.error).toHaveBeenCalledWith(
+    expect(logger.error).toHaveBeenCalledWith(
       "Session start failed",
       expect.objectContaining({ error: expect.stringContaining("timed out") }),
     );
