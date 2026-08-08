@@ -544,9 +544,10 @@ voice agents without the CLI:
     upload, the credential preflight (CLI-side now — see "The platform
     stores no agent config" in `packages/aai-server/CLAUDE.md`), ownership,
     reserved slugs, and the ASSEMBLYAI_API_KEY env floor are therefore
-    byte-for-byte the laptop path. The CLI's output — success, build diagnostics, deploy errors,
-    preflight warnings — returns to the client, which **posts it into the
-    chat** so the coding agent sees and can fix failures.
+    byte-for-byte the laptop path. The CLI's output — success, build
+    diagnostics, deploy errors, preflight warnings — returns to the client,
+    which **posts it into the chat** so the coding agent sees and can fix
+    failures.
     `--allow-missing-secrets` exists because the Secrets panel needs a
     deployed slug to attach secrets to — a hard preflight failure would
     deadlock first publishes. It is now belt-and-braces: the CLI's preflight
