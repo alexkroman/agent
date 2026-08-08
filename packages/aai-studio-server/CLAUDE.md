@@ -552,7 +552,10 @@ voice agents without the CLI:
     so the guest holds no second copy to drift — only the two deliberate
     deltas are code (`workspaceTsconfig`, the exact dependency pins); a
     dir-local `AAI_CONFIG_DIR` carries the caller's key; `.aai/project.json`
-    pins the slug) and runs
+    pins the slug — those last two written by the CLI's own writers
+    (`@alexkroman1/aai-cli/project-config`), since the CLI is what parses them
+    back and the 0600 atomic rename and the pin's MERGE are invisible in the
+    JSON) and runs
     `aai deploy --server <origin> --json --allow-missing-secrets`. Build,
     upload, the credential preflight (CLI-side now — see "The platform
     stores no agent config" in `packages/aai-server/CLAUDE.md`), ownership,

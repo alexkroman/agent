@@ -63,6 +63,21 @@ after crossing this module's own JSON-RPC boundary, and `errMsg` rendered
 those as `[object Object]`. One name, one import, and the behaviour is
 covered once in `sdk/utils.test.ts`.
 
+**The two files a Publish writes for the CLI come from the CLI'S OWN
+writers** (`@alexkroman1/aai-cli/project-config` — `writeConfigHome` and
+`updateProjectConfig`). `studio-publish.ts` used to `JSON.stringify` both the
+dir-local config home and `.aai/project.json`, so their shapes agreed with the
+schemas the CLI parses them back with only by coincidence — and the two
+properties that matter are not visible in the JSON at all: the config home
+holds the caller's API key and is written **0600 through an atomic rename**
+(which TIGHTENS an older world-readable file rather than leaving it), and the
+project pin is **merged, never replaced** (`.aai/project.json` also carries the
+studio link fields, which a whole-document write drops). Reaching for the
+toolchain is safe on this path specifically because `resolveCliEntry()` runs
+first and has already failed the publish cleanly if it is not there — so the
+dynamic import is deliberately AFTER it. Anything else this package writes for
+the CLI to read belongs in that subpath too, not in a `JSON.stringify` here.
+
 ## Dev/prod parity
 
 **The guest IS the dev server — and the runtime IS the user's.** The

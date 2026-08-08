@@ -228,12 +228,14 @@ depend on `@alexkroman1/aai` (via `workspace:*`). `aai-server` depends on
 `dist/harness.mjs`, baked into the guest snapshot image) — it never imports
 guest source, and the guest never imports server code; that hard boundary is
 the reason the guest is its own package. The one edge to the CLI is
-`aai-server` → `aai-cli`, and only for its three public build-hook subpaths
-(`/worker-bundler`, `/client-bundler`, `/typecheck`): the studio builds
-workspaces through the CLI's own Vite pipeline (and typechecks them with the
-CLI's own gate) rather than carrying a second bundler. Do not widen it —
-nothing else in the server may import from the CLI, and the CLI must never
-import from the server.
+`aai-guest` → `aai-cli`, and only for its four public subpaths: the three
+build hooks (`/worker-bundler`, `/client-bundler`, `/typecheck`), because the
+studio builds workspaces through the CLI's own Vite pipeline and typechecks
+them with the CLI's own gate rather than carrying a second bundler, plus
+`/project-config`, because Publish materializes a project the CLI then parses
+and the writers for those two files belong to the CLI. Do not widen it —
+nothing else may import from the CLI, and the CLI must never import from the
+server or the guest.
 
 **Publishable packages must use the `@alexkroman1/` scope.** The unscoped
 names `aai`, `aai-ui`, `aai-cli` are taken on npm by other publishers —

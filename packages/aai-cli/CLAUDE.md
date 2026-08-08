@@ -162,7 +162,17 @@ its app-database schema, and its secrets with it. See the `-preview` note in
 - `_bundler.ts` — bundles `agent.ts` (and optional `client.tsx`) into
   deployable artifacts
 - `_api-client.ts` — platform API client (`apiRequest`, `apiRequestOrThrow`)
-- `_config.ts` — auth config, project config, API key management
+- `_config.ts` — auth config, project config, API key management;
+  `project-config.ts` re-exports its two WRITERS (`writeConfigHome`,
+  `updateProjectConfig`) as a public subpath. That exists for the studio
+  guest, which materializes a workspace into a real project and spawns this
+  CLI against it (`aai-guest/studio-publish.ts`) — it hand-wrote both files
+  with `JSON.stringify`, so the shapes matched the schemas the CLI parses
+  them back with by coincidence, and neither of the properties that matter is
+  visible in the JSON: the config home is 0600 via atomic rename (an older
+  world-readable file is TIGHTENED, not left), and the project pin is MERGED
+  (`.aai/project.json` also carries the studio link fields). Keep it a thin
+  re-export — the point is one writer per format, not a nicer one
 - `_agent.ts` — agent discovery, dev mode detection, server URL resolution
 - `_utils.ts` — shared utilities (`resolveCwd`, `fileExists`)
 - `_server-common.ts` — shared server utilities
