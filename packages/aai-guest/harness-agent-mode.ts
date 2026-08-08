@@ -25,11 +25,11 @@
  * only, zero workspace imports.
  */
 
-import { hash } from "node:crypto";
 import { readFile, rm } from "node:fs/promises";
 import type http from "node:http";
 import { verifyBearer } from "./harness-auth.ts";
-import { BUNDLE_FETCH_TIMEOUT_MS, GUEST_CONTRACT_VERSION } from "./limits.ts";
+import { bundleSourceOf, readVerifiedBundle } from "./harness-bundle-source.ts";
+import { GUEST_CONTRACT_VERSION } from "./limits.ts";
 
 // ---- Boot artifacts ----------------------------------------------------------
 
@@ -60,34 +60,15 @@ export async function readAgentBoot(
   env: Record<string, string | undefined> = process.env,
 ): Promise<AgentBoot> {
   const expected = env.AAI_BUNDLE_SHA256;
-  const source = bundleSource(env);
+  const source = bundleSourceOf(env.AAI_BUNDLE_URL, env.AAI_BUNDLE_PATH);
   if (!(expected && source)) {
     throw new Error("agent mode requires AAI_BUNDLE_SHA256 and one of AAI_BUNDLE_PATH/_URL");
   }
-  const code =
-    "url" in source ? await fetchBundle(source.url) : await readFile(source.path, "utf-8");
-  const actual = hash("sha256", code);
-  if (actual !== expected.toLowerCase()) {
-    throw new Error(
-      `bundle hash mismatch: expected sha256 ${expected}, got ${actual} — refusing to load`,
-    );
-  }
+  // Agent mode requires the hash for BOTH shapes (the shared reader only
+  // forces it for a URL): a deployed agent's bundle is named by the agents
+  // row's `worker_hash`, so there is never a reason to load one unverified.
+  const code = await readVerifiedBundle(source, expected);
   return { code, env: await readAgentEnvFile(env.AAI_AGENT_ENV_PATH) };
-}
-
-/**
- * Where the spawner said the bundle is. Mirrors its own union (`agentBootEnv`
- * in aai-server/warm-harness.ts): the SHAPE decides where to look, so there is
- * no precedence rule for either side to get wrong — and no way to be pointed
- * at a path that was never written.
- */
-function bundleSource(
-  env: Record<string, string | undefined>,
-): { url: string } | { path: string } | null {
-  const url = env.AAI_BUNDLE_URL;
-  if (url) return { url };
-  const path = env.AAI_BUNDLE_PATH;
-  return path ? { path } : null;
 }
 
 /**
@@ -110,35 +91,6 @@ async function readAgentEnvFile(envPath: string | undefined): Promise<Record<str
   }
   await rm(envPath, { force: true }).catch(() => undefined);
   return agentEnv;
-}
-
-/**
- * Fetch the worker bundle from the signed URL the spawner handed us.
- *
- * Two things it deliberately does not do. It does not RETRY: the caller of a
- * failed boot is the platform's spawn path, which fails the spawn and lets
- * the client re-broker onto a fresh sandbox — a retry loop here would only
- * make a dead URL take longer to report. And it never puts the URL in an
- * error: the URL *is* the read capability for this blob, and a boot failure's
- * whole job is to be printed to stderr and shipped to the host log
- * (`startGuestLogging`). The status and the byte count are what diagnose it.
- */
-async function fetchBundle(url: string): Promise<string> {
-  const res = await fetch(url, {
-    signal: AbortSignal.timeout(BUNDLE_FETCH_TIMEOUT_MS),
-  }).catch((err: unknown) => {
-    throw new Error(`bundle fetch failed: ${err instanceof Error ? err.message : String(err)}`);
-  });
-  if (!res.ok) {
-    // A 400 here is very likely an EXPIRED signature rather than a bad
-    // request, since the URL was minted seconds ago by the spawner; say so,
-    // because the alternative reading sends a reader looking for a bug in the
-    // request this code does not build.
-    throw new Error(
-      `bundle fetch rejected with HTTP ${res.status} (an expired signed URL looks like this)`,
-    );
-  }
-  return await res.text();
 }
 
 // ---- Manage surface ----------------------------------------------------------
