@@ -31,17 +31,28 @@
 -- `packages/aai-server/CLAUDE.md`, "Where we differ from Supabase's own
 -- recommendations") and it arrives with its own policies.
 --
--- ── VERIFY ON STAGING BEFORE THIS REACHES PRODUCTION ────────────────────────
+-- ── THE WALRUS CLAIM — NOW COVERED BY A TEST ────────────────────────────────
 --
--- These statements rest on one claim that cannot be checked from a test
--- suite: that walrus — Realtime's per-subscriber row-visibility filter — still
--- sees rows for a BYPASSRLS subscriber once RLS is enabled on the table. It
--- should, and the failure if it does not is the SILENT one this platform has
--- already been bitten by: filtered subscribes stop, the service boots healthy,
--- and it merely stops invalidating resident sandboxes and pushing studio SSE.
+-- These statements rest on one claim: that walrus — Realtime's per-subscriber
+-- row-visibility filter — still sees rows for a BYPASSRLS subscriber once RLS
+-- is enabled on the table. The failure if it does not is the SILENT one this
+-- platform has already been bitten by: filtered subscribes stop, the service
+-- boots healthy, and it merely stops invalidating resident sandboxes and
+-- pushing studio SSE.
 --
--- So confirm two things against a staging project with this applied, both of
--- which exercise the change stream end to end:
+-- This block used to say the claim "cannot be checked from a test suite" and
+-- asked for a staging project. That was true only for as long as no test
+-- environment had a Realtime in it. A local `supabase start` stack does, so
+-- `packages/aai-server/realtime-rls.integration.test.ts` now drives the real
+-- `createRealtimePlatformEvents` against these very statements and asserts:
+-- service_role still receives changes on both an unfiltered and a FILTERED
+-- channel, and an anon subscriber receives nothing. It was mutation-tested
+-- against a deliberately mis-granted schema, where it observed the leak, so a
+-- green run is worth something.
+--
+-- Two app-level checks are still worth doing by hand against a real project,
+-- because they exercise the same subscription one layer up — through the SSE
+-- routes and the sandbox-invalidation path, neither of which the test boots:
 --   1. Editing a studio workspace still pushes a `project` frame on
 --      `GET /studio/projects/:project/events`.
 --   2. Redeploying an agent still retires the resident sandbox for its slug

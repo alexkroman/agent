@@ -227,9 +227,36 @@ plus the boot-time publication/grant setup. The trade is deploy ORDERING —
 `supabase db push` before the deploy — and a missed migration now fails
 loudly with "relation does not exist" instead of being papered over by a lazy
 create that runs on whichever connection first noticed.
-`platform-schema.test.ts` is the guard in both directions: every
-`aai_platform.<table>` the source queries must be declared in a migration,
-and the store suites assert that no store issues DDL:
+`platform-schema.test.ts` guards two things statically: every
+`aai_platform.<table>` the source queries must be declared in a migration, and
+the store suites assert that no store issues DDL.
+
+**Those are both the FORWARD direction, and the reverse one cost us three
+tables.** A table that is queried nowhere *and* declared nowhere satisfies
+every check above trivially, and production held exactly that:
+`sandbox_registry`, `slug_epochs`, and `slug_locks`, created at runtime by
+`pg-ensure.ts` before the schema was declared and never dropped — because a
+declared schema has no `drop` for a table it never declared. #950 replaced each
+one (a Modal sandbox NAME, `agents.version`, and `pg_advisory_lock`
+respectively) and correctly declared only what the code still needed, which is
+how they became invisible rather than wrong.
+
+They were not inert. `20260807000000_platform_rls.sql` enables RLS on the five
+tables it names, so leftovers would have been the only tables in the schema
+without it — and nothing reports that, since splinter's
+`rls_disabled_in_public` and the RLS-disabled alerts both key on `public`.
+`20260807120000_drop_orphan_platform_tables.sql` drops them (`slug_epochs` was
+not empty: 21 stale counters superseded by `agents.version`, recorded in that
+migration's header rather than discovered afterwards).
+
+**Drift detection cannot be static** — it is a fact about a database, not the
+repo — so the guard is `schema-drift.integration.test.ts`, gated on
+`AAI_TEST_PG_URL` and read-only, asserting every table in `aai_platform` is
+declared by a migration. Point it at whatever database you want the claim to
+hold for; `supabase db diff --linked --schema aai_platform` is the ad-hoc
+equivalent and also reports column-level drift.
+
+The cross-replica coordination that lives in this same Postgres:
 
 - **Per-slug mutation lock** (`platform-lock.ts`): deploy/delete/secret/
   storage mutations for a slug run under a **Postgres advisory lock**

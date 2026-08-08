@@ -1,0 +1,64 @@
+-- Drop three tables that exist in the production database and in no migration.
+--
+-- `sandbox_registry`, `slug_epochs`, and `slug_locks` are residue of the
+-- transition FROM lazy DDL TO a declared schema, on a database that outlived
+-- both. Every `aai_platform` store used to call a memoized
+-- `create schema/table if not exists` on first use (`pg-ensure.ts`), so these
+-- tables were created in production by code, at runtime. The commit that
+-- introduced `20260805000000_platform_schema.sql` (#950) deleted `pg-ensure.ts`
+-- and declared what the code needed AT THAT MOMENT — correctly leaving these
+-- three out, because each had already been replaced:
+--
+--   * `sandbox_registry` → a Modal sandbox NAME. Modal's control plane became
+--     the arbiter of one-resident-per-slug (`sandboxes.fromName` returns only a
+--     RUNNING sandbox), which retired the lease row, its 10s heartbeat, its
+--     pg_cron sweep, and the stale-lease window. See sandbox-directory.ts.
+--   * `slug_epochs` → the `version` column on `aai_platform.agents`. The deploy
+--     record's own version is the invalidation signal, so there is no separate
+--     counter to keep in step. See agent-store.ts.
+--   * `slug_locks` → `pg_advisory_lock` on a reserved connection
+--     (`AdminDb.reserve()`), which retired the lease row, the 250ms poll loop,
+--     and lease expiry with its sweep. See platform-lock.ts.
+--
+-- Nothing in `packages/` references any of the three outside the comments that
+-- explain they are gone. What no migration did was DROP them, because a
+-- declared schema has no `drop` for a table it never declared — so they simply
+-- persisted, invisible.
+--
+-- ── WHY THIS IS NOT MERELY TIDYING ──────────────────────────────────────────
+--
+-- They would be the only tables in this schema without row-level security.
+-- `20260807000000_platform_rls.sql` names five tables; the database has eight.
+-- That migration's whole argument is that the only thing between a browser and
+-- `aai_platform` is the ABSENCE of a grant, with nothing anywhere reporting a
+-- mistake — splinter's `rls_disabled_in_public` (0013) and the RLS-disabled
+-- email alerts both key on the `public` schema, which this is not. So after it
+-- lands, an accidental grant returns zero rows for five tables and every row
+-- for three. And these three hold tenant-identifying data:
+-- `sandbox_registry.session_url` is a live guest endpoint,
+-- `slug_locks.holder` identifies a replica.
+--
+-- DROP rather than `enable row level security`, deliberately. Enabling RLS on a
+-- dead table is a standing claim that someone might legitimately read it, and
+-- it would leave the reverse-direction drift (a table no migration declares)
+-- in place for the next person to rediscover.
+--
+-- ── `slug_epochs` IS NOT EMPTY, AND THAT IS ACCEPTED ─────────────────────────
+--
+-- Measured against production (`supabase inspect db table-stats --linked`)
+-- before writing this: `slug_locks` 0 rows, `sandbox_registry` 0 rows,
+-- `slug_epochs` **21 rows**. The 21 are stale slug→epoch counters superseded by
+-- `agents.version`, which is independent of them and already authoritative —
+-- no code path reads `slug_epochs` to produce them or to interpret them, so
+-- they cannot be reconstructed into anything and cannot be missed. Recorded
+-- here rather than left for the reader to discover, because "the drop was
+-- known to discard rows" and "the drop was assumed to discard nothing" are
+-- very different claims to be making after the fact.
+--
+-- `if exists` so this is a no-op on a fresh project, where the tables were
+-- never created — the same property every statement in the schema migration
+-- has, and what makes re-running the whole directory safe.
+
+drop table if exists aai_platform.sandbox_registry;
+drop table if exists aai_platform.slug_epochs;
+drop table if exists aai_platform.slug_locks;
