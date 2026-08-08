@@ -8,7 +8,7 @@ import { localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import type { DeployBody } from "./schemas.ts";
 import { EnvSchema, RESERVED_SLUGS } from "./schemas.ts";
 import { hashApiKey, matchAnyHash } from "./secrets.ts";
-import { generatedSlug, slugBaseFromName } from "./slug-generate.ts";
+import { generatedSlug } from "./slug-generate.ts";
 import type { BundleStore } from "./store-types.ts";
 
 /** Server-level dependencies the deploy core needs (a subset of Bindings). */
@@ -36,20 +36,6 @@ export type DeployParams = {
   worker: string;
   clientFiles: Record<string, string>;
   env?: Record<string, string> | undefined;
-  /**
-   * The agent's display name, used ONLY to seed a GENERATED slug (see
-   * `slugBaseFromName`). Advisory and client-supplied on purpose: it names
-   * nothing the platform acts on, and a generated slug carries a random
-   * suffix either way, so a wrong or absent value costs a nicer default and
-   * nothing else. Absent — or unusable after slugification — falls back to
-   * random words inside the generator.
-   *
-   * It is deliberately the ONLY thing the platform learns about a bundle.
-   * What an agent IS — providers, tools, prompts — is the bundle's business,
-   * interpreted by the SDK it shipped with, inside its own sandbox. See
-   * "The platform stores no agent config" in packages/aai-server/CLAUDE.md.
-   */
-  name?: string | undefined;
   /**
    * Permit a requested slug ending in {@link PREVIEW_SLUG_SUFFIX}. That suffix
    * is owned by the studio's auto-preview deploys, and the orphan-preview
@@ -95,11 +81,12 @@ export function deployAgentBundle(deps: DeployDeps, params: DeployParams): Promi
       error: `The "${PREVIEW_SLUG_SUFFIX}" suffix is reserved for studio previews`,
     });
   }
-  // No requested slug: generate one from the agent's display name plus a
-  // random suffix — the same generator the studio uses for prompt-derived
-  // project names. The name is a client-supplied hint (see DeployParams.name);
-  // an absent or unusable one falls back to random words in the generator.
-  const slug = requested ?? generatedSlug(slugBaseFromName(params.name ?? ""));
+  // No requested slug: the generator mints one from human-id words plus a
+  // random suffix. It takes no readable base, because the platform knows
+  // nothing about the bundle to derive one from — see "The platform stores
+  // no agent config" in CLAUDE.md. A caller that wants its name in the URL
+  // requests the slug.
+  const slug = requested ?? generatedSlug();
   const lock = deps.slugLock ?? localSlugLock;
   return lock(slug, async () => {
     // Ownership is checked whether the slug was requested or generated. A
@@ -194,11 +181,11 @@ function outcomeToResponse(c: ValidatedAppContext<DeployBody>, outcome: DeployOu
 /**
  * `POST /deploy` — deploy to the body's slug, or a server-generated one.
  *
- * The platform learns nothing about the bundle beyond an optional display
- * name for slug generation: it stores the artifacts and the ownership
- * hashes, and the bundle describes itself to its own SDK inside its own
- * sandbox. See "The platform stores no agent config" in CLAUDE.md for what
- * that replaced and why the guest-side extraction went away with it.
+ * The platform learns NOTHING about the bundle: it stores the artifacts and
+ * the ownership hashes, and the bundle describes itself to its own SDK
+ * inside its own sandbox. See "The platform stores no agent config" in
+ * CLAUDE.md for what that replaced and why the guest-side extraction went
+ * away with it.
  */
 export async function handleDeployNew(
   c: ValidatedAppContext<DeployBody>,
@@ -216,7 +203,6 @@ export async function handleDeployNew(
     worker: body.worker,
     clientFiles: body.clientFiles,
     env: body.env,
-    name: body.name,
     allowPreviewSlug: body.allowPreviewSlug,
   });
   return outcomeToResponse(c, outcome);

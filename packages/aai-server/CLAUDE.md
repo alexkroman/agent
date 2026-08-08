@@ -1067,11 +1067,13 @@ down, like the file-length allowlist.
 
 ## The platform stores no agent config
 
-**The deploy boundary learns one thing about a bundle: an optional display
-name, used to seed a generated slug.** No config is extracted, validated, or
-stored. `POST /deploy` takes artifacts (worker, client files, env), ownership
-(the caller's key), and `name`; the bundle describes itself to its own SDK
-inside its own sandbox, and nowhere else.
+**The deploy boundary learns NOTHING about a bundle.** No config is
+extracted, validated, or stored, and no name is taken either: `POST /deploy`
+takes artifacts (worker, client files, env) and ownership (the caller's key),
+and that is the whole of it. A slugless deploy is named `human-id` words plus
+a random suffix; a caller who wants a readable URL requests the slug. The
+bundle describes itself to its own SDK inside its own sandbox, and nowhere
+else.
 
 **What this replaced, and why it went.** A deploy used to spawn a THROWAWAY
 guest sandbox per call (`describeBundle`, the guest's one-shot describe mode)
@@ -1084,6 +1086,8 @@ deleted, `/client-config` is proxied from the guest — and the extraction
 outlived its consumers, because the changes that removed them had no reason to
 revisit it. By the end the stored `config` column was write-only and the
 extracted value decided exactly two things: a default slug and a warning.
+Both are better served elsewhere — the warning by the CLI, the slug by the
+word generator that already backed every unusable base.
 
 So the sandbox spawn, the describe mode, the nonce protocol, the `inspect`
 role, `IsolateConfigSchema`, and the column are all gone. Three consequences
@@ -1103,8 +1107,9 @@ worth knowing:
   the deploy path now evaluates the built bundle locally — see the note in
   `packages/aai-cli/CLAUDE.md`.
 - **A client-sent config is still ignored, and now there is nothing to
-  poison.** `DeployBodySchema` has no such field, and `name` is advisory: it
-  is slugified, gets a random suffix, and gates nothing.
+  poison.** `DeployBodySchema` has no field for one, and none for a name
+  either — a client cannot influence a generated slug at all, so there is no
+  advisory-input surface to reason about.
 
 **Re-adding a host-side view of what an agent is means re-adding trusted
 extraction.** Nothing in the platform can answer "which providers does this
@@ -1404,11 +1409,13 @@ stored env at sandbox creation time and kept host-side only.
   agent and appending the caller's credential hash to it.
 - **Server-generated names come from one generator**
   (`aai-server/slug-generate.ts`): a readable base plus a random lowercase
-  base36 suffix, v0-style (`contact-form-x7k2mq`). A slugless CLI deploy
-  seeds the base from the agent's own `name` (its bundle-described config);
-  studio project creation seeds it from the creating chat prompt
-  (`projectBaseFromPrompt`); an unusable base falls back to `human-id`
-  words. Clients never generate names — creation always hits the server.
+  base36 suffix, v0-style (`contact-form-x7k2mq`). Only STUDIO project
+  creation supplies a base, from the creating chat prompt
+  (`projectBaseFromPrompt`); a slugless CLI deploy supplies none and gets
+  `human-id` words, because the platform holds no description of the bundle
+  to name one after (see "The platform stores no agent config"). A CLI caller
+  who wants their agent's name in the URL requests the slug. Clients never
+  generate names — creation always hits the server.
 
 ### The image is layered dependencies-first (`scripts/modal_image.py`)
 

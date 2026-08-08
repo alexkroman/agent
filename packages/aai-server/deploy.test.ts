@@ -308,13 +308,13 @@ describe("POST /deploy", () => {
     const res = await fetch("/deploy", {
       method: "POST",
       headers: authHeaders(),
-      body: deployBody({ name: "test-agent" }),
+      body: deployBody(),
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { slug: string };
-    // Base from the body's `name` hint plus the shared random suffix
-    // (slug-generate.ts).
-    expect(body.slug).toMatch(/^test-agent-[a-z0-9]{6}$/);
+    // Words from human-id plus the shared random suffix (slug-generate.ts) —
+    // nothing about the bundle reaches the name.
+    expect(body.slug).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*-[a-z0-9]{6}$/);
   });
 
   test("uses slug from body when provided", async () => {
@@ -389,22 +389,9 @@ describe("POST /deploy", () => {
     expect(afterRecord?.credential_hashes).toEqual(originalHashes);
   });
 
-  test("a generated slug is seeded by the body's name hint", async () => {
-    const { fetch } = await createTestOrchestrator();
-    const res = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders(),
-      body: deployBody({ name: "Contact Form" }),
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { slug: string };
-    // Base from the hint, plus the generator's random suffix.
-    expect(body.slug).toMatch(/^contact-form-[a-z0-9]+$/);
-  });
-
-  test("a deploy with no name hint still gets a slug", async () => {
-    // Old CLIs send none, and the platform asks the bundle for nothing —
-    // the generator falls back to random words rather than failing.
+  test("a generated slug is human-id words plus a suffix", async () => {
+    // The platform derives nothing from the bundle, so a slugless deploy
+    // gets random words rather than the agent's name.
     const { fetch } = await createTestOrchestrator();
     const res = await fetch("/deploy", {
       method: "POST",
@@ -413,7 +400,7 @@ describe("POST /deploy", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { slug: string };
-    expect(body.slug).toMatch(/^[a-z0-9-]+$/);
+    expect(body.slug).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*-[a-z0-9]{6}$/);
   });
 
   test("a body-supplied agentConfig is ignored, not stored", async () => {

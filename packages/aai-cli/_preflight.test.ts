@@ -9,10 +9,9 @@ import {
   type PreflightConfig,
 } from "./_preflight.ts";
 
-const S2S_AGENT: PreflightConfig = { name: "s2s-agent" };
+const S2S_AGENT: PreflightConfig = {};
 
 const PIPELINE_AGENT: PreflightConfig = {
-  name: "pipeline-agent",
   stt: { kind: "assemblyai", options: {} },
   llm: { kind: "anthropic", options: { model: "claude-sonnet-4-5" } },
   tts: { kind: "cartesia", options: {} },

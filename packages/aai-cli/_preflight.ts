@@ -28,15 +28,13 @@ import { requiredProviderEnvVars } from "@alexkroman1/aai/runtime";
 
 /**
  * The config shape read out of a bundle's `__aaiConfig` export: the provider
- * descriptors the credential derivation needs, plus the two fields the deploy
- * itself reads. Deliberately structural rather than the SDK's `AgentConfig` —
+ * descriptors the credential derivation needs, plus the agent's declared
+ * `requiredEnv`. Deliberately structural rather than the SDK's `AgentConfig` —
  * the export comes from the USER's installed SDK, which may be older or newer
  * than this CLI's, so anything beyond these is not ours to assume.
  */
 export type PreflightConfig = Parameters<typeof requiredProviderEnvVars>[0] & {
   requiredEnv?: readonly string[] | undefined;
-  /** Display name, sent as the server's slug-generation hint. */
-  name?: string | undefined;
 };
 
 /**

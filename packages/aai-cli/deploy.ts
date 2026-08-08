@@ -42,8 +42,8 @@ export async function executeDeploy(opts: {
 
   // Import the bundle we just built: proves it loads (a top-level throw fails
   // HERE, not as a sandbox that never becomes ready) and yields the config the
-  // preflight and the slug hint read. The platform evaluates nothing, so this
-  // is the only place either happens — see _preflight.ts.
+  // preflight reads. The platform evaluates nothing, so this is the only
+  // place either happens — see _preflight.ts.
   const config = (await evalWorkerConfig(bundle.worker)) as PreflightConfig | undefined;
   const missing = config ? missingCredentials(config, uploadEnv) : [];
   if (missing.length > 0) log.warn(missingCredentialMessage(missing));
@@ -57,7 +57,6 @@ export async function executeDeploy(opts: {
     // must win — matching the server's own defaultEnv merge semantics.
     env: uploadEnv,
     ...(slug ? { slug } : {}),
-    ...(typeof config?.name === "string" ? { name: config.name } : {}),
     ...(opts.allowMissingSecrets ? { allowMissingSecrets: true } : {}),
     ...(opts.allowPreviewSlug ? { allowPreviewSlug: true } : {}),
     apiKey,

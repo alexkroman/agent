@@ -310,8 +310,8 @@ sounds.** It used to upload without importing, because the platform extracted
 the config guest-side; that extraction is gone (see "The platform stores no
 agent config" in `packages/aai-server/CLAUDE.md`), so the CLI is now the only
 place that can read `__aaiConfig` — which it needs for the credential
-preflight (`_preflight.ts`) and the slug-name hint, and whose import doubles
-as the deploy's smoke test. The same command already executed repo-controlled
+preflight (`_preflight.ts`), and whose import doubles as the deploy's smoke
+test. The same command already executed repo-controlled
 code regardless: `buildAgentBundle` does NOT pass `configFile: false` (only
 the guest's untrusted-workspace builds do), so the project's `vite.config.ts`
 runs at build time either way.
