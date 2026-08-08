@@ -9,16 +9,9 @@ import { createOwnedMap } from "../sdk/owned-map.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeLogger, makeMockCore, silentLogger } from "./_test-utils.ts";
+import { defaultConfig, openSocket } from "./_ws-handler-test-utils.ts";
 import type { SessionCore } from "./session-core.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
-
-const defaultConfig = { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 };
-
-function openSocket(readyState: number = MockWebSocket.OPEN): MockWebSocket {
-  const ws = new MockWebSocket("ws://test");
-  ws.readyState = readyState;
-  return ws;
-}
 
 describe("wireSessionSocket lifecycle", () => {
   test("close handler calls session.stop", async () => {

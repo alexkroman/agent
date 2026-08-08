@@ -6,35 +6,16 @@ import { describe, expect, test, vi } from "vitest";
 import { createOwnedMap } from "../sdk/owned-map.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeLogger, makeMockCore, silentLogger } from "./_test-utils.ts";
+import {
+  defaultConfig,
+  openSocket,
+  parseFirstFrame,
+  simulateBinaryFrame,
+  simulateTextFrame,
+  waitForSessionReady,
+} from "./_ws-handler-test-utils.ts";
 import type { SessionCore } from "./session-core.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
-
-const defaultConfig = { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 };
-
-function openSocket(readyState: number = MockWebSocket.OPEN): MockWebSocket {
-  const ws = new MockWebSocket("ws://test");
-  ws.readyState = readyState;
-  return ws;
-}
-
-function simulateBinaryFrame(ws: MockWebSocket, frame: Uint8Array): void {
-  ws.dispatchEvent(new MessageEvent("message", { data: frame }));
-}
-
-function simulateTextFrame(ws: MockWebSocket, text: string): void {
-  ws.dispatchEvent(new MessageEvent("message", { data: text }));
-}
-
-async function waitForSessionReady(logger: { info: ReturnType<typeof vi.fn> }): Promise<void> {
-  await vi.waitFor(() => {
-    const calls = logger.info.mock.calls.map((c: unknown[]) => c[0]);
-    if (!calls.includes("Session ready")) throw new Error("Session not ready yet");
-  });
-}
-
-function parseFirstFrame(ws: MockWebSocket): Record<string, unknown> {
-  return JSON.parse(ws.sent[0] as string);
-}
 
 describe("wireSessionSocket", () => {
   test("'Session ready' is not logged until session.start() resolves", async () => {

@@ -19,6 +19,7 @@ import {
 } from "./_studio-routes-test-utils.ts";
 import { createTestCombined } from "./_test-combined.ts";
 import { requestPublicOrigin } from "./studio-context.ts";
+import { ASSEMBLYAI_GATEWAY_MODELS } from "./studio-llm.ts";
 import { mutateWorkspace, studioScope } from "./studio-workspace.ts";
 
 // The orchestrator constructs its studio routes internally; intercept the
@@ -105,16 +106,34 @@ describe("studio page + routing", () => {
     });
   });
 
-  test("status reports the gateway provider/model when configured", async () => {
+  // Was "status reports the gateway provider/model when configured" and
+  // configured nothing: it stubbed STUDIO_LLM_PROVIDER — a knob NO production
+  // source reads — plus an EMPTY STUDIO_LLM_MODEL, then asserted the same
+  // default body as the test above it. `vi.stubEnv` accepts any name, so the
+  // dead one was silent; the same shape as the `lru-eviction` suite the
+  // server guide records, which configured two settings that no longer
+  // existed and stayed green while testing nothing.
+  test("an explicit STUDIO_LLM_MODEL is what status reports", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "test-key");
-    vi.stubEnv("STUDIO_LLM_PROVIDER", "");
-    vi.stubEnv("STUDIO_LLM_MODEL", "");
+    vi.stubEnv("STUDIO_LLM_MODEL", "claude-sonnet-4-6");
     const { fetch } = await createTestCombined();
     expect(await (await fetch("/studio/status")).json()).toEqual({
       llm: true,
       provider: "assemblyai",
-      model: "gpt-5.5",
+      model: "claude-sonnet-4-6",
     });
+  });
+
+  test("an EMPTY STUDIO_LLM_MODEL means unset, not a model named ''", async () => {
+    // studio-llm.ts resolves this with `||` rather than `??` precisely so an
+    // empty env var falls back; nothing pinned that, and `??` would ship a
+    // status body (and a gateway request) naming the empty string.
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "test-key");
+    vi.stubEnv("STUDIO_LLM_MODEL", "");
+    const { fetch } = await createTestCombined();
+    const body = (await (await fetch("/studio/status")).json()) as { model: string };
+    expect(body.model).not.toBe("");
+    expect(body.model).toBe(ASSEMBLYAI_GATEWAY_MODELS[0]);
   });
 
   test("studio slugs are reserved: agent routes 404 and deploys reject them", async () => {

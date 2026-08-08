@@ -113,11 +113,11 @@ export {
   createPipelineTransport,
   type PipelineTransportOptions,
 } from "./transports/pipeline-transport.ts";
-export {
-  _internals,
-  createS2sTransport,
-  type S2sTransportOptions,
-} from "./transports/s2s-transport.ts";
+// `_internals` (the connectS2s spy seam) is deliberately NOT re-exported: it
+// is a mutable object a test patches, and publishing it put a process-wide
+// behaviour switch on the `@alexkroman1/aai/runtime` surface. Tests inside
+// this package import it from the module directly.
+export { createS2sTransport, type S2sTransportOptions } from "./transports/s2s-transport.ts";
 export type {
   Transport,
   TransportCallbacks,

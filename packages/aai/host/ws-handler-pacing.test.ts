@@ -7,17 +7,11 @@
 import { describe, expect, test, vi } from "vitest";
 import { createOwnedMap } from "../sdk/owned-map.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
-import { MockWebSocket } from "./_mock-ws.ts";
+import type { MockWebSocket } from "./_mock-ws.ts";
 import { makeMockCore, silentLogger } from "./_test-utils.ts";
+import { defaultConfig, openSocket } from "./_ws-handler-test-utils.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
-const defaultConfig = { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 };
-
-function openSocket(readyState: number = MockWebSocket.OPEN): MockWebSocket {
-  const ws = new MockWebSocket("ws://test");
-  ws.readyState = readyState;
-  return ws;
-}
 /**
  * Pacing specs. The sink relays TTS audio at a bounded lead over real time
  * rather than the instant a provider frame arrives, which also makes ordering

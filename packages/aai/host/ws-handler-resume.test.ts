@@ -7,20 +7,9 @@ import { describe, expect, test, vi } from "vitest";
 import { createOwnedMap } from "../sdk/owned-map.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeMockCore, silentLogger, sleep } from "./_test-utils.ts";
+import { defaultConfig, openSocket, parseFirstFrame } from "./_ws-handler-test-utils.ts";
 import type { SessionCore } from "./session-core.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
-
-const defaultConfig = { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 };
-
-function openSocket(readyState: number = MockWebSocket.OPEN): MockWebSocket {
-  const ws = new MockWebSocket("ws://test");
-  ws.readyState = readyState;
-  return ws;
-}
-
-function parseFirstFrame(ws: MockWebSocket): Record<string, unknown> {
-  return JSON.parse(ws.sent[0] as string);
-}
 
 describe("wireSessionSocket resume", () => {
   test("resumeFrom reuses old session ID instead of generating new UUID", () => {
