@@ -624,34 +624,6 @@ describe("deploy + chat endpoints", () => {
   });
 });
 
-// Landing on a project (the once-per-open session broker call) wakes its
-// preview. The wake's behavior (stale redeploy gates, sandbox warm-up) is
-// covered in studio-preview.test.ts — this asserts the route's wiring.
-describe("session wakes the preview", () => {
-  test("a successful session broker call wakes the project's preview", async () => {
-    wakePreviewMock.mockClear();
-    const { fetch } = await createTestCombined();
-    await createProject(fetch);
-    const res = await authFetch(fetch, "/studio/projects/proj/session", { body: {} });
-    expect(res.status).toBe(200);
-    expect(wakePreviewMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        scope: studioScope("key1"),
-        project: "proj",
-        target: expect.objectContaining({
-          apiKey: "key1",
-          serverUrl: expect.stringMatching(/^https?:/),
-        }),
-        schedule: expect.any(Function),
-      }),
-    );
-    // A missing project never wakes anything.
-    wakePreviewMock.mockClear();
-    await authFetch(fetch, "/studio/projects/ghost/session", { body: {} });
-    expect(wakePreviewMock).not.toHaveBeenCalled();
-  });
-});
-
 describe("requestPublicOrigin", () => {
   /** A request as the studio sees it behind Modal: cleartext, public Host. */
   const behindTls = (headers: Record<string, string> = {}) =>

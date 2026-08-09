@@ -326,6 +326,14 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
     createProject.mutate(prompt);
   };
 
+  // The Preview pane's report that the platform is not serving the slug it
+  // wants to frame. Not a mutation: nothing on screen waits on it, and the
+  // pane owns the one-shot/retry policy — this is just the request.
+  const wakePreview = useCallback(
+    () => (project ? api.wakePreview(bearer, project) : Promise.resolve()),
+    [bearer, project],
+  );
+
   const publishError = errorText(publish.error);
   const publishOutput = publish.data?.output;
 
@@ -421,6 +429,7 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
               unpublished={workspace.data?.unpublished}
               nonce={previewNonce}
               onPublish={() => setPublishOpen(true)}
+              onPreviewMissing={wakePreview}
             />
           )}
           {tab === "code" && (

@@ -94,11 +94,30 @@ export function warmPreviewSandbox(
 }
 
 /**
- * Landing on a project wakes its preview. Hung off the once-per-open
- * session broker call (`POST /projects/:project/session`) — the "user is
- * looking at this project again" signal. Fire-and-forget: the caller's
- * response never waits on it.
+ * How long one project's wake stays throttled. Sized against what a wake
+ * COSTS — a workspace read plus a broker call that can spawn a sandbox — not
+ * against how often a healthy client sends one, which is once.
+ */
+export const PREVIEW_WAKE_THROTTLE_MS = 30_000;
+
+/**
+ * Something says the project's preview may need regenerating. Two triggers,
+ * both fire-and-forget (the caller's response never waits on it):
  *
+ * - **Landing on the project** — the once-per-open session broker call
+ *   (`POST /projects/:project/session`), i.e. "the user is looking at this
+ *   again".
+ * - **The Preview pane reporting the page missing**
+ *   (`POST /projects/:project/preview/wake`), which is the same condition
+ *   observed from the only place that can see it in a tab that never re-opens
+ *   the project. The two are not redundant: the open-signal fires once and
+ *   then never again for the life of the tab, so a preview swept an hour later
+ *   had nothing to correct it — the pane polled `/:slug/health` 1,061 times
+ *   across 50 minutes in production before an unrelated action happened to
+ *   broker a session. Neither trigger is TRUSTED; both land here, and the
+ *   404 check below is what decides.
+ *
+
  * It does ONE thing now: warm the sandbox of the agent the pane embeds (the
  * preview, falling back to the production agent for projects published
  * before previews existed) via {@link warmPreviewSandbox}, so a preview
