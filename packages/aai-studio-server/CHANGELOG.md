@@ -1,5 +1,33 @@
 # aai-studio-server
 
+## 0.6.1
+
+### Patch Changes
+
+- 42cf8ab: Studio front-end: the gate card — the studio's last-resort error screen — was a fixed 420px and put the server's own error text through no wrapping guard, so an upstream message carrying one unbroken token (a URL, a request id, a base64 fragment) blew the card past the viewport: measured 1266px of content in a 338px column. It is now a max-width that also fits a narrow window, and both the message and the detail break long tokens. The top bar could not shrink below ~830px either, so the action buttons ran off the right edge of any window narrower than that; the published-URL link now yields first and the wordmark hides below lg, which clears it down to ~690px.
+- 7cf76d3: Keep the studio UI alive across a Modal deploy: serve the app shell no-store (it names content-hashed assets that only exist in the image it was built into, and those are served immutable), and recover a tab whose chunks were deleted by the rollout — one guarded reload on a failed lazy import or Vite modulepreload error instead of a blank page.
+- Updated dependencies [9a7916a]
+- Updated dependencies [a7fc229]
+- Updated dependencies [65dca0b]
+- Updated dependencies [db3fb48]
+- Updated dependencies [42cf8ab]
+- Updated dependencies [7cf76d3]
+- Updated dependencies [c49f501]
+- Updated dependencies [db3fb48]
+- Updated dependencies [7cf76d3]
+- Updated dependencies [a91c3bc]
+- Updated dependencies [db3fb48]
+- Updated dependencies [a87bd05]
+- Updated dependencies [c49f501]
+- Updated dependencies [9fded19]
+- Updated dependencies [348fa16]
+- Updated dependencies [db3fb48]
+- Updated dependencies [9fded19]
+  - aai-server@3.5.1
+  - aai-studio-client@0.4.9
+  - @alexkroman1/aai@5.12.0
+  - @alexkroman1/aai-ui@5.12.0
+
 ## 0.6.0
 
 ### Minor Changes

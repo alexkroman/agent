@@ -1,5 +1,25 @@
 # aai-studio-client
 
+## 0.4.9
+
+### Patch Changes
+
+- 65dca0b: Studio gate screens never sit on an unexplained wait: the account and auth-config reads carry per-attempt deadlines, and a failed read shows "AssemblyAI Build is busy right now" with a Try again button instead of "Loading…" forever.
+- 7cf76d3: Keep the studio UI alive across a Modal deploy: serve the app shell no-store (it names content-hashed assets that only exist in the image it was built into, and those are served immutable), and recover a tab whose chunks were deleted by the rollout — one guarded reload on a failed lazy import or Vite modulepreload error instead of a blank page.
+- Updated dependencies [db3fb48]
+- Updated dependencies [42cf8ab]
+- Updated dependencies [c49f501]
+- Updated dependencies [db3fb48]
+- Updated dependencies [a91c3bc]
+- Updated dependencies [db3fb48]
+- Updated dependencies [c49f501]
+- Updated dependencies [9fded19]
+- Updated dependencies [348fa16]
+- Updated dependencies [db3fb48]
+- Updated dependencies [9fded19]
+  - @alexkroman1/aai@5.12.0
+  - @alexkroman1/aai-ui@5.12.0
+
 ## 0.4.8
 
 ### Patch Changes
