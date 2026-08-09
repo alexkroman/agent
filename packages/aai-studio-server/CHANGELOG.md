@@ -1,5 +1,14 @@
 # aai-studio-server
 
+## 0.6.2
+
+### Patch Changes
+
+- 18c0aa7: Let the Preview pane report a preview the platform is not serving, so a tab that stays open recovers instead of polling a dead slug forever
+- Updated dependencies [6b18703]
+- Updated dependencies [65eab69]
+  - aai-server@3.5.2
+
 ## 0.6.1
 
 ### Patch Changes
