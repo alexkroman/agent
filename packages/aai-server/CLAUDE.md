@@ -994,93 +994,15 @@ down, like the file-length allowlist.
   not document, so their availability on the floor is unverified; see the
   note in `studio-session-broker.ts`.
 
-- **The harness AND the build toolchain are baked into a snapshot image**,
-  not written per spawn, in two halves that cache differently. The
-  TOOLCHAIN is a native image LAYER (`toolchainImage`: a
-  `dockerfileCommands` `RUN npm install` into `/opt/aai/node_modules` — the
-  aai CLI bundlers plus the workspace-facing packages), so Modal's own
-  layer cache serves it and a harness rebuild — every
-  server code change — no longer reinstalls ~15 packages. The HARNESS needs a
-  throwaway builder sandbox, because the JS SDK's `dockerfileCommands` takes
-  commands with no build context and there is nothing to `COPY` a ~13 MB local
-  bundle from: a sandbox started from the layer writes it, its filesystem is
-  snapshotted (`snapshotFilesystem`), and the image is `publish`ed under a
-  content-addressed tag
-  (`aai-guest-harness:<hash(base image, harness, toolchain)>`), so every
-  later spawn — and every other replica, across restarts — resolves it with
-  one `images.fromName` call. A new harness build, base-image change, or
-  toolchain bump mints a new tag. This is the only harness-delivery path; a
-  failed build fails the spawn loudly (memo cleared, next spawn retries).
-  DEPLOYED AGENTS spawn from the tag recorded on their agents row at deploy
-  time (`harness_image_tag` — per-deploy pinning, so a platform upgrade
-  never changes the environment under an already-deployed bundle). An
-  unresolvable pin FAILS the spawn loudly — silently substituting the
-  current image is exactly the untested-environment drift pinning exists to
-  prevent; the operator kill switch `SANDBOX_IGNORE_IMAGE_PINS=1` forces
-  the current image for every spawn when a registry loss makes that trade
-  explicitly. Studio sandboxes always run the current image.
-- **The harness's V8 COMPILE CACHE is baked into the same snapshot.** The
-  harness is one ~13 MB bundle and every sandbox boots it cold, so V8 paid the
-  same parse+compile on every spawn. The builder sandbox now runs the harness
-  once in **warm-up mode** (`AAI_GUEST_WARMUP=1` — evaluates the module, opens
-  nothing, exits 0) under `NODE_COMPILE_CACHE`, before `snapshotFilesystem()`,
-  and `guestExecBaseEnv()` points every guest exec at the resulting
-  `/opt/aai/.compile-cache`. Measured on the real bundle: **~570ms → ~345ms**,
-  i.e. ~200ms off every cold voice session and studio broker call, for
-  ~1.5 MB in the image. Three things make it safe: a
-  missing or stale entry is a silent MISS (the cache keys on Node version +
-  file content, so a bumped base image simply misses), the warm-up is
-  best-effort (a failure logs and still publishes — the cache is an
-  optimization, and failing the build would take all spawning down for a
-  perf tweak), and it is Modal-only, since the cache is a property of the
-  baked image and the subprocess backend has no image.
-
-  **Warm-up is a DECLARED mode, and both halves are tested, because the
-  failure is invisible.** A warm-up that stops compiling the harness leaves a
-  cache that is merely empty: the image builds, every guest boots, and the
-  200ms comes back forever with nothing reporting it. It relied on the
-  `AAI_GUEST_TOKEN` check to exit for us at first — true by accident, and it
-  would silently rot the moment that check moved. So the mode is checked
-  before every other mode in `main()`, and `modal-harness-image.test.ts`
-  pins BOTH sides: the host asks for the warm-up before snapshotting (fake
-  Modal), and the real built harness honours it with no token (real spawn).
-  Note the fake sandbox had no `exec` at all when this landed, so the
-  host-side assertion had to be added with it — without `exec` the warm-up
-  threw into its own best-effort catch and every test stayed green.
-
-- **The guest toolchain is LOCKED, and the lock is committed**
-  (`packages/aai-guest/toolchain/{package.json,package-lock.json}`, regenerated
-  by `pnpm sync:guest-toolchain`, gated by `pnpm check:guest-toolchain` in
-  `scripts/check.sh` AND the CI check job). Without it the resolved tree is a
-  function of WHEN the layer was built, while the published tag and Modal's
-  layer cache both key on the install command's TEXT — so one
-  `harness_image_tag` could mean two different trees, the exact opposite of
-  the per-deploy environment pinning the tag exists for. The install is
-  therefore two steps, and the split is forced:
-  - **Third-party packages: `npm ci` against the committed lockfile.** Their
-    versions and integrity hashes are known at commit time, and this is where
-    nearly all the transitive surface lives (vite/rolldown, typescript,
-    vitest, react, tailwind). `npm ci` also refuses to run when the manifest
-    and lockfile disagree, so a hand-edited manifest fails the BUILD.
-  - **`@alexkroman1/*`: `npm install` at exact resolved versions.** These
-    CANNOT be locked here — their versions change every release, and a
-    lockfile entry needs an integrity hash that only exists once the version
-    is PUBLISHED, which happens after the commit that bumps it. Their own
-    dependencies (the provider SDKs) therefore still resolve at install time;
-    closing that residual gap needs a post-publish regeneration step, not a
-    lockfile in this repo.
-
-  Both files are written by the RUN itself, gzipped and base64'd (~20 KB), for
-  the same reason the harness cannot be `COPY`'d: `dockerfileCommands` carries
-  no build context. The image TAG hashes the lockfile's content, not the
-  manifest's — the manifest names direct versions, the lockfile names the whole
-  tree, so a purely transitive change still mints a new tag.
-  Only the Modal backend needs this: the subprocess backend's harness runs
-  from `packages/aai-guest/dist/` and resolves the toolchain through
-  aai-guest's own `node_modules` — the same walk-up shape as `/opt/aai`, with
-  nothing to build or mount. The `workspace-build-integration.test.ts` suite
-  keeps the path covered on any runner by spawning the harness there directly
-  and publishing through the real CLI to a real listening orchestrator.
+- **The harness, the build toolchain, and the V8 compile cache are baked into
+  a snapshot image**, not written per spawn — with the toolchain LOCKED by a
+  committed lockfile so one `harness_image_tag` can only ever mean one tree.
+  That artifact is the guest's, so its construction, its two cache layers, and
+  the split install (`npm ci` for third-party, `npm install` for
+  `@alexkroman1/*`) are documented where it is owned: see "The snapshot image"
+  in `packages/aai-guest/CLAUDE.md`. The host half — `modal-harness-image.ts`,
+  the content-addressed tag, and per-deploy pinning via `harness_image_tag` —
+  stays here.
 - Sandboxes are created with open egress and a bounded lifetime
   (`SANDBOX_TIMEOUT_SECS`, default 4h).
 - **Guest resources are a BURST RANGE: reserve the idle shape, cap the build
@@ -1779,49 +1701,18 @@ which is why it needs a test rather than a comment.
 
 ### The guest fetches its own bundle (signed Storage URL)
 
-A cold agent spawn used to move the worker bundle — ~8 MB typical, 30 MB cap —
-through this process **twice**: `loadBundleParts` read the blob out of Supabase
-Storage into the replica's heap, and `spawnModalAgentServer` wrote those same
-bytes into the sandbox with `filesystem.writeText`. Neither hop bought
-anything. The guest now fetches the bundle itself from a time-boxed signed
-Storage URL (`BlobStorage.signedUrl` → `BundleStore.getWorkerUrl` →
-`WorkerSource` in `sandbox-vm.ts` → `AAI_BUNDLE_URL` in the exec env), and both
-transfers disappear.
+A cold agent spawn no longer moves the worker bundle through this process at
+all: the guest fetches it from a time-boxed signed Storage URL
+(`BlobStorage.signedUrl` → `BundleStore.getWorkerUrl` → `WorkerSource` in
+`sandbox-vm.ts` → `AAI_BUNDLE_URL` in the exec env), and hash-verifies what it
+gets against the agents row's `worker_hash`.
 
-**The hash is the whole security argument, and it predates this.** Agent mode
-already refused to load a bundle whose sha-256 did not match `AAI_BUNDLE_SHA256`
-(`readAgentBoot`), so the guest trusts the HASH, never the transport. What
-changed is where that hash comes from: the agents row's `worker_hash` — the
-deploy's own record of what it published — rather than a digest of the bytes
-the host happened to be holding, which made the check a tautology on the file
-path. The URL grants read of exactly one immutable blob, carries no
-service-role key, and expires (`WORKER_URL_TTL_SECONDS`, 5 min — sized against
-the 120s readiness budget plus scheduling, because a URL expiring inside it
-turns slow Modal scheduling into a boot failure that only appears under
-capacity pressure).
-
-**There is no fallback for a failure.** Signing throws and fails the spawn,
-like every other spawn failure; the client re-brokers. `signedUrl` resolving
-`null` means something else entirely — *this backend cannot sign* — which is
-true only of the memory blob store behind local dev and tests, and puts them on
-the byte path. Conflating the two would silently put production back on the
-byte path with nothing reporting it.
-
-**A pinned guest may be too old to understand it, and that is checked**
-(`guestUnderstandsBundleUrl`). Deployed agents spawn from the harness image
-pinned on their row, so the guest can be arbitrarily older than the platform,
-and a `GUEST_CONTRACT_VERSION` 1 harness reads only `AAI_BUNDLE_PATH` — handed
-a URL it fails boot outright. Nothing can ask a guest its version *before*
-exec, so the host compares images instead: no pin, or `SANDBOX_IGNORE_IMAGE_PINS`
-(which must agree with `resolveSpawnImage` substituting the current image), or a
-pin equal to the tag this process builds. The tag hashes the harness content, so
-"same tag" means "same harness". **So the saving lands per deploy**, as agents
-are redeployed onto a harness that understands the URL — not all at once when
-this ships.
-
-One side effect worth knowing: `loadBundleParts` now reads the agents row ONCE
-and derives the worker source from it, where it previously issued `getAgent`
-and `getWorkerCode` concurrently and each read the row.
+The host-side pieces above live here. The BOOT contract — why the hash is the
+whole security argument, why `signedUrl` resolving `null` means "this backend
+cannot sign" rather than "signing failed", and why a pinned older guest is
+checked with `guestUnderstandsBundleUrl` before being handed a URL it cannot
+read — is documented with the guest: see "Fetching its own bundle" in
+`packages/aai-guest/CLAUDE.md`.
 
 ### No warm pool — every spawn boots from the snapshot image
 
