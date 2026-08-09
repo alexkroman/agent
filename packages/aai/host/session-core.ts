@@ -4,6 +4,7 @@
 
 import type { AgentConfig, ExecuteTool } from "../sdk/_internal-types.ts";
 import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_HISTORY } from "../sdk/constants.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { ClientEvent, ClientSink, SessionErrorCode } from "../sdk/protocol.ts";
 import type { Message } from "../sdk/types.ts";
 import { capToolResult, errorMessage, toolError } from "../sdk/utils.ts";
@@ -290,7 +291,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       opts.transport.seedHistory?.(messages);
     },
     onToolResult(toolCallId, result, error) {
-      opts.onToolResult?.({ toolCallId, result, ...(error !== undefined ? { error } : {}) });
+      opts.onToolResult?.({ toolCallId, result, ...omitUndefined({ error }) });
     },
 
     // ─── Inbound from transport ───────────────────────────────────────────

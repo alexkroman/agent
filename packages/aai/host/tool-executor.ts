@@ -12,6 +12,7 @@ import { TOOL_EXECUTION_TIMEOUT_MS } from "../sdk/constants.ts";
 import type { Db } from "../sdk/db.ts";
 import { STORAGE_DISABLED_MESSAGE } from "../sdk/db.ts";
 import type { GenerateOptions, GenerateResult } from "../sdk/generate.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { formatSchemaIssues } from "../sdk/schema.ts";
 import type { Message, ToolContext, ToolDef } from "../sdk/types.ts";
 import { errorDetail, errorMessage, toolError } from "../sdk/utils.ts";
@@ -45,7 +46,7 @@ function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
   return {
     env,
     state: state ?? {},
-    ...(signal !== undefined ? { signal } : {}),
+    ...omitUndefined({ signal }),
     get db(): Db {
       if (!db) {
         throw new Error(STORAGE_DISABLED_MESSAGE);

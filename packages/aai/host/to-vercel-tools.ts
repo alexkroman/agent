@@ -38,6 +38,10 @@ export function toVercelTools(
         const signal = options.abortSignal ?? ctx.signal;
         const opts: ExecuteToolOptions = {};
         if (signal !== undefined) opts.signal = signal;
+        // The AI SDK declares `toolCallId` required, so this guard is dead by
+        // the vendor's own types — kept because it is the vendor's claim about
+        // its runtime, not ours, and `ExecuteToolOptions.toolCallId` is
+        // optional under `exactOptionalPropertyTypes`.
         if (options.toolCallId !== undefined) opts.toolCallId = options.toolCallId;
         // Snapshot history so concurrent mutation from a newer turn can't
         // leak into this tool's view.

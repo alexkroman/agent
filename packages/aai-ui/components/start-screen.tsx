@@ -44,7 +44,7 @@ export function StartScreen({
   subtitle?: string | undefined;
   buttonText?: string | undefined;
   className?: string | undefined;
-}) {
+}): ReactNode {
   // Narrow subscription: only re-render when `started` flips, not on every
   // snapshot change.
   const started = useSessionSelector((s) => s.started);

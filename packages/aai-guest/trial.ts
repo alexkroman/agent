@@ -81,7 +81,10 @@ export async function executeTool(
   if (req.name === "run_code") {
     const code = typeof req.args?.code === "string" ? req.args.code : "";
     const result = await runCode(code);
-    if (typeof result === "object" && result !== null && "error" in result) {
+    // No null check: `runCode` returns `string | { error: string }`, so the
+    // typeof narrows it fully. A widened return would fail the `in` below at
+    // compile time rather than throwing here.
+    if (typeof result === "object" && "error" in result) {
       return { error: result.error, state };
     }
     return { result, state };

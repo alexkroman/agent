@@ -13,6 +13,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 
 /** Output tail kept per stream from a CLI child (build / deploy envelopes). */
 export const CLI_OUTPUT_CAP = 32_000;
@@ -52,7 +53,7 @@ export function runCapped(
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, {
       cwd: opts.cwd,
-      ...(opts.env !== undefined ? { env: opts.env } : {}),
+      ...omitUndefined({ env: opts.env }),
       timeout: opts.timeoutMs,
       stdio: ["ignore", "pipe", "pipe"],
     });

@@ -21,6 +21,7 @@ import {
   DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS,
   WS_OPEN,
 } from "../sdk/constants.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { ClientEvent, HostConfig } from "../sdk/protocol.ts";
 import { HostConfigMessageSchema } from "../sdk/protocol.ts";
 import type { AgentDef } from "../sdk/types.ts";
@@ -152,7 +153,7 @@ export function buildHostAgent(host: HostConfig, baseAgent?: AgentDef): AgentDef
     maxSteps: DEFAULT_HOST_MAX_STEPS,
     // STT biasing follows the provider triple's inheritance rule: the client's
     // value wins when sent, the operator's configured prompt stands otherwise.
-    ...(host.sttPrompt !== undefined ? { sttPrompt: host.sttPrompt } : {}),
+    ...omitUndefined({ sttPrompt: host.sttPrompt }),
     // Injected tools are relayed to the client, not executed in-process.
     tools: {},
   };
@@ -268,8 +269,7 @@ function s2sConfigFromHandshake(msg: {
 }): S2SConfig {
   return {
     ...DEFAULT_S2S_CONFIG,
-    ...(msg.sampleRate !== undefined ? { inputSampleRate: msg.sampleRate } : {}),
-    ...(msg.ttsSampleRate !== undefined ? { outputSampleRate: msg.ttsSampleRate } : {}),
+    ...omitUndefined({ inputSampleRate: msg.sampleRate, outputSampleRate: msg.ttsSampleRate }),
   };
 }
 

@@ -23,6 +23,7 @@ import {
   type ToolCallRepairFunction,
   type ToolSet,
 } from "ai";
+import { omitUndefined } from "../../sdk/omit-undefined.ts";
 import type { ToolChoice } from "../../sdk/types.ts";
 import { errorMessage } from "../../sdk/utils.ts";
 import type { Logger } from "../runtime-config.ts";
@@ -205,7 +206,7 @@ export function startLlmStream(req: LlmRequest): StartedLlmStream {
     tools: req.tools,
     toolChoice: req.toolChoice,
     // Temperature only when set — Claude 5 ignores it and warns.
-    ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
+    ...omitUndefined({ temperature: req.temperature }),
     // Word-coalesce text for TTS, keeping thinking signatures (see pipeline-smooth.ts).
     experimental_transform: smoothTextStream(),
     experimental_repairToolCall: req.repairToolCall,

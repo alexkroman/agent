@@ -11,6 +11,7 @@ import pTimeout, { TimeoutError } from "p-timeout";
 import { toAgentConfig } from "../sdk/_internal-types.ts";
 import { assertProviderTriple, type SessionMode } from "../sdk/config-rules.ts";
 import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../sdk/constants.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { createOwnedMap } from "../sdk/owned-map.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "../sdk/protocol.ts";
@@ -415,14 +416,14 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       ...(startOpts?.onOpen ? { onOpen: startOpts.onOpen } : {}),
       ...(startOpts?.onClose ? { onClose: startOpts.onClose } : {}),
       ...(startOpts?.onSinkCreated ? { onSinkCreated: startOpts.onSinkCreated } : {}),
-      ...(startOpts?.audioLeadMs !== undefined ? { audioLeadMs: startOpts.audioLeadMs } : {}),
+      ...omitUndefined({ audioLeadMs: startOpts?.audioLeadMs }),
       // sinkMap/stateMap cleanup lives in the identity-guarded stop() wrapper
       // (createSession) — a key delete here would hit the resumed session's
       // entries when an old session's stop settles after a reconnect.
       onSessionEnd: (sid, sink) => {
         userOnSessionEnd?.(sid, sink);
       },
-      ...(sessionStartTimeoutMs !== undefined ? { sessionStartTimeoutMs } : {}),
+      ...omitUndefined({ sessionStartTimeoutMs }),
       ...(resumeFrom ? { resumeFrom } : {}),
     });
   }

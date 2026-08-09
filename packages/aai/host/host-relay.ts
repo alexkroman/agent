@@ -15,6 +15,7 @@
 import pTimeout from "p-timeout";
 import type { ExecuteTool } from "../sdk/_internal-types.ts";
 import { DEFAULT_RELAY_TOOL_TIMEOUT_MS } from "../sdk/constants.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { ClientEvent } from "../sdk/protocol.ts";
 import { safeJsonParse, toolError } from "../sdk/utils.ts";
 
@@ -99,7 +100,7 @@ export function createRelayExecuteTool(opts: {
     // Either way the pending entry is dropped once the call settles.
     return pTimeout(promise, {
       milliseconds: timeoutMs,
-      ...(signal !== undefined ? { signal } : {}),
+      ...omitUndefined({ signal }),
       message: new Error(`Relay tool "${name}" (${toolCallId}) timed out after ${timeoutMs}ms`),
     }).finally(() => {
       pending.delete(toolCallId);

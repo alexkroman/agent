@@ -98,11 +98,17 @@ export async function loadBundle(
   if (oldRuntime) void oldRuntime.shutdown().catch(() => undefined);
 
   const mod = await importBundleModule(params.code);
-  const agent = (mod.default ?? mod) as AgentDef;
+  // `unknown`, not `as AgentDef`: this is a tenant's bundle exporting whatever
+  // it likes, so the assertion has to come AFTER the check rather than instead
+  // of it. Asserting first made the guard below provably dead to the checker
+  // while it stayed load-bearing at runtime — the type stopped marking where
+  // the trust boundary is, and deleting the guard would have raised no error.
+  const exported: unknown = mod.default ?? mod;
 
-  if (!agent || typeof agent !== "object") {
+  if (exported === null || typeof exported !== "object") {
     throw new Error("Agent bundle must export an object");
   }
+  const agent = exported as AgentDef;
   const createRuntime = (mod as { __aaiCreateRuntime?: unknown }).__aaiCreateRuntime;
   if (typeof createRuntime !== "function") {
     throw new Error(

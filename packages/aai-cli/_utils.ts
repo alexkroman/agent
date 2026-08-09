@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 // The `/utils` subpath is deliberately zod-free, so re-exporting from it
 // keeps `aai --help` from paying zod's startup cost (the root barrel would).
-import { errorMessage } from "@alexkroman1/aai/utils";
+import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 
 export { errorDetail, errorMessage } from "@alexkroman1/aai/utils";
 
@@ -116,9 +116,11 @@ export async function writeJson(
     ...(opts.mode !== undefined ? { mode: 0o700 } : {}),
   });
   const tmpPath = `${filePath}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
-  await fs.writeFile(tmpPath, `${JSON.stringify(data, null, 2)}\n`, {
-    ...(opts.mode !== undefined ? { mode: opts.mode } : {}),
-  });
+  await fs.writeFile(
+    tmpPath,
+    `${JSON.stringify(data, null, 2)}\n`,
+    omitUndefined({ mode: opts.mode }),
+  );
   try {
     await fs.rename(tmpPath, filePath);
   } catch (err) {
