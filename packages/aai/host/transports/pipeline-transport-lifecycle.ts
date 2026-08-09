@@ -41,6 +41,17 @@ export interface PipelineLifecycle {
    */
   onAudioReady(): void;
   /**
+   * Queue the greeting turn. Called at session start via
+   * {@link PipelineLifecycle.onAudioReady} and again by the transport's
+   * `reset()` — a client `reset` discards the conversation, and a conversation
+   * that starts without its opening line is not the one the agent declares.
+   *
+   * No-op with no greeting configured, before TTS is adopted (there is nothing
+   * to speak into yet — the start path greets as soon as it is), or after
+   * teardown.
+   */
+  greet(): void;
+  /**
    * Has {@link PipelineLifecycle.onAudioReady} fired? The transport gates
    * inbound audio on it — STT is not open before that, so forwarding frames
    * would write into a session that does not exist yet.
@@ -168,18 +179,29 @@ export function createPipelineLifecycle(deps: PipelineLifecycleDeps): PipelineLi
     });
   }
 
-  function onAudioReady(): void {
-    if (audioReady || isTerminated()) return;
-    audioReady = true;
-    if (deps.skipGreeting) return;
+  function greet(): void {
+    if (!audioReady || isTerminated()) return;
     const greeting = deps.greeting;
     if (!greeting) return;
     turnChain.chain(() => runGreeting(greeting).catch(logTurnCrash("Pipeline greeting failed")));
   }
 
+  function onAudioReady(): void {
+    if (audioReady || isTerminated()) return;
+    audioReady = true;
+    // `skipGreeting` is a RESUME flag and scoped to this connection's START:
+    // a reconnect rejoins a conversation already in progress, so re-greeting
+    // there would repeat a line the caller has heard. It deliberately does not
+    // reach `greet()`, because a later `reset()` is the opposite case — the
+    // conversation is discarded and the next one begins.
+    if (deps.skipGreeting) return;
+    greet();
+  }
+
   return {
     onProviderError,
     onAudioReady,
+    greet,
     audioReady: () => audioReady,
 
     async start(): Promise<void> {
