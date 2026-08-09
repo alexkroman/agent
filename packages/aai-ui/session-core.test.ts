@@ -141,6 +141,25 @@ describe("createSessionCore", () => {
     expect(lastSocket?.url).not.toContain("resume=");
   });
 
+  it("reset on a closed socket redials as a fresh session, not a resume", () => {
+    // "New Conversation" while the link is down: the `reset` frame has nowhere
+    // to go, so the redial is what starts the new conversation. Carrying the
+    // resume id would rejoin the old one — the server keeps the history this
+    // reset discarded, and `skipGreeting` suppresses the opening line.
+    core.start();
+    lastSocket?.simulateOpen();
+    lastSocket?.simulateMessage(makeConfig());
+    lastSocket?.simulateClose();
+
+    core.reset();
+
+    expect(lastSocket?.url).not.toContain("sessionId=");
+    expect(lastSocket?.url).not.toContain("resume=");
+    const snap = core.getSnapshot();
+    expect(snap.running).toBe(true);
+    expect(snap.started).toBe(true);
+  });
+
   it("external AbortSignal triggers disconnect", () => {
     const controller = new AbortController();
     core.connect({ signal: controller.signal });

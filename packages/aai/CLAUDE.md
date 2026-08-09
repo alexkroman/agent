@@ -742,6 +742,34 @@ The residual risk in a container is prompt injection steering the model at an
 internal endpoint; accepted, because the sandbox has nothing internal worth
 reaching and an author who wants that can already write it.
 
+## A `reset` starts a conversation, so it GREETS
+
+The client `reset` frame — aai-ui's "New Conversation" button — discards the
+conversation, and a conversation that begins without the agent's declared
+opening line is not the one the agent declares. The pipeline transport greeted
+only from `onAudioReady`, once per CALL, so every conversation after the first
+opened on silence: the caller cleared the transcript and then sat listening to
+a live mic with nothing to prompt them. `reset()` therefore ends by calling
+`lifecycle.greet()` — queued AFTER `gate.invalidateAll()` so the strand that
+kills the pre-reset turns cannot catch it, and on the turn chain so it runs
+after the aborted turn unwinds rather than interleaving with it.
+
+**`skipGreeting` deliberately does not reach `greet()`.** It is a RESUME flag
+scoped to a connection's start ("this caller already heard the opening line"),
+which is the opposite claim from a reset. That is also why aai-ui's `reset()`
+drops the resume identity when the socket is already closed: there the redial
+IS the new conversation, and a `?sessionId=`/`resume=1` reconnect would rejoin
+the old one — server history kept, greeting suppressed.
+
+**Neither S2S transport re-greets, and that is a known gap rather than a
+decision.** AssemblyAI S2S has no `reset()` at all (its greeting is dispatched
+service-side from the session config, with no protocol verb to replay it), and
+OpenAI Realtime has none either — its `sendGreeting()` is a one-shot
+`response.create` that could be re-issued, but the service still holds the
+conversation a reset is supposed to discard, so re-greeting alone would open a
+"new" conversation the model can still see the whole of. Clearing it means
+tracking every `conversation.item` id to delete, which is its own change.
+
 ## History records what was HEARD, not what was generated
 
 An interrupted reply lands in history as the words the caller is estimated to

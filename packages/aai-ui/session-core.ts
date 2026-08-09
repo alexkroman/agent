@@ -437,12 +437,14 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
       sendJson({ type: "reset" });
       return;
     }
-    resetState();
-    disconnect();
-    // The reconnect keeps the session live — without this, `running` stays
-    // false and the controls show "Resume" on a freshly connected session.
-    updateState({ running: true });
-    connect();
+    // No socket, so the `reset` frame above went nowhere and this redial is
+    // what starts the new conversation. `end()` is the whole clear-and-forget:
+    // it drops the resume identity, so `start()` redials without
+    // `?sessionId=`/`resume=1` — a resume rejoins the conversation in progress,
+    // keeping the server's history and suppressing the greeting. `start()`
+    // also leaves the session running, so the controls don't show "Resume".
+    end();
+    start();
   }
 
   function disconnect(): void {

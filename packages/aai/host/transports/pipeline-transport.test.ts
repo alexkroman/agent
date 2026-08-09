@@ -15,7 +15,8 @@ import { createPipelineTransport } from "./pipeline-transport.ts";
 
 // Turn-processing specs (STT final → LLM stream → TTS) live in
 // pipeline-turn.test.ts; barge-in/interruption specs live in
-// pipeline-transport-barge-in.test.ts; shared helpers in
+// pipeline-transport-barge-in.test.ts; the greeting turn (at start and on
+// reset) in pipeline-greeting.test.ts; shared helpers in
 // _pipeline-transport-harness.ts.
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -60,69 +61,6 @@ describe("PipelineTransport", () => {
       const t = createPipelineTransport(opts);
       await t.start();
       expect(callbacks.onSessionReady).toHaveBeenCalledWith("test-sid");
-      await t.stop();
-    });
-  });
-
-  describe("greeting", () => {
-    test("sends greeting via ttsSession.sendText and fires onReplyStarted + onAgentTranscript + onReplyDone", async () => {
-      const { opts, tts, callbacks } = makeOpts({
-        sessionConfig: { systemPrompt: "s", greeting: "Hi there!" },
-      });
-      const t = createPipelineTransport(opts);
-      await t.start();
-      await vi.waitFor(() => {
-        expect(callbacks.onReplyDone).toHaveBeenCalledOnce();
-      });
-      expect(tts.last()?.textChunks).toContain("Hi there!");
-      expect(callbacks.onReplyStarted).toHaveBeenCalledWith(expect.stringContaining("greeting"));
-      expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("Hi there!", false);
-      // onAudioDone is owned by session-core's flushReply, not the transport.
-      expect(callbacks.onAudioDone).not.toHaveBeenCalled();
-      await t.stop();
-    });
-
-    test("also pushes the greeting via sttSession.updateAgentContext", async () => {
-      const { opts, stt, callbacks } = makeOpts({
-        sessionConfig: { systemPrompt: "s", greeting: "Hi there!" },
-      });
-      const t = createPipelineTransport(opts);
-      await t.start();
-      await vi.waitFor(() => {
-        expect(callbacks.onReplyDone).toHaveBeenCalledOnce();
-      });
-      expect(stt.last()?.updateAgentContext).toHaveBeenCalledWith("Hi there!");
-      await t.stop();
-    });
-
-    test("publishes the greeting transcript exactly once", async () => {
-      // The whole greeting reaches TTS in one call, so the interim transcript
-      // would be a byte-identical copy of the final: the turn emitted the same
-      // `agent_transcript` frame twice, final first — the inverse of the
-      // documented partial-then-final order.
-      const { opts, callbacks } = makeOpts({
-        sessionConfig: { systemPrompt: "s", greeting: "Hi there!" },
-      });
-      const t = createPipelineTransport(opts);
-      await t.start();
-      await vi.waitFor(() => {
-        expect(callbacks.onReplyDone).toHaveBeenCalledOnce();
-      });
-      expect(callbacks.onAgentTranscript).toHaveBeenCalledExactlyOnceWith("Hi there!", false);
-      expect(callbacks.onAgentTranscriptPartial).not.toHaveBeenCalled();
-      await t.stop();
-    });
-
-    test("skipGreeting suppresses the greeting turn", async () => {
-      const { opts, tts, callbacks } = makeOpts({
-        skipGreeting: true,
-        sessionConfig: { systemPrompt: "s", greeting: "Hello!" },
-      });
-      const t = createPipelineTransport(opts);
-      await t.start();
-      await sleep(20);
-      expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
-      expect(tts.last()?.textChunks).toHaveLength(0);
       await t.stop();
     });
   });

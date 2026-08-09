@@ -426,6 +426,12 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       history.reset();
       // A reset is user activity: restore the budget, restart the window.
       nudger.onUserSpeech();
+      // A reset starts a NEW conversation, so it opens the way every
+      // conversation does. Queued after the invalidateAll above, so the
+      // greeting turn's epoch is the fresh one and the strand does not catch
+      // it; queued on the turn chain, so it runs after the aborted turn
+      // unwinds rather than interleaving with it.
+      lifecycle.greet();
     },
   };
 }
