@@ -154,9 +154,33 @@ def _stage_install_inputs() -> Path:
     its real workspace path. The directory has to outlive this call — Modal
     builds the image lazily, at `modal deploy`, not here — so it is cleaned up
     at process exit instead of by a context manager.
+
+    EMPTY inside the container, and that guard is what keeps the app
+    startable. Modal re-imports the deploy script in every container to
+    hydrate the function (see `add_local_python_source` at the end of
+    `build_image`), so this runs THERE too — where the repo does not exist and
+    `REPO_ROOT`, derived from `__file__`, resolves to `/` because the module
+    is mounted at `/root/modal_image.py`. Evaluated eagerly as an argument to
+    `add_local_dir`, that is a hard `FileNotFoundError: '/pnpm-lock.yaml'` at
+    import time, and the shape of the failure is the dangerous part: `modal
+    deploy` exits 0 and CI reports success, the image builds, the app reads
+    `deployed` — and then every container dies on startup while the PREVIOUS
+    deploy's containers keep serving. Nothing in the request log says the
+    rollout failed; the service simply cannot scale out or be replaced, until
+    the last old container goes and takes the service with it. (Modal does log
+    `Function modal_deploy.server is crash-looping`, minutes later, in the app
+    log nobody is reading.) The image is only ever BUILT locally, so the
+    container's copy has nothing to stage.
+
+    The rule this generalizes to: everything in this module may be IMPORTED
+    without the repo present. Modal's own `Image` builder calls are lazy, so
+    referring to `REPO_ROOT` in one is fine; reading the filesystem to compute
+    an argument to one is not.
     """
     staged = Path(tempfile.mkdtemp(prefix="aai-modal-install-"))
     atexit.register(shutil.rmtree, staged, True)
+    if not modal.is_local():
+        return staged
 
     for name in INSTALL_ROOT_FILES:
         shutil.copyfile(REPO_ROOT / name, staged / name)
@@ -304,6 +328,10 @@ def build_image(*, port: int, extra_env: dict[str, str] | None = None):
         .add_local_dir(_stage_install_inputs(), remote_path="/app", copy=True)
         .workdir("/app")
         .run_commands("pnpm install --frozen-lockfile --ignore-scripts --prod=false")
+        # Passing REPO_ROOT (a bogus `/` in the container) is safe only because
+        # this call is LAZY — Modal walks the directory at image build, which
+        # happens locally. See _stage_install_inputs for the eager case, and
+        # the rule.
         .add_local_dir(REPO_ROOT, remote_path="/app", copy=True, ignore=BUILD_IGNORE)
         .run_commands(ASSERT_INSTALL_SURVIVED, BUILD_COMMAND, WARM_COMPILE_CACHE)
         .env(
