@@ -575,7 +575,26 @@ you only need to list one package.
 - Type-level tests use `.test-d.ts` files with `typecheck: { only: true }`
   — they are checked by tsc but never executed at runtime. Use
   `expectTypeOf` from vitest to assert on type shapes. Projects:
-  `aai-types`.
+  `aai-types`, `aai-ui-types` — one per package, because each has to run under
+  its own package tsconfig (`aai-ui`'s type tests need `lib: DOM` and
+  `jsx: react-jsx`, which the root config does not set).
+
+  **What GATES a `.test-d.ts` is `turbo run typecheck`, not those projects.**
+  They are declared only in the root `vitest.config.ts`, which nothing in the
+  repo or in CI evaluates — the same cause as the root coverage thresholds
+  above, and it means `pnpm vitest run --project aai-types` is a local
+  iteration shortcut rather than the gate. The real enforcement is that every
+  package tsconfig includes its test files and a mismatched `expectTypeOf` is a
+  hard compile error: injecting
+  `expectTypeOf<string>().toEqualTypeOf<number>()` fails `tsc -p packages/aai`
+  with `TS2344`, naming the mismatch in the constraint. So a new `.test-d.ts`
+  is covered on creation — but only in a package whose tsconfig includes it,
+  which is worth checking when adding the first one to a package.
+
+  **The first `.test-d.ts` in a package needs a `knip.json` entry too**
+  (`"**/*.test-d.ts"`). A type test is imported by nothing, so without it knip
+  reports the file itself as unused — which is what happened to
+  `aai-ui/hooks.test-d.ts`, on a pattern `packages/aai` had carried all along.
 - **Package validation**: `publint` runs post-build to verify package.json
   exports resolve to real files. `attw` validates export types. Both run in
   the check pipeline AND in CI, and **all three publishable packages
@@ -907,10 +926,22 @@ back to the host's `process.env`.
 
 ### Known limitations
 
-- **Type-level tests**: Cover public entry points of `aai` (`.`, `./types`)
-  and `aai-ui` (`.`). Subpath exports (e.g. `./protocol`) are not covered
-  by type tests. (Their RUNTIME export lists are pinned — see
+- **Type-level tests**: Cover public entry points of `aai` (`.`, `./types`,
+  plus the provider descriptors) and `aai-ui` (`.` — the four generic hooks a
+  custom client is written against). Subpath exports (e.g. `./protocol`) are
+  not covered by type tests. (Their RUNTIME export lists are pinned — see
   `sdk/exports.test.ts` — which is a different guarantee.)
+
+  This entry claimed the `aai-ui` half for a long time before it was true:
+  every `.test-d.ts` in the repo lived in `packages/aai`, and the
+  `aai-types` project is rooted there, so it could not have run an `aai-ui`
+  type test if one had been written. What was unpinned is exactly what a type
+  test is for — `useToolResult<R>`'s two overloads, `useAgentState<S>`'s
+  nullable return, and the deliberate `any` on both (`DefaultToolResult`, and
+  `ToolCallInfo.args`), which are documented decisions with a rationale and no
+  check. `hooks.test-d.ts` pins them now, including the `any`s, because
+  tightening one to `unknown` is a breaking change for every untyped client
+  and should fail here rather than in a user's build.
 
 ### Open testability work
 

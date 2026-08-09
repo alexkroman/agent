@@ -67,12 +67,38 @@ export default defineConfig({
       // Every package's own vitest.config.ts — the single definition of each
       // suite. Adding a package needs no edit here.
       "packages/*",
+      // One typecheck project PER PACKAGE that has `.test-d.ts` files, rather
+      // than one rooted at the repo: each has to run under its own package
+      // tsconfig, and `aai-ui`'s is the reason — its type tests need `lib:
+      // DOM` and `jsx: react-jsx`, neither of which the root config sets.
+      //
+      // Note these projects are NOT what gates a `.test-d.ts`. Nothing in the
+      // repo or in CI evaluates this file (see the coverage-threshold note in
+      // the root CLAUDE.md — same cause), so what actually fails a wrong
+      // `expectTypeOf` is `turbo run typecheck`: every package tsconfig
+      // includes its test files, and a mismatched assertion is a hard TS2344.
+      // They stay because `--project <name>` is the fast way to iterate on one
+      // package's type tests without checking the whole program.
       {
         ...sharedConfig,
         test: {
           ...sharedConfig.test,
           name: "aai-types",
           root: "packages/aai",
+          include: [],
+          typecheck: {
+            enabled: true,
+            only: true,
+            include: ["**/*.test-d.ts"],
+          },
+        },
+      },
+      {
+        ...sharedConfig,
+        test: {
+          ...sharedConfig.test,
+          name: "aai-ui-types",
+          root: "packages/aai-ui",
           include: [],
           typecheck: {
             enabled: true,
