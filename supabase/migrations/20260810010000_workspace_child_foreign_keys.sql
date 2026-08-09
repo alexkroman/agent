@@ -12,9 +12,17 @@
 -- and `sandbox_token` for a project that is gone.
 --
 -- A composite foreign key makes both the database's job. The application-level
--- deletes stay (they are what the in-memory stores do in dev and tests, and
--- they release the session's guest deliberately rather than by cascade); this
--- is the backstop under them.
+-- deletes stay — they are what the in-memory stores do in dev and tests — and
+-- this is the backstop under them.
+--
+-- For `studio_sessions` it is not a backstop but the WHOLE mechanism: the
+-- delete route (`studio-routes.ts`) touches the workspace and the chat and
+-- nothing else, so before this the row simply outlived the project. Nothing
+-- releases the guest on that path either, with or without the cascade — the
+-- owning replica's idle sweeper is what disposes a studio sandbox, and it
+-- disposes this one SOONER once the lease row is gone, since `get` stops
+-- reporting the project as recently brokered. So the cascade is strictly an
+-- improvement on both counts; it just is not a release.
 --
 -- ── ORDERING, WHICH IS WHAT MAKES THIS SAFE ─────────────────────────────────
 --

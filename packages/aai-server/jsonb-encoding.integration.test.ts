@@ -126,15 +126,17 @@ describeWithPg("platform jsonb columns hold jsonb, not strings", () => {
   });
 
   test("the orphan-preview sweep can see which slug a workspace claims", async () => {
-    // The sweep deletes a `-preview` agent only when NO workspace names it.
-    // Against a string-encoded doc this arrow returns NULL for every row, so
-    // the guard matched nothing and it deleted previews that were in use.
+    // The sweep deletes a `-preview` agent only when NO workspace names it,
+    // joining `preview_slug` — a STORED generated column over
+    // `doc->>'previewSlug'`. The generation expression is the same arrow, so it
+    // inherits the same failure: against a string-encoded doc it computes NULL
+    // for every row, the guard matches nothing, and previews in use are deleted.
     const store = createPgWorkspaceStore(sql);
     await store.put(SCOPE, "claim", { files: {}, previewSlug: "claim-preview" }, null);
     const rows = await sql<{ claimed: boolean }>(
       `select exists (
          select 1 from aai_platform.studio_workspaces w
-         where w.doc->>'previewSlug' = $1
+         where w.preview_slug = $1
        ) as claimed`,
       ["claim-preview"],
     );

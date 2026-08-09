@@ -83,6 +83,13 @@ const SWEEP_STUDIO_SESSIONS = "delete from aai_platform.studio_sessions where ex
  * an age floor so a preview whose workspace stamp hasn't landed yet (the
  * deploy returns before `previewSlug` is written) is never reaped mid-birth.
  *
+ * The back-reference is joined through `studio_workspaces.preview_slug` — a
+ * STORED generated column over `doc->>'previewSlug'`
+ * (`20260810020000_preview_slug_column.sql`), indexed. Reading the field out of
+ * `doc` here instead would detoast the whole project file map for every
+ * workspace row, once an hour, forever; that migration's header has the
+ * measurement and the reason an expression index does not fix it.
+ *
  * Each reaped slug is cleaned up the way the delete route would: its app
  * database is deprovisioned FIRST (schema + role, named by the `role` in the
  * stored `app-db:` meta — dropping the secret before the schema would strand
@@ -112,7 +119,7 @@ begin
         and a.updated_at < now() - interval '1 hour'
         and not exists (
           select 1 from aai_platform.studio_workspaces w
-          where w.doc->>'previewSlug' = a.slug
+          where w.preview_slug = a.slug
         )
       returning slug
     )

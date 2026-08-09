@@ -107,6 +107,29 @@ end $$;
 -- ── Realtime change streams ─────────────────────────────────────────────────
 -- The watched tables must be in the `supabase_realtime` publication before
 -- the Realtime service will stream their changes.
+--
+-- WHOLE TABLES, DELIBERATELY. Narrowing these to a column list — publishing
+-- only the identity columns the handlers actually key off, and keeping
+-- `studio_workspaces.doc` out of the stream — is the obvious optimization and
+-- it DOES NOTHING. Supabase Realtime does not decode with `pgoutput`, which is
+-- the only thing that honours a publication's column list; `realtime.
+-- list_changes` reads this publication for its TABLE list alone and decodes
+-- with wal2json:
+--
+--   pg_logical_slot_get_changes(slot, …, 'add-tables', <tables from pub>)
+--
+-- wal2json has no notion of publications, so `pg_publication_rel.prattrs` is
+-- never consulted and every column is emitted regardless. Measured on the
+-- local stack (realtime v2.112.6, PG 17.6): a publication whose `attnames` is
+-- `{id,small}` still emits `big` in full. So a column list here costs a
+-- migration and buys nothing — the whole `doc` is still detoasted, serialized
+-- and handed to walrus on every settled edit.
+--
+-- If that cost needs to come down, the lever is a different MECHANISM, not a
+-- narrower publication: Broadcast from Database (`realtime.broadcast_changes`
+-- from a trigger, which sends a payload you choose), or moving the signal to a
+-- skinny table that does not carry the document. See "Realtime change streams"
+-- in packages/aai-server/CLAUDE.md.
 do $$
 begin
   if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then

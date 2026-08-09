@@ -66,7 +66,11 @@ function migrationForStockPostgres(): { sql: string; stripped: number } {
   if (files.length === 0) throw new Error(`no migrations in ${migrationsDir}`);
   const raw = files.map((n) => readFileSync(path.join(migrationsDir, n), "utf-8")).join("\n");
   let stripped = 0;
-  const sql = raw.replace(/^create extension if not exists \w+;$/gm, () => {
+  // `with schema extensions` is part of the line for pg_net (Supabase's
+  // convention; a bare create lands the extension in `public`), so the pattern
+  // has to allow the clause or that one silently stops being stripped — the
+  // count below is what turns "silently" into a failure.
+  const sql = raw.replace(/^create extension if not exists \w+(?: with schema \w+)?;$/gm, () => {
     stripped += 1;
     return "-- extension omitted: not available on a stock server";
   });
@@ -275,6 +279,40 @@ describeIfPg("the platform migration applies and the stores work against it", ()
     await workspaces.delete("scope-cascade", "proj");
 
     expect(await chats.getChat("scope-cascade", "proj")).toBeNull();
+  });
+
+  test("a parentless chat is REFUSED, not stranded", async () => {
+    // The other half of the same key, and the half no cascade can show: before
+    // it, this write succeeded and produced a row no surface could see and no
+    // code path could ever delete.
+    const chats = createPgChatStore(sql);
+    await expect(chats.putChat("scope-ghost", "ghost", [])).rejects.toThrow(
+      /studio_chats_workspace_fk/,
+    );
+  });
+
+  test("deleting a workspace cascades to its session too", async () => {
+    // `studio_sessions` is the sharper case: the delete route never touched it
+    // at all, so the row outlived the project carrying a live `chat_token` and
+    // `sandbox_token` until its lease expired. Nothing in the application
+    // deletes it even now — unlike the chat, where the cascade backs up a
+    // delete that already existed, here the cascade IS the mechanism.
+    const workspaces = createPgWorkspaceStore(sql);
+    await workspaces.put("scope-session", "proj", { files: {} }, null);
+    await sql(
+      `insert into aai_platform.studio_sessions
+         (scope, project, chat_url, chat_token, guest_origin, sandbox_token, owner, expires_at)
+       values ($1, $2, 'u', 't', 'o', 's', 'replica', now() + interval '1 hour')`,
+      ["scope-session", "proj"],
+    );
+
+    await workspaces.delete("scope-session", "proj");
+
+    const rows = await sql(
+      "select 1 from aai_platform.studio_sessions where scope = $1 and project = $2",
+      ["scope-session", "proj"],
+    );
+    expect(rows).toEqual([]);
   });
 
   test("no store issued DDL — the schema came from the migration alone", async () => {

@@ -319,16 +319,25 @@ differ, and each is a decision rather than an oversight:
   direction if this ever moves, and worth knowing before adding a fourth
   watched table.
 
-  **The publication carries COLUMN LISTS, which is what makes staying on
-  `postgres_changes` cheap** (`20260810000000_realtime_publication_columns.
-  sql`). These are signal streams — handlers re-read — so publishing every
-  column meant walrus detoasted and serialized the WHOLE workspace document on
-  every metadata stamp, for a payload the handler discards. The lists are row
-  IDENTITY plus `version`: exactly what the filters and `scopeAccepts` need,
-  and exactly the replica-identity columns a column list must contain. Filter
-  on a column outside the list and events silently stop matching —
-  `platform-schema.test.ts` pins the two against each other. Per-table `drop` +
-  `add`, never `set table`, which replaces the publication's whole table list.
+  **Staying on `postgres_changes` is not cheap, and a publication COLUMN LIST
+  cannot make it cheaper.** These are signal streams — handlers re-read — so
+  every settled edit hands walrus the WHOLE workspace document, detoasted and
+  serialized, for a payload the handler discards. Narrowing the publication to
+  the identity columns is the obvious fix and it is a NO-OP: column lists are a
+  `pgoutput` feature, and Supabase Realtime does not decode with pgoutput.
+  `realtime.list_changes` reads the publication for its TABLE list alone and
+  decodes with **wal2json** (`pg_logical_slot_get_changes(…, 'add-tables', …)`),
+  which has no notion of publications and emits every column regardless —
+  measured on realtime v2.112.6 / PG 17.6, where a publication with
+  `attnames = {id,small}` still emitted the excluded column in full. The lists
+  were written, measured, and reverted; `platform-schema.test.ts` now guards
+  AGAINST them, because the cost of the attempt is not the migration, it is the
+  comment explaining a mechanism that isn't there.
+
+  If the decode cost ever has to come down, it takes a different mechanism, not
+  a narrower publication: Broadcast from Database (a trigger calling
+  `realtime.broadcast_changes` with a payload you choose), or moving the signal
+  onto a skinny table that does not carry `doc`.
 - **RLS is enabled and DENY-ALL, which is not what RLS is usually for.**
   Access is really controlled by the grant: `anon`/`authenticated` hold no
   privilege on `aai_platform`, and it is not a PostgREST-exposed schema.
@@ -670,9 +679,10 @@ down, like the file-length allowlist.
   **Supabase setup this depends on lives in `supabase/migrations`**, applied
   with `supabase db push` BEFORE the code that queries it: the `aai_platform`
   schema and its tables, the watched tables' membership in the
-  `supabase_realtime` publication (with their column lists), the
+  `supabase_realtime` publication, the
   `service_role` SELECT grants, the workspace-child foreign keys, the
-  orphan-sweep's `(doc->>'previewSlug')` index, and the
+  orphan-sweep's `studio_workspaces.preview_slug` generated column + index,
+  and the
   `pg_cron`/`pgmq`/`pg_net` extensions. Realtime validates channel filter
   columns (and gates row visibility) against what the subscriber's claimed
   role can SELECT, and the app-created `aai_platform` schema gets none of

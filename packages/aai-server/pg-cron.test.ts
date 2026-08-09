@@ -84,8 +84,11 @@ test("the orphan-preview sweep only reaps unreferenced, aged preview slugs", () 
   const command = orphans?.command ?? "";
   // Only `-preview` slugs, never production agents.
   expect(command).toContain("like '%-preview'");
-  // The workspace back-reference is what marks a preview as live.
-  expect(command).toContain("doc->>'previewSlug'");
+  // The workspace back-reference is what marks a preview as live, joined
+  // through the indexed generated column rather than dug out of `doc` — see
+  // 20260810020000_preview_slug_column.sql.
+  expect(command).toContain("w.preview_slug = a.slug");
+  expect(command).not.toContain("doc->>'previewSlug'");
   // Age floor: a preview whose workspace stamp hasn't landed yet is not an
   // orphan.
   expect(command).toContain("interval '1 hour'");

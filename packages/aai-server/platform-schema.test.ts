@@ -114,63 +114,36 @@ describe("platform schema migrations", () => {
   });
 
   /**
-   * The publication carries only the columns that IDENTIFY a row
-   * (20260810000000_realtime_publication_columns.sql), because the handlers
-   * re-read rather than read the payload.
+   * The watched tables are published WHOLE, and this exists to keep them that
+   * way.
    *
-   * Two ways that narrowing breaks, both silent:
+   * Narrowing the publication to a column list is the obvious optimization —
+   * these are signal streams, handlers re-read, so shipping
+   * `studio_workspaces.doc` on every settled edit is a whole project file map
+   * decoded for a payload nobody looks at. It was tried, and it does nothing:
+   * a column list is honoured by `pgoutput`, and Supabase Realtime does not
+   * decode with pgoutput. `realtime.list_changes` reads the publication for its
+   * TABLE list alone and calls `pg_logical_slot_get_changes(…, 'add-tables', …)`
+   * against **wal2json**, which has no notion of publications and emits every
+   * column regardless (measured on realtime v2.112.6 / PG 17.6: a publication
+   * whose `attnames` is `{id,small}` still emitted the excluded column in full).
    *
-   * - A channel filters on (or a handler checks) a column that is no longer
-   *   published. Realtime keeps validating the filter against the table's
-   *   catalog columns, so the subscribe still succeeds — the events just stop
-   *   matching, and the only symptom is that sandboxes stop being invalidated
-   *   and studio SSE goes quiet. That is the same invisible failure the
-   *   service-role key guard exists for.
-   * - Someone reintroduces a bare `add table` (no column list) and every
-   *   workspace document is back in the WAL, with nothing to notice but a
-   *   Realtime bill.
-   *
-   * So this pins the filter columns against the migration's lists rather than
-   * restating them: `realtime-events.ts` is the source of the filters, and a
-   * new filter on an unpublished column fails here.
+   * A no-op migration is worse than none, because the comment on it teaches the
+   * next reader a mechanism that isn't there — so the guard is against the
+   * column list, not for it. If the decode cost has to come down, it takes a
+   * different mechanism (Broadcast from Database, or a signal table that does
+   * not carry the document), which will fail this test and should: it will also
+   * be deleting these `add table` lines.
    */
-  test("publishes every column the change streams filter or check on", () => {
+  test("publishes the watched tables WHOLE — a column list here is inert", () => {
     const sql = stripSqlComments(migrationSql());
-    const source = readFileSync(
-      path.join(repoRoot, "packages/aai-server/realtime-events.ts"),
-      "utf-8",
-    );
-
-    // The narrowed lists, as the migration declares them.
-    const published = new Map(
-      [...sql.matchAll(/\('([a-z_]+)',\s*'([a-z_, ]+)'\)/g)].map(([, table, columns]) => [
-        table,
-        (columns ?? "").split(",").map((column) => column.trim()),
-      ]),
-    );
-    expect([...published.keys()].sort()).toEqual(["agents", "studio_chats", "studio_workspaces"]);
-
-    // Every `filter: \`<column>=eq.…\`` in the events module, paired with the
-    // table it is declared alongside.
-    const filters = [...source.matchAll(/table:\s*"([a-z_]+)",\s*filter:\s*`([a-z_]+)=eq\./g)];
-    // At least the three filtered channels that exist today (workspace, chat,
-    // scope projects) — a floor, not a pin, so a fourth channel is free to
-    // land while a regex that stops matching still fails rather than passing
-    // vacuously over zero filters.
-    expect(filters.length).toBeGreaterThanOrEqual(3);
-    for (const [, table, column] of filters) {
-      expect
-        .soft(published.get(table ?? ""), `${table}.${column} is filtered on but not published`)
-        .toContain(column);
-    }
-
-    // `scopeAccepts` reads `row.scope` off the payload, so scope has to arrive
-    // on both workspace channels even though only one filters on it.
-    expect(source).toContain("row?.scope === scope");
-    expect(published.get("studio_workspaces")).toContain("scope");
-    // Delete events carry only the replica identity (the primary key), which
-    // is why `watchAgents` can key off `payload.old?.slug`.
-    expect(published.get("agents")).toContain("slug");
+    const withColumnList = [
+      ...sql.matchAll(/alter publication supabase_realtime add table\s+\S+\s*\(/g),
+    ];
+    expect(
+      withColumnList.map((match) => match[0]),
+      "wal2json ignores publication column lists — see this test's comment",
+    ).toEqual([]);
   });
 
   /**
