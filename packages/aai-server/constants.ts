@@ -117,6 +117,56 @@ export const BROKER_READY_TIMEOUT_MS = envMs(process.env.BROKER_READY_TIMEOUT_MS
 export const SHUTDOWN_CLOSE_FALLBACK_MS = 3000;
 
 /**
+ * How long a TEARDOWN path — `Sandbox.drain`, `Sandbox.shutdown` — waits on a
+ * sandbox that has not finished booting.
+ *
+ * Both go through the spawn's readiness promise, because reaching a guest
+ * needs a handle. That promise is bounded by the BOOT budget
+ * (`GUEST_READY_TIMEOUT_MS`, 120s), which is the right answer for a broker
+ * waiting on a sandbox it is about to serve and the wrong one for a process
+ * that is exiting: retirement then blocks for two minutes on a guest that has
+ * no sessions to drain, because it has never served one.
+ *
+ * Bounding it cannot orphan the guest, which is the only reason waiting was
+ * ever justified. An agent-mode guest owns its own idleness and self-exits
+ * after `AGENT_IDLE_EXIT_MS` with zero sessions (see
+ * `packages/aai-guest/CLAUDE.md`), and Modal's `idleTimeoutMs`/`timeoutMs` sit
+ * behind that — so a boot we walk away from is reclaimed on the guest's clock.
+ * Waiting out the full budget does not reclaim it any better; it just spends
+ * the container's stop grace, and a SIGKILL orphans the guest anyway while
+ * cutting every teardown that would otherwise have finished.
+ *
+ * Five seconds, so a boot that is nearly done is still drained.
+ * Override with `SANDBOX_TEARDOWN_READY_MS`. Unlike the two constants above,
+ * 0 is NOT a distinct behaviour here — it is clamped to 1ms at the call site,
+ * since giving up on a pending boot is what any small value already does.
+ */
+export const SANDBOX_TEARDOWN_READY_MS = envMs(process.env.SANDBOX_TEARDOWN_READY_MS, 5000);
+
+/**
+ * The whole service teardown's deadline — the general net under
+ * {@link SANDBOX_TEARDOWN_READY_MS}'s specific one.
+ *
+ * `createShutdownHandler` awaits `onShutdown()` before arming any timer, so
+ * for a long time the one bound on shutdown protected the fast half (waiting
+ * for connections to close) and not the slow half (retiring every resident
+ * guest). The bounded work in there now adds up to
+ * `SHUTDOWN_GRACE_MS` (3s) + {@link SANDBOX_TEARDOWN_READY_MS} (5s) +
+ * `MANAGE_REQUEST_TIMEOUT_MS` (5s) = 13s, run in PARALLEL across guests — but
+ * the Modal control-plane calls underneath (`sandbox.terminate()`) carry no
+ * timeout of their own, so the sum is a floor rather than a bound. This is
+ * what makes it one.
+ *
+ * 20s leaves margin over that 13s; with {@link SHUTDOWN_CLOSE_FALLBACK_MS}
+ * after it the process exits within ~23s of the signal, which must stay inside
+ * the platform's container stop grace — Modal SIGKILLs at the end of it, and a
+ * SIGKILL is the failure this whole ordering exists to avoid (see
+ * live-streams.ts). Raising `SHUTDOWN_GRACE_MS` means raising this too.
+ * Override with `SHUTDOWN_TEARDOWN_TIMEOUT_MS`; 0 disables the net.
+ */
+export const SHUTDOWN_TEARDOWN_TIMEOUT_MS = envMs(process.env.SHUTDOWN_TEARDOWN_TIMEOUT_MS, 20_000);
+
+/**
  * Locate the built Node guest harness — the `aai-guest` workspace package's
  * single-file artifact (overridable via GUEST_HARNESS_PATH). Resolved
  * lazily at sandbox creation, so a missing build fails the spawn loudly

@@ -21,7 +21,8 @@
 import type { Server as NodeHttpServer } from "node:http";
 import { errorMessage } from "@alexkroman1/aai";
 import { serve } from "@hono/node-server";
-import { SHUTDOWN_CLOSE_FALLBACK_MS } from "./constants.ts";
+import pTimeout from "p-timeout";
+import { SHUTDOWN_CLOSE_FALLBACK_MS, SHUTDOWN_TEARDOWN_TIMEOUT_MS } from "./constants.ts";
 import { endLiveStreams } from "./live-streams.ts";
 
 /** The slice of a node HTTP server this module drives. Injectable for tests. */
@@ -39,6 +40,12 @@ export type ShutdownHandlerOptions = {
   /** Injectable for tests — defaults to `process.exit`. */
   exit?: (code: number) => void;
   fallbackMs?: number;
+  /**
+   * Deadline for `onShutdown`. Defaults to
+   * {@link SHUTDOWN_TEARDOWN_TIMEOUT_MS}; the constant carries the budget
+   * arithmetic it has to cover.
+   */
+  teardownTimeoutMs?: number;
 };
 
 /**
@@ -52,6 +59,7 @@ export type ShutdownHandlerOptions = {
 export function createShutdownHandler(opts: ShutdownHandlerOptions): () => Promise<void> {
   const exit = opts.exit ?? ((code: number) => process.exit(code));
   const fallbackMs = opts.fallbackMs ?? SHUTDOWN_CLOSE_FALLBACK_MS;
+  const teardownTimeoutMs = opts.teardownTimeoutMs ?? SHUTDOWN_TEARDOWN_TIMEOUT_MS;
   let running = false;
 
   return async () => {
@@ -78,12 +86,27 @@ export function createShutdownHandler(opts: ShutdownHandlerOptions): () => Promi
     if (ended > 0) console.info(`Shutdown: ended ${ended} live stream(s)`);
 
     try {
-      await opts.onShutdown();
+      // BOUNDED, because the timer below cannot cover this. It is armed only
+      // after `onShutdown()` settles, so for a long time the one deadline on
+      // shutdown protected the fast half — waiting for connections to close —
+      // and left the slow half unbounded. And the slow half is the one that
+      // hangs: retiring a resident guest goes through the spawn's readiness
+      // promise (120s of boot budget before SANDBOX_TEARDOWN_READY_MS capped
+      // it), and the Modal control-plane calls underneath carry no timeout at
+      // all. Past the container's stop grace the platform SIGKILLs, so the
+      // hang was not merely slow — it was SILENT, skipping both the warning
+      // below and the graceful close it guards.
+      await pTimeout(opts.onShutdown(), {
+        milliseconds: teardownTimeoutMs,
+        message: `teardown exceeded ${teardownTimeoutMs}ms; exiting anyway`,
+      });
     } catch (err: unknown) {
-      // A teardown that throws must not strand the process: the platform
-      // SIGKILLs when the grace period lapses, which is strictly worse than
-      // exiting with one sandbox possibly un-terminated (the guest's own
-      // orphan timeout reclaims it).
+      // A teardown that throws — or now, one that overran — must not strand
+      // the process: the platform SIGKILLs when the grace period lapses, which
+      // is strictly worse than exiting with one sandbox possibly un-terminated
+      // (the guest's own idle self-exit and Modal's sandbox timeout reclaim
+      // it). Both outcomes take this path deliberately: there is nothing
+      // different to DO about them, and one log line beats two.
       console.warn("Shutdown teardown failed:", errorMessage(err));
     }
 

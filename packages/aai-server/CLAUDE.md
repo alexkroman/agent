@@ -781,6 +781,21 @@ down, like the file-length allowlist.
   existed to protect. Studio guests DO go down with the replica (the
   broker's `dispose()`): their coding-agent sessions live on the host's
   control channel, so a dead host makes them useless.
+
+  **Shutdown is BOUNDED at two levels**, because `createShutdownHandler` arms
+  its `SHUTDOWN_CLOSE_FALLBACK_MS` timer only AFTER `onShutdown()` settles — so
+  the sole deadline used to cover the fast half (waiting for connections to
+  close) and leave the slow half unbounded, and the slow half is the one that
+  hangs. `SANDBOX_TEARDOWN_READY_MS` caps the readiness wait `Sandbox.drain` /
+  `shutdown` inherit from the spawn (the 120s BOOT budget, spent on guests with
+  nothing to drain); `SHUTDOWN_TEARDOWN_TIMEOUT_MS` is the general net over it,
+  since the Modal calls underneath carry no timeout at all. Both constants
+  carry the budget arithmetic and the why-giving-up-is-safe argument in
+  `constants.ts`; read them before changing `SHUTDOWN_GRACE_MS`, which they are
+  sized against. Pinned by tests that FAIL FAST rather than hang — "this
+  settles within a budget" times out to the suite limit once the budget is
+  gone, so the teardown promises are never awaited; settlement is recorded on
+  a `vi.fn()`.
 - **Shutdown ENDS long-lived responses; it must never let the process exit
   destroy them** (`live-streams.ts`, wired into `serve-lifecycle.ts`). SSE
   streams never end on their own, so `server.close()` waited out
@@ -809,9 +824,12 @@ down, like the file-length allowlist.
   - **It runs FIRST, before the service teardown.** Ending a stream is
     synchronous and depends on nothing, while `onShutdown` sleeps
     `SHUTDOWN_GRACE_MS` and then awaits one drain request per resident guest —
-    seconds at best, unbounded when a guest is unreachable. Modal SIGKILLs the
-    container when its stop grace lapses, so ending them *after* the teardown
-    made the graceful end contingent on sandbox teardown finishing in time.
+    seconds at best, and up to `SHUTDOWN_TEARDOWN_TIMEOUT_MS` when a guest is
+    unreachable or still booting (it was genuinely unbounded before that
+    deadline existed). Modal SIGKILLs the container when its stop grace lapses,
+    so ending them *after* the teardown made the graceful end contingent on
+    sandbox teardown finishing in time — which is a bound now, but still not a
+    dependency worth having.
   - **The registry LATCHES closed.** Nothing drains it twice, so a stream
     registered after shutdown began would be held open until the exit destroyed
     it; `registerLiveStream` therefore ends a late arrival on the spot instead.

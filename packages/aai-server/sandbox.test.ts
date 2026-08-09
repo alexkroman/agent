@@ -3,6 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { inlineWorker } from "./_sandbox-vm-test-utils.ts";
 import { sleep } from "./_sleep.ts";
+import { SANDBOX_TEARDOWN_READY_MS } from "./constants.ts";
 import { createSandbox, type SandboxOptions } from "./sandbox.ts";
 import { resolveSandbox } from "./sandbox-resolve.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
@@ -128,6 +129,73 @@ describe("createSandbox", () => {
       const sandbox = createSandbox(makeSandboxOptions());
       await expect(sandbox.drain()).rejects.toThrow("guest gone");
       await sandbox.shutdown();
+    });
+  });
+
+  // ── Teardown readiness budget ─────────────────────────────────────────────
+  //
+  // Reaching a guest needs a handle, so drain/shutdown go through the spawn's
+  // readiness promise — which carries the BOOT budget (120s). Correct for a
+  // broker; wrong for a process that is exiting, where it blocks shutdown for
+  // two minutes on a guest that has never served a session. Walking away is
+  // safe: the guest self-exits on idle and Modal's timeouts sit behind that.
+  describe("teardown while still booting", () => {
+    /** A spawn that never comes back — a guest stuck mid-boot. */
+    function neverBoots(): void {
+      mockSpawnAgentServer.mockReturnValueOnce(new Promise(() => undefined));
+    }
+
+    // Nothing here AWAITS the teardown promise: against an unbounded wait that
+    // would hang to the suite timeout instead of failing, and a 20s red test
+    // that names nothing is barely better than a green one. Recording the
+    // settlement on a spy fails on the spot, and says which side settled.
+    it("drain gives up at the budget instead of waiting out the boot", async () => {
+      vi.useFakeTimers();
+      try {
+        neverBoots();
+        const sandbox = createSandbox(makeSandboxOptions());
+
+        const rejected = vi.fn();
+        void sandbox.drain().catch(rejected);
+        await vi.advanceTimersByTimeAsync(SANDBOX_TEARDOWN_READY_MS);
+
+        expect(rejected).toHaveBeenCalledWith(
+          expect.objectContaining({ message: expect.stringContaining("still booting") }),
+        );
+        // The rejection is retirement's signal to terminate rather than trust
+        // a guest it never reached.
+        expect(mockDrain).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    // `retireSandbox` calls drain() and then, on its rejection, shutdown().
+    // A fresh timer per call would let one stuck sandbox spend the budget
+    // twice on its way out — and the shutdown handler's own deadline is sized
+    // against one.
+    it("spends the budget once across drain and shutdown", async () => {
+      vi.useFakeTimers();
+      try {
+        neverBoots();
+        const sandbox = createSandbox(makeSandboxOptions());
+
+        const drainRejected = vi.fn();
+        void sandbox.drain().catch(drainRejected);
+        await vi.advanceTimersByTimeAsync(SANDBOX_TEARDOWN_READY_MS);
+        expect(drainRejected).toHaveBeenCalled();
+
+        // The budget is now spent. A second one would leave this pending —
+        // recorded on a spy, not awaited, for the reason above.
+        const shutdownSettled = vi.fn();
+        void sandbox.shutdown().then(shutdownSettled);
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(shutdownSettled).toHaveBeenCalled();
+        expect(mockShutdown).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
