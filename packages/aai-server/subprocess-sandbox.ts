@@ -54,6 +54,7 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { Readable } from "node:stream";
 import { errorMessage } from "@alexkroman1/aai";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { debug } from "./_debug-log.ts";
 import { pollGuestHealth } from "./guest-readiness.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
@@ -120,7 +121,7 @@ export function buildHarnessSpawn(params: HarnessSpawnParams): {
     execArgv:
       params.memoryLimitMiB === undefined ? [] : [`--max-old-space-size=${params.memoryLimitMiB}`],
     env: {
-      ...(params.token !== undefined ? { AAI_GUEST_TOKEN: params.token } : {}),
+      ...omitUndefined({ AAI_GUEST_TOKEN: params.token }),
       ...(params.port !== undefined ? { AAI_GUEST_PORT: String(params.port) } : {}),
       // Auth-free session endpoint: keep it off the dev machine's network.
       AAI_GUEST_HOST: "127.0.0.1",

@@ -8,6 +8,8 @@
     "useUnknownInCatchVariables": true,
     "noImplicitOverride": true,
     "noUncheckedIndexedAccess": true,
+    "noFallthroughCasesInSwitch": true,
+    "allowUnreachableCode": false,
     "noUncheckedSideEffectImports": true,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,

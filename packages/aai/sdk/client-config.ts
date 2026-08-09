@@ -13,6 +13,7 @@
 
 import { z } from "zod";
 import { MAX_TRANSCRIPT_CHARS } from "./constants.ts";
+import { omitUndefined } from "./omit-undefined.ts";
 
 /** Relative path of the client-config endpoint under an agent's base URL. */
 export const CLIENT_CONFIG_PATH = "client-config";
@@ -53,9 +54,5 @@ export function buildClientConfig(src: {
   greeting?: string | undefined;
   sessionUrl?: string | undefined;
 }): ClientConfigResponse {
-  return {
-    ...(src.name !== undefined ? { name: src.name } : {}),
-    ...(src.greeting !== undefined ? { greeting: src.greeting } : {}),
-    ...(src.sessionUrl !== undefined ? { sessionUrl: src.sessionUrl } : {}),
-  };
+  return omitUndefined({ name: src.name, greeting: src.greeting, sessionUrl: src.sessionUrl });
 }

@@ -18,6 +18,7 @@
  */
 
 import type { ProviderMetadata, StreamTextTransform, TextStreamPart, ToolSet } from "ai";
+import { omitUndefined } from "../../sdk/omit-undefined.ts";
 
 /** Word-boundary chunker — mirrors `smoothStream`'s `chunking: "word"`. */
 const WORD_CHUNK = /\S+\s+/m;
@@ -38,7 +39,7 @@ export function smoothTextStream<TOOLS extends ToolSet>(): StreamTextTransform<T
           type: "text-delta",
           text: buffer,
           id,
-          ...(providerMetadata !== undefined ? { providerMetadata } : {}),
+          ...omitUndefined({ providerMetadata }),
         });
         buffer = "";
         providerMetadata = undefined;

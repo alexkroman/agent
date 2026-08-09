@@ -4,6 +4,7 @@ import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import type http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
 import {
   createIdleController,
@@ -158,7 +159,7 @@ function fakeRes(): FakeRes {
 function fakeReq(auth?: string, url?: string): http.IncomingMessage {
   return {
     headers: auth ? { authorization: auth } : {},
-    ...(url !== undefined ? { url } : {}),
+    ...omitUndefined({ url }),
   } as http.IncomingMessage;
 }
 

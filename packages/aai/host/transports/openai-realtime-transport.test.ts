@@ -1,5 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
+import { omitUndefined } from "../../sdk/omit-undefined.ts";
 import { silentLogger } from "../_test-utils.ts";
 import {
   createOpenaiRealtimeTransport,
@@ -173,7 +174,7 @@ describe("greeting", () => {
       options: {},
       sessionConfig: {
         systemPrompt: "",
-        ...(args.greeting !== undefined ? { greeting: args.greeting } : {}),
+        ...omitUndefined({ greeting: args.greeting }),
       },
       toolSchemas: [],
       toolChoice: "auto",
@@ -181,7 +182,7 @@ describe("greeting", () => {
       sid: "s",
       inputSampleRate: 16_000,
       outputSampleRate: 24_000,
-      ...(args.skipGreeting !== undefined ? { skipGreeting: args.skipGreeting } : {}),
+      ...omitUndefined({ skipGreeting: args.skipGreeting }),
       createWebSocket: () => fake,
       logger: silentLogger,
     });

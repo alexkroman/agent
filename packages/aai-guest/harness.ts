@@ -70,6 +70,7 @@ import { pathToFileURL } from "node:url";
 import { errorMessage } from "@alexkroman1/aai";
 import { formatSchemaIssues } from "@alexkroman1/aai/internal";
 import { createServer, type SessionRuntime } from "@alexkroman1/aai/runtime";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { type WebSocket, WebSocketServer } from "ws";
 import { z } from "zod";
 import { createIdleController, createManageHandler, readAgentBoot } from "./harness-agent-mode.ts";
@@ -285,8 +286,12 @@ async function mainAgent(port: number, host: string, token: string): Promise<voi
     // own `/client-config` for name/greeting, so the bundle's live agent
     // definition — interpreted by the bundle's own SDK — is what renders,
     // and the host never reads fields out of the stored config.
-    ...(state.agent?.name !== undefined ? { name: state.agent.name } : {}),
-    ...(state.agent?.greeting !== undefined ? { greeting: state.agent.greeting } : {}),
+    //
+    // Both guards are load-bearing at RUNTIME even though `AgentDef` declares
+    // the two fields required: `state.agent` is a tenant object asserted to
+    // `AgentDef` at load (`harness-bundle.ts`), so a bundle can ship neither.
+    // The types cannot see that, which is why a checker will call these dead.
+    ...omitUndefined({ name: state.agent?.name, greeting: state.agent?.greeting }),
     request: createManageHandler({
       token,
       activeSessions: () => state.activeSessions,

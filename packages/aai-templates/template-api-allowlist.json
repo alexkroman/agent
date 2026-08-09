@@ -135,6 +135,7 @@
     "isTextAssetPath",
     "linkConfirmationCode",
     "normalizeSpeechText",
+    "omitUndefined",
     "safeJsonParse",
     "toArgsRecord",
     "toolError"

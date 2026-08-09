@@ -8,12 +8,18 @@
  * dependencies so the CLI can import it on every invocation without a
  * startup cost.
  *
+ * That zod-free property is why `omitUndefined` lives here rather than on
+ * `/internal` alongside the other cross-package infrastructure: `/internal`
+ * re-exports `formatSchemaIssues` from `sdk/schema.ts`, so importing anything
+ * from it pulls zod — and the CLI's own `_utils.ts` is on the startup path.
+ *
  * @module utils
  */
 
 import { MAX_TOOL_RESULT_CHARS, TOOL_RESULT_TRUNCATION_MARKER } from "./constants.ts";
 
 export { linkConfirmationCode } from "./cli-link.ts";
+export { omitUndefined } from "./omit-undefined.ts";
 export { MAX_SLUG_LENGTH, PREVIEW_SLUG_SUFFIX, RESERVED_SLUGS, VALID_SLUG_RE } from "./slug.ts";
 
 /** Extract an error message from an unknown thrown value. */

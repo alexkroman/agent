@@ -24,6 +24,7 @@
  */
 
 import { buildClientConfig, ClientConfigResponseSchema } from "@alexkroman1/aai/protocol";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { HTTPException } from "hono/http-exception";
 import { TtlCache } from "./_ttl-cache.ts";
 import type { AppContext } from "./context.ts";
@@ -73,8 +74,7 @@ export function createAgentClientConfigHandler(
       if (!parsed.success) return {};
       const { name, greeting } = parsed.data;
       const config = {
-        ...(name !== undefined ? { name } : {}),
-        ...(greeting !== undefined ? { greeting } : {}),
+        ...omitUndefined({ name, greeting }),
       };
       memo.set(guestOrigin, config);
       return config;
