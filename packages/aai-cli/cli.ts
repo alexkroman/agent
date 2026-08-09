@@ -3,9 +3,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { defineCommand, runMain } from "citty";
+import { type ArgsDef, type CommandDef, defineCommand, runMain, showUsage } from "citty";
 import { runCommand, setup, sharedArgs, unknownFlagsForArgv } from "./_cli-common.ts";
-import { CliError, installStdoutGuard } from "./_output.ts";
+import { CliError, fail, getOutputMode, installStdoutGuard, writeLine } from "./_output.ts";
 import { list, publish, pull, push } from "./_studio-commands.ts";
 import { log } from "./_ui.ts";
 import { AGENT_ENTRY, errorMessage, resolveCwd } from "./_utils.ts";
@@ -29,6 +29,26 @@ function readCliVersion(dir: string): string {
   return "unknown";
 }
 const VERSION: string = readCliVersion(cliDir);
+
+/**
+ * `aai secret put` for a subcommand, `aai` for the root — the name to put in
+ * front of `--help` when telling someone which usage to read.
+ *
+ * `meta` is a `Resolvable`, so it can be a function or a promise; only the
+ * plain-object form carries a name synchronously and anything else degrades
+ * to the binary name rather than blocking the error path on a resolve.
+ */
+function commandPath<T extends ArgsDef>(cmd: CommandDef<T>, parent?: CommandDef<T>): string {
+  const nameOf = (c: CommandDef<T> | undefined): string | undefined => {
+    const meta = c?.meta;
+    return meta && typeof meta === "object" && "name" in meta && typeof meta.name === "string"
+      ? meta.name
+      : undefined;
+  };
+  const parts = [nameOf(parent), nameOf(cmd)].filter((n): n is string => n !== undefined);
+  const path = parts.join(" ");
+  return path.startsWith("aai") ? path : `aai ${path}`.trim();
+}
 
 const init = defineCommand({
   meta: { name: "init", description: "Scaffold a new agent project" },
@@ -86,7 +106,13 @@ const test = defineCommand({
   },
   async run({ args }) {
     await runCommand(args, async () => {
-      const cwd = await setup();
+      // `{ agent: true }` like dev/build/push/publish. Without it this was
+      // the one project-scoped command that would run anywhere: in a
+      // directory with no agent.ts it found no test file, reported
+      // `{ passed: true, skipped: true }` and exited 0 — a green result for
+      // a project that isn't there, which in CI is indistinguishable from a
+      // passing suite.
+      const cwd = await setup({ agent: true });
       const { executeTest } = await import("./test.ts");
       return executeTest(cwd);
     });
@@ -385,6 +411,41 @@ if (process.env.VITEST !== "true") {
   };
 
   /**
+   * Render usage the way the active output mode allows.
+   *
+   * citty calls `showUsage` from two places: the `--help` path, and its
+   * `catch` for a `CLIError` (a missing positional, an unknown subcommand) —
+   * where it writes the usage block to STDOUT and the reason to stderr. That
+   * second one breaks JSON mode's contract of exactly one result line on
+   * stdout, and JSON mode is auto-detected on a pipe: `aai secret put --json`
+   * put a usage block where a script's `jq` expected a result, with no JSON
+   * emitted at all. Every other failure path in this CLI converges on one
+   * emitter and gets this right.
+   *
+   * `--help` is explicitly still the human block whatever the mode — piping
+   * it into a pager is the normal way to read it, and it is not an error.
+   * The specific reason keeps going to stderr as citty already writes it, so
+   * nothing is lost to a human watching the terminal.
+   */
+  const usageForMode: typeof showUsage = async (cmd, parent) => {
+    const argv = process.argv.slice(2);
+    const wantsHelp = argv.includes("--help") || argv.includes("-h");
+    if (wantsHelp || getOutputMode({}) === "human") {
+      await showUsage(cmd, parent);
+      return;
+    }
+    await writeLine(
+      `${JSON.stringify(
+        fail(
+          "usage",
+          `Invalid arguments for \`${commandPath(cmd, parent)}\`.`,
+          `Run \`${commandPath(cmd, parent)} --help\` to see the arguments it accepts.`,
+        ),
+      )}\n`,
+    );
+  };
+
+  /**
    * Refuse an unrecognized flag instead of ignoring it.
    *
    * citty drops one silently, so `aai push --serverr=http://x` exited 0 having
@@ -403,7 +464,7 @@ if (process.env.VITEST !== "true") {
   // parses args — so --help/--version never prompt for a key.
   void runDefault()
     .then(assertKnownFlags)
-    .then(() => runMain(mainCommand))
+    .then(() => runMain(mainCommand, { showUsage: usageForMode }))
     .catch((err: unknown) => {
       log.error(errorMessage(err));
       process.exitCode = 1;
