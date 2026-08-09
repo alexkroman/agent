@@ -42,7 +42,7 @@ vi.mock("./_utils.ts", async () => (await import("./_dev-server-test-utils.ts"))
 
 // ─── Imports under test (after mocks) ───────────────────────────────────────
 
-import { loadAgentDef, startDevServer, watchDirectory } from "./_dev-server.ts";
+import { createDevLogger, loadAgentDef, startDevServer, watchDirectory } from "./_dev-server.ts";
 import { log } from "./_ui.ts";
 
 // 30s, not the 5s default: sibling suites run multi-second runtime-inlining
@@ -126,6 +126,9 @@ describe("startDevServer", () => {
         // Credentials resolve from providerEnv; ctx.env stays as `env` so dev
         // matches production in what agent code can read.
         providerEnv: { ASSEMBLYAI_API_KEY: "test-key" },
+        // The runtime logs through a logger this command chooses, so its
+        // diagnostics can be kept off stdout in JSON mode (createDevLogger).
+        logger: expect.objectContaining({ info: expect.any(Function) }),
       });
       expect(mockCreateServer).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -507,5 +510,40 @@ describe("loadAgentDef", () => {
       await expect(loadAgentDef(dir, evaluate)).rejects.toThrow();
       expect(evaluate).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("createDevLogger", () => {
+  // `aai dev` writes its one JSON result line and then keeps running, so the
+  // runtime's own diagnostics have to go somewhere that isn't stdout. They
+  // were going to stdout: the SDK's default logger is console-backed, and the
+  // multi-line "Session mode resolved" dump landed above the result line — in
+  // the NORMAL case, since JSON mode is auto-detected on a pipe.
+  test("routes the runtime's diagnostics to stderr once output is silenced", () => {
+    const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const err = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const logger = createDevLogger(true);
+
+    logger.info("Session mode resolved", { mode: "pipeline" });
+    logger.warn("something drifted");
+    logger.error("something broke");
+
+    expect(out).not.toHaveBeenCalled();
+    expect(err).toHaveBeenCalledTimes(3);
+    // The structured context survives rather than being dropped.
+    expect(String(err.mock.calls[0]?.[0])).toContain('{"mode":"pipeline"}');
+  });
+
+  test("debug stays off in silenced mode", () => {
+    const err = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    createDevLogger(true).debug("hot path", { chunk: 1 });
+    expect(err).not.toHaveBeenCalled();
+  });
+
+  test("human mode hands back the SDK's own console logger untouched", () => {
+    const err = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    createDevLogger(false).info("Session mode resolved");
+    // A TTY has nothing to parse, so human mode must not be rerouted.
+    expect(err).not.toHaveBeenCalled();
   });
 });

@@ -50,6 +50,11 @@ export function notify(level: "error" | "warn" | "info" | "success", message: st
   process.stderr.write(`${message}\n`);
 }
 
+/** Whether `silenceOutput()` has been called — i.e. we are in JSON mode. */
+export function outputSilenced(): boolean {
+  return silenced;
+}
+
 /**
  * Unwrap a clack prompt result, exiting cleanly if the user cancelled.
  * `message` lets the caller name what was cancelled (e.g. "Setup cancelled").

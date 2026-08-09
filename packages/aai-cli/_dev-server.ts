@@ -15,8 +15,10 @@ import type { AgentDef } from "@alexkroman1/aai";
 // below, so a dynamic import inside startDevServer would defer nothing.
 import {
   type AgentServer,
+  consoleLogger,
   createRuntime,
   createServer,
+  type Logger,
   requiredProviderEnvVars,
   withHostCredentialFallback,
 } from "@alexkroman1/aai/runtime";
@@ -31,7 +33,7 @@ import { fallbackHtmlPlugin } from "./_default-html.ts";
 import { devBindHost, devWatchEnabled, hostModeEnv } from "./_dev-env.ts";
 import { createRestartSupervisor } from "./_dev-restart.ts";
 import { resolveServerEnv } from "./_server-common.ts";
-import { log, notify } from "./_ui.ts";
+import { log, notify, outputSilenced } from "./_ui.ts";
 import { errorCode, errorMessage } from "./_utils.ts";
 import { buildWorker } from "./worker-bundler.ts";
 
@@ -164,6 +166,31 @@ export function isIgnoredPath(dir: string, filePath: string): boolean {
 }
 
 /**
+ * The logger the dev server's runtime writes through.
+ *
+ * The SDK's default logger is console-backed and `console.log` is STDOUT, so
+ * in JSON mode the runtime's own diagnostics — the multi-line "Session mode
+ * resolved" dump at startup, every later warning — landed on stdout ahead of
+ * the single result line `aai dev` promises there. JSON mode is AUTO-DETECTED
+ * on a pipe, so that is the normal case rather than an opt-in one:
+ * `aai dev > dev.log`, a process supervisor, a container. It is the same
+ * hazard `notify` exists for, one layer down: `silenceOutput()` only reaches
+ * this CLI's own `log`, and the runtime is not using it.
+ *
+ * Human mode keeps the console logger exactly as it was — a TTY has nothing
+ * to parse, and stdout is where people are already reading these.
+ */
+export function createDevLogger(silenced: boolean): Logger {
+  if (!silenced) return consoleLogger;
+  const write = (msg: string, ctx?: Record<string, unknown>): void => {
+    // Carries the runtime's structured context too, rather than dropping it
+    // the way a plain `notify` line would.
+    process.stderr.write(`${msg}${ctx === undefined ? "" : ` ${JSON.stringify(ctx)}`}\n`);
+  };
+  return { info: write, warn: write, error: write, debug: () => undefined };
+}
+
+/**
  * Watch the agent directory for changes and call `onChange` when detected.
  * Debounces to avoid rapid restarts. Uses chokidar for reliable recursive
  * watching across platforms (raw `fs.watch` misses events on Linux).
@@ -264,6 +291,8 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   // previously evaluated AgentDef instead of leaking another ESM module.
   const evaluateWorker = createWorkerEvaluator();
 
+  const devLogger: Logger = createDevLogger(outputSilenced());
+
   /** Full build sequence, shared by initial startup and every restart. */
   async function buildServer(): Promise<AgentServer> {
     const agentDef = await loadAgentDef(cwd, evaluateWorker);
@@ -274,7 +303,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     // the platform (only what `.env` / `aai secret put` declares) and so can't
     // come to depend on a host-level variable that won't exist there.
     const providerEnv = withHostCredentialFallback(env);
-    const runtime = createRuntime({ agent: agentDef, env, providerEnv });
+    const runtime = createRuntime({ agent: agentDef, env, providerEnv, logger: devLogger });
     return createServer({
       runtime,
       name: agentDef.name,
