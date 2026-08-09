@@ -5,6 +5,37 @@
 import clsx from "clsx";
 import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from "react";
 import { useTheme } from "../context.ts";
+import { INK_SURFACE_PCT, inkTint, primaryTint } from "./_colors.ts";
+
+/**
+ * A style object that may also carry CSS custom properties.
+ *
+ * `CSSProperties` has no index signature, so a `--foo` key is a type error
+ * without one. The template-literal key keeps this fully checked — only
+ * custom properties are admitted, not arbitrary strings.
+ */
+type StyleWithVars = CSSProperties & Record<`--${string}`, string>;
+
+/**
+ * Rest and hover colors for one variant. Hover is a real requirement rather
+ * than polish: `transition-colors` was on this button from the start with
+ * nothing to transition, so rest and hover computed *byte-identically* in all
+ * three variants — a primary CTA with no feedback to a pointer at all.
+ *
+ * They travel as custom properties because the base colors have to move off
+ * the inline `style` for a `:hover` rule to be able to win at all — an inline
+ * declaration beats any class, hover or not. Variables are the one thing a
+ * class *can* read back, and consumers keep their override: a `style` prop
+ * setting `background` outright is still inline, and still wins.
+ */
+type VariantColors = {
+  bg: string;
+  fg: string;
+  border: string;
+  hoverBg: string;
+  hoverFg: string;
+  hoverBorder: string;
+};
 
 /**
  * Visual style of a {@link Button} (design-system "website refresh":
@@ -70,32 +101,69 @@ export function Button({
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className">) {
   const theme = useTheme();
 
-  let variantStyle: CSSProperties;
+  let colors: VariantColors;
   if (variant === "default") {
-    variantStyle = { background: theme.primary, color: theme.surface, borderColor: "transparent" };
+    colors = {
+      bg: theme.primary,
+      fg: theme.surface,
+      border: "transparent",
+      // Blended toward the theme's own ink, so one rule reads correctly on a
+      // dark theme (where "toward ink" is lighter) as on a light one.
+      hoverBg: inkTint(theme.text, theme.primary, 14),
+      hoverFg: theme.surface,
+      hoverBorder: "transparent",
+    };
   } else if (variant === "secondary") {
-    variantStyle = {
-      background: "transparent",
-      color: theme.primary,
-      borderColor: theme.primary,
+    colors = {
+      bg: "transparent",
+      fg: theme.primary,
+      border: theme.primary,
+      hoverBg: primaryTint(theme.primary, theme.surface, 8),
+      hoverFg: theme.primary,
+      hoverBorder: theme.primary,
     };
   } else {
-    variantStyle = {
-      background: theme.surface,
-      color: theme.text,
-      borderColor: theme.border,
+    colors = {
+      bg: theme.surface,
+      fg: theme.text,
+      border: theme.border,
+      hoverBg: inkTint(theme.text, theme.surface, INK_SURFACE_PCT + 2),
+      hoverFg: theme.text,
+      hoverBorder: theme.border,
     };
   }
+
+  const vars: StyleWithVars = {
+    "--aai-btn-bg": colors.bg,
+    "--aai-btn-fg": colors.fg,
+    "--aai-btn-bd": colors.border,
+    "--aai-btn-bg-hover": colors.hoverBg,
+    "--aai-btn-fg-hover": colors.hoverFg,
+    "--aai-btn-bd-hover": colors.hoverBorder,
+    // A real property, so it needs no variant class of its own — the
+    // focus-visible rule only has to turn the outline on.
+    outlineColor: theme.primary,
+    ...style,
+  };
 
   return (
     <button
       type="button"
-      style={{ ...variantStyle, ...style }}
+      style={vars}
       className={clsx(
         "inline-flex items-center justify-center appearance-none m-0 w-fit whitespace-nowrap",
         size === "lg" ? "h-11 px-7 text-xs" : "h-9 px-5 text-[11px]",
         "rounded-aai font-aai font-medium tracking-[1.4px] uppercase leading-none",
-        "cursor-pointer border outline-none transition-colors duration-150",
+        "cursor-pointer border transition-colors duration-150",
+        "bg-(--aai-btn-bg) text-(--aai-btn-fg) border-(--aai-btn-bd)",
+        "enabled:hover:bg-(--aai-btn-bg-hover) enabled:hover:text-(--aai-btn-fg-hover)",
+        "enabled:hover:border-(--aai-btn-bd-hover)",
+        // The ring is the only thing a keyboard user gets. `outline-none`
+        // used to sit here with no replacement, so focus was invisible on
+        // every control in the default client — WCAG 2.4.7. Written as a
+        // shorthand so it cannot be undone by Tailwind's shared
+        // `--tw-outline-style` variable.
+        "outline-none focus-visible:[outline:2px_solid] focus-visible:[outline-offset:2px]",
         "disabled:cursor-not-allowed disabled:opacity-50",
         className,
       )}

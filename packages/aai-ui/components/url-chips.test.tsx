@@ -5,6 +5,7 @@
 
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { ThemeProvider } from "../context.ts";
 import { UiUrlChip } from "./url-chips.tsx";
 
 function installClipboard(writeText: () => Promise<void>) {
@@ -61,5 +62,20 @@ describe("UrlChip copy feedback", () => {
       /* flush the clipboard promise */
     });
     expect(screen.getByText("UI")).toBeDefined();
+  });
+});
+
+describe("UrlChip focus", () => {
+  test("declares a focus-visible ring", () => {
+    // `outline-none` sat here with no replacement, so a chip reachable by Tab
+    // showed nothing at all when it received focus (WCAG 2.4.7).
+    render(
+      <ThemeProvider>
+        <UiUrlChip />
+      </ThemeProvider>,
+    );
+    const chip = screen.getByTestId("ui-url-chip");
+    expect(chip.className).toContain("focus-visible:[outline:2px_solid]");
+    expect(chip.style.outlineColor).not.toBe("");
   });
 });

@@ -3,7 +3,7 @@
 /** @jsxImportSource react */
 
 import clsx from "clsx";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useTheme } from "../context.ts";
 
 /**
@@ -44,24 +44,40 @@ export function SidebarLayout({
 }) {
   const theme = useTheme();
 
+  // Below `md` the two panes stack instead of sitting side by side. Side by
+  // side they could not: the sidebar is a fixed width that never shrinks, so
+  // at a 390px viewport it kept all 288px and left the main pane 102px —
+  // about 30px of text column once ChatView's own padding and card border
+  // came off, which renders a conversation one character per line. The
+  // fixed width therefore only applies from `md` up, and the divider moves
+  // to the horizontal edge when stacked.
   const sidebarEl = (
     <div
-      className="shrink-0 flex flex-col overflow-y-auto"
-      style={{
-        width: sidebarWidth,
-        ...(sidebarPosition === "left"
-          ? { borderRight: `1px solid ${theme.border}` }
-          : { borderLeft: `1px solid ${theme.border}` }),
-      }}
+      className={clsx(
+        "shrink-0 flex flex-col overflow-y-auto",
+        "w-full max-h-[40vh] md:w-(--aai-sidebar-w) md:max-h-none",
+        sidebarPosition === "left"
+          ? "border-b md:border-b-0 md:border-r"
+          : "border-t md:border-t-0 md:border-l order-last md:order-none",
+      )}
+      style={{ borderColor: theme.border }}
     >
       {sidebar}
     </div>
   );
 
+  const vars: CSSProperties & Record<`--${string}`, string> = {
+    background: theme.bg,
+    "--aai-sidebar-w": sidebarWidth,
+  };
+
   return (
-    <div className={clsx("flex h-screen", className)} style={{ background: theme.bg }}>
+    <div
+      className={clsx("flex flex-col md:flex-row min-h-screen md:h-screen", className)}
+      style={vars}
+    >
       {sidebarPosition === "left" && sidebarEl}
-      <div className="flex-1 min-w-0">{children}</div>
+      <div className="flex-1 min-w-0 min-h-0">{children}</div>
       {sidebarPosition === "right" && sidebarEl}
     </div>
   );

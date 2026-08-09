@@ -6,16 +6,20 @@ import clsx from "clsx";
 import type { ReactNode } from "react";
 import { useTheme } from "../context.ts";
 import type { AgentState } from "../types.ts";
-import { ERROR_COLOR, TEXT_FAINT, THINKING_COLOR } from "./_colors.ts";
+import { ERROR_COLOR, INK_FAINT_PCT, inkTint, THINKING_COLOR } from "./_colors.ts";
 import { AaiLogo } from "./aai-logo.tsx";
 import { Eyebrow } from "./eyebrow.tsx";
 
 /**
- * Indicator dot color per state, on the light refresh palette.
+ * Indicator dot color per state.
+ *
+ * `idle` is the theme's own faint ink step rather than a fixed warm grey, so
+ * the dot stays visible on a dark ground; the thinking amber and error red
+ * are semantic and stay fixed.
  *
  * @internal
  */
-function stateColor(state: AgentState, primary: string): string {
+function stateColor(state: AgentState, primary: string, idle: string): string {
   switch (state) {
     case "listening":
     case "speaking":
@@ -26,7 +30,7 @@ function stateColor(state: AgentState, primary: string): string {
     case "error":
       return ERROR_COLOR;
     default:
-      return TEXT_FAINT; // disconnected / connecting
+      return idle; // disconnected / connecting
   }
 }
 
@@ -91,7 +95,11 @@ export function ConsoleShell({
           <span
             className="w-[7px] h-[7px] rounded-full"
             style={{
-              background: stateColor(state, theme.primary),
+              background: stateColor(
+                state,
+                theme.primary,
+                inkTint(theme.text, theme.bg, INK_FAINT_PCT),
+              ),
               animation: pulsing ? "aai-pulse 1.6s ease-in-out infinite" : "none",
             }}
           />
