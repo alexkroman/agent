@@ -19,6 +19,7 @@
 
 import { hash } from "node:crypto";
 import { createKeyedLock, withLock } from "aai-server/platform-barrel";
+import { projectKey as platformProjectKey } from "aai-server/platform-events";
 import { SafePathSchema } from "aai-server/schemas";
 import { WorkspaceConflictError, type WorkspaceStore } from "aai-server/workspace-store";
 import {
@@ -121,12 +122,16 @@ export function studioScope(apiKey: string): string {
 /**
  * Composite key for one project within one scope — used by the session
  * broker's sandbox map, the preview coalescer, and the workspace mutation
- * lock. NUL separator: neither a scope hash nor a validated project name
- * can contain it, so distinct (scope, project) pairs can never collide the
- * way a printable separator would allow.
+ * lock.
+ *
+ * Delegated rather than redefined: the NUL separator's whole argument is that
+ * no (scope, project) pair can forge another's key, and that holds only while
+ * every copy agrees on the separator. They did not — the Realtime channel pool
+ * keyed on a SPACE — so there is one definition now, in the package that
+ * documents the reasoning.
  */
 export function projectKey(scope: string, project: string): string {
-  return `${scope}\u0000${project}`;
+  return platformProjectKey(scope, project);
 }
 
 /** Validate a workspace-relative file path; throws on traversal/absolute paths. */

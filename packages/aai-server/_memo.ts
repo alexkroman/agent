@@ -107,18 +107,31 @@ export type KeyedAsyncMemo<T> = ((key: string, build: () => Promise<T>) => Promi
  * own rejection. The builder is per-call so it can close over more than the
  * key (e.g. the harness image build closes over the bundle code its tag was
  * derived from).
+ *
+ * The reset is BY OWNERSHIP, like every other keyed teardown here. A build's
+ * rejection can land after the key already holds a successor — `clear()`
+ * releases the key while a build is still in flight, and the next call claims
+ * it — and an unguarded `memo.delete(key)` there evicts that successor. What
+ * it costs is a redundant rebuild rather than a wrong answer (the successor's
+ * own callers still hold its promise), but for `modal-harness-image.ts` a
+ * rebuild is a builder sandbox and a filesystem snapshot. It is reachable only
+ * through `clear()` today, which is test-only — the guard is here because
+ * `createSingleFlight` two functions up gets this right and a reader has no
+ * way to tell which of the two spellings was deliberate.
  */
 export function keyedMemoAsync<T>(): KeyedAsyncMemo<T> {
-  const memo = new Map<string, Promise<T>>();
+  const memo = createOwnedMap<string, Promise<T>>();
   const fn = (key: string, build: () => Promise<T>): Promise<T> => {
-    let pending = memo.get(key);
-    if (!pending) {
-      pending = build().catch((err: unknown) => {
-        memo.delete(key);
-        throw err;
-      });
-      memo.set(key, pending);
-    }
+    const joined = memo.get(key);
+    if (joined) return joined;
+    // Assigned before the catch can run: `claim` is synchronous and a
+    // rejection is a microtask at the earliest.
+    let release: () => boolean = () => false;
+    const pending = build().catch((err: unknown) => {
+      release();
+      throw err;
+    });
+    release = memo.claim(key, pending);
     return pending;
   };
   fn.clear = (): void => memo.clear();

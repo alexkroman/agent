@@ -228,6 +228,76 @@ describe("createSessionReaper", () => {
 
       expect(warm.disposed).toBe(0);
     });
+
+    test("a stalled registry read stays ONE read, however many ticks pass", async () => {
+      // The entry is still in `sessions` and its `lastUsed` has not moved
+      // while `heldByUs` is pending, so every tick re-selects it. The platform
+      // admin connection has no statement_timeout, so "pending" is unbounded —
+      // one read per tick would pile onto the pool that is already stuck.
+      const reads: string[] = [];
+      const { reaper, addEntry } = setup({
+        fleet: {
+          heldByUs: (scope, project) => {
+            reads.push(`${scope}/${project}`);
+            return new Promise<boolean>(() => {});
+          },
+        },
+      });
+      addEntry("alpha", IDLE_MS + 1);
+
+      for (let i = 0; i < 5; i++) await vi.advanceTimersByTimeAsync(SWEEP_INTERVAL_MS);
+
+      expect(reads).toEqual(["scope/alpha"]);
+      reaper.stop();
+    });
+
+    test("disposes once when a slow read spans two ticks", async () => {
+      // Two sweeps reaching disposeEntry means two Symbol.asyncDispose calls —
+      // two sandbox terminates — and two fleet releases. The identity guards
+      // downstream absorb the damage, which is what kept it invisible.
+      const gates: ((held: boolean) => void)[] = [];
+      const { reaper, sessions, calls, addEntry } = setup({
+        fleet: {
+          heldByUs: () =>
+            new Promise<boolean>((resolve) => {
+              gates.push(resolve);
+            }),
+        },
+      });
+      const { warm } = addEntry("alpha", IDLE_MS + 1);
+
+      await vi.advanceTimersByTimeAsync(SWEEP_INTERVAL_MS);
+      await vi.advanceTimersByTimeAsync(SWEEP_INTERVAL_MS);
+      // Only the first tick ever issued a read; release it and let it settle.
+      expect(gates).toHaveLength(1);
+      for (const gate of gates) gate(false);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(warm.disposed).toBe(1);
+      expect(calls.release).toEqual(["scope/alpha"]);
+      expect(sessions.get("scope/alpha")).toBeUndefined();
+      reaper.stop();
+    });
+
+    test("retries on the next tick after a peer's hold lapses", async () => {
+      // The guard must release on the spare path too, or one held-by-us answer
+      // would exempt the entry from eviction for the life of the process.
+      let held = true;
+      const { reaper, sessions, addEntry } = setup({
+        fleet: { heldByUs: () => Promise.resolve(held) },
+      });
+      const { warm } = addEntry("alpha", IDLE_MS + 1);
+
+      await vi.advanceTimersByTimeAsync(SWEEP_INTERVAL_MS);
+      expect(warm.disposed).toBe(0);
+
+      held = false;
+      await vi.advanceTimersByTimeAsync(SWEEP_INTERVAL_MS);
+
+      expect(warm.disposed).toBe(1);
+      expect(sessions.get("scope/alpha")).toBeUndefined();
+      reaper.stop();
+    });
   });
 
   test("tolerates a timer handle with no unref()", () => {

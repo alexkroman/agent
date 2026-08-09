@@ -56,13 +56,40 @@ export function createSessionReaper(deps: {
   }
 
   /**
+   * Entries whose sweep is still running. A sweep spans a registry round trip
+   * (`heldByUs`), and NOTHING it does before that read returns takes the entry
+   * out of `sessions` or moves its `lastUsed` — so without this the next tick
+   * re-selects the same entry and starts a second sweep for it.
+   *
+   * Both halves of that matter. The platform admin connection carries no
+   * `statement_timeout` (only tenant app roles get one — app-database.ts), so
+   * a stalled registry read is unbounded: every 60s tick adds another read for
+   * the same entry, piling onto the pool that is already the thing failing.
+   * And once two sweeps are in flight, both reach `disposeEntry`, which means
+   * two `Symbol.asyncDispose` calls — two sandbox terminates — and two fleet
+   * releases. The identity guards downstream (the owned map's release, the
+   * fleet's owner check) keep that from corrupting a successor's state, which
+   * is exactly why it stayed invisible.
+   */
+  const sweeping = new Set<SessionEntry>();
+
+  /**
    * Evict `entry` unless someone in the fleet has been brokering it — see
    * `SessionFleet.heldByUs`. The lease and the idle window are the same
    * number for exactly this comparison (see STUDIO_SESSION_IDLE_MS).
    */
   async function sweepIfIdle(entry: SessionEntry): Promise<void> {
-    if (await fleet.heldByUs(entry.scope, entry.project)) return;
-    await disposeEntry(entry);
+    if (sweeping.has(entry)) return;
+    sweeping.add(entry);
+    try {
+      if (await fleet.heldByUs(entry.scope, entry.project)) return;
+      await disposeEntry(entry);
+    } finally {
+      // By identity, so this releases only our own mark. The entry is gone
+      // from `sessions` on the eviction path, and still there on the
+      // held-by-us path — where the next tick is meant to try again.
+      sweeping.delete(entry);
+    }
   }
 
   const sweeper = setInterval(() => {
