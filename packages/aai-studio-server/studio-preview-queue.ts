@@ -130,7 +130,7 @@ function parseJob(raw: unknown): PreviewJob | null {
 export function createPgPreviewQueue(sql: SqlExec): PreviewQueue {
   return {
     async enqueue(job) {
-      await sql("select pgmq.send($1, $2::jsonb)", [PREVIEW_QUEUE, JSON.stringify(job)]);
+      await sql("select pgmq.send($1, $2::text::jsonb)", [PREVIEW_QUEUE, JSON.stringify(job)]);
     },
 
     async claim(max) {

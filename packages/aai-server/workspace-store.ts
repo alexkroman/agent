@@ -99,6 +99,29 @@ const TABLE = "aai_platform.studio_workspaces";
  * as JSON text with a `::jsonb` cast so the statement shape is
  * driver-agnostic; reads accept either the parsed object (what the `postgres`
  * driver returns for jsonb) or a raw string.
+ *
+ * **The cast is `::text::jsonb`, and the extra step is load-bearing.** Bound to
+ * a bare `$n::jsonb`, postgres.js resolves the parameter's type FROM that cast
+ * and JSON-encodes the string we already encoded — so the column ends up
+ * holding a jsonb *string* rather than an object. Measured against a real
+ * Postgres: `$3::jsonb` stores `jsonb_typeof = 'string'`, `$3::text::jsonb`
+ * stores `'object'`. Pinning the parameter to `text` makes Postgres do the
+ * parse, which is what was intended all along.
+ *
+ * It was invisible for as long as it was because NOTHING read the column from
+ * inside Postgres — every reader round-tripped the value through JS, where
+ * `parseDoc` unwraps the extra layer and each sibling store grew the same
+ * tolerance. The two things that DID reach into the jsonb both failed silently
+ * or late:
+ *
+ * - `patch` below (`doc - text[]`) threw **`cannot delete from scalar`**, which
+ *   is how this was found — every metadata stamp in production, so every
+ *   preview deploy, Publish, and database toggle;
+ * - the orphan-preview sweep (`pg-cron.ts`) skips an agent whose slug some
+ *   workspace still names, via `doc->>'previewSlug'` — which reads NULL out of
+ *   a string, so the predicate matched nothing and the sweep deleted LIVE
+ *   previews. That is the "swept preview" the Preview pane's wake exists to
+ *   recover from; it was not a rare race, it was every preview, hourly.
  */
 export function createPgWorkspaceStore(sql: SqlExec): WorkspaceStore {
   const parseDoc = (value: unknown): unknown =>
@@ -123,12 +146,12 @@ export function createPgWorkspaceStore(sql: SqlExec): WorkspaceStore {
       const rows =
         expectedVersion === null
           ? await sql(
-              `insert into ${TABLE} (scope, project, doc) values ($1, $2, $3::jsonb)
+              `insert into ${TABLE} (scope, project, doc) values ($1, $2, $3::text::jsonb)
                on conflict do nothing returning version`,
               [scope, project, json],
             )
           : await sql(
-              `update ${TABLE} set doc = $3::jsonb, version = version + 1, updated_at = now()
+              `update ${TABLE} set doc = $3::text::jsonb, version = version + 1, updated_at = now()
                where scope = $1 and project = $2 and version = $4 returning version`,
               [scope, project, json, expectedVersion],
             );
@@ -142,8 +165,16 @@ export function createPgWorkspaceStore(sql: SqlExec): WorkspaceStore {
       // a key in both wins as a set. One statement, so it is atomic against
       // every other writer without holding a version: there is nothing read
       // here that a concurrent write could invalidate.
+      //
+      // `doc #>> '{}'` unwraps a row written by a build that stored this
+      // column DOUBLE-ENCODED (see the doc comment above). It is a no-op on a
+      // well-formed object — the empty path returns the whole document as
+      // text, which `::jsonb` parses straight back — and the assignment then
+      // heals the row. It is needed for two windows, not one: the rows already
+      // in the database, and the length of a rolling deploy, during which
+      // containers on the previous build keep writing strings.
       const rows = await sql(
-        `update ${TABLE} set doc = (doc - $4::text[]) || $3::jsonb,
+        `update ${TABLE} set doc = ((doc #>> '{}')::jsonb - $4::text[]) || $3::text::jsonb,
            version = version + 1, updated_at = now()
          where scope = $1 and project = $2 returning doc, version`,
         [scope, project, JSON.stringify(set), remove],

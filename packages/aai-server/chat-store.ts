@@ -103,7 +103,7 @@ export function createPgChatStore(sql: SqlExec): ChatStore {
     async putChat(scope, project, messages) {
       const json = `[${trimChat(messages, MAX_STUDIO_CHAT_STORE_BYTES).parts.join(",")}]`;
       await sql(
-        `insert into ${TABLE} (scope, project, messages) values ($1, $2, $3::jsonb)
+        `insert into ${TABLE} (scope, project, messages) values ($1, $2, $3::text::jsonb)
          on conflict (scope, project) do update set messages = excluded.messages, updated_at = now()`,
         [scope, project, json],
       );
