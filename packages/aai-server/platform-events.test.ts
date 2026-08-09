@@ -122,6 +122,36 @@ describe("store decorators", () => {
     expect(seen).toHaveBeenCalledTimes(2);
   });
 
+  // The metadata stamp — every preview/publish/database write goes through
+  // `patch`, and it is the one the decorator forgot. Watched here rather than
+  // only through the studio because production wraps nothing, so nothing else
+  // can catch a mutator that never reaches a watcher.
+  test("withWorkspaceEvents emits on patch, and returns the patched record", async () => {
+    const memory = createMemoryPlatformEvents();
+    const seen = vi.fn();
+    memory.events.watchWorkspace("s", "p", seen);
+    const store = withWorkspaceEvents(createMemoryWorkspaceStore(), memory.emitWorkspace);
+    await store.put("s", "p", { files: {} }, null);
+    seen.mockClear();
+
+    const record = await store.patch("s", "p", { set: { previewSlug: "p-preview" } });
+    await memory.settled();
+
+    expect(seen).toHaveBeenCalledTimes(1);
+    expect(record?.doc).toMatchObject({ previewSlug: "p-preview" });
+  });
+
+  test("withWorkspaceEvents stays quiet when there is no row to patch", async () => {
+    const memory = createMemoryPlatformEvents();
+    const seen = vi.fn();
+    memory.events.watchWorkspace("s", "gone", seen);
+    const store = withWorkspaceEvents(createMemoryWorkspaceStore(), memory.emitWorkspace);
+
+    expect(await store.patch("s", "gone", { set: { previewSlug: "x" } })).toBeNull();
+    await memory.settled();
+    expect(seen).not.toHaveBeenCalled();
+  });
+
   test("withChatEvents emits on put and delete", async () => {
     const memory = createMemoryPlatformEvents();
     const seen = vi.fn();

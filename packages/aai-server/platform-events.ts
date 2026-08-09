@@ -246,6 +246,24 @@ export function withWorkspaceEvents(
 ): WorkspaceStore {
   return {
     ...store,
+    // EVERY mutator has to be here, `patch` included. Production wraps
+    // nothing — the row's own UPDATE is what Realtime streams — so a mutator
+    // missing from this list is invisible in production and silent in dev:
+    // the write lands, the version bumps, and no watcher ever hears about it.
+    // `patch` is the metadata stamp (`stampWorkspaceMeta`), i.e. the ONLY
+    // writer of `previewSlug`/`previewHash`/`previewError`,
+    // `deployedSlug`/`deployedHash`, and `databaseEnabled` — so while it was
+    // missing, a preview deploy landing under `pnpm dev:aai-server` pushed no
+    // `project` frame and the Preview pane sat on its "Starting your
+    // preview" screen until the page was reloaded. There is no polling loop
+    // behind these streams to cover for a dropped signal.
+    async patch(scope, project, workspacePatch) {
+      const record = await store.patch(scope, project, workspacePatch);
+      // Null means there was no row to patch: nothing changed, so there is
+      // nothing to announce.
+      if (record) emit(scope, project);
+      return record;
+    },
     async put(scope, project, doc, expectedVersion) {
       const version = await store.put(scope, project, doc, expectedVersion);
       emit(scope, project);
