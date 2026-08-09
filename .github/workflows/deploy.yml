@@ -64,7 +64,38 @@ jobs:
           python-version: "3.13"
       - run: pip install modal
       - name: Deploy platform
+        id: deploy
         env:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
-        run: modal deploy packages/aai-server/modal_deploy.py
+        run: |
+          set -o pipefail
+          # Stamped BEFORE the deploy: the verify step below asserts a
+          # container started after this instant, which is what separates a
+          # real rollout from the previous deploy's containers still serving.
+          echo "started=$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" >> "$GITHUB_OUTPUT"
+          modal deploy packages/aai-server/modal_deploy.py 2>&1 | tee /tmp/modal-deploy.log
+          # Self-configuring rather than a hardcoded workspace hostname —
+          # `modal deploy` prints the app's URL on success.
+          url="$(grep -oE 'https://[a-z0-9.-]+\.modal\.run' /tmp/modal-deploy.log | head -1)"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      # `modal deploy` exiting 0 means the image built and the app is
+      # registered — NOT that a container can start. Under Modal's rolling
+      # strategy the old containers keep serving a broken rollout, so this job
+      # reported success for a deploy whose every container died at startup.
+      - name: Verify the rollout
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+          # Via env rather than inline `${{ }}`, so neither value can reach the
+          # shell as syntax. Both are ours (a `date`, and a URL matched by a
+          # character-restricted grep), which is why this is a habit and not a
+          # fix — the habit is what holds when a value later isn't.
+          DEPLOY_STARTED: ${{ steps.deploy.outputs.started }}
+          DEPLOY_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          python scripts/verify_modal_deploy.py \
+            --app aai-server-web \
+            --since "$DEPLOY_STARTED" \
+            --health-url "$DEPLOY_URL/health"

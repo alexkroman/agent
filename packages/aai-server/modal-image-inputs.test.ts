@@ -134,6 +134,68 @@ describe("modal image install inputs", () => {
 });
 
 /**
+ * Modal re-imports the deploy script INSIDE every container to hydrate the
+ * function, so `build_image` runs twice in two different filesystems: once
+ * locally with the repo present, and once in a container where it is not and
+ * where `REPO_ROOT` (derived from `__file__`, mounted at `/root/`) resolves to
+ * `/`. Modal's own `Image` builder calls are lazy, so naming `REPO_ROOT` in
+ * one is harmless; computing an ARGUMENT to one by reading the filesystem is
+ * not — `_stage_install_inputs` did, and the container died at import with
+ * `FileNotFoundError: '/pnpm-lock.yaml'`.
+ *
+ * It is worth a test because every signal a deploy has is blind to it.
+ * `modal deploy` exits 0, the image builds, CI goes green, the app reads
+ * `deployed`, and the PREVIOUS deploy's containers keep serving — so the
+ * request log is clean too. What actually shipped is a service that cannot
+ * scale out or replace a container, and that goes down whenever the last old
+ * one does. Observed in production 2026-08-09: 13 failed container starts over
+ * four minutes behind a Deploy workflow that reported success, and a
+ * `Function modal_deploy.server is crash-looping` line in an app log nobody
+ * was reading.
+ *
+ * Static, because importing the Python needs modal installed and the real
+ * check — does a container actually start — belongs to the deploy workflow's
+ * post-deploy gate, which catches this and every other startup failure.
+ */
+describe("modal image container re-import", () => {
+  /**
+   * Docstrings and comments stripped — this whole check is about which lines
+   * EXECUTE, and the prose here discusses `REPO_ROOT` at length.
+   */
+  const code = modalImagePy.replaceAll(/"""[\s\S]*?"""/g, "").replaceAll(/^\s*#.*$/gm, "");
+
+  /** The body of a top-level `def`, up to the next top-level statement. */
+  function pyFunctionBody(name: string): string {
+    const body = new RegExp(`^def ${name}\\(([\\s\\S]*?)\\n(?=\\S)`, "m").exec(code)?.[0];
+    if (body === undefined) throw new Error(`def ${name} not found in scripts/modal_image.py`);
+    return body;
+  }
+
+  test("stages nothing when the repo is not there", () => {
+    const body = pyFunctionBody("_stage_install_inputs");
+    const guard = body.indexOf("if not modal.is_local():");
+    expect(guard, "_stage_install_inputs must short-circuit off-host").toBeGreaterThan(-1);
+    // Position, not presence: a guard placed after the first REPO_ROOT read
+    // throws before it runs, which is the bug with a comment on it.
+    const firstRead = body.indexOf("REPO_ROOT");
+    expect(firstRead).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(firstRead);
+    // And it has to actually leave the function.
+    expect(body.slice(guard)).toMatch(/if not modal\.is_local\(\):\n\s+return /);
+  });
+
+  test("reads the filesystem in one place, so the guard covers all of it", () => {
+    // Every eager repo read must live behind the guard above. A second helper
+    // called from `build_image` would reintroduce the crash with this suite
+    // still green, so pin the count rather than the one call site.
+    const readers = [...code.matchAll(/^def (_?\w+)\([\s\S]*?\n(?=\S)/gm)].filter(
+      (m) => m[0].includes("REPO_ROOT") && !m[0].startsWith("def build_image"),
+    );
+    expect(readers.map((m) => m[1])).toEqual(["_stage_install_inputs"]);
+  });
+});
+
+/**
  * The image bakes a V8 compile cache for the SERVER entry the same way the
  * guest snapshot bakes one for the harness (~600ms → ~395ms measured on the
  * built bundle). Three things have to agree across three files, and two of the

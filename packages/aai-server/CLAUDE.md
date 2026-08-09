@@ -1480,6 +1480,34 @@ rolling strategy the old containers serve throughout); it is the **cold
 start**, where a container on a worker that already holds the install layer
 pulls only what changed.
 
+**Everything in the recipe must be IMPORTABLE without the repo present, and
+that is not a style rule — it is the difference between a deploy and a
+crash-loop.** Modal re-imports the deploy script inside every container to
+hydrate the function, so `build_image` runs a second time where the repo does
+not exist and `REPO_ROOT` (derived from `__file__`, mounted at `/root/`)
+resolves to `/`. Modal's own `Image` builder calls are LAZY, so naming
+`REPO_ROOT` in one is fine; computing an argument to one by reading the
+filesystem is not. `_stage_install_inputs` did, and the container died at
+import with `FileNotFoundError: '/pnpm-lock.yaml'` — it is guarded on
+`modal.is_local()` now, returning an empty staging dir off-host.
+
+**Every signal a deploy has is blind to that failure**, which is why it ran for
+hours: `modal deploy` exits 0, the image builds, CI goes green, the app reads
+`deployed`, and — because the rolling strategy keeps the PREVIOUS deploy's
+containers serving — the health endpoint answers 200 and the request log stays
+clean. What actually shipped was a service that could not scale out or replace
+a container, one container-death away from an outage with no recovery path.
+Observed 2026-08-09: 13 failed container starts over four minutes, production
+served for the next two hours by a container that predated the deploy, and the
+only trace was a `Function modal_deploy.server is crash-looping` line in an app
+log nobody was reading. Hence two guards, at different distances:
+`modal-image-inputs.test.ts` pins the `is_local` short-circuit statically (a
+gate that fails in the ordinary test run), and **`deploy.yml`'s verify step**
+(`scripts/verify_modal_deploy.py`) asserts after every deploy that a container
+started AFTER the deploy began and that the service answers — the general net,
+since it catches any startup failure rather than this one. Checking health
+alone would not have caught it; the stale container was answering fine.
+
 **The manifests are NORMALIZED, and without that the split would be pure
 ceremony.** A layer's cache key is the bytes that go into it, and a
 package.json's `version` moves on every changeset release — which is exactly
