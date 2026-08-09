@@ -24,7 +24,9 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   cleanup semantics
 - `sandbox-slots.ts` — the per-slug slot cache: `{ slug, version?, sandbox? }`
   plus the slug lock. NO idle machinery — idleness is the guest's own job
-  (agent-mode self-exit), and its exit detaches the slot via `onSandboxLost`
+  (agent-mode self-exit), and its exit drops the whole SLOT via
+  `onSandboxLost` — not just its sandbox, which grew the map by one shell per
+  slug for the container's life; a rebuild needs nothing from an empty slot
 - `modal-context.ts` — the shared Modal context every spawn path needs
   first: the client, the App, the harness-baked snapshot image (built once
   per harness version, published under a content-addressed tag), and the
@@ -169,7 +171,9 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   ~333 MB gated, the gated figure being flat in N rather than smaller
 - `auth.ts` — authentication/authorization
 - `credentials.ts` — credential derivation
-- `bundle-store.ts` — deploy persistence: content-addressed, immutable
+- `bundle-store.ts` — deploy persistence (blob reads AND writes retry
+  transients — the write path moves far more bytes, and a content-hash key
+  plus `upsert` makes a retry byte-identical): content-addressed, immutable
   blobs (`blobs/<sha256>` — worker + client files) committed
   by the agents-row upsert, which is the deploy's ATOMIC publish point.
 
@@ -483,6 +487,20 @@ The cross-replica coordination that lives in this same Postgres:
   `sandbox-resolve.ts` stays on the in-process lock deliberately: it guards
   this replica's slot cache, a legitimately process-local resource.
 
+  **The acquire deadline applies to BOTH halves, because the mutex is taken
+  first.** `lock_timeout` → `55P03` → 409 only ever saw CROSS-replica
+  contention; two mutations of one slug on one replica queued on the mutex
+  unbounded — reachable in practice, since `watchAgentInvalidation` holds it
+  across `handoverSlot`'s 120s boot. The mutex now carries the same deadline
+  (`KeyedLockTimeoutError` → `SlugLockTimeoutError`), and a waiter that gives up
+  must RESOLVE ITS PLACE IN THE CHAIN or everyone behind it blocks forever.
+
+  **The connection budget is fleet-wide** (`MAX_PLATFORM_DB_CONNECTIONS`,
+  pinned by `platform-db-budget.test.ts`): these are DIRECT session-mode
+  connections, so `MAX_CONTAINERS` × the per-replica pools consumes
+  `max_connections` outright — a product spanning two files that never referred
+  to each other, whose ceiling is an outage rather than degradation.
+
   **`SUPABASE_DB_URL` must be the direct, SESSION-mode connection string.** A
   transaction-mode pooler (Supavisor's port 6543, `pgbouncer=true`) returns
   the server connection between statements, so an advisory lock taken through
@@ -569,21 +587,16 @@ modal_deploy.py`. Note the asymmetry — the deploy script lives in the package
 that does NOT provide the entry; it is the platform's deploy policy, and it
 launches `packages/aai-studio-server/dist/index.mjs`.
 
-**A SPLIT deployment used to live here** — a second Modal app (`aai-studio-web`,
-its own `modal_deploy.py`), with the agent app booting `AAI_SERVICE=agent` and
-reverse-proxying the studio surface to a `STUDIO_UPSTREAM_URL`. The motivation
-was real (studio chat turns are LLM-bound and bursty; agent brokering is light
-and latency-sensitive, and one container serves both imperfectly), but the
-upstream was never wired in production, so the combined branch was the only one
-that ever ran and the split half was unreachable code that still constrained
-the design: a proxy hop that had to re-resolve the public origin, forward SSE
-endably, and keep a path predicate agreeing with the combined dispatcher.
-
-It is removed rather than left dormant. Git history has the whole thing. Two
-constraints survive any revival: **one public origin** (agent pages set
+**A SPLIT deployment used to live here** — a second Modal app
+(`aai-studio-web`) with the agent app reverse-proxying to a
+`STUDIO_UPSTREAM_URL`. Removed rather than left dormant: the upstream was never
+wired, so the combined branch was the only one that ever ran while the split
+half still constrained the design. `modal_deploy.py`'s own "One app, both
+surfaces" block carries the motivation and what reviving it would cost; two
+constraints survive any revival — **one public origin** (agent pages set
 `X-Frame-Options: SAMEORIGIN`, so a studio on a second hostname breaks the
 preview iframe), and the studio service would need the event streams' timeout
-raised — see the note under "A long-lived connection is ONE Modal input".
+raised (see "A long-lived connection is ONE Modal input").
 
 **aai-server is COMPILED IN to that entry, and the bundler pattern must match
 its SUBPATHS.** `aai-studio-server/tsdown.config.ts` lists it under

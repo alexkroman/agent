@@ -64,7 +64,7 @@ import {
  * — the one long-held resource, a slug lock's reserved connection, has its
  * own pool below.
  */
-const ADMIN_POOL_MAX = 4;
+export const ADMIN_POOL_MAX = 4;
 
 /**
  * Connections reserved for per-slug mutation locks. Each concurrent
@@ -73,7 +73,46 @@ const ADMIN_POOL_MAX = 4;
  * acquires queue in the pool, which is indistinguishable to the caller from
  * queueing in Postgres's lock manager.
  */
-const SLUG_LOCK_POOL_MAX = 4;
+export const SLUG_LOCK_POOL_MAX = 4;
+
+/** Connections one extra `APP_DB_URLS` placement cluster pools per replica. */
+export const APP_DB_TARGET_POOL_MAX = 4;
+
+/**
+ * The platform's own ceiling on DIRECT Postgres connections, fleet-wide.
+ *
+ * These are session-mode connections by construction — `assertSessionModeUrl`
+ * refuses a transaction-mode pooler, because an advisory lock needs connection
+ * affinity to mean anything (platform-lock.ts). So they consume the database's
+ * `max_connections` directly, with no Supavisor in front to multiplex them,
+ * and the fleet total is `MAX_CONTAINERS × per-replica` — a number that lived
+ * in two files that never referred to each other.
+ *
+ * The failure at the ceiling is not degradation. Pools open LAZILY, so the
+ * limit is only reached under load, and what happens there is that every
+ * platform read starts failing at once with "remaining connection slots are
+ * reserved": Vault, the agents row the broker needs, workspaces, chats. A
+ * control-plane outage, at peak, with nothing before it to read as a warning.
+ *
+ * **This number is a claim about the provisioned instance, and nothing in the
+ * repo can check it** — verify it against the project's `max_connections` (and
+ * leave room for migrations, the dashboard, and Supavisor) when changing
+ * either side. `platform-db-budget.test.ts` holds the arithmetic so that
+ * raising `MAX_CONTAINERS`, a pool size, or the cluster list fails a check
+ * instead of failing in production. The tenant-facing half of this concern was
+ * always reasoned explicitly (`APP_DB_CONNECTION_LIMIT`, "so one hot app
+ * cannot starve the shared cluster"); the platform's own half was not.
+ */
+export const MAX_PLATFORM_DB_CONNECTIONS = 80;
+
+/**
+ * Direct connections one replica may open, given `extraAppDbTargets` extra
+ * placement clusters. The admin and slug-lock pools are deliberately separate
+ * (see `slugLock` below), so they add.
+ */
+export function platformDbConnectionsPerReplica(extraAppDbTargets = 0): number {
+  return ADMIN_POOL_MAX + SLUG_LOCK_POOL_MAX + extraAppDbTargets * APP_DB_TARGET_POOL_MAX;
+}
 
 /** Comma-separated extra placement clusters (APP_DB_URLS) → pooled targets. */
 function parseExtraAppDbTargets(raw: string | undefined): AppDbTarget[] {
@@ -83,7 +122,7 @@ function parseExtraAppDbTargets(raw: string | undefined): AppDbTarget[] {
     .map((url) => url.trim())
     .filter(Boolean)
     .map((url) => {
-      const db = createPostgresDb({ url, max: 4 });
+      const db = createPostgresDb({ url, max: APP_DB_TARGET_POOL_MAX });
       return { url, sql: (query, params) => db.query(query, params) } satisfies AppDbTarget;
     });
 }

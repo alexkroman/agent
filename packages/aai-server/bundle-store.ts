@@ -169,6 +169,35 @@ export function createBundleStore(
     });
   }
 
+  /**
+   * Write one blob, retrying the same transient network failures reads retry.
+   *
+   * The read path has been wrapped since `_retry.ts` was written — and its
+   * code list (`ECONNRESET`, `UND_ERR_SOCKET`, …) was written FOR this
+   * endpoint, describing "body-phase socket failures from fetch() against
+   * S3-compatible endpoints (Supabase Storage)". The write path is strictly
+   * more exposed to those: it moves the ~8 MB worker bundle plus every client
+   * file, where a read of the same deploy usually moves nothing (the caches
+   * above serve it). Unwrapped, one reset on any single file failed the whole
+   * deploy — and for studio Publish that surfaces to a user as a build failure
+   * carrying a network message.
+   *
+   * Retrying is safe BY CONSTRUCTION rather than by argument: the key is the
+   * content hash and `UPLOAD_OPTIONS` sets `upsert: true` (blob-storage.ts),
+   * so a retry rewrites byte-identical content to the same key. That is the
+   * same property `putAgent` already relies on to write blobs before the row.
+   */
+  function writeBlob(contentHashHex: string, content: string): Promise<void> {
+    const key = blobKey(contentHashHex);
+    return retryOnTransient(() => storage.setItem(key, content), {
+      onRetry: (attempt, attempts, err) => {
+        console.warn(
+          `Transient storage error writing ${key} (attempt ${attempt}/${attempts}): ${errorMessage(err)}`,
+        );
+      },
+    });
+  }
+
   function readBlobCached(contentHashHex: string): Promise<string | null> {
     const cached = blobCache.get(contentHashHex);
     if (cached !== undefined) return Promise.resolve(cached === BLOB_MISS ? null : cached);
@@ -231,9 +260,9 @@ export function createBundleStore(
       // landed does the row upsert publish the deploy.
       await Promise.all([
         writeEnv(bundle.slug, bundle.env),
-        storage.setItem(blobKey(workerHash), bundle.worker),
+        writeBlob(workerHash, bundle.worker),
         ...Object.entries(bundle.clientFiles).map(([path, content]) =>
-          storage.setItem(blobKey(clientFiles[path] ?? ""), content),
+          writeBlob(clientFiles[path] ?? "", content),
         ),
       ]);
 

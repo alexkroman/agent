@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, it } from "vitest";
-import { createKeyedLock } from "./_keyed-lock.ts";
+import { createKeyedLock, KeyedLockTimeoutError } from "./_keyed-lock.ts";
 import { sleep } from "./_sleep.ts";
 
 /** Yield enough microtasks for the lock's internal cleanup chains to run. */
@@ -85,5 +85,70 @@ describe("createKeyedLock", () => {
     again();
     await flushMicrotasks();
     expect(lock.size).toBe(0);
+  });
+  describe("acquire deadline", () => {
+    it("rejects a waiter that never gets the key", async () => {
+      const lock = createKeyedLock();
+      const release = await lock("k");
+
+      await expect(lock("k", { timeoutMs: 5 })).rejects.toBeInstanceOf(KeyedLockTimeoutError);
+
+      release();
+    });
+
+    it("resolves normally when the key frees inside the deadline", async () => {
+      const lock = createKeyedLock();
+      const release = await lock("k");
+      const queued = lock("k", { timeoutMs: 1000 });
+      release();
+
+      const second = await queued;
+      expect(typeof second).toBe("function");
+      second();
+      await flushMicrotasks();
+      expect(lock.size).toBe(0);
+    });
+
+    /**
+     * The property that makes a deadline safe rather than a new deadlock.
+     * Every acquirer appends its own release to the key's chain, so a waiter
+     * that walks away WITHOUT resolving its slot leaves one that never frees —
+     * and it is the last acquirer's `tail` the next one queues behind. Before
+     * the give-up-our-place step, one timed-out waiter wedged the key for the
+     * life of the process.
+     */
+    it("a timed-out waiter does not wedge the key for those behind it", async () => {
+      const lock = createKeyedLock();
+      const release = await lock("k");
+
+      await expect(lock("k", { timeoutMs: 5 })).rejects.toBeInstanceOf(KeyedLockTimeoutError);
+      // Queued AFTER the abandoned slot, so it inherits it.
+      const behind = lock("k", { timeoutMs: 1000 });
+      release();
+
+      const acquired = await behind;
+      acquired();
+      await flushMicrotasks();
+      expect(lock.size).toBe(0);
+    });
+
+    it("leaks no entry once an abandoned key drains", async () => {
+      const lock = createKeyedLock();
+      const release = await lock("k");
+      await expect(lock("k", { timeoutMs: 5 })).rejects.toThrow(KeyedLockTimeoutError);
+      release();
+      await flushMicrotasks();
+      expect(lock.size).toBe(0);
+    });
+
+    it("an uncontended key never waits on the deadline", async () => {
+      const lock = createKeyedLock();
+      // No holder, so this resolves on the spot — a deadline must not become
+      // a floor on the common case.
+      const release = await lock("free", { timeoutMs: 1 });
+      release();
+      await flushMicrotasks();
+      expect(lock.size).toBe(0);
+    });
   });
 });

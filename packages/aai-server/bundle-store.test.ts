@@ -242,6 +242,56 @@ describe("bundle store (agents rows + content-addressed blobs)", () => {
     expect(callCount).toBe(3);
   });
 
+  /**
+   * The write path is strictly MORE exposed to these than the read path — it
+   * moves the ~8 MB worker plus every client file, where a read of the same
+   * deploy usually moves nothing (the caches serve it) — and it went unwrapped
+   * for as long as the read path was wrapped. One reset on any single file
+   * failed the whole deploy; for studio Publish that reached a user as a build
+   * failure carrying a network message.
+   */
+  test("retries blob WRITES on transient ECONNRESET", async () => {
+    const { store, storage } = makeStore();
+    const workerKey = blobKey(contentHash(BASE_BUNDLE.worker));
+
+    const originalSetItem = storage.setItem.bind(storage);
+    let callCount = 0;
+    storage.setItem = (async (key: string, value: string) => {
+      if (key === workerKey) {
+        callCount++;
+        if (callCount < 3) {
+          throw Object.assign(new TypeError("fetch failed"), {
+            cause: Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }),
+          });
+        }
+      }
+      return originalSetItem(key, value);
+    }) as typeof storage.setItem;
+
+    await store.putAgent(BASE_BUNDLE);
+
+    expect(callCount).toBe(3);
+    // Retrying is safe by construction, not by argument: the key is the
+    // content hash and uploads upsert, so every attempt writes identical bytes
+    // to the same key — and the deploy still published.
+    expect(await store.getWorkerCode("test-agent")).toBe(BASE_BUNDLE.worker);
+  });
+
+  test("a non-transient write failure fails the deploy without retrying", async () => {
+    const { store, storage } = makeStore();
+    let callCount = 0;
+    storage.setItem = (async () => {
+      callCount++;
+      throw new Error("403 Forbidden");
+    }) as typeof storage.setItem;
+
+    await expect(store.putAgent(BASE_BUNDLE)).rejects.toThrow("403 Forbidden");
+    expect(callCount).toBe(1);
+    // The row is the deploy's commit point, and blobs land first — so a failed
+    // blob write must leave no agent published.
+    expect(await store.getAgent("test-agent")).toBeNull();
+  });
+
   test("non-transient errors are not retried", async () => {
     const { store, storage } = makeStore();
     await store.putAgent(BASE_BUNDLE);
