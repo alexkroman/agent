@@ -7,7 +7,7 @@ import { memo, type ReactNode, useMemo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useTheme } from "../context.ts";
-import { SURFACE_TINT, TEXT_MUTED } from "./_colors.ts";
+import { INK_MUTED_PCT, INK_SURFACE_PCT, inkTint } from "./_colors.ts";
 
 const BARE_ORDERED_MARKER = /^(\s*)(\d{1,9})([.)])\s*$/;
 const BARE_BULLET_MARKER = /^(\s*)([-*+])\s*$/;
@@ -130,7 +130,11 @@ export const Markdown = memo(function Markdown({
         ) : (
           <code
             className={clsx("rounded-sm border px-1 py-0.5 font-aai-mono", scale.code)}
-            style={{ borderColor: theme.border, background: SURFACE_TINT, ...style }}
+            style={{
+              borderColor: theme.border,
+              background: inkTint(theme.text, theme.surface, INK_SURFACE_PCT),
+              ...style,
+            }}
             {...rest}
           >
             {children}
@@ -140,14 +144,22 @@ export const Markdown = memo(function Markdown({
       pre: ({ style, ...props }) => (
         <pre
           className="my-1.5 overflow-x-auto rounded-md border p-2.5 whitespace-pre-wrap wrap-break-word"
-          style={{ borderColor: theme.border, background: SURFACE_TINT, ...style }}
+          style={{
+            borderColor: theme.border,
+            background: inkTint(theme.text, theme.surface, INK_SURFACE_PCT),
+            ...style,
+          }}
           {...props}
         />
       ),
       blockquote: ({ style, ...props }) => (
         <blockquote
           className="my-1.5 border-l-2 pl-3"
-          style={{ borderColor: theme.border, color: TEXT_MUTED, ...style }}
+          style={{
+            borderColor: theme.border,
+            color: inkTint(theme.text, theme.surface, INK_MUTED_PCT),
+            ...style,
+          }}
           {...props}
         />
       ),

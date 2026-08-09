@@ -37,14 +37,24 @@ export const Controls = memo(function Controls({ className }: { className?: stri
   const { toggle, reset } = useSessionCore();
 
   return (
-    <div className={clsx("flex items-center gap-3 shrink-0", className)}>
+    // `flex-wrap`, because the row could not shrink: two nowrap buttons plus
+    // the chips measured 360px against a 320px viewport, so the whole page
+    // picked up a horizontal scrollbar on a small phone.
+    <div className={clsx("flex flex-wrap items-center gap-3 shrink-0", className)}>
       <Button variant="secondary" onClick={toggle}>
         {running ? "Stop" : "Resume"}
       </Button>
       <Button variant="ghost" onClick={reset}>
         New Conversation
       </Button>
-      <SessionUrlChips className="ml-auto max-w-[60%]" />
+      {/*
+       * Below `sm` the chips take a line of their own rather than sharing one
+       * with the buttons. Squeezed onto the same row they truncated down to
+       * their bare labels ("UI http…", "API wss…"), dropping the URL that is
+       * the entire point of the chip — and the `title` tooltip that still
+       * carried it is not something a touch device can open.
+       */}
+      <SessionUrlChips className="basis-full sm:basis-auto sm:ml-auto sm:max-w-[60%]" />
     </div>
   );
 });

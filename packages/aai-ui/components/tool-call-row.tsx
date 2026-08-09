@@ -5,7 +5,7 @@
 import clsx from "clsx";
 import { type ReactNode, useState } from "react";
 import { useTheme } from "../context.ts";
-import { TEXT_FAINT } from "./_colors.ts";
+import { INK_FAINT_PCT, inkTint } from "./_colors.ts";
 import { Eyebrow } from "./eyebrow.tsx";
 
 /**
@@ -110,13 +110,25 @@ export function ToolCallRow({
         {icon ? (
           <span className="w-4 h-4 shrink-0 text-center leading-4">{icon}</span>
         ) : (
-          <Eyebrow className="shrink-0" style={{ color: TEXT_FAINT }}>
+          <Eyebrow
+            className="shrink-0"
+            style={{ color: inkTint(theme.text, theme.bg, INK_FAINT_PCT) }}
+          >
             Tool
           </Eyebrow>
         )}
+        {/*
+         * `truncate`, not `shrink-0`. Unshrinkable, a long tool name pushed
+         * the detail to zero width and then shoved the chevron out of this
+         * container's `overflow-hidden` — measured on the 760px column, the
+         * args preview vanished at a 74-character name and the chevron was
+         * clipped at 76 (44 and 46 in a 520px window). The row still
+         * expanded on click, but the only affordance saying so had been
+         * cropped away, so an expandable row read as an inert one.
+         */}
         <span
           className={clsx(
-            "shrink-0 font-aai-mono font-medium",
+            "min-w-0 truncate font-aai-mono font-medium",
             sizes.title,
             pending && "tool-shimmer",
           )}
@@ -126,7 +138,7 @@ export function ToolCallRow({
         </span>
         <span
           className={clsx("font-aai-mono truncate flex-1 min-w-0", sizes.title)}
-          style={{ color: TEXT_FAINT }}
+          style={{ color: inkTint(theme.text, theme.bg, INK_FAINT_PCT) }}
         >
           {detail}
         </span>
@@ -137,7 +149,7 @@ export function ToolCallRow({
               sizes.chevron,
               isOpen && "rotate-90",
             )}
-            style={{ color: TEXT_FAINT }}
+            style={{ color: inkTint(theme.text, theme.bg, INK_FAINT_PCT) }}
           >
             ▶
           </span>

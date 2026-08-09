@@ -6,7 +6,7 @@ import { memo, type ReactNode, useMemo } from "react";
 import { truncate, tryParseJSON } from "../_utils.ts";
 import { useTheme } from "../context.ts";
 import type { ToolCallInfo } from "../types.ts";
-import { TEXT_MUTED } from "./_colors.ts";
+import { INK_MUTED_PCT, inkTint } from "./_colors.ts";
 import { ToolCallRow } from "./tool-call-row.tsx";
 import { useToolConfig } from "./tool-config-context.ts";
 
@@ -91,7 +91,7 @@ export const ToolCallBlock = memo(function ToolCallBlock({
           {formatted && (
             <pre
               className="font-aai-mono text-xs px-3.5 py-3 m-0 whitespace-pre-wrap wrap-break-word"
-              style={{ color: TEXT_MUTED }}
+              style={{ color: inkTint(theme.text, theme.surface, INK_MUTED_PCT) }}
             >
               {formatted}
             </pre>

@@ -7,7 +7,7 @@ import { type CSSProperties, memo, type ReactNode, useMemo } from "react";
 import { StickToBottom } from "use-stick-to-bottom";
 import { useSessionSelector, useTheme } from "../context.ts";
 import type { ChatMessage, ToolCallInfo } from "../types.ts";
-import { primaryTint, TEXT_FAINT, TEXT_MUTED } from "./_colors.ts";
+import { INK_FAINT_PCT, INK_MUTED_PCT, inkTint, primaryTint } from "./_colors.ts";
 import { Markdown } from "./markdown.tsx";
 import { ToolCallBlock } from "./tool-call-block.tsx";
 
@@ -18,17 +18,16 @@ const DOT_STYLES: CSSProperties[] = [0, 0.16, 0.32].map((delay) => ({
 
 /** Animated three-dot "thinking" indicator. @internal */
 function ThinkingDots(): ReactNode {
+  const theme = useTheme();
+  const muted = inkTint(theme.text, theme.surface, INK_MUTED_PCT);
   return (
-    <div
-      className="flex items-center gap-2 text-sm font-medium min-h-5"
-      style={{ color: TEXT_MUTED }}
-    >
+    <div className="flex items-center gap-2 text-sm font-medium min-h-5" style={{ color: muted }}>
       {DOT_STYLES.map((style, i) => (
         <div
           // biome-ignore lint/suspicious/noArrayIndexKey: static array, index as key is safe
           key={i}
           className="w-1.5 h-1.5 rounded-full"
-          style={{ ...style, background: TEXT_MUTED }}
+          style={{ ...style, background: muted }}
         />
       ))}
     </div>
@@ -94,7 +93,7 @@ const MessageBubble = memo(function MessageBubble({
     <div className="flex flex-col gap-1 max-w-[82%]">
       <span
         className="text-[10px] font-medium tracking-[1.2px] uppercase leading-none"
-        style={{ color: TEXT_FAINT }}
+        style={{ color: inkTint(theme.text, theme.surface, INK_FAINT_PCT) }}
       >
         Agent
       </span>
@@ -224,7 +223,7 @@ export const MessageList = memo(function MessageList({ className }: { className?
         {items}
         {streamingMessage && <MessageBubble message={streamingMessage} theme={theme} />}
         {userTranscript !== null && (
-          <UserBubble theme={theme} color={TEXT_FAINT}>
+          <UserBubble theme={theme} color={inkTint(theme.text, theme.surface, INK_FAINT_PCT)}>
             {userTranscript ? userTranscript : <ThinkingDots />}
           </UserBubble>
         )}

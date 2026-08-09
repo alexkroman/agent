@@ -5,7 +5,7 @@
 import clsx from "clsx";
 import type { ReactNode } from "react";
 import { useSessionCore, useSessionSelector, useTheme } from "../context.ts";
-import { TEXT_MUTED } from "./_colors.ts";
+import { INK_MUTED_PCT, inkTint } from "./_colors.ts";
 import { AaiLogo } from "./aai-logo.tsx";
 import { Button } from "./button.tsx";
 import { Eyebrow } from "./eyebrow.tsx";
@@ -79,7 +79,10 @@ export function StartScreen({
           </h1>
         )}
         {subtitle && (
-          <p className="text-[15px] leading-[22px] m-0 max-w-75" style={{ color: TEXT_MUTED }}>
+          <p
+            className="text-[15px] leading-[22px] m-0 max-w-75"
+            style={{ color: inkTint(theme.text, theme.surface, INK_MUTED_PCT) }}
+          >
             {subtitle}
           </p>
         )}

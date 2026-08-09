@@ -110,6 +110,9 @@ export function aaiRuntimeModule(): Record<string, unknown> {
     // `env`; identity here keeps these tests focused on wiring. The helper's
     // own behavior is covered in aai/host/providers/host-env.test.ts.
     withHostCredentialFallback: (env: Record<string, string>) => env,
+    // The console-backed logger the dev server hands the runtime in human
+    // mode (see createDevLogger); these specs only need it to exist.
+    consoleLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
   };
 }
 
@@ -132,6 +135,9 @@ export function uiModule(): Record<string, unknown> {
       log[level](message);
     }),
     fmtUrl: vi.fn((url: string) => url),
+    // The dev server asks whether output is silenced to pick the runtime's
+    // logger (see createDevLogger). These specs run in human mode.
+    outputSilenced: vi.fn(() => false),
   };
 }
 

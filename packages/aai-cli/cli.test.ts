@@ -1,7 +1,31 @@
 // Copyright 2025 the AAI authors. MIT license.
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { renderUsage } from "citty";
+import { execa } from "execa";
 import { describe, expect, test } from "vitest";
+import { withTempDir } from "./_test-utils.ts";
 import { mainCommand } from "./cli.ts";
+
+const BIN = path.join(path.dirname(fileURLToPath(import.meta.url)), "bin.mjs");
+
+/**
+ * Run the real bin with stdout piped, which is also what puts it in JSON mode
+ * — the auto-detection these two behaviours turn on cannot be reached by
+ * calling the command bodies directly.
+ */
+async function runBin(
+  args: string[],
+  cwd: string,
+): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  const result = await execa(process.execPath, [BIN, ...args], {
+    cwd,
+    reject: false,
+    extendEnv: false,
+    env: { PATH: process.env.PATH ?? "", HOME: cwd, AAI_CONFIG_DIR: path.join(cwd, ".config") },
+  });
+  return { exitCode: result.exitCode ?? 0, stdout: result.stdout, stderr: result.stderr };
+}
 
 /** Strip ANSI escape codes and normalize the version string for stable snapshots. */
 function normalize(s: string): string {
@@ -104,5 +128,58 @@ describe("cli usage snapshots", () => {
   test.each(["status", "enable", "disable"])("aai storage %s --help", async (name) => {
     const usage = await renderUsage(storageSub(name));
     expect(normalize(usage)).toMatchSnapshot();
+  });
+});
+
+describe("JSON mode keeps stdout to one result line", () => {
+  // citty writes its usage block to STDOUT from the same `catch` that handles
+  // a missing positional or an unknown subcommand, so `aai secret put --json`
+  // put a usage block where a script's parser expected a result and emitted
+  // no JSON at all. JSON mode is auto-detected on a pipe, so this is the
+  // normal scripted case rather than an opt-in one.
+  test("a missing positional emits a JSON result, not a usage block", async () => {
+    await withTempDir(async (dir) => {
+      const { exitCode, stdout, stderr } = await runBin(["secret", "put"], dir);
+      expect(exitCode).toBe(1);
+      const parsed: unknown = JSON.parse(stdout.trim());
+      expect(parsed).toMatchObject({ ok: false, code: "usage" });
+      // The specific reason is still there for a human — on stderr, where it
+      // does not corrupt the result line.
+      expect(stderr).toContain("NAME");
+    });
+  });
+
+  test("an unknown subcommand emits a JSON result too", async () => {
+    await withTempDir(async (dir) => {
+      const { exitCode, stdout } = await runBin(["no-such-command"], dir);
+      expect(exitCode).toBe(1);
+      expect(JSON.parse(stdout.trim())).toMatchObject({ ok: false, code: "usage" });
+    });
+  });
+
+  test("--help is still the human usage block when piped", async () => {
+    await withTempDir(async (dir) => {
+      const { exitCode, stdout } = await runBin(["secret", "put", "--help"], dir);
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain("USAGE");
+      expect(() => JSON.parse(stdout.trim())).toThrow();
+    });
+  });
+});
+
+describe("aai test requires an agent project", () => {
+  // It was the one project-scoped command calling `setup()` bare rather than
+  // `setup({ agent: true })`. With no agent.ts it found no test file, reported
+  // `{ passed: true, skipped: true }` and exited 0 — a green result for a
+  // project that is not there, which in CI reads exactly like a passing suite.
+  test("refuses a directory with no agent.ts instead of reporting success", async () => {
+    await withTempDir(async (dir) => {
+      const { exitCode, stdout } = await runBin(["test"], dir);
+      expect(exitCode).toBe(1);
+      expect(JSON.parse(stdout.trim())).toMatchObject({
+        ok: false,
+        error: expect.stringContaining("No agent.ts found"),
+      });
+    });
   });
 });

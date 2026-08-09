@@ -174,7 +174,13 @@ export function TopBar(props: TopBarProps) {
         title="Home"
       >
         <img src={logoUrl} alt="AssemblyAI" className="h-5 w-5" />
-        <span className="font-serif text-[16px] whitespace-nowrap text-fg">AssemblyAI Build</span>
+        {/* The wordmark is the first thing to go when the bar runs out of
+            room — the logo still identifies the app. `lg`, not `md`: the bar
+            needs ~830px for everything else, so hiding it only below 768
+            left the 768–830 band still overflowing. */}
+        <span className="hidden font-serif text-[16px] whitespace-nowrap text-fg lg:inline">
+          AssemblyAI Build
+        </span>
       </button>
       {props.project && (
         <>
@@ -209,7 +215,10 @@ export function TopBar(props: TopBarProps) {
           link that opens the deployed agent in a new tab. */}
       {props.deployedSlug && (
         <a
-          className="max-w-80 truncate font-mono text-xs whitespace-nowrap text-muted hover:text-indigo"
+          // `min-w-0`: a flex item defaults to min-width:auto, so `truncate`
+          // alone could not shrink it and the action buttons overflowed the
+          // viewport instead (measured: 829px of bar in a 768px window).
+          className="max-w-80 min-w-0 truncate font-mono text-xs whitespace-nowrap text-muted hover:text-indigo"
           href={agentUrl(props.deployedSlug)}
           target="_blank"
           rel="noreferrer"

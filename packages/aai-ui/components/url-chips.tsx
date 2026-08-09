@@ -6,7 +6,7 @@ import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
 import { pageBaseUrl } from "../_utils.ts";
 import { useSessionSelector, useTheme } from "../context.ts";
-import { SURFACE_TINT, TEXT_FAINT, TEXT_MUTED } from "./_colors.ts";
+import { INK_FAINT_PCT, INK_MUTED_PCT, INK_SURFACE_PCT, inkTint } from "./_colors.ts";
 
 /** How long the "Copied" confirmation replaces the label after a click. */
 const COPIED_FEEDBACK_MS = 1500;
@@ -58,13 +58,24 @@ function UrlChip({
       onClick={copy}
       title={`${hint} (click to copy)\n${url}`}
       className={clsx(
-        "flex items-center gap-1.5 min-w-0 appearance-none m-0 px-2 py-1 rounded-aai border cursor-pointer outline-none text-[11px] leading-none font-aai-mono",
+        "flex items-center gap-1.5 min-w-0 appearance-none m-0 px-2 py-1 rounded-aai border cursor-pointer text-[11px] leading-none font-aai-mono",
+        // Same story as Button: `outline-none` sat here alone, so a chip
+        // reachable by Tab showed nothing at all when it got focus.
+        "outline-none focus-visible:[outline:2px_solid] focus-visible:[outline-offset:2px]",
         className,
       )}
-      style={{ background: SURFACE_TINT, borderColor: theme.border, color: TEXT_FAINT }}
+      style={{
+        background: inkTint(theme.text, theme.surface, INK_SURFACE_PCT),
+        borderColor: theme.border,
+        color: inkTint(theme.text, theme.surface, INK_FAINT_PCT),
+        outlineColor: theme.primary,
+      }}
       data-testid={testId}
     >
-      <span className="uppercase tracking-wide shrink-0" style={{ color: TEXT_MUTED }}>
+      <span
+        className="uppercase tracking-wide shrink-0"
+        style={{ color: inkTint(theme.text, theme.surface, INK_MUTED_PCT) }}
+      >
         {copied ? "Copied" : label}
       </span>
       <span className="truncate" data-testid={`${testId}-url`}>

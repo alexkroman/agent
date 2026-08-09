@@ -14,8 +14,10 @@ import logoUrl from "./assets/assemblyai-logomark.svg";
 
 export function GateCard({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-full items-center justify-center bg-cream">
-      <div className="flex w-[420px] flex-col gap-3.5 rounded-lg border border-line bg-panel p-10 shadow-sm">
+    <div className="flex h-full items-center justify-center bg-cream p-4">
+      {/* `max-w`, not a fixed width: a gate IS the page, so on a viewport
+          narrower than the card there is nothing behind it to scroll to. */}
+      <div className="flex w-full max-w-[420px] min-w-0 flex-col gap-3.5 rounded-lg border border-line bg-panel p-10 shadow-sm">
         <div className="flex items-center gap-2.5">
           <img src={logoUrl} alt="AssemblyAI" className="h-5 w-5" />
           <span className="font-serif text-[16px]">AssemblyAI Build</span>
@@ -52,8 +54,13 @@ export type GateProblemProps = {
 export function GateProblem({ message, detail, retrying, onRetry }: GateProblemProps) {
   return (
     <GateCard>
-      <p className="m-0 text-[15px] text-err">{message}</p>
-      {detail && <p className="m-0 text-[13px] text-subtle">{detail}</p>}
+      <p className="m-0 text-[15px] break-words text-err">{message}</p>
+      {/* `break-words`, because this is the SERVER's own text: an upstream
+          error carrying a URL, a request id or a base64 fragment is one
+          unbroken token, and without a wrapping guard it blew the card out
+          past the viewport — measured 1266px of content in a 338px column,
+          on the one screen that exists to explain a failure. */}
+      {detail && <p className="m-0 text-[13px] break-words text-subtle">{detail}</p>}
       {onRetry && (
         // Primary, unlike the plain button this replaced: it is the only
         // control on the screen, and `btn-primary` is the variant that has a
