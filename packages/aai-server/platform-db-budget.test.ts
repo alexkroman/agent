@@ -12,6 +12,13 @@
  *
  * Same shape as `modal-image-inputs.test.ts`, which pins the other agreements
  * that span the TypeScript and the deploy recipe.
+ *
+ * The constants live in `constants.ts` rather than in `service-config.ts`,
+ * which consumes them, and that placement is load-bearing HERE: v8 coverage
+ * reports only the files a run loaded, so importing the 489-line composition
+ * root from a unit test added ~370 uncovered lines to the package denominator
+ * and dropped it below its floor — a test making the coverage gate fail by
+ * existing, with nothing about it looking wrong.
  */
 
 import { readFileSync } from "node:fs";
@@ -23,7 +30,7 @@ import {
   MAX_PLATFORM_DB_CONNECTIONS,
   platformDbConnectionsPerReplica,
   SLUG_LOCK_POOL_MAX,
-} from "./service-config.ts";
+} from "./constants.ts";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const deployPy = readFileSync(path.join(REPO_ROOT, "packages/aai-server/modal_deploy.py"), "utf-8");
