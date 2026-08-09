@@ -250,3 +250,65 @@ describe("modal image compile cache", () => {
     expect(modalImagePy).toContain('"NODE_COMPILE_CACHE": SERVER_COMPILE_CACHE');
   });
 });
+
+/**
+ * Modal's in-container ASGI proxy logs a ~25-line traceback every time a
+ * browser walks away from an SSE stream — its relay task is created and never
+ * awaited, so CPython hands the exception to the asyncio logger. It is normal
+ * traffic (the request itself logs `200 OK`), and on production `aai-server-web`
+ * it was ~600 of one hour's ~3,200 log lines against ZERO 5xx.
+ * `install_proxy_noise_filter` collapses it to one line.
+ *
+ * Static, like the rest of this file — the Python is the source of truth and
+ * importing it needs modal installed. What is pinned here is what rots
+ * SILENTLY, and everything about this rots silently in the same direction:
+ * toward suppressing more than it should, in a log nobody reads until an
+ * incident. A filter that stops matching merely restores the noise; one that
+ * over-matches eats the traceback you needed.
+ */
+describe("modal proxy log noise", () => {
+  const deployPy = readFileSync(
+    path.join(REPO_ROOT, "packages/aai-server/modal_deploy.py"),
+    "utf-8",
+  );
+
+  test("is installed before the port opens, or it filters nothing", () => {
+    // An uninstalled filter is invisible: the log looks exactly as it did.
+    expect(deployPy).toMatch(/^from modal_image import .*install_proxy_noise_filter/m);
+    // To the next top-level statement, or to EOF — `server()` is the last
+    // thing in the file today, and a regex that silently matched nothing
+    // would make every assertion below vacuous.
+    const body = /def server\(\) -> None:\n([\s\S]*?)(?=\n\S|$)/.exec(deployPy)?.[1];
+    expect(body, "def server() not found in modal_deploy.py").toBeDefined();
+    expect(body).toContain("install_proxy_noise_filter()");
+    // Before run_node, which blocks serving traffic for the container's life.
+    expect(body?.indexOf("install_proxy_noise_filter()")).toBeLessThan(
+      body?.indexOf("run_node(") ?? -1,
+    );
+  });
+
+  test("needs BOTH discriminators, so it can't decay into swallowing asyncio", () => {
+    // The exception type alone would match one of OUR tasks failing the same
+    // way; the coroutine name is what scopes it to Modal's own relay.
+    expect(modalImagePy).toContain('PROXY_NOISE_CORO = "_proxy_http_request"');
+    expect(modalImagePy).toMatch(/PROXY_NOISE_EXCEPTIONS = \(\s*"ClientPayloadError"/);
+    const predicate = /def _is_abandoned_stream\([\s\S]*?\n(?=\S)/.exec(modalImagePy)?.[0];
+    expect(predicate).toBeDefined();
+    expect(predicate).toContain("PROXY_NOISE_EXCEPTIONS");
+    expect(predicate).toContain("PROXY_NOISE_CORO");
+  });
+
+  test("collapses the record rather than dropping it", () => {
+    // The count and the timing ARE the diagnostic — the server guide's rule
+    // for reading these is to join a RISE to the request log, which a dropped
+    // record makes impossible. Both filter paths must therefore return True.
+    const filter = /class _ProxyNoiseFilter[\s\S]*?\n(?=\S)/.exec(modalImagePy)?.[0];
+    expect(filter).toBeDefined();
+    expect(filter).not.toMatch(/return False/);
+    expect((filter?.match(/return True/g) ?? []).length).toBe(2);
+    // Clearing only `exc_info` leaves the formatter's cached render behind,
+    // and the traceback prints anyway.
+    expect(filter).toContain("record.exc_info = None");
+    expect(filter).toContain("record.exc_text = None");
+  });
+});

@@ -21,6 +21,7 @@ back.
 import atexit
 import contextlib
 import json
+import logging
 import os
 import shutil
 import signal
@@ -219,6 +220,96 @@ ASSERT_INSTALL_SURVIVED = (
 # headroom rather than a budget the shutdown consumes; Modal's SIGKILL
 # backstop still bounds the container's real grace period.
 NODE_STOP_TIMEOUT_SECS = 150
+
+
+# ── Modal's proxy noise on an abandoned streamed response ────────────────────
+#
+# Modal's in-container ASGI proxy relays a streamed response by iterating the
+# upstream body in a task it CREATES AND NEVER AWAITS
+# (``_proxy_http_request.<locals>.send_response``, modal/_runtime/asgi.py). When
+# the browser goes away mid-stream that iteration dies on the upstream
+# connection, and because nobody ever retrieves the task's exception, CPython's
+# ``Task.__del__`` hands it to the asyncio logger — one ~25-line traceback per
+# abandoned stream:
+#
+#     Task exception was never retrieved
+#     future: <Task finished ... coro=<_proxy_http_request.<locals>.send_response() ...
+#     aiohttp.client_exceptions.ClientPayloadError: Response payload is not
+#       completed: <TransferEncodingError: 400, 'Not enough data to satisfy
+#       transfer length header.'>
+#
+# It is normal traffic, not a fault: every SSE stream the studio opens ends this
+# way (a tab close, a navigation, a resubscribe), the browser is already gone
+# when it fires, and Modal's own request log records the same request as
+# ``200 OK``. Measured on production ``aai-server-web``: ~25 of these an hour
+# against ~20 stream completions, and across a 60-minute window they were
+# ~600 of the log's ~3,200 lines while the service served ZERO 5xx.
+#
+# COLLAPSED TO ONE LINE, NOT DROPPED, and that distinction is the point. The
+# count and the timing are the only diagnostic these carry, and they matter:
+# the server guide's rule for reading them is to join the count to Modal's
+# request log, because a RISE means a client is churning subscriptions. Deleting
+# the record would delete that; keeping the traceback buries it. So the record
+# still flows, carrying its exception type, and the twenty-odd frames of Modal
+# and aiohttp internals — identical every time, actionable never — go.
+PROXY_NOISE_LOGGER = "asyncio"
+
+# The proxy coroutine named in the record. Requiring it is what keeps this from
+# being "swallow asyncio errors": an unretrieved task from anywhere else in the
+# runtime — including any of ours — still prints in full.
+PROXY_NOISE_CORO = "_proxy_http_request"
+
+# Matched by NAME so this module does not import aiohttp (vendored in the
+# container at /__modal/deps, and a local `modal deploy` must not depend on it).
+# `ClientPayloadError` is what the task raises; `TransferEncodingError` is its
+# cause, matched too because which one surfaces is aiohttp's business.
+PROXY_NOISE_EXCEPTIONS = ("ClientPayloadError", "TransferEncodingError")
+
+
+def _is_abandoned_stream(record: logging.LogRecord) -> bool:
+    """Is this the one record Modal emits per abandoned streamed response?"""
+    exception = record.exc_info[1] if record.exc_info else None
+    if exception is None or type(exception).__name__ not in PROXY_NOISE_EXCEPTIONS:
+        return False
+    return PROXY_NOISE_CORO in record.getMessage()
+
+
+class _ProxyNoiseFilter(logging.Filter):
+    """Collapse the traceback; keep the event."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not _is_abandoned_stream(record):
+            return True
+        name = type(record.exc_info[1]).__name__ if record.exc_info else "?"
+        record.msg = (
+            f"modal proxy: client abandoned a streamed response ({name}) — "
+            "expected on an SSE disconnect; a RISE in these means a client is "
+            "churning subscriptions"
+        )
+        record.args = ()
+        # Both, or the handler re-renders the traceback from whichever it finds:
+        # `exc_text` is the formatter's cache of an already-rendered one.
+        record.exc_info = None
+        record.exc_text = None
+        return True
+
+
+def install_proxy_noise_filter() -> None:
+    """Install {@link _ProxyNoiseFilter} on the asyncio logger.
+
+    A filter rather than an ``asyncio`` exception handler: the record is
+    emitted on Modal's own event loop, and the deploy's entry point runs off
+    that loop (``@modal.web_server`` calls a sync function), so there is no
+    running loop to attach a handler to from where we get control. Logging is
+    process-global and has no such constraint.
+
+    Idempotent — a second install would double-collapse nothing but is pointless
+    noise in the filter chain.
+    """
+    logger = logging.getLogger(PROXY_NOISE_LOGGER)
+    if any(isinstance(existing, _ProxyNoiseFilter) for existing in logger.filters):
+        return
+    logger.addFilter(_ProxyNoiseFilter())
 
 
 def run_node(entry: str, env: dict[str, str]) -> subprocess.Popen:
