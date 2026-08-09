@@ -47,7 +47,8 @@ import type { PlatformEvents } from "./platform-events.ts";
 import { createMutationLock, localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import { createRateLimiter, DEPLOY_IP_RATE_LIMIT, type RateLimiter } from "./rate-limit.ts";
 import type { SandboxDirectory } from "./sandbox-directory.ts";
-import { type ResolveSandboxOpts, watchAgentInvalidation } from "./sandbox-resolve.ts";
+import { watchAgentInvalidation } from "./sandbox-invalidate.ts";
+import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
 import { currentHarnessImageTag } from "./sandbox-vm.ts";
 import {
@@ -153,7 +154,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // than each entry re-wiring it. Lives for the process, like the slots.
   if (opts.events) watchAgentInvalidation(opts.events, opts);
 
-  addHealthRoute(app, opts.isDraining);
+  addHealthRoute(app, opts.isDraining, opts.events);
 
   // This app never serves the studio surface itself — the studio is its own
   // package, and the combined composition (aai-studio-server's entry, what

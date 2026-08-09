@@ -1,0 +1,42 @@
+-- `pg_net`, so a pg_cron job can call an API.
+--
+-- The blob GC sweep (`aai-sweep-blob-gc`, pg-cron.ts) reclaims unreferenced
+-- deploy blobs, and the referenced set is a pure SQL question — every
+-- `worker_hash` plus every value of `client_files` — while the DELETE is not:
+-- a Storage object's bytes can only be removed through the Storage API.
+-- Deleting the `storage.objects` row instead leaves the object in the bucket
+-- AND destroys the only record that it is there, which is strictly worse than
+-- never sweeping at all.
+--
+-- `pg_net` is the sanctioned bridge (it is what Supabase's own docs use to
+-- invoke Edge Functions from pg_cron). Its requests are fire-and-forget, which
+-- suits a sweep exactly: a failed delete leaves the object for the next run to
+-- find, so the job is self-healing with no retry bookkeeping of its own. It
+-- also prunes its own `net._http_response` table, so this adds no growth of
+-- the kind `aai-sweep-cron-history` exists to control.
+--
+-- The credential the sweep presents lives in Vault
+-- (`platform:storage-key`, written at boot — see PLATFORM_STORAGE_KEY_SECRET),
+-- never in `cron.job.command`, where it would be plaintext in every operator's
+-- listing.
+--
+-- The sweep body guards on `to_regnamespace('net')`, so a project without this
+-- extension no-ops rather than erroring hourly — the extension is required for
+-- the sweep to DO anything, not for the platform to run.
+--
+-- ── THE TWO SCHEMAS ARE DIFFERENT SCHEMAS ───────────────────────────────────
+--
+-- `with schema extensions` places the EXTENSION OBJECT where Supabase's own
+-- convention puts it; a bare `create extension pg_net` lands it in whatever
+-- the search path resolves to (`public` on a fresh project), which is what
+-- Supabase's `extension_in_public` advisor flags. It does not change where the
+-- FUNCTIONS live: pg_net's install script creates its own `net` schema and puts
+-- `http_get`/`http_post`/`http_delete` there either way, so the sweep's
+-- `to_regnamespace('net')` guard and its `net.http_delete(…)` call are
+-- unaffected by this clause — verified both ways on PG 17.6.
+--
+-- `extensions` is created if absent so this also applies to a bare Postgres
+-- (the platform tables run on one in the jsonb suite); on a Supabase project it
+-- already exists and the statement is a no-op.
+create schema if not exists extensions;
+create extension if not exists pg_net with schema extensions;

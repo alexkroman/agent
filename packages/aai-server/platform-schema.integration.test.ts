@@ -42,12 +42,18 @@ const migrationsDir = path.resolve(import.meta.dirname, "../../supabase/migratio
 /**
  * The migration as it ships, minus the two `create extension` lines.
  *
- * pg_cron and pgmq are Supabase-provided and cannot be installed on a stock
- * server (both are compiled extensions; pg_cron additionally needs
+ * pg_cron, pgmq and pg_net are Supabase-provided and cannot be installed on a
+ * stock server (all three are compiled extensions; pg_cron additionally needs
  * `shared_preload_libraries`). Everything else — every table, index, the
- * publication block, the grants, and the pgmq queue creation — executes
- * VERBATIM, because `stubPgmq` below supplies the one function the migration
- * calls.
+ * publication block, the grants, the foreign keys, and the pgmq queue
+ * creation — executes VERBATIM, because `stubPgmq` below supplies the one
+ * function the migration calls.
+ *
+ * pg_net needs no stub, unlike pgmq: nothing in the migrations CALLS `net.*`.
+ * Its only consumer is a pg_cron sweep body, which lives in TypeScript
+ * (pg-cron.ts) and guards itself on `to_regnamespace('net')` — so a database
+ * without the extension is a sweep that no-ops, which is exactly the shape
+ * this stock server stands in for.
  *
  * The substitution is COUNTED so this can never quietly cover less: a third
  * extension, or a changed extension line, fails the assertion in the first
@@ -60,7 +66,11 @@ function migrationForStockPostgres(): { sql: string; stripped: number } {
   if (files.length === 0) throw new Error(`no migrations in ${migrationsDir}`);
   const raw = files.map((n) => readFileSync(path.join(migrationsDir, n), "utf-8")).join("\n");
   let stripped = 0;
-  const sql = raw.replace(/^create extension if not exists \w+;$/gm, () => {
+  // `with schema extensions` is part of the line for pg_net (Supabase's
+  // convention; a bare create lands the extension in `public`), so the pattern
+  // has to allow the clause or that one silently stops being stripped — the
+  // count below is what turns "silently" into a failure.
+  const sql = raw.replace(/^create extension if not exists \w+(?: with schema \w+)?;$/gm, () => {
     stripped += 1;
     return "-- extension omitted: not available on a stock server";
   });
@@ -114,10 +124,12 @@ describeIfPg("the platform migration applies and the stores work against it", ()
     }
   });
 
-  test("needs exactly the two extensions that cannot be installed locally", () => {
-    // Guards the substitution above: if the migration grows a third extension,
-    // decide whether it is testable rather than quietly skipping it.
-    expect(migrationForStockPostgres().stripped).toBe(2);
+  test("needs exactly the three extensions that cannot be installed locally", () => {
+    // Guards the substitution above: if the migration grows another extension,
+    // decide whether it is testable rather than quietly skipping it. pg_net
+    // was the third such decision — see the note on
+    // `migrationForStockPostgres`.
+    expect(migrationForStockPostgres().stripped).toBe(3);
   });
 
   test("re-applying the migration is a no-op, not an error", async () => {
@@ -237,12 +249,70 @@ describeIfPg("the platform migration applies and the stores work against it", ()
 
   test("chat rows round-trip", async () => {
     const chats = createPgChatStore(sql);
+    // A chat BELONGS to a workspace (`studio_chats_workspace_fk`), so the
+    // project has to exist first — which is the real ordering: a chat row is
+    // only ever written by `studio/persist-chat`, at the end of a turn in a
+    // session brokered against an existing project. Writing one standalone
+    // is a shape production never produces, and until the foreign key landed
+    // this test was the only place it happened.
+    const workspaces = createPgWorkspaceStore(sql);
+    await workspaces.put("scope-chat", "proj", { files: {} }, null);
+
     const messages = [{ id: "m1", role: "user", parts: [{ type: "text", text: "hi" }] }];
-    await chats.putChat("scope-a", "proj", messages);
-    expect(await chats.getChat("scope-a", "proj")).toEqual(messages);
-    expect(await chats.getChat("scope-a", "absent")).toBeNull();
-    await chats.deleteChat("scope-a", "proj");
-    expect(await chats.getChat("scope-a", "proj")).toBeNull();
+    await chats.putChat("scope-chat", "proj", messages);
+    expect(await chats.getChat("scope-chat", "proj")).toEqual(messages);
+    expect(await chats.getChat("scope-chat", "absent")).toBeNull();
+    await chats.deleteChat("scope-chat", "proj");
+    expect(await chats.getChat("scope-chat", "proj")).toBeNull();
+  });
+
+  test("deleting a workspace cascades to its chat", async () => {
+    // The point of the foreign key: project deletion writes the workspace and
+    // the chat side by side, so a half-failed delete used to strand a chat row
+    // that NOTHING reaps — no sweep covers `studio_chats`, and the only path
+    // that deletes one is the delete of a project that no longer exists.
+    const workspaces = createPgWorkspaceStore(sql);
+    const chats = createPgChatStore(sql);
+    await workspaces.put("scope-cascade", "proj", { files: {} }, null);
+    await chats.putChat("scope-cascade", "proj", [{ id: "m1", role: "user", parts: [] }]);
+
+    await workspaces.delete("scope-cascade", "proj");
+
+    expect(await chats.getChat("scope-cascade", "proj")).toBeNull();
+  });
+
+  test("a parentless chat is REFUSED, not stranded", async () => {
+    // The other half of the same key, and the half no cascade can show: before
+    // it, this write succeeded and produced a row no surface could see and no
+    // code path could ever delete.
+    const chats = createPgChatStore(sql);
+    await expect(chats.putChat("scope-ghost", "ghost", [])).rejects.toThrow(
+      /studio_chats_workspace_fk/,
+    );
+  });
+
+  test("deleting a workspace cascades to its session too", async () => {
+    // `studio_sessions` is the sharper case: the delete route never touched it
+    // at all, so the row outlived the project carrying a live `chat_token` and
+    // `sandbox_token` until its lease expired. Nothing in the application
+    // deletes it even now — unlike the chat, where the cascade backs up a
+    // delete that already existed, here the cascade IS the mechanism.
+    const workspaces = createPgWorkspaceStore(sql);
+    await workspaces.put("scope-session", "proj", { files: {} }, null);
+    await sql(
+      `insert into aai_platform.studio_sessions
+         (scope, project, chat_url, chat_token, guest_origin, sandbox_token, owner, expires_at)
+       values ($1, $2, 'u', 't', 'o', 's', 'replica', now() + interval '1 hour')`,
+      ["scope-session", "proj"],
+    );
+
+    await workspaces.delete("scope-session", "proj");
+
+    const rows = await sql(
+      "select 1 from aai_platform.studio_sessions where scope = $1 and project = $2",
+      ["scope-session", "proj"],
+    );
+    expect(rows).toEqual([]);
   });
 
   test("no store issued DDL — the schema came from the migration alone", async () => {

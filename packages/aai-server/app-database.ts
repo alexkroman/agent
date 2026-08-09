@@ -181,7 +181,27 @@ export function appDbUrlFor(meta: AppDbMeta, fallbackAdminUrl: string): string {
  */
 export type AppDatabases = {
   provision(slug: string): Promise<AppDbMeta>;
-  deprovision(slug: string): Promise<void>;
+  /**
+   * Drop one app's schema and role.
+   *
+   * **Pass the stored `app-db:<slug>` meta whenever the caller has it.** Its
+   * `url` is the app's LOCATOR, and it is the only thing that survives a
+   * change to the cluster list: placement is `hash(slug) % targets.length`,
+   * so adding or removing an `APP_DB_URLS` entry re-shuffles every existing
+   * app. Recomputing the placement here — which this used to do, reasoned as
+   * "same deterministic placement, so no locator lookup is needed" — then
+   * issues both drops against a cluster that never hosted the app, where
+   * `if exists` makes them silent no-ops. The caller deletes the secret
+   * immediately afterwards, so the real schema survives with its only
+   * credential gone: tenant data, unreachable, and nothing errored.
+   *
+   * With no meta the app's cluster is genuinely unknown (a secret already
+   * swept, a partial earlier failure), so every configured cluster is
+   * swept. The identifier is slug-derived and unique, so a drop on a
+   * cluster that never hosted this app is a real no-op — strictly safer
+   * than guessing one.
+   */
+  deprovision(slug: string, meta?: AppDbMeta | null): Promise<void>;
   /**
    * The app's own connection URL (its scoped role's credentials against the
    * cluster the app lives on) — delivered to the guest as `DATABASE_URL`.
@@ -212,9 +232,27 @@ export function createAppDatabases(opts: {
       const target = pickAppDbTarget(targets, slug);
       return provisionAppDatabase(target.sql, slug, target.url);
     },
-    // Deprovision on the cluster that hosts the app: same deterministic
-    // placement, so no locator lookup is needed for the DDL executor.
-    deprovision: (slug) => deprovisionAppDatabase(pickAppDbTarget(targets, slug).sql, slug),
+    // Deprovision on the cluster the app's own locator names — never on a
+    // recomputed placement (see the doc on AppDatabases.deprovision).
+    deprovision: async (slug, meta) => {
+      if (meta?.url) {
+        await deprovisionAppDatabase(targetFor(meta.url).sql, slug);
+        return;
+      }
+      // Unknown locator: sweep every cluster rather than guess one. Each drop
+      // is attempted even after an earlier one fails — one unreachable
+      // cluster must not leave the others provisioned — and the first failure
+      // is reported once they all have been.
+      let failure: unknown;
+      for (const target of targets) {
+        try {
+          await deprovisionAppDatabase(target.sql, slug);
+        } catch (err) {
+          failure ??= err;
+        }
+      }
+      if (failure !== undefined) throw failure;
+    },
     connectionUrl: (meta) => appDbUrlFor(meta, targetFor(meta.url).url),
   };
 }

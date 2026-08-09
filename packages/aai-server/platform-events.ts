@@ -54,8 +54,17 @@ export type PlatformEvents = {
   /**
    * Fires when ANY agents row changes (deploy, delete). The handler gets the
    * slug only — re-read the row's version to learn what happened.
+   *
+   * `onResync` fires when the stream (re)joins, and carries NO slug because a
+   * join is not about one row: it says "delivery just started, so anything
+   * that changed before now reached nobody." A handler answers it by
+   * re-checking everything it holds.
+   *
+   * It is separate rather than a nullable slug on `onChange` so that a
+   * consumer which does not handle resync says so by omission at the call
+   * site, instead of silently mishandling a sentinel it never checked for.
    */
-  watchAgents(onChange: Watcher<[slug: string]>): Unwatch;
+  watchAgents(onChange: Watcher<[slug: string]>, onResync?: Watcher): Unwatch;
   /**
    * Fires when one project's workspace row changes. Signal only — the
    * handler re-reads the workspace.
@@ -65,14 +74,60 @@ export type PlatformEvents = {
   watchChat(scope: string, project: string, onChange: Watcher): Unwatch;
   /** Fires when any workspace row in `scope` changes. Signal only. */
   watchScopeProjects(scope: string, onChange: Watcher): Unwatch;
+  /**
+   * Whether change delivery is actually working — see
+   * {@link PlatformEventsHealth}.
+   *
+   * Required rather than optional, deliberately: an implementation that
+   * cannot answer this should have to say so (the memory emitter returns
+   * "nothing stalled", which is true — it delivers in-process), rather than
+   * omit the method and have every reader treat absent as healthy.
+   */
+  health(): PlatformEventsHealth;
   /** Tear down the underlying connection (production: the Realtime socket). */
   close(): Promise<void>;
+};
+
+/**
+ * A snapshot of the change streams' delivery health.
+ *
+ * This exists because a subscription that never joins is the platform's most
+ * expensive SILENT failure, and it has been hit twice. Filter columns are
+ * validated against the subscriber's claimed role, so an `anon`-authority
+ * key (or a missing grant) fails every filtered subscribe server-side with
+ * `invalid column for filter` — and realtime-js retries the join forever.
+ * The service boots healthy, `/health` answers 200, every request succeeds,
+ * and the platform merely stops invalidating resident sandboxes on redeploy
+ * and stops pushing studio SSE. The only trace was one `console.warn` per
+ * retry, in a log nobody reads until something else goes wrong.
+ *
+ * `assertServiceRoleKey` closes the two KNOWN causes at boot. This closes the
+ * class: whatever the reason, a channel that has been trying to join for
+ * longer than the budget is reported.
+ */
+export type PlatformEventsHealth = {
+  /** Channels currently open — subscribed or still trying. */
+  channels: number;
+  /**
+   * Topics that have never acked a join and have been trying longer than the
+   * join budget. Non-empty means changes are NOT being delivered on those
+   * channels, however healthy everything else looks.
+   */
+  stalled: string[];
 };
 
 export type MemoryPlatformEvents = {
   events: PlatformEvents;
   /** Notify agents watchers — wired into the memory agent rows' writes. */
   emitAgent(slug: string): void;
+  /**
+   * Fire the agents stream's REJOIN signal. Nothing in this emitter calls it
+   * on its own — an in-process dispatch has no socket to lose and no join gap
+   * to cover — so it exists as the driver for the one thing that does:
+   * `watchAgentInvalidation`'s resync path, which production only ever reaches
+   * through a Realtime reconnect that no unit test can stage.
+   */
+  emitAgentResync(): void;
   /**
    * Notify one project's workspace watchers (and its scope's project-list
    * watchers) — wired into memory-store writes.
@@ -162,6 +217,7 @@ function createWatcherMap<A extends unknown[]>(track: TrackDispatch) {
  */
 export function createMemoryPlatformEvents(): MemoryPlatformEvents {
   const agentWatchers = new Set<Watcher<[slug: string]>>();
+  const agentResyncWatchers = new Set<Watcher>();
   const inFlight = new Set<Promise<void>>();
 
   const track: TrackDispatch = (dispatch) => {
@@ -181,9 +237,13 @@ export function createMemoryPlatformEvents(): MemoryPlatformEvents {
 
   return {
     events: {
-      watchAgents(onChange) {
+      watchAgents(onChange, onResync) {
         agentWatchers.add(onChange);
-        return () => agentWatchers.delete(onChange);
+        if (onResync) agentResyncWatchers.add(onResync);
+        return () => {
+          agentWatchers.delete(onChange);
+          if (onResync) agentResyncWatchers.delete(onResync);
+        };
       },
       watchWorkspace(scope, project, onChange) {
         return workspaceWatchers.add(projectKey(scope, project), onChange);
@@ -194,12 +254,28 @@ export function createMemoryPlatformEvents(): MemoryPlatformEvents {
       watchScopeProjects(scope, onChange) {
         return scopeWatchers.add(scope, onChange);
       },
+      // Nothing to stall: dispatch is a microtask in this very process, so
+      // there is no join to fail and no socket to lose. Reporting zero
+      // channels rather than inventing a count keeps the number honest — it
+      // means "no Realtime channels", not "no watchers".
+      health: () => ({ channels: 0, stalled: [] }),
       close: () => Promise.resolve(),
     },
     emitAgent(slug) {
       track(async () => {
         await Promise.resolve();
         await Promise.all([...agentWatchers].map((watcher) => watcher(slug)));
+      });
+    },
+    emitAgentResync() {
+      // Tracked like every other dispatch, so `settled()` covers a resync's
+      // handlers too — the resync handler does strictly MORE async work than a
+      // change handler (one reconcile per resident, not one), so a test that
+      // could not wait it out would be the worst-placed one to hand-roll a
+      // microtask spin for.
+      track(async () => {
+        await Promise.resolve();
+        await Promise.all([...agentResyncWatchers].map((watcher) => watcher()));
       });
     },
     emitWorkspace(scope, project) {

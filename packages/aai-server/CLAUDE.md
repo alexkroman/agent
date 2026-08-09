@@ -80,34 +80,51 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   studio SSE test modelled the stamp as a read-modify-write (a `put`) instead
   of calling `stampWorkspaceMeta`; a test standing in for a real writer has to
   BE that writer.
-  **Wait out an emit with `memory.settled()`, never a microtask spin.** An
-  emit is fire-and-forget in both directions — dispatch is deferred a
-  microtask, and a handler like `watchAgentInvalidation` then does async work
-  (row re-read, slot retirement, a replacement boot) that returns to nobody —
-  so three specs hand-rolled `for (let i = 0; i < N; i++) await
-  Promise.resolve()` with N=5 in one file and N=20 in two others. That number
-  is unknowable and silent when wrong: one more `await` in the handover chain
-  and the spin finishes early, so assertions run against half-applied state
-  and either flake or pass while testing nothing. `settled()` collects each
-  handler's returned promise and drains until quiescent (handlers that emit
-  again included), which is why `watchAgentInvalidation` RETURNS its
-  `withSlugLock` promise instead of `void`-ing it. Two consequences: a new
-  watcher whose work must be waitable has to return its promise, and because
-  `settled()` really waits it can DEADLOCK — a test holding the slug lock must
-  commit, release, then settle
+  **Wait out an emit with `memory.settled()`, never a microtask spin** — an
+  emit is fire-and-forget in both directions, and the spin's iteration count is
+  unknowable and silent when wrong. The full account is on `settled()`'s own
+  doc comment in `platform-events.ts`; the two consequences to carry into new
+  code are that a watcher whose work must be waitable has to RETURN its promise
+  (which is why `watchAgentInvalidation` returns its `withSlugLock` promise
+  rather than `void`-ing it), and that because `settled()` really waits it can
+  DEADLOCK — a test holding the slug lock must commit, release, then settle
 - `realtime-events.ts` — the production `PlatformEvents`: Supabase Realtime
   `postgres_changes` on `aai_platform.agents` / `studio_workspaces` /
   `studio_chats` over `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`, plus
-  the boot-time `supabase_realtime` publication setup
+  the boot-time `supabase_realtime` publication setup.
+
+  **A channel that never joins is COUNTED, not narrated.** realtime-js rejoins
+  forever, so a subscribe that can never succeed (a wrong-authority key, a
+  missing grant) differs from a healthy channel only in the rate of a
+  `console.warn` — which is how it twice reached production and merely stopped
+  invalidating sandboxes and pushing SSE. The monitor records the last join
+  per topic: an ordinary failure warns, a channel past `JOIN_BUDGET_MS` that
+  has never joined escalates ONCE to `console.error`, and
+  `PlatformEvents.health()` reports it in `/health`'s BODY — never as a 503,
+  since the causes are project-wide and every replica would leave rotation at
+  once, turning a feature outage into a total one.
 - `pg-cron.ts` — janitorial sweeps as pg_cron jobs (dead rate-limit windows,
   orphaned `-preview` agents + their app database schema/role and Vault
-  secrets), installed idempotently at boot. `cron.schedule` upserts by name,
-  so a job DELETED from `PLATFORM_CRON_JOBS` keeps firing on any database that
+  secrets, unreferenced deploy blobs, runaway tenant queries, pg_cron's own
+  run log), installed idempotently at boot. `cron.schedule` upserts by name,
+  so a job DELETED from `platformCronJobs()` keeps firing on any database that
   already has it — and `guarded()` makes that silent. Boot therefore DIFFS:
   every `aai-sweep-*` job in `cron.job` that the code no longer declares is
-  unscheduled, so `PLATFORM_CRON_JOBS` is the whole truth about what the
+  unscheduled, so `platformCronJobs()` is the whole truth about what the
   platform runs and retiring one cannot be forgotten (the hand-maintained
-  retired list this replaced had exactly one failure mode — omission)
+  retired list this replaced had exactly one failure mode — omission).
+
+  It is a FUNCTION because the blob GC needs deployment config: it deletes
+  through the Storage API (a Storage object's bytes cannot be removed in SQL —
+  deleting the `storage.objects` row orphans the object AND destroys the only
+  record of it), so it needs `pg_net`, a project URL, a bucket, and a
+  credential — read from Vault at run time, never interpolated into the job
+  command where it would be plaintext in every `select * from cron.job`.
+  **Two guards there are load-bearing**: it refuses to run when
+  `aai_platform.agents` is EMPTY (one bad read otherwise concludes every blob
+  is garbage), and its grace window is a day — far past the retirement drain
+  and the signed worker URL's TTL, so it cannot delete what a spawn is still
+  reaching for.
 - `studio-paths.ts` — `isStudioPath`, the studio/agent surface boundary the
   combined entry dispatches on. Must agree with `RESERVED_SLUGS`
 - `app-middleware.ts` — the two apps' shared base middleware, so they can't
@@ -229,17 +246,59 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   separate setting and stays publishable.
 
   Agent env lives in Supabase Vault through the injected `SecretStore`.
-  Orphan blobs from superseded/deleted deploys are accepted (content
-  dedupes; a shared blob must not die with one referrer).
+
+  **No referrer may delete a blob, but the SET of referrers may.** Content
+  dedupes, so a superseded deploy's blob can be another agent's live file —
+  which for a long time meant nothing deleted one, ever, and the bucket grew
+  by a worker bundle (~8 MB) per changed deploy. `aai-sweep-blob-gc`
+  (pg-cron.ts) closes it by mark-and-sweep, safe only BECAUSE the keys are
+  hashes: the live set is every `worker_hash` plus every value of
+  `client_files`, so a blob outside it is unreferenced by construction.
+
+  **`assertBucketPrivate` refuses boot on a MISCONFIGURED bucket and only
+  warns on an unreachable one.** The bucket is the one piece of Supabase state
+  living in the dashboard rather than in `supabase/migrations`, so nothing
+  else would notice it going missing or turning public. But this guard is a
+  network call, unlike `assertServiceRoleKey`/`assertSessionModeUrl` — failing
+  boot on a Storage blip would stop every container at once, a worse outage
+  than the one guarded against.
 - `deploy.ts` / `delete.ts` — deployment lifecycle
 - `secret-handler.ts` — secret management
 - `secret-store.ts` — `SecretStore` interface: Supabase Vault
   (`createVaultSecretStore`, over the `SUPABASE_DB_URL` Postgres
   connection) in production, in-memory for local dev/tests. Holds agent
-  env (`agent-env:<slug>`) and app-database credentials (`app-db:<slug>`)
+  env (`agent-env:<slug>`), app-database credentials (`app-db:<slug>`), and
+  the platform's own Storage key for the blob GC sweep
+  (`PLATFORM_STORAGE_KEY_SECRET`).
+
+  **`put` absorbs a lost create race.** Read-id-then-create-or-update has a
+  window, and while every per-SLUG write is serialized by the advisory lock,
+  the ACCOUNT paths are not — `PUT /studio/account/key` and
+  `POST /studio/cli-link/approve` can write the same name at once. A `23505`
+  is retried as an update exactly once, which is sufficient by construction:
+  after it the name exists. Read the SQLSTATE, never the message.
 - `app-database.ts` — per-app Postgres schema/role provisioning in the
   platform Supabase database (`provisionAppDatabase`,
-  `deprovisionAppDatabase`, `openAppDb`)
+  `deprovisionAppDatabase`, `openAppDb`).
+
+  **Deprovision follows the app's stored LOCATOR, never a recomputed
+  placement.** Placement is `hash(slug) % targets.length`, so changing
+  `APP_DB_URLS` re-shuffles every existing app and the `url` in its
+  `app-db:<slug>` meta is the only record that survives it. Recomputing —
+  which this used to do, reasoned as "same deterministic placement" — issues
+  both `if exists` drops against a cluster that never hosted the app (silent
+  no-ops) while the caller deletes the secret holding the real schema's only
+  credential: tenant data left unreachable, nothing raised. Both call sites
+  read the meta BEFORE it is swept; with no meta every target is swept, since
+  a slug-derived drop where the app never lived is a real no-op.
+
+  **The per-tenant caps differ in strength, and only two are controls.**
+  `connection limit` is superuser-only to raise and `temp_file_limit` is
+  `SUSET` (lowerable, never raisable), but `statement_timeout` is `USERSET` —
+  tenant code holding the credential can `set statement_timeout = 0`. The 10s
+  setting is what a well-behaved app sees; the enforceable half is
+  `aai-sweep-app-db-runaways`, which terminates `app\_%` backends active past
+  a much higher ceiling. Never treat the role setting as isolation.
 - `storage-handler.ts` — `GET/POST/DELETE /:slug/storage` (owner-auth'd)
   toggling the app's database
 
@@ -277,6 +336,26 @@ differ, and each is a decision rather than an oversight:
   REPLICAS, not users, so we are orders of magnitude below it. The documented
   direction if this ever moves, and worth knowing before adding a fourth
   watched table.
+
+  **Staying on `postgres_changes` is not cheap, and a publication COLUMN LIST
+  cannot make it cheaper.** These are signal streams — handlers re-read — so
+  every settled edit hands walrus the WHOLE workspace document, detoasted and
+  serialized, for a payload the handler discards. Narrowing the publication to
+  the identity columns is the obvious fix and it is a NO-OP: column lists are a
+  `pgoutput` feature, and Supabase Realtime does not decode with pgoutput.
+  `realtime.list_changes` reads the publication for its TABLE list alone and
+  decodes with **wal2json** (`pg_logical_slot_get_changes(…, 'add-tables', …)`),
+  which has no notion of publications and emits every column regardless —
+  measured on realtime v2.112.6 / PG 17.6, where a publication with
+  `attnames = {id,small}` still emitted the excluded column in full. The lists
+  were written, measured, and reverted; `platform-schema.test.ts` now guards
+  AGAINST them, because the cost of the attempt is not the migration, it is the
+  comment explaining a mechanism that isn't there.
+
+  If the decode cost ever has to come down, it takes a different mechanism, not
+  a narrower publication: Broadcast from Database (a trigger calling
+  `realtime.broadcast_changes` with a payload you choose), or moving the signal
+  onto a skinny table that does not carry `doc`.
 - **RLS is enabled and DENY-ALL, which is not what RLS is usually for.**
   Access is really controlled by the grant: `anon`/`authenticated` hold no
   privilege on `aai_platform`, and it is not a PostgREST-exposed schema.
@@ -592,6 +671,33 @@ down, like the file-length allowlist.
   reordered events harmless; an unreadable version logs and leaves the
   resident alone rather than killing a healthy sandbox.
 
+  **The stream's REJOIN is itself a signal, and on THIS stream it has to be.**
+  `subscribe()` only sends the join — the binding is not live until the ack,
+  and realtime-js rejoins after any socket drop — so changes in either window
+  reach nobody, ever. The pooled channels always fired their watchers on the
+  ack; the AGENTS channel did not, and it is where the gap is unrecoverable,
+  being the single mover of residents with no later check behind it (see the
+  deleted duplicate paths above). A deploy during a drop left the replica
+  serving superseded code and a delete left it answering for a deleted agent,
+  until the guest happened to self-exit on idle — for a busy agent, never,
+  since traffic is what keeps it non-idle. The deploy reported success.
+
+  So `watchAgents` takes a second, slug-less `onResync`, which
+  `watchAgentInvalidation` answers by re-running the same per-slug reconcile
+  over every resident. Three properties: it is a **separate callback, not a
+  nullable slug**, so a consumer that ignores resync says so by omission
+  rather than mishandling a sentinel silently; **the residents are the query,
+  not the agents table** — one version read per sandbox actually served
+  (single-flighted, 1s-cached) and none at all on a replica holding none,
+  because every reconnect fires this and the common case must stay a cheap
+  re-read; and **registration precedes `ensureAgentsChannel()`**, so a join
+  cannot fire ahead of the watcher that triggered it.
+
+  The subscription MONITOR (`createSubscriptionMonitor`, via `/health`) is the
+  complement, not the same thing: it makes a channel that never joins visible,
+  and cannot repair one that dropped and recovered on its own — the common
+  case, and the silent one.
+
   **Deploy and delete are the ONLY mutations that move sandboxes.** Secret
   and storage changes write Vault and bump nothing — they take effect on
   the agent's next deploy (or whenever its sandbox is next rebuilt). That
@@ -602,14 +708,18 @@ down, like the file-length allowlist.
   **Supabase setup this depends on lives in `supabase/migrations`**, applied
   with `supabase db push` BEFORE the code that queries it: the `aai_platform`
   schema and its tables, the watched tables' membership in the
-  `supabase_realtime` publication, the `service_role` SELECT grants, and the
-  `pg_cron`/`pgmq` extensions. Realtime validates channel filter columns (and
-  gates row visibility) against what the subscriber's claimed role can SELECT,
-  and the app-created `aai_platform` schema gets none of Supabase's default
-  `public` grants, so without those grants every filtered subscribe fails with
-  `invalid column for filter <col>`. Only the pg_cron SCHEDULING stays at boot
-  (`schedulePlatformSweeps` via `bootstrapPlatformDb`), because the sweep
-  bodies are defined in TypeScript and change with the code that owns them.
+  `supabase_realtime` publication, the
+  `service_role` SELECT grants, the workspace-child foreign keys, the
+  orphan-sweep's `studio_workspaces.preview_slug` generated column + index,
+  and the
+  `pg_cron`/`pgmq`/`pg_net` extensions. Realtime validates channel filter
+  columns (and gates row visibility) against what the subscriber's claimed
+  role can SELECT, and the app-created `aai_platform` schema gets none of
+  Supabase's default `public` grants, so without those grants every filtered
+  subscribe fails with `invalid column for filter <col>`. Only the pg_cron
+  SCHEDULING stays at boot (`schedulePlatformSweeps` via
+  `bootstrapPlatformDb`), because the sweep bodies are defined in TypeScript
+  and change with the code that owns them.
   The env carries `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` for the
   Realtime socket, required in production alongside `SUPABASE_DB_URL`.
 - **A superseded sandbox is RETIRED, not terminated** (`sandbox-retire.ts`).
@@ -884,93 +994,15 @@ down, like the file-length allowlist.
   not document, so their availability on the floor is unverified; see the
   note in `studio-session-broker.ts`.
 
-- **The harness AND the build toolchain are baked into a snapshot image**,
-  not written per spawn, in two halves that cache differently. The
-  TOOLCHAIN is a native image LAYER (`toolchainImage`: a
-  `dockerfileCommands` `RUN npm install` into `/opt/aai/node_modules` — the
-  aai CLI bundlers plus the workspace-facing packages), so Modal's own
-  layer cache serves it and a harness rebuild — every
-  server code change — no longer reinstalls ~15 packages. The HARNESS needs a
-  throwaway builder sandbox, because the JS SDK's `dockerfileCommands` takes
-  commands with no build context and there is nothing to `COPY` a ~13 MB local
-  bundle from: a sandbox started from the layer writes it, its filesystem is
-  snapshotted (`snapshotFilesystem`), and the image is `publish`ed under a
-  content-addressed tag
-  (`aai-guest-harness:<hash(base image, harness, toolchain)>`), so every
-  later spawn — and every other replica, across restarts — resolves it with
-  one `images.fromName` call. A new harness build, base-image change, or
-  toolchain bump mints a new tag. This is the only harness-delivery path; a
-  failed build fails the spawn loudly (memo cleared, next spawn retries).
-  DEPLOYED AGENTS spawn from the tag recorded on their agents row at deploy
-  time (`harness_image_tag` — per-deploy pinning, so a platform upgrade
-  never changes the environment under an already-deployed bundle). An
-  unresolvable pin FAILS the spawn loudly — silently substituting the
-  current image is exactly the untested-environment drift pinning exists to
-  prevent; the operator kill switch `SANDBOX_IGNORE_IMAGE_PINS=1` forces
-  the current image for every spawn when a registry loss makes that trade
-  explicitly. Studio sandboxes always run the current image.
-- **The harness's V8 COMPILE CACHE is baked into the same snapshot.** The
-  harness is one ~13 MB bundle and every sandbox boots it cold, so V8 paid the
-  same parse+compile on every spawn. The builder sandbox now runs the harness
-  once in **warm-up mode** (`AAI_GUEST_WARMUP=1` — evaluates the module, opens
-  nothing, exits 0) under `NODE_COMPILE_CACHE`, before `snapshotFilesystem()`,
-  and `guestExecBaseEnv()` points every guest exec at the resulting
-  `/opt/aai/.compile-cache`. Measured on the real bundle: **~570ms → ~345ms**,
-  i.e. ~200ms off every cold voice session and studio broker call, for
-  ~1.5 MB in the image. Three things make it safe: a
-  missing or stale entry is a silent MISS (the cache keys on Node version +
-  file content, so a bumped base image simply misses), the warm-up is
-  best-effort (a failure logs and still publishes — the cache is an
-  optimization, and failing the build would take all spawning down for a
-  perf tweak), and it is Modal-only, since the cache is a property of the
-  baked image and the subprocess backend has no image.
-
-  **Warm-up is a DECLARED mode, and both halves are tested, because the
-  failure is invisible.** A warm-up that stops compiling the harness leaves a
-  cache that is merely empty: the image builds, every guest boots, and the
-  200ms comes back forever with nothing reporting it. It relied on the
-  `AAI_GUEST_TOKEN` check to exit for us at first — true by accident, and it
-  would silently rot the moment that check moved. So the mode is checked
-  before every other mode in `main()`, and `modal-harness-image.test.ts`
-  pins BOTH sides: the host asks for the warm-up before snapshotting (fake
-  Modal), and the real built harness honours it with no token (real spawn).
-  Note the fake sandbox had no `exec` at all when this landed, so the
-  host-side assertion had to be added with it — without `exec` the warm-up
-  threw into its own best-effort catch and every test stayed green.
-
-- **The guest toolchain is LOCKED, and the lock is committed**
-  (`packages/aai-guest/toolchain/{package.json,package-lock.json}`, regenerated
-  by `pnpm sync:guest-toolchain`, gated by `pnpm check:guest-toolchain` in
-  `scripts/check.sh` AND the CI check job). Without it the resolved tree is a
-  function of WHEN the layer was built, while the published tag and Modal's
-  layer cache both key on the install command's TEXT — so one
-  `harness_image_tag` could mean two different trees, the exact opposite of
-  the per-deploy environment pinning the tag exists for. The install is
-  therefore two steps, and the split is forced:
-  - **Third-party packages: `npm ci` against the committed lockfile.** Their
-    versions and integrity hashes are known at commit time, and this is where
-    nearly all the transitive surface lives (vite/rolldown, typescript,
-    vitest, react, tailwind). `npm ci` also refuses to run when the manifest
-    and lockfile disagree, so a hand-edited manifest fails the BUILD.
-  - **`@alexkroman1/*`: `npm install` at exact resolved versions.** These
-    CANNOT be locked here — their versions change every release, and a
-    lockfile entry needs an integrity hash that only exists once the version
-    is PUBLISHED, which happens after the commit that bumps it. Their own
-    dependencies (the provider SDKs) therefore still resolve at install time;
-    closing that residual gap needs a post-publish regeneration step, not a
-    lockfile in this repo.
-
-  Both files are written by the RUN itself, gzipped and base64'd (~20 KB), for
-  the same reason the harness cannot be `COPY`'d: `dockerfileCommands` carries
-  no build context. The image TAG hashes the lockfile's content, not the
-  manifest's — the manifest names direct versions, the lockfile names the whole
-  tree, so a purely transitive change still mints a new tag.
-  Only the Modal backend needs this: the subprocess backend's harness runs
-  from `packages/aai-guest/dist/` and resolves the toolchain through
-  aai-guest's own `node_modules` — the same walk-up shape as `/opt/aai`, with
-  nothing to build or mount. The `workspace-build-integration.test.ts` suite
-  keeps the path covered on any runner by spawning the harness there directly
-  and publishing through the real CLI to a real listening orchestrator.
+- **The harness, the build toolchain, and the V8 compile cache are baked into
+  a snapshot image**, not written per spawn — with the toolchain LOCKED by a
+  committed lockfile so one `harness_image_tag` can only ever mean one tree.
+  That artifact is the guest's, so its construction, its two cache layers, and
+  the split install (`npm ci` for third-party, `npm install` for
+  `@alexkroman1/*`) are documented where it is owned: see "The snapshot image"
+  in `packages/aai-guest/CLAUDE.md`. The host half — `modal-harness-image.ts`,
+  the content-addressed tag, and per-deploy pinning via `harness_image_tag` —
+  stays here.
 - Sandboxes are created with open egress and a bounded lifetime
   (`SANDBOX_TIMEOUT_SECS`, default 4h).
 - **Guest resources are a BURST RANGE: reserve the idle shape, cap the build
@@ -1002,14 +1034,12 @@ down, like the file-length allowlist.
   because the memory is native, not V8's. The reservation is the idle
   voice-session shape; the cap only has to clear the bundler's peak.
 
-  **BOTH Modal apps set the burst range in their image env** — the agent
-  app's guest-sandbox resources block (`aai-server/modal_deploy.py`) and
-  the studio app's (`aai-studio-server/modal_deploy.py`). The studio spawns
-  its own sandboxes (coding-agent sessions, Publish),
-  whose `test_agent`/Publish builds are exactly the workload the cap exists
-  for — for a while only the agent app set the range, so studio-spawned
-  sandboxes ran on Modal defaults. Keep the two blocks' values in lockstep
-  unless the divergence is deliberate.
+  **The burst range is set in ONE place** — the guest-sandbox resources block
+  in `aai-server/modal_deploy.py`, the only Modal app there is. Studio
+  sandboxes (coding-agent sessions, Publish) are spawned by that same process
+  and inherit it, which matters because their `test_agent`/Publish builds are
+  the workload the cap exists for. (This said "BOTH Modal apps … keep the two
+  blocks in lockstep" until the second one went with the split deployment.)
 - **Every sandbox is tagged with a `role`** (`sandbox-role.ts`: `agent`,
   `preview`, `studio`, `studio-publish`) plus the `slug`
   (studio sandboxes carry the project name), so the Modal dashboard can tell
@@ -1184,22 +1214,19 @@ Both are better served elsewhere — the warning by the CLI, the slug by the
 word generator that already backed every unusable base.
 
 So the sandbox spawn, the describe mode, the nonce protocol, the `inspect`
-role, and `IsolateConfigSchema` are all gone. The COLUMN is only unwritten so
-far: dropping it is the contract half of an expand/contract and waits for the
-release AFTER the one carrying the expand migration — `supabase db push` runs
-BEFORE the deploy and old containers keep serving through the rollout, so a
-drop landing beside its own expand is a drop against containers that still
-name the column, failing every deploy that reaches one.
+role, `IsolateConfigSchema` and — since
+`20260810030000_drop_agents_config.sql` — the COLUMN are all gone.
 
-**That wait is now enforced by the `RETIRED_COLUMNS` ledger in
-`platform-schema.test.ts`**, which is where a column in this state goes.
-Each entry asserts two things: that no platform source writes the column
-(a reintroduced write is otherwise invisible until the drop lands, at which
-point it fails in production rather than in CI), and that the column is
+**The `RETIRED_COLUMNS` ledger in `platform-schema.test.ts` is what carried
+that last step, and it is EMPTY now — which is the goal state, not a reason
+to delete the mechanism.** A contract migration cannot ride the same release
+as its expand (`supabase db push` runs before the deploy and old containers
+keep serving through the rollout, so a drop beside its own expand fails every
+deploy that reaches one), so the drop is owed to a LATER release and an owed
+thing recorded only in prose is an owed thing forgotten. Each entry asserts
+two things: that no platform source writes the column, and that the column is
 STILL declared — so the entry has to be deleted in the same commit as the
-drop. It replaces a paragraph saying "treat this as owed work", which is
-what the schema drift test cannot say for you (it compares relations, not
-columns). Removing the last entry is the goal; nothing should live there.
+drop, which is exactly how this one cleared. Put the next such column there.
 Three consequences worth knowing:
 
 - **The credential preflight moved to the CLI** (`aai-cli/_preflight.ts`).
@@ -1509,7 +1536,12 @@ stored env at sandbox creation time and kept host-side only.
   Two properties worth keeping. `getClaims` is safe on either kind of project
   — on a symmetric (HS256) one it falls back to a server call by itself — and
   that is also why the request path KEEPS its short TTL cache: on such a
-  project the cache is what stops a per-request round trip. And a rejected
+  project the cache is what stops a per-request round trip. **That cache entry
+  is capped at the token's own `exp`**, because `getClaims` validates expiry
+  only on a MISS — a flat TTL kept serving a token that expired 59 seconds
+  ago, making the bound the SUM of the two rather than the minimum. A
+  rejection keeps the flat TTL; there is no `exp` to read from a token that
+  did not verify. And a rejected
   token and an unreachable Supabase are opposite answers, so only
   `isAuthRetryableFetchError` throws (a 5xx to the caller); everything else
   caches as a rejection. `storageKey` is set explicitly because auth-js caches
@@ -1669,49 +1701,18 @@ which is why it needs a test rather than a comment.
 
 ### The guest fetches its own bundle (signed Storage URL)
 
-A cold agent spawn used to move the worker bundle — ~8 MB typical, 30 MB cap —
-through this process **twice**: `loadBundleParts` read the blob out of Supabase
-Storage into the replica's heap, and `spawnModalAgentServer` wrote those same
-bytes into the sandbox with `filesystem.writeText`. Neither hop bought
-anything. The guest now fetches the bundle itself from a time-boxed signed
-Storage URL (`BlobStorage.signedUrl` → `BundleStore.getWorkerUrl` →
-`WorkerSource` in `sandbox-vm.ts` → `AAI_BUNDLE_URL` in the exec env), and both
-transfers disappear.
+A cold agent spawn no longer moves the worker bundle through this process at
+all: the guest fetches it from a time-boxed signed Storage URL
+(`BlobStorage.signedUrl` → `BundleStore.getWorkerUrl` → `WorkerSource` in
+`sandbox-vm.ts` → `AAI_BUNDLE_URL` in the exec env), and hash-verifies what it
+gets against the agents row's `worker_hash`.
 
-**The hash is the whole security argument, and it predates this.** Agent mode
-already refused to load a bundle whose sha-256 did not match `AAI_BUNDLE_SHA256`
-(`readAgentBoot`), so the guest trusts the HASH, never the transport. What
-changed is where that hash comes from: the agents row's `worker_hash` — the
-deploy's own record of what it published — rather than a digest of the bytes
-the host happened to be holding, which made the check a tautology on the file
-path. The URL grants read of exactly one immutable blob, carries no
-service-role key, and expires (`WORKER_URL_TTL_SECONDS`, 5 min — sized against
-the 120s readiness budget plus scheduling, because a URL expiring inside it
-turns slow Modal scheduling into a boot failure that only appears under
-capacity pressure).
-
-**There is no fallback for a failure.** Signing throws and fails the spawn,
-like every other spawn failure; the client re-brokers. `signedUrl` resolving
-`null` means something else entirely — *this backend cannot sign* — which is
-true only of the memory blob store behind local dev and tests, and puts them on
-the byte path. Conflating the two would silently put production back on the
-byte path with nothing reporting it.
-
-**A pinned guest may be too old to understand it, and that is checked**
-(`guestUnderstandsBundleUrl`). Deployed agents spawn from the harness image
-pinned on their row, so the guest can be arbitrarily older than the platform,
-and a `GUEST_CONTRACT_VERSION` 1 harness reads only `AAI_BUNDLE_PATH` — handed
-a URL it fails boot outright. Nothing can ask a guest its version *before*
-exec, so the host compares images instead: no pin, or `SANDBOX_IGNORE_IMAGE_PINS`
-(which must agree with `resolveSpawnImage` substituting the current image), or a
-pin equal to the tag this process builds. The tag hashes the harness content, so
-"same tag" means "same harness". **So the saving lands per deploy**, as agents
-are redeployed onto a harness that understands the URL — not all at once when
-this ships.
-
-One side effect worth knowing: `loadBundleParts` now reads the agents row ONCE
-and derives the worker source from it, where it previously issued `getAgent`
-and `getWorkerCode` concurrently and each read the row.
+The host-side pieces above live here. The BOOT contract — why the hash is the
+whole security argument, why `signedUrl` resolving `null` means "this backend
+cannot sign" rather than "signing failed", and why a pinned older guest is
+checked with `guestUnderstandsBundleUrl` before being handed a URL it cannot
+read — is documented with the guest: see "Fetching its own bundle" in
+`packages/aai-guest/CLAUDE.md`.
 
 ### No warm pool — every spawn boots from the snapshot image
 

@@ -207,9 +207,20 @@ export function createRecordingSql(
  * **The DDL is EXTRACTED from `supabase/migrations`, never restated here.** A
  * hand-copy of a schema in a test util is the same class of bug as the one
  * these suites exist to catch: it passes forever against a shape production
- * does not have. The extraction is deliberately partial — `create table`
- * statements only — because the migrations also install `pg_cron` and `pgmq`,
- * and neither extension exists on a stock cluster. Nothing here needs them.
+ * does not have. The extraction is deliberately partial — `create table` plus
+ * column-level `alter table` — because the migrations also install `pg_cron`
+ * and `pgmq`, and neither extension exists on a stock cluster. Nothing here
+ * needs them.
+ *
+ * **The `alter table` half is what keeps a create-table-only replay from
+ * drifting into fiction.** A column added or dropped after its table's
+ * migration exists only in an `alter`, so replaying the creates alone builds
+ * the schema as it stood on day one: `agents.config` back from the dead (NOT
+ * NULL, and no store writes it any more) and no `studio_workspaces.
+ * preview_slug` for the orphan-preview sweep to join on. Only `add column` /
+ * `drop column` are replayed — constraint and index DDL lives inside `do $$`
+ * blocks that a statement-level regex cannot safely split, and no suite here
+ * depends on one.
  *
  * **It returns early on a database that already has the schema**, so pointing
  * the suite at the local Supabase stack, or at staging, runs no DDL at all.
@@ -228,7 +239,14 @@ export async function ensurePlatformTables(sql: SqlExec): Promise<void> {
     .filter((name) => name.endsWith(".sql"))
     .sort()
     .map((name) => readFileSync(path.join(dir, name), "utf-8"))
-    .join("\n");
+    .join("\n")
+    // COMMENTS FIRST, or prose becomes DDL. These migrations explain
+    // themselves at length and quote statements while doing it — the expand
+    // half of the `agents.config` retirement names its own contract half
+    // (`alter table … drop column config;`) in a comment, which this happily
+    // executed: a `drop` with no `if exists`, extracted from a sentence.
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/--.*$/gm, "");
 
   // The migrations format every table as `create table … (` … `\n);`, which is
   // what makes a regex safe despite the `primary key (a, b)` lines inside.
@@ -240,6 +258,13 @@ export async function ensurePlatformTables(sql: SqlExec): Promise<void> {
   }
   await sql("create schema if not exists aai_platform");
   for (const statement of tables) await sql(statement);
+
+  // Applied in migration order (the file sort above), so a column added and
+  // later dropped ends up dropped. Every one is `if [not] exists`, so this is
+  // as re-runnable as the creates.
+  const columns =
+    sqlText.match(/alter table\s+aai_platform\.\w+\s+(?:add|drop) column[\s\S]*?;/g) ?? [];
+  for (const statement of columns) await sql(statement);
 
   const [created] = await sql(
     "select to_regclass('aai_platform.studio_workspaces') is not null as present",

@@ -18,7 +18,7 @@
  */
 
 import { HTTPException } from "hono/http-exception";
-import type { AppDatabases } from "./app-database.ts";
+import { type AppDatabases, parseAppDbMeta } from "./app-database.ts";
 import type { AppContext } from "./context.ts";
 import type { SlugMutationLock } from "./platform-lock.ts";
 import { appDbSecretName, type SecretStore } from "./secret-store.ts";
@@ -56,7 +56,12 @@ export function disableStorage(env: StorageEnv, slug: string): Promise<{ enabled
   const appDb = env.appDb;
   if (!appDb) throw new HTTPException(503, { message: UNCONFIGURED_MESSAGE });
   return env.slugLock(slug, async () => {
-    await appDb.deprovision(slug);
+    // Read the locator BEFORE deleting the secret that holds it: the stored
+    // `url` names the cluster this app lives on, and recomputing that
+    // placement drops on the wrong one after any change to APP_DB_URLS (see
+    // AppDatabases.deprovision).
+    const meta = parseAppDbMeta(await env.secrets.get(appDbSecretName(slug)));
+    await appDb.deprovision(slug, meta);
     await env.secrets.delete(appDbSecretName(slug));
     console.info("Storage disabled", { slug });
     return { enabled: false as const };

@@ -28,4 +28,30 @@
 -- platform source writes it and that it is still declared — so the entry has
 -- to be deleted in the same commit as the drop, and until then it is a
 -- standing item in a test run rather than a paragraph nobody re-reads.
-alter table aai_platform.agents alter column config set default '{}'::jsonb;
+--
+-- ── GUARDED, BECAUSE THE CONTRACT HALF HAS SINCE LANDED ─────────────────────
+--
+-- `20260810030000_drop_agents_config.sql` drops the column, and re-applying
+-- this directory is a property the repo maintains ("Idempotent throughout, so
+-- re-applying is safe", asserted by `platform-schema.integration.test.ts`
+-- against a real Postgres). On a second pass `create table if not exists`
+-- no-ops against the already-dropped shape and this statement then raises
+-- `42703: column "config" of relation "agents" does not exist`, aborting the
+-- whole migration.
+--
+-- So the statement is conditioned on the column still being there. Editing a
+-- migration that has already been applied is normally wrong; it is right here
+-- because this changes nothing for any database that ran it (the column
+-- existed, the default was set, and it is set again), and restores the
+-- directory-wide property its successor broke. The alternative — deleting
+-- this file — would skip the expand for a database that has not yet applied
+-- it, which is the rollout failure the file exists to prevent.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'aai_platform' and table_name = 'agents' and column_name = 'config'
+  ) then
+    alter table aai_platform.agents alter column config set default '{}'::jsonb;
+  end if;
+end $$;

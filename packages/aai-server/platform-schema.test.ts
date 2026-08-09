@@ -87,9 +87,12 @@ describe("platform schema migrations", () => {
   test("create the schema and the extensions the platform schedules work with", () => {
     const sql = migrationSql();
     expect(sql).toContain("create schema if not exists aai_platform");
-    // pg_cron runs the janitorial sweeps; pgmq backs the preview-deploy queue.
+    // pg_cron runs the janitorial sweeps; pgmq backs the preview-deploy queue;
+    // pg_net is how the blob GC sweep reaches the Storage API from inside a
+    // pg_cron job (a Storage object's bytes cannot be deleted in SQL).
     expect(sql).toContain("create extension if not exists pg_cron");
     expect(sql).toContain("create extension if not exists pgmq");
+    expect(sql).toContain("create extension if not exists pg_net");
   });
 
   /**
@@ -108,6 +111,39 @@ describe("platform schema migrations", () => {
     }
     expect(sql).toContain("grant usage on schema aai_platform to service_role");
     expect(sql).toContain("grant select on");
+  });
+
+  /**
+   * The watched tables are published WHOLE, and this exists to keep them that
+   * way.
+   *
+   * Narrowing the publication to a column list is the obvious optimization —
+   * these are signal streams, handlers re-read, so shipping
+   * `studio_workspaces.doc` on every settled edit is a whole project file map
+   * decoded for a payload nobody looks at. It was tried, and it does nothing:
+   * a column list is honoured by `pgoutput`, and Supabase Realtime does not
+   * decode with pgoutput. `realtime.list_changes` reads the publication for its
+   * TABLE list alone and calls `pg_logical_slot_get_changes(…, 'add-tables', …)`
+   * against **wal2json**, which has no notion of publications and emits every
+   * column regardless (measured on realtime v2.112.6 / PG 17.6: a publication
+   * whose `attnames` is `{id,small}` still emitted the excluded column in full).
+   *
+   * A no-op migration is worse than none, because the comment on it teaches the
+   * next reader a mechanism that isn't there — so the guard is against the
+   * column list, not for it. If the decode cost has to come down, it takes a
+   * different mechanism (Broadcast from Database, or a signal table that does
+   * not carry the document), which will fail this test and should: it will also
+   * be deleting these `add table` lines.
+   */
+  test("publishes the watched tables WHOLE — a column list here is inert", () => {
+    const sql = stripSqlComments(migrationSql());
+    const withColumnList = [
+      ...sql.matchAll(/alter publication supabase_realtime add table\s+\S+\s*\(/g),
+    ];
+    expect(
+      withColumnList.map((match) => match[0]),
+      "wal2json ignores publication column lists — see this test's comment",
+    ).toEqual([]);
   });
 
   /**
@@ -192,14 +228,20 @@ describe("platform schema migrations", () => {
    * self-clearing: the column must still be declared, so once the drop
    * lands, the entry has to be deleted or this fails. Removing the last
    * entry is the point — this is not a list anything should live on.
+   *
+   * **It is EMPTY, and that is the goal state.** `agents.config` was the one
+   * entry; its contract migration
+   * (`20260810030000_drop_agents_config.sql`) landed in the commit that
+   * deleted the entry, exactly as the second assertion below forces. The
+   * mechanism stays for the next column that needs it.
    */
-  const RETIRED_COLUMNS: { table: string; column: string; why: string }[] = [
-    {
-      table: "agents",
-      column: "config",
-      why: "the platform stores no agent config (20260808120000_agents_config_default.sql)",
-    },
-  ];
+  const RETIRED_COLUMNS: { table: string; column: string; why: string }[] = [];
+
+  test("the retired-column ledger is empty — nothing is owed a drop", () => {
+    // Not decoration: `describe.each` cannot take an empty array, so without
+    // this the empty state would be a file with no assertion in it at all.
+    expect(RETIRED_COLUMNS).toEqual([]);
+  });
 
   describe.each(RETIRED_COLUMNS)("retired column $table.$column", ({ table, column, why }) => {
     test(`is still declared — drop it and delete this entry (${why})`, () => {

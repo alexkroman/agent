@@ -15,6 +15,7 @@ import { type AgentRows, createMemoryAgentRows, createPgAgentRows } from "./agen
 import { createApiKeyVerifierFromEnv } from "./api-key-verify.ts";
 import { type AppDatabases, type AppDbTarget, createAppDatabases } from "./app-database.ts";
 import {
+  assertBucketPrivate,
   type BlobStorage,
   createMemoryBlobStorage,
   createSupabaseBlobStorage,
@@ -26,7 +27,7 @@ import { endLiveStreams } from "./live-streams.ts";
 import { isModalConfigured, modalRequiredError, prewarmModal } from "./modal-context.ts";
 import { createModalSandboxDirectory } from "./modal-sandbox-directory.ts";
 import type { OrchestratorOpts } from "./orchestrator.ts";
-import { schedulePlatformSweeps } from "./pg-cron.ts";
+import { platformCronJobs, schedulePlatformSweeps } from "./pg-cron.ts";
 import {
   createMemoryPlatformEvents,
   type PlatformEvents,
@@ -46,6 +47,7 @@ import { createSlotCache } from "./sandbox-slots.ts";
 import {
   createMemorySecretStore,
   createVaultSecretStore,
+  PLATFORM_STORAGE_KEY_SECRET,
   type SecretStore,
   type SqlExec,
 } from "./secret-store.ts";
@@ -120,6 +122,29 @@ export type ServiceConfig = OrchestratorOpts & {
   replicaId: string;
 };
 
+/**
+ * Verify the deploy-artifact bucket at boot — see {@link assertBucketPrivate}
+ * for what is fatal and what merely warns.
+ *
+ * Separate from {@link buildStorage} because it is ASYNC and that one is not:
+ * the entry awaits this once, beside the other boot assertions, rather than
+ * every construction of a storage handle paying a round trip.
+ */
+export async function assertStorageBucket(env: NodeJS.ProcessEnv): Promise<void> {
+  // Local dev is the memory blob store — there is no bucket to check.
+  if (isLocalDev(env)) return;
+  const required = requireEnv(env, [
+    "SUPABASE_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "SUPABASE_STORAGE_BUCKET",
+  ]);
+  await assertBucketPrivate({
+    url: required.SUPABASE_URL,
+    serviceRoleKey: required.SUPABASE_SERVICE_ROLE_KEY,
+    bucket: required.SUPABASE_STORAGE_BUCKET,
+  });
+}
+
 export function buildStorage(env: NodeJS.ProcessEnv): BlobStorage {
   if (isLocalDev(env)) {
     console.info("Local dev mode: in-memory blob storage for deploy artifacts");
@@ -172,8 +197,24 @@ function buildMemoryStores(): {
  * runs; only the SCHEDULING stays here, because the sweep bodies are defined
  * in TypeScript (pg-cron.ts) and change with the code that owns them.
  */
-function bootstrapPlatformDb(sql: SqlExec): void {
-  schedulePlatformSweeps(sql).catch((err: unknown) => {
+function bootstrapPlatformDb(sql: SqlExec, env: NodeJS.ProcessEnv): void {
+  // The blob GC sweep deletes through the Storage API from inside Postgres,
+  // so it needs a credential no SQL-only job can otherwise hold. Stored in
+  // Vault rather than interpolated into the job command, where it would sit
+  // as plaintext in `cron.job` (see PLATFORM_STORAGE_KEY_SECRET). Re-written
+  // on every boot so a rotated key reaches the sweep with the next deploy;
+  // concurrent replicas booting together are safe because `put` absorbs the
+  // create race.
+  const url = env.SUPABASE_URL;
+  const bucket = env.SUPABASE_STORAGE_BUCKET;
+  const key = env.SUPABASE_SERVICE_ROLE_KEY;
+  const storage = url && bucket && key ? { url, bucket } : undefined;
+
+  const bootstrap = async (): Promise<void> => {
+    if (storage && key) await createVaultSecretStore(sql).put(PLATFORM_STORAGE_KEY_SECRET, key);
+    await schedulePlatformSweeps(sql, platformCronJobs({ ...(storage && { storage }) }));
+  };
+  bootstrap().catch((err: unknown) => {
     console.error("pg_cron sweep scheduling failed — janitorial sweeps will not run:", err);
   });
 }
@@ -241,7 +282,7 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   // rows are the emitters (postgres_changes), so unlike the memory path the
   // stores need no write-side wrapping.
   const realtime = requireEnv(env, ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]);
-  bootstrapPlatformDb(exec);
+  bootstrapPlatformDb(exec, env);
   return {
     secrets: createVaultSecretStore(exec),
     agents: createPgAgentRows(exec),

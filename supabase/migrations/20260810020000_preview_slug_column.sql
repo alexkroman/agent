@@ -1,0 +1,64 @@
+-- Materialize the back-reference the orphan-preview sweep joins on.
+--
+-- `aai-sweep-orphan-previews` (pg-cron.ts) keeps a `<project>-preview` agent
+-- alive while some workspace still names it, which before this was a join on a
+-- field dug out of the document:
+--
+--   not exists (select 1 from aai_platform.studio_workspaces w
+--               where w.doc->>'previewSlug' = a.slug)
+--
+-- `doc` is the whole project file map, so every row the sweep considers has to
+-- be DETOASTED before the arrow operator can reach a 20-character string. It
+-- runs at `23 * * * *` forever and it grows with the number of projects rather
+-- than the number of previews.
+--
+-- ── WHY A STORED COLUMN AND NOT AN EXPRESSION INDEX ─────────────────────────
+--
+-- The obvious fix is `create index on studio_workspaces ((doc->>'previewSlug'))`,
+-- and it does not work: the planner will not choose it. Postgres costs
+-- `doc->>'previewSlug'` as a cheap function call over a tuple it is scanning
+-- anyway — its cost model has no notion of TOAST fetches — so a hash anti-join
+-- over a sequential scan always prices below the nested loop the index needs,
+-- and the plan it picks is exactly the one that detoasts every row. Measured on
+-- the local stack (PG 17.6, 800 workspaces, ~80 KB docs):
+--
+--   expression index present, planner free    Hash Anti Join + Seq Scan   7.55 ms
+--   same index, nested loop forced            Index Scan                  0.03 ms
+--
+-- A STORED generated column moves the string into the main tuple, so the win
+-- does not depend on the planner reaching for anything: even the hash-join plan
+-- now builds from a `text` column and never touches TOAST. Same 800 rows, same
+-- plan shape, planner unhinted: **7.55 ms → 0.097 ms**. It also retires the
+-- fragility the index version had to warn about — an expression index only
+-- serves a byte-for-byte matching expression, so the sweep and the migration
+-- had to be edited in lockstep, while a named column is just a column.
+--
+-- The index is therefore NOT what delivers that number, and at this size the
+-- planner does not read it: it is what the plan can flip TO — a nested-loop
+-- anti-join of ~N index probes — once the table is large enough that scanning
+-- it stops being the cheaper half. Cheap to carry, and it is the shape that
+-- keeps scaling.
+--
+-- Two properties this still depends on:
+--
+--   * **`doc` must really hold a jsonb OBJECT.** While the column held a
+--     double-encoded jsonb *string* (fixed by
+--     `20260809120000_normalize_double_encoded_jsonb.sql`) this expression
+--     returned NULL for every row, so the sweep's guard matched nothing and it
+--     deleted live previews hourly. A generated column stores NULL just as
+--     faithfully — this makes the query fast, never correct.
+--   * **Nothing may write `preview_slug`.** Postgres enforces that (a generated
+--     column rejects INSERT/UPDATE of its own value), which is the point: the
+--     column cannot drift from `doc`, because it is not a copy anyone maintains.
+--
+-- `add column … stored` rewrites the table under an ACCESS EXCLUSIVE lock. One
+-- row per project and the only readers are an hourly sweep and the studio's own
+-- workspace fetches, so the rewrite is measured in milliseconds; it is worth
+-- noting only because it is the reason this is cheap NOW and would want
+-- scheduling if the table ever became large.
+alter table aai_platform.studio_workspaces
+  add column if not exists preview_slug text
+  generated always as (doc->>'previewSlug') stored;
+
+create index if not exists studio_workspaces_preview_slug
+  on aai_platform.studio_workspaces (preview_slug);

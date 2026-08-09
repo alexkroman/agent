@@ -106,6 +106,79 @@ describe("agents channel", () => {
     channels[0]?.handlers[0]?.({ new: { slug: "s" } });
     expect(seen).not.toHaveBeenCalled();
   });
+
+  /**
+   * The gap that makes this channel's join signal matter MORE than the pooled
+   * channels' — where a missed change costs a stale studio pane until the next
+   * edit. This stream is the only thing that moves resident sandboxes (no
+   * per-broker version check, no idle-sweep superseded probe), so a deploy
+   * landing during a socket drop reaches nobody and nothing later notices: the
+   * replica serves superseded code, and answers for a deleted agent, while the
+   * deploy reports success.
+   */
+  test("a join fires the resync watchers, so changes missed before it are re-checked", () => {
+    const { client, channels } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    const onChange = vi.fn();
+    const onResync = vi.fn();
+    events.watchAgents(onChange, onResync);
+    const channel = channels[0] as FakeChannel;
+
+    // Nothing yet — the join is still in flight, which is the whole gap.
+    expect(onResync).not.toHaveBeenCalled();
+    channel.ack("SUBSCRIBED");
+    expect(onResync).toHaveBeenCalledOnce();
+
+    // Every REjoin too: a socket drop loses every change during the outage.
+    channel.ack("SUBSCRIBED");
+    expect(onResync).toHaveBeenCalledTimes(2);
+
+    // A failed join is not a delivery point, so it must not fire.
+    channel.ack("CHANNEL_ERROR", new Error("nope"));
+    expect(onResync).toHaveBeenCalledTimes(2);
+
+    // A resync is not a change: it carries no slug and must not be mistaken
+    // for one by a handler that only registered `onChange`.
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  test("the join fires the resync watcher that triggered it, not just later ones", () => {
+    const { client, channels } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    // A synchronous ack is legal (a fake, a same-tick reconnect), so the first
+    // watcher must already be registered when subscribe() is called — it is
+    // the one whose subscription the join is making real. Registering after
+    // `ensureAgentsChannel()` would drop exactly that first signal.
+    const first = vi.fn();
+    events.watchAgents(vi.fn(), first);
+    (channels[0] as FakeChannel).ack("SUBSCRIBED");
+    expect(first).toHaveBeenCalledOnce();
+
+    const late = vi.fn();
+    events.watchAgents(vi.fn(), late);
+    expect(channels).toHaveLength(1);
+    (channels[0] as FakeChannel).ack("SUBSCRIBED");
+    expect(late).toHaveBeenCalledOnce();
+    expect(first).toHaveBeenCalledTimes(2);
+  });
+
+  test("unwatching drops the resync watcher with its change watcher", () => {
+    const { client, channels } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    const onResync = vi.fn();
+    events.watchAgents(vi.fn(), onResync)();
+    (channels[0] as FakeChannel).ack("SUBSCRIBED");
+    expect(onResync).not.toHaveBeenCalled();
+  });
+
+  test("a watcher registered without a resync handler still joins cleanly", () => {
+    const { client, channels } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    const onChange = vi.fn();
+    events.watchAgents(onChange);
+    expect(() => (channels[0] as FakeChannel).ack("SUBSCRIBED")).not.toThrow();
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });
 
 describe("workspace channels", () => {
@@ -264,5 +337,78 @@ describe("workspace channels", () => {
     await events.close();
     expect(channels[0]?.unsubscribed).toBe(true);
     expect(client.disconnect).toHaveBeenCalled();
+  });
+});
+
+/**
+ * The failure these cover has happened twice in production and produced no
+ * symptom either time: a subscribe that can never succeed leaves realtime-js
+ * retrying the join forever, so the service boots healthy, every request
+ * succeeds, and the platform merely stops invalidating sandboxes and pushing
+ * SSE. The only trace was a `console.warn` per retry.
+ */
+describe("subscription health", () => {
+  test("a channel that acks its join is healthy, and reports as one", () => {
+    const { client, channels } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    events.watchWorkspace("s", "p", vi.fn());
+    (channels[0] as FakeChannel).ack("SUBSCRIBED");
+
+    expect(events.health()).toEqual({ channels: 1, stalled: [] });
+  });
+
+  test("a channel that never joins is stalled once its budget lapses", () => {
+    const { client, channels } = fakeClient();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    events.watchWorkspace("s", "p", vi.fn());
+    const channel = channels[0] as FakeChannel;
+
+    // Inside the budget a failure is ordinary — a deploy, a blip — and warns.
+    channel.ack("CHANNEL_ERROR", new Error("invalid column for filter project"));
+    expect(events.health().stalled).toEqual([]);
+    expect(warn).toHaveBeenCalledOnce();
+    expect(error).not.toHaveBeenCalled();
+
+    vi.useFakeTimers();
+    try {
+      vi.advanceTimersByTime(60_000);
+      channel.ack("CHANNEL_ERROR", new Error("invalid column for filter project"));
+      channel.ack("CHANNEL_ERROR", new Error("invalid column for filter project"));
+
+      expect(events.health()).toEqual({ channels: 1, stalled: ["aai:workspace:s:p"] });
+      // Escalated ONCE, however many times it retries — the point is to be
+      // findable in a log, not to become the log.
+      expect(error).toHaveBeenCalledOnce();
+      expect(error.mock.calls[0]?.[0]).toContain("never joined");
+      expect(warn).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a joined channel stays healthy however long it runs", () => {
+    const { client, channels } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    events.watchAgents(vi.fn());
+    (channels[0] as FakeChannel).ack("SUBSCRIBED");
+
+    vi.useFakeTimers();
+    try {
+      vi.advanceTimersByTime(60_000);
+      expect(events.health().stalled).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("releasing the last watcher stops counting the channel", () => {
+    const { client } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    const unwatch = events.watchWorkspace("s", "p", vi.fn());
+    expect(events.health().channels).toBe(1);
+    unwatch();
+    expect(events.health()).toEqual({ channels: 0, stalled: [] });
   });
 });

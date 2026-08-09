@@ -1,21 +1,21 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Event-driven sandbox invalidation (see sandbox-resolve.ts +
- * platform-events.ts): the agents row's change stream is THE mover of
- * resident sandboxes — a deploy anywhere (any replica, either service)
- * retires this replica's resident, and a delete terminates it. There is no
- * per-broker version check and no idle-sweep superseded probe; secret
- * changes deliberately do NOT move sandboxes (they apply on the next
- * deploy/rebuild). The vmReady-failure resolution paths are covered in
- * sandbox.test.ts.
+ * Slug → sandbox resolution and the paths that hang off it: storage
+ * (`ctx.db`) env delivery, the draining guard, the broker's readiness cap,
+ * and the fleet-wide directory that keeps one sandbox per deploy.
+ *
+ * The agents-row change stream that INVALIDATES these residents moved to
+ * sandbox-invalidate.test.ts with the code it covers; vmReady-failure
+ * resolution is in sandbox.test.ts. `seedAgent` still wires a real watcher,
+ * because several cases below depend on a resident not being disturbed.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryPlatformEvents } from "./platform-events.ts";
-import type { Sandbox } from "./sandbox.ts";
 import { brokerSessionUrl } from "./sandbox-broker.ts";
 import { createMemorySandboxDirectory, SandboxNameTakenError } from "./sandbox-directory.ts";
-import { resolveSandbox, watchAgentInvalidation } from "./sandbox-resolve.ts";
+import { watchAgentInvalidation } from "./sandbox-invalidate.ts";
+import { resolveSandbox } from "./sandbox-resolve.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { appDbSecretName, createMemorySecretStore } from "./secret-store.ts";
 import { createTestStore } from "./test-utils.ts";
@@ -42,7 +42,18 @@ async function seedAgent(slug: string) {
   // The real signal that a change event has been delivered AND its handler
   // has finished — this file used to spin 20 microtasks and hope.
   const settleEvents = (): Promise<void> => memory.settled();
-  const store = createTestStore(undefined, memory);
+  // Models a Realtime OUTAGE, which is the one thing the memory emitter cannot
+  // do on its own: the row write still lands, its notification is simply not
+  // delivered. Dropping the emit rather than the write is the whole point —
+  // the database is the source of truth and stays correct; what breaks is this
+  // replica's knowledge of it.
+  let streamDown = false;
+  const store = createTestStore(undefined, {
+    ...memory,
+    emitAgent: (changed: string) => {
+      if (!streamDown) memory.emitAgent(changed);
+    },
+  });
   const put = (worker: string) =>
     store.putAgent({
       slug,
@@ -83,189 +94,17 @@ async function seedAgent(slug: string) {
       await store.deleteAgent(slug);
       await settleEvents();
     },
+    /** Take the change stream down / bring it back — see `streamDown`. */
+    setStreamDown: (down: boolean) => {
+      streamDown = down;
+    },
+    /** The stream re-joined: `subscribe()` acked SUBSCRIBED. */
+    rejoin: async () => {
+      memory.emitAgentResync();
+      await settleEvents();
+    },
   };
 }
-
-describe("agents-row change stream drives sandbox invalidation", () => {
-  beforeEach(() => {
-    vi.spyOn(console, "info").mockImplementation(() => undefined);
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
-  });
-
-  it("reuses the resident sandbox while nothing changed", async () => {
-    const deps = await seedAgent("stable");
-    const first = await resolveSandbox("stable", deps);
-    // The cold rebuild itself reads fresh (one invalidate); a warm resident
-    // costs nothing more.
-    deps.invalidate.mockClear();
-    const second = await resolveSandbox("stable", deps);
-    expect(second).toBe(first);
-    expect(deps.invalidate).not.toHaveBeenCalled();
-    await first?.shutdown();
-    deps.unwatch();
-  });
-
-  it("a deploy's change event hands over BLUE-GREEN: the replacement is attached before the old resident detaches", async () => {
-    const deps = await seedAgent("redeployed");
-    const first = await resolveSandbox("redeployed", deps);
-    expect(first).not.toBeNull();
-
-    // A deploy elsewhere upserts the agents row → change event. The handler
-    // boots the NEW deploy's sandbox, waits for its readiness, and swaps —
-    // the slot is never empty, so the next caller pays no cold start.
-    await deps.redeploy();
-
-    const replacement = deps.slots.get("redeployed")?.sandbox;
-    expect(replacement).toBeDefined();
-    expect(replacement).not.toBe(first);
-    // The rebuild read a fresh row, not a pre-mutation cached one.
-    expect(deps.invalidate).toHaveBeenCalledWith("redeployed");
-
-    // The broker serves the ready replacement as-is — no rebuild, and its
-    // own deploy event (already handled) leaves it alone.
-    await expect(resolveSandbox("redeployed", deps)).resolves.toBe(replacement);
-    await (replacement as Sandbox).shutdown();
-    deps.unwatch();
-  });
-
-  it("a replacement that fails to boot retires the old resident — the failure stays visible", async () => {
-    const deps = await seedAgent("bad-redeploy");
-    const first = await resolveSandbox("bad-redeploy", deps);
-    expect(first).not.toBeNull();
-
-    // The NEW deploy crashes on boot. Blue-green must not cut over to a
-    // corpse, and must not keep serving superseded code silently either:
-    // the old resident retires and the slot empties, so the next broker
-    // call rebuilds and surfaces the boot failure.
-    mockSpawnAgentServer.mockReturnValueOnce(Promise.reject(new Error("boot crash")));
-    await deps.redeploy();
-
-    await vi.waitFor(() => {
-      expect(deps.slots.get("bad-redeploy")?.sandbox).toBeUndefined();
-    });
-    deps.unwatch();
-  });
-
-  it("a duplicated change event does not touch a resident already at the row's version", async () => {
-    const deps = await seedAgent("self-echo");
-    const sandbox = await resolveSandbox("self-echo", deps);
-    expect(sandbox).not.toBeNull();
-    // A duplicated (or reordered) event re-reads the version, compares it
-    // against the slot's stamp, and leaves the current resident alone.
-    await deps.reEmit();
-    expect(deps.slots.get("self-echo")?.sandbox).toBe(sandbox);
-    await sandbox?.shutdown();
-    deps.unwatch();
-  });
-
-  it("a delete's change event terminates the resident and drops the slot", async () => {
-    const deps = await seedAgent("gone");
-    const first = (await resolveSandbox("gone", deps)) as Sandbox;
-    expect(first).not.toBeNull();
-    const shutdown = vi.spyOn(first, "shutdown");
-
-    await deps.deleteAgent();
-
-    // Terminated (a deleted agent must stop answering), slot dropped, and
-    // the next resolve finds no record → 404 upstream.
-    expect(shutdown).toHaveBeenCalled();
-    expect(deps.slots.get("gone")).toBeUndefined();
-    await expect(resolveSandbox("gone", deps)).resolves.toBeNull();
-    deps.unwatch();
-  });
-
-  it("a deploy landing mid-rebuild is not dropped: the event queues on the slug lock and retires the stale build", async () => {
-    const deps = await seedAgent("mid-rebuild");
-    // Park the rebuild between its record read and the sandbox attach.
-    const { promise: gate, resolve: release } = Promise.withResolvers<void>();
-    const realGetWorkerCode = deps.store.getWorkerCode.bind(deps.store);
-    deps.store.getWorkerCode = async (slug) => {
-      await gate;
-      return realGetWorkerCode(slug);
-    };
-
-    const resolving = resolveSandbox("mid-rebuild", deps);
-    // NOT an event wait — nothing has been emitted yet. This waits for the
-    // parked rebuild to reach its slot claim, which happens before any read,
-    // so the event pre-filter below sees a slot with no sandbox attached.
-    await vi.waitFor(() => expect(deps.slots.get("mid-rebuild")).toBeDefined());
-    expect(deps.slots.get("mid-rebuild")?.sandbox).toBeUndefined();
-
-    // A deploy elsewhere commits while the rebuild is in flight. Its change
-    // event queues behind the rebuild's slug lock instead of being skipped —
-    // so the commit cannot be settled until the rebuild releases the lock.
-    await deps.commitDeploy();
-    release();
-    const stale = await resolving;
-    expect(stale).not.toBeNull();
-
-    // The queued handler ran after the attach: version mismatch → blue-green
-    // handover to a replacement at the row's current version.
-    await deps.settleEvents();
-    const fresh = deps.slots.get("mid-rebuild")?.sandbox;
-    expect(fresh).toBeDefined();
-    expect(fresh).not.toBe(stale);
-    await expect(resolveSandbox("mid-rebuild", deps)).resolves.toBe(fresh);
-    await (fresh as Sandbox).shutdown();
-    deps.unwatch();
-  });
-
-  it("a failed rebuild of an unknown slug leaves no empty slot behind", async () => {
-    const deps = await seedAgent("known");
-    await expect(resolveSandbox("never-deployed", deps)).resolves.toBeNull();
-    expect(deps.slots.get("never-deployed")).toBeUndefined();
-    deps.unwatch();
-  });
-
-  it("a secret change does NOT retire the resident sandbox", async () => {
-    const deps = await seedAgent("secretly-updated");
-    const first = await resolveSandbox("secretly-updated", deps);
-    expect(first).not.toBeNull();
-
-    // Secret mutations write Vault, not the agents row: no change event.
-    await deps.store.putEnv("secretly-updated", { NEW_KEY: "v" });
-    await deps.settleEvents();
-
-    await expect(resolveSandbox("secretly-updated", deps)).resolves.toBe(first);
-    await first?.shutdown();
-    deps.unwatch();
-  });
-
-  it("an unreadable version store never takes down a healthy sandbox", async () => {
-    const deps = await seedAgent("db-blip");
-    const first = await resolveSandbox("db-blip", deps);
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    deps.store.getAgentVersion = () => Promise.reject(new Error("db down"));
-
-    await deps.redeploy();
-
-    // The handler logged and left the resident alone; sessions continue.
-    expect(warn).toHaveBeenCalled();
-    await expect(resolveSandbox("db-blip", deps)).resolves.toBe(first);
-    await first?.shutdown();
-    deps.unwatch();
-  });
-
-  it("retirement hands the old sandbox its drain budget instead of cutting it", async () => {
-    const deps = await seedAgent("draining");
-    const sandbox = (await resolveSandbox("draining", deps)) as Sandbox;
-    const drain = vi.spyOn(sandbox, "drain");
-    const shutdown = vi.spyOn(sandbox, "shutdown");
-
-    await deps.redeploy();
-
-    // Handed over: the slot holds the READY replacement (no new session
-    // can reach the old sandbox), and the old one was told to drain — the
-    // GUEST finishes its calls and exits itself; the host never hangs up.
-    expect(deps.slots.get("draining")?.sandbox).toBeDefined();
-    expect(deps.slots.get("draining")?.sandbox).not.toBe(sandbox);
-    await vi.waitFor(() => {
-      expect(drain).toHaveBeenCalledWith(expect.any(Number));
-    });
-    expect(shutdown).not.toHaveBeenCalled();
-    deps.unwatch();
-  });
-});
 
 describe("storage (ctx.db) delivery", () => {
   it("injects the app's own DATABASE_URL into the bundle/load env when storage is enabled", async () => {

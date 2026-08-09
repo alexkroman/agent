@@ -1,0 +1,26 @@
+-- The CONTRACT half of the `agents.config` expand/contract.
+--
+-- `20260808120000_agents_config_default.sql` is the expand: it gave the column
+-- a default so the build that stopped writing it could deploy beside
+-- containers that still did. That was two releases ago and the column has been
+-- write-only since long before it — nothing has ever READ a field of it (host
+-- mode is gone; the broker proxies name/greeting from the guest's own
+-- `/client-config`). See "The platform stores no agent config" in
+-- packages/aai-server/CLAUDE.md.
+--
+-- **The precondition is a RELEASE boundary, not a commit boundary.** Migrations
+-- are applied before the deploy and Modal's rolling strategy keeps the previous
+-- build's containers serving beside the new one, so a drop landing in the same
+-- release as its own expand is a drop against containers that still name the
+-- column in their insert — every `POST /deploy` reaching one fails for the
+-- length of the rollout. That is why this waited, and it is the only reason it
+-- could not have shipped earlier.
+--
+-- The `RETIRED_COLUMNS` ledger entry in `platform-schema.test.ts` is deleted in
+-- the same commit as this file: the entry asserts BOTH that no platform source
+-- writes the column and that it is still declared, so it fails the moment this
+-- lands and cannot be left behind.
+--
+-- `if exists` so this is a no-op on a database where it has already gone —
+-- the same property that makes re-running the whole directory safe.
+alter table aai_platform.agents drop column if exists config;
