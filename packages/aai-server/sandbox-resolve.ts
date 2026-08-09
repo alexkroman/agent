@@ -2,25 +2,27 @@
 /**
  * Slot-based sandbox resolution: map a slug to its (possibly freshly built)
  * resident sandbox. Split from sandbox.ts, which owns one sandbox's
- * lifecycle; this module owns the replica's slug→sandbox map and its
- * invalidation — `watchAgentInvalidation`, driven by the agents row's
- * change stream (Supabase Realtime in production; see platform-events.ts
- * and agent-store.ts).
+ * lifecycle; this module owns the replica's slug→sandbox map and the reads
+ * that populate it.
+ *
+ * Reacting to the map going STALE is sandbox-invalidate.ts
+ * (`watchAgentInvalidation`, driven by the agents row's change stream). It
+ * imports `loadBundleParts` / `buildSlotSandbox` / `DrainingError` from here,
+ * which is why those are exported rather than module-private — they are the
+ * seam between resolving a slug and replacing what it resolved to, and both
+ * sides must build a sandbox identically.
  */
 
-import { errorMessage } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
 import type { AgentRecord } from "./agent-store.ts";
 import { type AppDatabases, type AppDbMeta, parseAppDbMeta } from "./app-database.ts";
 import { BROKER_READY_TIMEOUT_MS, resolveHarnessPath } from "./constants.ts";
-import type { PlatformEvents, Unwatch } from "./platform-events.ts";
 import { createSandbox, type Sandbox } from "./sandbox.ts";
 import type { SandboxDirectory } from "./sandbox-directory.ts";
 import {
   type AgentSlot,
   deleteSlot,
   isLive,
-  retireSlot,
   type SlotCache,
   setSlot,
   terminateSlot,
@@ -87,7 +89,7 @@ export type ResolveSandboxOpts = {
   isDraining?: () => boolean;
 };
 
-type BundleParts = {
+export type BundleParts = {
   worker: WorkerSource;
   env: Record<string, string>;
   appDbMeta: AppDbMeta | null;
@@ -155,7 +157,10 @@ async function loadWorkerSource(
  * row first internally, and reading it once here means one `agents.get` on a
  * cold cache where there were two.
  */
-function loadBundleParts(slug: string, opts: ResolveSandboxOpts): Promise<BundleParts | null> {
+export function loadBundleParts(
+  slug: string,
+  opts: ResolveSandboxOpts,
+): Promise<BundleParts | null> {
   const { store } = opts;
   // The full row — for the worker blob's hash, the pinned harness image tag,
   // and the deploy version. The stored config is NOT read: it is opaque to
@@ -232,143 +237,17 @@ function buildSandboxFromParts(
  * slug lock so a deploy/delete that already replaced the slot is never
  * raced).
  */
-function buildSlotSandbox(slug: string, parts: BundleParts, opts: ResolveSandboxOpts): Sandbox {
+export function buildSlotSandbox(
+  slug: string,
+  parts: BundleParts,
+  opts: ResolveSandboxOpts,
+): Sandbox {
   return buildSandboxFromParts(slug, parts, opts, (sandbox) => {
     void withSlugLock(slug, async () => {
       const current = opts.slots.get(slug);
       if (current?.sandbox === sandbox) await terminateSlot(current);
     });
   });
-}
-
-/**
- * THE mover of resident sandboxes on mutations. The agents row's change
- * stream (Supabase Realtime in production, the memory stores' emitter in
- * dev/tests — see platform-events.ts) is the single invalidation mechanism:
- * mutation handlers only write the row, and every replica — the writer
- * included — reacts here. There is deliberately no per-broker version check
- * and no idle-sweep superseded probe anymore; those were two more
- * implementations of the same comparison, and the change stream replaced
- * them rather than accelerating them.
- *
- * The event is a signal carrying nothing but the slug: the handler drops the
- * row caches and re-reads the version fresh, so a duplicated or reordered
- * event can only cause a redundant read — the version comparison under the
- * slug lock decides. A deleted row (version null) terminates rather than
- * retires — a deleted agent must stop answering, not drain for ten more
- * minutes — and the slot is dropped so the map doesn't grow one dead entry
- * per deleted slug.
- */
-export function watchAgentInvalidation(events: PlatformEvents, opts: ResolveSandboxOpts): Unwatch {
-  return events.watchAgents((slug) => {
-    // Cheap pre-filter outside the lock: most events are for slugs this
-    // replica has never brokered. Existence, NOT liveness — a slot
-    // mid-rebuild has no sandbox attached yet, and skipping its event
-    // would drop the only invalidation a concurrent remote deploy gets
-    // (there is no per-broker version check to catch it later). Queued on
-    // the slug lock below, the handler runs after the rebuild attaches
-    // and the version comparison reconciles.
-    if (!opts.slots.get(slug)) return;
-    // RETURNED, not `void`-discarded. Nothing in production awaits it — a
-    // change stream has no caller — but the memory emitter collects it, which
-    // is the only way a test can know this handler has finished rather than
-    // spinning microtasks and hoping. The catch is what makes returning it
-    // safe: production drops the value, so a rejection escaping here would be
-    // an unhandled rejection (the `void` form had the same hole — the lock
-    // acquisition itself sits outside the inner try/catch below).
-    return withSlugLock(slug, async () => {
-      const slot = opts.slots.get(slug);
-      if (!slot?.sandbox) return;
-      opts.store.invalidate?.(slug);
-      try {
-        const version = await opts.store.getAgentVersion(slug);
-        if (version === null) {
-          // Row gone: a resident for a deleted agent always terminates —
-          // never compared against the slot's stamp, which a slot built
-          // before the stamp landed may not carry.
-          console.info("Resident sandbox's agent deleted (change event); terminating", { slug });
-          await terminateSlot(slot);
-          deleteSlot(opts.slots, slug);
-        } else if (version !== slot.version) {
-          console.info("Resident sandbox superseded (change event); booting replacement", {
-            slug,
-            version,
-          });
-          await handoverSlot(slug, slot, version, opts);
-        }
-      } catch (err) {
-        // An unreadable version must never take down a healthy sandbox; the
-        // next change event (or a redeploy) retries.
-        console.warn(`Change-event invalidation failed for ${slug}: ${errorMessage(err)}`);
-      }
-    }).catch((err: unknown) => {
-      // Only reachable from the lock acquisition itself — the body above
-      // catches its own. Logged rather than rethrown: see the return comment.
-      console.warn(`Change-event invalidation could not lock ${slug}: ${errorMessage(err)}`);
-    });
-  });
-}
-
-/**
- * BLUE-GREEN handoff on a redeploy: boot the NEW deploy's sandbox and wait
- * for its readiness (`sessionUrl()` resolves once the guest's `/health`
- * answered with the bundle loaded) BEFORE detaching the old one, so a
- * redeploy never leaves the broker with an empty slot — the next caller
- * lands on a warm replacement instead of paying the cold start. Runs under
- * the caller's slug lock, which also parks concurrent broker rebuilds until
- * the swap lands. Sessions already on the old sandbox keep running: it is
- * retired (drained in the background), exactly as before.
- *
- * If the REPLACEMENT fails to boot (the new deploy crashes on start), the
- * old resident is retired anyway rather than kept: keeping it would
- * silently serve superseded code forever, while an empty slot makes the
- * failure visible on the very next broker call (503 + the guest's boot
- * error in the host log).
- */
-async function handoverSlot(
-  slug: string,
-  slot: AgentSlot,
-  version: number,
-  opts: ResolveSandboxOpts,
-): Promise<void> {
-  const parts = await loadBundleParts(slug, opts);
-  if (!parts) {
-    // The row vanished between the version read and the artifact read —
-    // a delete raced the deploy event. Same handling as the deleted branch.
-    await terminateSlot(slot);
-    deleteSlot(opts.slots, slug);
-    return;
-  }
-  let replacement: Sandbox;
-  try {
-    replacement = buildSlotSandbox(slug, parts, opts);
-  } catch (err) {
-    // Draining: leave the old resident attached and untouched. Retiring it to
-    // honour a deploy this process will not live to serve would cut its live
-    // calls for nothing — every surviving replica gets the same event and does
-    // the handover properly.
-    if (err instanceof DrainingError) {
-      debug("Draining; leaving the superseded resident to the surviving replicas", { slug });
-      return;
-    }
-    throw err;
-  }
-  try {
-    await replacement.sessionUrl();
-  } catch (err) {
-    console.error("Replacement sandbox failed to boot; retiring old resident", {
-      slug,
-      error: errorMessage(err),
-    });
-    await replacement.shutdown().catch(() => undefined);
-    void retireSlot(slot, "superseded");
-    return;
-  }
-  // Swap: detach the old sandbox (background drain) and attach the ready
-  // replacement in the same tick — no window with an empty slot.
-  void retireSlot(slot, "superseded");
-  slot.version = version;
-  slot.sandbox = replacement;
 }
 
 /** Build (and attach) a fresh sandbox for `slot`; null when the slug has no bundle. */

@@ -295,6 +295,7 @@ export function createRealtimePlatformEvents(opts: RealtimePlatformEventsOptions
 
   // The one agents channel, shared by every watcher, created on first watch.
   const agentWatchers = new Set<(slug: string) => void>();
+  const agentResyncWatchers = new Set<() => void>();
   let agentsChannel: RealtimeChannelLike | null = null;
 
   const ensureAgentsChannel = (): void => {
@@ -311,7 +312,29 @@ export function createRealtimePlatformEvents(opts: RealtimePlatformEventsOptions
         for (const watcher of [...agentWatchers]) watcher(slug);
       },
     );
-    agentsChannel.subscribe(monitor.track("aai:agents"));
+    const onStatus = monitor.track("aai:agents");
+    agentsChannel.subscribe((status, err) => {
+      onStatus(status, err);
+      // **A (re)join is a signal on THIS channel too** — the same rule
+      // `createChannelPool` documents, and for a long time the pooled channels
+      // were the only ones that honoured it. The gap is worse here, not
+      // better: this stream is the SINGLE mover of resident sandboxes (the
+      // per-broker version check and the idle sweep's superseded probe were
+      // both deleted when it took the job), so a change that lands between a
+      // socket drop and the rejoin is delivered to nobody and NOTHING else
+      // will ever notice. The replica keeps serving superseded code, and keeps
+      // answering for a deleted agent, until its guest happens to self-exit on
+      // idle — which for a busy agent is never, because traffic is what keeps
+      // it non-idle. The deploy that caused it reported success.
+      //
+      // The monitor beside this makes such a channel VISIBLE once it is
+      // stalled; it cannot repair one that recovered on its own, which is the
+      // common case and the silent one.
+      if (status === "SUBSCRIBED") {
+        // Snapshot: a handler may unwatch from inside its own callback.
+        for (const watcher of [...agentResyncWatchers]) watcher();
+      }
+    });
   };
 
   const monitor = createSubscriptionMonitor();
@@ -320,10 +343,18 @@ export function createRealtimePlatformEvents(opts: RealtimePlatformEventsOptions
     row?.scope === scope;
 
   return {
-    watchAgents(onChange): Unwatch {
-      ensureAgentsChannel();
+    watchAgents(onChange, onResync): Unwatch {
+      // Registered BEFORE the channel is ensured, so the join this call may
+      // trigger cannot fire ahead of the watcher that triggered it — the same
+      // ordering `createChannelPool.watch` keeps, and now load-bearing here
+      // for the same reason: the join IS `onResync`'s first delivery.
       agentWatchers.add(onChange);
-      return () => agentWatchers.delete(onChange);
+      if (onResync) agentResyncWatchers.add(onResync);
+      ensureAgentsChannel();
+      return () => {
+        agentWatchers.delete(onChange);
+        if (onResync) agentResyncWatchers.delete(onResync);
+      };
     },
 
     watchWorkspace(scope, project, onChange): Unwatch {

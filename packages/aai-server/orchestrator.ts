@@ -42,7 +42,8 @@ import { createWsUpgrades } from "./orchestrator-ws.ts";
 import type { PlatformEvents } from "./platform-events.ts";
 import { createMutationLock, localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import type { SandboxDirectory } from "./sandbox-directory.ts";
-import { type ResolveSandboxOpts, watchAgentInvalidation } from "./sandbox-resolve.ts";
+import { watchAgentInvalidation } from "./sandbox-invalidate.ts";
+import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
 import { currentHarnessImageTag } from "./sandbox-vm.ts";
 import {

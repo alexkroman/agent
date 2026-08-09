@@ -54,8 +54,17 @@ export type PlatformEvents = {
   /**
    * Fires when ANY agents row changes (deploy, delete). The handler gets the
    * slug only — re-read the row's version to learn what happened.
+   *
+   * `onResync` fires when the stream (re)joins, and carries NO slug because a
+   * join is not about one row: it says "delivery just started, so anything
+   * that changed before now reached nobody." A handler answers it by
+   * re-checking everything it holds.
+   *
+   * It is separate rather than a nullable slug on `onChange` so that a
+   * consumer which does not handle resync says so by omission at the call
+   * site, instead of silently mishandling a sentinel it never checked for.
    */
-  watchAgents(onChange: Watcher<[slug: string]>): Unwatch;
+  watchAgents(onChange: Watcher<[slug: string]>, onResync?: Watcher): Unwatch;
   /**
    * Fires when one project's workspace row changes. Signal only — the
    * handler re-reads the workspace.
@@ -111,6 +120,14 @@ export type MemoryPlatformEvents = {
   events: PlatformEvents;
   /** Notify agents watchers — wired into the memory agent rows' writes. */
   emitAgent(slug: string): void;
+  /**
+   * Fire the agents stream's REJOIN signal. Nothing in this emitter calls it
+   * on its own — an in-process dispatch has no socket to lose and no join gap
+   * to cover — so it exists as the driver for the one thing that does:
+   * `watchAgentInvalidation`'s resync path, which production only ever reaches
+   * through a Realtime reconnect that no unit test can stage.
+   */
+  emitAgentResync(): void;
   /**
    * Notify one project's workspace watchers (and its scope's project-list
    * watchers) — wired into memory-store writes.
@@ -200,6 +217,7 @@ function createWatcherMap<A extends unknown[]>(track: TrackDispatch) {
  */
 export function createMemoryPlatformEvents(): MemoryPlatformEvents {
   const agentWatchers = new Set<Watcher<[slug: string]>>();
+  const agentResyncWatchers = new Set<Watcher>();
   const inFlight = new Set<Promise<void>>();
 
   const track: TrackDispatch = (dispatch) => {
@@ -219,9 +237,13 @@ export function createMemoryPlatformEvents(): MemoryPlatformEvents {
 
   return {
     events: {
-      watchAgents(onChange) {
+      watchAgents(onChange, onResync) {
         agentWatchers.add(onChange);
-        return () => agentWatchers.delete(onChange);
+        if (onResync) agentResyncWatchers.add(onResync);
+        return () => {
+          agentWatchers.delete(onChange);
+          if (onResync) agentResyncWatchers.delete(onResync);
+        };
       },
       watchWorkspace(scope, project, onChange) {
         return workspaceWatchers.add(projectKey(scope, project), onChange);
@@ -243,6 +265,17 @@ export function createMemoryPlatformEvents(): MemoryPlatformEvents {
       track(async () => {
         await Promise.resolve();
         await Promise.all([...agentWatchers].map((watcher) => watcher(slug)));
+      });
+    },
+    emitAgentResync() {
+      // Tracked like every other dispatch, so `settled()` covers a resync's
+      // handlers too — the resync handler does strictly MORE async work than a
+      // change handler (one reconcile per resident, not one), so a test that
+      // could not wait it out would be the worst-placed one to hand-roll a
+      // microtask spin for.
+      track(async () => {
+        await Promise.resolve();
+        await Promise.all([...agentResyncWatchers].map((watcher) => watcher()));
       });
     },
     emitWorkspace(scope, project) {

@@ -106,6 +106,79 @@ describe("agents channel", () => {
     channels[0]?.handlers[0]?.({ new: { slug: "s" } });
     expect(seen).not.toHaveBeenCalled();
   });
+
+  /**
+   * The gap that makes this channel's join signal matter MORE than the pooled
+   * channels' — where a missed change costs a stale studio pane until the next
+   * edit. This stream is the only thing that moves resident sandboxes (no
+   * per-broker version check, no idle-sweep superseded probe), so a deploy
+   * landing during a socket drop reaches nobody and nothing later notices: the
+   * replica serves superseded code, and answers for a deleted agent, while the
+   * deploy reports success.
+   */
+  test("a join fires the resync watchers, so changes missed before it are re-checked", () => {
+    const { client, channels } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    const onChange = vi.fn();
+    const onResync = vi.fn();
+    events.watchAgents(onChange, onResync);
+    const channel = channels[0] as FakeChannel;
+
+    // Nothing yet — the join is still in flight, which is the whole gap.
+    expect(onResync).not.toHaveBeenCalled();
+    channel.ack("SUBSCRIBED");
+    expect(onResync).toHaveBeenCalledOnce();
+
+    // Every REjoin too: a socket drop loses every change during the outage.
+    channel.ack("SUBSCRIBED");
+    expect(onResync).toHaveBeenCalledTimes(2);
+
+    // A failed join is not a delivery point, so it must not fire.
+    channel.ack("CHANNEL_ERROR", new Error("nope"));
+    expect(onResync).toHaveBeenCalledTimes(2);
+
+    // A resync is not a change: it carries no slug and must not be mistaken
+    // for one by a handler that only registered `onChange`.
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  test("the join fires the resync watcher that triggered it, not just later ones", () => {
+    const { client, channels } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    // A synchronous ack is legal (a fake, a same-tick reconnect), so the first
+    // watcher must already be registered when subscribe() is called — it is
+    // the one whose subscription the join is making real. Registering after
+    // `ensureAgentsChannel()` would drop exactly that first signal.
+    const first = vi.fn();
+    events.watchAgents(vi.fn(), first);
+    (channels[0] as FakeChannel).ack("SUBSCRIBED");
+    expect(first).toHaveBeenCalledOnce();
+
+    const late = vi.fn();
+    events.watchAgents(vi.fn(), late);
+    expect(channels).toHaveLength(1);
+    (channels[0] as FakeChannel).ack("SUBSCRIBED");
+    expect(late).toHaveBeenCalledOnce();
+    expect(first).toHaveBeenCalledTimes(2);
+  });
+
+  test("unwatching drops the resync watcher with its change watcher", () => {
+    const { client, channels } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    const onResync = vi.fn();
+    events.watchAgents(vi.fn(), onResync)();
+    (channels[0] as FakeChannel).ack("SUBSCRIBED");
+    expect(onResync).not.toHaveBeenCalled();
+  });
+
+  test("a watcher registered without a resync handler still joins cleanly", () => {
+    const { client, channels } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    const onChange = vi.fn();
+    events.watchAgents(onChange);
+    expect(() => (channels[0] as FakeChannel).ack("SUBSCRIBED")).not.toThrow();
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });
 
 describe("workspace channels", () => {

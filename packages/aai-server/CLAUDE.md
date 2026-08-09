@@ -80,21 +80,14 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   studio SSE test modelled the stamp as a read-modify-write (a `put`) instead
   of calling `stampWorkspaceMeta`; a test standing in for a real writer has to
   BE that writer.
-  **Wait out an emit with `memory.settled()`, never a microtask spin.** An
-  emit is fire-and-forget in both directions — dispatch is deferred a
-  microtask, and a handler like `watchAgentInvalidation` then does async work
-  (row re-read, slot retirement, a replacement boot) that returns to nobody —
-  so three specs hand-rolled `for (let i = 0; i < N; i++) await
-  Promise.resolve()` with N=5 in one file and N=20 in two others. That number
-  is unknowable and silent when wrong: one more `await` in the handover chain
-  and the spin finishes early, so assertions run against half-applied state
-  and either flake or pass while testing nothing. `settled()` collects each
-  handler's returned promise and drains until quiescent (handlers that emit
-  again included), which is why `watchAgentInvalidation` RETURNS its
-  `withSlugLock` promise instead of `void`-ing it. Two consequences: a new
-  watcher whose work must be waitable has to return its promise, and because
-  `settled()` really waits it can DEADLOCK — a test holding the slug lock must
-  commit, release, then settle
+  **Wait out an emit with `memory.settled()`, never a microtask spin** — an
+  emit is fire-and-forget in both directions, and the spin's iteration count is
+  unknowable and silent when wrong. The full account is on `settled()`'s own
+  doc comment in `platform-events.ts`; the two consequences to carry into new
+  code are that a watcher whose work must be waitable has to RETURN its promise
+  (which is why `watchAgentInvalidation` returns its `withSlugLock` promise
+  rather than `void`-ing it), and that because `settled()` really waits it can
+  DEADLOCK — a test holding the slug lock must commit, release, then settle
 - `realtime-events.ts` — the production `PlatformEvents`: Supabase Realtime
   `postgres_changes` on `aai_platform.agents` / `studio_workspaces` /
   `studio_chats` over `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`, plus
@@ -640,6 +633,33 @@ down, like the file-length allowlist.
   reordered events harmless; an unreadable version logs and leaves the
   resident alone rather than killing a healthy sandbox.
 
+  **The stream's REJOIN is itself a signal, and on THIS stream it has to be.**
+  `subscribe()` only sends the join — the binding is not live until the ack,
+  and realtime-js rejoins after any socket drop — so changes in either window
+  reach nobody, ever. The pooled channels always fired their watchers on the
+  ack; the AGENTS channel did not, and it is where the gap is unrecoverable,
+  being the single mover of residents with no later check behind it (see the
+  deleted duplicate paths above). A deploy during a drop left the replica
+  serving superseded code and a delete left it answering for a deleted agent,
+  until the guest happened to self-exit on idle — for a busy agent, never,
+  since traffic is what keeps it non-idle. The deploy reported success.
+
+  So `watchAgents` takes a second, slug-less `onResync`, which
+  `watchAgentInvalidation` answers by re-running the same per-slug reconcile
+  over every resident. Three properties: it is a **separate callback, not a
+  nullable slug**, so a consumer that ignores resync says so by omission
+  rather than mishandling a sentinel silently; **the residents are the query,
+  not the agents table** — one version read per sandbox actually served
+  (single-flighted, 1s-cached) and none at all on a replica holding none,
+  because every reconnect fires this and the common case must stay a cheap
+  re-read; and **registration precedes `ensureAgentsChannel()`**, so a join
+  cannot fire ahead of the watcher that triggered it.
+
+  The subscription MONITOR (`createSubscriptionMonitor`, via `/health`) is the
+  complement, not the same thing: it makes a channel that never joins visible,
+  and cannot repair one that dropped and recovered on its own — the common
+  case, and the silent one.
+
   **Deploy and delete are the ONLY mutations that move sandboxes.** Secret
   and storage changes write Vault and bump nothing — they take effect on
   the agent's next deploy (or whenever its sandbox is next rebuilt). That
@@ -1053,14 +1073,12 @@ down, like the file-length allowlist.
   because the memory is native, not V8's. The reservation is the idle
   voice-session shape; the cap only has to clear the bundler's peak.
 
-  **BOTH Modal apps set the burst range in their image env** — the agent
-  app's guest-sandbox resources block (`aai-server/modal_deploy.py`) and
-  the studio app's (`aai-studio-server/modal_deploy.py`). The studio spawns
-  its own sandboxes (coding-agent sessions, Publish),
-  whose `test_agent`/Publish builds are exactly the workload the cap exists
-  for — for a while only the agent app set the range, so studio-spawned
-  sandboxes ran on Modal defaults. Keep the two blocks' values in lockstep
-  unless the divergence is deliberate.
+  **The burst range is set in ONE place** — the guest-sandbox resources block
+  in `aai-server/modal_deploy.py`, the only Modal app there is. Studio
+  sandboxes (coding-agent sessions, Publish) are spawned by that same process
+  and inherit it, which matters because their `test_agent`/Publish builds are
+  the workload the cap exists for. (This said "BOTH Modal apps … keep the two
+  blocks in lockstep" until the second one went with the split deployment.)
 - **Every sandbox is tagged with a `role`** (`sandbox-role.ts`: `agent`,
   `preview`, `studio`, `studio-publish`) plus the `slug`
   (studio sandboxes carry the project name), so the Modal dashboard can tell
