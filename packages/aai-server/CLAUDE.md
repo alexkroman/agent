@@ -693,6 +693,28 @@ down, like the file-length allowlist.
   tight cluster at one value); and a rise in the count usually means a client is
   churning subscriptions, not that a stream was cut.
 
+  **So the container COLLAPSES each one to a single line**
+  (`install_proxy_noise_filter` in `scripts/modal_image.py`, installed at the
+  top of `server()` in `modal_deploy.py`). Left whole they are the log's
+  dominant content and they crowd out the thing you opened it for: across one
+  60-minute production window they were ~600 of ~3,200 lines while the service
+  served **zero 5xx** — and the window in question also held 13 failed
+  container starts and a `crash-looping` line that took a targeted grep to
+  find. The twenty-odd frames are Modal and aiohttp internals, identical every
+  time and actionable never.
+
+  **Collapsed, NOT dropped**, because the count and the timing are the entire
+  diagnostic — the rule above is to join a RISE to the request log, and a
+  deleted record makes that impossible. It stays a record on the `asyncio`
+  logger, at the same level, carrying its exception type; only the traceback
+  goes. It is also matched on TWO discriminators (the exception name **and**
+  `_proxy_http_request` in the record), so it can never decay into swallowing
+  asyncio errors: one of our own tasks dying the same way, or Modal's proxy
+  task dying of anything else, still prints in full. `modal-image-inputs.test.ts`
+  pins all three properties, which is worth the ceremony because every way this
+  rots is silent and in the same direction — toward eating a traceback you
+  needed, in a log nobody reads until an incident.
+
   **Capping the streams' own lifetime was considered and rejected.** It cannot
   reduce the above — a tab close still aborts whatever stream is open — while
   `projectPayload` carries `files: workspace.files`, so every forced recycle

@@ -57,7 +57,7 @@ import modal
 # The image recipe is shared with the studio app so the two services can never
 # run different dependency trees — see scripts/modal_image.py.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "scripts"))
-from modal_image import build_image, run_node  # noqa: E402
+from modal_image import build_image, install_proxy_noise_filter, run_node  # noqa: E402
 
 PORT = 8080
 
@@ -215,6 +215,10 @@ app = modal.App("aai-server-web")
 @modal.concurrent(max_inputs=MAX_INPUTS, target_inputs=TARGET_INPUTS)
 @modal.web_server(port=PORT, startup_timeout=180)
 def server() -> None:
+    # Before the port opens, so no request can outrun it. Modal's ASGI proxy
+    # runs in THIS process and logs a full traceback every time a browser walks
+    # away from an SSE stream — see install_proxy_noise_filter.
+    install_proxy_noise_filter()
     env = os.environ.copy()
     # Modal injects MODAL_SERVER_URL into its containers pointing at an
     # internal Unix socket (/run/modal.sock) for the Python task runtime.
