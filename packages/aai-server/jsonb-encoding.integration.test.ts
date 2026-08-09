@@ -34,6 +34,7 @@
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createPgChatStore } from "./chat-store.ts";
+import { ensurePlatformTables } from "./test-utils.ts";
 import { createPgWorkspaceStore } from "./workspace-store.ts";
 
 const PG_URL = process.env.AAI_TEST_PG_URL;
@@ -47,9 +48,12 @@ describeWithPg("platform jsonb columns hold jsonb, not strings", () => {
   let db: ReturnType<typeof createPostgresDb>;
   let sql: <T = Record<string, unknown>>(q: string, p?: unknown[]) => Promise<T[]>;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     db = createPostgresDb({ url: PG_URL as string });
     sql = db.query;
+    // CI's Postgres is the runner's own cluster with no `aai_platform` schema;
+    // a no-op against the local Supabase stack or any real database.
+    await ensurePlatformTables(sql);
   });
 
   afterAll(async () => {

@@ -193,3 +193,56 @@ export function createRecordingSql(
   };
   return { sql, calls };
 }
+
+/**
+ * Create the `aai_platform` tables on the database under test, if it has none.
+ *
+ * The integration tier's Postgres is the CI runner's own cluster
+ * (`.github/workflows/check.yml` starts it), which carries no `aai_platform`
+ * schema. That was fine while the only suites needing a database were
+ * `platform-lock` (advisory locks need no schema) and `schema-drift` (it reads
+ * `pg_class`, and an empty schema satisfies "every table present is declared"
+ * vacuously). A suite that reads and writes real rows needs the tables.
+ *
+ * **The DDL is EXTRACTED from `supabase/migrations`, never restated here.** A
+ * hand-copy of a schema in a test util is the same class of bug as the one
+ * these suites exist to catch: it passes forever against a shape production
+ * does not have. The extraction is deliberately partial — `create table`
+ * statements only — because the migrations also install `pg_cron` and `pgmq`,
+ * and neither extension exists on a stock cluster. Nothing here needs them.
+ *
+ * **It returns early on a database that already has the schema**, so pointing
+ * the suite at the local Supabase stack, or at staging, runs no DDL at all.
+ */
+export async function ensurePlatformTables(sql: SqlExec): Promise<void> {
+  // `SqlExec` is not generic — the row is `unknown`, which is all this needs.
+  const [existing] = await sql(
+    "select to_regclass('aai_platform.studio_workspaces') is not null as present",
+  );
+  if (existing?.present) return;
+
+  const { readdirSync, readFileSync } = await import("node:fs");
+  const path = await import("node:path");
+  const dir = path.resolve(import.meta.dirname, "../../supabase/migrations");
+  const sqlText = readdirSync(dir)
+    .filter((name) => name.endsWith(".sql"))
+    .sort()
+    .map((name) => readFileSync(path.join(dir, name), "utf-8"))
+    .join("\n");
+
+  // The migrations format every table as `create table … (` … `\n);`, which is
+  // what makes a regex safe despite the `primary key (a, b)` lines inside.
+  const tables = sqlText.match(/create table if not exists aai_platform\.\w+ \([\s\S]*?\n\);/g);
+  // Loud rather than vacuous: a reformatted migration must fail here, not
+  // produce a suite that silently creates nothing and errors row by row.
+  if (!tables || tables.length === 0) {
+    throw new Error(`no create-table statements found in ${dir} — has the format changed?`);
+  }
+  await sql("create schema if not exists aai_platform");
+  for (const statement of tables) await sql(statement);
+
+  const [created] = await sql(
+    "select to_regclass('aai_platform.studio_workspaces') is not null as present",
+  );
+  if (!created?.present) throw new Error("aai_platform tables were not created");
+}
