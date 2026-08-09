@@ -1,6 +1,7 @@
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 import type { ToolContext } from "@alexkroman1/aai";
+import { createKeyedLock, withLock } from "@alexkroman1/aai";
 
 export const SEVERITIES = ["critical", "urgent", "moderate", "minor"] as const;
 export type Severity = (typeof SEVERITIES)[number];
@@ -198,7 +199,7 @@ function pruneState(state: DispatchState): void {
   }
 }
 
-const sessionLocks = new Map<string, Promise<unknown>>();
+const sessionLock = createKeyedLock();
 
 /**
  * Serialized update of the session's dispatch state.
@@ -206,33 +207,30 @@ const sessionLocks = new Map<string, Promise<unknown>>();
  * The LLM loop executes parallel tool calls concurrently. The state lives in
  * `ctx.state` now (one shared object, no snapshot/save round-trip), but a
  * mutator may be async, and two interleaving async mutators can each observe
- * the other's half-applied changes. This per-session promise chain makes
- * each update run against the previous one's finished result. It also
- * centralizes the shared bookkeeping every mutating tool needs: pruning and
- * alert-level recalculation.
+ * the other's half-applied changes. Holding the session's key makes each
+ * update run against the previous one's finished result. It also centralizes
+ * the shared bookkeeping every mutating tool needs: pruning and alert-level
+ * recalculation.
+ *
+ * `createKeyedLock` rather than a hand-rolled promise chain per session: the
+ * SDK's drops each key's entry once its chain drains (so a long-running agent
+ * does not accumulate one per session id) and does it by ownership, which is
+ * the part a hand-rolled chain gets wrong.
  *
  * There is no post-save callback: pushing the board to the client used to
  * need one, and `syncState` now does it after every tool call.
  */
-export async function updateState<R>(
+export function updateState<R>(
   ctx: ToolContext,
   mutator: (state: DispatchState) => R | Promise<R>,
 ): Promise<R> {
-  const prev = sessionLocks.get(ctx.sessionId) ?? Promise.resolve();
-  const run = prev.then(async () => {
+  return withLock(sessionLock, ctx.sessionId, async () => {
     const state = getState(ctx);
     const result = await mutator(state);
     pruneState(state);
     recalculateAlertLevel(state);
     return result;
   });
-  // Keep the chain alive across failures, and drop it once idle.
-  const tail = run.catch(() => {});
-  sessionLocks.set(ctx.sessionId, tail);
-  tail.then(() => {
-    if (sessionLocks.get(ctx.sessionId) === tail) sessionLocks.delete(ctx.sessionId);
-  });
-  return run;
 }
 
 // ─── Incident helpers ────────────────────────────────────────────────────────

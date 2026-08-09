@@ -273,7 +273,12 @@ describe("createPreviewDeployer", () => {
       const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
       // The first deploy never returns — a sandbox that went away mid-request.
-      const wedged = vi.fn((): Promise<WorkspaceDeployOutcome> => new Promise(() => {}));
+      const wedged = vi.fn(
+        (): Promise<WorkspaceDeployOutcome> =>
+          new Promise(() => {
+            /* never settles */
+          }),
+      );
       const queue = createMemoryPreviewQueue();
       const deployer = createPreviewDeployer({
         workspaces,

@@ -239,7 +239,9 @@ describe("createSessionReaper", () => {
         fleet: {
           heldByUs: (scope, project) => {
             reads.push(`${scope}/${project}`);
-            return new Promise<boolean>(() => {});
+            return new Promise<boolean>(() => {
+              /* never settles */
+            });
           },
         },
       });
