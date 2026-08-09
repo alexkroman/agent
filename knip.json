@@ -53,6 +53,7 @@
     "packages/aai-ui": {
       "entry": [
         "**/*.test.{ts,tsx}",
+        "**/*.test-d.ts",
         "_react-test-utils.ts"
       ]
     },

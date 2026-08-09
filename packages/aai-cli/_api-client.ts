@@ -8,6 +8,7 @@
  * 5xx/429) are retried before surfacing an error.
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { FetchError, ofetch } from "ofetch";
 
 export const HINT_INVALID_API_KEY =
@@ -65,7 +66,7 @@ export async function apiRequest<T = unknown>(url: string, opts: ApiRequestOptio
     return await client<T>(url, {
       method: opts.method ?? "GET",
       headers: { Authorization: `Bearer ${opts.apiKey}`, ...opts.headers },
-      ...(opts.body !== undefined ? { body: opts.body } : {}),
+      ...omitUndefined({ body: opts.body }),
       retry: opts.retry ?? 2,
       retryDelay: opts.retryDelay ?? 300,
     });

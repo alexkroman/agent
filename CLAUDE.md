@@ -65,6 +65,30 @@ in proxied environments and fails with misleading errors (instant
 `ERR_PNPM_FETCH_404`s) that only reproduce under `turbo run`, never when
 running the underlying script directly.
 
+**A file a task depends on must be hashed by that task, and `inputs` globs
+resolve RELATIVE TO THE PACKAGE — so anything at the repo root belongs in
+`globalDependencies`.** This is the same failure the `typecheck` task's
+`**/*.test.ts` note below describes, and the root `tsconfig.json` sat in it:
+every package `extends` that file, so it defines `strict`,
+`exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`, `target` and
+`customConditions` for the whole repo, and `tsconfig*.json` in the task's
+`inputs` matched only the package's own copy. Demonstrated on a clean tree:
+warm the cache, weaken the root config until `tsc -p packages/aai` reports an
+error, re-run — `2 cached, 40ms >>> FULL TURBO`, and `build` the same. CI was
+safe only by accident (its turbo cache does not survive between runs), so the
+gate this actually broke was the PRE-PUSH HOOK, i.e. green locally and red in
+CI. `lint` had it right all along with `../../biome.json`, and `test` with
+`../../vitest.shared.ts`; a per-task `$TURBO_ROOT$/…` entry works too, but the
+global is the one the next task cannot forget.
+
+Relatedly, **`cacheDir` and the CI cache path have to name the same
+directory.** They did not: `turbo.json` set
+`node_modules/.cache/turbo` while `check.yml` cached `path: .turbo`, which
+does not exist (it IS in `.gitignore`, which is what made it look plausible),
+so the "Cache Turborepo" step saved and restored nothing and every CI run
+type-checked cold. `cacheDir` is now `.turbo/cache`, which is what the
+workflow and `.gitignore` already assumed.
+
 `pnpm check:local` uses the same script with `--local` flag, running a
 subset: build, typecheck, lint, publint, syncpack, sherif, knip, test —
 all in one turbo call with `--continue` (shows all failures at once).
@@ -395,6 +419,31 @@ primitives — reach for them before re-inventing the pattern at a call site:
 - **Combining abort signals**: use native `AbortSignal.any([...])` (sources
   held weakly — no unlink bookkeeping); the pipeline transport combines the
   session signal with each turn's controller this way.
+- **`omitUndefined()`** (`aai/sdk/omit-undefined.ts`, exported from
+  `@alexkroman1/aai/utils`) — the one way to build the optional half of an
+  object under `exactOptionalPropertyTypes`. That flag makes
+  `{ name: maybeName }` an error whenever the value can be `undefined`, so the
+  only spelling that compiles is `...(name !== undefined ? { name } : {})` —
+  correct, and hand-written 44 times across five packages, eight of them in a
+  single object literal in `host/agent-server.ts`. Each line names its key
+  twice, which is what makes a mismatched pair (`x !== undefined ? { y: x }`)
+  read as noise rather than as the bug it is. Write
+  `...omitUndefined({ name, greeting })` instead; renaming a key
+  (`{ leadMs: audioLeadMs }`) works the same.
+
+  Three sites deliberately keep the long form, and they are the ones where the
+  GUARD IS NOT THE VALUE — `params.port !== undefined ? { AAI_GUEST_PORT:
+  String(params.port) }` (`omitUndefined` would stringify `undefined` into
+  `"undefined"`), the `JSON.stringify` twin in `aai-server/test-utils.ts`, and
+  `opts.mode !== undefined ? { mode: 0o700 }` in the CLI, which sets a
+  DIFFERENT value from the one it tests. Check that before converting a
+  fourth.
+
+  It lives on `/utils` rather than `/internal` (where the other cross-package
+  primitives above sit) for one reason: `/internal` re-exports
+  `formatSchemaIssues` from `sdk/schema.ts`, so importing anything from it
+  pulls **zod** — and `aai-cli/_utils.ts`, one of its callers, is on the
+  documented zod-free CLI startup path.
 
 ### Fixed release coupling
 
@@ -526,7 +575,26 @@ you only need to list one package.
 - Type-level tests use `.test-d.ts` files with `typecheck: { only: true }`
   — they are checked by tsc but never executed at runtime. Use
   `expectTypeOf` from vitest to assert on type shapes. Projects:
-  `aai-types`.
+  `aai-types`, `aai-ui-types` — one per package, because each has to run under
+  its own package tsconfig (`aai-ui`'s type tests need `lib: DOM` and
+  `jsx: react-jsx`, which the root config does not set).
+
+  **What GATES a `.test-d.ts` is `turbo run typecheck`, not those projects.**
+  They are declared only in the root `vitest.config.ts`, which nothing in the
+  repo or in CI evaluates — the same cause as the root coverage thresholds
+  above, and it means `pnpm vitest run --project aai-types` is a local
+  iteration shortcut rather than the gate. The real enforcement is that every
+  package tsconfig includes its test files and a mismatched `expectTypeOf` is a
+  hard compile error: injecting
+  `expectTypeOf<string>().toEqualTypeOf<number>()` fails `tsc -p packages/aai`
+  with `TS2344`, naming the mismatch in the constraint. So a new `.test-d.ts`
+  is covered on creation — but only in a package whose tsconfig includes it,
+  which is worth checking when adding the first one to a package.
+
+  **The first `.test-d.ts` in a package needs a `knip.json` entry too**
+  (`"**/*.test-d.ts"`). A type test is imported by nothing, so without it knip
+  reports the file itself as unused — which is what happened to
+  `aai-ui/hooks.test-d.ts`, on a pattern `packages/aai` had carried all along.
 - **Package validation**: `publint` runs post-build to verify package.json
   exports resolve to real files. `attw` validates export types. Both run in
   the check pipeline AND in CI, and **all three publishable packages
@@ -858,10 +926,22 @@ back to the host's `process.env`.
 
 ### Known limitations
 
-- **Type-level tests**: Cover public entry points of `aai` (`.`, `./types`)
-  and `aai-ui` (`.`). Subpath exports (e.g. `./protocol`) are not covered
-  by type tests. (Their RUNTIME export lists are pinned — see
+- **Type-level tests**: Cover public entry points of `aai` (`.`, `./types`,
+  plus the provider descriptors) and `aai-ui` (`.` — the four generic hooks a
+  custom client is written against). Subpath exports (e.g. `./protocol`) are
+  not covered by type tests. (Their RUNTIME export lists are pinned — see
   `sdk/exports.test.ts` — which is a different guarantee.)
+
+  This entry claimed the `aai-ui` half for a long time before it was true:
+  every `.test-d.ts` in the repo lived in `packages/aai`, and the
+  `aai-types` project is rooted there, so it could not have run an `aai-ui`
+  type test if one had been written. What was unpinned is exactly what a type
+  test is for — `useToolResult<R>`'s two overloads, `useAgentState<S>`'s
+  nullable return, and the deliberate `any` on both (`DefaultToolResult`, and
+  `ToolCallInfo.args`), which are documented decisions with a rationale and no
+  check. `hooks.test-d.ts` pins them now, including the `any`s, because
+  tightening one to `unknown` is a breaking change for every untyped client
+  and should fail here rather than in a user's build.
 
 ### Open testability work
 

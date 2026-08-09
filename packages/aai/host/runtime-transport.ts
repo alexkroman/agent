@@ -11,6 +11,7 @@
 import type { LanguageModel } from "ai";
 import type { AgentConfig, ToolSchema } from "../sdk/_internal-types.ts";
 import { DEFAULT_TOOL_CHOICE } from "../sdk/constants.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { ASSEMBLYAI_S2S_KIND } from "../sdk/providers/s2s/assemblyai.ts";
 import {
@@ -122,7 +123,7 @@ export function createTransportFactory(
       ttsSampleRate: s2sConfig.outputSampleRate,
       maxSteps: agentConfig.maxSteps,
       toolChoice: agentConfig.toolChoice,
-      ...(agentConfig.sttPrompt !== undefined ? { sttPrompt: agentConfig.sttPrompt } : {}),
+      ...omitUndefined({ sttPrompt: agentConfig.sttPrompt }),
       silenceTimeoutMs: agentConfig.silenceTimeoutMs,
       silencePrompt: agentConfig.silencePrompt,
       minBargeInWords: agentConfig.minBargeInWords,
@@ -157,7 +158,7 @@ export function createTransportFactory(
       options: (agent.s2s?.options ?? {}) as OpenaiRealtimeOptions,
       sessionConfig: {
         systemPrompt,
-        ...(agentConfig.greeting !== undefined ? { greeting: agentConfig.greeting } : {}),
+        ...omitUndefined({ greeting: agentConfig.greeting }),
       },
       toolSchemas,
       toolChoice: agentConfig.toolChoice ?? DEFAULT_TOOL_CHOICE,
@@ -179,10 +180,10 @@ export function createTransportFactory(
       sessionConfig: {
         systemPrompt,
         tools: toolSchemas,
-        ...(agentConfig.greeting !== undefined ? { greeting: agentConfig.greeting } : {}),
+        ...omitUndefined({ greeting: agentConfig.greeting }),
         // Forwarded on its own presence, like the pipeline branch above. Omitting
         // it here is what made `sttPrompt` a silent no-op for every S2S agent.
-        ...(agentConfig.sttPrompt !== undefined ? { sttPrompt: agentConfig.sttPrompt } : {}),
+        ...omitUndefined({ sttPrompt: agentConfig.sttPrompt }),
       },
       callbacks,
       sid: sessionOpts.id,

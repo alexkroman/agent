@@ -26,6 +26,7 @@
 
 import type { Db } from "../sdk/db.ts";
 import type { AgentEnv, ProviderEnv } from "../sdk/env-types.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { createRuntime, type RuntimeOptions } from "./runtime.ts";
 import { type AgentServer, createServer, type PassthroughServerOptions } from "./server.ts";
 
@@ -96,18 +97,12 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
   const runtime = createRuntime({
     agent,
     env,
-    ...(providerEnv !== undefined ? { providerEnv } : {}),
-    ...(db !== undefined ? { db } : {}),
-    ...(logger !== undefined ? { logger } : {}),
+    ...omitUndefined({ providerEnv, db, logger }),
   });
   return createServer({
     runtime,
     // Read off the agent rather than asked for again — see the module doc.
     name: agent.name,
-    ...(agent.greeting !== undefined ? { greeting: agent.greeting } : {}),
-    ...(clientDir !== undefined ? { clientDir } : {}),
-    ...(logger !== undefined ? { logger } : {}),
-    ...(upgrade !== undefined ? { upgrade } : {}),
-    ...(request !== undefined ? { request } : {}),
+    ...omitUndefined({ greeting: agent.greeting, clientDir, logger, upgrade, request }),
   });
 }

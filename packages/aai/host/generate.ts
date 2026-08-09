@@ -13,6 +13,7 @@
 import { generateObject, generateText, jsonSchema, type LanguageModel } from "ai";
 import type { ProviderEnv } from "../sdk/env-types.ts";
 import type { GenerateOptions, GenerateResult } from "../sdk/generate.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { normalizeLlm } from "../sdk/providers/llm/from-string.ts";
 import type { LlmProvider } from "../sdk/providers.ts";
 import { isConvertibleSchema, toToolJsonSchema } from "../sdk/schema.ts";
@@ -106,12 +107,12 @@ export function createGenerateFn(opts: CreateGenerateFnOptions): HostGenerateFn 
     const common = {
       model,
       prompt: options.prompt,
-      ...(options.system !== undefined ? { system: options.system } : {}),
-      ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
-      ...(options.maxOutputTokens !== undefined
-        ? { maxOutputTokens: options.maxOutputTokens }
-        : {}),
-      ...(callOpts?.signal !== undefined ? { abortSignal: callOpts.signal } : {}),
+      ...omitUndefined({
+        system: options.system,
+        temperature: options.temperature,
+        maxOutputTokens: options.maxOutputTokens,
+        abortSignal: callOpts?.signal,
+      }),
     };
     if (options.schema !== undefined) {
       const { object } = await generateObject({
