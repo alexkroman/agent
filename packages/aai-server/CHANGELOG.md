@@ -1,5 +1,12 @@
 # @alexkroman1/aai-server
 
+## 3.5.2
+
+### Patch Changes
+
+- 6b18703: Collapse Modal's per-abandoned-SSE-stream proxy traceback to one line, so the container log is readable during an incident
+- 65eab69: Fix the Modal container crash-loop: guard the image recipe's repo read behind modal.is_local(), and verify the rollout in CI instead of trusting modal deploy's exit code
+
 ## 3.5.1
 
 ### Patch Changes
