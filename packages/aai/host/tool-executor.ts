@@ -11,8 +11,7 @@ import { EMPTY_PARAMS } from "../sdk/_internal-types.ts";
 import { TOOL_EXECUTION_TIMEOUT_MS } from "../sdk/constants.ts";
 import type { Db } from "../sdk/db.ts";
 import { STORAGE_DISABLED_MESSAGE } from "../sdk/db.ts";
-import type { GenerateOptions, GenerateResult } from "../sdk/generate.ts";
-import { omitUndefined } from "../sdk/omit-undefined.ts";
+import type { GenerateFn, GenerateOptions, GenerateResult } from "../sdk/generate.ts";
 import { formatSchemaIssues } from "../sdk/schema.ts";
 import type { Message, ToolContext, ToolDef } from "../sdk/types.ts";
 import { errorDetail, errorMessage, toolError } from "../sdk/utils.ts";
@@ -41,26 +40,38 @@ type ExecuteToolCallOptions = {
   signal?: AbortSignal | undefined;
 };
 
-function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
+// Takes the per-call signal as a REQUIRED narrowing of the options bag:
+// `ExecuteToolCallOptions.signal` is the turn signal and is optional, but the
+// context's signal is the per-call controller `executeToolCall` always builds,
+// which is what makes `ToolContext.signal` non-optional.
+function buildToolContext(opts: ExecuteToolCallOptions & { signal: AbortSignal }): ToolContext {
   const { env, state, db, messages, sessionId, send, signal, generate } = opts;
   return {
     env,
     state: state ?? {},
-    ...omitUndefined({ signal }),
+    signal,
     get db(): Db {
       if (!db) {
         throw new Error(STORAGE_DISABLED_MESSAGE);
       }
       return db;
     },
-    generate(genOpts: GenerateOptions): Promise<GenerateResult> {
+    // Asserted rather than inferred, and this is the one place it happens.
+    // `GenerateFn` is OVERLOADED: a Standard Schema call promises a required
+    // `object`, which `createGenerateFn` does deliver (it runs `generateObject`
+    // and returns `{ text, object }` unconditionally on that path). TypeScript
+    // cannot check an overloaded signature against a single implementation, so
+    // the forwarder is declared with the widest one and asserted here — the
+    // narrowing is backed by host/generate.ts, not by hope.
+    generate: ((genOpts: GenerateOptions): Promise<GenerateResult> => {
       if (!generate) {
         return Promise.reject(new Error("generate is not available in this execution context"));
       }
-      // The issuing turn's signal cancels an in-flight generation the same
-      // way it unblocks the tool await.
-      return generate(genOpts, signal !== undefined ? { signal } : {});
-    },
+      // The per-call signal cancels an in-flight generation the same way it
+      // unblocks the tool await. Passed unconditionally — it is always present
+      // now that `ToolContext.signal` is.
+      return generate(genOpts, { signal });
+    }) as GenerateFn,
     messages: messages ?? [],
     // No session → a unique per-call id, NOT "": the builtin remember/recall
     // notes are keyed by sessionId in a process-wide map, so sessionless

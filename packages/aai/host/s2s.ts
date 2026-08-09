@@ -110,6 +110,25 @@ export type S2sSessionConfig = {
    * authenticating first name from 1 of 6 attempts correct to 6 of 6.
    */
   sttPrompt?: string;
+  /**
+   * Agent voice, sent as `output.voice`. From `assemblyAIS2s({ voice })`;
+   * unset leaves the service default.
+   */
+  voice?: string;
+  /**
+   * Language codes to bias transcription toward, sent as
+   * `input.language_codes`. From `assemblyAIS2s({ languages })`.
+   *
+   * Unset is MEANINGFUL — it means "detect per turn" — so this is forwarded on
+   * its own presence and never defaulted here. See the descriptor's doc for why
+   * a host-side `["en"]` would be the mirror-image bug.
+   */
+  languages?: readonly string[];
+  /**
+   * Domain terms to bias transcription toward, sent as `input.keyterms`. From
+   * `assemblyAIS2s({ keyterms })`.
+   */
+  keyterms?: readonly string[];
 };
 
 /**
@@ -233,10 +252,10 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     },
 
     updateSession(sessionConfig: S2sSessionConfig): void {
-      // Both are destructured OUT rather than left to the spread: they are SDK
-      // field names, and `rest` goes onto the wire verbatim, so leaving either
-      // in would send an unknown key the service rejects.
-      const { systemPrompt, sttPrompt, ...rest } = sessionConfig;
+      // All five are destructured OUT rather than left to the spread: they are
+      // SDK field names, and `rest` goes onto the wire verbatim, so leaving any
+      // of them in would send an unknown key the service rejects.
+      const { systemPrompt, sttPrompt, voice, languages, keyterms, ...rest } = sessionConfig;
       send({
         type: "session.update",
         session: {
@@ -253,8 +272,16 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
             ...pcmAudio(config.inputSampleRate),
             ...voiceFocusInput(),
             ...transcriptionPromptInput(sttPrompt),
+            // Both forwarded on PRESENCE only. An unset `language_codes` means
+            // "detect per turn" service-side, so sending a default here would
+            // disable multilingual transcription for every agent.
+            ...(languages && languages.length > 0 ? { language_codes: [...languages] } : {}),
+            ...(keyterms && keyterms.length > 0 ? { keyterms: [...keyterms] } : {}),
           },
-          output: pcmAudio(config.outputSampleRate),
+          output: {
+            ...pcmAudio(config.outputSampleRate),
+            ...(voice !== undefined ? { voice } : {}),
+          },
         },
       });
     },

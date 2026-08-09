@@ -216,8 +216,8 @@ present in the `agent()` config:
   what was spoken, so committing it would put words in history the caller never
   heard.
 
-  **S2S sends Voice Focus and `sttPrompt`; `languages`, `keyterms` and `voice`
-  are still unreachable.** `updateSession` pins
+  **S2S sends Voice Focus, `sttPrompt`, and the three descriptor options
+  (`voice`, `languages`, `keyterms`).** `updateSession` pins
   `input.voice_focus`/`voice_focus_threshold` from the same
   `DEFAULT_VOICE_FOCUS`/`DEFAULT_VOICE_FOCUS_THRESHOLD` constants the pipeline
   STT stage reads (the S2S default is the service's 0.7, and the interferer that
@@ -233,14 +233,29 @@ present in the `agent()` config:
   transcription and no warning. `runtime-transport.test.ts` pins the forwarding
   at the point it was missing (verified to fail when reverted).
 
-  What remains unreachable is `input.language_codes`, `input.keyterms` and
-  `output.voice`, because `assemblyAIS2s()` takes no options at all — so an S2S
-  agent cannot pick its voice either, and the claim elsewhere in this guide that
-  "S2S mode's voice rides on the `s2s` descriptor" is wrong: `voice` is a compile
-  error on `agent()` and there is no descriptor field to put it on. Note
-  `languages` must stay AUTHOR-controlled rather than defaulted here — an unset
-  value means "detect per turn", and a host-side `["en"]` would silently disable
-  multilingual transcription for every agent, the mirror-image bug.
+  **That fix landed the runtime half and left the TYPE half closed for three
+  days**, which is worth more than the bug was. `PipelineOnlyField` in
+  `sdk/define.ts` still listed `sttPrompt`, so `agent({ s2s, sttPrompt })` was a
+  compile error naming a rule that was no longer true, while `AgentDef.sttPrompt`
+  documented the field as working in both modes and the transport forwarded it.
+  The only way to reach the measured win was to skip `agent()` for a raw
+  `export default {...}`. A dropped field has a mirror image — a REJECTED field
+  the runtime honours — and it reads to an author as "unsupported", so it draws
+  no bug report at all. When a config field's mode rule changes, the type gate,
+  the doc, and the transport all move together or none of them do.
+
+  `input.language_codes`, `input.keyterms` and `output.voice` are reachable as of
+  2026-08-09: `assemblyAIS2s()` takes `{ voice, languages, keyterms }`, read off
+  the stored descriptor by `readAssemblyS2sOptions` in `runtime-transport.ts` and
+  forwarded on presence only. Before that the factory took no options at all, so
+  an S2S agent could not pick its voice — which is why the claim elsewhere in
+  this guide that "S2S mode's voice rides on the `s2s` descriptor" was wrong when
+  written and is now merely how it works. Note `languages` must stay
+  AUTHOR-controlled rather than defaulted — an unset value means "detect per
+  turn", and a host-side `["en"]` would silently disable multilingual
+  transcription for every agent, the mirror-image bug. The accepted `voice` set
+  is the SERVICE's and is unverified here; an id it rejects arrives in-band after
+  connect, so the agent connects, reports ready, and never speaks.
 
   Measured on tau2 retail (2 runs per arm, identical audio and pacing):
   `language_codes: ["en"]` + voice focus 0.9 + a `transcription_prompt` took the
@@ -482,9 +497,13 @@ Reference providers shipped today:
     streaming turns the same rejection into a bare
     `{"message":"something went wrong","code":500}` with the explanation
     stripped — the diagnosis exists only in the non-streaming reply, which
-    nothing in the pipeline sends. And since `DEFAULT_BUILTIN_TOOLS` puts four
-    tools on every agent that does not opt out, an unguarded descriptor fails
-    on *every* turn while reading as a gateway outage. So the constraint is
+    nothing in the pipeline sends. And it fires for any agent that declares a
+    tool at all — its own, or a named builtin — so an unguarded descriptor
+    fails on *every* turn of a tool-using agent while reading as a gateway
+    outage. (This paragraph used to reason from `DEFAULT_BUILTIN_TOOLS` putting
+    four tools on every agent that did not opt out, which stopped being true
+    when that default went empty; the conclusion survives the premise, because
+    a voice agent worth deploying declares tools.) So the constraint is
     encoded rather than documented: `TOOLS_REQUIRE_NO_REASONING` in
     `sdk/providers/llm/assemblyai.ts` makes the factory default
     `reasoningEffort` to `"none"` for those model ids, covering all three ways
@@ -932,7 +951,7 @@ defaults that affect agent behavior:
 | `HEARD_AUDIO_LAG_MS` | 750 ms | `pipeline-heard.ts` | Pipeline only, internal (no agent field; the transport takes a `heardLagMs` for tests). How far behind the "audio forwarded" bookkeeping the caller's ear is — subtracted from the estimated playback position to get the cursor that decides what an interrupted reply records and where the resume anchor sits. **DERIVED, not measured**: `PLAYBACK_JITTER_MS` (400) plus an assumed sub-second network hop, the same decomposition `PIPELINE_PLAYBACK_GRACE_MS` states for the same delay with the opposite sign. It is a second constant precisely so tuning the grace for barge-in robustness (where erring late is harmless) cannot silently drop more words from the record (where erring either way costs). See "History records what was HEARD". |
 | `maxHistory` | 200 | `constants.ts:52` | Sliding window of conversation messages retained. **The LLM view is trimmed by `capLlm`, not `cap`** (`pipeline-history.ts`): that view holds tool-call/result PAIRS, and an index trim can land between an assistant `tool-call` message and the `tool` message answering it. Both providers reject an unmatched tool result outright (OpenAI: "messages with role 'tool' must be a response to a preceding message with 'tool_calls'"), so every remaining turn of the call failed at the provider and the caller heard `errorPhrase` instead of a reply. Turn sizes vary — 2 messages for a text-only turn, 4 for one tool call, more for a chain — so the window drifts out of alignment with turn boundaries on its own; nothing about the conversation has to be unusual. Only the FRONT is trimmed, so dropping leading `tool` messages is sufficient. A uniform turn size hides the whole class: 4 divides 200, so every trim lands on a turn boundary. |
 | resume grace | 120,000 (`SESSION_RESUME_GRACE_MS`) | `constants.ts` | How long a disconnected session's per-session tool state (`ctx.state`) survives awaiting a `?sessionId=<id>` resume — the runtime's stateMap sweep (in-guest on the platform, in-process under `aai dev`) waits it out, cancelled when the session resumes. Sized above the browser client's worst-case automatic-reconnect span (~105s); the client reconnects with the sessionId from the `config` frame, so the resumed session finds its state under the same key. |
-| `builtinTools` | `DEFAULT_BUILTIN_TOOLS` (`think`, `remember`, `recall`, `calculate`) | `constants.ts` | Cognitive built-ins on by default: private reasoning scratchpad, session notes, safe calculator. Set `builtinTools` explicitly (including `[]`) to override. `web_search`/`visit_webpage`/`get_page_design`/`fetch_json`/`run_code` remain opt-in. A custom or relayed tool with the same name wins — the built-in is dropped. |
+| `builtinTools` | `DEFAULT_BUILTIN_TOOLS` (empty) | `constants.ts` | NO built-ins are enabled by default — omitting the field and passing `[]` mean the same thing, and every built-in (`think`/`remember`/`recall`/`calculate` as much as `web_search`/`visit_webpage`/`get_page_design`/`fetch_json`/`run_code`) is opt-in by name. A custom or relayed tool with the same name wins — the built-in is dropped. This row read "`think`, `remember`, `recall`, `calculate` … on by default" long after the constant went empty; the constant is `as const satisfies` now so the emptiness is a type-level fact. |
 
 ## Provider sockets disable permessage-deflate
 

@@ -46,6 +46,10 @@ export function createMockToolContext(overrides?: Partial<ToolContext>): ToolCon
     messages: [],
     sessionId: "test-session",
     send: vi.fn(),
+    // A signal that never aborts — `ToolContext.signal` is non-optional, and
+    // "this context cannot cancel" is spelled as a live-forever signal rather
+    // than as an absent field.
+    signal: new AbortController().signal,
     ...overrides,
   };
 }

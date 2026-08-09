@@ -64,6 +64,58 @@ describe("createTransportFactory (S2S)", () => {
     const sent = handle.updateSession.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(sent).not.toHaveProperty("sttPrompt");
   });
+
+  // The descriptor took NO options until 2026-08-09, so voice/languages/keyterms
+  // were unreachable in S2S while the pipeline had all three. These ride on
+  // `s2s.options` rather than on top-level config fields, so the read is a
+  // separate path from `sttPrompt` above and needs its own pin.
+  test("forwards the descriptor's voice/languages/keyterms", async () => {
+    const handle = await buildS2sSessionConfig({
+      s2s: assemblyAIS2s({
+        voice: "michael",
+        languages: ["en"],
+        keyterms: ["Acme Rewards"],
+      }),
+    });
+    expect(handle.updateSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        voice: "michael",
+        languages: ["en"],
+        keyterms: ["Acme Rewards"],
+      }),
+    );
+  });
+
+  test("omits each descriptor option the author did not set", async () => {
+    const handle = await buildS2sSessionConfig({ s2s: assemblyAIS2s({ voice: "michael" }) });
+    const sent = handle.updateSession.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(sent).toHaveProperty("voice", "michael");
+    // An unset `languages` means "detect per turn" service-side — forwarding a
+    // default would silently disable multilingual transcription for every agent.
+    expect(sent).not.toHaveProperty("languages");
+    expect(sent).not.toHaveProperty("keyterms");
+  });
+
+  test("drops a malformed descriptor option rather than putting it on the wire", async () => {
+    // Descriptor options are `Record<string, unknown>` at the wire boundary, so
+    // a stored config can carry anything. A non-string voice must read as
+    // "unset" (service default) rather than becoming a rejected session.update
+    // on a session that otherwise looks healthy.
+    const handle = await buildS2sSessionConfig({
+      s2s: {
+        kind: "assemblyai",
+        options: { voice: 42, languages: ["en", 7], keyterms: ["Acme Rewards"] },
+      },
+    });
+    const sent = handle.updateSession.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(sent).not.toHaveProperty("voice");
+    // A mixed-type array is rejected WHOLE — forwarding the string entries
+    // would silently narrow the author's declared language set.
+    expect(sent).not.toHaveProperty("languages");
+    // The valid sibling still goes through, so this test cannot pass merely
+    // because nothing was forwarded at all.
+    expect(sent).toHaveProperty("keyterms", ["Acme Rewards"]);
+  });
 });
 
 /**

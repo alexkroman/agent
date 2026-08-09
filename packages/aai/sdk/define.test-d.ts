@@ -158,3 +158,38 @@ test("s2s cannot be combined with pipeline providers or pipeline-only tuning", (
   // Shared fields stay declarable on an s2s agent.
   expectTypeOf<{ name: string; s2s: S2sProvider; idleTimeoutMs: number }>().toExtend<AgentParams>();
 });
+
+test("sttPrompt is declarable in BOTH modes", () => {
+  // It is not pipeline-only and must never go back to being typed that way.
+  // S2S forwards it as `input.transcription_prompt` and `AgentDef.sttPrompt`
+  // documents it as honoured in both modes, but `PipelineOnlyField` listed it
+  // anyway — so `agent()` rejected a field the runtime honoured, and the only
+  // way to reach the measured win (a spelled first name going from 1 of 6
+  // attempts correct to 6 of 6) was to skip `agent()` for a raw config object.
+  expectTypeOf<{ name: string; s2s: S2sProvider; sttPrompt: string }>().toExtend<AgentParams>();
+  expectTypeOf<{ name: string; sttPrompt: string }>().toExtend<AgentParams>();
+});
+
+/**
+ * `ctx.signal` is REQUIRED, and `ctx.generate`'s schema overload returns a
+ * REQUIRED `object`.
+ *
+ * Both were optional until they were checked against what the runtime does.
+ * The executor builds a per-call `AbortController` on every path, and
+ * `host/generate.ts` returns `{ text, object }` unconditionally whenever a
+ * schema was passed — so the two `?`s only ever bought authors a `?.` and an
+ * `if` on values that are always there. Tightening either back to optional is a
+ * silent ergonomic regression, which is why this pins both.
+ */
+test("ToolContext.signal and a schema generate's object are non-optional", () => {
+  expectTypeOf<ToolContext>().toHaveProperty("signal").toEqualTypeOf<AbortSignal>();
+
+  const ctx = {} as ToolContext;
+  const withSchema = ctx.generate({ prompt: "p", schema: z.object({ n: z.number() }) });
+  expectTypeOf(withSchema).resolves.toEqualTypeOf<{ text: string; object: { n: number } }>();
+
+  // Without a Standard Schema the caller must still narrow: a plain JSON Schema
+  // produces an object the framework cannot type.
+  const noSchema = ctx.generate({ prompt: "p" });
+  expectTypeOf(noSchema).resolves.toEqualTypeOf<{ text: string; object?: unknown }>();
+});

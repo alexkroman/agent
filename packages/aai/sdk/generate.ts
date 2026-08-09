@@ -24,7 +24,9 @@
  *       prompt: ctx.messages.map((m) => `${m.role}: ${m.content}`).join("\n"),
  *       schema: z.object({ summary: z.string(), sentiment: z.string() }),
  *     });
- *     return object; // typed { summary: string; sentiment: string }
+ *     // `object` is typed { summary: string; sentiment: string } and is not
+ *     // optional — reading a field directly is the point of passing a schema.
+ *     return `${object.sentiment}: ${object.summary}`;
  *   },
  * });
  * ```
@@ -62,22 +64,47 @@ export type GenerateOptions = {
   maxOutputTokens?: number;
 };
 
-/** Result of one LLM generation call. */
-export type GenerateResult<T = unknown> = {
+/**
+ * Result of one LLM generation call without a Standard Schema — text only.
+ *
+ * `object` is declared as optional-and-`unknown` rather than omitted because
+ * this is also what a PLAIN JSON Schema call returns: the host does produce an
+ * object there, but nothing types it, so a caller must narrow before reading.
+ */
+export type GenerateResult = {
   /** The generated text. For schema calls, the JSON-stringified object. */
   text: string;
-  /** The schema-validated object when `schema` was set; absent otherwise. */
-  object?: T;
+  /** The parsed object when a plain JSON Schema was passed; absent otherwise. */
+  object?: unknown;
+};
+
+/**
+ * Result of a generation call that passed a Standard Schema — `object` is
+ * REQUIRED, matching what the host guarantees.
+ *
+ * Split from {@link GenerateResult} rather than expressed as
+ * `GenerateResult<T>` with an optional `object`: the optionality survived the
+ * typed overload, so the one spelling the overload exists to reward —
+ * `const { object } = await ctx.generate({ prompt, schema })` — needed a `!`
+ * or an `if` before any field could be read, even though `host/generate.ts`
+ * returns `{ text, object }` unconditionally on that path.
+ */
+export type GenerateObjectResult<T> = {
+  /** The generated text — the JSON-stringified object. */
+  text: string;
+  /** The schema-validated object. Always present on this overload. */
+  object: T;
 };
 
 /**
  * One-shot LLM generation — the signature of `ctx.generate`. A call with a
  * Standard Schema `schema` returns a result whose `object` is typed by that
- * schema; a plain-JSON-Schema or schemaless call returns `unknown`.
+ * schema and non-optional; a plain-JSON-Schema or schemaless call returns
+ * {@link GenerateResult}, whose `object` is `unknown` and must be narrowed.
  */
 export type GenerateFn = {
   <S extends StandardSchemaV1>(
     options: GenerateOptions & { schema: S },
-  ): Promise<GenerateResult<InferSchemaOutput<S>>>;
+  ): Promise<GenerateObjectResult<InferSchemaOutput<S>>>;
   (options: GenerateOptions): Promise<GenerateResult>;
 };

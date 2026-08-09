@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, test } from "vitest";
 import { z } from "zod";
 import type { AgentDef, Db, ToolDef } from "../index.ts";
 import { agent, tool } from "../index.ts";
+import { DEFAULT_BUILTIN_TOOLS } from "./constants.ts";
 import { DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
 
 describe("constants", () => {
@@ -13,6 +14,21 @@ describe("constants", () => {
   test("DEFAULT_GREETING is a non-empty string", () => {
     expect(typeof DEFAULT_GREETING).toBe("string");
     expect(DEFAULT_GREETING.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * Pinned as an EQUALITY, not a containment.
+   *
+   * The only other assertion on this constant is
+   * `expect.arrayContaining([...DEFAULT_BUILTIN_TOOLS])` in `runtime.test.ts`,
+   * which is vacuously true for an empty array — so nothing checked the default
+   * at all, and three separate docs (including the scaffold guide shipped to
+   * users) went on describing a four-tool "cognitive set" default long after it
+   * was removed. An agent that opts into no built-ins must get none.
+   */
+  test("DEFAULT_BUILTIN_TOOLS is empty — built-ins are opt-in by name", () => {
+    expect(DEFAULT_BUILTIN_TOOLS).toEqual([]);
+    expect(agent({ name: "t" }).builtinTools).toBeUndefined();
   });
 });
 
