@@ -66,6 +66,34 @@ export function registerAccountRoutes(studio: Hono<StudioHonoEnv>): void {
   studio.put("/account/key", zValidator("json", AccountKeySchema), async (c) => {
     const user = await requireStudioUser(c.req.raw, c.env);
     const { apiKey } = c.req.valid("json");
+    // This is the OTHER half of key verification (api-key-verify.ts). The
+    // request path verifies raw bearers; a browser session never presents a
+    // key at all, so without this an account could store an arbitrary string
+    // and every later request would resolve to it having skipped the check —
+    // the stored key IS the credential for deploys, ownership hashes, and the
+    // gateway. Verifying at the point of storage means it happens once.
+    if (c.env.keyVerifier) {
+      let valid: boolean;
+      try {
+        valid = await c.env.keyVerifier(apiKey);
+      } catch {
+        return c.json({ error: "Could not verify that key right now — try again shortly" }, 503);
+      }
+      if (!valid) return c.json({ error: "That is not a valid AssemblyAI API key" }, 400);
+    }
+    // A key belongs to ONE account. Rebinding one that another account
+    // already claimed is how key knowledge becomes durable capture: the
+    // victim's CLI authenticates with the raw key, resolves scope through
+    // this mapping, and silently lands in the attacker's studio scope, where
+    // `aai push` writes the victim's source into the attacker's workspace.
+    // Both scopes stay internally consistent, so nothing on either side ever
+    // reports a problem. Last-writer-wins was documented as benign for a
+    // shared team key; the shared-key case is the one that must give up
+    // something, and a 409 it can see beats a silent redirect it cannot.
+    const currentOwner = await c.env.secrets.get(apiKeyOwnerSecretName(apiKey));
+    if (currentOwner !== null && currentOwner !== user.id) {
+      return c.json({ error: "That API key is already linked to another account" }, 409);
+    }
     // Both directions: the session→key lookup every JWT request rides, and
     // the key→user reverse mapping that lands raw-key callers (`aai login`'d
     // CLIs) in this user's studio scope. See apiKeyOwnerSecretName for the
@@ -104,10 +132,20 @@ export function registerAccountRoutes(studio: Hono<StudioHonoEnv>): void {
     // side naming the cause. Writing it here heals that account on its next
     // `aai login`. Idempotent, and it happens BEFORE the grant is stored, so
     // the CLI cannot exchange and get a request in ahead of the mapping.
-    // A key two accounts share follows whichever linked last — the same
-    // last-writer-wins the onboarding PUT has (see apiKeyOwnerSecretName).
-    await c.env.secrets.put(apiKeyOwnerSecretName(key), user.id);
-    invalidateApiKeyOwner(c.env.secrets, key);
+    // It BACKFILLS, and never rebinds: a mapping already pointing at another
+    // account is left alone rather than followed (the onboarding PUT refuses
+    // the same move, for the reason spelled out there). This can only happen
+    // to two accounts that stored one key before that guard existed, and the
+    // healing case — a legacy account with NO mapping — is unaffected, which
+    // is the whole job of this write. Refusing the link outright would strand
+    // exactly the accounts this exists to heal, so the link still succeeds;
+    // it just keeps the key-derived scope it already had.
+    const ownerName = apiKeyOwnerSecretName(key);
+    const currentOwner = await c.env.secrets.get(ownerName);
+    if (currentOwner === null || currentOwner === user.id) {
+      await c.env.secrets.put(ownerName, user.id);
+      invalidateApiKeyOwner(c.env.secrets, key);
+    }
     const grant: CliLinkGrant = {
       uid: user.id,
       ...(user.email && { email: user.email }),

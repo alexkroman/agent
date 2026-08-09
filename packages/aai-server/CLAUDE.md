@@ -149,6 +149,24 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   carried NO cache headers for a long time, which is weaker than it sounds:
   absent a directive and a validator, a heuristically caching intermediary may
   reuse the response.
+- `api-key-verify.ts` — raw API-key verification against AssemblyAI (see
+  "Auth" below). The one absolute authentication check on the platform
+- `rate-limit.ts` — the shared fixed-window limiter (in-memory + Postgres).
+  It lived in `aai-studio-server` while the studio was its only caller, which
+  is why `POST /deploy` had none: this package cannot import from that one.
+  Policy stays with each consumer; only the mechanism is here
+- `client-ip.ts` — the rate-limit key. Reads the **last** `X-Forwarded-For`
+  entry (the hop our own proxy appended), not the first — the leftmost is
+  client-supplied, and keying on it hands an attacker an unlimited supply of
+  rate-limit buckets. Note `public-origin.ts` reads the FIRST entry from the
+  same header and is right to: it wants what the browser saw, which is the
+  opposite end of the same list
+- `_semaphore.ts` — counting semaphore with a bounded wait. Caps how many
+  deploy bodies buffer at once (`DEPLOY_BODY_CONCURRENCY`): the size caps
+  bound ONE request, and peak memory was arrival rate times ~164 MB against a
+  2048 MiB container — a number the caller picks. Measured: 28 KB on the wire
+  inflates to ~164 MB of RSS, so 24 concurrent cost ~812 MB ungated and
+  ~333 MB gated, the gated figure being flat in N rather than smaller
 - `auth.ts` — authentication/authorization
 - `credentials.ts` — credential derivation
 - `bundle-store.ts` — deploy persistence: content-addressed, immutable
@@ -487,13 +505,24 @@ The cross-replica coordination that lives in this same Postgres:
   forgets produces no error at all. Only the row caches are dropped: blob
   caches are content-addressed and cannot go stale. The broker path
   deliberately does NOT go through this wrapper — it mutates nothing.
-- **Studio rate limits** (`aai-studio-server/studio-rate-limit.ts`): the
-  chat and project-create windows are rows in
-  `aai_platform.studio_rate_limits` (`createPgRateLimiter`, one atomic
-  upsert per check), so the limit holds platform-wide instead of
-  multiplying by the replica count. Fail-closed: a database error
-  propagates rather than silently unmetering the LLM-proxy route. Expired
-  rows are swept by pg_cron (`aai-server/pg-cron.ts`), not in-process.
+- **Rate limits** (`rate-limit.ts`; the studio's windows in
+  `aai-studio-server/studio-rate-limit.ts`): the chat, project-create, and
+  deploy windows are rows in `aai_platform.studio_rate_limits`
+  (`createPgRateLimiter`, one atomic upsert per check), so a limit holds
+  platform-wide instead of multiplying by the replica count — which for an
+  ABUSE limit is the whole point, since `MAX_CONTAINERS = 10` makes a
+  per-replica cap a cap of ten times the number written down. Fail-closed: a
+  database error propagates rather than silently unmetering the route.
+  Expired rows are swept by pg_cron (`pg-cron.ts`), not in-process. The
+  `studio_` table name is now a misnomer; `name` namespaces each limiter's
+  rows, which is what lets a second consumer share it without a migration.
+
+  **Every limited route is keyed TWICE — by scope and by client IP.** The
+  scope key is derived from the caller's bearer, so for a raw-key caller it
+  was a value they chose: one character's difference minted a fresh window,
+  which made both studio limits decorative against exactly the traffic they
+  exist to stop. Key verification above is what makes a scope cost an
+  account; the IP key is what bounds the damage before one is spent.
 - **Session resume needs no cross-replica store**: sessions live in the
   guest sandbox, not on a replica — a `?sessionId=<id>` reconnect
   re-brokers via `GET /:slug/client-config` and lands on the SAME sandbox,
@@ -1492,6 +1521,35 @@ stored env at sandbox creation time and kept host-side only.
 
 **Auth:**
 
+- **A raw bearer is VERIFIED against AssemblyAI before it means anything**
+  (`api-key-verify.ts`, called from `resolveBearer`). This is the platform's
+  only ABSOLUTE authentication check; everything else is relative.
+  `verifySlugOwner` asks whether a bearer matches a hash on one agent's row —
+  a real authorization check that says nothing about whether the bearer is a
+  credential at all — and the routes IN FRONT of ownership have no row to
+  check against: `POST /deploy` claims an unclaimed slug for whoever asks,
+  and the studio's project-create and session-broker key their scope off the
+  bearer itself and spawn a Modal sandbox per call. All three were reachable
+  with `Authorization: Bearer <anything>`; an audit deployed 25 agents under
+  25 junk strings.
+
+  Four properties, each of which is a way to write this so it looks correct
+  and is not:
+  - **Ambiguity is never "valid".** Only 401/403 means "not a key". A 5xx,
+    timeout, DNS failure or proxy error THROWS, and the caller answers 503.
+    Fail-open ("don't let an AssemblyAI outage take us down") reopens the
+    whole hole for the duration of any outage an attacker can provoke or
+    wait for. `supabase-auth.ts` draws the same line for sessions.
+  - **Negatives are cached**, or one unauthenticated request becomes one
+    upstream request — a traffic amplifier pointed at AssemblyAI.
+  - **The verifier is ABSENT in local dev and tests** (`isLocalDev`, plus an
+    explicit `AAI_VERIFY_API_KEYS=0`), and present otherwise — so a
+    production boot that merely forgot a variable gets verification, not a
+    hole. The endpoint is `AAI_KEY_VERIFY_URL`-overridable.
+  - **The browser path is verified at STORAGE, not per request**
+    (`PUT /studio/account/key`): a session never presents a key, so the
+    stored string would otherwise skip the check and then BE the credential
+    for every deploy and ownership hash the account makes.
 - **Two bearer forms, one resolution point** (`resolveBearer` in
   `middleware.ts`). Raw API keys (the `aai` CLI, and the in-guest
   `aai deploy` Publish runs) pass through unchanged. JWT-shaped bearers —
@@ -1521,6 +1579,20 @@ stored env at sandbox creation time and kept host-side only.
   CLI is about to authenticate with at once, which is what makes it the place
   to heal it; it writes before storing the grant, so the CLI cannot exchange
   and get a request in ahead of the mapping.
+
+  **Neither route may REBIND a key another account holds.** This mapping
+  decides which studio scope a raw-key caller lands in, so whoever writes it
+  decides where that CLI pushes. Last-writer-wins was documented as benign
+  for a shared team key, and it is — right up until the second writer is not
+  a teammate: someone who learns Alice's key signs in as themselves, binds
+  it, and from then on Alice's CLI resolves into THEIR scope, so `aai push`
+  writes Alice's source into their workspace. It is silent by construction —
+  both scopes stay internally consistent, so every request on both sides
+  succeeds, the same failure shape as the bug the backfill above exists to
+  cure. The onboarding PUT now 409s on a foreign owner; the approval
+  backfill leaves a foreign mapping alone and links anyway (refusing would
+  strand exactly the legacy accounts it exists to heal). Same-uid re-saves
+  stay idempotent, so rotation is unaffected.
 - **Browser sessions are Supabase Auth** (`supabase-auth.ts`): GitHub
   OAuth sign-in via supabase-js (`signInWithOAuth`) in the studio client.
   The server verifies access tokens **two ways, and which one a route gets is

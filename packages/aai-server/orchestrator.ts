@@ -28,11 +28,15 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { createMiddleware } from "hono/factory";
 import { z } from "zod";
+import { createSemaphore } from "./_semaphore.ts";
+import type { ApiKeyVerifier } from "./api-key-verify.ts";
 import type { AppDatabases } from "./app-database.ts";
 import { addHealthRoute, applyPlatformMiddleware, bindFetchEnv } from "./app-middleware.ts";
 import { createAgentClientConfigHandler } from "./client-config-handler.ts";
-import { resolveHarnessPath } from "./constants.ts";
+import { clientIp } from "./client-ip.ts";
+import { DEPLOY_BODY_CONCURRENCY, DEPLOY_BODY_WAIT_MS, resolveHarnessPath } from "./constants.ts";
 import type { HonoEnv } from "./context.ts";
 import { handleDelete } from "./delete.ts";
 import { handleDeployNew } from "./deploy.ts";
@@ -41,6 +45,7 @@ import { authMw, existingOwnerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
 import type { PlatformEvents } from "./platform-events.ts";
 import { createMutationLock, localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
+import { createRateLimiter, DEPLOY_IP_RATE_LIMIT, type RateLimiter } from "./rate-limit.ts";
 import type { SandboxDirectory } from "./sandbox-directory.ts";
 import { watchAgentInvalidation } from "./sandbox-invalidate.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
@@ -75,6 +80,27 @@ export type OrchestratorOpts = {
   secrets?: SecretStore;
   /** Browser-session auth; absent means raw-API-key bearers only. */
   auth?: StudioAuth;
+  /**
+   * Verifies raw API-key bearers against AssemblyAI (api-key-verify.ts).
+   * Absent accepts any bearer string as a key — dev and tests only; the
+   * production builder supplies one unless `AAI_VERIFY_API_KEYS=0`.
+   */
+  keyVerifier?: ApiKeyVerifier;
+  /**
+   * Per-client-IP limiter for `POST /deploy`. Postgres-backed in production
+   * so the limit holds fleet-wide (see rate-limit.ts); the in-memory default
+   * is per-replica, which is correct for a single process and weak for ten.
+   */
+  deployRateLimiter?: RateLimiter;
+  /**
+   * How many deploy bodies may be buffered and parsed at once, and how long a
+   * caller waits for a slot. Defaults to the `DEPLOY_BODY_*` constants (both
+   * env-overridable); an explicit value wins, which is what lets a
+   * self-hosted deployment on a bigger container raise it — and lets the
+   * saturation test reach the 503 without a module-level env stub.
+   */
+  deployBodyConcurrency?: number;
+  deployBodyWaitMs?: number;
   /** Per-app database provisioning; absent when SUPABASE_DB_URL is unset. */
   appDb?: AppDatabases;
   /**
@@ -147,6 +173,45 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     onError: (c) => c.json({ error: "Request body too large" }, 413),
   });
 
+  // ...and cap how many of them are in flight together, which is the axis the
+  // two size limits above cannot bound: peak memory was arrival rate times
+  // ~164 MB, and arrival rate is the caller's to choose. Runs FIRST, ahead of
+  // bodyLimit and the gunzip, so a refused request has allocated nothing.
+  // Per-replica by construction — this bounds THIS container's heap, which is
+  // a process-local resource, so it wants no cross-replica coordination.
+  // Per-IP deploy limit. Runs ahead of the body gate so a refused caller
+  // never occupies one of its slots — otherwise the cheap control queues
+  // behind the expensive one it is meant to protect.
+  const deployLimiter = opts.deployRateLimiter ?? createRateLimiter(DEPLOY_IP_RATE_LIMIT);
+  const deployRateMw = createMiddleware<HonoEnv>(async (c, next) => {
+    const verdict = await deployLimiter.check(clientIp(c.req.raw));
+    if (!verdict.ok) {
+      return c.json({ error: "Too many deploys — try again later" }, 429, {
+        "Retry-After": String(verdict.retryAfterSeconds),
+      });
+    }
+    await next();
+  });
+
+  const deployBodySlots = createSemaphore(opts.deployBodyConcurrency ?? DEPLOY_BODY_CONCURRENCY);
+  const deployBodyWaitMs = opts.deployBodyWaitMs ?? DEPLOY_BODY_WAIT_MS;
+  const deployBodyGate = createMiddleware<HonoEnv>(async (c, next) => {
+    const slot = await deployBodySlots.acquire(deployBodyWaitMs);
+    if (!slot) {
+      return c.json({ error: "Server busy — retry shortly" }, 503, {
+        "Retry-After": String(Math.max(1, Math.ceil(deployBodyWaitMs / 1000))),
+      });
+    }
+    try {
+      await next();
+    } finally {
+      // Released once the handler has RETURNED, which is after the body was
+      // parsed and after `putAgent` uploaded it — the whole window in which
+      // this request is holding the bytes.
+      slot();
+    }
+  });
+
   // Deploys record the harness image they ran against (per-deploy image
   // pinning — see currentHarnessImageTag in sandbox-vm.ts).
   const harnessImageTag = (): Promise<string | null> =>
@@ -154,6 +219,8 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
 
   app.post(
     "/deploy",
+    deployRateMw,
+    deployBodyGate,
     authMw,
     deployBodyLimit,
     gzipRequestMw,
@@ -228,6 +295,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     store: opts.store,
     secrets,
     ...(opts.auth && { auth: opts.auth }),
+    ...(opts.keyVerifier && { keyVerifier: opts.keyVerifier }),
     ...(opts.appDb && { appDb: opts.appDb }),
     // Same default posture as secrets: tests build orchestrators without a
     // platform database, where in-process exclusion is exact. Wrapped so

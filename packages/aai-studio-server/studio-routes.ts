@@ -223,7 +223,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
 
   studio.post("/projects", zValidator("json", CreateProjectSchema), async (c) => {
     const scope = requestScope(c);
-    const limited = await limits.projectCreate(scope);
+    const limited = await limits.projectCreate(scope, c.req.raw);
     if (limited) return limited;
     const { name, prompt } = c.req.valid("json");
     // No explicit name: the server generates one, v0-style — a readable base
@@ -383,7 +383,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
       // Creation via push: same guards as POST /projects — reserved names
       // can never go live, and creates are rate-limited per scope.
       if (RESERVED_SLUGS.has(project)) return c.json({ error: "That name is reserved" }, 400);
-      const limited = await limits.projectCreate(scope);
+      const limited = await limits.projectCreate(scope, c.req.raw);
       if (limited) return limited;
     }
     try {
@@ -429,7 +429,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   // agent's /websocket. Rate-limited: each call can spawn a Modal sandbox.
   studio.post("/projects/:project/session", async (c) => {
     const { scope, project } = c.var;
-    const limited = await limits.chat(scope);
+    const limited = await limits.chat(scope, c.req.raw);
     if (limited) return limited;
     // Arms auto preview deploys: the guest's end-of-turn sync makes the
     // broker ship the edited workspace to the preview slug. `userId` rides

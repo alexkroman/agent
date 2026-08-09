@@ -12,6 +12,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
 import { assertServiceRoleKey, isLocalDev, requireEnv } from "./_boot.ts";
 import { type AgentRows, createMemoryAgentRows, createPgAgentRows } from "./agent-store.ts";
+import { createApiKeyVerifierFromEnv } from "./api-key-verify.ts";
 import { type AppDatabases, type AppDbTarget, createAppDatabases } from "./app-database.ts";
 import {
   assertBucketPrivate,
@@ -350,6 +351,11 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
       "[auth] SUPABASE_URL/SUPABASE_PUBLISHABLE_KEY not set — studio browser login is disabled",
     );
   }
+  // Raw API-key bearers are verified against AssemblyAI before they can claim
+  // a slug or spawn a sandbox (api-key-verify.ts). Undefined only in local dev
+  // or under an explicit opt-out, so a production boot that forgot a variable
+  // gets verification rather than a hole.
+  const keyVerifier = createApiKeyVerifierFromEnv(env, { localDev: isLocalDev(env) });
   return {
     slots,
     // Blob storage serves deploy artifacts only (content-addressed worker +
@@ -361,6 +367,7 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
     events,
     secrets,
     ...(auth && { auth }),
+    ...(keyVerifier && { keyVerifier }),
     slugLock,
     replicaId,
     ...(appDb && { appDb }),
