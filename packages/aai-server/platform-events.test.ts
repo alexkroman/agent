@@ -96,6 +96,39 @@ describe("createMemoryPlatformEvents", () => {
   });
 });
 
+/**
+ * Assert a store decorator REPLACED every method except the named reads.
+ *
+ * A decorator that misses a mutator is silent in both directions, which is why
+ * this is structural rather than three more behavioural tests. Production wraps
+ * nothing — the row's own UPDATE is what Realtime streams — so nothing there
+ * can notice, and in dev the write simply lands with no watcher told: no
+ * error, no lost data, just a UI that never updates. `patch` sat unwrapped
+ * exactly that way while every studio SSE test passed, because they all wrote
+ * through `put`.
+ *
+ * Spread (`{...store}`) copies a missed mutator through BY IDENTITY, which is
+ * what makes the comparison work — and it means adding a reader has to be a
+ * deliberate edit to the allowlist rather than a silent pass.
+ */
+function decoratorGaps<T extends object>(
+  base: T,
+  wrapped: T,
+  reads: readonly (keyof T & string)[],
+): { unwrapped: string[]; unknownReads: string[] } {
+  const names = Object.keys(base) as (keyof T & string)[];
+  return {
+    // Mutators the decorator left alone: they reach no watcher.
+    unwrapped: names.filter((name) => !reads.includes(name) && wrapped[name] === base[name]),
+    // The allowlist must name methods that exist, or a renamed read exempts
+    // nothing while the mutator it was standing in for goes unchecked.
+    unknownReads: reads.filter((name) => !names.includes(name)),
+  };
+}
+
+/** What a passing {@link decoratorGaps} looks like — nothing missed either way. */
+const NO_GAPS = { unwrapped: [], unknownReads: [] };
+
 describe("store decorators", () => {
   test("withAgentEvents emits on put and delete", async () => {
     const memory = createMemoryPlatformEvents();
@@ -163,6 +196,40 @@ describe("store decorators", () => {
     expect(seen).toHaveBeenCalledTimes(2);
     expect(await store.getChat("s", "p")).toBeNull();
   });
+
+  /**
+   * A decorator that misses a mutator is silent in BOTH directions, which is
+   * why this is a structural check and not three more behavioural tests.
+   * Production wraps nothing — the row's own UPDATE is what Realtime streams —
+   * so nothing there can notice, and in dev the write simply lands with no
+   * watcher told: no error, no dropped data, just a UI that never updates.
+   * `patch` sat unwrapped exactly that way, and every studio SSE test passed
+   * throughout, because they all wrote through `put`.
+   *
+   * So: enumerate what the memory store really exposes and require the
+   * decorator to have REPLACED everything that is not on the reads
+   * allowlist. Spread (`{...store}`) copies a missed mutator through by
+   * identity, which is what makes the comparison work — and adding a reader
+   * has to be a deliberate edit here rather than a silent pass.
+   */
+  test("withWorkspaceEvents wraps every method that is not a read", () => {
+    const base = createMemoryWorkspaceStore();
+    const wrapped = withWorkspaceEvents(base, () => undefined);
+    expect(decoratorGaps(base, wrapped, ["get", "list"])).toEqual(NO_GAPS);
+  });
+
+  test("withChatEvents wraps every method that is not a read", () => {
+    const base = createMemoryChatStore();
+    const wrapped = withChatEvents(base, () => undefined);
+    expect(decoratorGaps(base, wrapped, ["getChat"])).toEqual(NO_GAPS);
+  });
+
+  test("withAgentEvents wraps every method that is not a read", () => {
+    const base = createMemoryAgentRows();
+    const wrapped = withAgentEvents(base, () => undefined);
+    expect(decoratorGaps(base, wrapped, ["get", "getVersion"])).toEqual(NO_GAPS);
+  });
+
   // ── settled() ──────────────────────────────────────────────────────────────
   // The point of the signal: it waits for the HANDLER, not just for delivery.
   // A fixed number of microtask turns cannot, which is what it replaced.
