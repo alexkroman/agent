@@ -13,7 +13,13 @@
 import { authHeaders, type TestFetch } from "aai-server/test-utils";
 import { expect, test } from "vitest";
 import { createTestCombined } from "./_test-combined.ts";
-import { createWorkspace, mutateWorkspace, studioScope } from "./studio-workspace.ts";
+import {
+  createWorkspace,
+  getWorkspace,
+  mutateWorkspace,
+  stampWorkspaceMeta,
+  studioScope,
+} from "./studio-workspace.ts";
 
 /** Parse the payloads of `event` out of complete frames in `buffer`. */
 function payloadsOf(buffer: string, event: string): unknown[] {
@@ -93,12 +99,18 @@ test("a workspace write pushes the updated project state", async () => {
 
   // A preview deploy finishing elsewhere stamps the workspace row; the
   // change stream must push the new preview state without any client poll.
+  //
+  // Through `stampWorkspaceMeta` deliberately — the real writer. Modelled as
+  // a `mutateWorkspace` read-modify-write, this passed while the dev-mode
+  // event decorator emitted on `put` and `delete` but not on `patch`, so
+  // under `pnpm dev:aai-server` every landed preview was silent and the pane
+  // sat on its "Starting your preview" screen until a reload.
   const framesP = readFrames(res, "project", 2);
-  await mutateWorkspace(harness.workspaces, scope, "proj", (current) => ({
-    ...current,
+  const stored = await getWorkspace(harness.workspaces, scope, "proj");
+  await stampWorkspaceMeta(harness.workspaces, scope, "proj", {
     previewSlug: "proj-preview",
-    previewHash: current.hash ?? "",
-  }));
+    previewHash: stored?.hash ?? "",
+  });
 
   const [, updated] = (await framesP) as Record<string, unknown>[];
   expect(updated).toMatchObject({

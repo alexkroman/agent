@@ -66,6 +66,20 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   notifications (`watchAgents`, `watchWorkspace`, `watchChat`,
   `watchScopeProjects`) as SIGNALS (handlers re-read rows, never trust
   payloads); memory emitter + store decorators for dev/tests.
+  **A store decorator must wrap EVERY mutator, and a missed one is silent in
+  both directions.** Production wraps nothing — the row's own UPDATE is what
+  Realtime streams — so a gap here is invisible in production and, in dev, is
+  a write that lands and bumps the version with no watcher ever hearing it;
+  there is no polling loop behind these streams to cover for it.
+  `withWorkspaceEvents` missed `patch`, which is the METADATA STAMP
+  (`stampWorkspaceMeta`, the only writer of `previewSlug`/`previewHash`/
+  `previewError`, `deployedSlug`/`deployedHash`, `databaseEnabled`), so under
+  `pnpm dev:aai-server` a finished preview deploy pushed no `project` frame at
+  all and the studio's Preview pane sat on its placeholder until a reload —
+  Publish and the database switch equally quiet. It survived because the
+  studio SSE test modelled the stamp as a read-modify-write (a `put`) instead
+  of calling `stampWorkspaceMeta`; a test standing in for a real writer has to
+  BE that writer.
   **Wait out an emit with `memory.settled()`, never a microtask spin.** An
   emit is fire-and-forget in both directions — dispatch is deferred a
   microtask, and a handler like `watchAgentInvalidation` then does async work
