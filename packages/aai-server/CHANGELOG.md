@@ -1,5 +1,11 @@
 # @alexkroman1/aai-server
 
+## 3.5.3
+
+### Patch Changes
+
+- 49d63cd: Store jsonb columns as jsonb: the ::jsonb parameter cast made postgres.js double-encode every document, which broke all metadata stamps and blinded the orphan-preview sweep
+
 ## 3.5.2
 
 ### Patch Changes

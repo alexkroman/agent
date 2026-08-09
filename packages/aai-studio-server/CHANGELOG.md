@@ -1,5 +1,12 @@
 # aai-studio-server
 
+## 0.6.3
+
+### Patch Changes
+
+- Updated dependencies [49d63cd]
+  - aai-server@3.5.3
+
 ## 0.6.2
 
 ### Patch Changes
