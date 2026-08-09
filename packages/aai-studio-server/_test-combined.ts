@@ -27,6 +27,7 @@ type CombinedOverrides = Partial<OrchestratorOpts> & {
   // `undefined` are indistinguishable from outside.
   studioSessionRegistry?: StudioAppOpts["studioSessionRegistry"];
   previewQueue?: StudioAppOpts["previewQueue"];
+  studioRateLimiters?: StudioAppOpts["studioRateLimiters"];
   replicaId?: string;
 };
 
@@ -42,8 +43,10 @@ export async function createTestCombined(overrides: CombinedOverrides = {}) {
     events: overrides.events ?? orch.events,
     secrets,
     ...(overrides.auth && { auth: overrides.auth }),
+    ...(overrides.keyVerifier && { keyVerifier: overrides.keyVerifier }),
     ...(overrides.appDb && { appDb: overrides.appDb }),
     ...(overrides.slugLock && { slugLock: overrides.slugLock }),
+    ...(overrides.studioRateLimiters && { studioRateLimiters: overrides.studioRateLimiters }),
     ...(overrides.studioSessionRegistry && {
       studioSessionRegistry: overrides.studioSessionRegistry,
     }),

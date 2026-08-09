@@ -4,6 +4,7 @@ import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import { parseBearer } from "./_bearer.ts";
 import { TtlCache } from "./_ttl-cache.ts";
+import type { ApiKeyVerifier } from "./api-key-verify.ts";
 import type { HonoEnv } from "./context.ts";
 import { RESERVED_SLUGS, VALID_SLUG_RE } from "./schemas.ts";
 import type { SecretStore } from "./secret-store.ts";
@@ -96,6 +97,41 @@ async function lookupApiKeyOwner(
 }
 
 /**
+ * Reject a raw bearer that AssemblyAI does not recognize.
+ *
+ * This is the platform's ONLY absolute authentication check. Everything after
+ * it is relative — `verifySlugOwner` asks whether a bearer matches a hash on
+ * one agent's row, which is a real authorization check and says nothing about
+ * whether the bearer is a credential at all. Without this, the routes in
+ * front of ownership (deploy, which CLAIMS an unclaimed slug; the studio's
+ * project-create and session-broker, which key their scope off the bearer)
+ * were reachable with an arbitrary string.
+ *
+ * An unreachable verifier is a 503, never a pass: see the module note in
+ * api-key-verify.ts for why "fail open so an AssemblyAI outage can't take us
+ * with it" reopens the hole for the duration of any outage that can be
+ * provoked or waited for.
+ */
+async function assertVerifiedApiKey(
+  token: string,
+  verifier: ApiKeyVerifier | undefined,
+): Promise<void> {
+  if (!verifier) return;
+  let valid: boolean;
+  try {
+    valid = await verifier(token);
+  } catch (err) {
+    throw new HTTPException(503, {
+      message: "Could not verify the API key right now — retry shortly",
+      cause: err,
+    });
+  }
+  if (!valid) {
+    throw new HTTPException(401, { message: "Invalid API key" });
+  }
+}
+
+/**
  * Resolve the request's bearer to a platform API key.
  *
  * Two bearer forms arrive on the same routes: raw API keys (the `aai` CLI,
@@ -112,10 +148,15 @@ async function lookupApiKeyOwner(
  */
 export async function resolveBearer(
   req: Request,
-  env: { auth?: StudioAuth | undefined; secrets: SecretStore },
+  env: {
+    auth?: StudioAuth | undefined;
+    secrets: SecretStore;
+    keyVerifier?: ApiKeyVerifier | undefined;
+  },
 ): Promise<ResolvedBearer> {
   const token = requireBearerToken(req);
   if (!(env.auth && isJwtShaped(token))) {
+    await assertVerifiedApiKey(token, env.keyVerifier);
     const userId = await lookupApiKeyOwner(env.secrets, token);
     return { apiKey: token, ...(userId ? { userId } : {}) };
   }
@@ -186,9 +227,14 @@ export async function requireOwner(
     store: BundleStore;
     secrets: SecretStore;
     auth?: StudioAuth | undefined;
+    keyVerifier?: ApiKeyVerifier | undefined;
   },
 ): Promise<ResolvedBearer> {
-  const resolved = await resolveBearer(req, { auth: opts.auth, secrets: opts.secrets });
+  const resolved = await resolveBearer(req, {
+    auth: opts.auth,
+    secrets: opts.secrets,
+    keyVerifier: opts.keyVerifier,
+  });
   const result = await verifySlugOwner(resolved.apiKey, { slug: opts.slug, store: opts.store });
   if (result.status === "forbidden") {
     throw new HTTPException(403, { message: "Forbidden" });
@@ -219,6 +265,7 @@ export const existingOwnerMw = createMiddleware<HonoEnv>(async (c, next) => {
     store: c.env.store,
     secrets: c.env.secrets,
     auth: c.env.auth,
+    keyVerifier: c.env.keyVerifier,
   });
   c.set("apiKey", apiKey);
   if (userId) c.set("userId", userId);
@@ -234,6 +281,7 @@ export const authMw = createMiddleware<HonoEnv>(async (c, next) => {
   const { apiKey, userId } = await resolveBearer(c.req.raw, {
     auth: c.env.auth,
     secrets: c.env.secrets,
+    keyVerifier: c.env.keyVerifier,
   });
   c.set("apiKey", apiKey);
   if (userId) c.set("userId", userId);

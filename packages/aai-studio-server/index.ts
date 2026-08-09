@@ -21,6 +21,7 @@
 import { DEFAULT_PORT } from "aai-server/constants";
 import { createOrchestrator } from "aai-server/orchestrator";
 import { resolvePort } from "aai-server/platform-barrel";
+import { DEPLOY_IP_RATE_LIMIT, type RateLimiter } from "aai-server/rate-limit";
 import { startService } from "aai-server/serve-lifecycle";
 import {
   assertSandboxBackendOrWarn,
@@ -33,8 +34,10 @@ import { teardownSandboxes } from "aai-server/teardown-sandboxes";
 import { createStudioApp, type StudioAppOpts } from "./studio-app.ts";
 import { createPgPreviewQueue } from "./studio-preview-queue.ts";
 import {
+  CHAT_IP_RATE_LIMIT,
   CHAT_RATE_LIMIT,
   createPgRateLimiter,
+  PROJECT_CREATE_IP_RATE_LIMIT,
   PROJECT_CREATE_RATE_LIMIT,
   type StudioRateLimiters,
 } from "./studio-rate-limit.ts";
@@ -49,7 +52,21 @@ function buildRateLimiters(base: ServiceConfig): StudioRateLimiters | undefined 
       name: "studio-project-create",
       ...PROJECT_CREATE_RATE_LIMIT,
     }),
+    // The per-IP companions. Postgres-backed for the same reason as the
+    // scoped ones and more so: an abuse limit that multiplies by the replica
+    // count is a limit of ten times what it says.
+    chatIp: createPgRateLimiter(base.sql, { name: "studio-chat-ip", ...CHAT_IP_RATE_LIMIT }),
+    projectCreateIp: createPgRateLimiter(base.sql, {
+      name: "studio-project-create-ip",
+      ...PROJECT_CREATE_IP_RATE_LIMIT,
+    }),
   };
+}
+
+/** Fleet-wide per-IP deploy limiter, when a platform database is configured. */
+function buildDeployRateLimiter(base: ServiceConfig): RateLimiter | undefined {
+  if (!base.sql) return;
+  return createPgRateLimiter(base.sql, { name: "deploy-ip", ...DEPLOY_IP_RATE_LIMIT });
 }
 
 function studioAppOpts(base: ServiceConfig, isDraining: () => boolean): StudioAppOpts {
@@ -68,6 +85,7 @@ function studioAppOpts(base: ServiceConfig, isDraining: () => boolean): StudioAp
     events: base.events,
     ...(base.secrets && { secrets: base.secrets }),
     ...(base.auth && { auth: base.auth }),
+    ...(base.keyVerifier && { keyVerifier: base.keyVerifier }),
     ...(base.appDb && { appDb: base.appDb }),
     ...(base.slugLock && { slugLock: base.slugLock }),
     ...(rateLimiters && { studioRateLimiters: rateLimiters }),
@@ -104,7 +122,12 @@ async function main(): Promise<void> {
   // would bypass the studio app's bindings injection) is involved.
   // `base.events` rides into the orchestrator, which wires the agents-row
   // change stream to sandbox invalidation.
-  const orchestrator = createOrchestrator({ ...base, isDraining: () => draining });
+  const deployRateLimiter = buildDeployRateLimiter(base);
+  const orchestrator = createOrchestrator({
+    ...base,
+    ...(deployRateLimiter && { deployRateLimiter }),
+    isDraining: () => draining,
+  });
   const combinedFetch = (req: Request): Response | Promise<Response> =>
     isStudioPath(new URL(req.url).pathname) ? studioApp.fetch(req) : orchestrator.app.fetch(req);
 

@@ -1,109 +1,53 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Per-scope rate limiting for the studio's expensive routes.
+ * The studio's rate-limit POLICY — which routes are metered, and how hard.
  *
- * Studio auth accepts any non-empty bearer key (workspace scoping is all it
- * needs), so without a cap session brokering is unmetered Modal sandbox
- * spawning and project creation is unmetered storage growth. (Chat turns
- * themselves run browser→guest on the caller's own LLM key, so they need no
- * platform metering.) A small fixed-window limiter keyed by the caller's
- * `studioScope` bounds both routes.
+ * The mechanism moved to `aai-server/rate-limit.ts` when the agent surface
+ * needed it too (`POST /deploy` had no limiter at all, and `aai-server`
+ * cannot import from this package). What stays here is the part that is a
+ * judgement about the studio: the two windows, and the pair the routes take.
  *
- * Two implementations behind one async interface:
- *
- * - `createRateLimiter` — in-memory windows in a `TtlCache` (quick-lru with
- *   the window as max-age), for local dev and tests. Attacker-chosen scopes
- *   cannot grow it without bound: stale windows expire on read and the LRU
- *   cap evicts beyond `maxKeys`.
- * - `createPgRateLimiter` — windows in `aai_platform.studio_rate_limits`
- *   over the platform's Supabase Postgres, so the limit holds across
- *   replicas instead of multiplying by the replica count. One atomic upsert
- *   per check; a database error propagates (fail-closed) rather than
- *   silently unmetering the route. Expired rows are swept by the platform's
- *   pg_cron job (aai-server/pg-cron.ts), not in-process.
+ * Both are keyed by the caller's `studioScope`. That was the ONLY key until
+ * an audit pointed out what it is derived from — for a raw-key caller, a hash
+ * of the bearer they chose — so an unauthenticated caller minted a fresh
+ * window per request by changing one character. Two things answer that now
+ * and they are complementary: raw bearers are verified against AssemblyAI
+ * (`aai-server/api-key-verify.ts`), which makes a scope cost an account; and
+ * the routes additionally meter by client IP (`studio-route-limits.ts`),
+ * which bounds the damage before the account is spent.
  */
 
-import { TtlCache } from "aai-server/platform-barrel";
-import type { SqlExec } from "aai-server/secret-store";
+import { CLIENT_IP_RATE_LIMIT_WINDOW_MS, type RateLimiter } from "aai-server/rate-limit";
 
 /** `POST /studio/projects/:project/session` — each request can spawn a Modal sandbox. */
 export const CHAT_RATE_LIMIT = { limit: 30, windowMs: 5 * 60_000 } as const;
 /** `POST /studio/projects` — each request writes a new workspace document. */
 export const PROJECT_CREATE_RATE_LIMIT = { limit: 60, windowMs: 60 * 60_000 } as const;
 
-/** LRU cap on tracked scopes per limiter. */
-const MAX_TRACKED_KEYS = 10_000;
+/**
+ * The same two routes, metered by CLIENT IP instead of scope.
+ *
+ * Deliberately looser than the per-scope limits and not a substitute for
+ * them: one IP is legitimately many accounts (an office, a CI runner, a
+ * mobile carrier NAT), so this is sized to stop a single host enumerating
+ * scopes, not to be the primary meter. It is the limit that still holds when
+ * the scope key is worthless — which is exactly the state an attacker
+ * arranges by rotating bearers.
+ */
+export const CHAT_IP_RATE_LIMIT = { limit: 90, windowMs: CLIENT_IP_RATE_LIMIT_WINDOW_MS } as const;
+export const PROJECT_CREATE_IP_RATE_LIMIT = {
+  limit: 120,
+  windowMs: CLIENT_IP_RATE_LIMIT_WINDOW_MS,
+} as const;
 
-type Window = { count: number; resetAt: number };
-
-export type RateLimitVerdict = { ok: true } | { ok: false; retryAfterSeconds: number };
-
-export type RateLimiter = {
-  /** Count one request against `key`; refuse once the window's limit is hit. */
-  check(key: string, now?: number): Promise<RateLimitVerdict>;
-};
-
-/** The studio's pair of limiters, injectable per orchestrator. */
+/** The studio's limiters, injectable per app. */
 export type StudioRateLimiters = {
   chat: RateLimiter;
   projectCreate: RateLimiter;
+  /** Per-IP companions to the two above. */
+  chatIp?: RateLimiter;
+  projectCreateIp?: RateLimiter;
 };
 
-export function createRateLimiter(options: { limit: number; windowMs: number }): RateLimiter {
-  const windows = new TtlCache<Window>(options.windowMs, MAX_TRACKED_KEYS);
-  return {
-    check(key, now = Date.now()) {
-      const entry = windows.get(key);
-      // The explicit `resetAt` check (not just the cache TTL) keeps the
-      // window correct even when a caller supplies its own clock.
-      if (!entry || entry.resetAt <= now) {
-        windows.set(key, { count: 1, resetAt: now + options.windowMs });
-        return Promise.resolve({ ok: true });
-      }
-      if (entry.count < options.limit) {
-        entry.count += 1;
-        return Promise.resolve({ ok: true });
-      }
-      return Promise.resolve({
-        ok: false,
-        retryAfterSeconds: Math.max(1, Math.ceil((entry.resetAt - now) / 1000)),
-      });
-    },
-  };
-}
-
-const TABLE = "aai_platform.studio_rate_limits";
-// One atomic statement: start a fresh window when the stored one has
-// expired, otherwise bump its counter. `returning` reports the verdict
-// inputs, with the remaining window computed database-side so replicas never
-// compare their own clocks against each other's.
-const CHECK_SQL = `insert into ${TABLE} as t (name, key, count, reset_at)
-values ($1, $2, 1, now() + $3::int * interval '1 millisecond')
-on conflict (name, key) do update set
-  count = case when t.reset_at <= now() then 1 else t.count + 1 end,
-  reset_at = case when t.reset_at <= now()
-    then now() + $3::int * interval '1 millisecond' else t.reset_at end
-returning count, ceil(extract(epoch from (reset_at - now()))) as retry_after_seconds`;
-
-/**
- * Postgres-backed fixed-window limiter over the platform admin connection.
- * `name` namespaces this limiter's rows so several limiters share the table.
- */
-export function createPgRateLimiter(
-  sql: SqlExec,
-  options: { name: string; limit: number; windowMs: number },
-): RateLimiter {
-  return {
-    async check(key) {
-      const rows = await sql(CHECK_SQL, [options.name, key, options.windowMs]);
-      const row = rows[0];
-      if (!row) throw new Error(`Rate-limit upsert returned no row for ${options.name}/${key}`);
-      const count = Number(row.count);
-      if (count <= options.limit) return { ok: true };
-      return {
-        ok: false,
-        retryAfterSeconds: Math.max(1, Number(row.retry_after_seconds) || 1),
-      };
-    },
-  };
-}
+export type { RateLimiter, RateLimitVerdict } from "aai-server/rate-limit";
+export { createPgRateLimiter, createRateLimiter } from "aai-server/rate-limit";
