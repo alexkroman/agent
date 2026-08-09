@@ -10,7 +10,11 @@
 import { describe, expect, test, vi } from "vitest";
 import { makeStore, PROJECT, SCOPE, settled, TARGET } from "./_studio-preview-test-utils.ts";
 import { createPreviewDeployer, type PreviewDeployerOptions } from "./studio-preview.ts";
-import { createMemoryPreviewQueue, PREVIEW_JOB_MAX_ATTEMPTS } from "./studio-preview-queue.ts";
+import {
+  createMemoryPreviewQueue,
+  PREVIEW_JOB_MAX_ATTEMPTS,
+  PREVIEW_JOB_VISIBILITY_MS,
+} from "./studio-preview-queue.ts";
 import type { WorkspaceDeployOutcome, WorkspaceDeployTarget } from "./studio-session-broker.ts";
 import { createWorkspace, getWorkspace, mutateWorkspace } from "./studio-workspace.ts";
 
@@ -255,6 +259,58 @@ describe("createPreviewDeployer", () => {
     await vi.waitFor(async () => {
       expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewHash).toBeDefined();
     });
+  });
+
+  test("a job wedged on its project lock is handed back, not sat on", async () => {
+    // A claimed job is invisible to the whole fleet for the visibility
+    // timeout, so waiting on an in-process lock spends the queue's own
+    // durability. The acquire is bounded well under that window; a lapsed one
+    // rejects, leaving the job unacked for redelivery.
+    vi.useFakeTimers();
+    try {
+      const workspaces = makeStore();
+      await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+      // The first deploy never returns — a sandbox that went away mid-request.
+      const wedged = vi.fn((): Promise<WorkspaceDeployOutcome> => new Promise(() => {}));
+      const queue = createMemoryPreviewQueue();
+      const deployer = createPreviewDeployer({
+        workspaces,
+        deployWorkspace: wedged,
+        queue,
+        pollMs: 0,
+        resolveApiKey: () => Promise.resolve("stored-key"),
+      });
+
+      // Two jobs for ONE project, so the batch claims both and the second
+      // queues behind the first on the project lock.
+      const job = { scope: SCOPE, project: PROJECT, serverUrl: TARGET.serverUrl, userId: "u1" };
+      await queue.enqueue(job);
+      await queue.enqueue(job);
+
+      // Never settles — the first job's deploy is wedged by construction.
+      void deployer.drainOnce();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(wedged).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(PREVIEW_JOB_VISIBILITY_MS);
+
+      // The waiter gave up rather than holding its claim to the deadline, and
+      // it is still in the queue — unacked and unarchived — for redelivery.
+      // Asserting the REASON, not just that something warned: a job left
+      // unacked because the deploy errored looks identical from the queue's
+      // side, and only the message separates it from the lock lapsing.
+      expect(warn).toHaveBeenCalledWith(
+        "Studio preview deploy errored",
+        expect.objectContaining({ error: expect.stringContaining("timed out") }),
+      );
+      expect(queue.archived).toEqual([]);
+      expect(wedged).toHaveBeenCalledTimes(1);
+      deployer.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("a job redelivered past the attempt cap is archived, not retried forever", async () => {
