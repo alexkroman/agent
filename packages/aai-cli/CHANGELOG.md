@@ -1,5 +1,32 @@
 # @alexkroman1/aai-cli
 
+## 5.12.0
+
+### Minor Changes
+
+- c49f501: Run the credential preflight and a bundle smoke test in the CLI at deploy time. The platform no longer extracts or stores an agent config, so aai deploy now imports the worker it just built: a bundle whose top level throws fails in your project directory instead of as a sandbox that never starts, and missing provider credentials are reported as a warning naming the keys. Deploys also send the agent name as a slug hint.
+- c49f501: Export the CLI's project-config writers as a public subpath (`@alexkroman1/aai-cli/project-config`), so the studio guest's Publish stops hand-writing the config home and the `.aai/project.json` pin with JSON.stringify. One writer per on-disk format keeps the 0600 atomic-rename write and the pin's merge semantics.
+
+### Patch Changes
+
+- 42cf8ab: aai test now requires an agent project like every other project-scoped command: it was the one calling setup() without the agent guard, so in a directory with no agent.ts it found no test file, reported passed/skipped and exited 0 — a green result for a project that isn't there. And JSON mode now keeps its one-result-line stdout contract on citty's own argument errors: a missing positional or an unknown subcommand wrote a human usage block to stdout and no JSON at all, which is the normal scripted case since JSON mode is auto-detected on a pipe. The specific reason still goes to stderr, and --help is still the human block whatever the mode.
+- 42cf8ab: aai dev no longer breaks JSON mode's one-result-line stdout contract: the SDK's default logger is console-backed and console.log is stdout, so the runtime's own diagnostics (the multi-line Session mode resolved dump at startup, every later warning) landed above the single JSON line. JSON mode is auto-detected on a pipe, so that was the normal case — aai dev > dev.log, a process supervisor, a container. The runtime now logs through a logger the command chooses, which writes to stderr with its structured context intact once output is silenced; human mode keeps the console logger untouched.
+- db3fb48: Keep a failed log write from taking the dev server down: reporting a successful restart no longer sits inside the listen try/catch, where a throwing notifier (stderr closed by a piped `aai dev`) was reported as a failed listen and tore down a server that had already bound.
+- c49f501: aai secret and aai publish now set secrets on a linked project's preview agent as well as its production one, matching what the studio's Secrets panel already did. Previously a key set from the CLI reached production alone, so the preview agent the same publish created failed at its first session.
+- Updated dependencies [db3fb48]
+- Updated dependencies [42cf8ab]
+- Updated dependencies [c49f501]
+- Updated dependencies [db3fb48]
+- Updated dependencies [a91c3bc]
+- Updated dependencies [db3fb48]
+- Updated dependencies [c49f501]
+- Updated dependencies [9fded19]
+- Updated dependencies [348fa16]
+- Updated dependencies [db3fb48]
+- Updated dependencies [9fded19]
+  - @alexkroman1/aai@5.12.0
+  - @alexkroman1/aai-ui@5.12.0
+
 ## 5.11.0
 
 ### Minor Changes

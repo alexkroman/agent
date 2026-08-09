@@ -1,5 +1,63 @@
 # @alexkroman1/aai-server
 
+## 3.5.1
+
+### Patch Changes
+
+- 9a7916a: Close three caching gaps on the Supabase-backed read paths.
+
+  The agent shell is served `no-store`. It referenced content-hashed assets that
+  only resolve through the current agents row, so a redeploy unmapped them and a
+  cached shell 404'd its own entry script — a white page, with no stale-build
+  reload on this surface to recover. It previously carried no cache headers at
+  all, which lets a heuristically caching intermediary reuse it.
+
+  The bundle store's row, version, and blob reads are single-flighted. The
+  read-through caches only ever served a read that had already finished, so a
+  cold replica answered a burst for one deploy with one Postgres read and one
+  Storage download per request: measured at 61 backend round trips for 20
+  browsers fetching a shell plus an asset, against 3.
+
+  Blob uploads carry a one-year cache directive, matching the immutability their
+  content-addressed keys already guarantee. Inert today — every read is an
+  authenticated download or a per-call signed URL — but Storage stamps the
+  directive at upload time and never revisits it.
+
+- a7fc229: Cut latency from the deployed-agent sandbox spawn: write the bundle and env boot artifacts concurrently instead of serially, issue the tunnel lookup before those writes so its round trip overlaps the ~8 MB bundle upload, and tighten the guest readiness probe interval from 250ms to 100ms (the interval is dead time on every spawn — half of it on average — and the probe is a localhost TCP connect inside an idle container).
+- 7cf76d3: Layer the Modal image dependencies-first: install from normalized workspace manifests before copying the source, so an ordinary code change reuses the installed node_modules instead of refetching the whole tree on every deploy.
+- 7cf76d3: Keep the studio UI alive across a Modal deploy: serve the app shell no-store (it names content-hashed assets that only exist in the image it was built into, and those are served immutable), and recover a tab whose chunks were deleted by the rollout — one guarded reload on a failed lazy import or Vite modulepreload error instead of a blank page.
+- a87bd05: Emit a workspace change event on `patch`, so the studio's Preview pane updates
+  under `pnpm dev:aai-server`.
+
+  `withWorkspaceEvents` — the dev/test decorator standing in for production's
+  `postgres_changes` stream — wrapped `put` and `delete` but not `patch`. Every
+  metadata stamp goes through `patch` (`stampWorkspaceMeta` is the only writer of
+  `previewSlug`/`previewHash`/`previewError`, `deployedSlug`/`deployedHash`, and
+  `databaseEnabled`), so in local dev a finished preview deploy pushed no
+  `project` frame at all. With no polling loop behind those streams, the Preview
+  pane sat on "Nothing to preview yet" / "Updating preview…" until the page was
+  reloaded — and a failed preview's error banner, a Publish, and the database
+  switch were silent the same way. Production was unaffected: it wraps nothing,
+  because the row's own UPDATE is what Realtime streams.
+
+  The studio SSE regression test modelled the preview stamp as a read-modify-write
+  rather than calling `stampWorkspaceMeta`, which is why it stayed green.
+
+- Updated dependencies [db3fb48]
+- Updated dependencies [42cf8ab]
+- Updated dependencies [c49f501]
+- Updated dependencies [db3fb48]
+- Updated dependencies [a91c3bc]
+- Updated dependencies [db3fb48]
+- Updated dependencies [c49f501]
+- Updated dependencies [9fded19]
+- Updated dependencies [348fa16]
+- Updated dependencies [db3fb48]
+- Updated dependencies [9fded19]
+  - @alexkroman1/aai@5.12.0
+  - @alexkroman1/aai-ui@5.12.0
+  - aai-guest@0.4.10
+
 ## 3.5.0
 
 ### Minor Changes

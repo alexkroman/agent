@@ -1,5 +1,21 @@
 # @alexkroman1/aai
 
+## 5.12.0
+
+### Minor Changes
+
+- c49f501: Add the @alexkroman1/aai/workspace-files subpath: the walk, caps, skip rules and strict UTF-8 decode that define a studio workspace on disk. The CLI's push, the studio guest's end-of-turn sync and the platform's validation now read one definition instead of three copies that had to agree.
+- c49f501: Add the `@alexkroman1/aai/slugify` subpath (`slugifyName`) — one normalization of a human name into the platform slug grammar, shared by the CLI, the platform server, and the studio. The CLI's directory-derived project name previously used a hand-rolled regex, so `Café Ordering/` pushed as `caf-ordering` where the studio produced `cafe-ordering`.
+- 348fa16: Add linkConfirmationCode to the /utils subpath: the aai login confirmation code, previously derived identically in aai-cli and the studio client. Providers build their session shell through createSttSessionShell / createTtsSessionShell, so the per-stage cleanCloseIsFatal invariant lives in one place. aai deploy drops the inert --allow-missing-secrets flag; missing provider credentials always warn.
+
+### Patch Changes
+
+- db3fb48: Make the SSRF DNS resolver injectable so the DNS-rebinding defense can be tested for what it does rather than for what the test host's resolver answers.
+- db3fb48: Stop publishing the s2s-transport connectS2s spy seam from the runtime barrel: a mutable test-patch object was part of the public API and could be overwritten process-wide.
+- a91c3bc: Split the pipeline transport's session lifecycle (provider open, greeting, provider-error teardown, stop) into pipeline-transport-lifecycle.ts, keeping pipeline-transport.ts to turn orchestration. No behaviour change.
+- db3fb48: Recognise the S2S reply.content_part.started/done bracket frames. The service sends them around every reply; absent from the message union each took the unrecognised path and logged a warning, burying the one signal that says a frame the service really sends is going unhandled.
+- db3fb48: Extract the SSRF DNS pin (address plus family) into a testable helper; no behaviour change.
+
 ## 5.11.0
 
 ### Patch Changes

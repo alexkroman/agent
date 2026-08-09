@@ -1,5 +1,22 @@
 # @alexkroman1/aai-ui
 
+## 5.12.0
+
+### Patch Changes
+
+- 42cf8ab: Fix six accessibility and responsive defects in the built-in UI components found by a manual browser QA pass: keyboard focus was invisible on every Button and URL chip (outline-none with no replacement, WCAG 2.4.7), buttons had no hover state at all, SidebarLayout squeezed ChatView to an unreadable column on phones instead of stacking, the Controls footer overflowed the viewport below 330px, a long tool name pushed ToolCallRow's expand chevron out of its clipped container, and the neutral text steps are now derived from the theme so a dark ClientTheme no longer leaves labels, tool details and chips below contrast minimums.
+- 9fded19: Deadline the pre-connection client-config lookup. It runs inside the session's WebSocket URL provider, which partysocket awaits before arming any timeout of its own, so a platform that hung rather than failed meant no socket was ever constructed and none of the reconnect attempts ever ran — the session stayed on "connecting" indefinitely, including after the server recovered. A timed-out lookup now degrades like every other failed one.
+- 9fded19: Fail a session whose socket opened but never received a config frame. The server sends config at zero RTT, so an open-but-silent socket means the peer is not a healthy agent server — but partysocket's connection timeout is cleared once the socket opens, so the session reached "ready" (the same live indicator the UI gives "listening") and stayed there permanently with no mic, no error and no retry. It now re-dials on a deadline and surfaces a connection error once the budget is spent.
+- Updated dependencies [db3fb48]
+- Updated dependencies [c49f501]
+- Updated dependencies [db3fb48]
+- Updated dependencies [a91c3bc]
+- Updated dependencies [db3fb48]
+- Updated dependencies [c49f501]
+- Updated dependencies [348fa16]
+- Updated dependencies [db3fb48]
+  - @alexkroman1/aai@5.12.0
+
 ## 5.11.0
 
 ### Patch Changes
