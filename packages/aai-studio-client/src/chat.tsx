@@ -20,7 +20,7 @@ import {
   type QueuedMessage,
   queueReducer,
 } from "./chat-queue.ts";
-import { LlmStatusNote } from "./llm-status-note.tsx";
+import { ChatStatusNote } from "./chat-status-note.tsx";
 import { createResilientFetch } from "./resilient-fetch.ts";
 import { isEnterSubmit, SEND_BUTTON_CLASS, SendIcon, StopIcon } from "./send-button.tsx";
 import { ToolRow, toBlocks } from "./tool-row.tsx";
@@ -33,7 +33,7 @@ type ChatPanelProps = {
    */
   chatHistory: UIMessage[] | undefined;
   /** Undefined while `/studio/status` is loading or unreachable. */
-  llmStatus: StudioStatus | undefined;
+  chatStatus: StudioStatus | undefined;
   /** The project's brokered sandbox; undefined while booting. */
   chatSession: ChatSession | undefined;
   /**
@@ -90,14 +90,14 @@ export type NotifyChat = (text: string, opts?: { respond?: boolean }) => void;
  * How a notification should reach the conversation.
  *
  * Falls back to `"append"` rather than dropping when a turn is already in
- * flight or the LLM isn't up: a publish failure has to survive either way,
- * and the next turn still carries an appended message.
+ * flight or chat is not yet accepting: a publish failure has to survive
+ * either way, and the next turn still carries an appended message.
  */
 export function notifyDispatch(
   opts: { respond?: boolean } | undefined,
-  state: { busy: boolean; llmReady: boolean },
+  state: { busy: boolean; chatReady: boolean },
 ): "turn" | "append" {
-  return opts?.respond === true && !state.busy && state.llmReady ? "turn" : "append";
+  return opts?.respond === true && !state.busy && state.chatReady ? "turn" : "append";
 }
 
 // Memoized: while a turn streams, useChat updates dozens of times a second
@@ -250,7 +250,7 @@ function EmptyStateBody({ status }: { status: StudioStatus | undefined }) {
           first version.
         </p>
       </div>
-      <LlmStatusNote status={status} />
+      <ChatStatusNote status={status} />
     </>
   );
 }
@@ -263,7 +263,7 @@ function EmptyStateBody({ status }: { status: StudioStatus | undefined }) {
 function ProjectChat({
   session,
   initialMessages,
-  llmStatus,
+  chatStatus,
   toolLabels,
   initialPrompt,
   onInitialPromptSent,
@@ -302,7 +302,9 @@ function ProjectChat({
   });
 
   const busy = status === "submitted" || status === "streaming";
-  const llmReady = llmStatus?.llm === true;
+  // Chat itself is unconditional — it runs on the caller's own key — so this
+  // is only "has `/studio/status` answered yet".
+  const chatReady = chatStatus !== undefined;
 
   // Follow-ups typed while the agent works. The composer's text lives here
   // too, so a Stop can hand the queue back to it.
@@ -338,11 +340,11 @@ function ProjectChat({
       drainQueueToComposer();
       return;
     }
-    const next = nextToFlush(queue, { status, llmReady });
+    const next = nextToFlush(queue, { status, chatReady });
     if (next === null) return;
     dispatchQueue({ type: "dispatch" });
     void sendMessage({ text: next });
-  }, [busy, status, llmReady, queue, sendMessage, drainQueueToComposer]);
+  }, [busy, status, chatReady, queue, sendMessage, drainQueueToComposer]);
 
   // Mirror the outstanding-work state up to the app. The cleanup clears it on
   // unmount (project switch, back to home) so a turn left streaming in a
@@ -358,8 +360,8 @@ function ProjectChat({
   // queued would jump the line, so it appends instead.
   const pendingRef = useRef(pending);
   pendingRef.current = pending;
-  const llmReadyRef = useRef(llmReady);
-  llmReadyRef.current = llmReady;
+  const chatReadyRef = useRef(chatReady);
+  chatReadyRef.current = chatReady;
 
   // Publish output and secret changes arrive as injected user messages —
   // visible in the transcript, carried into the agent's next turn, and
@@ -369,7 +371,7 @@ function ProjectChat({
     registerNotify((text, opts) => {
       const mode = notifyDispatch(opts, {
         busy: pendingRef.current,
-        llmReady: llmReadyRef.current,
+        chatReady: chatReadyRef.current,
       });
       if (mode === "turn") {
         void sendMessage({ text });
@@ -400,14 +402,14 @@ function ProjectChat({
   // Prompt queued by the guided pre-project flow — send exactly once.
   const sentInitial = useRef(false);
   useEffect(() => {
-    if (sentInitial.current || !initialPrompt || !llmReady) return;
+    if (sentInitial.current || !initialPrompt || !chatReady) return;
     sentInitial.current = true;
     void sendMessage({ text: initialPrompt });
     onInitialPromptSent();
-  }, [initialPrompt, llmReady, sendMessage, onInitialPromptSent]);
+  }, [initialPrompt, chatReady, sendMessage, onInitialPromptSent]);
 
   const send = (text: string) => {
-    if (!llmReady) return;
+    if (!chatReady) return;
     if (pending) {
       dispatchQueue({ type: "queue", text });
       return;
@@ -421,7 +423,7 @@ function ProjectChat({
           scrolls up to read, re-engaging once they return to the bottom. */}
       <StickToBottom className="min-h-0 flex-1" initial="instant" resize="smooth">
         <StickToBottom.Content className="flex flex-col gap-4 px-6 py-5">
-          {messages.length === 0 && !initialPrompt && <EmptyStateBody status={llmStatus} />}
+          {messages.length === 0 && !initialPrompt && <EmptyStateBody status={chatStatus} />}
           {messages.map((message) => (
             <MessageView key={message.id} message={message} busy={busy} labels={toolLabels} />
           ))}
@@ -430,7 +432,7 @@ function ProjectChat({
         </StickToBottom.Content>
       </StickToBottom>
       <Composer
-        disabled={!llmReady}
+        disabled={!chatReady}
         busy={busy}
         onStop={handleStop}
         placeholder={busy ? "Queue a follow-up…" : "Describe your agent…"}
@@ -480,7 +482,7 @@ export function ChatPanel(props: ChatPanelProps) {
         <ProjectChat
           session={props.chatSession}
           initialMessages={props.chatHistory}
-          llmStatus={props.llmStatus}
+          chatStatus={props.chatStatus}
           toolLabels={props.toolLabels}
           initialPrompt={props.initialPrompt}
           onInitialPromptSent={props.onInitialPromptSent}

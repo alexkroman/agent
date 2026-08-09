@@ -26,17 +26,17 @@ describe("findUnknownFlags", () => {
     server: { type: "string", alias: "s" },
     force: { type: "boolean", alias: "f" },
     json: { type: "boolean" },
-    allowMissingSecrets: { type: "boolean" },
+    allowPreviewSlug: { type: "boolean" },
     dir: { type: "positional", required: false },
   } as const;
 
   test("accepts the kebab-case spelling of a camelCase flag", () => {
     // citty accepts both, and the guest's in-sandbox Publish spawns
-    // `aai deploy --allow-missing-secrets --allow-preview-slug`. Matching only
-    // the camelCase name broke Publish outright.
-    expect(findUnknownFlags(["--allow-missing-secrets"], argsDef)).toEqual([]);
-    expect(findUnknownFlags(["--allowMissingSecrets"], argsDef)).toEqual([]);
-    expect(findUnknownFlags(["--no-allow-missing-secrets"], argsDef)).toEqual([]);
+    // `aai deploy --allow-preview-slug`. Matching only the camelCase name
+    // broke Publish outright.
+    expect(findUnknownFlags(["--allow-preview-slug"], argsDef)).toEqual([]);
+    expect(findUnknownFlags(["--allowPreviewSlug"], argsDef)).toEqual([]);
+    expect(findUnknownFlags(["--no-allow-preview-slug"], argsDef)).toEqual([]);
   });
 
   test("accepts declared flags, aliases, `=` forms, and negations", () => {
@@ -124,7 +124,6 @@ describe("unknownFlagsForArgv", () => {
         "--server",
         "http://x",
         "--json",
-        "--allow-missing-secrets",
         "--allow-preview-slug",
       ]),
     ).toEqual([]);

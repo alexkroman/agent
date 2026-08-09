@@ -28,7 +28,13 @@ import {
 import { debug } from "./_debug-log.ts";
 import { keyedMemoAsync, memoAsync } from "./_memo.ts";
 import { createHarnessImageResolver } from "./modal-harness-image.ts";
+import {
+  DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
+  DEFAULT_SANDBOX_TIMEOUT_MS,
+  guestSandboxResources,
+} from "./modal-sandbox-env.ts";
 import { SandboxNameTakenError } from "./sandbox-directory.ts";
+import { type SandboxRole, sandboxTags } from "./sandbox-role.ts";
 
 // ── Structural Modal types ───────────────────────────────────────────────────
 // Minimal shapes of the Modal SDK objects we touch. Structural rather than the
@@ -151,6 +157,44 @@ const READINESS_PROBE_INTERVAL_MS = 100;
 export const GUEST_READINESS_PROBE = Probe.withTcp(GUEST_PORT, {
   intervalMs: READINESS_PROBE_INTERVAL_MS,
 });
+
+/**
+ * The `SandboxCreateParams` every guest spawn shares — the tunnelled port, the
+ * readiness probe, the env-derived limits and resources, and the observability
+ * tags.
+ *
+ * The two spawners (control-channel in `modal-sandbox.ts`, deployed agent in
+ * `modal-agent-sandbox.ts`) differ in everything AFTER creation and in nothing
+ * about the container they create, so this is the shape of a guest sandbox
+ * stated once. A `name` claims the fleet-wide identity Modal enforces (see
+ * sandbox-directory.ts); omit it for an unnamed spawn.
+ *
+ * NOTE the caller must pass `name` as a plain value, never reach into its own
+ * `opts` inside a closure over the result — see the allocation note in
+ * `spawnModalAgentServer`.
+ */
+export function guestSandboxCreateParams(opts: {
+  role: SandboxRole;
+  slug?: string | undefined;
+  name?: string | undefined;
+}): SandboxCreateParams {
+  const { limits, resourceParams } = guestSandboxResources(process.env);
+  return {
+    // Explicit idle entrypoint: the exec'd harness is what holds the sandbox
+    // active, so its exit is what starts the idle timer.
+    command: ["sleep", "infinity"],
+    // The host (or a client) reaches the guest through this tunnel; the
+    // harness's bearer-token check is what keeps the public tunnel URL from
+    // being an open door.
+    encryptedPorts: [GUEST_PORT],
+    readinessProbe: GUEST_READINESS_PROBE,
+    timeoutMs: limits.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
+    idleTimeoutMs: limits.idleTimeoutMs ?? DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
+    ...resourceParams,
+    tags: sandboxTags(opts.role, opts.slug),
+    ...(opts.name === undefined ? {} : { name: opts.name }),
+  };
+}
 
 export function modalRequiredError(): Error {
   return new Error(

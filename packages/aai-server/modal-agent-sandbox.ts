@@ -18,19 +18,14 @@ import { debug } from "./_debug-log.ts";
 import { GUEST_READY_TIMEOUT_MS, raceGuestExit } from "./guest-readiness.ts";
 import {
   GUEST_PORT,
-  GUEST_READINESS_PROBE,
+  guestSandboxCreateParams,
   harnessCode,
   type ModalSpawnContext,
   modalContext,
 } from "./modal-context.ts";
 import { guestExecBaseEnv, HARNESS_REMOTE_PATH } from "./modal-harness-image.ts";
-import {
-  DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
-  DEFAULT_SANDBOX_TIMEOUT_MS,
-  guestSandboxResources,
-} from "./modal-sandbox-env.ts";
 import { SandboxUnavailableError } from "./sandbox-errors.ts";
-import { resolveSandboxRole, sandboxTags } from "./sandbox-role.ts";
+import { resolveSandboxRole } from "./sandbox-role.ts";
 import type { WorkerSource } from "./sandbox-vm.ts";
 import {
   type AgentServerHandle,
@@ -78,7 +73,6 @@ export async function spawnModalAgentServer(
     harnessCode(opts.harnessPath),
     ctx ? Promise.resolve(ctx) : modalContext(),
   ]);
-  const { limits, resourceParams } = guestSandboxResources(process.env);
   const role = resolveSandboxRole({ slug: opts.slug });
 
   const t0 = performance.now();
@@ -90,16 +84,7 @@ export async function spawnModalAgentServer(
   const sandboxName = opts.name;
   const sb = await context.createGuestSandbox(
     code,
-    {
-      command: ["sleep", "infinity"],
-      encryptedPorts: [GUEST_PORT],
-      readinessProbe: GUEST_READINESS_PROBE,
-      timeoutMs: limits.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
-      idleTimeoutMs: limits.idleTimeoutMs ?? DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
-      ...resourceParams,
-      tags: sandboxTags(role, opts.slug),
-      name: sandboxName,
-    },
+    guestSandboxCreateParams({ role, slug: opts.slug, name: sandboxName }),
     opts.imageTag,
   );
   try {

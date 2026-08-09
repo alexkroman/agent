@@ -4,7 +4,12 @@
 // stores — versions included, so dev/tests cannot drift from production.
 
 import { describe, expect, test } from "vitest";
-import type { SqlExec } from "./secret-store.ts";
+import {
+  createDispatchingSql,
+  createRecordingSql,
+  refusingDdl,
+  type SqlHandler,
+} from "./test-utils.ts";
 import {
   createMemoryWorkspaceStore,
   createPgWorkspaceStore,
@@ -19,30 +24,21 @@ import {
  * string-doc parse branch.
  */
 function createFakeSql(opts: { failEnsures?: number } = {}) {
-  type Handler = (params: unknown[]) => Record<string, unknown>[];
   const rows = new Map<string, { doc: string; version: number }>();
-  const log: { query: string; params: unknown[] }[] = [];
-  let ensureFailures = opts.failEnsures ?? 0;
   const key = (scope: unknown, project: unknown) => `${scope} ${project}`;
 
-  const ddl: Handler = () => {
-    if (ensureFailures > 0) {
-      ensureFailures -= 1;
-      throw new Error("ddl refused");
-    }
-    return [];
-  };
-  const selectRow: Handler = ([scope, project]) => {
+  const ddl = refusingDdl(opts.failEnsures);
+  const selectRow: SqlHandler = ([scope, project]) => {
     const row = rows.get(key(scope, project));
     return row ? [{ doc: row.doc, version: row.version }] : [];
   };
-  const insertRow: Handler = ([scope, project, doc]) => {
+  const insertRow: SqlHandler = ([scope, project, doc]) => {
     const k = key(scope, project);
     if (rows.has(k)) return [];
     rows.set(k, { doc: String(doc), version: 1 });
     return [{ version: 1 }];
   };
-  const updateRow: Handler = ([scope, project, doc, expected]) => {
+  const updateRow: SqlHandler = ([scope, project, doc, expected]) => {
     const k = key(scope, project);
     const row = rows.get(k);
     if (!row || row.version !== expected) return [];
@@ -54,7 +50,7 @@ function createFakeSql(opts: { failEnsures?: number } = {}) {
   // the statement's own evaluation order. Distinguished from the versioned
   // update by a longer prefix (both statements begin `update <table> set doc
   // =`), and listed FIRST so that longer prefix is the one that matches.
-  const patchRow: Handler = ([scope, project, set, remove]) => {
+  const patchRow: SqlHandler = ([scope, project, set, remove]) => {
     const k = key(scope, project);
     const row = rows.get(k);
     if (!row) return [];
@@ -65,18 +61,18 @@ function createFakeSql(opts: { failEnsures?: number } = {}) {
     rows.set(k, { doc: JSON.stringify(merged), version });
     return [{ doc: JSON.stringify(merged), version }];
   };
-  const deleteRow: Handler = ([scope, project]) => {
+  const deleteRow: SqlHandler = ([scope, project]) => {
     rows.delete(key(scope, project));
     return [];
   };
-  const listRows: Handler = ([scope]) => {
+  const listRows: SqlHandler = ([scope]) => {
     const prefix = `${scope} `;
     return [...rows.keys()]
       .filter((k) => k.startsWith(prefix))
       .map((k) => ({ project: k.slice(prefix.length) }))
       .sort((a, b) => a.project.localeCompare(b.project));
   };
-  const handlers: [string, Handler][] = [
+  return createDispatchingSql([
     ["create schema", ddl],
     ["create table", ddl],
     ["select doc, version", selectRow],
@@ -85,21 +81,7 @@ function createFakeSql(opts: { failEnsures?: number } = {}) {
     ["update", updateRow],
     ["delete", deleteRow],
     ["select project", listRows],
-  ];
-
-  const sql: SqlExec = (query, params = []) => {
-    log.push({ query, params });
-    const q = query.replace(/\s+/g, " ").trim().toLowerCase();
-    const handler = handlers.find(([prefix]) => q.startsWith(prefix))?.[1];
-    if (!handler) return Promise.reject(new Error(`Unexpected query: ${query}`));
-    try {
-      return Promise.resolve(handler(params));
-    } catch (err) {
-      return Promise.reject(err);
-    }
-  };
-
-  return { sql, log };
+  ]);
 }
 
 // ── Behavioral parity: both implementations must agree ─────────────────────
@@ -316,10 +298,9 @@ describe("createPgWorkspaceStore SQL", () => {
   test("reads accept a jsonb doc that arrives pre-parsed", async () => {
     // The `postgres` driver returns jsonb columns as objects; the fake above
     // returns strings. Both must parse identically.
-    const sql: SqlExec = (query) =>
-      Promise.resolve(
-        query.includes("select doc, version") ? [{ doc: { v: "object" }, version: 3 }] : [],
-      );
+    const { sql } = createRecordingSql((query) =>
+      query.includes("select doc, version") ? [{ doc: { v: "object" }, version: 3 }] : [],
+    );
     const store = createPgWorkspaceStore(sql);
     expect(await store.get("s", "p")).toEqual({ doc: { v: "object" }, version: 3 });
   });

@@ -64,14 +64,9 @@ export function clearCliLinkCode(): void {
 }
 
 /**
- * Human-matchable confirmation shown on the approval gate — the terminal
- * that ran `aai login` prints the same value (aai-cli's login.ts derives
- * it identically; keep the two in lockstep). Not a secret: both ends
- * already hold the full code. It exists so someone who lands on an
- * approval page they didn't cause has a concrete mismatch to notice
- * ("what terminal?") instead of a bare Approve button.
+ * The confirmation the approval gate shows. Re-exported rather than derived
+ * here: the terminal that ran `aai login` must print the SAME value, so the
+ * derivation is a shared contract (`@alexkroman1/aai/utils`), not a copy each
+ * end keeps in step with the other.
  */
-export function linkConfirmationCode(code: string): string {
-  const head = code.slice(0, 8).toUpperCase();
-  return `${head.slice(0, 4)}-${head.slice(4)}`;
-}
+export { linkConfirmationCode } from "@alexkroman1/aai/utils";

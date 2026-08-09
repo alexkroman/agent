@@ -1,5 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
+import { createRecordingSql } from "aai-server/test-utils";
 import { describe, expect, test, vi } from "vitest";
 import {
   createMemoryStudioSessionRegistry,
@@ -72,12 +73,7 @@ describe("memory studio session registry", () => {
 
 describe("postgres studio session registry", () => {
   function fakeSql(rows: Record<string, unknown>[] = []) {
-    const calls: { query: string; params: unknown[] }[] = [];
-    const sql = (query: string, params: unknown[] = []) => {
-      calls.push({ query, params });
-      return Promise.resolve(query.trimStart().startsWith("select") ? rows : []);
-    };
-    return { sql, calls };
+    return createRecordingSql((query) => (query.trimStart().startsWith("select") ? rows : []));
   }
 
   test("claim upserts every field plus the lease", async () => {

@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import type { SqlExec } from "aai-server/secret-store";
+import { createRecordingSql } from "aai-server/test-utils";
 import { describe, expect, test, vi } from "vitest";
 import {
   createMemoryPreviewQueue,
@@ -66,12 +66,8 @@ describe("createMemoryPreviewQueue", () => {
 
 describe("createPgPreviewQueue", () => {
   function fakeSql() {
-    const calls: { query: string; params?: unknown[] }[] = [];
     let rows: Record<string, unknown>[] = [];
-    const sql: SqlExec = (query, params) => {
-      calls.push({ query, ...(params && { params }) });
-      return Promise.resolve(query.includes("pgmq.read") ? rows : []);
-    };
+    const { sql, calls } = createRecordingSql((query) => (query.includes("pgmq.read") ? rows : []));
     const setRows = (next: Record<string, unknown>[]): void => {
       rows = next;
     };

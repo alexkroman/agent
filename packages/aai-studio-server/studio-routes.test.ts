@@ -98,9 +98,7 @@ describe("studio page + routing", () => {
     const { fetch } = await createTestCombined();
     const res = await fetch("/studio/status");
     expect(res.status).toBe(200);
-    // Chat always runs — on the caller's own key — so llm is always true.
     expect(await res.json()).toEqual({
-      llm: true,
       provider: "assemblyai",
       model: "gpt-5.5",
     });
@@ -118,7 +116,6 @@ describe("studio page + routing", () => {
     vi.stubEnv("STUDIO_LLM_MODEL", "claude-sonnet-4-6");
     const { fetch } = await createTestCombined();
     expect(await (await fetch("/studio/status")).json()).toEqual({
-      llm: true,
       provider: "assemblyai",
       model: "claude-sonnet-4-6",
     });

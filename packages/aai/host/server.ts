@@ -38,6 +38,24 @@ import { type SessionWebSocket, safeSend } from "./ws-handler.ts";
 export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown">;
 
 /** Configuration for {@link createServer}. */
+/**
+ * The options every front door over {@link createServer} passes straight
+ * through — a logger and the two request hooks.
+ *
+ * Shared rather than restated because {@link createAgentServer} and
+ * `createHostServer` are wrappers, not alternative APIs: a hook added here has
+ * to reach both, and three identically-documented fields copied into each is
+ * how one of them silently stops offering it.
+ */
+export type PassthroughServerOptions = {
+  /** Structured logger. Defaults to the console logger. */
+  logger?: Logger;
+  /** First look at every WebSocket upgrade — see {@link ServerOptions.upgrade}. */
+  upgrade?: ServerOptions["upgrade"];
+  /** First look at every HTTP request — see {@link ServerOptions.request}. */
+  request?: ServerOptions["request"];
+};
+
 export type ServerOptions = {
   /** The runtime sessions are started on — see `createRuntime`. */
   runtime: SessionRuntime;

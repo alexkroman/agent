@@ -71,7 +71,7 @@ of subpath exports in `aai/package.json`:
 | Import path | Resolves to | What it contains |
 | --- | --- | --- |
 | `@alexkroman1/aai` | `packages/aai/index.ts` → 6 modules | Types, Db, utils, constants, `agent()`/`tool()` helpers |
-| `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | Zod-free utilities (`errorMessage`, `errorDetail`, …) + the slug contract (`VALID_SLUG_RE`, `RESERVED_SLUGS` from `sdk/slug.ts`). Deliberately dependency-free so the CLI can load it on every invocation without paying zod's startup cost |
+| `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | Zod-free utilities (`errorMessage`, `errorDetail`, …) plus the two contracts BOTH ends of a platform interaction must derive identically: the slug shape (`VALID_SLUG_RE`, `RESERVED_SLUGS` from `sdk/slug.ts`) and the `aai login` confirmation code (`linkConfirmationCode` from `sdk/cli-link.ts` — the terminal prints it, the studio's approval gate shows it, and the point is that they match). Deliberately dependency-free so the CLI can load it on every invocation without paying zod's startup cost |
 | `@alexkroman1/aai/slugify` | `host/slugify.ts` (direct) | `slugifyName` — how a human name BECOMES a slug (transliterating, `decamelize: false`), for the CLI, the platform server, and the studio. Separate from the contract in `sdk/slug.ts` on purpose: that one is dependency-free and rides every agent bundle, this one pulls the transliteration tables. Nothing on the SDK hot path may import it |
 | `@alexkroman1/aai/runtime` | `host/runtime-barrel.ts` → 11 modules | Full Node.js runtime: session, S2S, server, tools, WS handler |
 | `@alexkroman1/aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `ClientEvent`, `ServerMessage` |
@@ -596,6 +596,15 @@ Adding a provider means: descriptor factory there, an opener in
 `host/providers/{stt,tts}/` (built on the shared session shell in
 `host/providers/_utils.ts`), and one entry in the matching registry in
 `host/providers/resolve.ts`.
+
+**Reach for `createSttSessionShell` / `createTtsSessionShell`, not
+`createSessionShell` directly.** The raw factory takes the error constructor,
+the emit, AND `cleanCloseIsFatal` — and the last of those is a per-stage
+invariant rather than a per-provider choice (see its doc: fatal for a
+continuous INPUT stream, normal completion for an output one). Seven openers
+restated the same three lines, which made a session-deafening default one
+copy-paste away; the wrappers leave a provider with only its own `teardown`
+to name.
 
 **All four stages are registries, S2S included.** For a long time only
 STT/TTS/LLM were: S2S was three hand-written kind comparisons, and they

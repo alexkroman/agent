@@ -556,19 +556,23 @@ voice agents without the CLI:
     (`@alexkroman1/aai-cli/project-config`), since the CLI is what parses them
     back and the 0600 atomic rename and the pin's MERGE are invisible in the
     JSON) and runs
-    `aai deploy --server <origin> --json --allow-missing-secrets`. Build,
-    upload, the credential preflight (CLI-side now — see "The platform
+    `aai deploy --server <origin> --json`. Build, upload, the credential
+    preflight (CLI-side now — see "The platform
     stores no agent config" in `packages/aai-server/CLAUDE.md`), ownership,
     reserved slugs, and the ASSEMBLYAI_API_KEY env floor are therefore
     byte-for-byte the laptop path. The CLI's output — success, build
     diagnostics, deploy errors, preflight warnings — returns to the client,
     which **posts it into the chat** so the coding agent sees and can fix
     failures.
-    `--allow-missing-secrets` exists because the Secrets panel needs a
-    deployed slug to attach secrets to — a hard preflight failure would
-    deadlock first publishes. It is now belt-and-braces: the CLI's preflight
-    only ever warns (it cannot see secrets already stored against the slug),
-    so nothing blocks a first publish anyway. The public origin comes from `requestPublicOrigin`
+    Missing credentials only ever WARN, which is what a first publish needs:
+    the Secrets panel has nowhere to attach a secret until a slug is deployed,
+    so a hard preflight failure would deadlock every agent needing a
+    third-party key. That used to be an opt-in the guest passed
+    (`--allow-missing-secrets`, which asked the SERVER to warn); the server
+    stopped preflighting when config extraction moved CLI-side, and the CLI's
+    own preflight cannot see secrets already stored against the slug, so
+    warning is the only behaviour left and the flag is gone.
+    The public origin comes from `requestPublicOrigin`
     (studio-context.ts — beside the context type, not in studio-routes.ts, so
     route modules under it can resolve the origin without importing their own
     parent) → `resolvePublicOrigin` (aai-server/public-origin.ts).

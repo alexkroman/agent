@@ -14,7 +14,7 @@ import {
   queueReducer,
 } from "./chat-queue.ts";
 
-const ready = { status: "ready", llmReady: true } as const;
+const ready = { status: "ready", chatReady: true } as const;
 
 function queued(...texts: string[]): MessageQueue {
   return texts.reduce<MessageQueue>(
@@ -54,18 +54,18 @@ describe("nextToFlush", () => {
   });
 
   test("waits while a turn is in flight", () => {
-    expect(nextToFlush(queued("a"), { status: "streaming", llmReady: true })).toBeNull();
-    expect(nextToFlush(queued("a"), { status: "submitted", llmReady: true })).toBeNull();
+    expect(nextToFlush(queued("a"), { status: "streaming", chatReady: true })).toBeNull();
+    expect(nextToFlush(queued("a"), { status: "submitted", chatReady: true })).toBeNull();
   });
 
   test("parks the queue when the last turn failed", () => {
     // Firing follow-ups into a conversation whose turn just errored buries the
     // error; the messages stay queued and removable instead.
-    expect(nextToFlush(queued("a"), { status: "error", llmReady: true })).toBeNull();
+    expect(nextToFlush(queued("a"), { status: "error", chatReady: true })).toBeNull();
   });
 
   test("waits for the LLM to come up", () => {
-    expect(nextToFlush(queued("a"), { status: "ready", llmReady: false })).toBeNull();
+    expect(nextToFlush(queued("a"), { status: "ready", chatReady: false })).toBeNull();
   });
 
   test("an empty queue has nothing to flush", () => {

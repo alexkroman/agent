@@ -44,7 +44,6 @@ USAGE deploy [OPTIONS]
 OPTIONS
   -s, --server=<server>    Platform server URL
                  --json    Output JSON (auto-detected in non-TTY)
-  --allowMissingSecrets    Deploy even when the agent's providers are missing credentials (the server warns instead of rejecting; set them afterwards with \`aai secret put\`)
      --allowPreviewSlug    Permit a \`-preview\`-suffixed slug (reserved for studio auto-previews; studio-internal — a slug you claim this way is subject to the preview reaper)
         --skipTypecheck    Skip type checking before deploy"
 `;

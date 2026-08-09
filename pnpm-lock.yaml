@@ -417,6 +417,9 @@ importers:
       '@ai-sdk/react':
         specifier: ^4.0.44
         version: 4.0.44(react@19.2.8)(zod@4.4.3)
+      '@alexkroman1/aai':
+        specifier: workspace:*
+        version: link:../aai
       '@alexkroman1/aai-ui':
         specifier: workspace:*
         version: link:../aai-ui

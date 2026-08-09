@@ -13,14 +13,6 @@ export type DeployOpts = {
   slug?: string;
   apiKey: string;
   /**
-   * Ask the server to WARN (in `warnings`) instead of rejecting when the
-   * agent's providers are missing credentials — `aai deploy
-   * --allow-missing-secrets`, for setting them post-deploy with
-   * `aai secret put` (the studio's publish flow relies on this: its Secrets
-   * panel needs a deployed slug to attach secrets to).
-   */
-  allowMissingSecrets?: boolean;
-  /**
    * Ask the server to permit a `-preview`-suffixed slug (`aai deploy
    * --allow-preview-slug`). That suffix is reserved for the studio's
    * auto-preview deploys — the server rejects it otherwise — and this is set
@@ -44,9 +36,6 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
   const body = gzipSync(
     JSON.stringify({
       ...(opts.slug ? { slug: opts.slug } : {}),
-      // Kept for OLDER servers only: the current one runs no credential
-      // preflight (the CLI does — see _preflight.ts) and strips this field.
-      ...(opts.allowMissingSecrets ? { credentialPolicy: "warn" } : {}),
       ...(opts.allowPreviewSlug ? { allowPreviewSlug: true } : {}),
       env: opts.env,
       worker: opts.bundle.worker,

@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { readGlobalConfig } from "./_config.ts";
 import { CliError } from "./_output.ts";
-import { executeLogin, linkConfirmationCode } from "./login.ts";
+import { executeLogin } from "./login.ts";
 
 // The default browser opener spawns the platform's opener command; stub it
 // so tests never launch a real browser, and exercise its swallowed-error
@@ -221,13 +221,5 @@ describe("aai login", () => {
   test("refuses without a TTY", async () => {
     Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
     await expect(executeLogin({}, fakeFetch({}))).rejects.toBeInstanceOf(CliError);
-  });
-
-  // The exact fixture is mirrored in aai-studio-client's cli-link.test.ts —
-  // the terminal prints this value and the browser approval gate displays
-  // it, so the two derivations must never drift.
-  test("linkConfirmationCode matches the studio gate's derivation", () => {
-    expect(linkConfirmationCode("abcDEF12_-345678901234567890123456789012345")).toBe("ABCD-EF12");
-    expect(linkConfirmationCode("zzzzyyyy-rest-ignored-0000000000000000000")).toBe("ZZZZ-YYYY");
   });
 });

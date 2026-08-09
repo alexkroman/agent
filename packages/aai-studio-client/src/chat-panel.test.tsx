@@ -101,7 +101,7 @@ function renderPanel(overrides: { onBusyChange?: (busy: boolean) => void } = {})
   return render(
     <ChatPanel
       chatHistory={[]}
-      llmStatus={{ llm: true }}
+      chatStatus={{ provider: "assemblyai", model: "gpt-5.5" }}
       chatSession={{ url: SANDBOX_URL, token: "chat-token" }}
       toolLabels={{}}
       onSessionStale={vi.fn()}

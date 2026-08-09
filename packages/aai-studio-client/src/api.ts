@@ -59,8 +59,8 @@ export type DatabaseState = {
   warning?: string;
 };
 
+/** `GET /studio/status` — which LLM the studio's chat runs on. */
 export type StudioStatus = {
-  llm: boolean;
   provider?: string;
   model?: string;
 };

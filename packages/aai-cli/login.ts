@@ -24,6 +24,7 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
+import { linkConfirmationCode } from "@alexkroman1/aai/utils";
 import { resolveServerUrl } from "./_agent.ts";
 import { approveServer, readGlobalConfig, updateGlobalConfig } from "./_config.ts";
 import { CliError, type CommandResult, ok } from "./_output.ts";
@@ -160,19 +161,6 @@ function openerFor(platform: NodeJS.Platform): [string, string[]] {
   if (platform === "darwin") return ["open", []];
   if (platform === "win32") return ["cmd", ["/c", "start", ""]];
   return ["xdg-open", []];
-}
-
-/**
- * Human-matchable confirmation derived from the link code — printed in the
- * terminal AND shown on the browser approval gate (aai-studio-client's
- * cli-link.ts derives the same value; keep the two in lockstep). Not a
- * secret: both ends already hold the full code. It exists so someone who
- * lands on an approval page they didn't cause has a concrete mismatch to
- * notice ("what terminal?") instead of a bare Approve button.
- */
-export function linkConfirmationCode(code: string): string {
-  const head = code.slice(0, 8).toUpperCase();
-  return `${head.slice(0, 4)}-${head.slice(4)}`;
 }
 
 /** Best-effort: the link URL is always printed, so a failure is fine. */

@@ -26,7 +26,7 @@ import {
   closeOnAbort,
   connectOrThrow,
   createPcmFrameAccumulator,
-  createSessionShell,
+  createSttSessionShell,
   requireApiKey,
 } from "../_utils.ts";
 
@@ -232,11 +232,8 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
       suppressDiscardedSocketError(transcriber);
 
       const emitter: Emitter<SttEvents> = createNanoEvents<SttEvents>();
-      const shell = createSessionShell({
-        makeStreamError: (msg) => makeSttError("stt_stream_error", msg),
-        emitError: (err) => emitter.emit("error", err),
-        // A provider-initiated close ends the transcript stream — see the option doc.
-        cleanCloseIsFatal: true,
+      const shell = createSttSessionShell({
+        emitter,
         teardown: () => transcriber.close(),
       });
 

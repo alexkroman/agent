@@ -136,12 +136,6 @@ const deploy = defineCommand({
   args: {
     server: sharedArgs.server,
     json: sharedArgs.json,
-    allowMissingSecrets: {
-      type: "boolean",
-      description:
-        "Deploy even when the agent's providers are missing credentials " +
-        "(the server warns instead of rejecting; set them afterwards with `aai secret put`)",
-    },
     allowPreviewSlug: {
       type: "boolean",
       description:
@@ -157,7 +151,6 @@ const deploy = defineCommand({
       return executeDeploy({
         cwd,
         server: args.server,
-        allowMissingSecrets: args.allowMissingSecrets,
         allowPreviewSlug: args.allowPreviewSlug,
         skipTypecheck: args.skipTypecheck,
       });

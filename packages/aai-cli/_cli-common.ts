@@ -52,11 +52,11 @@ export function findUnknownFlags(rawArgs: string[], argsDef: ArgsDef): string[] 
  * A flag's comparison key: dashes dropped and lower-cased, with a leading
  * `no` negation removed.
  *
- * citty accepts both `--allowMissingSecrets` and `--allow-missing-secrets` for
- * an arg declared as `allowMissingSecrets`, and the guest's in-sandbox Publish
- * spawns the kebab-case spelling. Comparing the literal text rejected
- * `--allow-missing-secrets` as unknown and broke Publish for every studio
- * user, so both sides are normalized to one key.
+ * citty accepts both `--allowPreviewSlug` and `--allow-preview-slug` for an
+ * arg declared as `allowPreviewSlug`, and the guest's in-sandbox Publish
+ * spawns the kebab-case spelling. Comparing the literal text rejected the
+ * kebab-case form as unknown and broke Publish for every studio user, so both
+ * sides are normalized to one key.
  */
 function canonicalFlag(flag: string): string {
   return flag.replace(/^--?/, "").replace(/^no-/, "").replace(/-/g, "").toLowerCase();

@@ -118,7 +118,7 @@ import {
   closeOnAbort,
   connectOrThrow,
   createGuardedWs,
-  createSessionShell,
+  createTtsSessionShell,
   dropSocket as dropSocketShared,
   requireApiKey,
   waitForOpen,
@@ -276,9 +276,8 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
       const dropSocket = (socket: WebSocket): void =>
         dropSocketShared(socket, () => socket.send(JSON.stringify({ type: "Terminate" })));
 
-      const shell = createSessionShell({
-        makeStreamError: (msg) => makeTtsError("tts_stream_error", msg),
-        emitError: (err) => emitter.emit("error", err),
+      const shell = createTtsSessionShell({
+        emitter,
         // `ws` is read at teardown time so a close after a cancel-reconnect
         // releases the replacement socket, not the one already dropped.
         teardown: () => dropSocket(ws),

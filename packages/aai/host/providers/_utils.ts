@@ -4,6 +4,7 @@
 import { pEvent } from "p-event";
 import type WebSocket from "ws";
 import { STT_FRAME_MAX_MS, STT_FRAME_TARGET_MS, WS_OPEN } from "../../sdk/constants.ts";
+import { makeSttError, makeTtsError, type SttError, type TtsError } from "../../sdk/providers.ts";
 import { errorMessage } from "../../sdk/utils.ts";
 
 /** PCM16 sample rates accepted by providers that stream raw PCM16 LE audio. */
@@ -326,6 +327,43 @@ export function createSessionShell<E extends Error>(opts: {
       if (!graceful || opts.cleanCloseIsFatal) streamError(`socket closed ${code ?? "unknown"}`);
     },
   };
+}
+
+/**
+ * The STT flavour of {@link createSessionShell}: stream errors are
+ * `stt_stream_error`, and a clean provider-initiated close is FATAL.
+ *
+ * That second setting is the one worth having in a single place. It is right
+ * for every continuous INPUT stream and wrong for every output one, so
+ * restating it per opener is a per-provider chance to get a session-deafening
+ * default backwards — see `cleanCloseIsFatal`'s own doc for what that costs.
+ */
+export function createSttSessionShell(opts: {
+  emitter: { emit: (event: "error", err: SttError) => void };
+  teardown: () => Promise<void> | void;
+}): SessionShell {
+  return createSessionShell({
+    makeStreamError: (msg) => makeSttError("stt_stream_error", msg),
+    emitError: (err) => opts.emitter.emit("error", err),
+    cleanCloseIsFatal: true,
+    teardown: opts.teardown,
+  });
+}
+
+/**
+ * The TTS flavour of {@link createSessionShell}: stream errors are
+ * `tts_stream_error`, and a clean provider-initiated close is NORMAL
+ * COMPLETION — the provider has finished sending the audio it was asked for.
+ */
+export function createTtsSessionShell(opts: {
+  emitter: { emit: (event: "error", err: TtsError) => void };
+  teardown: () => Promise<void> | void;
+}): SessionShell {
+  return createSessionShell({
+    makeStreamError: (msg) => makeTtsError("tts_stream_error", msg),
+    emitError: (err) => opts.emitter.emit("error", err),
+    teardown: opts.teardown,
+  });
 }
 
 /** Per-turn `done` latch — see {@link createDoneLatch}. */
