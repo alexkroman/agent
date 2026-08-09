@@ -205,9 +205,9 @@ that stage — the rest keep the default.
 from `@alexkroman1/aai`, next to `agent()`) selects AssemblyAI's
 speech-to-speech Voice Agent API: STT, the LLM loop, and TTS run
 service-side in one socket. Fewer moving parts, but you cannot choose the
-model, swap a provider, or tune a stage. There is no way to reach S2S by
-omission — only the `s2s` field selects it, and it is mutually exclusive
-with the `stt`/`llm`/`tts` triple.
+model or swap a provider. There is no way to reach S2S by omission — only
+the `s2s` field selects it, and it is mutually exclusive with the
+`stt`/`llm`/`tts` triple.
 
 ```ts
 import { agent, assemblyAIS2s } from "@alexkroman1/aai";
@@ -217,6 +217,33 @@ export default agent({
   s2s: assemblyAIS2s(),
 });
 ```
+
+The descriptor takes three optional knobs, all forwarded only when set:
+
+```ts
+import { agent, assemblyAIS2s } from "@alexkroman1/aai";
+
+export default agent({
+  name: "My Agent",
+  sttPrompt: "Callers spell order numbers one character at a time.",
+  s2s: assemblyAIS2s({
+    voice: "michael",
+    languages: ["en"],
+    keyterms: ["Acme Rewards", "SKU"],
+  }),
+});
+```
+
+- `voice` — the agent's voice. Unset uses the service default.
+- `languages` — **leave it unset for multilingual calls**: unset means
+  "detect per turn", so pinning `["en"]` on a line that takes other
+  languages disables detection for every caller. Pin it when the line
+  really is monolingual — on a benchmark run that plus a transcription
+  prompt took a caller's spelled first name from 1 of 6 attempts correct
+  to 6 of 6.
+- `keyterms` — product names and proper nouns to bias transcription
+  toward. Use `sttPrompt` (above, and honoured in **both** modes) for
+  prose guidance and `keyterms` for a term list.
 
 **Prefer pipeline mode** — the default — unless the user specifically
 asks for the speech-to-speech API. Nearly every template ships this way, and
@@ -444,6 +471,28 @@ ctx.messages: readonly Message[]               // conversation history [{role, c
 ctx.sessionId: string                          // unique session ID
 ctx.send(event: string, data: unknown): void   // push custom event to browser client (silently dropped over 64 KB JSON)
 ctx.generate(opts): Promise<{ text, object? }> // one-shot LLM call (host-side)
+                                               // with a `schema`, `object` is REQUIRED and typed by it
+ctx.signal: AbortSignal                        // aborts on barge-in, reset, session stop, or this call's timeout
+```
+
+**Pass `ctx.signal` to anything slow.** It is always present — no `?.`
+needed — and forwarding it is what makes a tool stop work the caller has
+already interrupted:
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export const lookup = tool({
+  description: "Look up an order",
+  inputSchema: z.object({ id: z.string() }),
+  execute: async ({ id }, ctx) => {
+    const res = await fetch(`https://api.example.com/orders/${id}`, {
+      signal: ctx.signal,
+    });
+    return await res.json();
+  },
+});
 ```
 
 **Typing `ctx.state` is optional.** `ctx.state` is untyped by default, and
@@ -632,9 +681,10 @@ export default agent({
 
 ## Built-in tools
 
-Enable via `builtinTools` in `agent()`. When `builtinTools` is omitted, the
-cognitive defaults (`think`, `remember`, `recall`, `calculate`) are enabled;
-set `builtinTools` explicitly (including `[]`) to override.
+Enable via `builtinTools` in `agent()`. **When `builtinTools` is omitted, none
+are enabled** — omitting the field and passing `[]` mean the same thing. Name
+the ones you want; a built-in is something an agent asks for rather than
+something it has to notice and switch off.
 
 | Tool | Description | Params |
 | --- | --- | --- |
@@ -643,10 +693,10 @@ set `builtinTools` explicitly (including `[]`) to override.
 | `get_page_design` | Fetch URL's raw HTML + CSS (style blocks and linked stylesheets) to study/mimic a site's design | `url` |
 | `fetch_json` | HTTP GET a JSON API | `url`, `headers?` |
 | `run_code` | Execute JS in the agent's sandbox — same authority as the agent's own tool code, output is what it logs (5s timeout) | `code` |
-| `think` | Private reasoning scratchpad, no side effects (on by default) | `thought` |
-| `remember` | Save a confirmed fact to session notes (on by default) | `key`, `value` |
-| `recall` | Read session notes saved with `remember` (on by default) | `key?` |
-| `calculate` | Safe arithmetic evaluator, no code execution (on by default) | `expression` |
+| `think` | Private reasoning scratchpad, no side effects | `thought` |
+| `remember` | Save a confirmed fact to session notes | `key`, `value` |
+| `recall` | Read session notes saved with `remember` | `key?` |
+| `calculate` | Safe arithmetic evaluator, no code execution | `expression` |
 
 **Every builtin in this table is a tool the MODEL calls — not a function
 your code can call.** Listing one in `builtinTools` adds it to the model's

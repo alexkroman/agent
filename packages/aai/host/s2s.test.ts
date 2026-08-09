@@ -106,6 +106,61 @@ describe("connectS2s", () => {
     expect(sent.session).not.toHaveProperty("sttPrompt");
   });
 
+  // The three descriptor options. Each rides a DIFFERENT wire block — voice on
+  // `output`, the other two on `input` — so a single spread would not have
+  // covered them, and none was reachable at all before `assemblyAIS2s()` took
+  // options.
+  test("updateSession sends voice on output and languages/keyterms on input", async () => {
+    const { raw, handle } = await setupHandle();
+
+    handle.updateSession({
+      systemPrompt: "test",
+      tools: [],
+      voice: "michael",
+      languages: ["en", "es"],
+      keyterms: ["Acme Rewards", "SKU"],
+    });
+
+    const sent = lastSent(raw) as {
+      session: { input: Record<string, unknown>; output: Record<string, unknown> };
+    };
+    expect(sent.session.output).toMatchObject({ voice: "michael" });
+    expect(sent.session.input).toMatchObject({
+      language_codes: ["en", "es"],
+      keyterms: ["Acme Rewards", "SKU"],
+    });
+    // SDK field names must never reach the wire — the service rejects unknown
+    // keys, and the spread that builds `session` would otherwise carry them.
+    expect(sent.session).not.toHaveProperty("voice");
+    expect(sent.session).not.toHaveProperty("languages");
+    expect(sent.session).not.toHaveProperty("keyterms");
+  });
+
+  // Unset `language_codes` means "detect per turn" service-side. Sending an
+  // empty array instead of omitting the key would be a claim about the call's
+  // languages, not the absence of one.
+  test("updateSession omits language_codes and keyterms when unset or empty", async () => {
+    const { raw, handle } = await setupHandle();
+
+    handle.updateSession({ systemPrompt: "test", tools: [], languages: [], keyterms: [] });
+
+    const sent = lastSent(raw) as { session: { input: Record<string, unknown> } };
+    expect(sent.session.input).not.toHaveProperty("language_codes");
+    expect(sent.session.input).not.toHaveProperty("keyterms");
+  });
+
+  test("updateSession omits output.voice when the agent picks none", async () => {
+    const { raw, handle } = await setupHandle();
+
+    handle.updateSession({ systemPrompt: "test", tools: [] });
+
+    const sent = lastSent(raw) as { session: { output: Record<string, unknown> } };
+    expect(sent.session.output).not.toHaveProperty("voice");
+    // The format still goes out — omitting it is the S2S failure with no
+    // symptom at all (the agent greets and is then permanently deaf).
+    expect(sent.session.output).toHaveProperty("format");
+  });
+
   test("updateSession omits transcription_prompt when there is no sttPrompt", async () => {
     const { raw, handle } = await setupHandle();
 

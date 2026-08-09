@@ -54,6 +54,9 @@ function makeCtx(sessionId = "session-a", db: Db = makeDb().db): ToolContext {
     generate: () => Promise.reject(new Error("generate not available in tests")),
     messages: [],
     sessionId,
+    // Never aborts — a test has no turn to cancel. `ctx.signal` is always
+    // present at runtime, so a stub supplies one rather than omitting it.
+    signal: new AbortController().signal,
     send: vi.fn(),
   };
 }

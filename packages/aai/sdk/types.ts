@@ -173,11 +173,19 @@ export type ToolContext<S = DefaultSessionState> = {
   send(event: string, data: unknown): void;
   /**
    * Cooperative cancellation signal. Aborts when the turn that issued this
-   * tool call is cancelled (barge-in, reset, or session stop). Long-running
-   * tools should pass it to `fetch` etc. so their work stops promptly;
-   * absent in execution contexts that don't support cancellation.
+   * tool call is cancelled (barge-in, reset, or session stop), and also when
+   * the call itself settles exceptionally — above all on timeout. Long-running
+   * tools should pass it to `fetch` etc. so their work stops promptly.
+   *
+   * @remarks
+   * Always present. It was optional until it was checked: the executor builds
+   * a per-call `AbortController` on every path and there has never been a
+   * context without one, so the `?` only bought authors a `?.` on every
+   * `ctx.signal.aborted` and a `!` wherever a non-optional `AbortSignal` was
+   * wanted. A context that genuinely cannot cancel supplies a signal that
+   * never aborts rather than omitting the field.
    */
-  signal?: AbortSignal;
+  signal: AbortSignal;
 };
 
 /**
@@ -336,9 +344,17 @@ export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
    */
   toolChoice?: ToolChoice;
   /**
-   * Built-in server-side tools enabled for this agent. Unset defaults to the
-   * cognitive set {@link DEFAULT_BUILTIN_TOOLS} (`think`, `remember`,
-   * `recall`, `calculate`); set explicitly — including `[]` — to override.
+   * Built-in server-side tools enabled for this agent. Unset enables NONE
+   * ({@link DEFAULT_BUILTIN_TOOLS} is empty) — a built-in is something an agent
+   * asks for rather than something it has to notice and switch off, so `[]` and
+   * omitting the field mean the same thing. See {@link BuiltinTool} for the
+   * catalog.
+   *
+   * @remarks
+   * This doc used to claim a "cognitive set" default of `think`/`remember`/
+   * `recall`/`calculate`, contradicting {@link BuiltinTool}'s doc in this same
+   * file and the constant itself. The empty default is the real one and is what
+   * `host/runtime-tools.ts` applies.
    */
   builtinTools?: readonly BuiltinTool[];
   /**

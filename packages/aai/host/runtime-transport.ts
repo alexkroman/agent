@@ -34,6 +34,35 @@ import { createPipelineTransport } from "./transports/pipeline-transport.ts";
 import { createS2sTransport } from "./transports/s2s-transport.ts";
 import type { Transport, TransportCallbacks } from "./transports/types.ts";
 
+/**
+ * Read the author-set `assemblyAIS2s({ voice, languages, keyterms })` options
+ * off the stored descriptor.
+ *
+ * Narrowed field by field rather than asserted: `options` is
+ * `Record<string, unknown>` at the descriptor boundary because a config that
+ * crossed the wire was validated by `ProviderDescriptorSchema`, which does not
+ * know any one vendor's option shape. A malformed value is DROPPED rather than
+ * forwarded — an unset field means "service default" everywhere in this path,
+ * which is the safe reading, whereas putting a non-string on the wire would be
+ * a rejected `session.update` on a session that otherwise looks healthy.
+ */
+function readAssemblyS2sOptions(options: Record<string, unknown> | undefined): {
+  voice?: string;
+  languages?: readonly string[];
+  keyterms?: readonly string[];
+} {
+  const isStringArray = (v: unknown): v is readonly string[] =>
+    Array.isArray(v) && v.every((entry) => typeof entry === "string");
+  const voice = options?.voice;
+  const languages = options?.languages;
+  const keyterms = options?.keyterms;
+  return {
+    ...(typeof voice === "string" ? { voice } : {}),
+    ...(isStringArray(languages) ? { languages } : {}),
+    ...(isStringArray(keyterms) ? { keyterms } : {}),
+  };
+}
+
 /** Per-session identifiers and client sink a transport is built for. */
 export type TransportSessionOpts = {
   id: string;
@@ -184,6 +213,11 @@ export function createTransportFactory(
         // Forwarded on its own presence, like the pipeline branch above. Omitting
         // it here is what made `sttPrompt` a silent no-op for every S2S agent.
         ...omitUndefined({ sttPrompt: agentConfig.sttPrompt }),
+        // Read from the stored descriptor rather than from `agentConfig`: these
+        // are vendor options, so they ride on `s2s.options` and never become
+        // top-level config fields. Same dropped-field class as `sttPrompt` —
+        // the descriptor took no options at all until these were added.
+        ...readAssemblyS2sOptions(agentConfig.s2s?.options),
       },
       callbacks,
       sid: sessionOpts.id,

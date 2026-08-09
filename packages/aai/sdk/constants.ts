@@ -191,7 +191,11 @@ export const DEFAULT_SILENCE_PROMPT =
  * behaviours. Defaulting to none makes the tool surface something an agent
  * asks for rather than something it has to notice and switch off.
  */
-export const DEFAULT_BUILTIN_TOOLS: readonly BuiltinTool[] = [];
+// `as const satisfies` rather than a bare annotation: the annotation erased the
+// type-level fact that this list is EMPTY, which is what let two docs (and the
+// scaffold guide shipped to users) go on claiming a four-tool "cognitive set"
+// default long after it was removed, with nothing able to check them.
+export const DEFAULT_BUILTIN_TOOLS = [] as const satisfies readonly BuiltinTool[];
 
 /**
  * Cap (characters) on a tool result's JSON serialization as seen by the LLM

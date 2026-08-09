@@ -7,6 +7,7 @@
     "AgentDef",
     "AgentParams",
     "AssemblyAIPipelineOptions",
+    "AssemblyAIS2sOptions",
     "AssemblyAIS2sProvider",
     "BuiltinTool",
     "BuiltinToolSchema",
@@ -46,6 +47,7 @@
     "DefaultedAgentField",
     "FETCH_TIMEOUT_MS",
     "GenerateFn",
+    "GenerateObjectResult",
     "GenerateOptions",
     "GenerateResult",
     "HEARD_AUDIO_LAG_MS",
@@ -262,6 +264,7 @@
   "@alexkroman1/aai/s2s": [
     "ASSEMBLYAI_S2S_API_KEY_ENV",
     "ASSEMBLYAI_S2S_KIND",
+    "AssemblyAIS2sOptions",
     "AssemblyAIS2sProvider",
     "OPENAI_REALTIME_API_KEY_ENV",
     "OPENAI_REALTIME_KIND",

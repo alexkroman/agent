@@ -131,18 +131,19 @@ export type ProviderField = "stt" | "llm" | "tts" | "s2s";
  *
  * The voice-UX knobs are DERIVED from {@link PipelineVoiceTuning} rather than
  * re-listed, so a field added to that interface gets this compile error for
- * free. The three hand-listed names are the ones that are not voice-UX tuning:
- * the two silence-nudge fields, and `sttPrompt` — which is visibly odd here,
- * because S2S has forwarded it as `input.transcription_prompt` since
- * 2026-08-06 (see packages/aai/CLAUDE.md). That membership is a pre-existing
- * inconsistency, flagged deliberately rather than quietly resolved: removing it
- * is a behaviour change for authors and belongs in its own change.
+ * free. The two hand-listed names are the silence-nudge fields, which are not
+ * voice-UX tuning but share the rule.
+ *
+ * `sttPrompt` used to be listed here and no longer is. S2S has forwarded it as
+ * `input.transcription_prompt` since 2026-08-06, so the type was rejecting a
+ * field the runtime honours and {@link AgentDef.sttPrompt} documents as working
+ * in both modes — leaving the measured win (a spelled first name going from 1
+ * of 6 attempts correct to 6 of 6) reachable only by skipping `agent()` for a
+ * raw `export default {...}`. Removing it is purely WIDENING: the field falls
+ * through to {@link SharedAgentParams}, which turns a compile error into legal
+ * code and breaks no existing agent.
  */
-export type PipelineOnlyField =
-  | keyof PipelineVoiceTuning
-  | "sttPrompt"
-  | "silenceTimeoutMs"
-  | "silencePrompt";
+export type PipelineOnlyField = keyof PipelineVoiceTuning | "silenceTimeoutMs" | "silencePrompt";
 
 /**
  * The "type" a pipeline-only field has on an S2S agent — a message, so the

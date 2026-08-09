@@ -18,6 +18,7 @@ export type { S2sProvider } from "../providers.ts";
 export {
   ASSEMBLYAI_S2S_API_KEY_ENV,
   ASSEMBLYAI_S2S_KIND,
+  type AssemblyAIS2sOptions,
   type AssemblyAIS2sProvider,
   assemblyAIS2s,
 } from "./s2s/assemblyai.ts";
