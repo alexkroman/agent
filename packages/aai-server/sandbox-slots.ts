@@ -13,7 +13,7 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { createOwnedMap, type OwnedMap } from "@alexkroman1/aai/internal";
-import { createKeyedLock, withLock } from "./_keyed-lock.ts";
+import { createKeyedLock, type KeyedLockOptions, withLock } from "./_keyed-lock.ts";
 import { type RetirableSandbox, retireSandbox } from "./sandbox-retire.ts";
 
 export type SlotSandbox = RetirableSandbox & {
@@ -50,9 +50,20 @@ export function createSlotCache(): SlotCache {
 // pre-auth WS-upgrade path can't grow the map one entry per distinct slug.
 const apiLock = createKeyedLock();
 
-/** Serialize deploy/delete API calls for the same slug. */
-export const withSlugLock = <T>(slug: string, fn: () => Promise<T>): Promise<T> =>
-  withLock(apiLock, slug, fn);
+/**
+ * Serialize deploy/delete API calls for the same slug.
+ *
+ * `opts.timeoutMs` bounds the ACQUIRE (see `_keyed-lock.ts`). The mutation
+ * routes pass one so a contended slug answers 409 instead of holding the
+ * request; the slot-cache callers here deliberately do not — they are
+ * bookkeeping under a lock nobody is waiting on a reply from, and failing
+ * them would trade a slow rebuild for a dead sandbox left installed.
+ */
+export const withSlugLock = <T>(
+  slug: string,
+  fn: () => Promise<T>,
+  opts?: KeyedLockOptions,
+): Promise<T> => withLock(apiLock, slug, fn, opts);
 
 /** Best-effort terminate a slot's sandbox. Errors are logged, never thrown. */
 export async function terminateSlot(slot: AgentSlot): Promise<void> {

@@ -236,6 +236,17 @@ function buildSandboxFromParts(
  * that exited later) tears the whole slot down (identity-checked under the
  * slug lock so a deploy/delete that already replaced the slot is never
  * raced).
+ *
+ * The SLOT goes too, not just its sandbox. An agent-mode guest self-exiting
+ * on idle is the normal end of a sandbox's life, and `terminateSlot` only
+ * clears the `sandbox` field — so every slug this replica ever brokered left
+ * a `{ slug }` shell behind, and the map grew monotonically for the life of
+ * the container (`MIN_CONTAINERS=1`, so the floor replica spans every
+ * deploy). Deleting is the same rule `rebuildSlot` already applies to a slug
+ * with no bundle ("must not leave an empty slot behind") and the reason
+ * `_keyed-lock.ts` exists instead of p-lock — a long-lived process must not
+ * accumulate one entry per distinct key forever. An empty slot carries no
+ * state a rebuild needs: `resolveSandbox` reads the row fresh either way.
  */
 export function buildSlotSandbox(
   slug: string,
@@ -245,7 +256,12 @@ export function buildSlotSandbox(
   return buildSandboxFromParts(slug, parts, opts, (sandbox) => {
     void withSlugLock(slug, async () => {
       const current = opts.slots.get(slug);
-      if (current?.sandbox === sandbox) await terminateSlot(current);
+      if (current?.sandbox !== sandbox) return;
+      await terminateSlot(current);
+      // Safe to key-delete: the identity check above ran under this lock, so
+      // `current` is still the mapped slot and no successor can have claimed
+      // the key. Same pairing the delete-event handler uses.
+      deleteSlot(opts.slots, slug);
     });
   });
 }

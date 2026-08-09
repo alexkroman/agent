@@ -12,9 +12,11 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import pTimeout from "p-timeout";
 import { debug } from "./_debug-log.ts";
-import { resolveHarnessPath } from "./constants.ts";
+import { resolveHarnessPath, SANDBOX_TEARDOWN_READY_MS } from "./constants.ts";
 import { spawnAgentServer, type WorkerSource } from "./sandbox-vm.ts";
+import type { AgentServerHandle } from "./warm-harness.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -132,6 +134,34 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
 
   debug("Sandbox initializing", { slug });
 
+  // The readiness wait the TEARDOWN paths take, bounded and memoized.
+  //
+  // Bounded because `vmReady` carries the BOOT budget (120s), which is the
+  // right wait for a broker and the wrong one for a process that is exiting —
+  // see SANDBOX_TEARDOWN_READY_MS for why walking away cannot orphan the
+  // guest. `sessionUrl`/`guestOrigin` deliberately keep the unbounded promise:
+  // the broker caps its own wait (BROKER_READY_TIMEOUT_MS) and the boot must
+  // continue behind it.
+  //
+  // Memoized so the budget is spent ONCE per sandbox, not once per caller.
+  // `retireSandbox` calls `drain()` and then `shutdown()` on its failure path,
+  // so a fresh timer each time would let one still-booting sandbox burn two
+  // full budgets on its way out.
+  // Clamped to >=1ms rather than honouring 0 the way SANDBOX_RETIRE_DRAIN_MS
+  // and SHUTDOWN_GRACE_MS do: there, 0 selects a different BEHAVIOUR
+  // (terminate immediately / skip the wait), while here it would only mean a
+  // shorter wait — and p-timeout rejects a non-positive `milliseconds` with a
+  // TypeError, which would turn every teardown into a thrown spawn error.
+  const readyWaitMs = Math.max(1, SANDBOX_TEARDOWN_READY_MS);
+  let teardownReady: Promise<AgentServerHandle> | null = null;
+  const readyForTeardown = (): Promise<AgentServerHandle> => {
+    teardownReady ??= pTimeout(vmReady, {
+      milliseconds: readyWaitMs,
+      message: `sandbox for ${slug} still booting after ${readyWaitMs}ms; abandoning teardown wait`,
+    });
+    return teardownReady;
+  };
+
   return {
     sessionUrl: () => vmReady.then((handle) => handle.sessionUrl),
 
@@ -141,18 +171,21 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
 
     async drain(deadlineMs?: number): Promise<void> {
       // Deliberately NOT swallowed: a rejected drain (VM never started,
-      // guest gone) is retirement's signal to terminate rather than trust
-      // the guest to exit itself.
-      const handle = await vmReady;
+      // guest gone, or — now — still booting past the teardown budget) is
+      // retirement's signal to terminate rather than trust the guest to exit
+      // itself.
+      const handle = await readyForTeardown();
       await handle.drain(deadlineMs);
     },
 
     async shutdown(): Promise<void> {
       try {
-        const handle = await vmReady;
+        const handle = await readyForTeardown();
         await handle.shutdown();
       } catch {
-        // VM failed to start or already shut down
+        // VM failed to start, still booting past the budget, or already shut
+        // down. The first and last are nothing to do; the middle one is left
+        // to the guest's own idle self-exit and Modal's sandbox timeout.
       }
     },
   };

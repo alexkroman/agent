@@ -22,7 +22,12 @@ import {
 } from "./blob-storage.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./chat-store.ts";
-import { resolveHarnessPath } from "./constants.ts";
+import {
+  ADMIN_POOL_MAX,
+  APP_DB_TARGET_POOL_MAX,
+  resolveHarnessPath,
+  SLUG_LOCK_POOL_MAX,
+} from "./constants.ts";
 import { endLiveStreams } from "./live-streams.ts";
 import { isModalConfigured, modalRequiredError, prewarmModal } from "./modal-context.ts";
 import { createModalSandboxDirectory } from "./modal-sandbox-directory.ts";
@@ -58,23 +63,6 @@ import {
   type WorkspaceStore,
 } from "./workspace-store.ts";
 
-/**
- * Connections the platform admin pool may open per replica. Every statement
- * on it is a short query (Vault, agents rows, workspaces, chats, the sweeps)
- * — the one long-held resource, a slug lock's reserved connection, has its
- * own pool below.
- */
-const ADMIN_POOL_MAX = 4;
-
-/**
- * Connections reserved for per-slug mutation locks. Each concurrent
- * distinct-slug mutation holds one for its whole critical section, so this is
- * the ceiling on concurrent mutations THIS replica can start — past it,
- * acquires queue in the pool, which is indistinguishable to the caller from
- * queueing in Postgres's lock manager.
- */
-const SLUG_LOCK_POOL_MAX = 4;
-
 /** Comma-separated extra placement clusters (APP_DB_URLS) → pooled targets. */
 function parseExtraAppDbTargets(raw: string | undefined): AppDbTarget[] {
   if (!raw) return [];
@@ -83,7 +71,7 @@ function parseExtraAppDbTargets(raw: string | undefined): AppDbTarget[] {
     .map((url) => url.trim())
     .filter(Boolean)
     .map((url) => {
-      const db = createPostgresDb({ url, max: 4 });
+      const db = createPostgresDb({ url, max: APP_DB_TARGET_POOL_MAX });
       return { url, sql: (query, params) => db.query(query, params) } satisfies AppDbTarget;
     });
 }

@@ -56,16 +56,40 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import type { CloseableDb } from "@alexkroman1/aai/runtime";
+import { KeyedLockTimeoutError } from "./_keyed-lock.ts";
 import { withSlugLock } from "./sandbox-slots.ts";
 
 /** Run `fn` while holding the platform-wide mutation lock for `slug`. */
 export type SlugMutationLock = <T>(slug: string, fn: () => Promise<T>) => Promise<T>;
 
 /**
+ * Take the in-process mutex under the SAME acquire deadline the Postgres half
+ * enforces, and report a lapse as the same error.
+ *
+ * Both slug-lock paths queue here first, so without this the 15s deadline was
+ * only ever reachable by a CROSS-replica waiter: two mutations of one slug on
+ * one replica blocked on the mutex indefinitely, and `SlugLockTimeoutError` —
+ * hence the retryable 409 — could not be produced. That is not a rare
+ * shape. `watchAgentInvalidation` holds this very mutex across
+ * `handoverSlot`, which awaits the replacement sandbox's readiness (the 120s
+ * boot budget), so a redeploy landing while the previous one is still booting
+ * is exactly it, and the Modal function timeout is four hours.
+ */
+function withSlugMutex<T>(slug: string, fn: () => Promise<T>, timeoutMs: number): Promise<T> {
+  return withSlugLock(slug, fn, { timeoutMs }).catch((err: unknown) => {
+    // One taxonomy for both halves: local contention and remote contention are
+    // the same answer to a caller — someone else holds this slug, try again.
+    if (err instanceof KeyedLockTimeoutError) throw new SlugLockTimeoutError(slug, { cause: err });
+    throw err;
+  });
+}
+
+/**
  * In-process implementation — the dev/test default, and the fallback when no
  * platform database is configured (single-replica by definition).
  */
-export const localSlugLock: SlugMutationLock = withSlugLock;
+export const localSlugLock: SlugMutationLock = (slug, fn) =>
+  withSlugMutex(slug, fn, SLUG_LOCK_ACQUIRE_TIMEOUT_MS);
 
 /** The slice of the bundle store the mutation lock has to reach. */
 export type InvalidatableStore = { invalidate?: ((slug: string) => void) | undefined };
@@ -193,42 +217,48 @@ export function createPgSlugLock(db: AdminDb, opts: PgSlugLockOptions = {}): Slu
 
   return (slug, fn) =>
     // Local mutex first: in-process waiters queue here instead of each
-    // holding a reserved connection open while blocked on the same lock.
-    withSlugLock(slug, async () => {
-      const reserved = await db.reserve();
-      let held = false;
-      try {
-        // Postgres enforces the acquire deadline and queues the waiter, so
-        // there is no poll loop. `lock_timeout` is per-connection state,
-        // which is exactly what the reservation buys.
-        await reserved.query(`set lock_timeout = ${Math.max(1, Math.round(acquireTimeoutMs))}`);
+    // holding a reserved connection open while blocked on the same lock. It
+    // carries the same deadline, so whichever half a waiter is stuck behind it
+    // answers 409 after the same wait — see withSlugMutex.
+    withSlugMutex(
+      slug,
+      async () => {
+        const reserved = await db.reserve();
+        let held = false;
         try {
-          await reserved.query(ACQUIRE_SQL, [SLUG_LOCK_NAMESPACE, slug]);
-          held = true;
-        } catch (err) {
-          if ((err as { code?: unknown }).code === LOCK_NOT_AVAILABLE) {
-            throw new SlugLockTimeoutError(slug, { cause: err });
+          // Postgres enforces the acquire deadline and queues the waiter, so
+          // there is no poll loop. `lock_timeout` is per-connection state,
+          // which is exactly what the reservation buys.
+          await reserved.query(`set lock_timeout = ${Math.max(1, Math.round(acquireTimeoutMs))}`);
+          try {
+            await reserved.query(ACQUIRE_SQL, [SLUG_LOCK_NAMESPACE, slug]);
+            held = true;
+          } catch (err) {
+            if ((err as { code?: unknown }).code === LOCK_NOT_AVAILABLE) {
+              throw new SlugLockTimeoutError(slug, { cause: err });
+            }
+            throw err;
           }
-          throw err;
+          return await fn();
+        } finally {
+          // The explicit unlock is the REAL release path: postgres.js
+          // `release()` returns the connection to the pool with its session
+          // state intact, so an advisory lock survives it — a failed unlock
+          // leaks the lock onto a pooled connection, which is why the failure is
+          // logged rather than swallowed. (A DROPPED connection does free it;
+          // that is the crashed-replica backstop, a different event.) Skipping
+          // the unlock when the acquire failed matters too: unlocking a lock
+          // this session never took logs a Postgres warning and returns false.
+          if (held) {
+            await reserved
+              .query(RELEASE_SQL, [SLUG_LOCK_NAMESPACE, slug])
+              .catch((err: unknown) =>
+                console.warn(`Failed to release slug lock for ${slug}: ${errorMessage(err)}`),
+              );
+          }
+          reserved.release();
         }
-        return await fn();
-      } finally {
-        // The explicit unlock is the REAL release path: postgres.js
-        // `release()` returns the connection to the pool with its session
-        // state intact, so an advisory lock survives it — a failed unlock
-        // leaks the lock onto a pooled connection, which is why the failure is
-        // logged rather than swallowed. (A DROPPED connection does free it;
-        // that is the crashed-replica backstop, a different event.) Skipping
-        // the unlock when the acquire failed matters too: unlocking a lock
-        // this session never took logs a Postgres warning and returns false.
-        if (held) {
-          await reserved
-            .query(RELEASE_SQL, [SLUG_LOCK_NAMESPACE, slug])
-            .catch((err: unknown) =>
-              console.warn(`Failed to release slug lock for ${slug}: ${errorMessage(err)}`),
-            );
-        }
-        reserved.release();
-      }
-    });
+      },
+      acquireTimeoutMs,
+    );
 }

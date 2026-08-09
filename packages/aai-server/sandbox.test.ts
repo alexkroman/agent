@@ -3,6 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { inlineWorker } from "./_sandbox-vm-test-utils.ts";
 import { sleep } from "./_sleep.ts";
+import { SANDBOX_TEARDOWN_READY_MS } from "./constants.ts";
 import { createSandbox, type SandboxOptions } from "./sandbox.ts";
 import { resolveSandbox } from "./sandbox-resolve.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
@@ -128,6 +129,73 @@ describe("createSandbox", () => {
       const sandbox = createSandbox(makeSandboxOptions());
       await expect(sandbox.drain()).rejects.toThrow("guest gone");
       await sandbox.shutdown();
+    });
+  });
+
+  // ── Teardown readiness budget ─────────────────────────────────────────────
+  //
+  // Reaching a guest needs a handle, so drain/shutdown go through the spawn's
+  // readiness promise — which carries the BOOT budget (120s). Correct for a
+  // broker; wrong for a process that is exiting, where it blocks shutdown for
+  // two minutes on a guest that has never served a session. Walking away is
+  // safe: the guest self-exits on idle and Modal's timeouts sit behind that.
+  describe("teardown while still booting", () => {
+    /** A spawn that never comes back — a guest stuck mid-boot. */
+    function neverBoots(): void {
+      mockSpawnAgentServer.mockReturnValueOnce(new Promise(() => undefined));
+    }
+
+    // Nothing here AWAITS the teardown promise: against an unbounded wait that
+    // would hang to the suite timeout instead of failing, and a 20s red test
+    // that names nothing is barely better than a green one. Recording the
+    // settlement on a spy fails on the spot, and says which side settled.
+    it("drain gives up at the budget instead of waiting out the boot", async () => {
+      vi.useFakeTimers();
+      try {
+        neverBoots();
+        const sandbox = createSandbox(makeSandboxOptions());
+
+        const rejected = vi.fn();
+        void sandbox.drain().catch(rejected);
+        await vi.advanceTimersByTimeAsync(SANDBOX_TEARDOWN_READY_MS);
+
+        expect(rejected).toHaveBeenCalledWith(
+          expect.objectContaining({ message: expect.stringContaining("still booting") }),
+        );
+        // The rejection is retirement's signal to terminate rather than trust
+        // a guest it never reached.
+        expect(mockDrain).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    // `retireSandbox` calls drain() and then, on its rejection, shutdown().
+    // A fresh timer per call would let one stuck sandbox spend the budget
+    // twice on its way out — and the shutdown handler's own deadline is sized
+    // against one.
+    it("spends the budget once across drain and shutdown", async () => {
+      vi.useFakeTimers();
+      try {
+        neverBoots();
+        const sandbox = createSandbox(makeSandboxOptions());
+
+        const drainRejected = vi.fn();
+        void sandbox.drain().catch(drainRejected);
+        await vi.advanceTimersByTimeAsync(SANDBOX_TEARDOWN_READY_MS);
+        expect(drainRejected).toHaveBeenCalled();
+
+        // The budget is now spent. A second one would leave this pending —
+        // recorded on a spy, not awaited, for the reason above.
+        const shutdownSettled = vi.fn();
+        void sandbox.shutdown().then(shutdownSettled);
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(shutdownSettled).toHaveBeenCalled();
+        expect(mockShutdown).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
@@ -308,32 +376,73 @@ describe("createSandbox", () => {
       await vi.waitFor(() => {
         expect(deps.slots.get("broken")?.sandbox).toBeUndefined();
       });
-      // The slot itself stays registered for the rebuild.
-      expect(deps.slots.has("broken")).toBe(true);
+      // The empty SLOT goes too. It used to stay registered "for the rebuild",
+      // but a rebuild needs nothing from it — `resolveSandbox` re-reads the row
+      // either way and `rebuildSlot` claims a fresh slot when none exists — so
+      // keeping it only grew the map by one shell per slug, forever.
+      await vi.waitFor(() => {
+        expect(deps.slots.has("broken")).toBe(false);
+      });
+      // And the slug still resolves: an empty slot was never the thing that
+      // made it resolvable.
+      const rebuilt = await resolveSandbox("broken", deps);
+      expect(rebuilt).not.toBeNull();
+      await rebuilt?.shutdown();
     });
 
-    it("does not detach a replacement sandbox installed after the failure", async () => {
-      mockSpawnAgentServer.mockReturnValueOnce(Promise.reject(new Error("VM spawn failed")));
-      const deps = await seedAgent("raced");
+    /**
+     * The case that made the map grow without bound: an agent-mode guest
+     * self-exiting after `AGENT_IDLE_EXIT_MS` is the NORMAL end of a
+     * sandbox's life, not a failure — so on a long-lived replica
+     * (`MIN_CONTAINERS=1` spans every deploy) every slug ever brokered left a
+     * `{ slug }` shell behind. Same standard `_keyed-lock.ts` exists to keep,
+     * and the one `rebuildSlot` already applies to a slug with no bundle.
+     */
+    it("drops the slot when an idle guest exits, not just its sandbox", async () => {
+      const deps = await seedAgent("idle-exit");
+      const sandbox = await resolveSandbox("idle-exit", deps);
+      expect(sandbox).not.toBeNull();
+      expect(deps.slots.has("idle-exit")).toBe(true);
 
-      await resolveSandbox("raced", deps);
-      // A deploy replaces the slot's sandbox before the failure callback runs.
+      fireGuestExit();
+
+      await vi.waitFor(() => {
+        expect(deps.slots.has("idle-exit")).toBe(false);
+      });
+    });
+
+    /**
+     * The identity check in `buildSlotSandbox`'s detach: a sandbox that dies
+     * AFTER a deploy already replaced it in the slot must take neither the
+     * successor nor the slot with it.
+     *
+     * Driven off `fireGuestExit` rather than a failed spawn, because the
+     * failed-spawn version could not actually stage what it described. Its
+     * detach callback had already run by the time it installed the
+     * "replacement", so the check it meant to exercise was never reached — the
+     * assertion passed only because the emptied slot object stayed mapped and
+     * could still be mutated. A guest exit is fired on demand, so the ordering
+     * is stated rather than hoped for.
+     */
+    it("does not detach a replacement sandbox installed before the original died", async () => {
+      const deps = await seedAgent("raced");
+      const original = await resolveSandbox("raced", deps);
+      expect(original).not.toBeNull();
+
+      // A deploy swaps in a new sandbox while the original is still alive.
       const replacement = { shutdown: vi.fn().mockResolvedValue(undefined) };
       const slot = deps.slots.get("raced");
       if (!slot) throw new Error("slot missing");
       slot.sandbox = replacement;
 
-      await vi.waitFor(() => {
-        expect(console.error).toHaveBeenCalledWith(
-          "Sandbox VM failed to start",
-          expect.objectContaining({ slug: "raced" }),
-        );
-      });
-      // Let the identity-checked detach (queued under the slug lock) settle.
+      // Only NOW does the original's guest exit.
+      fireGuestExit();
       await sleep(0);
 
       expect(deps.slots.get("raced")?.sandbox).toBe(replacement);
       expect(replacement.shutdown).not.toHaveBeenCalled();
+      // And the slot survives — the delete is identity-checked too.
+      expect(deps.slots.has("raced")).toBe(true);
     });
 
     it("rebuilds rather than re-serving a resident whose guest exited", async () => {

@@ -159,6 +159,54 @@ describe("createPgSlugLock", () => {
     other.release();
   });
 
+  /**
+   * The deadline was unreachable for SAME-replica contention until the mutex
+   * gained one. Both slug-lock paths take the in-process mutex FIRST — so a
+   * local waiter never reached the Postgres `lock_timeout` that produces this
+   * error, and queued on the mutex with no bound at all. Not a rare shape:
+   * `watchAgentInvalidation` holds that same mutex across `handoverSlot`,
+   * which awaits a replacement sandbox's 120s boot budget, so a redeploy
+   * landing while the previous one is still booting is exactly it — and the
+   * Modal function timeout is four hours.
+   */
+  test("a LOCAL waiter times out with the same error, without reaching the database", async () => {
+    const { db, counts } = fakeAdvisoryDb();
+    const lock = createPgSlugLock(db, { acquireTimeoutMs: 5 });
+    const { promise: held, resolve: finish } = Promise.withResolvers<void>();
+
+    // First mutation holds the mutex (and one reserved connection).
+    const holder = lock("my-agent", () => held);
+    await vi.waitFor(() => expect(counts().live).toBe(1));
+
+    await expect(lock("my-agent", async () => "never")).rejects.toBeInstanceOf(
+      SlugLockTimeoutError,
+    );
+    // It gave up on the MUTEX, so it never reserved a second connection —
+    // which is why the mutex is taken first in the first place.
+    expect(counts().live).toBe(1);
+
+    finish();
+    await holder;
+    expect(counts().live).toBe(0);
+  });
+
+  test("a local waiter that gives up does not wedge the slug", async () => {
+    const { db } = fakeAdvisoryDb();
+    const lock = createPgSlugLock(db, { acquireTimeoutMs: 5 });
+    const { promise: held, resolve: finish } = Promise.withResolvers<void>();
+    const holder = lock("my-agent", () => held);
+
+    await expect(lock("my-agent", async () => "never")).rejects.toBeInstanceOf(
+      SlugLockTimeoutError,
+    );
+    finish();
+    await holder;
+
+    // The abandoned waiter released its place in the chain, so the slug is
+    // usable again rather than wedged for the life of the process.
+    await expect(lock("my-agent", () => Promise.resolve("ok"))).resolves.toBe("ok");
+  });
+
   test("does not unlock a lock it never acquired", async () => {
     const { db, statements } = fakeAdvisoryDb({ timeoutOnContention: true });
     const lock = createPgSlugLock(db);

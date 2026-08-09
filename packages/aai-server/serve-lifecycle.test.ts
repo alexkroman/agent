@@ -95,6 +95,46 @@ describe("createShutdownHandler", () => {
     expect(console.warn).toHaveBeenCalledWith("Shutdown teardown failed:", "sandbox boom");
   });
 
+  // The `fallbackMs` timer below is armed only AFTER onShutdown settles, so it
+  // could never cover the teardown itself — and the teardown is the half that
+  // hangs (a resident guest's retirement goes through the spawn's readiness
+  // promise; the Modal calls under it carry no timeout at all). Past the
+  // container's stop grace the platform SIGKILLs, so an unbounded teardown did
+  // not merely delay the exit: it skipped the warning below AND the graceful
+  // close, silently.
+  it("bounds a teardown that never settles, then closes and exits", async () => {
+    vi.useFakeTimers();
+    try {
+      const exit = vi.fn();
+      const closeServer = vi.fn((cb: () => void) => cb());
+      const shutdown = createShutdownHandler({
+        // A guest whose boot — or whose Modal terminate — never comes back.
+        onShutdown: () => new Promise<void>(() => undefined),
+        closeServer,
+        exit,
+        teardownTimeoutMs: 20_000,
+      });
+
+      const settled = vi.fn();
+      void shutdown().then(settled);
+
+      await vi.advanceTimersByTimeAsync(19_999);
+      expect(settled).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(settled).toHaveBeenCalled();
+      expect(console.warn).toHaveBeenCalledWith(
+        "Shutdown teardown failed:",
+        "teardown exceeded 20000ms; exiting anyway",
+      );
+      expect(closeServer).toHaveBeenCalledOnce();
+      expect(exit).toHaveBeenCalledWith(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // The drift this module exists to prevent: the combined entry's copy had
   // lost this warning, so a hung shutdown exited silently.
   it("warns and exits when connections never close", async () => {

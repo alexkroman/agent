@@ -117,6 +117,56 @@ export const BROKER_READY_TIMEOUT_MS = envMs(process.env.BROKER_READY_TIMEOUT_MS
 export const SHUTDOWN_CLOSE_FALLBACK_MS = 3000;
 
 /**
+ * How long a TEARDOWN path — `Sandbox.drain`, `Sandbox.shutdown` — waits on a
+ * sandbox that has not finished booting.
+ *
+ * Both go through the spawn's readiness promise, because reaching a guest
+ * needs a handle. That promise is bounded by the BOOT budget
+ * (`GUEST_READY_TIMEOUT_MS`, 120s), which is the right answer for a broker
+ * waiting on a sandbox it is about to serve and the wrong one for a process
+ * that is exiting: retirement then blocks for two minutes on a guest that has
+ * no sessions to drain, because it has never served one.
+ *
+ * Bounding it cannot orphan the guest, which is the only reason waiting was
+ * ever justified. An agent-mode guest owns its own idleness and self-exits
+ * after `AGENT_IDLE_EXIT_MS` with zero sessions (see
+ * `packages/aai-guest/CLAUDE.md`), and Modal's `idleTimeoutMs`/`timeoutMs` sit
+ * behind that — so a boot we walk away from is reclaimed on the guest's clock.
+ * Waiting out the full budget does not reclaim it any better; it just spends
+ * the container's stop grace, and a SIGKILL orphans the guest anyway while
+ * cutting every teardown that would otherwise have finished.
+ *
+ * Five seconds, so a boot that is nearly done is still drained.
+ * Override with `SANDBOX_TEARDOWN_READY_MS`. Unlike the two constants above,
+ * 0 is NOT a distinct behaviour here — it is clamped to 1ms at the call site,
+ * since giving up on a pending boot is what any small value already does.
+ */
+export const SANDBOX_TEARDOWN_READY_MS = envMs(process.env.SANDBOX_TEARDOWN_READY_MS, 5000);
+
+/**
+ * The whole service teardown's deadline — the general net under
+ * {@link SANDBOX_TEARDOWN_READY_MS}'s specific one.
+ *
+ * `createShutdownHandler` awaits `onShutdown()` before arming any timer, so
+ * for a long time the one bound on shutdown protected the fast half (waiting
+ * for connections to close) and not the slow half (retiring every resident
+ * guest). The bounded work in there now adds up to
+ * `SHUTDOWN_GRACE_MS` (3s) + {@link SANDBOX_TEARDOWN_READY_MS} (5s) +
+ * `MANAGE_REQUEST_TIMEOUT_MS` (5s) = 13s, run in PARALLEL across guests — but
+ * the Modal control-plane calls underneath (`sandbox.terminate()`) carry no
+ * timeout of their own, so the sum is a floor rather than a bound. This is
+ * what makes it one.
+ *
+ * 20s leaves margin over that 13s; with {@link SHUTDOWN_CLOSE_FALLBACK_MS}
+ * after it the process exits within ~23s of the signal, which must stay inside
+ * the platform's container stop grace — Modal SIGKILLs at the end of it, and a
+ * SIGKILL is the failure this whole ordering exists to avoid (see
+ * live-streams.ts). Raising `SHUTDOWN_GRACE_MS` means raising this too.
+ * Override with `SHUTDOWN_TEARDOWN_TIMEOUT_MS`; 0 disables the net.
+ */
+export const SHUTDOWN_TEARDOWN_TIMEOUT_MS = envMs(process.env.SHUTDOWN_TEARDOWN_TIMEOUT_MS, 20_000);
+
+/**
  * Locate the built Node guest harness — the `aai-guest` workspace package's
  * single-file artifact (overridable via GUEST_HARNESS_PATH). Resolved
  * lazily at sandbox creation, so a missing build fails the spawn loudly
@@ -133,4 +183,69 @@ export function resolveHarnessPath(env: NodeJS.ProcessEnv = process.env): string
       { cause: err },
     );
   }
+}
+
+// ── Platform database connection budget ──────────────────────────────────────
+//
+// Here rather than in service-config.ts (which consumes them) for two reasons:
+// they are POLICY, not composition, and service-config is the composition root
+// — a 489-line module nothing else can cheaply import. A test that reached for
+// these through it pulled the whole root into the v8 coverage denominator,
+// which reports only files it loaded, and dropped the package 3.7 points on
+// its own.
+
+/**
+ * Connections the platform admin pool may open per replica. Every statement
+ * on it is a short query (Vault, agents rows, workspaces, chats, the sweeps)
+ * — the one long-held resource, a slug lock's reserved connection, has its
+ * own pool below.
+ */
+export const ADMIN_POOL_MAX = 4;
+
+/**
+ * Connections reserved for per-slug mutation locks. Each concurrent
+ * distinct-slug mutation holds one for its whole critical section, so this is
+ * the ceiling on concurrent mutations THIS replica can start — past it,
+ * acquires queue in the pool, which is indistinguishable to the caller from
+ * queueing in Postgres's lock manager.
+ */
+export const SLUG_LOCK_POOL_MAX = 4;
+
+/** Connections one extra `APP_DB_URLS` placement cluster pools per replica. */
+export const APP_DB_TARGET_POOL_MAX = 4;
+
+/**
+ * The platform's own ceiling on DIRECT Postgres connections, fleet-wide.
+ *
+ * These are session-mode connections by construction — `assertSessionModeUrl`
+ * refuses a transaction-mode pooler, because an advisory lock needs connection
+ * affinity to mean anything (platform-lock.ts). So they consume the database's
+ * `max_connections` directly, with no Supavisor in front to multiplex them,
+ * and the fleet total is `MAX_CONTAINERS × per-replica` — a number that lived
+ * in two files that never referred to each other.
+ *
+ * The failure at the ceiling is not degradation. Pools open LAZILY, so the
+ * limit is only reached under load, and what happens there is that every
+ * platform read starts failing at once with "remaining connection slots are
+ * reserved": Vault, the agents row the broker needs, workspaces, chats. A
+ * control-plane outage, at peak, with nothing before it to read as a warning.
+ *
+ * **This number is a claim about the provisioned instance, and nothing in the
+ * repo can check it** — verify it against the project's `max_connections` (and
+ * leave room for migrations, the dashboard, and Supavisor) when changing
+ * either side. `platform-db-budget.test.ts` holds the arithmetic so that
+ * raising `MAX_CONTAINERS`, a pool size, or the cluster list fails a check
+ * instead of failing in production. The tenant-facing half of this concern was
+ * always reasoned explicitly (`APP_DB_CONNECTION_LIMIT`, "so one hot app
+ * cannot starve the shared cluster"); the platform's own half was not.
+ */
+export const MAX_PLATFORM_DB_CONNECTIONS = 80;
+
+/**
+ * Direct connections one replica may open, given `extraAppDbTargets` extra
+ * placement clusters. The admin and slug-lock pools are deliberately separate
+ * (see `slugLock` below), so they add.
+ */
+export function platformDbConnectionsPerReplica(extraAppDbTargets = 0): number {
+  return ADMIN_POOL_MAX + SLUG_LOCK_POOL_MAX + extraAppDbTargets * APP_DB_TARGET_POOL_MAX;
 }
