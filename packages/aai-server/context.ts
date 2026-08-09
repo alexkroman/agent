@@ -10,6 +10,7 @@
  */
 
 import type { Context } from "hono";
+import type { ApiKeyVerifier } from "./api-key-verify.ts";
 import type { AppDatabases } from "./app-database.ts";
 import type { SlugMutationLock } from "./platform-lock.ts";
 import type { SecretStore } from "./secret-store.ts";
@@ -42,6 +43,13 @@ export type HonoEnv = {
      * Absent means raw-API-key bearers only — the CLI's protocol.
      */
     auth?: StudioAuth;
+    /**
+     * Verifies that a raw API-key bearer is a credential AssemblyAI issued
+     * (see api-key-verify.ts). Absent means ANY bearer string is accepted as
+     * a key — correct for dev and tests, which is why it is optional, and the
+     * reason the production builder returns one unless explicitly told not to.
+     */
+    keyVerifier?: ApiKeyVerifier;
   };
   Variables: {
     slug: string;

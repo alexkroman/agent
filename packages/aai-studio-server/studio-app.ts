@@ -21,6 +21,7 @@
  * seconds; see sandbox-resolve.ts).
  */
 
+import type { ApiKeyVerifier } from "aai-server/api-key-verify";
 import type { AppDatabases } from "aai-server/app-database";
 import { addHealthRoute, applyPlatformMiddleware, bindFetchEnv } from "aai-server/app-middleware";
 import type { ChatStore } from "aai-server/chat-store";
@@ -54,6 +55,13 @@ export type StudioAppOpts = {
   secrets?: SecretStore;
   /** Browser-session auth; absent means raw-API-key bearers only. */
   auth?: StudioAuth;
+  /**
+   * Verifies raw API-key bearers against AssemblyAI. The studio needs it as
+   * much as the agent surface does: project-create and the session broker key
+   * their scope off the bearer and each spawn a Modal sandbox, so an
+   * unverified bearer is unauthenticated compute.
+   */
+  keyVerifier?: ApiKeyVerifier;
   /** Per-app database provisioning; absent when SUPABASE_DB_URL is unset. */
   appDb?: AppDatabases;
   /** Cross-service slug mutation lock — MUST be the shared Postgres lock in production. */
@@ -112,6 +120,7 @@ export function createStudioApp(opts: StudioAppOpts): {
     events: opts.events ?? createMemoryPlatformEvents().events,
     secrets: opts.secrets ?? createMemorySecretStore(),
     ...(opts.auth && { auth: opts.auth }),
+    ...(opts.keyVerifier && { keyVerifier: opts.keyVerifier }),
     ...(opts.appDb && { appDb: opts.appDb }),
     // Wrapped exactly as the agent service wraps it: holding the lock must
     // also drop this replica's cached view of the slug, or a mutation

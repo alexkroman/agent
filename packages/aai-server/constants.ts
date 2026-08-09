@@ -31,6 +31,42 @@ export const DEFAULT_PORT = 8080;
 export const MAX_WORKER_SIZE = 30_000_000;
 
 /**
+ * How many deploy bodies may be buffered and parsed AT ONCE.
+ *
+ * `MAX_INFLATED_BODY_BYTES` bounds one request; nothing bounded how many
+ * arrive together, so peak memory was a function of arrival rate — a number
+ * the caller picks, not the server. Measured against the real orchestrator, a
+ * single max-size deploy costs ~164 MB of RSS (the compressed buffer, the
+ * inflated buffer, the re-wrapped body, then `JSON.parse`'s UTF-16 string and
+ * object), from **28 KB on the wire** because the worker gzips ~1000:1 when
+ * it is compressible. Six concurrent cost ~388 MB against a container
+ * provisioned at 2048 MiB.
+ *
+ * 2 keeps the worst case near ~330 MB while leaving deploys able to overlap.
+ * It is low because it can afford to be: a deploy is a rare, human-initiated
+ * operation, not a request-path one, and the queue below absorbs bursts. Note
+ * the cap is what makes the SIZE limit survivable, so the two move together
+ * — raising `MAX_WORKER_SIZE` (bundles do grow) means re-checking this.
+ * Override with `DEPLOY_BODY_CONCURRENCY`.
+ */
+export const DEPLOY_BODY_CONCURRENCY = (() => {
+  const raw = Number(process.env.DEPLOY_BODY_CONCURRENCY);
+  return Number.isInteger(raw) && raw >= 1 ? raw : 2;
+})();
+
+/**
+ * How long a deploy waits for one of those slots before answering 503.
+ *
+ * A waiter holds only its unread request stream — none of the buffers above —
+ * so queueing is cheap and this can be generous relative to the ~1s a deploy
+ * body takes to inflate and parse. Bounded anyway: an unbounded queue trades
+ * the memory problem for a latency problem and keeps every socket open while
+ * it does. `Retry-After` rides the 503, and the CLI already retries them.
+ * Override with `DEPLOY_BODY_WAIT_MS`.
+ */
+export const DEPLOY_BODY_WAIT_MS = envMs(process.env.DEPLOY_BODY_WAIT_MS, 15_000);
+
+/**
  * How long a sandbox superseded by a deploy/secret/storage mutation keeps
  * serving the sessions it already had, before its remaining calls are cut.
  *

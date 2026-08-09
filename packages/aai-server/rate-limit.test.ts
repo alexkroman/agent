@@ -1,8 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import type { SqlExec } from "aai-server/secret-store";
 import { describe, expect, test } from "vitest";
-import { createPgRateLimiter, createRateLimiter } from "./studio-rate-limit.ts";
+import { createPgRateLimiter, createRateLimiter } from "./rate-limit.ts";
+import type { SqlExec } from "./secret-store.ts";
 
 describe("createRateLimiter", () => {
   test("allows up to the limit within a window, then refuses", async () => {
