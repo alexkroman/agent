@@ -84,7 +84,7 @@ export function createStudioApp(opts: StudioAppOpts): {
   const app = new Hono<StudioHonoEnv>();
   applyPlatformMiddleware(app, opts.allowedOrigins);
 
-  addHealthRoute(app, opts.isDraining);
+  addHealthRoute(app, opts.isDraining, opts.events);
 
   app.get("/", handleStudioPage);
   // v0-style project URLs (`/studio/chat/<project>`) serve the same shell —

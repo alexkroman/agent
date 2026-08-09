@@ -43,6 +43,22 @@ function deployOpts(fetch: typeof globalThis.fetch, overrides?: Partial<DeployOp
   };
 }
 
+/**
+ * Budget for the one test here whose cost is a cold cross-package TRANSFORM
+ * rather than the work it asserts.
+ *
+ * It dynamic-imports a module from another package, which vitest has to load
+ * and type-strip on the spot. That fits the 5s unit budget comfortably when
+ * this file runs alone and does not under `pnpm check`, where turbo runs every
+ * package's suite at once — measured failing there and passing standalone in
+ * the same working tree, so it is contention, not a regression.
+ *
+ * The budget is raised rather than the import removed: importing the REAL
+ * server schema is the entire point of the test, and a local copy of it would
+ * be a second declaration of the very thing it exists to catch drift against.
+ */
+const CROSS_PACKAGE_IMPORT_TIMEOUT_MS = 20_000;
+
 describe("runDeploy", () => {
   test("sends POST /deploy with auth and JSON content type", async () => {
     const mockFetch = vi.fn().mockResolvedValue(deployOk());
@@ -166,18 +182,22 @@ describe("runDeploy", () => {
     await expect(runDeploy(deployOpts(mockFetch))).rejects.toThrow("bundle is too large");
   });
 
-  test("deploy body conforms to server DeployBodySchema", async () => {
-    // Import the real server schema to validate CLI deploy payload.
-    // This cross-package import catches format mismatches between CLI and server.
-    const { DeployBodySchema } = await import("../aai-server/schemas.ts");
-    const mockFetch = vi.fn().mockResolvedValue(deployOk());
-    await runDeploy(deployOpts(mockFetch));
-    const [, init] = mockFetch.mock.calls[0] ?? [];
-    const body = decodeBody(init);
-    const result = DeployBodySchema.safeParse(body);
-    expect(
-      result.success,
-      `Deploy body rejected by server schema: ${JSON.stringify(result.error?.issues, null, 2)}`,
-    ).toBe(true);
-  });
+  test(
+    "deploy body conforms to server DeployBodySchema",
+    async () => {
+      // Import the real server schema to validate CLI deploy payload.
+      // This cross-package import catches format mismatches between CLI and server.
+      const { DeployBodySchema } = await import("../aai-server/schemas.ts");
+      const mockFetch = vi.fn().mockResolvedValue(deployOk());
+      await runDeploy(deployOpts(mockFetch));
+      const [, init] = mockFetch.mock.calls[0] ?? [];
+      const body = decodeBody(init);
+      const result = DeployBodySchema.safeParse(body);
+      expect(
+        result.success,
+        `Deploy body rejected by server schema: ${JSON.stringify(result.error?.issues, null, 2)}`,
+      ).toBe(true);
+    },
+    CROSS_PACKAGE_IMPORT_TIMEOUT_MS,
+  );
 });

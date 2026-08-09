@@ -1,0 +1,35 @@
+-- Index the back-reference the orphan-preview sweep joins on.
+--
+-- `aai-sweep-orphan-previews` (pg-cron.ts) keeps a `<project>-preview` agent
+-- alive while some workspace still names it:
+--
+--   not exists (select 1 from aai_platform.studio_workspaces w
+--               where w.doc->>'previewSlug' = a.slug)
+--
+-- Unindexed, that predicate is evaluated by scanning every workspace row — and
+-- `doc` is the whole project file map, so each row must be DETOASTED before
+-- the arrow operator can reach a 20-character string. It is the most expensive
+-- thing the database does on a schedule, it runs at `23 * * * *` forever, and
+-- it grows with the number of projects rather than the number of previews.
+--
+-- Two properties this depends on, both already true and worth keeping true:
+--
+--   * **The expression must match the sweep's byte for byte.** An expression
+--     index only serves an exactly-matching expression, so changing either
+--     side means changing both. `pg-cron.ts` carries the counterpart comment.
+--   * **`doc` must really hold a jsonb OBJECT.** While the column held a
+--     double-encoded jsonb *string* (fixed by
+--     `20260809120000_normalize_double_encoded_jsonb.sql`) this expression
+--     returned NULL for every row, so the sweep's guard matched nothing and it
+--     deleted live previews hourly. An index built over that shape would have
+--     indexed NULL just as faithfully — it makes the query fast, never
+--     correct.
+--
+-- NOT `concurrently`, deliberately: the Supabase CLI applies each migration
+-- inside a transaction and `create index concurrently` cannot run in one. The
+-- table is one row per project and the only reader is an hourly sweep, so the
+-- brief `SHARE` lock a plain build takes is not worth the alternative of
+-- applying this by hand outside the migration set, where nothing would record
+-- that it exists.
+create index if not exists studio_workspaces_preview_slug
+  on aai_platform.studio_workspaces ((doc->>'previewSlug'));

@@ -1,7 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
+  assertBucketPrivate,
   type BlobStorage,
   createMemoryBlobStorage,
   createSupabaseBlobStorage,
@@ -155,5 +156,62 @@ describe("createSupabaseBlobStorage", () => {
     await expect(store.signedUrl("blobs/abc", 300)).rejects.toThrow(
       /blob signing failed for blobs\/abc/,
     );
+  });
+});
+
+/**
+ * The bucket is the one piece of this platform's Supabase state that lives in
+ * the dashboard rather than in `supabase/migrations`, so nothing else would
+ * ever notice it going missing or turning public.
+ */
+describe("assertBucketPrivate", () => {
+  const check = (handler: (call: Call) => Response) => {
+    const { fetch: fetchFn, calls } = fakeFetch(handler);
+    const run = assertBucketPrivate({
+      url: "https://ref.supabase.co",
+      serviceRoleKey: "service-role-key",
+      bucket: "aai-blobs",
+      fetch: fetchFn,
+    });
+    return { run, calls };
+  };
+
+  const bucketBody = (isPublic: boolean) =>
+    new Response(JSON.stringify({ id: "aai-blobs", name: "aai-blobs", public: isPublic }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+
+  test("passes a private bucket", async () => {
+    const { run, calls } = check(() => bucketBody(false));
+    await expect(run).resolves.toBeUndefined();
+    expect(calls[0]?.url).toContain("/storage/v1/bucket/aai-blobs");
+  });
+
+  test("refuses a PUBLIC bucket", async () => {
+    // Deploy artifacts are every tenant's worker bundles; the platform hands
+    // them out through per-call signed URLs precisely so they are not
+    // world-readable.
+    const { run } = check(() => bucketBody(true));
+    await expect(run).rejects.toThrow(/PUBLIC/);
+  });
+
+  test("refuses a bucket that does not exist", async () => {
+    const { run } = check(() => new Response("{}", { status: 404 }));
+    await expect(run).rejects.toThrow(/does not exist/);
+  });
+
+  /**
+   * The asymmetry that makes this safe to await at boot: a configuration
+   * error is fatal, a REACHABILITY failure is not. Failing boot on any error
+   * would turn a Storage blip into every container refusing to start at once
+   * — worse than the thing being guarded against.
+   */
+  test("a transient failure warns and lets the service boot", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { run } = check(() => new Response("upstream error", { status: 503 }));
+    await expect(run).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn.mock.calls[0]?.[0]).toContain("reachability");
   });
 });

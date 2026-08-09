@@ -21,6 +21,23 @@ export function appDbSecretName(slug: string): string {
   return `app-db:${slug}`;
 }
 
+/**
+ * SecretStore name for the platform's own Storage credential.
+ *
+ * The blob GC sweep runs INSIDE Postgres (pg_cron) and deletes objects through
+ * the Storage API with `pg_net`, so it needs a credential that no SQL-only job
+ * can otherwise have. Supabase's own guidance for calling an API from pg_cron
+ * is exactly this — put the key in Vault and read it in the job body — and the
+ * alternative is worse in a way that matters: a key interpolated into the job
+ * COMMAND sits in `cron.job` as plaintext, in every operator's listing.
+ *
+ * The blast radius is not widened by this. The same Vault already holds every
+ * tenant's `agent-env:<slug>` (their AssemblyAI keys) and every
+ * `app-db:<slug>`, so anything that can read this can already read strictly
+ * more sensitive material. Storage has no narrower credential to use instead.
+ */
+export const PLATFORM_STORAGE_KEY_SECRET = "platform:storage-key";
+
 /** Minimal SQL executor: one parameterized statement, resolves with rows. */
 export type SqlExec = (query: string, params?: unknown[]) => Promise<Record<string, unknown>[]>;
 
@@ -29,6 +46,16 @@ export type SecretStore = {
   put(name: string, value: string): Promise<void>;
   delete(name: string): Promise<void>;
 };
+
+/** Postgres `unique_violation` — what a lost create race looks like. */
+const UNIQUE_VIOLATION = "23505";
+
+function isUniqueViolation(err: unknown): boolean {
+  // Read the SQLSTATE, never the message: a driver rewording "duplicate key
+  // value violates unique constraint" would silently turn this retry back
+  // into the 500 it exists to prevent.
+  return (err as { code?: unknown } | null)?.code === UNIQUE_VIOLATION;
+}
 
 /**
  * Supabase Vault-backed secret store.
@@ -50,13 +77,43 @@ export function createVaultSecretStore(sql: SqlExec): SecretStore {
       return typeof value === "string" ? value : null;
     },
 
+    /**
+     * Write a secret, creating it or replacing its value.
+     *
+     * **Idempotent under concurrency, and it has to be.** The natural shape —
+     * read the id, then branch to create or update — is a read-then-write
+     * with a window in it: two writers of the same name both see no row and
+     * both call `create_secret`, so the loser hits the unique-name constraint
+     * and the caller gets a 500. Most writes here are safe from that by
+     * accident, because every mutation for a slug runs under the per-slug
+     * advisory lock — but the ACCOUNT paths take no such lock, and they are
+     * exactly the pair that can fire together: `PUT /studio/account/key`
+     * (onboarding and rotation) and `POST /studio/cli-link/approve` (which
+     * backfills the `key-user:` mapping), plus a double-submitted onboarding
+     * form.
+     *
+     * So the create race is absorbed rather than avoided. One retry is
+     * enough by construction: after a unique violation the name exists, so
+     * the update branch is the only one left and it cannot lose again.
+     */
     async put(name, value) {
-      const existing = await sql("select id from vault.secrets where name = $1", [name]);
-      const id = existing[0]?.id;
-      if (id !== undefined && id !== null) {
+      const updateExisting = async (): Promise<boolean> => {
+        const existing = await sql("select id from vault.secrets where name = $1", [name]);
+        const id = existing[0]?.id;
+        if (id === undefined || id === null) return false;
         await sql("select vault.update_secret($1, $2)", [id, value]);
-      } else {
+        return true;
+      };
+
+      if (await updateExisting()) return;
+      try {
         await sql("select vault.create_secret($1, $2)", [value, name]);
+      } catch (err) {
+        if (!isUniqueViolation(err)) throw err;
+        // Someone created it between our read and our create. Rethrow if the
+        // update still finds nothing — that is a row deleted underneath us,
+        // not a race this can settle.
+        if (!(await updateExisting())) throw err;
       }
     },
 

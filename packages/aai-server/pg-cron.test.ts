@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { expect, test } from "vitest";
-import { PLATFORM_CRON_JOBS, schedulePlatformSweeps } from "./pg-cron.ts";
+import { describe, expect, test } from "vitest";
+import { platformCronJobs, schedulePlatformSweeps } from "./pg-cron.ts";
 import type { SqlExec } from "./secret-store.ts";
 
 /** Capture every statement; `scheduled` is what `cron.job` already holds. */
@@ -19,11 +19,11 @@ function captureSql(scheduled: string[] = []) {
 
 test("installs the extension then upserts every job by name", async () => {
   const { sql, calls } = captureSql();
-  await schedulePlatformSweeps(sql, PLATFORM_CRON_JOBS);
+  await schedulePlatformSweeps(sql, platformCronJobs());
 
   expect(calls[0]?.query).toBe("create extension if not exists pg_cron");
-  const scheduled = calls.slice(1, 1 + PLATFORM_CRON_JOBS.length);
-  for (const [i, job] of PLATFORM_CRON_JOBS.entries()) {
+  const scheduled = calls.slice(1, 1 + platformCronJobs().length);
+  for (const [i, job] of platformCronJobs().entries()) {
     expect(scheduled[i]?.query).toBe("select cron.schedule($1, $2, $3)");
     expect(scheduled[i]?.params).toEqual([job.name, job.schedule, job.command]);
   }
@@ -71,7 +71,7 @@ test("tolerates an unschedule that finds nothing", async () => {
  * `vault.secrets` belongs to Supabase.
  */
 test("only sweeps over tables migrations do not own are guarded", () => {
-  const guarded = PLATFORM_CRON_JOBS.filter((job) => job.command.includes("to_regclass"));
+  const guarded = platformCronJobs().filter((job) => job.command.includes("to_regclass"));
   expect(guarded.map((job) => job.name).sort()).toEqual([
     "aai-sweep-orphan-previews",
     "aai-sweep-preview-archive",
@@ -79,7 +79,7 @@ test("only sweeps over tables migrations do not own are guarded", () => {
 });
 
 test("the orphan-preview sweep only reaps unreferenced, aged preview slugs", () => {
-  const orphans = PLATFORM_CRON_JOBS.find((j) => j.name === "aai-sweep-orphan-previews");
+  const orphans = platformCronJobs().find((j) => j.name === "aai-sweep-orphan-previews");
   expect(orphans).toBeDefined();
   const command = orphans?.command ?? "";
   // Only `-preview` slugs, never production agents.
@@ -95,7 +95,7 @@ test("the orphan-preview sweep only reaps unreferenced, aged preview slugs", () 
 });
 
 test("the orphan-preview sweep deprovisions the app database like the delete route", () => {
-  const orphans = PLATFORM_CRON_JOBS.find((j) => j.name === "aai-sweep-orphan-previews");
+  const orphans = platformCronJobs().find((j) => j.name === "aai-sweep-orphan-previews");
   const command = orphans?.command ?? "";
   // Schema + role go the way deprovisionAppDatabase drops them…
   expect(command).toContain("drop schema if exists %I cascade");
@@ -109,6 +109,94 @@ test("the orphan-preview sweep deprovisions the app database like the delete rou
 });
 
 test("lease sweeps delete only expired rows", () => {
-  const limits = PLATFORM_CRON_JOBS.find((j) => j.name === "aai-sweep-rate-limits");
+  const limits = platformCronJobs().find((j) => j.name === "aai-sweep-rate-limits");
   expect(limits?.command).toContain("reset_at <= now()");
+});
+
+test("every job name carries the prefix boot diffs on", () => {
+  // A job outside the prefix can never be unscheduled by the retirement diff,
+  // so it would fire forever on any database that once had it.
+  for (const job of platformCronJobs({ storage: { url: "https://p.supabase.co", bucket: "b" } })) {
+    expect.soft(job.name, `${job.name} is outside the aai-sweep- namespace`).toMatch(/^aai-sweep-/);
+  }
+});
+
+test("the cron-history sweep prunes pg_cron's own run log", () => {
+  // The one table the sweeps themselves grow. Supabase prunes nothing.
+  const history = platformCronJobs().find((j) => j.name === "aai-sweep-cron-history");
+  expect(history?.command).toContain("delete from cron.job_run_details");
+  expect(history?.command).toContain("interval '7 days'");
+});
+
+/**
+ * `statement_timeout` is a USERSET GUC, so the 10s the app role is provisioned
+ * with is advisory — tenant code holding the credential can simply turn it
+ * off. This is the half that cannot be overridden from a tenant connection.
+ */
+test("the runaway sweep reaches app roles and nothing else", () => {
+  const runaways = platformCronJobs().find((j) => j.name === "aai-sweep-app-db-runaways");
+  expect(runaways?.command).toContain("pg_terminate_backend");
+  // Scoped by role NAME. The platform's own connections are `postgres`, so
+  // the pattern is what keeps this from reaching them — note the escaped
+  // underscore, without which `app_` would match any three characters.
+  expect(runaways?.command).toContain(String.raw`usename like 'app\_%'`);
+  expect(runaways?.command).toContain("state = 'active'");
+});
+
+describe("blob GC", () => {
+  const withStorage = () =>
+    platformCronJobs({ storage: { url: "https://proj.supabase.co", bucket: "aai-blobs" } });
+  const command = () => withStorage().find((j) => j.name === "aai-sweep-blob-gc")?.command ?? "";
+
+  test("is declared only when object storage is configured", () => {
+    // Boot DIFFS declared jobs against the database, so omitting it here is
+    // what unschedules a stale one rather than leaving it firing against a
+    // bucket name from a previous configuration.
+    expect(withStorage().map((j) => j.name)).toContain("aai-sweep-blob-gc");
+    expect(platformCronJobs().map((j) => j.name)).not.toContain("aai-sweep-blob-gc");
+  });
+
+  test("refuses to run against an empty agents table", () => {
+    // The catastrophic failure: read zero referenced hashes, conclude every
+    // blob is garbage. One bad read away, and unrecoverable.
+    expect(command()).toContain("select count(*) into live_agents from aai_platform.agents");
+    expect(command()).toContain("if live_agents = 0 then");
+  });
+
+  test("treats both worker and client blobs as referenced", () => {
+    // client_files is path→hash, so the live set needs its VALUES; taking its
+    // keys would mark every client asset unreferenced.
+    expect(command()).toContain("select worker_hash as hash from aai_platform.agents");
+    expect(command()).toContain("jsonb_each_text(a.client_files) f");
+    expect(command()).toContain("select f.value");
+  });
+
+  test("only considers aged blobs, and bounds each run", () => {
+    // Comfortably past the retirement drain (10 min) and the signed worker
+    // URL's TTL (5 min), so a spawn can never be reaching for what it deletes.
+    expect(command()).toContain("interval '1 day'");
+    expect(command()).toContain("like 'blobs/%'");
+    expect(command()).toContain("limit 500");
+  });
+
+  test("deletes through the Storage API, never storage.objects", () => {
+    // Deleting the row orphans the S3 object AND destroys the only record it
+    // exists — strictly worse than leaving it.
+    expect(command()).toContain("net.http_delete");
+    expect(command()).toContain("https://proj.supabase.co/storage/v1/object/aai-blobs/");
+    expect(command()).not.toContain("delete from storage.objects");
+    // The credential comes from Vault, never the job command.
+    expect(command()).toContain("platform:storage-key");
+    expect(command()).not.toContain("sb_secret_");
+  });
+
+  test("no-ops rather than erroring where its dependencies are absent", () => {
+    for (const guard of [
+      "to_regnamespace('net')",
+      "to_regclass('storage.objects')",
+      "to_regclass('vault.secrets')",
+    ]) {
+      expect.soft(command(), `${guard} is unguarded`).toContain(guard);
+    }
+  });
 });

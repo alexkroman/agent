@@ -174,6 +174,34 @@ describe("createSupabaseAuth", () => {
     expect(fetchFn.mock.calls.length).toBe(afterFirst);
   });
 
+  /**
+   * `getClaims` validates `exp` — but only on a cache MISS, so a flat 60s
+   * entry keeps serving a token that expired 59 seconds ago. The cache TTL
+   * and the token's lifetime have to be a minimum, not a sum.
+   */
+  test("a cached verification never outlives the token's own exp", async () => {
+    const key = await signingKey();
+    const { auth, url } = fakeSupabase({ jwks: key.jwks });
+    const now = Math.floor(Date.now() / 1000);
+    // Expires well inside the verify cache's own TTL, which is the case a
+    // flat TTL gets wrong.
+    const token = await signToken(key, { sub: user.id, iat: now, exp: now + 5 }, url);
+
+    expect(await auth.verifyAccessToken(token)).toEqual({ id: user.id });
+
+    // Fake timers installed only for the jump: everything above signs and
+    // verifies for real, and the crypto has already settled.
+    vi.useFakeTimers();
+    try {
+      vi.advanceTimersByTime(10_000);
+      // The entry expired with the token, so this re-verifies — and a
+      // re-verification of an expired token is a rejection.
+      expect(await auth.verifyAccessToken(token)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("an unreachable Supabase throws rather than signing the user out", async () => {
     // A rejected token and an unreachable JWKS endpoint are opposite answers,
     // and only one of them should end a session. This is also the one failure

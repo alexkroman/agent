@@ -24,6 +24,7 @@ import { resolvePort } from "aai-server/platform-barrel";
 import { startService } from "aai-server/serve-lifecycle";
 import {
   assertSandboxBackendOrWarn,
+  assertStorageBucket,
   buildServiceConfig,
   installProcessSafetyNets,
   type ServiceConfig,
@@ -87,6 +88,12 @@ async function main(): Promise<void> {
   let draining = false;
   const base = buildServiceConfig(env);
   assertSandboxBackendOrWarn(env);
+  // Awaited, so a bucket that is missing or PUBLIC refuses the boot — the one
+  // piece of this platform's Supabase state that lives in the dashboard
+  // rather than in `supabase/migrations`, and so the one nothing else checks.
+  // A merely unreachable Storage warns and lets the service up; see
+  // assertBucketPrivate for why that asymmetry is deliberate.
+  await assertStorageBucket(env);
 
   const { app: studioApp, dispose: disposeStudio } = createStudioApp(
     studioAppOpts(base, () => draining),

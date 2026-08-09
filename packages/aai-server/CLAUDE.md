@@ -98,16 +98,40 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
 - `realtime-events.ts` — the production `PlatformEvents`: Supabase Realtime
   `postgres_changes` on `aai_platform.agents` / `studio_workspaces` /
   `studio_chats` over `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`, plus
-  the boot-time `supabase_realtime` publication setup
+  the boot-time `supabase_realtime` publication setup.
+
+  **A channel that never joins is COUNTED, not narrated.** realtime-js rejoins
+  forever, so a subscribe that can never succeed (a wrong-authority key, a
+  missing grant) differs from a healthy channel only in the rate of a
+  `console.warn` — which is how it twice reached production and merely stopped
+  invalidating sandboxes and pushing SSE. The monitor records the last join
+  per topic: an ordinary failure warns, a channel past `JOIN_BUDGET_MS` that
+  has never joined escalates ONCE to `console.error`, and
+  `PlatformEvents.health()` reports it in `/health`'s BODY — never as a 503,
+  since the causes are project-wide and every replica would leave rotation at
+  once, turning a feature outage into a total one.
 - `pg-cron.ts` — janitorial sweeps as pg_cron jobs (dead rate-limit windows,
   orphaned `-preview` agents + their app database schema/role and Vault
-  secrets), installed idempotently at boot. `cron.schedule` upserts by name,
-  so a job DELETED from `PLATFORM_CRON_JOBS` keeps firing on any database that
+  secrets, unreferenced deploy blobs, runaway tenant queries, pg_cron's own
+  run log), installed idempotently at boot. `cron.schedule` upserts by name,
+  so a job DELETED from `platformCronJobs()` keeps firing on any database that
   already has it — and `guarded()` makes that silent. Boot therefore DIFFS:
   every `aai-sweep-*` job in `cron.job` that the code no longer declares is
-  unscheduled, so `PLATFORM_CRON_JOBS` is the whole truth about what the
+  unscheduled, so `platformCronJobs()` is the whole truth about what the
   platform runs and retiring one cannot be forgotten (the hand-maintained
-  retired list this replaced had exactly one failure mode — omission)
+  retired list this replaced had exactly one failure mode — omission).
+
+  It is a FUNCTION because the blob GC needs deployment config: it deletes
+  through the Storage API (a Storage object's bytes cannot be removed in SQL —
+  deleting the `storage.objects` row orphans the object AND destroys the only
+  record of it), so it needs `pg_net`, a project URL, a bucket, and a
+  credential — read from Vault at run time, never interpolated into the job
+  command where it would be plaintext in every `select * from cron.job`.
+  **Two guards there are load-bearing**: it refuses to run when
+  `aai_platform.agents` is EMPTY (one bad read otherwise concludes every blob
+  is garbage), and its grace window is a day — far past the retirement drain
+  and the signed worker URL's TTL, so it cannot delete what a spawn is still
+  reaching for.
 - `studio-paths.ts` — `isStudioPath`, the studio/agent surface boundary the
   combined entry dispatches on. Must agree with `RESERVED_SLUGS`
 - `app-middleware.ts` — the two apps' shared base middleware, so they can't
@@ -211,17 +235,59 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   separate setting and stays publishable.
 
   Agent env lives in Supabase Vault through the injected `SecretStore`.
-  Orphan blobs from superseded/deleted deploys are accepted (content
-  dedupes; a shared blob must not die with one referrer).
+
+  **No referrer may delete a blob, but the SET of referrers may.** Content
+  dedupes, so a superseded deploy's blob can be another agent's live file —
+  which for a long time meant nothing deleted one, ever, and the bucket grew
+  by a worker bundle (~8 MB) per changed deploy. `aai-sweep-blob-gc`
+  (pg-cron.ts) closes it by mark-and-sweep, safe only BECAUSE the keys are
+  hashes: the live set is every `worker_hash` plus every value of
+  `client_files`, so a blob outside it is unreferenced by construction.
+
+  **`assertBucketPrivate` refuses boot on a MISCONFIGURED bucket and only
+  warns on an unreachable one.** The bucket is the one piece of Supabase state
+  living in the dashboard rather than in `supabase/migrations`, so nothing
+  else would notice it going missing or turning public. But this guard is a
+  network call, unlike `assertServiceRoleKey`/`assertSessionModeUrl` — failing
+  boot on a Storage blip would stop every container at once, a worse outage
+  than the one guarded against.
 - `deploy.ts` / `delete.ts` — deployment lifecycle
 - `secret-handler.ts` — secret management
 - `secret-store.ts` — `SecretStore` interface: Supabase Vault
   (`createVaultSecretStore`, over the `SUPABASE_DB_URL` Postgres
   connection) in production, in-memory for local dev/tests. Holds agent
-  env (`agent-env:<slug>`) and app-database credentials (`app-db:<slug>`)
+  env (`agent-env:<slug>`), app-database credentials (`app-db:<slug>`), and
+  the platform's own Storage key for the blob GC sweep
+  (`PLATFORM_STORAGE_KEY_SECRET`).
+
+  **`put` absorbs a lost create race.** Read-id-then-create-or-update has a
+  window, and while every per-SLUG write is serialized by the advisory lock,
+  the ACCOUNT paths are not — `PUT /studio/account/key` and
+  `POST /studio/cli-link/approve` can write the same name at once. A `23505`
+  is retried as an update exactly once, which is sufficient by construction:
+  after it the name exists. Read the SQLSTATE, never the message.
 - `app-database.ts` — per-app Postgres schema/role provisioning in the
   platform Supabase database (`provisionAppDatabase`,
-  `deprovisionAppDatabase`, `openAppDb`)
+  `deprovisionAppDatabase`, `openAppDb`).
+
+  **Deprovision follows the app's stored LOCATOR, never a recomputed
+  placement.** Placement is `hash(slug) % targets.length`, so changing
+  `APP_DB_URLS` re-shuffles every existing app and the `url` in its
+  `app-db:<slug>` meta is the only record that survives it. Recomputing —
+  which this used to do, reasoned as "same deterministic placement" — issues
+  both `if exists` drops against a cluster that never hosted the app (silent
+  no-ops) while the caller deletes the secret holding the real schema's only
+  credential: tenant data left unreachable, nothing raised. Both call sites
+  read the meta BEFORE it is swept; with no meta every target is swept, since
+  a slug-derived drop where the app never lived is a real no-op.
+
+  **The per-tenant caps differ in strength, and only two are controls.**
+  `connection limit` is superuser-only to raise and `temp_file_limit` is
+  `SUSET` (lowerable, never raisable), but `statement_timeout` is `USERSET` —
+  tenant code holding the credential can `set statement_timeout = 0`. The 10s
+  setting is what a well-behaved app sees; the enforceable half is
+  `aai-sweep-app-db-runaways`, which terminates `app\_%` backends active past
+  a much higher ceiling. Never treat the role setting as isolation.
 - `storage-handler.ts` — `GET/POST/DELETE /:slug/storage` (owner-auth'd)
   toggling the app's database
 
@@ -259,6 +325,17 @@ differ, and each is a decision rather than an oversight:
   REPLICAS, not users, so we are orders of magnitude below it. The documented
   direction if this ever moves, and worth knowing before adding a fourth
   watched table.
+
+  **The publication carries COLUMN LISTS, which is what makes staying on
+  `postgres_changes` cheap** (`20260810000000_realtime_publication_columns.
+  sql`). These are signal streams — handlers re-read — so publishing every
+  column meant walrus detoasted and serialized the WHOLE workspace document on
+  every metadata stamp, for a payload the handler discards. The lists are row
+  IDENTITY plus `version`: exactly what the filters and `scopeAccepts` need,
+  and exactly the replica-identity columns a column list must contain. Filter
+  on a column outside the list and events silently stop matching —
+  `platform-schema.test.ts` pins the two against each other. Per-table `drop` +
+  `add`, never `set table`, which replaces the publication's whole table list.
 - **RLS is enabled and DENY-ALL, which is not what RLS is usually for.**
   Access is really controlled by the grant: `anon`/`authenticated` hold no
   privilege on `aai_platform`, and it is not a PostgREST-exposed schema.
@@ -573,14 +650,17 @@ down, like the file-length allowlist.
   **Supabase setup this depends on lives in `supabase/migrations`**, applied
   with `supabase db push` BEFORE the code that queries it: the `aai_platform`
   schema and its tables, the watched tables' membership in the
-  `supabase_realtime` publication, the `service_role` SELECT grants, and the
-  `pg_cron`/`pgmq` extensions. Realtime validates channel filter columns (and
-  gates row visibility) against what the subscriber's claimed role can SELECT,
-  and the app-created `aai_platform` schema gets none of Supabase's default
-  `public` grants, so without those grants every filtered subscribe fails with
-  `invalid column for filter <col>`. Only the pg_cron SCHEDULING stays at boot
-  (`schedulePlatformSweeps` via `bootstrapPlatformDb`), because the sweep
-  bodies are defined in TypeScript and change with the code that owns them.
+  `supabase_realtime` publication (with their column lists), the
+  `service_role` SELECT grants, the workspace-child foreign keys, the
+  orphan-sweep's `(doc->>'previewSlug')` index, and the
+  `pg_cron`/`pgmq`/`pg_net` extensions. Realtime validates channel filter
+  columns (and gates row visibility) against what the subscriber's claimed
+  role can SELECT, and the app-created `aai_platform` schema gets none of
+  Supabase's default `public` grants, so without those grants every filtered
+  subscribe fails with `invalid column for filter <col>`. Only the pg_cron
+  SCHEDULING stays at boot (`schedulePlatformSweeps` via
+  `bootstrapPlatformDb`), because the sweep bodies are defined in TypeScript
+  and change with the code that owns them.
   The env carries `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` for the
   Realtime socket, required in production alongside `SUPABASE_DB_URL`.
 - **A superseded sandbox is RETIRED, not terminated** (`sandbox-retire.ts`).
@@ -1155,22 +1235,19 @@ Both are better served elsewhere — the warning by the CLI, the slug by the
 word generator that already backed every unusable base.
 
 So the sandbox spawn, the describe mode, the nonce protocol, the `inspect`
-role, and `IsolateConfigSchema` are all gone. The COLUMN is only unwritten so
-far: dropping it is the contract half of an expand/contract and waits for the
-release AFTER the one carrying the expand migration — `supabase db push` runs
-BEFORE the deploy and old containers keep serving through the rollout, so a
-drop landing beside its own expand is a drop against containers that still
-name the column, failing every deploy that reaches one.
+role, `IsolateConfigSchema` and — since
+`20260810030000_drop_agents_config.sql` — the COLUMN are all gone.
 
-**That wait is now enforced by the `RETIRED_COLUMNS` ledger in
-`platform-schema.test.ts`**, which is where a column in this state goes.
-Each entry asserts two things: that no platform source writes the column
-(a reintroduced write is otherwise invisible until the drop lands, at which
-point it fails in production rather than in CI), and that the column is
+**The `RETIRED_COLUMNS` ledger in `platform-schema.test.ts` is what carried
+that last step, and it is EMPTY now — which is the goal state, not a reason
+to delete the mechanism.** A contract migration cannot ride the same release
+as its expand (`supabase db push` runs before the deploy and old containers
+keep serving through the rollout, so a drop beside its own expand fails every
+deploy that reaches one), so the drop is owed to a LATER release and an owed
+thing recorded only in prose is an owed thing forgotten. Each entry asserts
+two things: that no platform source writes the column, and that the column is
 STILL declared — so the entry has to be deleted in the same commit as the
-drop. It replaces a paragraph saying "treat this as owed work", which is
-what the schema drift test cannot say for you (it compares relations, not
-columns). Removing the last entry is the goal; nothing should live there.
+drop, which is exactly how this one cleared. Put the next such column there.
 Three consequences worth knowing:
 
 - **The credential preflight moved to the CLI** (`aai-cli/_preflight.ts`).
@@ -1437,7 +1514,12 @@ stored env at sandbox creation time and kept host-side only.
   Two properties worth keeping. `getClaims` is safe on either kind of project
   — on a symmetric (HS256) one it falls back to a server call by itself — and
   that is also why the request path KEEPS its short TTL cache: on such a
-  project the cache is what stops a per-request round trip. And a rejected
+  project the cache is what stops a per-request round trip. **That cache entry
+  is capped at the token's own `exp`**, because `getClaims` validates expiry
+  only on a MISS — a flat TTL kept serving a token that expired 59 seconds
+  ago, making the bound the SUM of the two rather than the minimum. A
+  rejection keeps the flat TTL; there is no `exp` to read from a token that
+  did not verify. And a rejected
   token and an unreachable Supabase are opposite answers, so only
   `isAuthRetryableFetchError` throws (a 5xx to the caller); everything else
   caches as a rejection. `storageKey` is set explicitly because auth-js caches

@@ -266,3 +266,76 @@ describe("workspace channels", () => {
     expect(client.disconnect).toHaveBeenCalled();
   });
 });
+
+/**
+ * The failure these cover has happened twice in production and produced no
+ * symptom either time: a subscribe that can never succeed leaves realtime-js
+ * retrying the join forever, so the service boots healthy, every request
+ * succeeds, and the platform merely stops invalidating sandboxes and pushing
+ * SSE. The only trace was a `console.warn` per retry.
+ */
+describe("subscription health", () => {
+  test("a channel that acks its join is healthy, and reports as one", () => {
+    const { client, channels } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    events.watchWorkspace("s", "p", vi.fn());
+    (channels[0] as FakeChannel).ack("SUBSCRIBED");
+
+    expect(events.health()).toEqual({ channels: 1, stalled: [] });
+  });
+
+  test("a channel that never joins is stalled once its budget lapses", () => {
+    const { client, channels } = fakeClient();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    events.watchWorkspace("s", "p", vi.fn());
+    const channel = channels[0] as FakeChannel;
+
+    // Inside the budget a failure is ordinary — a deploy, a blip — and warns.
+    channel.ack("CHANNEL_ERROR", new Error("invalid column for filter project"));
+    expect(events.health().stalled).toEqual([]);
+    expect(warn).toHaveBeenCalledOnce();
+    expect(error).not.toHaveBeenCalled();
+
+    vi.useFakeTimers();
+    try {
+      vi.advanceTimersByTime(60_000);
+      channel.ack("CHANNEL_ERROR", new Error("invalid column for filter project"));
+      channel.ack("CHANNEL_ERROR", new Error("invalid column for filter project"));
+
+      expect(events.health()).toEqual({ channels: 1, stalled: ["aai:workspace:s:p"] });
+      // Escalated ONCE, however many times it retries — the point is to be
+      // findable in a log, not to become the log.
+      expect(error).toHaveBeenCalledOnce();
+      expect(error.mock.calls[0]?.[0]).toContain("never joined");
+      expect(warn).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a joined channel stays healthy however long it runs", () => {
+    const { client, channels } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    events.watchAgents(vi.fn());
+    (channels[0] as FakeChannel).ack("SUBSCRIBED");
+
+    vi.useFakeTimers();
+    try {
+      vi.advanceTimersByTime(60_000);
+      expect(events.health().stalled).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("releasing the last watcher stops counting the channel", () => {
+    const { client } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    const unwatch = events.watchWorkspace("s", "p", vi.fn());
+    expect(events.health().channels).toBe(1);
+    unwatch();
+    expect(events.health()).toEqual({ channels: 0, stalled: [] });
+  });
+});

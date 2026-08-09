@@ -65,8 +65,46 @@ export type PlatformEvents = {
   watchChat(scope: string, project: string, onChange: Watcher): Unwatch;
   /** Fires when any workspace row in `scope` changes. Signal only. */
   watchScopeProjects(scope: string, onChange: Watcher): Unwatch;
+  /**
+   * Whether change delivery is actually working — see
+   * {@link PlatformEventsHealth}.
+   *
+   * Required rather than optional, deliberately: an implementation that
+   * cannot answer this should have to say so (the memory emitter returns
+   * "nothing stalled", which is true — it delivers in-process), rather than
+   * omit the method and have every reader treat absent as healthy.
+   */
+  health(): PlatformEventsHealth;
   /** Tear down the underlying connection (production: the Realtime socket). */
   close(): Promise<void>;
+};
+
+/**
+ * A snapshot of the change streams' delivery health.
+ *
+ * This exists because a subscription that never joins is the platform's most
+ * expensive SILENT failure, and it has been hit twice. Filter columns are
+ * validated against the subscriber's claimed role, so an `anon`-authority
+ * key (or a missing grant) fails every filtered subscribe server-side with
+ * `invalid column for filter` — and realtime-js retries the join forever.
+ * The service boots healthy, `/health` answers 200, every request succeeds,
+ * and the platform merely stops invalidating resident sandboxes on redeploy
+ * and stops pushing studio SSE. The only trace was one `console.warn` per
+ * retry, in a log nobody reads until something else goes wrong.
+ *
+ * `assertServiceRoleKey` closes the two KNOWN causes at boot. This closes the
+ * class: whatever the reason, a channel that has been trying to join for
+ * longer than the budget is reported.
+ */
+export type PlatformEventsHealth = {
+  /** Channels currently open — subscribed or still trying. */
+  channels: number;
+  /**
+   * Topics that have never acked a join and have been trying longer than the
+   * join budget. Non-empty means changes are NOT being delivered on those
+   * channels, however healthy everything else looks.
+   */
+  stalled: string[];
 };
 
 export type MemoryPlatformEvents = {
@@ -194,6 +232,11 @@ export function createMemoryPlatformEvents(): MemoryPlatformEvents {
       watchScopeProjects(scope, onChange) {
         return scopeWatchers.add(scope, onChange);
       },
+      // Nothing to stall: dispatch is a microtask in this very process, so
+      // there is no join to fail and no socket to lose. Reporting zero
+      // channels rather than inventing a count keeps the number honest — it
+      // means "no Realtime channels", not "no watchers".
+      health: () => ({ channels: 0, stalled: [] }),
       close: () => Promise.resolve(),
     },
     emitAgent(slug) {

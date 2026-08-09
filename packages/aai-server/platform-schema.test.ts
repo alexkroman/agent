@@ -87,9 +87,12 @@ describe("platform schema migrations", () => {
   test("create the schema and the extensions the platform schedules work with", () => {
     const sql = migrationSql();
     expect(sql).toContain("create schema if not exists aai_platform");
-    // pg_cron runs the janitorial sweeps; pgmq backs the preview-deploy queue.
+    // pg_cron runs the janitorial sweeps; pgmq backs the preview-deploy queue;
+    // pg_net is how the blob GC sweep reaches the Storage API from inside a
+    // pg_cron job (a Storage object's bytes cannot be deleted in SQL).
     expect(sql).toContain("create extension if not exists pg_cron");
     expect(sql).toContain("create extension if not exists pgmq");
+    expect(sql).toContain("create extension if not exists pg_net");
   });
 
   /**
@@ -108,6 +111,66 @@ describe("platform schema migrations", () => {
     }
     expect(sql).toContain("grant usage on schema aai_platform to service_role");
     expect(sql).toContain("grant select on");
+  });
+
+  /**
+   * The publication carries only the columns that IDENTIFY a row
+   * (20260810000000_realtime_publication_columns.sql), because the handlers
+   * re-read rather than read the payload.
+   *
+   * Two ways that narrowing breaks, both silent:
+   *
+   * - A channel filters on (or a handler checks) a column that is no longer
+   *   published. Realtime keeps validating the filter against the table's
+   *   catalog columns, so the subscribe still succeeds — the events just stop
+   *   matching, and the only symptom is that sandboxes stop being invalidated
+   *   and studio SSE goes quiet. That is the same invisible failure the
+   *   service-role key guard exists for.
+   * - Someone reintroduces a bare `add table` (no column list) and every
+   *   workspace document is back in the WAL, with nothing to notice but a
+   *   Realtime bill.
+   *
+   * So this pins the filter columns against the migration's lists rather than
+   * restating them: `realtime-events.ts` is the source of the filters, and a
+   * new filter on an unpublished column fails here.
+   */
+  test("publishes every column the change streams filter or check on", () => {
+    const sql = stripSqlComments(migrationSql());
+    const source = readFileSync(
+      path.join(repoRoot, "packages/aai-server/realtime-events.ts"),
+      "utf-8",
+    );
+
+    // The narrowed lists, as the migration declares them.
+    const published = new Map(
+      [...sql.matchAll(/\('([a-z_]+)',\s*'([a-z_, ]+)'\)/g)].map(([, table, columns]) => [
+        table,
+        (columns ?? "").split(",").map((column) => column.trim()),
+      ]),
+    );
+    expect([...published.keys()].sort()).toEqual(["agents", "studio_chats", "studio_workspaces"]);
+
+    // Every `filter: \`<column>=eq.…\`` in the events module, paired with the
+    // table it is declared alongside.
+    const filters = [...source.matchAll(/table:\s*"([a-z_]+)",\s*filter:\s*`([a-z_]+)=eq\./g)];
+    // At least the three filtered channels that exist today (workspace, chat,
+    // scope projects) — a floor, not a pin, so a fourth channel is free to
+    // land while a regex that stops matching still fails rather than passing
+    // vacuously over zero filters.
+    expect(filters.length).toBeGreaterThanOrEqual(3);
+    for (const [, table, column] of filters) {
+      expect
+        .soft(published.get(table ?? ""), `${table}.${column} is filtered on but not published`)
+        .toContain(column);
+    }
+
+    // `scopeAccepts` reads `row.scope` off the payload, so scope has to arrive
+    // on both workspace channels even though only one filters on it.
+    expect(source).toContain("row?.scope === scope");
+    expect(published.get("studio_workspaces")).toContain("scope");
+    // Delete events carry only the replica identity (the primary key), which
+    // is why `watchAgents` can key off `payload.old?.slug`.
+    expect(published.get("agents")).toContain("slug");
   });
 
   /**
@@ -192,14 +255,20 @@ describe("platform schema migrations", () => {
    * self-clearing: the column must still be declared, so once the drop
    * lands, the entry has to be deleted or this fails. Removing the last
    * entry is the point — this is not a list anything should live on.
+   *
+   * **It is EMPTY, and that is the goal state.** `agents.config` was the one
+   * entry; its contract migration
+   * (`20260810030000_drop_agents_config.sql`) landed in the commit that
+   * deleted the entry, exactly as the second assertion below forces. The
+   * mechanism stays for the next column that needs it.
    */
-  const RETIRED_COLUMNS: { table: string; column: string; why: string }[] = [
-    {
-      table: "agents",
-      column: "config",
-      why: "the platform stores no agent config (20260808120000_agents_config_default.sql)",
-    },
-  ];
+  const RETIRED_COLUMNS: { table: string; column: string; why: string }[] = [];
+
+  test("the retired-column ledger is empty — nothing is owed a drop", () => {
+    // Not decoration: `describe.each` cannot take an empty array, so without
+    // this the empty state would be a file with no assertion in it at all.
+    expect(RETIRED_COLUMNS).toEqual([]);
+  });
 
   describe.each(RETIRED_COLUMNS)("retired column $table.$column", ({ table, column, why }) => {
     test(`is still declared — drop it and delete this entry (${why})`, () => {

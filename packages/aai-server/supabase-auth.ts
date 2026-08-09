@@ -163,6 +163,24 @@ export function createSupabaseAuth(opts: {
     fetch: doFetch,
   });
 
+  /**
+   * How long a verified token may be SERVED from cache: the flat TTL, capped
+   * at the token's own expiry.
+   *
+   * `getClaims` validates `exp` and rejects an expired token — but only on a
+   * cache miss, so a flat TTL means a token cached one second before it
+   * expires stays accepted for the rest of the minute. Capping here is what
+   * makes this path's bound the token's lifetime OR the TTL, rather than
+   * their sum.
+   *
+   * Claims with no readable `exp` fall back to the flat TTL: a token that
+   * never expires is Supabase's business, not this cache's.
+   */
+  const cacheTtlFor = (claims: { exp?: unknown }): number => {
+    if (typeof claims.exp !== "number") return VERIFY_TTL_MS;
+    return Math.max(0, Math.min(VERIFY_TTL_MS, claims.exp * 1000 - Date.now()));
+  };
+
   /** JWT claims → the user shape, or null when the claims name no subject. */
   const userFromClaims = (claims: { sub?: unknown; email?: unknown }): StudioAuthUser | null =>
     typeof claims.sub === "string" && claims.sub.length > 0
@@ -219,7 +237,10 @@ export function createSupabaseAuth(opts: {
         return null;
       }
       const user = data ? userFromClaims(data.claims) : null;
-      cache.set(cacheKey, user);
+      // A REJECTION keeps the flat TTL — there is no `exp` to read from a
+      // token that did not verify, and re-verifying a bad token every minute
+      // is the behaviour that was wanted anyway.
+      cache.set(cacheKey, user, data ? { maxAge: cacheTtlFor(data.claims) } : undefined);
       return user;
     },
 

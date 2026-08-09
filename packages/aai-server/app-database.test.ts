@@ -166,6 +166,80 @@ describe("createAppDatabases", () => {
     await appDb.deprovision("slug-a");
     expect(calls.length).toBeGreaterThan(0);
   });
+
+  /**
+   * Placement is `hash(slug) % targets.length`, so adding or removing a
+   * cluster re-shuffles every existing app. The stored locator is the only
+   * record that survives that, and deprovision used to recompute the
+   * placement instead — issuing both `if exists` drops against a cluster that
+   * never hosted the app (silent no-ops) while the caller went on to delete
+   * the secret holding the real schema's only credential.
+   *
+   * The primary is deliberately the target `pickAppDbTarget` chooses for this
+   * slug, so a recomputing implementation passes every other assertion here
+   * and fails only this one.
+   */
+  test("deprovision drops on the cluster the stored locator names", async () => {
+    const primary = captureSql();
+    const secondary = captureSql();
+    const secondaryUrl = "postgres://postgres:pw@cluster-b.example:5432/postgres";
+    const appDb = createAppDatabases({
+      url: "postgres://postgres:pw@primary.example:5432/postgres",
+      sql: primary.sql,
+      extraTargets: [{ url: secondaryUrl, sql: secondary.sql }],
+    });
+
+    await appDb.deprovision("slug-a", {
+      role: appDbIdentifier("slug-a"),
+      password: "0".repeat(32),
+      url: secondaryUrl,
+    });
+
+    expect(secondary.calls.map((c) => c.query)).toEqual([
+      `drop schema if exists "${appDbIdentifier("slug-a")}" cascade`,
+      `drop role if exists "${appDbIdentifier("slug-a")}"`,
+    ]);
+    expect(primary.calls).toEqual([]);
+  });
+
+  /**
+   * No locator means the app's cluster is genuinely unknown — a secret
+   * already swept, or an earlier partial failure. Guessing one leaves a live
+   * schema behind; the drops are slug-derived and unique, so sweeping every
+   * cluster is a real no-op wherever the app never lived.
+   */
+  test("deprovision without a locator sweeps every cluster", async () => {
+    const primary = captureSql();
+    const secondary = captureSql();
+    const appDb = createAppDatabases({
+      url: "postgres://postgres:pw@primary.example:5432/postgres",
+      sql: primary.sql,
+      extraTargets: [
+        { url: "postgres://postgres:pw@cluster-b.example:5432/postgres", sql: secondary.sql },
+      ],
+    });
+
+    await appDb.deprovision("slug-a");
+
+    expect(primary.calls).toHaveLength(2);
+    expect(secondary.calls).toHaveLength(2);
+  });
+
+  /** One unreachable cluster must not leave the others provisioned. */
+  test("a failing cluster does not skip the rest, and still reports", async () => {
+    const failing: SqlExec = vi.fn(() => Promise.reject(new Error("cluster down")));
+    const healthy = captureSql();
+    const appDb = createAppDatabases({
+      url: "postgres://postgres:pw@primary.example:5432/postgres",
+      sql: failing,
+      extraTargets: [
+        { url: "postgres://postgres:pw@cluster-b.example:5432/postgres", sql: healthy.sql },
+      ],
+    });
+
+    await expect(appDb.deprovision("slug-a")).rejects.toThrow("cluster down");
+    expect(healthy.calls).toHaveLength(2);
+  });
 });
 
 describe("parseAppDbMeta", () => {

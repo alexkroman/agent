@@ -127,7 +127,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // than each entry re-wiring it. Lives for the process, like the slots.
   if (opts.events) watchAgentInvalidation(opts.events, opts);
 
-  addHealthRoute(app, opts.isDraining);
+  addHealthRoute(app, opts.isDraining, opts.events);
 
   // This app never serves the studio surface itself — the studio is its own
   // package, and the combined composition (aai-studio-server's entry, what

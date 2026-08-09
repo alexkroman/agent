@@ -18,10 +18,10 @@
  * every boot is idempotent and a changed schedule or command takes effect on
  * the next deploy. Retirement is the same statement read the other way: boot
  * unschedules every `aai-sweep-*` job the code no longer declares, so
- * {@link PLATFORM_CRON_JOBS} is the whole truth about what the platform runs.
+ * {@link platformCronJobs} is the whole truth about what the platform runs.
  */
 
-import type { SqlExec } from "./secret-store.ts";
+import { PLATFORM_STORAGE_KEY_SECRET, type SqlExec } from "./secret-store.ts";
 
 export type CronJob = {
   /** Unique job name — `cron.schedule` upserts by it. */
@@ -138,19 +138,177 @@ begin
   end loop;
 end $$`;
 
-/** The platform core's sweeps. The studio's rate-limit sweep rides along —
+/**
+ * pg_cron's own run log. It records a row per job execution and Supabase
+ * prunes NOTHING, so the sweeps' bookkeeping outgrows everything they sweep —
+ * this is the standard way a Supabase project's largest table turns out to be
+ * cron history. A week is long enough to answer "did the sweep run, and did it
+ * fail" and short enough to stay small.
+ */
+const SWEEP_CRON_HISTORY =
+  "delete from cron.job_run_details where end_time < now() - interval '7 days'";
+
+/**
+ * Terminate runaway tenant queries.
+ *
+ * Provisioning sets `statement_timeout = '10s'` on each app role, and that is
+ * a courtesy rather than a control: `statement_timeout` is a `USERSET` GUC, so
+ * tenant code holding the credential can `set statement_timeout = 0` on its
+ * own connection and run unbounded SQL against the shared cluster. (The other
+ * two settings do hold — `connection limit` is superuser-only to raise, and
+ * `temp_file_limit` is `SUSET`, so a tenant may lower it and never raise it.)
+ *
+ * This is the enforceable half. The ceiling is deliberately far above the role
+ * default: the 10s setting is what a well-behaved app should see, while this
+ * exists only to stop a query that has escaped it, and killing a legitimate
+ * slow migration would be the worse error. Matching on the role NAME is what
+ * keeps it scoped — `app\_%` is the provisioned shape (`app_` + 16 hex), and
+ * the platform's own connections authenticate as `postgres`, so no sweep of
+ * this kind can reach them.
+ */
+const SWEEP_APP_DB_RUNAWAYS = `select pg_terminate_backend(pid)
+from pg_stat_activity
+where usename like 'app\\_%'
+  and state = 'active'
+  and query_start < now() - interval '60 seconds'`;
+
+/**
+ * Unreferenced deploy blobs.
+ *
+ * Blobs are content-addressed and immutable, and no referrer may delete one
+ * (two agents with an identical file share a key), so nothing has ever deleted
+ * them — every deploy that changes a byte writes a new ~8 MB worker bundle
+ * that stays forever, including for agents since deleted and previews the
+ * hourly sweep reaped. Mark-and-sweep is safe precisely BECAUSE the keys are
+ * hashes: the live set is every `worker_hash` plus every value of
+ * `client_files`, and a blob outside it is unreferenced by construction.
+ *
+ * Four things make this safe to run unattended, and each is load-bearing:
+ *
+ *   * **It refuses to run against an empty agents table.** Reading zero
+ *     referenced hashes and deleting everything not in that set is the
+ *     catastrophic failure mode, and it is one bad read away — a truncated
+ *     table, a wrong database, a migration mid-flight. A platform with agents
+ *     always has rows; one without has nothing worth reclaiming.
+ *   * **A generous grace window.** A day is far past the retirement drain
+ *     (10 min) and the signed-URL TTL (5 min), so an object cannot be swept
+ *     while a spawn is still reaching for it. The cost of being slow here is
+ *     storage; the cost of being fast is a failed deploy.
+ *   * **Bounded per run.** 500 deletes an hour reclaims steadily without
+ *     turning one sweep into a stampede against the Storage API.
+ *   * **The delete goes through the Storage API, never `storage.objects`.**
+ *     Deleting the row leaves the S3 object behind AND removes the only record
+ *     that it exists — strictly worse than doing nothing. `pg_net` is how a
+ *     SQL job calls an API, and it is fire-and-forget: a failed delete simply
+ *     leaves the object for the next run to find, so the sweep is
+ *     self-healing without any retry bookkeeping.
+ *
+ * Everything is guarded so a project without `pg_net`, without Vault, or
+ * without the stored key no-ops rather than erroring hourly.
+ */
+function sweepBlobGc(storage: { url: string; bucket: string }): string {
+  const base = storage.url.replace(/\/+$/, "");
+  return `do $$
+declare
+  target record;
+  storage_key text;
+  live_agents bigint;
+begin
+  if to_regnamespace('net') is null or to_regclass('storage.objects') is null then
+    return;
+  end if;
+  if to_regclass('vault.secrets') is null then
+    return;
+  end if;
+  select decrypted_secret into storage_key from vault.decrypted_secrets
+    where name = '${PLATFORM_STORAGE_KEY_SECRET}';
+  if storage_key is null then
+    return;
+  end if;
+  -- The empty-table guard. Never derive "unreferenced" from a set that may
+  -- simply have failed to load.
+  select count(*) into live_agents from aai_platform.agents;
+  if live_agents = 0 then
+    return;
+  end if;
+  for target in
+    with referenced as (
+      select worker_hash as hash from aai_platform.agents
+      union
+      select f.value from aai_platform.agents a, jsonb_each_text(a.client_files) f
+    )
+    select o.name
+    from storage.objects o
+    where o.bucket_id = '${storage.bucket}'
+      and o.name like 'blobs/%'
+      and o.created_at < now() - interval '1 day'
+      and not exists (
+        select 1 from referenced r where r.hash = substring(o.name from 7)
+      )
+    limit 500
+  loop
+    perform net.http_delete(
+      url := '${base}/storage/v1/object/${storage.bucket}/' || target.name,
+      headers := jsonb_build_object(
+        'apikey', storage_key,
+        'Authorization', 'Bearer ' || storage_key
+      )
+    );
+  end loop;
+end $$`;
+}
+
+/** Where deploy blobs live, when this deployment has object storage at all. */
+export type PlatformCronStorage = {
+  /** Supabase project URL (`https://<ref>.supabase.co`). */
+  url: string;
+  /** The deploy-artifact bucket. */
+  bucket: string;
+};
+
+/**
+ * The platform core's sweeps. The studio's rate-limit sweep rides along —
  * the table is shared infrastructure in `aai_platform`, and scheduling is
- * idempotent, so both services installing the same job set is correct. */
-export const PLATFORM_CRON_JOBS: readonly CronJob[] = [
-  { name: "aai-sweep-rate-limits", schedule: "7 * * * *", command: SWEEP_RATE_LIMITS },
-  { name: "aai-sweep-studio-sessions", schedule: "*/30 * * * *", command: SWEEP_STUDIO_SESSIONS },
-  { name: "aai-sweep-orphan-previews", schedule: "23 * * * *", command: SWEEP_ORPHAN_PREVIEWS },
-  {
-    name: "aai-sweep-preview-archive",
-    schedule: "41 3 * * *",
-    command: SWEEP_PREVIEW_ARCHIVE,
-  },
-];
+ * idempotent, so both services installing the same job set is correct.
+ *
+ * A FUNCTION rather than a constant because one job needs deployment config
+ * (the Storage project + bucket the blob GC deletes through). Omitting
+ * `storage` omits that job, and since boot DIFFS what it declares against
+ * what the database has, a deployment without object storage actively
+ * unschedules it rather than leaving it firing against a bucket name from a
+ * previous config.
+ *
+ * Minutes are spread deliberately: the three hourly jobs sit at :07, :23 and
+ * :51 so the busiest one (the orphan-preview sweep, which anti-joins every
+ * workspace) never shares a minute with the blob GC's Storage fan-out.
+ */
+export function platformCronJobs(opts: { storage?: PlatformCronStorage } = {}): readonly CronJob[] {
+  return [
+    { name: "aai-sweep-rate-limits", schedule: "7 * * * *", command: SWEEP_RATE_LIMITS },
+    { name: "aai-sweep-studio-sessions", schedule: "*/30 * * * *", command: SWEEP_STUDIO_SESSIONS },
+    { name: "aai-sweep-orphan-previews", schedule: "23 * * * *", command: SWEEP_ORPHAN_PREVIEWS },
+    {
+      name: "aai-sweep-preview-archive",
+      schedule: "41 3 * * *",
+      command: SWEEP_PREVIEW_ARCHIVE,
+    },
+    { name: "aai-sweep-cron-history", schedule: "52 4 * * *", command: SWEEP_CRON_HISTORY },
+    {
+      name: "aai-sweep-app-db-runaways",
+      schedule: "*/5 * * * *",
+      command: SWEEP_APP_DB_RUNAWAYS,
+    },
+    ...(opts.storage
+      ? [
+          {
+            name: "aai-sweep-blob-gc",
+            schedule: "51 * * * *",
+            command: sweepBlobGc(opts.storage),
+          },
+        ]
+      : []),
+  ];
+}
 
 /**
  * Every job name this module owns starts with this — so what the platform
@@ -159,7 +317,7 @@ export const PLATFORM_CRON_JOBS: readonly CronJob[] = [
  *
  * The list it replaces was hand-maintained and permanent, and its only
  * failure mode was forgetting to add to it: `cron.schedule` upserts by name,
- * so deleting a job from {@link PLATFORM_CRON_JOBS} leaves a database that
+ * so deleting a job from {@link platformCronJobs} leaves a database that
  * already has it firing forever, against a table that may no longer exist.
  * The `guarded()` wrapper makes that harmless rather than noisy, which is
  * exactly why it went unnoticed — the job just sat in `cron.job` looking
@@ -175,7 +333,7 @@ const CRON_JOB_PREFIX = "aai-sweep-";
  */
 export async function schedulePlatformSweeps(
   sql: SqlExec,
-  jobs: readonly CronJob[] = PLATFORM_CRON_JOBS,
+  jobs: readonly CronJob[] = platformCronJobs(),
 ): Promise<void> {
   await sql("create extension if not exists pg_cron");
   for (const job of jobs) {

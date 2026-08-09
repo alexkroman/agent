@@ -112,13 +112,65 @@ const UPLOAD_OPTIONS = {
   upsert: true,
 } as const;
 
-/** Supabase Storage-backed blob storage (production). */
-export function createSupabaseBlobStorage(opts: SupabaseBlobStorageOptions): BlobStorage {
-  const client = new StorageClient(
+function storageClient(opts: SupabaseBlobStorageOptions): StorageClient {
+  return new StorageClient(
     storageEndpoint(opts.url),
     { apikey: opts.serviceRoleKey, Authorization: `Bearer ${opts.serviceRoleKey}` },
     opts.fetch,
   );
+}
+
+/**
+ * Boot-time check that the configured bucket exists and is PRIVATE.
+ *
+ * Everything else about this platform's Supabase state is declared and
+ * reviewable — schema, publication, grants, RLS, extensions, queues, all in
+ * `supabase/migrations`. The bucket is the exception: it is created and
+ * configured in the dashboard, and `supabase/config.toml` deliberately omits
+ * storage settings so there is no second source of truth for something
+ * nothing applies. That is the right call for auth and realtime settings and
+ * the wrong one for this, because "is this bucket public" is a one-bit
+ * property deciding whether every tenant's worker bundle is world-readable,
+ * and no migration, test, or request would ever notice it flipping.
+ *
+ * **A misconfiguration is fatal; an unreachable Storage is not.** The
+ * distinction is the whole design. `assertServiceRoleKey` and
+ * `assertSessionModeUrl` are local, total functions — they can refuse boot
+ * because they cannot be wrong about a transient. This one is a network call,
+ * so failing boot on any error would turn a Storage blip into a
+ * fleet-wide crash-loop: every container refusing to start at once, which is
+ * far worse than the thing being guarded against. So a bucket that answers
+ * and is misconfigured throws, a bucket that answers 404 throws, and anything
+ * else warns and lets the service come up — where the first deploy will
+ * report it in a way an operator can act on.
+ */
+export async function assertBucketPrivate(opts: SupabaseBlobStorageOptions): Promise<void> {
+  const { data, error } = await storageClient(opts).getBucket(opts.bucket);
+  if (error && isNotFound(error)) {
+    throw new Error(
+      `Supabase Storage bucket "${opts.bucket}" does not exist. SUPABASE_STORAGE_BUCKET names ` +
+        "the bucket deploy artifacts are written to; create it (private) or correct the variable.",
+    );
+  }
+  if (error || !data) {
+    console.warn(
+      `[storage] Could not verify bucket "${opts.bucket}": ${errorMessage(error)}. ` +
+        "Continuing — this is a reachability failure, not a configuration one.",
+    );
+    return;
+  }
+  if (data.public) {
+    throw new Error(
+      `Supabase Storage bucket "${opts.bucket}" is PUBLIC. Deploy artifacts are every tenant's ` +
+        "worker bundles and client files, and the platform hands them out through per-call " +
+        "signed URLs precisely so they are not world-readable. Make the bucket private.",
+    );
+  }
+}
+
+/** Supabase Storage-backed blob storage (production). */
+export function createSupabaseBlobStorage(opts: SupabaseBlobStorageOptions): BlobStorage {
+  const client = storageClient(opts);
   // `from` is a pure accessor over the client — no per-call state, so one
   // handle serves every read and write.
   const bucket = client.from(opts.bucket);

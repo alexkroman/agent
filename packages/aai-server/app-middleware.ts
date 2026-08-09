@@ -12,6 +12,7 @@ import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import type { HonoEnv } from "./context.ts";
 import { createErrorHandler } from "./error-handler.ts";
+import type { PlatformEvents } from "./platform-events.ts";
 
 export function applyPlatformMiddleware<E extends HonoEnv>(
   // Generic over the env so a service that ADDS bindings (the studio's
@@ -61,14 +62,33 @@ export function applyPlatformMiddleware<E extends HonoEnv>(
  * what pulls the replica out of the platform proxy's rotation, so new
  * traffic goes to a replica that is staying up — without it the drain would
  * keep accepting the very sessions it is waiting to finish.
+ *
+ * It also reports the change streams' delivery health, and **a stalled
+ * channel deliberately stays a 200.** The temptation is to fail the check —
+ * it is a real degradation, and failing is how you get someone's attention.
+ * But the causes are almost all PROJECT-WIDE (a wrong-authority key, a
+ * missing grant, Realtime itself down), so every replica would stall at once
+ * and every replica would drop out of rotation together: a feature outage
+ * converted into a total one, by the health check. The replica can still
+ * broker sessions, serve pages, and deploy. So the signal goes in the BODY,
+ * where a dashboard or an alert can read it and a load balancer cannot act
+ * on it.
  */
 export function addHealthRoute<E extends HonoEnv>(
   app: Hono<E>,
   isDraining: (() => boolean) | undefined,
+  events?: PlatformEvents,
 ): void {
-  app.get("/health", (c) =>
-    isDraining?.() ? c.json({ status: "draining" }, 503) : c.json({ status: "ok" }),
-  );
+  app.get("/health", (c) => {
+    if (isDraining?.()) return c.json({ status: "draining" }, 503);
+    const stalled = events?.health().stalled ?? [];
+    // Absent when healthy rather than an empty array, so the ordinary body
+    // stays exactly what it has always been and the field's presence is
+    // itself the signal.
+    return c.json(
+      stalled.length > 0 ? { status: "ok", realtimeStalled: stalled } : { status: "ok" },
+    );
+  });
 }
 
 /**
