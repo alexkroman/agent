@@ -18,8 +18,11 @@ afterEach(() => {
 
 const noop = (): void => undefined;
 
-/** Mirrors PROBE_RETRY_MS in preview.tsx. */
+/** Mirror the poll constants in preview.tsx. */
 const PROBE_RETRY_MS = 3000;
+const PROBE_SLOW_AFTER = 10;
+const PROBE_SLOW_RETRY_MS = 30_000;
+const HOUR_MS = 60 * 60 * 1000;
 
 /**
  * Answer the platform's agent health route (`GET /:slug/health`) — what the
@@ -187,5 +190,78 @@ describe("PreviewPane readiness probe", () => {
       await vi.advanceTimersByTimeAsync(PROBE_RETRY_MS * 3);
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Polling is not a recovery. The server's fix for a swept preview is hung off
+ * OPENING the project, which a tab that is already open never does again — so
+ * before this the pane could poll a slug nothing was going to redeploy for as
+ * long as it stayed on screen (1,061 probes over 50 minutes, in production).
+ */
+describe("PreviewPane: reporting a missing preview", () => {
+  /** Run the pane against a permanently-404 slug for `ms` of poll time. */
+  async function pollFor(ms: number, onPreviewMissing?: () => Promise<unknown>) {
+    vi.useFakeTimers();
+    const fetchMock = stubHealth([]);
+    render(
+      <PreviewPane
+        previewSlug="p-preview"
+        nonce={0}
+        onPublish={noop}
+        {...(onPreviewMissing && { onPreviewMissing })}
+      />,
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+    return fetchMock;
+  }
+
+  test("reports the preview missing after a few failed probes", async () => {
+    const onPreviewMissing = vi.fn(() => Promise.resolve());
+    // Three failures at the fast cadence — the first probe is immediate.
+    await pollFor(PROBE_RETRY_MS * 2, onPreviewMissing);
+    expect(onPreviewMissing).toHaveBeenCalledTimes(1);
+  });
+
+  test("does not report on the first failure", async () => {
+    // A stamped slug that 404s is already abnormal, but a probe's worth of
+    // grace costs seconds and covers a blip.
+    const onPreviewMissing = vi.fn(() => Promise.resolve());
+    await pollFor(0, onPreviewMissing);
+    expect(onPreviewMissing).not.toHaveBeenCalled();
+  });
+
+  test("reports ONCE — the wake enqueues a durable job, the queue retries", async () => {
+    const onPreviewMissing = vi.fn(() => Promise.resolve());
+    await pollFor(PROBE_SLOW_RETRY_MS * 10, onPreviewMissing);
+    expect(onPreviewMissing).toHaveBeenCalledTimes(1);
+  });
+
+  test("a report that never arrived is sent again", async () => {
+    // Latching on the attempt rather than the delivery would strand the pane
+    // exactly as before, on one dropped request.
+    const onPreviewMissing = vi
+      .fn<() => Promise<unknown>>()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValue(undefined);
+    await pollFor(PROBE_RETRY_MS * 4, onPreviewMissing);
+    expect(onPreviewMissing.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test("the probe backs off, so a stuck preview is not 20 requests a minute", async () => {
+    // The fast cadence exists for a deploy landing in the next few seconds;
+    // past that it buys nothing. An hour at 3s is ~1200 requests.
+    const fetchMock = await pollFor(HOUR_MS);
+    const fast = PROBE_SLOW_AFTER;
+    const slow = (HOUR_MS - PROBE_RETRY_MS * PROBE_SLOW_AFTER) / PROBE_SLOW_RETRY_MS;
+    expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(fast + slow + 1);
+    expect(fetchMock.mock.calls.length).toBeLessThan(HOUR_MS / PROBE_RETRY_MS / 5);
+  });
+
+  test("still polls with no reporter — an unopened project has nothing to wake", async () => {
+    const fetchMock = await pollFor(PROBE_RETRY_MS * 3);
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
   });
 });

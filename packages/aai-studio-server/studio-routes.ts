@@ -32,6 +32,10 @@
  * - `POST /studio/projects/:project/session`  — boot the project's coding-agent
  *   sandbox; the browser then streams chat turns DIRECTLY to the sandbox's
  *   public `/studio/chat` (see studio-session-broker.ts)
+ * - `POST /studio/projects/:project/preview/wake` — the Preview pane reporting
+ *   that the platform does not serve the slug it frames. The second trigger
+ *   for `wakeProjectPreview`, and the only one a tab that never re-opens the
+ *   project can reach
  *
  * Plus the browser-session surface:
  * - `GET /studio/auth`         — public: how to sign in (Supabase/dev/none)
@@ -53,6 +57,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import { zValidator } from "@hono/zod-validator";
 import { deleteAgentResources } from "aai-server/delete";
 import { authMw } from "aai-server/middleware";
+import { TtlCache } from "aai-server/platform-barrel";
 import { RESERVED_SLUGS } from "aai-server/schemas";
 import { verifySlugOwner } from "aai-server/secrets";
 import { generatedSlug } from "aai-server/slug-generate";
@@ -66,7 +71,7 @@ import { databaseDeployHook, registerDatabaseRoutes } from "./studio-database-ro
 import { deployStudioProject } from "./studio-deploy.ts";
 import { registerEventRoutes } from "./studio-events-routes.ts";
 import { studioLlmInfo } from "./studio-llm.ts";
-import { wakeProjectPreview } from "./studio-preview.ts";
+import { PREVIEW_WAKE_THROTTLE_MS, wakeProjectPreview } from "./studio-preview.ts";
 import type { PreviewQueue } from "./studio-preview-queue.ts";
 import type { StudioRateLimiters } from "./studio-rate-limit.ts";
 import { createRouteLimits } from "./studio-route-limits.ts";
@@ -89,6 +94,7 @@ import {
   getWorkspace,
   listProjects,
   mutateWorkspace,
+  projectKey,
   studioScope,
   syncWorkspaceSource,
 } from "./studio-workspace.ts";
@@ -295,6 +301,22 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   const settledEdit = (c: Context<StudioHonoEnv>, scope: string, project: string): void =>
     onSettledEdit(ensureBroker(c), c, scope, project);
 
+  /**
+   * The project-preview wake, from either of its two triggers — opening the
+   * project, and the pane reporting the page missing. One call site so the
+   * two cannot drift on what a wake IS (in particular on `previewOrigin`,
+   * whose `userId` is the field a second copy silently loses — see
+   * studio-settled-edit.ts).
+   */
+  const wake = (c: Context<StudioHonoEnv>, scope: string, project: string): void =>
+    wakeProjectPreview({
+      workspaces: c.env.workspaces,
+      scope,
+      project,
+      target: { ...previewOrigin(c), apiKey: c.var.apiKey },
+      schedule: ensureBroker(c).schedulePreview,
+    });
+
   studio.put("/projects/:project/file", zValidator("json", StudioFileSchema), async (c) => {
     const { scope, project } = c.var;
     const { path, content } = c.req.valid("json");
@@ -418,16 +440,48 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     if (!session) return c.json({ error: "Project not found" }, 404);
     // The user just landed on (or re-opened) this project — wake its preview
     // too (fire-and-forget; gates and rationale live in studio-preview.ts).
-    wakeProjectPreview({
-      workspaces: c.env.workspaces,
-      scope,
-      project,
-      target: { ...preview, apiKey: c.var.apiKey },
-      schedule: ensureBroker(c).schedulePreview,
-    });
+    wake(c, scope, project);
     // `token` is the guest chat surface's per-session bearer — the browser
     // presents it (never a long-lived credential) on the public tunnel URL.
     return c.json({ url: session.url, token: session.token });
+  });
+
+  /**
+   * The Preview pane reporting that the platform does not serve the slug it
+   * frames (`api.wakePreview`).
+   *
+   * The recovery it reaches is not new — `wakeProjectPreview` has always
+   * cleared the stamp and enqueued a deploy when the broker 404s. What was
+   * missing is a way to REACH it from a tab that is already open: the only
+   * trigger was the once-per-open session broker call, so a preview swept out
+   * from under a tab left that tab probing a slug nothing would ever redeploy
+   * (1,061 probes over 50 minutes, in production, ended by the user happening
+   * to do something else). The pane can see the 404 the server would have to
+   * go looking for, so it says so.
+   *
+   * The caller is a TRIGGER, not evidence: the wake re-checks with its own
+   * broker call and schedules nothing unless that 404s too. So this route
+   * cannot be talked into a deploy, which is what lets it be cheap to call
+   * and unrate-limited beyond the throttle below.
+   *
+   * 202 either way — the wake is fire-and-forget by construction, so "did it
+   * redeploy" is not a question this response could answer, and a project
+   * that does not exist is a no-op rather than a 404 (the pane only probes a
+   * slug the workspace stamped, so a miss here means a delete raced it).
+   */
+  const wokenRecently = new TtlCache<true>(PREVIEW_WAKE_THROTTLE_MS, 1000);
+  studio.post("/projects/:project/preview/wake", (c) => {
+    const { scope, project } = c.var;
+    const key = projectKey(scope, project);
+    // Per process, so a fleet-wide burst is bounded by the replica count
+    // rather than by one number — enough, because the pane sends this ONCE
+    // per missing preview. The throttle is here for the client that stops
+    // being that pane, not for the one that is.
+    if (!wokenRecently.get(key)) {
+      wokenRecently.set(key, true);
+      wake(c, scope, project);
+    }
+    return c.json({ ok: true }, 202);
   });
 
   return {

@@ -240,6 +240,33 @@ export const api = {
     ),
 
   /**
+   * Tell the server the platform is not serving this project's preview, so it
+   * regenerates one.
+   *
+   * The server already has the recovery — `wakeProjectPreview` clears the
+   * stamp and enqueues a deploy when the broker 404s — but the only thing that
+   * TRIGGERED it was opening the project. A tab already open when the preview
+   * is swept out from under it never re-brokers a session, so the pane could
+   * poll {@link agentPageReady} indefinitely against a slug nothing was ever
+   * going to redeploy: measured in production at 1,061 probes across 50
+   * minutes, ended only by the user happening to do something that booted a
+   * session.
+   *
+   * The client is a TRIGGER, never the evidence: the server re-checks with its
+   * own broker call and schedules nothing unless that 404s too. So a caller
+   * cannot talk the platform into a deploy, and a probe that failed for some
+   * local reason (an offline tab) costs one no-op.
+   *
+   * One delivered call is enough — the wake enqueues a DURABLE job, and the
+   * queue owns retries from there — so the pane sends this once per missing
+   * preview rather than on every failed probe.
+   */
+  wakePreview: (key: string, project: string) =>
+    request<{ ok: true }>(key, `/projects/${encodeURIComponent(project)}/preview/wake`, {
+      method: "POST",
+    }),
+
+  /**
    * Subscribe to the project's live state (`GET …/events`, SSE): the server
    * pushes a full {@link ProjectData} whenever the workspace row changes —
    * fed by Supabase Realtime server-side — which is how a finished preview

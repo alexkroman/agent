@@ -9,7 +9,7 @@
 // that page (see useAgentPageReady), so a preview still deploying shows the
 // pane's own screen instead of the platform's raw 404 body.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "./api.ts";
 
 /**
@@ -18,6 +18,39 @@ import { api } from "./api.ts";
  * to frame anyway.
  */
 const PROBE_RETRY_MS = 3000;
+
+/**
+ * After this many failures the cadence drops to {@link PROBE_SLOW_RETRY_MS}.
+ *
+ * The fast cadence exists for ONE case — a deploy landing in the next few
+ * seconds — so it only has to outlast that, and ~30s of it does. Past there
+ * the pane is not waiting on a deploy, it is waiting on the wake below, and
+ * 20 requests a minute buys nothing: the same 50-minute window that produced
+ * 1,061 probes produces ~106 under this.
+ *
+ * Deliberately two speeds rather than an exponential backoff. Exponential
+ * reaches a sane ceiling by way of delays that are WORSE than the fast
+ * cadence exactly where it matters (a preview landing at 25s is noticed at
+ * 45s), which trades the common case for the pathological one.
+ */
+const PROBE_SLOW_AFTER = 10;
+
+/** The cadence once a missing preview is clearly not a deploy in flight. */
+const PROBE_SLOW_RETRY_MS = 30_000;
+
+/**
+ * Consecutive failures before the pane reports the preview missing (see
+ * `api.wakePreview`). Not the first failure: a stamped `previewSlug` means a
+ * deploy SUCCEEDED at some point, so a 404 is already the abnormal answer,
+ * but a couple of probes' grace costs ~9s and covers a transient blip
+ * without asking the server to go looking.
+ */
+const PROBE_FAILURES_BEFORE_WAKE = 3;
+
+/** Fast while a deploy could plausibly be landing, slow once it clearly isn't. */
+function probeRetryMs(failures: number): number {
+  return failures < PROBE_SLOW_AFTER ? PROBE_RETRY_MS : PROBE_SLOW_RETRY_MS;
+}
 
 /**
  * Is the agent page this pane wants to frame actually there? `null` until
@@ -36,22 +69,53 @@ const PROBE_RETRY_MS = 3000;
  * because flipping back to the placeholder would unmount the iframe and
  * kill any voice session running inside it. A new preview deploy reaches
  * the frame through its `previewVersion` key instead.
+ *
+ * Polling alone is not a recovery, which is the other half of this. The
+ * server's own recovery for a swept preview (`wakeProjectPreview`) is hung
+ * off opening the project, and a tab that was ALREADY open never does that
+ * again — so this loop used to run against a slug nothing was going to
+ * redeploy until the user happened to trigger a session. `onMissing` is the
+ * report that closes it: sent once the failures pass
+ * {@link PROBE_FAILURES_BEFORE_WAKE}, and ONCE, because it enqueues a durable
+ * job whose queue owns the retries. A rejected report un-latches — the point
+ * is to deliver the signal, not to have tried.
  */
-function useAgentPageReady(slug: string | undefined): boolean | null {
+function useAgentPageReady(
+  slug: string | undefined,
+  onMissing?: () => Promise<unknown>,
+): boolean | null {
   // Carries the slug it is about, so a probe that settles after the framed
   // slug changed can't answer for the new one.
   const [result, setResult] = useState<{ slug: string; ready: boolean } | null>(null);
+  // Through a ref so a caller passing an inline arrow doesn't restart the
+  // poll — and with it the failure count and the latch — on every render.
+  const onMissingRef = useRef(onMissing);
+  onMissingRef.current = onMissing;
 
   useEffect(() => {
     if (!slug) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let failures = 0;
+    let reported = false;
+    /** Latches on DELIVERY: a report that never arrived is sent again. */
+    const report = (): void => {
+      const send = onMissingRef.current;
+      if (!send) return;
+      reported = true;
+      void send().catch(() => {
+        reported = false;
+      });
+    };
     const probe = (): void => {
       void api.agentPageReady(slug).then((ready) => {
         if (cancelled) return;
         setResult({ slug, ready });
         // Ready → no timer armed, so the polling stops here for good.
-        if (!ready) timer = setTimeout(probe, PROBE_RETRY_MS);
+        if (ready) return;
+        failures += 1;
+        if (failures >= PROBE_FAILURES_BEFORE_WAKE && !reported) report();
+        timer = setTimeout(probe, probeRetryMs(failures));
       });
     };
     probe();
@@ -82,6 +146,13 @@ type PreviewPaneProps = {
   /** Bumped after each publish so the production-fallback iframe reloads. */
   nonce: number;
   onPublish: () => void;
+  /**
+   * Report that the platform is not serving the slug this pane wants to
+   * frame, so the server regenerates it. Called at most once per missing
+   * preview; a rejection is retried. Absent means no recovery is possible
+   * (no project open), and the pane just keeps probing.
+   */
+  onPreviewMissing?: () => Promise<unknown>;
 };
 
 /**
@@ -147,7 +218,7 @@ export function PreviewPane(props: PreviewPaneProps) {
   // Prefer the preview (the workspace's current state); production is only
   // a fallback for projects published before auto previews existed.
   const slug = previewSlug ?? deployedSlug;
-  const ready = useAgentPageReady(slug);
+  const ready = useAgentPageReady(slug, props.onPreviewMissing);
   if (slug && ready) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">

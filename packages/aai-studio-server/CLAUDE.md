@@ -447,12 +447,31 @@ voice agents without the CLI:
   `/:slug/secret` routes remain the platform primitive underneath, and the
   only surface for an agent belonging to no project.
 
-  **Landing on a project wakes its preview**
-  (`wakeProjectPreview` in studio-preview.ts, hung off the once-per-open
-  session broker call): the embedded agent's sandbox is warmed through the
-  platform's public client-config broker (`warmPreviewSandbox`) so a preview
-  idle-evicted since the last visit is booting before the pane's iframe asks
-  for it. It used to ALSO redeploy a stale preview, because scheduling was
+  **Two things wake a project's preview, and it needs both**
+  (`wakeProjectPreview` in studio-preview.ts). Landing on the project — the
+  once-per-open session broker call — warms the embedded agent's sandbox
+  through the platform's public client-config broker (`warmPreviewSandbox`) so
+  a preview idle-evicted since the last visit is booting before the pane's
+  iframe asks for it. **And the Preview pane reporting the page missing**
+  (`POST /projects/:project/preview/wake`), which is the same condition seen
+  from the only place that can see it in a tab that is already open.
+
+  That second trigger exists because the first fires ONCE and then never again
+  for the life of the tab, so a preview swept an hour later had nothing to
+  correct it: the recovery below was sitting right there, and the only thing
+  that could reach it was an action the user had already taken. Measured in
+  production — the pane polled `/:slug/health` **1,061 times across 50
+  minutes** against a slug nothing was going to redeploy, and recovered only
+  when the user happened to do something that brokered a session. **The
+  reporter is a TRIGGER, never evidence**: both triggers land in the same
+  function and the broker 404 below is what decides, so a client cannot talk
+  the platform into a deploy and a probe that failed locally costs a no-op.
+  The route is throttled per project (`PREVIEW_WAKE_THROTTLE_MS`) because a
+  wake costs a workspace read plus a broker call that can spawn a sandbox;
+  the pane itself sends exactly one per missing preview, since the wake
+  enqueues a durable job whose queue owns the retries.
+
+  It used to ALSO redeploy a stale preview, because scheduling was
   fire-and-forget in-process state that a replica restart could drop, leaving
   the pane on "Updating preview…" until the next edit; the queue owns delivery
   now, so a stale preview means a job is still queued — re-scheduling here

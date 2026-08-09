@@ -171,6 +171,28 @@ segmented control switches between — `preview.tsx`, `code-view.tsx`,
   The first probe renders as an empty pane rather than the screen, so an
   already-deployed preview doesn't flash "starting" on every open.
 
+  **Polling is not a recovery, and treating it as one stranded the pane for
+  fifty minutes.** The server's fix for a swept preview (`wakeProjectPreview`)
+  is hung off OPENING the project, which a tab that is already open never does
+  again — so the loop ran against a slug nothing was going to redeploy until
+  the user happened to broker a session: **1,061 probes across 50 minutes**,
+  in production, all of them 404, with the recovery sitting right there and
+  nothing able to reach it. The pane can see the condition the server would
+  have to go looking for, so it reports it (`api.wakePreview` →
+  `POST /studio/projects/:project/preview/wake`; the server still re-checks
+  before scheduling anything, so the pane is a trigger and not evidence).
+  It reports after `PROBE_FAILURES_BEFORE_WAKE` failures and then **once**,
+  because the wake enqueues a durable job whose queue owns the retries — but
+  it latches on DELIVERY rather than on the attempt, so a single dropped
+  request cannot re-strand the pane the same way. The cadence is two-speed
+  (`PROBE_SLOW_AFTER`, `PROBE_SLOW_RETRY_MS`): 3s exists for a deploy landing
+  in the next few seconds and only has to outlast that, after which the pane
+  is waiting on the wake rather than on a deploy and 20 requests a minute
+  buys nothing. Two speeds and NOT exponential backoff — exponential reaches
+  a sane ceiling by way of delays worse than 3s exactly where promptness
+  matters (a preview landing at 25s noticed at 45s), trading the common case
+  for the pathological one.
+
 - **The composer QUEUES follow-ups typed mid-turn**
   (`aai-studio-client/src/chat-queue.ts`), Claude-Code style: the input stays
   live while the agent works, Enter parks the message in a visible, dismissable
