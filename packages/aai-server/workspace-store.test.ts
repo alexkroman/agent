@@ -46,10 +46,15 @@ function createFakeSql(opts: { failEnsures?: number } = {}) {
     rows.set(k, { doc: String(doc), version });
     return [{ version }];
   };
-  // `(doc - $4::text[]) || $3::jsonb` — removals, then the merge, matching
-  // the statement's own evaluation order. Distinguished from the versioned
-  // update by a longer prefix (both statements begin `update <table> set doc
-  // =`), and listed FIRST so that longer prefix is the one that matches.
+  // `((doc #>> '{}')::jsonb - $4::text[]) || $3::text::jsonb` — removals, then
+  // the merge, matching the statement's own evaluation order. The `#>> '{}'`
+  // unwrap has no analogue here: this fake stores the doc as text and parses
+  // it on every read, so it cannot represent the double-encoded row the
+  // unwrap exists for. That shape is covered against a real Postgres in
+  // jsonb-encoding.integration.test.ts, which is the only place it is
+  // representable at all. Distinguished from the versioned update by a longer
+  // prefix (both statements begin `update <table> set doc =`), and listed
+  // FIRST so that longer prefix is the one that matches.
   const patchRow: SqlHandler = ([scope, project, set, remove]) => {
     const k = key(scope, project);
     const row = rows.get(k);
@@ -77,7 +82,7 @@ function createFakeSql(opts: { failEnsures?: number } = {}) {
     ["create table", ddl],
     ["select doc, version", selectRow],
     ["insert into", insertRow],
-    ["update aai_platform.studio_workspaces set doc = (doc -", patchRow],
+    ["update aai_platform.studio_workspaces set doc = ((doc", patchRow],
     ["update", updateRow],
     ["delete", deleteRow],
     ["select project", listRows],
@@ -235,7 +240,10 @@ describe("createPgWorkspaceStore SQL", () => {
     await createPgWorkspaceStore(sql).put("s", "p", { v: 1 }, null);
     const insert = log.find((entry) => entry.query.includes("insert into"));
     expect(insert?.query).toContain("aai_platform.studio_workspaces");
-    expect(insert?.query).toContain("$3::jsonb");
+    // `::text::jsonb`, never a bare `$3::jsonb`: the driver types the parameter
+    // from the cast and JSON-encodes an already-encoded document, storing a
+    // jsonb STRING. See the store's doc comment and the integration suite.
+    expect(insert?.query).toContain("$3::text::jsonb");
     expect(insert?.query).toContain("on conflict do nothing returning version");
     expect(insert?.params).toEqual(["s", "p", JSON.stringify({ v: 1 })]);
   });
@@ -246,7 +254,7 @@ describe("createPgWorkspaceStore SQL", () => {
     await store.put("s", "p", { v: 1 }, null);
     await store.put("s", "p", { v: 2 }, 1);
     const update = log.find((entry) => entry.query.includes("update aai_platform"));
-    expect(update?.query).toContain("set doc = $3::jsonb, version = version + 1");
+    expect(update?.query).toContain("set doc = $3::text::jsonb, version = version + 1");
     expect(update?.query).toContain("updated_at = now()");
     expect(update?.query).toContain("where scope = $1 and project = $2 and version = $4");
     expect(update?.params).toEqual(["s", "p", JSON.stringify({ v: 2 }), 1]);

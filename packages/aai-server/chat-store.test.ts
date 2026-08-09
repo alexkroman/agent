@@ -173,7 +173,9 @@ describe("createPgChatStore SQL", () => {
     await createPgChatStore(sql).putChat("s", "p", [msg("m1")]);
     const insert = log.find((entry) => entry.query.includes("insert into"));
     expect(insert?.query).toContain("aai_platform.studio_chats");
-    expect(insert?.query).toContain("$3::jsonb");
+    // `::text::jsonb`: a bare `$3::jsonb` makes the driver double-encode, so
+    // the column holds a jsonb string. See workspace-store.ts.
+    expect(insert?.query).toContain("$3::text::jsonb");
     expect(insert?.query).toContain(
       "on conflict (scope, project) do update set messages = excluded.messages, updated_at = now()",
     );

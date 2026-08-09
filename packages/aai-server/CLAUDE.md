@@ -309,6 +309,35 @@ create that runs on whichever connection first noticed.
 `aai_platform.<table>` the source queries must be declared in a migration, and
 the store suites assert that no store issues DDL.
 
+**`supabase db push` is MANUAL, and nothing tells you when you have forgotten
+it.** No workflow runs it — `.github/workflows/deploy.yml` is checkout →
+`modal deploy`, and there is no migration script in `package.json`. So "the
+trade is deploy ORDERING" is a trade a human has to make on every release that
+adds a migration, and the failure lands in production rather than in CI. It has
+already happened once: `20260808120000_agents_config_default.sql` stopped
+`agents.config` being written but was never pushed, so **every** `POST /deploy`
+died on `null value in column "config" violates not-null constraint` — Publish
+and auto-preview alike — while CI was green and the deploy reported success.
+Push migrations before shipping a release that needs them:
+
+```sh
+supabase db push        # from the repo root, against the linked project
+```
+
+**Jsonb columns must be bound `::text::jsonb`, never a bare `::jsonb`.** The
+stores bind documents as JSON text; with the parameter's type resolved from a
+bare cast, postgres.js JSON-encodes the string we already encoded and the
+column ends up holding a jsonb **string**. See the long note in
+`workspace-store.ts` for the two failures that came out of it (every metadata
+stamp raising `cannot delete from scalar`, and the orphan-preview sweep
+deleting live previews because `doc->>'previewSlug'` reads NULL out of a
+string), and `jsonb-encoding.integration.test.ts` for the guard. The reason it
+survived so long is worth keeping: **the in-memory stores cannot represent the
+bug.** They hold JS objects, so the encoding has no analogue in them, and every
+unit test passed against a shape production never had. Anything that reaches
+into a jsonb column from inside Postgres — an arrow operator, `-`, `jsonb_set`,
+a predicate in a pg_cron body — needs a test against a real database.
+
 **Those are both the FORWARD direction, and the reverse one cost us three
 tables.** A table that is queried nowhere *and* declared nowhere satisfies
 every check above trivially, and production held exactly that:

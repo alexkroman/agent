@@ -66,7 +66,7 @@ from ${TABLE} where slug = $1`;
 
 const PUT_SQL = `insert into ${TABLE} as a
   (slug, credential_hashes, worker_hash, client_files, harness_image_tag, version)
-values ($1, $2::jsonb, $3, $4::jsonb, $5, 1)
+values ($1, $2::text::jsonb, $3, $4::text::jsonb, $5, 1)
 on conflict (slug) do update set
   credential_hashes = excluded.credential_hashes,
   worker_hash = excluded.worker_hash,
