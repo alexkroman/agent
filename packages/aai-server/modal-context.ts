@@ -130,6 +130,32 @@ const DEFAULT_MODAL_APP_NAME = "aai-server";
 /** Container port the harness WebSocket server listens on (tunneled). */
 export const GUEST_PORT = 8080;
 
+/**
+ * The guest's one origin, from the sandbox's tunnel map.
+ *
+ * Every guest surface derives from this — the bearer-gated control channel, the
+ * public auth-free client-session endpoint, the studio chat (see
+ * `GUEST_ROUTES`) — so both spawners need exactly the same three steps: look up
+ * the tunnel for the harness's port, fail loudly if Modal returned none, and
+ * build the `wss://` origin. It lives beside {@link GUEST_PORT} because that
+ * port is the only thing the lookup keys on.
+ *
+ * This is deliberately the ONLY thing the two spawn paths share after
+ * `createGuestSandbox`. What surrounds it differs on purpose — the agent path
+ * writes boot artifacts before its exec and pre-issues `sb.tunnels()` so the
+ * round trip overlaps that write — and those differences are load-bearing, not
+ * drift (see "An agent spawn's steps are ordered by what they actually depend
+ * on" in CLAUDE.md). Merging the surrounding `Promise.all`s would re-serialize
+ * exactly what the tests there pin.
+ */
+export function guestOrigin(tunnels: Record<number, { host: string; port: number }>): string {
+  const tunnel = tunnels[GUEST_PORT];
+  if (!tunnel) {
+    throw new Error(`no tunnel for guest port ${GUEST_PORT}`);
+  }
+  return `wss://${tunnel.host}:${tunnel.port}`;
+}
+
 /** Probe evaluation interval — half of it is dead spawn time; see CLAUDE.md. */
 const READINESS_PROBE_INTERVAL_MS = 100;
 

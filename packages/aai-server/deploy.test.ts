@@ -6,6 +6,7 @@ import {
   authHeaders,
   createTestOrchestrator,
   createTestStore,
+  deploy,
   deployAgent,
   deployBody,
   VALID_ENV,
@@ -66,10 +67,8 @@ describe("POST /deploy body handling", () => {
       EXISTING: "original-value",
       EXTRA: "stored-value",
     });
-    const res = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders(),
-      body: deployBody({ slug: "my-agent", env: { ...VALID_ENV, EXISTING: "new-value" } }),
+    const res = await deploy(fetch, {
+      body: { slug: "my-agent", env: { ...VALID_ENV, EXISTING: "new-value" } },
     });
     expect(res.status).toBe(200);
     const env = await store.getEnv("my-agent");
@@ -80,11 +79,7 @@ describe("POST /deploy body handling", () => {
   test("replaces existing sandbox on redeploy", async () => {
     const { fetch } = await createTestOrchestrator();
     await deployAgent(fetch);
-    const res = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders(),
-      body: deployBody({ slug: "my-agent" }),
-    });
+    const res = await deploy(fetch, { body: { slug: "my-agent" } });
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
     expect(body.ok).toBe(true);
@@ -305,11 +300,7 @@ describe("deployAgentBundle preview-slug guard", () => {
 describe("POST /deploy", () => {
   test("generates slug when not provided in body", async () => {
     const { fetch } = await createTestOrchestrator();
-    const res = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders(),
-      body: deployBody(),
-    });
+    const res = await deploy(fetch);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { slug: string };
     // Words from human-id plus the shared random suffix (slug-generate.ts) —
@@ -319,11 +310,7 @@ describe("POST /deploy", () => {
 
   test("uses slug from body when provided", async () => {
     const { fetch } = await createTestOrchestrator();
-    const res = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders(),
-      body: deployBody({ slug: "my-custom-slug" }),
-    });
+    const res = await deploy(fetch, { body: { slug: "my-custom-slug" } });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { ok: boolean; slug: string };
     expect(body.slug).toBe("my-custom-slug");
@@ -331,11 +318,7 @@ describe("POST /deploy", () => {
 
   test("rejects invalid slug format", async () => {
     const { fetch } = await createTestOrchestrator();
-    const res = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders(),
-      body: deployBody({ slug: "INVALID SLUG!" }),
-    });
+    const res = await deploy(fetch, { body: { slug: "INVALID SLUG!" } });
     expect(res.status).toBe(400);
   });
 
@@ -351,11 +334,7 @@ describe("POST /deploy", () => {
 
   test("stores agent and returns slug", async () => {
     const { fetch, store } = await createTestOrchestrator();
-    const res = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders(),
-      body: deployBody({ slug: "test-agent" }),
-    });
+    const res = await deploy(fetch, { body: { slug: "test-agent" } });
     expect(res.status).toBe(200);
     const record = await store.getAgent("test-agent");
     expect(record).not.toBeNull();
@@ -366,22 +345,14 @@ describe("POST /deploy", () => {
     const { fetch, store } = await createTestOrchestrator();
 
     // First deploy by key1
-    const first = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders(),
-      body: deployBody({ slug: "stolen-agent" }),
-    });
+    const first = await deploy(fetch, { body: { slug: "stolen-agent" } });
     expect(first.status).toBe(200);
 
     const originalRecord = await store.getAgent("stolen-agent");
     const originalHashes = originalRecord?.credential_hashes ?? [];
 
     // Second deploy attempt by a different key (key2)
-    const second = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders("key2"),
-      body: deployBody({ slug: "stolen-agent" }),
-    });
+    const second = await deploy(fetch, { key: "key2", body: { slug: "stolen-agent" } });
     expect(second.status).toBe(403);
 
     // Original owner's credential_hashes should not be modified
@@ -393,11 +364,7 @@ describe("POST /deploy", () => {
     // The platform derives nothing from the bundle, so a slugless deploy
     // gets random words rather than the agent's name.
     const { fetch } = await createTestOrchestrator();
-    const res = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders(),
-      body: deployBody(),
-    });
+    const res = await deploy(fetch);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { slug: string };
     expect(body.slug).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*-[a-z0-9]{6}$/);
@@ -407,10 +374,8 @@ describe("POST /deploy", () => {
     // The platform records no description of the bundle at all, so there is
     // nothing for a client-sent config to poison.
     const { fetch, store } = await createTestOrchestrator();
-    const res = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders(),
-      body: deployBody({ slug: "config-test", agentConfig: { name: "attacker-config" } }),
+    const res = await deploy(fetch, {
+      body: { slug: "config-test", agentConfig: { name: "attacker-config" } },
     });
     expect(res.status).toBe(200);
     const stored = await store.getAgent("config-test");
@@ -422,18 +387,10 @@ describe("POST /deploy", () => {
     const { fetch, store } = await createTestOrchestrator();
 
     // First deploy
-    await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders(),
-      body: deployBody({ slug: "owned-agent" }),
-    });
+    await deploy(fetch, { body: { slug: "owned-agent" } });
 
     // Second deploy by same key
-    const res = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders(),
-      body: deployBody({ slug: "owned-agent" }),
-    });
+    const res = await deploy(fetch, { body: { slug: "owned-agent" } });
     expect(res.status).toBe(200);
 
     const record = await store.getAgent("owned-agent");

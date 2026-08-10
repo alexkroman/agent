@@ -48,8 +48,9 @@ export function makeSlot(overrides?: Partial<AgentSlot>): AgentSlot {
   };
 }
 
-export function deployBody(overrides?: Record<string, unknown>): string {
-  return JSON.stringify({
+/** The default deploy payload as an OBJECT, for callers that re-encode it. */
+export function deployPayload(overrides?: Record<string, unknown>): Record<string, unknown> {
+  return {
     env: VALID_ENV,
     worker:
       'export default { name: "test-agent", systemPrompt: "Test", greeting: "", maxSteps: 1, tools: {} };',
@@ -60,7 +61,11 @@ export function deployBody(overrides?: Record<string, unknown>): string {
       "assets/index.js": 'console.log("c");',
     },
     ...overrides,
-  });
+  };
+}
+
+export function deployBody(overrides?: Record<string, unknown>): string {
+  return JSON.stringify(deployPayload(overrides));
 }
 
 export type TestFetch = (input: string | Request, init?: RequestInit) => Promise<Response>;
@@ -112,16 +117,30 @@ export async function authFetch(
   });
 }
 
+/**
+ * Convenience: authenticated `POST /deploy` carrying the standard test body,
+ * returning the response.
+ *
+ * This is the shape almost every deploy-route spec wants, and spelling it out
+ * per call site is what let ~40 of them drift apart on the details that are
+ * not the subject of the test (the method, the JSON content type, whether the
+ * body was encoded once or twice). Use {@link deployAgent} when the response
+ * does not matter, and drop to a bare `fetch` only when the REQUEST itself is
+ * what a spec is exercising — a missing header, a gzipped body, a raw string.
+ */
+export async function deploy(
+  fetch: TestFetch,
+  opts: { key?: string; body?: Record<string, unknown> } = {},
+): Promise<Response> {
+  return authFetch(fetch, "/deploy", { ...opts, body: deployPayload(opts.body) });
+}
+
 export async function deployAgent(
   fetch: TestFetch,
   slug = "my-agent",
   key = "key1",
 ): Promise<void> {
-  await fetch("/deploy", {
-    method: "POST",
-    headers: authHeaders(key),
-    body: deployBody({ slug }),
-  });
+  await deploy(fetch, { key, body: { slug } });
 }
 
 // ── SqlExec fakes ────────────────────────────────────────────────────────────

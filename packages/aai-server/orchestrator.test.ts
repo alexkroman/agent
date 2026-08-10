@@ -4,7 +4,13 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { authHeaders, createTestOrchestrator, deployAgent, deployBody } from "./test-utils.ts";
+import {
+  authHeaders,
+  createTestOrchestrator,
+  deploy,
+  deployAgent,
+  deployBody,
+} from "./test-utils.ts";
 
 test("returns health check", async () => {
   const { fetch } = await createTestOrchestrator();
@@ -56,22 +62,14 @@ test("deploy rejects different owner for claimed slug", async () => {
     clientFiles: { "index.html": "<html></html>" },
     credential_hashes: [await hashApiKey("key1")],
   });
-  const res = await fetch("/deploy", {
-    method: "POST",
-    headers: authHeaders("key2"),
-    body: deployBody({ slug: "my-agent" }),
-  });
+  const res = await deploy(fetch, { key: "key2", body: { slug: "my-agent" } });
   expect(res.status).toBe(403);
 });
 
 test("deploy succeeds and stores agent", async () => {
   const { fetch, store } = await createTestOrchestrator();
   const { verifyApiKeyHash } = await import("./secrets.ts");
-  const res = await fetch("/deploy", {
-    method: "POST",
-    headers: authHeaders(),
-    body: deployBody({ slug: "my-agent" }),
-  });
+  const res = await deploy(fetch, { body: { slug: "my-agent" } });
   expect(res.status).toBe(200);
   const record = await store.getAgent("my-agent");
   expect(record?.credential_hashes).toHaveLength(1);
@@ -82,11 +80,7 @@ test("deploy succeeds and stores agent", async () => {
 test("deploy can redeploy same slug", async () => {
   const { fetch } = await createTestOrchestrator();
   await deployAgent(fetch);
-  const res = await fetch("/deploy", {
-    method: "POST",
-    headers: authHeaders(),
-    body: deployBody({ slug: "my-agent" }),
-  });
+  const res = await deploy(fetch, { body: { slug: "my-agent" } });
   expect(res.status).toBe(200);
 });
 
@@ -147,11 +141,7 @@ test("agent page returns HTML for deployed agent", async () => {
 
 test("agent page serves default aai-ui when deployed without client files", async () => {
   const { fetch } = await createTestOrchestrator();
-  const res = await fetch("/deploy", {
-    method: "POST",
-    headers: authHeaders(),
-    body: deployBody({ slug: "no-client", clientFiles: {} }),
-  });
+  const res = await deploy(fetch, { body: { slug: "no-client", clientFiles: {} } });
   expect(res.status).toBe(200);
 
   const pageRes = await fetch("/no-client/");
@@ -164,11 +154,7 @@ test("agent page serves default aai-ui when deployed without client files", asyn
 
 test("default aai-ui serves JS assets for agents without custom client", async () => {
   const { fetch } = await createTestOrchestrator();
-  await fetch("/deploy", {
-    method: "POST",
-    headers: authHeaders(),
-    body: deployBody({ slug: "default-assets", clientFiles: {} }),
-  });
+  await deploy(fetch, { body: { slug: "default-assets", clientFiles: {} } });
 
   // The default HTML references ./assets/index-*.js
   const pageRes = await fetch("/default-assets/");
@@ -210,13 +196,11 @@ test("client asset returns JS with correct content type", async () => {
 
 test("client asset falls back to octet-stream for unknown extension", async () => {
   const { fetch } = await createTestOrchestrator();
-  await fetch("/deploy", {
-    method: "POST",
-    headers: authHeaders(),
-    body: deployBody({
+  await deploy(fetch, {
+    body: {
       slug: "my-agent",
       clientFiles: { "index.html": "<html></html>", "assets/data.xyz123": "binary stuff" },
-    }),
+    },
   });
   const res = await fetch("/my-agent/assets/data.xyz123");
   expect(res.status).toBe(200);
@@ -236,13 +220,11 @@ test("agent favicon serves a custom client's stored favicon", async () => {
   // Binary client files are stored base64-encoded (isTextAssetPath), so the
   // favicon route must decode — a pass-through would corrupt the bytes.
   const icoBytes = Buffer.from([0x00, 0x00, 0x01, 0x00, 0xff, 0xfe]);
-  await fetch("/deploy", {
-    method: "POST",
-    headers: authHeaders(),
-    body: deployBody({
+  await deploy(fetch, {
+    body: {
       slug: "my-agent",
       clientFiles: { "index.html": "<html></html>", "favicon.ico": icoBytes.toString("base64") },
-    }),
+    },
   });
   const res = await fetch("/my-agent/favicon.ico");
   expect(res.status).toBe(200);

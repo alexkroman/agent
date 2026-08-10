@@ -18,6 +18,7 @@ import { debug } from "./_debug-log.ts";
 import { GUEST_READY_TIMEOUT_MS, raceGuestExit } from "./guest-readiness.ts";
 import {
   GUEST_PORT,
+  guestOrigin,
   guestSandboxCreateParams,
   harnessCode,
   type ModalSpawnContext,
@@ -141,11 +142,7 @@ export async function spawnModalAgentServer(
     // Before the readiness poll: a bundle that throws at load exits here, and
     // its stderr IS the diagnosis (see startGuestLogging).
     startGuestLogging(proc, `modal:${sb.sandboxId}`);
-    const tunnel = tunnels[GUEST_PORT];
-    if (!tunnel) {
-      throw new Error(`no tunnel for guest port ${GUEST_PORT}`);
-    }
-    const origin = `wss://${tunnel.host}:${tunnel.port}`;
+    const origin = guestOrigin(tunnels);
     // Modal's readiness probe, raced against guest-process exit: a bundle
     // that throws at load exits here, and its stderr IS the diagnosis.
     await raceGuestExit(sb.waitUntilReady(GUEST_READY_TIMEOUT_MS), proc);

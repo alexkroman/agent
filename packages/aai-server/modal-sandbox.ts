@@ -39,6 +39,7 @@ import { GUEST_READY_TIMEOUT_MS, raceGuestExit } from "./guest-readiness.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
 import {
   GUEST_PORT,
+  guestOrigin,
   guestSandboxCreateParams,
   harnessCode,
   type ModalProcLike,
@@ -129,14 +130,7 @@ export async function spawnModalWarm(
     // Before the dial: a harness that dies during boot must still get its
     // stderr into the host log (see startGuestLogging).
     startGuestLogging(proc, `modal:${sb.sandboxId}`);
-    const tunnel = tunnels[GUEST_PORT];
-    if (!tunnel) {
-      throw new Error(`no tunnel for guest port ${GUEST_PORT}`);
-    }
-    // One origin; every guest surface (the bearer-gated control channel, the
-    // PUBLIC auth-free client-session endpoint, the studio chat) derives from
-    // it via GUEST_ROUTES.
-    const origin = `wss://${tunnel.host}:${tunnel.port}`;
+    const origin = guestOrigin(tunnels);
     // Wait for Modal's probe rather than discovering readiness by failed
     // dials: the dial's own retry stays as the backstop, but on the happy
     // path it now connects first try instead of polling the boot.

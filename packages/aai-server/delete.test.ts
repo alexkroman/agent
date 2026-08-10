@@ -3,7 +3,7 @@ import { expect, test, vi } from "vitest";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createMemoryPlatformEvents } from "./platform-events.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import { createTestStore, deployAgent, makeSlot, type TestFetch } from "./test-utils.ts";
+import { authFetch, createTestStore, deployAgent, makeSlot, type TestFetch } from "./test-utils.ts";
 
 async function setup() {
   // Store + event bus are a pair: the delete route only removes the row, and
@@ -26,10 +26,7 @@ test("delete returns 200 for deployed agent", async () => {
   const { fetch } = await setup();
   await deployAgent(fetch);
 
-  const resp = await fetch("/my-agent", {
-    method: "DELETE",
-    headers: { Authorization: "Bearer key1" },
-  });
+  const resp = await authFetch(fetch, "/my-agent", { method: "DELETE" });
 
   expect(resp.status).toBe(200);
   const body = (await resp.json()) as Record<string, unknown>;
@@ -40,10 +37,7 @@ test("delete removes agent from store", async () => {
   const { fetch, store } = await setup();
   await deployAgent(fetch);
 
-  const resp = await fetch("/my-agent", {
-    method: "DELETE",
-    headers: { Authorization: "Bearer key1" },
-  });
+  const resp = await authFetch(fetch, "/my-agent", { method: "DELETE" });
   expect(resp.status).toBe(200);
 
   const record = await store.getAgent("my-agent");
@@ -68,10 +62,7 @@ test("delete's change event shuts down the resident sandbox", async () => {
   const shutdown = vi.fn().mockResolvedValue(undefined);
   slots.claim("my-agent", { ...makeSlot({ slug: "my-agent" }), sandbox: { shutdown } as never });
 
-  const resp = await fetch("/my-agent", {
-    method: "DELETE",
-    headers: { Authorization: "Bearer key1" },
-  });
+  const resp = await authFetch(fetch, "/my-agent", { method: "DELETE" });
   expect(resp.status).toBe(200);
   await settleEvents();
 
@@ -87,10 +78,7 @@ test("delete succeeds even if sandbox shutdown fails", async () => {
   const shutdown = vi.fn().mockRejectedValue(new Error("shutdown failed"));
   slots.claim("my-agent", { ...makeSlot({ slug: "my-agent" }), sandbox: { shutdown } as never });
 
-  const resp = await fetch("/my-agent", {
-    method: "DELETE",
-    headers: { Authorization: "Bearer key1" },
-  });
+  const resp = await authFetch(fetch, "/my-agent", { method: "DELETE" });
 
   expect(resp.status).toBe(200);
   await settleEvents();

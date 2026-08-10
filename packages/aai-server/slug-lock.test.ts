@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expect, test } from "vitest";
-import { authHeaders, createTestOrchestrator, deployAgent, deployBody } from "./test-utils.ts";
+import { authFetch, createTestOrchestrator, deploy, deployAgent } from "./test-utils.ts";
 
 test("concurrent deploy and delete are serialized", async () => {
   const { fetch, store } = await createTestOrchestrator();
@@ -12,15 +12,8 @@ test("concurrent deploy and delete are serialized", async () => {
   // Fire deploy and delete concurrently for the same slug.
   // Without the shared lock the delete could run mid-deploy, corrupting state.
   const [deployResp, deleteResp] = await Promise.all([
-    fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders(),
-      body: deployBody({ slug: "my-agent" }),
-    }),
-    fetch("/my-agent", {
-      method: "DELETE",
-      headers: { Authorization: "Bearer key1" },
-    }),
+    deploy(fetch, { body: { slug: "my-agent" } }),
+    authFetch(fetch, "/my-agent", { method: "DELETE" }),
   ]);
 
   expect(deployResp.status).toBe(200);
@@ -38,14 +31,8 @@ test("concurrent deletes don't throw", async () => {
   await deployAgent(fetch);
 
   const [r1, r2] = await Promise.all([
-    fetch("/my-agent", {
-      method: "DELETE",
-      headers: { Authorization: "Bearer key1" },
-    }),
-    fetch("/my-agent", {
-      method: "DELETE",
-      headers: { Authorization: "Bearer key1" },
-    }),
+    authFetch(fetch, "/my-agent", { method: "DELETE" }),
+    authFetch(fetch, "/my-agent", { method: "DELETE" }),
   ]);
 
   expect(r1.status).toBe(200);
