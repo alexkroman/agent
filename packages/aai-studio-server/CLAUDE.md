@@ -431,7 +431,10 @@ voice agents without the CLI:
 
   `hasUnpublishedChanges` (`studio-workspace.ts`)
   still compares `filesHash` against `deployedHash` — the PRODUCTION
-  staleness — returned as `unpublished` for the pane's Publish nudge. A
+  staleness — returned as `unpublished` on the workspace payload. No pane
+  renders it today (the preview pane's Publish nudge that used to read it is
+  gone — see `packages/aai-studio-client/CLAUDE.md`); it stays on the wire
+  because it is the only report of production drift. A
   hash rather than a timestamp for two reasons: deploys themselves write
   the workspace (which bumps `updatedAt`), and editing a file then undoing
   it should not leave the project permanently "stale".

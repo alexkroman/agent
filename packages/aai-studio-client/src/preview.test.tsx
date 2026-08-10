@@ -2,10 +2,10 @@
 // Copyright 2026 the AAI authors. MIT license.
 // Preview pane states: placeholder before any deploy, the readiness probe
 // that keeps the platform's 404 body out of the pane, the preview iframe
-// (keyed by version), the updating/error banners, and the production
+// (keyed by version), the failed-build banner, and the production
 // fallback for projects published before auto previews existed.
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { jsonResponse } from "./_test-utils.ts";
 import { PreviewPane } from "./preview.tsx";
@@ -15,8 +15,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
-
-const noop = (): void => undefined;
 
 /** Mirror the poll constants in preview.tsx. */
 const PROBE_RETRY_MS = 3000;
@@ -52,7 +50,7 @@ function frame(container: HTMLElement): HTMLIFrameElement {
 describe("PreviewPane", () => {
   test("no deploys at all: the placeholder explains auto previews", () => {
     stubHealth([]);
-    render(<PreviewPane nonce={0} onPublish={noop} />);
+    render(<PreviewPane nonce={0} />);
     expect(screen.getByText("Nothing to preview yet")).toBeDefined();
     expect(document.querySelector("iframe")).toBeNull();
   });
@@ -60,30 +58,28 @@ describe("PreviewPane", () => {
   test("a preview slug frames the PREVIEW agent, keyed by version", async () => {
     stubHealth(["p-preview"]);
     const { container, rerender } = render(
-      <PreviewPane previewSlug="p-preview" previewVersion="h1" nonce={0} onPublish={noop} />,
+      <PreviewPane previewSlug="p-preview" previewVersion="h1" nonce={0} />,
     );
     await waitFor(() => expect(container.querySelector("iframe")).not.toBeNull());
     const first = frame(container);
     expect(first.getAttribute("src")).toBe("/p-preview/");
     // A new preview deploy (new version) remounts the frame — that is the
     // only reload path; nothing else may kill an in-progress voice session.
-    rerender(
-      <PreviewPane previewSlug="p-preview" previewVersion="h2" nonce={0} onPublish={noop} />,
-    );
+    rerender(<PreviewPane previewSlug="p-preview" previewVersion="h2" nonce={0} />);
     expect(frame(container)).not.toBe(first);
   });
 
   test("preview wins over production when both exist", async () => {
     stubHealth(["p-preview", "p"]);
     const { container } = render(
-      <PreviewPane previewSlug="p-preview" deployedSlug="p" nonce={0} onPublish={noop} />,
+      <PreviewPane previewSlug="p-preview" deployedSlug="p" nonce={0} />,
     );
     await waitFor(() => expect(frame(container).getAttribute("src")).toBe("/p-preview/"));
   });
 
   test("a pre-preview project falls back to the production agent", async () => {
     stubHealth(["legacy"]);
-    const { container } = render(<PreviewPane deployedSlug="legacy" nonce={3} onPublish={noop} />);
+    const { container } = render(<PreviewPane deployedSlug="legacy" nonce={3} />);
     await waitFor(() => expect(frame(container).getAttribute("src")).toBe("/legacy/"));
   });
 
@@ -96,7 +92,6 @@ describe("PreviewPane", () => {
         previewStale={true}
         hasAgent={true}
         nonce={0}
-        onPublish={noop}
       />,
     );
     await waitFor(() => expect(screen.getByText("Starting your preview")).toBeDefined());
@@ -108,7 +103,7 @@ describe("PreviewPane", () => {
     // The stale flag is true before the first preview deploy lands, so the
     // pane can say the build is on its way rather than "nothing to preview".
     stubHealth([]);
-    render(<PreviewPane previewStale={true} hasAgent={true} nonce={0} onPublish={noop} />);
+    render(<PreviewPane previewStale={true} hasAgent={true} nonce={0} />);
     await waitFor(() => expect(screen.getByText("Starting your preview")).toBeDefined());
   });
 
@@ -116,7 +111,7 @@ describe("PreviewPane", () => {
     // "No preview yet" IS stale server-side — without an agent to build,
     // that must not read as a deploy on the way.
     stubHealth([]);
-    render(<PreviewPane previewStale={true} nonce={0} onPublish={noop} />);
+    render(<PreviewPane previewStale={true} nonce={0} />);
     expect(screen.getByText("Nothing to preview yet")).toBeDefined();
   });
 
@@ -129,7 +124,6 @@ describe("PreviewPane", () => {
         previewStale={true}
         hasAgent={true}
         nonce={0}
-        onPublish={noop}
       />,
     );
     await waitFor(() => expect(screen.getByText("Starting your preview")).toBeDefined());
@@ -140,7 +134,6 @@ describe("PreviewPane", () => {
         previewStale={false}
         hasAgent={true}
         nonce={0}
-        onPublish={noop}
       />,
     );
     await waitFor(() => expect(frame(container).getAttribute("src")).toBe("/p-preview/"));
@@ -158,7 +151,6 @@ describe("PreviewPane", () => {
         previewStale={true}
         hasAgent={true}
         nonce={0}
-        onPublish={noop}
       />,
     );
     await waitFor(() => expect(screen.getByText(/preview build failed/i)).toBeDefined());
@@ -167,22 +159,17 @@ describe("PreviewPane", () => {
     expect(screen.queryByText("Starting your preview")).toBeNull();
   });
 
-  test("current preview with unpublished production offers Publish", async () => {
+  test("a healthy preview carries no banner over the frame", async () => {
+    // The publish nudge that used to sit here rendered on every unpublished
+    // project — i.e. nearly always — restating the pane's own name above the
+    // Publish control in the top bar.
     stubHealth(["p-preview"]);
-    const onPublish = vi.fn();
-    render(
-      <PreviewPane
-        previewSlug="p-preview"
-        previewVersion="h1"
-        previewStale={false}
-        unpublished={true}
-        nonce={0}
-        onPublish={onPublish}
-      />,
+    const { container } = render(
+      <PreviewPane previewSlug="p-preview" previewVersion="h1" previewStale={false} nonce={0} />,
     );
-    await waitFor(() => expect(screen.getByRole("button", { name: "Publish" })).toBeDefined());
-    fireEvent.click(screen.getByRole("button", { name: "Publish" }));
-    expect(onPublish).toHaveBeenCalled();
+    await waitFor(() => expect(container.querySelector("iframe")).not.toBeNull());
+    expect(screen.queryByText(/updates automatically as you edit/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Publish" })).toBeNull();
   });
 });
 
@@ -193,7 +180,7 @@ describe("PreviewPane readiness probe", () => {
     // `{"error":"HTML not found"}` rendered as the entire pane.
     stubHealth([]);
     const { container } = render(
-      <PreviewPane previewSlug="p-preview" previewStale={true} nonce={0} onPublish={noop} />,
+      <PreviewPane previewSlug="p-preview" previewStale={true} nonce={0} />,
     );
     await waitFor(() => expect(screen.getByText("Starting your preview")).toBeDefined());
     expect(container.querySelector("iframe")).toBeNull();
@@ -204,7 +191,7 @@ describe("PreviewPane readiness probe", () => {
     const served: string[] = [];
     stubHealth(served);
     const { container } = render(
-      <PreviewPane previewSlug="p-preview" previewVersion="h1" nonce={0} onPublish={noop} />,
+      <PreviewPane previewSlug="p-preview" previewVersion="h1" nonce={0} />,
     );
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
@@ -224,15 +211,13 @@ describe("PreviewPane readiness probe", () => {
     vi.useFakeTimers();
     const fetchMock = stubHealth(["p-preview"]);
     const { container, rerender } = render(
-      <PreviewPane previewSlug="p-preview" previewVersion="h1" nonce={0} onPublish={noop} />,
+      <PreviewPane previewSlug="p-preview" previewVersion="h1" nonce={0} />,
     );
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(container.querySelector("iframe")).not.toBeNull();
-    rerender(
-      <PreviewPane previewSlug="p-preview" previewVersion="h2" nonce={0} onPublish={noop} />,
-    );
+    rerender(<PreviewPane previewSlug="p-preview" previewVersion="h2" nonce={0} />);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(PROBE_RETRY_MS * 3);
     });
@@ -255,7 +240,6 @@ describe("PreviewPane: reporting a missing preview", () => {
       <PreviewPane
         previewSlug="p-preview"
         nonce={0}
-        onPublish={noop}
         {...(onPreviewMissing && { onPreviewMissing })}
       />,
     );

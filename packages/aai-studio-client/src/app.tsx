@@ -429,9 +429,7 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
               hasAgent={hasBuild}
               previewError={workspace.data?.previewError}
               deployedSlug={deployedSlug}
-              unpublished={workspace.data?.unpublished}
               nonce={previewNonce}
-              onPublish={() => setPublishOpen(true)}
               onPreviewMissing={wakePreview}
             />
           )}

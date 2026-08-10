@@ -215,6 +215,17 @@ segmented control switches between — `preview.tsx`, `code-view.tsx`,
   preview" permanently, and that case keeps the last good preview framed
   under the error banner, which is what the banner's own copy promises.
 
+  **The failed build is the ONLY banner left** (`PaneBanner`). It also carried
+  a publish nudge — "This preview updates automatically as you edit. Hit
+  Publish…" with its own Publish button — shown whenever `unpublished` was
+  true, which is nearly every project nearly all of the time. Permanent
+  furniture that restates the pane's own name, above a Publish control already
+  in the top bar two inches away, and it cost a strip of the preview on every
+  render. The workspace payload still reports `unpublished`; nothing in the
+  client reads it. A failed build stays because it is the one state the pane
+  cannot show by itself — the frame below it is a page that does NOT match the
+  code, and the banner is what says so.
+
   **Polling is not a recovery, and treating it as one stranded the pane for
   fifty minutes.** The server's fix for a swept preview (`wakeProjectPreview`)
   is hung off OPENING the project, which a tab that is already open never does
