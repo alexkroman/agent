@@ -1,0 +1,46 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    // This package's suites are the only ones that read files OUTSIDE their own
+    // package, and none of those files were hashed — so the gates that guard
+    // the gates were served from cache exactly when the thing they check
+    // changed. `claude-md-limit.test.ts` globs `../../CLAUDE.md` and
+    // `../*/CLAUDE.md` (the 120k cap, and the assertion that the root still
+    // links every package guide); `test-assertion-gate.test.ts` and
+    // `escape-hatch-scope.test.ts` spec `scripts/check-*.mjs` and assert the
+    // script, `scripts/check.sh`, root `package.json` and the CI check job
+    // still agree with each other. Touching any of them left
+    // `aai-templates#test` at an identical hash.
+    //
+    // Markdown is re-included (the root task drops it) because a CLAUDE.md IS
+    // the input here, not documentation about it.
+    "test": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "../../vitest.shared.ts",
+        "$TURBO_ROOT$/CLAUDE.md",
+        "$TURBO_ROOT$/packages/*/CLAUDE.md",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/workflows/check.yml"
+      ],
+      "env": ["CI", "VITEST_POOL"]
+    },
+    "test:coverage": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "../../vitest.shared.ts",
+        "$TURBO_ROOT$/CLAUDE.md",
+        "$TURBO_ROOT$/packages/*/CLAUDE.md",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/.github/workflows/check.yml"
+      ],
+      "outputs": ["coverage/**"],
+      "env": ["CI", "VITEST_POOL"]
+    }
+  }
+}

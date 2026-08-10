@@ -3,7 +3,15 @@
   "cacheDir": ".turbo/cache",
   "globalDependencies": [
     "pnpm-lock.yaml",
-    "tsconfig.json"
+    "pnpm-workspace.yaml",
+    "tsconfig.json",
+    // The config BOTH slow tiers actually run under (`vitest run -c
+    // ../../vitest.slow.config.ts`). `check:integration` used to name a
+    // `vitest.integration.config.ts` that has never existed, so editing the
+    // real one changed nothing and turbo replayed the previous run. Same class
+    // of miss as the root tsconfig above: a root file a task depends on has to
+    // be hashed, and `inputs` globs resolve relative to the PACKAGE.
+    "vitest.slow.config.ts"
   ],
   "globalPassThroughEnv": [
     "HTTP_PROXY",
@@ -26,36 +34,59 @@
     "AAI_STEP_CAP_HINT"
   ],
   "tasks": {
+    // `$TURBO_DEFAULT$` — every git-tracked file in the package — rather than a
+    // hand-kept list of extensions. The list missed the Vite inputs of the two
+    // packages that have them: `aai-ui#build` did not hash `index.html`,
+    // `styles.css` or `public/**`, and `aai-studio-client#build` missed those
+    // plus `src/assets/*.svg` and `src/fonts/*.woff2` — so a Tailwind- or
+    // HTML-only change was a FULL TURBO replay of the previous bundle, and CI's
+    // setup job handed that stale dist to every downstream job. An extension
+    // list can only ever be right about the file types that exist today.
+    //
+    // Markdown is excluded because no build reads it and CHANGELOG.md is
+    // rewritten by every changesets release. `aai-cli` deliberately does NOT
+    // inherit that exclusion — it bundles the templates and the scaffold, whose
+    // markdown (scaffold/CLAUDE.md above all) is shipped product.
     "build": {
       "dependsOn": [
         "^build"
       ],
       "inputs": [
-        "**/*.ts",
-        "**/*.tsx",
+        "$TURBO_DEFAULT$",
         "!**/*.test.ts",
         "!**/*.test.tsx",
         "!**/*.test-d.ts",
-        "tsconfig*.json",
-        "tsdown.config.ts",
-        "package.json"
+        "!**/*.md"
       ],
       "outputs": [
         "dist/**"
       ]
     },
+    // Tests read more than TypeScript: JSON fixtures (`aai/host/fixtures/`,
+    // `aai-ui/fixtures/`, `aai-server/compat-fixtures/`) and snapshots
+    // (`__snapshots__/*.snap`) were all unhashed, so an edited fixture — or an
+    // obsolete snapshot, which `update: "none"` exists to turn into a FAILURE —
+    // replayed green. `$TURBO_DEFAULT$` covers whatever a fixture is next
+    // written in. Markdown is excluded here as it is for build; the one suite
+    // that really does read markdown (aai-templates) re-includes it, along with
+    // the other repo-root files it reads, in its own turbo.json.
+    //
+    // VITEST_POOL is DECLARED, not passed through: turbo runs in strict env
+    // mode, so an undeclared variable never reaches the task at all. Declaring
+    // it in `env` also puts it in the hash, so a forks run and a threads run
+    // cannot share a cache entry.
     "test": {
       "dependsOn": [
         "^build"
       ],
       "inputs": [
-        "**/*.ts",
-        "**/*.tsx",
-        "vitest.config.ts",
+        "$TURBO_DEFAULT$",
+        "!**/*.md",
         "../../vitest.shared.ts"
       ],
       "env": [
-        "CI"
+        "CI",
+        "VITEST_POOL"
       ]
     },
     "test:coverage": {
@@ -63,18 +94,24 @@
         "^build"
       ],
       "inputs": [
-        "**/*.ts",
-        "**/*.tsx",
-        "vitest.config.ts",
+        "$TURBO_DEFAULT$",
+        "!**/*.md",
         "../../vitest.shared.ts"
       ],
       "outputs": [
         "coverage/**"
       ],
       "env": [
-        "CI"
+        "CI",
+        "VITEST_POOL"
       ]
     },
+    // `dependsOn: ["build"]` is SCHEDULING, not a requirement: every package
+    // type-checks with no `dist` present anywhere, because `@dev/source`
+    // resolves cross-package imports to TypeScript source. It is kept because
+    // dropping it is slower, not faster — tsc and tsdown then run concurrently
+    // and fight for cores (measured on 4 cores: `turbo run build typecheck
+    // --force`, 21.2s with the dependency, 25.7s without).
     "typecheck": {
       "dependsOn": [
         "build"
@@ -85,10 +122,13 @@
         "tsconfig*.json"
       ]
     },
+    // `biome check .` lints JSON and CSS as well as TS/TSX — a formatting error
+    // injected into `packages/aai/typedoc.json` is reported by biome but left
+    // the lint hash untouched while this listed only `**/*.ts`/`**/*.tsx`.
+    // `$TURBO_DEFAULT$` keeps this correct as biome grows languages.
     "lint": {
       "inputs": [
-        "**/*.ts",
-        "**/*.tsx",
+        "$TURBO_DEFAULT$",
         "../../biome.json"
       ]
     },
@@ -118,18 +158,27 @@
         "AAI_TEST_PG_URL"
       ],
       "inputs": [
-        "**/*.ts",
-        "vitest.integration.config.ts",
+        "$TURBO_DEFAULT$",
+        "!**/*.md",
         "../../vitest.shared.ts"
       ]
     },
+    // AAI_TEST_PM is the documented way to reproduce a user report under npm or
+    // yarn (`AAI_TEST_PM=npm pnpm test:e2e`). `pnpm test:e2e` IS `turbo run
+    // check:e2e`, and under strict env mode an undeclared variable is stripped
+    // before the task starts — so that command silently ran pnpm. Declaring it
+    // here both passes it through and makes each package manager its own cache
+    // entry.
     "check:e2e": {
       "dependsOn": [
         "build"
       ],
       "inputs": [
-        "**/*.ts",
-        "**/*.tsx"
+        "$TURBO_DEFAULT$",
+        "!**/*.md"
+      ],
+      "env": [
+        "AAI_TEST_PM"
       ]
     },
     "check:typecheck": {

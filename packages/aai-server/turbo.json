@@ -2,28 +2,31 @@
   "$schema": "https://turbo.build/schema.json",
   "extends": ["//"],
   "tasks": {
-    "test": {
-      // `^build` — every workspace dependency's build, which is exactly what
-      // the ROOT test task declares. This override used to narrow it to
-      // `["@alexkroman1/aai-ui#build"]`, and turbo's package-level `dependsOn`
-      // REPLACES the inherited value rather than merging it, so aai-server
-      // became the one package whose tests were not ordered after its
-      // dependencies' builds. The aai-ui entry was redundant anyway — aai-ui is
-      // a `workspace:*` dependency, so `^build` already covers it.
-      //
-      // This suite reads TWO built artifacts off disk, both via
-      // `require.resolve`: aai-ui's `dist/default-client` (transport-websocket.ts
-      // — the default UI served to agents with no client.tsx) and
-      // `aai-guest/harness` (constants.ts `resolveHarnessPath`, which
-      // createSandbox resolves eagerly). Only the first was declared, so
-      // `aai-guest#build` could run CONCURRENTLY with the tests: tsdown rewrites
-      // `dist/` mid-run and every sandbox test fails with "Guest harness not
-      // built". The `ensure-guest-harness.mjs` globalSetup cannot cover that —
-      // it builds a MISSING harness, and has no way to wait out one being
-      // rebuilt underneath it.
-      "dependsOn": ["^build"],
-      "inputs": ["**/*.ts", "**/*.tsx", "vitest.config.ts", "../../vitest.shared.ts"],
-      "env": ["CI"]
-    }
+    // Deliberately EMPTY: every field this override used to set was a
+    // character-for-character copy of the root task, and a copy is the thing
+    // that goes stale — when the root `inputs` grew to hash test fixtures and
+    // snapshots, this package would have kept the old list and kept replaying
+    // them. Turbo merges per FIELD across `extends`, so an empty task inherits
+    // all of them; the entry stays only to carry the two notes below, which are
+    // about why the ROOT value has to be what it is.
+    //
+    // `^build` — every workspace dependency's build. This override used to
+    // narrow it to `["@alexkroman1/aai-ui#build"]`, and turbo's package-level
+    // `dependsOn` REPLACES the inherited value rather than merging it, so
+    // aai-server became the one package whose tests were not ordered after its
+    // dependencies' builds. The aai-ui entry was redundant anyway — aai-ui is a
+    // `workspace:*` dependency, so `^build` already covers it.
+    //
+    // This suite reads TWO built artifacts off disk, both via `require.resolve`:
+    // aai-ui's `dist/default-client` (transport-websocket.ts — the default UI
+    // served to agents with no client.tsx) and `aai-guest/harness`
+    // (constants.ts `resolveHarnessPath`, which createSandbox resolves
+    // eagerly). Only the first was declared, so `aai-guest#build` could run
+    // CONCURRENTLY with the tests: tsdown rewrites `dist/` mid-run and every
+    // sandbox test fails with "Guest harness not built". The
+    // `ensure-guest-harness.mjs` globalSetup cannot cover that — it builds a
+    // MISSING harness, and has no way to wait out one being rebuilt underneath
+    // it.
+    "test": {}
   }
 }

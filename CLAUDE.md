@@ -65,6 +65,18 @@ in proxied environments and fails with misleading errors (instant
 `ERR_PNPM_FETCH_404`s) that only reproduce under `turbo run`, never when
 running the underlying script directly.
 
+**Strict mode also silently drops any variable a HUMAN sets on the command
+line**, which is the failure mode the passthrough list does not cover.
+`AAI_TEST_PM=npm pnpm test:e2e` — the documented way to reproduce a user
+report under another package manager — ran pnpm, because `pnpm test:e2e` is
+`turbo run check:e2e` and `AAI_TEST_PM` was declared nowhere. Same for
+`VITEST_POOL`. Both now sit in the owning task's **`env`** rather than
+`globalPassThroughEnv`: `env` passes the variable through AND puts it in the
+hash, so an npm run and a pnpm run cannot share a cache entry — which
+passthrough alone would let them do. A variable that selects what a task
+actually does belongs in `env`; `globalPassThroughEnv` is for ambient
+machine config (proxies, CA bundles) that must not fragment the cache.
+
 **A file a task depends on must be hashed by that task, and `inputs` globs
 resolve RELATIVE TO THE PACKAGE — so anything at the repo root belongs in
 `globalDependencies`.** This is the same failure the `typecheck` task's
@@ -80,6 +92,28 @@ gate this actually broke was the PRE-PUSH HOOK, i.e. green locally and red in
 CI. `lint` had it right all along with `../../biome.json`, and `test` with
 `../../vitest.shared.ts`; a per-task `$TURBO_ROOT$/…` entry works too, but the
 global is the one the next task cannot forget.
+
+**The other half of that rule is that an EXTENSION LIST is not a description
+of a task's inputs, and `$TURBO_DEFAULT$` is.** The same audit found five more
+of these, all with the same shape — the glob list named the file types that
+existed when it was written. `test` hashed `**/*.ts` only, so every JSON
+fixture (`aai/host/fixtures/`, `aai-ui/fixtures/`, `aai-server/
+compat-fixtures/`) and every `__snapshots__/*.snap` could change under a cached
+green run — including the obsolete snapshot that `update: "none"` exists to
+turn into a failure. `build` missed the Vite inputs of the two packages that
+have them (`index.html`, `styles.css`, `public/**`, `src/fonts/*.woff2`), so a
+Tailwind-only change was a FULL TURBO replay and CI's setup job handed that
+stale `dist` to every downstream job. `lint` hashed no JSON or CSS although
+`biome check .` lints both. Those tasks now take `$TURBO_DEFAULT$` — every
+git-tracked file in the package — minus `**/*.md` (no build or test reads it,
+and CHANGELOG.md is rewritten by every release). The two packages that DO read
+markdown re-include it: `aai-cli`, which bundles the templates and scaffold as
+shipped product, and `aai-templates`, whose suites read repo-root files —
+`../../CLAUDE.md`, `../*/CLAUDE.md`, `scripts/check-*.mjs`, `scripts/check.sh`,
+`.github/workflows/check.yml` — and so had the gates-that-guard-the-gates
+served from cache exactly when the file they check changed. Prove any of this
+the same way: capture `turbo run <task> --filter <pkg> --dry=json`'s hash,
+touch the file, capture again. An identical hash is the bug.
 
 Relatedly, **`cacheDir` and the CI cache path have to name the same
 directory.** They did not: `turbo.json` set
@@ -730,6 +764,11 @@ install is one env var away when reproducing a user report:
 ```sh
 AAI_TEST_PM=npm pnpm test:e2e
 ```
+
+That line only works because `AAI_TEST_PM` is declared in the `check:e2e`
+task's `env` — under turbo's strict env mode it was stripped before the task
+started, so the documented command ran pnpm and said nothing (see "strict env
+mode" above).
 
 Treat those two branches as a debugging tool, not covered ground.
 
