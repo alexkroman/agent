@@ -304,7 +304,8 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   `aai-sweep-app-db-runaways`, which terminates `app\_%` backends active past
   a much higher ceiling. Never treat the role setting as isolation.
 - `storage-handler.ts` — `GET/POST/DELETE /:slug/storage` (owner-auth'd)
-  toggling the app's database
+  toggling the app's database, plus `storageUsage`/`appDatabaseUsage` (how
+  much is IN it — see `packages/aai-studio-client/CLAUDE.md`)
 
 ## Stateless server
 

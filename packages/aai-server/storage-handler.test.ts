@@ -24,6 +24,7 @@ function fakeAppDb(): AppDatabases & {
     connectionUrl: () => {
       throw new Error("connectionUrl not expected in these tests");
     },
+    usage: async () => ({ tables: 0, rows: 0, bytes: 0 }),
   };
 }
 

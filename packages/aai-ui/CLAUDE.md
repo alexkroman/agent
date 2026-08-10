@@ -168,6 +168,36 @@ whose failure re-enters the normal backoff and re-fetches on the next
 attempt. `fetchClientConfig` inherits it, which also keeps a hung lookup off
 the default client's pre-connection name/greeting render.
 
+## A FATAL error must survive the frames that follow it
+
+**A live socket is not a live session, and every fatal path EMITS on its way
+down.** `SessionCore` had two independent rules that both read a later frame
+as evidence the failure had been survived: `clearRecoveredError` recovered an
+errored session to `listening` on any non-error event, and `reply_done` /
+`cancelled` / `reset` each wrote `state: "listening"` unconditionally. The
+host's fatal paths all call `terminate()`, and terminating calls
+`onCancelled()` — so the frame ANNOUNCING the session's death was also the
+frame that wiped the message explaining it, a few hundred milliseconds after
+it appeared, leaving a session that looked live and was deaf.
+
+The error that costs most is the one that names the fix: a missing provider
+key surfaces as `Cartesia TTS: missing API key. Set CARTESIA_API_KEY in the
+agent env.` (`requireApiKey`, `aai/host/providers/_utils.ts`) — reported by
+`onProviderError`, which is fatal precisely because it terminates.
+
+So `ConnState.fatalError` latches on the fatal branch of `handleErrorEvent`,
+`clearRecoveredError` returns early while it is set, and the three turn
+boundaries go through `toListening`, which drops the state field when it is
+set (the `reset` case additionally keeps its `error`, since
+`CLEARED_SESSION_STATE` nulls it). **Exactly one thing clears it: the next
+`config` frame.** That is a completed handshake, i.e. a live session — the
+one frame a dying session cannot produce, and per CONNECTION rather than per
+session, so partysocket's automatic retries reaching a healthy peer are not
+pinned to the dead one's banner. A NON-fatal error (`fatal: false`) is
+untouched by all of this: the server said the session survived, so later
+activity still retires its banner, which is the case the recovery was
+written for.
+
 ## A handshake is not a session (`session-core-handshake.ts`)
 
 **An open socket proves the peer answered `101`, nothing more.** The server

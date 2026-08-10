@@ -137,6 +137,12 @@ type PreviewPaneProps = {
   previewVersion?: string | undefined;
   /** An edit hasn't reached the preview yet (deploy in flight or failed). */
   previewStale?: boolean | undefined;
+  /**
+   * The workspace has an agent to build. False on a project nobody has
+   * edited yet, where `previewStale` is true only because "no preview" IS
+   * stale — there is no build in flight to report.
+   */
+  hasAgent?: boolean | undefined;
   /** CLI output of the last failed preview deploy. */
   previewError?: string | undefined;
   /** Production slug — updated only by Publish; fallback for old projects. */
@@ -157,9 +163,13 @@ type PreviewPaneProps = {
 
 /**
  * The strip above the iframe, by priority: a failed preview build (with its
- * CLI output), a deploy on the way, or the publish nudge when production is
- * behind. One at a time — they answer the same question ("does what I see
- * match my edits?"), so stacking them would just contradict itself.
+ * CLI output), or the publish nudge when production is behind. One at a time
+ * — they answer the same question ("does what I see match my edits?"), so
+ * stacking them would just contradict itself.
+ *
+ * A build IN FLIGHT has no banner: it takes over the whole pane instead (see
+ * {@link PreviewPane}), so a row saying the same thing above it would be
+ * redundant.
  */
 function PaneBanner(props: PreviewPaneProps & { framed: boolean }) {
   if (props.previewError) {
@@ -172,15 +182,6 @@ function PaneBanner(props: PreviewPaneProps & { framed: boolean }) {
         <pre className="m-0 max-h-24 overflow-auto rounded-md border border-line bg-cream p-2 font-mono text-[10px] whitespace-pre-wrap text-err">
           {props.previewError}
         </pre>
-      </div>
-    );
-  }
-  if (props.previewStale && props.previewSlug) {
-    // Stale with a deploy on the way — the auto preview lands shortly and
-    // the iframe below reloads on its own.
-    return (
-      <div className="flex shrink-0 items-center gap-3 border-b border-line bg-indigo-50 px-4 py-2">
-        <span className="text-[11px] text-fg">Updating preview…</span>
       </div>
     );
   }
@@ -219,7 +220,21 @@ export function PreviewPane(props: PreviewPaneProps) {
   // a fallback for projects published before auto previews existed.
   const slug = previewSlug ?? deployedSlug;
   const ready = useAgentPageReady(slug, props.onPreviewMissing);
-  if (slug && ready) {
+  // A build in flight owns the whole pane — the FIRST one and every rebuild
+  // alike, which is why this is one flag and not a first-build special case.
+  // It costs nothing to unmount the frame here: the landing deploy remounts
+  // it anyway through the `previewVersion` key, so there is no voice session
+  // that survives a rebuild either way. What it buys is that the pane never
+  // shows a page that doesn't match the code while claiming, in a one-line
+  // banner above it, that it doesn't.
+  //
+  // A FAILED build is not in flight — `previewStale` stays true after one
+  // (the files still differ from the last good deploy), and parking the pane
+  // on "Starting your preview" forever is the one state this must not
+  // produce. That case keeps the last good preview framed under the error
+  // banner, which is what the banner's own copy promises.
+  const building = Boolean(props.previewStale) && Boolean(props.hasAgent) && !props.previewError;
+  if (slug && ready && !building) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <PaneBanner {...props} framed={true} />
@@ -240,17 +255,20 @@ export function PreviewPane(props: PreviewPaneProps) {
       </div>
     );
   }
-  if (slug) {
-    // There is a slug but no page behind it yet — a preview deploy on the
-    // way, or one being regenerated. The banners still apply (they describe
-    // the deploy, not the frame); below them the pane's own screen, never
-    // the platform's 404 body. `null` is the first probe still in flight:
-    // an empty pane, so an already-deployed preview doesn't flash a
-    // "starting" message for one round trip on every open.
+  if (slug || building) {
+    // Nothing to frame: a build on the way (the first one, with no slug yet,
+    // or a rebuild over a preview that exists), or a slug whose page the
+    // platform isn't serving — one being regenerated. The banners still
+    // apply (they describe the deploy, not the frame); below them the pane's
+    // own screen, never the platform's 404 body. `null` is the first probe
+    // still in flight: an empty pane, so an already-deployed preview doesn't
+    // flash a "starting" message for one round trip on every open. A build
+    // in flight skips that grace — the screen is the answer either way, so
+    // there is nothing to wait for the probe to rule out.
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <PaneBanner {...props} framed={false} />
-        {ready === null ? (
+        {ready === null && !building ? (
           <div className="min-h-0 flex-1 bg-cream" />
         ) : (
           <PaneScreen

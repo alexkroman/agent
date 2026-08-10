@@ -202,17 +202,36 @@ describe("session-core server events", () => {
       expect(core.getSnapshot().state).toBe("error");
     });
 
-    it("recovers an errored session to listening on a non-error event", () => {
-      // The socket is demonstrably open, so "disconnected" would misreport it.
+    it("retires a NON-FATAL banner on a non-error event", () => {
+      // The socket is demonstrably open and the server said the session
+      // survived, so later activity clears the banner.
       vi.spyOn(console, "error").mockImplementation(() => undefined);
       const socket = connect();
-      send(socket, { type: "error", code: "audio", message: "worklet failed", fatal: true });
-      expect(core.getSnapshot().state).toBe("error");
+      send(socket, { type: "error", code: "audio", message: "worklet failed", fatal: false });
+      expect(core.getSnapshot().error?.code).toBe("audio");
 
       send(socket, { type: "speech_started" });
+      expect(core.getSnapshot().error).toBeNull();
+    });
+
+    it("a FATAL error survives every later frame, turn boundaries included", () => {
+      // The host's fatal paths call `terminate()`, which emits `onCancelled()`
+      // — so the frame announcing the session's death used to be the frame
+      // that wiped the message explaining it. The missing-provider-key error
+      // is the one this costs most: it names the fix.
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const socket = connect();
+      send(socket, {
+        type: "error",
+        code: "tts",
+        message: "Cartesia TTS: missing API key. Set CARTESIA_API_KEY in the agent env.",
+      });
+      send(socket, { type: "cancelled" });
+      send(socket, { type: "reply_done" });
+      send(socket, { type: "speech_started" });
       const snap = core.getSnapshot();
-      expect(snap.state).toBe("listening");
-      expect(snap.error).toBeNull();
+      expect(snap.state).toBe("error");
+      expect(snap.error?.message).toContain("CARTESIA_API_KEY");
     });
   });
 

@@ -93,6 +93,56 @@ describe("DatabaseCard", () => {
     expect(screen.getAllByText("Ready")).toHaveLength(2);
   });
 
+  test("an environment reports what its schema holds", async () => {
+    // "Ready" answers whether the switch took effect, which is not the
+    // question people have — they want to know whether anything is landing.
+    stubFetch({
+      [`GET ${PATH}`]: () =>
+        jsonResponse({
+          ...ON,
+          environments: [
+            {
+              environment: "production",
+              slug: "demo",
+              enabled: true,
+              usage: { tables: 2, rows: 17, bytes: 49_152 },
+            },
+            {
+              environment: "preview",
+              slug: "demo-preview",
+              enabled: true,
+              usage: { tables: 0, rows: 0, bytes: 0 },
+            },
+          ],
+        }),
+    });
+    renderCard();
+    await waitFor(() => {
+      expect(screen.getByText("2 tables · 17 rows · 48 KB")).toBeTruthy();
+    });
+    // An enabled schema with nothing in it says so, rather than "Ready".
+    expect(screen.getByText("Ready · no tables yet")).toBeTruthy();
+  });
+
+  test("an unread schema stays 'Ready' rather than claiming zero rows", async () => {
+    // A failed measurement and an empty database are different answers.
+    stubFetch({ [`GET ${PATH}`]: () => jsonResponse(ON) });
+    renderCard();
+    await waitFor(() => {
+      expect(screen.getAllByText("Ready")).toHaveLength(2);
+    });
+    expect(screen.queryByText(/0 rows/)).toBeNull();
+  });
+
+  test("the counts can be re-read without leaving the pane", async () => {
+    const fetchMock = stubFetch({ [`GET ${PATH}`]: () => jsonResponse(ON) });
+    renderCard();
+    await waitFor(() => expect(screen.getByText("Refresh counts")).toBeTruthy());
+    const before = fetchMock.mock.calls.length;
+    fireEvent.click(screen.getByText("Refresh counts"));
+    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(before));
+  });
+
   test("an environment the switch is waiting on says what it is waiting for", async () => {
     // Enabled before the first publish — the common case. Production has no
     // slug yet, and its database is provisioned when Publish claims one.

@@ -32,6 +32,42 @@ const PENDING_LABELS: Record<DatabaseEnvironment["environment"], string> = {
   preview: "Deploying now",
 };
 
+/**
+ * Bytes as a short human string. Binary units, because this is disk.
+ */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  // One decimal below 10 so 1.4 MB doesn't read as 1 MB; none above, where it
+  // is noise.
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+}
+
+const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/**
+ * What the row says on the right, which is the whole reason for the numbers:
+ * "Ready" answers whether the switch took effect and says nothing about
+ * whether the agent is WRITING anything — the question people actually have
+ * when a tool looks like it saved something and the next call can't find it.
+ * An enabled schema with no tables therefore reads as "no data yet" rather
+ * than as the reassuring "Ready" it used to.
+ */
+function usageText(row: DatabaseEnvironment): string {
+  if (!row.enabled) return PENDING_LABELS[row.environment];
+  const usage = row.usage;
+  // A read that failed is not an empty database — say nothing rather than 0.
+  if (!usage) return "Ready";
+  if (usage.tables === 0) return "Ready · no tables yet";
+  return `${plural(usage.tables, "table")} · ${plural(usage.rows, "row")} · ${formatBytes(usage.bytes)}`;
+}
+
 function EnvironmentRow({ row }: { row: DatabaseEnvironment }) {
   return (
     <li className="flex items-center gap-3 border-b border-line bg-cream px-3 py-2 last:border-b-0">
@@ -39,9 +75,7 @@ function EnvironmentRow({ row }: { row: DatabaseEnvironment }) {
       <code className="min-w-0 flex-1 truncate font-mono text-xs text-muted">
         {row.slug ?? "not deployed yet"}
       </code>
-      <span className="shrink-0 text-[11px] text-subtle">
-        {row.enabled ? "Ready" : PENDING_LABELS[row.environment]}
-      </span>
+      <span className="shrink-0 text-[11px] text-subtle">{usageText(row)}</span>
     </li>
   );
 }
@@ -107,11 +141,24 @@ export function DatabaseCard({ bearer, project, onNotifyChat }: DatabaseCardProp
   return (
     <Card title="Database" blurb={<Blurb enabled={enabled} unavailable={unavailable} />}>
       {enabled && state && (
-        <ul className="m-0 flex list-none flex-col overflow-hidden rounded-md border border-line p-0">
-          {state.environments.map((row) => (
-            <EnvironmentRow key={row.environment} row={row} />
-          ))}
-        </ul>
+        <>
+          <ul className="m-0 flex list-none flex-col overflow-hidden rounded-md border border-line p-0">
+            {state.environments.map((row) => (
+              <EnvironmentRow key={row.environment} row={row} />
+            ))}
+          </ul>
+          {/* The counts are read live, so they are as old as this card's last
+              fetch — which is a problem exactly when they matter: you make a
+              call, then want to know whether it landed. */}
+          <button
+            type="button"
+            className="btn self-start px-2 py-1 text-xs"
+            onClick={() => void database.refetch()}
+            disabled={database.isFetching}
+          >
+            {database.isFetching ? "Refreshing…" : "Refresh counts"}
+          </button>
+        </>
       )}
       {!unavailable && (
         <>

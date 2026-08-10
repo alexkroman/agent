@@ -164,6 +164,28 @@ export type ConnState = {
    * reconnect on demand).
    */
   retiredByServer: boolean;
+  /**
+   * A FATAL error has been reported for this connection — the session is
+   * over, and no later frame may take its banner off the screen.
+   *
+   * The recovery rule below it (`clearRecoveredError`) reads a non-error
+   * frame as proof the session works, which is right for a client-side or
+   * turn-level failure and wrong for a server error that ended the call:
+   * every fatal path in the host tears the transport down, and tearing down
+   * EMITS — `terminate()` calls `onCancelled()` immediately after
+   * `emitError`. So the very next frame recovered the state to "listening"
+   * and wiped the message. A missing provider key is the case that made this
+   * visible: the one error that says exactly what to go and fix
+   * ("Cartesia TTS: missing API key. Set CARTESIA_API_KEY in the agent env.")
+   * was on screen for a few hundred milliseconds and left a session that
+   * looked live and was deaf.
+   *
+   * Cleared by exactly one thing — the next `config` frame, i.e. a completed
+   * handshake. That is per CONNECTION rather than per session, so a
+   * reconnect that really works is not pinned to a dead session's banner,
+   * and it is the only frame a dying session cannot produce.
+   */
+  fatalError: boolean;
   voiceIO: VoiceIO | null;
   audioSetupInFlight: boolean;
   /** Connection epoch, bumped on each connect()/retry (see `createEpoch`).

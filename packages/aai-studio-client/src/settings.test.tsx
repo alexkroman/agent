@@ -2,11 +2,10 @@
 // Copyright 2026 the AAI authors. MIT license.
 // The Settings pane: a full page (not a dropdown), whose main section is
 // project secrets talking to /studio/projects/:project/secret — the server
-// writes both of a project's agents, so the pane no longer mirrors anything.
-// Unpublished projects get the "publish first" gate, and every successful
+// writes both of a project's agents AND the project's own record, so the pane
+// no longer mirrors anything and needs no publish first. Every successful
 // change posts a note into the chat so the coding agent knows which keys
-// exist — values never included. The CLI and delete sections work with no
-// published slug at all.
+// exist — values never included. Every section works with no published slug.
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -30,14 +29,13 @@ function callsTo(fetchMock: ReturnType<typeof stubFetch>, path: string): number 
   return fetchMock.mock.calls.filter(([input]) => String(input) === path).length;
 }
 
-function renderPanel(slug: string | undefined, onNotifyChat = vi.fn(), onDeleteProject = vi.fn()) {
+function renderPanel(onNotifyChat = vi.fn(), onDeleteProject = vi.fn()) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
       <SettingsPane
         bearer="sk-test"
         project="demo"
-        slug={slug}
         onNotifyChat={onNotifyChat}
         onDeleteProject={onDeleteProject}
         deleting={false}
@@ -53,29 +51,47 @@ afterEach(() => {
 });
 
 describe("SettingsPane", () => {
-  test("unpublished projects get the publish-first gate, no secret requests", () => {
-    const fetchMock = stubFetch({ ...DATABASE_STATE });
-    renderPanel(undefined);
-    expect(screen.getByText(/Publish the project first/)).toBeTruthy();
-    expect(callsTo(fetchMock, "/studio/projects/demo/secret")).toBe(0);
+  test("the box is usable with nothing published — no publish-first gate", async () => {
+    // An agent needs its provider key to RUN, so requiring a publish first
+    // asked for the one order that cannot work: ship it broken, attach the
+    // key, ship again.
+    const fetchMock = stubFetch({
+      ...DATABASE_STATE,
+      "GET /studio/projects/demo/secret": () => jsonResponse({ vars: [], pending: [] }),
+    });
+    renderPanel();
+    await waitFor(() => expect(callsTo(fetchMock, "/studio/projects/demo/secret")).toBe(1));
+    expect(screen.queryByText(/Publish the project first/)).toBeNull();
+    expect(screen.getByText("Save secrets")).toBeTruthy();
   });
 
   test("the CLI section renders with no published slug — pulling needs no deploy", () => {
     stubFetch({ ...DATABASE_STATE });
-    renderPanel(undefined);
+    renderPanel();
     expect(screen.getByText("aai pull demo")).toBeTruthy();
     expect(screen.getByText("Work locally")).toBeTruthy();
   });
 
-  test("lists the deployed agent's secret names", async () => {
+  test("lists the project's secret names", async () => {
     stubFetch({
       ...DATABASE_STATE,
       "GET /studio/projects/demo/secret": () => jsonResponse({ vars: ["OPENAI_API_KEY"] }),
     });
-    renderPanel("demo");
+    renderPanel();
     await waitFor(() => {
       expect(screen.getByText("OPENAI_API_KEY")).toBeTruthy();
     });
+  });
+
+  test("a name no deployed agent carries yet says so, rather than reading as live", async () => {
+    stubFetch({
+      ...DATABASE_STATE,
+      "GET /studio/projects/demo/secret": () =>
+        jsonResponse({ vars: ["LIVE_KEY", "NEW_KEY"], pending: ["NEW_KEY"] }),
+    });
+    renderPanel();
+    await waitFor(() => expect(screen.getByText("NEW_KEY")).toBeTruthy());
+    expect(screen.getAllByText("on next deploy")).toHaveLength(1);
   });
 
   test("saving secrets PUTs them and posts a chat note without the values", async () => {
@@ -84,7 +100,7 @@ describe("SettingsPane", () => {
       "GET /studio/projects/demo/secret": () => jsonResponse({ vars: [] }),
       "PUT /studio/projects/demo/secret": () => jsonResponse({ ok: true, keys: ["MY_KEY"] }),
     });
-    const notify = renderPanel("demo");
+    const notify = renderPanel();
     fireEvent.change(screen.getByPlaceholderText("OPENAI_API_KEY=..."), {
       target: { value: "MY_KEY=super-secret-value" },
     });
@@ -103,7 +119,7 @@ describe("SettingsPane", () => {
       "GET /studio/projects/demo/secret": () => jsonResponse({ vars: [] }),
       "PUT /studio/projects/demo/secret": () => jsonResponse({ ok: true, keys: ["A", "B"] }),
     });
-    const notify = renderPanel("demo");
+    const notify = renderPanel();
     fireEvent.change(screen.getByPlaceholderText("OPENAI_API_KEY=..."), {
       target: { value: "A=1\nB=2" },
     });
@@ -119,7 +135,7 @@ describe("SettingsPane", () => {
       ...DATABASE_STATE,
       "GET /studio/projects/demo/secret": () => jsonResponse({ vars: [] }),
     });
-    const notify = renderPanel("demo");
+    const notify = renderPanel();
     await waitFor(() => {
       expect(callsTo(fetchMock, "/studio/projects/demo/secret")).toBe(1);
     });
@@ -133,7 +149,7 @@ describe("SettingsPane", () => {
       ...DATABASE_STATE,
       "GET /studio/projects/demo/secret": () => jsonResponse({ error: "unauthorized" }, 401),
     });
-    renderPanel("demo");
+    renderPanel();
     await waitFor(() => {
       expect(screen.getByText("unauthorized")).toBeTruthy();
     });
@@ -145,7 +161,7 @@ describe("SettingsPane", () => {
       "GET /studio/projects/demo/secret": () => jsonResponse({ vars: [] }),
       "PUT /studio/projects/demo/secret": () => jsonResponse({ error: "vault unavailable" }, 503),
     });
-    const notify = renderPanel("demo");
+    const notify = renderPanel();
     fireEvent.change(screen.getByPlaceholderText("OPENAI_API_KEY=..."), {
       target: { value: "A=1" },
     });
@@ -162,7 +178,7 @@ describe("SettingsPane", () => {
       "GET /studio/projects/demo/secret": () => jsonResponse({ vars: ["OLD_KEY"] }),
       "DELETE /studio/projects/demo/secret/OLD_KEY": () => jsonResponse({ ok: true }),
     });
-    const notify = renderPanel("demo");
+    const notify = renderPanel();
     await waitFor(() => {
       expect(screen.getByText("OLD_KEY")).toBeTruthy();
     });
@@ -181,7 +197,7 @@ describe("SettingsPane", () => {
       "GET /studio/projects/demo/secret": () =>
         jsonResponse({ vars: ["ASSEMBLYAI_API_KEY", "OPENAI_API_KEY"] }),
     });
-    renderPanel("demo");
+    renderPanel();
     await waitFor(() => {
       expect(screen.getByText("OPENAI_API_KEY")).toBeTruthy();
     });
@@ -200,7 +216,7 @@ describe("SettingsPane", () => {
       "PUT /studio/projects/demo/secret": () =>
         jsonResponse({ ok: true, keys: ["OPENAI_API_KEY"] }),
     });
-    const notify = renderPanel("demo");
+    const notify = renderPanel();
     await waitFor(() => expect(callsTo(fetchMock, "/studio/projects/demo/secret")).toBe(1));
     fireEvent.change(screen.getByPlaceholderText("OPENAI_API_KEY=..."), {
       target: { value: "ASSEMBLYAI_API_KEY=leaked\nOPENAI_API_KEY=ok" },
@@ -221,7 +237,7 @@ describe("SettingsPane", () => {
       ...DATABASE_STATE,
       "GET /studio/projects/demo/secret": () => jsonResponse({ vars: [] }),
     });
-    const notify = renderPanel("demo");
+    const notify = renderPanel();
     await waitFor(() => expect(callsTo(fetchMock, "/studio/projects/demo/secret")).toBe(1));
     fireEvent.change(screen.getByPlaceholderText("OPENAI_API_KEY=..."), {
       target: { value: "ASSEMBLYAI_API_KEY=leaked" },
@@ -239,7 +255,7 @@ describe("SettingsPane", () => {
       "confirm",
       vi.fn(() => false),
     );
-    renderPanel(undefined, vi.fn(), onDeleteProject);
+    renderPanel(vi.fn(), onDeleteProject);
     fireEvent.click(screen.getByText("Delete project"));
     expect(onDeleteProject).not.toHaveBeenCalled();
     vi.stubGlobal(
@@ -255,7 +271,7 @@ describe("SettingsPane", () => {
       ...DATABASE_STATE,
       "GET /studio/projects/demo/secret": () => jsonResponse({ vars: [] }),
     });
-    renderPanel("demo");
+    renderPanel();
     await waitFor(() => {
       expect(screen.getByText("Delete project")).toBeTruthy();
     });

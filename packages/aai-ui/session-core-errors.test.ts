@@ -108,6 +108,51 @@ describe("session-core error handling", () => {
       expect(snap.error).toEqual({ code: "internal", message: "provider died" });
       expect(snap.running).toBe(false);
     });
+
+    it("the teardown frames that FOLLOW a fatal error do not wipe its banner", async () => {
+      // The host tears the transport down on a fatal error, and tearing down
+      // emits — `terminate()` calls `onCancelled()` right after `emitError`.
+      // Read as evidence the session recovered, that one frame took the
+      // message off the screen a few hundred ms after it appeared and left
+      // the session claiming to listen. A missing provider key is the case
+      // that matters: it is the error that says what to go and fix.
+      core.connect();
+      lastSocket?.simulateOpen();
+      lastSocket?.simulateMessage(makeConfig());
+      await vi.waitFor(() => {
+        expect(core.getSnapshot().recording).toBe(true);
+      });
+      lastSocket?.simulateMessage(
+        JSON.stringify({
+          type: "error",
+          code: "tts",
+          message: "Cartesia TTS: missing API key. Set CARTESIA_API_KEY in the agent env.",
+        }),
+      );
+      lastSocket?.simulateMessage(JSON.stringify({ type: "cancelled" }));
+      const snap = core.getSnapshot();
+      expect(snap.state).toBe("error");
+      expect(snap.error?.message).toContain("CARTESIA_API_KEY");
+    });
+
+    it("a fresh handshake supersedes it — a reconnected session is not stuck on it", async () => {
+      // The latch is per CONNECTION: a `config` frame is a live session, so
+      // whatever ended the last one must not pin a banner over this one.
+      core.connect();
+      lastSocket?.simulateOpen();
+      lastSocket?.simulateMessage(makeConfig());
+      await vi.waitFor(() => {
+        expect(core.getSnapshot().recording).toBe(true);
+      });
+      lastSocket?.simulateMessage(fatalError());
+      expect(core.getSnapshot().state).toBe("error");
+
+      lastSocket?.simulateMessage(makeConfig());
+      lastSocket?.simulateMessage(JSON.stringify({ type: "cancelled" }));
+      const snap = core.getSnapshot();
+      expect(snap.state).toBe("listening");
+      expect(snap.error).toBe(null);
+    });
   });
 
   // ─── Pre-aborted signal ───────────────────────────────────────────────────
@@ -170,18 +215,34 @@ describe("session-core error handling", () => {
 
   // ─── Recovery from a fatal error while the socket lives ──────────────────
 
-  it("a server event after a fatal error recovers to listening", () => {
+  it("a server event after a fatal error does NOT recover the session", () => {
+    // A live socket is not a live session. Every fatal path in the host tears
+    // the transport down and keeps relaying whatever is already in flight, so
+    // "a frame arrived" is not evidence the failure was survived — treating
+    // it as evidence produced a session that looked live and was deaf.
     core.connect();
     lastSocket?.simulateOpen();
     lastSocket?.simulateMessage(fatalError());
     expect(core.getSnapshot().state).toBe("error");
 
-    // The socket is demonstrably alive — a server event proves the session
-    // works, so the error state recovers to "listening", not "disconnected".
     lastSocket?.simulateMessage(JSON.stringify({ type: "agent_transcript", text: "still here" }));
     const snap = core.getSnapshot();
-    expect(snap.state).toBe("listening");
-    expect(snap.error).toBe(null);
+    expect(snap.state).toBe("error");
+    expect(snap.error).toEqual({ code: "internal", message: "provider died" });
+  });
+
+  it("a server event after a NON-fatal error still retires its banner", () => {
+    // The other half of the rule, and the case the recovery was written for:
+    // the server kept running, so later activity clears the banner.
+    core.connect();
+    lastSocket?.simulateOpen();
+    lastSocket?.simulateMessage(
+      JSON.stringify({ type: "error", code: "stt", message: "one turn failed", fatal: false }),
+    );
+    expect(core.getSnapshot().error?.code).toBe("stt");
+
+    lastSocket?.simulateMessage(JSON.stringify({ type: "agent_transcript", text: "still here" }));
+    expect(core.getSnapshot().error).toBe(null);
   });
 
   // ─── Audio failure paths ──────────────────────────────────────────────────

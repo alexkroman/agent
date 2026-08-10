@@ -38,7 +38,7 @@
  * pane says out loud.
  */
 
-import type { AppDatabases } from "aai-server/app-database";
+import type { AppDatabases, AppDbUsage } from "aai-server/app-database";
 import type { SlugMutationLock } from "aai-server/platform-lock";
 import type { SecretStore } from "aai-server/secret-store";
 import {
@@ -46,6 +46,7 @@ import {
   enableStorage,
   type StorageEnv,
   storageStatus,
+  storageUsage,
 } from "aai-server/storage-handler";
 import type { BundleStore } from "aai-server/store-types";
 import type { WorkspaceStore } from "aai-server/workspace-store";
@@ -75,6 +76,13 @@ export type ProjectDatabaseEnvironmentState = {
   slug?: string;
   /** Is a database provisioned for that slug right now? */
   enabled: boolean;
+  /**
+   * What that schema currently holds — tables, rows, bytes. Absent when the
+   * database is off, or when the read failed (see `storageUsage`): a missing
+   * measurement and an empty database are different answers, and collapsing
+   * them would report "0 rows" for a database nobody could look at.
+   */
+  usage?: AppDbUsage;
 };
 
 export type ProjectDatabaseState = {
@@ -101,8 +109,13 @@ async function environmentState(
   // someone else's agent has one.
   if (!(await ownsProjectSlug(env.store, apiKey, slug)))
     return { environment, slug, enabled: false };
-  const { enabled } = await storageStatus(storageEnvOf(env), slug);
-  return { environment, slug, enabled };
+  const storage = storageEnvOf(env);
+  const { enabled } = await storageStatus(storage, slug);
+  if (!enabled) return { environment, slug, enabled };
+  // The point of the number is to answer "is my agent actually saving
+  // anything" — so it is read live rather than stamped anywhere.
+  const usage = await storageUsage(storage, slug);
+  return { environment, slug, enabled, ...(usage && { usage }) };
 }
 
 function stateFor(

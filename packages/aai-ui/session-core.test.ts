@@ -380,18 +380,29 @@ describe("createSessionCore", () => {
       expect(snap.running).toBe(false);
     });
 
-    it("non-error event clears error state", () => {
-      // Set error state
+    it("non-error event clears a NON-FATAL error banner", () => {
+      lastSocket?.simulateMessage(
+        JSON.stringify({ type: "error", code: "internal", message: "fail", fatal: false }),
+      );
+      expect(core.getSnapshot().error?.message).toBe("fail");
+
+      // The session kept running, so later activity retires the banner.
+      lastSocket?.simulateMessage(JSON.stringify({ type: "speech_started" }));
+      const snap = core.getSnapshot();
+      expect(snap.state).not.toBe("error");
+      expect(snap.error).toBe(null);
+    });
+
+    it("a non-error event does NOT clear a fatal one — the session is over", () => {
       lastSocket?.simulateMessage(
         JSON.stringify({ type: "error", code: "internal", message: "fail" }),
       );
       expect(core.getSnapshot().state).toBe("error");
 
-      // Any non-error event should clear it
       lastSocket?.simulateMessage(JSON.stringify({ type: "speech_started" }));
       const snap = core.getSnapshot();
-      expect(snap.state).not.toBe("error");
-      expect(snap.error).toBe(null);
+      expect(snap.state).toBe("error");
+      expect(snap.error).toEqual({ code: "internal", message: "fail" });
     });
   });
 

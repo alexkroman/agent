@@ -424,6 +424,9 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
               previewSlug={workspace.data?.previewSlug}
               previewVersion={workspace.data?.previewVersion}
               previewStale={workspace.data?.previewStale}
+              // "No preview yet" counts as stale, so the pane needs this to
+              // tell a first build in flight from an untouched project.
+              hasAgent={hasBuild}
               previewError={workspace.data?.previewError}
               deployedSlug={deployedSlug}
               unpublished={workspace.data?.unpublished}
@@ -450,7 +453,6 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
             <SettingsPane
               bearer={bearer}
               project={project}
-              slug={deployedSlug}
               onNotifyChat={notifyChat}
               onDeleteProject={() => deleteProject.mutate()}
               deleting={deleteProject.isPending}
