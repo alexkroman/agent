@@ -176,9 +176,33 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
   // `not a function` on the consumer's Node 24. The V8 14.6 additions are
   // usable in the platform packages (aai-server, aai-guest, aai-studio-*,
   // all `>=26`) and not in this one.
-  const getState = (sid: string) => {
-    if (!stateMap.has(sid) && agent.state) stateMap.set(sid, agent.state());
-    return stateMap.get(sid) ?? {};
+  /**
+   * The session's ONE state object — memoized whether or not the agent
+   * declared a `state` factory.
+   *
+   * The `?? {}` this replaces only looked like a default. With no factory
+   * nothing was ever stored, so every read minted a FRESH `{}`: a tool wrote
+   * `ctx.state.cart = []`, the write succeeded, and the next call — or the
+   * `syncStateToClient` in the same call's `finally`, which calls this a
+   * second time — saw an empty object again. Silent in exactly the way that
+   * costs the most: no throw, no log, and `AgentDef.state`'s own doc promises
+   * the opposite ("unset leaves `ctx.state` an empty object", one of them).
+   * Four of the five shipped templates hit it — `infocom-adventure`,
+   * `solo-rpg`, `dispatch-center` and `pizza-ordering` all mutate `ctx.state`
+   * through a `slot.x ??= …` helper and declare no factory, so the adventure
+   * game reset its room and inventory on every tool call and `syncState`
+   * projected an empty object to the client.
+   *
+   * `stateMap.has(sid)` keeps meaning "this session has run a tool call",
+   * which is what `pushStateSnapshot` reads it for, and the entry is reclaimed
+   * by the same grace-window sweep (`session-state-sweeps.ts`) either way.
+   */
+  const getState = (sid: string): Record<string, unknown> => {
+    const existing = stateMap.get(sid);
+    if (existing !== undefined) return existing;
+    const created = agent.state ? agent.state() : {};
+    stateMap.set(sid, created);
+    return created;
   };
   const frozenEnv = Object.freeze({ ...env });
 

@@ -698,6 +698,35 @@ marker, never the `~standard` interface (`isConvertibleSchema`).
 removed unused; multi-step orchestration is composed directly over
 `ctx.generate`.)
 
+## `ctx.state` is ONE object per session — with or without a `state` factory
+
+`getState` in `host/runtime-tools.ts` memoizes the session's state object
+whichever way the agent declared it. Its `?? {}` predecessor only looked like
+a default: with no `AgentDef.state` factory nothing was ever stored, so every
+read minted a **fresh** `{}`. A tool wrote `ctx.state.cart = []`, the write
+succeeded, and the next call saw an empty object again — as did the
+`syncStateToClient` in the *same* call's `finally`, which calls `getState` a
+second time and therefore projected a different object from the one the tool
+had just mutated. `_state-sync.ts` keys `lastSent` by the state OBJECT in a
+`WeakMap`, so with a new object per call the unchanged-check never matched
+either: every tool call pushed an `agent_state` frame, carrying the empty
+projection, onto a socket that also carries 384 kbps of PCM.
+
+Silent in the way that costs most — no throw, no log, and `AgentDef.state`'s
+own doc promises the opposite ("unset leaves `ctx.state` an empty object",
+one of them). **Four of the five shipped templates were on that path**:
+`infocom-adventure`, `solo-rpg`, `dispatch-center` and `pizza-ordering` all
+reach `ctx.state` through a `slot.x ??= …` helper and declare no factory, so
+the adventure game reset its room, inventory and score on every tool call
+while its `syncState` showed the client nothing.
+
+`stateMap.has(sid)` still means "this session has run a tool call" — what
+`pushStateSnapshot` reads it for — and the entry is reclaimed by the same
+grace-window sweep (`session-state-sweeps.ts`) either way. `runtime.test.ts`
+pins both halves as one `test.each`, because the bug was invisible to the
+factory case and a template's own tests fake `ctx` with a persistent object,
+so nothing below the runtime can see it.
+
 ## Storage (`ctx.db`)
 
 There is no KV store anymore. Persistent state is the opt-in **app
@@ -1241,6 +1270,18 @@ copying fields:
   of re-declaring it inline — the inline form is how `send` and `state`
   shipped as runtime-working but excess-property errors for authors
   (neither bundler typechecks user code). `define.test-d.ts` locks this.
+
+  **Its defaults go through `omitUndefined`, because a spread lets a
+  present-and-`undefined` key WIN over the default beneath it.**
+  `agent({ greeting: undefined })` is already a compile error under
+  `exactOptionalPropertyTypes` — but `agent({ name, ...opts })`, where `opts`
+  is declared `{ greeting?: string; maxSteps?: number }`, is not, and that is
+  how an options bag reaches `agent()`. It returned an agent whose `greeting`,
+  `systemPrompt` and `maxSteps` were all `undefined` while every one of them is
+  typed as REQUIRED on `AgentDef`: the agent opened on silence, ran with no
+  system prompt, and the pipeline's `stopWhen` budget was `NaN` — with nothing
+  anywhere reporting it. Making absent and present-and-undefined mean the same
+  thing is what those fields' docs ("Defaults to …") already promise.
 - **`IsolateConfigSchema`** (`aai-server/rpc-schemas.ts`) is
   `AgentConfigSchema.extend({...})` — the extensions are wire-tolerance
   loosenings, wire defaults, and the wire-only `toolSchemas`; none may drop
