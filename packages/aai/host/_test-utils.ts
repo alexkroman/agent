@@ -43,6 +43,10 @@ export function createMockToolContext(overrides?: Partial<ToolContext>): ToolCon
     state: {},
     db: {} as never,
     generate: () => Promise.reject(new Error("generate not mocked")),
+    workflows: {
+      start: () => Promise.reject(new Error("workflows not mocked")),
+      get: () => Promise.reject(new Error("workflows not mocked")),
+    },
     messages: [],
     sessionId: "test-session",
     send: vi.fn(),

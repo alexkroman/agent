@@ -25,6 +25,8 @@ import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "./builtin-tools.ts";
 import { createGenerateFn, type HostGenerateFn } from "./generate.ts";
 import type { RuntimeOptions } from "./runtime-types.ts";
 import { type ExecuteTool, executeToolCall } from "./tool-executor.ts";
+import { createWorkflowEngine, type WorkflowEngine } from "./workflow-engine.ts";
+import { createPostgresWorkflowStore } from "./workflow-store.ts";
 
 /**
  * Merge the agent's builtins with the tools a mode dispatches itself — the
@@ -70,6 +72,12 @@ type ToolSetup = {
    * holds no state.
    */
   pushStateSnapshot?: (sessionId: string, sink: ClientSink) => void;
+  /**
+   * The agent's workflow engine, or `undefined` when it declared no workflows
+   * or storage is off. The runtime owns its lifecycle (recovery on boot,
+   * `close()` on shutdown); tool contexts get it as `ctx.workflows`.
+   */
+  workflows?: WorkflowEngine | undefined;
 };
 
 /** Runtime state the tool-setup paths close over. */
@@ -106,11 +114,42 @@ function setupGenerate(deps: ToolSetupDeps): HostGenerateFn {
   });
 }
 
+/**
+ * Build the workflow engine, or nothing.
+ *
+ * Nothing in two cases, and they are different failures: an agent that
+ * declared no workflows has no engine to build, while one that declared some
+ * without storage has a journal with nowhere to live. Neither throws here —
+ * a voice agent whose workflows are misconfigured must still answer the
+ * phone — so both land on the rejecting client in tool-executor, whose
+ * message names the missing half.
+ */
+function setupWorkflows(deps: ToolSetupDeps, generate: HostGenerateFn): WorkflowEngine | undefined {
+  const workflows = deps.agent.workflows;
+  if (!workflows || Object.keys(workflows).length === 0) return;
+  if (!deps.resolvedDb) {
+    deps.logger.warn(
+      `Agent declares ${Object.keys(workflows).length} workflow(s) but storage is not enabled; ` +
+        "runs cannot be journaled and ctx.workflows will reject",
+    );
+    return;
+  }
+  return createWorkflowEngine({
+    workflows,
+    store: createPostgresWorkflowStore(deps.resolvedDb),
+    db: deps.resolvedDb,
+    env: Object.freeze({ ...deps.env }),
+    generate,
+    logger: deps.logger,
+  });
+}
+
 /** Sandbox mode — custom tools are RPC-backed; builtins run host-side. */
 function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): ToolSetup {
   const { agent, opts, env, resolvedDb, logger } = deps;
   const builtinFetchOpt = opts.fetch ? { fetch: opts.fetch } : undefined;
   const generate = setupGenerate(deps);
+  const workflows = setupWorkflows(deps, generate);
   const resolved = mergeBuiltinSurface(agent, builtinFetchOpt, {
     schemas: opts.toolSchemas ?? [],
     ...(opts.toolGuidance ? { guidance: opts.toolGuidance } : {}),
@@ -134,6 +173,7 @@ function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): To
         db: resolvedDb,
         messages,
         generate,
+        workflows,
         logger,
         signal: callOpts?.signal,
       });
@@ -144,7 +184,7 @@ function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): To
     // tool call fail with "invoked without a toolCallId" in pipeline mode.
     return rpcExecuteTool(name, args, sessionId, messages, callOpts);
   };
-  return { executeTool, toolSchemas, toolGuidance: resolved.guidance };
+  return { executeTool, toolSchemas, toolGuidance: resolved.guidance, workflows };
 }
 
 /**
@@ -207,6 +247,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
   const frozenEnv = Object.freeze({ ...env });
 
   const generate = setupGenerate(deps);
+  const workflows = setupWorkflows(deps, generate);
 
   /**
    * `ctx.send` → client `custom_event`, with the wire caps enforced here —
@@ -274,6 +315,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
         db: resolvedDb,
         messages,
         generate,
+        workflows,
         logger,
         // Always defined: `ctx.send` is a no-op when no socket holds the id
         // (the same shape a missing sink produced before), and binding it
@@ -305,7 +347,13 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
     syncStateToClient(sink, getState(sessionId), { force: true });
   };
 
-  return { executeTool, toolSchemas, toolGuidance: builtins.guidance, pushStateSnapshot };
+  return {
+    executeTool,
+    toolSchemas,
+    toolGuidance: builtins.guidance,
+    pushStateSnapshot,
+    workflows,
+  };
 }
 
 /** Pick the tool path: RPC-backed sandbox mode when overrides are provided. */
