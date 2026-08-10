@@ -1,13 +1,5 @@
 import type { ToolContext, ToolFailure } from "@alexkroman1/aai";
-import {
-  createKeyedLock,
-  isToolFailure,
-  pushCapped,
-  type SlotStateOf,
-  sessionSlot,
-  tool,
-  withLock,
-} from "@alexkroman1/aai";
+import { isToolFailure, pushCapped, type SlotStateOf, sessionSlot, tool } from "@alexkroman1/aai";
 import type { z } from "zod";
 import seedJson from "./seed.json";
 import type {
@@ -49,7 +41,18 @@ export function createDefaultState(): RetailState {
   return { ...emptyRetailState(), store: structuredClone(SEED) };
 }
 
-/** The session's store, as one typed slot inside `ctx.state`. */
+/**
+ * The session's store, as one typed slot inside `ctx.state`.
+ *
+ * Every mutating tool goes through `retailSlot.update` (via `retailTool`),
+ * which serializes per session: the LLM loop can run a step's tool calls
+ * concurrently, and two interleaving async mutators would each observe the
+ * other's half-applied changes.
+ *
+ * No `after` hook — unlike dispatch-center, this store has no derived field to
+ * recalculate, and its one growth cap (`activity`) is held on append by
+ * `record` below.
+ */
 export const retailSlot = sessionSlot("retail", createDefaultState);
 
 export type StateSlot = SlotStateOf<typeof retailSlot>;
@@ -141,32 +144,6 @@ export function requireOwnOrder(state: RetailState, orderId: string): Order | To
   return order;
 }
 
-// ─── Serialized state updates ────────────────────────────────────────────────
-
-const sessionLock = createKeyedLock();
-
-/**
- * Serialized update of the session's store.
- *
- * The LLM loop can execute parallel tool calls, and a mutator may be async —
- * two interleaving async mutators can each observe the other's half-applied
- * changes. Holding the session's key runs each update against the previous
- * one's finished result. `createKeyedLock` is the SDK's primitive for exactly
- * this; the hand-rolled promise chain it replaced also had to remember to drop
- * each key's entry by ownership once idle.
- *
- * NOT exported, unlike dispatch-center's equivalent. `retailTool` is the only
- * caller, so a tool body cannot re-enter it — which would wait on a key only
- * the outer call can release, i.e. deadlock. A hazard you can't reach beats a
- * hazard you documented.
- */
-function updateState<R>(
-  ctx: ToolContext<StateSlot>,
-  mutator: (state: RetailState) => R | Promise<R>,
-): Promise<R> {
-  return withLock(sessionLock, ctx.sessionId, async () => mutator(retailSlot.get(ctx)));
-}
-
 // ─── The tool wrapper ────────────────────────────────────────────────────────
 
 interface RetailToolSpec<S extends z.ZodType<Record<string, unknown>>, R> {
@@ -211,8 +188,12 @@ export function retailTool<S extends z.ZodType<Record<string, unknown>>, R>(
   return tool({
     description: spec.description,
     inputSchema: spec.inputSchema,
+    // `retailSlot.update` is the only caller of the serialized region in this
+    // template, which is what keeps `update`'s non-reentrancy unreachable: a
+    // tool body cannot nest another `update` on this slot, because tool bodies
+    // are `spec.execute` and always run INSIDE this one.
     execute: (args, ctx) =>
-      updateState(ctx, async (state) => {
+      retailSlot.update(ctx, async (state) => {
         const typedArgs = args as z.output<S>;
         if (requiresAuth && !state.authenticatedUserId) {
           record(state, spec.name, "blocked: not authenticated");

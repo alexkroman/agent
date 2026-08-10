@@ -1,13 +1,7 @@
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-import type { ToolContext, ToolFailure } from "@alexkroman1/aai";
-import {
-  createKeyedLock,
-  pushCapped,
-  type SlotStateOf,
-  sessionSlot,
-  withLock,
-} from "@alexkroman1/aai";
+import type { ToolFailure } from "@alexkroman1/aai";
+import { pushCapped, type SlotStateOf, sessionSlot } from "@alexkroman1/aai";
 
 export const SEVERITIES = ["critical", "urgent", "moderate", "minor"] as const;
 export type Severity = (typeof SEVERITIES)[number];
@@ -172,13 +166,6 @@ export function createDefaultState(): DispatchState {
 // state — sessions must not see each other's incidents, and ctx.state gives
 // that isolation by construction. Nothing here needs to outlive the session.
 
-/** The session's dispatch board, as one typed slot inside `ctx.state`. */
-export const dispatchSlot = sessionSlot("dispatch", createDefaultState);
-
-export type StateSlot = SlotStateOf<typeof dispatchSlot>;
-
-// ─── Serialized state updates ────────────────────────────────────────────────
-
 /**
  * Growth caps. The whole dispatch state is one object whose summaries feed
  * both the LLM and the dashboard event, so resolved incidents and long
@@ -198,39 +185,27 @@ function pruneState(state: DispatchState): void {
   }
 }
 
-const sessionLock = createKeyedLock();
-
 /**
- * Serialized update of the session's dispatch state.
+ * The session's dispatch board, as one typed slot inside `ctx.state`.
  *
- * The LLM loop executes parallel tool calls concurrently. The state lives in
- * `ctx.state` now (one shared object, no snapshot/save round-trip), but a
- * mutator may be async, and two interleaving async mutators can each observe
- * the other's half-applied changes. Holding the session's key makes each
- * update run against the previous one's finished result. It also centralizes
- * the shared bookkeeping every mutating tool needs: pruning and alert-level
- * recalculation.
+ * Mutating tools go through `dispatchSlot.update`, which serializes them per
+ * session: the LLM loop runs a step's tool calls concurrently, and two
+ * interleaving async mutators would each observe the other's half-applied
+ * changes.
  *
- * `createKeyedLock` rather than a hand-rolled promise chain per session: the
- * SDK's drops each key's entry once its chain drains (so a long-running agent
- * does not accumulate one per session id) and does it by ownership, which is
- * the part a hand-rolled chain gets wrong.
- *
- * There is no post-save callback: pushing the board to the client used to
- * need one, and `syncState` now does it after every tool call.
+ * `after` is the bookkeeping every mutating tool needs and none of them should
+ * have to remember — pruning resolved incidents, and recalculating the alert
+ * level the dashboard reads. Declaring it here rather than at each call site is
+ * the point: a new mutating tool gets both for free.
  */
-export function updateState<R>(
-  ctx: ToolContext,
-  mutator: (state: DispatchState) => R | Promise<R>,
-): Promise<R> {
-  return withLock(sessionLock, ctx.sessionId, async () => {
-    const state = dispatchSlot.get(ctx);
-    const result = await mutator(state);
+export const dispatchSlot = sessionSlot("dispatch", createDefaultState, {
+  after: (state) => {
     pruneState(state);
     recalculateAlertLevel(state);
-    return result;
-  });
-}
+  },
+});
+
+export type StateSlot = SlotStateOf<typeof dispatchSlot>;
 
 // ─── Incident helpers ────────────────────────────────────────────────────────
 

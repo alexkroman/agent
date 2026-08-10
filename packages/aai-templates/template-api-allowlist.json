@@ -117,6 +117,7 @@
     "STT_FRAME_MAX_MS",
     "STT_FRAME_TARGET_MS",
     "SessionSlot",
+    "SessionSlotOptions",
     "SharedAgentParams",
     "SlotState",
     "StandardSchemaIssue",
@@ -137,6 +138,7 @@
     "assemblyAIPipeline",
     "assemblyAIS2s",
     "capToolResult",
+    "createKeyedLock",
     "errorDetail",
     "errorMessage",
     "isTextAssetPath",
@@ -145,7 +147,8 @@
     "omitUndefined",
     "safeJsonParse",
     "toArgsRecord",
-    "toolError"
+    "toolError",
+    "withLock"
   ],
   "@alexkroman1/aai/stt": [
     "ASSEMBLYAI_API_KEY_ENV",

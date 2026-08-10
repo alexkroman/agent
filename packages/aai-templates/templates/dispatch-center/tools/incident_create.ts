@@ -3,12 +3,12 @@ import { z } from "zod";
 import {
   calculateTriageScore,
   createIncident,
+  dispatchSlot,
   getApplicableProtocols,
   recommendResources,
   recommendSeverity,
   recommendType,
   resourceBrief,
-  updateState,
 } from "../shared.ts";
 
 export const incidentCreate = tool({
@@ -31,7 +31,7 @@ export const incidentCreate = tool({
       .optional(),
   }),
   async execute(args, ctx) {
-    return updateState(ctx, (state) => {
+    return dispatchSlot.update(ctx, (state) => {
       const recSeverity = recommendSeverity(args.description);
       const recType = recommendType(args.description);
       const triageScore = calculateTriageScore(

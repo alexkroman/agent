@@ -739,9 +739,12 @@ context (`ctx: ToolContext<S>`), so a tool in its own file cannot see the
 `state` factory's type — `retail` declares a factory and still cast. A slot puts
 the narrowing and the lazy install in one place: `slot.get(ctx)` returns the live
 object, `slot.set`/`slot.reset` replace it, `slot.read` and
-`slot.projection(fn)` are the `syncState` side, and `SlotStateOf<typeof slot>` is
-the state type. Declaring `state: () => ({ [slot.key]: slot.create() })` is still
-worth it — that is what makes the state exist before the first tool call, which
+`slot.projection(fn)` are the `syncState` side, `slot.update(ctx, mutate)` is the
+per-session serialized mutation (with the slot's `after` hook for invariants
+every mutating tool would otherwise have to restore by hand), and
+`SlotStateOf<typeof slot>` is the state type. Declaring
+`state: () => ({ [slot.key]: slot.create() })` is still worth it — that is what
+makes the state exist before the first tool call, which
 `pushStateSnapshot` needs on resume — and composes with the slot rather than
 replacing it. See the root guide's concurrency-primitives entry for the two
 properties that are load-bearing (the factory must clone a shared default;

@@ -62,6 +62,7 @@ with a different error: plain `ERR_PNPM_NO_MATCHING_VERSION` and a
 `The latest release … is "X"` line naming a version older than the pin. That one
 is client-side (`pnpm cache delete "@alexkroman1/*"`), not ours — the quarantine
 error always names the constraint or carries a `published by <date>` clause.
+
 ## The templates are where SDK primitives get their worked example
 
 `template-api-coverage.test.ts` already enforces the direction "every public
@@ -74,6 +75,7 @@ once, and the templates are now their reference use:
 | --- | --- |
 | `sessionSlot()` + `SlotStateOf` | every stateful template — `pizza-ordering` (smallest), `retail` (slot in `store.ts`, view in `shared.ts`, so the seed stays out of the browser bundle) |
 | `slot.projection(view)` as `syncState` | `pizza-ordering`, `dispatch-center`, `retail`; `solo-rpg` uses bare `slot.read` (its projection is the identity) |
+| `slot.update` (serialized mutation) | `dispatch-center` (every mutating tool, plus an `after` hook that prunes and recalculates the alert level), `retail` (inside `retailTool`, the one caller — which is what keeps `update`'s non-reentrancy unreachable) |
 | `ToolFailure` / `isToolFailure` | `retail` (~40 sites, failures propagating through `store.ts` helpers), `dispatch-center` (six) |
 | `pushCapped` | `dispatch-center` (incident timeline), `retail` (activity feed), `solo-rpg` (session log), `infocom-adventure` (command history) |
 | `createToolContext` (`@alexkroman1/aai/testing`) | the four suites that test tools directly — `dispatch-center`, `pizza-ordering`, `retail`, `solo-rpg` |

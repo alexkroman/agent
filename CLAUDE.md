@@ -503,6 +503,15 @@ primitives — reach for them before re-inventing the pattern at a call site:
   parts that get missed are dropping the drained entry BY OWNERSHIP, and
   resolving your own place in the chain when you abandon a timed-out acquire
   (otherwise everyone behind you blocks forever).
+
+  **For the `ctx.state` case specifically, reach for `sessionSlot`'s `update`
+  instead** (below). Those same two templates then hand-rolled the LOCK+SLOT
+  pair — `createKeyedLock()` beside `withLock(lock, ctx.sessionId, () =>
+  mutator(slot.get(ctx)))` — which is now one method. This entry stays because
+  the primitive is still the right answer for serialized work that is not a slot
+  mutation, and because `timeoutMs` has no `update` equivalent; no template
+  demonstrates it any more, which is recorded in `template-api-allowlist.json`
+  rather than being an oversight.
 - **Timeouts**: use `p-timeout` (a dependency of aai, aai-cli, aai-guest,
   and aai-server) — never a hand-rolled `Promise.race` with a timer; the
   losing branch's late rejection and timer cleanup are exactly what gets
@@ -528,10 +537,38 @@ primitives — reach for them before re-inventing the pattern at a call site:
   `pushStateSnapshot` needs on resume) and composes:
   `state: () => ({ [slot.key]: slot.create() })`.
 
-  Two things the API shape is load-bearing about. `create` is a FACTORY called
-  once per session, so a shared module-level default must be cloned inside it
-  (`() => structuredClone(DEFAULT)`) or every session mutates one object —
-  three templates need this. And `projection(fn)` hands `fn` a REAL value
+  **`slot.update(ctx, mutate)` is the serialized half, and it is what an ASYNC
+  mutator must use.** It holds a per-slot, per-session key for the mutation and
+  then runs the slot's optional `after` hook. Both stateful templates with async
+  tool bodies had hand-rolled exactly this — `createKeyedLock()` at module scope
+  plus `withLock(lock, ctx.sessionId, () => mutator(slot.get(ctx)))`, twice,
+  rationale paragraph included — and `after` is what dispatch-center's copy did
+  on top (prune resolved incidents, recalculate the alert level), which is
+  bookkeeping every mutating tool needs and any new one would forget. `get` is
+  still right for a synchronous read-modify-write, which cannot interleave.
+
+  Three properties to know before relying on it. It is **not re-entrant** — a
+  `mutate` body calling `update` on the same slot waits on a key only its caller
+  can release, which is a deadlock rather than an error (retail keeps that
+  unreachable by construction: `retailTool` is the only caller, and tool bodies
+  run inside it). `after` **does not run when the mutator throws**, so a
+  half-applied value is left as the mutator left it rather than normalized by a
+  hook that never saw a complete mutation, and the mutator's error is the one
+  that propagates. And the lock is per SLOT as well as per session, so two
+  different slots' updates nest safely and one caller never queues behind
+  another's.
+
+  **`createKeyedLock`/`withLock` stay public and are now unexercised by any
+  template** (allowlisted, deliberately). They remain the right tool for
+  serialized work that is not a slot mutation — an external resource, a key
+  that is not the session id, or `{ timeoutMs }` when a contended mutation must
+  fail rather than queue. `slot.update` covers the case the templates actually
+  had, which is why none of them demonstrates the raw primitive any more.
+
+  Two more things the API shape is load-bearing about. `create` is a FACTORY
+  called once per session, so a shared module-level default must be cloned
+  inside it (`() => structuredClone(DEFAULT)`) or every session mutates one
+  object — three templates need this. And `projection(fn)` hands `fn` a REAL value
   rather than the slot, which is what lets a `syncState` projection drop the
   optional chaining it used to carry for the pre-first-tool-call frame; in
   `retail`'s `storeView` that chaining read as security gating and was not (the

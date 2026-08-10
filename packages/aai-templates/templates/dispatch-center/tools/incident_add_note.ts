@@ -1,6 +1,6 @@
 import { isToolFailure, tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import { findIncident, logEvent, updateState } from "../shared.ts";
+import { dispatchSlot, findIncident, logEvent } from "../shared.ts";
 
 export const incidentAddNote = tool({
   description: "Add a situational update note to an incident's timeline.",
@@ -10,7 +10,7 @@ export const incidentAddNote = tool({
     source: z.string().max(100).describe("Who reported this — unit callsign or caller").optional(),
   }),
   async execute(args, ctx) {
-    return updateState(ctx, (state) => {
+    return dispatchSlot.update(ctx, (state) => {
       const inc = findIncident(state, args.incidentId);
       if (isToolFailure(inc)) return inc;
 

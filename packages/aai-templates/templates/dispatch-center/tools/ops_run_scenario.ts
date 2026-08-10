@@ -1,7 +1,7 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import type { Incident, IncidentType, Severity } from "../shared.ts";
-import { calculateTriageScore, createIncident, updateState } from "../shared.ts";
+import { calculateTriageScore, createIncident, dispatchSlot } from "../shared.ts";
 
 type ScenarioIncident = Pick<Incident, "location" | "description" | "type" | "severity">;
 type ScenarioDef = { narrative: string; incidents: ScenarioIncident[] };
@@ -123,7 +123,7 @@ export const opsRunScenario = tool({
     scenario: z.enum(SCENARIO_NAMES).describe("Scenario type to simulate"),
   }),
   async execute(args, ctx) {
-    return updateState(ctx, (state) => {
+    return dispatchSlot.update(ctx, (state) => {
       const s = scenarios[args.scenario];
 
       const created: string[] = [];

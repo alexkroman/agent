@@ -148,6 +148,119 @@ describe("sessionSlot", () => {
     });
   });
 
+  describe("update", () => {
+    test("mutates the live value and resolves with the mutator's return", async () => {
+      const ctx = createToolContext<{ cart?: Cart }>();
+      const result = await cartSlot.update(ctx, (cart) => {
+        cart.items.push("apple");
+        return cart.items.length;
+      });
+      expect(result).toBe(1);
+      expect(cartSlot.get(ctx).items).toEqual(["apple"]);
+    });
+
+    test("installs the default on first use, like get", async () => {
+      const ctx = createToolContext<{ cart?: Cart }>();
+      await cartSlot.update(ctx, () => undefined);
+      expect(ctx.state.cart).toEqual({ items: [], nextId: 1 });
+    });
+
+    test("serializes concurrent async mutators of one session", async () => {
+      // THE reason this method exists: the LLM loop runs a step's tool calls
+      // concurrently, so two async mutators interleave at every await. Without
+      // the lock both read `items.length === 0` and the second write wins,
+      // leaving one item instead of two.
+      const ctx = createToolContext<{ cart?: Cart }>();
+      const appendSlowly = (sku: string) =>
+        cartSlot.update(ctx, async (cart) => {
+          const seen = cart.items.length;
+          await Promise.resolve();
+          await Promise.resolve();
+          cart.items = [...cart.items.slice(0, seen), sku];
+        });
+      await Promise.all([appendSlowly("a"), appendSlowly("b")]);
+      expect(cartSlot.get(ctx).items).toEqual(["a", "b"]);
+    });
+
+    test("does not serialize across sessions", async () => {
+      // Two callers must not queue behind each other — the lock is keyed by
+      // session id, and blocking on a stranger's tool call would be a latency
+      // bug that only shows up under concurrency.
+      const a = createToolContext<{ cart?: Cart }>();
+      const b = createToolContext<{ cart?: Cart }>();
+      const started = new Set<string>();
+      const bothInFlight = Promise.withResolvers<void>();
+      const enter = (ctx: typeof a, name: string) =>
+        cartSlot.update(ctx, async () => {
+          started.add(name);
+          if (started.size === 2) bothInFlight.resolve();
+          await bothInFlight.promise;
+        });
+      // Resolves only if the two ran at the same time; a shared lock hangs.
+      await Promise.all([enter(a, "a"), enter(b, "b")]);
+      expect([...started].sort()).toEqual(["a", "b"]);
+    });
+
+    test("a rejecting mutator does not wedge the lock", async () => {
+      const ctx = createToolContext<{ cart?: Cart }>();
+      await expect(cartSlot.update(ctx, () => Promise.reject(new Error("boom")))).rejects.toThrow(
+        "boom",
+      );
+      await expect(cartSlot.update(ctx, (cart) => cart.items.length)).resolves.toBe(0);
+    });
+
+    describe("the after hook", () => {
+      const capped = sessionSlot("log", (): { entries: string[] } => ({ entries: [] }), {
+        after: (value) => {
+          value.entries = value.entries.slice(-2);
+        },
+      });
+
+      test("runs inside the lock after a successful mutation", async () => {
+        const ctx = createToolContext<{ log?: { entries: string[] } }>();
+        await capped.update(ctx, (log) => log.entries.push("a", "b", "c", "d"));
+        expect(capped.get(ctx).entries).toEqual(["c", "d"]);
+      });
+
+      test("runs on every update, not only the first", async () => {
+        const ctx = createToolContext<{ log?: { entries: string[] } }>();
+        await capped.update(ctx, (log) => log.entries.push("a", "b", "c"));
+        await capped.update(ctx, (log) => log.entries.push("d", "e", "f"));
+        expect(capped.get(ctx).entries).toEqual(["e", "f"]);
+      });
+
+      test("does NOT run when the mutator throws, and the mutator's error wins", async () => {
+        const ctx = createToolContext<{ log?: { entries: string[] } }>();
+        await expect(
+          capped.update(ctx, (log) => {
+            log.entries.push("a", "b", "c");
+            throw new Error("mid-mutation");
+          }),
+        ).rejects.toThrow("mid-mutation");
+        // Untrimmed: the half-applied value is left exactly as the mutator left
+        // it rather than being normalized by a hook that never saw a complete
+        // mutation.
+        expect(capped.get(ctx).entries).toEqual(["a", "b", "c"]);
+      });
+
+      test("normalizes the value the slot NOW holds, after a mutator's set", async () => {
+        // A mutator that loads or restores calls `set`, replacing the object it
+        // was handed. The hook has to see the replacement — running it on the
+        // stale reference would leave the loaded value untrimmed.
+        const ctx = createToolContext<{ log?: { entries: string[] } }>();
+        await capped.update(ctx, () => {
+          capped.set(ctx, { entries: ["w", "x", "y", "z"] });
+        });
+        expect(capped.get(ctx).entries).toEqual(["y", "z"]);
+      });
+
+      test("a slot with no hook is unaffected", async () => {
+        const ctx = createToolContext<{ cart?: Cart }>();
+        await expect(cartSlot.update(ctx, (cart) => cart.items.length)).resolves.toBe(0);
+      });
+    });
+  });
+
   test("two slots on one state object stay independent", () => {
     const other = sessionSlot("flags", () => ({ seen: false }));
     const ctx = createToolContext<{ cart?: Cart; flags?: { seen: boolean } }>();

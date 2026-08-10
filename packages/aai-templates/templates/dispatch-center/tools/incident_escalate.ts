@@ -3,10 +3,10 @@ import { z } from "zod";
 import {
   assertNotResolved,
   calculateTriageScore,
+  dispatchSlot,
   findIncident,
   logEvent,
   recommendResources,
-  updateState,
 } from "../shared.ts";
 
 export const incidentEscalate = tool({
@@ -21,7 +21,7 @@ export const incidentEscalate = tool({
     newSeverity: z.enum(["critical", "urgent"]).describe("Escalated severity level").optional(),
   }),
   async execute(args, ctx) {
-    return updateState(ctx, (state) => {
+    return dispatchSlot.update(ctx, (state) => {
       const inc = findIncident(state, args.incidentId);
       if (isToolFailure(inc)) return inc;
       const blocked = assertNotResolved(inc, "escalate");

@@ -3,13 +3,13 @@ import { z } from "zod";
 import {
   assertNotResolved,
   calculateTriageScore,
+  dispatchSlot,
   findIncident,
   getApplicableProtocols,
   INCIDENT_TYPES,
   logEvent,
   recommendResources,
   SEVERITIES,
-  updateState,
 } from "../shared.ts";
 
 export const incidentTriage = tool({
@@ -28,7 +28,7 @@ export const incidentTriage = tool({
     notes: z.string().max(1000).describe("Triage notes").optional(),
   }),
   async execute(args, ctx) {
-    return updateState(ctx, (state) => {
+    return dispatchSlot.update(ctx, (state) => {
       const inc = findIncident(state, args.incidentId);
       if (isToolFailure(inc)) return inc;
       const blocked = assertNotResolved(inc, "triage");

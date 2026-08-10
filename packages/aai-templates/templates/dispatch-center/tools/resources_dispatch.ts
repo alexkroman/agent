@@ -3,10 +3,10 @@ import { z } from "zod";
 import type { Resource } from "../shared.ts";
 import {
   assertNotResolved,
+  dispatchSlot,
   findIncident,
   logEvent,
   recommendResources,
-  updateState,
 } from "../shared.ts";
 
 export const resourcesDispatch = tool({
@@ -31,7 +31,7 @@ export const resourcesDispatch = tool({
       .optional(),
   }),
   async execute(args, ctx) {
-    return updateState(ctx, (state) => {
+    return dispatchSlot.update(ctx, (state) => {
       const inc = findIncident(state, args.incidentId);
       if (isToolFailure(inc)) return inc;
       const blocked = assertNotResolved(inc, "dispatch resources");

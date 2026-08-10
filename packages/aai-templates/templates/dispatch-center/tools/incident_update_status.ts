@@ -1,6 +1,6 @@
 import { isToolFailure, tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import { assertNotResolved, findIncident, logEvent, updateState } from "../shared.ts";
+import { assertNotResolved, dispatchSlot, findIncident, logEvent } from "../shared.ts";
 
 export const incidentUpdateStatus = tool({
   description: "Update an incident's status (en_route, on_scene, resolved, escalated).",
@@ -17,7 +17,7 @@ export const incidentUpdateStatus = tool({
       .optional(),
   }),
   async execute(args, ctx) {
-    return updateState(ctx, (state) => {
+    return dispatchSlot.update(ctx, (state) => {
       const inc = findIncident(state, args.incidentId);
       if (isToolFailure(inc)) return inc;
       const blocked = assertNotResolved(inc, `set status to ${args.status}`);

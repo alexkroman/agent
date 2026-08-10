@@ -5,12 +5,24 @@
 Extract five patterns the templates had each re-implemented into the SDK, and
 convert the templates to them.
 
-- `sessionSlot(key, create)` (root export) — a typed named slot inside
-  `ctx.state`, with `get`/`set`/`reset` plus `read`/`projection` for the
-  `syncState` side. Every stateful template declared its own
-  `type StateSlot = { x?: T }` and a `ctx.state as StateSlot` cast with a lazy
-  `??=` init; a slot moves that narrowing into one seam, and `SlotStateOf<typeof
-  slot>` is the one spelling of the state type.
+- `sessionSlot(key, create, { after? })` (root export) — a typed named slot
+  inside `ctx.state`, with `get`/`set`/`reset`, `read`/`projection` for the
+  `syncState` side, and `update` for a serialized mutation. Every stateful
+  template declared its own `type StateSlot = { x?: T }` and a
+  `ctx.state as StateSlot` cast with a lazy `??=` init; a slot moves that
+  narrowing into one seam, and `SlotStateOf<typeof slot>` is the one spelling of
+  the state type.
+
+  `slot.update(ctx, mutate)` holds a per-slot, per-session lock for the mutation
+  and then runs the optional `after` hook — the shape dispatch-center and retail
+  had each hand-rolled as `createKeyedLock()` plus
+  `withLock(lock, ctx.sessionId, () => mutator(slot.get(ctx)))`, with
+  dispatch-center's copy additionally pruning and recalculating afterwards. It is
+  NOT re-entrant, and `after` does not run when the mutator throws; both are
+  documented on the method. `createKeyedLock`/`withLock` stay public for
+  serialized work that is not a slot mutation (and for `timeoutMs`, which
+  `update` has no equivalent for), and are now allowlisted as unexercised by any
+  template.
 - `ToolFailure` / `isToolFailure` (root + `/utils`) — the `{ error: string }`
   shape tools return for a recoverable failure, and the guard that narrows a
   propagated one. Distinct from `toolError`, which returns the host's

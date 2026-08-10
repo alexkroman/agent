@@ -6,6 +6,7 @@
  * @module session-slot
  */
 
+import { createKeyedLock, withLock } from "./keyed-lock.ts";
 import type { ToolContext } from "./types.ts";
 
 /**
@@ -81,6 +82,71 @@ export interface SessionSlot<K extends string, T> {
    * ```
    */
   projection<V>(project: (value: T) => V): (state: SlotState<K, T> | undefined) => V;
+  /**
+   * Mutate this session's value under a per-session lock, then run the slot's
+   * `after` hook. Resolves with whatever `mutate` returned.
+   *
+   * **Use this instead of `get` for any mutation that awaits.** The LLM loop
+   * runs a step's tool calls CONCURRENTLY, so two async mutators of one slot
+   * interleave at every await and each reads what the other half-applied.
+   * `get` is fine for a synchronous read-modify-write, which cannot interleave.
+   *
+   * **Not re-entrant.** A `mutate` body that calls `update` on the same slot
+   * waits on a key only its own caller can release — a deadlock, not an error.
+   * Keep the serialized region to the mutation itself: call other tools'
+   * helpers on the value you were handed, not through `update` again. (The
+   * lock is per slot AND per session, so a DIFFERENT slot's `update` nests
+   * safely.)
+   *
+   * For serialized work that is NOT a slot mutation — an external resource, a
+   * key that isn't the session id, or a mutation that must fail rather than
+   * queue — reach for `createKeyedLock`/`withLock` directly. They are public
+   * for exactly that, and `createKeyedLock({ timeoutMs })` is what turns a
+   * contended acquire into a `KeyedLockTimeoutError` instead of a wait.
+   *
+   * @example
+   * ```ts
+   * import { sessionSlot, tool } from "@alexkroman1/aai";
+   * import { z } from "zod";
+   *
+   * const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
+   *
+   * export const addItem = tool({
+   *   description: "Add an item to the cart",
+   *   inputSchema: z.object({ sku: z.string() }),
+   *   execute: (args, ctx) =>
+   *     cartSlot.update(ctx, async (cart) => {
+   *       const priced = await Promise.resolve(args.sku);
+   *       cart.items.push(priced);
+   *       return { count: cart.items.length };
+   *     }),
+   * });
+   * ```
+   */
+  update<R>(ctx: ToolContext<SlotState<K, T>>, mutate: (value: T) => R | Promise<R>): Promise<R>;
+}
+
+/**
+ * Options for {@link sessionSlot}.
+ *
+ * @public
+ */
+export interface SessionSlotOptions<T> {
+  /**
+   * Invariant restoration, run inside the lock at the end of every successful
+   * {@link SessionSlot.update} — pruning growth, recalculating a derived field.
+   *
+   * It exists so those rules live with the slot rather than being re-listed at
+   * every mutating call site, which is how one gets forgotten. Because it runs
+   * inside the lock, it sees a value no other mutator is touching.
+   *
+   * **It does NOT run when `mutate` throws.** A mutator that failed part-way
+   * may have left the value in a shape the hook itself cannot handle, and an
+   * error thrown from the hook would replace the one that actually explains
+   * the failure. The mutator's error propagates and the lock releases either
+   * way.
+   */
+  after?: (value: T) => void;
 }
 
 /**
@@ -136,7 +202,11 @@ export interface SessionSlot<K extends string, T> {
  *
  * @public
  */
-export function sessionSlot<const K extends string, T>(key: K, create: () => T): SessionSlot<K, T> {
+export function sessionSlot<const K extends string, T>(
+  key: K,
+  create: () => T,
+  options: SessionSlotOptions<T> = {},
+): SessionSlot<K, T> {
   /**
    * `=== undefined` and NOT `??`: only an absent value defaults. `??` would
    * also swallow a slot legitimately holding `null`, and would put `read` and
@@ -147,18 +217,23 @@ export function sessionSlot<const K extends string, T>(key: K, create: () => T):
     const existing = state?.[key];
     return existing === undefined ? create() : existing;
   };
+  const get = (ctx: ToolContext<SlotState<K, T>>): T => {
+    // A slot explicitly holding `undefined` is indistinguishable from an
+    // untouched one to every reader here, so it counts as absent.
+    const existing = ctx.state[key];
+    if (existing !== undefined) return existing;
+    const value = create();
+    ctx.state[key] = value;
+    return value;
+  };
+  // Per SLOT as well as per session, so one slot's serialized region cannot
+  // block another's — and `createKeyedLock` drops a key once its chain drains,
+  // so a long-running agent does not accumulate one entry per session id.
+  const lock = createKeyedLock();
   return {
     key,
     create,
-    get(ctx) {
-      // A slot explicitly holding `undefined` is indistinguishable from an
-      // untouched one to every reader here, so it counts as absent.
-      const existing = ctx.state[key];
-      if (existing !== undefined) return existing;
-      const value = create();
-      ctx.state[key] = value;
-      return value;
-    },
+    get,
     set(ctx, value) {
       ctx.state[key] = value;
       return value;
@@ -171,6 +246,17 @@ export function sessionSlot<const K extends string, T>(key: K, create: () => T):
     read,
     projection(project) {
       return (state) => project(read(state));
+    },
+    update(ctx, mutate) {
+      return withLock(lock, ctx.sessionId, async () => {
+        const result = await mutate(get(ctx));
+        // Re-read rather than reusing what `mutate` was handed: a mutator that
+        // called `set` (a load, a restore) replaced the stored object, and the
+        // hook has to normalize what the slot NOW holds, not what it held when
+        // the mutation began.
+        options.after?.(get(ctx));
+        return result;
+      });
     },
   };
 }
