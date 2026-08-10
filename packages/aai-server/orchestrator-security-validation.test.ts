@@ -8,13 +8,7 @@
 import { describe, expect, test } from "vitest";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import {
-  authHeaders,
-  createTestOrchestrator,
-  createTestStore,
-  deployAgent,
-  deployBody,
-} from "./test-utils.ts";
+import { createTestOrchestrator, createTestStore, deploy, deployAgent } from "./test-utils.ts";
 
 // ── Slug Validation & Path Traversal ───────────────────────────────────
 
@@ -28,11 +22,7 @@ describe("slug validation prevents path traversal", () => {
   ])("deploy rejects a body slug with %s", async (_why, slug) => {
     const { fetch } = await createTestOrchestrator();
 
-    const res = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders(),
-      body: deployBody({ slug }),
-    });
+    const res = await deploy(fetch, { body: { slug } });
     expect(res.status).toBe(400);
   });
 

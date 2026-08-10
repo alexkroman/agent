@@ -5,7 +5,13 @@ import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { createMemorySecretStore } from "./secret-store.ts";
 import { apiKeyOwnerSecretName } from "./supabase-auth.ts";
-import { createTestOrchestrator, createTestStore, deployAgent, deployBody } from "./test-utils.ts";
+import {
+  authFetch,
+  createTestOrchestrator,
+  createTestStore,
+  deploy,
+  deployAgent,
+} from "./test-utils.ts";
 
 test("orchestrator adds Cross-Origin-Isolation headers", async () => {
   const store = createTestStore();
@@ -63,14 +69,7 @@ describe("deploy route auth", () => {
   test("returns 403 when key does not match agent owner", async () => {
     const { fetch } = await createTestOrchestrator();
     await deployAgent(fetch, "my-agent", "owner-key");
-    const res = await fetch("/deploy", {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer wrong-key",
-        "Content-Type": "application/json",
-      },
-      body: deployBody({ slug: "my-agent" }),
-    });
+    const res = await deploy(fetch, { key: "wrong-key", body: { slug: "my-agent" } });
     expect(res.status).toBe(403);
   });
 });
@@ -131,10 +130,7 @@ describe("requireOwner on storage endpoint", () => {
   test("accepts valid owner API key on storage endpoint", async () => {
     const { fetch } = await createTestOrchestrator();
     await deployAgent(fetch, "my-agent");
-    const res = await fetch("/my-agent/storage", {
-      method: "GET",
-      headers: { Authorization: "Bearer key1" },
-    });
+    const res = await authFetch(fetch, "/my-agent/storage", { method: "GET" });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ enabled: false });
   });

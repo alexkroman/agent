@@ -13,7 +13,13 @@
 import { describe, expect, test, vi } from "vitest";
 import type { ApiKeyVerifier } from "./api-key-verify.ts";
 import { createRateLimiter } from "./rate-limit.ts";
-import { authHeaders, createTestOrchestrator, deployBody } from "./test-utils.ts";
+import {
+  authFetch,
+  authHeaders,
+  createTestOrchestrator,
+  deploy,
+  deployBody,
+} from "./test-utils.ts";
 
 /** Accepts exactly the listed keys, rejects everything else. */
 const verifierAccepting = (...valid: string[]): ApiKeyVerifier =>
@@ -24,11 +30,7 @@ describe("raw API-key verification", () => {
     const keyVerifier = verifierAccepting("real-key");
     const { fetch, store } = await createTestOrchestrator({ keyVerifier });
 
-    const res = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders("not-a-real-key"),
-      body: deployBody({ slug: "squatted" }),
-    });
+    const res = await deploy(fetch, { key: "not-a-real-key", body: { slug: "squatted" } });
 
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: "Invalid API key" });
@@ -41,11 +43,7 @@ describe("raw API-key verification", () => {
     const keyVerifier = verifierAccepting("real-key");
     const { fetch, store } = await createTestOrchestrator({ keyVerifier });
 
-    const res = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders("real-key"),
-      body: deployBody({ slug: "legit" }),
-    });
+    const res = await deploy(fetch, { key: "real-key", body: { slug: "legit" } });
 
     expect(res.status).toBe(200);
     expect(await store.getAgent("legit")).not.toBeNull();
@@ -59,11 +57,7 @@ describe("raw API-key verification", () => {
     });
     const { fetch, store } = await createTestOrchestrator({ keyVerifier });
 
-    const res = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders("anything"),
-      body: deployBody({ slug: "outage" }),
-    });
+    const res = await deploy(fetch, { key: "anything", body: { slug: "outage" } });
 
     expect(res.status).toBe(503);
     expect(await store.getAgent("outage")).toBeNull();
@@ -72,39 +66,27 @@ describe("raw API-key verification", () => {
   test("owner-scoped routes verify too, so a stale key stops working everywhere", async () => {
     const keyVerifier = verifierAccepting("real-key");
     const { fetch } = await createTestOrchestrator({ keyVerifier });
-    await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders("real-key"),
-      body: deployBody({ slug: "owned" }),
-    });
+    await deploy(fetch, { key: "real-key", body: { slug: "owned" } });
 
     const revoked = verifierAccepting();
     const after = await createTestOrchestrator({ keyVerifier: revoked });
-    const res = await after.fetch("/owned/secret", {
+    const res = await authFetch(after.fetch, "/owned/secret", {
       method: "GET",
-      headers: authHeaders("real-key"),
+      key: "real-key",
     });
     expect(res.status).toBe(401);
   });
 
   test("no verifier configured keeps the pre-existing behavior (dev and tests)", async () => {
     const { fetch } = await createTestOrchestrator();
-    const res = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders("any-string-at-all"),
-      body: deployBody({ slug: "devmode" }),
-    });
+    const res = await deploy(fetch, { key: "any-string-at-all", body: { slug: "devmode" } });
     expect(res.status).toBe(200);
   });
 
   test("the verifier is asked for the bearer as sent", async () => {
     const keyVerifier = verifierAccepting("real-key");
     const { fetch } = await createTestOrchestrator({ keyVerifier });
-    await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders("real-key"),
-      body: deployBody({ slug: "arg-check" }),
-    });
+    await deploy(fetch, { key: "real-key", body: { slug: "arg-check" } });
     expect(keyVerifier).toHaveBeenCalledWith("real-key");
   });
 });
@@ -126,19 +108,11 @@ describe("POST /deploy body concurrency", () => {
       } as never,
     });
 
-    const held = fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders("k"),
-      body: deployBody({ slug: "holder" }),
-    });
+    const held = deploy(fetch, { key: "k", body: { slug: "holder" } });
     // Let the first request take the slot before the second asks for one.
     await new Promise((r) => setImmediate(r));
 
-    const refused = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders("k"),
-      body: deployBody({ slug: "queued" }),
-    });
+    const refused = await deploy(fetch, { key: "k", body: { slug: "queued" } });
     expect(refused.status).toBe(503);
     expect(Number(refused.headers.get("Retry-After"))).toBeGreaterThan(0);
 
@@ -146,11 +120,7 @@ describe("POST /deploy body concurrency", () => {
     await held;
 
     // ...and the slot comes back, so the gate throttles rather than wedges.
-    const after = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders("k"),
-      body: deployBody({ slug: "after" }),
-    });
+    const after = await deploy(fetch, { key: "k", body: { slug: "after" } });
     expect(after.status).toBe(200);
   });
 });

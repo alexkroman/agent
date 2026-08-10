@@ -6,13 +6,7 @@ import { WebSocket as WsClient } from "ws";
 import { createOrchestrator } from "./orchestrator.ts";
 import type { Sandbox } from "./sandbox.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import {
-  authHeaders,
-  createTestOrchestrator,
-  createTestStore,
-  deployAgent,
-  deployBody,
-} from "./test-utils.ts";
+import { createTestOrchestrator, createTestStore, deploy, deployAgent } from "./test-utils.ts";
 
 describe("handleAgentHealth", () => {
   test("returns 404 for non-existent agent", async () => {
@@ -157,11 +151,7 @@ describe("handleAgentPage", () => {
     // An agent that shipped no client of its own falls back to aai-ui's
     // built default client — served from the container image, so a cached
     // shell outlives its assets across a rollout the same way.
-    await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders("key1"),
-      body: deployBody({ slug: "bare-agent", clientFiles: {} }),
-    });
+    await deploy(fetch, { key: "key1", body: { slug: "bare-agent", clientFiles: {} } });
 
     const res = await fetch("/bare-agent/");
     expect(res.status).toBe(200);

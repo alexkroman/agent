@@ -9,11 +9,10 @@ import { describe, expect, test } from "vitest";
 import { hashApiKey } from "./secrets.ts";
 import {
   authFetch,
-  authHeaders,
   createTestOrchestrator,
   createTestStore,
+  deploy,
   deployAgent,
-  deployBody,
 } from "./test-utils.ts";
 
 // ── Cross-Agent Storage Isolation ──────────────────────────────────────
@@ -26,16 +25,16 @@ describe("cross-agent storage isolation", () => {
     await deployAgent(fetch, "agent-beta", "key-beta");
 
     // Agent alpha's key should be rejected on agent beta's storage endpoint
-    const res = await fetch("/agent-beta/storage", {
+    const res = await authFetch(fetch, "/agent-beta/storage", {
       method: "GET",
-      headers: { Authorization: "Bearer key-alpha" },
+      key: "key-alpha",
     });
     expect(res.status).toBe(403);
 
     // Beta's own key is accepted
-    const own = await fetch("/agent-beta/storage", {
+    const own = await authFetch(fetch, "/agent-beta/storage", {
       method: "GET",
-      headers: { Authorization: "Bearer key-beta" },
+      key: "key-beta",
     });
     expect(own.status).toBe(200);
   });
@@ -51,11 +50,7 @@ describe("cross-agent auth isolation", () => {
     await deployAgent(fetch, "agent-beta", "key-beta");
 
     // Alpha's key tries to redeploy over beta
-    const res = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders("key-alpha"),
-      body: deployBody({ slug: "agent-beta" }),
-    });
+    const res = await deploy(fetch, { key: "key-alpha", body: { slug: "agent-beta" } });
     expect(res.status).toBe(403);
   });
 
@@ -65,10 +60,7 @@ describe("cross-agent auth isolation", () => {
     await deployAgent(fetch, "agent-alpha", "key-alpha");
     await deployAgent(fetch, "agent-beta", "key-beta");
 
-    const res = await fetch("/agent-beta", {
-      method: "DELETE",
-      headers: { Authorization: "Bearer key-alpha" },
-    });
+    const res = await authFetch(fetch, "/agent-beta", { method: "DELETE", key: "key-alpha" });
     expect(res.status).toBe(403);
   });
 
@@ -79,23 +71,24 @@ describe("cross-agent auth isolation", () => {
     await deployAgent(fetch, "agent-beta", "key-beta");
 
     // Try to list agent B's secrets with agent A's key
-    const listRes = await fetch("/agent-beta/secret", {
-      headers: { Authorization: "Bearer key-alpha" },
+    const listRes = await authFetch(fetch, "/agent-beta/secret", {
+      method: "GET",
+      key: "key-alpha",
     });
     expect(listRes.status).toBe(403);
 
     // Try to set a secret on agent B with agent A's key
-    const setRes = await fetch("/agent-beta/secret", {
+    const setRes = await authFetch(fetch, "/agent-beta/secret", {
       method: "PUT",
-      headers: authHeaders("key-alpha"),
-      body: JSON.stringify({ MY_SECRET: "injected" }),
+      key: "key-alpha",
+      body: { MY_SECRET: "injected" },
     });
     expect(setRes.status).toBe(403);
 
     // Try to delete a secret from agent B with agent A's key
-    const delRes = await fetch("/agent-beta/secret/MY_SECRET", {
+    const delRes = await authFetch(fetch, "/agent-beta/secret/MY_SECRET", {
       method: "DELETE",
-      headers: { Authorization: "Bearer key-alpha" },
+      key: "key-alpha",
     });
     expect(delRes.status).toBe(403);
   });
@@ -106,11 +99,7 @@ describe("cross-agent auth isolation", () => {
     await deployAgent(fetch, "agent-alpha", "key-alpha");
 
     // Use wrong key — error message should not echo the slug back
-    const res = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders("wrong-key"),
-      body: deployBody({ slug: "agent-alpha" }),
-    });
+    const res = await deploy(fetch, { key: "wrong-key", body: { slug: "agent-alpha" } });
     expect(res.status).toBe(403);
     const body = (await res.json()) as { error: string };
     // The deploy route says the requested slug is taken (that is inherent to
@@ -149,10 +138,9 @@ describe("platform credential handling", () => {
     const { fetch } = await createTestOrchestrator();
     await deployAgent(fetch, "my-agent", "key1");
 
-    const res = await fetch("/my-agent/secret", {
+    const res = await authFetch(fetch, "/my-agent/secret", {
       method: "PUT",
-      headers: authHeaders(),
-      body: JSON.stringify({ ASSEMBLYAI_API_KEY: "new-key" }),
+      body: { ASSEMBLYAI_API_KEY: "new-key" },
     });
     expect(res.status).toBe(200);
   });
@@ -161,9 +149,8 @@ describe("platform credential handling", () => {
     const { fetch } = await createTestOrchestrator();
     await deployAgent(fetch, "my-agent", "key1");
 
-    const res = await fetch("/my-agent/secret/ASSEMBLYAI_API_KEY", {
+    const res = await authFetch(fetch, "/my-agent/secret/ASSEMBLYAI_API_KEY", {
       method: "DELETE",
-      headers: { Authorization: "Bearer key1" },
     });
     expect(res.status).toBe(200);
   });
@@ -202,15 +189,12 @@ describe("multi-tenant deploy isolation", () => {
     });
 
     // Redeploy agent alpha
-    await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders("key-alpha"),
-      body: deployBody({ slug: "agent-alpha" }),
-    });
+    await deploy(fetch, { key: "key-alpha", body: { slug: "agent-alpha" } });
 
     // Beta's secret should still be intact
-    const betaRead = await fetch("/agent-beta/secret", {
-      headers: { Authorization: "Bearer key-beta" },
+    const betaRead = await authFetch(fetch, "/agent-beta/secret", {
+      method: "GET",
+      key: "key-beta",
     });
     expect(betaRead.status).toBe(200);
     expect(((await betaRead.json()) as { vars: string[] }).vars).toContain("PERSIST_TEST");
@@ -223,9 +207,9 @@ describe("multi-tenant deploy isolation", () => {
     await deployAgent(fetch, "agent-beta", "key-beta");
 
     // Delete alpha
-    const deleteRes = await fetch("/agent-alpha/", {
+    const deleteRes = await authFetch(fetch, "/agent-alpha/", {
       method: "DELETE",
-      headers: { Authorization: "Bearer key-alpha" },
+      key: "key-alpha",
     });
     expect(deleteRes.status).toBeLessThan(500);
 

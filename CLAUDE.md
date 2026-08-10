@@ -378,11 +378,22 @@ Each package has distinct test helpers tailored to its domain:
   `MockAudioContext`, `installAudioMocks()`
 - **`aai-server/test-utils.ts`** — (no underscore) `createTestStore()`
   (in-memory BundleStore), `createTestOrchestrator()`, `authHeaders()` /
-  `authFetch()` / `deployAgent()` / `deployBody()`, `makeSlot()`.
+  `authFetch()` / `deploy()` / `deployAgent()` / `deployPayload()` /
+  `deployBody()`, `makeSlot()`.
   (`createMockKv()` was listed here for a while and has never existed in this
-  package — KV was removed. Reach for `authHeaders`/`authFetch` rather than
-  spelling out a `Bearer`+`Content-Type` literal; ~47 sites across 8 files
-  still do.)
+  package — KV was removed.)
+
+  **Build a request with `authFetch`/`deploy`, not a header literal.** The
+  `Bearer`+`Content-Type` pair was spelled out at ~47 sites across 8 files;
+  they are converted, and the 28 remaining `Bearer` strings in the package are
+  all ones where the literal IS the subject — the bearer parser's own spec
+  (`_bearer.test.ts`), the `resolveBearer` cases in `middleware.test.ts`, and
+  header ASSERTIONS in the blob-storage / supabase-auth / warm-harness suites.
+  `deploy(fetch, { key, body })` is the same idea one level up, for the
+  `POST /deploy` shape ~40 specs restate; `deployPayload()` is `deployBody()`
+  as an object, for callers that re-encode it (the gzip specs). Drop to a bare
+  `fetch` only when the REQUEST is what a spec exercises — a missing header, a
+  gzipped body, a raw string — and those cases are why `deployBody` stays.
 
 ### `@dev/source` custom export condition
 

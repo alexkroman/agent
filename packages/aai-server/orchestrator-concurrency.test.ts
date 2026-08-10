@@ -1,22 +1,14 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { describe, expect, test } from "vitest";
-import { authHeaders, createTestOrchestrator, deployBody } from "./test-utils.ts";
+import { authHeaders, createTestOrchestrator, deploy } from "./test-utils.ts";
 
 describe("orchestrator concurrency", () => {
   test("parallel deploys of different slugs all succeed", async () => {
     const { fetch } = await createTestOrchestrator();
     const slugs = Array.from({ length: 10 }, (_, i) => `agent-${i}`);
 
-    const results = await Promise.all(
-      slugs.map((slug) =>
-        fetch("/deploy", {
-          method: "POST",
-          headers: authHeaders(),
-          body: deployBody({ slug }),
-        }),
-      ),
-    );
+    const results = await Promise.all(slugs.map((slug) => deploy(fetch, { body: { slug } })));
 
     for (const res of results) {
       expect(res.status).toBe(200);
@@ -28,13 +20,7 @@ describe("orchestrator concurrency", () => {
 
     // Deploy the same slug concurrently — all should succeed since same owner
     const results = await Promise.all(
-      Array.from({ length: 5 }, () =>
-        fetch("/deploy", {
-          method: "POST",
-          headers: authHeaders("key1"),
-          body: deployBody({ slug: "my-agent" }),
-        }),
-      ),
+      Array.from({ length: 5 }, () => deploy(fetch, { key: "key1", body: { slug: "my-agent" } })),
     );
 
     // All should succeed (last write wins)
@@ -52,11 +38,7 @@ describe("orchestrator concurrency", () => {
 
     // Mix deploy and health check requests
     const deploys = Array.from({ length: 5 }, (_, i) =>
-      fetch("/deploy", {
-        method: "POST",
-        headers: authHeaders(),
-        body: deployBody({ slug: `agent-${i}` }),
-      }),
+      deploy(fetch, { body: { slug: `agent-${i}` } }),
     );
     const healthChecks = Array.from({ length: 10 }, () => fetch("/health"));
 
@@ -72,11 +54,7 @@ describe("orchestrator concurrency", () => {
     const { fetch } = await createTestOrchestrator();
 
     // Deploy first
-    const deployRes = await fetch("/deploy", {
-      method: "POST",
-      headers: authHeaders("key1"),
-      body: deployBody({ slug: "my-agent" }),
-    });
+    const deployRes = await deploy(fetch, { key: "key1", body: { slug: "my-agent" } });
     expect(deployRes.status).toBe(200);
 
     // Immediately delete and re-deploy in parallel
@@ -85,11 +63,7 @@ describe("orchestrator concurrency", () => {
         method: "POST",
         headers: authHeaders("key1"),
       }),
-      fetch("/deploy", {
-        method: "POST",
-        headers: authHeaders("key1"),
-        body: deployBody({ slug: "my-agent" }),
-      }),
+      deploy(fetch, { key: "key1", body: { slug: "my-agent" } }),
     ]);
 
     // Both should complete without crashing — exact status depends on ordering

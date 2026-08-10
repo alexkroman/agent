@@ -2,7 +2,7 @@
 import { expect, test, vi } from "vitest";
 import type { AppDatabases, AppDbMeta } from "./app-database.ts";
 import { createMemorySecretStore, type SecretStore } from "./secret-store.ts";
-import { createTestOrchestrator, deployAgent } from "./test-utils.ts";
+import { authFetch, createTestOrchestrator, deployAgent, type TestFetch } from "./test-utils.ts";
 
 // Carries a `url`, because that locator is the point of the two deprovision
 // assertions below: it names the cluster this app was placed on, and a
@@ -34,8 +34,9 @@ async function deployWithStorage(opts: { appDb?: AppDatabases; secrets?: SecretS
   return { ...orch, secrets };
 }
 
-function storageReq(slug: string, key: string, method: string): [string, RequestInit] {
-  return [`/${slug}/storage`, { method, headers: { Authorization: `Bearer ${key}` } }];
+/** Owner-auth'd request to the storage route of the agent every spec deploys. */
+function storageReq(fetch: TestFetch, method: string, key = "key1"): Promise<Response> {
+  return authFetch(fetch, "/my-agent/storage", { method, key });
 }
 
 test("storage status rejects without auth", async () => {
@@ -45,14 +46,14 @@ test("storage status rejects without auth", async () => {
 
 test("storage status is disabled by default", async () => {
   const { fetch } = await deployWithStorage();
-  const res = await fetch(...storageReq("my-agent", "key1", "GET"));
+  const res = await storageReq(fetch, "GET");
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual({ enabled: false });
 });
 
 test("storage enable returns 503 when SUPABASE_DB_URL is unconfigured", async () => {
   const { fetch } = await deployWithStorage(); // no appDb binding
-  const res = await fetch(...storageReq("my-agent", "key1", "POST"));
+  const res = await storageReq(fetch, "POST");
   expect(res.status).toBe(503);
   expect(await res.text()).toContain("SUPABASE_DB_URL");
 });
@@ -61,22 +62,22 @@ test("storage enable provisions, stores credentials, and reports enabled", async
   const appDb = fakeAppDb();
   const { fetch, secrets } = await deployWithStorage({ appDb });
 
-  const res = await fetch(...storageReq("my-agent", "key1", "POST"));
+  const res = await storageReq(fetch, "POST");
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual({ ok: true, enabled: true });
   expect(appDb.provision).toHaveBeenCalledWith("my-agent");
   expect(JSON.parse((await secrets.get("app-db:my-agent")) ?? "")).toEqual(META);
 
-  const status = await fetch(...storageReq("my-agent", "key1", "GET"));
+  const status = await storageReq(fetch, "GET");
   expect(await status.json()).toEqual({ enabled: true });
 });
 
 test("storage disable deprovisions, deletes credentials, and reports disabled", async () => {
   const appDb = fakeAppDb();
   const { fetch, secrets } = await deployWithStorage({ appDb });
-  await fetch(...storageReq("my-agent", "key1", "POST"));
+  await storageReq(fetch, "POST");
 
-  const res = await fetch(...storageReq("my-agent", "key1", "DELETE"));
+  const res = await storageReq(fetch, "DELETE");
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual({ ok: true, enabled: false });
   // The stored locator reaches deprovision — read BEFORE the secret holding
@@ -84,7 +85,7 @@ test("storage disable deprovisions, deletes credentials, and reports disabled", 
   expect(appDb.deprovision).toHaveBeenCalledWith("my-agent", META);
   expect(await secrets.get("app-db:my-agent")).toBeNull();
 
-  const status = await fetch(...storageReq("my-agent", "key1", "GET"));
+  const status = await storageReq(fetch, "GET");
   expect(await status.json()).toEqual({ enabled: false });
 });
 
@@ -92,7 +93,7 @@ test("storage routes reject a non-owner key", async () => {
   const appDb = fakeAppDb();
   const { fetch } = await deployWithStorage({ appDb });
   for (const method of ["GET", "POST", "DELETE"]) {
-    const res = await fetch(...storageReq("my-agent", "intruder-key", method));
+    const res = await storageReq(fetch, method, "intruder-key");
     expect(res.status).toBe(403);
   }
   expect(appDb.provision).not.toHaveBeenCalled();
@@ -101,12 +102,9 @@ test("storage routes reject a non-owner key", async () => {
 test("agent delete deprovisions the app database and clears its credentials", async () => {
   const appDb = fakeAppDb();
   const { fetch, secrets } = await deployWithStorage({ appDb });
-  await fetch(...storageReq("my-agent", "key1", "POST"));
+  await storageReq(fetch, "POST");
 
-  const res = await fetch("/my-agent", {
-    method: "DELETE",
-    headers: { Authorization: "Bearer key1" },
-  });
+  const res = await authFetch(fetch, "/my-agent", { method: "DELETE" });
   expect(res.status).toBe(200);
   // Same locator rule as disable, and the ordering is tighter here: the delete
   // path's own `store.deleteAgent` sweeps `app-db:<slug>`, so the read has to
