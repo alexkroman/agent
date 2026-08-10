@@ -2,18 +2,22 @@
   "$schema": "https://turbo.build/schema.json",
   "extends": ["//"],
   "tasks": {
+    // The CLI bundles the templates and the scaffold, which live in another
+    // package — turbo's own graph cannot know that, so they are named here.
+    //
+    // Two differences from the root task, both deliberate. `$TURBO_DEFAULT$`
+    // replaces the copied extension list so this override cannot drift from the
+    // root one. And markdown is NOT excluded: `bundle-templates.mjs` copies the
+    // templates and the scaffold verbatim into `dist/templates`, so
+    // `scaffold/CLAUDE.md` and the templates' READMEs are shipped product here,
+    // not documentation.
     "build": {
       "dependsOn": ["^build"],
       "inputs": [
-        "**/*.ts",
-        "**/*.tsx",
+        "$TURBO_DEFAULT$",
         "!**/*.test.ts",
         "!**/*.test.tsx",
         "!**/*.test-d.ts",
-        "tsconfig*.json",
-        "tsdown.config.ts",
-        "bundle-templates.mjs",
-        "package.json",
         "$TURBO_ROOT$/packages/aai-templates/templates/**",
         "$TURBO_ROOT$/packages/aai-templates/scaffold/**"
       ],
