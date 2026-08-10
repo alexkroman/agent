@@ -1,7 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
-import type { ToolDef } from "../sdk/types.ts";
+import type { ToolContext, ToolDef } from "../sdk/types.ts";
+import { WORKFLOWS_UNAVAILABLE_MESSAGE } from "../sdk/workflow.ts";
 import { makeTool, sleep } from "./_test-utils.ts";
 import { executeToolCall } from "./tool-executor.ts";
 
@@ -96,6 +97,36 @@ describe("executeToolCall", () => {
         "Settings → Database in the studio; under `aai dev`, set DATABASE_URL in the " +
         "project .env.",
     });
+  });
+
+  // Both methods, because a tool that polls a run's status is as likely to be
+  // the first thing an author writes as one that starts it.
+  test.each([
+    ["start", (ctx: ToolContext) => ctx.workflows.start("digest", {})],
+    ["get", (ctx: ToolContext) => ctx.workflows.get("run-1")],
+  ])("ctx.workflows.%s rejects with the unavailable message with no engine", async (_m, call) => {
+    const result = await run("test", {}, makeTool({ execute: (_args, ctx) => call(ctx) }));
+    expect(JSON.parse(result)).toEqual({ error: WORKFLOWS_UNAVAILABLE_MESSAGE });
+  });
+
+  test("ctx.generate rejects when no host generation is wired", async () => {
+    const tool = makeTool({ execute: (_args, ctx) => ctx.generate({ prompt: "hi" }) });
+    const result = await run("test", {}, tool);
+    expect(JSON.parse(result)).toEqual({
+      error: "generate is not available in this execution context",
+    });
+  });
+
+  test("ctx.workflows forwards to the engine when one is wired", async () => {
+    const start = vi.fn(() => Promise.resolve("run-1"));
+    const tool = makeTool({
+      execute: (_args, ctx) => ctx.workflows.start("digest", { topic: "ai" }),
+    });
+    const result = await run("test", {}, tool, {
+      workflows: { start, get: () => Promise.resolve(undefined) },
+    });
+    expect(result).toBe("run-1");
+    expect(start).toHaveBeenCalledWith("digest", { topic: "ai" });
   });
 
   test("handles async tool execution", async () => {

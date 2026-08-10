@@ -31,6 +31,8 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "DEFAULT_SILENCE_PROMPT",
   "DEFAULT_SPEECH_IDLE_TIMEOUT_MS",
   "DEFAULT_START_FAILURE_PHRASE",
+  "DEFAULT_STEP_BACKOFF_MS",
+  "DEFAULT_STEP_MAX_ATTEMPTS",
   "DEFAULT_STT_PROMPT",
   "DEFAULT_STT_SAMPLE_RATE",
   "DEFAULT_SYSTEM_PROMPT",
@@ -64,6 +66,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "MAX_SLUG_LENGTH",
   "MAX_TOOL_RESULT_CHARS",
   "MAX_TRANSCRIPT_CHARS",
+  "MAX_WORKFLOW_STEPS",
   "MAX_WS_PAYLOAD_BYTES",
   "MIC_BUFFER_SECONDS",
   "MIC_SEND_MAX_BUFFERED_BYTES",
@@ -100,6 +103,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "TTS_RECONNECT_TIMEOUT_MS",
   "ToolChoiceSchema",
   "VALID_SLUG_RE",
+  "WORKFLOWS_UNAVAILABLE_MESSAGE",
   "WS_NORMAL_CLOSURE",
   "WS_OPEN",
   "agent",
@@ -121,6 +125,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "tool",
   "toolError",
   "withLock",
+  "workflow",
 ]
 `;
 

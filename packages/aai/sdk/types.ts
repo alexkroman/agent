@@ -8,6 +8,7 @@ import type { Db } from "./db.ts";
 import type { GenerateFn } from "./generate.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
+import type { WorkflowClient, WorkflowDef } from "./workflow.ts";
 
 /**
  * Identifier for a built-in server-side tool.
@@ -160,6 +161,17 @@ export type ToolContext<S = DefaultSessionState> = {
    * output ({@link GenerateFn}).
    */
   generate: GenerateFn;
+  /**
+   * Start and inspect durable workflow runs ({@link WorkflowClient}).
+   *
+   * The seam between a turn and work that outlives it: `start()` resolves as
+   * soon as the run is journaled, so a tool can answer the caller in the same
+   * turn while the run continues past the end of the session. Requires
+   * storage, and requires the workflow to be declared in
+   * {@link AgentDef.workflows} — both surface as a rejected promise naming
+   * what is missing.
+   */
+  workflows: WorkflowClient;
   /** Read-only snapshot of conversation messages so far. */
   messages: readonly Message[];
   /** Unique identifier for the current session. Useful for correlating logs across concurrent sessions. */
@@ -368,6 +380,19 @@ export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
    * becomes `unknown` again. Tools are still *checked* against `S`.
    */
   tools: Readonly<Record<string, ToolDef<ToolInputSchema, NoInfer<S>>>>;
+  /**
+   * Durable workflows this agent can start, keyed by name — the name
+   * `ctx.workflows.start()` takes, and the name the journal records.
+   *
+   * A workflow is not a tool: the LLM never selects one, and it holds no
+   * session state (a run outlives every session, so there is none to hold).
+   * Tool code starts them; see {@link workflow} for the authoring shape and
+   * "Durable workflows" in `packages/aai/CLAUDE.md` for the run semantics.
+   *
+   * Declaring workflows requires storage to be enabled for the app — the
+   * journal is what makes a run survive the sandbox that started it.
+   */
+  workflows?: Readonly<Record<string, WorkflowDef>>;
   /**
    * Factory creating this session's mutable state — the value tools read and
    * write as `ctx.state`. Called once per session; unset leaves `ctx.state`

@@ -702,6 +702,65 @@ marker, never the `~standard` interface (`isConvertibleSchema`).
 removed unused; multi-step orchestration is composed directly over
 `ctx.generate`.)
 
+## Durable workflows
+
+`workflow()` (`sdk/workflow.ts`, on the ROOT export beside `agent()`/`tool()` —
+not the deleted `@alexkroman1/aai/workflow` subpath named above) declares work
+that OUTLIVES the session that started it. Declared as `agent({ workflows })`,
+started from tool code as `ctx.workflows.start(name, input)`, which resolves as
+soon as the run is journaled — so a tool answers its turn while the run keeps
+going past the hangup. `ctx.workflows.get(runId)` reads status back.
+
+**The engine is replay-based** (`host/workflow-engine.ts`): the author's `run`
+function is called FROM THE TOP on every execution, and `ctx.step(name, fn)`
+returns the journaled output of any step that already succeeded instead of
+re-running it. One code path starts and resumes a run, so there is no separate
+resume routine to drift. `ctx.sleep(ms)` journals a wake time and THROWS a
+private `Suspended`, unwinding without completing; the run is released and
+replays to the same `sleep`, which now finds the deadline past. Four
+consequences an author has to know, all in that file's module doc and
+`sdk/workflow.ts`:
+
+- **Steps are AT-LEAST-ONCE.** A crash between `fn` returning and the journal
+  write re-runs `fn`, so an external side effect wants an idempotency key
+  (`runId` + step name).
+- **The step SEQUENCE must be deterministic.** Branch on values that came out
+  of a step or the input, never on `Date.now()`/`Math.random()` read in the
+  workflow body. A name reused in a loop is disambiguated by call order
+  (`s:fetch#0`, `s:fetch#1`); `sleep` gets a `t:` prefix so it can never collide
+  with a step of the same name.
+- **Storage is required**, since the journal is what makes a run durable — two
+  tables in the app's own schema (`aai_workflow_runs`, `aai_workflow_steps`,
+  `host/workflow-store.ts`). An agent that declares workflows without storage
+  logs a warning and gets the rejecting `ctx.workflows`
+  (`WORKFLOWS_UNAVAILABLE_MESSAGE`) rather than failing to boot — a voice agent
+  whose workflows are misconfigured must still answer the phone.
+- **`MAX_WORKFLOW_STEPS` (500) is a hard cap, and it exists to stay under
+  `MAX_DB_RESULT_ROWS`.** Replay reads the journal through `ctx.db`, which
+  throws past 1000 rows, and a journal that cannot be read in full looks like a
+  run with no history — i.e. every completed step runs a second time.
+
+**Recovery is lease-based, not timer-based.** A claim
+(`WORKFLOW_LEASE_MS`, 120s) is what stops two sandboxes replaying one run, and
+a `running` run whose lease EXPIRED is claimable again — that is the whole
+mechanism by which a dead sandbox's run continues, and why the status set has no
+"crashed". `runDue()` runs once per runtime boot and sweeps due sleepers,
+unclaimed runs, and abandoned ones. A drain therefore must NOT fail an in-flight
+run: `close()` aborts `ctx.signal`, the catch leaves the run `running` with its
+journal intact, and the next host resumes it. Marking it failed would turn every
+redeploy into a graveyard of runs one step from finishing.
+
+**Two platform pieces are deliberately NOT wired yet, and both are the
+platform's job rather than the SDK's.** A wake timer only fires while this host
+lives (`MAX_WAKE_TIMER_MS`, 60s — past that, recovery is `runDue()`'s), so
+nothing wakes an idle-exited sandbox to serve a due run; and there is no trigger
+surface, because a deployed guest serves `/`, `/client-config`, static assets and
+`/websocket` plus token-gated `/manage/*` — no route an inbound webhook or cron
+tick can hit. So today a run is started from a voice session or the browser
+client, and a long sleep resumes on the next boot rather than on time. The
+substrate for both already exists in the platform Postgres (`pg_cron`, `pgmq`,
+`pg_net` — see `packages/aai-server/CLAUDE.md`).
+
 ## `ctx.state` is ONE object per session — with or without a `state` factory
 
 `getState` in `host/runtime-tools.ts` memoizes the session's state object

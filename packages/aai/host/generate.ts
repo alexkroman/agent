@@ -12,7 +12,7 @@
 
 import { generateObject, generateText, jsonSchema, type LanguageModel } from "ai";
 import type { ProviderEnv } from "../sdk/env-types.ts";
-import type { GenerateOptions, GenerateResult } from "../sdk/generate.ts";
+import type { GenerateFn, GenerateOptions, GenerateResult } from "../sdk/generate.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { normalizeLlm } from "../sdk/providers/llm/from-string.ts";
 import type { LlmProvider } from "../sdk/providers.ts";
@@ -124,4 +124,31 @@ export function createGenerateFn(opts: CreateGenerateFnOptions): HostGenerateFn 
     const { text } = await generateText(common);
     return { text };
   };
+}
+
+/**
+ * Bind a {@link HostGenerateFn} and a cancellation signal into the
+ * author-facing `ctx.generate` — what a tool's context and a workflow's
+ * context both expose.
+ *
+ * @internal
+ *
+ * The cast is the one place it happens, and it is not a widening: `GenerateFn`
+ * is OVERLOADED (a Standard Schema call promises a required `object`), and
+ * TypeScript cannot check an overloaded signature against a single
+ * implementation. `createGenerateFn` does deliver that shape — it returns
+ * `{ text, object }` unconditionally on the `generateObject` path above — so
+ * the narrowing is backed by this module rather than by hope. Both contexts go
+ * through here so there is one such assertion instead of one per call site.
+ */
+export function toGenerateFn(
+  generate: HostGenerateFn | undefined,
+  callOpts: { signal: AbortSignal },
+): GenerateFn {
+  return ((options: GenerateOptions): Promise<GenerateResult> => {
+    if (!generate) {
+      return Promise.reject(new Error("generate is not available in this execution context"));
+    }
+    return generate(options, callOpts);
+  }) as GenerateFn;
 }

@@ -225,7 +225,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   const stateMap = new Map<string, Record<string, unknown>>();
   const stateSweeps = createStateSweeps(stateMap);
 
-  const { executeTool, toolSchemas, toolGuidance, pushStateSnapshot } = setupTools({
+  const { executeTool, toolSchemas, toolGuidance, pushStateSnapshot, workflows } = setupTools({
     agent,
     opts,
     llm: effectiveProviders.llm,
@@ -235,6 +235,14 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     logger,
     sinkMap,
     stateMap,
+  });
+
+  // Cold-start recovery: pick up runs this agent left behind — due sleepers,
+  // and runs whose previous sandbox died mid-step. Fire-and-forget because a
+  // runtime must come up whether or not the journal is reachable; a redeploy
+  // is the common path here, and nothing about it should block a session.
+  void workflows?.runDue().catch((err: unknown) => {
+    logger.error(`Workflow recovery failed: ${errorMessage(err)}`);
   });
 
   // Resolve pipeline providers once per runtime (not per session). Each
@@ -437,6 +445,10 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     stateMap.clear();
     // Pending grace-window sweeps have nothing left to reclaim.
     stateSweeps.clear();
+    // Before the pool: the engine's `close()` aborts in-flight runs so they
+    // stop reaching for a connection that is about to go away. Abandoned runs
+    // keep their journal and resume once the lease expires.
+    workflows?.close();
     // Release a runtime-owned DB pool (see the resolution comment above).
     // Fire-and-forget: releaseResources is sync and a drain failure on a
     // dying pool is not actionable.

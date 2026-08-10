@@ -59,9 +59,9 @@ let sessionCounter = 0;
 /**
  * Build a {@link ToolContext} for testing a tool's `execute` in isolation.
  *
- * Defaults are chosen so the context is inert: empty `env`, empty `state`, a
- * `db` and `generate` that reject with a message naming themselves, a `signal`
- * that never aborts, and a `send` that records. Override any of them.
+ * Defaults are chosen so the context is inert: empty `env`, empty `state`,
+ * `db`/`generate`/`workflows` that reject with a message naming themselves, a
+ * `signal` that never aborts, and a `send` that records. Override any of them.
  *
  * **Each call is a distinct session.** `sessionId` auto-increments, which is
  * what makes the two-context isolation test — the same tool run against two
@@ -125,6 +125,24 @@ export function createToolContext<S = DefaultSessionState>(
           "ctx.generate was not stubbed for this test — pass `generate` to createToolContext",
         ),
       ),
+    // Rejects for the same reason `db` and `generate` do, and it is the field
+    // most worth defaulting: a tool that starts a workflow is testable without
+    // the test knowing anything about the engine, and one that starts a
+    // workflow it should not fails by name.
+    workflows: {
+      start: () =>
+        Promise.reject(
+          new Error(
+            "ctx.workflows was not stubbed for this test — pass `workflows` to createToolContext",
+          ),
+        ),
+      get: () =>
+        Promise.reject(
+          new Error(
+            "ctx.workflows was not stubbed for this test — pass `workflows` to createToolContext",
+          ),
+        ),
+    },
     messages: [],
     // Never aborts: a test has no turn to cancel. Present rather than omitted
     // because it is always present at runtime, so a tool may read it.

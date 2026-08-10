@@ -42,3 +42,6 @@ export type {
 export * from "./sdk/session-slot.ts";
 export * from "./sdk/types.ts";
 export * from "./sdk/utils.ts";
+// Durable workflows: `workflow()` sits next to `agent()`/`tool()` because it
+// is the third thing an `agent.ts` declares, not a subsystem behind a subpath.
+export * from "./sdk/workflow.ts";

@@ -11,11 +11,11 @@ import { EMPTY_PARAMS } from "../sdk/_internal-types.ts";
 import { TOOL_EXECUTION_TIMEOUT_MS } from "../sdk/constants.ts";
 import type { Db } from "../sdk/db.ts";
 import { STORAGE_DISABLED_MESSAGE } from "../sdk/db.ts";
-import type { GenerateFn, GenerateOptions, GenerateResult } from "../sdk/generate.ts";
 import { formatSchemaIssues } from "../sdk/schema.ts";
 import type { Message, ToolContext, ToolDef } from "../sdk/types.ts";
 import { errorDetail, errorMessage, toolError } from "../sdk/utils.ts";
-import type { HostGenerateFn } from "./generate.ts";
+import { WORKFLOWS_UNAVAILABLE_MESSAGE, type WorkflowClient } from "../sdk/workflow.ts";
+import { type HostGenerateFn, toGenerateFn } from "./generate.ts";
 import type { Logger } from "./runtime-config.ts";
 
 export type { ExecuteTool, ExecuteToolOptions } from "../sdk/_internal-types.ts";
@@ -33,6 +33,8 @@ type ExecuteToolCallOptions = {
   messages?: readonly Message[] | undefined;
   /** Host LLM generation (ctx.generate); absent contexts throw on use. */
   generate?: HostGenerateFn | undefined;
+  /** ctx.workflows; absent (no workflows declared, or no storage) rejects on use. */
+  workflows?: WorkflowClient | undefined;
   logger?: Logger | undefined;
   send?: ((event: string, data: unknown) => void) | undefined;
   /** Turn-scoped cancellation: unblocks the await (and is exposed to the tool
@@ -44,8 +46,17 @@ type ExecuteToolCallOptions = {
 // `ExecuteToolCallOptions.signal` is the turn signal and is optional, but the
 // context's signal is the per-call controller `executeToolCall` always builds,
 // which is what makes `ToolContext.signal` non-optional.
+/**
+ * The `ctx.workflows` a context without an engine gets: every method rejects
+ * with the same message, so dev and prod cannot describe the gap differently.
+ */
+const UNAVAILABLE_WORKFLOWS: WorkflowClient = {
+  start: () => Promise.reject(new Error(WORKFLOWS_UNAVAILABLE_MESSAGE)),
+  get: () => Promise.reject(new Error(WORKFLOWS_UNAVAILABLE_MESSAGE)),
+};
+
 function buildToolContext(opts: ExecuteToolCallOptions & { signal: AbortSignal }): ToolContext {
-  const { env, state, db, messages, sessionId, send, signal, generate } = opts;
+  const { env, state, db, messages, sessionId, send, signal, generate, workflows } = opts;
   return {
     env,
     state: state ?? {},
@@ -56,22 +67,16 @@ function buildToolContext(opts: ExecuteToolCallOptions & { signal: AbortSignal }
       }
       return db;
     },
-    // Asserted rather than inferred, and this is the one place it happens.
-    // `GenerateFn` is OVERLOADED: a Standard Schema call promises a required
-    // `object`, which `createGenerateFn` does deliver (it runs `generateObject`
-    // and returns `{ text, object }` unconditionally on that path). TypeScript
-    // cannot check an overloaded signature against a single implementation, so
-    // the forwarder is declared with the widest one and asserted here — the
-    // narrowing is backed by host/generate.ts, not by hope.
-    generate: ((genOpts: GenerateOptions): Promise<GenerateResult> => {
-      if (!generate) {
-        return Promise.reject(new Error("generate is not available in this execution context"));
-      }
-      // The per-call signal cancels an in-flight generation the same way it
-      // unblocks the tool await. Passed unconditionally — it is always present
-      // now that `ToolContext.signal` is.
-      return generate(genOpts, { signal });
-    }) as GenerateFn,
+    // The per-call signal cancels an in-flight generation the same way it
+    // unblocks the tool await. Bound through the shared forwarder in
+    // host/generate.ts, which owns the one assertion the overloaded
+    // `GenerateFn` needs — a workflow's context binds its own the same way.
+    generate: toGenerateFn(generate, { signal }),
+    // Absent when the agent declares no workflows or storage is off. A
+    // rejecting client rather than a missing field: `ctx.workflows.start` is
+    // reached from inside a tool body, where a `?.` on every call buys the
+    // author nothing over an error that names the fix.
+    workflows: workflows ?? UNAVAILABLE_WORKFLOWS,
     messages: messages ?? [],
     // No session → a unique per-call id, NOT "": the builtin remember/recall
     // notes are keyed by sessionId in a process-wide map, so sessionless
