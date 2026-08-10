@@ -147,11 +147,8 @@ type PreviewPaneProps = {
   previewError?: string | undefined;
   /** Production slug — updated only by Publish; fallback for old projects. */
   deployedSlug?: string | undefined;
-  /** Workspace has edits the PRODUCTION agent does not have yet. */
-  unpublished?: boolean | undefined;
   /** Bumped after each publish so the production-fallback iframe reloads. */
   nonce: number;
-  onPublish: () => void;
   /**
    * Report that the platform is not serving the slug this pane wants to
    * frame, so the server regenerates it. Called at most once per missing
@@ -162,14 +159,20 @@ type PreviewPaneProps = {
 };
 
 /**
- * The strip above the iframe, by priority: a failed preview build (with its
- * CLI output), or the publish nudge when production is behind. One at a time
- * — they answer the same question ("does what I see match my edits?"), so
- * stacking them would just contradict itself.
+ * The strip above the iframe: a failed preview build, with its CLI output.
+ * That is the only thing worth a row here — it is the one state the pane
+ * cannot show by itself, since the frame below still holds the last good
+ * preview.
  *
- * A build IN FLIGHT has no banner: it takes over the whole pane instead (see
- * {@link PreviewPane}), so a row saying the same thing above it would be
- * redundant.
+ * There is deliberately no "this preview updates as you edit / hit Publish"
+ * nudge. It rendered on every unpublished project, which is nearly all of
+ * them nearly all the time, so it was permanent furniture stating what the
+ * pane's own name already says — and the Publish control it pointed at is
+ * two inches above it in the top bar.
+ *
+ * A build IN FLIGHT has no banner either: it takes over the whole pane
+ * instead (see {@link PreviewPane}), so a row saying the same thing above it
+ * would be redundant.
  */
 function PaneBanner(props: PreviewPaneProps & { framed: boolean }) {
   if (props.previewError) {
@@ -182,19 +185,6 @@ function PaneBanner(props: PreviewPaneProps & { framed: boolean }) {
         <pre className="m-0 max-h-24 overflow-auto rounded-md border border-line bg-cream p-2 font-mono text-[10px] whitespace-pre-wrap text-err">
           {props.previewError}
         </pre>
-      </div>
-    );
-  }
-  if (props.unpublished) {
-    return (
-      <div className="flex shrink-0 items-center gap-3 border-b border-line bg-indigo-50 px-4 py-2">
-        <span className="text-[11px] text-fg">
-          This preview updates automatically as you edit. Hit Publish to ship it to your production
-          agent.
-        </span>
-        <button type="button" className="btn btn-primary ml-auto" onClick={props.onPublish}>
-          Publish
-        </button>
       </div>
     );
   }
