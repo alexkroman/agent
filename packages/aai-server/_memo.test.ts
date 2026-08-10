@@ -59,6 +59,26 @@ describe("keyedMemoAsync", () => {
     memo.clear();
     await expect(memo("a", () => Promise.resolve("second"))).resolves.toBe("second");
   });
+
+  test("a rejection settling after clear() does not evict the successor", async () => {
+    // The build's reset is by ownership: `clear()` frees the key while the
+    // first build is still in flight, the next call claims it, and the first
+    // one's rejection must not take that claim down with it.
+    const memo = keyedMemoAsync<string>();
+    const { promise, reject } = Promise.withResolvers<string>();
+
+    const failing = memo("k", () => promise);
+    memo.clear();
+    await expect(memo("k", () => Promise.resolve("successor"))).resolves.toBe("successor");
+
+    reject(new Error("boom"));
+    await expect(failing).rejects.toThrow("boom");
+
+    // Still memoized: the successor's entry survived the late rejection.
+    const rebuilt = vi.fn(async () => "rebuilt");
+    await expect(memo("k", rebuilt)).resolves.toBe("successor");
+    expect(rebuilt).not.toHaveBeenCalled();
+  });
 });
 
 describe("createSingleFlight", () => {

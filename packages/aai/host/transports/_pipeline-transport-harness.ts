@@ -2,7 +2,7 @@
 // Shared test harness for the pipeline-transport specs (split across
 // pipeline-transport.test.ts and pipeline-turn.test.ts).
 
-import { vi } from "vitest";
+import { afterEach, beforeEach, vi } from "vitest";
 import {
   createFakeLanguageModel,
   createFakeSttProvider,
@@ -132,3 +132,37 @@ export const noopToolSchema = {
   description: "Look something up.",
   parameters: { type: "object" as const, properties: {}, required: [] },
 };
+
+/**
+ * Run this file's specs on VIRTUAL time.
+ *
+ * The pipeline transports are a pile of timers — the endpoint settler, the
+ * silence countdown, the dead-air cover, the speaking-edge watchdog — and
+ * their specs used to observe those timers by waiting out real wall-clock
+ * milliseconds (`await sleep(60)`). Three costs, in rising order of how much
+ * they matter:
+ *
+ * - ~2.3s of the unit run spent asleep.
+ * - Every window had to be squeezed to tens of milliseconds to keep that
+ *   bearable, which puts the effect under test the same size as a scheduling
+ *   hiccup. A spec cannot then describe the SHIPPED window (a 5s dead-air
+ *   cover, a 300s idle timeout) at all.
+ * - These are races, so a contended runner fails them FIRST — the flake lands
+ *   on whoever is merging, and it names a timing spec rather than a bug.
+ *
+ * `vi.useFakeTimers()` reaches all of it, including the fakes: `_fake-llm.ts`
+ * spaces its scripted parts with the same GLOBAL `setTimeout` that fake timers
+ * replace, which is why no scheduler had to be threaded through
+ * `PipelineTransportOptions` to make this work. `vi.waitFor` composes too — it
+ * advances the fake clock while it polls.
+ *
+ * Call at file scope, then drive with `vi.advanceTimersByTimeAsync(ms)`.
+ */
+export function useVirtualTime(): void {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+}

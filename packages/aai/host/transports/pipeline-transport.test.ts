@@ -9,8 +9,12 @@ import {
   createFakeTtsProvider,
   type ScriptedPart,
 } from "../_pipeline-test-fakes.ts";
-import { sleep, tick } from "../_test-utils.ts";
-import { firstCallArg, makeCallbacks, makeOpts } from "./_pipeline-transport-harness.ts";
+import {
+  firstCallArg,
+  makeCallbacks,
+  makeOpts,
+  useVirtualTime,
+} from "./_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
 
 // Turn-processing specs (STT final → LLM stream → TTS) live in
@@ -20,6 +24,8 @@ import { createPipelineTransport } from "./pipeline-transport.ts";
 // _pipeline-transport-harness.ts.
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
+
+useVirtualTime();
 
 describe("PipelineTransport", () => {
   describe("start()", () => {
@@ -149,7 +155,7 @@ describe("PipelineTransport", () => {
       await vi.waitFor(() => {
         expect(llm.calls.length).toBeGreaterThanOrEqual(1);
       });
-      await sleep(20);
+      await vi.advanceTimersByTimeAsync(20);
       expect(llm.calls.length).toBe(1);
       await t.stop();
     });
@@ -254,7 +260,7 @@ describe("PipelineTransport", () => {
         stopResolved = true;
       });
 
-      await tick();
+      await vi.advanceTimersByTimeAsync(0);
       expect(stopResolved).toBe(false); // blocked on the in-flight open
 
       const landed: SttSession = {

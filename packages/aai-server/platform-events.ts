@@ -168,8 +168,9 @@ export type MemoryPlatformEvents = {
 type TrackDispatch = (dispatch: () => Promise<void>) => void;
 
 /**
- * Composite watcher-map key. The separator is NUL because neither a scope nor
- * a project name can contain one, so no pair can forge another's key.
+ * Composite key for one project within one scope. The separator is NUL because
+ * neither a scope nor a project name can contain one, so no pair can forge
+ * another's key.
  *
  * It MUST stay the `\u0000` escape rather than a literal NUL byte in the
  * source: one control byte makes the whole file binary to every text tool.
@@ -177,8 +178,16 @@ type TrackDispatch = (dispatch: () => Promise<void>) => void;
  * the lines, `git diff` showed "Binary files differ" for every edit, and
  * GitHub declined to render the blob — all for a file that is otherwise plain
  * TypeScript. Same value at runtime, legible at rest.
+ *
+ * Exported because it is the ONE spelling of this key repo-wide, and the
+ * argument above is only as good as its uniformity: a second copy using a
+ * printable separator re-opens the collision this closes, invisibly, for as
+ * long as the two grammars happen to exclude that character too. Both other
+ * copies delegate here — `realtime-events.ts`, whose Realtime channel keys
+ * used a SPACE, and `aai-studio-server/studio-workspace.ts` (the session
+ * broker's map, the preview coalescer, the workspace mutation lock).
  */
-const projectKey = (scope: string, project: string) => `${scope}\u0000${project}`;
+export const projectKey = (scope: string, project: string) => `${scope}\u0000${project}`;
 
 /** A keyed set of watchers with add/remove/fire — the emitter's one shape. */
 function createWatcherMap<A extends unknown[]>(track: TrackDispatch) {

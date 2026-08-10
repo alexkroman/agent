@@ -1,5 +1,5 @@
 import type { ToolContext } from "@alexkroman1/aai";
-import { tool } from "@alexkroman1/aai";
+import { createKeyedLock, tool, withLock } from "@alexkroman1/aai";
 import type { z } from "zod";
 import seedJson from "./seed.json";
 import type {
@@ -151,34 +151,28 @@ export function requireOwnOrder(state: RetailState, orderId: string): Order | Er
 
 // ─── Serialized state updates ────────────────────────────────────────────────
 
-const sessionLocks = new Map<string, Promise<unknown>>();
+const sessionLock = createKeyedLock();
 
 /**
  * Serialized update of the session's store.
  *
  * The LLM loop can execute parallel tool calls, and a mutator may be async —
  * two interleaving async mutators can each observe the other's half-applied
- * changes. This per-session promise chain runs each update against the previous
- * one's finished result.
+ * changes. Holding the session's key runs each update against the previous
+ * one's finished result. `createKeyedLock` is the SDK's primitive for exactly
+ * this; the hand-rolled promise chain it replaced also had to remember to drop
+ * each key's entry by ownership once idle.
  *
  * NOT exported, unlike dispatch-center's equivalent. `retailTool` is the only
- * caller, so a tool body cannot re-enter it — which would chain the inner call
- * on a tail that only resolves once the inner call finishes, i.e. deadlock. A
- * hazard you can't reach beats a hazard you documented.
+ * caller, so a tool body cannot re-enter it — which would wait on a key only
+ * the outer call can release, i.e. deadlock. A hazard you can't reach beats a
+ * hazard you documented.
  */
-async function updateState<R>(
+function updateState<R>(
   ctx: ToolContext,
   mutator: (state: RetailState) => R | Promise<R>,
 ): Promise<R> {
-  const previous = sessionLocks.get(ctx.sessionId) ?? Promise.resolve();
-  const run = previous.then(() => mutator(getState(ctx)));
-  // Keep the chain alive across failures, and drop it once idle.
-  const tail = run.catch(() => {});
-  sessionLocks.set(ctx.sessionId, tail);
-  tail.then(() => {
-    if (sessionLocks.get(ctx.sessionId) === tail) sessionLocks.delete(ctx.sessionId);
-  });
-  return run;
+  return withLock(sessionLock, ctx.sessionId, async () => mutator(getState(ctx)));
 }
 
 // ─── The tool wrapper ────────────────────────────────────────────────────────

@@ -465,6 +465,53 @@ describe("cache invalidation fences in-flight row reads", () => {
     expect((await store.getAgent("a"))?.version).toBe(2);
     expect(await store.getWorkerCode("a")).toBe("v2");
   });
+
+  test("a deploy of one slug does not fence another slug's in-flight read", async () => {
+    // The fence is per slug: a mutation makes ONE slug's parked reads stale.
+    // Under a store-wide counter every deploy discarded the cache write of
+    // every other slug's concurrent read — always safe, never necessary, and
+    // it re-reads Postgres precisely when the replica is busiest.
+    const agents = createMemoryAgentRows();
+    const { promise: atFetch, resolve: entered } = Promise.withResolvers<void>();
+    const { promise: held, resolve: release } = Promise.withResolvers<void>();
+    let parkSlug: string | null = null;
+
+    const originalGet = agents.get.bind(agents);
+    agents.get = async (slug: string) => {
+      const value = await originalGet(slug);
+      if (parkSlug === slug) {
+        parkSlug = null;
+        entered();
+        await held;
+      }
+      return value;
+    };
+
+    const store = createBundleStore(createMemoryBlobStorage(), {
+      secrets: createMemorySecretStore(),
+      agents,
+    });
+    await store.putAgent({ ...BASE_BUNDLE, slug: "a", worker: "a-v1" });
+    await store.putAgent({ ...BASE_BUNDLE, slug: "b", worker: "b-v1" });
+    store.invalidate?.("a");
+
+    // A cold read of "a" parks mid-fetch...
+    parkSlug = "a";
+    const parked = store.getAgent("a");
+    await atFetch;
+
+    // ...while an unrelated slug is deployed.
+    await store.putAgent({ ...BASE_BUNDLE, slug: "b", worker: "b-v2" });
+
+    release();
+    await parked;
+
+    // "a" was never mutated, so its parked read's value is still current and
+    // belongs in the cache — reading it again must not go back to Postgres.
+    const get = vi.spyOn(agents, "get");
+    expect((await store.getAgent("a"))?.slug).toBe("a");
+    expect(get).not.toHaveBeenCalled();
+  });
 });
 
 describe("single-flight over cold reads", () => {

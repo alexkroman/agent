@@ -13,8 +13,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel } from "../_pipeline-test-fakes.ts";
-import { sleep } from "../_test-utils.ts";
-import { makeOpts } from "./_pipeline-transport-harness.ts";
+import { makeOpts, useVirtualTime } from "./_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
 
 const GREETING = "Hi there!";
@@ -23,6 +22,8 @@ const GREETING = "Hi there!";
 function greetingOpts(overrides: Parameters<typeof makeOpts>[0] = {}) {
   return makeOpts({ sessionConfig: { systemPrompt: "s", greeting: GREETING }, ...overrides });
 }
+
+useVirtualTime();
 
 describe("pipeline greeting", () => {
   describe("at session start", () => {
@@ -72,7 +73,7 @@ describe("pipeline greeting", () => {
       const { opts, tts, callbacks } = greetingOpts({ skipGreeting: true });
       const t = createPipelineTransport(opts);
       await t.start();
-      await sleep(20);
+      await vi.advanceTimersByTimeAsync(20);
       expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
       expect(tts.last()?.textChunks).toHaveLength(0);
       await t.stop();
@@ -108,7 +109,7 @@ describe("pipeline greeting", () => {
       const { opts, tts, callbacks } = greetingOpts({ skipGreeting: true });
       const t = createPipelineTransport(opts);
       await t.start();
-      await sleep(20);
+      await vi.advanceTimersByTimeAsync(20);
       expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
 
       t.reset?.();
@@ -126,7 +127,7 @@ describe("pipeline greeting", () => {
       const t = createPipelineTransport(opts);
       await t.start();
       t.reset?.();
-      await sleep(20);
+      await vi.advanceTimersByTimeAsync(20);
       expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
       await t.stop();
     });

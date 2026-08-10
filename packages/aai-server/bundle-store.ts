@@ -20,7 +20,6 @@
 
 import { hash } from "node:crypto";
 import { errorMessage } from "@alexkroman1/aai";
-import { createEpoch } from "@alexkroman1/aai/internal";
 import { LRUCache } from "lru-cache";
 import { createKeyedLock, withLock } from "./_keyed-lock.ts";
 import { createSingleFlight } from "./_memo.ts";
@@ -123,8 +122,21 @@ export function createBundleStore(
    * right after the mutation lock's invalidate (see platform-lock.ts) — a
    * poisoned entry there silently drops a co-owner's hash. Blobs need no
    * guard: content-addressed keys cannot go stale.
+   *
+   * PER SLUG, because a mutation only makes one slug's in-flight reads stale.
+   * A single counter for the whole store (which is what this was) meant any
+   * deploy discarded the cache write of every OTHER slug's concurrent read —
+   * correct, since it only ever fails safe, but it re-reads Postgres for slugs
+   * nothing happened to, and it does so exactly when the replica is busiest.
+   *
+   * The map grows only for slugs this replica has MUTATED — a read never adds
+   * an entry — so it is bounded by deploy variety rather than by traffic, and
+   * each entry is a slug and an integer.
    */
-  const readEpoch = createEpoch();
+  const readEpochs = new Map<string, number>();
+  const currentEpoch = (slug: string): number => readEpochs.get(slug) ?? 0;
+  const isCurrentEpoch = (slug: string, captured: number): boolean =>
+    currentEpoch(slug) === captured;
 
   /**
    * Single-flight over the three reads that miss together.
@@ -151,7 +163,7 @@ export function createBundleStore(
   const blobFlight = createSingleFlight<string | null>();
 
   function invalidate(slug: string): void {
-    readEpoch.bump();
+    readEpochs.set(slug, currentEpoch(slug) + 1);
     rowCache.delete(slug);
     versionCache.delete(slug);
     rowFlight.drop(slug);
@@ -214,9 +226,9 @@ export function createBundleStore(
     const cached = rowCache.get(slug);
     if (cached !== undefined) return Promise.resolve(cached);
     return rowFlight.run(slug, async () => {
-      const gen = readEpoch.current();
+      const gen = currentEpoch(slug);
       const value = await agents.get(slug);
-      if (readEpoch.isCurrent(gen)) rowCache.set(slug, value);
+      if (isCurrentEpoch(slug, gen)) rowCache.set(slug, value);
       return value;
     });
   }
@@ -287,9 +299,9 @@ export function createBundleStore(
       const cached = versionCache.get(slug);
       if (cached !== undefined) return Promise.resolve(cached);
       return versionFlight.run(slug, async () => {
-        const gen = readEpoch.current();
+        const gen = currentEpoch(slug);
         const value = await agents.getVersion(slug);
-        if (readEpoch.isCurrent(gen)) versionCache.set(slug, value);
+        if (isCurrentEpoch(slug, gen)) versionCache.set(slug, value);
         return value;
       });
     },

@@ -228,6 +228,22 @@ describe("workspace channels", () => {
     expect(channels).toHaveLength(2);
   });
 
+  test("no (scope, project) pair can forge another's pool key", () => {
+    // The pool keyed on `ws:${scope} ${project}` — a SPACE — while the
+    // separator's whole argument (see projectKey in platform-events.ts) is
+    // that no pair can spell another's key. Under a printable separator these
+    // two pairs collide, and the second watcher silently joins the FIRST
+    // pair's channel: it would then receive the other project's events and
+    // none of its own. Today's grammars exclude a space from both halves, so
+    // this is the drift guard rather than a live bug.
+    const { client, channels } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    events.watchWorkspace("a b", "c", vi.fn());
+    events.watchWorkspace("a", "b c", vi.fn());
+    expect(channels).toHaveLength(2);
+    expect(channels[0]?.topic).not.toBe(channels[1]?.topic);
+  });
+
   test("chat watches stream studio_chats, scope-checked like workspaces", () => {
     const { client, channels } = fakeClient();
     const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
@@ -337,6 +353,50 @@ describe("workspace channels", () => {
     await events.close();
     expect(channels[0]?.unsubscribed).toBe(true);
     expect(client.disconnect).toHaveBeenCalled();
+  });
+
+  test("close unsubscribes the agents channel too, not just the pooled ones", async () => {
+    const { client, channels } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    events.watchAgents(vi.fn());
+    await events.close();
+    expect(channels[0]?.topic).toBe("aai:agents");
+    expect(channels[0]?.unsubscribed).toBe(true);
+  });
+
+  test("close drops the resync watchers with the change watchers", async () => {
+    // `watchAgents` writes to both sets; clearing one left the resync
+    // handlers reachable by a rejoin on a channel nothing had released.
+    const { client, channels } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    const onChange = vi.fn();
+    const onResync = vi.fn();
+    events.watchAgents(onChange, onResync);
+    await events.close();
+
+    channels[0]?.ack("SUBSCRIBED");
+    channels[0]?.handlers[0]?.({ new: { slug: "a" } });
+
+    expect(onResync).not.toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  test("a watch after close builds a fresh, subscribed agents channel", async () => {
+    // `ensureAgentsChannel` short-circuits on a non-null handle, so leaving
+    // the closed channel in place made a later watch silently inert — the
+    // watcher installed onto a channel that would never be subscribed again.
+    const { client, channels } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    events.watchAgents(vi.fn());
+    await events.close();
+
+    const onChange = vi.fn();
+    events.watchAgents(onChange);
+
+    expect(channels).toHaveLength(2);
+    expect(channels[1]?.subscribed).toBe(true);
+    channels[1]?.handlers[0]?.({ new: { slug: "a" } });
+    expect(onChange).toHaveBeenCalledWith("a");
   });
 });
 

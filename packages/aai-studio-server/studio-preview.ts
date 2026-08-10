@@ -285,6 +285,28 @@ const PREVIEW_DRAIN_BATCH = 5;
  */
 const LOCAL_KEY_TTL_MS = PREVIEW_JOB_VISIBILITY_MS * (PREVIEW_JOB_MAX_ATTEMPTS + 1);
 
+/**
+ * How long a claimed job may wait on its project's lock before it is handed
+ * back to the queue.
+ *
+ * A claimed job is INVISIBLE to the rest of the fleet for
+ * {@link PREVIEW_JOB_VISIBILITY_MS}, so waiting on an in-process lock spends
+ * the queue's own durability: a project whose lock is wedged (a deploy stuck
+ * on an unreachable sandbox — the request paths carry deadlines, this one is
+ * bookkeeping under a lock and does not) holds every later job for that
+ * project off the fleet for the full five minutes, and they are the jobs most
+ * likely to be the ones the user is waiting on. Giving up leaves the job
+ * UNACKED, which is the queue's existing redelivery path — the same outcome
+ * as a deploy that threw.
+ *
+ * Derived from the visibility timeout rather than written down separately:
+ * the only requirement is that it lapse first, and half leaves the redelivery
+ * a wide margin. It is far above a real wait — a deploy is seconds to tens of
+ * seconds, and the jobs queued behind one for the same project find
+ * `previewHash` current and no-op.
+ */
+const PREVIEW_LOCK_WAIT_MS = Math.floor(PREVIEW_JOB_VISIBILITY_MS / 2);
+
 /** Log-and-continue wrapper: queue trouble must never fail a caller's request. */
 function bestEffort(what: string): (err: unknown) => undefined {
   return (err: unknown) => {
@@ -368,9 +390,16 @@ export function createPreviewDeployer(
       return;
     }
     // Per project, so two jobs for one project cannot deploy concurrently —
-    // the second finds `previewHash` current and no-ops.
-    await withLock(projectLock, projectKey(scope, project), () =>
-      attempt(scope, project, { serverUrl, apiKey }),
+    // the second finds `previewHash` current and no-ops. Bounded: a claimed
+    // job waiting here is invisible to the fleet, so a wedged lock must hand
+    // it back rather than sit on it (see PREVIEW_LOCK_WAIT_MS). A lapsed
+    // acquire rejects, which leaves the job unacked for redelivery — the same
+    // path a deploy that threw takes.
+    await withLock(
+      projectLock,
+      projectKey(scope, project),
+      () => attempt(scope, project, { serverUrl, apiKey }),
+      { timeoutMs: PREVIEW_LOCK_WAIT_MS },
     );
     // Settled (deployed, or stamped with a build failure): the job is done
     // either way. A build error is deterministic, so retrying it would just

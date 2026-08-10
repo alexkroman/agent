@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, it } from "vitest";
-import { createKeyedLock, KeyedLockTimeoutError } from "./_keyed-lock.ts";
-import { sleep } from "./_sleep.ts";
+import { sleep } from "../host/_test-utils.ts";
+import { createKeyedLock, KeyedLockTimeoutError } from "./keyed-lock.ts";
 
 /** Yield enough microtasks for the lock's internal cleanup chains to run. */
 async function flushMicrotasks(): Promise<void> {

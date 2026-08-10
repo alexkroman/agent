@@ -53,7 +53,12 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { createOwnedMap } from "@alexkroman1/aai/internal";
 import { RealtimeClient } from "@supabase/realtime-js";
-import type { PlatformEvents, PlatformEventsHealth, Unwatch } from "./platform-events.ts";
+import {
+  type PlatformEvents,
+  type PlatformEventsHealth,
+  projectKey,
+  type Unwatch,
+} from "./platform-events.ts";
 
 /** The rows a postgres_changes payload carries. Treated as untrusted wire data. */
 type ChangePayload = {
@@ -359,7 +364,7 @@ export function createRealtimePlatformEvents(opts: RealtimePlatformEventsOptions
 
     watchWorkspace(scope, project, onChange): Unwatch {
       return pool.watch(
-        `ws:${scope} ${project}`,
+        `ws:${projectKey(scope, project)}`,
         `aai:workspace:${scope}:${project}`,
         {
           event: "*",
@@ -374,7 +379,7 @@ export function createRealtimePlatformEvents(opts: RealtimePlatformEventsOptions
 
     watchChat(scope, project, onChange): Unwatch {
       return pool.watch(
-        `chat:${scope} ${project}`,
+        `chat:${projectKey(scope, project)}`,
         `aai:chat:${scope}:${project}`,
         {
           event: "*",
@@ -407,7 +412,17 @@ export function createRealtimePlatformEvents(opts: RealtimePlatformEventsOptions
 
     close() {
       pool.close();
+      // Both watcher sets, and the channel itself. `watchAgents` writes to
+      // both sets, so clearing one was an asymmetry with two consequences:
+      // the resync handlers stayed reachable after close, and — because
+      // `ensureAgentsChannel` short-circuits on a non-null `agentsChannel` —
+      // a `watchAgents` after close installed a watcher onto a channel that
+      // would never be subscribed again, silently. The pooled channels have
+      // always been unsubscribed here; this one was left to `disconnect()`.
       agentWatchers.clear();
+      agentResyncWatchers.clear();
+      void agentsChannel?.unsubscribe().catch(() => undefined);
+      agentsChannel = null;
       monitor.clear();
       client.disconnect();
       return Promise.resolve();

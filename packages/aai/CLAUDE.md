@@ -48,7 +48,8 @@ model) is the security boundary.
 Subpath exports consumed by sibling packages and user agents:
 
 - `.` — `agent()`, `tool()` helpers, `Db`, types, utils, constants
-- `./utils` — zod-free utilities + platform slug contract (fast CLI startup path)
+- `./utils` — zod-free utilities, `createKeyedLock`, platform slug contract
+  (fast CLI startup path)
 - `./runtime` — full Node.js runtime engine (barrel → 11 host/ modules)
 - `./protocol` — wire-format Zod schemas, `lenientParse()`, `ClientEvent`
 - `./manifest` — `toAgentConfig()`, `agentToolsToSchemas()`, config schemas
@@ -71,7 +72,7 @@ of subpath exports in `aai/package.json`:
 | Import path | Resolves to | What it contains |
 | --- | --- | --- |
 | `@alexkroman1/aai` | `packages/aai/index.ts` → 6 modules | Types, Db, utils, constants, `agent()`/`tool()` helpers |
-| `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | Zod-free utilities (`errorMessage`, `errorDetail`, …) plus the two contracts BOTH ends of a platform interaction must derive identically: the slug shape (`VALID_SLUG_RE`, `RESERVED_SLUGS` from `sdk/slug.ts`) and the `aai login` confirmation code (`linkConfirmationCode` from `sdk/cli-link.ts` — the terminal prints it, the studio's approval gate shows it, and the point is that they match). Deliberately dependency-free so the CLI can load it on every invocation without paying zod's startup cost |
+| `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | Zod-free utilities (`errorMessage`, `errorDetail`, …); `createKeyedLock`/`withLock` (`sdk/keyed-lock.ts`), the per-key serializer a stateful agent needs because the LLM loop runs a step's tool calls concurrently; and the two contracts BOTH ends of a platform interaction must derive identically: the slug shape (`VALID_SLUG_RE`, `RESERVED_SLUGS` from `sdk/slug.ts`) and the `aai login` confirmation code (`linkConfirmationCode` from `sdk/cli-link.ts` — the terminal prints it, the studio's approval gate shows it, and the point is that they match). Kept clear of zod so the CLI can load it on every invocation without paying that startup cost — `p-timeout` (2.4 KB, no dependencies), which backs the lock's acquire deadline, is the one exception and is measured against that rule rather than around it |
 | `@alexkroman1/aai/slugify` | `host/slugify.ts` (direct) | `slugifyName` — how a human name BECOMES a slug (transliterating, `decamelize: false`), for the CLI, the platform server, and the studio. Separate from the contract in `sdk/slug.ts` on purpose: that one is dependency-free and rides every agent bundle, this one pulls the transliteration tables. Nothing on the SDK hot path may import it |
 | `@alexkroman1/aai/runtime` | `host/runtime-barrel.ts` → 11 modules | Full Node.js runtime: session, S2S, server, tools, WS handler |
 | `@alexkroman1/aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `ClientEvent`, `ServerMessage` |

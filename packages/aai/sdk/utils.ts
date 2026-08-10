@@ -2,16 +2,25 @@
 /**
  * Shared utility functions (the `@alexkroman1/aai/utils` subpath).
  *
- * For user tool code: `errorMessage`, `errorDetail`, `safeJsonParse`, and
- * `toolError`. The remaining exports are framework plumbing shared with the
- * sibling packages. The module stays free of zod and other runtime
- * dependencies so the CLI can import it on every invocation without a
- * startup cost.
+ * For user tool code: `errorMessage`, `errorDetail`, `safeJsonParse`,
+ * `toolError`, and `createKeyedLock`. The remaining exports are framework
+ * plumbing shared with the sibling packages. The module stays free of zod and
+ * other heavy runtime dependencies so the CLI can import it on every
+ * invocation without a startup cost.
  *
  * That zod-free property is why `omitUndefined` lives here rather than on
  * `/internal` alongside the other cross-package infrastructure: `/internal`
  * re-exports `formatSchemaIssues` from `sdk/schema.ts`, so importing anything
  * from it pulls zod — and the CLI's own `_utils.ts` is on the startup path.
+ *
+ * `createKeyedLock` is the one export with a runtime dependency (`p-timeout`,
+ * for its optional acquire deadline). Deliberate, and measured against the
+ * rule above rather than around it: p-timeout is 2.4 KB with an empty
+ * dependency list, where the cost this rule exists to keep off the startup
+ * path is zod's module graph. It belongs on the PUBLIC subpath because the
+ * hazard it addresses is an agent author's — the LLM loop runs a step's tool
+ * calls concurrently, so two async mutators of one `ctx.state` interleave —
+ * and `/internal` would be telling users to import internal API.
  *
  * @module utils
  */
@@ -19,6 +28,13 @@
 import { MAX_TOOL_RESULT_CHARS, TOOL_RESULT_TRUNCATION_MARKER } from "./constants.ts";
 
 export { linkConfirmationCode } from "./cli-link.ts";
+export {
+  createKeyedLock,
+  type KeyedLock,
+  type KeyedLockOptions,
+  KeyedLockTimeoutError,
+  withLock,
+} from "./keyed-lock.ts";
 export { omitUndefined } from "./omit-undefined.ts";
 export { MAX_SLUG_LENGTH, PREVIEW_SLUG_SUFFIX, RESERVED_SLUGS, VALID_SLUG_RE } from "./slug.ts";
 
