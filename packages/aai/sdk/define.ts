@@ -3,6 +3,7 @@
 import { normalizeAgentConveniences } from "./_author-conveniences.ts";
 import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
 import { DEFAULT_MAX_STEPS } from "./constants.ts";
+import { omitUndefined } from "./omit-undefined.ts";
 import type { AssemblyAITtsVoice } from "./providers/tts/assemblyai.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
@@ -255,12 +256,32 @@ export type S2sAgentParams<S = DefaultSessionState> = SharedAgentParams<S> & {
  * @public
  */
 export function agent<S = DefaultSessionState>(def: AgentParams<S>): AgentDef<S> {
+  /**
+   * `omitUndefined` because a spread lets an own key whose value is
+   * `undefined` WIN over the default beneath it. Writing
+   * `agent({ greeting: undefined })` is already a compile error under
+   * `exactOptionalPropertyTypes` — but `agent({ name, ...opts })`, where
+   * `opts` is declared `{ greeting?: string; maxSteps?: number }`, is not, and
+   * that is how an options bag reaches here. It returned an agent whose
+   * `greeting`, `systemPrompt` and `maxSteps` were all `undefined` while every
+   * one of them is typed as REQUIRED on {@link AgentDef} — so the agent opened
+   * on silence, ran on no system prompt, and the pipeline's `stopWhen` budget
+   * was `NaN`, with nothing anywhere reporting it.
+   *
+   * Making absent and present-and-undefined mean the same thing is what those
+   * fields' docs ("Defaults to …") already promise. The cast back is the same
+   * one the normalize call needs — `omitUndefined` widens every key to
+   * optional, and `name` is not.
+   */
+  const params = omitUndefined(
+    normalizeAgentConveniences(def) as AgentParamsCore<S>,
+  ) as AgentParamsCore<S>;
   return {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     greeting: DEFAULT_GREETING,
     maxSteps: DEFAULT_MAX_STEPS,
     tools: {},
-    ...(normalizeAgentConveniences(def) as AgentParamsCore<S>),
+    ...params,
   };
 }
 

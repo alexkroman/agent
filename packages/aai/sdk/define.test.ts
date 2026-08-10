@@ -11,6 +11,7 @@ import { assemblyAIS2s } from "./providers/s2s/assemblyai.ts";
 import { assemblyAIStt } from "./providers/stt/assemblyai.ts";
 import { assemblyAITts } from "./providers/tts/assemblyai.ts";
 import { cartesia } from "./providers/tts/cartesia.ts";
+import { DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
 
 describe("tool()", () => {
   test("returns the definition unchanged", () => {
@@ -42,6 +43,25 @@ describe("agent()", () => {
 
   test("setting both `system` and `systemPrompt` throws", () => {
     expect(() => agent({ name: "t", system: "a", systemPrompt: "b" })).toThrow(/aliases/);
+  });
+
+  test("a key that is present-and-undefined does not clobber a default", () => {
+    // This repo compiles with `exactOptionalPropertyTypes`, so the literal
+    // `agent({ greeting: undefined })` is a compile error HERE. A user's agent
+    // project does not — `scaffold/tsconfig.json` sets `strict` and not that
+    // flag — so `agent({ greeting: process.env.GREETING })` type-checks there
+    // and reaches this function with own `undefined` keys. Assigning them one
+    // at a time is how the spec models the caller the fix is for; the keys are
+    // exactly the three `agent()` defaults.
+    const opts: { greeting?: string; maxSteps?: number; systemPrompt?: string } = {};
+    const own = opts as Record<string, unknown>;
+    for (const key of ["greeting", "maxSteps", "systemPrompt"]) own[key] = undefined;
+    expect(Object.keys(opts)).toHaveLength(3);
+
+    const def = agent({ name: "t", ...opts });
+    expect(def.greeting).toBe(DEFAULT_GREETING);
+    expect(def.maxSteps).toBe(DEFAULT_MAX_STEPS);
+    expect(def.systemPrompt).toBe(DEFAULT_SYSTEM_PROMPT);
   });
 
   test("llm accepts a creator/model string and desugars to the Vercel AI Gateway", () => {

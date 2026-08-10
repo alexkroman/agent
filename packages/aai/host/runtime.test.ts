@@ -169,6 +169,32 @@ describe("createRuntime", () => {
     expect(JSON.parse(result)).toEqual({ counter: 0 });
   });
 
+  // The no-factory half is the one that regressed: `?? {}` minted a fresh
+  // object per read, so the write below landed and vanished. Both halves run
+  // because the bug was invisible to the factory case.
+  test.each([
+    ["a state factory", { state: () => ({ n: 0 }) }],
+    ["no state factory", {}],
+  ])("session state persists across tool calls with %s", async (_label, stateField) => {
+    const agent = makeAgent({
+      ...stateField,
+      tools: {
+        bump: {
+          description: "Bump a counter on ctx.state",
+          execute: (_args, ctx) => {
+            ctx.state.n = ((ctx.state.n ?? 0) as number) + 1;
+            return String(ctx.state.n);
+          },
+        },
+      },
+    });
+    const exec = createRuntime({ agent, env: {} });
+    expect(await exec.executeTool("bump", {}, "s1", [])).toBe("1");
+    expect(await exec.executeTool("bump", {}, "s1", [])).toBe("2");
+    // A different session must not inherit it.
+    expect(await exec.executeTool("bump", {}, "s2", [])).toBe("1");
+  });
+
   test("executeTool passes messages to tool context", async () => {
     const agent = makeAgent({
       tools: {
