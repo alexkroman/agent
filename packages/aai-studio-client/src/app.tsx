@@ -409,9 +409,16 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
             chatSession={chatSession.data}
             sessionError={chatSession.error}
             toolLabels={toolLabels.data}
-            onSessionStale={() =>
-              void queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions })
-            }
+            // Re-broker, and hand the panel the lease that came back so the
+            // turn that found the sandbox gone can be re-sent on it. Read from
+            // the CACHE rather than from `chatSession.data`: this settles
+            // before React has re-rendered with the new prop, and a re-read of
+            // the render-time value would see the dead lease (see
+            // sandbox-transport.ts).
+            onSessionStale={async () => {
+              await queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions });
+              return queryClient.getQueryData<ChatSession>(queryKeys.chatSession(project));
+            }}
             chatStatus={status.data}
             initialPrompt={pendingPrompt}
             onInitialPromptSent={() => setPendingPrompt(null)}
