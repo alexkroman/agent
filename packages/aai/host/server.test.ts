@@ -3,9 +3,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import WebSocket from "ws";
 import { makeAgent, makeLogger, silentLogger } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";
-import { createServer } from "./server.ts";
+import { createServer, type SessionRuntime } from "./server.ts";
 
 /**
  * `fetch` + drain the body, always. Every request in this file goes through
@@ -297,5 +298,104 @@ describe("createServer static client dir", () => {
     const { headers, body } = await get(`${base}/client-config`);
     expect(headers.get("Content-Type")).toContain("application/json");
     expect((JSON.parse(body) as { name?: string }).name).toBeDefined();
+  });
+});
+
+/**
+ * The `/phone` route end to end: a real HTTP upgrade, the real bridge, and a
+ * carrier speaking Twilio's framing on the far end.
+ *
+ * The runtime here is a stub rather than a real one because the property
+ * under test is the WIRING — that a carrier's socket reaches a session as an
+ * ordinary `SessionWebSocket`, and that audio crosses in both directions. A
+ * real runtime would need provider credentials to produce a single byte of
+ * TTS, which is the one thing this route does not touch.
+ */
+describe("createServer telephony route", () => {
+  let server: ReturnType<typeof createServer> | null = null;
+
+  afterEach(async () => {
+    await server?.close();
+    server = null;
+  });
+
+  /** A runtime that echoes one 20 ms chunk of 24 kHz TTS back per inbound frame. */
+  function echoRuntime(received: unknown[]): SessionRuntime {
+    return {
+      startSession(ws) {
+        ws.send(
+          JSON.stringify({
+            type: "config",
+            audioFormat: "pcm16",
+            sampleRate: 16_000,
+            ttsSampleRate: 24_000,
+          }),
+        );
+        ws.addEventListener("message", (event: { data: unknown }) => {
+          received.push(event.data);
+          if (event.data instanceof Uint8Array) ws.send(new Uint8Array(480 * 2));
+        });
+      },
+      shutdown: () => Promise.resolve(),
+    };
+  }
+
+  async function openCarrier(url: string): Promise<WebSocket> {
+    const socket = new WebSocket(url);
+    await new Promise<void>((resolve, reject) => {
+      socket.once("open", resolve);
+      socket.once("error", reject);
+    });
+    return socket;
+  }
+
+  /** The `ws` error for an upgrade the server refused before the handshake. */
+  function refusal(url: string): Promise<Error> {
+    return new Promise<Error>((resolve) => new WebSocket(url).once("error", resolve));
+  }
+
+  test("carries a call in both directions", async () => {
+    const received: unknown[] = [];
+    server = createServer({ runtime: echoRuntime(received), logger: silentLogger });
+    await server.listen(0);
+
+    const socket = await openCarrier(`ws://localhost:${server.port}/phone`);
+    const fromCarrier: Record<string, unknown>[] = [];
+    socket.on("message", (data: Buffer) => fromCarrier.push(JSON.parse(data.toString())));
+
+    socket.send(JSON.stringify({ event: "start", streamSid: "MZ1", start: {} }));
+    socket.send(
+      JSON.stringify({
+        event: "media",
+        streamSid: "MZ1",
+        media: { payload: Buffer.alloc(160, 0xff).toString("base64") },
+      }),
+    );
+
+    // The synthesized audio_ready, then the caller's audio as PCM16.
+    await vi.waitFor(() => expect(received.length).toBeGreaterThanOrEqual(2));
+    expect(received[0]).toBe(JSON.stringify({ type: "audio_ready" }));
+    expect(received[1]).toBeInstanceOf(Uint8Array);
+
+    // And the reply comes back as a Twilio media frame.
+    await vi.waitFor(() => expect(fromCarrier.length).toBeGreaterThanOrEqual(1));
+    expect(fromCarrier[0]).toMatchObject({ event: "media", streamSid: "MZ1" });
+    socket.close();
+  });
+
+  test("refuses an unknown carrier without upgrading", async () => {
+    server = createServer({ runtime: echoRuntime([]), logger: silentLogger });
+    await server.listen(0);
+
+    const err = await refusal(`ws://localhost:${server.port}/phone?carrier=vonage`);
+    expect(err.message).toContain("400");
+  });
+
+  test("telephony: false removes the route", async () => {
+    server = createServer({ runtime: echoRuntime([]), logger: silentLogger, telephony: false });
+    await server.listen(0);
+
+    const err = await refusal(`ws://localhost:${server.port}/phone`);
+    expect(err.message).toContain("404");
   });
 });

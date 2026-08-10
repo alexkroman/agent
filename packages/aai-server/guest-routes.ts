@@ -20,6 +20,12 @@ export const GUEST_ROUTES = {
   control: "/ws",
   /** PUBLIC client voice sessions, connected directly by browsers. */
   session: "/websocket",
+  /**
+   * PUBLIC carrier media streams (Twilio, Telnyx), connected directly by the
+   * carrier. Same posture as `session` above: the TwiML at
+   * `POST /:slug/phone` hands the carrier this URL and the carrier dials it.
+   */
+  phone: "/phone",
   /** PUBLIC studio coding-agent chat (SSE), bearer-gated by the caller's key. */
   studioChat: "/studio/chat",
   /**

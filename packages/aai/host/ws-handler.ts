@@ -30,7 +30,7 @@ import type { SessionCore } from "./session-core.ts";
 import { createClientSink } from "./ws-client-sink.ts";
 import { type SessionWebSocket, safeSend } from "./ws-frames.ts";
 
-export { type SessionWebSocket, safeSend } from "./ws-frames.ts";
+export { asSessionWebSocket, type SessionWebSocket, safeSend } from "./ws-frames.ts";
 
 /** Options for wiring a WebSocket to a session. */
 type WsSessionOptions = {

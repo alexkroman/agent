@@ -330,16 +330,6 @@ only guards raw wire shapes that skipped the fill.
   `{}`), and a failed/invalid call is recorded with an error `result` rather
   than left dangling.
 
-- **The capture worklet** (`worklets/capture-processor.ts`) is the single
-  mic-capture processor. It flushes a `slice()` copy and keeps its own
-  buffer (re-reading a just-transferred view is how a mic once went
-  permanently deaf), with start/stop gating, a stop → flush → `stopped`-ack
-  protocol, and the dead-mic probe. Two guards remain load-bearing:
-  `instantiateWorklet`'s harness honors the transfer list (`structuredClone`
-  with `transfer`, which really detaches) and caps posted messages so a
-  runaway loop is a named failure rather than a hang, and
-  `worklets/capture-processor.test.ts` exercises the processor source.
-
 - **Pre-connection client config**: the default client page is
   byte-identical for every agent and the CSP bars inline scripts, so the
   agent's display name and greeting reach the browser via a pre-connection
@@ -353,39 +343,13 @@ only guards raw wire shapes that skipped the fill.
   agent definition; the harness passes the loaded agent's name/greeting to
   `createServer`), never read from the stored config, which is fully opaque
   to the host. A guest that can't answer degrades to `{ sessionUrl }` only.
-  In `aai-ui`, `client()`'s config
-  tier renders `DefaultRoot`, which fetches the config (any failure degrades
-  to the empty default, so older servers keep working) and mounts the chat
-  shell; the shell uses the server-declared `name` unless `client({ name })`
-  overrides it. A custom `component` ignores all of it. The `aai dev` Vite
-  proxy forwards `/client-config` to the backend.
+  The `aai dev` Vite proxy forwards `/client-config` to the backend.
 
-  **The session's per-attempt broker lookup uses `loadClientConfig`, not
-  `fetchClientConfig`** — it returns `null` for a lookup that produced no
-  answer, keeping that distinct from a server that answered and named no
-  `sessionUrl`. Degrading both to `{}` is fine for name/greeting and wrong
-  here: `session-core.ts` latches `serverIsBroker = false` on a config with
-  no `sessionUrl`, and that latch skips the broker fetch on every later
-  attempt. So one 503 — a sandbox mid-boot, or one that failed to start —
-  pinned the client to the platform's `/:slug/websocket`, whose WebSocket
-  redirect browsers do not follow (sessions go straight to the sandbox now),
-  with no route back even after the agent recovered. Only an ANSWERED lookup
-  may set the latch.
-
-- **There is no text-only mode.** Every pipeline agent declares a real TTS
-  provider, and the default `ChatView` always renders the voice `Controls`.
-  The snapshot's `apiUrl` field carries the programmatic WebSocket endpoint,
-  shown by `ApiUrlChip`. **It is the LONG-LIVING platform endpoint**
-  (`wss://host/:slug/websocket`), never the brokered sandbox tunnel URL the
-  session actually connects to — the tunnel URL dies with the sandbox (idle
-  eviction, redeploy), so surfacing it hands users a link that rots. The
-  platform endpoint stays valid: a plain upgrade on it resolves the live
-  sandbox (booting it like the client-config broker) and answers a 302
-  redirect to the sandbox's current session URL (`orchestrator-ws.ts`,
-  query preserved so `?sessionId=` resumes survive). Programmatic WebSocket
-  clients that follow handshake redirects land on the sandbox; browsers
-  don't follow WebSocket redirects, which is fine — the browser path is the
-  client-config broker.
+- **What the BROWSER client does with all of that** — the `DefaultRoot`
+  config tier, the `serverIsBroker` latch that must only be set by an
+  ANSWERED lookup, and why `ApiUrlChip` shows the long-living platform
+  endpoint rather than the sandbox tunnel — is in
+  `packages/aai-ui/CLAUDE.md`, "Consuming the client config".
 
 Reference providers shipped today:
 
@@ -814,6 +778,57 @@ The residual risk in a container is prompt injection steering the model at an
 internal endpoint; accepted, because the sandbox has nothing internal worth
 reaching and an author who wants that can already write it.
 
+**SSRF screening implementation (`host/ssrf.ts`).** The rules the screen
+itself has to get right, as opposed to when it runs:
+
+- Lives in the SDK, not `aai-server`, so both the platform's guest-fetch proxy
+  and the SDK's own network builtins resolve one implementation.
+- `resolveAndAssertPublic()` uses the `bogon` library for private IP ranges.
+- Handles IPv4-mapped IPv6 bypass (`::ffff:127.0.0.1`).
+- Blocks `.internal`, `.local`, cloud metadata hostnames, and non-HTTP(S)
+  protocols.
+- Re-validates every redirect hop and strips credential headers once a redirect
+  leaves the original origin.
+- Pins the validated IP with an undici dispatcher `lookup` rather than
+  rewriting the URL hostname. Rewriting broke TLS — SNI and cert verification
+  use the URL, not the `Host` header — so every `https://` request failed. Keep
+  the URL intact when touching this.
+- **The dispatcher and the `fetch` it is handed to must come from the same
+  undici.** `pinnedDispatcher` builds an `Agent` from this package's `undici`
+  dependency, while `globalThis.fetch` is backed by the copy bundled into the
+  Node runtime (`process.versions.undici`) — a different major. undici 8
+  reworked the dispatch-handler interface, so a v8 `Agent` rejects the v7-style
+  handler Node's internal fetch builds, with `InvalidArgumentError: invalid
+  onRequestStart method` surfacing as a bare `TypeError: fetch failed`. A
+  dispatcher is attached to *every* hostname request, so the mismatch takes out
+  all SSRF-guarded egress at once — `web_search`, `visit_webpage`,
+  `get_page_design`, and `fetch_json`. `safeFetch` therefore routes through
+  `pinnedFetch`, undici's own `fetch`; never reintroduce `globalThis.fetch`
+  there. Guarded by `ssrf-dispatcher.test.ts` — the rest of the SSRF suite
+  injects a fake fetch and never builds a real dispatcher, which is why this
+  shipped unnoticed. Two rules survived the (since-removed) tool-egress
+  guard that first hit this: **the caller may not name a fetch
+  implementation** (leave `fetchFn` unset — it exists for tests — so the
+  pinned default applies), and the guard test has to cover the *call site*,
+  not just `pinnedFetch` in isolation.
+
+  **The request *body* crosses the same seam, and `FormData` does not survive
+  it.** undici 8's `extractBody` brand-checks each body type with an
+  `instanceof` against **its own** class, so a `globalThis.FormData` (an
+  instance of Node's *internal* undici's class) matches no branch, falls
+  through to the string conversion, and goes out as `Content-Type: text/plain`
+  with the 17-byte body `[object FormData]` — the server answers
+  `415 Unsupported Media Type` and the caller sees an opaque HTTP failure.
+
+  The rule that generalizes: **never hand a `FormData`, `Blob`, `File`,
+  `Headers`, or `Request` to a `fetch` that might not be the one your realm's
+  global came from** — pass bytes.
+- The network builtins (`web_search`, `visit_webpage`, `get_page_design`,
+  `fetch_json`) take a
+  model-controlled URL and **default** to this via `safeFetch` in
+  `builtin-tools.ts`. Protection is not opt-in per caller; only tests override
+  the `fetch` option.
+
 ## A `reset` starts a conversation, so it GREETS
 
 The client `reset` frame — aai-ui's "New Conversation" button — discards the
@@ -1125,6 +1140,67 @@ both are fail-closed:
   a MINIMUM tick duration, so it never runs ahead of the wall clock (measured
   mean 315ms per 200ms tick — 0.63x real time). Reach for `null` only for a
   harness that genuinely steps faster than real time.
+
+## Telephony: a phone call is an ordinary session
+
+`WS /phone` (`host/telephony/`) accepts a carrier's bidirectional media
+stream — Twilio Media Streams, Telnyx media streaming — and runs it as an
+ordinary session. `createServer` serves it by default, so `aai dev`, a
+self-hosted server and every deployed agent all answer phone calls with no
+per-agent configuration. The platform half (the TwiML webhook that points a
+carrier here) is in `packages/aai-server/CLAUDE.md`.
+
+**Nothing in the session stack knows about telephony, and that is the whole
+design.** `SessionCore` talks to a `ClientSink`; `wireSessionSocket` talks to
+a `SessionWebSocket`. So the adapter is a socket-shaped SHIM
+(`createTelephonyBridge`) that speaks the client protocol on one side and the
+carrier's JSON framing on the other, handed straight to
+`runtime.startSession`. Turn-taking, barge-in, tool calls, the audio pacer and
+its ordering rules, session eviction, keepalives, start timeouts and teardown
+are not reimplemented for phone — a call gets them because it runs the same
+code the browser does. Resist adding a telephony branch anywhere below the
+bridge; if one seems necessary, the bridge is the wrong shape.
+
+Four things that are easy to get wrong here, each of which was a decision:
+
+- **Pacing stays ON.** A carrier accepts audio far faster than it plays it and
+  buffers the rest — exactly the shape that made unpaced host-mode sessions
+  destroy 36% of all agent audio (see "Host-mode audio pacing" above): the
+  backlog builds on the FAR side, where `PacedAudioSink.clear()` cannot reach
+  it. So the bridge sets no `audioLeadMs` and a barge-in additionally sends the
+  carrier's own `clear` frame, which is the only way to drop what it already
+  holds. Without that frame the caller talks over an agent that keeps speaking
+  for seconds after being interrupted.
+- **The rates are LEARNED from the `config` frame**, not configured. The first
+  thing any runtime sends a session is `{ sampleRate, ttsSampleRate }`, so the
+  bridge builds its converters from that — which lets one adapter serve a
+  16 kHz pipeline agent and a 24 kHz S2S agent, and avoids plumbing a rate
+  through `createServer`, whose runtime is a LAZY facade in the guest harness
+  and cannot answer a rate question before the first session exists.
+- **Downsampling must low-pass first** (`telephony/resample.ts`). Decimating
+  24 kHz TTS to 8 kHz without it folds everything above 4 kHz back into the
+  speech band; measured, a 6 kHz tone lands at 2 kHz at FULL amplitude. It
+  reads as a poor phone line rather than as a defect, which is how it ships.
+  Upsampling needs no filter — the carrier already band-limits to ~3.4 kHz.
+  Both converters are STATEFUL and must stay so: rebuilt per 20 ms chunk they
+  put a click at every boundary, 50 a second.
+- **This does not contradict "the host does not resample"** (see the S2S
+  section). That rule says rate conversion belongs at the EDGE, because every
+  client owns its own rate and asking it to send the advertised one is cheaper
+  and more honest. A carrier is the one client that cannot comply — 8 kHz
+  μ-law is what the PSTN carries — and the bridge IS the edge. The rule put
+  the conversion exactly here.
+
+Adding a carrier is one `CarrierCodec` in `telephony/carriers.ts` and nothing
+else. Two properties they all owe: decoding NEVER throws (a carrier is free to
+add frame types, and a throw off a socket event takes the host down mid-call),
+and a media frame on a non-`inbound` track is DROPPED — a both-tracks stream
+otherwise transcribes the agent as the caller and every reply reads as a
+barge-in against itself.
+
+**Known gaps**, both deliberate: no `mark` frames, so `playback_progress` is
+unused and the pipeline falls back to its open-loop estimate; and DTMF is
+ignored rather than surfaced as a custom event.
 
 ## Pipeline-transport interleaving fuzz
 

@@ -206,13 +206,18 @@ exports[`export surface stability > @alexkroman1/aai/protocol export 1`] = `
 
 exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
 [
+  "CARRIER_CODECS",
+  "CARRIER_PARAM",
   "CONTAINED_ENV",
   "DEFAULT_LISTEN_HOST",
   "DEFAULT_S2S_CONFIG",
   "PROVIDER_CREDENTIAL_ENVS",
   "SANDBOX_ONLY_BUILTINS",
+  "TELEPHONY_PATH",
+  "TELEPHONY_SAMPLE_RATE",
   "buildHostAgent",
   "builtinFetch",
+  "carrierByName",
   "consoleLogger",
   "createAgentServer",
   "createConsoleLogger",
@@ -225,6 +230,7 @@ exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
   "createS2sTransport",
   "createServer",
   "createSessionCore",
+  "createTelephonyBridge",
   "debugLoggingEnabled",
   "decliningRuntime",
   "executeToolCall",
@@ -242,6 +248,9 @@ exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
   "safeSend",
   "ssrfSafeFetch",
   "startHostSession",
+  "startTelephonySession",
+  "telnyxCodec",
+  "twilioCodec",
   "wireSessionSocket",
   "withHostCredentialFallback",
 ]
