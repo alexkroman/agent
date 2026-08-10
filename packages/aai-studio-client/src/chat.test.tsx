@@ -6,7 +6,8 @@
 import type { UIMessage } from "ai";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
-import { ChatPanel, Composer, notifyDispatch } from "./chat.tsx";
+import { ChatPanel, notifyDispatch } from "./chat.tsx";
+import { Composer } from "./composer.tsx";
 import { toBlocks } from "./tool-row.tsx";
 
 function message(parts: Record<string, unknown>[]): UIMessage {
@@ -109,6 +110,14 @@ describe("Composer", () => {
     expect(html).toMatch(/<button[^>]*\sdisabled=/);
   });
 
+  test("a sandbox still starting holds the send button but leaves the field live", () => {
+    // Distinct from `disabled`: the wait is finite, so the message can be
+    // written while it runs out. Only sending waits.
+    const html = renderToStaticMarkup(<Composer {...composerProps} sendDisabled={true} />);
+    expect(html).not.toMatch(/<textarea[^>]*\sdisabled=/);
+    expect(html).toMatch(/<button[^>]*\sdisabled=/);
+  });
+
   test("queued follow-ups render with a per-message dismiss", () => {
     const html = renderToStaticMarkup(
       <Composer
@@ -156,6 +165,36 @@ describe("ChatPanel session failure", () => {
     const html = renderToStaticMarkup(<ChatPanel {...panelProps} sessionError={null} />);
     expect(html).toContain("Starting sandbox…");
     expect(html).not.toContain("Try again");
+  });
+
+  test("the restored conversation stays up through both", () => {
+    // A sandbox that is booting — or that refused to — says nothing about the
+    // transcript, which loaded from a different request and reads fine
+    // without one. Replacing it threw away the only thing that had arrived.
+    const history = [
+      { id: "m1", role: "user", parts: [{ type: "text", text: "build a pizza bot" }] },
+    ] as UIMessage[];
+    const booting = renderToStaticMarkup(
+      <ChatPanel {...panelProps} chatHistory={history} sessionError={null} />,
+    );
+    expect(booting).toContain("build a pizza bot");
+    expect(booting).toContain("Starting sandbox…");
+
+    const failed = renderToStaticMarkup(
+      <ChatPanel {...panelProps} chatHistory={history} sessionError={new Error("at capacity")} />,
+    );
+    expect(failed).toContain("build a pizza bot");
+    expect(failed).toContain("Try again");
+  });
+
+  test("a conversation that has not loaded yet has nothing to show but the wait", () => {
+    // The one state with no transcript to hold: the history request is still
+    // in flight, so the panel must not claim the conversation is empty.
+    const html = renderToStaticMarkup(
+      <ChatPanel {...panelProps} chatHistory={undefined} sessionError={null} />,
+    );
+    expect(html).toContain("Loading conversation…");
+    expect(html).not.toContain("Welcome to AssemblyAI Build");
   });
 });
 

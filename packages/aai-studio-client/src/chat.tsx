@@ -5,31 +5,34 @@
 // (home.tsx), whose first prompt auto-creates a project.
 
 import { useChat } from "@ai-sdk/react";
-import { Markdown } from "@alexkroman1/aai-ui";
 import { DefaultChatTransport, type UIMessage } from "ai";
-import clsx from "clsx";
-import { memo, useCallback, useEffect, useReducer, useRef, useState } from "react";
-import { StickToBottom } from "use-stick-to-bottom";
+import {
+  type Dispatch,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import type { ChatSession, StudioStatus } from "./api.ts";
 import { errorText } from "./api-error.ts";
-import {
-  drainText,
-  EMPTY_QUEUE,
-  hasPendingWork,
-  nextToFlush,
-  type QueuedMessage,
-  queueReducer,
-} from "./chat-queue.ts";
-import { ChatStatusNote } from "./chat-status-note.tsx";
+import { drainText, EMPTY_QUEUE, hasPendingWork, nextToFlush, queueReducer } from "./chat-queue.ts";
+import { EmptyStateBody, Transcript } from "./chat-transcript.tsx";
+import { Composer } from "./composer.tsx";
 import { createResilientFetch } from "./resilient-fetch.ts";
-import { isEnterSubmit, SEND_BUTTON_CLASS, SendIcon, StopIcon } from "./send-button.tsx";
-import { ToolRow, toBlocks } from "./tool-row.tsx";
 
 type ChatPanelProps = {
   /**
    * The project's persisted conversation, restored on open. `undefined`
    * while the fetch is in flight — the panel shows a loading state instead
    * of flashing an empty "new chat" composer that hydration then replaces.
+   *
+   * It is rendered as soon as it lands, WITHOUT waiting for the sandbox: the
+   * two requests go out together but the broker has to boot a container, so
+   * gating the transcript on it left a project the user just clicked showing
+   * nothing it already knew for seconds. What waits on the sandbox is
+   * SENDING, which is what actually needs it.
    */
   chatHistory: UIMessage[] | undefined;
   /** Undefined while `/studio/status` is loading or unreachable. */
@@ -100,157 +103,84 @@ export function notifyDispatch(
   return opts?.respond === true && !state.busy && state.chatReady ? "turn" : "append";
 }
 
-// Memoized: while a turn streams, useChat updates dozens of times a second
-// but only the streaming message's identity changes — settled messages must
-// not re-run their markdown parse on every chunk.
-const MessageView = memo(function MessageView({
-  message,
-  busy = false,
-  labels,
-}: {
-  message: UIMessage;
-  busy?: boolean;
-  labels?: Record<string, string> | undefined;
-}) {
-  if (message.role === "user") {
-    const text = message.parts
-      .map((part) => (part.type === "text" ? part.text : ""))
-      .join("")
-      .trim();
-    return (
-      <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-lg border border-line bg-cream px-3.5 py-2 text-[13px] leading-5 break-words whitespace-pre-wrap">
-          {text}
-        </div>
-      </div>
-    );
+/**
+ * What the brokered sandbox is doing, rendered at the foot of the restored
+ * transcript — the thing the composer is waiting on, said where the next
+ * message would appear rather than in place of the conversation.
+ *
+ * The failure keeps the history up for the same reason the wait does: the
+ * transcript is readable without a sandbox, and replacing it with an error
+ * card threw away the one thing that had already loaded. The server's own
+ * reason rides along when it gave one — a capacity or boot timeout reads very
+ * differently from a bad key, and the generic line cannot tell them apart.
+ */
+function SandboxNote({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  if (error == null) {
+    return <p className="m-0 text-[13px] text-subtle italic">Starting sandbox…</p>;
   }
   return (
-    <div className="text-[13px] leading-[19px] break-words">
-      {toBlocks(message).map((block) =>
-        block.kind === "text" ? (
-          <Markdown key={block.key} text={block.text} variant="compact" />
-        ) : (
-          <ToolRow key={block.key} part={block.part} active={busy} labels={labels} />
-        ),
-      )}
-    </div>
-  );
-});
-
-type ComposerProps = {
-  disabled: boolean;
-  placeholder: string;
-  /** Controlled input — the parent owns it so a Stop can drain the queue into it. */
-  value: string;
-  onValueChange: (value: string) => void;
-  onSend: (text: string) => void;
-  /** A turn is in flight: the send button becomes a Stop button. */
-  busy?: boolean;
-  /** Cancel the in-flight turn. Required whenever `busy` can be true. */
-  onStop?: () => void;
-  /** Follow-ups waiting for the current turn to finish, oldest first. */
-  queued?: readonly QueuedMessage[];
-  onRemoveQueued?: (id: string) => void;
-};
-
-/**
- * Composer pinned to the panel bottom (1b spec). Exported for tests.
- *
- * The input stays live while a turn streams — submitting then QUEUES the
- * message (the parent decides; see `hasPendingWork`) instead of it being
- * swallowed, which is what the disabled input used to do to anyone who thought
- * of a follow-up mid-turn.
- *
- * The button still swaps to Stop for the whole time a turn is in flight, even
- * with text in the input: it is the one escape hatch when a tool call is
- * taking forever, so it must be unconditionally reachable. Enter is what
- * queues — the placeholder says so, and the queued rows above make the
- * mechanism visible once something is in there.
- */
-export function Composer({
-  disabled,
-  placeholder,
-  value,
-  onValueChange,
-  onSend,
-  busy = false,
-  onStop,
-  queued = [],
-  onRemoveQueued,
-}: ComposerProps) {
-  const submit = () => {
-    const text = value.trim();
-    if (!text || disabled) return;
-    onValueChange("");
-    onSend(text);
-  };
-  const showStop = busy && onStop != null;
-  return (
-    <div className="flex flex-none flex-col gap-2 border-t border-line px-5 pt-4 pb-5">
-      {queued.length > 0 && (
-        <ul aria-label="Queued messages" className="m-0 flex list-none flex-col gap-1 p-0">
-          {queued.map((item, index) => (
-            <li
-              key={item.id}
-              className="flex items-center gap-2 rounded-md border border-dashed border-line-strong bg-cream px-2.5 py-1.5 text-[12px] text-muted"
-            >
-              <span className="min-w-0 flex-1 truncate">{item.text}</span>
-              <button
-                type="button"
-                aria-label={`Remove queued message ${index + 1}`}
-                className="flex-none cursor-pointer border-none bg-transparent p-0 text-[14px] leading-none text-subtle hover:text-fg"
-                onClick={() => onRemoveQueued?.(item.id)}
-              >
-                ×
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="flex items-end gap-2">
-        {/* A textarea, not an input: Shift+Enter for a newline is table stakes
-            for prompting, and a Stop that hands several queued messages back
-            (see drainText) needs a field that can hold them — a single-line
-            input silently strips the newlines between them. */}
-        <textarea
-          className="field field-sizing-content max-h-40 min-h-10 min-w-0 flex-1 resize-none border-line-strong py-2.5"
-          rows={1}
-          value={value}
-          onChange={(e) => onValueChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (isEnterSubmit(e)) {
-              e.preventDefault();
-              submit();
-            }
-          }}
-          disabled={disabled}
-          placeholder={placeholder}
-        />
-        <button
-          type="button"
-          aria-label={showStop ? "Stop" : "Send"}
-          className={clsx("h-10 w-10", SEND_BUTTON_CLASS)}
-          onClick={showStop ? onStop : submit}
-          disabled={!showStop && disabled}
-        >
-          {showStop ? <StopIcon /> : <SendIcon />}
-        </button>
-      </div>
+    <div className="flex flex-col items-start gap-2">
+      <p className="m-0 text-[13px] text-err">Could not start the project's sandbox.</p>
+      {errorText(error) && <p className="m-0 text-[13px] text-subtle">{errorText(error)}</p>}
+      {/* Re-broker in place — the retries behind "Starting sandbox…" already
+          gave up, so recovery must not require a page reload. */}
+      <button type="button" className="btn" onClick={onRetry}>
+        Try again
+      </button>
     </div>
   );
 }
 
-function EmptyStateBody({ status }: { status: StudioStatus | undefined }) {
+/**
+ * The project's conversation before its sandbox exists: the restored history,
+ * read-only, with {@link SandboxNote} where the next turn will go.
+ *
+ * The composer is present and TYPABLE, only unable to send. A brokered
+ * sandbox takes seconds, and a dead field for those seconds is the same
+ * swallow-what-you-typed bug the follow-up queue exists to fix — one step
+ * earlier. The text lives in ChatPanel, so it is still there (and sendable)
+ * the moment the live chat takes over.
+ */
+function PendingChat({
+  history,
+  chatStatus,
+  toolLabels,
+  initialPrompt,
+  sessionError,
+  onSessionStale,
+  input,
+  onInputChange,
+}: {
+  history: UIMessage[];
+  chatStatus: StudioStatus | undefined;
+  toolLabels?: Record<string, string> | undefined;
+  initialPrompt: string | null;
+  sessionError: unknown;
+  onSessionStale: () => void;
+  input: string;
+  onInputChange: Dispatch<SetStateAction<string>>;
+}) {
   return (
     <>
-      <div className="rounded-lg border border-line bg-cream px-[18px] py-4">
-        <p className="m-0 text-[13px] leading-5">
-          Welcome to AssemblyAI Build. Tell me what your voice agent should do and I'll build the
-          first version.
-        </p>
-      </div>
-      <ChatStatusNote status={status} />
+      <Transcript
+        messages={history}
+        labels={toolLabels}
+        lead={
+          history.length === 0 && !initialPrompt ? <EmptyStateBody status={chatStatus} /> : null
+        }
+        footer={<SandboxNote error={sessionError} onRetry={onSessionStale} />}
+      />
+      <Composer
+        disabled={false}
+        sendDisabled
+        placeholder={
+          sessionError != null ? "Sandbox unavailable…" : "Starting sandbox — write ahead…"
+        }
+        value={input}
+        onValueChange={onInputChange}
+        // Unreachable: `sendDisabled` returns before any send.
+        onSend={() => undefined}
+      />
     </>
   );
 }
@@ -271,9 +201,19 @@ function ProjectChat({
   onBusyChange,
   onSessionStale,
   registerNotify,
+  input,
+  onInputChange,
 }: Omit<ChatPanelProps, "chatHistory" | "chatSession" | "sessionError"> & {
   session: ChatSession;
   initialMessages: UIMessage[];
+  /**
+   * The composer's text, owned by ChatPanel so that anything written while
+   * the sandbox was still starting survives this component mounting under it.
+   * A `SetStateAction` rather than a plain setter because a Stop drains the
+   * queue into whatever is already there.
+   */
+  input: string;
+  onInputChange: Dispatch<SetStateAction<string>>;
 }) {
   // Keep the latest callbacks out of the transport, which is created once.
   const staleRef = useRef(onSessionStale);
@@ -306,10 +246,10 @@ function ProjectChat({
   // is only "has `/studio/status` answered yet".
   const chatReady = chatStatus !== undefined;
 
-  // Follow-ups typed while the agent works. The composer's text lives here
-  // too, so a Stop can hand the queue back to it.
+  // Follow-ups typed while the agent works. The composer's text lives one
+  // level up (see `input`), so a Stop can hand the queue back to it.
   const [queue, dispatchQueue] = useReducer(queueReducer, EMPTY_QUEUE);
-  const [input, setInput] = useState("");
+  const setInput = onInputChange;
   const pending = hasPendingWork(queue, busy);
 
   /**
@@ -323,7 +263,7 @@ function ProjectChat({
     if (queue.items.length === 0) return;
     setInput((current) => drainText(queue, current));
     dispatchQueue({ type: "clear" });
-  }, [queue]);
+  }, [queue, setInput]);
 
   // Send the head of the queue the moment a turn settles — one turn at a
   // time, FIFO. While a turn runs, `turn-observed` releases the dispatch
@@ -419,18 +359,20 @@ function ProjectChat({
 
   return (
     <>
-      {/* StickToBottom follows streamed output but releases when the user
-          scrolls up to read, re-engaging once they return to the bottom. */}
-      <StickToBottom className="min-h-0 flex-1" initial="instant" resize="smooth">
-        <StickToBottom.Content className="flex flex-col gap-4 px-6 py-5">
-          {messages.length === 0 && !initialPrompt && <EmptyStateBody status={chatStatus} />}
-          {messages.map((message) => (
-            <MessageView key={message.id} message={message} busy={busy} labels={toolLabels} />
-          ))}
-          {error && <div className="text-[13px] text-err">{error.message}</div>}
-          {busy && <div className="text-[13px] text-subtle italic">Working…</div>}
-        </StickToBottom.Content>
-      </StickToBottom>
+      <Transcript
+        messages={messages}
+        busy={busy}
+        labels={toolLabels}
+        lead={
+          messages.length === 0 && !initialPrompt ? <EmptyStateBody status={chatStatus} /> : null
+        }
+        footer={
+          <>
+            {error && <div className="text-[13px] text-err">{error.message}</div>}
+            {busy && <div className="text-[13px] text-subtle italic">Working…</div>}
+          </>
+        }
+      />
       <Composer
         disabled={!chatReady}
         busy={busy}
@@ -446,38 +388,48 @@ function ProjectChat({
   );
 }
 
+/**
+ * The chat panel, in three states — and the ORDER of the two waits is the
+ * point. The history and the sandbox are requested together when a project
+ * opens, but the history is a row read and the sandbox is a container boot, so
+ * the transcript lands first and is shown first; only the ability to SEND
+ * waits on the broker, said in a note under the last message.
+ *
+ * The composer's text is owned here rather than by ProjectChat because that
+ * component mounts LATE — when the sandbox arrives — and anything typed
+ * against the pre-sandbox composer would be thrown away by the swap.
+ */
 export function ChatPanel(props: ChatPanelProps) {
+  const [input, setInput] = useState("");
   return (
     <div className="flex w-[360px] flex-none flex-col border-r border-line bg-panel">
       <div className="flex items-center justify-between gap-2 px-6 pt-5">
         <span className="eyebrow">Agent</span>
       </div>
-      {props.sessionError != null && (
+      {props.chatHistory === undefined && (
+        // Nothing to show yet: not even the conversation has arrived. A failed
+        // broker is still worth reporting here — it is the only thing that has
+        // an answer, and it comes with the button that retries it.
         <div className="flex flex-1 flex-col items-start justify-center gap-3 px-6 py-5">
-          <p className="m-0 text-[13px] text-err">Could not start the project's sandbox.</p>
-          {/* The server's own reason, when it gave one — a capacity/boot
-              timeout reads very differently from a bad key, and the generic
-              line above cannot tell them apart. */}
-          {errorText(props.sessionError) && (
-            <p className="m-0 text-[13px] text-subtle">{errorText(props.sessionError)}</p>
+          {props.sessionError != null ? (
+            <SandboxNote error={props.sessionError} onRetry={props.onSessionStale} />
+          ) : (
+            <p className="m-0 text-[13px] text-subtle italic">Loading conversation…</p>
           )}
-          {/* Re-broker in place — the retries behind "Starting sandbox…"
-              already gave up, so recovery must not require a page reload. */}
-          <button type="button" className="btn" onClick={props.onSessionStale}>
-            Try again
-          </button>
         </div>
       )}
-      {props.sessionError == null &&
-        (props.chatHistory === undefined || props.chatSession === undefined) && (
-          // History or sandbox still loading: hold the panel rather than
-          // flashing an empty "new chat" the restored conversation replaces.
-          <div className="flex flex-1 items-center px-6 py-5">
-            <p className="m-0 text-[13px] text-subtle italic">
-              {props.chatHistory === undefined ? "Loading conversation…" : "Starting sandbox…"}
-            </p>
-          </div>
-        )}
+      {props.chatHistory !== undefined && props.chatSession === undefined && (
+        <PendingChat
+          history={props.chatHistory}
+          chatStatus={props.chatStatus}
+          toolLabels={props.toolLabels}
+          initialPrompt={props.initialPrompt}
+          sessionError={props.sessionError}
+          onSessionStale={props.onSessionStale}
+          input={input}
+          onInputChange={setInput}
+        />
+      )}
       {props.chatHistory !== undefined && props.chatSession !== undefined && (
         <ProjectChat
           session={props.chatSession}
@@ -490,6 +442,8 @@ export function ChatPanel(props: ChatPanelProps) {
           onBusyChange={props.onBusyChange}
           onSessionStale={props.onSessionStale}
           registerNotify={props.registerNotify}
+          input={input}
+          onInputChange={setInput}
         />
       )}
     </div>

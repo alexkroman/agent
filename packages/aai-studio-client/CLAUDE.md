@@ -237,6 +237,37 @@ segmented control switches between — `preview.tsx`, `code-view.tsx`,
   matters (a preview landing at 25s noticed at 45s), trading the common case
   for the pathological one.
 
+- **The transcript does not wait on the sandbox** (`chat.tsx` — the three
+  states of `ChatPanel`, and `PendingChat` in particular). Opening a project
+  fires two requests together, and they are not remotely the same request: the
+  history is a row read, while the session broker has to boot a container. The
+  panel used to render neither until BOTH had landed, so a project whose entire
+  conversation was already in hand showed a one-line "Starting sandbox…" for
+  seconds. It now renders the history the moment it arrives and puts the wait
+  where the next message would go, as the last thing in the scroll region —
+  `SandboxNote`, which the composer is visibly gated on.
+  - **The composer is TYPABLE through the wait, only unable to send**
+    (`sendDisabled` on `Composer`, distinct from `disabled`). A dead field for
+    those seconds is the swallow-what-you-typed bug the follow-up queue exists
+    to fix, one step earlier — and an early Enter must not clear the field
+    either, since the text is the thing being held back. `disabled` stays for
+    the case with nothing to wait out (the LLM being unreachable).
+  - **The composer's text is owned by `ChatPanel`, not `ProjectChat`.** That
+    is what makes the wait cost nothing: `ProjectChat` mounts LATE — it cannot
+    exist before the brokered URL, and `useChat` seeds its messages once at
+    mount — so state held inside it would be born empty and take anything
+    typed against the pre-sandbox composer down with the swap.
+  - **A FAILED broker keeps the history up too**, with the same note carrying
+    the reason and the Try again button. It used to replace the whole panel,
+    which threw away the one thing that had successfully loaded. The only
+    state with no transcript to hold is a history request still in flight, and
+    that one still says "Loading conversation…" rather than claiming an empty
+    conversation.
+  - Both the pre-sandbox view and the live chat render through one
+    `Transcript` (`chat-transcript.tsx`) with `lead`/`footer` slots. Two
+    hand-matched copies would shift the messages under the reader at the exact
+    moment the live chat takes over.
+
 - **The composer QUEUES follow-ups typed mid-turn**
   (`aai-studio-client/src/chat-queue.ts`), Claude-Code style: the input stays
   live while the agent works, Enter parks the message in a visible, dismissable
