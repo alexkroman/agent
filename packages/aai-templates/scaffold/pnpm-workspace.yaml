@@ -11,3 +11,27 @@ onlyBuiltDependencies:
   - esbuild
 allowBuilds:
   esbuild: true
+
+# Exempt our own packages from pnpm's release-age quarantine, and ONLY ours.
+# `minimumReleaseAge` holds a version back until it has been on the registry
+# for N minutes (pnpm 11 turns it on by default; an org .npmrc or a corporate
+# config can set it far higher). The scaffold pins `^<newest>` — see
+# scripts/sync-scaffold-versions.mjs, which resyncs it on every `changeset
+# version` — and this repo publishes several times a day, so EVERY version
+# satisfying that range is younger than the window and resolution fails
+# outright:
+#
+#   ERR_PNPM_NO_MATURE_MATCHING_VERSION  Version 5.13.2 (released 2 hours ago)
+#   of @alexkroman1/aai-cli does not meet the minimumReleaseAge constraint
+#
+# There is no version to fall back to, so a freshly scaffolded project cannot
+# install at all — `aai init` fails at its own install step. Lowering the pin
+# would not help: the floor has to admit the SDK the templates are written
+# against, and that build is by definition new.
+#
+# Quarantine exists to blunt a compromised-release window, so this stays a
+# per-package exemption rather than `minimumReleaseAge: 0` — every third-party
+# dependency keeps whatever window the user has configured. We are the one
+# publisher whose freshness the user is opting into by running `aai init`.
+minimumReleaseAgeExclude:
+  - "@alexkroman1/*"

@@ -34,6 +34,35 @@ documentation for this repo.
     deliberately sets no `AAI_TEMPLATES_DIR` — that override used to pin
     every e2e run to the workspace sources.
 
+## The scaffold pins `^<newest>`, so it must opt out of release-age quarantine
+
+`scripts/sync-scaffold-versions.mjs` resyncs `scaffold/package.json` to the
+workspace versions on every `changeset version`, so a scaffolded project always
+asks for the SDK release that was just cut. That is correct — the templates are
+written against it — but it collides with pnpm's `minimumReleaseAge`, which
+holds a version back until it has been on the registry for N minutes (pnpm 11
+turns it on by default; an org config can set it far higher). Because this repo
+publishes several times a day, EVERY version satisfying `^<newest>` is inside
+the window, there is nothing older to fall back to, and `aai init` dies at its
+own install step with `ERR_PNPM_NO_MATURE_MATCHING_VERSION`. Lowering the pin
+does not help: the floor has to admit the build the templates need.
+
+`scaffold/pnpm-workspace.yaml` therefore ships
+`minimumReleaseAgeExclude: ["@alexkroman1/*"]` — scoped to our own packages, not
+`minimumReleaseAge: 0`, so a user's window still covers every third-party
+dependency. `templates.test.ts` pins both that key and the
+`onlyBuiltDependencies`/`allowBuilds` pair beside it, because **every setting in
+that file fails only on a user's machine**: pnpm ignores unknown keys silently,
+so a rename or a dropped line is invisible in-tree. Reproduce either failure by
+copying `scaffold/` to a temp dir, appending `minimumReleaseAge: 10080`, and
+running `pnpm install --lockfile-only`.
+
+Do not confuse this with a stale metadata cache, which fails the same command
+with a different error: plain `ERR_PNPM_NO_MATCHING_VERSION` and a
+`The latest release … is "X"` line naming a version older than the pin. That one
+is client-side (`pnpm cache delete "@alexkroman1/*"`), not ours — the quarantine
+error always names the constraint or carries a `published by <date>` clause.
+
 ## What `tsconfig.json` includes is what gets type-checked
 
 A test file is imported by nothing, so tsc only sees it if `include` names
