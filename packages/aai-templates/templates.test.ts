@@ -25,6 +25,7 @@ import { describe, expect, test } from "vitest";
 // `?raw` rather than node:fs — this package's tsconfig has no node types, and
 // the raw-import shape is the one the CLI bundler supports anyway.
 import scaffoldGuide from "./scaffold/CLAUDE.md?raw";
+import scaffoldWorkspaceYaml from "./scaffold/pnpm-workspace.yaml?raw";
 
 /** What a template's default export must satisfy — derived from the exact
  * functions the CLI bundler feeds it to. */
@@ -104,5 +105,28 @@ describe("scaffold guide SDK defaults", () => {
     expect(scaffoldGuide).toContain(
       `Tool execution timeout: ${TOOL_EXECUTION_TIMEOUT_MS / 1000} seconds`,
     );
+  });
+});
+
+/**
+ * The scaffold's pnpm settings only ever fail on a USER's machine, days after
+ * anyone touched this repo — `aai init` runs the install, and a dropped or
+ * misspelled key is silent (pnpm ignores unknown settings). So pin the two
+ * that a scaffolded project cannot install without.
+ */
+describe("scaffold pnpm-workspace.yaml", () => {
+  test("exempts our own packages from the release-age quarantine", () => {
+    // Not `minimumReleaseAge: 0` — the exemption is deliberately scoped to
+    // the packages `aai init` pins at `^<newest>`, leaving every third-party
+    // dependency under whatever window the user configured.
+    expect(scaffoldWorkspaceYaml).toMatch(/^minimumReleaseAgeExclude:\n\s+- "@alexkroman1\/\*"$/m);
+    expect(scaffoldWorkspaceYaml).not.toMatch(/^minimumReleaseAge:/m);
+  });
+
+  test("keeps esbuild's build script approved under both pnpm 10 and 11", () => {
+    // pnpm 10 reads `onlyBuiltDependencies`, pnpm 11 `allowBuilds`; whichever
+    // one goes missing, the install fails on an unapproved build script.
+    expect(scaffoldWorkspaceYaml).toMatch(/^onlyBuiltDependencies:\n\s+- esbuild$/m);
+    expect(scaffoldWorkspaceYaml).toMatch(/^allowBuilds:\n\s+esbuild: true$/m);
   });
 });
