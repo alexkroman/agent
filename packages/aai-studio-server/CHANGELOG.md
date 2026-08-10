@@ -1,5 +1,19 @@
 # aai-studio-server
 
+## 0.6.8
+
+### Patch Changes
+
+- df41665: Studio Settings gains a Phone number card: the per-carrier webhook URLs for the published agent, with each carrier's signing secret named and reported as live, saved-but-undelivered, or missing.
+- 0f76c59: Studio: recover a chat turn sent to a spun-down sandbox instead of failing it. The chat transport now targets the project's current session lease per request and re-sends a turn once on the re-brokered sandbox, so a message typed into a tab whose sandbox had been idle-evicted lands instead of showing a fetch error until the page is reloaded.
+- e73d50d: Studio: drop the "this preview updates automatically as you edit" banner from the Preview pane. It rendered on every unpublished project — i.e. nearly always — restating the pane's own name above a Publish control already in the top bar. The failed-build banner is unchanged.
+- Updated dependencies [df41665]
+- Updated dependencies [24e8178]
+  - @alexkroman1/aai@5.14.0
+  - aai-server@3.5.7
+  - aai-studio-client@0.4.13
+  - @alexkroman1/aai-ui@5.14.0
+
 ## 0.6.7
 
 ### Patch Changes
