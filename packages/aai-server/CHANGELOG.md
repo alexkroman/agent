@@ -1,5 +1,23 @@
 # @alexkroman1/aai-server
 
+## 3.5.4
+
+### Patch Changes
+
+- 2ec1efd: Close four more resilience findings. R3: the slug lock's 15s acquire deadline was unreachable for same-replica contention, because both paths take the in-process mutex before the Postgres one — the mutex now carries the same deadline and a waiter that gives up releases its place in the chain. R4: blob WRITES now retry transient network errors like reads do; the write path moves far more bytes and is idempotent by construction (content-hash key plus upsert). R6: MAX_PLATFORM_DB_CONNECTIONS plus platform-db-budget.test.ts pin MAX_CONTAINERS x the per-replica direct-connection pools, which spanned two files that never referred to each other. R7: a guest's idle self-exit now drops the whole slot, not just its sandbox, so the map no longer grows one shell per slug for the life of the container.
+- 9303ba8: Supabase audit fixes: deprovision an app database on the cluster its stored locator names (a change to APP_DB_URLS otherwise dropped on the wrong one and stranded tenant data); join the orphan-preview sweep on a stored generated column so it stops detoasting every workspace document once an hour; cascade chat and session rows from their workspace; make the Vault put idempotent under a lost create race; cap the token verify cache at the token exp; report a never-joining Realtime channel; refuse boot on a missing or public Storage bucket; and add sweeps for unreferenced blobs, runaway tenant queries and pg_cron run history.
+- 9303ba8: Resync resident sandboxes when the agents change stream rejoins. subscribe() only sends the join and realtime-js rejoins after any socket drop, so changes in either window reach nobody — and since this stream is the single mover of resident sandboxes, nothing later noticed: a deploy during a drop left the replica serving superseded code and a delete left it answering for a deleted agent, until the guest happened to self-exit on idle. watchAgents now takes a slug-less onResync handler, and watchAgentInvalidation answers it by re-running the same per-slug reconcile over every resident in the slot cache.
+- 2ec1efd: Bound the shutdown teardown. createShutdownHandler armed its fallback timer only after onShutdown() settled, so the one deadline on shutdown covered waiting for connections to close and left sandbox teardown unbounded — and teardown is the half that hangs, since Sandbox.drain/shutdown reach a guest through the spawn's readiness promise (120s of boot budget). SANDBOX_TEARDOWN_READY_MS (5s, memoized per sandbox) caps that wait, and SHUTDOWN_TEARDOWN_TIMEOUT_MS (20s) is the general net over the untimed Modal control-plane calls beneath it.
+- Updated dependencies [5cfe26b]
+- Updated dependencies [90e5c15]
+- Updated dependencies [cdc8e54]
+- Updated dependencies [db4b0fb]
+- Updated dependencies [ce45435]
+- Updated dependencies [cdc8e54]
+  - @alexkroman1/aai@5.13.0
+  - aai-guest@0.4.11
+  - @alexkroman1/aai-ui@5.13.0
+
 ## 3.5.3
 
 ### Patch Changes

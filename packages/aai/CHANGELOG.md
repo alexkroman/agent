@@ -1,5 +1,67 @@
 # @alexkroman1/aai
 
+## 5.13.0
+
+### Minor Changes
+
+- cdc8e54: Close four places where the SDK's types contradicted its own runtime.
+
+  - **`sttPrompt` is now declarable on an S2S agent.** The transport has forwarded
+    it as `input.transcription_prompt` since the S2S dropped-field fix, and
+    `AgentDef.sttPrompt` documents it as honoured in both modes, but
+    `PipelineOnlyField` still listed it — so `agent({ s2s, sttPrompt })` was a
+    compile error naming a rule that was no longer true, and the measured win (a
+    spelled first name going from 1 of 6 attempts correct to 6 of 6) was reachable
+    only by skipping `agent()` for a raw config object. Purely widening; no
+    existing agent changes behaviour.
+
+  - **`ctx.generate({ schema })` now types `object` as required.** The host runs
+    `generateObject` and returns `{ text, object }` unconditionally on that path,
+    but the optionality survived the typed overload, so the one spelling the
+    overload exists to reward needed a `!` or an `if` before any field could be
+    read. `GenerateResult` is now text-only (with `object?: unknown` for plain
+    JSON Schema calls) and a Standard Schema call returns the new
+    `GenerateObjectResult<T>`.
+
+  - **`ctx.signal` is now non-optional.** The executor builds a per-call
+    `AbortController` on every path and no context has ever lacked one, so the `?`
+    only bought a `?.` on every `ctx.signal.aborted`. Contexts that genuinely
+    cannot cancel supply a signal that never aborts. **Migration:** code that
+    hand-builds a `ToolContext` (test mocks, almost exclusively) must add
+    `signal: new AbortController().signal`; consuming `ctx.signal` needs no change.
+
+  - **`assemblyAIS2s()` takes `{ voice, languages, keyterms }`.** It previously
+    took no options at all, so an AssemblyAI S2S agent could not pick its voice
+    and could not reach `input.language_codes` or `input.keyterms` — the pipeline
+    had all three. Each is forwarded only when set; leaving `languages` unset
+    still means "detect per turn", and a malformed stored value is dropped rather
+    than put on the wire. The accepted voice set is the service's and is not
+    verified here — an id it rejects arrives in-band after connect, leaving an
+    agent that reports ready and never speaks.
+
+- db4b0fb: Add createKeyedLock/withLock to the public SDK: a per-key async serializer for agents whose tools mutate shared ctx.state, which the LLM loop runs concurrently. Exported from the root and /utils.
+
+### Patch Changes
+
+- 5cfe26b: New Conversation now replays the agent's greeting. A client `reset` discarded the conversation but never reopened one: the pipeline transport greeted only at session start, so every conversation after the first began on silence. `reset()` now queues the greeting turn after clearing history, and a reset on a closed socket redials as a fresh session instead of resuming (a resume carries `?sessionId=`/`resume=1`, which keeps the server's history and suppresses the greeting).
+- 90e5c15: Add `omitUndefined()` to `@alexkroman1/aai/utils` — the one way to build the optional half of an object under `exactOptionalPropertyTypes`, replacing 41 hand-written `...(x !== undefined ? { x } : {})` spreads. Also annotates `StartScreen`'s return type, so the published declarations no longer carry an inferred union leaking React's `JSXElementConstructor`.
+- ce45435: Speak alphanumeric identifiers one character at a time end to end. "Speak phone numbers and codes digit by digit" was followed only halfway: measured against Full-Duplex-Bench audio, the agent wrote `ABC123`, `two K2` and `DELIV`, which TTS then rendered as "ABC one hundred twenty three", "2K2" and "Delive" — a caller cannot tell "123" from "one two three", and a quantity abutting a product code becomes one unsayable token. With the rule the same five utterances produce `two of K-two` and `D-E-L-I-V`, and transcribing the agent's own audio back shows the caller now hears `2 of K2` rather than `2K2`, and `Deliv` rather than `Dulif`.
+
+  Also quote money and counts from the tool-result field that holds them rather than computing them, and fix `firstPartMs` in the per-turn LLM trace so it times the model's first content part instead of the AI SDK's synchronous `start`/`start-step` parts — it reported 0-2 ms on every real turn, hiding time-to-first-token entirely, and now reports a p50 of 799 ms on the same turns.
+
+- cdc8e54: Correct the `builtinTools` default in the docs, and make it checkable.
+
+  `DEFAULT_BUILTIN_TOOLS` has been empty for some time, but `AgentDef.builtinTools`
+  still described a four-tool "cognitive set" default — contradicting the
+  `BuiltinTool` doc in the same file, the SDK guide, and the scaffold guide
+  shipped into every `aai init` project, which marked four built-ins "on by
+  default". Unset enables none; `[]` and omitting the field mean the same thing.
+
+  Nothing could catch the drift: the constant was annotated `readonly
+BuiltinTool[]`, which erased the type-level fact that it is empty, and its only
+  assertion was an `arrayContaining` spread that is vacuously true for an empty
+  array. It is now `as const satisfies` with an equality test.
+
 ## 5.12.0
 
 ### Minor Changes
