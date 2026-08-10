@@ -1,5 +1,25 @@
 # aai-studio-server
 
+## 0.6.4
+
+### Patch Changes
+
+- 9303ba8: Supabase audit fixes: deprovision an app database on the cluster its stored locator names (a change to APP_DB_URLS otherwise dropped on the wrong one and stranded tenant data); join the orphan-preview sweep on a stored generated column so it stops detoasting every workspace document once an hour; cascade chat and session rows from their workspace; make the Vault put idempotent under a lost create race; cap the token verify cache at the token exp; report a never-joining Realtime channel; refuse boot on a missing or public Storage bucket; and add sweeps for unreferenced blobs, runaway tenant queries and pg_cron run history.
+- Updated dependencies [2ec1efd]
+- Updated dependencies [5cfe26b]
+- Updated dependencies [9303ba8]
+- Updated dependencies [90e5c15]
+- Updated dependencies [cdc8e54]
+- Updated dependencies [db4b0fb]
+- Updated dependencies [9303ba8]
+- Updated dependencies [ce45435]
+- Updated dependencies [cdc8e54]
+- Updated dependencies [2ec1efd]
+  - aai-server@3.5.4
+  - @alexkroman1/aai@5.13.0
+  - aai-studio-client@0.4.10
+  - @alexkroman1/aai-ui@5.13.0
+
 ## 0.6.3
 
 ### Patch Changes
