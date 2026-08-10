@@ -12,14 +12,24 @@
   },
   "include": [
     "scaffold/global.d.ts",
-    "templates.test.ts",
-    "claude-md-limit.test.ts",
     // Deliberately generic: tsc's `include` only sets *root* files, and a
     // test file is imported by nothing, so anything not listed here is
     // never typechecked at all (unlike source modules, which get pulled in
     // transitively via imports from an included root). Globbing every
     // template file/test means a new template's source or test file is
     // covered on creation, not on the next config edit.
+    //
+    // The package's own files were named ONE BY ONE despite that, and the
+    // list had fallen three behind: `escape-hatch-scope.test.ts`,
+    // `template-api-coverage.test.ts` and `test-assertion-gate.test.ts` were
+    // type-checked by nothing (verified with `tsc --listFiles`, and by
+    // injecting `const x: number = "s"` into one and watching `tsc --noEmit`
+    // report zero errors). `*.ts` is the same argument as the template globs
+    // below — the next file added here is covered on creation. It matches
+    // only this directory, so `scaffold/` stays out: that tree is checked
+    // separately by `check:template-types`, under the SCAFFOLD's looser
+    // tsconfig, which is the point of checking it there.
+    "*.ts",
     "templates/*/*.ts",
     "templates/*/*.tsx",
     "templates/*/tools/*.ts"

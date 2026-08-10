@@ -34,6 +34,18 @@ documentation for this repo.
     deliberately sets no `AAI_TEMPLATES_DIR` — that override used to pin
     every e2e run to the workspace sources.
 
+## What `tsconfig.json` includes is what gets type-checked
+
+A test file is imported by nothing, so tsc only sees it if `include` names
+it — a package guide's worth of files can be silently unchecked. This one had
+three: `escape-hatch-scope.test.ts`, `template-api-coverage.test.ts` and
+`test-assertion-gate.test.ts` were listed nowhere and type-checked by nothing,
+under a comment that describes exactly that failure mode. `include` now globs
+`*.ts` (this directory only — `scaffold/` is checked separately by
+`check:template-types`, under the scaffold's own looser tsconfig). Verify with
+`tsc --noEmit --listFiles`, which prints the program's real file list, or by
+injecting a type error into a file you expect to be covered.
+
 ## Self-hosting is the scaffold's default
 
 `scaffold/server.mjs` plus `"start": "node server.mjs"` ship in every project,
