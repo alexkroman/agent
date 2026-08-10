@@ -62,7 +62,7 @@ export type SecretState = "missing" | "pending" | "live";
  *
  * `pending` is the one worth distinguishing: the project holds the value but
  * no deploy has carried it onto the published agent yet, so verification is
- * NOT running even though the name is visible in the list above. Reporting
+ * NOT running even though the name is visible in the list below. Reporting
  * that as set would tell someone their webhook is protected while it is still
  * accepting anything.
  */
@@ -93,7 +93,7 @@ function SecretHint({ carrier, state }: { carrier: Carrier; state: SecretState }
   }
   return (
     <span className="text-[11px] text-muted">
-      Add <code className="font-mono">{carrier.secret}</code> in Secrets above to verify calls
+      Add <code className="font-mono">{carrier.secret}</code> in Secrets below to verify calls
       really came from {carrier.label} ({carrier.secretSource}). Until then anyone with this URL can
       start calls on your account.
     </span>

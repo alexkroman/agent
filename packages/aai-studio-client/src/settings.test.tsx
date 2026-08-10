@@ -5,7 +5,9 @@
 // writes both of a project's agents AND the project's own record, so the pane
 // no longer mirrors anything and needs no publish first. Every successful
 // change posts a note into the chat so the coding agent knows which keys
-// exist — values never included. Every section works with no published slug.
+// exist — values never included. Every section works with no published slug,
+// and they run in a fixed order (Work locally, Phone number, Database,
+// Secrets, Danger zone) that the Phone card's copy points into.
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -51,6 +53,23 @@ afterEach(() => {
 });
 
 describe("SettingsPane", () => {
+  test("the sections run in the order a project needs them", async () => {
+    // Setting up first, provider keys last: the CLI round-trip, the webhook
+    // URLs, the Database switch, Secrets, and Delete project at the bottom.
+    // The order is also what two pieces of Phone card copy point at — both
+    // send the reader to "Secrets below" for a carrier's signing secret.
+    stubFetch({
+      ...DATABASE_STATE,
+      "GET /studio/projects/demo/secret": () => jsonResponse({ vars: [], pending: [] }),
+    });
+    renderPanel();
+    await waitFor(() => expect(screen.getByText("Database")).toBeTruthy());
+    // Card titles are eyebrow spans rather than headings, and inside this
+    // pane every one of them is a section title.
+    const titles = [...document.querySelectorAll(".eyebrow")].map((el) => el.textContent);
+    expect(titles).toEqual(["Work locally", "Phone number", "Database", "Secrets", "Danger zone"]);
+  });
+
   test("the box is usable with nothing published — no publish-first gate", async () => {
     // An agent needs its provider key to RUN, so requiring a publish first
     // asked for the one order that cannot work: ship it broken, attach the

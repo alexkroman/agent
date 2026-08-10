@@ -35,7 +35,7 @@ describe("secretState", () => {
   });
 
   test("a pending secret is not reported as live", () => {
-    // It is visible in the Secrets list above but has not reached the
+    // It is visible in the Secrets list below but has not reached the
     // published agent, so verification is not running — saying "set" would
     // tell someone their webhook is protected while it accepts anything.
     expect(secretState("TELNYX_PUBLIC_KEY", ["TELNYX_PUBLIC_KEY"], ["TELNYX_PUBLIC_KEY"])).not.toBe(

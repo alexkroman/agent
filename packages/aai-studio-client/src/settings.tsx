@@ -5,15 +5,18 @@
 // (secrets, the CLI round-trip, delete) never fit that, so it is laid out as
 // a real page instead.
 //
-// Its main section is agent secrets — its own UI, not part of Publish, and
-// like every other section here it works from the moment a project exists.
-// The project holds its own copy of them (studio-secrets.ts), so a key can be
-// saved before anything is deployed and lands in each agent as its deploy
-// claims a slug; the preview redeploys on its own so the environment the user
-// is looking at picks the key up. Every change posts a note into the chat
-// (values withheld) so the coding agent knows which keys exist without ever
-// seeing them. Below it sit the Database switch (database-card.tsx), the CLI
-// pull commands (cli-commands.tsx), and the delete-project button.
+// The sections run in the order a project needs them: the CLI round-trip
+// (cli-commands.tsx), the carrier webhook URLs (phone-card.tsx), the Database
+// switch (database-card.tsx), agent secrets, and the delete-project button
+// last.
+//
+// Secrets are their own UI, not part of Publish, and like every other section
+// here they work from the moment a project exists. The project holds its own
+// copy of them (studio-secrets.ts), so a key can be saved before anything is
+// deployed and lands in each agent as its deploy claims a slug; the preview
+// redeploys on its own so the environment the user is looking at picks the key
+// up. Every change posts a note into the chat (values withheld) so the coding
+// agent knows which keys exist without ever seeing them.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -134,6 +137,30 @@ export function SettingsPane({
           </p>
         </header>
 
+        {/* Unconditional — pulling a project locally needs no published slug. */}
+        <Card
+          title="Work locally"
+          blurb={
+            <>
+              Pull this project's files with the <code className="font-mono">aai</code> CLI, edit
+              them in your own editor, then <code className="font-mono">aai push</code> to sync them
+              back (or <code className="font-mono">aai publish</code> to sync and ship to
+              production).
+            </>
+          }
+        >
+          <CliCommands project={project} />
+        </Card>
+
+        {/* Gated on a published slug, unlike the cards around it — a
+            webhook URL is not an intent a later deploy can pick up. */}
+        <PhoneCard deployedSlug={deployedSlug} secretNames={names} pendingSecrets={pending} />
+
+        {/* Unconditional, like the cards above and below: a database is
+            provisioned per environment as each one deploys, so it can be
+            switched on before the project has ever been published. */}
+        <DatabaseCard bearer={bearer} project={project} onNotifyChat={onNotifyChat} />
+
         <Card
           title="Secrets"
           blurb={
@@ -201,30 +228,6 @@ export function SettingsPane({
             </p>
           )}
           {message && <p className="m-0 text-xs text-err">{message}</p>}
-        </Card>
-
-        {/* Unconditional, like the two below: a database is provisioned per
-            environment as each one deploys, so it can be switched on before
-            the project has ever been published. */}
-        <DatabaseCard bearer={bearer} project={project} onNotifyChat={onNotifyChat} />
-
-        {/* Gated on a published slug, unlike the cards around it — a
-            webhook URL is not an intent a later deploy can pick up. */}
-        <PhoneCard deployedSlug={deployedSlug} secretNames={names} pendingSecrets={pending} />
-
-        {/* Unconditional — pulling a project locally needs no published slug. */}
-        <Card
-          title="Work locally"
-          blurb={
-            <>
-              Pull this project's files with the <code className="font-mono">aai</code> CLI, edit
-              them in your own editor, then <code className="font-mono">aai push</code> to sync them
-              back (or <code className="font-mono">aai publish</code> to sync and ship to
-              production).
-            </>
-          }
-        >
-          <CliCommands project={project} />
         </Card>
 
         <Card
