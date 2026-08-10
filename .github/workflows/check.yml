@@ -24,14 +24,12 @@ jobs:
           node-version: 26
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Cache TypeScript incremental build info
-        uses: actions/cache@v6
-        with:
-          path: .tsbuildinfo/
-          key: tsbuildinfo-build-${{ runner.os }}-${{ hashFiles('packages/*/tsconfig.json', 'tsconfig.json') }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            tsbuildinfo-build-${{ runner.os }}-${{ hashFiles('packages/*/tsconfig.json', 'tsconfig.json') }}-
-            tsbuildinfo-build-${{ runner.os }}-
+      # NO .tsbuildinfo cache here. This job runs `turbo run build`, and the
+      # build configs set `incremental: false` — only `typecheck` writes
+      # `.tsbuildinfo/`, so the step that used to sit here restored into a job
+      # that never wrote the directory, and the job that does write it
+      # (lint-typecheck-and-checks) never saved. tsc therefore ran cold on
+      # every turbo cache miss. The cache now lives beside its producer.
       - name: Cache Turborepo
         uses: actions/cache@v6
         with:
@@ -45,7 +43,6 @@ jobs:
             node_modules
             packages/*/node_modules
             packages/*/dist
-            .tsbuildinfo
             .turbo
           key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
 
@@ -67,16 +64,28 @@ jobs:
             node_modules
             packages/*/node_modules
             packages/*/dist
-            .tsbuildinfo
             .turbo
           key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
       - run: pnpm install --frozen-lockfile
+      # Beside the only task that writes it (`typecheck`; the build configs set
+      # `incremental: false`). Keyed on the tsconfigs and the lockfile — what
+      # invalidates a tsc program — with the run's SHA appended so each run
+      # saves a fresh entry; a key that already exists is skipped on save, so a
+      # SHA-less key would freeze the first run's buildinfo forever.
+      - name: Cache TypeScript incremental build info
+        uses: actions/cache@v6
+        with:
+          path: .tsbuildinfo/
+          key: tsbuildinfo-typecheck-${{ runner.os }}-${{ hashFiles('packages/*/tsconfig.json', 'tsconfig.json', 'pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            tsbuildinfo-typecheck-${{ runner.os }}-${{ hashFiles('packages/*/tsconfig.json', 'tsconfig.json', 'pnpm-lock.yaml') }}-
+            tsbuildinfo-typecheck-${{ runner.os }}-
       - run: pnpm exec turbo run lint typecheck
       - name: Check for changeset
         if: github.event_name == 'pull_request' && github.head_ref != 'changeset-release/main' && !contains(github.event.pull_request.labels.*.name, 'no-release')
         run: pnpm changeset status --since=origin/main
       - run: |
-          pnpm exec turbo run check:publint check:attw check:typecheck docs
+          pnpm exec turbo run check:publint check:attw docs
           pnpm run check:knip
           # `turbo run lint` above is per-PACKAGE, and scripts/ is not a
           # package — so until this line it was the one source directory in
@@ -131,11 +140,18 @@ jobs:
             node_modules
             packages/*/node_modules
             packages/*/dist
-            .tsbuildinfo
             .turbo
           key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter "./packages/${{ matrix.package }}" test:coverage
+      # Through turbo rather than pnpm directly, for the `^build` ordering.
+      # Running the package script straight assumes the workspace cache restore
+      # above put every dependency's `dist` back; when it does not (an evicted
+      # or partial entry) the suite fails on a missing built artifact —
+      # aai-server alone resolves two, `aai-ui/dist/default-client` and
+      # `aai-guest/harness` — with an error that names a file nothing in the
+      # package touches. Under turbo those builds are cache hits from the setup
+      # job in the normal case and a real rebuild in the abnormal one.
+      - run: pnpm exec turbo run test:coverage --filter "./packages/${{ matrix.package }}"
 
   integration:
     needs: setup
@@ -161,7 +177,6 @@ jobs:
             node_modules
             packages/*/node_modules
             packages/*/dist
-            .tsbuildinfo
             .turbo
           key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
       - run: pnpm install --frozen-lockfile
@@ -212,7 +227,6 @@ jobs:
             node_modules
             packages/*/node_modules
             packages/*/dist
-            .tsbuildinfo
             .turbo
           key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
       - run: pnpm install --frozen-lockfile

@@ -123,6 +123,24 @@ so the "Cache Turborepo" step saved and restored nothing and every CI run
 type-checked cold. `cacheDir` is now `.turbo/cache`, which is what the
 workflow and `.gitignore` already assumed.
 
+**And a cache has to live in the job that WRITES the thing.** The
+`.tsbuildinfo` cache sat in the `setup` job, which only runs `turbo run
+build` — and the build configs set `incremental: false`, so that job never
+creates the directory (verified: `turbo run build --force` leaves no
+`.tsbuildinfo/`; `pnpm --filter aai typecheck` writes two files into it).
+The job that does write it, `lint-typecheck-and-checks`, only ever restored.
+So nothing was saved and tsc ran cold on every turbo cache miss, for the same
+reason as the `cacheDir` bug and with the same symptom of a step that looks
+right in the diff. The cache is now a `actions/cache@v6` (restore AND save)
+in the typecheck job, keyed on the tsconfigs plus the lockfile with the run
+SHA appended — a key that already exists is skipped on save, so a SHA-less
+key would pin the first run's buildinfo forever.
+
+The `test` matrix goes through `turbo run test:coverage --filter` rather than
+`pnpm --filter` for a related reason: run directly, it assumes the workspace
+cache restored every dependency's `dist`, and when that assumption fails the
+suite dies on a missing built artifact rather than rebuilding one.
+
 `pnpm check:local` uses the same script with `--local` flag, running a
 subset: build, typecheck, lint, publint, syncpack, sherif, knip, test —
 all in one turbo call with `--continue` (shows all failures at once).

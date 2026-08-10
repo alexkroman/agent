@@ -181,11 +181,6 @@
         "AAI_TEST_PM"
       ]
     },
-    "check:typecheck": {
-      "dependsOn": [
-        "^build"
-      ]
-    },
     "//#check:syncpack": {
       "inputs": [
         "package.json",
