@@ -1,9 +1,8 @@
 import "@alexkroman1/aai-ui/styles.css";
 import type { ChatMessage } from "@alexkroman1/aai-ui";
-import { client, useAgentState, useSession } from "@alexkroman1/aai-ui";
-import { useEffect, useRef } from "react";
+import { AutoScroll, client, useAgentState, useSession } from "@alexkroman1/aai-ui";
 import type { DashboardView, DispatchState, IncidentSummary, Severity, Status } from "./shared.ts";
-import { dashboardView } from "./shared.ts";
+import { dashboardView, dispatchSlot } from "./shared.ts";
 
 const CSS = `
 @keyframes dc-pulse {
@@ -54,7 +53,7 @@ const statusColors: Record<string, string> = {
 
 // The board before the first tool call — derived from the projection so a
 // new DashboardView field can't silently miss the pre-first-tool-call render.
-const EMPTY_DASH = dashboardView({});
+const EMPTY_DASH: DashboardView = dispatchSlot.projection(dashboardView)(undefined);
 
 function stateColor(state: string): string {
   return state === "listening"
@@ -133,15 +132,10 @@ function IncidentCard({ inc }: { inc: IncidentSummary }) {
 
 function App() {
   const session = useSession();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   // The agent's own board, projected by `syncState`. This replaced a
   // useState mirror that merged incident deltas out of tool events — the
   // projection is already the complete list, so there is nothing to merge.
-  const dash = useAgentState<DashboardView>() ?? EMPTY_DASH;
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [session.messages]);
+  const dash = useAgentState<DashboardView>(EMPTY_DASH);
 
   const incidentList = [...dash.incidents].reverse();
   const activeIncidents = incidentList.filter((i) => i.status !== "resolved");
@@ -222,7 +216,10 @@ function App() {
             className="flex flex-col overflow-hidden"
             style={{ borderRight: "1px solid #1e293b" }}
           >
-            <div className="dc-messages flex-1 overflow-y-auto p-4 flex flex-col gap-2">
+            <AutoScroll
+              scrollClassName="dc-messages overflow-y-auto"
+              contentClassName="p-4 flex flex-col gap-2"
+            >
               {session.messages.length === 0 && (
                 <div className="text-center p-10 text-[13px]" style={{ color: "#475569" }}>
                   Dispatch Command Center standing by. Click START to begin operations.
@@ -250,8 +247,7 @@ function App() {
                   {m.content}
                 </div>
               ))}
-              <div ref={messagesEndRef} />
-            </div>
+            </AutoScroll>
 
             {session.userTranscript !== null && (
               <div

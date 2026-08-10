@@ -1,7 +1,7 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import type { GameState } from "../shared.ts";
-import { loadState, saveGameState, saveSlotKey, saveSlotParam } from "../shared.ts";
+import { gameSlot, loadState, saveSlotKey, saveSlotParam } from "../shared.ts";
 
 // Requires storage — `aai storage enable` (or DATABASE_URL in .env under
 // `aai dev`); the rest of the game works without it.
@@ -11,7 +11,7 @@ export const loadGame = tool({
   async execute(args, ctx) {
     const saved = await loadState<GameState>(ctx, saveSlotKey(args.slot));
     if (!saved) return { error: "No save found." };
-    saveGameState(ctx, saved);
+    gameSlot.set(ctx, saved);
     return {
       loaded: true,
       playerName: saved.playerName,

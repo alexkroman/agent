@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { authenticateAs } from "../authenticate.ts";
-import { getState, retailTool } from "../store.ts";
+import { retailSlot, retailTool } from "../store.ts";
 
 export const findUserIdByEmail = retailTool({
   name: "find_user_id_by_email",
@@ -17,7 +17,7 @@ export const findUserIdByEmail = retailTool({
   // literal properties in source order — with `summary` first, `result` in its
   // signature can't be inferred and silently falls back to `unknown`.
   execute: (args, ctx) => {
-    const state = getState(ctx);
+    const state = retailSlot.get(ctx);
     const target = args.email.trim().toLowerCase();
     const match = Object.values(state.store.users).find(
       (user) => user.email.toLowerCase() === target,

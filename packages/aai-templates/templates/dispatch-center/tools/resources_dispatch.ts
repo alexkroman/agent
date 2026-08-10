@@ -1,4 +1,4 @@
-import { tool } from "@alexkroman1/aai";
+import { isToolFailure, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import type { Resource } from "../shared.ts";
 import {
@@ -33,7 +33,7 @@ export const resourcesDispatch = tool({
   async execute(args, ctx) {
     return updateState(ctx, (state) => {
       const inc = findIncident(state, args.incidentId);
-      if ("error" in inc) return inc;
+      if (isToolFailure(inc)) return inc;
       const blocked = assertNotResolved(inc, "dispatch resources");
       if (blocked) return blocked;
 

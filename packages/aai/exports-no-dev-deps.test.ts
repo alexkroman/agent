@@ -47,6 +47,24 @@ const devDeps = new Set(
 const IMPORT_RE =
   /(?:\bimport\s+(?:[^"'`;]+?\s+from\s+)?|\bexport\s+(?:\*|\{[^}]*\}|[\w$,\s]+)\s+from\s+|\bimport\s*\(\s*)["']([^"']+)["']/g;
 
+// Comments and their contents, blanked before the scan above runs.
+const COMMENT_RE = /\/\*[\s\S]*?\*\/|\/\/[^\n]*/g;
+
+/**
+ * Strip comments, preserving newlines so any reported position still lines up.
+ *
+ * tsdown keeps JSDoc in the output, so a doc `@example` showing how to TEST a
+ * tool — `import { expect, test } from "vitest"` — is a devDependency import as
+ * far as a regex is concerned. That is a false positive by construction, and it
+ * arrived the moment a published module documented its own use in a test
+ * (`sdk/testing.ts`, the `./testing` subpath). Masking loses nothing real: an
+ * `import` is a statement and can never live inside a comment, so anything this
+ * removes was never going to be resolved at runtime.
+ */
+function stripComments(src: string): string {
+  return src.replace(COMMENT_RE, (match) => match.replace(/[^\n]/g, " "));
+}
+
 function rootSpecifier(spec: string): string {
   if (spec.startsWith("@")) return spec.split("/").slice(0, 2).join("/");
   return spec.split("/")[0] ?? spec;
@@ -78,9 +96,20 @@ describe("built exports do not import devDependency-only packages", () => {
     expect(entries.length).toBeGreaterThan(0);
   });
 
+  // The masking above can only ever REMOVE candidates, so it needs its own
+  // check: without one, a `stripComments` that over-matched would silence every
+  // case in this file and print the same all-green as a clean bundle.
+  test("the comment mask keeps real imports and drops commented ones", () => {
+    const masked = stripComments(
+      ['import { real } from "vitest";', '// import { commented } from "tsdown";'].join("\n"),
+    );
+    const found = [...masked.matchAll(IMPORT_RE)].map((m) => m[1]);
+    expect(found).toEqual(["vitest"]);
+  });
+
   test.each(entries)("$subpath bundle has no devDependency import", ({ dist }) => {
     const file = resolve(PKG_DIR, dist);
-    const src = readFileSync(file, "utf-8");
+    const src = stripComments(readFileSync(file, "utf-8"));
     const leaks = new Set<string>();
     for (const match of src.matchAll(IMPORT_RE)) {
       const spec = match[1];

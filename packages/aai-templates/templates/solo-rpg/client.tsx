@@ -771,7 +771,7 @@ function SoloRPGApp() {
   // The agent's own session state, projected by `syncState` and pushed after
   // every tool call — no per-tool `ctx.send`, and nothing to keep in step
   // when a new tool starts mutating the game.
-  const game = useAgentState<GameState>() ?? DEFAULT_STATE;
+  const game = useAgentState<GameState>(DEFAULT_STATE);
 
   return (
     <StartScreen

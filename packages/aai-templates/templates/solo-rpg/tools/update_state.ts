@@ -1,9 +1,9 @@
-import { tool } from "@alexkroman1/aai";
+import { pushCapped, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import {
   DEFAULT_CLOCK_SEGMENTS,
   DISPOSITIONS,
-  getGameState,
+  gameSlot,
   MAX_BOND,
   MAX_CLOCK_SEGMENTS,
   MAX_CLOCKS,
@@ -55,7 +55,7 @@ export const updateState = tool({
     logEntry: z.string().max(500).describe("Short log entry for this scene").optional(),
   }),
   async execute(args, ctx) {
-    const state = getGameState(ctx);
+    const state = gameSlot.get(ctx);
     const warnings: string[] = [];
     const clockEvents: { clock: string; trigger: string }[] = [];
 
@@ -147,14 +147,15 @@ export const updateState = tool({
 
     // Session log
     if (args.logEntry) {
-      state.sessionLog.push({
-        scene: state.sceneCount,
-        summary: args.logEntry,
-        location: state.currentLocation,
-      });
-      if (state.sessionLog.length > MAX_SESSION_LOG) {
-        state.sessionLog = state.sessionLog.slice(-MAX_SESSION_LOG);
-      }
+      pushCapped(
+        state.sessionLog,
+        {
+          scene: state.sceneCount,
+          summary: args.logEntry,
+          location: state.currentLocation,
+        },
+        MAX_SESSION_LOG,
+      );
     }
 
     // Crisis check

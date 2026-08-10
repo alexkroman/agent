@@ -1,5 +1,6 @@
+import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { findItem, getState, isError, retailTool } from "../store.ts";
+import { findItem, retailSlot, retailTool } from "../store.ts";
 
 export const getItemDetails = retailTool({
   name: "get_item_details",
@@ -13,8 +14,8 @@ export const getItemDetails = retailTool({
   // `execute` before `summary`: see find_user_id_by_email.ts for why the order
   // is load-bearing for the generic `result` type in `summary`.
   execute: (args, ctx) => {
-    const found = findItem(getState(ctx), args.item_id);
-    if (isError(found)) return found;
+    const found = findItem(retailSlot.get(ctx), args.item_id);
+    if (isToolFailure(found)) return found;
     return {
       item_id: found.variant.item_id,
       product_id: found.product.product_id,

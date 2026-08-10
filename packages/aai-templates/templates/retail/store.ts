@@ -1,5 +1,13 @@
-import type { ToolContext } from "@alexkroman1/aai";
-import { createKeyedLock, tool, withLock } from "@alexkroman1/aai";
+import type { ToolContext, ToolFailure } from "@alexkroman1/aai";
+import {
+  createKeyedLock,
+  isToolFailure,
+  pushCapped,
+  type SlotStateOf,
+  sessionSlot,
+  tool,
+  withLock,
+} from "@alexkroman1/aai";
 import type { z } from "zod";
 import seedJson from "./seed.json";
 import type {
@@ -8,12 +16,11 @@ import type {
   PaymentMethod,
   Product,
   RetailState,
-  StateSlot,
   Store,
   User,
   Variant,
 } from "./shared.ts";
-import { MAX_ACTIVITY } from "./shared.ts";
+import { emptyRetailState, MAX_ACTIVITY } from "./shared.ts";
 
 /**
  * The JSON import's inferred type has `status: string` where `Order` wants a
@@ -22,12 +29,6 @@ import { MAX_ACTIVITY } from "./shared.ts";
  * schema — rather than by paying a 107 KB validation on every session start.
  */
 const SEED = seedJson as unknown as Store;
-
-export type ErrorResult = { error: string };
-
-export function isError(value: unknown): value is ErrorResult {
-  return typeof value === "object" && value !== null && "error" in value;
-}
 
 /** Round to cents. Gift-card balances and price differences are compared for
  *  equality, and raw float arithmetic makes that a coin toss. */
@@ -45,22 +46,13 @@ export function isGiftCard(method: PaymentMethod): method is GiftCard {
  *  module-level object shared by every session in the process, so a mutation
  *  without it would let one caller's cancellation show up in another's. */
 export function createDefaultState(): RetailState {
-  return {
-    store: structuredClone(SEED),
-    authenticatedUserId: null,
-    callSeq: 0,
-    activity: [],
-    focus: {},
-  };
+  return { ...emptyRetailState(), store: structuredClone(SEED) };
 }
 
-/** The session's live store. Mutations to the returned object stick — it is
- *  the object held in `ctx.state`. */
-export function getState(ctx: ToolContext): RetailState {
-  const slot = ctx.state as StateSlot;
-  slot.retail ??= createDefaultState();
-  return slot.retail;
-}
+/** The session's store, as one typed slot inside `ctx.state`. */
+export const retailSlot = sessionSlot("retail", createDefaultState);
+
+export type StateSlot = SlotStateOf<typeof retailSlot>;
 
 export function setFocus(
   state: RetailState,
@@ -71,15 +63,15 @@ export function setFocus(
 
 // ─── Lookups ─────────────────────────────────────────────────────────────────
 
-export function findUser(state: RetailState, userId: string): User | ErrorResult {
+export function findUser(state: RetailState, userId: string): User | ToolFailure {
   return state.store.users[userId] ?? { error: `User ${userId} not found.` };
 }
 
-export function findOrder(state: RetailState, orderId: string): Order | ErrorResult {
+export function findOrder(state: RetailState, orderId: string): Order | ToolFailure {
   return state.store.orders[orderId] ?? { error: `Order ${orderId} not found.` };
 }
 
-export function findProduct(state: RetailState, productId: string): Product | ErrorResult {
+export function findProduct(state: RetailState, productId: string): Product | ToolFailure {
   return (
     state.store.products[productId] ?? {
       error: `Product ${productId} not found. Note a product id is not an item id.`,
@@ -87,7 +79,7 @@ export function findProduct(state: RetailState, productId: string): Product | Er
   );
 }
 
-export function findVariant(product: Product, itemId: string): Variant | ErrorResult {
+export function findVariant(product: Product, itemId: string): Variant | ToolFailure {
   return (
     product.variants[itemId] ?? {
       error: `Item ${itemId} is not a variant of ${product.name} (${product.product_id}).`,
@@ -99,7 +91,7 @@ export function findVariant(product: Product, itemId: string): Variant | ErrorRe
 export function findItem(
   state: RetailState,
   itemId: string,
-): { product: Product; variant: Variant } | ErrorResult {
+): { product: Product; variant: Variant } | ToolFailure {
   for (const product of Object.values(state.store.products)) {
     const variant = product.variants[itemId];
     if (variant) return { product, variant };
@@ -107,7 +99,7 @@ export function findItem(
   return { error: `Item ${itemId} not found. Note an item id is not a product id.` };
 }
 
-export function findPaymentMethod(user: User, methodId: string): PaymentMethod | ErrorResult {
+export function findPaymentMethod(user: User, methodId: string): PaymentMethod | ToolFailure {
   return (
     user.payment_methods[methodId] ?? {
       error: `Payment method ${methodId} is not on this customer's profile. Available: ${Object.keys(
@@ -123,7 +115,7 @@ const NOT_AUTHENTICATED =
   "Not authenticated. Identify the customer first with find_user_id_by_email, " +
   "or find_user_id_by_name_zip if they cannot remember their email.";
 
-export function authenticatedUser(state: RetailState): User | ErrorResult {
+export function authenticatedUser(state: RetailState): User | ToolFailure {
   if (!state.authenticatedUserId) return { error: NOT_AUTHENTICATED };
   return findUser(state, state.authenticatedUserId);
 }
@@ -139,9 +131,9 @@ export function authenticatedUser(state: RetailState): User | ErrorResult {
  * matches every sibling lookup (`findUser`, `findOrder`, `findProduct`, …),
  * which all echo the id precisely so an LLM can target a repair retry.
  */
-export function requireOwnOrder(state: RetailState, orderId: string): Order | ErrorResult {
+export function requireOwnOrder(state: RetailState, orderId: string): Order | ToolFailure {
   const user = authenticatedUser(state);
-  if (isError(user)) return user;
+  if (isToolFailure(user)) return user;
   const order = state.store.orders[orderId];
   if (!order || order.user_id !== user.user_id) {
     return { error: `Order ${orderId} was not found on this customer's account.` };
@@ -169,10 +161,10 @@ const sessionLock = createKeyedLock();
  * hazard you documented.
  */
 function updateState<R>(
-  ctx: ToolContext,
+  ctx: ToolContext<StateSlot>,
   mutator: (state: RetailState) => R | Promise<R>,
 ): Promise<R> {
-  return withLock(sessionLock, ctx.sessionId, async () => mutator(getState(ctx)));
+  return withLock(sessionLock, ctx.sessionId, async () => mutator(retailSlot.get(ctx)));
 }
 
 // ─── The tool wrapper ────────────────────────────────────────────────────────
@@ -193,10 +185,11 @@ interface RetailToolSpec<S extends z.ZodType<Record<string, unknown>>, R> {
 
 function record(state: RetailState, name: string, summary: string): void {
   state.callSeq += 1;
-  state.activity.push({ seq: state.callSeq, tool: name, summary, at: Date.now() });
-  if (state.activity.length > MAX_ACTIVITY) {
-    state.activity = state.activity.slice(-MAX_ACTIVITY);
-  }
+  pushCapped(
+    state.activity,
+    { seq: state.callSeq, tool: name, summary, at: Date.now() },
+    MAX_ACTIVITY,
+  );
 }
 
 /**
@@ -229,7 +222,7 @@ export function retailTool<S extends z.ZodType<Record<string, unknown>>, R>(
         record(
           state,
           spec.name,
-          isError(result) ? `error: ${result.error}` : spec.summary(typedArgs, result),
+          isToolFailure(result) ? `error: ${result.error}` : spec.summary(typedArgs, result),
         );
         return result;
       }),

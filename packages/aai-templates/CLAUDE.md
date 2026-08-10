@@ -62,6 +62,29 @@ with a different error: plain `ERR_PNPM_NO_MATCHING_VERSION` and a
 `The latest release … is "X"` line naming a version older than the pin. That one
 is client-side (`pnpm cache delete "@alexkroman1/*"`), not ours — the quarantine
 error always names the constraint or carries a `published by <date>` clause.
+## The templates are where SDK primitives get their worked example
+
+`template-api-coverage.test.ts` already enforces the direction "every public
+export is exercised by a template". The converse is the rule to apply while
+EDITING one: when the same helper appears in a third template, that is the
+signal to extract it into the SDK rather than copy it again. Five came out at
+once, and the templates are now their reference use:
+
+| Primitive | Demonstrated by |
+| --- | --- |
+| `sessionSlot()` + `SlotStateOf` | every stateful template — `pizza-ordering` (smallest), `retail` (slot in `store.ts`, view in `shared.ts`, so the seed stays out of the browser bundle) |
+| `slot.projection(view)` as `syncState` | `pizza-ordering`, `dispatch-center`, `retail`; `solo-rpg` uses bare `slot.read` (its projection is the identity) |
+| `ToolFailure` / `isToolFailure` | `retail` (~40 sites, failures propagating through `store.ts` helpers), `dispatch-center` (six) |
+| `pushCapped` | `dispatch-center` (incident timeline), `retail` (activity feed), `solo-rpg` (session log), `infocom-adventure` (command history) |
+| `createToolContext` (`@alexkroman1/aai/testing`) | the four suites that test tools directly — `dispatch-center`, `pizza-ordering`, `retail`, `solo-rpg` |
+| `useAgentState(fallback)` | `pizza-ordering`, `dispatch-center`, `retail`, `solo-rpg` |
+| `AutoScroll` | the three custom-chrome clients — `dispatch-center`, `retail`, `infocom-adventure` |
+
+The one thing a template may still hand-roll here is a **fallback that would
+cost the browser bundle**: `retail`'s client builds its empty view from a
+seedless `emptyRetailState()` instead of `retailSlot.projection(storeView)
+(undefined)`, because the slot's factory pulls a 107 KB `seed.json` and
+importing it would ship the whole catalog to the browser. It says so in place.
 
 ## What `tsconfig.json` includes is what gets type-checked
 

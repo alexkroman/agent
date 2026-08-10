@@ -2,12 +2,11 @@
 
 /** @jsxImportSource react */
 
-import clsx from "clsx";
 import { type CSSProperties, memo, type ReactNode, useMemo } from "react";
-import { StickToBottom } from "use-stick-to-bottom";
 import { useSessionSelector, useTheme } from "../context.ts";
 import type { ChatMessage, ToolCallInfo } from "../types.ts";
 import { INK_FAINT_PCT, INK_MUTED_PCT, inkTint, primaryTint } from "./_colors.ts";
+import { AutoScroll } from "./auto-scroll.tsx";
 import { Markdown } from "./markdown.tsx";
 import { ToolCallBlock } from "./tool-call-block.tsx";
 
@@ -203,32 +202,25 @@ export const MessageList = memo(function MessageList({ className }: { className?
     [messages, toolCalls, theme],
   );
 
-  // StickToBottom follows streamed output (its ResizeObserver tracks content
+  // `AutoScroll` follows streamed output (its ResizeObserver tracks content
   // height, so a ToolCallBlock expanding or markdown reflowing keeps the pin)
   // but releases when the user scrolls up to read, re-engaging once they
-  // return to the bottom. `initial="instant"` jumps to the latest content on
-  // mount; `resize="smooth"` animates growth while pinned.
+  // return to the bottom. Shared with custom-chrome clients, which is why it
+  // is a component rather than the wiring inlined here.
   return (
-    <StickToBottom
-      role="log"
-      className={clsx("flex-1 min-h-0", className)}
+    <AutoScroll
+      className={className}
       style={{ background: theme.surface }}
-      initial="instant"
-      resize="smooth"
+      contentClassName="flex flex-col gap-4 p-7"
     >
-      <StickToBottom.Content
-        scrollClassName="overflow-y-auto [scrollbar-width:none]"
-        className="flex flex-col gap-4 p-7"
-      >
-        {items}
-        {streamingMessage && <MessageBubble message={streamingMessage} theme={theme} />}
-        {userTranscript !== null && (
-          <UserBubble theme={theme} color={inkTint(theme.text, theme.surface, INK_FAINT_PCT)}>
-            {userTranscript ? userTranscript : <ThinkingDots />}
-          </UserBubble>
-        )}
-        {showThinking && <ThinkingDots />}
-      </StickToBottom.Content>
-    </StickToBottom>
+      {items}
+      {streamingMessage && <MessageBubble message={streamingMessage} theme={theme} />}
+      {userTranscript !== null && (
+        <UserBubble theme={theme} color={inkTint(theme.text, theme.surface, INK_FAINT_PCT)}>
+          {userTranscript ? userTranscript : <ThinkingDots />}
+        </UserBubble>
+      )}
+      {showThinking && <ThinkingDots />}
+    </AutoScroll>
   );
 });

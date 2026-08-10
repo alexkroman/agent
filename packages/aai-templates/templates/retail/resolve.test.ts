@@ -1,6 +1,7 @@
+import { isToolFailure } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
 import { normalizeItemId, normalizeOrderId, resolveOrder, resolveVariantId } from "./resolve.ts";
-import { createDefaultState, findProduct, isError } from "./store.ts";
+import { createDefaultState, findProduct } from "./store.ts";
 
 function stateFor(userId: string) {
   const state = createDefaultState();
@@ -39,13 +40,13 @@ describe("resolveOrder — canonical ids", () => {
     const state = stateFor("olivia_ito_3591");
     for (const spoken of ["#W5866402", "W 5866402", "5866402"]) {
       const order = resolveOrder(state, spoken);
-      expect.soft(isError(order) ? null : order.order_id, spoken).toBe("#W5866402");
+      expect.soft(isToolFailure(order) ? null : order.order_id, spoken).toBe("#W5866402");
     }
   });
 
   test("refuses another customer's order id", () => {
     const state = stateFor("olivia_ito_3591");
-    expect(isError(resolveOrder(state, "#W4316152"))).toBe(true);
+    expect(isToolFailure(resolveOrder(state, "#W4316152"))).toBe(true);
   });
 });
 
@@ -54,14 +55,14 @@ describe("resolveOrder — shorthand", () => {
     const state = stateFor("olivia_ito_3591");
     for (const spoken of ["the delivered one", "my delivered order", "delivered"]) {
       const order = resolveOrder(state, spoken);
-      expect.soft(isError(order) ? null : order.order_id, spoken).toBe("#W5866402");
+      expect.soft(isToolFailure(order) ? null : order.order_id, spoken).toBe("#W5866402");
     }
   });
 
   test("three pending orders make bare 'my pending order' ambiguous, and it lists them", () => {
     const state = stateFor("olivia_ito_3591");
     const result = resolveOrder(state, "my pending order");
-    if (!isError(result)) throw new Error("expected ambiguity");
+    if (!isToolFailure(result)) throw new Error("expected ambiguity");
     for (const id of ["#W5442520", "#W7941031", "#W3657213"]) {
       expect.soft(result.error, `ambiguity message omits ${id}`).toContain(id);
     }
@@ -71,38 +72,38 @@ describe("resolveOrder — shorthand", () => {
     const state = stateFor("olivia_ito_3591");
     const first = resolveOrder(state, "my first pending order");
     const second = resolveOrder(state, "the second pending order");
-    expect(isError(first) ? null : first.order_id).toBe("#W5442520");
-    expect(isError(second) ? null : second.order_id).toBe("#W7941031");
+    expect(isToolFailure(first) ? null : first.order_id).toBe("#W5442520");
+    expect(isToolFailure(second) ? null : second.order_id).toBe("#W7941031");
   });
 
   test("'last' picks the final one", () => {
     const state = stateFor("olivia_ito_3591");
     const result = resolveOrder(state, "my last pending order");
-    expect(isError(result) ? null : result.order_id).toBe("#W3657213");
+    expect(isToolFailure(result) ? null : result.order_id).toBe("#W3657213");
   });
 
   test("a bare ordinal with no status word indexes all of the caller's orders", () => {
     const state = stateFor("emma_smith_8564");
     const result = resolveOrder(state, "the first one");
-    expect(isError(result) ? null : result.order_id).toBe("#W2417020");
+    expect(isToolFailure(result) ? null : result.order_id).toBe("#W2417020");
   });
 
   test("a status the caller has none of says what they do have", () => {
     const state = stateFor("harper_brown_7363");
     const result = resolveOrder(state, "my cancelled order");
-    if (!isError(result)) throw new Error("expected refusal");
+    if (!isToolFailure(result)) throw new Error("expected refusal");
     expect(result.error).toContain("delivered");
     expect(result.error).toContain("pending");
   });
 
   test("an out-of-range ordinal is refused, not clamped", () => {
     const state = stateFor("emma_smith_8564");
-    expect(isError(resolveOrder(state, "the fourth pending order"))).toBe(true);
+    expect(isToolFailure(resolveOrder(state, "the fourth pending order"))).toBe(true);
   });
 
   test("unresolvable input is refused before authentication too", () => {
     const state = createDefaultState();
-    expect(isError(resolveOrder(state, "my pending order"))).toBe(true);
+    expect(isToolFailure(resolveOrder(state, "my pending order"))).toBe(true);
   });
 });
 
@@ -110,7 +111,7 @@ describe("resolveVariantId", () => {
   const state = createDefaultState();
   function teaKettle() {
     const product = findProduct(state, "9832717871");
-    if (isError(product)) throw new Error(product.error);
+    if (isToolFailure(product)) throw new Error(product.error);
     return product;
   }
 
@@ -120,7 +121,7 @@ describe("resolveVariantId", () => {
   });
 
   test("refuses an item id belonging to a different product", () => {
-    expect(isError(resolveVariantId(teaKettle(), "4725166838"))).toBe(true);
+    expect(isToolFailure(resolveVariantId(teaKettle(), "4725166838"))).toBe(true);
   });
 
   test("matches a spoken option phrase", () => {
@@ -135,13 +136,13 @@ describe("resolveVariantId", () => {
 
   test("an ambiguous phrase lists the candidates with their options", () => {
     const result = resolveVariantId(teaKettle(), "glass");
-    if (!isError(result)) throw new Error("expected ambiguity");
+    if (!isToolFailure(result)) throw new Error("expected ambiguity");
     expect(result.error).toContain("glass");
     expect(result.error.match(/\d{10}/g)?.length).toBeGreaterThan(1);
   });
 
   test("a phrase matching nothing is refused", () => {
-    expect(isError(resolveVariantId(teaKettle(), "titanium"))).toBe(true);
+    expect(isToolFailure(resolveVariantId(teaKettle(), "titanium"))).toBe(true);
   });
 
   test("availableOnly excludes unavailable variants from matching", () => {

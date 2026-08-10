@@ -1,5 +1,5 @@
 import { agent } from "@alexkroman1/aai";
-import { dashboardView } from "./shared.ts";
+import { dashboardView, dispatchSlot } from "./shared.ts";
 import systemPrompt from "./system-prompt.md?raw";
 import { incidentAddNote } from "./tools/incident_add_note.ts";
 import { incidentCreate } from "./tools/incident_create.ts";
@@ -18,7 +18,7 @@ export default agent({
   name: "Dispatch Command Center",
   // One projection replaces eleven `ctx.send("incidents", ...)` calls, and
   // is the single place that decides caller PII stays server-side.
-  syncState: dashboardView,
+  syncState: dispatchSlot.projection(dashboardView),
   // A dispatcher reads addresses and unit numbers in bursts with pauses inside
   // one message ("unit twelve … respond to"). The default pipeline's
   // `max_turn_silence` already tolerates that; reach for

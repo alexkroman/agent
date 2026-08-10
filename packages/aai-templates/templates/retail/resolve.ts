@@ -1,5 +1,6 @@
+import { isToolFailure, type ToolFailure } from "@alexkroman1/aai";
 import type { Order, OrderStatus, Product, RetailState } from "./shared.ts";
-import { authenticatedUser, type ErrorResult, isError } from "./store.ts";
+import { authenticatedUser } from "./store.ts";
 
 /** `#W5866402` from anything STT plausibly produces for it. */
 export function normalizeOrderId(spoken: string): string {
@@ -53,9 +54,9 @@ function describeOrder(order: Order): string {
  * Ambiguity is always an error listing the candidates, never a guess — the
  * consequence of guessing here is cancelling the wrong order.
  */
-export function resolveOrder(state: RetailState, spoken: string): Order | ErrorResult {
+export function resolveOrder(state: RetailState, spoken: string): Order | ToolFailure {
   const user = authenticatedUser(state);
-  if (isError(user)) return user;
+  if (isToolFailure(user)) return user;
 
   const owned = user.orders
     .map((id) => state.store.orders[id])
@@ -110,7 +111,7 @@ export function resolveVariantId(
   product: Product,
   spoken: string,
   opts: { availableOnly?: boolean } = {},
-): string | ErrorResult {
+): string | ToolFailure {
   if (LOOKS_LIKE_ITEM_ID.test(spoken)) {
     const itemId = normalizeItemId(spoken);
     const variant = product.variants[itemId];

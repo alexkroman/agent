@@ -3,6 +3,7 @@
   "entryPoints": [
     "dist/index.d.ts",
     "dist/sdk/utils.d.ts",
+    "dist/sdk/testing.d.ts",
     "dist/sdk/protocol.d.ts",
     "dist/host/runtime-barrel.d.ts",
     "dist/sdk/manifest-barrel.d.ts",

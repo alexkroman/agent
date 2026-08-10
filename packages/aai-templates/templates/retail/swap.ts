@@ -1,13 +1,6 @@
+import { isToolFailure, type ToolFailure } from "@alexkroman1/aai";
 import type { Order, OrderItem, RetailState, User, Variant } from "./shared.ts";
-import {
-  type ErrorResult,
-  findPaymentMethod,
-  findProduct,
-  findVariant,
-  isError,
-  isGiftCard,
-  money,
-} from "./store.ts";
+import { findPaymentMethod, findProduct, findVariant, isGiftCard, money } from "./store.ts";
 
 export interface SwapPair {
   /** Index into `order.items`. Matching by index rather than by "first item
@@ -37,7 +30,7 @@ export function planItemSwap(
   itemIds: string[],
   newItemIds: string[],
   opts: { requireDifferent: boolean },
-): SwapPlan | ErrorResult {
+): SwapPlan | ToolFailure {
   if (itemIds.length === 0) {
     return { error: "No items were listed to change." };
   }
@@ -89,10 +82,10 @@ export function planItemSwap(
     consumed.add(index);
 
     const product = findProduct(state, item.product_id);
-    if (isError(product)) return product;
+    if (isToolFailure(product)) return product;
 
     const newVariant = findVariant(product, newItemId);
-    if (isError(newVariant)) {
+    if (isToolFailure(newVariant)) {
       return {
         error: `${newItemId} is not an option of ${product.name} (${product.product_id}). An item can only be changed to a different option of the same product — you cannot change a ${product.name} into something else.`,
       };
@@ -114,9 +107,9 @@ export function planItemSwap(
  * Gate the price difference on the chosen payment method. Only a gift card has
  * a balance to run out of; a negative difference is a refund and never gated.
  */
-export function assertCanCoverDiff(user: User, methodId: string, diff: number): ErrorResult | null {
+export function assertCanCoverDiff(user: User, methodId: string, diff: number): ToolFailure | null {
   const method = findPaymentMethod(user, methodId);
-  if (isError(method)) return method;
+  if (isToolFailure(method)) return method;
   if (isGiftCard(method) && method.balance < diff) {
     return {
       error: `Gift card ${methodId}'s balance ($${method.balance.toFixed(2)}) does not cover the $${diff.toFixed(2)} difference. Ask for another payment method.`,

@@ -1,8 +1,7 @@
 import "@alexkroman1/aai-ui/styles.css";
 import type { ChatMessage } from "@alexkroman1/aai-ui";
-import { client, useAgentState, useSession } from "@alexkroman1/aai-ui";
+import { AutoScroll, client, useAgentState, useSession } from "@alexkroman1/aai-ui";
 import type { ReactNode } from "react";
-import { useEffect, useRef } from "react";
 import type {
   OrderStatus,
   OrderView,
@@ -10,7 +9,7 @@ import type {
   StoreView,
   SwapOptionView,
 } from "./shared.ts";
-import { DEMO_PERSONAS, storeView } from "./shared.ts";
+import { DEMO_PERSONAS, emptyRetailState, storeView } from "./shared.ts";
 
 const CSS = `
 @keyframes rt-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
@@ -38,8 +37,11 @@ const statusColors: Record<string, string> = {
 } satisfies Record<OrderStatus, string>;
 
 // The sidebar before the first tool call, derived from the projection itself so
-// a new StoreView field can't miss the pre-first-call render.
-const EMPTY_VIEW: StoreView = storeView({});
+// a new StoreView field can't miss the pre-first-call render. Built from
+// `emptyRetailState` rather than `retailSlot.projection(...)(undefined)`,
+// because the slot's factory lives in `store.ts` and pulls the 107 KB seed —
+// importing it here would ship the whole catalog to the browser.
+const EMPTY_VIEW: StoreView = storeView(emptyRetailState());
 
 function stateColor(state: string): string {
   if (state === "listening" || state === "ready") return "#16a34a";
@@ -193,13 +195,8 @@ function SwapOptions({ option }: { option: SwapOptionView }) {
 
 function App() {
   const session = useSession();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   // The agent's own store, projected by `syncState` after every tool call.
-  const view = useAgentState<StoreView>() ?? EMPTY_VIEW;
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [session.messages]);
+  const view = useAgentState<StoreView>(EMPTY_VIEW);
 
   const lastAction = view.activity.at(-1);
 
@@ -255,7 +252,10 @@ function App() {
             className="flex flex-col overflow-hidden"
             style={{ borderRight: "1px solid #e4e4e7" }}
           >
-            <div className="rt-scroll flex-1 overflow-y-auto p-4 flex flex-col gap-2">
+            <AutoScroll
+              scrollClassName="rt-scroll overflow-y-auto"
+              contentClassName="p-4 flex flex-col gap-2"
+            >
               {session.messages.length === 0 && (
                 <div className="text-center p-10 text-[13px]" style={{ color: "#a1a1aa" }}>
                   Press start, then read one of the emails from “Who to be” to the agent.
@@ -277,8 +277,7 @@ function App() {
                   {message.content}
                 </div>
               ))}
-              <div ref={messagesEndRef} />
-            </div>
+            </AutoScroll>
 
             {session.userTranscript !== null && (
               <div

@@ -1,6 +1,11 @@
-import { tool } from "@alexkroman1/aai";
+import { isToolFailure, tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import { findIncident, getApplicableProtocols, getState, incidentAgeMinutes } from "../shared.ts";
+import {
+  dispatchSlot,
+  findIncident,
+  getApplicableProtocols,
+  incidentAgeMinutes,
+} from "../shared.ts";
 
 export const incidentGet = tool({
   description: "Get full details on a specific incident including timeline and assigned resources.",
@@ -8,9 +13,9 @@ export const incidentGet = tool({
     incidentId: z.string().max(20).describe("The incident ID"),
   }),
   async execute(args, ctx) {
-    const state = getState(ctx);
+    const state = dispatchSlot.get(ctx);
     const inc = findIncident(state, args.incidentId);
-    if ("error" in inc) return inc;
+    if (isToolFailure(inc)) return inc;
 
     const assignedResourceDetails = inc.assignedResources
       .map((rId) => {

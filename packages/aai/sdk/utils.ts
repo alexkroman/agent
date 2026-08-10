@@ -3,7 +3,8 @@
  * Shared utility functions (the `@alexkroman1/aai/utils` subpath).
  *
  * For user tool code: `errorMessage`, `errorDetail`, `safeJsonParse`,
- * `toolError`, and `createKeyedLock`. The remaining exports are framework
+ * `toolError`, `isToolFailure`, `pushCapped`, and `createKeyedLock`. The
+ * remaining exports are framework
  * plumbing shared with the sibling packages. The module stays free of zod and
  * other heavy runtime dependencies so the CLI can import it on every
  * invocation without a startup cost.
@@ -70,12 +71,102 @@ export function safeJsonParse(text: string): unknown {
 
 /**
  * Format an error for a tool result: returns the JSON string
- * `'{"error":"<message>"}'`. Return this from a tool's `execute` (instead of
- * throwing) when the failure is something the LLM should see and recover
- * from — e.g. "no results found, try a broader query".
+ * `'{"error":"<message>"}'`.
+ *
+ * @remarks
+ * This is the PRE-SERIALIZED wire form, which is what the host itself emits
+ * for a tool that threw or could not be dispatched. Tool authors want
+ * {@link ToolFailure} instead — return the object `{ error: message }` and the
+ * runtime serializes it, so the value stays inspectable by the tool's own
+ * callers and its tests. `isToolFailure` does NOT narrow this function's
+ * string result.
  */
 export function toolError(message: string): string {
   return JSON.stringify({ error: message });
+}
+
+/**
+ * A tool result that reports a recoverable failure to the LLM.
+ *
+ * Return one from `execute` (instead of throwing) when the failure is
+ * something the model should see and act on — "no order matches that
+ * description, ask which one" — rather than an internal fault. The runtime
+ * serializes it like any other result, so it reaches the model as
+ * `{"error":"…"}` and reaches a test as an inspectable object.
+ *
+ * A tool that returns failures declares them in its own result union
+ * (`Order | ToolFailure`), which is what makes {@link isToolFailure} a
+ * narrowing guard at every call site that forwards one.
+ *
+ * @public
+ */
+export type ToolFailure = { error: string };
+
+/**
+ * Whether a value is a {@link ToolFailure}.
+ *
+ * The guard exists because failures PROPAGATE: a helper resolving an order
+ * returns `Order | ToolFailure`, and its caller forwards the failure
+ * unchanged rather than re-wording it. `if ("error" in value)` works only
+ * once the value is known to be an object, which is the check this bundles.
+ *
+ * @example
+ * ```ts
+ * import { isToolFailure, type ToolFailure } from "@alexkroman1/aai";
+ *
+ * type Order = { id: string; total: number };
+ *
+ * function findOrder(id: string): Order | ToolFailure {
+ *   return { error: `Order ${id} not found.` };
+ * }
+ *
+ * function orderTotal(id: string): number | ToolFailure {
+ *   const order = findOrder(id);
+ *   if (isToolFailure(order)) return order;
+ *   return order.total;
+ * }
+ * ```
+ *
+ * @public
+ */
+export function isToolFailure(value: unknown): value is ToolFailure {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "error" in value &&
+    typeof value.error === "string"
+  );
+}
+
+/**
+ * Append to a list, dropping the oldest entries so it never exceeds `max`.
+ * Mutates `list` in place and returns it.
+ *
+ * For the append-only lists an agent keeps in `ctx.state` — a timeline, an
+ * activity feed, a session log. Every one of them feeds an LLM summary or a
+ * `syncState` payload, so an uncapped list grows what the model reads and
+ * what crosses the wire for the length of the call, unboundedly. In place
+ * rather than returning a new array because the list is usually a property of
+ * the state object (`incident.timeline`), and reassigning that is a second
+ * thing to remember.
+ *
+ * `max` below 1 keeps nothing — including the entry just appended — which is
+ * what "a cap of zero" has to mean.
+ *
+ * @example
+ * ```ts
+ * import { pushCapped } from "@alexkroman1/aai";
+ *
+ * const log: string[] = ["a", "b", "c"];
+ * pushCapped(log, "d", 3); // ["b", "c", "d"]
+ * ```
+ *
+ * @public
+ */
+export function pushCapped<T>(list: T[], item: T, max: number): T[] {
+  list.push(item);
+  if (list.length > max) list.splice(0, list.length - Math.max(max, 0));
+  return list;
 }
 
 /**

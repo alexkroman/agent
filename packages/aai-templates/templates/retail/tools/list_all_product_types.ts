@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getState, retailTool } from "../store.ts";
+import { retailSlot, retailTool } from "../store.ts";
 
 export const listAllProductTypes = retailTool({
   name: "list_all_product_types",
@@ -13,7 +13,7 @@ export const listAllProductTypes = retailTool({
   // `execute` before `summary`: see find_user_id_by_email.ts for why the order
   // is load-bearing for the generic `result` type in `summary`.
   execute: (_args, ctx) => {
-    const state = getState(ctx);
+    const state = retailSlot.get(ctx);
     const entries = Object.values(state.store.products)
       .map((product) => [product.name, product.product_id] as const)
       .sort(([a], [b]) => a.localeCompare(b));

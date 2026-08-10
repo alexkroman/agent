@@ -57,6 +57,15 @@ test("useAgentState returns the caller's projection or null", () => {
   expectTypeOf(useAgentState()).toBeAny();
 });
 
+test("useAgentState with a fallback drops the null", () => {
+  // The whole point of the overload: a client that supplies the empty
+  // projection needs no branch for the pre-first-tool-call frame, so the
+  // `null` must be gone from the type and not merely unlikely at runtime.
+  expectTypeOf(useAgentState<{ cart: string[] }>({ cart: [] })).toEqualTypeOf<{
+    cart: string[];
+  }>();
+});
+
 test("useEvent types the event payload, defaulting to unknown", () => {
   useEvent<Quote>("quote", (data) => {
     expectTypeOf(data).toEqualTypeOf<Quote>();

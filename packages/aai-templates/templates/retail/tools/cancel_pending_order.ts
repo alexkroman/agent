@@ -1,7 +1,8 @@
+import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { creditRefund, REFUND_DELAY_NOTE, REFUND_IMMEDIATE_NOTE } from "../refund.ts";
 import { resolveOrder } from "../resolve.ts";
-import { authenticatedUser, getState, isError, retailTool, setFocus } from "../store.ts";
+import { authenticatedUser, retailSlot, retailTool, setFocus } from "../store.ts";
 
 /** tau2 accepts exactly these two. Anything else is refused. */
 const CANCEL_REASONS = ["no longer needed", "ordered by mistake"] as const;
@@ -27,12 +28,12 @@ export const cancelPendingOrder = retailTool({
   // source order — with `summary` first, `result` in its signature can't be
   // inferred and silently falls back to `unknown`.
   execute: (args, ctx) => {
-    const state = getState(ctx);
+    const state = retailSlot.get(ctx);
     const user = authenticatedUser(state);
-    if (isError(user)) return user;
+    if (isToolFailure(user)) return user;
 
     const order = resolveOrder(state, args.order_id);
-    if (isError(order)) return order;
+    if (isToolFailure(order)) return order;
     setFocus(state, { orderId: order.order_id });
 
     if (order.status !== "pending") {

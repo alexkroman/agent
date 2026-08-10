@@ -37,5 +37,8 @@ export type {
   StandardSchemaV1,
   ToolInputSchema,
 } from "./sdk/schema.ts";
+// `ctx.state`'s typed seam — next to `agent()`/`tool()` because it is how a
+// multi-file agent reads its own session state, not an optional utility.
+export * from "./sdk/session-slot.ts";
 export * from "./sdk/types.ts";
 export * from "./sdk/utils.ts";

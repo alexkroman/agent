@@ -1,11 +1,11 @@
 import { tool } from "@alexkroman1/aai";
-import { getState, incidentAgeMinutes, resourceBrief, resourceUtilization } from "../shared.ts";
+import { dispatchSlot, incidentAgeMinutes, resourceBrief, resourceUtilization } from "../shared.ts";
 
 export const opsDashboard = tool({
   description:
     "Get the full operational dashboard: alert level, resource utilization, active incidents, and available resources.",
   async execute(_args, ctx) {
-    const state = getState(ctx);
+    const state = dispatchSlot.get(ctx);
 
     const activeIncidents = Object.values(state.incidents)
       .filter((i) => i.status !== "resolved")

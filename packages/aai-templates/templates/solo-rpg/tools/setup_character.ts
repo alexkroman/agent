@@ -8,10 +8,10 @@ import {
   DEFAULT_STATE,
   DISPOSITIONS,
   GENRES,
+  gameSlot,
   MAX_CLOCK_SEGMENTS,
   MIN_CLOCK_SEGMENTS,
   makeNpc,
-  saveGameState,
   shuffle,
   stateSummary,
   TIME_PHASES,
@@ -191,7 +191,7 @@ export const setupCharacter = tool({
     state.phase = "playing";
     state.sceneCount = 1;
 
-    saveGameState(ctx, state);
+    gameSlot.set(ctx, state);
 
     return {
       success: true,

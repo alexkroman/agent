@@ -366,6 +366,21 @@ rather than here:
 
 Each package has distinct test helpers tailored to its domain:
 
+- **`aai/sdk/testing.ts`** — the one that is PUBLISHED
+  (`@alexkroman1/aai/testing`, so a user's agent project can import it, which is
+  why it carries no test-runner dependency): `createToolContext(overrides?)`
+  builds a `ToolContext` for testing a tool's `execute`, and `createUnusedDb()`
+  is the `db` it defaults to. Defaults are inert — empty `env`/`state`, a `db`
+  and `generate` that reject naming themselves, a `signal` that never aborts, a
+  `send` that records into `ctx.sent` — and **each call is a distinct session**,
+  which is what the two-context isolation tests rest on; pass `sessionId` when
+  two contexts must be the SAME session. Pass `send: vi.fn()` when a spec asserts
+  call counts (`solo-rpg` does) and the recorder steps aside.
+
+  It replaced the same eight-field stub in four template suites, two of which
+  reached for `{ … } as unknown as ToolContext` — the cast that also stops
+  reporting when a field is ADDED, which is the failure a shared builder exists
+  to prevent. Its own spec asserts the field LIST, since that is the contract.
 - **`aai/host/_test-utils.ts`** — `flush()` (microtask yield), `makeTool()`,
   `makeAgent()`, `makeConfig()`, fixture replay helpers for S2S mocking
 - **`aai-cli/_test-utils.ts`** — `withTempDir()` (temp dir + cleanup),
@@ -497,6 +512,61 @@ primitives — reach for them before re-inventing the pattern at a call site:
 - **Combining abort signals**: use native `AbortSignal.any([...])` (sources
   held weakly — no unlink bookkeeping); the pipeline transport combines the
   session signal with each turn's controller this way.
+- **`sessionSlot()`** (`aai/sdk/session-slot.ts`, exported from the ROOT — it is
+  authoring API, not infrastructure) — a typed named slot inside `ctx.state`:
+  `get(ctx)` installs the default on first access and returns the live object,
+  `set`/`reset` replace it, and `read`/`projection` are the `syncState` side.
+  Reach for it whenever an agent's tools live in more than one file, which is
+  the case `ctx.state` cannot type on its own: `tool()` learns the state shape
+  only from an annotated context (`ctx: ToolContext<S>`), so every module either
+  restates that annotation or casts. All five stateful templates had taken the
+  cast — `ctx.state as StateSlot` beside a hand-rolled `slot.x ??=
+  createDefault()`, five times, comment included — and `retail` took it even
+  though its `agent()` declares a `state` factory, because the factory's type
+  cannot reach `tools/*.ts`. Note the factory is still worth declaring (it makes
+  the session's state exist before the first tool call, which is what
+  `pushStateSnapshot` needs on resume) and composes:
+  `state: () => ({ [slot.key]: slot.create() })`.
+
+  Two things the API shape is load-bearing about. `create` is a FACTORY called
+  once per session, so a shared module-level default must be cloned inside it
+  (`() => structuredClone(DEFAULT)`) or every session mutates one object —
+  three templates need this. And `projection(fn)` hands `fn` a REAL value
+  rather than the slot, which is what lets a `syncState` projection drop the
+  optional chaining it used to carry for the pre-first-tool-call frame; in
+  `retail`'s `storeView` that chaining read as security gating and was not (the
+  gating that IS security is on `user`, and stayed). The client's empty-state
+  fallback then comes from `slot.projection(view)(undefined)` — still derived
+  from the projection, so a new field reaches the first render. `retail` is the
+  one exception and says why in place: its factory pulls a 107 KB `seed.json`,
+  so the client builds the fallback from a seedless `emptyRetailState()` rather
+  than importing the slot.
+- **`ToolFailure` / `isToolFailure()`** (`aai/sdk/utils.ts`, exported from the
+  root and `/utils`) — the `{ error: string }` object a tool returns for a
+  failure the MODEL should see and recover from, and the guard that narrows one.
+  The guard is the point: failures propagate, so a helper returning `Order |
+  ToolFailure` has a caller that forwards it unchanged, and `"error" in value`
+  only works once the value is known to be an object. Five templates returned
+  the shape; `retail` had its own `ErrorResult` + `isError` (used at ~40 sites)
+  and `dispatch-center` narrowed with inline `"error" in inc` at six.
+
+  **It is NOT `toolError()`, which is the trap the two names have to survive.**
+  That function returns the pre-serialized wire STRING `'{"error":"…"}'` — what
+  the host itself emits for a tool that threw — so `isToolFailure(toolError(m))`
+  is `false`. `toolError` is used ~15 times inside `host/` and was used by ZERO
+  of the fourteen templates despite its doc telling authors to return it, which
+  is what a helper with the wrong shape for its stated audience looks like; the
+  doc now names the split, and `utils.test.ts` pins the `false`.
+- **`pushCapped(list, item, max)`** (`aai/sdk/utils.ts`, root and `/utils`) —
+  append to a list holding a cap, mutating in place (the list is usually a
+  property of the state object, so returning a new array is a reassignment the
+  caller can forget). For the append-only lists an agent keeps in `ctx.state`: a
+  timeline, an activity feed, a session log. Every one of them feeds an LLM
+  summary or a `syncState` payload, so uncapped it grows what the model reads
+  and what crosses the wire for the length of the call. Three templates had
+  hand-rolled `push` + `slice(-MAX)`; the fourth,
+  `infocom-adventure`, had NOT — its command history sliced only for display and
+  grew without bound, which is the bug a shared primitive turns into a decision.
 - **`omitUndefined()`** (`aai/sdk/omit-undefined.ts`, exported from
   `@alexkroman1/aai/utils`) — the one way to build the optional half of an
   object under `exactOptionalPropertyTypes`. That flag makes

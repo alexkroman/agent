@@ -1,12 +1,12 @@
+import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { resolveOrder } from "../resolve.ts";
 import {
   authenticatedUser,
   findPaymentMethod,
-  getState,
-  isError,
   isGiftCard,
   money,
+  retailSlot,
   retailTool,
   setFocus,
 } from "../store.ts";
@@ -32,12 +32,12 @@ export const modifyPendingOrderPayment = retailTool({
   // source order — with `summary` first, `result` in its signature can't be
   // inferred and silently falls back to `unknown`.
   execute: (args, ctx) => {
-    const state = getState(ctx);
+    const state = retailSlot.get(ctx);
     const user = authenticatedUser(state);
-    if (isError(user)) return user;
+    if (isToolFailure(user)) return user;
 
     const order = resolveOrder(state, args.order_id);
-    if (isError(order)) return order;
+    if (isToolFailure(order)) return order;
     setFocus(state, { orderId: order.order_id });
 
     if (!order.status.startsWith("pending")) {
@@ -47,7 +47,7 @@ export const modifyPendingOrderPayment = retailTool({
     }
 
     const newMethod = findPaymentMethod(user, args.payment_method_id);
-    if (isError(newMethod)) return newMethod;
+    if (isToolFailure(newMethod)) return newMethod;
 
     const original = order.payment_history[0];
     if (order.payment_history.length !== 1 || original?.transaction_type !== "payment") {

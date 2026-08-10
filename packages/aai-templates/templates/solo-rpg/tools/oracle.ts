@@ -1,6 +1,6 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import { checkChaosInterrupt, creativitySeed, d, getGameState, pick } from "../shared.ts";
+import { checkChaosInterrupt, creativitySeed, d, gameSlot, pick } from "../shared.ts";
 
 const REACTIONS = [
   "Acts on their agenda",
@@ -218,8 +218,8 @@ export const oracle = tool({
     }
 
     if (args.type === "chaos_check") {
-      // getGameState returns the live state object — mutations stick.
-      const state = getGameState(ctx);
+      // gameSlot.get returns the live state object — mutations stick.
+      const state = gameSlot.get(ctx);
       const interrupt = checkChaosInterrupt(state);
       return {
         type: "chaos_check",

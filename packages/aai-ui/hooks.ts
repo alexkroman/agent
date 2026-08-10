@@ -160,8 +160,44 @@ export function useToolResult(...args: unknown[]): void {
  *
  * @public
  */
-export function useAgentState<S = DefaultToolResult>(): S | null {
-  return useSessionSelector((snapshot) => snapshot.agentState) as S | null;
+export function useAgentState<S = DefaultToolResult>(): S | null;
+/**
+ * The agent's projected session state, falling back to `fallback` before the
+ * first push — so the return is never `null` and a sidebar needs no branch for
+ * the pre-first-tool-call moment.
+ *
+ * Build the fallback by running the SAME projection over an empty state, not
+ * by hand-writing an empty-looking literal: a field added to the projection
+ * then reaches the first render too, instead of being `undefined` only in
+ * that one frame.
+ *
+ * ```tsx no-check
+ * // `no-check`: the projection lives with the agent, in another file.
+ * import { useAgentState } from "@alexkroman1/aai-ui";
+ * import { cartSlot, cartView, type CartView } from "./shared.ts";
+ *
+ * const EMPTY: CartView = cartSlot.projection(cartView)(undefined);
+ *
+ * function Cart() {
+ *   const cart = useAgentState<CartView>(EMPTY);
+ *   return <ul>{cart.items.map((item) => <li key={item.sku}>{item.qty}</li>)}</ul>;
+ * }
+ * ```
+ *
+ * @param fallback - Returned while the agent has pushed nothing. Not memoized
+ *   here — hoist it to module scope (or memoize it) so it is a stable
+ *   reference across renders.
+ *
+ * @public
+ */
+export function useAgentState<S = DefaultToolResult>(fallback: S): S;
+export function useAgentState<S = DefaultToolResult>(fallback?: S): S | null {
+  const state = useSessionSelector((snapshot) => snapshot.agentState) as S | null;
+  if (state !== null) return state;
+  // An absent `fallback` must read back as `null`, not `undefined` — that is
+  // the no-arg overload's documented pre-first-push value, and a client
+  // spelling `state === null` predates this parameter.
+  return fallback === undefined ? null : fallback;
 }
 
 /**

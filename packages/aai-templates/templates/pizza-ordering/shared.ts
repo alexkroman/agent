@@ -1,4 +1,4 @@
-import type { ToolContext } from "@alexkroman1/aai";
+import { type SlotStateOf, sessionSlot, type ToolContext } from "@alexkroman1/aai";
 
 export const SIZES = ["small", "medium", "large"] as const;
 export const CRUSTS = ["thin", "regular", "thick", "stuffed"] as const;
@@ -89,19 +89,14 @@ export interface OrderState {
   placed?: { orderNumber: number; total: string; estimatedMinutes: number };
 }
 
-export type StateSlot = { order?: OrderState };
-
-function emptyOrder(): OrderState {
+export function emptyOrder(): OrderState {
   return { pizzas: [], nextId: 1, customerName: null };
 }
 
-/** The session's live cart. Mutations to the returned object stick — it is
- *  the object stored in `ctx.state`. */
-export function getOrder(ctx: ToolContext): OrderState {
-  const slot = ctx.state as StateSlot;
-  slot.order ??= emptyOrder();
-  return slot.order;
-}
+/** The session's cart, as one typed slot inside `ctx.state`. */
+export const orderSlot = sessionSlot("order", emptyOrder);
+
+export type StateSlot = SlotStateOf<typeof orderSlot>;
 
 /**
  * Clear the cart after checkout so a follow-up order starts fresh. The
@@ -110,12 +105,11 @@ export function getOrder(ctx: ToolContext): OrderState {
  * order that was just submitted.
  */
 export function resetOrder(ctx: ToolContext, placed?: OrderState["placed"]): void {
-  const slot = ctx.state as StateSlot;
-  slot.order = { ...emptyOrder(), ...(placed ? { placed } : {}) };
+  orderSlot.set(ctx, { ...emptyOrder(), ...(placed ? { placed } : {}) });
 }
 
 /**
- * What the browser sees. A projection rather than the raw slot: the client
+ * What the browser sees. A projection rather than the raw state: the client
  * needs the cart and its total, and `syncState` is where you decide what
  * leaves the server.
  */
@@ -127,13 +121,13 @@ export interface OrderView {
   estimatedMinutes?: number;
 }
 
-export function orderView(state: StateSlot): OrderView {
-  const order = state.order;
-  const pizzas = order?.pizzas ?? [];
-  const placed = order?.placed;
+/** Takes the cart itself, not the slot — `orderSlot.projection` supplies a real
+ *  one even before the first tool call, so there is nothing to optional-chain. */
+export function orderView(order: OrderState): OrderView {
+  const placed = order.placed;
   return {
-    pizzas,
-    total: placed?.total ?? formatPrice(calculateTotal(pizzas)),
+    pizzas: order.pizzas,
+    total: placed?.total ?? formatPrice(calculateTotal(order.pizzas)),
     orderPlaced: Boolean(placed),
     ...(placed
       ? { orderNumber: placed.orderNumber, estimatedMinutes: placed.estimatedMinutes }
