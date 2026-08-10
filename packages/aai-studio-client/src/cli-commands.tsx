@@ -4,7 +4,7 @@
 // the CLI round-trip is not discoverable from the UI otherwise, so the
 // commands are spelled out with the project name already filled in.
 
-import { useEffect, useRef, useState } from "react";
+import { useCopy } from "./use-copy.ts";
 
 const CLI_PACKAGE = "@alexkroman1/aai-cli";
 
@@ -28,8 +28,6 @@ export function pullCommands(project: string): string[] {
   ];
 }
 
-type CopyState = { text: string; ok: boolean };
-
 type CliCommandsProps = {
   /** The open project's name — `aai pull`'s argument and the target directory. */
   project: string;
@@ -37,35 +35,7 @@ type CliCommandsProps = {
 
 export function CliCommands({ project }: CliCommandsProps) {
   const commands = pullCommands(project);
-  const [copied, setCopied] = useState<CopyState | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-
-  // One live timer at a time, and none after unmount.
-  useEffect(() => () => clearTimeout(timer.current), []);
-
-  const copy = (text: string) => {
-    const flash = (ok: boolean) => {
-      setCopied({ text, ok });
-      clearTimeout(timer.current);
-      timer.current = setTimeout(() => setCopied(null), 1500);
-    };
-    // No clipboard in an insecure context (and none in jsdom) — the commands
-    // are on screen either way, so a failure only changes the button label.
-    const write = navigator.clipboard?.writeText(text);
-    if (!write) {
-      flash(false);
-      return;
-    }
-    void write.then(
-      () => flash(true),
-      () => flash(false),
-    );
-  };
-
-  const label = (text: string) => {
-    if (copied?.text !== text) return "Copy";
-    return copied.ok ? "Copied" : "Failed";
-  };
+  const copier = useCopy();
 
   const all = commands.join("\n");
 
@@ -82,16 +52,16 @@ export function CliCommands({ project }: CliCommandsProps) {
             <button
               type="button"
               className="btn px-2 py-1 text-xs"
-              onClick={() => copy(command)}
+              onClick={() => copier.copy(command)}
               aria-label={`Copy: ${command}`}
             >
-              {label(command)}
+              {copier.label(command)}
             </button>
           </li>
         ))}
       </ol>
-      <button type="button" className="btn self-start" onClick={() => copy(all)}>
-        {copied?.text === all && copied.ok ? "Copied all" : "Copy all"}
+      <button type="button" className="btn self-start" onClick={() => copier.copy(all)}>
+        {copier.didCopy(all) ? "Copied all" : "Copy all"}
       </button>
     </div>
   );

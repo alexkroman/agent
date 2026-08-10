@@ -458,6 +458,7 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
             <SettingsPane
               bearer={bearer}
               project={project}
+              deployedSlug={deployedSlug}
               onNotifyChat={notifyChat}
               onDeleteProject={() => deleteProject.mutate()}
               deleting={deleteProject.isPending}

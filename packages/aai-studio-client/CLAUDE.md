@@ -105,6 +105,39 @@ segmented control switches between — `preview.tsx`, `code-view.tsx`,
     hashes (`verifySlugOwner`), exactly as the project-delete cascade does —
     a workspace naming a foreign slug must not become a lever on, or an
     oracle for, someone else's agent.
+- **The Phone number card hands out the carrier webhook URLs**
+  (`phone-card.tsx`) — one per carrier, each with a copy button, pointing at
+  the platform's `/:slug/phone` route (see "Telephony" in
+  `packages/aai-server/CLAUDE.md`). Pasting one into a phone number's voice
+  webhook is the whole integration on the user's side, and the URL is not
+  derivable by hand: it needs the platform origin, the project's PUBLISHED
+  slug rather than its name, and the `?carrier=` value.
+  - **`?carrier=` is spelled out even for Twilio**, which the platform already
+    defaults to. This string is pasted into a carrier console once and never
+    looked at again, so it has to keep meaning the same thing — the default is
+    a decision the platform is free to revisit, and the copies already sitting
+    in people's phone-number settings are not.
+  - **It GATES on `deployedSlug`, unlike every other card on this pane.** The
+    others record an intent a later deploy picks up, which is why they are
+    ungated; a webhook URL is not an intent. Pointed at an unpublished slug it
+    resolves to nothing and the caller hears the agent-not-found message and
+    is hung up on — a dead URL is a worse answer than "publish first".
+  - **Each carrier names its signing secret and says whether it is LIVE**,
+    read off the Secrets card's own two lists (`secretState`). The three-way
+    split is the point: a `pending` secret is visible in the list above but
+    has not reached the published agent, so verification is not running, and
+    reporting it as set would tell someone their webhook is protected while it
+    still accepts anything. The missing case names where to find the value
+    (Twilio Console → Auth Token; Telnyx Portal → Public Key) rather than just
+    the variable, because a variable name alone is not an instruction.
+  - The origin comes from `window.location.origin` rather than the server: the
+    studio and the agent surface are one origin by construction (see "One
+    public origin" in `packages/aai-server/CLAUDE.md`).
+  - Clipboard handling is shared with the CLI commands (`use-copy.ts`) — the
+    flash is keyed by the copied TEXT so one row's "Copied" does not light up
+    every button, and there is one live timer so a second click cannot have
+    its flash cleared early by the first click's timeout.
+
 - **The Settings pane is also where the CLI round-trip is discoverable**
   (`cli-commands.tsx`, the "Work locally" section): the install / `aai login`
   / `aai pull <project>` / `aai dev` sequence with the project name filled

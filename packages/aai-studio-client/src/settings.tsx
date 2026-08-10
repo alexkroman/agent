@@ -21,6 +21,7 @@ import { api, parseSecrets } from "./api.ts";
 import { errorText } from "./api-error.ts";
 import { CliCommands } from "./cli-commands.tsx";
 import { DatabaseCard } from "./database-card.tsx";
+import { PhoneCard } from "./phone-card.tsx";
 import { queryKeys } from "./query-keys.ts";
 import { Card } from "./settings-card.tsx";
 
@@ -41,6 +42,8 @@ type SettingsPaneProps = {
   bearer: string;
   /** The open project's name — the target of the Delete project button. */
   project: string;
+  /** The project's published slug, if it has one — see PhoneCard. */
+  deployedSlug?: string | undefined;
   /** Post a note into the chat so the coding agent knows what changed. */
   onNotifyChat: (text: string) => void;
   /** Delete the project (workspace + chat). The app navigates home after. */
@@ -51,6 +54,7 @@ type SettingsPaneProps = {
 export function SettingsPane({
   bearer,
   project,
+  deployedSlug,
   onNotifyChat,
   onDeleteProject,
   deleting,
@@ -203,6 +207,10 @@ export function SettingsPane({
             environment as each one deploys, so it can be switched on before
             the project has ever been published. */}
         <DatabaseCard bearer={bearer} project={project} onNotifyChat={onNotifyChat} />
+
+        {/* Gated on a published slug, unlike the cards around it — a
+            webhook URL is not an intent a later deploy can pick up. */}
+        <PhoneCard deployedSlug={deployedSlug} secretNames={names} pendingSecrets={pending} />
 
         {/* Unconditional — pulling a project locally needs no published slug. */}
         <Card
