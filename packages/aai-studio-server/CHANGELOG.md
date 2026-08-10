@@ -1,5 +1,11 @@
 # aai-studio-server
 
+## 0.6.7
+
+### Patch Changes
+
+- 9ceb71a: Studio chat now shows a project's conversation as soon as it is opened, instead of holding the whole panel until the sandbox is brokered. The 'Starting sandbox…' wait moves to the foot of the transcript, where it gates sending only — the composer stays typable and hands whatever was written to the live chat. A broker failure keeps the history up too, with its reason and Try again in the same place.
+
 ## 0.6.6
 
 ### Patch Changes
