@@ -8,8 +8,13 @@
 import type { ModelMessage } from "ai";
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel } from "../_pipeline-test-fakes.ts";
-import { flush, sleep } from "../_test-utils.ts";
-import { llmCalls, makeOpts, noopToolSchema } from "./_pipeline-transport-harness.ts";
+import { flush } from "../_test-utils.ts";
+import {
+  llmCalls,
+  makeOpts,
+  noopToolSchema,
+  useVirtualTime,
+} from "./_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
 
 /** High enough to clear PREEMPTIVE_CONFIDENCE_THRESHOLD however it is retuned. */
@@ -39,6 +44,8 @@ function userTexts(call: { prompt?: unknown }): string[] {
     );
 }
 
+useVirtualTime();
+
 describe("preemptive generation — guardrail 1: nothing speculative is ever spoken", () => {
   test("a high-confidence partial generates but sends no TTS text, audio, or client frame", async () => {
     const { opts, stt, tts, callbacks } = makeOpts({
@@ -54,7 +61,7 @@ describe("preemptive generation — guardrail 1: nothing speculative is ever spo
     await vi.waitFor(() => {
       expect(llmCalls(opts).calls).toHaveLength(1);
     });
-    await sleep(20);
+    await vi.advanceTimersByTimeAsync(20);
 
     expect(tts.last()?.sendText).not.toHaveBeenCalled();
     expect(callbacks.onAudioChunk).not.toHaveBeenCalled();
@@ -96,7 +103,7 @@ describe("preemptive generation — guardrail 2: nothing speculative executes a 
     await vi.waitFor(() => {
       expect(llmCalls(opts).calls).toHaveLength(1);
     });
-    await sleep(20);
+    await vi.advanceTimersByTimeAsync(20);
     // The declaration-only tool set means the SDK cannot continue past the
     // call, so there is nothing to execute and nothing was spoken either.
     expect(executeTool).not.toHaveBeenCalled();
@@ -233,7 +240,7 @@ describe("preemptive generation — no trace", () => {
     await vi.waitFor(() => {
       expect(llmCalls(opts).calls).toHaveLength(1);
     });
-    await sleep(20);
+    await vi.advanceTimersByTimeAsync(20);
     stt.last()?.firePartial("something else entirely", CERTAIN);
     await flush();
 
@@ -266,7 +273,7 @@ describe("preemptive generation — recovery cannot resume a speculation", () =>
       expect(llmCalls(opts).calls).toHaveLength(1);
     });
     // Let the speaking edge go idle — the false-interruption resume signal.
-    await sleep(80);
+    await vi.advanceTimersByTimeAsync(80);
 
     expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
     expect(tts.last()?.sendText).not.toHaveBeenCalled();
@@ -320,7 +327,7 @@ describe("preemptive generation — OFF by default", () => {
     await t.start();
 
     stt.last()?.firePartial(UTTERANCE, CERTAIN);
-    await sleep(30);
+    await vi.advanceTimersByTimeAsync(30);
     expect(llmCalls(opts).calls).toHaveLength(0);
 
     // And the ordinary turn is byte-identical to what it always was.
@@ -343,7 +350,7 @@ describe("preemptive generation — OFF by default", () => {
     const t = createPipelineTransport(opts);
     await t.start();
     stt.last()?.firePartial(UTTERANCE, CERTAIN);
-    await sleep(30);
+    await vi.advanceTimersByTimeAsync(30);
     expect(llmCalls(opts).calls).toHaveLength(0);
     await t.stop();
   });

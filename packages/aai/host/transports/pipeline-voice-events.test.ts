@@ -7,11 +7,17 @@
 // _pipeline-transport-harness.ts.
 
 import { describe, expect, test, vi } from "vitest";
-import { DEAD_AIR_OPENING_PHRASE } from "../../sdk/constants.ts";
+import { DEAD_AIR_OPENING_PHRASE, DEFAULT_DEAD_AIR_COVER_MS } from "../../sdk/constants.ts";
 import { createFakeLanguageModel, type ScriptedPart } from "../_pipeline-test-fakes.ts";
-import { sleep, tick } from "../_test-utils.ts";
-import { inFlightReplyScript, makeOpts, noopToolSchema } from "./_pipeline-transport-harness.ts";
+import {
+  inFlightReplyScript,
+  makeOpts,
+  noopToolSchema,
+  useVirtualTime,
+} from "./_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
+
+useVirtualTime();
 
 describe("PipelineTransport", () => {
   describe("user-speaking events", () => {
@@ -237,7 +243,7 @@ describe("PipelineTransport", () => {
       // no self-expiry, so this is what proves the committed final consumed it
       // rather than leaving it to fire against an unrelated utterance.
       stt.last()?.firePartial("hm");
-      await sleep(120);
+      await vi.advanceTimersByTimeAsync(120);
       expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(2);
       await t.stop();
     });
@@ -263,7 +269,7 @@ describe("PipelineTransport", () => {
       stt.last()?.firePartial("uh what");
       expect(callbacks.onCancelled).toHaveBeenCalled();
 
-      await sleep(120);
+      await vi.advanceTimersByTimeAsync(120);
       expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(1);
       await t.stop();
     });
@@ -333,7 +339,7 @@ describe("PipelineTransport", () => {
       stt.last()?.firePartial("uh what");
       expect(callbacks.onCancelled).toHaveBeenCalled();
 
-      await sleep(120);
+      await vi.advanceTimersByTimeAsync(120);
       expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(1);
       await t.stop();
     });
@@ -365,7 +371,7 @@ describe("PipelineTransport", () => {
       stt.last()?.firePartial("wait actually");
       expect(callbacks.onCancelled).toHaveBeenCalled();
       for (let i = 0; i < 5; i++) {
-        await sleep(25);
+        await vi.advanceTimersByTimeAsync(25);
         stt.last()?.firePartial(`wait actually hold on ${i}`);
       }
 
@@ -571,7 +577,7 @@ describe("PipelineTransport", () => {
 
       // The noise partial's speaking edge now goes idle, which is what would
       // fire the resume. A client-initiated cancel is intentional: it doesn't.
-      await sleep(120);
+      await vi.advanceTimersByTimeAsync(120);
       expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(1);
       await t.stop();
     });
@@ -588,19 +594,38 @@ describe("PipelineTransport", () => {
           steps: [toolFirstScript, [{ type: "text", text: "Done." }]],
           delayMs: 20,
         }),
-        // 1ms so the window elapses inside the spec; the shipped 5000 would not.
-        deadAirCoverMs: 1,
+        // The SHIPPED window, not a 1ms stand-in for it. On the wall clock this
+        // spec could only afford `deadAirCoverMs: 1`, which tests the wiring
+        // and says nothing about the default a caller actually waits out.
+        deadAirCoverMs: DEFAULT_DEAD_AIR_COVER_MS,
         toolSchemas: [noopToolSchema],
-        executeTool: async () => "{}",
+        // A tool that outlasts the cover window — which is the only shape that
+        // produces dead air at the shipped 5s. The measured case this exists
+        // for is a 15-24s tool chain; on the wall clock the spec could afford
+        // neither, so it shrank the WINDOW to 1ms instead and tested the wiring
+        // against a turn that was never silent.
+        executeTool: () =>
+          new Promise<string>((resolve) => {
+            setTimeout(() => resolve("{}"), DEFAULT_DEAD_AIR_COVER_MS * 2);
+          }),
       });
       const t = createPipelineTransport(opts);
       await t.start();
 
       stt.last()?.fireFinal("look it up");
+      // Armed, but the window has not elapsed: the caller is in an ordinary
+      // pause, and covering it here would cost the reply's opening sentence.
+      await vi.advanceTimersByTimeAsync(DEFAULT_DEAD_AIR_COVER_MS - 1);
+      expect(tts.last()?.textChunks.join("")).not.toContain(DEAD_AIR_OPENING_PHRASE);
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(tts.last()?.textChunks.join("")).toContain(DEAD_AIR_OPENING_PHRASE);
+
+      // The tool lands and the reply follows it.
+      await vi.advanceTimersByTimeAsync(DEFAULT_DEAD_AIR_COVER_MS * 2);
       await vi.waitFor(() => {
-        expect(tts.last()?.textChunks.join("")).toContain(DEAD_AIR_OPENING_PHRASE);
+        expect(tts.last()?.textChunks.join("")).toContain("Done.");
       });
-      await tick();
       await t.stop();
     });
 

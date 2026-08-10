@@ -6,9 +6,19 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel, createTestClock, speakFor } from "../_pipeline-test-fakes.ts";
-import { sleep } from "../_test-utils.ts";
-import { inFlightReplyScript, llmCalls, makeOpts } from "./_pipeline-transport-harness.ts";
+import {
+  inFlightReplyScript,
+  llmCalls,
+  makeOpts,
+  useVirtualTime,
+} from "./_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
+
+/** A reply long enough to still be streaming when the re-prompts land. */
+const PART_COUNT = 20;
+const PART_DELAY_MS = 10;
+
+useVirtualTime();
 
 describe("PipelineTransport", () => {
   describe("barge-in", () => {
@@ -91,17 +101,21 @@ describe("PipelineTransport", () => {
       // history, so it outlived the next re-prompt and the reply never landed.
       const { opts, stt, tts, callbacks } = makeOpts({
         llm: createFakeLanguageModel({
-          script: Array.from({ length: 20 }, (_, i) => ({ type: "text" as const, text: `p${i} ` })),
-          delayMs: 10,
+          script: Array.from({ length: PART_COUNT }, (_, i) => ({
+            type: "text" as const,
+            text: `p${i} `,
+          })),
+          delayMs: PART_DELAY_MS,
         }),
       });
       const t = createPipelineTransport(opts);
       await t.start();
 
       stt.last()?.fireFinal("what is my balance");
-      await vi.waitFor(() => {
-        expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
-      });
+      // One scripted part's worth of virtual time — enough for the reply to be
+      // under way, not enough for it to finish.
+      await vi.advanceTimersByTimeAsync(PART_DELAY_MS);
+      expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
 
       // Two re-prompts land while the reply is still being computed.
       stt.last()?.fireFinal("hello any update");
@@ -109,9 +123,10 @@ describe("PipelineTransport", () => {
 
       expect(callbacks.onCancelled).not.toHaveBeenCalled();
       // The reply still finishes rather than being starved by the re-prompts.
-      await vi.waitFor(() => {
-        expect(callbacks.onReplyDone).toHaveBeenCalled();
-      });
+      // Driven rather than polled: the script's own length is how long it
+      // needs, so there is nothing here for a slow runner to lose a race to.
+      await vi.advanceTimersByTimeAsync(PART_COUNT * PART_DELAY_MS);
+      expect(callbacks.onReplyDone).toHaveBeenCalled();
       await t.stop();
     });
 
@@ -274,7 +289,7 @@ describe("PipelineTransport", () => {
       expect(callbacks.onCancelled).not.toHaveBeenCalled();
 
       // The user keeps talking past the duration gate → the next partial interrupts.
-      await sleep(120);
+      await vi.advanceTimersByTimeAsync(120);
       stt.last()?.firePartial("wait stop that");
       expect(callbacks.onCancelled).toHaveBeenCalled();
       expect(tts.last()?.cancel).toHaveBeenCalled();
@@ -374,7 +389,7 @@ describe("PipelineTransport", () => {
       // streamText turn against closed providers AFTER stop() — and stop()
       // hangs on its TTS drain for the whole flush timeout.
       await t.stop();
-      await sleep(50);
+      await vi.advanceTimersByTimeAsync(50);
       expect(llm.calls.length).toBe(1);
     });
 
@@ -383,7 +398,7 @@ describe("PipelineTransport", () => {
       t.reset?.();
       // The queued turn carries pre-reset user text: it must not run into the
       // fresh history.
-      await sleep(50);
+      await vi.advanceTimersByTimeAsync(50);
       expect(llm.calls.length).toBe(1);
       await t.stop();
     });
@@ -391,7 +406,7 @@ describe("PipelineTransport", () => {
     test("a turn queued behind an active one does not run after cancelReply()", async () => {
       const { t, llm } = await startWithQueuedTurn();
       t.cancelReply();
-      await sleep(50);
+      await vi.advanceTimersByTimeAsync(50);
       expect(llm.calls.length).toBe(1);
       await t.stop();
     });
@@ -408,7 +423,7 @@ describe("PipelineTransport", () => {
       });
 
       t.reset?.();
-      await sleep(50);
+      await vi.advanceTimersByTimeAsync(50);
       // persistInterruptedTurn runs after the abort settles; post-reset it must
       // not push the `[interrupted]` tail into the just-cleared history. Read
       // through a follow-up turn's LLM request rather than the transcript
@@ -569,7 +584,7 @@ describe("PipelineTransport", () => {
       expect(callbacks.onCancelled).toHaveBeenCalled();
       // Well past the aborted stream settling, which is when the frame used to
       // arrive; the interim snapshots (onAgentTranscriptPartial) are unaffected.
-      await sleep(80);
+      await vi.advanceTimersByTimeAsync(80);
       expect(vi.mocked(callbacks.onAgentTranscript).mock.calls.length).toBe(transcriptsBefore);
       await t.stop();
     });

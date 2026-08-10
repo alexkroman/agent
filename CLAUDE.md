@@ -410,6 +410,21 @@ primitives — reach for them before re-inventing the pattern at a call site:
   audio gate) as a discriminated-union machine whose named transitions are
   the only mutation path. New turn-state reads/writes go through it, not new
   closure flags.
+- **`createKeyedLock()`** (`aai/sdk/keyed-lock.ts`, exported from
+  `@alexkroman1/aai/utils` and the root — the one primitive here that is
+  PUBLIC) — serialize async work per key: `lock(key)` resolves with a release
+  once every earlier holder of that key has released, and `withLock(lock, key,
+  fn)` releases in every outcome. An optional `timeoutMs` bounds the ACQUIRE,
+  which is what makes a contended mutation answerable instead of queued
+  (`KeyedLockTimeoutError` → the platform's 409). It is public because the
+  hazard is an agent author's as much as the platform's: **the LLM loop runs a
+  step's tool calls CONCURRENTLY**, so two async mutators of one `ctx.state`
+  interleave at every await and each reads what the other half-applied. Two
+  templates had hand-rolled the same per-session promise chain before it was
+  published. Don't write `tails.get(k) ?? Promise.resolve()` by hand — the two
+  parts that get missed are dropping the drained entry BY OWNERSHIP, and
+  resolving your own place in the chain when you abandon a timed-out acquire
+  (otherwise everyone behind you blocks forever).
 - **Timeouts**: use `p-timeout` (a dependency of aai, aai-cli, aai-guest,
   and aai-server) — never a hand-rolled `Promise.race` with a timer; the
   losing branch's late rejection and timer cleanup are exactly what gets
@@ -572,6 +587,34 @@ you only need to list one package.
   specs used to define a *local* `flush` as `setTimeout(r, 0)`, shadowing the
   export so one name meant two different waits.
 - Use `vi.waitFor()` instead of arbitrary delays when polling for async results.
+- **A spec that observes a TIMER runs on virtual time, never the wall clock.**
+  The pipeline-transport specs used to wait out real milliseconds
+  (`await sleep(60)`) to see whether a window had elapsed, which cost ~2.3s of
+  the unit run and, far worse, made them races: they were the specs that failed
+  first on a contended runner, and the flake named a timing spec rather than a
+  bug. It also capped what a spec could describe — every window had to shrink
+  to tens of milliseconds, so the dead-air cover was exercised at
+  `deadAirCoverMs: 1` and the SHIPPED 5s default was tested by nothing.
+  `useVirtualTime()` (`transports/_pipeline-transport-harness.ts`) installs
+  fake timers per file; drive them with `vi.advanceTimersByTimeAsync(ms)`.
+
+  **No scheduler had to be threaded through `PipelineTransportOptions` for
+  this, and the note that said otherwise was wrong.** The claim was that fake
+  timers could not compose with the fake providers because `_fake-llm.ts`
+  schedules its own `setTimeout` for `delayMs` — but that is the GLOBAL
+  `setTimeout`, which is exactly what `vi.useFakeTimers()` replaces, so it is
+  driven along with everything else. `vi.waitFor` composes too. Check the
+  cheap mechanism before building the seam.
+
+  Two things virtual time does break, both mechanical: `tick()` is a
+  `setTimeout(0)` and hangs until something advances the clock (use
+  `vi.advanceTimersByTimeAsync(0)`), and a `vi.waitFor` that polls for work
+  gated on a timer still polls in REAL time — prefer advancing by the amount
+  the work actually needs, which is deterministic and has no race to lose.
+
+  Deliberately NOT converted: `s2s-transport.test.ts`'s five `sleep(5)` calls.
+  Those are queue-settle yields, not timer observations — nothing is racing
+  them, and rewriting them would be churn.
 - Type-level tests use `.test-d.ts` files with `typecheck: { only: true }`
   — they are checked by tsc but never executed at runtime. Use
   `expectTypeOf` from vitest to assert on type shapes. Projects:
@@ -945,24 +988,9 @@ back to the host's `process.env`.
 
 ### Open testability work
 
-Two known gaps, both found by audit and both deliberately left alone because
-each is a refactor in its own right rather than a fix that rides along with
-something else. Neither is blocked on a decision; they are sized, not stuck.
-
-- **The pipeline transports have no injectable clock**, so 32 assertions
-  across `host/transports/` wait on REAL wall-clock time (`await sleep(60)`,
-  `sleep(120)`, …) to observe a timer that did or did not fire. That is ~2.3s
-  of the unit run, but the cost is flakiness rather than seconds: these are
-  races, and they are exactly the specs that fail first on a contended
-  runner. The timer bookkeeping is already factored (`host/_timer.ts` —
-  `createRestartableTimer` / `createCoalescingTimer`), so the seam is a
-  scheduler parameter on those two factories threaded from
-  `PipelineTransportOptions`, alongside the `heardNow` clock seam that
-  already exists there for the same reason. What makes it a real piece of
-  work rather than a mechanical edit: fake timers have to compose with the
-  fake providers, and `_fake-llm.ts` schedules its own `setTimeout` for
-  `delayMs`, so the providers move onto the injected scheduler too or the
-  suites deadlock.
+One known gap, found by audit and deliberately left alone because it is a
+refactor in its own right rather than a fix that rides along with something
+else. It is not blocked on a decision; it is sized, not stuck.
 
 - **`aai-server` writes to `console.*` directly** — 47 calls, 45 of them
   outside `_debug-log.ts` — with no logger seam, so 39 of the repo's 86

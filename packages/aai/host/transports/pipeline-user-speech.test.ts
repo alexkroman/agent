@@ -1,19 +1,23 @@
 // Copyright 2026 the AAI authors. MIT license.
 // Unit specs for the pipeline transport's speaking-edge tracker (including
 // its idle watchdog). Exercised directly rather than through the transport so
-// the timeouts can be short and the timer-boundary cases stay deterministic.
+// the timer-boundary cases stay isolated; the windows run on virtual time, so
+// "short" is no longer a constraint on what a spec may describe.
 // End-to-end wiring is covered by pipeline-voice-events.test.ts; the
 // false-interruption recovery timer's specs live in pipeline-recovery.test.ts.
 
 import { describe, expect, test, vi } from "vitest";
 import { DEFAULT_FALSE_INTERRUPTION_PROMPT } from "../../sdk/constants.ts";
-import { silentLogger, sleep } from "../_test-utils.ts";
+import { silentLogger } from "../_test-utils.ts";
+import { useVirtualTime } from "./_pipeline-transport-harness.ts";
 import { createSpeechEdgeTracker } from "./pipeline-speech-edges.ts";
 import { createUserActivity } from "./pipeline-user-speech.ts";
 
 function makeEdgeCallbacks(): { onSpeechStarted: () => void; onSpeechStopped: () => void } {
   return { onSpeechStarted: vi.fn(), onSpeechStopped: vi.fn() };
 }
+
+useVirtualTime();
 
 describe("createSpeechEdgeTracker", () => {
   test("opens the edge once and closes it once", () => {
@@ -35,7 +39,7 @@ describe("createSpeechEdgeTracker", () => {
 
     expect(t.durationMs()).toBe(0);
     t.speechStarted();
-    await sleep(20);
+    await vi.advanceTimersByTimeAsync(20);
     expect(t.durationMs()).toBeGreaterThan(0);
     t.speechEnded();
     expect(t.durationMs()).toBe(0);
@@ -70,7 +74,7 @@ describe("createSpeechEdgeTracker", () => {
     t.speechStarted();
     // Keep "speaking" across more than one watchdog window.
     for (let i = 0; i < 4; i++) {
-      await sleep(25);
+      await vi.advanceTimersByTimeAsync(25);
       t.speechStarted();
     }
     expect(cb.onSpeechStopped).not.toHaveBeenCalled();
@@ -89,7 +93,7 @@ describe("createSpeechEdgeTracker", () => {
     const t = createSpeechEdgeTracker(cb, { idleTimeoutMs: 0 });
 
     t.speechStarted();
-    await sleep(40);
+    await vi.advanceTimersByTimeAsync(40);
     expect(cb.onSpeechStopped).not.toHaveBeenCalled();
   });
 
@@ -101,7 +105,7 @@ describe("createSpeechEdgeTracker", () => {
     t.reset();
     expect(cb.onSpeechStopped).not.toHaveBeenCalled();
 
-    await sleep(40);
+    await vi.advanceTimersByTimeAsync(40);
     // The pending watchdog must not fire an edge event after the reset.
     expect(cb.onSpeechStopped).not.toHaveBeenCalled();
   });
@@ -256,7 +260,7 @@ describe("no path leaves a stale resume armed", () => {
     activity: ReturnType<typeof createUserActivity>,
   ): Promise<void> {
     activity.sttEvents.onSttPartial("some later noise");
-    await sleep(80);
+    await vi.advanceTimersByTimeAsync(80);
   }
 
   const resumes = (calls: { chained: { isResume: boolean }[] }): number =>

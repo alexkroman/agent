@@ -12,7 +12,6 @@ import {
   type ScriptedPart,
   speakFor,
 } from "../_pipeline-test-fakes.ts";
-import { sleep } from "../_test-utils.ts";
 import {
   firstCallArg,
   inFlightReplyScript,
@@ -20,8 +19,11 @@ import {
   makeOpts,
   noopToolSchema,
   partialTranscriptSpy,
+  useVirtualTime,
 } from "./_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
+
+useVirtualTime();
 
 describe("PipelineTransport — STT → LLM turn", () => {
   test("final STT event fires onUserTranscript and onReplyStarted", async () => {
@@ -43,7 +45,7 @@ describe("PipelineTransport — STT → LLM turn", () => {
     const t = createPipelineTransport(opts);
     await t.start();
     stt.last()?.fireFinal("   ");
-    await sleep(10);
+    await vi.advanceTimersByTimeAsync(10);
     expect(callbacks.onUserTranscript).not.toHaveBeenCalled();
     expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
     await t.stop();
@@ -426,7 +428,7 @@ describe("interrupted-speech persistence", () => {
 
     stt.last()?.fireFinal("hi");
     // Abort during the pre-first-delta delay.
-    await sleep(10);
+    await vi.advanceTimersByTimeAsync(10);
     t.cancelReply();
 
     // No text accumulated → no interrupted transcript surfaced.
@@ -564,7 +566,7 @@ describe("interrupted-speech persistence", () => {
         delayMs: 20,
       }),
       executeTool: vi.fn(async () => {
-        await sleep(100);
+        await vi.advanceTimersByTimeAsync(100);
         return "ok";
       }),
       toolSchemas: [noopToolSchema],
