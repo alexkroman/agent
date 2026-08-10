@@ -80,6 +80,45 @@ describe("createTurnTrace", () => {
     expect(m).not.toHaveProperty("firstToolMs");
   });
 
+  // The AI SDK enqueues `start` and `start-step` synchronously out of
+  // `streamText`, before the request has a response, so timing them made
+  // `firstPartMs` a measure of our own bookkeeping: every real turn logged 0-2
+  // beside a `firstToolMs` of 600-1200. That reads as an instant model, which
+  // is the opposite of what the mark exists to report — and it is invisible,
+  // because a plausible number is present.
+  test("SDK lifecycle parts do not stop the clock; the model's first part does", () => {
+    const { info, trace, advance } = setup();
+    trace.onPart("start");
+    trace.onPart("start-step");
+    advance(1100);
+    trace.onPart("text-delta");
+    trace.done({ steps: 1, aborted: false });
+    expect(meta(info)).toMatchObject({ firstPartMs: 1100 });
+  });
+
+  // A turn whose only outcome is a provider error still reached the provider,
+  // and how long that took is the number worth having.
+  test("an error part stops the clock", () => {
+    const { info, trace, advance } = setup();
+    trace.onPart("start");
+    advance(700);
+    trace.onPart("error");
+    trace.done({ steps: 0, aborted: false });
+    expect(meta(info)).toMatchObject({ firstPartMs: 700 });
+  });
+
+  // A turn that only ever emitted lifecycle parts produced NOTHING, and must
+  // report that the same way an empty turn does — not as an instant one.
+  test("lifecycle parts alone leave the mark absent", () => {
+    const { info, trace, advance } = setup();
+    trace.onPart("start");
+    trace.onPart("start-step");
+    trace.onPart("finish-step");
+    advance(4000);
+    trace.done({ steps: 0, aborted: true });
+    expect(meta(info)).not.toHaveProperty("firstPartMs");
+  });
+
   test("a text-only turn reports no tool mark", () => {
     const { info, trace, advance } = setup();
     advance(300);
