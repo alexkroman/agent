@@ -210,12 +210,15 @@ describe("chat history hydration", () => {
     });
     renderApp(vi.fn());
     await openProject("demo");
-    // Holds on the boot state while the retry rides out the restart…
+    // Holds on the boot note while the retry rides out the restart…
     await waitFor(() => expect(screen.getByText("Starting sandbox…")).toBeDefined());
     // …then connects on its own once the broker answers (first retry ~1s).
-    await waitFor(() => expect(screen.getByText(/Welcome to AssemblyAI Build/)).toBeDefined(), {
+    // The note going away is the signal, not the welcome bubble: that renders
+    // over the restored (here empty) history from the first paint.
+    await waitFor(() => expect(screen.queryByText("Starting sandbox…")).toBeNull(), {
       timeout: 4000,
     });
+    expect(screen.getByPlaceholderText("Describe your agent…")).toBeDefined();
     expect(calls).toBe(2);
   });
 
@@ -235,7 +238,10 @@ describe("chat history hydration", () => {
       expect(screen.getByText(/Could not start the project's sandbox/)).toBeDefined(),
     );
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-    await waitFor(() => expect(screen.getByText(/Welcome to AssemblyAI Build/)).toBeDefined());
+    await waitFor(() =>
+      expect(screen.queryByText(/Could not start the project's sandbox/)).toBeNull(),
+    );
+    expect(screen.getByPlaceholderText("Describe your agent…")).toBeDefined();
     expect(calls).toBe(2);
   });
 
@@ -250,5 +256,56 @@ describe("chat history hydration", () => {
     await openProject("demo");
     await waitFor(() => expect(screen.getByText("Loading conversation…")).toBeDefined());
     expect(screen.queryByText(/Welcome to AssemblyAI Build/)).toBeNull();
+  });
+
+  test("the conversation renders while the sandbox is still being brokered", async () => {
+    // The history is a row read and the sandbox is a container boot, so
+    // gating the transcript on the broker showed nothing for seconds on a
+    // project whose whole conversation was already in hand.
+    stubFetch({
+      ...demoRoutes,
+      "/studio/projects/demo/chat": () =>
+        jsonResponse({
+          messages: [
+            { id: "m1", role: "user", parts: [{ type: "text", text: "build a pizza bot" }] },
+          ],
+        }),
+      // Never resolves — the transcript must not wait on it.
+      "/studio/projects/demo/session": () =>
+        new Response(new ReadableStream(), { headers: { "Content-Type": "application/json" } }),
+    });
+    renderApp(vi.fn());
+    await openProject("demo");
+    await waitFor(() => expect(screen.getByText("build a pizza bot")).toBeDefined());
+    // The wait is said under the last message, and it is SENDING that waits.
+    expect(screen.getByText("Starting sandbox…")).toBeDefined();
+    expect((screen.getByLabelText("Send") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test("a message typed while the sandbox starts is held, then handed to the live composer", async () => {
+    // The field stays live through the wait, so a thought had while the
+    // container boots isn't lost — and the component swap underneath it
+    // (pre-sandbox view → live chat) must not take the text with it.
+    let calls = 0;
+    stubFetch({
+      ...demoRoutes,
+      "/studio/projects/demo/chat": () => jsonResponse({ messages: [] }),
+      "/studio/projects/demo/session": () =>
+        ++calls === 1
+          ? jsonResponse({ error: "service unavailable" }, 503)
+          : jsonResponse({ url: "http://studio.test/sandbox/studio/chat" }),
+    });
+    renderApp(vi.fn());
+    await openProject("demo");
+    const waiting = await waitFor(() => screen.getByPlaceholderText(/Starting sandbox/));
+    fireEvent.change(waiting, { target: { value: "make it italian" } });
+    fireEvent.keyDown(waiting, { key: "Enter" });
+    // Submitting early neither sends nor clears: there is nothing to send to.
+    expect((waiting as HTMLTextAreaElement).value).toBe("make it italian");
+
+    const live = await waitFor(() => screen.getByPlaceholderText("Describe your agent…"), {
+      timeout: 4000,
+    });
+    expect((live as HTMLTextAreaElement).value).toBe("make it italian");
   });
 });
