@@ -125,6 +125,7 @@ describe("storage (ctx.db) delivery", () => {
       provision: () => Promise.reject(new Error("not expected")),
       deprovision: () => Promise.reject(new Error("not expected")),
       connectionUrl: vi.fn(() => "postgres://app_0123456789abcdef:pw@db.example:6543/postgres"),
+      usage: () => Promise.reject(new Error("not expected")),
     };
     mockSpawnAgentServer.mockClear();
 

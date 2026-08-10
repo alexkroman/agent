@@ -24,22 +24,39 @@ import {
   deleteProjectSecret,
   type ProjectSecretsEnv,
   projectSecretsState,
+  reconcileProjectSecrets,
   setProjectSecrets,
 } from "./studio-secrets.ts";
+import type { StudioSessionBroker } from "./studio-session-broker.ts";
+import { schedulePreviewFor } from "./studio-settled-edit.ts";
 
 /**
  * The secrets core's bindings, read off the REQUEST env — never closed over
  * the Context, matching `databaseEnvFor`'s reasoning.
  */
-function secretsEnvFor(c: Context<StudioHonoEnv>): ProjectSecretsEnv {
+export function secretsEnvFor(c: Context<StudioHonoEnv>): ProjectSecretsEnv {
   return {
     workspaces: c.env.workspaces,
     store: c.env.store,
+    secrets: c.env.secrets,
     slugLock: c.env.slugLock,
   };
 }
 
-export function registerSecretRoutes(studio: Hono<StudioHonoEnv>): void {
+/**
+ * `ensureBroker` is needed for one thing, the same one the database routes
+ * need it for: a stored secret reaches an agent's env when its sandbox is
+ * BUILT, so the environment the user is looking at has to be redeployed or
+ * the change sits there until an unrelated edit. Production still waits for a
+ * Publish, which is the user's call.
+ */
+export function registerSecretRoutes(
+  studio: Hono<StudioHonoEnv>,
+  ensureBroker: (c: Context<StudioHonoEnv>) => StudioSessionBroker,
+): void {
+  const redeployPreview = (c: Context<StudioHonoEnv>, scope: string, project: string): void =>
+    schedulePreviewFor(ensureBroker(c), c, scope, project);
+
   studio.get("/projects/:project/secret", async (c) => {
     const { scope, project, apiKey } = c.var;
     const state = await projectSecretsState(secretsEnvFor(c), { scope, project, apiKey });
@@ -54,6 +71,7 @@ export function registerSecretRoutes(studio: Hono<StudioHonoEnv>): void {
       project,
       apiKey,
       updates: c.req.valid("json"),
+      schedulePreview: () => redeployPreview(c, scope, project),
     });
     if (!state) return c.json({ error: "Project not found" }, 404);
     return c.json(state);
@@ -69,9 +87,24 @@ export function registerSecretRoutes(studio: Hono<StudioHonoEnv>): void {
         project,
         apiKey,
         key: c.req.valid("param").key,
+        schedulePreview: () => redeployPreview(c, scope, project),
       });
       if (!state) return c.json({ error: "Project not found" }, 404);
       return c.json(state);
     },
   );
+}
+
+/**
+ * The post-deploy hook the session broker is wired with: give a slug the
+ * deploy just claimed the secrets its project holds. The twin of
+ * `databaseDeployHook`, and bound the same way — {@link secretsEnvFor} reads
+ * the request env rather than the Context, which is what makes it safe to
+ * hand to a broker that outlives the request.
+ */
+export function secretsDeployHook(
+  c: Context<StudioHonoEnv>,
+): (scope: string, project: string, slug: string) => Promise<void> {
+  const env = secretsEnvFor(c);
+  return (scope, project, slug) => reconcileProjectSecrets(env, { scope, project, slug });
 }

@@ -38,11 +38,24 @@ export type AuthConfig =
 export type Account = { email?: string; hasKey: boolean };
 
 /** One deployed agent's database state (see GET …/database). */
+/** What one environment's schema holds right now — see `appDatabaseUsage`. */
+export type DatabaseUsage = {
+  tables: number;
+  rows: number;
+  bytes: number;
+};
+
 export type DatabaseEnvironment = {
   environment: "production" | "preview";
   /** The deployed slug; absent until that environment has deployed. */
   slug?: string;
   enabled: boolean;
+  /**
+   * Absent when the database is off OR when the measurement failed — an
+   * unread schema and an empty one are different answers, and reporting the
+   * second for the first is exactly the lie this number exists to catch.
+   */
+  usage?: DatabaseUsage;
 };
 
 /**
@@ -398,10 +411,15 @@ export const api = {
   // knew: `aai secret put` and `aai publish`'s .env sync reached production
   // alone. The per-slug routes are still the platform primitive underneath.
 
+  // `pending` names are held by the project but not yet by every deployed
+  // agent — they arrive with that agent's next deploy. A project with nothing
+  // deployed reports all of its names that way, which is the state the panel
+  // exists to make workable.
   listSecrets: (key: string, project: string) =>
-    request<{ vars: string[] }>(key, `/projects/${encodeURIComponent(project)}/secret`).then(
-      (r) => r.vars,
-    ),
+    request<{ vars: string[]; pending?: string[] }>(
+      key,
+      `/projects/${encodeURIComponent(project)}/secret`,
+    ).then((r) => ({ vars: r.vars, pending: r.pending ?? [] })),
 
   putSecrets: (key: string, project: string, updates: Record<string, string>) =>
     request<{ vars: string[] }>(key, `/projects/${encodeURIComponent(project)}/secret`, {

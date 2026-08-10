@@ -18,7 +18,7 @@
  */
 
 import { HTTPException } from "hono/http-exception";
-import { type AppDatabases, parseAppDbMeta } from "./app-database.ts";
+import { type AppDatabases, type AppDbUsage, parseAppDbMeta } from "./app-database.ts";
 import type { AppContext } from "./context.ts";
 import type { SlugMutationLock } from "./platform-lock.ts";
 import { appDbSecretName, type SecretStore } from "./secret-store.ts";
@@ -37,6 +37,26 @@ const UNCONFIGURED_MESSAGE =
 export async function storageStatus(env: StorageEnv, slug: string): Promise<{ enabled: boolean }> {
   const meta = await env.secrets.get(appDbSecretName(slug));
   return { enabled: meta !== null };
+}
+
+/**
+ * What the app's database holds — tables, rows, bytes — or null when it has
+ * none, when this server cannot provision at all, or when the read failed.
+ *
+ * **A failed read is `null`, never a thrown request.** This is an observation
+ * about a tenant schema on a shared cluster, offered beside a switch whose
+ * own state is already known; a cluster hiccup must degrade the number, not
+ * the pane that reports whether the database is on.
+ */
+export async function storageUsage(env: StorageEnv, slug: string): Promise<AppDbUsage | null> {
+  const appDb = env.appDb;
+  if (!appDb) return null;
+  const meta = parseAppDbMeta(await env.secrets.get(appDbSecretName(slug)));
+  if (!meta) return null;
+  return appDb.usage(slug, meta).catch((err: unknown) => {
+    console.warn("App database usage read failed", { slug, error: String(err) });
+    return null;
+  });
 }
 
 /** Provision + persist credentials. Idempotent. */

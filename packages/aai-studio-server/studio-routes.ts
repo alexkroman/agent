@@ -67,8 +67,9 @@ import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { registerAccountRoutes } from "./studio-account-routes.ts";
 import { requestPublicOrigin, type StudioHonoEnv } from "./studio-context.ts";
-import { databaseDeployHook, registerDatabaseRoutes } from "./studio-database-routes.ts";
+import { registerDatabaseRoutes } from "./studio-database-routes.ts";
 import { deployStudioProject } from "./studio-deploy.ts";
+import { createAfterDeploy } from "./studio-deploy-hooks.ts";
 import { registerEventRoutes } from "./studio-events-routes.ts";
 import { studioLlmInfo } from "./studio-llm.ts";
 import { PREVIEW_WAKE_THROTTLE_MS, wakeProjectPreview } from "./studio-preview.ts";
@@ -83,6 +84,7 @@ import {
   SyncSourceSchema,
 } from "./studio-schemas.ts";
 import { registerSecretRoutes } from "./studio-secret-routes.ts";
+import { deleteProjectSecrets } from "./studio-secrets.ts";
 import { createStudioSessionBroker, type StudioSessionBroker } from "./studio-session-broker.ts";
 import type { StudioSessionRegistry } from "./studio-session-registry.ts";
 import { onSettledEdit, previewOrigin } from "./studio-settled-edit.ts";
@@ -158,7 +160,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     // the process. The workspace/chat bindings below are read eagerly for the
     // same reason.
     const secrets = c.env.secrets;
-    const afterDeploy = databaseDeployHook(c);
+    const afterDeploy = createAfterDeploy(c);
     broker ??= (options.broker ?? createStudioSessionBroker)({
       workspaces: c.env.workspaces,
       chats: c.env.chats,
@@ -166,7 +168,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
       ...(options.replicaId && { replicaId: options.replicaId }),
       ...(options.previewQueue && { previewQueue: options.previewQueue }),
       // Runs after any successful deploy, on both paths — see
-      // studio-database.ts.
+      // studio-deploy-hooks.ts.
       afterDeploy,
       // A preview job redelivered here may have been enqueued by a replica
       // that is gone, so the drain resolves the user's key from Vault rather
@@ -293,6 +295,9 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     await Promise.all([
       deleteWorkspace(c.env.workspaces, scope, project),
       c.env.chats.deleteChat(scope, project),
+      // A project name can be taken again, so a surviving secret record
+      // would hand the next project a dead one's provider keys.
+      deleteProjectSecrets(c.env, scope, project),
     ]);
     return c.json({ ok: true });
   });
@@ -421,7 +426,9 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   // (production and preview). See studio-database.ts for why intent is
   // stamped on the workspace rather than provisioned for unclaimed slugs.
   registerDatabaseRoutes(studio, ensureBroker);
-  registerSecretRoutes(studio);
+  // Secrets are a project switch too: the broker is here so a saved secret
+  // redeploys the preview that has to carry it (studio-secrets.ts).
+  registerSecretRoutes(studio, ensureBroker);
 
   // Boot (or refresh) the project's coding-agent sandbox and return its
   // public chat URL — the browser talks to the sandbox directly from here

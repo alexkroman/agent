@@ -27,11 +27,24 @@ segmented control switches between — `preview.tsx`, `code-view.tsx`,
   width. Nothing on the pane gates on a build or a deploy: Delete project
   has to work before anything has ever been published, so Settings is
   reachable whenever a project is open.
-- **Secrets have their own section; storage has none.** Deployed-agent
-  secrets are managed in the Settings pane's Secrets card, which talks to
-  the platform's own `/:slug/secret` routes — the exact ones `aai secret`
-  uses — and posts a note into the chat on every change (key names only,
-  values withheld) so the coding agent knows which keys exist.
+- **Secrets have their own section; storage has none.** Agent secrets are
+  managed in the Settings pane's Secrets card, which talks to the project
+  route (`/studio/projects/:project/secret`) and posts a note into the chat on
+  every change (key names only, values withheld) so the coding agent knows
+  which keys exist.
+
+  **The card is UNGATED — no publish first.** It used to render "Publish the
+  project first" until `deployedSlug` existed, which asks for the one order
+  that cannot work: an agent needs its provider key to run at all, so the
+  sequence was ship it broken, attach the key, ship again. And production is
+  not even the environment that needs the key first — the preview agent is
+  auto-deployed by the first edit and is the one the user is about to talk
+  to. The server holds the project's own copy and reconciles it into each
+  slug as a deploy claims one (`aai-studio-server/studio-secrets.ts`), so a
+  save before anything is deployed is durable rather than a write reaching
+  nobody. A name no deployed agent carries yet is labelled **"on next
+  deploy"** from the response's `pending` list — a bare list would report a
+  saved-but-undelivered key as live everywhere.
   **`ASSEMBLYAI_API_KEY` is platform-managed and the pane neither lists,
   deletes, nor sets it** (`PLATFORM_MANAGED_SECRETS` in `settings.tsx`): it
   is seeded at publish from the caller's own account key, so it is not a
@@ -74,6 +87,20 @@ segmented control switches between — `preview.tsx`, `code-view.tsx`,
   - **An already-provisioned slug is never re-provisioned**: `provision`
     rotates the role's password on every call, so re-running it would
     invalidate the `DATABASE_URL` a live sandbox is holding.
+  - **Each row reports what its schema HOLDS** — tables, rows, bytes, read
+    live per environment (`appDatabaseUsage` → `storageUsage` → the state's
+    `usage`). "Ready" answers whether the switch took effect and is not the
+    question anyone has: the one worth answering is whether a tool is really
+    saving anything, which is invisible until you can see a row count move.
+    Hence the **Refresh counts** button — the numbers are as old as the
+    card's last fetch, which is stale exactly when it matters. Three
+    distinctions the copy holds: an enabled schema with no tables reads
+    "no tables yet" rather than "Ready"; a measurement that FAILED leaves
+    `usage` absent and falls back to "Ready", because reporting 0 rows for a
+    schema nobody could read is the precise lie this exists to catch; and the
+    counts are exact `count(*)`, never `reltuples` (the planner's estimate is
+    `-1` before the first ANALYZE and stale after every write, so it reads
+    zero for the row you just wrote).
   - Ownership of each slug is checked against the agents row's credential
     hashes (`verifySlugOwner`), exactly as the project-delete cascade does —
     a workspace naming a foreign slug must not become a lever on, or an
@@ -170,6 +197,23 @@ segmented control switches between — `preview.tsx`, `code-view.tsx`,
   — a new deploy still reaches the frame through the `previewVersion` key.
   The first probe renders as an empty pane rather than the screen, so an
   already-deployed preview doesn't flash "starting" on every open.
+
+  **A BUILD IN FLIGHT takes the whole pane, first build and rebuild alike**
+  (`building` in `preview.tsx` — `previewStale && hasAgent && !previewError`).
+  A rebuild used to leave the previous preview framed under a one-line
+  "Updating preview…" banner, which is a page that does not match the code
+  with a banner over it saying so; that row is gone and the "Starting your
+  preview" screen answers both cases. It costs nothing to unmount the frame:
+  the landing deploy remounts it through the `previewVersion` key anyway, so
+  no voice session survives a rebuild either way. Two conditions carry the
+  distinctions the flag alone would get wrong. `hasAgent` (the workspace has
+  an `agent.ts`) is needed because "no preview yet" IS stale server-side, so
+  an untouched project would otherwise claim a build was on its way instead
+  of "Nothing to preview yet". And `previewError` EXCLUDES a failed build:
+  `previewStale` stays true after one — the files still differ from the last
+  good deploy — so treating it as in-flight parks the pane on "Starting your
+  preview" permanently, and that case keeps the last good preview framed
+  under the error banner, which is what the banner's own copy promises.
 
   **Polling is not a recovery, and treating it as one stranded the pane for
   fifty minutes.** The server's fix for a swept preview (`wakeProjectPreview`)

@@ -1,19 +1,26 @@
 // Copyright 2026 the AAI authors. MIT license.
 // A project is two deployed agents, and a secret has to reach both — the
 // property that used to live in the browser, so every other caller wrote to
-// production alone.
+// production alone. It also has to reach the agents it does not have YET: the
+// panel is usable from the moment a project exists, so the project holds its
+// own record and each deploy claims what it is owed.
 import { localSlugLock } from "aai-server/platform-lock";
+import { createMemorySecretStore, type SecretStore } from "aai-server/secret-store";
 import { hashApiKey } from "aai-server/secrets";
 import type { BundleStore } from "aai-server/store-types";
 import { createTestStore } from "aai-server/test-utils";
 import { createMemoryWorkspaceStore, type WorkspaceStore } from "aai-server/workspace-store";
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
   deleteProjectSecret,
+  deleteProjectSecrets,
   type ProjectSecretsEnv,
+  projectEnvSecretName,
   projectSecretsState,
+  reconcileProjectSecrets,
   setProjectSecrets,
 } from "./studio-secrets.ts";
+import { getWorkspace } from "./studio-workspace.ts";
 
 const SCOPE = "scope-1";
 const PROJECT = "demo";
@@ -23,6 +30,7 @@ const OTHER_KEY = "someone-else";
 let env: ProjectSecretsEnv;
 let store: BundleStore;
 let workspaces: WorkspaceStore;
+let secrets: SecretStore;
 
 /** Claim a slug for `apiKey`, so ownership checks pass for it. */
 async function deployAgent(slug: string, apiKey = KEY): Promise<void> {
@@ -44,10 +52,15 @@ async function writeWorkspace(doc: Record<string, unknown>): Promise<void> {
 beforeEach(async () => {
   store = createTestStore();
   workspaces = createMemoryWorkspaceStore();
-  env = { store, workspaces, slugLock: localSlugLock };
+  secrets = createMemorySecretStore();
+  env = { store, workspaces, secrets, slugLock: localSlugLock };
   await deployAgent(PROJECT);
   await deployAgent(`${PROJECT}-preview`);
-  await writeWorkspace({ deployedSlug: PROJECT, previewSlug: `${PROJECT}-preview` });
+  await writeWorkspace({
+    deployedSlug: PROJECT,
+    previewSlug: `${PROJECT}-preview`,
+    previewHash: "h",
+  });
 });
 
 const params = { scope: SCOPE, project: PROJECT, apiKey: KEY };
@@ -91,6 +104,16 @@ describe("setProjectSecrets", () => {
     expect(state).toBeNull();
   });
 
+  test("redeploys the preview, since a secret reaches an agent when it is BUILT", async () => {
+    const schedulePreview = vi.fn();
+    await setProjectSecrets(env, { ...params, updates: { A: "1" }, schedulePreview });
+    expect(schedulePreview).toHaveBeenCalledTimes(1);
+    // Clearing the stamp is what makes the deploy run at all — it no-ops on a
+    // matching files hash.
+    const workspace = await getWorkspace(workspaces, SCOPE, PROJECT);
+    expect(workspace?.previewHash).toBeUndefined();
+  });
+
   test("skips a slug the caller does not own", async () => {
     // A workspace naming a foreign slug must not become a lever on someone
     // else's agent — the rule the delete cascade and the database switch
@@ -124,7 +147,84 @@ describe("projectSecretsState", () => {
   });
 });
 
+/**
+ * The panel is reachable from the moment a project exists, and an agent needs
+ * its provider key to run at all — so a save before anything is deployed has
+ * to be durable, not a write that reaches no one.
+ */
+describe("a project with nothing deployed", () => {
+  beforeEach(async () => {
+    await writeWorkspace({});
+  });
+
+  test("saves the secret and reports it, with no agent to write to", async () => {
+    const state = await setProjectSecrets(env, { ...params, updates: { OPENAI_API_KEY: "sk-1" } });
+    expect(state?.vars).toEqual(["OPENAI_API_KEY"]);
+    // Every environment is waiting on a deploy, and the panel says so.
+    expect(state?.pending).toEqual(["OPENAI_API_KEY"]);
+    expect(state?.environments.every((e) => e.slug === undefined)).toBe(true);
+  });
+
+  test("the first deploy of either environment picks it up", async () => {
+    await setProjectSecrets(env, { ...params, updates: { OPENAI_API_KEY: "sk-1" } });
+    // What a deploy does: claim the slug, then run the post-deploy hook.
+    await writeWorkspace({ previewSlug: `${PROJECT}-preview` });
+    await reconcileProjectSecrets(env, {
+      scope: SCOPE,
+      project: PROJECT,
+      slug: `${PROJECT}-preview`,
+    });
+    expect(await store.getEnv(`${PROJECT}-preview`)).toEqual({ OPENAI_API_KEY: "sk-1" });
+    expect((await projectSecretsState(env, params))?.pending).toEqual(["OPENAI_API_KEY"]);
+  });
+
+  test("nothing is left behind once both environments carry it", async () => {
+    await setProjectSecrets(env, { ...params, updates: { A: "1" } });
+    await writeWorkspace({ deployedSlug: PROJECT, previewSlug: `${PROJECT}-preview` });
+    for (const slug of [PROJECT, `${PROJECT}-preview`]) {
+      await reconcileProjectSecrets(env, { scope: SCOPE, project: PROJECT, slug });
+    }
+    expect((await projectSecretsState(env, params))?.pending).toEqual([]);
+  });
+});
+
+describe("reconcileProjectSecrets", () => {
+  test("never overrides a value the slug already carries", async () => {
+    // `aai secret put` against one slug must not be reinstated to the
+    // studio's value by the next unrelated deploy.
+    await setProjectSecrets(env, { ...params, updates: { A: "studio" } });
+    await store.putEnv(PROJECT, { A: "cli-set-later" });
+    await reconcileProjectSecrets(env, { scope: SCOPE, project: PROJECT, slug: PROJECT });
+    expect(await store.getEnv(PROJECT)).toEqual({ A: "cli-set-later" });
+  });
+
+  test("a project holding nothing writes nothing", async () => {
+    await store.putEnv(PROJECT, { EXISTING: "1" });
+    await reconcileProjectSecrets(env, { scope: SCOPE, project: PROJECT, slug: PROJECT });
+    expect(await store.getEnv(PROJECT)).toEqual({ EXISTING: "1" });
+  });
+});
+
+describe("deleteProjectSecrets", () => {
+  test("a deleted project takes its record with it", async () => {
+    // A project name can be claimed again — the next one must not inherit a
+    // dead project's provider keys.
+    await setProjectSecrets(env, { ...params, updates: { A: "1" } });
+    await deleteProjectSecrets(env, SCOPE, PROJECT);
+    expect(await secrets.get(projectEnvSecretName(SCOPE, PROJECT))).toBeNull();
+  });
+});
+
 describe("deleteProjectSecret", () => {
+  test("drops the name from the project's own record too", async () => {
+    // Otherwise the next deploy of either agent puts it straight back.
+    await setProjectSecrets(env, { ...params, updates: { A: "1" } });
+    await deleteProjectSecret(env, { ...params, key: "A" });
+    await store.putEnv(PROJECT, {});
+    await reconcileProjectSecrets(env, { scope: SCOPE, project: PROJECT, slug: PROJECT });
+    expect(await store.getEnv(PROJECT)).toEqual({});
+  });
+
   test("drops the name from both agents", async () => {
     await setProjectSecrets(env, { ...params, updates: { A: "1", B: "2" } });
     await deleteProjectSecret(env, { ...params, key: "A" });

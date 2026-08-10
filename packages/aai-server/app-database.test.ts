@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
 import {
+  appDatabaseUsage,
   appDbConnectionUrl,
   appDbIdentifier,
   appDbUrlFor,
@@ -100,6 +101,41 @@ describe("deprovisionAppDatabase", () => {
       `drop schema if exists "${id}" cascade`,
       `drop role if exists "${id}"`,
     ]);
+  });
+});
+
+describe("appDatabaseUsage", () => {
+  test("counts tables, rows and bytes for the app's own schema only", async () => {
+    const { sql, calls } = captureSql(() => [{ tables: "2", rows: "17", bytes: "49152" }]);
+    expect(await appDatabaseUsage(sql, "my-agent")).toEqual({
+      tables: 2,
+      rows: 17,
+      bytes: 49_152,
+    });
+    // The schema is BOUND, never interpolated, and it is the derived
+    // identifier rather than the slug.
+    expect(calls[0]?.params).toEqual([appDbIdentifier("my-agent")]);
+    expect(calls[0]?.query).toContain("table_schema = $1");
+  });
+
+  test("counts exactly, rather than reading the planner's estimate", async () => {
+    // `reltuples` is -1 until the first ANALYZE and stale after every write,
+    // so it reads zero for exactly the row somebody just wrote — which is the
+    // question this exists to answer.
+    const { sql, calls } = captureSql(() => [{ tables: "0", rows: "0", bytes: "0" }]);
+    await appDatabaseUsage(sql, "my-agent");
+    expect(calls[0]?.query).toContain("count(*)");
+    expect(calls[0]?.query).not.toContain("reltuples");
+  });
+
+  test("an empty schema is zeroes, not a crash", async () => {
+    const { sql } = captureSql(() => [{ tables: "0", rows: null, bytes: null }]);
+    expect(await appDatabaseUsage(sql, "my-agent")).toEqual({ tables: 0, rows: 0, bytes: 0 });
+  });
+
+  test("a row that answers nothing degrades to zeroes rather than NaN", async () => {
+    const { sql } = captureSql(() => []);
+    expect(await appDatabaseUsage(sql, "my-agent")).toEqual({ tables: 0, rows: 0, bytes: 0 });
   });
 });
 

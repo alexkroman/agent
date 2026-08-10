@@ -117,6 +117,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   const conn: ConnState = {
     ws: null,
     retiredByServer: false,
+    fatalError: false,
     voiceIO: null,
     audioSetupInFlight: false,
     generation: createEpoch(),
@@ -295,8 +296,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     teardownConnection();
     conn.generation.bump();
     // A fresh connect is the user asking for a session again — clear the
-    // previous one's idle retirement so THIS socket can auto-reconnect
-    // normally.
+    // previous one's idle retirement so THIS socket can auto-reconnect.
     conn.retiredByServer = false;
     const controller = new AbortController();
     connectionController = controller;

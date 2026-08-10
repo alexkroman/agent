@@ -139,6 +139,56 @@ function scrubSecret(failure: unknown, secret: string): unknown {
   return failure;
 }
 
+/** What one app's schema holds right now. */
+export type AppDbUsage = {
+  tables: number;
+  /** Summed across every table in the schema. */
+  rows: number;
+  /** Bytes, including indexes and TOAST (`pg_total_relation_size`). */
+  bytes: number;
+};
+
+/**
+ * How much is actually in one app's database.
+ *
+ * **Row counts are EXACT, not `reltuples`.** The planner's estimate is the
+ * usual answer to "how big is this table", and it is the wrong one here: it
+ * is `-1` until the first `ANALYZE` and stale after every write until
+ * autovacuum catches up — so a freshly written row reads as zero, which is
+ * precisely the question this exists to answer ("is my agent saving
+ * anything?"). Counting is affordable because these are per-agent schemas
+ * holding a tool's state, and the count is bounded regardless: it runs on the
+ * platform's admin connection with a statement timeout, and a schema is
+ * skipped rather than failing the read (see the caller).
+ *
+ * One statement rather than one per table: `query_to_xml` runs the count for
+ * each table inside the same round trip, which is the standard trick for
+ * exact counts across a schema and keeps this off the N+1 path.
+ */
+export async function appDatabaseUsage(sql: SqlExec, slug: string): Promise<AppDbUsage> {
+  const id = assertIdentifier(appDbIdentifier(slug));
+  const rows = await sql(
+    `select
+       count(*)::int8 as tables,
+       coalesce(sum((xpath('/row/c/text()',
+         query_to_xml(format('select count(*) as c from %I.%I', table_schema, table_name),
+                      false, true, '')))[1]::text::int8), 0) as rows,
+       coalesce(sum(pg_total_relation_size(format('%I.%I', table_schema, table_name)::regclass)), 0)
+         as bytes
+     from information_schema.tables
+     where table_schema = $1 and table_type = 'BASE TABLE'`,
+    [id],
+  );
+  const row = rows[0] ?? {};
+  // Postgres returns int8 as a string in most drivers; Number is safe at
+  // these magnitudes and a NaN would be a lie, so it degrades to 0.
+  const num = (value: unknown): number => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  };
+  return { tables: num(row.tables), rows: num(row.rows), bytes: num(row.bytes) };
+}
+
 /** Drop one app's schema (with all its data) and its role. Idempotent. */
 export async function deprovisionAppDatabase(sql: SqlExec, slug: string): Promise<void> {
   const id = assertIdentifier(appDbIdentifier(slug));
@@ -207,6 +257,11 @@ export type AppDatabases = {
    * cluster the app lives on) — delivered to the guest as `DATABASE_URL`.
    */
   connectionUrl(meta: AppDbMeta): string;
+  /**
+   * Tables / rows / bytes in the app's schema, on the cluster its own meta
+   * locates (never a recomputed placement — same rule as `deprovision`).
+   */
+  usage(slug: string, meta: AppDbMeta): Promise<AppDbUsage>;
 };
 
 /** One placement target: a cluster's admin URL plus an executor over it. */
@@ -254,6 +309,7 @@ export function createAppDatabases(opts: {
       if (failure !== undefined) throw failure;
     },
     connectionUrl: (meta) => appDbUrlFor(meta, targetFor(meta.url).url),
+    usage: (slug, meta) => appDatabaseUsage(targetFor(meta.url).sql, slug),
   };
 }
 

@@ -54,6 +54,7 @@ describe("project database routes", () => {
       })),
       deprovision: vi.fn(async (_slug: string) => undefined),
       connectionUrl: () => "postgres://app@db/app",
+      usage: async () => ({ tables: 0, rows: 0, bytes: 0 }),
     };
   }
 
@@ -124,8 +125,18 @@ describe("project database routes", () => {
       enabled: true,
       configured: true,
       environments: [
-        { environment: "production", slug: "proj", enabled: true },
-        { environment: "preview", slug: "proj-preview", enabled: true },
+        {
+          environment: "production",
+          slug: "proj",
+          enabled: true,
+          usage: { tables: 0, rows: 0, bytes: 0 },
+        },
+        {
+          environment: "preview",
+          slug: "proj-preview",
+          enabled: true,
+          usage: { tables: 0, rows: 0, bytes: 0 },
+        },
       ],
     });
     expect(appDb.provision.mock.calls.map(([slug]) => slug)).toEqual(["proj", "proj-preview"]);

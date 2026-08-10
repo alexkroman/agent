@@ -447,6 +447,31 @@ voice agents without the CLI:
   `/:slug/secret` routes remain the platform primitive underneath, and the
   only surface for an agent belonging to no project.
 
+  **And the project holds its OWN copy, so a secret can be saved before
+  anything is deployed.** Writing only to the slugs that exist made the panel
+  need a Publish first, which forces the one order that cannot work — an
+  agent needs its provider key to RUN, so "deploy it broken, attach the key,
+  deploy again" was the shortest path to a working agent. It is also not
+  production that needs the key first: the preview agent is auto-deployed by
+  the first edit and is the one the user is about to talk to. So the shape is
+  the database switch's: a record of INTENT (`studio-project-env:<scope>:
+  <project>` in the same Vault that holds every `agent-env:<slug>`, since
+  these are values and the workspace doc is streamed wholesale to every open
+  tab), written FIRST in both directions so a deploy racing the write cannot
+  miss an update or undo a delete, and `reconcileProjectSecrets` applying it
+  to each slug as a deploy claims it — composed with the database's hook into
+  the broker's one `afterDeploy` (`studio-deploy-hooks.ts`).
+
+  Three properties. The record is a **FLOOR, never an override**: a name the
+  slug already carries is left alone, or every deploy would silently
+  reinstate the studio's value over one set with `aai secret put`. A mutation
+  **redeploys the preview** (clear `previewHash`, schedule — the
+  `setProjectDatabase` pattern), because a stored secret only reaches an
+  agent's env when its sandbox is BUILT; production waits for a Publish. And
+  the project DELETE cascade drops the record — a project name can be taken
+  again, and a survivor would hand the next project a dead one's provider
+  keys.
+
   **Two things wake a project's preview, and it needs both**
   (`wakeProjectPreview` in studio-preview.ts). Landing on the project — the
   once-per-open session broker call — warms the embedded agent's sandbox

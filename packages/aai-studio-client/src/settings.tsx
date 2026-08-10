@@ -5,14 +5,15 @@
 // (secrets, the CLI round-trip, delete) never fit that, so it is laid out as
 // a real page instead.
 //
-// Its main section is deployed-agent secrets — its own UI, not part of
-// Publish. Talks to the platform's own `/:slug/secret` routes (the exact
-// ones `aai secret` uses), so it needs a published slug to attach secrets
-// to. Every change posts a note into the chat (values withheld) so the
-// coding agent knows which keys exist without ever seeing them. Below it sit
-// the project-scoped sections that work without a publish: the Database
-// switch (database-card.tsx), the CLI pull commands (cli-commands.tsx), and
-// the delete-project button.
+// Its main section is agent secrets — its own UI, not part of Publish, and
+// like every other section here it works from the moment a project exists.
+// The project holds its own copy of them (studio-secrets.ts), so a key can be
+// saved before anything is deployed and lands in each agent as its deploy
+// claims a slug; the preview redeploys on its own so the environment the user
+// is looking at picks the key up. Every change posts a note into the chat
+// (values withheld) so the coding agent knows which keys exist without ever
+// seeing them. Below it sit the Database switch (database-card.tsx), the CLI
+// pull commands (cli-commands.tsx), and the delete-project button.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -40,8 +41,6 @@ type SettingsPaneProps = {
   bearer: string;
   /** The open project's name — the target of the Delete project button. */
   project: string;
-  /** The project's published slug; undefined until the first publish. */
-  slug: string | undefined;
   /** Post a note into the chat so the coding agent knows what changed. */
   onNotifyChat: (text: string) => void;
   /** Delete the project (workspace + chat). The app navigates home after. */
@@ -52,7 +51,6 @@ type SettingsPaneProps = {
 export function SettingsPane({
   bearer,
   project,
-  slug,
   onNotifyChat,
   onDeleteProject,
   deleting,
@@ -62,15 +60,14 @@ export function SettingsPane({
   /** Managed key names the last save refused (see PLATFORM_MANAGED_SECRETS). */
   const [rejected, setRejected] = useState<string[]>([]);
 
-  // Keyed by PROJECT: one secret set spans both of its deployed agents, and
-  // the server writes both (studio-secrets.ts). Still gated on a published
-  // slug — a project that has deployed nothing has no agent to carry a
-  // secret, so the panel keeps its publish-first gate rather than accepting
-  // a write that would reach no one.
+  // Keyed by PROJECT: one secret set spans both of its deployed agents plus
+  // the project's own record, and the server writes all of them
+  // (studio-secrets.ts). Ungated — an agent needs its provider key to run at
+  // all, so requiring a publish first put the one order that cannot work
+  // (ship it broken, attach the key, ship again) in front of every project.
   const secrets = useQuery({
     queryKey: queryKeys.secrets(project),
     queryFn: () => api.listSecrets(bearer, project),
-    enabled: slug != null,
   });
 
   const invalidate = () => {
@@ -84,9 +81,9 @@ export function SettingsPane({
       setDraft("");
       const names = Object.keys(updates);
       onNotifyChat(
-        `I set the secret${names.length > 1 ? "s" : ""} ${names.join(", ")} on the ` +
-          "deployed agent from the Secrets panel (values hidden). They are available " +
-          "to the published agent as environment variables via ctx.env.",
+        `I set the secret${names.length > 1 ? "s" : ""} ${names.join(", ")} on this ` +
+          "project from the Secrets panel (values hidden). They are available to both " +
+          "the preview and production agents as environment variables via ctx.env.",
       );
     },
   });
@@ -95,7 +92,7 @@ export function SettingsPane({
     mutationFn: (name: string) => api.deleteSecret(bearer, project, name),
     onSuccess: (_data, name) => {
       invalidate();
-      onNotifyChat(`I deleted the secret ${name} from the deployed agent via the Secrets panel.`);
+      onNotifyChat(`I deleted the secret ${name} from this project via the Secrets panel.`);
     },
   });
 
@@ -116,7 +113,10 @@ export function SettingsPane({
   const message = errorText(secrets.error ?? save.error ?? remove.error);
   // Platform-managed keys are filtered out of the list, which is also what
   // withholds their Delete button — there is no row to hang one on.
-  const names = (secrets.data ?? []).filter((name) => !PLATFORM_MANAGED_SECRETS.includes(name));
+  const names = (secrets.data?.vars ?? []).filter(
+    (name) => !PLATFORM_MANAGED_SECRETS.includes(name),
+  );
+  const pending = secrets.data?.pending ?? [];
 
   return (
     // min-w-0 keeps the page from stretching the flex row sideways, exactly
@@ -133,64 +133,63 @@ export function SettingsPane({
         <Card
           title="Secrets"
           blurb={
-            slug ? (
-              <>
-                Third-party keys for the deployed agent, readable as{" "}
-                <code className="font-mono">ctx.env</code> — one{" "}
-                <code className="font-mono">KEY=value</code> per line.{" "}
-                <code className="font-mono">ASSEMBLYAI_API_KEY</code> is set and managed for you at
-                publish, so it is not listed here.
-              </>
-            ) : (
-              "Publish the project first — secrets attach to the deployed agent."
-            )
+            <>
+              Third-party keys for your agent, readable as{" "}
+              <code className="font-mono">ctx.env</code> — one{" "}
+              <code className="font-mono">KEY=value</code> per line. They reach both the preview and
+              production agents; the preview redeploys with them right away, production when you
+              publish. <code className="font-mono">ASSEMBLYAI_API_KEY</code> is set and managed for
+              you, so it is not listed here.
+            </>
           }
         >
-          {slug && (
-            <>
-              {names.length > 0 && (
-                <ul className="m-0 flex list-none flex-col overflow-hidden rounded-md border border-line p-0">
-                  {names.map((name) => (
-                    <li
-                      key={name}
-                      className="flex items-center gap-3 border-b border-line bg-cream px-3 py-2 last:border-b-0"
-                    >
-                      <code className="min-w-0 flex-1 truncate font-mono text-xs">{name}</code>
-                      <span className="font-mono text-[11px] text-subtle" aria-hidden>
-                        ••••••••
-                      </span>
-                      <button
-                        type="button"
-                        className="btn px-2 py-1 text-xs"
-                        onClick={() => remove.mutate(name)}
-                        disabled={remove.isPending}
-                      >
-                        Delete
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <textarea
-                className="field h-28 resize-y py-2 font-mono text-xs"
-                value={draft}
-                onChange={(e) => {
-                  setDraft(e.target.value);
-                  setRejected([]);
-                }}
-                placeholder="OPENAI_API_KEY=..."
-                spellCheck={false}
-              />
-              <button
-                type="button"
-                className="btn btn-primary self-start"
-                onClick={onSave}
-                disabled={save.isPending}
-              >
-                {save.isPending ? "Saving…" : "Save secrets"}
-              </button>
-            </>
+          {names.length > 0 && (
+            <ul className="m-0 flex list-none flex-col overflow-hidden rounded-md border border-line p-0">
+              {names.map((name) => (
+                <li
+                  key={name}
+                  className="flex items-center gap-3 border-b border-line bg-cream px-3 py-2 last:border-b-0"
+                >
+                  <code className="min-w-0 flex-1 truncate font-mono text-xs">{name}</code>
+                  {/* Saved, but not on every agent yet — the honest state for
+                      a project that hasn't published, and the one a bare list
+                      would misreport as live everywhere. */}
+                  {pending.includes(name) && (
+                    <span className="text-[11px] text-muted">on next deploy</span>
+                  )}
+                  <span className="font-mono text-[11px] text-subtle" aria-hidden>
+                    ••••••••
+                  </span>
+                  <button
+                    type="button"
+                    className="btn px-2 py-1 text-xs"
+                    onClick={() => remove.mutate(name)}
+                    disabled={remove.isPending}
+                  >
+                    Delete
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
+          <textarea
+            className="field h-28 resize-y py-2 font-mono text-xs"
+            value={draft}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              setRejected([]);
+            }}
+            placeholder="OPENAI_API_KEY=..."
+            spellCheck={false}
+          />
+          <button
+            type="button"
+            className="btn btn-primary self-start"
+            onClick={onSave}
+            disabled={save.isPending}
+          >
+            {save.isPending ? "Saving…" : "Save secrets"}
+          </button>
           {rejected.length > 0 && (
             <p className="m-0 text-xs text-err">
               {rejected.join(", ")} {rejected.length > 1 ? "are" : "is"} managed for you and can't

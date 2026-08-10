@@ -87,34 +87,84 @@ describe("PreviewPane", () => {
     await waitFor(() => expect(frame(container).getAttribute("src")).toBe("/legacy/"));
   });
 
-  test("stale preview shows the updating banner", async () => {
+  test("a rebuild takes the whole pane, not a banner over a stale frame", async () => {
     stubHealth(["p-preview"]);
-    render(
+    const { container } = render(
       <PreviewPane
         previewSlug="p-preview"
         previewVersion="h1"
         previewStale={true}
+        hasAgent={true}
         nonce={0}
         onPublish={noop}
       />,
     );
-    await waitFor(() => expect(screen.getByText("Updating preview…")).toBeDefined());
+    await waitFor(() => expect(screen.getByText("Starting your preview")).toBeDefined());
+    expect(container.querySelector("iframe")).toBeNull();
+    expect(screen.queryByText("Updating preview…")).toBeNull();
   });
 
-  test("a failed preview build surfaces its CLI output", async () => {
+  test("the FIRST build shows the same screen, before any preview slug exists", async () => {
+    // The stale flag is true before the first preview deploy lands, so the
+    // pane can say the build is on its way rather than "nothing to preview".
+    stubHealth([]);
+    render(<PreviewPane previewStale={true} hasAgent={true} nonce={0} onPublish={noop} />);
+    await waitFor(() => expect(screen.getByText("Starting your preview")).toBeDefined());
+  });
+
+  test("an untouched project still reads as empty, not as a build in flight", () => {
+    // "No preview yet" IS stale server-side — without an agent to build,
+    // that must not read as a deploy on the way.
+    stubHealth([]);
+    render(<PreviewPane previewStale={true} nonce={0} onPublish={noop} />);
+    expect(screen.getByText("Nothing to preview yet")).toBeDefined();
+  });
+
+  test("the frame comes back when the rebuild lands", async () => {
+    stubHealth(["p-preview"]);
+    const { container, rerender } = render(
+      <PreviewPane
+        previewSlug="p-preview"
+        previewVersion="h1"
+        previewStale={true}
+        hasAgent={true}
+        nonce={0}
+        onPublish={noop}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("Starting your preview")).toBeDefined());
+    rerender(
+      <PreviewPane
+        previewSlug="p-preview"
+        previewVersion="h2"
+        previewStale={false}
+        hasAgent={true}
+        nonce={0}
+        onPublish={noop}
+      />,
+    );
+    await waitFor(() => expect(frame(container).getAttribute("src")).toBe("/p-preview/"));
+  });
+
+  test("a failed preview build surfaces its CLI output over the last good preview", async () => {
+    // A failure leaves the workspace stale forever — if that read as a build
+    // in flight the pane would sit on "Starting your preview" for good.
     stubHealth(["p-preview"]);
     const cliOutput = "Build failed:\nagent.ts:1: oops";
-    render(
+    const { container } = render(
       <PreviewPane
         previewSlug="p-preview"
         previewError={cliOutput}
         previewStale={true}
+        hasAgent={true}
         nonce={0}
         onPublish={noop}
       />,
     );
     await waitFor(() => expect(screen.getByText(/preview build failed/i)).toBeDefined());
     expect(screen.getByText(/agent\.ts:1: oops/)).toBeDefined();
+    await waitFor(() => expect(container.querySelector("iframe")).not.toBeNull());
+    expect(screen.queryByText("Starting your preview")).toBeNull();
   });
 
   test("current preview with unpublished production offers Publish", async () => {
@@ -147,9 +197,6 @@ describe("PreviewPane readiness probe", () => {
     );
     await waitFor(() => expect(screen.getByText("Starting your preview")).toBeDefined());
     expect(container.querySelector("iframe")).toBeNull();
-    // The deploy-state banner still applies — it describes the deploy, not
-    // the frame.
-    expect(screen.getByText("Updating preview…")).toBeDefined();
   });
 
   test("the frame appears once the deploy lands, without an edit or a reload", async () => {

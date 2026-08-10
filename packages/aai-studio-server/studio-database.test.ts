@@ -43,6 +43,7 @@ function fakeAppDb(): AppDatabases & {
     ),
     deprovision: vi.fn(async () => undefined),
     connectionUrl: () => "postgres://app@db/app",
+    usage: async () => ({ tables: 0, rows: 0, bytes: 0 }),
   };
 }
 
@@ -108,8 +109,18 @@ describe("setProjectDatabase", () => {
     const state = await enable(h);
     expect(state?.enabled).toBe(true);
     expect(state?.environments).toEqual([
-      { environment: "production", slug: "demo", enabled: true },
-      { environment: "preview", slug: "demo-preview", enabled: true },
+      {
+        environment: "production",
+        slug: "demo",
+        enabled: true,
+        usage: { tables: 0, rows: 0, bytes: 0 },
+      },
+      {
+        environment: "preview",
+        slug: "demo-preview",
+        enabled: true,
+        usage: { tables: 0, rows: 0, bytes: 0 },
+      },
     ]);
     expect(h.env.appDb.provision.mock.calls.map(([slug]) => slug)).toEqual([
       "demo",
@@ -211,7 +222,12 @@ describe("setProjectDatabase", () => {
     // whether the real owner has one.
     expect(state?.environments).toEqual([
       { environment: "production", slug: "demo", enabled: false },
-      { environment: "preview", slug: "demo-preview", enabled: true },
+      {
+        environment: "preview",
+        slug: "demo-preview",
+        enabled: true,
+        usage: { tables: 0, rows: 0, bytes: 0 },
+      },
     ]);
   });
 
@@ -229,7 +245,12 @@ describe("setProjectDatabase", () => {
     const state = await enable(h);
     expect(state?.warning).toMatch(/preview/);
     expect(state?.environments).toEqual([
-      { environment: "production", slug: "demo", enabled: true },
+      {
+        environment: "production",
+        slug: "demo",
+        enabled: true,
+        usage: { tables: 0, rows: 0, bytes: 0 },
+      },
       { environment: "preview", slug: "demo-preview", enabled: false },
     ]);
   });
