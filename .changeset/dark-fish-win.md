@@ -14,4 +14,4 @@ Not yet wired, both platform-side: nothing wakes an idle-exited sandbox to serve
 
 **Migration:** `createToolContext` from `@alexkroman1/aai/testing` supplies `workflows` (rejecting by default, like `db` and `generate`), so tests built on it need no change. Code that still hand-builds a `ToolContext` must add the field. Consuming `ctx.workflows` needs no change.
 
-Also ships the `nightly-digest` template as a worked example.
+Also ships the `transcription-desk` template as the worked example — a voice front desk over AssemblyAI's async transcription API, where the workflow submits a job and then polls it with a durable `ctx.sleep` between polls, so a resumed run replays the polls it already made and issues exactly one new request. The scaffold guide documents `workflow()` too, so studio-authored agents can reach it.

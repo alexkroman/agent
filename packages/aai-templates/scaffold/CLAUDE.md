@@ -27,7 +27,9 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    `node_modules/@alexkroman1/aai-cli/dist/templates/`. Read them directly;
    `aai init --template <name>` scaffolds a fresh project from one. Closest
    matches: `simple`, `pipeline-simple`, `web-researcher`, `solo-rpg`,
-   `pizza-ordering`, `retail` (the most complex — 15 tools over a
+   `pizza-ordering`, `transcription-desk` (the reference for durable
+   workflows — a submit-then-poll job that outlives the call), `retail` (the
+   most complex — 15 tools over a
    relational store, with a `syncState`-driven UI). When reading SDK
    types under
    `node_modules/@alexkroman1/aai*/dist/`, note the built entry points
@@ -773,6 +775,98 @@ user profiles). For scratch that only the current session needs, prefer
 `ctx.state` (per-session mutable state — no storage required); the
 `remember`/`recall` builtins likewise remain for session-scoped notes the
 LLM manages itself.
+
+## Durable workflows — `workflow()`
+
+For work that takes longer than a turn — or longer than the call. A tool must
+answer the caller now (it is capped at 30 seconds and dies with the session); a
+workflow is journaled, so it survives the end of the call and the machine that
+started it.
+
+```ts
+import { agent, tool, workflow } from "@alexkroman1/aai";
+import { z } from "zod";
+
+const process = workflow({
+  description: "Fetch a report, summarize it, file it",
+  input: z.object({ url: z.string() }),
+  async run({ url }, ctx) {
+    // Each step runs ONCE per run: on a resume, a step that already succeeded
+    // returns its recorded result instead of running again.
+    const raw = await ctx.step("fetch", async () => (await fetch(url)).text());
+
+    // Durable: nothing is held open, and the run may resume on another machine.
+    await ctx.sleep(60_000);
+
+    const summary = await ctx.step("summarize", async () => {
+      const { text } = await ctx.generate({ prompt: `Summarize:\n${raw}` });
+      return text;
+    });
+    await ctx.step("save", () =>
+      ctx.db.query("insert into reports (url, summary) values ($1, $2)", [url, summary]),
+    );
+    return { url, length: summary.length };
+  },
+});
+
+export default agent({
+  name: "Desk",
+  workflows: { process },
+  tools: {
+    // The LLM cannot call a workflow directly — it calls a TOOL that starts one.
+    file_report: tool({
+      description: "Start processing a report. Returns a job id; does not wait.",
+      inputSchema: z.object({ url: z.string() }),
+      execute: async ({ url }, ctx) => {
+        const runId = await ctx.workflows.start("process", { url });
+        return { runId, status: "processing" };
+      },
+    }),
+    check_report: tool({
+      description: "Check on a report that is already processing.",
+      inputSchema: z.object({ runId: z.string() }),
+      execute: async ({ runId }, ctx) => {
+        const run = await ctx.workflows.get(runId);
+        if (!run) return { error: `No job with id ${runId}` };
+        if (run.status === "completed") return { status: "done", result: run.output };
+        if (run.status === "failed") return { status: "failed", reason: run.error };
+        return { status: run.status, stepsCompleted: run.stepsCompleted };
+      },
+    }),
+  },
+});
+```
+
+`ctx.workflows.start()` resolves as soon as the run is recorded, so the tool
+answers the turn immediately — tell the caller it is running and that they can
+hang up. Never offer to wait on the line.
+
+**Workflows require the database** (`aai storage enable`, or Settings →
+Database in the studio) — the journal that makes a run durable lives there. An
+agent that declares workflows without it still answers calls; `ctx.workflows`
+just rejects with a message saying so.
+
+Five rules, all of them things that bite later rather than at authoring time:
+
+- **A step must be safe to run twice.** If the process dies between your
+  function returning and the journal write, it runs again on resume. Keep steps
+  that touch the outside world as small as possible, and make writes idempotent
+  (`on conflict … do update`).
+- **The step SEQUENCE must be the same on every replay.** Branch on values that
+  came out of a step or out of the input — never on `Date.now()` or
+  `Math.random()` read directly in the workflow body. A name reused in a loop is
+  fine: each iteration journals its own entry.
+- **Return small, JSON-serializable values from a step.** They are stored and
+  read back on the next replay; never return a whole result set.
+- **Nothing after `ctx.sleep()` runs in the same pass.** The run unwinds there
+  and replays from the top when it is due, so treat the code after a sleep as
+  running in a later life of the run.
+- **Cap the work in one run at ~500 journal entries** (steps plus sleeps). A
+  polling loop is fine; an unbounded one is not. Fan out into separate runs
+  instead.
+
+Progress is `run.stepsCompleted` — enough to say "still going" honestly. Do not
+invent a percentage.
 
 ## Custom UI — `client()`
 

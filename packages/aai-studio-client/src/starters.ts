@@ -59,6 +59,10 @@ export const STARTERS: Starter[] = [
     label: "A late-night movie, music, and book picker",
     prompt: "Use the night-owl template.",
   },
+  {
+    label: "A desk that transcribes recordings after you hang up",
+    prompt: "Use the transcription-desk template.",
+  },
 ];
 
 /**
