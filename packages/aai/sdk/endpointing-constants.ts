@@ -221,3 +221,41 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
  * a slow turn slow.
  */
 export const DEFAULT_MAX_TURN_SILENCE_MS = 3500;
+
+/*
+ * CONFIDENCE-TRIGGERED ENDPOINTING WAS BUILT, MEASURED, AND REMOVED — do not
+ * rebuild it without new evidence, and read this first if you are tempted to
+ * trim the ceiling instead.
+ *
+ * The ceiling is content-blind, so an utterance that never reads as complete
+ * pays all of it. Measured 2026-08-09 against the live service on a raw v3
+ * socket (no SDK in the path), three runs per arm, spread < 0.15 s:
+ *
+ * | utterance | ceiling 3500 | ceiling 2000 |
+ * | --- | --- | --- |
+ * | "…the order ID is ABC123." | 22.9 s -> `A A, B, C, 1, 2, 3.` | 18.3 s -> `ABC123.` |
+ * | "Um, so like, uh… a desk. Something under $300…" | 23.9 s, whole utterance | 10.3 s -> `"…I'm looking for, um, for a new"` |
+ *
+ * So trimming the ceiling is NOT available: it buys 4.6 s on the identifier
+ * and truncates the hesitant caller before the product or the price — the
+ * same failure that reverted a 3000 ceiling above. Note also that the extra
+ * wait is not idle; the service spends it re-rendering `ABC123.` into a
+ * spelled-out form that acquires a spurious doubled "A", so the ceiling costs
+ * transcript quality on identifiers as well as time.
+ *
+ * The obvious escape is the service's own `ForceEndpoint` driven by
+ * `end_of_turn_confidence` — end the turn ourselves once the ramp is high and
+ * the transcript has stopped changing. It works, and it is not worth having:
+ * across 51 real disfluent utterances (two disjoint samples of FDB-v3 audio,
+ * 25 and 26) it fired on 3 of each, saving a median 0.8-1.3 s, with ZERO
+ * truncations. The reason it cannot do better is the signal, not the policy:
+ * **21 of 26 utterances never emit a single non-zero confidence partial**
+ * (peak-confidence distribution 0.0 x21, then 0.52, 0.52, 0.95, 0.97, 0.97).
+ * The service only ramps when a pause makes it dither; otherwise the check
+ * fires once and the final lands with no intermediate signal. Sweeping the
+ * threshold 0.4-0.9 offline against recorded traces changes nothing — the same
+ * 3 utterances fire at every level — and relaxing the two-sample plateau to one
+ * sample introduces real truncations at 0.5 and below. Ceiling of ~12% of
+ * turns and ~0.15 s per utterance averaged, which is below the noise of every
+ * benchmark here.
+ */
