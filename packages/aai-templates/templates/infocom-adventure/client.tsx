@@ -1,7 +1,6 @@
 import "@alexkroman1/aai-ui/styles.css";
 import type { ChatMessage } from "@alexkroman1/aai-ui";
-import { client, useSession } from "@alexkroman1/aai-ui";
-import { useEffect, useRef } from "react";
+import { AutoScroll, client, useSession } from "@alexkroman1/aai-ui";
 
 const CSS = `
 @keyframes ic-flicker {
@@ -55,17 +54,6 @@ const CYAN = "#00ccff";
 
 function InfocomAdventure() {
   const session = useSession();
-  const bottom = useRef<HTMLDivElement>(null);
-
-  // Bumps whenever a message lands or the live transcript changes, so the
-  // view follows the conversation instead of scrolling once on mount.
-  const contentVersion = session.messages.length + (session.userTranscript?.length ?? 0);
-  useEffect(() => {
-    // Never true — contentVersion only drives the dependency array, and this
-    // reference keeps the exhaustive-deps lint satisfied.
-    if (contentVersion < 0) return;
-    bottom.current?.scrollIntoView({ behavior: "smooth" });
-  }, [contentVersion]);
 
   const stateLabel =
     session.state === "listening"
@@ -184,8 +172,9 @@ function InfocomAdventure() {
           )}
 
           {/* Messages */}
-          <div
-            className="ic-messages flex-1 overflow-y-auto p-5"
+          <AutoScroll
+            scrollClassName="ic-messages overflow-y-auto"
+            contentClassName="p-5"
             style={{ scrollbarWidth: "thin", scrollbarColor: `${GREEN} #001a00` }}
           >
             {session.messages.map((msg: ChatMessage, i: number) => (
@@ -211,8 +200,7 @@ function InfocomAdventure() {
                 {session.userTranscript === "" ? "..." : session.userTranscript}
               </div>
             )}
-            <div ref={bottom} />
-          </div>
+          </AutoScroll>
 
           {/* Footer controls */}
           <div

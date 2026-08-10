@@ -1,6 +1,7 @@
 import type { ToolContext } from "@alexkroman1/aai";
+import { createToolContext } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
-import { getState } from "./shared.ts";
+import { dispatchSlot, type StateSlot } from "./shared.ts";
 import { incidentCreate } from "./tools/incident_create.ts";
 import { incidentEscalate } from "./tools/incident_escalate.ts";
 import { incidentTriage } from "./tools/incident_triage.ts";
@@ -8,19 +9,11 @@ import { incidentUpdateStatus } from "./tools/incident_update_status.ts";
 import { resourcesDispatch } from "./tools/resources_dispatch.ts";
 import { resourcesUpdateStatus } from "./tools/resources_update_status.ts";
 
-let sessionCounter = 0;
-
-/** ToolContext stub — the dispatch board lives in ctx.state, one per session. */
-function makeCtx(): { ctx: ToolContext } {
-  const sessionId = `test-session-${++sessionCounter}`;
-  const ctx = {
-    sessionId,
-    send: () => {},
-    env: {},
-    state: {},
-    messages: [],
-  } as unknown as ToolContext;
-  return { ctx };
+/** The dispatch board lives in ctx.state, one per session — and
+ *  `createToolContext` gives each call its own session id, so two contexts are
+ *  two boards by construction. */
+function makeCtx(): { ctx: ToolContext<StateSlot> } {
+  return { ctx: createToolContext<StateSlot>() };
 }
 
 async function createIncidentFor(
@@ -49,7 +42,7 @@ describe("dispatch-center template", () => {
     // Resolving the first incident must not touch Medic-1 anymore.
     await incidentUpdateStatus.execute({ incidentId: inc1, status: "resolved" }, ctx);
 
-    const state = getState(ctx);
+    const state = dispatchSlot.get(ctx);
     const medic1 = state.resources.find((r) => r.callsign === "Medic-1");
     expect(medic1?.status).toBe("dispatched");
     expect(medic1?.assignedIncident).toBe(inc2);
@@ -82,7 +75,7 @@ describe("dispatch-center template", () => {
       incidentCreate.execute({ location: "2 Second St", description: "vehicle crash" }, ctx),
     ])) as { incidentId: string }[];
 
-    const state = getState(ctx);
+    const state = dispatchSlot.get(ctx);
     expect(a?.incidentId).not.toBe(b?.incidentId);
     expect(state.incidentCounter).toBe(2);
     expect(Object.keys(state.incidents)).toHaveLength(2);
@@ -121,7 +114,7 @@ describe("dispatch-center template", () => {
       ctx,
     );
 
-    const state = getState(ctx);
+    const state = dispatchSlot.get(ctx);
     const mutualAid = state.resources.filter((r) => r.id.startsWith("MA-"));
     expect(mutualAid).toHaveLength(4);
     expect(new Set(mutualAid.map((r) => r.id)).size).toBe(4);

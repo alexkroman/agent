@@ -1,6 +1,6 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import { logEvent, RESOURCE_STATUSES, updateState } from "../shared.ts";
+import { dispatchSlot, logEvent, RESOURCE_STATUSES } from "../shared.ts";
 
 export const resourcesUpdateStatus = tool({
   description: "Update a resource unit's status when it radios in.",
@@ -10,7 +10,7 @@ export const resourcesUpdateStatus = tool({
     notes: z.string().max(1000).describe("Status notes").optional(),
   }),
   async execute(args, ctx) {
-    return updateState(ctx, (state) => {
+    return dispatchSlot.update(ctx, (state) => {
       const resource = state.resources.find(
         (r) => r.callsign.toLowerCase() === args.callsign.toLowerCase(),
       );

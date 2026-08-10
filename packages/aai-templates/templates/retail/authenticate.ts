@@ -1,5 +1,5 @@
+import type { ToolFailure } from "@alexkroman1/aai";
 import type { RetailState, User } from "./shared.ts";
-import type { ErrorResult } from "./store.ts";
 
 export interface AuthResult {
   user_id: string;
@@ -16,7 +16,7 @@ export interface AuthResult {
  * order you want. Re-running a finder for the SAME customer succeeds, because a
  * caller repeating their email should not hit an error.
  */
-export function authenticateAs(state: RetailState, user: User): AuthResult | ErrorResult {
+export function authenticateAs(state: RetailState, user: User): AuthResult | ToolFailure {
   const current = state.authenticatedUserId;
   if (current && current !== user.user_id) {
     return {

@@ -1,11 +1,11 @@
+import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { resolveOrder } from "../resolve.ts";
 import {
   authenticatedUser,
   findPaymentMethod,
-  getState,
-  isError,
   isGiftCard,
+  retailSlot,
   retailTool,
   setFocus,
 } from "../store.ts";
@@ -37,12 +37,12 @@ export const returnDeliveredOrderItems = retailTool({
   // source order — with `summary` first, `result` in its signature can't be
   // inferred and silently falls back to `unknown`.
   execute: (args, ctx) => {
-    const state = getState(ctx);
+    const state = retailSlot.get(ctx);
     const user = authenticatedUser(state);
-    if (isError(user)) return user;
+    if (isToolFailure(user)) return user;
 
     const order = resolveOrder(state, args.order_id);
-    if (isError(order)) return order;
+    if (isToolFailure(order)) return order;
     setFocus(state, { orderId: order.order_id });
 
     if (order.status !== "delivered") {
@@ -52,7 +52,7 @@ export const returnDeliveredOrderItems = retailTool({
     }
 
     const method = findPaymentMethod(user, args.payment_method_id);
-    if (isError(method)) return method;
+    if (isToolFailure(method)) return method;
 
     const originalMethodId = order.payment_history[0]?.payment_method_id;
     if (!isGiftCard(method) && args.payment_method_id !== originalMethodId) {

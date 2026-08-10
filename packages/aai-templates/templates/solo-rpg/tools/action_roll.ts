@@ -4,7 +4,7 @@ import {
   applyConsequences,
   canBurnMomentum,
   checkChaosInterrupt,
-  getGameState,
+  gameSlot,
   MOVE_LABELS,
   MOVES,
   RESULT_LABELS,
@@ -26,7 +26,7 @@ export const actionRoll = tool({
     targetNpcId: z.string().max(32).describe("Target NPC id for social moves").optional(),
   }),
   async execute(args, ctx) {
-    const state = getGameState(ctx);
+    const state = gameSlot.get(ctx);
     const statValue = state[args.stat];
     const roll = rollAction(args.stat, statValue, args.move);
 

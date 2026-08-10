@@ -47,9 +47,12 @@ model) is the security boundary.
 
 Subpath exports consumed by sibling packages and user agents:
 
-- `.` — `agent()`, `tool()` helpers, `Db`, types, utils, constants
-- `./utils` — zod-free utilities, `createKeyedLock`, platform slug contract
-  (fast CLI startup path)
+- `.` — `agent()`, `tool()` helpers, `sessionSlot()`, `Db`, types, utils,
+  constants
+- `./utils` — zod-free utilities, `createKeyedLock`, `isToolFailure`,
+  `pushCapped`, platform slug contract (fast CLI startup path)
+- `./testing` — `createToolContext()` / `createUnusedDb()` for testing a tool's
+  `execute`; published so a user's agent project can import it
 - `./runtime` — full Node.js runtime engine (barrel → 11 host/ modules)
 - `./protocol` — wire-format Zod schemas, `lenientParse()`, `ClientEvent`
 - `./manifest` — `toAgentConfig()`, `agentToolsToSchemas()`, config schemas
@@ -72,7 +75,8 @@ of subpath exports in `aai/package.json`:
 | Import path | Resolves to | What it contains |
 | --- | --- | --- |
 | `@alexkroman1/aai` | `packages/aai/index.ts` → 6 modules | Types, Db, utils, constants, `agent()`/`tool()` helpers |
-| `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | Zod-free utilities (`errorMessage`, `errorDetail`, …); `createKeyedLock`/`withLock` (`sdk/keyed-lock.ts`), the per-key serializer a stateful agent needs because the LLM loop runs a step's tool calls concurrently; and the two contracts BOTH ends of a platform interaction must derive identically: the slug shape (`VALID_SLUG_RE`, `RESERVED_SLUGS` from `sdk/slug.ts`) and the `aai login` confirmation code (`linkConfirmationCode` from `sdk/cli-link.ts` — the terminal prints it, the studio's approval gate shows it, and the point is that they match). Kept clear of zod so the CLI can load it on every invocation without paying that startup cost — `p-timeout` (2.4 KB, no dependencies), which backs the lock's acquire deadline, is the one exception and is measured against that rule rather than around it |
+| `@alexkroman1/aai/testing` | `sdk/testing.ts` (direct) | `createToolContext(overrides?)` — a full `ToolContext` for testing a tool's `execute` in isolation, with inert defaults, a recording `send` (`ctx.sent`), and a distinct `sessionId` per call — plus `createUnusedDb()`, the rejecting `db` it defaults to. PUBLISHED rather than an internal `_test-utils.ts` because the audience is an agent author's own project, which is also why it carries no vitest dependency (`send` records into an array; pass `vi.fn()` to override). See the `_test-utils.ts` section of the root guide |
+| `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | Zod-free utilities (`errorMessage`, `errorDetail`, …); `ToolFailure`/`isToolFailure` (the `{ error: string }` a tool returns for a recoverable failure, and the guard for a propagated one — NOT `toolError`, which returns the pre-serialized wire string, so `isToolFailure(toolError(m))` is false); `pushCapped` (append to a `ctx.state` list holding a cap, in place); `createKeyedLock`/`withLock` (`sdk/keyed-lock.ts`), the per-key serializer a stateful agent needs because the LLM loop runs a step's tool calls concurrently; and the two contracts BOTH ends of a platform interaction must derive identically: the slug shape (`VALID_SLUG_RE`, `RESERVED_SLUGS` from `sdk/slug.ts`) and the `aai login` confirmation code (`linkConfirmationCode` from `sdk/cli-link.ts` — the terminal prints it, the studio's approval gate shows it, and the point is that they match). Kept clear of zod so the CLI can load it on every invocation without paying that startup cost — `p-timeout` (2.4 KB, no dependencies), which backs the lock's acquire deadline, is the one exception and is measured against that rule rather than around it |
 | `@alexkroman1/aai/slugify` | `host/slugify.ts` (direct) | `slugifyName` — how a human name BECOMES a slug (transliterating, `decamelize: false`), for the CLI, the platform server, and the studio. Separate from the contract in `sdk/slug.ts` on purpose: that one is dependency-free and rides every agent bundle, this one pulls the transliteration tables. Nothing on the SDK hot path may import it |
 | `@alexkroman1/aai/runtime` | `host/runtime-barrel.ts` → 11 modules | Full Node.js runtime: session, S2S, server, tools, WS handler |
 | `@alexkroman1/aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `ClientEvent`, `ServerMessage` |
@@ -726,6 +730,25 @@ grace-window sweep (`session-state-sweeps.ts`) either way. `runtime.test.ts`
 pins both halves as one `test.each`, because the bug was invisible to the
 factory case and a template's own tests fake `ctx` with a persistent object,
 so nothing below the runtime can see it.
+
+**Reach for `sessionSlot()` rather than writing `ctx.state as StateSlot`**
+(`sdk/session-slot.ts`, root export). The `slot.x ??= …` helper named above is
+the shape every stateful template converged on, and the cast in it is not
+avoidable per-module: `tool()` learns the state type only from an annotated
+context (`ctx: ToolContext<S>`), so a tool in its own file cannot see the
+`state` factory's type — `retail` declares a factory and still cast. A slot puts
+the narrowing and the lazy install in one place: `slot.get(ctx)` returns the live
+object, `slot.set`/`slot.reset` replace it, `slot.read` and
+`slot.projection(fn)` are the `syncState` side, `slot.update(ctx, mutate)` is the
+per-session serialized mutation (with the slot's `after` hook for invariants
+every mutating tool would otherwise have to restore by hand), and
+`SlotStateOf<typeof slot>` is the state type. Declaring
+`state: () => ({ [slot.key]: slot.create() })` is still worth it — that is what
+makes the state exist before the first tool call, which
+`pushStateSnapshot` needs on resume — and composes with the slot rather than
+replacing it. See the root guide's concurrency-primitives entry for the two
+properties that are load-bearing (the factory must clone a shared default;
+`projection` hands the callback a real value, not the slot).
 
 ## Storage (`ctx.db`)
 

@@ -110,10 +110,13 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "errorDetail",
   "errorMessage",
   "isTextAssetPath",
+  "isToolFailure",
   "linkConfirmationCode",
   "normalizeSpeechText",
   "omitUndefined",
+  "pushCapped",
   "safeJsonParse",
+  "sessionSlot",
   "toArgsRecord",
   "tool",
   "toolError",
@@ -274,6 +277,13 @@ exports[`export surface stability > @alexkroman1/aai/stt export 1`] = `
 ]
 `;
 
+exports[`export surface stability > @alexkroman1/aai/testing export 1`] = `
+[
+  "createToolContext",
+  "createUnusedDb",
+]
+`;
+
 exports[`export surface stability > @alexkroman1/aai/tools export 1`] = `
 [
   "fetchJson",
@@ -314,9 +324,11 @@ exports[`export surface stability > @alexkroman1/aai/utils export 1`] = `
   "errorDetail",
   "errorMessage",
   "isTextAssetPath",
+  "isToolFailure",
   "linkConfirmationCode",
   "normalizeSpeechText",
   "omitUndefined",
+  "pushCapped",
   "safeJsonParse",
   "toArgsRecord",
   "toolError",

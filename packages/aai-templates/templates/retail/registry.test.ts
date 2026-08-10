@@ -1,7 +1,7 @@
-import type { ToolContext } from "@alexkroman1/aai";
+import { isToolFailure, type ToolContext } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
 import retailAgent from "./agent.ts";
-import { getState, isError } from "./store.ts";
+import { retailSlot } from "./store.ts";
 
 /** Tools that legitimately run before the caller is identified. Everything
  *  else must refuse. Listed here so ADDING an unauthenticated tool is a
@@ -126,9 +126,9 @@ describe("the UI-update invariant", () => {
   // retailTool(): it would work, and the sidebar would sit still through it.
   test.each(registry)("%s increments callSeq and logs activity", async (name, def) => {
     const ctx = makeCtx();
-    const before = getState(ctx).callSeq;
+    const before = retailSlot.get(ctx).callSeq;
     await def.execute(SAMPLE_ARGS[name] ?? {}, ctx);
-    const state = getState(ctx);
+    const state = retailSlot.get(ctx);
     expect(state.callSeq, `${name} did not bump callSeq`).toBe(before + 1);
     expect(state.activity.at(-1)?.tool, `${name} logged the wrong tool name`).toBe(name);
     expect(state.activity.at(-1)?.summary).toBeTruthy();
@@ -139,7 +139,7 @@ describe("the UI-update invariant", () => {
     // disagree — the activity feed would then attribute calls to the wrong tool.
     const ctx = makeCtx();
     await def.execute(SAMPLE_ARGS[name] ?? {}, ctx);
-    expect(getState(ctx).activity.at(-1)?.tool).toBe(name);
+    expect(retailSlot.get(ctx).activity.at(-1)?.tool).toBe(name);
   });
 });
 
@@ -148,8 +148,8 @@ describe("the authentication gate", () => {
     "%s refuses before the caller is identified",
     async (name, def) => {
       const result = await def.execute(SAMPLE_ARGS[name] ?? {}, makeCtx());
-      expect(isError(result), `${name} did not refuse`).toBe(true);
-      if (!isError(result)) return;
+      expect(isToolFailure(result), `${name} did not refuse`).toBe(true);
+      if (!isToolFailure(result)) return;
       expect(result.error, `${name} refused for the wrong reason`).toContain(
         "find_user_id_by_email",
       );
@@ -162,9 +162,9 @@ describe("the authentication gate", () => {
       const result = await def.execute(SAMPLE_ARGS[name] ?? {}, makeCtx());
       // A public tool may still fail on its own (deliberately bogus) arguments;
       // it must not fail on the GATE. Written as one unconditional assertion —
-      // an `if (isError(result))` wrapper would pass vacuously for the tools
+      // an `if (isToolFailure(result))` wrapper would pass vacuously for the tools
       // that succeed, which is precisely the set most at risk of regressing.
-      const blockedByGate = isError(result) && result.error.includes("find_user_id_by_email");
+      const blockedByGate = isToolFailure(result) && result.error.includes("find_user_id_by_email");
       expect(blockedByGate, `${name} was blocked by the auth gate`).toBe(false);
     },
   );

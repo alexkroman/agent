@@ -13,6 +13,11 @@
       "types": "./dist/sdk/utils.d.ts",
       "import": "./dist/sdk/utils.js"
     },
+    "./testing": {
+      "@dev/source": "./sdk/testing.ts",
+      "types": "./dist/sdk/testing.d.ts",
+      "import": "./dist/sdk/testing.js"
+    },
     "./protocol": {
       "@dev/source": "./sdk/protocol.ts",
       "types": "./dist/sdk/protocol.d.ts",

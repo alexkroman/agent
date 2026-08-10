@@ -1,6 +1,7 @@
+import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { AddressFields, formatAddress, toAddress } from "../address.ts";
-import { authenticatedUser, getState, isError, retailTool } from "../store.ts";
+import { authenticatedUser, retailSlot, retailTool } from "../store.ts";
 
 export const modifyUserAddress = retailTool({
   name: "modify_user_address",
@@ -17,9 +18,9 @@ export const modifyUserAddress = retailTool({
   // source order — with `summary` first, `result` in its signature can't be
   // inferred and silently falls back to `unknown`.
   execute: (args, ctx) => {
-    const state = getState(ctx);
+    const state = retailSlot.get(ctx);
     const user = authenticatedUser(state);
-    if (isError(user)) return user;
+    if (isToolFailure(user)) return user;
     if (user.user_id !== args.user_id) {
       return {
         error: `${args.user_id} is not the customer on this call. You can help only one customer per conversation.`,

@@ -1,34 +1,25 @@
-import type { Db, ToolContext, ToolDef } from "@alexkroman1/aai";
+import type { ToolContext, ToolDef } from "@alexkroman1/aai";
+import { createToolContext } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import agentDef from "./agent.ts";
-import { calculateTotal, orderView, type Pizza, pizzaPrice, type StateSlot } from "./shared.ts";
+import {
+  calculateTotal,
+  orderSlot,
+  orderView,
+  type Pizza,
+  pizzaPrice,
+  type StateSlot,
+} from "./shared.ts";
 
 // ─── Test doubles ────────────────────────────────────────────────────────────
 
-/** This template keeps its cart in ctx.state — the db must never be touched. */
-const noDb: Db = {
-  query: () => Promise.reject(new Error("db not used by this template")),
-};
-
-/** ToolContext stub: per-session ctx.state, and captured ctx.send events.
- *  Each stub is one session — the cart is session-scoped by construction. */
-function makeCtx(sessionId = "session-a") {
-  const sent: Array<{ event: string; data: unknown }> = [];
-  const ctx: ToolContext = {
-    env: {},
-    state: {},
-    db: noDb,
-    generate: () => Promise.reject(new Error("generate not available in tests")),
-    messages: [],
-    sessionId,
-    // Never aborts — a test has no turn to cancel. `ctx.signal` is always
-    // present at runtime, so a stub supplies one rather than omitting it.
-    signal: new AbortController().signal,
-    send: (event, data) => {
-      sent.push({ event, data });
-    },
-  };
-  return { ctx, sent };
+/** Each context is one session — the cart is session-scoped by construction,
+ *  and `createToolContext` mints a distinct session id per call. Its default
+ *  `db` rejects every query, which is right here: this template keeps its cart
+ *  in ctx.state and must never touch storage. */
+function makeCtx(sessionId?: string) {
+  const ctx = createToolContext<StateSlot>(sessionId ? { sessionId } : {});
+  return { ctx, sent: ctx.sent };
 }
 
 function getTool(name: string): ToolDef {
@@ -204,7 +195,7 @@ describe("orderView projection", () => {
       ctx,
     );
 
-    const view = orderView(ctx.state as StateSlot);
+    const view = orderView(orderSlot.read(ctx.state));
     expect(view.orderPlaced).toBe(false);
     const item = view.pizzas[0];
     if (!item) throw new Error("no pizza in the projection");
@@ -226,15 +217,20 @@ describe("orderView projection", () => {
     await run("add_pizza", { size: "small", crust: "thin", toppings: [], quantity: 1 }, ctx);
     await run("place_order", {}, ctx);
 
-    const view = orderView(ctx.state as StateSlot);
+    const view = orderView(orderSlot.read(ctx.state));
     expect(view.orderPlaced).toBe(true);
     expect(view.pizzas).toEqual([]);
     expect(view.estimatedMinutes).toBe(20);
     expect(view.total).toMatch(/^\$\d+\.\d{2}$/);
   });
 
-  test("an untouched session projects an empty cart, not undefined", async () => {
-    // The client renders before any tool has run; `state.order` is absent.
-    expect(orderView({})).toMatchObject({ pizzas: [], total: "$0.00", orderPlaced: false });
+  test("an untouched session projects an empty cart, not undefined", () => {
+    // The client renders before any tool has run, so `state.order` is absent —
+    // this is exactly the value `client.tsx` hoists as its fallback.
+    expect(orderSlot.projection(orderView)(undefined)).toMatchObject({
+      pizzas: [],
+      total: "$0.00",
+      orderPlaced: false,
+    });
   });
 });

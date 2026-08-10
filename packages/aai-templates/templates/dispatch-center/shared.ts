@@ -1,7 +1,7 @@
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-import type { ToolContext } from "@alexkroman1/aai";
-import { createKeyedLock, withLock } from "@alexkroman1/aai";
+import type { ToolFailure } from "@alexkroman1/aai";
+import { pushCapped, type SlotStateOf, sessionSlot } from "@alexkroman1/aai";
 
 export const SEVERITIES = ["critical", "urgent", "moderate", "minor"] as const;
 export type Severity = (typeof SEVERITIES)[number];
@@ -111,21 +111,15 @@ export interface DashboardView {
   incidents: IncidentSummary[];
 }
 
-/** The `syncState` projection — the whole contract with client.tsx. */
-export function dashboardView(state: StateSlot): DashboardView {
-  const dispatch = state.dispatch;
+/** The `syncState` projection — the whole contract with client.tsx. Takes the
+ *  board itself, not the slot: `dispatchSlot.projection` supplies a real one
+ *  even before the first tool call. */
+export function dashboardView(state: DispatchState): DashboardView {
   return {
-    systemAlertLevel: dispatch?.alertLevel ?? "green",
-    incidents: Object.values(dispatch?.incidents ?? {}).map(incidentSummary),
+    systemAlertLevel: state.alertLevel,
+    incidents: Object.values(state.incidents).map(incidentSummary),
   };
 }
-
-// ─── State helpers ───────────────────────────────────────────────────────────
-// The dispatch board lives in `ctx.state`, the agent's per-session mutable
-// state — sessions must not see each other's incidents, and ctx.state gives
-// that isolation by construction. Nothing here needs to outlive the session.
-
-export type StateSlot = { dispatch?: DispatchState };
 
 // ─── Resource generation ────────────────────────────────────────────────────
 
@@ -167,15 +161,10 @@ export function createDefaultState(): DispatchState {
   };
 }
 
-/** The session's live dispatch state. Mutations to the returned object
- *  stick — it is the object stored in `ctx.state`. */
-export function getState(ctx: ToolContext): DispatchState {
-  const slot = ctx.state as StateSlot;
-  slot.dispatch ??= createDefaultState();
-  return slot.dispatch;
-}
-
-// ─── Serialized state updates ────────────────────────────────────────────────
+// ─── State helpers ───────────────────────────────────────────────────────────
+// The dispatch board lives in `ctx.state`, the agent's per-session mutable
+// state — sessions must not see each other's incidents, and ctx.state gives
+// that isolation by construction. Nothing here needs to outlive the session.
 
 /**
  * Growth caps. The whole dispatch state is one object whose summaries feed
@@ -183,8 +172,10 @@ export function getState(ctx: ToolContext): DispatchState {
  * timelines must be pruned or a long session's payloads grow without bound.
  */
 const MAX_RESOLVED_KEPT = 10;
-const MAX_TIMELINE_ENTRIES = 50;
+export const MAX_TIMELINE_ENTRIES = 50;
 
+/** Resolved incidents only — the timeline cap is held on append by
+ *  `logEvent`, so nothing here has to re-trim it. */
 function pruneState(state: DispatchState): void {
   const resolved = Object.values(state.incidents)
     .filter((i) => i.status === "resolved")
@@ -192,46 +183,29 @@ function pruneState(state: DispatchState): void {
   for (const inc of resolved.slice(MAX_RESOLVED_KEPT)) {
     delete state.incidents[inc.id];
   }
-  for (const inc of Object.values(state.incidents)) {
-    if (inc.timeline.length > MAX_TIMELINE_ENTRIES) {
-      inc.timeline = inc.timeline.slice(-MAX_TIMELINE_ENTRIES);
-    }
-  }
 }
-
-const sessionLock = createKeyedLock();
 
 /**
- * Serialized update of the session's dispatch state.
+ * The session's dispatch board, as one typed slot inside `ctx.state`.
  *
- * The LLM loop executes parallel tool calls concurrently. The state lives in
- * `ctx.state` now (one shared object, no snapshot/save round-trip), but a
- * mutator may be async, and two interleaving async mutators can each observe
- * the other's half-applied changes. Holding the session's key makes each
- * update run against the previous one's finished result. It also centralizes
- * the shared bookkeeping every mutating tool needs: pruning and alert-level
- * recalculation.
+ * Mutating tools go through `dispatchSlot.update`, which serializes them per
+ * session: the LLM loop runs a step's tool calls concurrently, and two
+ * interleaving async mutators would each observe the other's half-applied
+ * changes.
  *
- * `createKeyedLock` rather than a hand-rolled promise chain per session: the
- * SDK's drops each key's entry once its chain drains (so a long-running agent
- * does not accumulate one per session id) and does it by ownership, which is
- * the part a hand-rolled chain gets wrong.
- *
- * There is no post-save callback: pushing the board to the client used to
- * need one, and `syncState` now does it after every tool call.
+ * `after` is the bookkeeping every mutating tool needs and none of them should
+ * have to remember — pruning resolved incidents, and recalculating the alert
+ * level the dashboard reads. Declaring it here rather than at each call site is
+ * the point: a new mutating tool gets both for free.
  */
-export function updateState<R>(
-  ctx: ToolContext,
-  mutator: (state: DispatchState) => R | Promise<R>,
-): Promise<R> {
-  return withLock(sessionLock, ctx.sessionId, async () => {
-    const state = getState(ctx);
-    const result = await mutator(state);
+export const dispatchSlot = sessionSlot("dispatch", createDefaultState, {
+  after: (state) => {
     pruneState(state);
     recalculateAlertLevel(state);
-    return result;
-  });
-}
+  },
+});
+
+export type StateSlot = SlotStateOf<typeof dispatchSlot>;
 
 // ─── Incident helpers ────────────────────────────────────────────────────────
 
@@ -263,17 +237,16 @@ export function createIncident(state: DispatchState, overrides: Partial<Incident
   return incident;
 }
 
-export function findIncident(
-  state: DispatchState,
-  incidentId: string,
-): Incident | { error: string } {
+export function findIncident(state: DispatchState, incidentId: string): Incident | ToolFailure {
   return state.incidents[incidentId] ?? { error: `Incident ${incidentId} not found` };
 }
 
-/** Append a timeline entry and touch `updatedAt`. */
+/** Append a timeline entry and touch `updatedAt`, holding
+ *  {@link MAX_TIMELINE_ENTRIES}. Capped on APPEND rather than swept later, so
+ *  a single long-running incident cannot outgrow the payload between sweeps. */
 export function logEvent(inc: Incident, event: string): void {
   const time = Date.now();
-  inc.timeline.push({ time, event });
+  pushCapped(inc.timeline, { time, event }, MAX_TIMELINE_ENTRIES);
   inc.updatedAt = time;
 }
 
@@ -296,7 +269,7 @@ export function resourceBrief(r: Resource): {
  * resources have been released (and possibly reassigned), so escalating,
  * re-resolving, or dispatching to it would corrupt resource assignments.
  */
-export function assertNotResolved(inc: Incident, action: string): { error: string } | null {
+export function assertNotResolved(inc: Incident, action: string): ToolFailure | null {
   if (inc.status === "resolved") {
     return {
       error: `Incident ${inc.id} is resolved — cannot ${action}. Create a new incident if the situation has reopened.`,

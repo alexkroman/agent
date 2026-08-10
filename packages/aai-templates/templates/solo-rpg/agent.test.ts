@@ -1,15 +1,16 @@
 import type { Db, ToolContext } from "@alexkroman1/aai";
+import { createToolContext } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
 import {
   applyConsequences,
   DEFAULT_STATE,
   type GameState,
-  getGameState,
+  gameSlot,
   MAX_NPCS,
   MIN_MOMENTUM,
   makeNpc,
   rollAction,
-  saveGameState,
+  type StateSlot,
 } from "./shared.ts";
 import { actionRoll } from "./tools/action_roll.ts";
 import { burnMomentum } from "./tools/burn_momentum.ts";
@@ -46,19 +47,10 @@ function makeDb(): { db: Db; rows: Map<string, unknown> } {
   return { db, rows };
 }
 
-function makeCtx(sessionId = "session-a", db: Db = makeDb().db): ToolContext {
-  return {
-    env: {},
-    state: {},
-    db,
-    generate: () => Promise.reject(new Error("generate not available in tests")),
-    messages: [],
-    sessionId,
-    // Never aborts — a test has no turn to cancel. `ctx.signal` is always
-    // present at runtime, so a stub supplies one rather than omitting it.
-    signal: new AbortController().signal,
-    send: vi.fn(),
-  };
+/** `send` is a spy rather than the recorder `createToolContext` installs,
+ *  because this suite asserts call counts on it. */
+function makeCtx(sessionId = "session-a", db: Db = makeDb().db): ToolContext<StateSlot> {
+  return createToolContext<StateSlot>({ sessionId, db, send: vi.fn() });
 }
 
 const SETUP_ARGS = {
@@ -106,19 +98,19 @@ describe("setup_character", () => {
     await setupCharacter.execute(SETUP_ARGS, ctx);
 
     // Simulate a played, damaged game between setups.
-    const played = getGameState(ctx);
+    const played = gameSlot.get(ctx);
     played.health = 1;
     played.momentum = -4;
     played.chaosFactor = 8;
     played.sceneCount = 42;
-    saveGameState(ctx, played);
+    gameSlot.set(ctx, played);
 
     const result = (await setupCharacter.execute(
       { ...SETUP_ARGS, playerName: "Luna" },
       ctx,
     )) as Record<string, unknown>;
 
-    const state = getGameState(ctx);
+    const state = gameSlot.get(ctx);
     expect(state.npcs).toHaveLength(1);
     expect(state.npcs[0]?.id).toBe("npc_1");
     expect(state.clocks).toHaveLength(1);
@@ -140,7 +132,7 @@ describe("setup_character", () => {
   test("stats are a permutation of [3,2,2,1,1] with the archetype's stat at 3", async () => {
     const ctx = makeCtx();
     await setupCharacter.execute(SETUP_ARGS, ctx);
-    const state = getGameState(ctx);
+    const state = gameSlot.get(ctx);
     const stats = [state.edge, state.heart, state.iron, state.shadow, state.wits];
     expect([...stats].sort()).toEqual([1, 1, 2, 2, 3]);
     // investigator biases wits (index 4) to the high stat
@@ -267,7 +259,7 @@ describe("burn_momentum", () => {
         clockTicks: 1,
       },
     };
-    saveGameState(ctx, state);
+    gameSlot.set(ctx, state);
   }
 
   test("a legal burn reverts the miss's consequences, upgrades, and resets momentum", async () => {
@@ -278,7 +270,7 @@ describe("burn_momentum", () => {
     expect(result.burned).toBe(true);
     expect(result.newResultCode).toBe("STRONG_HIT");
 
-    const state = getGameState(ctx);
+    const state = gameSlot.get(ctx);
     expect(state.health).toBe(5); // -2 reverted
     expect(state.clocks[0]?.filled).toBe(0); // tick reverted
     expect(state.momentum).toBe(2); // reset, overriding the strong hit's gain
@@ -306,21 +298,21 @@ describe("burn_momentum", () => {
 
     // Strong hits cannot be upgraded
     seedRolledState(8, ctx);
-    const state = getGameState(ctx);
+    const state = gameSlot.get(ctx);
     state.lastRoll!.result = "STRONG_HIT";
-    saveGameState(ctx, state);
+    gameSlot.set(ctx, state);
     result = (await burnMomentum.execute({} as never, ctx)) as Record<string, unknown>;
     expect(result.error).toMatch(/already a Strong Hit/);
   });
 
   test("action_roll persists the roll so burn needs no dice arguments", async () => {
     const ctx = makeCtx();
-    saveGameState(ctx, playingState());
+    gameSlot.set(ctx, playingState());
     await actionRoll.execute(
       { move: "clash", stat: "iron", position: "risky", effect: "standard", purpose: "attack" },
       ctx,
     );
-    const state = getGameState(ctx);
+    const state = gameSlot.get(ctx);
     expect(state.lastRoll).not.toBeNull();
     expect(state.lastRoll?.move).toBe("clash");
     expect(state.lastRoll?.deltas).toBeDefined();
@@ -372,13 +364,13 @@ describe("rollAction", () => {
 describe("update_state", () => {
   test("clock ids never collide after a removal (max-scan, not length+1)", async () => {
     const ctx = makeCtx();
-    saveGameState(ctx, playingState()); // has clock_1
+    gameSlot.set(ctx, playingState()); // has clock_1
 
     await updateState.execute({ addClockName: "Second" }, ctx); // clock_2
     await updateState.execute({ removeClockName: "Doom" }, ctx); // removes clock_1
     await updateState.execute({ addClockName: "Third" }, ctx);
 
-    const state = getGameState(ctx);
+    const state = gameSlot.get(ctx);
     const ids = state.clocks.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).toEqual(["clock_2", "clock_3"]);
@@ -388,7 +380,7 @@ describe("update_state", () => {
     const ctx = makeCtx();
     const state = playingState();
     state.clocks[0]!.filled = 3; // 3 of 4
-    saveGameState(ctx, state);
+    gameSlot.set(ctx, state);
 
     const result = (await updateState.execute({ advanceClockName: "Doom" }, ctx)) as {
       clockEvents: { clock: string; trigger: string }[];
@@ -402,13 +394,13 @@ describe("update_state", () => {
     while (state.npcs.length < MAX_NPCS) {
       state.npcs.push(makeNpc({ id: `npc_${state.npcs.length + 1}`, name: "Extra" }));
     }
-    saveGameState(ctx, state);
+    gameSlot.set(ctx, state);
 
     const result = (await updateState.execute({ addNpcName: "One Too Many" }, ctx)) as {
       warnings?: string[];
     };
     expect(result.warnings?.[0]).toMatch(/NPC limit/);
-    const after = getGameState(ctx);
+    const after = gameSlot.get(ctx);
     expect(after.npcs).toHaveLength(MAX_NPCS);
   });
 
@@ -442,7 +434,7 @@ describe("save_game / load_game", () => {
     const played = playingState();
     played.playerName = "Kael";
     played.sceneCount = 7;
-    saveGameState(sessionA, played);
+    gameSlot.set(sessionA, played);
     const saved = (await saveGame.execute({ slot: "chapter-2" }, sessionA)) as Record<
       string,
       unknown
@@ -460,7 +452,7 @@ describe("save_game / load_game", () => {
     expect(loaded.loaded).toBe(true);
     expect(loaded.playerName).toBe("Kael");
     expect(loaded.sceneCount).toBe(7);
-    expect(getGameState(sessionB).playerName).toBe("Kael");
+    expect(gameSlot.get(sessionB).playerName).toBe("Kael");
   });
 
   test("loading a missing slot reports an error instead of resetting the game", async () => {
@@ -472,9 +464,9 @@ describe("save_game / load_game", () => {
   test("saving twice to one slot upserts — the newer save wins", async () => {
     const { db, rows } = makeDb();
     const ctx = makeCtx("session-a", db);
-    saveGameState(ctx, playingState());
+    gameSlot.set(ctx, playingState());
     await saveGame.execute({}, ctx); // autosave
-    getGameState(ctx).sceneCount = 9;
+    gameSlot.get(ctx).sceneCount = 9;
     await saveGame.execute({}, ctx);
     expect(rows.size).toBe(1);
     expect(rows.get("save:autosave")).toMatchObject({ sceneCount: 9 });

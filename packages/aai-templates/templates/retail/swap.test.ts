@@ -1,5 +1,6 @@
+import { isToolFailure } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
-import { createDefaultState, findUser, isError } from "./store.ts";
+import { createDefaultState, findUser } from "./store.ts";
 import { applySwap, assertCanCoverDiff, planItemSwap } from "./swap.ts";
 
 function fixture(orderId: string) {
@@ -15,7 +16,7 @@ describe("planItemSwap", () => {
     const plan = planItemSwap(state, order, ["1304426904"], ["4725166838"], {
       requireDifferent: true,
     });
-    if (isError(plan)) throw new Error(plan.error);
+    if (isToolFailure(plan)) throw new Error(plan.error);
     expect(plan.diff).toBe(36.32);
     expect(plan.pairs).toHaveLength(1);
     expect(plan.pairs[0]?.newVariant.item_id).toBe("4725166838");
@@ -26,7 +27,7 @@ describe("planItemSwap", () => {
     const plan = planItemSwap(state, order, ["6242772310"], ["6200867091"], {
       requireDifferent: true,
     });
-    expect(isError(plan) ? null : plan.diff).toBe(-40.86);
+    expect(isToolFailure(plan) ? null : plan.diff).toBe(-40.86);
   });
 
   test("handles a duplicate item id swapped twice", () => {
@@ -38,7 +39,7 @@ describe("planItemSwap", () => {
       ["3909406921", "3909406921"],
       { requireDifferent: true },
     );
-    if (isError(plan)) throw new Error(plan.error);
+    if (isToolFailure(plan)) throw new Error(plan.error);
     expect(plan.diff).toBe(6.9);
     expect(plan.pairs.map((p) => p.index)).toEqual([0, 1]);
   });
@@ -48,7 +49,7 @@ describe("planItemSwap", () => {
     const plan = planItemSwap(state, order, ["7292993796"], ["3909406921"], {
       requireDifferent: true,
     });
-    if (isError(plan)) throw new Error(plan.error);
+    if (isToolFailure(plan)) throw new Error(plan.error);
     expect(plan.pairs).toHaveLength(1);
     expect(plan.diff).toBe(3.45);
   });
@@ -62,7 +63,7 @@ describe("planItemSwap", () => {
       ["3909406921", "3909406921", "3909406921"],
       { requireDifferent: true },
     );
-    expect(isError(plan) && plan.error).toContain("7292993796");
+    expect(isToolFailure(plan) && plan.error).toContain("7292993796");
   });
 
   test("refuses mismatched list lengths", () => {
@@ -70,12 +71,14 @@ describe("planItemSwap", () => {
     const plan = planItemSwap(state, order, ["7292993796"], ["3909406921", "3738831434"], {
       requireDifferent: true,
     });
-    expect(isError(plan) && plan.error.toLowerCase()).toContain("same number");
+    expect(isToolFailure(plan) && plan.error.toLowerCase()).toContain("same number");
   });
 
   test("refuses an empty swap", () => {
     const { state, order } = fixture("#W4316152");
-    expect(isError(planItemSwap(state, order, [], [], { requireDifferent: true }))).toBe(true);
+    expect(isToolFailure(planItemSwap(state, order, [], [], { requireDifferent: true }))).toBe(
+      true,
+    );
   });
 
   test("refuses an item the order does not contain", () => {
@@ -83,7 +86,7 @@ describe("planItemSwap", () => {
     const plan = planItemSwap(state, order, ["1304426904"], ["4725166838"], {
       requireDifferent: true,
     });
-    expect(isError(plan)).toBe(true);
+    expect(isToolFailure(plan)).toBe(true);
   });
 
   test("refuses a target of a different product", () => {
@@ -91,7 +94,7 @@ describe("planItemSwap", () => {
     const plan = planItemSwap(state, order, ["7292993796"], ["4725166838"], {
       requireDifferent: true,
     });
-    expect(isError(plan) && plan.error).toContain("Tea Kettle");
+    expect(isToolFailure(plan) && plan.error).toContain("Tea Kettle");
   });
 
   test("refuses an unavailable target", () => {
@@ -99,7 +102,7 @@ describe("planItemSwap", () => {
     const plan = planItemSwap(state, order, ["7292993796"], ["6454334990"], {
       requireDifferent: true,
     });
-    expect(isError(plan) && plan.error.toLowerCase()).toContain("not available");
+    expect(isToolFailure(plan) && plan.error.toLowerCase()).toContain("not available");
   });
 
   test("requireDifferent refuses a no-op swap; exchange allows it", () => {
@@ -107,11 +110,11 @@ describe("planItemSwap", () => {
     const strict = planItemSwap(state, order, ["7292993796"], ["7292993796"], {
       requireDifferent: true,
     });
-    expect(isError(strict)).toBe(true);
+    expect(isToolFailure(strict)).toBe(true);
     const loose = planItemSwap(state, order, ["7292993796"], ["7292993796"], {
       requireDifferent: false,
     });
-    expect(isError(loose) ? null : loose.diff).toBe(0);
+    expect(isToolFailure(loose) ? null : loose.diff).toBe(0);
   });
 });
 
@@ -119,7 +122,7 @@ describe("assertCanCoverDiff", () => {
   function aarav() {
     const state = createDefaultState();
     const user = findUser(state, "aarav_anderson_8794");
-    if (isError(user)) throw new Error(user.error);
+    if (isToolFailure(user)) throw new Error(user.error);
     return user;
   }
 
@@ -140,7 +143,7 @@ describe("assertCanCoverDiff", () => {
   test("does not gate a non-gift-card method on any balance", () => {
     const state = createDefaultState();
     const olivia = findUser(state, "olivia_ito_3591");
-    if (isError(olivia)) throw new Error(olivia.error);
+    if (isToolFailure(olivia)) throw new Error(olivia.error);
     expect(assertCanCoverDiff(olivia, "credit_card_9753331", 100_000)).toBeNull();
   });
 
@@ -161,7 +164,7 @@ describe("applySwap", () => {
       ["4725166838", "3909406921"],
       { requireDifferent: true },
     );
-    if (isError(plan)) throw new Error(plan.error);
+    if (isToolFailure(plan)) throw new Error(plan.error);
     applySwap(order, plan);
 
     const vacuum = order.items.find((i) => i.item_id === "4725166838");
@@ -179,7 +182,7 @@ describe("applySwap", () => {
     const plan = planItemSwap(state, order, ["7292993796"], ["3909406921"], {
       requireDifferent: true,
     });
-    if (isError(plan)) throw new Error(plan.error);
+    if (isToolFailure(plan)) throw new Error(plan.error);
     applySwap(order, plan);
     expect(order.items.map((i) => i.item_id)).toEqual(["3909406921", "7292993796"]);
   });

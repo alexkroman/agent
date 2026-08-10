@@ -4,8 +4,11 @@ import {
   errorDetail,
   errorMessage,
   isTextAssetPath,
+  isToolFailure,
   normalizeSpeechText,
+  pushCapped,
   toArgsRecord,
+  toolError,
 } from "./utils.ts";
 
 describe("toArgsRecord", () => {
@@ -139,5 +142,99 @@ describe("normalizeSpeechText", () => {
     expect(normalizeSpeechText(s)).toBe("It's fine");
     expect(normalizeSpeechText(s)).toBe("It's fine");
     expect(normalizeSpeechText(s)).toBe("It's fine");
+  });
+});
+
+describe("isToolFailure", () => {
+  test("narrows an object carrying a string error", () => {
+    expect(isToolFailure({ error: "Order not found." })).toBe(true);
+  });
+
+  test("accepts a failure carrying extra fields", () => {
+    // Helpers attach context alongside the message; the guard is about the
+    // `error` field, not about the object being exactly that one key.
+    expect(isToolFailure({ error: "not found", orderId: "#W1" })).toBe(true);
+  });
+
+  test("rejects a successful result that happens to be an object", () => {
+    expect(isToolFailure({ orderId: "#W1", total: 12 })).toBe(false);
+  });
+
+  test("rejects a non-string error field", () => {
+    // An `Error` instance under `error` is a thrown fault someone stored, not
+    // the wire shape — narrowing it would hand callers `.error` as an object
+    // where they format it as text.
+    expect(isToolFailure({ error: new Error("boom") })).toBe(false);
+    expect(isToolFailure({ error: 500 })).toBe(false);
+    expect(isToolFailure({ error: null })).toBe(false);
+  });
+
+  test("rejects null, undefined and primitives", () => {
+    expect(isToolFailure(null)).toBe(false);
+    expect(isToolFailure(undefined)).toBe(false);
+    expect(isToolFailure("error")).toBe(false);
+    expect(isToolFailure(0)).toBe(false);
+  });
+
+  test("rejects an array", () => {
+    expect(isToolFailure([{ error: "nested" }])).toBe(false);
+  });
+
+  test("does NOT narrow toolError's string, and that is documented", () => {
+    // The two spellings coexist on this module: `toolError` is the host's
+    // pre-serialized wire form, `ToolFailure` is what a tool author returns.
+    // Mistaking one for the other is the trap the doc comment calls out.
+    expect(isToolFailure(toolError("boom"))).toBe(false);
+  });
+
+  test("narrows the type, not just the value", () => {
+    // Behind a function so the union survives — a `const` initialized with one
+    // member narrows to it, and the false branch would be `never`.
+    const lookup = (found: boolean): { id: string } | { error: string } =>
+      found ? { id: "#W1" } : { error: "nope" };
+    // Reads `.error` / `.id` with no cast — that this compiles IS the assertion.
+    expect(isToolFailure(lookup(false)) ? "failed" : "ok").toBe("failed");
+    const hit = lookup(true);
+    expect(isToolFailure(hit) ? hit.error : hit.id).toBe("#W1");
+  });
+});
+
+describe("pushCapped", () => {
+  test("appends below the cap", () => {
+    expect(pushCapped(["a", "b"], "c", 5)).toEqual(["a", "b", "c"]);
+  });
+
+  test("drops the oldest entry at the cap", () => {
+    expect(pushCapped(["a", "b", "c"], "d", 3)).toEqual(["b", "c", "d"]);
+  });
+
+  test("mutates in place — the caller's reference reflects the cap", () => {
+    // The list is usually a property of the state object (`incident.timeline`),
+    // so in-place is what saves the caller a reassignment they can forget.
+    const state = { timeline: ["a", "b", "c"] };
+    const returned = pushCapped(state.timeline, "d", 3);
+    expect(state.timeline).toEqual(["b", "c", "d"]);
+    expect(returned).toBe(state.timeline);
+  });
+
+  test("trims a list that was already over the cap", () => {
+    // Reachable when a cap is lowered, or when state was restored from a save
+    // written under a larger one.
+    expect(pushCapped(["a", "b", "c", "d", "e"], "f", 3)).toEqual(["d", "e", "f"]);
+  });
+
+  test("a cap of 1 keeps only the newest", () => {
+    expect(pushCapped(["a", "b"], "c", 1)).toEqual(["c"]);
+  });
+
+  test("a cap of 0 or below keeps nothing, including the new entry", () => {
+    expect(pushCapped(["a"], "b", 0)).toEqual([]);
+    expect(pushCapped(["a"], "b", -3)).toEqual([]);
+  });
+
+  test("repeated appends hold the cap", () => {
+    const log: number[] = [];
+    for (let i = 0; i < 100; i += 1) pushCapped(log, i, 4);
+    expect(log).toEqual([96, 97, 98, 99]);
   });
 });

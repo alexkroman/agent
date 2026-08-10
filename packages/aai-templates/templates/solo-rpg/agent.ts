@@ -1,5 +1,5 @@
 import { agent } from "@alexkroman1/aai";
-import { DEFAULT_STATE, type StateSlot } from "./shared.ts";
+import { gameSlot } from "./shared.ts";
 import systemPrompt from "./system-prompt.md?raw";
 import { actionRoll } from "./tools/action_roll.ts";
 import { burnMomentum } from "./tools/burn_momentum.ts";
@@ -22,7 +22,7 @@ export default agent({
   // One declaration replaces a `ctx.send("game_state", state)` in every
   // state-mutating tool — six of them, and adding a seventh meant
   // remembering to push or watching the UI quietly fall out of sync.
-  syncState: (s: StateSlot) => s.game ?? DEFAULT_STATE,
+  syncState: gameSlot.read,
   tools: {
     action_roll: actionRoll,
     burn_momentum: burnMomentum,

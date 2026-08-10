@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import seedJson from "./seed.json";
 import type { RetailState, Store } from "./shared.ts";
-import { buildScriptBullets, DEMO_PERSONAS, storeView } from "./shared.ts";
+import { buildScriptBullets, DEMO_PERSONAS, emptyRetailState, storeView } from "./shared.ts";
 
 function makeState(authenticatedUserId: string | null): RetailState {
   return {
@@ -15,20 +15,21 @@ function makeState(authenticatedUserId: string | null): RetailState {
 
 describe("storeView", () => {
   test("projects nothing identifying before authentication", () => {
-    const view = storeView({ retail: makeState(null) });
+    const view = storeView(makeState(null));
     expect(view.customer).toBeNull();
     expect(view.orders).toEqual([]);
   });
 
-  test("an absent state slot degrades to an empty view", () => {
-    const view = storeView({});
+  test("an untouched session projects an empty view, not undefined", () => {
+    // The value `client.tsx` hoists as its pre-first-tool-call fallback.
+    const view = storeView(emptyRetailState());
     expect(view.customer).toBeNull();
     expect(view.orders).toEqual([]);
     expect(view.callSeq).toBe(0);
   });
 
   test("projects the authenticated customer and only their orders", () => {
-    const view = storeView({ retail: makeState("olivia_ito_3591") });
+    const view = storeView(makeState("olivia_ito_3591"));
     expect(view.customer?.name).toBe("Olivia Ito");
     expect(view.customer?.email).toBe("olivia.ito5204@example.com");
     expect(view.orders.map((o) => o.orderId).sort((a, b) => a.localeCompare(b))).toEqual(
@@ -40,13 +41,13 @@ describe("storeView", () => {
 
   test("projects live gift-card balances, since refunds move them", () => {
     const state = makeState("olivia_ito_3591");
-    const view = storeView({ retail: state });
+    const view = storeView(state);
     const card = view.customer?.paymentMethods.find((m) => m.id === "gift_card_7794233");
     expect(card?.balance).toBe(56);
   });
 
   test("no other customer's email, address, or payment method reaches the client", () => {
-    const view = storeView({ retail: makeState("olivia_ito_3591") });
+    const view = storeView(makeState("olivia_ito_3591"));
     const json = JSON.stringify(view);
     for (const leaked of [
       "aarav.anderson9752@example.com",
@@ -64,14 +65,14 @@ describe("storeView", () => {
   });
 
   test("carries callSeq, activity and focus through", () => {
-    const view = storeView({ retail: makeState("olivia_ito_3591") });
+    const view = storeView(makeState("olivia_ito_3591"));
     expect(view.callSeq).toBe(3);
     expect(view.activity).toHaveLength(1);
     expect(view.focus.orderId).toBe("#W5866402");
   });
 
   test("order totals sum the payments, not the items", () => {
-    const view = storeView({ retail: makeState("olivia_ito_3591") });
+    const view = storeView(makeState("olivia_ito_3591"));
     const delivered = view.orders.find((o) => o.orderId === "#W5866402");
     expect(delivered?.total).toBe(3203.78);
   });
@@ -105,12 +106,12 @@ describe("swapOptions", () => {
   test("empty when no order is focused", () => {
     const state = makeState("olivia_ito_3591");
     state.focus = {};
-    expect(storeView({ retail: state }).swapOptions).toEqual([]);
+    expect(storeView(state).swapOptions).toEqual([]);
   });
 
   test("lists available alternatives for the focused order's items", () => {
     // makeState focuses #W5866402 — Espresso Machine + Sneakers.
-    const view = storeView({ retail: makeState("olivia_ito_3591") });
+    const view = storeView(makeState("olivia_ito_3591"));
     expect(view.swapOptions).toHaveLength(2);
     const espresso = view.swapOptions.find((s) => s.itemId === "6242772310");
     expect(espresso?.itemName).toBe("Espresso Machine");
@@ -121,7 +122,7 @@ describe("swapOptions", () => {
   test("never offers an unavailable variant as a target", () => {
     const state = makeState("aarav_anderson_8794");
     state.focus = { orderId: "#W4316152" };
-    const view = storeView({ retail: state });
+    const view = storeView(state);
     const ids = view.swapOptions.flatMap((s) => s.alternatives.map((a) => a.itemId));
     // 6454334990 is a Tea Kettle variant with available: false.
     expect(ids).not.toContain("6454334990");
@@ -130,7 +131,7 @@ describe("swapOptions", () => {
   test("caps both axes so the payload stays bounded", () => {
     const state = makeState("aarav_anderson_8794");
     state.focus = { orderId: "#W9311069" }; // five items
-    const view = storeView({ retail: state });
+    const view = storeView(state);
     expect(view.swapOptions.length).toBeLessThanOrEqual(3);
     for (const option of view.swapOptions) {
       expect(option.alternatives.length).toBeLessThanOrEqual(4);
@@ -140,7 +141,7 @@ describe("swapOptions", () => {
   test("a focus on another customer's order projects nothing", () => {
     const state = makeState("olivia_ito_3591");
     state.focus = { orderId: "#W4316152" }; // aarav's
-    const view = storeView({ retail: state });
+    const view = storeView(state);
     expect(view.swapOptions).toEqual([]);
     expect(JSON.stringify(view)).not.toContain("#W4316152");
   });
@@ -153,8 +154,8 @@ describe("buildScriptBullets", () => {
     expect(bullets.join(" ")).toContain(DEMO_PERSONAS[0]?.zip ?? "");
   });
 
-  test("undefined state yields the pre-auth bullets", () => {
-    expect(buildScriptBullets(undefined).length).toBeGreaterThan(0);
+  test("an empty state yields the pre-auth bullets", () => {
+    expect(buildScriptBullets(emptyRetailState()).length).toBeGreaterThan(0);
   });
 
   test("a customer with pending orders is offered cancel and address change", () => {

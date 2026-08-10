@@ -1,5 +1,6 @@
+import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { authenticatedUser, getState, isError, retailTool } from "../store.ts";
+import { authenticatedUser, retailSlot, retailTool } from "../store.ts";
 
 export const getUserDetails = retailTool({
   name: "get_user_details",
@@ -12,9 +13,9 @@ export const getUserDetails = retailTool({
   // `execute` before `summary`: see find_user_id_by_email.ts for why the order
   // is load-bearing for the generic `result` type in `summary`.
   execute: (args, ctx) => {
-    const state = getState(ctx);
+    const state = retailSlot.get(ctx);
     const user = authenticatedUser(state);
-    if (isError(user)) return user;
+    if (isToolFailure(user)) return user;
     if (user.user_id !== args.user_id) {
       return {
         error: `${args.user_id} is not the customer on this call. You can help only one customer per conversation.`,

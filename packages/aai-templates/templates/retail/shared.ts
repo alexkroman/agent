@@ -129,7 +129,24 @@ export interface RetailState {
   focus: { orderId?: string; productId?: string };
 }
 
-export type StateSlot = { retail?: RetailState };
+/**
+ * A pristine, EMPTY store — no seed data.
+ *
+ * `store.ts`'s `createDefaultState` builds the real seeded state on top of
+ * this, so the shape is declared once. It lives here, apart from that, because
+ * `client.tsx` needs a `RetailState` for its pre-first-call fallback and must
+ * not import `store.ts`: that module pulls the 107 KB `seed.json`, which would
+ * then land in the browser bundle.
+ */
+export function emptyRetailState(): RetailState {
+  return {
+    store: { users: {}, orders: {}, products: {} },
+    authenticatedUserId: null,
+    callSeq: 0,
+    activity: [],
+    focus: {},
+  };
+}
 
 // ─── View types — exactly what crosses the wire ──────────────────────────────
 
@@ -321,16 +338,20 @@ function swapOptionsFor(state: RetailState, order: Order | undefined): SwapOptio
  *
  *  Only the authenticated customer is projected. The other five seeded
  *  customers' emails, addresses, and payment methods never leave the server,
- *  which is why `syncState` takes a projection rather than a boolean. */
-export function storeView(slot: StateSlot): StoreView {
-  const state = slot.retail;
-  const userId = state?.authenticatedUserId ?? null;
-  const user = userId ? state?.store.users[userId] : undefined;
-  const focusedOrderId = state?.focus.orderId;
+ *  which is why `syncState` takes a projection rather than a boolean.
+ *
+ *  Takes the state itself, not the slot: `retailSlot.projection` supplies a
+ *  real one even before the first tool call, so the optional chaining this
+ *  used to carry — which read as security gating and was not — is gone. The
+ *  gating that IS security is still here, on `user`. */
+export function storeView(state: RetailState): StoreView {
+  const userId = state.authenticatedUserId;
+  const user = userId ? state.store.users[userId] : undefined;
+  const focusedOrderId = state.focus.orderId;
   // Gated on `user`: an order is only ever projected for the customer on the
   // call, so a stale focus from before authentication cannot leak one.
   const focusedOrder =
-    state && user && focusedOrderId && user.orders.includes(focusedOrderId)
+    user && focusedOrderId && user.orders.includes(focusedOrderId)
       ? state.store.orders[focusedOrderId]
       : undefined;
 
@@ -346,7 +367,7 @@ export function storeView(slot: StateSlot): StoreView {
       : null,
     orders: user
       ? user.orders
-          .map((id) => state?.store.orders[id])
+          .map((id) => state.store.orders[id])
           .filter((o): o is Order => o !== undefined)
           .map(orderView)
       : [],
@@ -356,13 +377,13 @@ export function storeView(slot: StateSlot): StoreView {
     // though its details were already withheld from `orders`/`swapOptions`.
     focus: {
       ...(focusedOrder && focusedOrderId ? { orderId: focusedOrderId } : {}),
-      ...(state?.focus.productId ? { productId: state.focus.productId } : {}),
+      ...(state.focus.productId ? { productId: state.focus.productId } : {}),
     },
-    swapOptions: state ? swapOptionsFor(state, focusedOrder) : [],
-    callSeq: state?.callSeq ?? 0,
-    activity: state?.activity.slice(-MAX_ACTIVITY) ?? [],
+    swapOptions: swapOptionsFor(state, focusedOrder),
+    callSeq: state.callSeq,
+    activity: state.activity.slice(-MAX_ACTIVITY),
     scriptBullets: buildScriptBullets(state),
-    productCount: Object.keys(state?.store.products ?? {}).length,
+    productCount: Object.keys(state.store.products).length,
   };
 }
 
@@ -375,13 +396,13 @@ const MAX_BULLETS = 6;
  * that offers actions the data can't support — "return an item" to someone
  * with no delivered order — is worse than no list.
  */
-export function buildScriptBullets(state: RetailState | undefined): string[] {
-  const userId = state?.authenticatedUserId;
-  const user = userId ? state?.store.users[userId] : undefined;
+export function buildScriptBullets(state: RetailState): string[] {
+  const userId = state.authenticatedUserId;
+  const user = userId ? state.store.users[userId] : undefined;
 
   // Pre-auth: only the two ways in. The personas panel (a constant, rendered
   // straight from DEMO_PERSONAS) covers WHICH customer to be.
-  if (!(state && user)) {
+  if (!user) {
     const first = DEMO_PERSONAS[0];
     return [
       `"My email is ${first?.email ?? ""}"`,

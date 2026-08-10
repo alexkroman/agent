@@ -1,6 +1,6 @@
 import { agent, tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import { getGameState, resetGameState } from "./shared.ts";
+import { gameSlot, recordCommand } from "./shared.ts";
 import systemPrompt from "./system-prompt.md?raw";
 
 export default agent({
@@ -21,7 +21,7 @@ export default agent({
         value: z.string().describe("Item name to drop"),
       }),
       async execute(args, ctx) {
-        const g = getGameState(ctx);
+        const g = gameSlot.get(ctx);
         g.inventory = g.inventory.filter((i) => i !== args.value);
         return { inventory: g.inventory };
       },
@@ -33,7 +33,7 @@ export default agent({
         value: z.string().describe("Flag name to set"),
       }),
       async execute(args, ctx) {
-        const g = getGameState(ctx);
+        const g = gameSlot.get(ctx);
         g.flags[args.value] = true;
         return { flags: g.flags };
       },
@@ -43,7 +43,7 @@ export default agent({
       description:
         "Read the current game state including inventory, current room, score, moves, flags, and recent history.",
       async execute(_args, ctx) {
-        const g = getGameState(ctx);
+        const g = gameSlot.get(ctx);
         return {
           currentRoom: g.currentRoom,
           inventory: g.inventory,
@@ -61,8 +61,8 @@ export default agent({
         value: z.string().describe("Command text to log"),
       }),
       async execute(args, ctx) {
-        const g = getGameState(ctx);
-        g.history.push(args.value);
+        const g = gameSlot.get(ctx);
+        recordCommand(g, args.value);
         g.moves++;
         return { moves: g.moves, recentHistory: g.history.slice(-5) };
       },
@@ -74,7 +74,7 @@ export default agent({
         value: z.string().describe("Room name to move to"),
       }),
       async execute(args, ctx) {
-        const g = getGameState(ctx);
+        const g = gameSlot.get(ctx);
         g.currentRoom = args.value;
         g.moves++;
         return { currentRoom: g.currentRoom, moves: g.moves };
@@ -85,7 +85,7 @@ export default agent({
       description:
         "Reset the game to the beginning: empty inventory, zero score and moves, all flags cleared. Use when the player asks to restart, quit, or start a new game.",
       async execute(_args, ctx) {
-        const g = resetGameState(ctx);
+        const g = gameSlot.reset(ctx);
         return { restarted: true, currentRoom: g.currentRoom };
       },
     }),
@@ -96,7 +96,7 @@ export default agent({
         value: z.number().describe("Points to add"),
       }),
       async execute(args, ctx) {
-        const g = getGameState(ctx);
+        const g = gameSlot.get(ctx);
         g.score += args.value;
         return { score: g.score };
       },
@@ -108,7 +108,7 @@ export default agent({
         value: z.string().describe("Item name to take"),
       }),
       async execute(args, ctx) {
-        const g = getGameState(ctx);
+        const g = gameSlot.get(ctx);
         if (!g.inventory.includes(args.value)) g.inventory.push(args.value);
         return { inventory: g.inventory };
       },

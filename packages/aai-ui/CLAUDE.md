@@ -32,8 +32,47 @@ conventions and testing rules live in the root `CLAUDE.md`.
   to agents with no `client.tsx`, and its build step
 - `types.ts` — UI type definitions
 - `components/` — UI components (console-shell, chat-view, controls,
-  message-list, start-screen, sidebar-layout, tool-call-block, button,
-  aai-logo, tool-config-context)
+  message-list, auto-scroll, start-screen, sidebar-layout, tool-call-block,
+  button, aai-logo, tool-config-context)
+
+## `AutoScroll` is the only scroll-pinning implementation
+
+`components/auto-scroll.tsx` wraps `use-stick-to-bottom` (pin to the bottom as
+content grows, release when the reader scrolls up, re-engage at the bottom).
+`MessageList` renders it rather than the library directly, so there is one
+owner, and it is EXPORTED because the clients that need it most are the ones
+not using `MessageList` — a custom chat chrome (a terminal, a dispatch board)
+that would otherwise hand-roll the effect.
+
+The hand-rolled version is a `useEffect` calling
+`ref.current?.scrollIntoView()` keyed on `session.messages`, and it fails three
+ways that compound: it fights the reader, since scrolling up to re-read is
+undone by the next transcript delta; it misses growth that is not a new message
+(a streamed reply, an expanding tool block, a markdown reflow all change height
+without changing the dependency array); and it needs a synthetic dependency
+(`messages.length + transcript.length`) to fire at all, which is where the dead
+`if (version < 0) return;` line in `infocom-adventure`'s copy came from. A
+`ResizeObserver` on the content has none of those.
+
+The one constraint callers get wrong: the outer container **must have a bounded
+height** (`flex-1 min-h-0`, `h-full`, a fixed height). An unbounded one grows
+with its content and never scrolls, so nothing pins.
+
+## `useAgentState` has a fallback overload
+
+`useAgentState<S>()` returns `S | null` — nullable because nothing has been
+pushed before the first tool call. `useAgentState<S>(fallback)` returns `S`.
+Every real consumer wanted the second: four of the six template clients
+immediately wrote `?? EMPTY`, and three of those built `EMPTY` by running their
+own `syncState` projection over an empty state, which is the pattern to copy —
+`slot.projection(view)(undefined)`, so a field added to the projection reaches
+the first render instead of being `undefined` in that one frame. Hoist the
+fallback to module scope; the hook does not memoize it.
+
+Note the fallback is only substituted for `null`, and an absent argument still
+reads back as `null` rather than `undefined` — a client spelling
+`state === null` predates the overload. `hooks.test-d.ts` pins both signatures,
+since an overload is a type-level contract a runtime suite cannot assert.
 
 ## Client audio path (browser ⇄ server)
 

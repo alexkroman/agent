@@ -1,7 +1,6 @@
 import { agent } from "@alexkroman1/aai";
-import type { StateSlot } from "./shared.ts";
 import { storeView } from "./shared.ts";
-import { createDefaultState } from "./store.ts";
+import { retailSlot, type StateSlot } from "./store.ts";
 import systemPrompt from "./system-prompt.md?raw";
 import { cancelPendingOrder } from "./tools/cancel_pending_order.ts";
 import { exchangeDeliveredOrderItems } from "./tools/exchange_delivered_order_items.ts";
@@ -27,18 +26,16 @@ export default agent({
   // overridden below; `llm` and `tts` take the defaults.
 
   // The store lives in ctx.state, one pristine copy per session — callers must
-  // not see each other's cancellations. Wrapped in the `StateSlot` shape
-  // `store.ts`'s `getState`/`shared.ts`'s `storeView` both key off — `agent()`
-  // infers its session-state type parameter from BOTH `state` and `syncState`,
-  // and `StateSlot`'s `retail` field is optional (a "weak type"), so handing
-  // it a bare `RetailState` with no properties in common fails that inference
-  // rather than an ordinary structural check.
-  state: (): StateSlot => ({ retail: createDefaultState() }),
+  // not see each other's cancellations. Declaring `state` (rather than letting
+  // the slot install itself on first access) means the session's store exists
+  // before the first tool call, so a resumed connection has something to
+  // project; the slot owns the shape either way.
+  state: (): StateSlot => ({ [retailSlot.key]: retailSlot.create() }),
 
   // One projection pushed after every tool call. It is a projection, not a
   // flag, because the state holds all six seeded customers and only the
   // authenticated one may reach the browser.
-  syncState: storeView,
+  syncState: retailSlot.projection(storeView),
 
   // Callers read order numbers and ten-digit item numbers in bursts with pauses
   // inside one utterance ("W seven six seven … eight oh seven two"). The default

@@ -1,11 +1,11 @@
 import "@alexkroman1/aai-ui/styles.css";
 import { client, useAgentState, useTheme } from "@alexkroman1/aai-ui";
 import type { OrderView } from "./shared.ts";
-import { formatPrice, orderView, pizzaPrice } from "./shared.ts";
+import { formatPrice, orderSlot, orderView, pizzaPrice } from "./shared.ts";
 
 // Derived from the projection so a new OrderView field can't silently miss
-// the pre-first-tool-call render.
-const EMPTY_ORDER = orderView({});
+// the pre-first-tool-call render — `projection` runs it over an empty cart.
+const EMPTY_ORDER: OrderView = orderSlot.projection(orderView)(undefined);
 
 function PizzaIcon({ size }: { size: string }) {
   const dim = size === "small" ? 36 : size === "large" ? 52 : 44;
@@ -30,7 +30,7 @@ function OrderSidebar() {
   // tool call. This replaced ~45 lines that rebuilt the cart by diffing
   // added/removed/updated events — where one missed event desynced the view
   // for the rest of the session.
-  const order = useAgentState<OrderView>() ?? EMPTY_ORDER;
+  const order = useAgentState<OrderView>(EMPTY_ORDER);
 
   if (order.orderPlaced) {
     return (

@@ -1,7 +1,8 @@
+import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { AddressFields, formatAddress, toAddress } from "../address.ts";
 import { resolveOrder } from "../resolve.ts";
-import { getState, isError, retailTool, setFocus } from "../store.ts";
+import { retailSlot, retailTool, setFocus } from "../store.ts";
 
 export const modifyPendingOrderAddress = retailTool({
   name: "modify_pending_order_address",
@@ -20,9 +21,9 @@ export const modifyPendingOrderAddress = retailTool({
   // source order — with `summary` first, `result` in its signature can't be
   // inferred and silently falls back to `unknown`.
   execute: (args, ctx) => {
-    const state = getState(ctx);
+    const state = retailSlot.get(ctx);
     const order = resolveOrder(state, args.order_id);
-    if (isError(order)) return order;
+    if (isToolFailure(order)) return order;
     setFocus(state, { orderId: order.order_id });
 
     // Any pending variant is fine here — unlike cancel and modify-items, which

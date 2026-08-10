@@ -9,6 +9,7 @@ export {
   loadClientConfig,
 } from "./client-config.ts";
 // Components
+export { AutoScroll } from "./components/auto-scroll.tsx";
 export { Button, type ButtonSize, type ButtonVariant } from "./components/button.tsx";
 export { ChatView } from "./components/chat-view.tsx";
 export { Controls } from "./components/controls.tsx";

@@ -4,8 +4,8 @@ import {
   CRUSTS,
   calculateTotal,
   formatPrice,
-  getOrder,
   menuText,
+  orderSlot,
   orderView,
   type Pizza,
   resetOrder,
@@ -24,7 +24,7 @@ export default agent({
   // The cart, pushed to the client after every tool call. Replaces a
   // `ctx.send("order", ...)` in each of the five order tools, and the
   // event-diffing the client had to do to rebuild the cart from them.
-  syncState: orderView,
+  syncState: orderSlot.projection(orderView),
   // The menu section is generated from MENU so the prompt can never quote a
   // price the pricing code doesn't charge.
   systemPrompt: `${systemPrompt}\n${menuText()}`,
@@ -43,7 +43,7 @@ export default agent({
         quantity: z.number().int().min(1).default(1),
       }),
       async execute(args, ctx) {
-        const order = getOrder(ctx);
+        const order = orderSlot.get(ctx);
 
         const pizza: Pizza = {
           id: order.nextId,
@@ -67,7 +67,7 @@ export default agent({
       description:
         "Place the final order. Use when the customer confirms they are done and ready to order.",
       async execute(_args, ctx) {
-        const order = getOrder(ctx);
+        const order = orderSlot.get(ctx);
         const pizzas = order.pizzas;
         if (pizzas.length === 0) return { error: "Cannot place an empty order." };
 
@@ -96,7 +96,7 @@ export default agent({
         pizza_id: z.number().describe("The pizza ID to remove"),
       }),
       async execute(args, ctx) {
-        const order = getOrder(ctx);
+        const order = orderSlot.get(ctx);
         const idx = order.pizzas.findIndex((p) => p.id === args.pizza_id);
         if (idx === -1) return { error: "Pizza not found in the order." };
 
@@ -116,7 +116,7 @@ export default agent({
         name: z.string(),
       }),
       async execute(args, ctx) {
-        getOrder(ctx).customerName = args.name;
+        orderSlot.get(ctx).customerName = args.name;
         return { name: args.name };
       },
     }),
@@ -131,7 +131,7 @@ export default agent({
         quantity: z.number().int().min(1).optional(),
       }),
       async execute(args, ctx) {
-        const order = getOrder(ctx);
+        const order = orderSlot.get(ctx);
         const idx = order.pizzas.findIndex((p) => p.id === args.pizza_id);
         if (idx === -1) return { error: "Pizza not found in the order." };
 
@@ -153,7 +153,7 @@ export default agent({
     view_order: tool({
       description: "View the current order summary with all pizzas and total price.",
       async execute(_args, ctx) {
-        const pizzas = getOrder(ctx).pizzas;
+        const pizzas = orderSlot.get(ctx).pizzas;
         if (pizzas.length === 0) return { message: "The order is empty." };
 
         return {

@@ -1,6 +1,6 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import { getState, RESOURCE_TYPES } from "../shared.ts";
+import { dispatchSlot, RESOURCE_TYPES } from "../shared.ts";
 
 export const resourcesGetAvailable = tool({
   description: "List available resources, optionally filtered by type.",
@@ -11,7 +11,7 @@ export const resourcesGetAvailable = tool({
       .optional(),
   }),
   async execute(args, ctx) {
-    const state = getState(ctx);
+    const state = dispatchSlot.get(ctx);
     let resources = state.resources;
     if (args.type && args.type !== "all") {
       resources = resources.filter((r) => r.type === args.type);
