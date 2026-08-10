@@ -5,7 +5,7 @@
 // (home.tsx), whose first prompt auto-creates a project.
 
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport, type UIMessage } from "ai";
+import type { UIMessage } from "ai";
 import {
   type Dispatch,
   type SetStateAction,
@@ -20,7 +20,7 @@ import { errorText } from "./api-error.ts";
 import { drainText, EMPTY_QUEUE, hasPendingWork, nextToFlush, queueReducer } from "./chat-queue.ts";
 import { EmptyStateBody, Transcript } from "./chat-transcript.tsx";
 import { Composer } from "./composer.tsx";
-import { createResilientFetch } from "./resilient-fetch.ts";
+import { createSandboxTransport } from "./sandbox-transport.ts";
 
 type ChatPanelProps = {
   /**
@@ -49,8 +49,13 @@ type ChatPanelProps = {
   sessionError?: unknown;
   /** Tool name → friendly label, served by the sandbox. */
   toolLabels?: Record<string, string> | undefined;
-  /** The sandbox went away mid-session — re-broker. */
-  onSessionStale: () => void;
+  /**
+   * The sandbox went away mid-session — re-broker, and report the replacement
+   * lease so the turn that hit the dead one can be sent again on it (see
+   * sandbox-transport.ts). Also the SandboxNote's Try again button, which only
+   * wants the re-broker and ignores what comes back.
+   */
+  onSessionStale: () => Promise<ChatSession | undefined>;
   /** Prompt queued before the project existed — sent once on mount. */
   initialPrompt: string | null;
   onInitialPromptSent: () => void;
@@ -156,7 +161,7 @@ function PendingChat({
   toolLabels?: Record<string, string> | undefined;
   initialPrompt: string | null;
   sessionError: unknown;
-  onSessionStale: () => void;
+  onSessionStale: () => Promise<ChatSession | undefined>;
   input: string;
   onInputChange: Dispatch<SetStateAction<string>>;
 }) {
@@ -215,24 +220,28 @@ function ProjectChat({
   input: string;
   onInputChange: Dispatch<SetStateAction<string>>;
 }) {
-  // Keep the latest callbacks out of the transport, which is created once.
+  // The transport is created ONCE — `useChat` owns the conversation for the
+  // whole life of this component — but the lease it targets is not durable, so
+  // both of these are read through refs at request time rather than captured.
+  // See sandbox-transport.ts for what a stale lease costs when they are not.
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
   const staleRef = useRef(onSessionStale);
   staleRef.current = onSessionStale;
 
-  const [transport] = useState(
-    () =>
-      // Turns stream DIRECTLY to the project's sandbox (the brokered URL),
-      // mirroring how voice clients connect straight to a deployed agent.
-      new DefaultChatTransport({
-        api: session.url,
-        // The broker-minted per-session token — the browser never holds a
-        // long-lived credential for the sandbox's public surface.
-        headers: { Authorization: `Bearer ${session.token}` },
-        // Every way this surface can reject us — 401 (stale token), 409
-        // (no session), or an unreachable sandbox — means the same thing:
-        // re-broker. See resilient-fetch.ts for why each needs saying.
-        fetch: createResilientFetch({ onStale: () => staleRef.current() }),
-      }),
+  /** The sandbox went away mid-turn and we are waiting on its replacement. */
+  const [restarting, setRestarting] = useState(false);
+
+  const [transport] = useState(() =>
+    createSandboxTransport({
+      session: () => sessionRef.current,
+      // Every way this surface can reject us — 401 (stale token), 409 (no
+      // session), or an unreachable sandbox — means the same thing: re-broker,
+      // and send the turn again on what comes back. See resilient-fetch.ts for
+      // why each needs saying.
+      rebroker: () => staleRef.current(),
+      onRestarting: setRestarting,
+    }),
   );
 
   const { messages, sendMessage, setMessages, status, error, stop } = useChat({
@@ -369,7 +378,15 @@ function ProjectChat({
         footer={
           <>
             {error && <div className="text-[13px] text-err">{error.message}</div>}
-            {busy && <div className="text-[13px] text-subtle italic">Working…</div>}
+            {/* A re-broker mid-turn is a container boot, so saying "Working…"
+                through it would report the agent as busy while nothing is
+                running — the same unexplained wait SandboxNote exists to
+                avoid on the way in. */}
+            {restarting ? (
+              <div className="text-[13px] text-subtle italic">Restarting the sandbox…</div>
+            ) : (
+              busy && <div className="text-[13px] text-subtle italic">Working…</div>
+            )}
           </>
         }
       />

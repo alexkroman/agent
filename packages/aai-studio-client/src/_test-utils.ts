@@ -3,6 +3,21 @@
 
 import { vi } from "vitest";
 
+/**
+ * A spy that stands in for `fetch` where one is INJECTED rather than stubbed
+ * globally (`createResilientFetch`, `createSandboxTransport`).
+ *
+ * The one typed seam for that, and the reason it is worth having is that the
+ * hand-rolled version was an `as unknown as typeof fetch` per suite — the cast
+ * is unnecessary once the mock's parameter types are declared here instead of
+ * being inferred from a narrower callback at each call site.
+ */
+export function fakeFetch(
+  impl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
+): ReturnType<typeof vi.fn<typeof fetch>> {
+  return vi.fn(impl);
+}
+
 export function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,

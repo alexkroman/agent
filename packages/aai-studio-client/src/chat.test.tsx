@@ -142,7 +142,7 @@ describe("ChatPanel session failure", () => {
     chatHistory: [] as UIMessage[],
     chatStatus: { provider: "assemblyai", model: "gpt-5.5" },
     chatSession: undefined,
-    onSessionStale: noop,
+    onSessionStale: () => Promise.resolve(undefined),
     initialPrompt: null,
     onInitialPromptSent: noop,
     onWorkspaceChanged: noop,

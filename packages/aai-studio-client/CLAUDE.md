@@ -279,6 +279,38 @@ segmented control switches between — `preview.tsx`, `code-view.tsx`,
     hand-matched copies would shift the messages under the reader at the exact
     moment the live chat takes over.
 
+- **The chat transport is aimed at the CURRENT sandbox lease, per request**
+  (`sandbox-transport.ts`). A brokered session is a lease on a guest sandbox
+  that is idle-evicted after `STUDIO_SESSION_IDLE_MS`, so a tab left open holds
+  a URL and a token for a process that no longer exists.
+  `DefaultChatTransport` captures its `api` and `headers` at construction and
+  `useChat` needs ONE transport for the life of the conversation, so a
+  transport built from the lease that existed at mount could only ever talk to
+  that one sandbox: the re-broker landed in the query cache and the chat went
+  on posting to the dead origin. **That is what made "Failed to fetch" a
+  RELOAD-only failure** — the first message after a spin-down failed, and so
+  did every retype, because nothing in the tab could re-aim itself. The wrapper
+  builds the real transport per request from the lease the app holds now.
+  - **The retry lives with the TURN, not the request** — the replacement
+    sandbox answers on a different origin with a different token, so nothing
+    inside one fetch can re-aim itself. `resilient-fetch.ts` therefore only
+    NAMES the failure (`StaleSandboxError`, thrown for the three signals it
+    already classified) and the transport re-sends the turn once on the fresh
+    lease. Retrying is safe because of what that error means: the guest either
+    never received the request or refused it before the turn began, so nothing
+    ran and nothing is duplicated. A 423 (another tab holds the turn) is
+    deliberately NOT in that class.
+  - **The re-broker reports the lease; the transport never re-reads it.** The
+    broker's query settles before React has re-rendered with the new prop, so
+    a re-read of the render-time value sees the dead lease and gives up on a
+    sandbox that is right there. `onSessionStale` (app.tsx) therefore resolves
+    with what it read out of the query CACHE.
+  - **The wait says what it is waiting on.** A mid-turn re-broker is a
+    container boot, so the footer shows "Restarting the sandbox…" rather than
+    "Working…" — reporting the agent as busy while nothing runs is the same
+    unexplained wait `SandboxNote` exists to avoid on the way in. A retry with
+    no replacement to aim at (the broker gave up) fails the turn with the
+    error's own sentence, not the browser's "Failed to fetch".
 - **The composer QUEUES follow-ups typed mid-turn**
   (`aai-studio-client/src/chat-queue.ts`), Claude-Code style: the input stays
   live while the agent works, Enter parks the message in a visible, dismissable

@@ -9,6 +9,7 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import type { ChatSession } from "./api.ts";
 import { ChatPanel } from "./chat.tsx";
 
 // jsdom has no ResizeObserver; use-stick-to-bottom needs one.
@@ -97,14 +98,20 @@ function stubChatTurns(count: number) {
   return { turn, sent, fetchMock };
 }
 
-function renderPanel(overrides: { onBusyChange?: (busy: boolean) => void } = {}) {
+function renderPanel(
+  overrides: {
+    onBusyChange?: (busy: boolean) => void;
+    chatSession?: ChatSession;
+    onSessionStale?: () => Promise<ChatSession | undefined>;
+  } = {},
+) {
   return render(
     <ChatPanel
       chatHistory={[]}
       chatStatus={{ provider: "assemblyai", model: "gpt-5.5" }}
-      chatSession={{ url: SANDBOX_URL, token: "chat-token" }}
+      chatSession={overrides.chatSession ?? { url: SANDBOX_URL, token: "chat-token" }}
       toolLabels={{}}
-      onSessionStale={vi.fn()}
+      onSessionStale={overrides.onSessionStale ?? vi.fn()}
       initialPrompt={null}
       onInitialPromptSent={vi.fn()}
       onWorkspaceChanged={vi.fn()}
@@ -239,6 +246,60 @@ describe("queued follow-ups", () => {
     expect(screen.queryByLabelText("Queued messages")).toBeNull();
     // Not auto-sent over the failure: the error is what the user needs to see.
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("a sandbox that spun down is re-brokered and the message still lands", async () => {
+    // The reported bug: type into a project whose sandbox had been idle-evicted
+    // and the panel showed "Failed to fetch" — every retype too, because the
+    // transport had captured the dead lease. Only a page reload fixed it.
+    const live = openTurn();
+    const dead: ChatSession = { url: "http://dead.sandbox.test/studio/chat", token: "dead-token" };
+    const replacement: ChatSession = { url: SANDBOX_URL, token: "fresh-token" };
+    const fetchMock = vi.fn((input: RequestInfo | URL) =>
+      String(input).startsWith(dead.url)
+        ? Promise.reject(new TypeError("Failed to fetch"))
+        : Promise.resolve(live.response),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const onSessionStale = vi.fn(() => Promise.resolve(replacement));
+    renderPanel({ chatSession: dead, onSessionStale });
+
+    type("build a greeter");
+
+    // One request to the dead sandbox, one re-broker, one to the replacement.
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(onSessionStale).toHaveBeenCalledOnce();
+    expect(String(fetchMock.mock.calls[1]?.[0])).toBe(replacement.url);
+
+    live.speak("on it");
+    live.finish();
+    await waitFor(() => expect(screen.getByText("on it")).toBeDefined());
+    // The user is never shown the failure the studio recovered from.
+    expect(screen.queryByText(/Lost the connection/)).toBeNull();
+  });
+
+  test("the wait for a replacement sandbox says so, rather than 'Working…'", async () => {
+    // A re-broker is a container boot: reporting it as the agent working is a
+    // stall with no explanation, which is what sent people to the reload button.
+    const live = openTurn();
+    const dead: ChatSession = { url: "http://dead.sandbox.test/studio/chat", token: "dead-token" };
+    const fetchMock = vi.fn((input: RequestInfo | URL) =>
+      String(input).startsWith(dead.url)
+        ? Promise.reject(new TypeError("Failed to fetch"))
+        : Promise.resolve(live.response),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const broker = Promise.withResolvers<ChatSession>();
+    renderPanel({ chatSession: dead, onSessionStale: () => broker.promise });
+
+    type("build a greeter");
+
+    await waitFor(() => expect(screen.getByText("Restarting the sandbox…")).toBeDefined());
+    expect(screen.queryByText("Working…")).toBeNull();
+
+    broker.resolve({ url: SANDBOX_URL, token: "fresh-token" });
+    await waitFor(() => expect(screen.queryByText("Restarting the sandbox…")).toBeNull());
+    expect(screen.getByText("Working…")).toBeDefined();
   });
 
   test("Publish stays locked between queued turns", async () => {
