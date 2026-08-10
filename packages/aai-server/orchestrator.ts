@@ -13,6 +13,8 @@
  * - `GET  /:slug/health`         — per-agent health check
  * - `GET  /:slug/client-config`  — session broker: name/greeting + the live
  *   sandbox session URL (ensures the sandbox is running)
+ * - `GET/POST /:slug/phone`     — carrier call-answering webhook: brokers the
+ *   sandbox and answers with TwiML/TeXML pointing at its media-stream endpoint
  * - `GET  /:slug/favicon.ico`    — agent page favicon (custom or default)
  * - `GET  /:slug/assets/:path`   — client static assets
  * - `DELETE /:slug/`             — owner: delete agent
@@ -43,6 +45,7 @@ import { handleDeployNew } from "./deploy.ts";
 import { gzipRequestMw, MAX_INFLATED_BODY_BYTES } from "./gzip-request.ts";
 import { authMw, existingOwnerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
+import { createPhoneHandler, PHONE_ROUTE } from "./phone-handler.ts";
 import type { PlatformEvents } from "./platform-events.ts";
 import { createMutationLock, localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import { createRateLimiter, DEPLOY_IP_RATE_LIMIT, type RateLimiter } from "./rate-limit.ts";
@@ -284,6 +287,14 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // Same auth posture as the page and the session endpoint: none.
   const handleAgentClientConfig = createAgentClientConfigHandler(opts.guestConfigFetch);
   agents.get("/client-config", (c) => handleAgentClientConfig(c, brokerOpts));
+  // Call-answering webhook: brokers the sandbox and answers with the TwiML
+  // that points the carrier at the guest's own /phone endpoint. Same auth
+  // posture as the routes above — none by default; an agent that stores its
+  // carrier's signing secret gets every request verified (phone-signature.ts).
+  // GET as well as POST because a carrier's webhook method is the operator's
+  // to configure, and a GET-configured number should work rather than 405.
+  const handlePhone = createPhoneHandler({ store: opts.store });
+  agents.on(["GET", "POST"], PHONE_ROUTE, (c) => handlePhone(c, brokerOpts));
   agents.get("/favicon.ico", handleAgentFavicon);
   agents.get("/assets/:path{.+}", handleClientAsset);
   // GET /:slug/ stays on the top-level app — Hono's mergePath("/:slug", "/")

@@ -60,6 +60,9 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
 - `sandbox-broker.ts` — `brokerSessionUrl`: slug → the public session URL a
   client dials, with the one failure taxonomy `GET /:slug/client-config` and
   the `/:slug/websocket` upgrade share. The platform's ONLY routing point
+- `phone-handler.ts` / `phone-signature.ts` — `GET/POST /:slug/phone`: the
+  carrier call-answering webhook (see "Telephony" below) and its webhook
+  authenticity checks
 - `sandbox-directory.ts` / `sandbox-peers.ts` — the fleet-wide answer to "is
   some replica already serving this deploy?", which is a Modal sandbox NAME
   (`agent-<hash(slug)>-v<version>`) rather than a lease table — see "No
@@ -1331,22 +1334,11 @@ Key properties:
   state (`ctx.state`, history, the resume grace window) exactly as the
   self-hosted runtime does. The host holds no session state.
 
-### Platform sandbox
-
-Agent code runs in **per-agent Modal Sandboxes**. Key files:
-`packages/aai-server/sandbox.ts`, `sandbox-vm.ts`, `modal-sandbox.ts`,
-`aai-guest/harness.ts`, `rpc-transport.ts`.
-
-**Isolation layers:**
-
-- **Filesystem**: the baked harness image. No host filesystem access.
-- **Network**: open egress (the container is the boundary); ctx.db connects
-  directly on the app's own scoped role — platform admin credentials stay
-  host-side.
-- **Memory/CPU**: Modal per-sandbox limits; separate container per sandbox.
-- **Env vars**: a deployed agent's env is delivered as a boot FILE written
-  into its own sandbox (scrubbed after reading); per-sandbox tokens ride
-  the exec env. Platform secrets stay host-side.
+Key files: `sandbox.ts`, `sandbox-vm.ts`, `modal-sandbox.ts`,
+`aai-guest/harness.ts`, `rpc-transport.ts`. A deployed agent's env is
+delivered as a boot FILE written into its own sandbox (scrubbed after
+reading); per-sandbox tokens ride the exec env, and platform secrets stay
+host-side.
 
 **Credential separation:**
 
@@ -1405,73 +1397,14 @@ stored env at sandbox creation time and kept host-side only.
 - Sessions are per-sandbox (`Map<string, Session>`).
 - No shared mutable state between sandboxes.
 
-**`run_code` built-in tool (`aai-guest/trial.ts`):**
+**`run_code`**: executes only inside the guest sandbox — see "The
+`run_code` executor" in `packages/aai-guest/CLAUDE.md` for its authority
+and why there is no in-process capability stripping.
 
-- Executes **only inside the guest sandbox** (Modal/Node): the harness wires
-  its in-sandbox executor into the runtime as `RuntimeOptions.runCode`
-  (`run_code` is in `SANDBOX_ONLY_BUILTINS`). The old host-side `node:vm`
-  execution was removed — `node:vm` is not a security boundary; the Modal
-  container is.
-- The host-side `execute` (`builtin-run-code.ts`) is a guard for the
-  self-hosted path (`aai dev`), which has no sandbox — it refuses rather
-  than evaluating attacker-influenceable code in the host process.
-- The executor is a bare `new Function` async wrapper: code runs with the
-  **same authority as the rest of the sandboxed agent** — open egress,
-  filesystem, env, child processes — and nothing more. There is deliberately
-  no in-process capability stripping; the container is the whole boundary.
-  (This is why the tool description promises only "output from console.log",
-  not "no network/filesystem" — that claim would be false now.)
-- 5-second execution timeout (enforced in the guest).
-
-**SSRF protection (aai/host/ssrf.ts):**
-
-- Lives in the SDK, not `aai-server`, so both the platform's guest-fetch proxy
-  and the SDK's own network builtins resolve one implementation.
-- `resolveAndAssertPublic()` uses the `bogon` library for private IP ranges.
-- Handles IPv4-mapped IPv6 bypass (`::ffff:127.0.0.1`).
-- Blocks `.internal`, `.local`, cloud metadata hostnames, and non-HTTP(S)
-  protocols.
-- Re-validates every redirect hop and strips credential headers once a redirect
-  leaves the original origin.
-- Pins the validated IP with an undici dispatcher `lookup` rather than
-  rewriting the URL hostname. Rewriting broke TLS — SNI and cert verification
-  use the URL, not the `Host` header — so every `https://` request failed. Keep
-  the URL intact when touching this.
-- **The dispatcher and the `fetch` it is handed to must come from the same
-  undici.** `pinnedDispatcher` builds an `Agent` from this package's `undici`
-  dependency, while `globalThis.fetch` is backed by the copy bundled into the
-  Node runtime (`process.versions.undici`) — a different major. undici 8
-  reworked the dispatch-handler interface, so a v8 `Agent` rejects the v7-style
-  handler Node's internal fetch builds, with `InvalidArgumentError: invalid
-  onRequestStart method` surfacing as a bare `TypeError: fetch failed`. A
-  dispatcher is attached to *every* hostname request, so the mismatch takes out
-  all SSRF-guarded egress at once — `web_search`, `visit_webpage`,
-  `get_page_design`, and `fetch_json`. `safeFetch` therefore routes through
-  `pinnedFetch`, undici's own `fetch`; never reintroduce `globalThis.fetch`
-  there. Guarded by `ssrf-dispatcher.test.ts` — the rest of the SSRF suite
-  injects a fake fetch and never builds a real dispatcher, which is why this
-  shipped unnoticed. Two rules survived the (since-removed) tool-egress
-  guard that first hit this: **the caller may not name a fetch
-  implementation** (leave `fetchFn` unset — it exists for tests — so the
-  pinned default applies), and the guard test has to cover the *call site*,
-  not just `pinnedFetch` in isolation.
-
-  **The request *body* crosses the same seam, and `FormData` does not survive
-  it.** undici 8's `extractBody` brand-checks each body type with an
-  `instanceof` against **its own** class, so a `globalThis.FormData` (an
-  instance of Node's *internal* undici's class) matches no branch, falls
-  through to the string conversion, and goes out as `Content-Type: text/plain`
-  with the 17-byte body `[object FormData]` — the server answers
-  `415 Unsupported Media Type` and the caller sees an opaque HTTP failure.
-
-  The rule that generalizes: **never hand a `FormData`, `Blob`, `File`,
-  `Headers`, or `Request` to a `fetch` that might not be the one your realm's
-  global came from** — pass bytes.
-- The network builtins (`web_search`, `visit_webpage`, `get_page_design`,
-  `fetch_json`) take a
-  model-controlled URL and **default** to this via `safeFetch` in
-  `builtin-tools.ts`. Protection is not opt-in per caller; only tests override
-  the `fetch` option.
+**SSRF protection**: `aai/host/ssrf.ts` — the SDK owns it, and so does its
+guide. The screening policy (why a CONTAINED guest is not screened), the
+bypass classes covered, and the two undici-version traps in the pinned
+dispatcher are in `packages/aai/CLAUDE.md`, "Guest network access".
 
 **Auth:**
 
@@ -1745,6 +1678,54 @@ cannot sign" rather than "signing failed", and why a pinned older guest is
 checked with `guestUnderstandsBundleUrl` before being handed a URL it cannot
 read — is documented with the guest: see "Fetching its own bundle" in
 `packages/aai-guest/CLAUDE.md`.
+
+### Telephony — `GET/POST /:slug/phone`
+
+A carrier points a phone number at this route; it brokers the agent's sandbox
+and answers with the markup that tells the carrier to open a media stream
+against that sandbox's own `/phone` endpoint. From there the carrier talks to
+the guest directly and the platform is out of the path, exactly as it is for
+browser sessions. The guest half — the bridge, the codecs, the resampling — is
+the SDK's: see "Telephony" in `packages/aai/CLAUDE.md`.
+
+**Why this route exists rather than pointing the carrier at
+`/:slug/websocket`.** That endpoint answers a plain upgrade with a 302 to the
+live sandbox (`orchestrator-ws.ts`), and carriers do not follow WebSocket
+handshake redirects — the call would connect to nothing. TwiML is an
+indirection the carrier DOES follow, so the redirect problem does not need
+solving: the markup carries the resolved sandbox URL, and the sandbox a call
+lands on is always the current one. Telnyx's TeXML accepts the same verbs, so
+one document shape serves both.
+
+**Cold start is answered with MARKUP, not with a held request.** A carrier
+times out a webhook in ~15s, which is under a cold sandbox's boot budget, so
+waiting for the boot inside the request is not available — the per-attempt
+readiness budget is `PHONE_READY_TIMEOUT_MS` (8s), well inside it. A
+still-booting agent gets `<Pause>` + `<Redirect>` back here instead; the boot
+continues server-side and the next attempt joins the same readiness promise
+(see `BROKER_READY_TIMEOUT_MS`). A browser client gets this for free by
+re-brokering, and a phone call has no such loop — so the loop is written into
+the response, bounded so a permanently broken agent hangs up instead of
+looping until the caller does.
+
+**Webhook verification is enabled by the AGENT'S OWN SECRET, not by a flag.**
+An agent whose stored env holds `TWILIO_AUTH_TOKEN` (HMAC-SHA1 over the URL
+plus sorted params) or `TELNYX_PUBLIC_KEY` (Ed25519 over `timestamp|body`,
+with a freshness bound — without one a captured request is valid forever) has
+every request checked; an agent that has set neither is left exactly as open
+as `/client-config` and `/websocket` beside it, which is the posture every
+public agent route already has. Two defaults were available and the
+alternatives are worse: refusing unsigned requests unconditionally means a
+phone number that 403s until the operator finds a doc page, and demanding the
+secret up front puts a credential in the way of trying the feature. What
+setting it buys is real — without it, anyone who learns a slug can drive
+sandbox boots and provider spend by POSTing here.
+
+**The signed URL is the PUBLIC one.** Twilio signs the URL it built the
+request from, which behind Modal's TLS termination is never `c.req.url` — the
+handler composes it from `resolvePublicOrigin`, for the same reason everything
+else on this platform does (see "Never derive the public scheme from the
+request URL").
 
 ### No warm pool — every spawn boots from the snapshot image
 

@@ -26,7 +26,8 @@ import { isHostAllowed, startHostSession } from "./host-mode.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import type { AgentRuntime } from "./runtime-types.ts";
-import { type SessionWebSocket, safeSend } from "./ws-handler.ts";
+import { handleTelephonyUpgrade } from "./telephony/telephony-server.ts";
+import { asSessionWebSocket, safeSend } from "./ws-handler.ts";
 
 /**
  * The session-facing slice of a runtime — all {@link createServer} needs.
@@ -114,6 +115,16 @@ export type ServerOptions = {
     url: string,
     method: string,
   ) => boolean;
+  /**
+   * Serve carrier media streams on `WS /phone` (Twilio, Telnyx — see
+   * `telephony/carriers.ts`). Defaults to true.
+   *
+   * On by default because it grants exactly what `/websocket` beside it
+   * already grants — the same session, agent and credentials — so it is not
+   * the kind of surface the loopback bind and the host-mode flag are
+   * fail-closed about. Set false to remove the route.
+   */
+  telephony?: boolean;
 };
 
 /** Handle returned by {@link createServer}. */
@@ -350,6 +361,10 @@ export function createServer(options: ServerOptions): AgentServer {
     if (options.upgrade?.(req, socket, head)) return;
 
     const url = req.url?.split("?")[0] ?? "";
+    const telephony = options.telephony ?? true;
+    if (handleTelephonyUpgrade({ req, socket, head, wss, runtime, logger, enabled: telephony })) {
+      return;
+    }
     if (!url.startsWith("/websocket")) {
       // No other upgrade consumer exists on this server: an unmatched upgrade
       // socket would otherwise dangle forever with no error handling.
@@ -362,7 +377,7 @@ export function createServer(options: ServerOptions): AgentServer {
 
     wss.handleUpgrade(req, socket, head, (ws) => {
       const startOpts = parseWsUpgradeParams(req.url ?? "");
-      const session = ws as unknown as SessionWebSocket;
+      const session = asSessionWebSocket(ws);
 
       // Host mode: defer startSession until the first `config` frame supplies
       // the per-connection agent. Requires `env` (for gating + secrets).

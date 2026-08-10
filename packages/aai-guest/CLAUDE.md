@@ -13,8 +13,10 @@ agent. ONE BINARY, TWO MODES, selected by the spawner via `AAI_GUEST_MODE`
 delivers):
   **agent mode** (deployed agents — see "Agent guests are servers") boots
   from files delivered at exec time and serves only the public session
-  surfaces plus the token-gated `/manage/status` + `/manage/drain` pair
-  (`harness-agent-mode.ts`); **studio mode** serves
+  surfaces — `/websocket` for browsers and `/phone` for carrier media streams,
+  both from the SDK's own `createServer` — plus the token-gated
+  `/manage/status` + `/manage/drain` pair (`harness-agent-mode.ts`);
+  **studio mode** serves
   `/ws` (bearer-token host control channel — JSON-RPC
   `workspace/deploy` (Publish's in-guest `aai deploy`), `status`,
   `studio/session-init`; guest→host
@@ -77,6 +79,24 @@ toolchain is safe on this path specifically because `resolveCliEntry()` runs
 first and has already failed the publish cleanly if it is not there — so the
 dynamic import is deliberately AFTER it. Anything else this package writes for
 the CLI to read belongs in that subpath too, not in a `JSON.stringify` here.
+
+## The `run_code` executor (`trial.ts`)
+
+- Executes **only inside the guest sandbox** (Modal/Node): the harness wires
+  its in-sandbox executor into the runtime as `RuntimeOptions.runCode`
+  (`run_code` is in `SANDBOX_ONLY_BUILTINS`). The old host-side `node:vm`
+  execution was removed — `node:vm` is not a security boundary; the Modal
+  container is.
+- The host-side `execute` (`builtin-run-code.ts`) is a guard for the
+  self-hosted path (`aai dev`), which has no sandbox — it refuses rather
+  than evaluating attacker-influenceable code in the host process.
+- The executor is a bare `new Function` async wrapper: code runs with the
+  **same authority as the rest of the sandboxed agent** — open egress,
+  filesystem, env, child processes — and nothing more. There is deliberately
+  no in-process capability stripping; the container is the whole boundary.
+  (This is why the tool description promises only "output from console.log",
+  not "no network/filesystem" — that claim would be false now.)
+- 5-second execution timeout (enforced in the guest).
 
 ## Dev/prod parity
 

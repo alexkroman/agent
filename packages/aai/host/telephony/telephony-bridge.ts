@@ -1,0 +1,304 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * A phone call, presented to the runtime as an ordinary session socket.
+ *
+ * **The session stack is not changed by telephony, and that is the design.**
+ * `SessionCore` talks to a `ClientSink`, `wireSessionSocket` talks to a
+ * `SessionWebSocket`, and neither knows what is on the far end. So a
+ * carrier's media stream does not need a second session implementation, a
+ * second pacer, or a second lifecycle — it needs a socket-shaped adapter that
+ * speaks the client protocol on one side and the carrier's framing on the
+ * other. Everything the browser path already gets — turn-taking, barge-in,
+ * tool calls, the audio pacer and its ordering rules, session eviction,
+ * keepalives, start timeouts, teardown — a phone call gets for free, on the
+ * same code, because it IS the same code.
+ *
+ * Two translations, in opposite directions:
+ *
+ * | direction | carrier | session |
+ * | --- | --- | --- |
+ * | caller speech | base64 μ-law, 8 kHz, in a JSON `media` frame | raw PCM16 binary at the session's input rate |
+ * | agent speech | base64 μ-law, 8 kHz, in a JSON `media` frame | raw PCM16 binary at the session's TTS rate |
+ *
+ * **The rates are LEARNED, not configured.** The first thing any runtime
+ * sends a new session is the protocol `config` frame carrying `sampleRate`
+ * and `ttsSampleRate`, so the bridge reads them off the wire and builds its
+ * converters then. That is what lets one adapter serve a 16 kHz pipeline
+ * agent and a 24 kHz S2S agent with no per-agent configuration and no plumbing
+ * through `createServer` — which matters because the guest harness hands
+ * `createServer` a LAZY runtime facade that cannot answer a rate question
+ * until the first session has already begun.
+ *
+ * **Pacing stays ON, deliberately.** A carrier accepts audio far faster than
+ * it plays it and buffers the rest, which is precisely the shape that made
+ * unpaced host-mode sessions destroy 36% of all agent audio (see
+ * "Host-mode audio pacing" in `packages/aai/CLAUDE.md`): the backlog builds
+ * on the far side, where `PacedAudioSink.clear()` cannot reach it. Paced, the
+ * backlog stays here and a barge-in drops it. The carrier's own buffer is
+ * emptied by the `clear` frame — see {@link CarrierCodec.clear}.
+ */
+
+import { WS_OPEN } from "../../sdk/constants.ts";
+import { safeJsonParse } from "../../sdk/utils.ts";
+import { base64ToUint8, uint8ToBase64 } from "../_base64.ts";
+import { bytesToPcm16 } from "../_pcm.ts";
+import type { Logger } from "../runtime-config.ts";
+import { consoleLogger } from "../runtime-config.ts";
+import type { SessionWebSocket } from "../ws-frames.ts";
+import { type CarrierCodec, type CarrierInbound, isMulawFormat } from "./carriers.ts";
+import { mulawToPcm16, pcm16ToMulaw, TELEPHONY_SAMPLE_RATE } from "./mulaw.ts";
+import { createResampler, type Resampler } from "./resample.ts";
+
+/** The `audio_ready` frame, synthesized when the carrier's stream starts. */
+const AUDIO_READY_FRAME = JSON.stringify({ type: "audio_ready" });
+
+/** Close code sent when the carrier ends the stream (the caller hung up). */
+const WS_CLOSE_NORMAL = 1000;
+
+/** Options for {@link createTelephonyBridge}. */
+export type TelephonyBridgeOptions = {
+  /** Framing for the carrier on the other end — see `carriers.ts`. */
+  carrier: CarrierCodec;
+  /** Structured logger. Defaults to the console logger. */
+  logger?: Logger;
+};
+
+type MessageListener = (event: { data: unknown }) => void;
+type CloseListener = (event: { code?: number; reason?: string }) => void;
+
+/**
+ * Read a carrier frame's payload as text.
+ *
+ * `ws` hands text frames over as strings through the EventTarget API, but a
+ * carrier is free to send its JSON in a binary frame and at least one proxy
+ * in the path may rewrite it — decoding bytes costs nothing and turns a whole
+ * class of "the call connects and nothing happens" into working audio.
+ */
+function frameText(data: unknown): string | null {
+  if (typeof data === "string") return data;
+  if (data instanceof Uint8Array) return Buffer.from(data).toString("utf-8");
+  if (data instanceof ArrayBuffer) return Buffer.from(data).toString("utf-8");
+  return null;
+}
+
+function asBytes(data: string | ArrayBuffer | Uint8Array): Uint8Array | null {
+  if (data instanceof Uint8Array) return data;
+  if (data instanceof ArrayBuffer) return new Uint8Array(data);
+  return null;
+}
+
+/**
+ * Wrap a carrier's media-stream socket as a `SessionWebSocket`, ready to
+ * hand straight to `runtime.startSession`.
+ *
+ * @example
+ * ```ts
+ * import { createTelephonyBridge, twilioCodec } from "@alexkroman1/aai/runtime";
+ * declare const runtime: import("@alexkroman1/aai/runtime").AgentRuntime;
+ * declare const carrierSocket: import("@alexkroman1/aai/runtime").SessionWebSocket;
+ *
+ * runtime.startSession(createTelephonyBridge(carrierSocket, { carrier: twilioCodec }));
+ * ```
+ *
+ * @public
+ */
+export function createTelephonyBridge(
+  carrierSocket: SessionWebSocket,
+  opts: TelephonyBridgeOptions,
+): SessionWebSocket {
+  const { carrier } = opts;
+  const log = opts.logger ?? consoleLogger;
+
+  /** Echoed on outbound frames; Twilio drops frames that omit it. */
+  let streamId: string | null = null;
+  /** 8 kHz μ-law → the session's input rate. Built from the `config` frame. */
+  let toSession: Resampler | null = null;
+  /** The session's TTS rate → 8 kHz. Built from the same frame. */
+  let toCarrier: Resampler | null = null;
+
+  const messageListeners: MessageListener[] = [];
+  /**
+   * Frames decoded before the runtime attached its listener.
+   *
+   * In practice the runtime wires up synchronously in the same tick the
+   * bridge is created, so nothing lands here — but a dropped `start` would
+   * cost the greeting and, with it, the opening of every call, which is too
+   * quiet a failure to leave to event-loop ordering.
+   */
+  let pending: unknown[] | null = [];
+
+  function emit(data: unknown): void {
+    if (pending !== null) {
+      pending.push(data);
+      return;
+    }
+    for (const listener of messageListeners) listener({ data });
+  }
+
+  function sendToCarrier(frame: unknown): void {
+    if (carrierSocket.readyState !== WS_OPEN) return;
+    try {
+      carrierSocket.send(JSON.stringify(frame));
+    } catch (err) {
+      log.debug("telephony: carrier send failed", { error: String(err) });
+    }
+  }
+
+  /**
+   * Build the converters from the protocol `config` frame.
+   *
+   * Idempotent by construction: a runtime sends `config` once per connection,
+   * and rebuilding the converters mid-call would reset their filter state and
+   * put a click in the audio.
+   */
+  function configure(sampleRate: number, ttsSampleRate: number): void {
+    if (toSession !== null) return;
+    toSession = createResampler(TELEPHONY_SAMPLE_RATE, sampleRate);
+    toCarrier = createResampler(ttsSampleRate, TELEPHONY_SAMPLE_RATE);
+    log.debug("telephony: session rates negotiated", {
+      carrier: carrier.name,
+      sampleRate,
+      ttsSampleRate,
+    });
+  }
+
+  /** Session → carrier: a protocol text frame. */
+  function handleSessionEvent(text: string): void {
+    const parsed = safeJsonParse(text);
+    const message = typeof parsed === "object" && parsed !== null ? parsed : null;
+    const type = (message as { type?: unknown } | null)?.type;
+    if (type === "config") {
+      const { sampleRate, ttsSampleRate } = message as {
+        sampleRate?: unknown;
+        ttsSampleRate?: unknown;
+      };
+      if (typeof sampleRate === "number" && typeof ttsSampleRate === "number") {
+        configure(sampleRate, ttsSampleRate);
+      }
+      return;
+    }
+    // The caller interrupted, or the conversation was reset. Both mean the
+    // audio the carrier is still holding is dead — see CarrierCodec.clear.
+    if (type === "cancelled" || type === "reset") sendToCarrier(carrier.clear(streamId));
+    // Everything else is for a screen: transcripts, tool calls, agent state,
+    // reply/turn boundaries. A phone has none, and the audio already carries
+    // the conversation.
+  }
+
+  /** Session → carrier: one PCM16 chunk of agent speech. */
+  function handleSessionAudio(bytes: Uint8Array): void {
+    if (toCarrier === null) {
+      // Only reachable if a runtime sent audio before its own `config` frame.
+      log.warn("telephony: dropping agent audio received before the config frame");
+      return;
+    }
+    const eightKhz = toCarrier.process(bytesToPcm16(bytes));
+    if (eightKhz.length === 0) return;
+    sendToCarrier(carrier.media(uint8ToBase64(pcm16ToMulaw(eightKhz)), streamId));
+  }
+
+  /** The carrier's stream has begun: pin the id and release the greeting. */
+  function handleCarrierStart(frame: CarrierInbound & { kind: "start" }): void {
+    streamId = frame.streamId === "" ? null : frame.streamId;
+    if (!isMulawFormat(frame.encoding)) {
+      // Informational, never fatal: the field is a declaration and the bytes
+      // are what they are. A wrong guess here should not end a call whose
+      // audio would otherwise have decoded fine.
+      log.warn("telephony: carrier declared an unexpected media format", {
+        carrier: carrier.name,
+        encoding: frame.encoding,
+        sampleRate: frame.sampleRate,
+      });
+    }
+    log.info("telephony: call connected", { carrier: carrier.name, streamId });
+    // What the browser client sends once its audio graph is live. It is what
+    // releases the agent's greeting, so the call opens on the agent's own
+    // opening line rather than on silence.
+    emit(AUDIO_READY_FRAME);
+  }
+
+  /** The carrier hung up. */
+  function handleCarrierStop(): void {
+    log.info("telephony: carrier ended the stream", { carrier: carrier.name });
+    try {
+      carrierSocket.close?.(WS_CLOSE_NORMAL, "carrier stopped the stream");
+    } catch (err) {
+      log.debug("telephony: close after stop failed", { error: String(err) });
+    }
+  }
+
+  /** Carrier → session: one decoded carrier frame. */
+  function handleCarrierFrame(data: unknown): void {
+    const text = frameText(data);
+    if (text === null) return;
+    const frame = carrier.decode(safeJsonParse(text));
+    if (frame.kind === "start") {
+      handleCarrierStart(frame);
+      return;
+    }
+    if (frame.kind === "stop") {
+      handleCarrierStop();
+      return;
+    }
+    if (frame.kind !== "media" || toSession === null) return;
+    const pcm = toSession.process(mulawToPcm16(base64ToUint8(frame.payload)));
+    if (pcm.length === 0) return;
+    emit(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength));
+  }
+
+  carrierSocket.addEventListener("message", (event) => {
+    // This runs off a socket event with no caller to catch for it, and it
+    // fans out into base64, DSP and JSON. An escaping throw would surface as
+    // an uncaughtException and take the host down over one bad frame.
+    try {
+      handleCarrierFrame(event.data);
+    } catch (err) {
+      log.error("telephony: carrier frame handling failed", { error: String(err) });
+    }
+  });
+
+  return {
+    get readyState() {
+      return carrierSocket.readyState;
+    },
+    get bufferedAmount() {
+      // Passed through so the sink's stalled-link guard still fires. It reads
+      // base64 μ-law rather than PCM16, so the byte budget corresponds to a
+      // much longer stretch of audio than it does on the browser path — it
+      // remains a stall detector, not a latency bound.
+      return carrierSocket.bufferedAmount;
+    },
+    send(data) {
+      if (typeof data === "string") {
+        handleSessionEvent(data);
+        return;
+      }
+      const bytes = asBytes(data);
+      if (bytes !== null && bytes.byteLength > 0) handleSessionAudio(bytes);
+    },
+    close(code, reason) {
+      carrierSocket.close?.(code, reason);
+    },
+    ping() {
+      carrierSocket.ping?.();
+    },
+    addEventListener(type: string, listener: (event: never) => void): void {
+      if (type === "message") {
+        messageListeners.push(listener as MessageListener);
+        // First listener: release anything the carrier sent before the
+        // runtime was wired up, in arrival order.
+        const queued = pending;
+        pending = null;
+        if (queued) for (const data of queued) (listener as MessageListener)({ data });
+        return;
+      }
+      // `open`, `close` and `error` are the carrier socket's own events —
+      // the bridge adds no lifecycle of its own, so they pass straight
+      // through and the session's teardown is driven by the real socket.
+      if (type === "open") carrierSocket.addEventListener("open", listener as () => void);
+      else if (type === "close") carrierSocket.addEventListener("close", listener as CloseListener);
+      else if (type === "error")
+        carrierSocket.addEventListener("error", listener as (e: { message?: string }) => void);
+    },
+  } satisfies SessionWebSocket;
+}

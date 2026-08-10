@@ -1,0 +1,249 @@
+// Copyright 2026 the AAI authors. MIT license.
+import { createHmac } from "node:crypto";
+import { describe, expect, test, vi } from "vitest";
+import { PHONE_READY_TIMEOUT_MS } from "./phone-handler.ts";
+import type { Sandbox } from "./sandbox.ts";
+import { createSlotCache } from "./sandbox-slots.ts";
+import { createTestOrchestrator, deployAgent } from "./test-utils.ts";
+
+type TestFetch = Awaited<ReturnType<typeof createTestOrchestrator>>["fetch"];
+
+function makeFakeSandbox(): Sandbox {
+  return {
+    sessionUrl: vi.fn(() => Promise.resolve("wss://tunnel.test:443/websocket")),
+    guestOrigin: vi.fn(() => Promise.resolve("wss://tunnel.test:443")),
+    drain: vi.fn(() => Promise.resolve()),
+    alive: vi.fn(() => true),
+    shutdown: vi.fn(() => Promise.resolve()),
+  };
+}
+
+/** Deploy `slug` and park a live fake sandbox in its slot, as the broker specs do. */
+async function seedResident(
+  harness: Awaited<ReturnType<typeof createTestOrchestrator>>,
+  slots: ReturnType<typeof createSlotCache>,
+  slug: string,
+): Promise<void> {
+  await deployAgent(harness.fetch, slug);
+  slots.claim(slug, {
+    slug,
+    sandbox: makeFakeSandbox(),
+    version: (await harness.store.getAgentVersion(slug)) ?? 1,
+  });
+}
+
+/** POST a carrier webhook the way Twilio does: form-encoded, no JSON. */
+async function callWebhook(
+  fetch: TestFetch,
+  path: string,
+  init: { body?: string; headers?: Record<string, string> } = {},
+): Promise<{ status: number; contentType: string | null; xml: string }> {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", ...init.headers },
+    body: init.body ?? "CallSid=CA1&From=%2B15551234567",
+  });
+  return {
+    status: res.status,
+    contentType: res.headers.get("Content-Type"),
+    xml: await res.text(),
+  };
+}
+
+describe("POST /:slug/phone", () => {
+  test("answers with TwiML pointing at the guest's media-stream endpoint", async () => {
+    const slots = createSlotCache();
+    const harness = await createTestOrchestrator({ slots });
+    await seedResident(harness, slots, "my-agent");
+
+    const { status, contentType, xml } = await callWebhook(harness.fetch, "/my-agent/phone");
+
+    expect(status).toBe(200);
+    expect(contentType).toContain("text/xml");
+    expect(xml).toContain('<Stream url="wss://tunnel.test:443/phone?carrier=twilio" />');
+    expect(xml).toContain("<Connect>");
+  });
+
+  test("passes the requested carrier through to the stream URL", async () => {
+    const slots = createSlotCache();
+    const harness = await createTestOrchestrator({ slots });
+    await seedResident(harness, slots, "my-agent");
+
+    const { xml } = await callWebhook(harness.fetch, "/my-agent/phone?carrier=telnyx");
+    expect(xml).toContain("?carrier=telnyx");
+  });
+
+  test("answers a GET too, since the webhook method is the operator's choice", async () => {
+    const slots = createSlotCache();
+    const harness = await createTestOrchestrator({ slots });
+    await seedResident(harness, slots, "my-agent");
+
+    const res = await harness.fetch("/my-agent/phone");
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("<Stream");
+  });
+
+  test("rejects an unsupported carrier with a 400 rather than a spoken error", async () => {
+    const slots = createSlotCache();
+    const harness = await createTestOrchestrator({ slots });
+    await seedResident(harness, slots, "my-agent");
+
+    const { status } = await callWebhook(harness.fetch, "/my-agent/phone?carrier=vonage");
+    expect(status).toBe(400);
+  });
+
+  test("hangs up on an unknown slug instead of retrying", async () => {
+    // Waiting cannot make an unknown agent exist.
+    const harness = await createTestOrchestrator();
+    const { status, xml } = await callWebhook(harness.fetch, "/no-such-agent/phone");
+    expect(status).toBe(200);
+    expect(xml).toContain("<Hangup />");
+    expect(xml).toContain("could not be found");
+    expect(xml).not.toContain("<Redirect");
+  });
+
+  describe("while the sandbox is still booting", () => {
+    /**
+     * An orchestrator holding a sandbox that never publishes its URLs — the
+     * handler's own per-attempt budget is what ends the wait, exactly as in
+     * production.
+     */
+    async function bootingHarness() {
+      const slots = createSlotCache();
+      const harness = await createTestOrchestrator({ slots });
+      await deployAgent(harness.fetch, "my-agent");
+      const booting: Sandbox = {
+        ...makeFakeSandbox(),
+        sessionUrl: vi.fn(() => new Promise<string>(() => undefined)),
+        guestOrigin: vi.fn(() => new Promise<string>(() => undefined)),
+      };
+      slots.claim("my-agent", {
+        slug: "my-agent",
+        sandbox: booting,
+        version: (await harness.store.getAgentVersion("my-agent")) ?? 1,
+      });
+      return harness;
+    }
+
+    /**
+     * Drive one attempt's readiness budget on VIRTUAL time.
+     *
+     * The budget is 8 seconds and there are five of these specs; waiting it
+     * out would put 40 seconds of wall clock in the unit suite and make every
+     * one of them a race on a contended runner. Fake timers are installed
+     * only around the request itself — the deploy and the slot seeding above
+     * run on the real clock.
+     */
+    async function callWhileBooting(fetch: TestFetch, path: string) {
+      vi.useFakeTimers();
+      try {
+        const pending = callWebhook(fetch, path);
+        await vi.advanceTimersByTimeAsync(PHONE_READY_TIMEOUT_MS + 1);
+        return await pending;
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+
+    test("pauses and redirects back rather than holding the request open", async () => {
+      // A carrier times out a webhook in ~15s, under a cold boot's budget —
+      // so the retry loop lives in the markup, not in the request.
+      const harness = await bootingHarness();
+      const { status, xml } = await callWhileBooting(harness.fetch, "/my-agent/phone");
+
+      expect(status).toBe(200);
+      expect(xml).toContain("<Pause length=");
+      expect(xml).toContain('<Redirect method="POST">');
+      expect(xml).toContain("attempt=1");
+      expect(xml).toContain("carrier=twilio");
+    });
+
+    test("escapes the ampersand in the redirect URL", async () => {
+      // Two query parameters in an XML attribute-free text node: a raw `&`
+      // is malformed XML and the carrier rejects the whole document.
+      const harness = await bootingHarness();
+      const { xml } = await callWhileBooting(harness.fetch, "/my-agent/phone");
+      expect(xml).toContain("&amp;");
+      expect(xml).not.toMatch(/&(?!amp;|lt;|gt;|quot;|apos;)/);
+    });
+
+    test("counts up across attempts", async () => {
+      const harness = await bootingHarness();
+      const { xml } = await callWhileBooting(harness.fetch, "/my-agent/phone?attempt=2");
+      expect(xml).toContain("attempt=3");
+    });
+
+    test("gives up and hangs up once the attempts are spent", async () => {
+      const harness = await bootingHarness();
+      const { xml } = await callWhileBooting(harness.fetch, "/my-agent/phone?attempt=5");
+      expect(xml).toContain("<Hangup />");
+      expect(xml).not.toContain("<Redirect");
+    });
+
+    test("treats a malformed attempt count as spent rather than looping", async () => {
+      const harness = await bootingHarness();
+      const { xml } = await callWhileBooting(harness.fetch, "/my-agent/phone?attempt=abc");
+      expect(xml).toContain("<Hangup />");
+    });
+  });
+
+  describe("signature verification", () => {
+    const AUTH_TOKEN = "12345678901234567890123456789012";
+    const BODY = "CallSid=CA1&From=%2B15551234567";
+
+    async function signedHarness() {
+      const slots = createSlotCache();
+      const harness = await createTestOrchestrator({ slots });
+      await seedResident(harness, slots, "my-agent");
+      await harness.store.putEnv("my-agent", { TWILIO_AUTH_TOKEN: AUTH_TOKEN });
+      return harness;
+    }
+
+    /** The signature Twilio would send for this request. */
+    function signatureFor(url: string, body: string): string {
+      const params = new URLSearchParams(body);
+      let payload = url;
+      for (const name of [...new Set(params.keys())].sort()) {
+        for (const value of params.getAll(name)) payload += name + value;
+      }
+      return createHmac("sha1", AUTH_TOKEN).update(payload, "utf-8").digest("base64");
+    }
+
+    test("accepts a correctly signed webhook", async () => {
+      const harness = await signedHarness();
+      const { status, xml } = await callWebhook(harness.fetch, "/my-agent/phone", {
+        body: BODY,
+        headers: {
+          "x-twilio-signature": signatureFor("http://localhost/my-agent/phone", BODY),
+        },
+      });
+      expect(status).toBe(200);
+      expect(xml).toContain("<Stream");
+    });
+
+    test("refuses an unsigned webhook once the token is stored", async () => {
+      const harness = await signedHarness();
+      const { status } = await callWebhook(harness.fetch, "/my-agent/phone", { body: BODY });
+      expect(status).toBe(403);
+    });
+
+    test("refuses a webhook whose body was modified in flight", async () => {
+      const harness = await signedHarness();
+      const { status } = await callWebhook(harness.fetch, "/my-agent/phone", {
+        body: "CallSid=CA1&From=%2B15559999999",
+        headers: {
+          "x-twilio-signature": signatureFor("http://localhost/my-agent/phone", BODY),
+        },
+      });
+      expect(status).toBe(403);
+    });
+
+    test("leaves an agent with no stored token open, like /client-config", async () => {
+      const slots = createSlotCache();
+      const harness = await createTestOrchestrator({ slots });
+      await seedResident(harness, slots, "my-agent");
+      const { status } = await callWebhook(harness.fetch, "/my-agent/phone");
+      expect(status).toBe(200);
+    });
+  });
+});

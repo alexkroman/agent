@@ -300,3 +300,51 @@ present. And the model has to stay **faithful to the protocol** — one
 `config` frame per connection, a drain-stop only after a `done`, timers
 advanced 1ms per op so a lagged message can cross later operations — or the
 "violations" it reports are its own.
+
+## The capture worklet (`worklets/capture-processor.ts`)
+
+The single mic-capture processor. It flushes a `slice()` copy and keeps its own
+buffer (re-reading a just-transferred view is how a mic once went
+permanently deaf), with start/stop gating, a stop → flush → `stopped`-ack
+protocol, and the dead-mic probe. Two guards remain load-bearing:
+`instantiateWorklet`'s harness honors the transfer list (`structuredClone`
+with `transfer`, which really detaches) and caps posted messages so a
+runaway loop is a named failure rather than a hang, and
+`worklets/capture-processor.test.ts` exercises the processor source.
+
+## Consuming the client config
+
+How the browser client reads `GET /client-config`. The endpoint itself is
+the SDK's — see "Pre-connection client config" in `packages/aai/CLAUDE.md`.
+
+`client()`'s config tier renders `DefaultRoot`, which fetches the config
+(any failure degrades to the empty default, so older servers keep working)
+and mounts the chat shell; the shell uses the server-declared `name` unless
+`client({ name })` overrides it. A custom `component` ignores all of it.
+
+**The session's per-attempt broker lookup uses `loadClientConfig`, not
+`fetchClientConfig`** — it returns `null` for a lookup that produced no
+answer, keeping that distinct from a server that answered and named no
+`sessionUrl`. Degrading both to `{}` is fine for name/greeting and wrong
+here: `session-core.ts` latches `serverIsBroker = false` on a config with
+no `sessionUrl`, and that latch skips the broker fetch on every later
+attempt. So one 503 — a sandbox mid-boot, or one that failed to start —
+pinned the client to the platform's `/:slug/websocket`, whose WebSocket
+redirect browsers do not follow (sessions go straight to the sandbox now),
+with no route back even after the agent recovered. Only an ANSWERED lookup
+may set the latch.
+
+**There is no text-only mode.** Every pipeline agent declares a real TTS
+provider, and the default `ChatView` always renders the voice `Controls`.
+The snapshot's `apiUrl` field carries the programmatic WebSocket endpoint,
+shown by `ApiUrlChip`. **It is the LONG-LIVING platform endpoint**
+(`wss://host/:slug/websocket`), never the brokered sandbox tunnel URL the
+session actually connects to — the tunnel URL dies with the sandbox (idle
+eviction, redeploy), so surfacing it hands users a link that rots. The
+platform endpoint stays valid: a plain upgrade on it resolves the live
+sandbox (booting it like the client-config broker) and answers a 302
+redirect to the sandbox's current session URL (`orchestrator-ws.ts`,
+query preserved so `?sessionId=` resumes survive). Programmatic WebSocket
+clients that follow handshake redirects land on the sandbox; browsers
+don't follow WebSocket redirects, which is fine — the browser path is the
+client-config broker.

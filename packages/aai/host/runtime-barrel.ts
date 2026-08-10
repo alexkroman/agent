@@ -109,6 +109,25 @@ export {
   safeFetch,
   ssrfSafeFetch,
 } from "./ssrf.ts";
+export {
+  CARRIER_CODECS,
+  type CarrierCodec,
+  type CarrierInbound,
+  type CarrierName,
+  carrierByName,
+  telnyxCodec,
+  twilioCodec,
+} from "./telephony/carriers.ts";
+export { TELEPHONY_SAMPLE_RATE } from "./telephony/mulaw.ts";
+export {
+  createTelephonyBridge,
+  type TelephonyBridgeOptions,
+} from "./telephony/telephony-bridge.ts";
+export {
+  CARRIER_PARAM,
+  startTelephonySession,
+  TELEPHONY_PATH,
+} from "./telephony/telephony-server.ts";
 export { type ExecuteTool, type ExecuteToolOptions, executeToolCall } from "./tool-executor.ts";
 export {
   createPipelineTransport,

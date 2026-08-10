@@ -21,8 +21,14 @@ export type SessionWebSocket = {
    * Bytes queued by `send()` but not yet transmitted (standard WebSocket /
    * `ws` property). Optional so minimal test doubles remain assignable; when
    * absent, the audio backpressure guard is skipped.
+   *
+   * Explicitly `| undefined` rather than optional alone: under
+   * `exactOptionalPropertyTypes` a WRAPPER around one of these sockets — the
+   * telephony bridge is one — has to forward the property through a getter,
+   * and a getter cannot be conditionally absent. Every reader already
+   * branches on `undefined`, so this widens nothing in practice.
    */
-  readonly bufferedAmount?: number;
+  readonly bufferedAmount?: number | undefined;
   send(data: string | ArrayBuffer | Uint8Array): void;
   /** Close the connection (standard WebSocket / `ws` method). */
   close?(code?: number, reason?: string): void;
@@ -47,6 +53,26 @@ export type SessionWebSocket = {
   addEventListener(type: "message", listener: (event: { data: unknown }) => void): void;
   addEventListener(type: "error", listener: (event: { message?: string }) => void): void;
 };
+
+/**
+ * Narrow a `ws` WebSocket to the {@link SessionWebSocket} the runtime accepts.
+ *
+ * The two are structurally compatible in every way that matters at runtime,
+ * but not to the checker: `ws` types `addEventListener` as a generic over its
+ * own event map, which is not assignable to the four overloads declared above.
+ *
+ * ONE helper rather than a cast per call site. Every front door over
+ * `createServer` needs this same narrowing — the `/websocket` session path,
+ * host mode, the telephony bridge — and a cast repeated per door is both a
+ * suppression per door and an invitation to widen one of them by accident.
+ * This is the seam; nothing else may cast to `SessionWebSocket`.
+ */
+export function asSessionWebSocket(ws: {
+  readonly readyState: number;
+  send(data: string | ArrayBuffer | Uint8Array): void;
+}): SessionWebSocket {
+  return ws as unknown as SessionWebSocket;
+}
 
 export const AUDIO_DONE_FRAME = JSON.stringify({
   type: "audio_done",
