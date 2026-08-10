@@ -1,5 +1,16 @@
 # aai-studio-server
 
+## 0.6.6
+
+### Patch Changes
+
+- 4ba7ab3: Studio: a preview build in flight takes the whole Preview pane (first build and rebuild alike) instead of a banner over a stale page; secrets can be saved before anything is published and reach both the preview and production agents as each deploy claims its slug; the Database card reports how many tables, rows, and bytes each environment's schema holds.
+- Updated dependencies [4ba7ab3]
+  - @alexkroman1/aai-ui@5.13.2
+  - aai-server@3.5.6
+  - aai-studio-client@0.4.12
+  - @alexkroman1/aai@5.13.2
+
 ## 0.6.5
 
 ### Patch Changes

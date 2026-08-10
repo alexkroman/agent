@@ -1,5 +1,12 @@
 # @alexkroman1/aai-ui
 
+## 5.13.2
+
+### Patch Changes
+
+- 4ba7ab3: Keep a fatal session error on screen: the host's own teardown frames (a cancelled turn, a reply boundary) no longer clear the banner or paint a live-mic state over it, so a missing provider key stays visible instead of flashing for a fraction of a second.
+  - @alexkroman1/aai@5.13.2
+
 ## 5.13.1
 
 ### Patch Changes
