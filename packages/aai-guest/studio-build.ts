@@ -32,6 +32,7 @@ import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { errorMessage } from "@alexkroman1/aai";
 import { annotateDiagnostics, type ExportResolver } from "./studio-diagnostics.ts";
+import { ensureWorkspaceDependencies, withDependencyWarning } from "./studio-workspace-deps.ts";
 
 /** Result of one guest build; `buildError` is prose the coding agent can act on. */
 export type GuestBuildResult = {
@@ -137,6 +138,13 @@ export async function buildWorkspaceDir(
   } catch (err) {
     return { buildError: `Build toolchain unavailable in this sandbox: ${errorMessage(err)}` };
   }
+  // Whatever package.json declares has to be on disk before either pass reads
+  // an import — the agent may have edited the manifest by hand rather than
+  // through `add_dependency`. A no-op unless something is genuinely missing.
+  const depWarning = await ensureWorkspaceDependencies(dir, {
+    sharedRoot: workspacesRoot(),
+    toolchainModules: toolchainModules(),
+  });
   // Type errors first, as their own failure: the bundlers strip types
   // unchecked, so this is the only gate that catches runtime-working-but-
   // wrong code — and the message is exactly what the coding agent needs.
@@ -145,7 +153,12 @@ export async function buildWorkspaceDir(
     // Attach the fixing idiom to the diagnostic rather than carrying it in
     // the system prompt: it costs nothing until a build actually fails, and
     // it arrives inside the error the agent is already reading.
-    return { buildError: annotateDiagnostics(scrubDir(typed.output, dir), moduleExports(dir)) };
+    return {
+      buildError: withDependencyWarning(
+        depWarning,
+        annotateDiagnostics(scrubDir(typed.output, dir), moduleExports(dir)),
+      ),
+    };
   }
   try {
     // Sequential, not Promise.all (#864): two concurrent Rolldown passes
@@ -164,7 +177,7 @@ export async function buildWorkspaceDir(
       ...(clientFiles !== undefined && { clientFiles }),
     };
   } catch (err) {
-    return { buildError: formatBuildFailure(err, dir) };
+    return { buildError: withDependencyWarning(depWarning, formatBuildFailure(err, dir)) };
   }
 }
 

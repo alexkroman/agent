@@ -80,6 +80,78 @@ first and has already failed the publish cleanly if it is not there — so the
 dynamic import is deliberately AFTER it. Anything else this package writes for
 the CLI to read belongs in that subpath too, not in a `JSON.stringify` here.
 
+## A workspace's own package.json is REIFIED, not just read
+
+`studio-workspace-deps.ts` installs whatever a workspace's `dependencies`
+declare that nothing above it already provides, and it runs wherever a
+workspace is prepared to be built: `initStudioSession`, `deployWorkspaceDir`
+(Publish), and `buildWorkspaceDir` (`test_agent`).
+
+**Declaring a dependency used to be the easy half.** The only thing that ever
+put a package on disk was `add_dependency` running in that exact directory, in
+that exact session — and a workspace directory survives neither boundary it has
+to cross. `materializeWorkspace` opens with `rm -rf`, so a session RE-install (a
+page refresh, a replica taking the session over) deletes `node_modules` while
+package.json goes on declaring what used to be in it; Publish builds a FRESH
+directory from the store snapshot (`withBuildDir`) that never had one at all;
+and a project pushed with `aai push` arrives with a manifest whose dependencies
+were only ever installed on a laptop. The worker bundle is built
+`ssr: { noExternal: true }` — everything is bundled, because the guest that
+loads it has no node_modules — so the missing package is not externalized, it is
+a hard `Rolldown failed to resolve import "ms"` naming a dependency the manifest
+plainly declares. **The agent tested fine and Publish died**, which is the worst
+shape that failure could take.
+
+Three decisions, the middle one measured:
+
+- **`dependencies` only.** Those are what `agent.ts` and `client.tsx` import.
+  `devDependencies` are the toolchain (vite, typescript, vitest, the
+  `@types/*`), baked into the image and resolved by walk-up — a pushed scaffold
+  manifest declares all of them, and fetching that set per publish would be a
+  large download arriving back where we started. Hence `--omit=dev`.
+- **The install goes to the SHARED `.workspaces/` root and names only what is
+  missing.** `npm install` reifies the WHOLE manifest it reads — there is no
+  flag that adds one package without resolving the rest — and in a workspace
+  the rest is the toolchain: installing `ms` there took **25s and 156 MB**, of
+  which all but 28 KB was a registry copy of the SDK, React and Tailwind
+  already sitting one directory up. Through a manifest naming only `ms`:
+  **358ms and 28 KB**. It also retires a hazard rather than managing it: no
+  toolchain package is shadowed by a workspace-local copy, which is what
+  `reconcileWorkspacePins` otherwise has to keep us on the right side of.
+  (`--omit=peer` is there for the same reason — an installed `react` peer would
+  hoist into the shared root and shadow the toolchain's for every workspace
+  under it, silently changing the React the client bundle is built against.)
+  The root is on every workspace's and build dir's resolution path (they are
+  created UNDER it) while being outside all of them, so nothing here syncs to
+  the store, the `rm -rf` cannot reach it, and a package installed during the
+  session is already there when Publish materializes its fresh directory. A
+  sandbox serves one project, so the sharing is with itself.
+- **One npm run PER PACKAGE, and a failure is un-staged again.** npm resolves a
+  manifest as a WHOLE, so anything staged together shares a fate: a bogus name
+  beside `ms` and `date-fns` left all three uninstalled (measured against the
+  real registry — this is why the first version of this note, which claimed
+  narrowing the manifest was enough, was wrong). A run each costs a few hundred
+  milliseconds against a warm tree and makes a bad entry cost only itself. The
+  un-staging is the half that is easy to miss: left in the shared manifest, one
+  unreachable entry is in the file EVERY later install reads, so it would
+  permanently break installing anything else in the sandbox rather than failing
+  once.
+- **A failed install WARNS, it does not throw.** A manifest can name a package
+  no source file imports, and failing a publish over one would regress against
+  the build that used to succeed by ignoring the manifest entirely. The warning
+  is prepended to a FAILING build or publish only (`withDependencyWarning`) —
+  it is usually that failure's cause and reads far better than the bundler's
+  bare "failed to resolve import", while putting it on a green one would train
+  the reader to skip the line.
+
+Specs that name a LOCATION rather than a version (`file:../x`, `git+ssh://…`,
+`github:owner/repo`, `npm:alias@1`) are refused by name: they resolve relative
+to the directory npm reads them from, and this reads them from the shared root
+rather than the workspace that wrote them, so carrying one across would quietly
+mean something else. `add_dependency` is unchanged and still installs into the
+workspace — this module only fills in what a manifest declares and nothing has
+installed.
+
 ## The `run_code` executor (`trial.ts`)
 
 - Executes **only inside the guest sandbox** (Modal/Node): the harness wires

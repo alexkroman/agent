@@ -8,8 +8,17 @@
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { deployWorkspaceDir, resolveCliEntry } from "./studio-publish.ts";
+import { ensureWorkspaceDependencies } from "./studio-workspace-deps.ts";
+
+// Mocked for both directions: it keeps a publish here from ever spawning a
+// real `npm install`, and it is the only way to drive the warning path without
+// one. Its own behaviour is covered in studio-workspace-deps.test.ts.
+vi.mock("./studio-workspace-deps.ts", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("./studio-workspace-deps.ts")>();
+  return { ...mod, ensureWorkspaceDependencies: vi.fn(() => Promise.resolve(null)) };
+});
 
 let dirs: string[] = [];
 
@@ -282,5 +291,41 @@ describe("deployWorkspaceDir", () => {
     expect(result.ok).toBe(false);
     expect(result.output).toContain("agent.ts: something broke");
     expect(result.output).not.toContain(dir);
+  });
+
+  test("a dependency that would not install is named ahead of the deploy failure", async () => {
+    // Publish builds a FRESH materialization with no node_modules, so this is
+    // where a custom package.json's dependencies get reified. When one cannot
+    // be, the CLI's "failed to resolve import" is the symptom and this is the
+    // cause — the coding agent needs the cause first.
+    vi.mocked(ensureWorkspaceDependencies).mockResolvedValueOnce("Could not install ms");
+    const dir = await makeDir();
+    const cliEntry = await makeFakeCli({
+      exitCode: 1,
+      stdout: `${JSON.stringify({ ok: false, error: "Build failed", code: "build_failed" })}\n`,
+    });
+    const result = await deployWorkspaceDir(dir, {
+      serverUrl: "https://x.test",
+      apiKey: "k",
+      cliEntry,
+    });
+    expect(result).toEqual({ ok: false, output: "Could not install ms\n\nBuild failed" });
+  });
+
+  test("a successful publish is not annotated with the install warning", async () => {
+    // A manifest may name a package nothing imports. Reporting that on a green
+    // publish would train the reader to skip the line that matters on a red one.
+    vi.mocked(ensureWorkspaceDependencies).mockResolvedValueOnce("Could not install ms");
+    const dir = await makeDir();
+    const cliEntry = await makeFakeCli({
+      stdout: `${JSON.stringify({ ok: true, data: { slug: "demo", url: "u" } })}\n`,
+    });
+    const result = await deployWorkspaceDir(dir, {
+      serverUrl: "https://x.test",
+      apiKey: "k",
+      cliEntry,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.output).not.toContain("Could not install ms");
   });
 });
