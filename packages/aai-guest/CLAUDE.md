@@ -143,6 +143,52 @@ Three decisions, the middle one measured:
   it is usually that failure's cause and reads far better than the bundler's
   bare "failed to resolve import", while putting it on a green one would train
   the reader to skip the line.
+- **"Satisfied" is not "present", and the difference shipped a wrong bundle.**
+  The shared root outlives the build dirs that read it, so a package installed
+  for one publish is still sitting there at the next — and an `existsSync`
+  therefore answered "already handled" for a workspace that had since CHANGED
+  the version it asks for. Measured: pin `date-fns` 3.6.0, publish, bump the
+  manifest to 4.1.0, publish again — the second bundle still carried 3.6.0,
+  silently. So the shared root only counts when the spec it was STAGED with is
+  the spec now declared, which needs no semver matcher because the staged
+  manifest is the one npm resolved. The toolchain and the workspace's own
+  `node_modules` still answer on presence (the platform owns those versions;
+  the workspace's copy is what `add_dependency` reified from this same
+  manifest). Consequently npm's **exit code** is the success predicate — on a
+  version change the directory is already there carrying the old version, so
+  presence proves nothing.
+
+**A missing dependency's first symptom is TS2307, and it has a hint**
+(`studio-diagnostics.ts`). `Cannot find module 'date-fns'` fires at the
+typecheck gate before the bundler says anything, and the hint names
+`add_dependency` — because installing is only half of what that tool does, and
+the half that matters here is RECORDING the package in package.json, which is
+what makes it survive a refresh and a Publish.
+
+**Lockfiles do not sync** (`snapshotWorkspace` passes `isLockfile`). This is
+the guest's one departure from its own walk, and it is not cosmetic:
+`add_dependency` runs `npm install`, which reifies the whole manifest, so the
+`package-lock.json` it leaves measured **92 KB after one dependency and 101 KB
+after three** — the overwhelming bulk of every turn's sync payload, ~40% of the
+256 KB per-file cap, a file `read_file` can spend context on, and, since `aai
+pull` materializes whatever the row holds, an npm lockfile landing in a project
+whose package.json declares pnpm. `walkWorkspace` still shows it, because that
+one backs `list_files`/`grep`; only the SYNC has a reason to drop it. Push's
+other local-only rule, `.env`, deliberately does NOT apply here — the coding
+agent may have written that file itself.
+
+**Known cost, unfixed: `add_dependency` is the slow half of this.** It runs
+`npm install <spec>` in the WORKSPACE, which reifies the whole manifest —
+measured **28s and 202 MB across 150 packages** to add `date-fns`, nearly all
+of it a redundant registry copy of the SDK, React, Tailwind and every provider
+SDK already baked one directory up (and a workspace-local copy of the SDK that
+shadows the baked one, safe only while `reconcileWorkspacePins` keeps the pins
+exact). The same package through the shared root costs **358ms and 28 KB**.
+Rerouting the tool through `ensureWorkspaceDependencies` would collapse that
+and leave ONE place custom dependencies live; the reason it has not been done
+is `--omit=peer`, which is right for a reconciliation pass over an existing
+manifest and wrong for a package a human just asked for — a peer the toolchain
+does not carry would silently not be installed. Settle that before rerouting.
 
 Specs that name a LOCATION rather than a version (`file:../x`, `git+ssh://…`,
 `github:owner/repo`, `npm:alias@1`) are refused by name: they resolve relative

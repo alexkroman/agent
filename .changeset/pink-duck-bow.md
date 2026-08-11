@@ -1,5 +1,6 @@
 ---
 "aai-guest": patch
+"@alexkroman1/aai": patch
 ---
 
 Install a studio workspace's own package.json dependencies before building it.
@@ -19,6 +20,13 @@ sits on every workspace's and build dir's resolution path. Only packages the
 baked toolchain does not already provide are fetched (measured: 358ms/28 KB
 against 25s/156 MB for reifying the workspace manifest), each in its own npm
 run so one unreachable entry cannot fail the others, and a package that did
-not install is removed from the shared manifest again. A failed install warns
-rather than throwing, and the warning is prepended to a failing build or
-publish.
+not install is removed from the shared manifest again. A dependency counts as
+satisfied only when the version it was installed for is the version now
+declared, so bumping a pin takes effect instead of silently republishing the
+old build. A failed install warns rather than throwing, and the warning is
+prepended to a failing build or publish.
+
+Two related fixes: `Cannot find module` (TS2307) now carries a hint pointing at
+`add_dependency`, and the guest no longer syncs package-manager lockfiles into
+the project — `npm install` leaves a ~100 KB `package-lock.json` that was the
+bulk of every turn's sync payload and landed in pnpm projects via `aai pull`.

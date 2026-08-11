@@ -10,6 +10,7 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  isLockfile,
   snapshotWorkspaceFiles,
   type WorkspaceSnapshot,
   walkWorkspaceFiles,
@@ -43,9 +44,16 @@ export function walkWorkspace(dir: string): Promise<string[]> {
  * definition in the SDK (`@alexkroman1/aai/workspace-files`), because the two
  * write the same map from opposite ends and a disagreement between them is a
  * file silently dropped on one path and resurrected on the other.
+ *
+ * Lockfiles are the one thing this drops (see {@link isLockfile}), and unlike
+ * push it drops ONLY those: `add_dependency` runs `npm install`, which writes
+ * a ~100 KB `package-lock.json` after three ordinary dependencies, and syncing
+ * it made a resolved tree the bulk of every turn's payload and of what `aai
+ * pull` writes back. Push's other rule — `.env` — deliberately does not apply
+ * here, because the coding agent may have written that file itself.
  */
 export function snapshotWorkspace(dir: string): Promise<WorkspaceSnapshot> {
-  return snapshotWorkspaceFiles(dir);
+  return snapshotWorkspaceFiles(dir, { skipFile: isLockfile });
 }
 
 /** Materialize a files record into `dir`, replacing whatever was there. */

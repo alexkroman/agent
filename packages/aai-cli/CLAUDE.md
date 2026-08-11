@@ -165,7 +165,9 @@ the user requests outright is unaffected.
   executors over the `/studio/projects` routes, the local source walk
   (the walk, caps, skip rules and strict UTF-8 decode all come from
   `@alexkroman1/aai/workspace-files`, shared with the guest's end-of-turn
-  sync; `.env`/lockfiles never sync — the one rule this side adds)
+  sync; lockfiles never sync in EITHER direction, and `.env` is the one rule
+  this side still adds — the guest keeps `.env` visible because the coding
+  agent may have written it)
 - `_init.ts` / `_deploy.ts` / `_delete.ts` / `_bundler.ts` — internal logic
 - `_dev-server.ts` — dev server for directory-based agents: loads `agent.ts`,
   builds runtime, watches for file changes, optionally runs Vite for client HMR

@@ -129,8 +129,9 @@ export type DependencyPlan = {
 /**
  * What of `manifest`'s runtime dependencies still needs installing.
  *
- * `isResolvable` answers for every place a bare import can come from — the
- * workspace's own `node_modules`, the shared root's, and the baked toolchain's.
+ * `isSatisfied` answers for every place a bare import can come from, and takes
+ * the DECLARED SPEC as well as the name — see {@link ensureWorkspaceDependencies}
+ * for why presence alone is not the question.
  *
  * A manifest that is not an object, or whose `dependencies` is not one, plans
  * nothing rather than throwing: the agent may be mid-edit, and npm reports a
@@ -138,12 +139,12 @@ export type DependencyPlan = {
  */
 export function planWorkspaceDependencies(
   manifest: unknown,
-  isResolvable: (name: string) => boolean,
+  isSatisfied: (name: string, spec: string) => boolean,
 ): DependencyPlan {
   const install: Record<string, string> = {};
   const skipped: string[] = [];
   for (const [name, spec] of Object.entries(dependenciesOf(manifest))) {
-    if (isResolvable(name)) continue;
+    if (isSatisfied(name, String(spec))) continue;
     if (!DEPENDENCY_NAME_RE.test(name)) {
       skipped.push(`${name}: not a valid npm package name`);
     } else if (typeof spec !== "string" || !VERSION_SPEC_RE.test(spec)) {
@@ -164,14 +165,30 @@ export function planWorkspaceDependencies(
 const installLock = createKeyedLock();
 
 /**
- * Install `dir`'s declared runtime dependencies when any of them are missing.
+ * Install `dir`'s declared runtime dependencies when any are unsatisfied.
  *
- * Returns null when there was nothing to do or every declared package is
- * resolvable afterwards, and otherwise a diagnostic naming what is still
- * missing — prose for the coding agent, which is the reader that can act on it.
- * It is a WARNING rather than a thrown error on purpose: a manifest can name a
- * package no source file imports, and failing a publish over one would be a
- * regression against the build that used to succeed by ignoring the manifest.
+ * **"Satisfied" is not "present", and the difference is a shipped bug.** The
+ * shared root outlives the build dirs that read it, so a package installed for
+ * one publish is still sitting there at the next — and a mere `existsSync`
+ * therefore answered "already handled" for a workspace that had since CHANGED
+ * the version it asks for. Measured: pin `date-fns` at 3.6.0, publish, bump the
+ * manifest to 4.1.0, publish again — the second bundle still carried 3.6.0,
+ * with no warning anywhere. So the shared root only counts when the spec it was
+ * STAGED with is the spec now declared; that needs no semver matcher and is
+ * exact, because the staged manifest is the one npm resolved.
+ *
+ * The other two sources answer on presence, deliberately. The toolchain is
+ * checked FIRST and wins: the platform owns those versions, and re-installing
+ * one for a spec change is the shadowing this module exists to avoid. The
+ * workspace's own `node_modules` is whatever `add_dependency` reified from this
+ * same manifest.
+ *
+ * Returns null when nothing needed doing or every install succeeded, and
+ * otherwise a diagnostic naming what is unusable — prose for the coding agent,
+ * which is the reader that can act on it. It is a WARNING rather than a thrown
+ * error on purpose: a manifest can name a package no source file imports, and
+ * failing a publish over one would be a regression against the build that used
+ * to succeed by ignoring the manifest entirely.
  */
 export async function ensureWorkspaceDependencies(
   dir: string,
@@ -181,32 +198,38 @@ export async function ensureWorkspaceDependencies(
   if (manifest === null) return null;
 
   const { sharedRoot, toolchainModules } = opts;
-  const isResolvable = (name: string): boolean =>
+  const satisfiedBy = (staged: Record<string, string>) => (name: string, spec: string) =>
+    (toolchainModules !== null && existsSync(path.join(toolchainModules, name))) ||
     existsSync(path.join(dir, "node_modules", name)) ||
-    existsSync(path.join(sharedRoot, "node_modules", name)) ||
-    (toolchainModules !== null && existsSync(path.join(toolchainModules, name)));
+    (staged[name] === spec && existsSync(path.join(sharedRoot, "node_modules", name)));
 
-  const plan = planWorkspaceDependencies(manifest, isResolvable);
+  const stagedPath = sharedManifestPath(sharedRoot);
+  const plan = planWorkspaceDependencies(
+    manifest,
+    satisfiedBy(dependenciesOf(await readJson(stagedPath))),
+  );
   if (Object.keys(plan.install).length === 0) {
     return plan.skipped.length === 0 ? null : describeMissing([], plan, "");
   }
 
-  const output = await withLock(installLock, sharedRoot, async () => {
-    // Re-planned inside the lock: an overlapping build may have installed
-    // exactly these while this one waited, and re-running npm for a tree that
-    // already satisfies us is the whole cost this module exists to avoid.
-    const fresh = planWorkspaceDependencies(manifest, isResolvable).install;
-    return Object.keys(fresh).length === 0
-      ? ""
-      : await installShared(sharedRoot, fresh, isResolvable);
+  const failures = await withLock(installLock, sharedRoot, async () => {
+    // Re-planned inside the lock, against a FRESHLY read staged manifest: an
+    // overlapping build may have installed exactly these while this one
+    // waited, and re-running npm for a tree that already satisfies us is the
+    // whole cost this module exists to avoid.
+    const fresh = planWorkspaceDependencies(
+      manifest,
+      satisfiedBy(dependenciesOf(await readJson(stagedPath))),
+    ).install;
+    return Object.keys(fresh).length === 0 ? [] : await installShared(sharedRoot, fresh);
   });
 
-  // The install's exit code is not the question — whether the imports resolve
-  // now is. npm exits 0 having installed nothing when an entry is optional,
-  // and exits nonzero after installing the package that mattered.
-  const stillMissing = Object.keys(plan.install).filter((name) => !isResolvable(name));
-  if (stillMissing.length === 0 && plan.skipped.length === 0) return null;
-  return describeMissing(stillMissing, plan, output);
+  if (failures.length === 0 && plan.skipped.length === 0) return null;
+  return describeMissing(
+    failures.map((f) => f.name),
+    plan,
+    failures.map((f) => `${f.name}: ${f.output || "(npm produced no output)"}`).join("\n"),
+  );
 }
 
 /**
@@ -228,27 +251,40 @@ export async function ensureWorkspaceDependencies(
 async function installShared(
   sharedRoot: string,
   specs: Record<string, string>,
-  isResolvable: (name: string) => boolean,
-): Promise<string> {
-  const failures: string[] = [];
+): Promise<{ name: string; output: string }[]> {
+  const failures: { name: string; output: string }[] = [];
   for (const [name, spec] of Object.entries(specs)) {
-    const output = await installOne(sharedRoot, name, spec);
-    if (isResolvable(name)) continue;
-    failures.push(`${name}: ${output || "(npm produced no output)"}`);
+    const { ok, output } = await installOne(sharedRoot, name, spec);
+    if (ok) continue;
+    failures.push({ name, output });
     await stage(sharedRoot, (deps) => {
       delete deps[name];
       return deps;
     });
   }
-  return failures.join("\n");
+  return failures;
 }
 
-/** Stage one package into the shared manifest and reify it. */
-async function installOne(sharedRoot: string, name: string, spec: string): Promise<string> {
+/**
+ * Stage one package into the shared manifest and reify it.
+ *
+ * Success is npm's **exit code**, not "is the directory there now". Those came
+ * apart once the spec started mattering: on a version change the directory is
+ * already present carrying the OLD version, so presence proves nothing, while
+ * exit 0 means npm satisfied the range it was given. The cost is that a
+ * package whose postinstall script fails is reported even though its files
+ * landed — a false alarm on a failing build, against silently shipping a
+ * version the manifest does not ask for.
+ */
+async function installOne(
+  sharedRoot: string,
+  name: string,
+  spec: string,
+): Promise<{ ok: boolean; output: string }> {
   try {
     await stage(sharedRoot, (deps) => ({ ...deps, [name]: spec }));
   } catch (err) {
-    return `could not stage the install manifest: ${errorMessage(err)}`;
+    return { ok: false, output: `could not stage the install manifest: ${errorMessage(err)}` };
   }
   try {
     const result = await runCapped(
@@ -270,10 +306,10 @@ async function installOne(sharedRoot: string, name: string, spec: string): Promi
       },
     );
     return result.signal
-      ? `killed by ${result.signal} after ${INSTALL_TIMEOUT_MS}ms`
-      : result.stdout.trim();
+      ? { ok: false, output: `killed by ${result.signal} after ${INSTALL_TIMEOUT_MS}ms` }
+      : { ok: result.exitCode === 0, output: result.stdout.trim() };
   } catch (err) {
-    return errorMessage(err);
+    return { ok: false, output: errorMessage(err) };
   }
 }
 
