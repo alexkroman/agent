@@ -4,7 +4,7 @@
  *
  * A `?sessionId=<id>` reconnect already survives a dropped SOCKET: the
  * runtime keeps `ctx.state` in an in-process map for
- * {@link SESSION_RESUME_GRACE_MS} (see session-state-sweeps.ts) and the S2S
+ * `SESSION_RESUME_GRACE_MS` (see session-state-sweeps.ts) and the S2S
  * transport keeps the provider's session id in a closure so a transient close
  * can `session.resume`. Both live in the guest PROCESS, so neither survives
  * that process going away — a restarted sandbox answers a resume with a
@@ -125,9 +125,9 @@ export type CreateDbSessionStoreOptions = {
   db: Db;
   /**
    * How long a snapshot outlives its last write before `load` ignores it and
-   * the next write sweeps it. Defaults to {@link SESSION_RESUME_GRACE_MS},
-   * matching the in-process grace window so a store cannot silently extend
-   * how long a session is resumable.
+   * the next write sweeps it. Defaults to `SESSION_RESUME_GRACE_MS`, matching
+   * the in-process grace window so a store cannot silently extend how long a
+   * session is resumable.
    */
   ttlMs?: number;
   /**
