@@ -117,7 +117,51 @@ describe("transcription-desk", () => {
     expect(output.words).toBe(7);
     // One journaled step per chunk plus the save — the shape MAX_CHUNKS is
     // sized against. A release step here would double the journal.
-    expect(ctx.steps).toEqual(["chunk", "chunk", "chunk", "save"]);
+    //
+    // Named by POSITION rather than all `chunk`: the chunks are transcribed
+    // concurrently, and a bare name is disambiguated by CALL ORDER, so the
+    // journal key would depend on how the pool interleaved them. `chunk-<i>`
+    // means a resume matches each output to its own chunk by construction.
+    expect(ctx.steps).toEqual(["chunk-0", "chunk-1", "chunk-2", "save"]);
+  });
+
+  test("transcribes chunks concurrently, bounded, and still stitches them in order", async () => {
+    // The pool is what makes a long recording usable — serial, a 40-chunk file
+    // is 40 round trips end to end. Both halves are asserted: that requests
+    // really overlap, and that overlapping cannot reorder the transcript.
+    let inFlight = 0;
+    let peak = 0;
+    const order: number[] = [];
+    let n = 0;
+    vi.stubGlobal("fetch", async () => {
+      const index = n++;
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      // Later chunks answer FIRST, so a transcript assembled in completion
+      // order would come back reversed.
+      await new Promise((resolve) => setTimeout(resolve, (8 - index) * 5));
+      inFlight -= 1;
+      order.push(index);
+      return Response.json({ text: `part${index}` });
+    });
+    const blobIds = Array.from({ length: 8 }, (_, i) => `blob-${i}`);
+    const ctx = createWorkflowContext({
+      env: ENV,
+      db: makeDb(),
+      ...makeBlobs(blobIds.map(() => 320)),
+    });
+
+    const output = (await transcribe?.run(
+      { blobIds, sampleRate: 16_000, label: "long.mp3" },
+      ctx,
+    )) as { transcript: string };
+
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(4);
+    // The generator really did settle out of order, so the ordering assertion
+    // below is exercising something.
+    expect(order).not.toEqual([...order].sort((a, b) => a - b));
+    expect(output.transcript).toBe("part0 part1 part2 part3 part4 part5 part6 part7");
   });
 
   test("sends the raw key and the model header, not a Bearer token", async () => {

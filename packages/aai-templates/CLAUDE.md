@@ -95,6 +95,31 @@ It is the only template with `page: "static"` — a page (`page()` +
 because the Sync API caps a request at 120 s and the sandbox has no decoder.
 See "Workflow apps" in `scaffold/CLAUDE.md` for the shape it teaches.
 
+**A template may ship its OWN `package.json`, and this one is the first that
+does.** `layerScaffold` merges the scaffold's manifest UNDERNEATH whatever the
+template copied in, per ENTRY for `dependencies`/`devDependencies`/`scripts`
+(`mergeScaffoldManifest`), so a template declaring only its extras gets the
+scaffold's name, scripts, toolchain and SDK pins filled in around them — and a
+dependency only that template needs stays out of every other scaffolded
+project. `transcription-desk` uses it for `@ricky0123/vad-web` +
+`onnxruntime-web`, which are ~19 MB installed and would otherwise land in all
+fifteen. Two things a first-time reader will not guess: declare `"type":
+"module"` in it (a nested manifest is a package boundary, so files under it
+otherwise resolve as CJS in-repo), and add the same packages to
+`aai-templates`'s own `devDependencies` plus `knip.json`'s
+`ignoreDependencies` — `templates/**` is knip-ignored, so an import inside one
+is invisible to it, which is why `@alexkroman1/aai-ui` was already listed.
+
+**Its browser assets are `?url` IMPORTS, never a CDN or `public/`, and both
+alternatives fail in ways only a deploy reveals.** `AGENT_CSP` is `connect-src
+'self' wss: ws:`, so a jsDelivr fetch is refused outright; and the platform
+routes only `/:slug/assets/*` (`handleClientAsset`), so a file in `public/`
+resolves under `aai dev` — where Vite serves the whole project root — and 404s
+the moment it ships. A `?url` import satisfies both, because Vite emits into
+`assets/`. Note `onnxruntime-web` exports its runtime files at the package
+ROOT (`onnxruntime-web/ort-wasm-simd-threaded.wasm`); a `./dist/…` path is
+refused by its `exports` map.
+
 **A template's colors come from `useTheme()`, not from Tailwind's palette.**
 This one shipped with `border-neutral-300` / `text-neutral-600` / `bg-white` /
 `rounded-lg`, which is not "unstyled" — the utilities compile fine — but it is

@@ -69,7 +69,9 @@
         "scaffold/**"
       ],
       "ignoreDependencies": [
-        "@alexkroman1/aai-ui"
+        "@alexkroman1/aai-ui",
+        "@ricky0123/vad-web",
+        "onnxruntime-web"
       ]
     },
     "packages/aai-guest": {

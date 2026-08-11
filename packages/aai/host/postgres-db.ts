@@ -51,6 +51,38 @@ export type CloseableDb = Db & {
 };
 
 /**
+ * SQLSTATEs an `IF NOT EXISTS` raises when the object is already there.
+ *
+ * `42P07` is duplicate_table (also duplicate_index — Postgres reuses it for
+ * every relation kind) and `42710` is duplicate_object, which the same idiom
+ * raises for types and constraints.
+ */
+const EXPECTED_NOTICE_CODES = new Set(["42P07", "42710"]);
+
+/**
+ * postgres.js's notice handler.
+ *
+ * The default prints every NOTICE to stdout as a six-line object, and the ones
+ * this driver actually produces are all self-inflicted: the workflow store
+ * ensures its schema with `create table if not exists` on every boot (five
+ * notices), and an agent doing the same for its own table adds one per run —
+ * `transcription-desk`'s `save` step is the worked example. Under the guest's
+ * log relay they reach the platform log too.
+ *
+ * **`IF NOT EXISTS` is a declaration that a no-op is expected**, so the notice
+ * it raises is expected output rather than information, and six of them per
+ * boot crowd out the line someone opened the log for. Filtered on the SQLSTATE
+ * rather than by silencing `onnotice` altogether: a NOTICE nobody asked for —
+ * a truncated identifier, a deprecated cast — is the kind of thing worth
+ * seeing, and swallowing the whole channel to quiet a known-benign subset is
+ * how a real warning goes missing.
+ */
+function reportNotice(notice: postgres.Notice): void {
+  if (notice.code !== undefined && EXPECTED_NOTICE_CODES.has(notice.code)) return;
+  console.warn(`[postgres] ${notice.severity ?? "NOTICE"}: ${notice.message}`);
+}
+
+/**
  * Create a {@link Db} backed by a Postgres connection pool.
  *
  * Connections open lazily on first query, so constructing the handle is
@@ -59,7 +91,11 @@ export type CloseableDb = Db & {
  * @public
  */
 export function createPostgresDb(opts: CreatePostgresDbOptions): CloseableDb {
-  const sql = postgres(opts.url, { max: opts.max ?? 4, prepare: false });
+  const sql = postgres(opts.url, {
+    max: opts.max ?? 4,
+    prepare: false,
+    onnotice: reportNotice,
+  });
 
   /** The one query implementation, over the pool or a reserved connection. */
   const queryOn =

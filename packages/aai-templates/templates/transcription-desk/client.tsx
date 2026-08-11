@@ -13,7 +13,11 @@
  * 1. **decode** — any container/codec the browser knows → float samples.
  * 2. **downmix + resample** to 16 kHz mono, through an `OfflineAudioContext`
  *    (which does both correctly, band-limited; hand-rolled decimation aliases).
- * 3. **slice** into `CHUNK_SECONDS` windows and convert each to S16LE PCM.
+ * 3. **slice** on SILENCE, capped at `CHUNK_SECONDS`, and convert each to S16LE
+ *    PCM. Silero VAD (`vad.ts`) says where the speech is and `chunker.ts`
+ *    decides where to cut; a fixed window would land mid-word about half the
+ *    time, and each side of that word is transcribed in isolation, so one bad
+ *    boundary costs two wrong words. See `chunker.ts` for the rules.
  *
  * Each chunk is uploaded to `/workflows/blobs` — never inlined into the run
  * input, which is journaled and replayed (see `agent.ts`) — and the ids start one
@@ -24,10 +28,16 @@
 import "@alexkroman1/aai-ui/styles.css";
 import { createWorkflowApi, isTerminal, page, useTheme, useWorkflowRun } from "@alexkroman1/aai-ui";
 import { type CSSProperties, useState } from "react";
+import { fixedChunks, MIN_SILENCE_MS, planChunks, type Span } from "./chunker.ts";
+import { loadRuns, rememberRun } from "./runs.ts";
+import { speechRegions } from "./vad.ts";
 
 /**
  * Seconds of audio per request. The API's hard ceiling is 120; 60 leaves room
  * for the boundary rounding below and halves what one failed chunk costs.
+ *
+ * With silence-aware splitting this is the CAP rather than the size — most
+ * chunks come in shorter, ending at the last pause that fits.
  */
 const CHUNK_SECONDS = 60;
 
@@ -45,7 +55,11 @@ type TranscribeOutput = {
 };
 
 /** Progress the page can honestly report while a run is in flight. */
-type Progress = { phase: "decoding" | "uploading" | "starting"; done: number; total: number };
+type Progress = {
+  phase: "decoding" | "detecting" | "uploading" | "starting";
+  done: number;
+  total: number;
+};
 
 /**
  * A style object that may also carry CSS custom properties.
@@ -108,17 +122,24 @@ function toPcm16(samples: Float32Array): Uint8Array<ArrayBuffer> {
   return new Uint8Array(buffer);
 }
 
-/** Split samples into `CHUNK_SECONDS` windows — the manual chunking. */
-function chunk(samples: Float32Array): Float32Array[] {
-  const perChunk = CHUNK_SECONDS * SAMPLE_RATE;
-  const chunks: Float32Array[] = [];
-  for (let start = 0; start < samples.length; start += perChunk) {
-    chunks.push(samples.subarray(start, Math.min(start + perChunk, samples.length)));
-  }
-  // A file shorter than one chunk still has to produce one — and the API's
-  // 80 ms floor is what an empty (or near-empty) upload would trip, reported as
-  // `audio_too_short` from inside the workflow rather than here.
-  return chunks;
+/**
+ * Split samples into chunks the API will accept, preferring silence.
+ *
+ * `subarray`, not `slice`: these are views onto the decoded audio, so a long
+ * recording is not copied a second time just to be handed to `toPcm16`.
+ *
+ * A file shorter than one chunk still produces one — and the API's 80 ms floor
+ * is what an empty (or near-empty) upload would trip, reported as
+ * `audio_too_short` from inside the workflow rather than here.
+ */
+async function chunk(samples: Float32Array): Promise<Float32Array[]> {
+  const maxSamples = CHUNK_SECONDS * SAMPLE_RATE;
+  const speech = await speechRegions(samples, SAMPLE_RATE);
+  const spans: Span[] =
+    speech === undefined
+      ? fixedChunks(samples.length, maxSamples)
+      : planChunks(samples.length, speech, maxSamples, (MIN_SILENCE_MS / 1000) * SAMPLE_RATE);
+  return spans.map((span) => samples.subarray(span.start, span.end));
 }
 
 function App() {
@@ -130,6 +151,10 @@ function App() {
   const [runId, setRunId] = useState<string>();
   const [progress, setProgress] = useState<Progress>();
   const [failure, setFailure] = useState<string>();
+  // `useState(loadRuns)` — the FUNCTION, not `loadRuns()`: passed as a lazy
+  // initializer React calls once, where the call form would re-read storage and
+  // re-parse the list on every render.
+  const [runs, setRuns] = useState(loadRuns);
   const { run, error: pollError } = useWorkflowRun(runId, { api });
 
   // Busy through the browser-side work AND while a started run is still going.
@@ -143,7 +168,11 @@ function App() {
     try {
       setProgress({ phase: "decoding", done: 0, total: 1 });
       const samples = await toMonoSamples(file);
-      const chunks = chunk(samples);
+      // Its own phase because it is its own wait: the first call downloads and
+      // instantiates a ~14.7 MB WASM model, so a page reporting "decoding" here
+      // would sit on that word for seconds with nothing explaining it.
+      setProgress({ phase: "detecting", done: 0, total: 1 });
+      const chunks = await chunk(samples);
 
       // Uploaded one at a time rather than with `Promise.all`: a long recording
       // is dozens of multi-megabyte POSTs, and firing them together is how a
@@ -159,9 +188,16 @@ function App() {
       setProgress({ phase: "starting", done: chunks.length, total: chunks.length });
       // Resolves as soon as the run is journaled — the transcription itself
       // continues without this page, which is why only the id is kept.
-      setRunId(
-        await api.start("transcribe", { blobIds, sampleRate: SAMPLE_RATE, label: file.name }),
-      );
+      const started = await api.start("transcribe", {
+        blobIds,
+        sampleRate: SAMPLE_RATE,
+        label: file.name,
+      });
+      // Remembered BEFORE it is shown, and that ordering is the whole point: from
+      // this line on, the run is reachable even if the tab closes in the next
+      // millisecond. Nothing else on this page holds the id.
+      setRuns(rememberRun({ runId: started, label: file.name, startedAt: Date.now() }));
+      setRunId(started);
     } catch (err) {
       setFailure(err instanceof Error ? err.message : String(err));
     } finally {
@@ -196,8 +232,9 @@ function App() {
           Transcription Desk
         </h1>
         <p className="m-0 text-sm opacity-70">
-          Pick a recording. It is split into {CHUNK_SECONDS}-second chunks in your browser and
-          transcribed one chunk at a time — you can close this tab and come back to the run id.
+          Pick a recording. Your browser splits it where nobody is speaking (at most {CHUNK_SECONDS}
+          s per chunk) and the chunks are transcribed in parallel. You can close this tab and come
+          back to any run below.
         </p>
       </header>
 
@@ -224,6 +261,7 @@ function App() {
       {progress && (
         <p className="m-0 text-sm opacity-70" role="status">
           {progress.phase === "decoding" && "Decoding audio…"}
+          {progress.phase === "detecting" && "Finding pauses to split on…"}
           {progress.phase === "uploading" &&
             `Uploading chunk ${progress.done + 1} of ${progress.total}…`}
           {progress.phase === "starting" && "Starting the run…"}
@@ -247,6 +285,46 @@ function App() {
       )}
       {pollError && !output && (
         <p className="m-0 text-sm text-amber-700">Lost contact with the run — still retrying.</p>
+      )}
+
+      {/* The list is the point of a DURABLE run, not a convenience: a run
+          outlives this tab, so the id is the only thing standing between the
+          user and a finished transcript. Clicking one re-points the poll at it,
+          which is the same code path a fresh page load takes — nothing is
+          cached client-side, the answer comes from the server every time. */}
+      {runs.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h2 className="m-0 text-[11px] font-semibold uppercase tracking-[1.3px] opacity-60">
+            Runs
+          </h2>
+          <ul className="m-0 flex list-none flex-col gap-1 p-0">
+            {runs.map((saved) => (
+              <li key={saved.runId}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFailure(undefined);
+                    setRunId(saved.runId);
+                  }}
+                  // `aria-current` rather than colour alone — the active row has
+                  // to be announced, not just tinted.
+                  aria-current={saved.runId === runId ? "true" : undefined}
+                  className="flex w-full cursor-pointer items-baseline gap-3 rounded-aai border px-3 py-2 text-left text-xs"
+                  style={{
+                    background: saved.runId === runId ? theme.bg : theme.surface,
+                    borderColor: saved.runId === runId ? theme.primary : theme.border,
+                    color: theme.text,
+                  }}
+                >
+                  <span className="truncate font-medium">{saved.label}</span>
+                  <span className="ml-auto shrink-0 font-aai-mono text-[10px] opacity-60">
+                    {saved.runId.slice(0, 8)}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {output && (

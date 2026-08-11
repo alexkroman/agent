@@ -151,6 +151,95 @@ describe("start() rejections", () => {
   });
 });
 
+describe("parallel steps", () => {
+  test("Promise.all over ctx.step journals by CALL order, not completion order", async () => {
+    // Concurrency needs no API of its own: `nextId` runs SYNCHRONOUSLY, before
+    // `step`'s first await, so a `.map()` over the input numbers its steps in
+    // map order however they settle. That is what the determinism rule really
+    // asks for — the order steps are CALLED — and it is why the transcription
+    // template can fan its chunks out. Nothing pinned it before.
+    //
+    // Deferreds rather than timers: the settle ORDER is the whole point here,
+    // so it is controlled outright instead of inferred from a clock this suite
+    // has faked anyway.
+    const gates = [0, 1, 2].map(() => Promise.withResolvers<void>());
+    const settled: string[] = [];
+    const { engine, store } = makeEngine({
+      fan: workflow({
+        async run(_input, ctx) {
+          const out = await Promise.all(
+            [0, 1, 2].map((n) =>
+              ctx.step("chunk", async () => {
+                await gates[n]?.promise;
+                settled.push(`c${n}`);
+                return `t${n}`;
+              }),
+            ),
+          );
+          return out.join(" ");
+        },
+      }),
+    });
+
+    const runId = await engine.start("fan");
+    await drain();
+    // Release in REVERSE: were ordinals assigned on completion, both the
+    // journal keys and the output would follow this instead, and a resume
+    // would replay the wrong value for every chunk.
+    for (const n of [2, 1, 0]) {
+      gates[n]?.resolve();
+      await drain();
+    }
+
+    expect(settled).toEqual(["c2", "c1", "c0"]);
+    // The PAIRING is the invariant, not the Map's iteration order — entries are
+    // inserted as each step records, so that order legitimately follows
+    // completion. What must not drift is which ordinal holds which output.
+    expect(Object.fromEntries(store.row(runId).steps)).toEqual({
+      "s:chunk#0": "t0",
+      "s:chunk#1": "t1",
+      "s:chunk#2": "t2",
+    });
+    // And the payoff: the run's own result is in call order, so a caller can
+    // join the chunks without sorting them.
+    expect((await engine.get(runId))?.output).toBe("t0 t1 t2");
+    engine.close();
+  });
+
+  test("a failing branch leaves its siblings journaled, so a resume re-runs only it", async () => {
+    // The half that makes fanning out safe: `Promise.all` rejects on the first
+    // failure, but the siblings already recorded are FACTS. This is the
+    // durability story the transcription template exists to show — one chunk's
+    // 503 must not re-bill the other thirty-nine.
+    let failures = 0;
+    const { engine, store } = makeEngine({
+      fan: workflow({
+        run: (_input, ctx) =>
+          Promise.all(
+            [0, 1, 2].map((n) =>
+              ctx.step(
+                "chunk",
+                () => {
+                  if (n === 1 && failures++ === 0) throw new Error("503");
+                  return `t${n}`;
+                },
+                { maxAttempts: 1 },
+              ),
+            ),
+          ),
+      }),
+    });
+
+    const runId = await engine.start("fan");
+    await drain();
+    expect((await engine.get(runId))?.status).toBe("failed");
+    // The two that succeeded are journaled under their own ordinals; the gap at
+    // #1 is exactly what a resume re-issues.
+    expect([...store.row(runId).steps.keys()].sort()).toEqual(["s:chunk#0", "s:chunk#2"]);
+    engine.close();
+  });
+});
+
 describe("step retry", () => {
   test("retries a failing step and journals only the success", async () => {
     let attempts = 0;

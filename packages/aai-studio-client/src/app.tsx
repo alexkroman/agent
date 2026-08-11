@@ -461,6 +461,7 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
               bearer={bearer}
               project={project}
               deployedSlug={deployedSlug}
+              previewSlug={workspace.data?.previewSlug}
               onNotifyChat={notifyChat}
               onDeleteProject={() => deleteProject.mutate()}
               deleting={deleteProject.isPending}

@@ -54,10 +54,10 @@ afterEach(() => {
 
 describe("SettingsPane", () => {
   test("the sections run in the order a project needs them", async () => {
-    // Setting up first, provider keys last: the CLI round-trip, the webhook
-    // URLs, the Database switch, Secrets, and Delete project at the bottom.
-    // The order is also what two pieces of Phone card copy point at — both
-    // send the reader to "Secrets below" for a carrier's signing secret.
+    // Setting up first, provider keys last: the CLI round-trip, the agent's own
+    // URLs, the webhook URLs, the Database switch, Secrets, and Delete project
+    // at the bottom. The order is also what two pieces of Phone card copy point
+    // at — both send the reader to "Secrets below" for a signing secret.
     stubFetch({
       ...DATABASE_STATE,
       "GET /studio/projects/demo/secret": () => jsonResponse({ vars: [], pending: [] }),
@@ -67,7 +67,14 @@ describe("SettingsPane", () => {
     // Card titles are eyebrow spans rather than headings, and inside this
     // pane every one of them is a section title.
     const titles = [...document.querySelectorAll(".eyebrow")].map((el) => el.textContent);
-    expect(titles).toEqual(["Work locally", "Phone number", "Database", "Secrets", "Danger zone"]);
+    expect(titles).toEqual([
+      "Work locally",
+      "API",
+      "Phone number",
+      "Database",
+      "Secrets",
+      "Danger zone",
+    ]);
   });
 
   test("the box is usable with nothing published — no publish-first gate", async () => {

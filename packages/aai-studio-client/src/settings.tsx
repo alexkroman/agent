@@ -21,6 +21,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, parseSecrets } from "./api.ts";
+import { ApiCard } from "./api-card.tsx";
 import { errorText } from "./api-error.ts";
 import { CliCommands } from "./cli-commands.tsx";
 import { DatabaseCard } from "./database-card.tsx";
@@ -47,6 +48,8 @@ type SettingsPaneProps = {
   project: string;
   /** The project's published slug, if it has one — see PhoneCard. */
   deployedSlug?: string | undefined;
+  /** The auto-deployed preview's slug — the API card's fallback before a publish. */
+  previewSlug?: string | undefined;
   /** Post a note into the chat so the coding agent knows what changed. */
   onNotifyChat: (text: string) => void;
   /** Delete the project (workspace + chat). The app navigates home after. */
@@ -58,6 +61,7 @@ export function SettingsPane({
   bearer,
   project,
   deployedSlug,
+  previewSlug,
   onNotifyChat,
   onDeleteProject,
   deleting,
@@ -151,6 +155,12 @@ export function SettingsPane({
         >
           <CliCommands project={project} />
         </Card>
+
+        {/* Where this agent answers, for anything outside the studio — the one
+            thing the studio's own iframe never shows. Falls back to the
+            preview's slug so the card has an answer before the first Publish,
+            which is why it sits above the Phone card rather than beside it. */}
+        <ApiCard deployedSlug={deployedSlug} previewSlug={previewSlug} />
 
         {/* Gated on a published slug, unlike the cards around it — a
             webhook URL is not an intent a later deploy can pick up. */}

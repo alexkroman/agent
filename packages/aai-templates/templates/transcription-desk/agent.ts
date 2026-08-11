@@ -63,6 +63,23 @@ const SAMPLE_RATE = 16_000;
  */
 const MAX_CHUNKS = 200;
 
+/**
+ * Chunks transcribed at once.
+ *
+ * The chunks are independent, so transcribing them one at a time makes a
+ * 40-minute recording take 40 round trips end to end for no reason. `ctx.step`
+ * is safe to call concurrently — the journal is keyed per step, and naming each
+ * one `chunk-<i>` (below) means the key is the chunk's POSITION rather than the
+ * order the pool happened to reach it in.
+ *
+ * BOUNDED rather than a bare `Promise.all`, because the other end is a rate
+ * limit: a long recording would otherwise open one request per chunk at once
+ * and collect 429s, and a rate-limited chunk fails the run instead of waiting
+ * its turn. Four is well inside any per-account limit and still turns those
+ * 40 round trips into 10.
+ */
+const CHUNK_CONCURRENCY = 4;
+
 /** What the Sync API answers with, narrowed to what this template reads. */
 type SyncTranscript = { text?: string; confidence?: number; audio_duration_ms?: number };
 
@@ -88,9 +105,11 @@ function authHeader(env: Readonly<Record<string, string>>): string {
 /**
  * Transcribe an uploaded recording, chunk by chunk, and file the result.
  *
- * The step SEQUENCE is a pure function of the input (one pass over `blobIds`),
- * which is what makes replay deterministic — no branch here reads a clock or a
- * random value.
+ * The step SET is a pure function of the input — one `chunk-<i>` per entry of
+ * `blobIds`, plus the save — which is what makes replay deterministic. No
+ * branch here reads a clock or a random value, and because each step is named
+ * by its POSITION rather than disambiguated by call order, the chunks may be
+ * transcribed in any order and by any number of workers without that changing.
  */
 const transcribe = workflow({
   description: "Transcribe an uploaded recording by sending each chunk to the Sync API",
@@ -102,13 +121,22 @@ const transcribe = workflow({
     label: z.string().default("recording").describe("What the user called this file"),
   }),
   async run({ blobIds, sampleRate, label }, ctx) {
-    const parts: string[] = [];
-
-    for (const blobId of blobIds) {
+    /**
+     * Transcribe chunk `index` and release its audio.
+     *
+     * **The step is named by INDEX, and that is what makes the pool below
+     * safe.** A bare `ctx.step("chunk", …)` is disambiguated by CALL ORDER, so
+     * every concurrent caller has to be reasoned about: does the scheduler
+     * really start them in `blobIds` order, on the first run AND on a replay
+     * that skips the journaled ones? `chunk-3` needs no such argument — the
+     * journal key IS the position, so a resume matches outputs to chunks by
+     * construction however the pool happened to interleave them.
+     */
+    const transcribeChunk = async (blobId: string, index: number): Promise<string> => {
       // One step per chunk, and the step's OUTPUT is the text — small, and the
       // only thing a resume needs. A step that returned the audio would put it
       // in the journal, which is the whole failure this design avoids.
-      const text = await ctx.step("chunk", async () => {
+      const text = await ctx.step(`chunk-${index}`, async () => {
         const audio = await ctx.blob(blobId);
         // Gone means swept or already released: a run that resumes past the
         // blob TTL cannot make progress, so say which chunk rather than sending
@@ -147,8 +175,6 @@ const transcribe = workflow({
         return body.text ?? "";
       });
 
-      parts.push(text);
-
       // The chunk is transcribed, so its audio has served its purpose. Released
       // per chunk rather than in one pass at the end, so a long run is not
       // sitting on the whole recording while it works through it.
@@ -161,7 +187,38 @@ const transcribe = workflow({
       // is already a no-op (`releaseBlob` resolves false for a blob that is
       // gone).
       await ctx.releaseBlob(blobId);
-    }
+      return text;
+    };
+
+    /**
+     * Run `transcribeChunk` over every chunk, `CHUNK_CONCURRENCY` at a time.
+     *
+     * A shared cursor rather than slicing into batches: batches run at the
+     * speed of their slowest member and leave workers idle at every boundary,
+     * which on chunks whose durations vary is most of the win.
+     *
+     * A rejection propagates, which is deliberate — see the note below.
+     */
+    const parts: string[] = new Array<string>(blobIds.length).fill("");
+    // The queue is built as pairs so a worker's loop condition is "was there an
+    // item" rather than an index comparison — which keeps the body free of the
+    // non-null assertion an `array[i]` read needs under
+    // `noUncheckedIndexedAccess`.
+    const queue = blobIds.map((blobId, index) => ({ blobId, index }));
+    let next = 0;
+    await Promise.all(
+      Array.from({ length: Math.min(CHUNK_CONCURRENCY, queue.length) }, async () => {
+        for (let item = queue[next++]; item !== undefined; item = queue[next++]) {
+          parts[item.index] = await transcribeChunk(item.blobId, item.index);
+        }
+      }),
+    );
+
+    // A failed chunk fails the RUN, and that is the durable half working rather
+    // than a gap: every sibling that finished is already journaled under its own
+    // `chunk-<i>`, so the resume replays those for free and re-issues only the
+    // one that failed. Catching here to salvage a partial transcript would ship
+    // a recording with a silent hole in it and call it a success.
 
     // Chunk boundaries fall mid-sentence, so the seam is a space: the Sync API
     // returns each chunk's own punctuation and inventing more (a newline, a
