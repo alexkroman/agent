@@ -87,8 +87,15 @@ const DEPENDENCY_NAME_RE = /^(@[a-z0-9~][\w.~-]*\/)?[a-z0-9~][\w.~-]*$/;
  * `github:owner/repo`, `npm:alias@1`). A relative location is the reason to
  * bother: it would resolve against the shared root rather than the workspace
  * that wrote it, so copying one across would quietly mean something else.
+ *
+ * The quantifier is `*`, not `+`: `"pkg": ""` is legal npm and means `*`
+ * (verified against the registry), so a `+` here refused an ordinary
+ * declaration and then let the build fail to resolve it. This stays a charset
+ * allowlist rather than a parser — `npm-package-arg` classifies a spec
+ * properly and costs a 3.4 MB dependency tree to do it, which is not a trade
+ * a 13 MB harness bundle should make for one regex.
  */
-const VERSION_SPEC_RE = /^[\w.^~<>=*+ |-]+$/;
+const VERSION_SPEC_RE = /^[\w.^~<>=*+ |-]*$/;
 
 /**
  * Where the shared install lives, and the two files it owns. Named off the

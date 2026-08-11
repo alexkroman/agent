@@ -132,6 +132,15 @@ describe("planWorkspaceDependencies", () => {
     expect(plan.skipped).toHaveLength(4);
   });
 
+  test('an empty spec is legal npm and means "*"', () => {
+    // Verified against the registry: `{"ms": ""}` installs. A `+` quantifier
+    // in VERSION_SPEC_RE refused it, and the build then failed to resolve it.
+    expect(planWorkspaceDependencies({ dependencies: { ms: "" } }, () => false)).toEqual({
+      install: { ms: "" },
+      skipped: [],
+    });
+  });
+
   test("refuses a name that is not an npm package name", () => {
     const plan = planWorkspaceDependencies({ dependencies: { "--registry": "1" } }, () => false);
     expect(plan.install).toEqual({});
