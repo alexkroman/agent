@@ -488,5 +488,8 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     startSession,
     shutdown,
     readyConfig,
+    // The engine itself, so `createServer` can serve the workflow HTTP API over
+    // it — undefined when this agent declared no workflows (see setupWorkflows).
+    workflows,
   };
 }

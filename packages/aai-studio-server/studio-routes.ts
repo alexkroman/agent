@@ -60,7 +60,6 @@ import { authMw } from "aai-server/middleware";
 import { TtlCache } from "aai-server/platform-barrel";
 import { RESERVED_SLUGS } from "aai-server/schemas";
 import { verifySlugOwner } from "aai-server/secrets";
-import { generatedSlug } from "aai-server/slug-generate";
 import { userApiKeySecretName } from "aai-server/supabase-auth";
 import { WorkspaceConflictError } from "aai-server/workspace-store";
 import { type Context, Hono } from "hono";
@@ -74,12 +73,12 @@ import { registerEventRoutes } from "./studio-events-routes.ts";
 import { studioLlmInfo } from "./studio-llm.ts";
 import { PREVIEW_WAKE_THROTTLE_MS, wakeProjectPreview } from "./studio-preview.ts";
 import type { PreviewQueue } from "./studio-preview-queue.ts";
+import { claimProjectName } from "./studio-project-create.ts";
 import type { StudioRateLimiters } from "./studio-rate-limit.ts";
 import { createRouteLimits } from "./studio-route-limits.ts";
 import {
   CreateProjectSchema,
   ProjectNameSchema,
-  projectBaseFromPrompt,
   StudioFileSchema,
   SyncSourceSchema,
 } from "./studio-schemas.ts";
@@ -89,9 +88,7 @@ import { createStudioSessionBroker, type StudioSessionBroker } from "./studio-se
 import type { StudioSessionRegistry } from "./studio-session-registry.ts";
 import { onSettledEdit, previewOrigin } from "./studio-settled-edit.ts";
 import { projectPayload } from "./studio-sse.ts";
-import { starterFiles } from "./studio-template.ts";
 import {
-  createWorkspace,
   deleteWorkspace,
   getWorkspace,
   listProjects,
@@ -129,11 +126,6 @@ export type StudioRouteOptions = {
    */
   previewQueue?: PreviewQueue;
 };
-
-/** Server-generated project name: prompt-derived base + random suffix. */
-function nameFromPrompt(prompt: string | undefined): string {
-  return generatedSlug(prompt ? projectBaseFromPrompt(prompt) : undefined);
-}
 
 function validateProject(name: string | undefined): string {
   const parsed = ProjectNameSchema.safeParse(name);
@@ -227,26 +219,13 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     const scope = requestScope(c);
     const limited = await limits.projectCreate(scope, c.req.raw);
     if (limited) return limited;
-    const { name, prompt } = c.req.valid("json");
-    // No explicit name: the server generates one, v0-style — a readable base
-    // from the creating prompt plus a random suffix, via the same generator
-    // slugless CLI deploys use (see aai-server/slug-generate.ts). The suffix
-    // makes a same-scope collision negligible; one retry absorbs it anyway.
-    const attempts = name ? [name] : [nameFromPrompt(prompt), nameFromPrompt(prompt)];
-    // Creation is atomic at the store (versioned insert): two concurrent
-    // creates — even on different replicas — cannot both succeed, so the
-    // loser can never reset the winner's files. No lock needed here.
-    for (const candidate of attempts) {
-      try {
-        const workspace = await createWorkspace(c.env.workspaces, scope, candidate, {
-          files: starterFiles(),
-        });
-        return c.json({ name: candidate, files: workspace.files }, 201);
-      } catch (err) {
-        if (!(err instanceof WorkspaceConflictError)) throw err;
-      }
-    }
-    return c.json({ error: "Project already exists" }, 409);
+    const { name, prompt, kind } = c.req.valid("json");
+    const created = await claimProjectName(c.env.workspaces, scope, { name, prompt, kind });
+    if (!created) return c.json({ error: "Project already exists" }, 409);
+    return c.json(
+      { name: created.project, files: created.workspace.files, kind: created.workspace.kind },
+      201,
+    );
   });
 
   studio.get("/projects/:project", async (c) => {

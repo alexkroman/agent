@@ -53,6 +53,17 @@ export const MAX_WAKE_TIMER_MS = 60_000;
 export const MAX_DUE_RUNS = 20;
 
 /**
+ * How long an uploaded blob survives without a run consuming it.
+ *
+ * Sized against the runs, not the upload: a run that sleeps between steps can
+ * legitimately take hours to reach the blob it was started with, so anything
+ * shorter would delete an input out from under a live run. What it reclaims is
+ * the upload nothing ever started — a closed tab, a failed `start()` — which is
+ * referenced by nothing and would otherwise sit in the app's schema forever.
+ */
+export const WORKFLOW_BLOB_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
  * Thrown by `ctx.sleep()` to unwind a run that has more to do later.
  *
  * A class rather than a sentinel value so it cannot be confused with an
@@ -103,6 +114,22 @@ export type WorkflowEngine = WorkflowClient & {
    * the runtime calls it once on boot.
    */
   runDue(): Promise<number>;
+  /**
+   * Store bytes for a run to work on and resolve the id that names them — see
+   * {@link WorkflowStore.putBlob} for why they may not ride the journal.
+   *
+   * Reached from the workflow HTTP API, which is the only caller that has
+   * bytes and no `ctx.db`: code inside the app writes its own rows.
+   */
+  putBlob(contentType: string, base64: string): Promise<string>;
+  /**
+   * The workflows this engine can run, name + description — what
+   * `GET /workflows` serves and what a static page's client-config carries.
+   *
+   * On the engine rather than read off the agent def by each caller, so the
+   * HTTP API and `createServer` cannot disagree about what this app offers.
+   */
+  listing(): { name: string; description?: string }[];
   /**
    * Stop: abort in-flight runs' `ctx.signal` and cancel pending wake timers.
    * Journaled state is untouched — an abandoned run resumes once its lease
@@ -248,6 +275,19 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
       generate: toGenerateFn(generate, { signal }),
       runId,
       signal,
+      async blob(blobId: string): Promise<{ contentType: string; bytes: Uint8Array } | undefined> {
+        const stored = await store.getBlob(blobId);
+        if (!stored) return;
+        return {
+          contentType: stored.contentType,
+          bytes: Uint8Array.from(Buffer.from(stored.base64, "base64")),
+        };
+      },
+
+      releaseBlob(blobId: string): Promise<boolean> {
+        return store.deleteBlob(blobId);
+      },
+
       async step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T> {
         const stepId = nextId("s", name);
         // Replay: a journaled step is a fact, and re-running it is exactly
@@ -373,10 +413,31 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
       return store.get(runId);
     },
 
+    async putBlob(contentType: string, base64: string): Promise<string> {
+      await ensureTables();
+      const blobId = crypto.randomUUID();
+      await store.putBlob(blobId, contentType, base64);
+      return blobId;
+    },
+
+    listing(): { name: string; description?: string }[] {
+      return Object.entries(workflows).map(([name, def]) =>
+        def.description === undefined ? { name } : { name, description: def.description },
+      );
+    },
+
     async runDue(): Promise<number> {
       if (Object.keys(workflows).length === 0) return 0;
       await ensureTables();
       const ids = await store.due(MAX_DUE_RUNS);
+      // Abandoned uploads are swept here rather than on a timer of their own:
+      // boot is already the moment this engine reconciles what the last life of
+      // the app left behind, and a sweep that only runs on a timer never runs
+      // at all in a sandbox that idle-exits between runs. Failure is logged and
+      // dropped — recovery is the job, and leaked bytes must not prevent it.
+      await store.pruneBlobs(WORKFLOW_BLOB_TTL_MS).catch((err: unknown) => {
+        logger.error("workflow blob prune failed", { error: errorMessage(err) });
+      });
       // Sequential: a cold start recovering a backlog should not open a
       // connection per run against a pool of four.
       for (const id of ids) await execute(id);

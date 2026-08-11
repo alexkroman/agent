@@ -67,6 +67,21 @@ export type StudioWorkspace = {
    * environment's schema is provisioned as its slug appears. Absent means off.
    */
   databaseEnabled?: boolean;
+  /**
+   * What KIND of thing this project builds, which selects the coding agent's
+   * system prompt and the examples the home page offers.
+   *
+   * Absent means `"agent"` — a voice agent, which is what every project created
+   * before this field existed is. Only `"workflow"` is ever written, on the same
+   * "absent means the default" principle as `databaseEnabled`.
+   *
+   * It is a property of the PROJECT rather than of a chat turn because it decides
+   * what the agent writes on every turn: a workflow project's `agent.ts` declares
+   * `page: "static"` and a `workflows` record, and its `client.tsx` mounts with
+   * `page()` rather than `client()`. Switching mid-project would mean the same
+   * conversation had been given two different sets of rules.
+   */
+  kind?: "workflow";
   updatedAt: number;
 };
 

@@ -17,6 +17,13 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { STUDIO_PREAMBLE } from "./studio-preamble.ts";
+import { WORKFLOW_PREAMBLE_ADDENDUM } from "./studio-preamble-workflow.ts";
+
+/**
+ * Which kind of project the coding agent is working in — the studio workspace's
+ * own `kind`, with `"agent"` standing for the absent (default) case.
+ */
+export type StudioProjectKind = "agent" | "workflow";
 
 /**
  * Compact fallback when the scaffold CLAUDE.md cannot be found on disk
@@ -89,7 +96,8 @@ export function scaffoldGuidePath(): string {
   return path.join(path.dirname(pkgPath), "scaffold", "CLAUDE.md");
 }
 
-let cachedPrompt: string | undefined;
+/** One slot per kind: the guide is static, so both are computed at most once. */
+const cachedPrompts = new Map<StudioProjectKind, string>();
 
 /** Read the scaffold authoring guide, or null when not on disk. */
 export function loadScaffoldGuide(guidePath: string = scaffoldGuidePath()): string | null {
@@ -100,28 +108,42 @@ export function loadScaffoldGuide(guidePath: string = scaffoldGuidePath()): stri
   }
 }
 
-/** Pure composition: studio preamble + guide (or the compact fallback). */
-export function composeStudioPrompt(guide: string | null): string {
-  return STUDIO_PREAMBLE + (guide ?? FALLBACK_GUIDE);
+/**
+ * Pure composition: studio preamble, the workflow addendum when the project is
+ * one, then the guide (or the compact fallback).
+ *
+ * The addendum sits BETWEEN them on purpose. Before the guide, it keeps the
+ * documented "the preamble outranks the reference" ordering — the guide is voice
+ * authoring documentation and a workflow project must not follow it wholesale.
+ * After the base preamble, it also overrides that text, which is what lets one
+ * shared preamble serve both kinds.
+ */
+export function composeStudioPrompt(
+  guide: string | null,
+  kind: StudioProjectKind = "agent",
+): string {
+  const addendum = kind === "workflow" ? WORKFLOW_PREAMBLE_ADDENDUM : "";
+  return STUDIO_PREAMBLE + addendum + (guide ?? FALLBACK_GUIDE);
 }
 
 /**
- * Compose the studio system prompt: studio preamble + the CLI's scaffold
- * CLAUDE.md (or the compact fallback). Cached — the guide is static for
- * the process lifetime.
+ * Compose the studio system prompt for a project of this `kind`: studio
+ * preamble + the CLI's scaffold CLAUDE.md (or the compact fallback). Cached per
+ * kind — the guide is static for the process lifetime.
  */
-export function studioSystemPrompt(): string {
-  if (cachedPrompt === undefined) {
-    const guide = loadScaffoldGuide();
-    if (!guide) {
-      console.warn("Studio: scaffold CLAUDE.md not found; using built-in authoring guide");
-    }
-    cachedPrompt = composeStudioPrompt(guide);
+export function studioSystemPrompt(kind: StudioProjectKind = "agent"): string {
+  const cached = cachedPrompts.get(kind);
+  if (cached !== undefined) return cached;
+  const guide = loadScaffoldGuide();
+  if (!guide) {
+    console.warn("Studio: scaffold CLAUDE.md not found; using built-in authoring guide");
   }
-  return cachedPrompt;
+  const composed = composeStudioPrompt(guide, kind);
+  cachedPrompts.set(kind, composed);
+  return composed;
 }
 
 /** Test-only: clear the composed-prompt cache. */
 export function _resetStudioPromptCache(): void {
-  cachedPrompt = undefined;
+  cachedPrompts.clear();
 }

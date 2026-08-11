@@ -142,6 +142,46 @@ export type WorkflowContext = {
    */
   step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
   /**
+   * Read bytes a caller uploaded through the workflow API's `/workflows/blobs`
+   * route, by the id the run's input named. Resolves `undefined` when the id is
+   * unknown or the blob has already been released or swept.
+   *
+   * This is the counterpart to that upload, and the pair exists because of what
+   * a journal is: `step` outputs and the run input are re-read on EVERY replay,
+   * so bytes must not travel in them. A page uploads first, starts the run
+   * naming the blob, and the run reads it here — so the audio or document is
+   * fetched once per step that needs it and never enters the journal.
+   *
+   * Call it INSIDE a step only when the bytes are what the step works on; the
+   * returned value must not itself be returned from the step (see above).
+   *
+   * @example
+   * ```ts
+   * import type { WorkflowContext } from "@alexkroman1/aai";
+   * declare const ctx: WorkflowContext;
+   * declare const blobId: string;
+   *
+   * const text = await ctx.step("transcribe", async () => {
+   *   const audio = await ctx.blob(blobId);
+   *   if (!audio) throw new Error(`upload ${blobId} is gone`);
+   *   return audio.bytes.byteLength; // …send it somewhere, journal the RESULT
+   * });
+   * ```
+   */
+  blob(blobId: string): Promise<{ contentType: string; bytes: Uint8Array } | undefined>;
+  /**
+   * Delete an uploaded blob now that the run is done with it.
+   *
+   * Optional housekeeping, not a correctness requirement — every blob is swept
+   * on age anyway. Worth doing when the bytes are a user's own recording or
+   * document: the sweep's window is sized for a run that sleeps for hours, which
+   * is far longer than a finished run has any reason to keep them.
+   *
+   * Resolves whether anything was deleted, so a replay of the same step (which
+   * finds it already gone) is not an error.
+   */
+  releaseBlob(blobId: string): Promise<boolean>;
+  /**
    * Suspend the run for `ms`, durably.
    *
    * Unlike a `setTimeout`, this does not hold a process open: the wake time

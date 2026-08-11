@@ -17,6 +17,7 @@
 
 import type { Db } from "./db.ts";
 import type { DefaultSessionState, ToolContext } from "./types.ts";
+import type { WorkflowContext } from "./workflow.ts";
 
 /** One `ctx.send(event, data)` call, as recorded by {@link createToolContext}. */
 export interface SentEvent {
@@ -151,6 +152,88 @@ export function createToolContext<S = DefaultSessionState>(
       sent.push({ event, data });
     },
     sent,
+    ...overrides,
+  };
+}
+
+/**
+ * A {@link WorkflowContext} that records the steps a run took.
+ *
+ * @public
+ */
+export type TestWorkflowContext = WorkflowContext & {
+  /** Step names `ctx.step` received, in call order. */
+  readonly steps: string[];
+  /** Sleep durations `ctx.sleep` was asked for, in call order. */
+  readonly sleeps: number[];
+};
+
+/**
+ * Build a {@link WorkflowContext} for testing a workflow's `run` in isolation.
+ *
+ * The twin of {@link createToolContext}, and it exists for the same reason —
+ * hand-rolling one means a cast that stops reporting when a field is added — but
+ * what it defaults is different, because a workflow's context is mostly the
+ * durability machinery:
+ *
+ * - **`step` RUNS its function and records the name.** That is the honest
+ *   default for a unit test: it exercises the body once, in order, which is what
+ *   the FIRST execution of a run does. Replay, per-step retry and lease recovery
+ *   are the engine's semantics, not the workflow's, and they are covered in
+ *   `host/workflow-engine.test.ts` — a template test asserting on them would be
+ *   testing the SDK through a template.
+ * - **`sleep` records and returns immediately**, so a test does not wait out a
+ *   poll interval (and does not have to install fake timers to avoid it).
+ * - **`blob` resolves undefined by default**, so a run that expects an upload
+ *   fails by name rather than transcribing nothing; pass `blob` to supply bytes.
+ * - `db`, `generate` reject exactly as they do for a tool context.
+ *
+ * @example
+ * ```ts no-check
+ * import { createWorkflowContext } from "@alexkroman1/aai/testing";
+ * import { expect, test } from "vitest";
+ * import agentDef from "./agent.ts";
+ *
+ * test("transcribe visits every chunk", async () => {
+ *   const ctx = createWorkflowContext({
+ *     blob: () => Promise.resolve({ contentType: "audio/pcm", bytes: new Uint8Array(320) }),
+ *   });
+ *   await agentDef.workflows.transcribe.run({ blobIds: ["a", "b"] }, ctx);
+ *   expect(ctx.steps).toEqual(["chunk", "chunk", "save"]);
+ * });
+ * ```
+ *
+ * @public
+ */
+export function createWorkflowContext(
+  overrides: Partial<WorkflowContext> = {},
+): TestWorkflowContext {
+  const steps: string[] = [];
+  const sleeps: number[] = [];
+  sessionCounter += 1;
+  return {
+    runId: `test-run-${sessionCounter}`,
+    env: {},
+    db: createUnusedDb(),
+    generate: () =>
+      Promise.reject(
+        new Error(
+          "ctx.generate was not stubbed for this test — pass `generate` to createWorkflowContext",
+        ),
+      ),
+    signal: new AbortController().signal,
+    step: async <T>(name: string, fn: () => Promise<T> | T): Promise<T> => {
+      steps.push(name);
+      return await fn();
+    },
+    sleep: (ms: number) => {
+      sleeps.push(ms);
+      return Promise.resolve();
+    },
+    blob: () => Promise.resolve(undefined),
+    releaseBlob: () => Promise.resolve(true),
+    steps,
+    sleeps,
     ...overrides,
   };
 }

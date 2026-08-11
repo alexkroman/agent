@@ -43,6 +43,10 @@ export function projectPayload(workspace: StudioWorkspace): Record<string, unkno
     ...(workspace.previewHash && { previewVersion: workspace.previewHash }),
     previewStale: hasPreviewChanges(workspace),
     ...(workspace.previewError && { previewError: workspace.previewError }),
+    // Absent for a voice project, so an older row and an `"agent"` project read
+    // identically. The client needs it to label the project and to know the
+    // Preview pane is framing a page rather than a voice client.
+    ...(workspace.kind && { kind: workspace.kind }),
   };
 }
 

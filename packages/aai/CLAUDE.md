@@ -719,16 +719,82 @@ run: `close()` aborts `ctx.signal`, the catch leaves the run `running` with its
 journal intact, and the next host resumes it. Marking it failed would turn every
 redeploy into a graveyard of runs one step from finishing.
 
-**Two platform pieces are deliberately NOT wired yet, and both are the
-platform's job rather than the SDK's.** A wake timer only fires while this host
-lives (`MAX_WAKE_TIMER_MS`, 60s — past that, recovery is `runDue()`'s), so
-nothing wakes an idle-exited sandbox to serve a due run; and there is no trigger
-surface, because a deployed guest serves `/`, `/client-config`, static assets and
-`/websocket` plus token-gated `/manage/*` — no route an inbound webhook or cron
-tick can hit. So today a run is started from a voice session or the browser
-client, and a long sleep resumes on the next boot rather than on time. The
-substrate for both already exists in the platform Postgres (`pg_cron`, `pgmq`,
-`pg_net` — see `packages/aai-server/CLAUDE.md`).
+**A run is started over HTTP as well as from a tool** (`host/workflow-api.ts`,
+mounted by `createServer` so `aai dev`, a self-hosted server and every deployed
+guest serve it identically — the same reasoning `/phone` is mounted there):
+
+```
+GET  /workflows            → { workflows: [{ name, description? }] }
+POST /workflows/runs       → { runId }        body: { workflow, input? }
+GET  /workflows/runs/:id   → a WorkflowRunSnapshot
+POST /workflows/blobs      → { blobId, bytes }  body: raw bytes
+```
+
+That closes the "no trigger surface" gap this section used to record: a cron job,
+a webhook relay, a script or a page can all start a run. What is still NOT wired
+is the platform WAKING an idle-exited sandbox for a due sleeper — a wake timer
+only fires while this host lives (`MAX_WAKE_TIMER_MS`, 60s; past that recovery is
+`runDue()`'s on the next boot), so a long sleep resumes when something next
+brings the agent up rather than on time. The substrate for that exists in the
+platform Postgres (`pg_cron`, `pgmq`, `pg_net` — see
+`packages/aai-server/CLAUDE.md`).
+
+**`/blobs` exists because bytes may not travel in the journal, and that is the
+one non-obvious thing about this surface.** Replay re-reads every step output and
+the run input on every resume, so audio or a document in either is re-read
+forever and counts against `MAX_DB_RESULT_ROWS`. A browser cannot reach `ctx.db`
+to put them anywhere else. So an upload lands in `aai_workflow_blobs` (the app's
+own schema), the run is started naming the id, and the workflow reads it with
+`ctx.blob(id)` INSIDE the step that needs it and `ctx.releaseBlob(id)` when done.
+Blobs are swept on age (`WORKFLOW_BLOB_TTL_MS`, 24h, from `runDue()`) because an
+upload whose run was never started is referenced by nothing. Note releasing must
+happen AFTER the step that consumed it is journaled, never inside it: inside, a
+crash between the API call and the journal write leaves the retry with nothing to
+read, which turns at-least-once into a run that can never finish
+(`transcription-desk`'s loop says so in place).
+
+**The API is as public as `/websocket`, and an operator can close it.** A page
+carries no credential — it is served to anyone with the URL, exactly like the
+voice client — so requiring one by default would mean no static page could work,
+and the existing posture is identical (anyone who knows a slug can open a voice
+session and spend the tenant's provider budget). The genuine difference is the
+COST SHAPE: a run outlives the request that started it, so a loop of cheap POSTs
+queues far more work than a loop of sessions can. `AAI_WORKFLOW_API_TOKEN` in the
+agent env makes every route require it as a bearer, checked BEFORE the engine is
+resolved so an unauthenticated caller cannot even make a guest build its runtime.
+Fail-OPEN when unset is the documented default, not an oversight.
+
+The body caps (`MAX_WORKFLOW_INPUT_BYTES`, `MAX_WORKFLOW_BLOB_BYTES`) are counted
+from the STREAM rather than from `Content-Length`, and an over-limit body is
+discarded as it arrives rather than answered by destroying the socket — both
+decisions are argued on `readBody`'s own doc comment, which is where to read
+before changing either.
+
+## A page can be STATIC — `agent({ page })`
+
+`page: "static"` says the agent's front door is an ordinary web page rather than a
+voice session, and it is the declaration that makes a workflow app coherent:
+
+- **Both voice surfaces are REFUSED** rather than left listening. `/websocket` is
+  completed and then declined with a protocol error naming the reason (a bare
+  failed upgrade sends a voice client into its reconnect backoff with nothing in
+  the frame log explaining it), and `/phone` — otherwise on by default — is not
+  routed at all, since a carrier has nothing to read a refusal from. A static app
+  declares no STT/LLM/TTS, so a session it accepted is one it could not serve.
+- **It rides `GET /client-config`**, so the browser knows BEFORE it mounts:
+  `page: "static"` plus the declared `workflows` listing. Absent means `"voice"`,
+  so a response from a server predating the field reads as one. The listing is
+  served ONLY for a static page, and that is laziness rather than taste —
+  resolving the engine builds the guest's runtime, and a voice agent's
+  client-config is fetched before every connect.
+- **It is serializable** (`AgentConfigSchema`), not host-only, because it is a
+  declaration about the surface exactly like `name` and `greeting`. The
+  `workflows` record beside it is host-only for the opposite reason: those are
+  functions.
+- **It is orthogonal to declaring workflows.** A `"voice"` agent may declare them
+  (a tool starts a run and answers its turn); a `"static"` one is just an app
+  whose front door is a form. The browser half is `page()` +
+  `createWorkflowApi()` — see `packages/aai-ui/CLAUDE.md`.
 
 ## `ctx.state` is ONE object per session — with or without a `state` factory
 

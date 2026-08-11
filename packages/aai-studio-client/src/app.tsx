@@ -17,6 +17,7 @@ import { PreviewPane } from "./preview.tsx";
 import { queryKeys } from "./query-keys.ts";
 import { SettingsPane } from "./settings.tsx";
 import { lazyRetry } from "./stale-build.ts";
+import type { ProjectKind } from "./starters.ts";
 import { PublishMenu, type StudioTab, TopBar } from "./top-bar.tsx";
 import { type StreamHandlers, useEventStream } from "./use-event-stream.ts";
 
@@ -244,7 +245,8 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
     // The SERVER names the project — a base derived from the prompt plus a
     // random suffix, v0-style, via the same generator slugless CLI deploys
     // use (aai-server/slug-generate.ts). The client never mints names.
-    mutationFn: (prompt: string) => api.createProject(bearer, { prompt }),
+    mutationFn: ({ prompt, kind }: { prompt: string; kind: ProjectKind }) =>
+      api.createProject(bearer, { prompt, kind }),
     onSuccess: (created) => {
       selectProject(created.name);
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects });
@@ -317,13 +319,13 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
 
   // Hero start: typing the first message creates a project (named from the
   // prompt server-side) and forwards it as the first chat turn.
-  const startWithPrompt = (prompt: string) => {
+  const startWithPrompt = (prompt: string, kind: ProjectKind) => {
     // The hero disables while pending; this guard covers the same-tick
     // race (Enter twice before the re-render) so one prompt never creates
     // two projects.
     if (createProject.isPending) return;
     setPendingPrompt(prompt);
-    createProject.mutate(prompt);
+    createProject.mutate({ prompt, kind });
   };
 
   // The Preview pane's report that the platform is not serving the slug it

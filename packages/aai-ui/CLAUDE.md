@@ -35,6 +35,41 @@ conventions and testing rules live in the root `CLAUDE.md`.
   message-list, auto-scroll, start-screen, sidebar-layout, tool-call-block,
   button, aai-logo, tool-config-context)
 
+## A STATIC page is `page()`, not `client()`
+
+An agent with `page: "static"` (see `packages/aai/CLAUDE.md`) has no session, so
+its `client.tsx` mounts with **`page()`** (`page.tsx`) and talks to the workflow
+HTTP API through **`createWorkflowApi()` / `useWorkflowRun()`**
+(`workflow-client.ts`).
+
+**Two mounts rather than a flag on `client()`, and the reason is what `client()`
+unavoidably does**: it constructs a `SessionCore`, which owns a WebSocket URL
+provider, an audio graph and a microphone request. A `session: false` option
+would make all of that conditional and then leave every session hook having to
+answer "what does this mean with no session?" — so the split is honest. Authoring
+is otherwise identical (still `client.tsx`, still React, still Tailwind, and
+`ThemeProvider` is installed either way), which is why the workflow templates read
+like every other template.
+
+**`useWorkflowRun` POLLS, and that is not a limitation to fix.** A run is durable
+and the page is not: it can complete while the tab is closed, on another sandbox,
+hours later. There is no socket to push down and nothing to reconnect — the
+`runId` is the whole state, so re-reading it is both the simplest and the most
+honest implementation. Three properties it needs to keep: polling STOPS on a
+terminal status (a finished run costs nothing, and a page left open must not poll
+forever), the timer is re-armed from the SETTLED read rather than on an interval
+(so a slow response cannot stack overlapping polls), and a failed read is
+REPORTED but retried — a dropped request against a booting sandbox is the common
+case, and giving up would strand a live run.
+
+**Bytes go through `api.upload()`, never into the run input.** The input is
+journaled and replayed, so the page uploads first and passes the returned
+`blobId` — see the `/blobs` note in `packages/aai/CLAUDE.md`. `transcription-desk`
+is the worked example: it decodes the picked file with `decodeAudioData`,
+downmixes and resamples through an `OfflineAudioContext` (which band-limits
+properly — hand-rolled decimation aliases), slices into 60 s windows, and uploads
+each as S16LE PCM.
+
 ## `AutoScroll` is the only scroll-pinning implementation
 
 `components/auto-scroll.tsx` wraps `use-stick-to-bottom` (pin to the bottom as

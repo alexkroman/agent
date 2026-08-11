@@ -126,6 +126,15 @@ export const CreateProjectSchema = z.object({
     .optional(),
   /** First chat message — seeds the generated name when `name` is absent. */
   prompt: z.string().max(MAX_NAME_PROMPT).optional(),
+  /**
+   * What this project builds — selects the coding agent's system prompt and
+   * therefore the shape of everything it writes. Absent means `"agent"`.
+   *
+   * Accepted at CREATE only: it is stamped on the workspace and there is no
+   * route that changes it, because a project's whole conversation was conducted
+   * under one set of rules (see `StudioWorkspace.kind`).
+   */
+  kind: z.enum(["agent", "workflow"]).optional(),
 });
 
 export const StudioFileSchema = z.object({

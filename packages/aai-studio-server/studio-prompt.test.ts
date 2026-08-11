@@ -147,3 +147,68 @@ describe("studioSystemPrompt", () => {
     expect(prompt).not.toContain("## `agent()` API"); // scaffold-only heading
   });
 });
+
+/**
+ * The workflow prompt is a different PRODUCT's instructions, not a variant of
+ * the same one, so these assert the substitutions that make it so — and, just as
+ * importantly, that an agent project's prompt is untouched by any of it.
+ */
+describe("studioSystemPrompt for a workflow project", () => {
+  test("tells the agent it is building a static page over durable steps", () => {
+    const prompt = studioSystemPrompt("workflow");
+    expect(prompt).toContain("THIS PROJECT IS A WORKFLOW APP, NOT A VOICE AGENT");
+    // The three declarations a workflow project cannot work without.
+    expect(prompt).toContain('page: "static"');
+    expect(prompt).toContain("workflows: { process }");
+    expect(prompt).toContain("page({ name:");
+  });
+
+  test("names what no longer applies, since the shared preamble is voice-shaped", () => {
+    const prompt = studioSystemPrompt("workflow");
+    // Disclaiming by name is the sharp tool the preamble's own header warns
+    // about; a workflow project that writes a greeting and a voice produces an
+    // app whose page cannot open at all.
+    expect(prompt).toContain("No `greeting`, no `voice`, no `systemPrompt`");
+    expect(prompt).toContain("never `client()`");
+    expect(prompt).toContain("Do NOT use useSession");
+  });
+
+  test("points at the worked example rather than describing it", () => {
+    // `use_template` copies files verbatim; a re-derivation from prose is what
+    // this line exists to prevent.
+    expect(studioSystemPrompt("workflow")).toContain("transcription-desk");
+  });
+
+  test("keeps the shared coding guidance — it is one preamble, not two", () => {
+    const workflow = studioSystemPrompt("workflow");
+    const agent = studioSystemPrompt("agent");
+    for (const shared of ["AssemblyAI Build coding agent", "test_agent", "## Refusals"]) {
+      expect(workflow).toContain(shared);
+      expect(agent).toContain(shared);
+    }
+  });
+
+  test("an agent project gets NONE of the workflow addendum", () => {
+    // The regression that would be invisible: a voice project told to write a
+    // static page still builds, and merely serves nothing anyone can talk to.
+    const agent = studioSystemPrompt("agent");
+    expect(agent).not.toContain("THIS PROJECT IS A WORKFLOW APP");
+    // Identified by the addendum's own markers: the scaffold guide (which BOTH
+    // prompts carry) documents `page: "static"` too, so that string alone would
+    // pass for the wrong reason.
+    // Markers unique to the ADDENDUM. The scaffold guide — which BOTH prompts
+    // carry — documents `page: "static"`, `workflows: { process }` and a
+    // "do not use useSession" rule of its own, so any of those would pass here
+    // for the wrong reason.
+    expect(agent).not.toContain("Read this section as overriding anything above it");
+    expect(agent).not.toContain("Read the worked example first");
+    // The default argument is the agent prompt, so an un-updated caller cannot
+    // silently get the workflow one.
+    expect(studioSystemPrompt()).toBe(agent);
+  });
+
+  test("each kind is cached separately", () => {
+    expect(studioSystemPrompt("workflow")).toBe(studioSystemPrompt("workflow"));
+    expect(studioSystemPrompt("workflow")).not.toBe(studioSystemPrompt("agent"));
+  });
+});

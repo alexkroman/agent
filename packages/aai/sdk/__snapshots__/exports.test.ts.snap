@@ -216,10 +216,14 @@ exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
   "CONTAINED_ENV",
   "DEFAULT_LISTEN_HOST",
   "DEFAULT_S2S_CONFIG",
+  "MAX_WORKFLOW_BLOB_BYTES",
+  "MAX_WORKFLOW_INPUT_BYTES",
   "PROVIDER_CREDENTIAL_ENVS",
   "SANDBOX_ONLY_BUILTINS",
   "TELEPHONY_PATH",
   "TELEPHONY_SAMPLE_RATE",
+  "WORKFLOW_API_PREFIX",
+  "WORKFLOW_API_TOKEN_ENV",
   "buildHostAgent",
   "builtinFetch",
   "carrierByName",
@@ -295,6 +299,7 @@ exports[`export surface stability > @alexkroman1/aai/testing export 1`] = `
 [
   "createToolContext",
   "createUnusedDb",
+  "createWorkflowContext",
 ]
 `;
 

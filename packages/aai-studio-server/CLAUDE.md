@@ -192,6 +192,35 @@ voice agents without the CLI:
   `createOwnedMap` exists on the agent side: every cleanup runs after an
   await (a rejected re-init, a publish whose sandbox died mid-request), by
   which point the key may hold a replacement that must not be evicted.
+- **A project has a KIND, stamped at creation, and it selects the coding agent's
+  system prompt.** The home page's Voice agent / Workflow toggle posts
+  `kind` to `POST /studio/projects`; `StudioWorkspace.kind` records it (absent
+  means `"agent"`, so every project predating the field reads correctly and only
+  `"workflow"` is ever written); `sessionParams` in `studio-session-ensure.ts`
+  passes it to `studioSystemPrompt(kind)` on every install, owner and peer alike.
+
+  **There is deliberately no route that CHANGES it.** A project's whole
+  conversation was conducted under one set of rules, and the artifacts differ
+  structurally — a workflow project's `agent.ts` declares `page: "static"` and a
+  `workflows` record and its `client.tsx` mounts with `page()` — so flipping the
+  kind mid-project would leave the agent editing files its instructions no longer
+  describe, with the chat history as evidence for the other reading.
+
+  **The workflow prompt is an ADDENDUM, not a second preamble**
+  (`WORKFLOW_PREAMBLE_ADDENDUM` in `studio-preamble.ts`, inserted between the
+  preamble and the scaffold guide). Most of the preamble is about being a good
+  coding agent here — the tool loop, `test_agent`, debugging, secrets, design,
+  refusals — and none of it changes because the artifact is a web app; forking it
+  would mean two copies of ~400 lines that must not drift, and the copy that
+  drifts is the one nobody is currently editing. So the addendum REPLACES the
+  target and then names the sections above that no longer apply, which is the
+  sharp tool `studio-preamble.ts`'s own header warns about, used deliberately: a
+  workflow project told to write a `greeting` and a `voice` produces an app whose
+  page cannot open. Sitting BEFORE the guide keeps the documented "preamble
+  outranks the reference" ordering while still overriding the voice-shaped
+  preamble text. `studio-prompt.test.ts` pins both directions — the substitutions
+  AND that an agent project gets none of them.
+
 - **No MCP.** The studio's coding agent has no MCP integration (the docs
   MCP server it once connected to was removed). The system prompt embeds a
   *snapshot* of the scaffold guide; anything outside it — a voice, a newly

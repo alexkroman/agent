@@ -16,6 +16,33 @@ Panes: `chat.tsx` (chat + composer), and the three the top bar's
 segmented control switches between — `preview.tsx`, `code-view.tsx`,
 `settings.tsx`.
 
+## The hero picks a KIND before it creates anything
+
+`home.tsx`'s tablist switches between **Voice agent** and **Workflow**, and the
+choice travels WITH the prompt into `onStart(prompt, kind)` →
+`api.createProject({ prompt, kind })`. It is one decision made at one instant: the
+server stamps `kind` on the workspace at creation and it selects the coding
+agent's system prompt for the life of the project (see
+`packages/aai-studio-server/CLAUDE.md`), so there is nothing to change later and
+no route that would.
+
+Two things the toggle has to get right, and both are about not lying about what
+the user is about to get:
+
+- **The starter pools are SEPARATE** (`starters.ts`: `AGENT_STARTERS` /
+  `WORKFLOW_STARTERS`, `startersFor(kind)`). Offering a voice agent's examples on
+  the Workflow tab would start someone in a project whose coding agent has been
+  told not to write voice agents — the pick would fight its own instructions.
+  `starters.test.ts` asserts the pools are disjoint and that a workflow sample
+  contains no agent starter, whatever the random draw.
+- **Both kinds are sampled ONCE per mount**, keyed by kind, so switching tabs and
+  switching back shows the same five rather than re-rolling — a re-roll reads as
+  the page losing its place.
+
+The heading, blurb and placeholder come from one `KIND_COPY` record rather than
+ternaries inside the JSX, so the two modes read as the two products they are and a
+third would be a row rather than another branch in five places.
+
 ## Panes and behaviour
 
 - **Settings is a PANE, not a dropdown** (`settings.tsx`): the top bar's

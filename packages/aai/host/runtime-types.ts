@@ -17,6 +17,7 @@ import type { CreateS2sWebSocket } from "./s2s.ts";
 import type { SessionCore } from "./session-core.ts";
 import type { ExecuteTool } from "./tool-executor.ts";
 import type { CreateOpenaiRealtimeWebSocket } from "./transports/openai-realtime-transport.ts";
+import type { WorkflowApiEngine } from "./workflow-api.ts";
 import type { SessionWebSocket } from "./ws-handler.ts";
 
 /** Per-session options passed to {@link AgentRuntime.startSession}. */
@@ -54,6 +55,17 @@ export type AgentRuntime = {
   startSession(ws: SessionWebSocket, opts?: SessionStartOptions): void;
   shutdown(): Promise<void>;
   readonly readyConfig: ReadyConfig;
+  /**
+   * The agent's workflow engine, or undefined when it declared no workflows
+   * (or storage is off, so runs could not be journaled).
+   *
+   * Exposed because the workflow HTTP API is served by `createServer`, which
+   * sees only {@link SessionRuntime} and so cannot reach inside the runtime for
+   * it. It is also what a guest harness forwards across the harness↔bundle
+   * contract, which is why it is optional there too — a bundle built with an
+   * older SDK simply has none, and the API answers 404.
+   */
+  readonly workflows?: WorkflowApiEngine | undefined;
 };
 
 /**

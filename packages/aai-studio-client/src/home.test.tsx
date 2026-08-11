@@ -8,7 +8,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { HomeHero } from "./home.tsx";
-import { STARTERS } from "./starters.ts";
+import { AGENT_STARTERS, WORKFLOW_STARTERS } from "./starters.ts";
 
 const noop = (): void => undefined;
 
@@ -61,7 +61,7 @@ describe("HomeHero states", () => {
     );
     const chips = html.match(/class="starter"/g) ?? [];
     expect(chips.length).toBe(5);
-    expect(chips.length).toBeLessThan(STARTERS.length);
+    expect(chips.length).toBeLessThan(AGENT_STARTERS.length);
   });
 
   test("renders no model picker or chip — the server default always runs", () => {
@@ -88,7 +88,7 @@ describe("HomeHero submit", () => {
     fireEvent.keyDown(box, { key: "Enter", shiftKey: true });
     expect(onStart).not.toHaveBeenCalled();
     fireEvent.keyDown(box, { key: "Enter" });
-    expect(onStart).toHaveBeenCalledWith("build a pizza bot");
+    expect(onStart).toHaveBeenCalledWith("build a pizza bot", "agent");
   });
 
   test("the send button submits, but never an empty prompt", () => {
@@ -105,7 +105,7 @@ describe("HomeHero submit", () => {
     expect(onStart).not.toHaveBeenCalled();
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "an FAQ bot" } });
     fireEvent.click(send);
-    expect(onStart).toHaveBeenCalledWith("an FAQ bot");
+    expect(onStart).toHaveBeenCalledWith("an FAQ bot", "agent");
   });
 
   test("a starter chip forwards its full prompt, not its label", () => {
@@ -121,6 +121,49 @@ describe("HomeHero submit", () => {
     fireEvent.click(chip);
     expect(onStart).toHaveBeenCalledTimes(1);
     const sent = onStart.mock.calls[0]?.[0];
-    expect(STARTERS.map((s) => s.prompt)).toContain(sent);
+    expect(AGENT_STARTERS.map((s) => s.prompt)).toContain(sent);
+    // The KIND travels with the prompt: it is stamped on the project at
+    // creation and selects the coding agent's system prompt, so a chip that
+    // forwarded only the text would create the wrong kind of project.
+    expect(onStart.mock.calls[0]?.[1]).toBe("agent");
+  });
+
+  test("the Workflow tab switches the heading, the placeholder and the starters", () => {
+    const onStart = vi.fn();
+    render(
+      <HomeHero
+        creating={false}
+        status={{ provider: "assemblyai", model: "gpt-5.5" }}
+        onStart={onStart}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Workflow" }));
+
+    expect(screen.getByText("What work should run in the background?")).toBeTruthy();
+    // The starters come from the workflow pool now — the whole point of the
+    // toggle, since the two kinds get different system prompts.
+    const chip = document.querySelector("button.starter") as HTMLButtonElement;
+    expect(WORKFLOW_STARTERS.map((s) => s.label)).toContain(chip.textContent);
+
+    fireEvent.click(chip);
+    expect(onStart).toHaveBeenCalledTimes(1);
+    expect(WORKFLOW_STARTERS.map((s) => s.prompt)).toContain(onStart.mock.calls[0]?.[0]);
+    expect(onStart.mock.calls[0]?.[1]).toBe("workflow");
+  });
+
+  test("typed text is submitted with the selected kind", () => {
+    const onStart = vi.fn();
+    render(
+      <HomeHero
+        creating={false}
+        status={{ provider: "assemblyai", model: "gpt-5.5" }}
+        onStart={onStart}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Workflow" }));
+    const box = document.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: "batch process my csv" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(onStart).toHaveBeenCalledWith("batch process my csv", "workflow");
   });
 });

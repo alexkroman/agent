@@ -88,6 +88,24 @@ seedless `emptyRetailState()` instead of `retailSlot.projection(storeView)
 (undefined)`, because the slot's factory pulls a 107 KB `seed.json` and
 importing it would ship the whole catalog to the browser. It says so in place.
 
+## `transcription-desk` is the WORKFLOW-app example, and it costs one demonstration
+
+It is the only template with `page: "static"` — a page (`page()` +
+`createWorkflowApi`) over a journaled workflow, chunking audio in the browser
+because the Sync API caps a request at 120 s and the sandbox has no decoder.
+See "Workflow apps" in `scaffold/CLAUDE.md` for the shape it teaches.
+
+**It used to be a VOICE agent that started a run from a tool, and nothing
+demonstrates that any more.** `ctx.workflows.start()` / `.get()` from inside a
+tool — a turn kicking off durable work and answering the caller in the same
+breath — is still fully supported and covered by
+`packages/aai/host/workflow-engine.test.ts` plus `sdk/testing.ts`'s
+`createToolContext`, which defaults `ctx.workflows` for exactly that test. But
+`WorkflowClient` and `WorkflowRunSnapshot` are in
+`template-api-allowlist.json` now, and that is the honest record of the gap
+rather than a claim that the API is unused. A voice template that starts a run
+would close it; nothing here is blocked on one.
+
 ## What `tsconfig.json` includes is what gets type-checked
 
 A test file is imported by nothing, so tsc only sees it if `include` names

@@ -290,7 +290,7 @@
       }
     },
     {
-      "includes": ["packages/aai/sdk/types.ts"],
+      "includes": ["packages/aai/sdk/types.ts", "packages/aai/sdk/session-state.ts"],
       "linter": {
         "rules": {
           "suspicious": {

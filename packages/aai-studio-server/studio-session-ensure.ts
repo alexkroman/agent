@@ -26,7 +26,7 @@ import type { WorkspaceStore } from "aai-server/workspace-store";
 import { MAX_CHAT_STEPS } from "./studio-limits.ts";
 import { studioLlmModelId } from "./studio-llm.ts";
 import type { PreviewOrigin } from "./studio-preview.ts";
-import { studioSystemPrompt } from "./studio-prompt.ts";
+import { type StudioProjectKind, studioSystemPrompt } from "./studio-prompt.ts";
 import type { SessionEntry } from "./studio-session-entry.ts";
 import type { SessionFleet } from "./studio-session-fleet.ts";
 import { chatUrlForGuest } from "./studio-session-wire.ts";
@@ -90,6 +90,7 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
     project: string,
     apiKey: string,
     files: Record<string, string>,
+    kind: StudioProjectKind,
   ) {
     return {
       // The guest pins (scope, project) on its first install and refuses any
@@ -99,7 +100,11 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
       project,
       files,
       apiKey,
-      system: studioSystemPrompt(),
+      // Selected by the PROJECT's kind, so a workflow project's coding agent is
+      // told to write a static page and a workflows record rather than a voice
+      // agent. Absent on the workspace means "agent", which is what every
+      // project created before the field existed is.
+      system: studioSystemPrompt(kind),
       model: studioLlmModelId(env),
       ...(env.STUDIO_LLM_REGION === "eu" ? { region: "eu" as const } : {}),
       maxSteps: MAX_CHAT_STEPS,
@@ -136,7 +141,10 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
     const chatToken = existingToken ?? randomBytes(32).toString("base64url");
     await warm.conn.sendRequest(
       "studio/session-init",
-      { ...sessionParams(scope, project, apiKey, workspace.files), chatToken },
+      {
+        ...sessionParams(scope, project, apiKey, workspace.files, workspace.kind ?? "agent"),
+        chatToken,
+      },
       SESSION_INIT_TIMEOUT_MS,
     );
     return chatToken;
@@ -245,7 +253,11 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
       // bogus project never reaches the registry, and before the spawn because
       // the spawn is exactly the duplicate this prevents.
       const adopt = (): Promise<BrokeredSession | null> =>
-        fleet.adopt(scope, project, sessionParams(scope, project, apiKey, workspace.files));
+        fleet.adopt(
+          scope,
+          project,
+          sessionParams(scope, project, apiKey, workspace.files, workspace.kind ?? "agent"),
+        );
       const adopted = await adopt();
       if (adopted) return adopted;
 

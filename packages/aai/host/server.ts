@@ -11,23 +11,31 @@
  * Import via `@alexkroman1/aai/runtime`.
  */
 
-import fs from "node:fs";
 import http from "node:http";
-import path from "node:path";
 import escapeHtml from "escape-html";
-import { lookup as mimeLookup } from "mime-types";
 import { WebSocketServer } from "ws";
 import { buildClientConfig, CLIENT_CONFIG_PATH } from "../sdk/client-config.ts";
 import { AGENT_CSP, MAX_WS_PAYLOAD_BYTES } from "../sdk/constants.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { AgentDef } from "../sdk/types.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import { parseWsUpgradeParams } from "../sdk/ws-upgrade.ts";
-import { isHostAllowed, startHostSession } from "./host-mode.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import type { AgentRuntime } from "./runtime-types.ts";
+import { serveStatic } from "./server-static.ts";
+import {
+  decliningRuntime,
+  STATIC_PAGE_REFUSAL,
+  startOrRefuseHostSession,
+} from "./server-upgrade.ts";
 import { handleTelephonyUpgrade } from "./telephony/telephony-server.ts";
-import { asSessionWebSocket, safeSend } from "./ws-handler.ts";
+import {
+  createWorkflowApi,
+  WORKFLOW_API_TOKEN_ENV,
+  type WorkflowApiEngine,
+} from "./workflow-api.ts";
+import { asSessionWebSocket } from "./ws-handler.ts";
 
 /**
  * The session-facing slice of a runtime — all {@link createServer} needs.
@@ -37,6 +45,10 @@ import { asSessionWebSocket, safeSend } from "./ws-handler.ts";
  * `AgentRuntime`) so an embedder can supply a lazily-built runtime facade.
  */
 export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown">;
+
+// Re-exported from its own module so `@alexkroman1/aai/runtime` and existing
+// importers are unchanged by the split.
+export { decliningRuntime } from "./server-upgrade.ts";
 
 /** Configuration for {@link createServer}. */
 /**
@@ -125,6 +137,25 @@ export type ServerOptions = {
    * fail-closed about. Set false to remove the route.
    */
   telephony?: boolean;
+  /**
+   * What this server's page IS — see `AgentDef.page`. Defaults to `"voice"`.
+   *
+   * `"static"` REFUSES both voice surfaces (`/websocket` and `/phone`) instead
+   * of leaving them listening, and reports itself in `GET /client-config` so the
+   * browser knows not to open a microphone. It is passed here rather than read
+   * off an agent because {@link SessionRuntime} is deliberately narrowed to two
+   * methods — `createServer` cannot see the agent (see `createAgentServer`).
+   */
+  page?: "voice" | "static";
+  /**
+   * Resolve the agent's workflow engine, mounting the workflow HTTP API
+   * (`/workflows/*` — see `host/workflow-api.ts`) over it.
+   *
+   * A function because the guest harness's runtime is lazy: for a static app the
+   * first thing that needs a runtime is a request to this API rather than a
+   * session. Omitted, or resolving undefined, leaves the routes answering 404.
+   */
+  workflows?: () => WorkflowApiEngine | undefined;
 };
 
 /** Handle returned by {@link createServer}. */
@@ -147,29 +178,6 @@ export type AgentServer = {
  */
 export const DEFAULT_LISTEN_HOST = "127.0.0.1";
 
-/**
- * A {@link SessionRuntime} that turns every session away with a protocol error
- * and closes, instead of accepting a socket it cannot answer.
- *
- * For a server whose `/websocket` has no agent behind it — `createHostServer`,
- * which serves only `?host=1` sessions. The guest harness hand-rolls the same
- * shape for its drain refusal; this is here so the third one does not get
- * written by hand too.
- *
- * A refusal must SAY something: closing a bare socket leaves the client
- * reconnecting against a server that will never answer, with nothing in the
- * frame log explaining why.
- */
-export function decliningRuntime(message: string, logger: Logger = consoleLogger): SessionRuntime {
-  return {
-    startSession(ws) {
-      safeSend(ws, JSON.stringify({ type: "error", code: "protocol", message }), logger);
-      ws.close?.(1008);
-    },
-    shutdown: () => Promise.resolve(),
-  };
-}
-
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 
 /**
@@ -179,81 +187,9 @@ const JSON_HEADERS = { "Content-Type": "application/json" } as const;
  */
 const IDLE_SWEEP_MS = 25;
 
-/**
- * Separator-safe containment: `target` is `dir` itself or strictly inside it.
- *
- * A bare `target.startsWith(dir)` also admits sibling directories sharing the
- * prefix (`<dir>-evil`) — the classic path-containment bug. Both paths must
- * already be resolved; this is a pure string check.
- *
- * @internal
- */
-export function isPathInside(dir: string, target: string): boolean {
-  return target === dir || target.startsWith(dir + path.sep);
-}
-
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, JSON_HEADERS);
   res.end(JSON.stringify(body));
-}
-
-async function serveStatic(
-  dir: string,
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
-  logger: Logger,
-): Promise<boolean> {
-  const url = req.url?.split("?")[0] ?? "/";
-  // Percent-decode so assets with spaces or non-ASCII names resolve (browsers
-  // request them encoded). A malformed escape throws URIError — treat it as
-  // not-found rather than crashing the request. Decoding happens BEFORE the
-  // join + containment check below, so an encoded traversal (`%2e%2e%2f`)
-  // decodes to `..`, collapses in `path.join`, and is caught by
-  // `isPathInside` like a literal one.
-  let pathname: string;
-  try {
-    pathname = decodeURIComponent(url);
-  } catch {
-    return false;
-  }
-  const filePath = path.join(dir, pathname === "/" ? "index.html" : pathname);
-
-  // Resolve before the containment check to avoid prefix collisions
-  // (e.g. dir="/app/static" matching "/app/static-secrets/…").
-  const resolved = path.resolve(dir);
-  if (!isPathInside(resolved, filePath)) return false;
-
-  // Only pre-response failures (ENOENT, EACCES, a directory) return false —
-  // the caller then writes the 404. Once headers go out below, every failure
-  // must be handled here: falling through would write on a broken response.
-  let stat: fs.Stats;
-  try {
-    stat = await fs.promises.stat(filePath);
-  } catch {
-    return false;
-  }
-  if (!stat.isFile()) return false;
-
-  const ext = path.extname(filePath).toLowerCase();
-  const mime = mimeLookup(ext) || "application/octet-stream";
-  try {
-    res.writeHead(200, { "Content-Type": mime, "Content-Length": stat.size });
-  } catch (err) {
-    // Response already broken (headers sent / destroyed) — claim the request
-    // so the caller doesn't try to write a 404 on it too.
-    logger.error("serveStatic: response unusable", { error: errorMessage(err) });
-    res.destroy();
-    return true;
-  }
-  const stream = fs.createReadStream(filePath);
-  stream.on("error", (err) => {
-    // Headers are already sent — destroy so the client sees a truncated
-    // body instead of a hang (and the read stream is released).
-    logger.error("serveStatic: read stream failed", { error: errorMessage(err) });
-    res.destroy(err);
-  });
-  stream.pipe(res);
-  return true;
 }
 
 /**
@@ -285,13 +221,37 @@ async function serveStatic(
 export function createServer(options: ServerOptions): AgentServer {
   const { runtime, clientDir, logger = consoleLogger, env, hostBaseAgent } = options;
   const name = options.name ?? "agent";
+  const isStatic = options.page === "static";
 
   const defaultHtml = `<!DOCTYPE html><html><body><h1>${escapeHtml(name)}</h1><p>Agent server running.</p></body></html>`;
+
+  const workflowApi = createWorkflowApi({
+    engine: options.workflows ?? (() => undefined),
+    ...omitUndefined({ token: env?.[WORKFLOW_API_TOKEN_ENV] }),
+    logger,
+  });
 
   // Pre-connection client config: how the default client should talk to
   // this agent (see sdk/client-config.ts).
   function sendClientConfig(res: http.ServerResponse): void {
-    sendJson(res, 200, buildClientConfig({ name, greeting: options.greeting }));
+    // The workflow LISTING is served only for a static page, and the reason is
+    // laziness rather than taste: resolving the engine builds the guest's
+    // runtime, and a voice agent's client-config is fetched before every
+    // connect — so listing there would make the pre-connection lookup eagerly
+    // build a runtime that the first session was going to build anyway. A
+    // static page has no session to defer to, and its page needs the list to
+    // render at all.
+    sendJson(
+      res,
+      200,
+      buildClientConfig({
+        name,
+        greeting: options.greeting,
+        ...(isStatic
+          ? { page: "static" as const, workflows: options.workflows?.()?.listing() }
+          : {}),
+      }),
+    );
   }
 
   async function handleRequest(
@@ -306,6 +266,11 @@ export function createServer(options: ServerOptions): AgentServer {
       sendClientConfig(res);
       return;
     }
+
+    // Also before static serving, and for the same reason: a client asset must
+    // not be able to shadow an API route. The embedder's own `request` hook
+    // still runs ahead of both (the guest's studio surface).
+    if (workflowApi(req, res, url, method)) return;
 
     if (clientDir && (await serveStatic(clientDir, req, res, logger))) return;
 
@@ -361,7 +326,11 @@ export function createServer(options: ServerOptions): AgentServer {
     if (options.upgrade?.(req, socket, head)) return;
 
     const url = req.url?.split("?")[0] ?? "";
-    const telephony = options.telephony ?? true;
+    // A static page declares no STT/LLM/TTS, so every voice surface is refused
+    // rather than left listening — including telephony, which is otherwise on by
+    // default. Refusing on `/websocket` SAYS so (below); a carrier gets nothing
+    // to say it to, so the route simply is not there.
+    const telephony = (options.telephony ?? true) && !isStatic;
     if (handleTelephonyUpgrade({ req, socket, head, wss, runtime, logger, enabled: telephony })) {
       return;
     }
@@ -379,30 +348,19 @@ export function createServer(options: ServerOptions): AgentServer {
       const startOpts = parseWsUpgradeParams(req.url ?? "");
       const session = asSessionWebSocket(ws);
 
-      // Host mode: defer startSession until the first `config` frame supplies
-      // the per-connection agent. Requires `env` (for gating + secrets).
-      if (wantsHost && env && isHostAllowed(env)) {
-        logger.info(`WS upgrade ${url} (host mode)`);
-        startHostSession(session, {
-          env,
-          startOpts,
-          logger,
-          ...(hostBaseAgent ? { baseAgent: hostBaseAgent } : {}),
-        });
+      // Static page: the socket is completed and then declined WITH A REASON,
+      // rather than destroyed at the upgrade. A client that dialed here is a
+      // voice client pointed at an app that has no voice — and a bare failed
+      // upgrade sends it into its reconnect backoff against a server that will
+      // never answer, with nothing in the frame log saying why.
+      if (isStatic) {
+        logger.warn(`WS upgrade ${url} rejected: this agent serves a static page`);
+        decliningRuntime(STATIC_PAGE_REFUSAL, logger).startSession(session);
         return;
       }
+
       if (wantsHost) {
-        logger.warn(`WS upgrade ${url} rejected: host mode unavailable`);
-        safeSend(
-          session,
-          JSON.stringify({
-            type: "error",
-            code: "protocol",
-            message: "host mode is not enabled on this server",
-          }),
-          logger,
-        );
-        ws.close(1008);
+        startOrRefuseHostSession(session, { env, hostBaseAgent, startOpts, logger, url });
         return;
       }
 

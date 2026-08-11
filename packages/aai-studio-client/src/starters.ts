@@ -1,16 +1,27 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 /**
- * Starter prompts for the empty chat state. `label` is the button; `prompt`
- * is what the agent receives. Each starter references its aai-templates
- * template by name: the coding agent's `use_template` tool copies the
- * template's files into the workspace verbatim, so a pick lands the user on
- * a complete, working agent the platform is known to build well — instead of
- * the agent re-deriving (and retyping) the same shape from a prose spec.
+ * Starter prompts for the empty chat state, in two pools — one per project
+ * KIND. `label` is the button; `prompt` is what the agent receives.
+ *
+ * Each starter references its aai-templates template by name: the coding agent's
+ * `use_template` tool copies the template's files into the workspace verbatim, so
+ * a pick lands the user on a complete, working project the platform is known to
+ * build well — instead of the agent re-deriving (and retyping) the same shape
+ * from a prose spec.
+ *
+ * The pools are separate because the two kinds produce different artifacts and
+ * are given different system prompts (see `studio-prompt.ts`): offering a voice
+ * agent's examples to someone who picked Workflows would start them in a project
+ * whose coding agent has been told not to write voice agents.
  */
 export type Starter = { label: string; prompt: string };
 
-export const STARTERS: Starter[] = [
+/** What a project builds. Mirrors the server's `CreateProjectSchema.kind`. */
+export type ProjectKind = "agent" | "workflow";
+
+/** Voice agents — a conversation, a microphone, tools called mid-turn. */
+export const AGENT_STARTERS: Starter[] = [
   {
     label: "A pizza-ordering agent with a real cart",
     prompt: "Use the pizza-ordering template.",
@@ -59,19 +70,67 @@ export const STARTERS: Starter[] = [
     label: "A late-night movie, music, and book picker",
     prompt: "Use the night-owl template.",
   },
-  {
-    label: "A desk that transcribes recordings after you hang up",
-    prompt: "Use the transcription-desk template.",
-  },
 ];
 
 /**
- * A random `count` starters without repeats — sampled once per page load so
- * the hero shows a rotating taste of the catalog instead of all of it.
- * `random` is injectable for deterministic tests.
+ * Workflows — a static page over durable, journaled server work.
+ *
+ * Only the first has a template today (`transcription-desk`, the worked
+ * example). The rest are prose specs, which is the honest state: the coding
+ * agent has the workflow addendum in its prompt and writes them from that. When
+ * one of these becomes a template, change the prompt to name it — a template
+ * copy beats a re-derivation every time.
  */
-export function sampleStarters(count: number, random: () => number = Math.random): Starter[] {
-  const pool = [...STARTERS];
+export const WORKFLOW_STARTERS: Starter[] = [
+  {
+    label: "Upload a recording and transcribe it",
+    prompt: "Use the transcription-desk template.",
+  },
+  {
+    label: "A page that summarizes a long document",
+    prompt:
+      "Build a workflow app: a page where I paste or upload a long document, and a workflow " +
+      "that splits it into sections, summarizes each one as its own step, then combines them " +
+      "into one summary I can copy.",
+  },
+  {
+    label: "Batch-check a list of URLs and report what broke",
+    prompt:
+      "Build a workflow app: a page where I paste a list of URLs, and a workflow that checks " +
+      "each one as its own step (status, redirect chain, response time) and shows me a table " +
+      "of the results with the failures first.",
+  },
+  {
+    label: "A nightly digest of a topic, saved to the database",
+    prompt:
+      "Build a workflow app: a page where I pick a topic and see past digests, and a workflow " +
+      "that researches the topic, waits with a durable sleep, researches again, and stores " +
+      "each digest in the database.",
+  },
+  {
+    label: "Enrich a CSV of companies row by row",
+    prompt:
+      "Build a workflow app: a page where I upload a CSV of company names, and a workflow " +
+      "that looks each one up as its own step and gives me an enriched CSV back to download.",
+  },
+];
+
+/** The pool for a kind — one lookup, so a caller never branches on the union. */
+export function startersFor(kind: ProjectKind): Starter[] {
+  return kind === "workflow" ? WORKFLOW_STARTERS : AGENT_STARTERS;
+}
+
+/**
+ * A random `count` starters without repeats, from `kind`'s pool — sampled once
+ * per page load so the hero shows a rotating taste of the catalog instead of all
+ * of it. `random` is injectable for deterministic tests.
+ */
+export function sampleStarters(
+  kind: ProjectKind,
+  count: number,
+  random: () => number = Math.random,
+): Starter[] {
+  const pool = [...startersFor(kind)];
   const picked: Starter[] = [];
   while (picked.length < count && pool.length > 0) {
     const [starter] = pool.splice(Math.floor(random() * pool.length), 1);

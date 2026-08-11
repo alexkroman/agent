@@ -28,10 +28,15 @@ export type MemoryRun = {
   steps: Map<string, unknown>;
 };
 
+/** One uploaded blob, as the memory store holds it. */
+export type MemoryBlob = { contentType: string; base64: string; createdAt: number };
+
 /** A {@link WorkflowStore} in a Map, plus the handles a spec asserts on. */
 export type MemoryWorkflowStore = WorkflowStore & {
   /** Live run rows, so a spec can inspect (or corrupt) journal state directly. */
   runs: Map<string, MemoryRun>;
+  /** Live blob rows, so a spec can assert what an upload stored and what a sweep left. */
+  blobs: Map<string, MemoryBlob>;
   /**
    * One row, throwing when it is absent.
    *
@@ -49,8 +54,10 @@ const CLAIMABLE: ReadonlySet<WorkflowRunStatus> = new Set(["pending", "sleeping"
 
 export function createMemoryWorkflowStore(): MemoryWorkflowStore {
   const runs = new Map<string, MemoryRun>();
+  const blobs = new Map<string, MemoryBlob>();
   const store: MemoryWorkflowStore = {
     runs,
+    blobs,
     initCount: 0,
 
     row(runId: string): MemoryRun {
@@ -156,6 +163,38 @@ export function createMemoryWorkflowStore(): MemoryWorkflowStore {
         ...(run.status === "failed" && run.error !== undefined ? { error: run.error } : {}),
         ...(run.status === "sleeping" && run.wakeAt !== undefined ? { wakeAt: run.wakeAt } : {}),
       });
+    },
+
+    putBlob(blobId: string, contentType: string, base64: string): Promise<void> {
+      blobs.set(blobId, { contentType, base64, createdAt: Date.now() });
+      return Promise.resolve();
+    },
+
+    getBlob(blobId: string): Promise<{ contentType: string; base64: string } | undefined> {
+      const blob = blobs.get(blobId);
+      return Promise.resolve(
+        blob ? { contentType: blob.contentType, base64: blob.base64 } : undefined,
+      );
+    },
+
+    deleteBlob(blobId: string): Promise<boolean> {
+      return Promise.resolve(blobs.delete(blobId));
+    },
+
+    pruneBlobs(maxAgeMs: number): Promise<number> {
+      // Modelled on the real clock rather than "delete everything", so a spec on
+      // fake timers can assert that a FRESH upload survives a sweep — which is
+      // the property that matters (a run sleeping between steps must still find
+      // the blob it was started with).
+      const cutoff = Date.now() - maxAgeMs;
+      let removed = 0;
+      for (const [id, blob] of blobs) {
+        if (blob.createdAt < cutoff) {
+          blobs.delete(id);
+          removed++;
+        }
+      }
+      return Promise.resolve(removed);
     },
   };
   return store;

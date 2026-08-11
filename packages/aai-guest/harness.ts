@@ -79,6 +79,7 @@ import {
   emptyHarnessState,
   ensureRuntime,
   type HarnessState,
+  lazyWorkflows,
   loadBundle,
 } from "./harness-bundle.ts";
 import { installCrashGuards } from "./harness-crash-guards.ts";
@@ -291,7 +292,15 @@ async function mainAgent(port: number, host: string, token: string): Promise<voi
     // the two fields required: `state.agent` is a tenant object asserted to
     // `AgentDef` at load (`harness-bundle.ts`), so a bundle can ship neither.
     // The types cannot see that, which is why a checker will call these dead.
-    ...omitUndefined({ name: state.agent?.name, greeting: state.agent?.greeting }),
+    ...omitUndefined({
+      name: state.agent?.name,
+      greeting: state.agent?.greeting,
+      // Same authority argument as name/greeting: the guest holds the live agent
+      // definition, so whether this deploy serves a voice socket or a static
+      // page is answered here and proxied by the platform's client-config.
+      page: state.agent?.page,
+    }),
+    workflows: lazyWorkflows(state),
     request: createManageHandler({
       token,
       activeSessions: () => state.activeSessions,
@@ -412,6 +421,11 @@ function main(): void {
   // and the studio chat surface claimed via the request hook.
   const server = createServer({
     runtime: lazyRuntime(state),
+    // Same surface as agent mode, for the same reason `/session` is here: a
+    // workspace being tested in the studio should serve what it will serve once
+    // published, and the two `createServer` calls diverging is how one of them
+    // silently stops offering something.
+    workflows: lazyWorkflows(state),
     request: (req, res, url, method) =>
       // Ahead of the chat surface: the install route is gated by the HOST
       // token and MINTS the chat token the chat surface checks, so it cannot

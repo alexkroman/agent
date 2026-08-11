@@ -94,11 +94,11 @@ export {
   createServer,
   DEFAULT_LISTEN_HOST,
   decliningRuntime,
-  isPathInside,
   type PassthroughServerOptions,
   type ServerOptions,
   type SessionRuntime,
 } from "./server.ts";
+export { isPathInside } from "./server-static.ts";
 export { createSessionCore, type SessionCore, type SessionCoreOptions } from "./session-core.ts";
 export {
   builtinFetch,
@@ -143,4 +143,11 @@ export type {
   TransportCallbacks,
   TransportSessionConfig,
 } from "./transports/types.ts";
+export {
+  MAX_WORKFLOW_BLOB_BYTES,
+  MAX_WORKFLOW_INPUT_BYTES,
+  WORKFLOW_API_PREFIX,
+  WORKFLOW_API_TOKEN_ENV,
+  type WorkflowApiEngine,
+} from "./workflow-api.ts";
 export { type SessionWebSocket, safeSend, wireSessionSocket } from "./ws-handler.ts";

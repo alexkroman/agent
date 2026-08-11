@@ -1,227 +1,215 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Durable workflows: a voice front desk over AssemblyAI's async transcription.
+ * A STATIC transcription app: upload a recording, get a transcript back.
  *
- * This is the case durable steps exist for. Transcribing a recording is a
- * SUBMIT-THEN-POLL job that takes minutes — far longer than a tool call may run
- * (`TOOL_EXECUTION_TIMEOUT_MS`), and far longer than the caller will stay on the
- * line. So the tool does not transcribe: it starts a run and reads back a job
- * reference, and the workflow keeps polling after the call ends, on whatever
- * sandbox happens to be alive when each poll comes due.
+ * Two things make this the worked example for workflows, and they are separate:
  *
- * The shape worth copying is the POLL LOOP. Each poll is its own journaled step
- * and each wait is a durable `ctx.sleep`, so a resumed run replays the polls it
- * already made from the journal (no HTTP, no cost) and issues exactly one new
- * request — the loop reads as ordinary code while being crash-safe at every
- * iteration.
+ * **1. The page is static, not a voice session.** `page: "static"` means this
+ * agent serves no `/websocket` and no `/phone` — its front door is `client.tsx`,
+ * an ordinary React page that POSTs to the workflow HTTP API. Nothing here
+ * declares an STT/LLM/TTS pipeline, because nothing here holds a conversation.
+ * (An agent that DOES hold one can still declare workflows — a tool calls
+ * `ctx.workflows.start()` and answers its turn. The two are orthogonal.)
  *
- * Requires storage (`aai storage enable`, or DATABASE_URL under `aai dev`).
+ * **2. The work is chunked, and that is forced by the API being SYNCHRONOUS.**
+ * AssemblyAI's Sync API returns a transcript in one request with no polling —
+ * and accepts at most **120 seconds** of audio per call. So a 40-minute
+ * recording is not one request, it is ~40 of them, and something has to hold the
+ * partial result across all of them. That something is the journal: each chunk
+ * is its own `ctx.step`, so a run that dies on chunk 27 resumes and replays 1–26
+ * from the journal for free — no re-upload, no re-transcription, no re-billing —
+ * and issues exactly one new request.
+ *
+ * **The audio never enters the journal.** Replay re-reads every step output, so
+ * bytes in a step (or in the run input) would be re-read on every resume and
+ * would blow the row cap. The page uploads each chunk to `/workflows/blobs`
+ * instead and passes the ids; the run reads one with `ctx.blob()` inside the
+ * step that needs it and releases it once transcribed.
+ *
+ * **Why the browser does the splitting.** The Sync API takes WAV or raw PCM
+ * only, and the sandbox has no ffmpeg — but every browser has an audio decoder.
+ * So `client.tsx` decodes whatever the user picked (mp3, m4a, wav…), downmixes
+ * to 16 kHz mono, and slices it. See its header for that half.
+ *
+ * Requires storage (`aai storage enable`, or DATABASE_URL under `aai dev`) — the
+ * journal and the uploads both live there.
  */
 
-import { agent, tool, workflow } from "@alexkroman1/aai";
+import { agent, workflow } from "@alexkroman1/aai";
 import { z } from "zod";
 
-const API = "https://api.assemblyai.com/v2/transcript";
+/** The synchronous transcription endpoint — one request in, transcript out. */
+const SYNC_URL = "https://sync.assemblyai.com/transcribe";
 
-/** Seconds between polls. Transcription is minutes-scale, so this is not a busy loop. */
-const POLL_INTERVAL_MS = 10_000;
+/** Model identifier the Sync API routes on. Required on every request. */
+const SYNC_MODEL = "universal-3-5-pro";
 
 /**
- * Polls before the run gives up, bounding both the wait (~10 min) and the
- * journal. Two entries per iteration (the poll, the sleep) against the SDK's
- * 500-entry cap, so this leaves plenty of room.
+ * Sample rate the page resamples to before uploading.
+ *
+ * Declared on both sides (`client.tsx` has the same constant) because raw PCM
+ * carries no header: the rate has to be sent in the request's `config` part, and
+ * a mismatch is not an error — it is a transcript of audio played at the wrong
+ * speed.
  */
-const MAX_POLLS = 60;
+const SAMPLE_RATE = 16_000;
 
-/** What `GET /v2/transcript/:id` tells us, narrowed to what this template reads. */
-type TranscriptStatus = {
-  status: "queued" | "processing" | "completed" | "error";
-  text?: string | null;
-  error?: string | null;
-};
+/**
+ * Chunks one run will accept.
+ *
+ * One journal entry per chunk plus the save, against the SDK's 500-entry cap —
+ * and at 60 s per chunk this is over three hours of audio, past which the honest
+ * answer is the async API rather than a longer journal.
+ */
+const MAX_CHUNKS = 200;
 
-/** One stored transcript row. */
-const TranscriptRow = z.object({
-  job_id: z.string(),
-  label: z.string(),
-  summary: z.string(),
-});
+/** What the Sync API answers with, narrowed to what this template reads. */
+type SyncTranscript = { text?: string; confidence?: number; audio_duration_ms?: number };
 
 const CREATE_TABLE = `create table if not exists transcripts (
   id bigserial primary key,
-  job_id text not null unique,
+  run_id text not null unique,
   label text not null,
-  audio_url text not null,
-  summary text not null,
   transcript text not null,
+  chunks int not null,
   created_at timestamptz not null default now()
 )`;
 
 /**
- * The streaming sockets and the REST API authenticate with the RAW key, not a
- * `Bearer` token — a detail that fails as a 401 rather than as a type error.
+ * The REST API authenticates with the RAW key, not a `Bearer` token — a detail
+ * that fails as a 401 rather than as a type error.
  */
-function authHeaders(env: Readonly<Record<string, string>>): Record<string, string> {
+function authHeader(env: Readonly<Record<string, string>>): string {
   const key = env.ASSEMBLYAI_API_KEY;
   if (!key) throw new Error("ASSEMBLYAI_API_KEY is not set for this app");
-  return { authorization: key, "content-type": "application/json" };
+  return key;
 }
 
 /**
- * Transcribe a recording, summarize it, and file the result.
+ * Transcribe an uploaded recording, chunk by chunk, and file the result.
  *
- * Every unit of work is a step, and the ORDER of the steps is fixed regardless
- * of what the polls return — which is what makes replay deterministic. The
- * decision that varies (keep polling or stop) is taken on values that came out
- * of a journaled step, never on a fresh clock reading.
+ * The step SEQUENCE is a pure function of the input (one pass over `blobIds`),
+ * which is what makes replay deterministic — no branch here reads a clock or a
+ * random value.
  */
 const transcribe = workflow({
-  description: "Submit a recording to AssemblyAI, wait for it, then summarize and store it",
+  description: "Transcribe an uploaded recording by sending each chunk to the Sync API",
   input: z.object({
-    audioUrl: z.string().url().describe("Publicly reachable URL of the recording"),
-    label: z.string().default("untitled").describe("How the caller refers to this recording"),
+    /** Blob ids from `/workflows/blobs`, in playback order — see the module doc. */
+    blobIds: z.array(z.string()).min(1).max(MAX_CHUNKS),
+    /** Rate the chunks were resampled to. Raw PCM has no header to read it from. */
+    sampleRate: z.number().int().positive().default(SAMPLE_RATE),
+    label: z.string().default("recording").describe("What the user called this file"),
   }),
-  async run({ audioUrl, label }, ctx) {
-    // The one step with an EXTERNAL side effect, and therefore the one to keep
-    // small. AssemblyAI's API takes no idempotency key, so a crash in the window
-    // between this POST returning and the journal write costs one duplicate
-    // (billable) job on resume. That is the at-least-once tax in its most
-    // concrete form: it cannot be designed away here, only bounded by putting
-    // nothing else inside this step.
-    const jobId = await ctx.step("submit", async () => {
-      const resp = await fetch(API, {
-        method: "POST",
-        headers: authHeaders(ctx.env),
-        // The URL came from the caller through the model; we hand it to
-        // AssemblyAI and never fetch it ourselves, so it reaches no host here.
-        body: JSON.stringify({ audio_url: audioUrl }),
-        signal: ctx.signal,
-      });
-      if (!resp.ok) throw new Error(`submit failed: ${resp.status} ${await resp.text()}`);
-      const { id } = (await resp.json()) as { id: string };
-      return id;
-    });
+  async run({ blobIds, sampleRate, label }, ctx) {
+    const parts: string[] = [];
 
-    // Poll until it settles. On a resume every completed poll below returns its
-    // journaled answer instantly and only the next one hits the network.
-    let transcript: string | undefined;
-    for (let poll = 0; poll < MAX_POLLS; poll++) {
-      const status = await ctx.step("poll", async (): Promise<TranscriptStatus> => {
-        const resp = await fetch(`${API}/${jobId}`, {
-          headers: authHeaders(ctx.env),
+    for (const blobId of blobIds) {
+      // One step per chunk, and the step's OUTPUT is the text — small, and the
+      // only thing a resume needs. A step that returned the audio would put it
+      // in the journal, which is the whole failure this design avoids.
+      const text = await ctx.step("chunk", async () => {
+        const audio = await ctx.blob(blobId);
+        // Gone means swept or already released: a run that resumes past the
+        // blob TTL cannot make progress, so say which chunk rather than sending
+        // an empty request and transcribing silence.
+        if (!audio) throw new Error(`uploaded chunk ${blobId} is no longer available`);
+
+        const form = new FormData();
+        // `audio/pcm` is raw S16LE, which is what the page uploads — so the
+        // rate and channel count must ride the `config` part; a WAV would carry
+        // them in its own header instead.
+        // Copied into an ArrayBuffer-backed view: `ctx.blob` hands back a
+        // `Uint8Array` over whatever buffer the journal read produced, and a
+        // `Blob` part will not accept a SharedArrayBuffer-backed one.
+        const bytes = new Uint8Array(audio.bytes);
+        form.append("audio", new Blob([bytes], { type: "audio/pcm" }), "chunk.pcm");
+        form.append(
+          "config",
+          new Blob([JSON.stringify({ sample_rate: sampleRate, channels: 1 })], {
+            type: "application/json",
+          }),
+        );
+
+        const resp = await fetch(SYNC_URL, {
+          method: "POST",
+          headers: { authorization: authHeader(ctx.env), "X-AAI-Model": SYNC_MODEL },
+          body: form,
+          // A drain aborts mid-chunk; the run resumes from the last recorded
+          // chunk, so abandoning this request costs one chunk's work.
           signal: ctx.signal,
         });
-        if (!resp.ok) throw new Error(`poll failed: ${resp.status}`);
-        return (await resp.json()) as TranscriptStatus;
+        if (!resp.ok) {
+          // The body carries `error_code` + `message` (or `detail` for auth and
+          // rate limits), and it is the whole diagnostic — `audio_too_short`
+          // reads very differently from `capacity_exceeded`, and the step's
+          // retry only helps for the second.
+          throw new Error(`sync transcribe failed: ${resp.status} ${await resp.text()}`);
+        }
+        const body = (await resp.json()) as SyncTranscript;
+        return body.text ?? "";
       });
 
-      if (status.status === "completed") {
-        transcript = status.text ?? "";
-        break;
-      }
-      // A service-side failure is terminal, so fail the run rather than burning
-      // the remaining polls on a job that will never finish.
-      if (status.status === "error") {
-        throw new Error(`transcription ${jobId} failed: ${status.error ?? "unknown error"}`);
-      }
-      // Durable: nothing is held open across this, and the run may resume on a
-      // different sandbox.
-      await ctx.sleep(POLL_INTERVAL_MS);
+      parts.push(text);
+
+      // The chunk is transcribed, so its audio has served its purpose. Released
+      // per chunk rather than in one pass at the end, so a long run is not
+      // sitting on the whole recording while it works through it.
+      //
+      // Deliberately NOT inside the step above and deliberately NOT a step of
+      // its own. Inside, it would delete the blob before the transcript was
+      // journaled — and a crash in that window leaves a retry with nothing to
+      // read, turning at-least-once into a run that can never finish. As its own
+      // step it would double the journal for no benefit, since a replayed delete
+      // is already a no-op (`releaseBlob` resolves false for a blob that is
+      // gone).
+      await ctx.releaseBlob(blobId);
     }
 
-    if (transcript === undefined) {
-      throw new Error(
-        `transcription ${jobId} did not finish within ${(MAX_POLLS * POLL_INTERVAL_MS) / 60_000} minutes`,
-      );
-    }
-
-    const summary = await ctx.step("summarize", async () => {
-      const { text } = await ctx.generate({
-        system: "You summarize call recordings for a busy operations team.",
-        prompt: `Summarize this transcript in four sentences, then list any action items.\n\n${transcript}`,
-      });
-      return text;
-    });
+    // Chunk boundaries fall mid-sentence, so the seam is a space: the Sync API
+    // returns each chunk's own punctuation and inventing more (a newline, a
+    // paragraph) would assert structure that is not in the audio.
+    const transcript = parts
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .join(" ");
 
     await ctx.step("save", async () => {
       await ctx.db.query(CREATE_TABLE);
-      // `on conflict (job_id)` makes the write itself idempotent, which is the
-      // cheap half of at-least-once: replaying this step cannot double-insert.
+      // `on conflict (run_id)` makes the write idempotent, which is the cheap
+      // half of at-least-once: replaying this step cannot double-insert.
       await ctx.db.query(
-        `insert into transcripts (job_id, label, audio_url, summary, transcript)
-         values ($1, $2, $3, $4, $5)
-         on conflict (job_id) do update set summary = excluded.summary`,
-        [jobId, label, audioUrl, summary, transcript],
+        `insert into transcripts (run_id, label, transcript, chunks)
+         values ($1, $2, $3, $4)
+         on conflict (run_id) do update set transcript = excluded.transcript`,
+        [ctx.runId, label, transcript, blobIds.length],
       );
-      return { saved: jobId };
+      return { saved: ctx.runId };
     });
 
-    return { jobId, label, words: transcript.split(/\s+/).filter(Boolean).length };
+    // The return value is what `GET /workflows/runs/:id` reports as `output`,
+    // so it is what the page renders — the transcript included, since a page
+    // that had to query the database for it would need a second surface.
+    return {
+      label,
+      chunks: blobIds.length,
+      words: transcript.split(/\s+/).filter(Boolean).length,
+      transcript,
+    };
   },
 });
 
 export default agent({
   name: "Transcription Desk",
-  voice: "vera",
-  greeting: "Transcription desk. Give me a recording link and I'll get it processed.",
-  systemPrompt: [
-    "You run a transcription desk. Callers give you links to recordings.",
-    "When a caller gives you a URL, call submit_recording and read back the job id",
-    "in short groups of characters so they can write it down. Tell them it is",
-    "processing and that they can hang up — never offer to wait on the line.",
-    "If they ask about a job, call check_job with the id.",
-    "If they ask what is already done, call list_transcripts.",
-    "Keep replies to one or two sentences; this is a phone call.",
-  ].join(" "),
+
+  // No voice: the page is a form, so `/websocket` and `/phone` are refused
+  // rather than left listening on an app that declares no pipeline.
+  page: "static",
 
   // The workflow reads this key directly, so declare it: the deploy checks that
   // every listed name is present, which turns a missing key into a deploy-time
-  // error rather than a run that fails on its first step.
+  // error rather than a run that fails on its first chunk.
   requiredEnv: ["ASSEMBLYAI_API_KEY"],
 
   workflows: { transcribe },
-
-  tools: {
-    submit_recording: tool({
-      description: "Start transcribing a recording. Returns a run id; does not wait.",
-      inputSchema: z.object({
-        audioUrl: z.string().describe("URL of the recording"),
-        label: z.string().optional().describe("What the caller calls this recording"),
-      }),
-      // Resolves as soon as the run is journaled — the transcription itself
-      // continues long after this turn, and after the call.
-      execute: async ({ audioUrl, label }, ctx) => {
-        const runId = await ctx.workflows.start("transcribe", {
-          audioUrl,
-          ...(label === undefined ? {} : { label }),
-        });
-        return { runId, status: "processing" };
-      },
-    }),
-
-    check_job: tool({
-      description: "Check on a transcription that is already running.",
-      inputSchema: z.object({ runId: z.string().describe("Run id from submit_recording") }),
-      execute: async ({ runId }, ctx) => {
-        const run = await ctx.workflows.get(runId);
-        if (!run) return { error: `No job with id ${runId}` };
-        if (run.status === "completed") return { status: "done", result: run.output };
-        if (run.status === "failed") return { status: "failed", reason: run.error };
-        // `stepsCompleted` counts polls too, so it rises while the job waits —
-        // enough to say "still going" honestly without inventing a percentage.
-        return { status: run.status, stepsCompleted: run.stepsCompleted };
-      },
-    }),
-
-    list_transcripts: tool({
-      description: "List recordings that have finished processing.",
-      execute: async (_args, ctx) => {
-        await ctx.db.query(CREATE_TABLE);
-        const rows = await ctx.db.query<z.infer<typeof TranscriptRow>>(
-          "select job_id, label, summary from transcripts order by created_at desc limit 5",
-        );
-        return rows.length > 0 ? { transcripts: rows } : { message: "Nothing processed yet." };
-      },
-    }),
-  },
 });

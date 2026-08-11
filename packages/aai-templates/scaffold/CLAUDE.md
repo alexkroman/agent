@@ -868,6 +868,105 @@ Five rules, all of them things that bite later rather than at authoring time:
 Progress is `run.stepsCompleted` — enough to say "still going" honestly. Do not
 invent a percentage.
 
+### Uploading bytes for a run to work on
+
+Bytes must NOT go in the run input or a step's return value: both are journaled
+and re-read on every replay. Upload them separately instead, and pass the id:
+
+- From a page: `await api.upload(bytes, "audio/pcm")` → `{ blobId }`.
+- Inside the workflow: `const b = await ctx.blob(blobId)` → `{ contentType,
+  bytes }`, then `await ctx.releaseBlob(blobId)` when done with it.
+
+Read the blob INSIDE the step that uses it, and release it AFTER that step has
+returned — never inside it. Releasing inside means a crash before the journal
+write leaves the retry with nothing to read, and the run can then never finish.
+
+## Workflow apps — a static page instead of a voice session
+
+An agent can be a **web app** rather than a conversation: a page plus durable
+server-side work, no microphone anywhere. Set `page: "static"`, declare
+`workflows`, and declare no voice at all — no `greeting`, no `voice`, no
+`systemPrompt`, no `stt`/`llm`/`tts`/`s2s`. Both voice surfaces are then refused
+rather than left listening.
+
+```ts
+import { agent, workflow } from "@alexkroman1/aai";
+import { z } from "zod";
+
+const summarize = workflow({
+  description: "Summarize a document section by section",
+  input: z.object({ text: z.string() }),
+  async run({ text }, ctx) {
+    const sections = text.split("\n\n");
+    const parts: string[] = [];
+    for (const section of sections) {
+      const summary = await ctx.step("section", async () => {
+        const { text: out } = await ctx.generate({ prompt: `Summarize:\n${section}` });
+        return out;
+      });
+      parts.push(summary);
+    }
+    return { summary: parts.join(" ") };
+  },
+});
+
+export default agent({
+  name: "Summarizer",
+  page: "static",
+  workflows: { summarize },
+});
+```
+
+The page uses **`page()`**, never `client()` — `client()` builds a session, opens
+a microphone and connects a WebSocket, none of which exist here:
+
+```tsx
+import "@alexkroman1/aai-ui/styles.css";
+import { createWorkflowApi, page, useWorkflowRun } from "@alexkroman1/aai-ui";
+import { useState } from "react";
+
+const api = createWorkflowApi();
+
+function App() {
+  const [runId, setRunId] = useState<string>();
+  const { run } = useWorkflowRun(runId, { api });
+  const output = run?.status === "completed" ? (run.output as { summary: string }) : undefined;
+  return (
+    <main className="mx-auto flex max-w-2xl flex-col gap-4 p-6">
+      <button
+        type="button"
+        className="rounded-md bg-black px-3 py-2 text-white"
+        onClick={() => void api.start("summarize", { text: "hello\n\nworld" }).then(setRunId)}
+      >
+        Summarize
+      </button>
+      {run && !output && <p>{run.status} — {run.stepsCompleted} section(s) done</p>}
+      {output && <p className="whitespace-pre-wrap">{output.summary}</p>}
+    </main>
+  );
+}
+
+page({ name: "Summarizer", component: App });
+```
+
+Do not use `useSession`, `Controls`, `ChatView`, `StartScreen` or `MessageList`
+on a static page — they are voice components. The design guidelines below still
+apply: this is a real UI and should look like one.
+
+**The same routes are a public API**, so the app is usable without the page:
+
+```sh
+curl -X POST https://<your-agent>/workflows/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"workflow":"summarize","input":{"text":"…"}}'
+# → {"runId":"…"}   then:
+curl https://<your-agent>/workflows/runs/<runId>
+```
+
+`GET /workflows` lists what an app declares. The routes are public like the rest
+of an agent's page; set `AAI_WORKFLOW_API_TOKEN` as a secret to require it as a
+`Authorization: Bearer` on all of them.
+
 ## Custom UI — `client()`
 
 File: `client.tsx` alongside `agent.ts`. Uses **React** (not Preact).

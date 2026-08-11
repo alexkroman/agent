@@ -5,6 +5,7 @@ import type { UIMessage } from "ai";
 import { parse } from "dotenv";
 import { ApiError } from "./api-error.ts";
 import { type StreamDownReason, watchEventStream } from "./api-events.ts";
+import type { ProjectKind } from "./starters.ts";
 
 export type ProjectData = {
   files: Record<string, string>;
@@ -20,6 +21,11 @@ export type ProjectData = {
   previewStale?: boolean;
   /** CLI output of the last failed preview deploy. */
   previewError?: string;
+  /**
+   * What this project builds. Absent means a voice agent — every project
+   * created before the field existed, and every one created on the Voice tab.
+   */
+  kind?: "workflow";
 };
 
 /**
@@ -216,10 +222,18 @@ export const api = {
    * (`contact-form-x7k2mq`) — so names are minted in exactly one place,
    * shared with the CLI's slugless deploy path.
    */
-  createProject: (key: string, opts: { prompt?: string }) =>
-    request<{ name: string; files: Record<string, string> }>(key, "/projects", {
+  // `kind` is create-only: it is stamped on the workspace and selects the coding
+  // agent's system prompt for the life of the project, so there is no route that
+  // changes it later. Omitted for an agent project, which is the server's
+  // default — sending it would be equivalent, but absent keeps the request
+  // identical to the one every older client sends.
+  createProject: (key: string, opts: { prompt?: string; kind?: ProjectKind }) =>
+    request<{ name: string; files: Record<string, string>; kind?: "workflow" }>(key, "/projects", {
       method: "POST",
-      body: JSON.stringify(opts.prompt ? { prompt: opts.prompt } : {}),
+      body: JSON.stringify({
+        ...(opts.prompt ? { prompt: opts.prompt } : {}),
+        ...(opts.kind === "workflow" ? { kind: opts.kind } : {}),
+      }),
     }),
 
   /** Delete a project (its workspace and chat). Deployed agents stay live. */

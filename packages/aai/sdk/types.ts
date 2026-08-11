@@ -4,11 +4,11 @@
  */
 
 import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
-import type { Db } from "./db.ts";
-import type { GenerateFn } from "./generate.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
-import type { WorkflowClient, WorkflowDef } from "./workflow.ts";
+import type { DefaultSessionState } from "./session-state.ts";
+import type { ToolContext } from "./tool-context.ts";
+import type { WorkflowDef } from "./workflow.ts";
 
 /**
  * Identifier for a built-in server-side tool.
@@ -58,147 +58,19 @@ export type BuiltinTool =
  */
 export type ToolChoice = "auto" | "required" | "none" | { type: "tool"; toolName: string };
 
-/**
- * A single message in the conversation history.
- *
- * Messages are passed to tool `execute` functions via
- * {@link ToolContext.messages} to provide conversation context.
- *
- * @public
- */
-export type Message = {
-  /** The role of the message sender. */
-  role: "user" | "assistant" | "tool";
-  /** The text content of the message. */
-  content: string;
-};
+// These three are the LEAVES `tool-context.ts` also needs, so they live in
+// `session-state.ts`: importing them from here while this file imports
+// `ToolContext` from there is a type-level CYCLE, and a cycle across these
+// declarations does not merely warn — it silently degrades `ToolDef`'s state
+// parameter until two tools with incompatible state shapes are mutually
+// assignable (caught by `define.test-d.ts`'s variance assertion). Re-exported so
+// every existing import is unchanged.
+export type { DefaultSessionState, DefaultToolResult, Message } from "./session-state.ts";
 
-/**
- * Default type of `ctx.state` when an agent does not declare one — `any`, so
- * untyped state access compiles. Opt into real checking by annotating the
- * context (`ctx: ToolContext<Cart>`), which also makes the agent verify the
- * tool against its own state shape.
- *
- * @remarks
- * `any` deliberately, not `Record<string, unknown>`: session state is a
- * genuinely dynamic bag created by the agent's `state` factory, and `tool()`
- * can only learn its real shape from an annotated context. The stricter
- * default made the ordinary spelling
- * (`execute: (a, ctx) => ctx.state.cart.push(a)`) a compile error even
- * though it runs correctly — and once `aai build`/`aai deploy` started
- * running the project's own `tsc`, that refused to publish working agents
- * without catching bugs.
- *
- * @public
- */
-export type DefaultSessionState = any;
-
-/**
- * Default type of a tool result observed on the client (`useToolResult`) —
- * `any`, so untyped reads compile. Pass the shape —
- * `useToolResult<Quote>("get_quote", …)` — for real checking.
- *
- * @remarks
- * The client half of {@link DefaultSessionState}'s problem, and `any` for
- * the same reason: a tool result is the author's own return value
- * round-tripped through JSON — the client already knows its shape, and the
- * framework cannot. The strict default (`unknown`) made reading one field a
- * compile error in a client that runs correctly, which blocked publishing
- * once `aai build` type-checked.
- *
- * @public
- */
-export type DefaultToolResult = any;
-
-/**
- * Context passed to tool `execute` functions.
- *
- * Provides access to the session environment, state, database, and
- * conversation history from within a tool's execute handler.
- *
- * @typeParam S - The shape of per-session state created by the agent's
- *   `state` factory. Defaults to {@link DefaultSessionState}; annotate the
- *   context (`ctx: ToolContext<MyState>`) to get real checking.
- *
- * @example
- * ```ts
- * import { tool } from "@alexkroman1/aai";
- * import { z } from "zod";
- *
- * const lookupNote = tool({
- *   description: "Look up a note from the database",
- *   inputSchema: z.object({ id: z.string() }),
- *   execute: async ({ id }, ctx) => {
- *     const rows = await ctx.db.query("select body from notes where id = $1", [id]);
- *     return { id, note: rows[0] ?? null };
- *   },
- * });
- * ```
- *
- * @public
- */
-export type ToolContext<S = DefaultSessionState> = {
-  /**
-   * Environment variables available to this agent's tools (from `.env` under
-   * `aai dev`, `aai secret` in production). Custom keys a tool depends on
-   * should be declared in {@link AgentDef.requiredEnv} so a missing value
-   * fails at deploy time.
-   */
-  env: Readonly<Record<string, string>>;
-  /** Mutable per-session state created by the agent's `state` factory. */
-  state: S;
-  /**
-   * SQL database scoped to this app. Available when storage is enabled
-   * (`aai storage enable`, or Settings → Database in the studio); accessing
-   * it otherwise throws.
-   */
-  db: Db;
-  /**
-   * One-shot LLM generation, executed on the host (like `db`).
-   * Defaults to the agent's pipeline `llm`; pass `llm` in the options to use
-   * another provider (its API key must be in the agent's env). Throws when
-   * no LLM is configured or named. Pass a Zod `schema` for typed structured
-   * output ({@link GenerateFn}).
-   */
-  generate: GenerateFn;
-  /**
-   * Start and inspect durable workflow runs ({@link WorkflowClient}).
-   *
-   * The seam between a turn and work that outlives it: `start()` resolves as
-   * soon as the run is journaled, so a tool can answer the caller in the same
-   * turn while the run continues past the end of the session. Requires
-   * storage, and requires the workflow to be declared in
-   * {@link AgentDef.workflows} — both surface as a rejected promise naming
-   * what is missing.
-   */
-  workflows: WorkflowClient;
-  /** Read-only snapshot of conversation messages so far. */
-  messages: readonly Message[];
-  /** Unique identifier for the current session. Useful for correlating logs across concurrent sessions. */
-  sessionId: string;
-  /**
-   * Push a custom event to the connected browser client. Fire-and-forget:
-   * events whose name exceeds {@link MAX_CLIENT_EVENT_NAME_LENGTH} or whose
-   * serialized payload exceeds {@link MAX_CLIENT_EVENT_PAYLOAD_BYTES} are
-   * dropped (with a warning log), not thrown.
-   */
-  send(event: string, data: unknown): void;
-  /**
-   * Cooperative cancellation signal. Aborts when the turn that issued this
-   * tool call is cancelled (barge-in, reset, or session stop), and also when
-   * the call itself settles exceptionally — above all on timeout. Long-running
-   * tools should pass it to `fetch` etc. so their work stops promptly.
-   *
-   * @remarks
-   * Always present. It was optional until it was checked: the executor builds
-   * a per-call `AbortController` on every path and there has never been a
-   * context without one, so the `?` only bought authors a `?.` on every
-   * `ctx.signal.aborted` and a `!` wherever a non-optional `AbortSignal` was
-   * wanted. A context that genuinely cannot cancel supplies a signal that
-   * never aborts rather than omitting the field.
-   */
-  signal: AbortSignal;
-};
+// `ToolContext` lives in `tool-context.ts` — it is the largest single type here
+// and the one an author reads most, and this file was at the 500-line cap. It is
+// re-exported so `@alexkroman1/aai` and every existing import are unchanged.
+export type { ToolContext } from "./tool-context.ts";
 
 /**
  * Definition of a custom tool that the agent can invoke.
@@ -393,6 +265,20 @@ export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
    * journal is what makes a run survive the sandbox that started it.
    */
   workflows?: Readonly<Record<string, WorkflowDef>>;
+  /**
+   * What this agent's page IS — and so whether it serves voice at all. Defaults
+   * to `"voice"`.
+   *
+   * `"static"` means the page is an ordinary web page over the
+   * {@link AgentDef.workflows} HTTP API: both voice surfaces (`/websocket`,
+   * `/phone`) are REFUSED rather than left listening, since a static app
+   * declares no STT/LLM/TTS and a session it accepted is one it could not serve.
+   *
+   * Orthogonal to declaring workflows — a `"voice"` agent may declare them too
+   * (a tool starts a run and answers the turn). See "A page can be STATIC" in
+   * `packages/aai/CLAUDE.md`.
+   */
+  page?: "voice" | "static";
   /**
    * Factory creating this session's mutable state — the value tools read and
    * write as `ctx.state`. Called once per session; unset leaves `ctx.state`

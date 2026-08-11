@@ -10,6 +10,8 @@
 
 import { writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { errorMessage } from "@alexkroman1/aai";
+import type { WorkflowApiEngine } from "@alexkroman1/aai/runtime";
 import type { AgentDef, CreateGuestRuntime, GuestRuntime } from "./harness-types.ts";
 import type { StudioSession } from "./studio-chat.ts";
 import { runCode } from "./trial.ts";
@@ -143,4 +145,28 @@ export function ensureRuntime(state: HarnessState): GuestRuntime {
     runCode,
   });
   return state.runtime;
+}
+
+/**
+ * The bundle's workflow engine, for `createServer`'s workflow API — resolved
+ * lazily and per request, exactly like a session resolves its runtime.
+ *
+ * That laziness is what makes the API reachable at all on a STATIC-page app:
+ * such an app never starts a session, so a runtime built only on
+ * `startSession` would never exist and every `/workflows/*` request would 404
+ * on a perfectly good agent. `ensureRuntime` memoizes, so the first workflow
+ * request builds it and the rest are a property read.
+ *
+ * Failure resolves undefined rather than throwing: the API answers 404, which
+ * is the same answer a bundle with no workflows gets, and a request must not be
+ * able to crash the guest.
+ */
+export function lazyWorkflows(state: HarnessState): () => WorkflowApiEngine | undefined {
+  return () => {
+    try {
+      return ensureRuntime(state).workflows as WorkflowApiEngine | undefined;
+    } catch (err) {
+      console.error(`workflow API unavailable: ${errorMessage(err)}`);
+    }
+  };
 }

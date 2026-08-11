@@ -399,3 +399,91 @@ describe("createServer telephony route", () => {
     expect(err.message).toContain("404");
   });
 });
+
+/**
+ * `page: "static"` — an app whose front door is a form.
+ *
+ * The three things it changes are all refusals or declarations, and each one is
+ * a way for a static app to look broken if it regressed: a page that opens a
+ * microphone against an agent with no pipeline, a carrier route on an app that
+ * cannot answer a call, and a browser that cannot tell which kind of page it is
+ * about to render.
+ */
+describe("createServer with page: static", () => {
+  let server: ReturnType<typeof createServer> | null = null;
+
+  afterEach(async () => {
+    await server?.close();
+    server = null;
+  });
+
+  const inertRuntime: SessionRuntime = {
+    startSession: () => {
+      throw new Error("a static page must not start a session");
+    },
+    shutdown: () => Promise.resolve(),
+  };
+
+  test("declares itself in client-config so the browser does not open a mic", async () => {
+    server = createServer({
+      runtime: inertRuntime,
+      logger: silentLogger,
+      name: "Desk",
+      page: "static",
+      workflows: () => ({
+        start: () => Promise.resolve("r"),
+        get: () => Promise.resolve(undefined),
+        putBlob: () => Promise.resolve("b"),
+        listing: () => [{ name: "transcribe" }],
+      }),
+    });
+    await server.listen(0);
+
+    const res = await fetch(`http://localhost:${server.port}/client-config`);
+    // The listing rides this response because a static page has to render its
+    // form before anything is started — and only here, since resolving the
+    // engine builds a guest's runtime (see sendClientConfig).
+    expect(await res.json()).toEqual({
+      name: "Desk",
+      page: "static",
+      workflows: [{ name: "transcribe" }],
+    });
+  });
+
+  test("a voice page reports no `page` and no listing", async () => {
+    // Absent rather than `"voice"`: a response from a server predating the field
+    // has to read identically, or every older agent looks misconfigured.
+    const { runtime } = makeRuntime({ name: "Voice" });
+    server = createServer({ runtime, logger: silentLogger, name: "Voice" });
+    await server.listen(0);
+
+    const res = await fetch(`http://localhost:${server.port}/client-config`);
+    expect(await res.json()).toEqual({ name: "Voice" });
+  });
+
+  test("refuses a /websocket session WITH A REASON rather than dropping it", async () => {
+    server = createServer({ runtime: inertRuntime, logger: silentLogger, page: "static" });
+    await server.listen(0);
+
+    // Completed then declined: a bare failed upgrade would send a voice client
+    // into its reconnect backoff with nothing in the frame log saying why.
+    const socket = new WebSocket(`ws://localhost:${server.port}/websocket`);
+    const frame = await new Promise<Record<string, unknown>>((resolve, reject) => {
+      socket.once("message", (data: Buffer) => resolve(JSON.parse(data.toString())));
+      socket.once("error", reject);
+    });
+    expect(frame).toMatchObject({ type: "error", code: "protocol" });
+    expect(String(frame.message)).toContain("workflow API");
+    socket.close();
+  });
+
+  test("removes the telephony route, which is otherwise on by default", async () => {
+    server = createServer({ runtime: inertRuntime, logger: silentLogger, page: "static" });
+    await server.listen(0);
+
+    const err = await new Promise<Error>((resolve) =>
+      new WebSocket(`ws://localhost:${server?.port}/phone`).once("error", resolve),
+    );
+    expect(err.message).toContain("404");
+  });
+});

@@ -64,6 +64,31 @@ export type WorkflowStore = {
   fail(runId: string, error: string): Promise<void>;
   /** Read a run's observable state. */
   get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
+  /**
+   * Store bytes a caller uploaded, OUTSIDE the journal, and resolve their id.
+   *
+   * This exists because of what the journal is: replay reads every step row
+   * back through {@link Db}, so audio or a document in a step output (or in a
+   * run's input) is re-read on every resume and counts against
+   * `MAX_DB_RESULT_ROWS`. A browser cannot reach `ctx.db` itself, so bytes it
+   * wants a run to work on have to land somewhere first, and that somewhere
+   * must not be the journal. The run then names the blob and reads it with
+   * ordinary SQL — it is the app's own schema.
+   *
+   * Base64 rather than `bytea` so the value survives the same JSON round trip
+   * every other column here does.
+   */
+  putBlob(blobId: string, contentType: string, base64: string): Promise<void>;
+  /** Read a blob back. Resolves undefined when no such id exists (or it was swept). */
+  getBlob(blobId: string): Promise<{ contentType: string; base64: string } | undefined>;
+  /** Delete one blob. Resolves whether a row was removed. */
+  deleteBlob(blobId: string): Promise<boolean>;
+  /**
+   * Delete blobs older than `maxAgeMs`. An upload whose run was never started
+   * — a closed tab, a failed start — is referenced by nothing, so nothing else
+   * would ever remove it.
+   */
+  pruneBlobs(maxAgeMs: number): Promise<number>;
 };
 
 /** Statuses a claim may take over, as a SQL list. */
@@ -93,6 +118,24 @@ const CREATE_STEPS = `create table if not exists aai_workflow_steps (
 )`;
 
 /**
+ * Uploads a run works on, kept out of the journal (see
+ * {@link WorkflowStore.putBlob}). Not a child of `aai_workflow_runs`: a blob is
+ * written BEFORE the run that names it exists, so a foreign key would reject
+ * every upload.
+ */
+const CREATE_BLOBS = `create table if not exists aai_workflow_blobs (
+  blob_id text primary key,
+  content_type text not null,
+  data text not null,
+  bytes int not null,
+  created_at timestamptz not null default now()
+)`;
+
+/** For the age sweep — without it pruning scans every blob ever uploaded. */
+const CREATE_BLOBS_INDEX = `create index if not exists aai_workflow_blobs_created
+  on aai_workflow_blobs (created_at)`;
+
+/**
  * Partial index over exactly the rows {@link WorkflowStore.due} scans. Without
  * it that query is a full scan of every run the app has ever made, run on a
  * timer — and completed runs are kept (they are the run history a UI reads),
@@ -115,6 +158,8 @@ export function createPostgresWorkflowStore(db: Db): WorkflowStore {
       await db.query(CREATE_RUNS);
       await db.query(CREATE_STEPS);
       await db.query(CREATE_DUE_INDEX);
+      await db.query(CREATE_BLOBS);
+      await db.query(CREATE_BLOBS_INDEX);
     },
 
     async create(runId: string, workflow: string, input: unknown): Promise<void> {
@@ -240,6 +285,44 @@ export function createPostgresWorkflowStore(db: Db): WorkflowStore {
         ...(row.status === "failed" && row.error !== null ? { error: row.error } : {}),
         ...(row.status === "sleeping" && row.wake_at_ms !== null ? { wakeAt: row.wake_at_ms } : {}),
       };
+    },
+
+    async putBlob(blobId: string, contentType: string, base64: string): Promise<void> {
+      await db.query(
+        `insert into aai_workflow_blobs (blob_id, content_type, data, bytes)
+         values ($1, $2, $3, $4)`,
+        // The byte count is stored rather than derived on read: every consumer
+        // wants it (a page reporting progress, a step sizing a request) and
+        // recovering it from base64 means decoding the whole payload.
+        [blobId, contentType, base64, Math.floor((base64.length * 3) / 4)],
+      );
+    },
+
+    async getBlob(blobId: string): Promise<{ contentType: string; base64: string } | undefined> {
+      const rows = await db.query<{ content_type: string; data: string }>(
+        "select content_type, data from aai_workflow_blobs where blob_id = $1",
+        [blobId],
+      );
+      const row = rows[0];
+      return row ? { contentType: row.content_type, base64: row.data } : undefined;
+    },
+
+    async deleteBlob(blobId: string): Promise<boolean> {
+      const rows = await db.query<{ blob_id: string }>(
+        "delete from aai_workflow_blobs where blob_id = $1 returning blob_id",
+        [blobId],
+      );
+      return rows.length > 0;
+    },
+
+    async pruneBlobs(maxAgeMs: number): Promise<number> {
+      const rows = await db.query<{ blob_id: string }>(
+        `delete from aai_workflow_blobs
+          where created_at < now() - make_interval(secs => $1::float8)
+          returning blob_id`,
+        [maxAgeMs / 1000],
+      );
+      return rows.length;
     },
   };
 }

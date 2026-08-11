@@ -47,16 +47,21 @@ function recordingDb(results: unknown[][] = []): {
 }
 
 describe("init", () => {
-  test("creates both tables and the due index, runs before steps", async () => {
+  test("creates every table and index, runs before steps", async () => {
     const q = recordingDb();
     await createPostgresWorkflowStore(q.db).init();
 
-    expect(q.count()).toBe(3);
+    expect(q.count()).toBe(5);
     expect(q.sql(0)).toContain("create table if not exists aai_workflow_runs");
     expect(q.sql(1)).toContain("create table if not exists aai_workflow_steps");
     expect(q.sql(2)).toContain("create index if not exists aai_workflow_runs_due");
     // The steps table's foreign key cannot be created before its target.
     expect(q.sql(1)).toContain("references aai_workflow_runs(run_id)");
+    // Blobs are NOT a child of the runs table: one is written before the run
+    // that names it exists, so a foreign key would reject every upload.
+    expect(q.sql(3)).toContain("create table if not exists aai_workflow_blobs");
+    expect(q.sql(3)).not.toContain("references");
+    expect(q.sql(4)).toContain("create index if not exists aai_workflow_blobs_created");
   });
 });
 
