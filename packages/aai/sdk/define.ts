@@ -2,7 +2,7 @@
 
 import { normalizeAgentConveniences } from "./_author-conveniences.ts";
 import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
-import { DEFAULT_MAX_STEPS } from "./constants.ts";
+import { DEFAULT_MAX_STEPS, DEFAULT_STT_PROMPT } from "./constants.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import type { AssemblyAITtsVoice } from "./providers/tts/assemblyai.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
@@ -71,7 +71,7 @@ export function tool<P extends ToolInputSchema = ToolInputSchema, S = DefaultSes
 }
 
 /** The {@link AgentDef} fields `agent()` fills with defaults when omitted. */
-export type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "tools";
+export type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "sttPrompt" | "tools";
 
 /**
  * The author-facing parameter shape of {@link agent}: every {@link AgentDef}
@@ -280,6 +280,13 @@ export function agent<S = DefaultSessionState>(def: AgentParams<S>): AgentDef<S>
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     greeting: DEFAULT_GREETING,
     maxSteps: DEFAULT_MAX_STEPS,
+    // Defaulted HERE rather than at the STT provider, so both session modes get
+    // it. `host/providers/stt/assemblyai.ts` also falls back to the constant,
+    // but S2S reads `agentConfig.sttPrompt` straight off the definition
+    // (`runtime-transport.ts`) — defaulting only at the provider would bias the
+    // pipeline and leave S2S unbiased, which is the same silent config drop
+    // that made `sttPrompt` a no-op for every S2S agent until 2026-08-06.
+    sttPrompt: DEFAULT_STT_PROMPT,
     tools: {},
     ...params,
   };

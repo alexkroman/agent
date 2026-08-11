@@ -9,7 +9,7 @@
 // `npm config get` is local, needs no network, and is the one command that
 // reports back what flags it was given.
 
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -43,6 +43,15 @@ describe("runNpm", () => {
   });
 
   test("runs in the directory it is given", async () => {
+    // `npm prefix` reports the nearest ANCESTOR holding a `package.json` or a
+    // `node_modules`, not the cwd — so without one of those in `dir` the answer
+    // depends on what happens to sit above the temp directory. That is a real
+    // flake and not a hypothetical: under `turbo run`, strict env mode strips
+    // TMPDIR, `os.tmpdir()` falls back to `/tmp`, and a stray
+    // `/tmp/node_modules` makes npm answer `/private/tmp`. Writing a manifest
+    // here stops the walk at `dir` whatever is above it. (TMPDIR is passed
+    // through in turbo.json now too — the two fixes are independent.)
+    await writeFile(path.join(dir, "package.json"), '{"name":"probe","version":"1.0.0"}');
     const result = await runNpm(dir, ["prefix"]);
     // macOS reports /private/var for /var; compare the resolved leaf instead.
     expect(result.stdout.trim().endsWith(path.basename(dir))).toBe(true);
