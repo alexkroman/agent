@@ -39,13 +39,17 @@ const HARD_LIMIT = 150_000;
 /** 20% under the hard limit — headroom for the next section. */
 const BUDGET = 120_000;
 
-// Three globs rather than one brace pattern, so a miss is obvious: the root
-// guide, one per workspace package, and the scaffold guide shipped to users.
+// Four globs rather than one brace pattern, so a miss is obvious: the root
+// guide, one per workspace package, the directory-scoped guides one level
+// inside a package (`packages/aai/host/CLAUDE.md` — what a package guide splits
+// into when it reaches the cap), and the scaffold guide shipped to users. The
+// last two overlap on the scaffold's own key, which the object spread dedupes.
 // `import.meta.glob` is a compile-time transform, so every argument has to be
 // a literal — the options object cannot be hoisted into a shared constant.
 const guides: Record<string, string> = {
   ...import.meta.glob("../../CLAUDE.md", { query: "?raw", import: "default", eager: true }),
   ...import.meta.glob("../*/CLAUDE.md", { query: "?raw", import: "default", eager: true }),
+  ...import.meta.glob("../*/*/CLAUDE.md", { query: "?raw", import: "default", eager: true }),
   ...import.meta.glob("../*/scaffold/CLAUDE.md", { query: "?raw", import: "default", eager: true }),
 };
 
@@ -78,7 +82,9 @@ describe("CLAUDE.md size", () => {
     expect(entries.map((e) => e.path)).toContain("packages/aai/CLAUDE.md");
     expect(entries.map((e) => e.path)).toContain("packages/aai-templates/scaffold/CLAUDE.md");
     expect(entries.map((e) => e.path)).toContain("packages/aai-templates/CLAUDE.md");
-    expect(entries.length).toBeGreaterThanOrEqual(9);
+    // A guide nested inside a package, which the one-level glob cannot see.
+    expect(entries.map((e) => e.path)).toContain("packages/aai/host/CLAUDE.md");
+    expect(entries.length).toBeGreaterThanOrEqual(10);
   });
 
   // Two separate assertions on purpose: over BUDGET is "refactor before you
