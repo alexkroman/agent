@@ -14,7 +14,7 @@
  */
 
 import type { WorkflowRunSnapshot, WorkflowSummary } from "@alexkroman1/aai";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { pageBaseUrl } from "./_utils.ts";
 import { buildAgentUrl } from "./client-config.ts";
 
@@ -179,7 +179,7 @@ export type UseWorkflowRunResult = {
  * without React in the way.
  */
 function pollUntilTerminal(
-  client: WorkflowApi,
+  getClient: () => WorkflowApi,
   runId: string,
   intervalMs: number,
   onRun: (run: WorkflowRun) => void,
@@ -190,7 +190,10 @@ function pollUntilTerminal(
 
   const read = async (): Promise<boolean> => {
     try {
-      const next = await client.get(runId);
+      // Resolved per read rather than captured once, so a caller that swaps
+      // clients mid-run — a token arriving after login — is picked up on the
+      // next poll without the loop restarting. See the ref in the hook.
+      const next = await getClient().get(runId);
       if (cancelled) return true;
       if (!next) return false;
       onRun(next);
@@ -242,16 +245,41 @@ export function useWorkflowRun(
   const [run, setRun] = useState<WorkflowRun | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
 
+  /**
+   * The caller's client, held in a ref rather than named as an effect
+   * dependency.
+   *
+   * As a dependency it was a footgun with no warning: the natural spelling
+   * `useWorkflowRun(id, { api: createWorkflowApi() })` passes a NEW object every
+   * render, so the effect tore down and restarted on each one — and because it
+   * opens by clearing state, every restart re-rendered and scheduled the next.
+   * The result is an unbounded request loop against the agent, with `error`
+   * wiped before anything can read it, and it presents as "the page polls
+   * forever" rather than as a mistake at the call site. Hoisting the client is
+   * still the right thing to do (both `transcription-desk` and `page()`'s doc
+   * example do), but nothing enforced it and the failure was silent.
+   */
+  const apiRef = useRef(api);
+  apiRef.current = api;
+
   useEffect(() => {
     // A new id must not show the previous run's state for one frame, which is
     // what makes the "started, still waiting" moment read as "completed".
     setRun(undefined);
     setError(undefined);
     if (!runId) return;
-    // Built here rather than as a render-time default so the effect does not
-    // re-run on every render of a caller that did not memoize one.
+    // The no-client default is built lazily and ONCE per loop — as a render-time
+    // default it would be a fresh object per render, the same hazard the ref
+    // above exists for.
+    let fallback: WorkflowApi | undefined;
+    const getClient = (): WorkflowApi => {
+      const current = apiRef.current;
+      if (current) return current;
+      fallback ??= createWorkflowApi();
+      return fallback;
+    };
     return pollUntilTerminal(
-      api ?? createWorkflowApi(),
+      getClient,
       runId,
       intervalMs,
       (next) => {
@@ -260,7 +288,7 @@ export function useWorkflowRun(
       },
       setError,
     );
-  }, [runId, api, intervalMs]);
+  }, [runId, intervalMs]);
 
   return { run, error, polling: runId !== undefined && !isTerminal(run) };
 }

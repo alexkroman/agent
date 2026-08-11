@@ -62,16 +62,20 @@ forever), the timer is re-armed from the SETTLED read rather than on an interval
 REPORTED but retried — a dropped request against a booting sandbox is the common
 case, and giving up would strand a live run.
 
-**Pass `useWorkflowRun` a `api` built ONCE, at module scope.** The hook's effect
-deps are `[runId, api, intervalMs]`, so an inline
-`useWorkflowRun(id, { api: createWorkflowApi() })` is a new object every render:
-the effect tears down and restarts on each one, and because it opens by clearing
-state (`setRun(undefined)`), each restart re-renders and schedules the next — a
-hot loop of HTTP requests against the agent, with `error` wiped before anything
-can read it. `transcription-desk` and the `page()` doc example both hoist it
-(`const api = createWorkflowApi()` above the component), which is why nothing
-ships broken; the specs hoist it for the same reason, and two of them silently
-passed on the churn before they did.
+**`useWorkflowRun` holds its `api` in a REF, not in the effect's deps.** As a
+dependency it was a footgun with no warning: the natural spelling
+`useWorkflowRun(id, { api: createWorkflowApi() })` passes a new object every
+render, so the effect tore down and restarted on each one — and because it opens
+by clearing state (`setRun(undefined)`), every restart re-rendered and scheduled
+the next. That is an unbounded request loop against the agent, with `error` wiped
+before anything can read it, presenting as "the page polls forever" rather than
+as a mistake at the call site. Hoisting the client is still the better style and
+both `transcription-desk` and the `page()` doc example do it, but nothing
+enforced it and two of this hook's own specs silently passed on the churn.
+
+The ref is read PER READ rather than once per loop, so a caller that genuinely
+swaps clients — a token arriving after login — is picked up on the next poll
+without restarting. Only `runId` and `intervalMs` restart it.
 
 **Two rules for testing this hook, both learned the hard way.** `await act()`
 NEVER RESOLVES once a polled read has rejected — measured with real timers as

@@ -748,6 +748,25 @@ coherent:
   declaration about the surface exactly like `name` and `greeting`. The
   `workflows` record beside it is host-only for the opposite reason: those are
   functions.
+- **It needs no provider credential: a failed provider resolution is not fatal
+  for it** (`resolveStaticPageProviders`). `defaultProviders` fills the
+  all-AssemblyAI pipeline for an app that declares none — right for a voice agent,
+  meaningless here — and resolving it eagerly demanded `ASSEMBLYAI_API_KEY` from
+  an app with no session to spend it on, failing the whole runtime. For a workflow
+  app that IS the front door, since the workflow API is what builds the runtime,
+  so a form-and-a-journal app could not start over a credential it never used.
+  `ctx.generate` is unaffected either way: it holds the descriptor and resolves
+  per call.
+
+  **Tolerating the failure rather than SKIPPING the resolve is the distinction.**
+  `page: "static"` is not a promise that no session can begin — `createServer`
+  reads it as the DEFAULT for telephony and not a veto, so an explicit
+  `telephony: true` still routes `/phone`. Skipping left that combination with no
+  providers at all and failed the call inside `buildTransport`, i.e. broke a
+  working setup to fix a different one. Both directions are pinned: a static app
+  with no key builds, and one WITH a key still resolves a transport. A `"voice"`
+  agent still fails loudly at build, which is what keeps a missing key a
+  deploy-time failure rather than a first-call one.
 - **It is orthogonal to declaring workflows.** A `"voice"` agent may declare them
   (a tool starts a run and answers its turn); a `"static"` one is just an app
   whose front door is a form. The browser half is `page()` +

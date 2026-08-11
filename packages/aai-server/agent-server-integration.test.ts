@@ -33,7 +33,9 @@ const sha256 = async (text: string): Promise<string> => {
 
 const handles: AgentServerHandle[] = [];
 
-async function spawnAgent(overrides: { workerSha256?: string } = {}): Promise<AgentServerHandle> {
+async function spawnAgent(
+  overrides: { workerSha256?: string; agentEnv?: Record<string, string> } = {},
+): Promise<AgentServerHandle> {
   const handle = await spawnSubprocessAgentServer({
     harnessPath: resolveHarnessPath(),
     slug: "server-mode-agent",
@@ -42,7 +44,7 @@ async function spawnAgent(overrides: { workerSha256?: string } = {}): Promise<Ag
       code: WORKER_CODE,
       sha256: overrides.workerSha256 ?? (await sha256(WORKER_CODE)),
     },
-    agentEnv: { SOME_KEY: "some-value" },
+    agentEnv: overrides.agentEnv ?? { SOME_KEY: "some-value" },
   });
   handles.push(handle);
   return handle;
@@ -104,5 +106,28 @@ describe("agent-server contract (real harness, no mocks)", () => {
     await expect(spawnAgent({ workerSha256: "0".repeat(64) })).rejects.toThrow(
       /not ready|spawn failed/i,
     );
+  }, 60_000);
+
+  test("AAI_WORKFLOW_API_TOKEN in the agent env actually closes the workflow API", async () => {
+    // It did NOT, on every deployed agent, for as long as the option existed:
+    // `createServer` reads the token out of `env` and agent mode passed no `env`
+    // at all, so a documented security control silently did nothing. A real
+    // harness booted with the key in its agent env is the only place that shows
+    // it — nothing below the boot contract can see the wiring.
+    const handle = await spawnAgent({
+      agentEnv: { SOME_KEY: "some-value", AAI_WORKFLOW_API_TOKEN: "s3cret" },
+    });
+    const workflows = guestHttpUrl(handle.guestOrigin, GUEST_ROUTES.workflows);
+
+    const anonymous = await fetch(workflows);
+    expect(anonymous.status).toBe(401);
+
+    // The bearer gets past the gate. This bundle declares no workflows, so the
+    // honest answer beyond it is a 404 — what matters is that it is no longer
+    // a 401, i.e. the token was checked and accepted.
+    const authorized = await fetch(workflows, {
+      headers: { authorization: "Bearer s3cret" },
+    });
+    expect(authorized.status).toBe(404);
   }, 60_000);
 });

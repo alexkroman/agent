@@ -235,11 +235,32 @@ agent env makes every route require it as a bearer, checked BEFORE the engine is
 resolved so an unauthenticated caller cannot even make a guest build its runtime.
 Fail-OPEN when unset is the documented default, not an oversight.
 
+**That control did NOTHING on deployed agents until 2026-08-11, which is the
+worst shape for one to fail in.** `createServer` reads the token out of its `env`
+option, and the guest's agent mode passed no `env` at all — so an operator who
+set the variable, read this paragraph, and verified the deploy got an API as open
+as before, with nothing anywhere reporting it. Agent mode now forwards exactly
+that one key (never the whole agent env, which would also make host mode
+reachable for any agent whose own env sets `AAI_ALLOW_HOST`). It is pinned in
+`aai-server/agent-server-integration.test.ts` against a REAL harness, because the
+wiring is the bug: every layer below the boot contract was correct on its own.
+
 The body caps (`MAX_WORKFLOW_INPUT_BYTES`, `MAX_WORKFLOW_BLOB_BYTES`) are counted
 from the STREAM rather than from `Content-Length`, and an over-limit body is
 discarded as it arrives rather than answered by destroying the socket — both
 decisions are argued on `readBody`'s own doc comment, which is where to read
 before changing either.
+
+**"No workflows" and "no runtime" are DIFFERENT answers.** An engine resolver
+that returns undefined means the app declared none (or storage is off) → 404. One
+that THROWS means the runtime could not be built → 500 carrying the reason. They
+were conflated, and the message that came out denied the premise: a guest with a
+missing provider key answered "This app declares no workflows" for an app whose
+workflows were declared and fine, while the only statement of the cause
+("AssemblyAI LLM: missing API key") went to the guest log, which the author of a
+deployed agent cannot see. Verified live against a real guest: `GET /workflows`
+and `POST /workflows/runs` both now answer 500 naming the key and its env var. The
+router catches the throw, so a request still cannot crash the guest.
 
 **The 413 is mapped in the ROUTER, not per route**, because the route that forgot
 to is how the split was found: `/blobs` caught the over-limit rejection and

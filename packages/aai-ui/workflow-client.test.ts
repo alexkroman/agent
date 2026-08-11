@@ -462,6 +462,61 @@ describe("useWorkflowRun", () => {
     }
   });
 
+  it("does NOT restart the poll when the caller rebuilds its client each render", async () => {
+    vi.useFakeTimers();
+    try {
+      const { get } = scriptedApi("running");
+      // The natural-but-wrong spelling: a fresh client object per render. As an
+      // effect dep this restarted the loop every render, and since the effect
+      // opens by clearing state each restart re-rendered — an unbounded request
+      // loop. One read per interval is the whole assertion.
+      const { rerender } = renderHook(() =>
+        useWorkflowRun("r1", { api: fakeApi(get), intervalMs: 1000 }),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(get).toHaveBeenCalledTimes(1);
+      for (let i = 0; i < 5; i++) rerender();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(get).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(get).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("picks up a swapped client on the NEXT read, without restarting", async () => {
+    vi.useFakeTimers();
+    try {
+      const first = scriptedApi("running");
+      const second = scriptedApi("running");
+      const { rerender } = renderHook(
+        ({ api }: { api: WorkflowApi }) => useWorkflowRun("r1", { api, intervalMs: 1000 }),
+        { initialProps: { api: first.api } },
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(first.get).toHaveBeenCalledTimes(1);
+      // A token arriving after login is the real case for this.
+      rerender({ api: second.api });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(second.get).toHaveBeenCalledTimes(1);
+      // The swap costs no extra read — the loop kept its place.
+      expect(first.get).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reports polling while a run is live and false once it is terminal", async () => {
     vi.useFakeTimers();
     try {

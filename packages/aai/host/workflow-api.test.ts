@@ -254,6 +254,33 @@ describe("workflow HTTP API", () => {
     expect(engine.blobs).toEqual([]);
   });
 
+  test("a runtime that cannot BE BUILT answers 500 naming the cause", async () => {
+    // Distinct from the 404 below, and the distinction was the whole bug: a
+    // guest that could not build its runtime reported "declares no workflows"
+    // about an app whose workflows were declared and fine, while the cause
+    // reached only the guest's own log. A misconfigured agent must say so.
+    server = createServer({
+      runtime: {
+        startSession: () => {
+          throw new Error("no session should be started by a workflow API test");
+        },
+        // A THROWING getter is how the guest's lazy facade fails: the runtime is
+        // built on first access, and that is what raises a missing key.
+        get workflows(): never {
+          throw new Error("AssemblyAI LLM: missing API key. Set ASSEMBLYAI_API_KEY.");
+        },
+        shutdown: () => Promise.resolve(),
+      },
+      logger: silentLogger,
+    });
+    await server.listen(0);
+    const res = await req(`http://localhost:${server.port}/workflows`);
+    expect(res.status).toBe(500);
+    expect(res.json).toEqual({
+      error: "Workflow API unavailable: AssemblyAI LLM: missing API key. Set ASSEMBLYAI_API_KEY.",
+    });
+  });
+
   test("with no engine every route is a 404, not a 500", async () => {
     const base = await boot({ engine: undefined });
     expect((await req(`${base}/workflows`)).status).toBe(404);

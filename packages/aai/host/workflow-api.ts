@@ -105,6 +105,16 @@ export type WorkflowApiOptions = {
    * and for a static app the first such thing is a request to this API, not a
    * session. Resolved per request, so it must stay cheap: the harness's own
    * getter is memoized.
+   *
+   * **It MAY THROW, and that is a different answer from `undefined`.** The two
+   * were conflated and the resulting message was actively misleading: when a
+   * guest could not BUILD its runtime, the harness swallowed the error and
+   * returned undefined, so the API said "This app declares no workflows" about
+   * an app whose workflows were declared and fine, while the real cause
+   * ("AssemblyAI LLM: missing API key") reached only the guest log — which the
+   * author of a deployed agent does not have in front of them. A throw is
+   * reported as a 500 naming the cause; the request still cannot crash the
+   * guest, because {@link createWorkflowApi}'s router catches it.
    */
   engine: () => WorkflowApiEngine | undefined;
   /**
@@ -323,7 +333,18 @@ export function createWorkflowApi(
       sendJson(res, 401, { error: "Missing or invalid workflow API token" });
       return;
     }
-    const engine = resolveEngine();
+    // A resolver that THREW could not build the runtime — a misconfigured agent,
+    // not an agent without workflows — so it answers 500 with the reason rather
+    // than the 404 below, which would deny that the workflows exist. See
+    // `WorkflowApiOptions.engine`.
+    let engine: WorkflowApiEngine | undefined;
+    try {
+      engine = resolveEngine();
+    } catch (err) {
+      logger.error("Workflow API unavailable", { error: errorMessage(err) });
+      sendJson(res, 500, { error: `Workflow API unavailable: ${errorMessage(err)}` });
+      return;
+    }
     if (!engine) {
       sendJson(res, 404, { error: "This app declares no workflows" });
       return;

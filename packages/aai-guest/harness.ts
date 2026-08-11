@@ -69,7 +69,11 @@
 
 import { pathToFileURL } from "node:url";
 import { errorMessage } from "@alexkroman1/aai";
-import { createServer, type SessionRuntime } from "@alexkroman1/aai/runtime";
+import {
+  createServer,
+  type SessionRuntime,
+  WORKFLOW_API_TOKEN_ENV,
+} from "@alexkroman1/aai/runtime";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { type WebSocket, WebSocketServer } from "ws";
 import { createIdleController, createManageHandler, readAgentBoot } from "./harness-agent-mode.ts";
@@ -105,17 +109,17 @@ import { executeTool } from "./trial.ts";
  * and every `/workflows/*` request would 404 on a perfectly good agent.
  * `ensureRuntime` memoizes, so this is a property read after the first.
  *
- * A failure resolves undefined rather than throwing — the API then answers the
- * same 404 a bundle with no workflows gets, and a request cannot crash the
- * guest. (`lazyRuntime.startSession` turns the same failure into a close frame,
- * which is the equivalent for a socket.)
+ * A failure PROPAGATES, and used to be swallowed here. Returning undefined made
+ * it indistinguishable from a bundle that declares no workflows, so the API
+ * answered "This app declares no workflows" for an app whose workflows were
+ * declared and fine — while the only statement of the real cause went to this
+ * guest's log, which the author of a deployed agent cannot see. The API's router
+ * catches it and answers 500 naming the cause, so a request still cannot crash
+ * the guest. (`lazyRuntime.startSession` turns the same failure into a close
+ * frame, which is the equivalent for a socket.)
  */
 function workflowEngine(state: HarnessState): SessionRuntime["workflows"] {
-  try {
-    return ensureRuntime(state).workflows as SessionRuntime["workflows"];
-  } catch (err) {
-    console.error(`workflow API unavailable: ${errorMessage(err)}`);
-  }
+  return ensureRuntime(state).workflows as SessionRuntime["workflows"];
 }
 
 /**
@@ -240,6 +244,16 @@ async function mainAgent(port: number, host: string, token: string): Promise<voi
       // page is answered here and proxied by the platform's client-config.
       page: state.agent?.page,
     }),
+    // ONLY the workflow-API token, never the whole agent env. `createServer`
+    // reads the token out of `env` (`WORKFLOW_API_TOKEN_ENV`), and agent mode
+    // passed no `env` at all — so `AAI_WORKFLOW_API_TOKEN` was documented as
+    // closing the workflow API and did nothing on every deployed agent, which is
+    // the worst shape for a security control to fail in. Handing the FULL env
+    // over would also make host mode reachable for any agent whose own env sets
+    // `AAI_ALLOW_HOST` (a session on the tenant's own key in the tenant's own
+    // sandbox, so not an escalation — but not a change to make in passing), so
+    // the one key that has a reason to be here is the one that travels.
+    env: omitUndefined({ [WORKFLOW_API_TOKEN_ENV]: boot.env[WORKFLOW_API_TOKEN_ENV] }),
     request: createManageHandler({
       token,
       activeSessions: () => state.activeSessions,

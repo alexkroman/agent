@@ -42,6 +42,14 @@ export const GUEST_ROUTES = {
   /** Agent-mode management surface (bearer-gated): session count + drain. */
   manageStatus: "/manage/status",
   manageDrain: "/manage/drain",
+  /**
+   * PUBLIC durable-workflow API (the SDK server's own route) — closed only when
+   * the agent's env sets `AAI_WORKFLOW_API_TOKEN`. Nothing host-side routes to
+   * it: a page and a programmatic caller both reach the guest directly, exactly
+   * as a voice client does. It is named here so the one integration test that
+   * asserts the token gate can build the URL like every other guest surface.
+   */
+  workflows: "/workflows",
 } as const;
 
 export type GuestRoute = (typeof GUEST_ROUTES)[keyof typeof GUEST_ROUTES];
