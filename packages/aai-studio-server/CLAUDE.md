@@ -893,9 +893,10 @@ uses it:
 - **`aai_analytics_reader`** — a NOLOGIN role holding `select` on exactly this
   one table. It is what makes the SQL guard above defence in depth rather than
   the only line: a hole in the scanner is then a hole in a role that can read
-  one table's rows for the caller's own slugs, not in the control plane. Ad-hoc model SQL runs under `set local role` on a reserved
-  connection (`runAsReader` in `analytics-store.ts`), so it is no longer the
-  table owner's statement. That is what makes the RLS policy apply at all:
+  one table's rows for the caller's own slugs, not in the control plane.
+  Ad-hoc model SQL runs under `set local role` on a reserved connection
+  (`runAsReader` in `analytics-store.ts`), so it is no longer the table
+  owner's statement. That is what makes the RLS policy apply at all:
   owners bypass policies, and every other table in `aai_platform` has RLS
   purely as defense in depth precisely because nothing ever connects as a
   non-owner.
