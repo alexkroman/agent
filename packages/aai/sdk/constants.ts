@@ -356,6 +356,9 @@ export {
   DEFAULT_MAX_TURN_SILENCE_MS,
   DEFAULT_MIN_TURN_SILENCE_MS,
 } from "./endpointing-constants.ts";
+// Re-exported so the import path stays `constants.ts` — its own module only
+// because it is an encoded blob and needs a scoped biome override (see there).
+export { AGENT_FAVICON } from "./favicon.ts";
 // Pipeline/provider tuning (dead-air cover phrases, false-interruption
 // recovery, TTS batching, STT framing, provider connect budgets) lives in its
 // own module for file-length reasons; re-exported here so `@alexkroman1/aai`

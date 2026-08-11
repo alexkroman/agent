@@ -8,6 +8,7 @@
 
 import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { AGENT_FAVICON } from "@alexkroman1/aai";
 import type { Plugin } from "vite";
 import { errorMessage } from "./_utils.ts";
 
@@ -17,7 +18,7 @@ export const DEFAULT_HTML = `<!DOCTYPE html>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>aai</title>
-    <link rel="icon" href="./favicon.ico" />
+    <link rel="icon" href="${AGENT_FAVICON}" />
     <style>html, body { background: #FBF8F2; margin: 0; }</style>
   </head>
   <body>

@@ -42,7 +42,7 @@
 import { timingSafeEqual } from "node:crypto";
 import type http from "node:http";
 import { errorMessage } from "../sdk/utils.ts";
-import type { WorkflowSummary } from "../sdk/workflow.ts";
+import type { WorkflowClient, WorkflowSummary } from "../sdk/workflow.ts";
 import type { Logger } from "./runtime-config.ts";
 
 /** Path prefix every route here lives under. */
@@ -74,23 +74,15 @@ export const MAX_WORKFLOW_INPUT_BYTES = 64 * 1024;
 export const MAX_WORKFLOW_BLOB_BYTES = 16 * 1024 * 1024;
 
 /**
- * The engine slice this API needs — `start`/`get` (what tool code sees as
- * `ctx.workflows`) plus the two the HTTP surface adds.
+ * The engine slice this API needs — {@link WorkflowClient} (`start`/`get`, what
+ * tool code sees as `ctx.workflows`) plus the two the HTTP surface adds.
+ *
+ * Spelled as an intersection rather than restated structurally. The restated
+ * version was `WorkflowRunSnapshot` copied field for field with `status` widened
+ * to `string` — so a seventh field or a sixth status had to be propagated here by
+ * hand, and the widening guaranteed it would still compile if nobody did.
  */
-export type WorkflowApiEngine = {
-  start(name: string, input?: unknown): Promise<string>;
-  get(runId: string): Promise<
-    | {
-        runId: string;
-        workflow: string;
-        status: string;
-        output?: unknown;
-        error?: string;
-        wakeAt?: number;
-        stepsCompleted: number;
-      }
-    | undefined
-  >;
+export type WorkflowApiEngine = WorkflowClient & {
   putBlob(contentType: string, base64: string): Promise<string>;
   listing(): WorkflowSummary[];
 };

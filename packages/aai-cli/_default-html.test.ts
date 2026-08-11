@@ -3,6 +3,7 @@
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { AGENT_FAVICON } from "@alexkroman1/aai";
 import type { Connect, ViteDevServer } from "vite";
 import { describe, expect, test, vi } from "vitest";
 import { DEFAULT_HTML, fallbackHtmlPlugin, writeTempHtml } from "./_default-html.ts";
@@ -12,6 +13,14 @@ describe("DEFAULT_HTML", () => {
   test("mounts the client entry into #app", () => {
     expect(DEFAULT_HTML).toContain('<main id="app">');
     expect(DEFAULT_HTML).toContain('src="./client.tsx"');
+  });
+
+  test("links the INLINE favicon and no icon FILE", () => {
+    // The file version 404'd on every agent page: nothing in any of the four
+    // serving paths (`aai dev`'s Vite root, this build's output, a self-hosted
+    // `clientDir`, the guest's assets) produced a `favicon.ico`.
+    expect(DEFAULT_HTML).toContain(`<link rel="icon" href="${AGENT_FAVICON}" />`);
+    expect(DEFAULT_HTML).not.toContain("favicon.ico");
   });
 });
 

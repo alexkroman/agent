@@ -290,6 +290,10 @@
       }
     },
     {
+      "includes": ["packages/aai/sdk/favicon.ts"],
+      "linter": { "rules": { "security": { "noSecrets": "off" } } }
+    },
+    {
       "includes": ["packages/aai/sdk/types.ts", "packages/aai/sdk/session-state.ts"],
       "linter": {
         "rules": {
