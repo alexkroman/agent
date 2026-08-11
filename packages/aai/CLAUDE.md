@@ -438,10 +438,10 @@ Reference providers shipped today:
     `[]` (an absent `choices` stays absent). Every other byte passes through.
     Remove each repair once the gateway emits conformant frames.
 
-    **The default model is `gpt-5.6-terra`.** It has been `gpt-5.5`,
-    `gpt-5.6-luna` and `qwen3-next-80b-a3b` in between; the id is a one-line
-    change, but it moves WHERE reasoning gets turned off, so read the two
-    blocks below together before changing it again. **And check the guide
+    **The default model is `qwen3-next-80b-a3b`.** It has been `gpt-5.5`,
+    `gpt-5.6-luna`, `gpt-5.6-terra` and qwen before, in that rotation; the id
+    is a one-line change, but it moves WHERE reasoning gets turned off, so read
+    the two blocks below together before changing it again. **And check the guide
     against the constant before trusting either** — this block described luna
     as the default for a stretch when `ASSEMBLYAI_LLM_DEFAULT_MODEL` said
     `gpt-5.5`, because the id was reverted in code and not here.
@@ -449,8 +449,10 @@ Reference providers shipped today:
     claim about it.
 
     **On the `gpt-5.6` family `reasoning_effort: "none"` is REQUIRED for tool
-    use — not a tuning knob.** The default is now one of them, so this is the
-    live path rather than a rule about a model an author might select. With
+    use — not a tuning knob.** The default is no longer one of them, so this is
+    a rule about a model an author may select rather than the live path — it
+    was the live path while terra was the default, and becomes one again the
+    moment a `gpt-5.6` id is set here. With
     `tools` present and any other effort — INCLUDING the model's own
     server-side default, i.e.
     sending no `reasoning_effort` at all — the gateway rejects the request:
@@ -476,8 +478,9 @@ Reference providers shipped today:
     encoded rather than documented: `TOOLS_REQUIRE_NO_REASONING` in
     `sdk/providers/llm/assemblyai.ts` makes the factory default
     `reasoningEffort` to `"none"` for those model ids, covering all three ways
-    a descriptor is built — `assemblyAILlm()` bare, the `llm: "gpt-5.6-terra"`
-    string shorthand (`from-string.ts`), and an explicit `model`. An explicit
+    a descriptor is built — `assemblyAILlm({ model })`, the
+    `llm: "gpt-5.6-terra"` string shorthand (`from-string.ts`), and a bare
+    `assemblyAILlm()` whenever the default is one of them. An explicit
     `reasoningEffort` is still honoured, same rule as `gatewayUrl` winning over
     `region`. Add a model id to that set when the gateway adds one that shares
     the constraint; the generated catalog (`gateway-models.ts`) cannot carry it
@@ -485,15 +488,15 @@ Reference providers shipped today:
     `reasoning_effort` for ANY model, including ones that plainly honour it
     (a bogus value 400s naming the supported ones).
 
-    **`assemblyAIPipeline()`'s explicit `reasoningEffort: "none"` is a
-    backstop on the current default, and must stay anyway.** Because
-    `gpt-5.6-terra` IS in `TOOLS_REQUIRE_NO_REASONING`, the factory now fills
-    the same value and the preset's argument
-    (`sdk/providers/assemblyai-pipeline.ts`) agrees with it rather than
-    carrying the whole weight. That agreement is a property of the id, not of
-    the pipeline: under `gpt-5.5` or `qwen3-next-80b-a3b` — two earlier
-    defaults, both outside the set — the preset's argument is the only
-    thing turning reasoning off, and deleting it as redundant costs every
+    **`assemblyAIPipeline()`'s explicit `reasoningEffort: "none"` is, on the
+    current default, the ONLY thing turning reasoning off.** Because
+    `qwen3-next-80b-a3b` is OUTSIDE `TOOLS_REQUIRE_NO_REASONING`, the factory
+    fills in nothing and the whole weight sits on the preset's argument
+    (`sdk/providers/assemblyai-pipeline.ts`); under `gpt-5.6-luna` or
+    `gpt-5.6-terra` the factory fills the same value and the argument merely
+    agrees with it. That agreement is a property of the id, not of
+    the pipeline, which is why the argument stays under either: deleting it as
+    redundant costs every
     default pipeline **1786ms p50 time-to-first-token against 999ms with
     reasoning off**, with seconds of pre-first-token silence rather than a
     failure as the symptom. So the two settings are pinned TOGETHER in
@@ -501,12 +504,14 @@ Reference providers shipped today:
     is what makes the next id change safe, and the pin is what makes an id
     change that needs a second look fail loudly.
 
-    **The measured case is for `gpt-5.6-luna`, terra's sibling, and does not
-    transfer.** What is known about terra directly is narrow: the gateway
-    advertises it with tools, streaming, 270k context and a live probe
-    (`gateway-models.ts`), and it shares luna's tool/reasoning constraint 4/4
-    (measured 2026-08-06). It has **no paired latency numbers and no price
-    comparison here at all**. Luna's, kept because they bound the family:
+    **The measured case is for `gpt-5.6-luna`, and it does not transfer to
+    either the current default or terra.** What is known about
+    `qwen3-next-80b-a3b` directly: the gateway advertises it with tools,
+    streaming, 200k context and a live probe (`gateway-models.ts`), it accepts
+    `reasoning_effort` as a hybrid-thinking model (`"none"` and `"low"` both
+    verified 2026-08-06), and it has **no paired latency numbers and no price
+    comparison here at all** — the same gap terra had. Luna's numbers, kept
+    because they bound the gpt-5.6 family:
     $1/$6 per M against `gpt-5.5`'s $5/$30, and on time-to-first-token
     (2026-08-06, 18 paired tool-calling turns, `reasoning_effort: "none"` on
     both) p50 **832ms vs 999ms** — ~17%, not the multiple an early n=1 probe
@@ -517,9 +522,9 @@ Reference providers shipped today:
     reasoning setting, which this pipeline turns off regardless of model.
 
     **No default here has been chosen on answer quality**, which is the axis
-    that should decide one — a tau2 run is what would settle it. Qwen has no
-    paired latency numbers at all, and terra has neither those nor a quality
-    run. Treat the current default as unverified on both axes.
+    that should decide one — a tau2 run is what would settle it. The current
+    default has neither paired latency numbers nor a quality run, and neither
+    did terra. Treat it as unverified on both axes.
 - **TTS**: one of
   - `cartesia({ voice })` — `CARTESIA_API_KEY`
   - `rime({ voice })` — `RIME_API_KEY`
@@ -1443,7 +1448,7 @@ Session mode resolved {
   stt: { kind: 'assemblyai', model: 'universal-3-5-pro', minTurnSilenceMs: 1600,
          maxTurnSilenceMs: 3000, voiceFocus: 'near-field',
          voiceFocusThreshold: 0.9, connectTimeoutMs: 2500, maxConnectRetries: 2 },
-  llm: { kind: 'assemblyai', reasoningEffort: 'none', model: 'gpt-5.6-terra' },
+  llm: { kind: 'assemblyai', reasoningEffort: 'none', model: 'qwen3-next-80b-a3b' },
   tts: { kind: 'assemblyai', voice: 'jane' }
 }
 ```

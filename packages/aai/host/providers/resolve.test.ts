@@ -165,7 +165,7 @@ describe("resolveLlm", () => {
       expect(model).toHaveProperty("specificationVersion");
     });
 
-    it("defaults to gpt-5.6-terra when the descriptor names no model", () => {
+    it("defaults to qwen3-next-80b-a3b when the descriptor names no model", () => {
       const model = resolveLlm(
         { kind: ASSEMBLYAI_LLM_KIND, options: {} },
         { ASSEMBLYAI_API_KEY: "fake-key" },

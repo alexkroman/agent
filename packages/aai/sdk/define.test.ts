@@ -92,16 +92,15 @@ describe("agent()", () => {
     expect(llm.options.reasoningEffort).toBe("none");
     // The descriptor must carry a model that accepts the parameter. Pinned
     // alongside the effort because the two are coupled: the current default
-    // (`gpt-5.6-terra`) is INSIDE TOOLS_REQUIRE_NO_REASONING, so the factory
-    // fills the same `"none"` and the preset's argument agrees with it rather
-    // than carrying the whole weight. That agreement is a property of the id,
-    // not of the pipeline — under `gpt-5.5` or `qwen3-next-80b-a3b`, both
-    // outside the set, the preset's explicit `"none"` is the only thing
-    // standing between the default pipeline and per-turn thinking latency
-    // (measured 1786ms p50 time-to-first-token on gpt-5.5's server-side
-    // default against 999ms with reasoning off). This pair is what makes a
-    // change to either fail loudly.
-    expect(llm.options.model).toBe("gpt-5.6-terra");
+    // (`qwen3-next-80b-a3b`) is OUTSIDE TOOLS_REQUIRE_NO_REASONING, so the
+    // factory fills in nothing and the preset's explicit `"none"` is the only
+    // thing standing between the default pipeline and per-turn thinking
+    // latency (measured 1786ms p50 time-to-first-token on gpt-5.5's
+    // server-side default against 999ms with reasoning off). Under a
+    // `gpt-5.6` id the factory would fill the same value and the argument
+    // would merely agree with it — an id property, not a pipeline one. This
+    // pair is what makes a change to either fail loudly.
+    expect(llm.options.model).toBe("qwen3-next-80b-a3b");
 
     // An agent with no providers at all gets the same treatment. Asserted
     // through toAgentConfig, not agent(): the default fill runs at the

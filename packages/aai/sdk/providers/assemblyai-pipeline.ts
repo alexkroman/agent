@@ -18,7 +18,7 @@
  * export default agent({
  *   name: "Jane",
  *   stt: assemblyAIStt({ model: "universal-3-5-pro" }),
- *   llm: assemblyAILlm({ model: "gpt-5.6-terra" }),
+ *   llm: assemblyAILlm({ model: "qwen3-next-80b-a3b" }),
  *   tts: assemblyAITts({ voice: "jane" }),
  * });
  * ```
@@ -122,16 +122,16 @@ export function assemblyAIPipeline(opts: AssemblyAIPipelineOptions = {}): {
     // model that would reject it. An agent that wants thinking depth declares
     // its own stage (`assemblyAILlm({ model, reasoningEffort })`).
     //
-    // On the current default (`gpt-5.6-terra`) the factory would fill in the
-    // same `"none"` on its own — terra is in TOOLS_REQUIRE_NO_REASONING, where
-    // the value is a tool-calling REQUIREMENT rather than a latency choice —
-    // so this argument is currently a backstop rather than the only thing
-    // turning reasoning off. **Keep it anyway.** That agreement is a property
-    // of the id, not of the pipeline: the default has been `gpt-5.5` and
-    // `qwen3-next-80b-a3b`, both outside the set, and under either of those
-    // this line is the whole latency guarantee — 1786ms p50 time-to-first-token
-    // on gpt-5.5's server-side reasoning default against 999ms with it off.
-    // Deleting it as redundant makes the next id change a silent regression.
+    // On the current default (`qwen3-next-80b-a3b`) this argument is the ONLY
+    // thing turning reasoning off: qwen is outside TOOLS_REQUIRE_NO_REASONING,
+    // so the factory fills in nothing and the model would otherwise run on its
+    // own server-side reasoning default. Under a `gpt-5.6` id — two of the
+    // defaults this has held — the factory fills the same `"none"` because the
+    // value is a tool-calling REQUIREMENT there rather than a latency choice,
+    // and this line reads as redundant. **Keep it under either.** The measured
+    // cost of losing it is 1786ms p50 time-to-first-token on gpt-5.5's
+    // server-side reasoning default against 999ms with it off; deleting it as
+    // redundant makes the next id change a silent regression.
     llm: assemblyAILlm({ reasoningEffort: "none", ...(region ? { region } : {}) }),
     tts: assemblyAITts(voice ? { voice } : {}),
   };
