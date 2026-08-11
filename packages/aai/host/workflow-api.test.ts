@@ -11,6 +11,7 @@
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { WORKFLOWS_UNAVAILABLE_MESSAGE } from "../sdk/workflow.ts";
 import { silentLogger } from "./_test-utils.ts";
 import { createServer, type SessionRuntime } from "./server.ts";
 import {
@@ -292,6 +293,29 @@ describe("workflow HTTP API", () => {
         })
       ).status,
     ).toBe(404);
+  });
+
+  test("the 404 names STORAGE too, because that is the other way to have no engine", async () => {
+    // `setupWorkflows` returns undefined for two reasons and the resolver
+    // cannot tell them apart here, so the answer must not pick one. It used to
+    // say "This app declares no workflows" — a confident false statement for
+    // the common case, an agent that declared workflows and never enabled
+    // storage, and one that sends its reader to audit code that is already
+    // right. Asserted on the SUBSTRINGS a reader acts on rather than the whole
+    // sentence, so rewording the message does not fail this.
+    const base = await boot({ engine: undefined });
+    const { error } = (await req(`${base}/workflows`)).json as { error: string };
+    expect(error).toContain("agent({ workflows })");
+    expect(error).toContain("aai storage enable");
+    expect(error).toContain("DATABASE_URL");
+  });
+
+  test("that 404 is the same sentence ctx.workflows rejects with", async () => {
+    // One condition, one message: the tool path and the HTTP path must not
+    // disagree about why an app has no workflow engine.
+    const base = await boot({ engine: undefined });
+    const { error } = (await req(`${base}/workflows`)).json as { error: string };
+    expect(error).toBe(WORKFLOWS_UNAVAILABLE_MESSAGE);
   });
 
   describe("with AAI_WORKFLOW_API_TOKEN set", () => {

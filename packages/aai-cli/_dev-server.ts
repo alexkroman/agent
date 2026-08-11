@@ -263,6 +263,12 @@ export function viteDevConfig(
         "/health": target,
         "/client-config": target,
         "/websocket": { target, ws: true },
+        // A STATIC agent's page has no session — the workflow API is its ONLY
+        // channel, so without this `aai dev` serves a page whose every request
+        // 404s. Vite's html fallback covers GET only, so the failure is not
+        // even a recognizable one: `POST /workflows/blobs` gets a bare
+        // bodyless 404, which the client reports as `Workflow API 404`.
+        "/workflows": target,
       },
     },
   };

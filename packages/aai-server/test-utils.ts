@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { vi } from "vitest";
 import { createMemoryAgentRows } from "./agent-store.ts";
 import { createMemoryBlobStorage } from "./blob-storage.ts";
 import { createBundleStore } from "./bundle-store.ts";
@@ -13,6 +14,7 @@ import {
   withChatEvents,
   withWorkspaceEvents,
 } from "./platform-events.ts";
+import type { Sandbox } from "./sandbox.ts";
 import { type AgentSlot, createSlotCache } from "./sandbox-slots.ts";
 import { createMemorySecretStore, type SecretStore, type SqlExec } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
@@ -46,6 +48,45 @@ export function makeSlot(overrides?: Partial<AgentSlot>): AgentSlot {
     slug: "test-agent",
     ...overrides,
   };
+}
+
+/**
+ * A resident sandbox that is ready immediately, so a broker test reuses it
+ * (`resolveSandbox`'s fast path) instead of spawning a real one.
+ *
+ * Shared rather than redeclared per suite because it is the seam BOTH brokered
+ * routes are written against — `/:slug/client-config` and `/:slug/workflows/*`
+ * — and its tunnel origin is what each one's URL assertions are stated in
+ * terms of. A per-suite copy is also where a double-cast to `Sandbox` comes
+ * from: the five methods below are the whole interface, so nothing needs a
+ * cast, and a copy that drifts short of them reaches for one.
+ */
+export function makeFakeSandbox(): Sandbox {
+  return {
+    sessionUrl: vi.fn(() => Promise.resolve("wss://tunnel.test:443/websocket")),
+    guestOrigin: vi.fn(() => Promise.resolve("wss://tunnel.test:443")),
+    drain: vi.fn(() => Promise.resolve()),
+    alive: vi.fn(() => true),
+    shutdown: vi.fn(() => Promise.resolve()),
+  };
+}
+
+/**
+ * Deploy `slug` and install `sandbox` in its slot.
+ *
+ * Seeded AFTER the deploy (which replaces the slug's slot) and at the deploy's
+ * own version, or the resident is invalidated as stale before the request
+ * under test runs.
+ */
+export async function seedResidentSandbox(
+  fetch: TestFetch,
+  store: BundleStore,
+  slots: ReturnType<typeof createSlotCache>,
+  slug: string,
+  sandbox: Sandbox = makeFakeSandbox(),
+): Promise<void> {
+  await deployAgent(fetch, slug);
+  slots.claim(slug, { slug, sandbox, version: (await store.getAgentVersion(slug)) ?? 1 });
 }
 
 /** The default deploy payload as an OBJECT, for callers that re-encode it. */

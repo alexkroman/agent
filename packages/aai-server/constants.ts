@@ -109,6 +109,24 @@ export const SANDBOX_RETIRE_DRAIN_MS = envMs(process.env.SANDBOX_RETIRE_DRAIN_MS
 export const BROKER_READY_TIMEOUT_MS = envMs(process.env.BROKER_READY_TIMEOUT_MS, 20_000);
 
 /**
+ * Cap on ONE forwarded workflow-API request (`workflow-handler.ts`).
+ *
+ * Sized for the slowest thing the API does, which is a blob UPLOAD rather than
+ * anything the guest computes: `start`/`get` are a journal write and a row
+ * read, but `transcription-desk` posts ~2 MB per 60 s chunk and the body
+ * streams through this hop at the CLIENT's uplink speed. A minute clears a
+ * multi-megabyte POST on a slow connection and still bounds a wedged guest.
+ *
+ * It deliberately does NOT have to cover the RUN — starting one resolves as
+ * soon as it is journaled, and the page polls for the rest. A workflow that
+ * takes an hour is served by a sequence of requests that each take
+ * milliseconds, which is the whole point of the mechanism.
+ *
+ * Override with `WORKFLOW_PROXY_TIMEOUT_MS`.
+ */
+export const WORKFLOW_PROXY_TIMEOUT_MS = envMs(process.env.WORKFLOW_PROXY_TIMEOUT_MS, 60_000);
+
+/**
  * After sandbox teardown, how long to wait for the HTTP server's remaining
  * connections to close before exiting anyway. By the time this timer arms,
  * guests are already retired, and a straggling connection is not a failed

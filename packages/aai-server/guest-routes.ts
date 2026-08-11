@@ -44,10 +44,15 @@ export const GUEST_ROUTES = {
   manageDrain: "/manage/drain",
   /**
    * PUBLIC durable-workflow API (the SDK server's own route) — closed only when
-   * the agent's env sets `AAI_WORKFLOW_API_TOKEN`. Nothing host-side routes to
-   * it: a page and a programmatic caller both reach the guest directly, exactly
-   * as a voice client does. It is named here so the one integration test that
-   * asserts the token gate can build the URL like every other guest surface.
+   * the agent's env sets `AAI_WORKFLOW_API_TOKEN`.
+   *
+   * A programmatic caller reaches the guest directly, exactly as a voice client
+   * does. A PAGE cannot, and this said otherwise for a while: a static agent's
+   * page is served by the platform at `GET /:slug/` and builds every request
+   * URL from `location`, with no broker step of the kind the voice session gets
+   * from `/client-config` — so its calls land on the platform, which had no
+   * route for them and answered `{"error":"Not found"}`. `workflow-handler.ts`
+   * is that route; this constant names the path for both sides of it.
    */
   workflows: "/workflows",
 } as const;

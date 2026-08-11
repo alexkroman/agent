@@ -22,8 +22,8 @@
  */
 
 import "@alexkroman1/aai-ui/styles.css";
-import { createWorkflowApi, isTerminal, page, useWorkflowRun } from "@alexkroman1/aai-ui";
-import { useState } from "react";
+import { createWorkflowApi, isTerminal, page, useTheme, useWorkflowRun } from "@alexkroman1/aai-ui";
+import { type CSSProperties, useState } from "react";
 
 /**
  * Seconds of audio per request. The API's hard ceiling is 120; 60 leaves room
@@ -46,6 +46,15 @@ type TranscribeOutput = {
 
 /** Progress the page can honestly report while a run is in flight. */
 type Progress = { phase: "decoding" | "uploading" | "starting"; done: number; total: number };
+
+/**
+ * A style object that may also carry CSS custom properties.
+ *
+ * `CSSProperties` has no index signature, so a `--foo` key is a type error
+ * without one — and the template-literal key keeps it fully checked rather than
+ * admitting any string. The same shape `aai-ui`'s own `Button` uses.
+ */
+type StyleWithVars = CSSProperties & Record<`--${string}`, string>;
 
 /**
  * Decode, downmix and resample a picked file to 16 kHz mono float samples.
@@ -113,6 +122,11 @@ function chunk(samples: Float32Array): Float32Array[] {
 }
 
 function App() {
+  // The design-system palette (`aai-ui`'s `ThemeProvider`, installed by
+  // `page()`). Read rather than hardcoded for the reason every other template
+  // reads it: a `client({ theme })` override has to reach this page too, and a
+  // literal `border-neutral-300` is a cool grey sitting on a warm cream page.
+  const theme = useTheme();
   const [runId, setRunId] = useState<string>();
   const [progress, setProgress] = useState<Progress>();
   const [failure, setFailure] = useState<string>();
@@ -157,23 +171,49 @@ function App() {
 
   const output = run?.status === "completed" ? (run.output as TranscribeOutput) : undefined;
 
+  /*
+   * A file input's button is a PSEUDO-ELEMENT (`::file-selector-button`), which
+   * no inline `style` can reach — so the theme colors travel as custom
+   * properties for the `file:` utilities below to read back. Left unstyled it is
+   * native OS chrome, the one control on the page ignoring the design system.
+   *
+   * A NAMED binding rather than an inline literal: annotating it widens the type
+   * before it reaches the `style` prop, and a fresh literal there would be
+   * excess-property-checked against `CSSProperties`, which has no `--foo` key.
+   */
+  const inputVars: StyleWithVars = {
+    "--desk-primary": theme.primary,
+    "--desk-surface": theme.surface,
+  };
+
   return (
-    <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 p-6">
+    <main
+      className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 p-6 font-aai"
+      style={{ color: theme.text }}
+    >
       <header className="flex flex-col gap-1">
-        <h1 className="m-0 text-2xl font-semibold">Transcription Desk</h1>
-        <p className="m-0 text-sm text-neutral-600">
+        <h1 className="m-0 font-aai-serif text-3xl font-semibold tracking-tight">
+          Transcription Desk
+        </h1>
+        <p className="m-0 text-sm opacity-70">
           Pick a recording. It is split into {CHUNK_SECONDS}-second chunks in your browser and
           transcribed one chunk at a time — you can close this tab and come back to the run id.
         </p>
       </header>
 
-      <label className="flex flex-col gap-2 rounded-lg border border-neutral-300 bg-white p-4">
-        <span className="text-sm font-medium">Recording</span>
+      <label
+        className="flex flex-col gap-3 rounded-aai border p-4"
+        style={{ background: theme.surface, borderColor: theme.border }}
+      >
+        <span className="text-[11px] font-semibold uppercase tracking-[1.3px] opacity-60">
+          Recording
+        </span>
         <input
           type="file"
           accept="audio/*,video/*"
           disabled={busy}
-          className="text-sm"
+          style={inputVars}
+          className="text-sm file:mr-3 file:cursor-pointer file:rounded-aai file:border-0 file:bg-[var(--desk-primary)] file:px-3 file:py-2 file:text-[11px] file:font-semibold file:uppercase file:tracking-[1.3px] file:text-[var(--desk-surface)] disabled:cursor-not-allowed disabled:opacity-50"
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) void submit(file);
@@ -182,7 +222,7 @@ function App() {
       </label>
 
       {progress && (
-        <p className="m-0 text-sm text-neutral-700" role="status">
+        <p className="m-0 text-sm opacity-70" role="status">
           {progress.phase === "decoding" && "Decoding audio…"}
           {progress.phase === "uploading" &&
             `Uploading chunk ${progress.done + 1} of ${progress.total}…`}
@@ -191,8 +231,8 @@ function App() {
       )}
 
       {runId && !output && (
-        <p className="m-0 text-sm text-neutral-700" role="status">
-          Run <code className="font-mono text-xs">{runId}</code> — {run?.status ?? "starting"}
+        <p className="m-0 text-sm opacity-70" role="status">
+          Run <code className="font-aai-mono text-xs">{runId}</code> — {run?.status ?? "starting"}
           {run ? `, ${run.stepsCompleted} chunk(s) transcribed` : ""}
         </p>
       )}
@@ -211,11 +251,14 @@ function App() {
 
       {output && (
         <section className="flex flex-col gap-2">
-          <h2 className="m-0 text-lg font-medium">{output.label}</h2>
-          <p className="m-0 text-xs text-neutral-600">
+          <h2 className="m-0 font-aai-serif text-xl font-semibold">{output.label}</h2>
+          <p className="m-0 text-[11px] uppercase tracking-[1.3px] opacity-60">
             {output.words} words from {output.chunks} chunk(s)
           </p>
-          <p className="m-0 whitespace-pre-wrap rounded-lg border border-neutral-300 bg-white p-4 text-sm leading-relaxed">
+          <p
+            className="m-0 whitespace-pre-wrap rounded-aai border p-4 text-sm leading-relaxed"
+            style={{ background: theme.surface, borderColor: theme.border }}
+          >
             {output.transcript}
           </p>
         </section>

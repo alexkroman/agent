@@ -6,7 +6,14 @@ import { WebSocket as WsClient } from "ws";
 import { createOrchestrator } from "./orchestrator.ts";
 import type { Sandbox } from "./sandbox.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import { createTestOrchestrator, createTestStore, deploy, deployAgent } from "./test-utils.ts";
+import {
+  createTestOrchestrator,
+  createTestStore,
+  deploy,
+  deployAgent,
+  makeFakeSandbox,
+  seedResidentSandbox,
+} from "./test-utils.ts";
 
 describe("handleAgentHealth", () => {
   test("returns 404 for non-existent agent", async () => {
@@ -29,26 +36,9 @@ describe("handleAgentHealth", () => {
 });
 
 describe("handleAgentClientConfig", () => {
-  /**
-   * Deploy `slug` and install a resident fake sandbox in its slot — the
-   * broker must reuse it (resolveSandbox fast path) rather than spawning a
-   * real one. Seeded AFTER deploying (the deploy replaces the slug's slot),
-   * at the deploy's version so the resident isn't invalidated as stale.
-   */
-  async function seedResident(
-    fetch: Awaited<ReturnType<typeof createTestOrchestrator>>["fetch"],
-    store: Awaited<ReturnType<typeof createTestOrchestrator>>["store"],
-    slots: ReturnType<typeof createSlotCache>,
-    slug: string,
-    sandbox: Sandbox = makeFakeSandbox(),
-  ): Promise<void> {
-    await deployAgent(fetch, slug);
-    slots.claim(slug, {
-      slug,
-      sandbox,
-      version: (await store.getAgentVersion(slug)) ?? 1,
-    });
-  }
+  // `seedResidentSandbox` (test-utils.ts) is shared with the workflow-API
+  // broker's suite: both routes are written against the same resident-sandbox
+  // seam, and its tunnel origin is what each one's URL assertions read.
 
   test("returns 404 for non-existent agent", async () => {
     const { fetch } = await createTestOrchestrator();
@@ -68,7 +58,7 @@ describe("handleAgentClientConfig", () => {
       return Response.json({ name: "guest-agent", greeting: "hello from the bundle" });
     };
     const { fetch, store } = await createTestOrchestrator({ slots, guestConfigFetch });
-    await seedResident(fetch, store, slots, "my-agent");
+    await seedResidentSandbox(fetch, store, slots, "my-agent");
     const res = await fetch("/my-agent/client-config");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
@@ -87,7 +77,7 @@ describe("handleAgentClientConfig", () => {
       throw new Error("guest not answering");
     };
     const { fetch, store } = await createTestOrchestrator({ slots, guestConfigFetch });
-    await seedResident(fetch, store, slots, "my-agent");
+    await seedResidentSandbox(fetch, store, slots, "my-agent");
     const res = await fetch("/my-agent/client-config");
     // Answered, with the one field a client cannot do without: the session
     // URL. The default client renders its empty defaults for the rest.
@@ -102,7 +92,7 @@ describe("handleAgentClientConfig", () => {
       ...makeFakeSandbox(),
       sessionUrl: () => Promise.reject(new Error("spawn failed")),
     };
-    await seedResident(fetch, store, slots, "my-agent", broken);
+    await seedResidentSandbox(fetch, store, slots, "my-agent", broken);
     const res = await fetch("/my-agent/client-config");
     expect(res.status).toBe(503);
   });
@@ -192,16 +182,6 @@ describe("handleClientAsset", () => {
 // ── /:slug/websocket upgrade handling ───────────────────────────────────
 
 /** Fake Sandbox (the direct-to-tunnel control-channel shape). */
-function makeFakeSandbox(): Sandbox {
-  return {
-    sessionUrl: vi.fn(() => Promise.resolve("wss://tunnel.test:443/websocket")),
-    guestOrigin: vi.fn(() => Promise.resolve("wss://tunnel.test:443")),
-    drain: vi.fn(() => Promise.resolve()),
-    alive: vi.fn(() => true),
-    shutdown: vi.fn(() => Promise.resolve()),
-  };
-}
-
 type HarnessOpts = {
   /** Skip pre-populating the slot with the fake sandbox. Default: seeded. */
   seedSandbox?: boolean;

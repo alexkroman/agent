@@ -42,7 +42,11 @@
 import { timingSafeEqual } from "node:crypto";
 import type http from "node:http";
 import { errorMessage } from "../sdk/utils.ts";
-import type { WorkflowClient, WorkflowSummary } from "../sdk/workflow.ts";
+import {
+  WORKFLOWS_UNAVAILABLE_MESSAGE,
+  type WorkflowClient,
+  type WorkflowSummary,
+} from "../sdk/workflow.ts";
 import type { Logger } from "./runtime-config.ts";
 
 /** Path prefix every route here lives under. */
@@ -95,10 +99,22 @@ export type WorkflowApiEngine = WorkflowClient & {
 
 export type WorkflowApiOptions = {
   /**
-   * Resolve the engine, or undefined when the agent declared no workflows (or
-   * storage is off) — in which case every route answers 404 rather than 500:
-   * there is no workflow API on an app that has no workflows, and saying so is
-   * more useful than reporting the engine's own unavailability message.
+   * Resolve the engine, or undefined — in which case every route answers 404
+   * rather than 500, since there is no workflow API to speak of.
+   *
+   * **Undefined has TWO causes and the answer must not pick one**
+   * (`setupWorkflows` in `runtime-tools.ts`): an agent that declared no
+   * workflows, and an agent that declared some with no storage for the journal.
+   * This used to answer `"This app declares no workflows"`, which is a
+   * confident false statement in the second case — and the second case is the
+   * common one, because declaring a workflow is the part an author does not
+   * forget. A deployed `transcription-desk` with storage off reported it for
+   * every upload, and the sentence sends its reader to look at the code they
+   * just wrote correctly. So the answer is {@link WORKFLOWS_UNAVAILABLE_MESSAGE},
+   * which names both halves and both fixes — the same sentence `ctx.workflows`
+   * rejects with, so the tool path and this one cannot disagree about a
+   * condition they share. Narrowing it further would take a second signal from
+   * the resolver; naming both costs nothing and cannot be wrong.
    *
    * A FUNCTION because the guest harness builds its runtime lazily, on the
    * first thing that needs it (see `lazyRuntime` in `aai-guest/harness.ts`) —
@@ -346,7 +362,9 @@ export function createWorkflowApi(
       return;
     }
     if (!engine) {
-      sendJson(res, 404, { error: "This app declares no workflows" });
+      // The SAME sentence `ctx.workflows` rejects with, because it is the same
+      // condition and it has two causes — see the option's doc.
+      sendJson(res, 404, { error: WORKFLOWS_UNAVAILABLE_MESSAGE });
       return;
     }
     const matched = routes.find((r) => r.method === method && r.matches(url));

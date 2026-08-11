@@ -1679,6 +1679,22 @@ checked with `guestUnderstandsBundleUrl` before being handed a URL it cannot
 read — is documented with the guest: see "Fetching its own bundle" in
 `packages/aai-guest/CLAUDE.md`.
 
+### The workflow API is brokered too — `/:slug/workflows/*`
+
+The SECOND routing point (`workflow-handler.ts`, shaped like
+`client-config-handler.ts`: broker the sandbox, then forward). It exists because
+a STATIC agent's page is served HERE at `GET /:slug/` and reaches the durable
+workflow API through `createWorkflowApi()`, which builds every URL from
+`location` — no broker step of the kind a voice session gets from
+`/client-config`. So they land on the platform, which had no route and answered
+`{"error":"Not found"}` to every upload from a deployed `transcription-desk`
+(`GUEST_ROUTES.workflows` claimed the opposite; its comment now records why).
+The handler's doc comment has the rest; two things to know here: bodies
+**stream** rather than buffer (`DEPLOY_BODY_CONCURRENCY` exists because the
+deploy path does not, and a blob upload is this API's whole point), and the
+guest's error body passes through unchanged, since that text is what the page
+renders.
+
 ### Telephony — `GET/POST /:slug/phone`
 
 A carrier points a phone number at this route; it brokers the agent's sandbox

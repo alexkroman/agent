@@ -70,6 +70,16 @@ describe("viteDevConfig", () => {
     expect(proxy["/client-config"]).toBe("http://localhost:3001");
   });
 
+  test("proxies /workflows to the backend", () => {
+    const config = viteDevConfig("/proj", 3000, 3001);
+    const proxy = config.server?.proxy as Record<string, unknown>;
+    // A STATIC agent's page has no session, so this is its ONLY channel —
+    // without the entry Vite answers `POST /workflows/blobs` with a bodyless
+    // 404 of its own (the html fallback is GET-only) and the page reports
+    // `Workflow API 404` for every upload.
+    expect(proxy["/workflows"]).toBe("http://localhost:3001");
+  });
+
   test("uses strictPort so the printed URL is never wrong", () => {
     // Vite would otherwise silently bind port+N when the port is busy while
     // executeDev prints/returns http://localhost:<requested port>.

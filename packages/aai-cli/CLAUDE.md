@@ -170,7 +170,19 @@ the user requests outright is unaffected.
   agent may have written it)
 - `_init.ts` / `_deploy.ts` / `_delete.ts` / `_bundler.ts` — internal logic
 - `_dev-server.ts` — dev server for directory-based agents: loads `agent.ts`,
-  builds runtime, watches for file changes, optionally runs Vite for client HMR
+  builds runtime, watches for file changes, optionally runs Vite for client HMR.
+
+  **`viteDevConfig`'s proxy table is the whole list of paths that reach the
+  agent, and adding an agent-server route means adding it here.** With a
+  `client.tsx`, Vite owns the user-requested port and the agent server moves to
+  `port+1`, so anything not proxied is answered by Vite. The table had
+  `/health`, `/client-config` and `/websocket` — the voice surfaces — and
+  `page: "static"` support was added to this file WITHOUT `/workflows`, which is
+  a static page's only channel. The failure is not even a recognizable one:
+  Vite's html fallback covers GET, so a `POST /workflows/blobs` gets a bodyless
+  404 and the page reports `Workflow API 404` for every upload. The platform had
+  the mirror-image gap; see "The workflow API is brokered too" in
+  `packages/aai-server/CLAUDE.md`.
 - `_dev-restart.ts` — the watch loop's restart state machine (see below)
 - `_bundler.ts` — bundles `agent.ts` (and optional `client.tsx`) into
   deployable artifacts

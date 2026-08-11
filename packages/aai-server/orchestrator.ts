@@ -42,6 +42,7 @@ import { DEPLOY_BODY_CONCURRENCY, DEPLOY_BODY_WAIT_MS, resolveHarnessPath } from
 import type { HonoEnv } from "./context.ts";
 import { handleDelete } from "./delete.ts";
 import { handleDeployNew } from "./deploy.ts";
+import { GUEST_ROUTES } from "./guest-routes.ts";
 import { gzipRequestMw, MAX_INFLATED_BODY_BYTES } from "./gzip-request.ts";
 import { authMw, existingOwnerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
@@ -75,6 +76,7 @@ import {
   handleAgentPage,
   handleClientAsset,
 } from "./transport-websocket.ts";
+import { createAgentWorkflowsHandler } from "./workflow-handler.ts";
 
 export type OrchestratorOpts = {
   slots: SlotCache;
@@ -134,6 +136,12 @@ export type OrchestratorOpts = {
    * config — see client-config-handler.ts).
    */
   guestConfigFetch?: typeof globalThis.fetch;
+  /**
+   * Test seam for the workflow-API proxy's forward to the guest
+   * (see workflow-handler.ts). Separate from `guestConfigFetch` so a test can
+   * stub one hop without silently standing in for the other.
+   */
+  guestWorkflowFetch?: typeof globalThis.fetch;
   /**
    * True once shutdown has begun. Fails `/health` so the platform's proxy
    * stops routing here. (Upgrades on `/:slug/websocket` are pure handshake
@@ -287,6 +295,21 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // Same auth posture as the page and the session endpoint: none.
   const handleAgentClientConfig = createAgentClientConfigHandler(opts.guestConfigFetch);
   agents.get("/client-config", (c) => handleAgentClientConfig(c, brokerOpts));
+  // Durable-workflow API, brokered to the guest. Registered even though a
+  // programmatic caller can reach the guest directly, because a STATIC agent's
+  // page cannot: this platform serves it at `GET /:slug/`, so its
+  // `createWorkflowApi()` builds every URL under `/:slug/` and lands here. Same
+  // auth posture as the two routes above — none by default; the guest's own
+  // `AAI_WORKFLOW_API_TOKEN` gate is what closes it, and the bearer is
+  // forwarded. See workflow-handler.ts.
+  const handleWorkflows = createAgentWorkflowsHandler(opts.guestWorkflowFetch);
+  agents.on(
+    ["GET", "POST"],
+    // The guest's own constant, so the two sides of the proxy cannot name
+    // different paths — the mismatch `guest-routes.ts` exists to prevent.
+    [GUEST_ROUTES.workflows, `${GUEST_ROUTES.workflows}/:path{.+}`],
+    (c) => handleWorkflows(c, brokerOpts),
+  );
   // Call-answering webhook: brokers the sandbox and answers with the TwiML
   // that points the carrier at the guest's own /phone endpoint. Same auth
   // posture as the routes above — none by default; an agent that stores its

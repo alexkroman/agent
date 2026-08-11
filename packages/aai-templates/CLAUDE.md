@@ -95,6 +95,26 @@ It is the only template with `page: "static"` — a page (`page()` +
 because the Sync API caps a request at 120 s and the sandbox has no decoder.
 See "Workflow apps" in `scaffold/CLAUDE.md` for the shape it teaches.
 
+**A template's colors come from `useTheme()`, not from Tailwind's palette.**
+This one shipped with `border-neutral-300` / `text-neutral-600` / `bg-white` /
+`rounded-lg`, which is not "unstyled" — the utilities compile fine — but it is
+cool grey furniture on the warm cream page `ThemeProvider` paints under every
+client (`#FBF8F2`; the tokens are in `aai-ui/context.ts` and `styles.css`). The
+design system reaches a template two ways and it needs both: `useTheme()` for
+`bg`/`surface`/`border`/`text`/`primary`, and the `@theme` tokens `font-aai`,
+`font-aai-serif`, `font-aai-mono` and `rounded-aai` for type and radius.
+
+The `<input type="file">` is the case with no obvious answer, and it is worth
+copying: its button is a PSEUDO-ELEMENT (`::file-selector-button`), so no inline
+`style` reaches it and left alone it renders as native OS chrome — the one
+control on the page ignoring the system. The theme colors therefore travel as
+CSS custom properties for the `file:` utilities to read back, the same mechanism
+`aai-ui`'s own `Button` uses to let a `:hover` rule beat an inline declaration.
+Bind the object to a named variable typed as `CSSProperties` intersected with a
+custom-property record rather than inlining it: a fresh literal in the `style`
+prop is excess-property-checked against `CSSProperties`, which declares no
+custom properties. `aai-ui`'s `StyleWithVars` is the shape to copy.
+
 **It used to be a VOICE agent that started a run from a tool, and nothing
 demonstrates that any more.** `ctx.workflows.start()` / `.get()` from inside a
 tool — a turn kicking off durable work and answering the caller in the same
