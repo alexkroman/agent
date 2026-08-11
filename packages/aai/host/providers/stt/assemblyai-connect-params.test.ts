@@ -76,22 +76,14 @@ describe("assemblyAIStt STT adapter — speech model", () => {
 });
 
 describe("assemblyAIStt STT adapter — prompt default", () => {
-  test("sends the spelled-identifier default when the agent configures none", async () => {
-    // Biasing is ON by default: a dropped identifier reaches the LLM missing
-    // rather than misheard, and the model fills the required tool argument
-    // with something plausible — a silent wrong answer. An agent whose callers
-    // never spell identifiers should set its own prompt or clear it.
-    expect(DEFAULT_STT_PROMPT).toContain("letter by letter");
+  test("sends no prompt when the agent configures none (default is empty)", async () => {
+    // Biasing is opt-in: a generic identifier prompt measured no better than
+    // none, and an off-target one steers the transcript toward vocabulary the
+    // caller never used. Agents that need it supply their own.
+    expect(DEFAULT_STT_PROMPT).toBe("");
     const session = await openSession({ model: "universal-3-5-pro" });
     const fake = fakeOf(session);
-    expect(fake.params.prompt).toBe(DEFAULT_STT_PROMPT);
-    await session.close();
-  });
-
-  test("an explicit empty sttPrompt still sends no prompt", async () => {
-    // The opt-OUT has to stay reachable now that the default is non-empty.
-    const session = await openSession({ model: "universal-3-5-pro" }, { sttPrompt: "" });
-    expect("prompt" in fakeOf(session).params).toBe(false);
+    expect("prompt" in fake.params).toBe(false);
     await session.close();
   });
 
