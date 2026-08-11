@@ -16,6 +16,7 @@ import {
   type AnalyticsStore,
   createMemoryAnalyticsStore,
   createPostgresAnalyticsStore,
+  type ReservedConnection,
 } from "./analytics-store.ts";
 import { createApiKeyVerifierFromEnv } from "./api-key-verify.ts";
 import { type AppDatabases, type AppDbTarget, createAppDatabases } from "./app-database.ts";
@@ -261,6 +262,12 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   // opens them lazily, so an idle replica pays for none of this.
   const admin = createPostgresDb({ url, max: ADMIN_POOL_MAX });
   const exec: SqlExec = (query, params) => admin.query(query, params);
+  // Ad-hoc analytics queries run their `set local role`/`read only`/timeout
+  // and the statement itself on ONE connection — see runAsReader.
+  const reserveAdmin = async (): Promise<ReservedConnection> => {
+    const reserved = await admin.reserve();
+    return { query: (q, p) => reserved.query(q, p), release: reserved.release };
+  };
   const localDev = isLocalDev(env);
   if (localDev) {
     return {
@@ -268,7 +275,7 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
       // The one exception to "local dev is all memory": rows go to the real
       // table when a database is configured, because the ad-hoc SQL surface
       // is the whole point of the feature and only Postgres can evaluate it.
-      analytics: createPostgresAnalyticsStore(exec),
+      analytics: createPostgresAnalyticsStore(exec, reserveAdmin),
       ...buildMemoryStores(),
       appDb: createAppDatabases({
         url,
@@ -285,7 +292,7 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   bootstrapPlatformDb(exec, env);
   return {
     secrets: createVaultSecretStore(exec),
-    analytics: createPostgresAnalyticsStore(exec),
+    analytics: createPostgresAnalyticsStore(exec, reserveAdmin),
     agents: createPgAgentRows(exec),
     workspaces: createPgWorkspaceStore(exec),
     chats: createPgChatStore(exec),

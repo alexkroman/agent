@@ -2,6 +2,16 @@
 /**
  * Storage for deployed-agent session analytics (`aai_platform.agent_events`).
  *
+ * ## Every read carries a `received_at` bound
+ *
+ * The table is RANGE partitioned by day on `received_at` (see the migration
+ * for why that column and not `ts`), so `received_at` is what the planner
+ * prunes partitions on. A query filtered only on `ts` is correct and scans
+ * every partition in the retention window; the extra predicate costs a
+ * duplicated parameter and makes it read one day's partition instead. Both
+ * bounds use the same value — `received_at >= ts` always holds, so the pair
+ * can only narrow, never drop a row a `ts` filter would have kept.
+ *
  * Two implementations with identical semantics, the same pattern every other
  * platform store follows: Postgres over the shared `SqlExec` in production,
  * and an array-backed one for local dev and tests.
@@ -62,6 +72,22 @@ export type LogRow = {
   message: string;
 };
 
+/**
+ * One ad-hoc query, plus the slugs it is allowed to see.
+ *
+ * The slugs are passed SEPARATELY from the statement even though the CTE
+ * wrapper already filters on them, because they are enforced twice by
+ * different mechanisms: the wrapper is a predicate the statement could in
+ * principle be written around, while the RLS policy on `agent_events` is
+ * applied by Postgres to the reader role no matter what the statement says.
+ * A caller that forgot to pass them reads zero rows, not every row.
+ */
+export type ScopedQueryRequest = {
+  sql: string;
+  params: readonly unknown[];
+  slugs: readonly string[];
+};
+
 export type AnalyticsQueryResult = {
   columns: string[];
   rows: Record<string, unknown>[];
@@ -82,12 +108,13 @@ export type AnalyticsStore = {
     levels?: readonly string[] | undefined;
   }): Promise<LogRow[]>;
   /**
-   * Run a pre-validated, slug-scoped read-only statement. `sql` must already
-   * have been through `buildScopedAnalyticsQuery` — this method does no
-   * checking of its own, which is why it is not called with anything a client
-   * sent.
+   * Run a pre-validated, model-authored statement under the READER ROLE.
+   *
+   * `sql` must already have been through `buildScopedAnalyticsQuery`; this
+   * does no syntactic checking of its own. What it adds is the half the
+   * validator cannot provide — see {@link ScopedQueryRequest}.
    */
-  runScoped(sql: string, params: readonly unknown[]): Promise<AnalyticsQueryResult>;
+  runScoped(request: ScopedQueryRequest): Promise<AnalyticsQueryResult>;
 };
 
 /**
@@ -112,8 +139,88 @@ function firstAudioOf(data: unknown): number | null {
   return toNumberOrNull((data as { firstAudioMs?: unknown }).firstAudioMs);
 }
 
-/** Postgres-backed store. The table is declared by the migrations, never here. */
-export function createPostgresAnalyticsStore(sql: SqlExec): AnalyticsStore {
+/**
+ * How long a model-authored query may run before Postgres cancels it.
+ *
+ * A `GROUP BY` an LLM wrote over a week of a busy agent's rows is the case
+ * this bounds, and it is bounded IN THE DATABASE rather than by a client
+ * timeout: abandoning the request would leave the query running.
+ */
+const READER_STATEMENT_TIMEOUT_MS = 10_000;
+
+/**
+ * Run one statement as `aai_analytics_reader` on a RESERVED connection.
+ *
+ * This is the structural half of the ad-hoc SQL guard, and the reason it can
+ * be structural at all is that all four settings below are transaction-local
+ * — which needs connection affinity, which is what `reserve()` provides (the
+ * same primitive the slug lock uses for advisory locks; over the pool, the
+ * `set local`s and the query could land on different connections).
+ *
+ * What each one buys, in the order they are applied:
+ *
+ * 1. **`aai.analytics_slugs`** is set BEFORE the role switch, so the reader
+ *    cannot choose its own scope. The RLS policy on `agent_events` reads it;
+ *    unset means zero rows.
+ * 2. **`set local role`** drops from the table owner to a role holding
+ *    `select` on exactly this one table. Owners bypass RLS, so without this
+ *    step the policy would be inert — this is what makes it apply.
+ * 3. **`read only`** refuses writes at the transaction level, which is what
+ *    stops a data-modifying CTE the validator's keyword scan missed.
+ * 4. **`statement_timeout`** bounds the work.
+ *
+ * The validator (`analytics-query.ts`) still runs first. It is now the layer
+ * that produces a MESSAGE the model can act on, rather than the only thing
+ * standing between a prompt injection and the control plane.
+ */
+async function runAsReader(
+  reserve: () => Promise<ReservedConnection>,
+  request: ScopedQueryRequest,
+): Promise<Record<string, unknown>[]> {
+  const conn = await reserve();
+  try {
+    await conn.query("begin");
+    try {
+      // A slug is `[a-z0-9-]` by construction (validateSlug), so the joined
+      // list cannot contain the delimiter the policy splits on — but it is a
+      // bound parameter regardless, so nothing here is interpolated.
+      await conn.query("select set_config('aai.analytics_slugs', $1, true)", [
+        request.slugs.join(","),
+      ]);
+      await conn.query("set local role aai_analytics_reader");
+      await conn.query("set local transaction read only");
+      await conn.query(`set local statement_timeout = ${READER_STATEMENT_TIMEOUT_MS}`);
+      const rows = await conn.query(request.sql, [...request.params]);
+      await conn.query("commit");
+      return rows;
+    } catch (err) {
+      // Rollback resets the role and every `set local` with it; a failed
+      // rollback is not worth masking the query error the caller needs.
+      await conn.query("rollback").catch(() => undefined);
+      throw err;
+    }
+  } finally {
+    conn.release();
+  }
+}
+
+/** The subset of a reserved Postgres connection this store needs. */
+export type ReservedConnection = {
+  query(sql: string, params?: unknown[]): Promise<Record<string, unknown>[]>;
+  release(): void;
+};
+
+/**
+ * Postgres-backed store. The table is declared by the migrations, never here.
+ *
+ * `reserve` is separate from `sql` because ad-hoc queries need connection
+ * affinity (see {@link runAsReader}) while ingest and the summary reads are
+ * ordinary pooled statements.
+ */
+export function createPostgresAnalyticsStore(
+  sql: SqlExec,
+  reserve: () => Promise<ReservedConnection>,
+): AnalyticsStore {
   return {
     async append(rows) {
       if (rows.length === 0) return;
@@ -151,7 +258,7 @@ export function createPostgresAnalyticsStore(sql: SqlExec): AnalyticsStore {
       const rows = await sql(
         `select session_id, ts, kind, turn, duration_ms, name, ok, data->'firstAudioMs' as first_audio
            from aai_platform.agent_events
-          where slug = any($1) and ts >= $2
+          where slug = any($1) and received_at >= $2 and ts >= $2
           order by ts desc
           limit $3`,
         [[...slugs], new Date(sinceMs).toISOString(), SUMMARY_ROW_CAP],
@@ -173,7 +280,7 @@ export function createPostgresAnalyticsStore(sql: SqlExec): AnalyticsStore {
       const rows = await sql(
         `select ts, session_id, level, body
            from aai_platform.agent_events
-          where slug = any($1) and ts >= $2 and kind = 'log'
+          where slug = any($1) and received_at >= $2 and ts >= $2 and kind = 'log'
             and ($3::text[] is null or level = any($3))
           order by ts desc
           limit $4`,
@@ -187,8 +294,8 @@ export function createPostgresAnalyticsStore(sql: SqlExec): AnalyticsStore {
       }));
     },
 
-    async runScoped(query, params) {
-      const rows = await sql(query, [...params]);
+    async runScoped(request) {
+      const rows = await runAsReader(reserve, request);
       return {
         columns: rows[0] ? Object.keys(rows[0]) : [],
         rows: rows.slice(0, ANALYTICS_QUERY_ROW_CAP),

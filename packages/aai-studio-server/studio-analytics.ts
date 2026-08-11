@@ -156,11 +156,11 @@ export async function runProjectAnalyticsQuery(
     ...(req.limit === undefined ? {} : { limit: req.limit }),
   });
   try {
-    return {
-      ok: true,
-      result: await env.analytics.store.runScoped(scoped.sql, scoped.params),
-      slugs,
-    };
+    // The slugs ride along separately from the wrapper's own filter: they are
+    // what the RLS policy on `agent_events` is applied with, so the scoping
+    // holds even for a statement that got around the CTE.
+    const result = await env.analytics.store.runScoped({ ...scoped, slugs });
+    return { ok: true, result, slugs };
   } catch (err) {
     // A database error here is nearly always the model's SQL — an unknown
     // column, a type mismatch, a bad aggregate — so the message goes BACK to

@@ -51,7 +51,9 @@ test("only looks at jobs it owns", async () => {
   const read = calls.find((c) => c.query.includes("from cron.job"));
   // A prefix match, so a job some other tenant of this database scheduled is
   // never in scope for unscheduling.
-  expect(read?.params).toEqual(["aai-sweep-%"]);
+  // The prefix covers every job the platform declares, not only the sweeps —
+  // a non-sweep job outside it could never be retired.
+  expect(read?.params).toEqual(["aai-%"]);
 });
 
 /** A concurrent boot may have unscheduled it between the read and the call. */
@@ -120,8 +122,22 @@ test("every job name carries the prefix boot diffs on", () => {
   // A job outside the prefix can never be unscheduled by the retirement diff,
   // so it would fire forever on any database that once had it.
   for (const job of platformCronJobs({ storage: { url: "https://p.supabase.co", bucket: "b" } })) {
-    expect.soft(job.name, `${job.name} is outside the aai-sweep- namespace`).toMatch(/^aai-sweep-/);
+    expect.soft(job.name, `${job.name} is outside the aai- namespace`).toMatch(/^aai-/);
   }
+});
+
+test("agent_events retention drops partitions rather than deleting rows", () => {
+  // A bulk delete on the platform's highest-write table leaves as many dead
+  // tuples as it removes rows; dropping a partition frees its files.
+  const job = platformCronJobs().find((j) => j.name === "aai-maintain-agent-events");
+  expect(job?.command).toContain("drop table if exists");
+  expect(job?.command).not.toMatch(/delete\s+from\s+aai_platform\.agent_events/);
+  // It creates ahead too: ingest FAILS on a row matching no partition, so the
+  // lead time is how long this job may be broken before analytics stops.
+  expect(job?.command).toContain("partition of aai_platform.agent_events");
+  expect(job?.command).toContain("current_date +");
+  // And it names the fallen-behind condition rather than hiding it.
+  expect(job?.command).toContain("agent_events_default");
 });
 
 test("the cron-history sweep prunes pg_cron's own run log", () => {

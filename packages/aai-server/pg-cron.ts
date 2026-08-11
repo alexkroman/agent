@@ -17,7 +17,7 @@
  * `cron.schedule(name, …)` upserts by job name, so re-running the setup on
  * every boot is idempotent and a changed schedule or command takes effect on
  * the next deploy. Retirement is the same statement read the other way: boot
- * unschedules every `aai-sweep-*` job the code no longer declares, so
+ * unschedules every `aai-*` job the code no longer declares, so
  * {@link platformCronJobs} is the whole truth about what the platform runs.
  */
 
@@ -156,22 +156,72 @@ const SWEEP_CRON_HISTORY =
   "delete from cron.job_run_details where end_time < now() - interval '7 days'";
 
 /**
- * Session analytics past their retention window.
+ * Partition maintenance for `aai_platform.agent_events` — the only job here
+ * that creates as well as removes.
  *
- * `agent_events` is the platform's highest-write table and its rows carry
- * end-user speech, so retention is a PRODUCT decision rather than a storage
- * one: {@link ANALYTICS_RETENTION_DAYS} days, which covers the
- * week-over-week comparison the studio's Analytics pane is built around and
- * stops the table from quietly becoming a transcript archive.
+ * Retention for that table is {@link ANALYTICS_RETENTION_DAYS} days and is
+ * enforced by DROPPING whole daily partitions rather than deleting rows. It is
+ * the platform's highest-write table, and an hourly `delete from` there would
+ * leave as many dead tuples as it removed rows, hand autovacuum a full pass
+ * every hour, and bloat the indexes the Analytics pane reads through. Dropping
+ * a partition frees its files and touches no index.
  *
- * It sweeps on `received_at`, not `ts`. `ts` is reported by the guest, so a
- * skewed clock could otherwise park a row outside the window in either
- * direction — deleted on arrival, or retained indefinitely. Hourly rather
- * than daily so the delete is many small batches instead of one large one.
+ * This job is what `pg_partman` would be. Supabase documents that extension
+ * but does not ship it (supabase/postgres #1586 — planned for a future
+ * Postgres 17 image, absent from the dashboard today), and no migration can
+ * install it, so the plpgsql below stands in for `create_parent` plus a
+ * retention setting. If it lands, this is what it replaces.
+ *
+ * Two properties are load-bearing:
+ *
+ * - **It creates ahead**, {@link PARTITION_LEAD_DAYS} days of them. Ingest
+ *   fails outright on a row matching no partition, so the lead is how long
+ *   this job may be broken before analytics stops arriving — a week rather
+ *   than the hour its schedule alone would buy, with the default partition as
+ *   the backstop under that.
+ * - **It drops only partitions wholly past retention**, computed from each
+ *   partition's own upper bound in the catalog rather than parsed out of its
+ *   name — so a naming change here cannot become a delete of live data.
  */
 export const ANALYTICS_RETENTION_DAYS = 7;
 
-const SWEEP_AGENT_EVENTS = `delete from aai_platform.agent_events where received_at < now() - interval '${ANALYTICS_RETENTION_DAYS} days'`;
+/** Days of partitions kept pre-created ahead of today. */
+const PARTITION_LEAD_DAYS = 7;
+
+const MAINTAIN_AGENT_EVENTS = `do $$
+declare
+  day date;
+  part record;
+begin
+  for day in
+    select generate_series(current_date, current_date + ${PARTITION_LEAD_DAYS}, interval '1 day')::date
+  loop
+    execute format(
+      'create table if not exists aai_platform.%I partition of aai_platform.agent_events for values from (%L) to (%L)',
+      'agent_events_' || to_char(day, 'YYYYMMDD'), day, day + 1
+    );
+  end loop;
+
+  for part in
+    select c.relname,
+           (regexp_match(pg_get_expr(c.relpartbound, c.oid), 'TO \\((''[^'']+'')\\)'))[1] as upper_bound
+      from pg_class c
+      join pg_inherits i on i.inhrelid = c.oid
+      join pg_class p on p.oid = i.inhparent
+      join pg_namespace n on n.oid = p.relnamespace
+     where n.nspname = 'aai_platform' and p.relname = 'agent_events'
+  loop
+    if part.upper_bound is not null
+       and part.upper_bound::timestamptz <= now() - interval '${ANALYTICS_RETENTION_DAYS} days'
+    then
+      execute format('drop table if exists aai_platform.%I', part.relname);
+    end if;
+  end loop;
+
+  if exists (select 1 from aai_platform.agent_events_default limit 1) then
+    raise warning 'aai_platform.agent_events_default is not empty: partition maintenance fell behind';
+  end if;
+end $$`;
 
 /**
  * Terminate runaway tenant queries.
@@ -318,7 +368,11 @@ export function platformCronJobs(opts: { storage?: PlatformCronStorage } = {}): 
       command: SWEEP_PREVIEW_ARCHIVE,
     },
     { name: "aai-sweep-cron-history", schedule: "52 4 * * *", command: SWEEP_CRON_HISTORY },
-    { name: "aai-sweep-agent-events", schedule: "34 * * * *", command: SWEEP_AGENT_EVENTS },
+    {
+      name: "aai-maintain-agent-events",
+      schedule: "34 * * * *",
+      command: MAINTAIN_AGENT_EVENTS,
+    },
     {
       name: "aai-sweep-app-db-runaways",
       schedule: "*/5 * * * *",
@@ -349,10 +403,18 @@ export function platformCronJobs(opts: { storage?: PlatformCronStorage } = {}): 
  * exactly why it went unnoticed — the job just sat in `cron.job` looking
  * current in every operator's listing. Diffing cannot be forgotten.
  */
-const CRON_JOB_PREFIX = "aai-sweep-";
+/**
+ * Broader than `aai-sweep-` on purpose: the prefix names jobs THIS PLATFORM
+ * DECLARES, not jobs that happen to delete something. The first job that
+ * wasn't a sweep (`aai-maintain-agent-events`, which creates partitions as
+ * well as dropping them) would otherwise have been invisible to the diff
+ * below — retiring it would leave it firing forever on every database that
+ * already had it, which is the exact failure this mechanism exists to stop.
+ */
+const CRON_JOB_PREFIX = "aai-";
 
 /**
- * Install (or update) the sweep jobs, and unschedule every `aai-sweep-*` job
+ * Install (or update) the platform's jobs, and unschedule every `aai-*` job
  * the platform no longer declares. Runs at boot on the platform admin
  * connection; failures propagate to the caller, which logs loudly — a missing
  * sweep degrades to table growth, never to wrong answers.

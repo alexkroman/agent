@@ -803,6 +803,79 @@ transcript archive nobody chose to keep. Anything that reads this data — a
 new pane, a new tool — inherits that, and lengthening the window is a
 privacy decision before it is a capacity one.
 
+### The Postgres shape, and why it is not a per-app database
+
+Two questions come up on sight of this table; both were decided rather than
+defaulted.
+
+**Why not a per-app schema + role, like `ctx.db`?** That is the platform's
+existing pattern for tenant data (`aai-server/app-database.ts`), and the
+reasons against reusing it here are enumerated at the top of
+`supabase/migrations/20260811000000_agent_events.sql`. The one that decides
+it: the tenant would own its own audit trail — that role's credentials live in
+the guest, so an agent could forge or erase its own telemetry. The rest are
+practical (app databases are opt-in while analytics is not; `APP_DB_URLS`
+shards apps across clusters, so a project's two agents could land on different
+instances and the pane's one query becomes a cross-cluster join; ingest would
+resolve a per-slug credential per batch). The cost of choosing platform-owned
+is real: **analytics cannot be joined against a tenant's own `ctx.db` tables**,
+which is the query someone will eventually want ("sessions that called
+`book_appointment` and produced no row in `appointments`"). Closing it means
+granting the app role `select` here and colocating the two — a decision about
+cross-schema coupling, not an oversight.
+
+What the per-app pattern DOES contribute is its second half, and this feature
+uses it:
+
+- **`aai_analytics_reader`** — a NOLOGIN role holding `select` on exactly this
+  one table. Ad-hoc model SQL runs under `set local role` on a reserved
+  connection (`runAsReader` in `analytics-store.ts`), so it is no longer the
+  table owner's statement. That is what makes the RLS policy apply at all:
+  owners bypass policies, and every other table in `aai_platform` has RLS
+  purely as defense in depth precisely because nothing ever connects as a
+  non-owner.
+- **The policy is the scoping**, keyed on a session GUC set BEFORE the role
+  switch so the reader cannot widen its own scope. `current_setting(…, true)`
+  is NULL when unset and `= any(NULL)` is NULL, so a caller that forgot it
+  reads zero rows. The CTE wrapper stays as the layer that produces a
+  MESSAGE the model can act on.
+- **NOLOGIN is what keeps it free.** Reachable only by `set role` from a
+  connection the platform already holds — no password to generate, store in
+  Vault, or rotate, and no second pool.
+
+**Retention drops PARTITIONS, it does not delete rows.** The table is RANGE
+partitioned by day on `received_at` and `aai-maintain-agent-events` (pg-cron.ts)
+creates a week ahead and drops what is wholly expired. On the platform's
+highest-write table an hourly `delete from` would leave as many dead tuples as
+it removed rows, hand autovacuum a full pass every hour, and bloat the indexes
+the pane reads through; dropping a partition frees its files and touches no
+index. Three consequences worth carrying:
+
+- **`pg_partman` is not available on Supabase.** They document the extension
+  and do not ship it (supabase/postgres #1586 — planned for a future Postgres
+  17 image, absent from the dashboard today), which is why the maintenance is
+  ~20 lines of plpgsql on a cron schedule the platform already runs rather
+  than `create_parent` plus a retention setting.
+- **The partition key is `received_at`, not `ts`** — `ts` comes from the
+  GUEST, so a skewed clock could place a row in a partition that never expires
+  or in one that does not exist (an insert error, not a slow query). The cost
+  is that pruning keys off `received_at`, so **every reader must carry a
+  `received_at` bound** as well as its `ts` one; `analytics-store.ts` and the
+  `events` CTE both do.
+- **Creating ahead is the real availability knob.** Ingest fails outright on a
+  row matching no partition, so the lead time is how long that job may be
+  broken before analytics stops arriving. A default partition sits under it as
+  a backstop, and the job warns when it is non-empty rather than sweeping it —
+  attaching a partition whose range the default already holds rows for is an
+  error, so that is a condition to fix rather than hide.
+
+**What was considered and is NOT the right tool here.** Supabase's analytics
+buckets (Iceberg) and Logflare are for volumes and access patterns this is not:
+no interactive per-row SQL, no sub-second pane load, no joins. A partitioned
+Postgres table is the correct choice for a 7-day window queried
+conversationally — and it is the only one an LLM can write ad-hoc SQL against
+through the connection the platform already holds.
+
 ## Studio starter evals (scripts/starter-eval/)
 
 The LLM-judge codegen suite (`studio-eval.test.ts`, vitest-evals) was

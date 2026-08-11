@@ -3,6 +3,7 @@ import {
   type AnalyticsRow,
   type AnalyticsStore,
   createMemoryAnalyticsStore,
+  type ScopedQueryRequest,
 } from "aai-server/analytics-store";
 import { hashApiKey } from "aai-server/secrets";
 import { createTestStore } from "aai-server/test-utils";
@@ -190,11 +191,11 @@ describe("runProjectAnalyticsQuery", () => {
   });
 
   test("passes a valid statement to the store, scoped to the owned slugs", async () => {
-    const seen: { sql: string; params: readonly unknown[] }[] = [];
+    const seen: ScopedQueryRequest[] = [];
     const recording: AnalyticsStore = {
       ...createMemoryAnalyticsStore(),
-      runScoped: (sql, params) => {
-        seen.push({ sql, params });
+      runScoped: (request) => {
+        seen.push(request);
         return Promise.resolve({ columns: ["count"], rows: [{ count: 3 }], truncated: false });
       },
     };
@@ -209,6 +210,9 @@ describe("runProjectAnalyticsQuery", () => {
     expect(outcome).toMatchObject({ ok: true, result: { rows: [{ count: 3 }] } });
     expect(seen[0]?.params[0]).toEqual(["my-project"]);
     expect(seen[0]?.sql).toContain("with events as (");
+    // Also passed out-of-band, because that is what the RLS policy is applied
+    // with — the CTE filter alone is a predicate, not an enforcement.
+    expect(seen[0]?.slugs).toEqual(["my-project"]);
   });
 
   test("returns a database error to the caller instead of throwing", async () => {

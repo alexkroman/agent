@@ -84,6 +84,23 @@ describe("platform schema migrations", () => {
     expect(missing).toEqual([]);
   });
 
+  /**
+   * Retention for `agent_events` is `drop table` on a partition, not `delete
+   * from` on the platform's highest-write table. Both halves are pinned:
+   * without the partitioning the maintenance job's drops find nothing, and
+   * without the default partition an outage in that job turns into failing
+   * ingest rather than a warning.
+   */
+  test("agent_events is partitioned, with a backstop partition", () => {
+    const sql = stripSqlComments(migrationSql());
+    expect(sql).toMatch(
+      /create table if not exists aai_platform\.agent_events[\s\S]*?partition by range \(received_at\)/,
+    );
+    expect(sql).toContain("partition of aai_platform.agent_events default");
+    // The partition key must be in the primary key — a composite, not `id`.
+    expect(sql).toContain("primary key (received_at, id)");
+  });
+
   test("create the schema and the extensions the platform schedules work with", () => {
     const sql = migrationSql();
     expect(sql).toContain("create schema if not exists aai_platform");
@@ -163,9 +180,19 @@ describe("platform schema migrations", () => {
    * rows instead of every row.
    */
   describe("row-level security", () => {
-    /** Tables the migrations declare, derived so a new one is covered. */
+    /**
+     * Tables the migrations declare, derived so a new one is covered —
+     * PARTITIONS excluded.
+     *
+     * A partition inherits its parent's policies, and enabling RLS on one
+     * separately is neither necessary nor sufficient (the parent's setting is
+     * what a query goes through). Demanding it per partition would also make
+     * this guard unsatisfiable for the partitions `aai-maintain-agent-events`
+     * creates at run time, which no migration declares at all.
+     */
     function declaredTables(sql: string): string[] {
-      return [...sql.matchAll(/create table if not exists aai_platform\.([a-z_]+)/g)]
+      return [...sql.matchAll(/create table if not exists aai_platform\.([a-z_]+)([\s\S]{0,40})/g)]
+        .filter(([, , tail]) => !/^\s*partition of/.test(tail ?? ""))
         .map(([, table]) => table)
         .filter((table): table is string => table !== undefined)
         .sort((a, b) => a.localeCompare(b));
@@ -182,6 +209,27 @@ describe("platform schema migrations", () => {
           .soft(sql, `aai_platform.${table} has no RLS`)
           .toContain(`alter table aai_platform.${table} enable row level security`);
       }
+    });
+
+    /**
+     * `agent_events` is the ONE table whose RLS is not merely defense in
+     * depth: the policy is what scopes model-authored SQL to the caller's own
+     * agents. Every part of that is silently inert on its own — a policy with
+     * no role reachable to apply it, a role with no grant, a grant with no
+     * policy — so all four are pinned together.
+     */
+    test("the analytics reader role is scoped by policy, not by trust", () => {
+      const sql = stripSqlComments(migrationSql());
+      expect(sql).toContain("create role aai_analytics_reader nologin");
+      expect(sql).toContain("grant select on aai_platform.agent_events to aai_analytics_reader");
+      expect(sql).toMatch(/create policy agent_events_reader_scope[\s\S]*?to aai_analytics_reader/);
+      // Fail-closed: `current_setting(..., true)` is NULL when unset, and
+      // `= any(NULL)` is NULL — so a connection that forgot to set the scope
+      // reads zero rows rather than every tenant's transcripts.
+      expect(sql).toMatch(/current_setting\('aai\.analytics_slugs', true\)/);
+      // NOLOGIN: reachable only by `set role` from a connection the platform
+      // already holds, which is what lets it exist with no password to store.
+      expect(sql).not.toMatch(/aai_analytics_reader[\s\S]{0,40}login\b(?!\s*;)/);
     });
 
     test("nothing is granted to anon, authenticated, or public", () => {
