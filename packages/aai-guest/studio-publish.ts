@@ -21,7 +21,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { errorMessage } from "@alexkroman1/aai";
-import { scrubDir } from "./studio-build.ts";
+import { scrubDir, workspaceDependencyOptions } from "./studio-build.ts";
 import { ensureProjectShape, fileExists } from "./studio-project-shape.ts";
 import {
   CLI_OUTPUT_CAP,
@@ -30,6 +30,7 @@ import {
   runCapped,
   type SpawnCappedResult,
 } from "./studio-spawn.ts";
+import { ensureWorkspaceDependencies, withDependencyWarning } from "./studio-workspace-deps.ts";
 
 /** Wall-clock cap for one `aai deploy` run (cold build + upload). */
 const DEPLOY_TIMEOUT_MS = 300_000;
@@ -130,6 +131,18 @@ export async function deployWorkspaceDir(
   // pin. Safe to reach for the toolchain at this point: `resolveCliEntry`
   // above has already failed the publish cleanly if it is not there.
   await ensureProjectShape(dir);
+  // This directory is a FRESH materialization of the store snapshot, so it has
+  // no node_modules at all — whatever the manifest declares beyond the baked
+  // toolchain has to be installed here or `aai deploy`'s bundler cannot resolve
+  // it. Ordered after `ensureProjectShape`, so the manifest exists to install.
+  const depWarning = await ensureWorkspaceDependencies(dir, workspaceDependencyOptions());
+  // Every failure exit carries the dependency warning, and the success exit
+  // does not — stated once here rather than restated at each `return`, so a
+  // fourth failure path cannot silently forget it.
+  const failed = (output: string): GuestPublishResult => ({
+    ok: false,
+    output: withDependencyWarning(depWarning, output),
+  });
   const { updateProjectConfig, writeConfigHome } = await import(
     "@alexkroman1/aai-cli/project-config"
   );
@@ -174,7 +187,7 @@ export async function deployWorkspaceDir(
       throw new Error(`aai deploy killed by ${result.signal} after ${DEPLOY_TIMEOUT_MS}ms`);
     }
   } catch (err) {
-    return { ok: false, output: `aai deploy failed to run: ${errorMessage(err)}` };
+    return failed(`aai deploy failed to run: ${errorMessage(err)}`);
   }
 
   const parsed = parseLastJsonLine<CliResult>(result.stdout);
@@ -194,15 +207,13 @@ export async function deployWorkspaceDir(
     };
   }
   if (parsed) {
-    const output = [parsed.error, ...(parsed.hint ? [parsed.hint] : [])].join("\n");
-    return { ok: false, output: scrubDir(output, dir) };
+    return failed(scrubDir([parsed.error, ...(parsed.hint ? [parsed.hint] : [])].join("\n"), dir));
   }
   // No parsable result — the CLI died before reporting; surface everything.
-  return {
-    ok: false,
-    output: scrubDir(
+  return failed(
+    scrubDir(
       `aai deploy exited with ${result.exitCode}\n${result.stdout.trim()}\n${stderrTail}`.trim(),
       dir,
     ),
-  };
+  );
 }

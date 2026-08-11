@@ -80,6 +80,95 @@ first and has already failed the publish cleanly if it is not there — so the
 dynamic import is deliberately AFTER it. Anything else this package writes for
 the CLI to read belongs in that subpath too, not in a `JSON.stringify` here.
 
+## A workspace's own package.json is REIFIED, not just read
+
+`studio-workspace-deps.ts` runs `npm install --omit=dev` in the workspace when
+anything its `dependencies` declare is missing, and it runs wherever a workspace
+is prepared to be built: `initStudioSession`, `deployWorkspaceDir` (Publish),
+and `buildWorkspaceDir` (`test_agent`).
+
+**Declaring a dependency used to be the easy half.** The only thing that ever
+put a package on disk was `add_dependency` running in that exact directory, in
+that exact session — and a workspace directory survives neither boundary it has
+to cross. `materializeWorkspace` opens with `rm -rf`, so a session RE-install (a
+page refresh, a replica taking the session over) deletes `node_modules` while
+package.json goes on declaring what used to be in it; Publish builds a FRESH
+directory from the store snapshot (`withBuildDir`) that never had one; and a
+project pushed with `aai push` arrives with a manifest whose dependencies were
+only ever installed on a laptop. The worker bundle is built
+`ssr: { noExternal: true }` — everything is bundled, because the guest that
+loads it has no node_modules — so the missing package is not externalized but a
+hard `Rolldown failed to resolve import "ms"`, naming a dependency the manifest
+plainly declares. **The agent tested fine and Publish died**, which is the worst
+shape that failure could take.
+
+**The whole mechanism is one `npm install`, and that is only viable because the
+workspace manifest declares nothing but the workspace's own packages.** The
+platform's six (`WORKSPACE_DEPENDENCIES` in `studio-project-shape.ts`) resolve
+from the toolchain `node_modules` above every workspace, and leaving them
+undeclared is what keeps this cheap: npm reifies whatever manifest it reads, so
+adding one small package costs **451ms and 28 KB** without them against **25s
+and 156 MB** with. They used to be pinned in purely so they could be READ, and
+that one documentary choice is what made everything expensive — including
+`add_dependency`, which dropped from **28s / 202 MB to 3.8s / 28 MB** when they
+came out. Both readers it served are covered elsewhere: the studio prompt lists
+what is preinstalled, and `aai pull` fills the manifest in per entry from the
+scaffold (`mergeScaffoldManifest`), which is where a laptop's versions belong.
+
+That also retired `reconcileWorkspacePins`, whose whole job was keeping those
+pins fresh so a stale one could not materialize an old SDK over the baked copy.
+
+**An intermediate version of this staged each missing package into a separate
+shared manifest one directory up and ran npm once per package**, to work around
+the reification the pins forced. It needed spec validation, per-package runs,
+un-staging, failure memoization, per-process scoping and a hoist/shadow check —
+seven mechanisms, all downstream of declaring six packages that did not need
+declaring. If any of them looks necessary again, check first whether the
+manifest has grown platform-owned entries.
+
+What remains, and why:
+
+- **`--omit=dev`.** `devDependencies` are the toolchain (vite, typescript,
+  vitest, the `@types/*`), baked into the image. `ensureProjectShape` writes
+  none, but a pushed project carries the scaffold's whole block.
+- **A budget, and a shorter one for session-init.** The host abandons
+  session-init at 30s (`ADOPT_TIMEOUT_MS`) or 60s (`SESSION_INIT_TIMEOUT_MS`)
+  and it runs on EVERY page open, so that path passes
+  `SESSION_INSTALL_BUDGET_MS` (20s): a slow registry degrades the install —
+  reported through the warning, which is non-fatal — rather than failing the
+  session.
+- **A per-directory lock with an acquire deadline.** npm takes no lock of its
+  own. The deadline is why the no-op path must NOT take the lock: a call with
+  no work could otherwise fail on contention.
+- **Presence, not version satisfaction, decides "missing".** That is npm's own
+  rule for a tree it already reified — `npm install` is what reconciles a
+  changed spec, and every path that changes one runs back through here.
+- **A failed install WARNS, it does not throw.** A manifest can name a package
+  no source file imports, and failing a publish over one would regress against
+  the build that used to succeed by ignoring the manifest. The warning is
+  prepended to a FAILING build or publish only (`withDependencyWarning`) —
+  it is usually that failure's cause and reads far better than the bundler's
+  bare "failed to resolve import", while putting it on a green one would train
+  the reader to skip the line.
+
+**A missing dependency's first symptom is TS2307, and it has a hint**
+(`studio-diagnostics.ts`). `Cannot find module 'date-fns'` fires at the
+typecheck gate before the bundler says anything, and the hint names
+`add_dependency` — because installing is only half of what that tool does, and
+the half that matters here is RECORDING the package in package.json, which is
+what makes it survive a refresh and a Publish.
+
+**Lockfiles do not sync** (`snapshotWorkspace` passes `isLockfile`). This is the
+guest's one departure from its own walk, and it is not cosmetic: `npm install`
+leaves a `package-lock.json` measured at **92 KB after one dependency and 101 KB
+after three** — the bulk of every turn's sync payload, ~40% of the 256 KB
+per-file cap, a file `read_file` can spend context on, and, since `aai pull`
+materializes whatever the row holds, an npm lockfile landing in a project whose
+package.json declares pnpm. `walkWorkspace` still shows it, because that one
+backs `list_files`/`grep`; only the SYNC has a reason to drop it. Push's other
+local-only rule, `.env`, deliberately does NOT apply here — the coding agent may
+have written that file itself.
+
 ## The `run_code` executor (`trial.ts`)
 
 - Executes **only inside the guest sandbox** (Modal/Node): the harness wires

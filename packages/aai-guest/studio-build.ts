@@ -32,6 +32,11 @@ import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { errorMessage } from "@alexkroman1/aai";
 import { annotateDiagnostics, type ExportResolver } from "./studio-diagnostics.ts";
+import {
+  ensureWorkspaceDependencies,
+  type WorkspaceDependencyOptions,
+  withDependencyWarning,
+} from "./studio-workspace-deps.ts";
 
 /** Result of one guest build; `buildError` is prose the coding agent can act on. */
 export type GuestBuildResult = {
@@ -53,12 +58,19 @@ type Toolchain = {
 };
 
 /**
- * Root under which workspaces materialize: a dot-directory next to this
- * module (→ next to the bundled harness.mjs), because that location — and
- * only that location — has the toolchain's `node_modules` above it.
+ * Root under which THIS PROCESS's workspaces materialize: a dot-directory next
+ * to this module (→ next to the bundled harness.mjs), because that location —
+ * and only that location — has the toolchain's `node_modules` above it, then
+ * one level per process id.
+ *
+ * The pid separates two harness processes' scratch trees. It has to be
+ * somewhere: under the subprocess backend every sandbox on the machine execs
+ * the same `packages/aai-guest/dist/harness.mjs`, so this path is shared by
+ * every one of them. It used to live in the child names (`session-<pid>`,
+ * `build-<pid>-<n>`); one level up is the same guarantee said once.
  */
 export function workspacesRoot(): string {
-  return path.join(import.meta.dirname, ".workspaces");
+  return path.join(import.meta.dirname, ".workspaces", String(process.pid));
 }
 
 /**
@@ -91,6 +103,16 @@ export function toolchainRoot(): string | null {
 export function toolchainModules(): string | null {
   const root = toolchainRoot();
   return root === null ? null : path.join(root, "node_modules");
+}
+
+/**
+ * The guest's dependency layout, for every site that prepares a workspace to be
+ * built (session install, `test_agent` build, Publish). A function rather than
+ * a constant so it stays resolved-on-use, and passed as options rather than
+ * imported by `studio-workspace-deps.ts`, because this module imports IT.
+ */
+export function workspaceDependencyOptions(): WorkspaceDependencyOptions {
+  return { toolchainModules: toolchainModules() };
 }
 
 // Memoized lazy load: pool-spawned warm harnesses must not pay the Vite
@@ -137,6 +159,10 @@ export async function buildWorkspaceDir(
   } catch (err) {
     return { buildError: `Build toolchain unavailable in this sandbox: ${errorMessage(err)}` };
   }
+  // Whatever package.json declares has to be on disk before either pass reads
+  // an import — the agent may have edited the manifest by hand rather than
+  // through `add_dependency`. A no-op unless something is genuinely missing.
+  const depWarning = await ensureWorkspaceDependencies(dir, workspaceDependencyOptions());
   // Type errors first, as their own failure: the bundlers strip types
   // unchecked, so this is the only gate that catches runtime-working-but-
   // wrong code — and the message is exactly what the coding agent needs.
@@ -145,7 +171,12 @@ export async function buildWorkspaceDir(
     // Attach the fixing idiom to the diagnostic rather than carrying it in
     // the system prompt: it costs nothing until a build actually fails, and
     // it arrives inside the error the agent is already reading.
-    return { buildError: annotateDiagnostics(scrubDir(typed.output, dir), moduleExports(dir)) };
+    return {
+      buildError: withDependencyWarning(
+        depWarning,
+        annotateDiagnostics(scrubDir(typed.output, dir), moduleExports(dir)),
+      ),
+    };
   }
   try {
     // Sequential, not Promise.all (#864): two concurrent Rolldown passes
@@ -164,7 +195,7 @@ export async function buildWorkspaceDir(
       ...(clientFiles !== undefined && { clientFiles }),
     };
   } catch (err) {
-    return { buildError: formatBuildFailure(err, dir) };
+    return { buildError: withDependencyWarning(depWarning, formatBuildFailure(err, dir)) };
   }
 }
 
@@ -207,7 +238,7 @@ export async function withBuildDir<T>(
   materialize: (dir: string, files: Record<string, string>) => Promise<void>,
   fn: (dir: string) => Promise<T>,
 ): Promise<T> {
-  const dir = path.join(workspacesRoot(), `build-${process.pid}-${++buildSeq}`);
+  const dir = path.join(workspacesRoot(), `build-${++buildSeq}`);
   await mkdir(dir, { recursive: true });
   try {
     await materialize(dir, files);

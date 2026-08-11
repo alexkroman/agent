@@ -27,14 +27,10 @@ import { generateText, type LanguageModel, type ToolSet, tool } from "ai";
 import { z } from "zod";
 import { MAX_STUDIO_FILE_BYTES } from "./limits.ts";
 import { WORKSPACE_DEPENDENCIES } from "./studio-project-shape.ts";
-import { envWithoutGuestToken, runCapped } from "./studio-spawn.ts";
+import { NPM_TIMEOUT_MS, PACKAGE_NAME_RE, runNpm } from "./studio-spawn.ts";
 import { STUDIO_TOOL_DESCRIPTIONS } from "./studio-tool-descriptions.ts";
 import { resolveInside } from "./studio-workspace-fs.ts";
 
-/** Wall-clock limit for one npm install/uninstall. */
-const NPM_TIMEOUT_MS = 110_000;
-/** Output tail kept from npm (errors print last). */
-const NPM_OUTPUT_CAP = 4000;
 /** Deadline for one asset download. */
 const DOWNLOAD_TIMEOUT_MS = 30_000;
 
@@ -46,24 +42,14 @@ const DOWNLOAD_TIMEOUT_MS = 30_000;
 const PACKAGE_SPEC_RE = /^(@[a-z0-9~][\w.~-]*\/)?[a-z0-9~][\w.~-]*(@[\w.^~<>=* -]+)?$/;
 
 /**
- * The same shape with NO version part. `update_dependencies` appends
- * `@latest` itself, so a caller-supplied version would either be ignored or
- * contradict the tool's whole purpose — refusing it is clearer than
- * silently overriding it, and it keeps the spec we hand npm entirely ours.
- */
-const PACKAGE_NAME_RE = /^(@[a-z0-9~][\w.~-]*\/)?[a-z0-9~][\w.~-]*$/;
-
-/**
  * Packages whose versions the PLATFORM owns, never the registry.
  *
- * These are pinned to the versions installed in the baked toolchain
- * (`resolveWorkspaceDependencies`), and `ensureProjectShape` reconciles the
- * pins on every settled write — so "update these to latest" is both futile
- * (the next reconcile rewrites them back) and actively harmful in the window
- * before it: `npm install` reifies the whole manifest, and a newer SDK,
- * React, or Tailwind materialized into a workspace-local `node_modules`
- * SHADOWS the baked copy the harness resolved and the build was tested
- * against. See `reconcileWorkspacePins` for the full argument.
+ * A workspace manifest does not declare them — they resolve from the baked
+ * toolchain above it (see `WORKSPACE_DEPENDENCIES`) — so ordinarily none of
+ * them reaches this tool at all. The guard is for the workspace that names one
+ * by hand: bumping it would install a newer SDK, React or Tailwind into the
+ * workspace's own `node_modules`, which SHADOWS the baked copy the harness
+ * resolved and the build was tested against.
  */
 const TOOLCHAIN_MANAGED: ReadonlySet<string> = new Set(WORKSPACE_DEPENDENCIES);
 
@@ -80,17 +66,16 @@ const NPM_INFO_FIELDS = [
   "peerDependencies",
 ];
 
-async function runNpm(
+/**
+ * {@link runNpm} with this file's output contract: a kill is folded INTO the
+ * output string, because these tools return one string to the model and a
+ * separate signal field would have nowhere to go.
+ */
+async function npmOutput(
   dir: string,
   args: string[],
 ): Promise<{ exitCode: number | null; output: string }> {
-  const result = await runCapped("npm", [...args, "--no-audit", "--no-fund", "--loglevel=error"], {
-    cwd: dir,
-    env: envWithoutGuestToken(),
-    timeoutMs: NPM_TIMEOUT_MS,
-    cap: NPM_OUTPUT_CAP,
-    combineStreams: true,
-  });
+  const result = await runNpm(dir, args);
   return {
     exitCode: result.exitCode,
     output: result.signal
@@ -104,7 +89,7 @@ async function npmTool(dir: string, verb: "install" | "uninstall", spec: string)
     return `Error: "${spec}" is not a valid npm package spec (expected name, @scope/name, or name@version)`;
   }
   try {
-    const { exitCode, output } = await runNpm(dir, [verb, spec]);
+    const { exitCode, output } = await npmOutput(dir, [verb, spec]);
     const body = output.trim();
     if (exitCode === 0) {
       return `npm ${verb} ${spec} succeeded${body ? `\n${body}` : ""}`;
@@ -224,7 +209,7 @@ async function updateDependencies(dir: string, requested?: string[]): Promise<st
   }
 
   try {
-    const { exitCode, output } = await runNpm(dir, [
+    const { exitCode, output } = await npmOutput(dir, [
       "install",
       ...targets.map((name) => `${name}@latest`),
     ]);
@@ -306,7 +291,7 @@ export function createProjectTools(deps: ProjectToolDeps): ToolSet {
           return `Error: "${spec}" is not a valid npm package spec (expected name, @scope/name, or name@version)`;
         }
         try {
-          const { exitCode, output } = await runNpm(dir, ["view", spec, ...NPM_INFO_FIELDS]);
+          const { exitCode, output } = await npmOutput(dir, ["view", spec, ...NPM_INFO_FIELDS]);
           const body = output.trim();
           if (exitCode !== 0) {
             return `npm view ${spec} failed [exit code ${exitCode}]\n${body || "(no output)"}`;

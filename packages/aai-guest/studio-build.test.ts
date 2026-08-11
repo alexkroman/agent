@@ -7,7 +7,7 @@
 import { existsSync } from "node:fs";
 import { readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   buildWorkspaceDir,
   formatBuildFailure,
@@ -18,6 +18,15 @@ import {
   workspacesRoot,
 } from "./studio-build.ts";
 import { toolchainPromptSection } from "./studio-chat.ts";
+import { ensureWorkspaceDependencies } from "./studio-workspace-deps.ts";
+
+// Mocked for both directions: it keeps a build here from ever spawning a real
+// `npm install`, and it is the only way to drive the warning path without one.
+// Its own behaviour is covered in studio-workspace-deps.test.ts.
+vi.mock("./studio-workspace-deps.ts", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("./studio-workspace-deps.ts")>();
+  return { ...mod, ensureWorkspaceDependencies: vi.fn(() => Promise.resolve(null)) };
+});
 
 describe("toolchainModules", () => {
   // The prompt section the guest appends names these paths outright, and
@@ -200,5 +209,30 @@ describe("buildWorkspaceDir", () => {
     expect(result.buildError).toContain("agent.ts");
     // The scratch path never reaches the coding agent.
     expect(result.buildError).not.toContain(workspacesRoot());
+  });
+
+  test("a dependency that would not install is named ahead of the failure it causes", {
+    timeout: 120_000,
+  }, async () => {
+    // Without this the agent reads only the bundler's "failed to resolve
+    // import", naming a package its own package.json plainly declares.
+    vi.mocked(ensureWorkspaceDependencies).mockResolvedValueOnce("Could not install ms");
+    const result = await withBuildDir(
+      {
+        // Same tsconfig as the test above, so this fails at the typecheck
+        // gate rather than paying for a full (doomed) bundle.
+        "tsconfig.json": JSON.stringify({
+          compilerOptions: { strict: true, noEmit: true, skipLibCheck: true, types: [] },
+        }),
+        "agent.ts": `export const n: number = "nope";\n`,
+      },
+      async (dir, files) => {
+        for (const [rel, content] of Object.entries(files)) {
+          await writeFile(path.join(dir, rel), content, "utf-8");
+        }
+      },
+      (dir) => buildWorkspaceDir(dir, { worker: true, client: false }),
+    );
+    expect(result.buildError).toMatch(/^Could not install ms/);
   });
 });

@@ -22,13 +22,10 @@
  * typecheck gate — see {@link workspaceTsconfig}) and the manifest's (exact
  * installed pins rather than the scaffold's carets).
  *
- * The one exception to "existing files win" is an existing package.json's
- * toolchain PINS, which are reconciled against what is installed — see
- * `reconcileWorkspacePins` for why a stale pin is a shadowing hazard rather
- * than a cosmetic wart.
+ * There are no exceptions: an existing manifest is the workspace's own and is
+ * never rewritten here.
  */
 
-import { readFileSync } from "node:fs";
 import { access, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { toolchainModules } from "./studio-build.ts";
@@ -45,8 +42,8 @@ export function fileExists(p: string): Promise<boolean> {
  * The scaffold shipped inside the baked toolchain's CLI tarball, or null when
  * the toolchain is not resolvable.
  *
- * Absence is a degraded mode this module already lives with — see
- * {@link resolveWorkspaceDependencies}. It is also not a state worth guarding
+ * Absence is a degraded mode this module already lives with. It is also not a
+ * state worth guarding
  * against here: every consumer of a shaped workspace (the bundlers, the
  * typecheck gate, Publish's `aai deploy`) loads out of that same toolchain, so
  * a workspace missing its shape is one nothing could have built anyway, and
@@ -116,16 +113,21 @@ export function workspaceTsconfig(scaffoldTsconfig: string): string {
 }
 
 /**
- * The runtime packages a workspace writes against — the `dependencies` half
- * of the scaffold's package.json.
+ * The runtime packages the PLATFORM owns — baked into the guest image and
+ * resolved from the toolchain `node_modules` above every workspace.
  *
- * These already resolve from the toolchain node_modules above the workspace,
- * so declaring them changes no build. They are here to be READ: package.json
- * is the first place any coding agent (or a user who exports the project)
- * looks to learn what it may import, and a manifest declaring nothing said
- * the opposite of the truth. The toolchain-only packages — vite, typescript,
- * the type packages — stay out: the agent never imports them, and every
- * entry here is one more package `npm install` reifies.
+ * A workspace manifest deliberately does NOT declare them. It used to, pinned
+ * to the installed versions, purely so they could be READ — and that one
+ * documentary choice was expensive: `npm install` reifies whatever manifest it
+ * reads, so declaring them made every install re-fetch the whole SDK tree
+ * (measured 25s and 156 MB to add one small package, against 451ms and 28 KB
+ * without them) and put a workspace-local copy above the baked one. Both
+ * readers are served elsewhere — the studio prompt lists what is preinstalled,
+ * and `aai pull` fills the manifest in per entry from the scaffold
+ * (`mergeScaffoldManifest`), which is where a laptop's versions belong anyway.
+ *
+ * The list survives because `update_dependencies` still has to refuse to bump
+ * one if a workspace names it by hand.
  */
 export const WORKSPACE_DEPENDENCIES = [
   "@alexkroman1/aai",
@@ -137,143 +139,41 @@ export const WORKSPACE_DEPENDENCIES = [
 ] as const;
 
 /**
- * The dependency NAMES the scaffold declares, or the constant above when the
- * scaffold cannot be read. Names rather than versions: the versions come from
- * what is installed (see {@link resolveWorkspaceDependencies}), so this is the
- * one thing worth reading off the scaffold — a package added there reaches a
- * workspace manifest without a second edit here.
- */
-function scaffoldDependencyNames(scaffoldManifest: string | null): readonly string[] {
-  if (scaffoldManifest === null) return WORKSPACE_DEPENDENCIES;
-  try {
-    const { dependencies } = JSON.parse(scaffoldManifest) as {
-      dependencies?: Record<string, string>;
-    };
-    const names = Object.keys(dependencies ?? {});
-    return names.length > 0 ? names : WORKSPACE_DEPENDENCIES;
-  } catch {
-    return WORKSPACE_DEPENDENCIES;
-  }
-}
-
-/**
- * Pin each dependency to the version actually installed in the toolchain.
- *
- * Exact versions, not the scaffold's carets: `add_dependency` runs
- * `npm install <spec>`, which reifies the WHOLE manifest, so a range would
- * let the workspace materialize a different build of the SDK than the one
- * the harness resolved — and a workspace-local node_modules shadows the
- * baked one. Pinned, the local copy is byte-identical and the shadowing is
- * merely redundant. A package we can't read is omitted rather than guessed;
- * a manifest that under-declares is recoverable, one that names a version
- * that doesn't exist breaks every later install.
- */
-export function resolveWorkspaceDependencies(
-  modulesDir: string | null = toolchainModules(),
-  names: readonly string[] = WORKSPACE_DEPENDENCIES,
-): Record<string, string> {
-  if (modulesDir === null) return {};
-  const deps: Record<string, string> = {};
-  for (const name of names) {
-    try {
-      const raw = readFileSync(path.join(modulesDir, name, "package.json"), "utf-8");
-      const { version } = JSON.parse(raw) as { version?: string };
-      if (typeof version === "string") deps[name] = version;
-    } catch {
-      // Not installed in this layout — leave it undeclared.
-    }
-  }
-  return deps;
-}
-
-/**
  * Minimal but real: `type: "module"` gives files the same semantics as a
- * scaffolded project, and `npm install <pkg>` records deps here like
- * anywhere else.
+ * scaffolded project, and `npm install <pkg>` records deps here like anywhere
+ * else — into an EMPTY dependencies map, so an install only ever fetches what
+ * this workspace actually added. See {@link WORKSPACE_DEPENDENCIES} for why
+ * the platform's own packages are not listed.
  */
-export function workspacePackageJson(
-  dependencies: Record<string, string> = resolveWorkspaceDependencies(),
-): string {
+export function workspacePackageJson(): string {
   return `${JSON.stringify(
-    { name: "aai-studio-workspace", private: true, type: "module", dependencies },
+    { name: "aai-studio-workspace", private: true, type: "module", dependencies: {} },
     null,
     2,
   )}\n`;
 }
 
 /**
- * Bring an EXISTING manifest's toolchain pins back in line with what is
- * actually installed, leaving everything else — including dependencies the
- * agent added — exactly as it found them.
- *
- * The pins are exact versions read from the toolchain when the manifest was
- * first written. Upgrade the platform's SDK and they go stale, and staleness
- * here is not cosmetic: `add_dependency` runs `npm install`, which reifies the
- * WHOLE manifest, so an old pin materializes an OLD SDK into a
- * workspace-local `node_modules` that then SHADOWS the baked one. The
- * reasoning that made exact pinning safe — the local copy is byte-identical to
- * the baked one, so the shadowing is merely redundant — holds only while the
- * manifest matches the toolchain, which it stops doing the moment the server
- * ships a new SDK. Secondary but real: package.json is the first place the
- * coding agent looks to learn what it may import, and a stale version there is
- * a wrong answer.
- *
- * Only ALREADY-DECLARED entries are rewritten. Absent ones are not added
- * back: `npm install` reifies only what is declared, so an absent entry is not
- * a shadowing hazard, and re-adding one would override a deliberate removal.
- * An unparseable manifest is left alone — the agent may be mid-edit, and
- * `npm install` will report it far better than a silent rewrite would.
- */
-async function reconcileWorkspacePins(
-  abs: string,
-  installed: Record<string, string>,
-): Promise<void> {
-  if (Object.keys(installed).length === 0) return;
-  let manifest: { dependencies?: Record<string, string> } & Record<string, unknown>;
-  try {
-    manifest = JSON.parse(await readFile(abs, "utf-8")) as typeof manifest;
-  } catch {
-    return;
-  }
-  const declared = manifest.dependencies;
-  if (!declared || typeof declared !== "object") return;
-  let changed = false;
-  for (const [name, version] of Object.entries(installed)) {
-    if (name in declared && declared[name] !== version) {
-      declared[name] = version;
-      changed = true;
-    }
-  }
-  if (changed) await writeFile(abs, `${JSON.stringify(manifest, null, 2)}\n`, "utf-8");
-}
-
-/**
  * Write any missing project-shape files into `dir`. Existing files win, with
- * one exception: an existing package.json has its toolchain pins reconciled
- * against what is installed (see {@link reconcileWorkspacePins}).
+ * no exceptions — the manifest is the workspace's own, and nothing here
+ * rewrites it. (It used to: the platform's packages were pinned in and had to
+ * be re-pinned on every SDK upgrade, or a stale pin would materialize an old
+ * SDK over the baked one. Not declaring them retires both jobs.)
  */
 export async function ensureProjectShape(dir: string): Promise<void> {
   const scaffold = scaffoldDir();
   // The scaffold reads are independent; so is every write below.
-  const [manifest, tsconfig, globalDts, viteConfig, vitestConfig] = await Promise.all([
-    readScaffoldFile(scaffold, "package.json"),
+  const [tsconfig, globalDts, viteConfig, vitestConfig] = await Promise.all([
     readScaffoldFile(scaffold, "tsconfig.json"),
     readScaffoldFile(scaffold, "global.d.ts"),
     readScaffoldFile(scaffold, "vite.config.ts"),
     readScaffoldFile(scaffold, "vitest.config.ts"),
   ]);
-  // One resolution pass for both consumers below — it is a handful of
-  // readFileSync + JSON.parse over the toolchain, and every settled write
-  // burst reaches here.
-  const installed = resolveWorkspaceDependencies(
-    toolchainModules(),
-    scaffoldDependencyNames(manifest),
-  );
   // COPIED verbatim, except where a delta is documented. A file the scaffold
   // does not supply is skipped rather than invented: see {@link scaffoldDir}
   // for why an unshaped workspace is not a state worth papering over.
   const shapeFiles: Record<string, string | null> = {
-    "package.json": workspacePackageJson(installed),
+    "package.json": workspacePackageJson(),
     "tsconfig.json": tsconfig === null ? null : workspaceTsconfig(tsconfig),
     "global.d.ts": globalDts,
     "vite.config.ts": viteConfig,
@@ -282,10 +182,7 @@ export async function ensureProjectShape(dir: string): Promise<void> {
   await Promise.all(
     Object.entries(shapeFiles).map(async ([rel, content]) => {
       const abs = path.join(dir, rel);
-      if (await fileExists(abs)) {
-        if (rel === "package.json") await reconcileWorkspacePins(abs, installed);
-        return;
-      }
+      if (await fileExists(abs)) return;
       if (content !== null) await writeFile(abs, content, "utf-8");
     }),
   );

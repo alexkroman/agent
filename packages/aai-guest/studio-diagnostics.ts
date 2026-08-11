@@ -71,6 +71,18 @@ const HINTS: Record<string, string> = {
     "rather than casting at every use.",
   TS7006: "Annotate the callback parameter, e.g. `(sum: number, item: Item) => ...`.",
   TS2304: "The name is not imported. Add the import; a TYPE needs `import type` here.",
+  // An import of a package the project does not declare. This is the FIRST
+  // symptom of reaching for a package rather than adding it, and it fires at
+  // the typecheck gate, before the bundler ever reports the same thing less
+  // clearly. `add_dependency` is the whole fix — it both installs the package
+  // and records it in package.json, which is what makes it survive a page
+  // refresh and a Publish (the workspace's node_modules does not).
+  TS2307:
+    "The module is not installed, or the project does not declare it. " +
+    "Run add_dependency with the package name — do NOT hand-edit package.json " +
+    "and do not write your own type declarations for it. " +
+    "If it IS declared and still missing, npm_info will say whether the name and " +
+    "version exist. For a relative import, this is a wrong path instead.",
   TS1361:
     "This is a type being used as a value. Import it with `import type` and " +
     "use it only in type positions.",
