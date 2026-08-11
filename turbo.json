@@ -14,6 +14,17 @@
     "vitest.slow.config.ts"
   ],
   "globalPassThroughEnv": [
+    // Ambient machine config, same class as the proxy/CA vars below. Stripped
+    // by strict env mode, `os.tmpdir()` falls back to `/tmp` — shared, not
+    // per-user, and not cleaned between runs, so anything a task writes there
+    // collides with every other user and with its own previous runs. It also
+    // changes behaviour: `npm prefix` walks up for the nearest `package.json`
+    // or `node_modules`, and a stray `/tmp/node_modules` (easy to acquire from
+    // one `npm install` in the wrong shell) makes it report `/tmp` instead of
+    // the directory npm was given.
+    "TMPDIR",
+    "TMP",
+    "TEMP",
     "HTTP_PROXY",
     "HTTPS_PROXY",
     "NO_PROXY",
