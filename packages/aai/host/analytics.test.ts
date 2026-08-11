@@ -117,6 +117,18 @@ describe("session analytics", () => {
     expect(h.of("barge_in")).toEqual([]);
   });
 
+  test("audio outside any reply does not make the NEXT reply a barge-in", () => {
+    // The greeting plays before the first user turn. A separate "did it
+    // speak" flag latched true there and never reset, so the next silent
+    // cancelled reply was recorded as an interruption of nothing.
+    const h = harness();
+    const client = h.analytics.wrapSink(fakeSink());
+    client.playAudioChunk(new Uint8Array([1]));
+    client.event({ type: "user_transcript", text: "hello" });
+    client.event({ type: "cancelled" });
+    expect(h.of("barge_in")).toEqual([]);
+  });
+
   test("a new user turn settles a reply the transport never closed", () => {
     const h = harness();
     const client = h.analytics.wrapSink(fakeSink());

@@ -222,13 +222,17 @@ function analyticsTarget(
   version: number,
   opts: ResolveSandboxOpts,
 ): { analytics?: GuestAnalyticsTarget } {
-  const origin = opts.analytics ? knownPublicOrigin() : undefined;
-  if (!(opts.analytics && origin)) return {};
+  // No secret means no way to mint a token this platform would accept, so a
+  // guest configured to ship would only drop batches (the studio service's
+  // read-only binding is exactly that case — it never spawns agents either).
+  const ingestSecret = opts.analytics?.ingestSecret;
+  const origin = ingestSecret ? knownPublicOrigin() : undefined;
+  if (!(ingestSecret && origin)) return {};
   return {
     analytics: {
       url: `${origin}/analytics/ingest`,
       // Minted per spawn: the token authorizes exactly this slug.
-      token: mintAnalyticsToken(opts.analytics.ingestSecret, slug),
+      token: mintAnalyticsToken(ingestSecret, slug),
       slug,
       version,
     },

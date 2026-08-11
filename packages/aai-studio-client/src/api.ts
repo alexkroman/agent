@@ -85,7 +85,7 @@ export type AnalyticsSummary = {
   sampled: boolean;
   slugs: string[];
   unavailable?: string;
-  sessions: { count: number; medianDurationMs: number | null; totalTurns: number };
+  sessions: { count: number; medianDurationMs: number | null };
   turns: {
     count: number;
     interrupted: number;

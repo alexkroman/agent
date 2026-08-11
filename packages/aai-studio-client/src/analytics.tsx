@@ -15,6 +15,7 @@
 // users, which is a lie that looks like data.
 
 import { useQuery } from "@tanstack/react-query";
+import clsx from "clsx";
 import { type AnalyticsSummary, api } from "./api.ts";
 import { errorText } from "./api-error.ts";
 import { queryKeys } from "./query-keys.ts";
@@ -71,8 +72,8 @@ const EMPTY = <p className="m-0 text-[13px] text-muted">Nothing yet.</p>;
  * numbers would be the largest thing in this bundle.
  */
 function DailyBars(props: { daily: AnalyticsSummary["daily"] }) {
-  const peak = Math.max(1, ...props.daily.map((d) => d.sessions));
   if (props.daily.length === 0) return EMPTY;
+  const peak = Math.max(1, ...props.daily.map((d) => d.sessions));
   return (
     <ol className="m-0 flex list-none items-end gap-1 p-0" aria-label="Sessions per day">
       {props.daily.map((day) => (
@@ -90,32 +91,62 @@ function DailyBars(props: { daily: AnalyticsSummary["daily"] }) {
   );
 }
 
-function ToolTable(props: { tools: AnalyticsSummary["tools"] }) {
-  if (props.tools.length === 0) return EMPTY;
+/**
+ * One column of {@link StatTable}. `danger` tints a numeric cell when it is
+ * non-zero — a failing tool or an errored session is the thing to notice, and
+ * both tables want it on exactly one column.
+ */
+type Column<Row> = {
+  label: string;
+  cell: (row: Row) => string | number;
+  align?: "right";
+  mono?: boolean;
+  danger?: (row: Row) => boolean;
+};
+
+/**
+ * The pane's two tables are the same table: same wrapper, same header row,
+ * same numeric cell classes, differing only in their columns. Written twice
+ * they drifted on alignment within a screenful of each other, and there is
+ * nothing about "tools" or "sessions" in the markup itself.
+ */
+function StatTable<Row>(props: {
+  columns: Column<Row>[];
+  rows: Row[];
+  rowKey: (row: Row) => string;
+}) {
+  if (props.rows.length === 0) return EMPTY;
   return (
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-[13px]">
         <thead>
           <tr className="text-left text-[11px] uppercase tracking-wide text-subtle">
-            <th className="py-1 pr-3 font-normal">Tool</th>
-            <th className="py-1 pr-3 text-right font-normal">Calls</th>
-            <th className="py-1 pr-3 text-right font-normal">Failures</th>
-            <th className="py-1 pr-3 text-right font-normal">p50</th>
-            <th className="py-1 text-right font-normal">p95</th>
+            {props.columns.map((column) => (
+              <th
+                key={column.label}
+                className={clsx("py-1 pr-3 font-normal", column.align === "right" && "text-right")}
+              >
+                {column.label}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
-          {props.tools.map((tool) => (
-            <tr key={tool.name} className="border-t border-line">
-              <td className="py-1 pr-3 font-mono">{tool.name}</td>
-              <td className="py-1 pr-3 text-right tabular-nums">{tool.calls}</td>
-              <td
-                className={`py-1 pr-3 text-right tabular-nums ${tool.errors > 0 ? "text-err" : ""}`}
-              >
-                {tool.errors}
-              </td>
-              <td className="py-1 pr-3 text-right tabular-nums">{ms(tool.p50Ms)}</td>
-              <td className="py-1 text-right tabular-nums">{ms(tool.p95Ms)}</td>
+          {props.rows.map((row) => (
+            <tr key={props.rowKey(row)} className="border-t border-line">
+              {props.columns.map((column) => (
+                <td
+                  key={column.label}
+                  className={clsx(
+                    "py-1 pr-3",
+                    column.mono && "font-mono",
+                    column.align === "right" && "text-right tabular-nums",
+                    column.danger?.(row) && "text-err",
+                  )}
+                >
+                  {column.cell(row)}
+                </td>
+              ))}
             </tr>
           ))}
         </tbody>
@@ -123,6 +154,22 @@ function ToolTable(props: { tools: AnalyticsSummary["tools"] }) {
     </div>
   );
 }
+
+const TOOL_COLUMNS: Column<AnalyticsSummary["tools"][number]>[] = [
+  { label: "Tool", cell: (t) => t.name, mono: true },
+  { label: "Calls", cell: (t) => t.calls, align: "right" },
+  { label: "Failures", cell: (t) => t.errors, align: "right", danger: (t) => t.errors > 0 },
+  { label: "p50", cell: (t) => ms(t.p50Ms), align: "right" },
+  { label: "p95", cell: (t) => ms(t.p95Ms), align: "right" },
+];
+
+const SESSION_COLUMNS: Column<AnalyticsSummary["recentSessions"][number]>[] = [
+  { label: "Started", cell: (s) => timeOfDay(s.startedAt) },
+  { label: "Length", cell: (s) => duration(s.durationMs), align: "right" },
+  { label: "Turns", cell: (s) => s.turns, align: "right" },
+  { label: "Errors", cell: (s) => s.errors, align: "right", danger: (s) => s.errors > 0 },
+  { label: "Ended", cell: (s) => s.endReason ?? "—" },
+];
 
 function LogTail(props: { logs: AnalyticsSummary["logs"] }) {
   if (props.logs.length === 0) return EMPTY;
@@ -143,40 +190,6 @@ function LogTail(props: { logs: AnalyticsSummary["logs"] }) {
         </li>
       ))}
     </ol>
-  );
-}
-
-function SessionTable(props: { sessions: AnalyticsSummary["recentSessions"] }) {
-  if (props.sessions.length === 0) return EMPTY;
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-[13px]">
-        <thead>
-          <tr className="text-left text-[11px] uppercase tracking-wide text-subtle">
-            <th className="py-1 pr-3 font-normal">Started</th>
-            <th className="py-1 pr-3 text-right font-normal">Length</th>
-            <th className="py-1 pr-3 text-right font-normal">Turns</th>
-            <th className="py-1 pr-3 text-right font-normal">Errors</th>
-            <th className="py-1 font-normal">Ended</th>
-          </tr>
-        </thead>
-        <tbody>
-          {props.sessions.map((session) => (
-            <tr key={session.sessionId} className="border-t border-line">
-              <td className="py-1 pr-3">{timeOfDay(session.startedAt)}</td>
-              <td className="py-1 pr-3 text-right tabular-nums">{duration(session.durationMs)}</td>
-              <td className="py-1 pr-3 text-right tabular-nums">{session.turns}</td>
-              <td
-                className={`py-1 pr-3 text-right tabular-nums ${session.errors > 0 ? "text-err" : ""}`}
-              >
-                {session.errors}
-              </td>
-              <td className="py-1 text-muted">{session.endReason ?? "—"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
   );
 }
 
@@ -221,7 +234,7 @@ export function AnalyticsPane(props: { bearer: string; project: string | null })
           <Stat
             label="Median call"
             value={duration(data.sessions.medianDurationMs)}
-            hint={`${data.sessions.totalTurns} turns total`}
+            hint={`${data.turns.count} turns total`}
           />
           <Stat
             label="Reply latency p50"
@@ -240,7 +253,7 @@ export function AnalyticsPane(props: { bearer: string; project: string | null })
         </Section>
 
         <Section title="Tools">
-          <ToolTable tools={data.tools} />
+          <StatTable columns={TOOL_COLUMNS} rows={data.tools} rowKey={(t) => t.name} />
         </Section>
 
         <Section title="Errors">
@@ -262,7 +275,11 @@ export function AnalyticsPane(props: { bearer: string; project: string | null })
         </Section>
 
         <Section title="Recent sessions">
-          <SessionTable sessions={data.recentSessions} />
+          <StatTable
+            columns={SESSION_COLUMNS}
+            rows={data.recentSessions}
+            rowKey={(s) => s.sessionId}
+          />
         </Section>
 
         <Section title="Logs">

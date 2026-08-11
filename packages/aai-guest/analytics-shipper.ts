@@ -31,7 +31,9 @@
  * how the session ENDED, which is the question the pane exists to answer.
  */
 
+import { errorMessage } from "@alexkroman1/aai";
 import type { AnalyticsEvent, AnalyticsSink } from "@alexkroman1/aai/runtime";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 
 export type AnalyticsShipperOptions = {
   /** Absolute ingest URL, e.g. `https://platform/analytics/ingest`. */
@@ -83,12 +85,14 @@ function toWireEvent(event: AnalyticsEvent): Record<string, unknown> {
     ts: event.ts,
     kind: event.kind,
     turn: event.turn,
-    ...(event.durationMs === undefined ? {} : { durationMs: Math.round(event.durationMs) }),
-    ...(event.level === undefined ? {} : { level: event.level }),
-    ...(event.name === undefined ? {} : { name: event.name }),
-    ...(event.text === undefined ? {} : { text: event.text }),
-    ...(event.ok === undefined ? {} : { ok: event.ok }),
-    ...(event.data === undefined ? {} : { data: event.data }),
+    ...omitUndefined({
+      durationMs: event.durationMs === undefined ? undefined : Math.round(event.durationMs),
+      level: event.level,
+      name: event.name,
+      text: event.text,
+      ok: event.ok,
+      data: event.data,
+    }),
   };
 }
 
@@ -118,7 +122,7 @@ export function createAnalyticsShipper(opts: AnalyticsShipperOptions): Analytics
   async function ship(batch: AnalyticsEvent[]): Promise<void> {
     const body = JSON.stringify({
       slug: opts.slug,
-      ...(opts.agentVersion === undefined ? {} : { agentVersion: opts.agentVersion }),
+      ...omitUndefined({ agentVersion: opts.agentVersion }),
       events: batch.map(toWireEvent),
     });
 
@@ -142,14 +146,13 @@ export function createAnalyticsShipper(opts: AnalyticsShipperOptions): Analytics
     if (disabled || buffer.length === 0) return Promise.resolve();
     // Taken out of the buffer BEFORE the await: rows recorded during the
     // shipment belong to the next batch, and leaving them in would ship them
-    // twice on a slow link.
-    const batch = buffer.slice(0, maxBatch);
-    buffer = buffer.slice(batch.length);
+    // twice on a slow link. `splice` rather than two `slice`s — it returns the
+    // batch and leaves the remainder in place, where the pair copied the tail
+    // a second time on every flush.
+    const batch = buffer.splice(0, maxBatch);
     return ship(batch).catch((err: unknown) => {
       dropped += batch.length;
-      console.warn(
-        `[analytics] dropped ${batch.length} events: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      console.warn(`[analytics] dropped ${batch.length} events: ${errorMessage(err)}`);
     });
   }
 
@@ -175,11 +178,12 @@ export function createAnalyticsShipper(opts: AnalyticsShipperOptions): Analytics
         if (stopped || disabled) return;
         buffer.push(event);
         if (buffer.length > maxBuffer) {
-          // Oldest first: a pane shows the recent past, and a buffer this
-          // deep means shipping is already failing.
-          const overflow = buffer.length - maxBuffer;
-          buffer = buffer.slice(overflow);
-          dropped += overflow;
+          // Oldest first: a pane shows the recent past, and a buffer this deep
+          // means shipping is already failing. In place — the overflow is
+          // almost always one event, and reallocating a 2,000-element array
+          // per event is not what a degraded sandbox should be spending memory
+          // bandwidth on.
+          dropped += buffer.splice(0, buffer.length - maxBuffer).length;
         }
         if (buffer.length >= maxBatch) void flush();
       },

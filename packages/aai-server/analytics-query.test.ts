@@ -1,4 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
+
+import { MAX_DB_RESULT_ROWS } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
 import {
   ANALYTICS_COLUMNS,
@@ -7,7 +9,12 @@ import {
   summarize,
   validateAnalyticsSql,
 } from "./analytics-query.ts";
-import type { LogRow, SummaryRow } from "./analytics-store.ts";
+import {
+  ANALYTICS_QUERY_ROW_CAP,
+  type LogRow,
+  SUMMARY_ROW_CAP,
+  type SummaryRow,
+} from "./analytics-store.ts";
 
 function row(over: Partial<SummaryRow> & Pick<SummaryRow, "kind">): SummaryRow {
   return {
@@ -108,15 +115,18 @@ describe("buildScopedAnalyticsQuery", () => {
     for (const column of ANALYTICS_COLUMNS) expect(built.sql).toContain(column);
   });
 
-  test("caps the row limit even when a caller asks for more", () => {
+  test("caps the row limit, and the +1 probe stays inside the driver's ceiling", () => {
     const built = buildScopedAnalyticsQuery({
       sql: "select 1 from events",
       slugs: ["a"],
       retentionDays: 7,
       limit: 999_999,
     });
-    // limit + 1, so the store can distinguish "at the cap" from "truncated".
-    expect(built.sql).toContain("limit 1001");
+    // `limit + 1` is what lets the store tell "exactly at the cap" from
+    // "truncated" — and it is the row that would THROW if the cap sat at the
+    // driver's own ceiling, in the one case the probe exists to detect.
+    expect(built.sql).toContain(`limit ${ANALYTICS_QUERY_ROW_CAP + 1}`);
+    expect(ANALYTICS_QUERY_ROW_CAP + 1).toBeLessThanOrEqual(MAX_DB_RESULT_ROWS);
   });
 
   test("strips a trailing semicolon so the wrapper stays one statement", () => {
@@ -127,6 +137,14 @@ describe("buildScopedAnalyticsQuery", () => {
     });
     expect(built.sql).not.toContain(";");
   });
+});
+
+test("both row caps stay within the driver's ceiling", () => {
+  // `createPostgresDb` THROWS past MAX_DB_RESULT_ROWS, so a cap above it is
+  // not a bigger read — it is a read that cannot succeed. At 50_000 the
+  // pane's summary failed outright for any project with real traffic.
+  expect(SUMMARY_ROW_CAP).toBeLessThanOrEqual(MAX_DB_RESULT_ROWS);
+  expect(ANALYTICS_QUERY_ROW_CAP).toBeLessThan(MAX_DB_RESULT_ROWS);
 });
 
 describe("percentile", () => {

@@ -10,7 +10,7 @@ import { createTestStore } from "aai-server/test-utils";
 import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
 import { beforeEach, describe, expect, test } from "vitest";
 import {
-  ownedProjectSlugs,
+  analyticsSlugs,
   type ProjectAnalyticsEnv,
   projectAnalytics,
   runProjectAnalyticsQuery,
@@ -61,10 +61,10 @@ async function setup(opts: { analytics?: AnalyticsStore | null } = {}) {
 
 const request = { scope: SCOPE, project: PROJECT, apiKey: KEY };
 
-describe("ownedProjectSlugs", () => {
+describe("analyticsSlugs", () => {
   test("returns null for a project that does not exist", async () => {
     const { env } = await setup();
-    await expect(ownedProjectSlugs(env, request)).resolves.toBeNull();
+    await expect(analyticsSlugs(env, request)).resolves.toBeNull();
   });
 
   test("covers BOTH the production and the preview agent", async () => {
@@ -74,7 +74,7 @@ describe("ownedProjectSlugs", () => {
     await deploy("my-project", KEY);
     await deploy("my-project-preview", KEY);
     await writeWorkspace({ deployedSlug: "my-project", previewSlug: "my-project-preview" });
-    await expect(ownedProjectSlugs(env, request)).resolves.toEqual([
+    await expect(analyticsSlugs(env, request)).resolves.toEqual([
       "my-project",
       "my-project-preview",
     ]);
@@ -87,13 +87,13 @@ describe("ownedProjectSlugs", () => {
     const { env, deploy, writeWorkspace } = await setup();
     await deploy("someone-elses-agent", OTHER_KEY);
     await writeWorkspace({ deployedSlug: "someone-elses-agent" });
-    await expect(ownedProjectSlugs(env, request)).resolves.toEqual([]);
+    await expect(analyticsSlugs(env, request)).resolves.toEqual([]);
   });
 
   test("drops a slug whose agent was deleted rather than failing", async () => {
     const { env, writeWorkspace } = await setup();
     await writeWorkspace({ deployedSlug: "gone" });
-    await expect(ownedProjectSlugs(env, request)).resolves.toEqual([]);
+    await expect(analyticsSlugs(env, request)).resolves.toEqual([]);
   });
 });
 

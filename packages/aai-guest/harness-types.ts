@@ -74,18 +74,35 @@ export type GuestRuntime = {
  * kept deliberately tiny so it can stay stable across SDK versions:
  * `{ env, db?, runCode? }` in, `{ startSession, shutdown }` out.
  */
+/**
+ * The shape the SDK's `AnalyticsSink` presents to the harness: one method
+ * taking one event. Only the fields the harness can vouch for are named —
+ * the SDK owns the rest of the event.
+ */
+export type AnalyticsSinkLike = {
+  record(event: { ts: number; sessionId: string; kind: string; turn: number }): void;
+};
+
 export type CreateGuestRuntime = (opts: {
   env: Record<string, string>;
   db?: DbAdapter;
   runCode?: (code: string) => Promise<string | { error: string }>;
   /**
-   * Where the runtime records session analytics. Typed `unknown` because the
-   * bundle's OWN SDK defines the sink, and that SDK may predate the option
-   * entirely — an older `createRuntime` simply ignores the extra key (the
-   * wrapper spreads opts), which is what makes this additive to a contract
-   * frozen per deploy.
+   * Where the runtime records session analytics.
+   *
+   * MIRRORED rather than imported, like {@link DbAdapter} above and for the
+   * same reason — this file takes no workspace imports. It is deliberately
+   * not `unknown`: old-bundle compatibility is a RUNTIME property (an older
+   * `createRuntime` ignores the extra key, because the wrapper spreads its
+   * opts), so nothing is bought by discarding the type on the harness side —
+   * and the harness CONSTRUCTS this value, which is the line the file's own
+   * doc draws between `db` and the values it merely forwards.
+   *
+   * Untyped, renaming `record` would type-check everywhere and leave every
+   * deployed agent silently recording nothing — indistinguishable, in the
+   * pane, from an agent nobody called.
    */
-  analytics?: unknown;
+  analytics?: AnalyticsSinkLike;
 }) => GuestRuntime;
 
 // ---- JSON-RPC 2.0 message shapes --------------------------------------------

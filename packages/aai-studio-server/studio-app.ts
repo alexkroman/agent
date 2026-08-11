@@ -21,11 +21,11 @@
  * seconds; see sandbox-resolve.ts).
  */
 
+import type { AnalyticsStore } from "aai-server/analytics-store";
 import type { ApiKeyVerifier } from "aai-server/api-key-verify";
 import type { AppDatabases } from "aai-server/app-database";
 import { addHealthRoute, applyPlatformMiddleware, bindFetchEnv } from "aai-server/app-middleware";
 import type { ChatStore } from "aai-server/chat-store";
-import type { AnalyticsBinding } from "aai-server/context";
 import { createMemoryPlatformEvents, type PlatformEvents } from "aai-server/platform-events";
 import { createMutationLock, localSlugLock, type SlugMutationLock } from "aai-server/platform-lock";
 import { createMemorySecretStore, type SecretStore } from "aai-server/secret-store";
@@ -70,8 +70,13 @@ export type StudioAppOpts = {
    * `query_analytics` read through it. Absent makes both report the feature
    * off, which is deliberately distinguishable from "this agent has no
    * traffic" (see studio-analytics.ts).
+   *
+   * The STORE, not the orchestrator's `AnalyticsBinding`: this service only
+   * ever reads. The binding pairs the store with the ingest secret because a
+   * store with no secret cannot be WRITTEN to, and that argument belongs to
+   * the service that ingests.
    */
-  analytics?: AnalyticsBinding;
+  analytics?: AnalyticsStore;
   /** Cross-service slug mutation lock — MUST be the shared Postgres lock in production. */
   slugLock?: SlugMutationLock;
   studioRateLimiters?: StudioRateLimiters;
@@ -130,7 +135,8 @@ export function createStudioApp(opts: StudioAppOpts): {
     ...(opts.auth && { auth: opts.auth }),
     ...(opts.keyVerifier && { keyVerifier: opts.keyVerifier }),
     ...(opts.appDb && { appDb: opts.appDb }),
-    ...(opts.analytics && { analytics: opts.analytics }),
+    // The store alone: this service reads analytics and never ingests.
+    ...(opts.analytics && { analytics: { store: opts.analytics } }),
     // Wrapped exactly as the agent service wraps it: holding the lock must
     // also drop this replica's cached view of the slug, or a mutation
     // read-modify-writes off a pre-lock snapshot (see createMutationLock).

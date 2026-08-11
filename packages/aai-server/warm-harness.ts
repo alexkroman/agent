@@ -23,7 +23,7 @@ import { sleep } from "./_sleep.ts";
 import { GUEST_ROUTES, guestHttpUrl, guestWsUrl } from "./guest-routes.ts";
 import type { GuestRpcSchema } from "./rpc-schemas.ts";
 import { createRpcConnection, type RpcWebSocket } from "./rpc-transport.ts";
-import type { WarmHarness } from "./sandbox-vm.ts";
+import type { GuestAnalyticsTarget, WarmHarness } from "./sandbox-vm.ts";
 
 /** Budget for the harness WebSocket to become dialable after exec. */
 const GUEST_DIAL_TIMEOUT_MS = 30_000;
@@ -271,22 +271,12 @@ export function agentBootEnv(
     bundleSha256: string;
     envPath: string;
     /**
-     * Session-analytics shipping, when the platform has it configured. All
-     * four values or none: the guest treats a partial set as "not
-     * configured" and records nothing, which is the right failure — a guest
-     * that buffers rows it can never ship is worse than one that never
-     * records them.
+     * Session-analytics shipping, when the platform has it configured. All of
+     * it or none: the guest treats a partial set as "not configured" and
+     * records nothing, which is the right failure — a guest that buffers rows
+     * it can never ship is worse than one that never records them.
      */
-    analytics?:
-      | {
-          /** Absolute ingest URL on the platform's PUBLIC origin. */
-          url: string;
-          /** The slug-scoped ingest token (analytics-token.ts). */
-          token: string;
-          slug: string;
-          version: number;
-        }
-      | undefined;
+    analytics?: GuestAnalyticsTarget | undefined;
   },
   /** The server's own environment; injectable for tests. */
   serverEnv: NodeJS.ProcessEnv = process.env,

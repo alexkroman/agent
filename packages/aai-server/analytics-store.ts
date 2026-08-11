@@ -33,6 +33,9 @@
  * — that one runs in the database.
  */
 
+import { MAX_DB_RESULT_ROWS } from "@alexkroman1/aai";
+import { createSemaphore, type Semaphore } from "./_semaphore.ts";
+import type { AdminDb } from "./platform-lock.ts";
 import type { SqlExec } from "./secret-store.ts";
 
 /** One event row as the ingest boundary accepts it (epoch-ms timestamps). */
@@ -100,13 +103,8 @@ export type AnalyticsStore = {
   append(rows: readonly AnalyticsRow[]): Promise<void>;
   /** The projection behind the default view, newest first, capped. */
   summaryRows(opts: { slugs: readonly string[]; sinceMs: number }): Promise<SummaryRow[]>;
-  /** Recent log lines at or above `minLevel`, newest first. */
-  logs(opts: {
-    slugs: readonly string[];
-    sinceMs: number;
-    limit: number;
-    levels?: readonly string[] | undefined;
-  }): Promise<LogRow[]>;
+  /** Recent log lines, newest first. */
+  logs(opts: { slugs: readonly string[]; sinceMs: number; limit: number }): Promise<LogRow[]>;
   /**
    * Run a pre-validated, model-authored statement under the READER ROLE.
    *
@@ -118,14 +116,42 @@ export type AnalyticsStore = {
 };
 
 /**
- * How many rows the default view will read. Chosen so that the worst case is
- * a few megabytes over the wire, not a design limit anyone should plan
- * around; past it the pane reports a sample.
+ * How many rows the default view reads, and the ad-hoc cap — both DERIVED
+ * from the driver's own ceiling rather than chosen.
+ *
+ * `createPostgresDb` THROWS on a result past {@link MAX_DB_RESULT_ROWS}
+ * ("add a LIMIT"), and the platform's admin handle is a `createPostgresDb`.
+ * So a cap above it is not a bigger read — it is a read that cannot succeed:
+ * at 50_000 the pane's summary failed outright for any project with more than
+ * a thousand events in a week, on every 30s refetch, which is precisely the
+ * projects the pane exists for.
+ *
+ * The summary therefore describes THE MOST RECENT {@link SUMMARY_ROW_CAP}
+ * events rather than the whole window, and says so (`sampled`) when it hits
+ * the cap. That is the honest shape for this pane anyway: exact figures over
+ * the full window are what `query_analytics` is for, and the sampled notice
+ * points there.
  */
-export const SUMMARY_ROW_CAP = 50_000;
+export const SUMMARY_ROW_CAP = MAX_DB_RESULT_ROWS;
 
-/** Max rows any ad-hoc query may return, mirroring `ctx.db`'s own cap. */
-export const ANALYTICS_QUERY_ROW_CAP = 1000;
+/**
+ * Max rows an ad-hoc query may return. One under the driver's ceiling,
+ * because `buildScopedAnalyticsQuery` asks for `limit + 1` to tell "exactly
+ * at the cap" from "truncated" — at the ceiling that probe row is what would
+ * throw, in the one case the probe exists to detect.
+ */
+export const ANALYTICS_QUERY_ROW_CAP = MAX_DB_RESULT_ROWS - 1;
+
+/**
+ * Epoch millis from whatever the driver handed back. postgres.js decodes
+ * `timestamptz` as a `Date`, so the common path is a field read — the string
+ * branch is for a driver (or a fake) that returns text, and going through it
+ * unconditionally cost a stringify plus a full parse per row, on a read that
+ * returns up to {@link SUMMARY_ROW_CAP} of them.
+ */
+function toEpochMs(value: unknown): number {
+  return value instanceof Date ? value.getTime() : Date.parse(String(value));
+}
 
 function toNumberOrNull(value: unknown): number | null {
   if (value === null || value === undefined) return null;
@@ -147,6 +173,29 @@ function firstAudioOf(data: unknown): number | null {
  * timeout: abandoning the request would leave the query running.
  */
 const READER_STATEMENT_TIMEOUT_MS = 10_000;
+
+/**
+ * How many ad-hoc queries may hold an admin connection at once.
+ *
+ * Each one reserves a connection from the shared admin pool for up to
+ * {@link READER_STATEMENT_TIMEOUT_MS}, and that pool is `ADMIN_POOL_MAX` (4)
+ * — the same four connections every Vault read, agents-row lookup, workspace
+ * read and analytics INGEST on this replica share. Unbounded, four coding
+ * agents each running a slow `GROUP BY` would stall the control plane for ten
+ * seconds.
+ *
+ * A semaphore rather than a pool of its own, deliberately: the platform's
+ * direct-connection budget is fleet-wide and already sits at its declared
+ * ceiling (`MAX_PLATFORM_DB_CONNECTIONS`, held by `platform-db-budget.test.ts`),
+ * so a third pool would be a claim about the provisioned instance rather than
+ * a local decision. Capping the SHARE of an existing pool needs no new
+ * connections.
+ *
+ * The wait is bounded too — a query that cannot get a slot is refused with a
+ * message the model can act on, which is better than one that hangs.
+ */
+const READER_CONCURRENCY = 2;
+const READER_WAIT_MS = 5000;
 
 /**
  * Run one statement as `aai_analytics_reader` on a RESERVED connection.
@@ -174,10 +223,15 @@ const READER_STATEMENT_TIMEOUT_MS = 10_000;
  * standing between a prompt injection and the control plane.
  */
 async function runAsReader(
-  reserve: () => Promise<ReservedConnection>,
+  db: AdminDb,
+  slots: Semaphore,
   request: ScopedQueryRequest,
 ): Promise<Record<string, unknown>[]> {
-  const conn = await reserve();
+  const slot = await slots.acquire(READER_WAIT_MS);
+  if (!slot) {
+    throw new Error("Too many analytics queries in flight right now — try again in a moment.");
+  }
+  const conn = await db.reserve();
   try {
     await conn.query("begin");
     try {
@@ -201,26 +255,19 @@ async function runAsReader(
     }
   } finally {
     conn.release();
+    slot();
   }
 }
-
-/** The subset of a reserved Postgres connection this store needs. */
-export type ReservedConnection = {
-  query(sql: string, params?: unknown[]): Promise<Record<string, unknown>[]>;
-  release(): void;
-};
 
 /**
  * Postgres-backed store. The table is declared by the migrations, never here.
  *
- * `reserve` is separate from `sql` because ad-hoc queries need connection
- * affinity (see {@link runAsReader}) while ingest and the summary reads are
- * ordinary pooled statements.
+ * `db` is separate from `sql` because ad-hoc queries need connection affinity
+ * (see {@link runAsReader}) while ingest and the summary reads are ordinary
+ * pooled statements. It is the same `AdminDb` the slug lock reserves on.
  */
-export function createPostgresAnalyticsStore(
-  sql: SqlExec,
-  reserve: () => Promise<ReservedConnection>,
-): AnalyticsStore {
+export function createPostgresAnalyticsStore(sql: SqlExec, db: AdminDb): AnalyticsStore {
+  const readerSlots = createSemaphore(READER_CONCURRENCY);
   return {
     async append(rows) {
       if (rows.length === 0) return;
@@ -265,7 +312,7 @@ export function createPostgresAnalyticsStore(
       );
       return rows.map((row) => ({
         sessionId: String(row.session_id),
-        ts: new Date(String(row.ts)).getTime(),
+        ts: toEpochMs(row.ts),
         kind: String(row.kind),
         turn: Number(row.turn ?? 0),
         durationMs: toNumberOrNull(row.duration_ms),
@@ -275,19 +322,18 @@ export function createPostgresAnalyticsStore(
       }));
     },
 
-    async logs({ slugs, sinceMs, limit, levels }) {
+    async logs({ slugs, sinceMs, limit }) {
       if (slugs.length === 0) return [];
       const rows = await sql(
         `select ts, session_id, level, body
            from aai_platform.agent_events
           where slug = any($1) and received_at >= $2 and ts >= $2 and kind = 'log'
-            and ($3::text[] is null or level = any($3))
           order by ts desc
-          limit $4`,
-        [[...slugs], new Date(sinceMs).toISOString(), levels ? [...levels] : null, limit],
+          limit $3`,
+        [[...slugs], new Date(sinceMs).toISOString(), limit],
       );
       return rows.map((row) => ({
-        ts: new Date(String(row.ts)).getTime(),
+        ts: toEpochMs(row.ts),
         sessionId: String(row.session_id),
         level: String(row.level ?? "info"),
         message: String(row.body ?? ""),
@@ -295,7 +341,7 @@ export function createPostgresAnalyticsStore(
     },
 
     async runScoped(request) {
-      const rows = await runAsReader(reserve, request);
+      const rows = await runAsReader(db, readerSlots, request);
       return {
         columns: rows[0] ? Object.keys(rows[0]) : [],
         rows: rows.slice(0, ANALYTICS_QUERY_ROW_CAP),
@@ -343,14 +389,9 @@ export function createMemoryAnalyticsStore(): AnalyticsStore & {
         }));
       return Promise.resolve(rows);
     },
-    logs({ slugs, sinceMs, limit, levels }) {
+    logs({ slugs, sinceMs, limit }) {
       const rows = stored
-        .filter(
-          (row) =>
-            inWindow(row, slugs, sinceMs) &&
-            row.kind === "log" &&
-            (!levels || levels.includes(row.level ?? "info")),
-        )
+        .filter((row) => inWindow(row, slugs, sinceMs) && row.kind === "log")
         .sort((a, b) => b.ts - a.ts)
         .slice(0, limit)
         .map((row) => ({

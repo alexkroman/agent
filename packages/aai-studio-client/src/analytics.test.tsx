@@ -15,7 +15,7 @@ const EMPTY_SUMMARY = {
   windowDays: 7,
   sampled: false,
   slugs: [] as string[],
-  sessions: { count: 0, medianDurationMs: null, totalTurns: 0 },
+  sessions: { count: 0, medianDurationMs: null },
   turns: { count: 0, interrupted: 0, p50FirstAudioMs: null, p95FirstAudioMs: null },
   tools: [],
   errors: [],
@@ -73,7 +73,7 @@ describe("Analytics pane", () => {
         jsonResponse({
           ...EMPTY_SUMMARY,
           slugs: ["demo", "demo-preview"],
-          sessions: { count: 12, medianDurationMs: 95_000, totalTurns: 40 },
+          sessions: { count: 12, medianDurationMs: 95_000 },
           turns: { count: 40, interrupted: 3, p50FirstAudioMs: 420, p95FirstAudioMs: 1800 },
         }),
     });

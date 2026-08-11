@@ -104,9 +104,15 @@ export type AgentSpawnOptions = {
 
 /**
  * What a guest needs to ship analytics: an absolute ingest URL on the
- * platform's public origin, a token authorizing exactly this slug, and the
+ * platform's public origin, a token authorizing exactly one slug, and the
  * deploy generation to stamp on every row. Minted per spawn by
  * `sandbox-resolve.ts` so the platform's ingest SECRET stops there.
+ *
+ * It carries its own `slug` even though the spawn objects it rides on have
+ * one: the token and the slug it authorizes have to be minted together (see
+ * `analyticsTarget`), and splitting them so `agentBootEnv` re-derives the
+ * slug from its own argument would put the pair's two halves in two places
+ * with nothing reconciling them.
  */
 export type GuestAnalyticsTarget = {
   url: string;

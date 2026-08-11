@@ -23,6 +23,7 @@
  * cannot skip them. This module is a well-described HTTP call.
  */
 
+import { errorMessage } from "@alexkroman1/aai";
 import { type ToolSet, tool } from "ai";
 import { z } from "zod";
 
@@ -164,7 +165,7 @@ export function createAnalyticsTools(deps: AnalyticsToolDeps): ToolSet {
             signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
           });
         } catch (err) {
-          return `Analytics request failed: ${err instanceof Error ? err.message : String(err)}`;
+          return `Analytics request failed: ${errorMessage(err)}`;
         }
         if (!res.ok) return `Analytics request failed: HTTP ${res.status}`;
         const body = (await res.json()) as QueryResponse;

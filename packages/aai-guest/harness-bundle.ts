@@ -10,7 +10,12 @@
 
 import { writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import type { AgentDef, CreateGuestRuntime, GuestRuntime } from "./harness-types.ts";
+import type {
+  AgentDef,
+  AnalyticsSinkLike,
+  CreateGuestRuntime,
+  GuestRuntime,
+} from "./harness-types.ts";
 import type { StudioSession } from "./studio-chat.ts";
 import { runCode } from "./trial.ts";
 
@@ -54,12 +59,12 @@ export type HarnessState = {
   /** Live client-session connections (host idle eviction asks). */
   activeSessions: number;
   /**
-   * Where the runtime should record session analytics — the shipper's sink
-   * in agent mode when the spawner configured one, null otherwise. Held on
-   * the state because `ensureRuntime` builds the runtime lazily, long after
-   * boot decided whether shipping was configured.
+   * Where the runtime should record session analytics — the shipper's sink in
+   * agent mode when the spawner configured one, null otherwise. Held on the
+   * state because `ensureRuntime` builds the runtime lazily, long after boot
+   * decided whether shipping was configured.
    */
-  analytics: unknown;
+  analytics: AnalyticsSinkLike | null;
   /**
    * The studio coding-agent session, installed by `studio/session-init` —
    * workspace dir, the caller's key (chat bearer + LLM credential), and

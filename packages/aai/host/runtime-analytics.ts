@@ -67,13 +67,10 @@ export function createRuntimeAnalytics(sink: AnalyticsSink | undefined): Runtime
         sessionId: sessionOpts.id,
         agent: sessionOpts.agent,
       });
-      const release = recorders.claim(sessionOpts.id, recorder);
       return {
         sessionOpts: { ...sessionOpts, client: recorder.wrapSink(sessionOpts.client) },
         recorder,
-        release: () => {
-          release();
-        },
+        release: recorders.claim(sessionOpts.id, recorder),
       };
     },
 

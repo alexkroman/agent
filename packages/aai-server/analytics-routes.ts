@@ -20,6 +20,7 @@
  *   means "your token is wrong", which retrying will never fix.
  */
 
+import { errorMessage } from "@alexkroman1/aai";
 import { zValidator } from "@hono/zod-validator";
 import type { Hono } from "hono";
 import { z } from "zod";
@@ -73,17 +74,19 @@ export type AnalyticsIngestBody = z.infer<typeof IngestBodySchema>;
 export function registerAnalyticsIngest(app: Hono<HonoEnv>): void {
   app.post("/analytics/ingest", zValidator("json", IngestBodySchema), async (c) => {
     const analytics = c.env.analytics;
-    // Absent binding = the feature is off for this deployment. A 404 rather
-    // than a 500: the guest treats it as "stop shipping", which is exactly
-    // right, and a deployment with no platform database is not broken.
-    if (!analytics) return c.json({ error: "Analytics is not enabled" }, 404);
+    // No binding, or a read-only one (the studio service is handed the store
+    // without the ingest secret): the feature is off for THIS app. A 404
+    // rather than a 500 — the guest treats it as "stop shipping", which is
+    // exactly right, and a deployment with no platform database is not broken.
+    const ingestSecret = analytics?.ingestSecret;
+    if (!(analytics && ingestSecret)) return c.json({ error: "Analytics is not enabled" }, 404);
 
     const body = c.req.valid("json");
     const token = parseBearer(c.req.raw.headers.get("authorization"));
     // Verified against the slug the BODY claims, which is what binds the
     // capability to one agent. Reading the slug from the token instead would
     // be the same check written the wrong way round.
-    if (!(token && verifyAnalyticsToken(analytics.ingestSecret, body.slug, token))) {
+    if (!(token && verifyAnalyticsToken(ingestSecret, body.slug, token))) {
       return c.json({ error: "Unauthorized" }, 401);
     }
 
@@ -110,7 +113,7 @@ export function registerAnalyticsIngest(app: Hono<HonoEnv>): void {
       console.warn("analytics ingest failed", {
         slug: body.slug,
         rows: rows.length,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       });
       return c.json({ accepted: 0 }, 202);
     }

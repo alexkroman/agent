@@ -71,14 +71,19 @@ export type HonoEnv = {
 };
 
 /**
- * The analytics feature's two halves: where rows go, and the secret that
- * mints the per-slug ingest tokens guests present (analytics-token.ts). They
- * travel together because a store with no secret cannot be written to and a
- * secret with no store has nothing to authorize.
+ * The analytics feature's two halves: where rows go, and the secret that mints
+ * the per-slug ingest tokens guests present (analytics-token.ts).
+ *
+ * The secret is OPTIONAL because the two halves have different audiences. The
+ * agent service ingests and so needs both; the studio service only ever reads
+ * (the pane and `query_analytics`), and handing a read-only surface the
+ * credential that authorizes writes is coupling that only widens. A binding
+ * without it makes `POST /analytics/ingest` answer "not enabled", which is
+ * already what that route says when the feature is off.
  */
 export type AnalyticsBinding = {
   store: AnalyticsStore;
-  ingestSecret: string;
+  ingestSecret?: string;
 };
 
 /** Typed context for route handlers using the platform {@link HonoEnv}. */

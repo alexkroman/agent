@@ -177,12 +177,17 @@ export function createSessionAnalytics(opts: SessionAnalyticsOptions): SessionAn
   let ended = false;
   /** When the user's turn committed — the anchor for this reply's latency. */
   let turnAt: number | null = null;
-  /** Time to first audio for the reply in flight; null until the frame lands. */
+  /**
+   * Time to first audio for the reply in flight; null until the frame lands.
+   *
+   * Doubles as "was the agent audible this reply", which is what decides a
+   * barge-in — a separate `spoke` flag restated it and disagreed in exactly
+   * one case: audio outside any reply (the greeting) latched it true, so the
+   * next reply cancelled before it made a sound was recorded as a barge-in.
+   */
   let firstAudioMs: number | null = null;
   /** Latest agent transcript snapshot (they are replacements, not appends). */
   let replyText = "";
-  /** Was the agent audible when the reply was cancelled? Decides barge-in. */
-  let spoke = false;
   let endReason: string | undefined;
   let errorCount = 0;
   let toolCount = 0;
@@ -226,12 +231,22 @@ export function createSessionAnalytics(opts: SessionAnalyticsOptions): SessionAn
         ...(interrupted ? { interrupted: true } : {}),
       },
     });
-    if (interrupted && spoke) {
+    // The caller can only have interrupted something they could hear.
+    if (interrupted && firstAudioMs !== null) {
       record({ ...base("barge_in"), durationMs: now() - at });
     }
     replyText = "";
     firstAudioMs = null;
-    spoke = false;
+  }
+
+  /**
+   * Hoisted out of `playAudioChunk` rather than written as a closure there:
+   * that method runs per PCM frame — roughly fifty times a second per live
+   * session — and an inline arrow would mint a function object on each one to
+   * do work that is a no-op after the turn's first frame.
+   */
+  function onAudioFrame(): void {
+    if (firstAudioMs === null && turnAt !== null) firstAudioMs = now() - turnAt;
   }
 
   function observe(event: ClientEvent): void {
@@ -311,10 +326,10 @@ export function createSessionAnalytics(opts: SessionAnalyticsOptions): SessionAn
           client.event(e);
         },
         playAudioChunk(chunk) {
-          safely(() => {
-            spoke = true;
-            if (firstAudioMs === null && turnAt !== null) firstAudioMs = now() - turnAt;
-          });
+          // The overwhelming majority of frames land after the reply's first,
+          // so the measurement is already made — check before paying for the
+          // try/catch at all.
+          if (firstAudioMs === null) safely(onAudioFrame);
           client.playAudioChunk(chunk);
         },
         playAudioDone() {

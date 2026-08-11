@@ -180,6 +180,9 @@ export const ANALYTICS_COLUMNS = [
   "data",
 ] as const;
 
+/** The CTE's select list, joined once rather than per query. */
+const ANALYTICS_COLUMN_LIST = ANALYTICS_COLUMNS.join(", ");
+
 export type ScopedAnalyticsQuery = { sql: string; params: unknown[] };
 
 /**
@@ -202,7 +205,7 @@ export function buildScopedAnalyticsQuery(opts: {
     // `limit + 1` so the store can tell "exactly at the cap" from "truncated"
     // without a second count query.
     sql: `with events as (
-  select ${ANALYTICS_COLUMNS.join(", ")}
+  select ${ANALYTICS_COLUMN_LIST}
     from aai_platform.agent_events
    where slug = any($1) and received_at >= now() - ($2 || ' days')::interval
 )
@@ -238,7 +241,7 @@ export type AnalyticsSummary = {
   windowDays: number;
   /** True when the row cap trimmed the window — the numbers describe a sample. */
   sampled: boolean;
-  sessions: { count: number; medianDurationMs: number | null; totalTurns: number };
+  sessions: { count: number; medianDurationMs: number | null };
   turns: {
     count: number;
     interrupted: number;
@@ -410,11 +413,13 @@ function toolStats(totals: Totals): ToolStat[] {
  * Shared by both stores on purpose — see the module doc on
  * `analytics-store.ts` for why this is not two SQL aggregations.
  */
+/** How many sessions the pane lists. */
+const RECENT_SESSION_LIMIT = 25;
+
 export function summarize(opts: {
   rows: readonly SummaryRow[];
   logs: readonly LogRow[];
   windowDays: number;
-  recentSessionLimit?: number;
 }): AnalyticsSummary {
   const { rows, logs, windowDays } = opts;
   const totals = emptyTotals();
@@ -426,7 +431,6 @@ export function summarize(opts: {
     sessions: {
       count: totals.sessions.size,
       medianDurationMs: percentile(totals.sessionDurations, 50),
-      totalTurns: totals.turnCount,
     },
     turns: {
       count: totals.turnCount,
@@ -441,7 +445,7 @@ export function summarize(opts: {
     daily: [...totals.daily.values()].sort((a, b) => a.day.localeCompare(b.day)),
     recentSessions: [...totals.sessions.values()]
       .sort((a, b) => b.startedAt - a.startedAt)
-      .slice(0, opts.recentSessionLimit ?? 25),
+      .slice(0, RECENT_SESSION_LIMIT),
     logs: [...logs],
   };
 }

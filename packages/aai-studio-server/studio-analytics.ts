@@ -24,6 +24,7 @@
  * row is read.
  */
 
+import { errorMessage } from "@alexkroman1/aai";
 import {
   type AnalyticsSummary,
   buildScopedAnalyticsQuery,
@@ -31,9 +32,9 @@ import {
   validateAnalyticsSql,
 } from "aai-server/analytics-query";
 import type { AnalyticsQueryResult, AnalyticsStore } from "aai-server/analytics-store";
-import { verifySlugOwner } from "aai-server/secrets";
 import type { BundleStore } from "aai-server/store-types";
 import type { WorkspaceStore } from "aai-server/workspace-store";
+import { ownedProjectSlugs } from "./studio-project-slugs.ts";
 import { getWorkspace } from "./studio-workspace.ts";
 
 /** Retention window; must match the pg_cron sweep (`ANALYTICS_RETENTION_DAYS`). */
@@ -63,30 +64,24 @@ export type ProjectAnalytics = AnalyticsSummary & {
 };
 
 /**
- * The project's two slugs, filtered to the ones this caller actually owns.
+ * The project's two slugs, filtered to the ones this caller actually owns —
+ * `null` when the project does not exist, which is the route's 404.
  *
- * An unowned or unclaimed slug is silently dropped rather than raising: the
- * common case is a `deployedSlug` whose agent was deleted (unclaimed), and a
- * 403 there would make an ordinary project look broken. A slug someone ELSE
- * owns is dropped for the reason in the module doc, and dropping it produces
- * exactly the same answer as never having seen it.
+ * The resolution itself is `studio-project-slugs.ts`, shared with the
+ * database and secrets switches: a project is two agents, and that fact has
+ * been rediscovered per feature before. An unowned or unclaimed slug is
+ * dropped there rather than raising — the common case is a `deployedSlug`
+ * whose agent was deleted, and a 403 for that would make an ordinary project
+ * look broken.
  */
-export async function ownedProjectSlugs(
+export async function analyticsSlugs(
   env: ProjectAnalyticsEnv,
   req: ProjectAnalyticsRequest,
 ): Promise<string[] | null> {
   const workspace = await getWorkspace(env.workspaces, req.scope, req.project);
   if (!workspace) return null;
-  const claimed = [workspace.deployedSlug, workspace.previewSlug].filter(
-    (slug): slug is string => typeof slug === "string" && slug.length > 0,
-  );
-  const verdicts = await Promise.all(
-    claimed.map(async (slug) => ({
-      slug,
-      result: await verifySlugOwner(req.apiKey, { slug, store: env.store }),
-    })),
-  );
-  return verdicts.filter((v) => v.result.status === "owned").map((v) => v.slug);
+  const owned = await ownedProjectSlugs(env.store, req.apiKey, workspace);
+  return owned.map((entry) => entry.slug);
 }
 
 /**
@@ -100,14 +95,17 @@ export async function projectAnalytics(
   env: ProjectAnalyticsEnv,
   req: ProjectAnalyticsRequest,
 ): Promise<ProjectAnalytics | null> {
-  const slugs = await ownedProjectSlugs(env, req);
+  const slugs = await analyticsSlugs(env, req);
   if (slugs === null) return null;
 
-  const empty = summarize({ rows: [], logs: [], windowDays: ANALYTICS_WINDOW_DAYS });
+  // Built only on the paths that answer with it: the common path summarizes
+  // real rows, and this one allocates six maps and four percentile passes.
+  const empty = (): AnalyticsSummary =>
+    summarize({ rows: [], logs: [], windowDays: ANALYTICS_WINDOW_DAYS });
   if (!env.analytics) {
-    return { ...empty, slugs, unavailable: "Analytics is not enabled on this deployment." };
+    return { ...empty(), slugs, unavailable: "Analytics is not enabled on this deployment." };
   }
-  if (slugs.length === 0) return { ...empty, slugs };
+  if (slugs.length === 0) return { ...empty(), slugs };
 
   const sinceMs = Date.now() - ANALYTICS_WINDOW_DAYS * 24 * 60 * 60 * 1000;
   const [rows, logs] = await Promise.all([
@@ -134,7 +132,7 @@ export async function runProjectAnalyticsQuery(
   env: ProjectAnalyticsEnv,
   req: ProjectAnalyticsRequest & { sql: string; limit?: number },
 ): Promise<AnalyticsQueryOutcome | null> {
-  const slugs = await ownedProjectSlugs(env, req);
+  const slugs = await analyticsSlugs(env, req);
   if (slugs === null) return null;
   if (!env.analytics) {
     return { ok: false, error: "Analytics is not enabled on this deployment." };
@@ -167,6 +165,6 @@ export async function runProjectAnalyticsQuery(
     // it rather than becoming a 500 it cannot learn from. Nothing in it names
     // anything the caller does not already have: the statement is its own,
     // and the wrapper only adds its slugs.
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errorMessage(err) };
   }
 }

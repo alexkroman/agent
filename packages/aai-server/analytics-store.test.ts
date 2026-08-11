@@ -13,41 +13,51 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import {
-  createMemoryAnalyticsStore,
-  createPostgresAnalyticsStore,
-  type ReservedConnection,
-} from "./analytics-store.ts";
+import { createMemoryAnalyticsStore, createPostgresAnalyticsStore } from "./analytics-store.ts";
+import type { AdminDb } from "./platform-lock.ts";
 import type { SqlExec } from "./secret-store.ts";
 
-/** A reserved connection that records every statement it is handed. */
-function fakeConnection() {
+type Reserved = Awaited<ReturnType<AdminDb["reserve"]>>;
+
+/** An `AdminDb` whose one connection records every statement it is handed. */
+function fakeDb() {
   const statements: { sql: string; params?: unknown[] }[] = [];
   const release = vi.fn();
-  const conn: ReservedConnection = {
-    query: (sql, params) => {
+  const reserved: Reserved = {
+    query: <T = Record<string, unknown>>(sql: string, params?: unknown[]) => {
       statements.push({ sql, ...(params && { params }) });
-      return Promise.resolve(sql.startsWith("select *") ? [{ n: 1 }] : []);
+      return Promise.resolve((sql.startsWith("select *") ? [{ n: 1 }] : []) as T[]);
     },
     release,
   };
-  return { conn, statements, release, sqlText: () => statements.map((s) => s.sql) };
+  const db: AdminDb = { reserve: () => Promise.resolve(reserved) };
+  return { db, statements, release, sqlText: () => statements.map((s) => s.sql) };
 }
 
-function storeWith(conn: ReservedConnection) {
-  const pooled = vi.fn(() => Promise.resolve([])) as unknown as SqlExec;
-  return {
-    pooled,
-    store: createPostgresAnalyticsStore(pooled, () => Promise.resolve(conn)),
+/** A pooled executor that records queries and returns nothing. */
+function fakeExec(): SqlExec & { queries: string[] } {
+  const queries: string[] = [];
+  const exec = (sql: string): Promise<Record<string, unknown>[]> => {
+    queries.push(sql);
+    return Promise.resolve([]);
   };
+  return Object.assign(exec, { queries });
+}
+
+/** An `AdminDb` that fails if reserved — for the pooled read paths. */
+const unusedDb: AdminDb = { reserve: () => Promise.reject(new Error("not used here")) };
+
+function storeWith(db: AdminDb) {
+  const pooled = fakeExec();
+  return { pooled, store: createPostgresAnalyticsStore(pooled, db) };
 }
 
 const REQUEST = { sql: "select * from x", params: ["p"], slugs: ["a", "a-preview"] };
 
 describe("ad-hoc queries run as the reader role", () => {
   test("sets the scope BEFORE switching role, so the reader cannot widen it", async () => {
-    const { conn, sqlText, statements } = fakeConnection();
-    await storeWith(conn).store.runScoped(REQUEST);
+    const { db, sqlText, statements } = fakeDb();
+    await storeWith(db).store.runScoped(REQUEST);
 
     const text = sqlText();
     const scopeAt = text.findIndex((s) => s.includes("aai.analytics_slugs"));
@@ -59,14 +69,14 @@ describe("ad-hoc queries run as the reader role", () => {
   });
 
   test("switches to the reader role — without it the owner bypasses RLS", async () => {
-    const { conn, sqlText } = fakeConnection();
-    await storeWith(conn).store.runScoped(REQUEST);
+    const { db, sqlText } = fakeDb();
+    await storeWith(db).store.runScoped(REQUEST);
     expect(sqlText()).toContain("set local role aai_analytics_reader");
   });
 
   test("marks the transaction read only and bounds the statement", async () => {
-    const { conn, sqlText } = fakeConnection();
-    await storeWith(conn).store.runScoped(REQUEST);
+    const { db, sqlText } = fakeDb();
+    await storeWith(db).store.runScoped(REQUEST);
     expect(sqlText()).toContain("set local transaction read only");
     expect(sqlText().some((s) => s.startsWith("set local statement_timeout"))).toBe(true);
   });
@@ -75,8 +85,8 @@ describe("ad-hoc queries run as the reader role", () => {
     // `set local` is transaction-scoped: over a pool the settings and the
     // statement could land on different connections, and every guarantee
     // above would be applied to a connection the query never used.
-    const { conn, sqlText, release } = fakeConnection();
-    const { store } = storeWith(conn);
+    const { db, sqlText, release } = fakeDb();
+    const { store } = storeWith(db);
     await store.runScoped(REQUEST);
     const text = sqlText();
     expect(text[0]).toBe("begin");
@@ -88,24 +98,26 @@ describe("ad-hoc queries run as the reader role", () => {
   test("rolls back and releases when the query fails", async () => {
     const statements: string[] = [];
     const release = vi.fn();
-    const conn: ReservedConnection = {
-      query: (sql) => {
+    const reserved: Reserved = {
+      query: <T = Record<string, unknown>>(sql: string) => {
         statements.push(sql);
-        return sql === "boom" ? Promise.reject(new Error("syntax error")) : Promise.resolve([]);
+        return sql === "boom"
+          ? Promise.reject(new Error("syntax error"))
+          : Promise.resolve([] as T[]);
       },
       release,
     };
-    const { store } = storeWith(conn);
+    const { store } = storeWith({ reserve: () => Promise.resolve(reserved) });
     await expect(store.runScoped({ ...REQUEST, sql: "boom" })).rejects.toThrow("syntax error");
     expect(statements).toContain("rollback");
     expect(release).toHaveBeenCalledTimes(1);
   });
 
   test("does not use the pooled executor at all", async () => {
-    const { conn } = fakeConnection();
-    const { store, pooled } = storeWith(conn);
+    const { db } = fakeDb();
+    const { store, pooled } = storeWith(db);
     await store.runScoped(REQUEST);
-    expect(pooled).not.toHaveBeenCalled();
+    expect(pooled.queries).toEqual([]);
   });
 });
 
@@ -113,28 +125,20 @@ describe("reads are bounded for partition pruning", () => {
   test("summaryRows and logs both filter on received_at, the partition key", async () => {
     // Filtering only on `ts` is correct and scans every partition in the
     // window — the table is partitioned on `received_at`.
-    const queries: string[] = [];
-    const pooled = ((sql: string) => {
-      queries.push(sql);
-      return Promise.resolve([]);
-    }) as unknown as SqlExec;
-    const store = createPostgresAnalyticsStore(pooled, () =>
-      Promise.reject(new Error("not used here")),
-    );
+    const pooled = fakeExec();
+    const store = createPostgresAnalyticsStore(pooled, unusedDb);
     await store.summaryRows({ slugs: ["a"], sinceMs: 0 });
     await store.logs({ slugs: ["a"], sinceMs: 0, limit: 10 });
-    expect(queries).toHaveLength(2);
-    for (const query of queries) expect(query).toContain("received_at >= $2");
+    expect(pooled.queries).toHaveLength(2);
+    for (const query of pooled.queries) expect(query).toContain("received_at >= $2");
   });
 
   test("an empty slug list reads nothing rather than everything", async () => {
-    const pooled = vi.fn(() => Promise.resolve([])) as unknown as SqlExec;
-    const store = createPostgresAnalyticsStore(pooled, () =>
-      Promise.reject(new Error("not used here")),
-    );
+    const pooled = fakeExec();
+    const store = createPostgresAnalyticsStore(pooled, unusedDb);
     await expect(store.summaryRows({ slugs: [], sinceMs: 0 })).resolves.toEqual([]);
     await expect(store.logs({ slugs: [], sinceMs: 0, limit: 10 })).resolves.toEqual([]);
-    expect(pooled).not.toHaveBeenCalled();
+    expect(pooled.queries).toEqual([]);
   });
 });
 
