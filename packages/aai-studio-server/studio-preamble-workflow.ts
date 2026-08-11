@@ -20,14 +20,23 @@
  * the copy nobody is currently editing.
  *
  * So this block does two things, in the order that matters: it REPLACES the
- * target (what to build, what the files look like), and it names the sections
- * above that no longer apply. Naming them is the sharp tool the module doc warns
- * about, used deliberately here — a workflow project that gets told to write a
- * greeting and a `voice` produces an agent whose page cannot even open.
+ * target (what to build), and it names the sections above that no longer apply.
+ * Naming them is the sharp tool the module doc warns about, used deliberately
+ * here — a workflow project that gets told to write a greeting and a `voice`
+ * produces an agent whose page cannot even open.
  *
  * It is inserted BETWEEN the preamble and the framework reference, so it keeps
  * the "preamble outranks the reference" property while also coming after — and
  * therefore overriding — the voice-shaped preamble text.
+ *
+ * **It carries no code examples and no workflow-body rules, deliberately.** The
+ * reference concatenated straight after it is the scaffold guide, whose
+ * "Durable workflows" and "Workflow apps" sections already hold both shapes
+ * (`agent.ts` and `client.tsx`), the five replay rules, the blob upload/release
+ * ordering and the HTTP API — and a second copy in the same prompt is one that
+ * can disagree with the first, in the one place where the SDK's own guide is the
+ * authority. What is left here is only what the guide cannot say: which of the
+ * preamble's instructions this project overrides, and where to read the rest.
  */
 export const WORKFLOW_PREAMBLE_ADDENDUM = `
 ## THIS PROJECT IS A WORKFLOW APP, NOT A VOICE AGENT
@@ -41,106 +50,36 @@ You are building a **workflow app**: a static web page plus durable
 server-side work. There is no conversation, no microphone, no turn-taking, and
 no spoken reply anywhere in it.
 
-### What agent.ts looks like
+### What overrides what
 
-\`\`\`ts
-import { agent, workflow } from "@alexkroman1/aai";
-import { z } from "zod";
-
-const process = workflow({
-  description: "What this run does",
-  input: z.object({ url: z.string() }),
-  async run({ url }, ctx) {
-    const fetched = await ctx.step("fetch", async () => {
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error(\`fetch failed: \${resp.status}\`);
-      return await resp.text();
-    });
-    return { chars: fetched.length };
-  },
-});
-
-export default agent({
-  name: "My App",
-  page: "static",
-  workflows: { process },
-});
-\`\`\`
-
-Three things are load-bearing:
-
-- **\`page: "static"\`** is what makes this a web app. It refuses the voice
-  surfaces outright, so an app that omits it is serving a WebSocket nothing
-  connects to. Always set it.
+- **\`page: "static"\`** on \`agent()\` is what makes this a web app. It refuses
+  the voice surfaces outright, so an app that omits it is serving a WebSocket
+  nothing connects to. Always set it.
 - **\`workflows\`, not \`tools\`.** A tool runs inside one turn and dies with the
   session; there is no turn here. A workflow is journaled and outlives
   everything. Declare no tools at all unless the app ALSO holds conversations.
 - **No \`greeting\`, no \`voice\`, no \`systemPrompt\`, no stt/llm/tts/s2s
-  providers.** Those configure a conversation this app does not have. (\`ctx.generate\`
-  is still available INSIDE a workflow when the work itself needs a model.)
+  providers.** Those configure a conversation this app does not have.
+  (\`ctx.generate\` is still available INSIDE a workflow when the work itself
+  needs a model.)
+- **\`client.tsx\` mounts with \`page()\`, never \`client()\`** — \`client()\` builds
+  a session, opens a microphone and connects a WebSocket, all of which fail
+  here. Do NOT use useSession, Controls, ChatView, StartScreen, MessageList, or
+  any other voice component. The design guidelines DO apply — this is still a
+  real UI and should look like one.
+- **Storage is required**, since the journal lives in the app's database. Tell
+  the user to switch the Database on in Settings if runs report it missing.
 
-### What client.tsx looks like
+### Where the shapes are written down
 
-The page mounts with \`page()\`, never \`client()\` — \`client()\` builds a session,
-opens a microphone, and connects a WebSocket, all of which fail here. It talks
-to the workflow HTTP API instead:
-
-\`\`\`tsx
-import "@alexkroman1/aai-ui/styles.css";
-import { createWorkflowApi, page, useWorkflowRun } from "@alexkroman1/aai-ui";
-import { useState } from "react";
-
-const api = createWorkflowApi();
-
-function App() {
-  const [runId, setRunId] = useState<string>();
-  const { run } = useWorkflowRun(runId, { api });
-  return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-4 p-6">
-      <button
-        type="button"
-        onClick={() => void api.start("process", { url: "https://example.com" }).then(setRunId)}
-      >
-        Start
-      </button>
-      {run && <p>{run.status} — {run.stepsCompleted} step(s)</p>}
-    </main>
-  );
-}
-
-page({ name: "My App", component: App });
-\`\`\`
-
-Do NOT use useSession, Controls, ChatView, StartScreen, MessageList, or any
-other voice component. The design guidelines above DO apply — this is still a
-real UI and should look like one.
-
-### Writing the workflow body
-
-- **Every unit of work is a \`ctx.step(name, fn)\`.** A completed step is
-  journaled and never re-runs, so a run that dies resumes from the last one. Work
-  outside a step is redone on every resume.
-- **Steps are at-least-once.** A crash between \`fn\` returning and the journal
-  write re-runs it, so an external side effect wants an idempotency key.
-- **The SEQUENCE of steps must be deterministic.** Branch on values that came
-  out of a step or the input — never on \`Date.now()\` or \`Math.random()\` read in
-  the workflow body.
-- **\`await ctx.sleep(ms)\` is durable** — it releases the run instead of holding
-  a process open, and the run resumes when due. Use it for polling loops and
-  waits, never \`setTimeout\`.
-- **Bytes never go in the run input or a step's return value.** Both are
-  journaled and re-read on every replay. A page uploads with \`api.upload(bytes)\`
-  and passes the returned id; the run reads it with \`await ctx.blob(id)\` inside
-  the step that needs it and calls \`ctx.releaseBlob(id)\` when done.
-- **Storage is required.** The journal lives in the app's database, so tell the
-  user to switch the Database on in Settings if runs report it missing.
-
-### The API is also the integration
-
-The same routes the page uses are a public HTTP API, so a user can drive the app
-from a script instead of the page — \`POST /workflows/runs\` with
-\`{ "workflow": "<name>", "input": … }\`, then \`GET /workflows/runs/<id>\`. Mention
-this when it is relevant; it is often the reason someone wants a workflow.
+Everything else about writing one is in the guide below, and it is the
+authority — do not re-derive it from memory. **Durable workflows** has the
+\`agent.ts\` shape, the replay rules (\`ctx.step\`, \`ctx.sleep\`, determinism,
+at-least-once) and how bytes reach a run (\`api.upload\` → \`ctx.blob\` →
+\`ctx.releaseBlob\`, in that order). **Workflow apps** has the \`client.tsx\`
+shape and the HTTP API — the same routes the page uses are public, so a user can
+drive the app from a script instead. Mention that when it is relevant; it is
+often the reason someone wants a workflow.
 
 ### Read the worked example first
 

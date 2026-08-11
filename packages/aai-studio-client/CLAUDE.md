@@ -40,8 +40,8 @@ the user is about to get:
   the page losing its place.
 
 The heading, blurb and placeholder come from one `KIND_COPY` record rather than
-ternaries inside the JSX, so the two modes read as the two products they are and a
-third would be a row rather than another branch in five places.
+ternaries inside the JSX, so the two modes read as the two products they are
+and a third would be a row rather than another branch in five places.
 
 ## Panes and behaviour
 

@@ -15,7 +15,7 @@
  * pipeline behind it.
  */
 
-import type { Db } from "@alexkroman1/aai";
+import type { Db, WorkflowContext } from "@alexkroman1/aai";
 import { createWorkflowContext } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
 import agentDef from "./agent.ts";
@@ -35,10 +35,15 @@ function makeDb(): Db & { sql: string[] } {
   };
 }
 
-/** A fake blob store: `n` chunks of silence, each distinguishable by length. */
-function makeBlobs(sizes: number[]): {
-  blob: (id: string) => Promise<{ contentType: string; bytes: Uint8Array } | undefined>;
-  releaseBlob: (id: string) => Promise<boolean>;
+/**
+ * A fake blob store: `n` chunks of silence, each distinguishable by length.
+ *
+ * Typed by `Pick`ing the real context's two members rather than restating their
+ * signatures — the restated `blob` had already drifted from `WorkflowContext`'s
+ * (which promises bytes that own their `ArrayBuffer`), and a fake that promises
+ * less than the real thing is a fake a spec cannot trust.
+ */
+function makeBlobs(sizes: number[]): Pick<WorkflowContext, "blob" | "releaseBlob"> & {
   released: string[];
 } {
   const released: string[] = [];

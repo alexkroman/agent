@@ -24,6 +24,7 @@ import { type ComponentType, createElement } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { ThemeProvider } from "./context.ts";
+import { resolveContainer } from "./define-client.tsx";
 import type { ClientTheme } from "./types.ts";
 
 /**
@@ -55,13 +56,6 @@ export type PageHandle = {
   dispose(): void;
   [Symbol.dispose](): void;
 };
-
-function resolveContainer(target: string | HTMLElement = "#app"): HTMLElement {
-  if (typeof target !== "string") return target;
-  const el = document.querySelector<HTMLElement>(target);
-  if (!el) throw new Error(`Element not found: ${target}`);
-  return el;
-}
 
 /**
  * Mount a static page for an agent whose work happens in workflows.

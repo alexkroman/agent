@@ -96,6 +96,17 @@ export function scaffoldGuidePath(): string {
   return path.join(path.dirname(pkgPath), "scaffold", "CLAUDE.md");
 }
 
+/**
+ * What each kind inserts between the preamble and the guide. A total record
+ * rather than a ternary, so a third kind is a compile error here instead of
+ * silently getting the voice-shaped prompt — which is the failure mode the
+ * kind exists to prevent, and the one nothing downstream can detect.
+ */
+const KIND_ADDENDUM: Record<StudioProjectKind, string> = {
+  agent: "",
+  workflow: WORKFLOW_PREAMBLE_ADDENDUM,
+};
+
 /** One slot per kind: the guide is static, so both are computed at most once. */
 const cachedPrompts = new Map<StudioProjectKind, string>();
 
@@ -122,8 +133,7 @@ export function composeStudioPrompt(
   guide: string | null,
   kind: StudioProjectKind = "agent",
 ): string {
-  const addendum = kind === "workflow" ? WORKFLOW_PREAMBLE_ADDENDUM : "";
-  return STUDIO_PREAMBLE + addendum + (guide ?? FALLBACK_GUIDE);
+  return STUDIO_PREAMBLE + KIND_ADDENDUM[kind] + (guide ?? FALLBACK_GUIDE);
 }
 
 /**

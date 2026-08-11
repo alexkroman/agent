@@ -403,11 +403,16 @@ describe("createServer telephony route", () => {
 /**
  * `page: "static"` — an app whose front door is a form.
  *
- * The three things it changes are all refusals or declarations, and each one is
- * a way for a static app to look broken if it regressed: a page that opens a
- * microphone against an agent with no pipeline, a carrier route on an app that
- * cannot answer a call, and a browser that cannot tell which kind of page it is
- * about to render.
+ * What it changes are REFUSALS, and each one is a way for a static app to look
+ * broken if it regressed: a page that opens a microphone against an agent with
+ * no pipeline, and a carrier route on an app that cannot answer a call.
+ *
+ * It deliberately changes NOTHING about `client-config`. A static page's
+ * `client.tsx` mounts with `page()`, which fetches no config at all and reads
+ * the workflow listing from `GET /workflows` — the API's own route — so a
+ * `page`/`workflows` pair on this response would be a second declaration
+ * channel that nothing consumes, and resolving the engine to fill it would
+ * build a guest's runtime on a request that never needed one.
  */
 describe("createServer with page: static", () => {
   let server: ReturnType<typeof createServer> | null = null;
@@ -424,41 +429,30 @@ describe("createServer with page: static", () => {
     shutdown: () => Promise.resolve(),
   };
 
-  test("declares itself in client-config so the browser does not open a mic", async () => {
+  test("serves its listing on /workflows and leaves client-config alone", async () => {
     server = createServer({
-      runtime: inertRuntime,
+      runtime: {
+        ...inertRuntime,
+        workflows: {
+          start: () => Promise.resolve("r"),
+          get: () => Promise.resolve(undefined),
+          putBlob: () => Promise.resolve("b"),
+          listing: () => [{ name: "transcribe" }],
+        },
+      },
       logger: silentLogger,
       name: "Desk",
       page: "static",
-      workflows: () => ({
-        start: () => Promise.resolve("r"),
-        get: () => Promise.resolve(undefined),
-        putBlob: () => Promise.resolve("b"),
-        listing: () => [{ name: "transcribe" }],
-      }),
     });
     await server.listen(0);
 
-    const res = await fetch(`http://localhost:${server.port}/client-config`);
-    // The listing rides this response because a static page has to render its
-    // form before anything is started — and only here, since resolving the
-    // engine builds a guest's runtime (see sendClientConfig).
-    expect(await res.json()).toEqual({
-      name: "Desk",
-      page: "static",
-      workflows: [{ name: "transcribe" }],
-    });
-  });
+    const listing = await fetch(`http://localhost:${server.port}/workflows`);
+    expect(await listing.json()).toEqual({ workflows: [{ name: "transcribe" }] });
 
-  test("a voice page reports no `page` and no listing", async () => {
-    // Absent rather than `"voice"`: a response from a server predating the field
-    // has to read identically, or every older agent looks misconfigured.
-    const { runtime } = makeRuntime({ name: "Voice" });
-    server = createServer({ runtime, logger: silentLogger, name: "Voice" });
-    await server.listen(0);
-
-    const res = await fetch(`http://localhost:${server.port}/client-config`);
-    expect(await res.json()).toEqual({ name: "Voice" });
+    // Byte-identical to a voice agent's: one declaration channel, and no engine
+    // resolved on a request that does not need one.
+    const config = await fetch(`http://localhost:${server.port}/client-config`);
+    expect(await config.json()).toEqual({ name: "Desk" });
   });
 
   test("refuses a /websocket session WITH A REASON rather than dropping it", async () => {

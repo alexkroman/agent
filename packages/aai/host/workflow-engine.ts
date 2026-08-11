@@ -34,6 +34,7 @@ import {
   type WorkflowContext,
   type WorkflowDef,
   type WorkflowRunSnapshot,
+  type WorkflowSummary,
 } from "../sdk/workflow.ts";
 import { type HostGenerateFn, toGenerateFn } from "./generate.ts";
 import type { Logger } from "./runtime-config.ts";
@@ -129,7 +130,7 @@ export type WorkflowEngine = WorkflowClient & {
    * On the engine rather than read off the agent def by each caller, so the
    * HTTP API and `createServer` cannot disagree about what this app offers.
    */
-  listing(): { name: string; description?: string }[];
+  listing(): WorkflowSummary[];
   /**
    * Stop: abort in-flight runs' `ctx.signal` and cancel pending wake timers.
    * Journaled state is untouched — an abandoned run resumes once its lease
@@ -275,12 +276,21 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
       generate: toGenerateFn(generate, { signal }),
       runId,
       signal,
-      async blob(blobId: string): Promise<{ contentType: string; bytes: Uint8Array } | undefined> {
+      async blob(
+        blobId: string,
+      ): Promise<{ contentType: string; bytes: Uint8Array<ArrayBuffer> } | undefined> {
         const stored = await store.getBlob(blobId);
         if (!stored) return;
         return {
           contentType: stored.contentType,
-          bytes: Uint8Array.from(Buffer.from(stored.base64, "base64")),
+          // `new Uint8Array(buf)`, not `Uint8Array.from(buf)`: the latter goes
+          // through the iterator path element by element. The copy itself is
+          // NOT redundant — `Buffer.from(str, "base64")` may allocate out of
+          // Node's shared pool, so its `.buffer` is other buffers' too, and
+          // exclusive ownership is what lets this be typed `Uint8Array<
+          // ArrayBuffer>` and handed to a `fetch` body or a `Blob` without the
+          // caller re-copying it (see `WorkflowContext.blob`).
+          bytes: new Uint8Array(Buffer.from(stored.base64, "base64")),
         };
       },
 
@@ -420,7 +430,7 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
       return blobId;
     },
 
-    listing(): { name: string; description?: string }[] {
+    listing(): WorkflowSummary[] {
       return Object.entries(workflows).map(([name, def]) =>
         def.description === undefined ? { name } : { name, description: def.description },
       );

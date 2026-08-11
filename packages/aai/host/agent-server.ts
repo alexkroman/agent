@@ -103,9 +103,6 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     runtime,
     // Read off the agent rather than asked for again — see the module doc.
     name: agent.name,
-    // The runtime is built above, so the engine getter is a plain read: only the
-    // guest harness needs it to be genuinely lazy.
-    workflows: () => runtime.workflows,
     // Forwarded for the workflow API's optional bearer
     // (`AAI_WORKFLOW_API_TOKEN`). It does NOT enable host mode, which is a
     // separate opt-in (`AAI_ALLOW_HOST`) — see `ServerOptions.env`.

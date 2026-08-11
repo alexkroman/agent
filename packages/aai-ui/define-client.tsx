@@ -124,7 +124,13 @@ export type ClientHandle = {
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
-function resolveContainer(target: string | HTMLElement = "#app"): HTMLElement {
+/**
+ * Resolve a mount target. Shared with `page()` — the two mounts differ in what
+ * they render, not in where.
+ *
+ * @internal
+ */
+export function resolveContainer(target: string | HTMLElement = "#app"): HTMLElement {
   if (typeof target !== "string") return target;
   const el = document.querySelector<HTMLElement>(target);
   if (!el) throw new Error(`Element not found: ${target}`);

@@ -89,8 +89,12 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
     scope: string,
     project: string,
     apiKey: string,
-    files: Record<string, string>,
-    kind: StudioProjectKind,
+    /**
+     * The workspace itself rather than its pieces: both call sites read the
+     * same two fields off one row, and the `kind` default below is the sort of
+     * thing that survives in one copy and not the other.
+     */
+    workspace: { files: Record<string, string>; kind?: StudioProjectKind | undefined },
   ) {
     return {
       // The guest pins (scope, project) on its first install and refuses any
@@ -98,13 +102,13 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
       // 409, not one tenant's workspace in another tenant's sandbox.
       scope,
       project,
-      files,
+      files: workspace.files,
       apiKey,
       // Selected by the PROJECT's kind, so a workflow project's coding agent is
       // told to write a static page and a workflows record rather than a voice
       // agent. Absent on the workspace means "agent", which is what every
       // project created before the field existed is.
-      system: studioSystemPrompt(kind),
+      system: studioSystemPrompt(workspace.kind ?? "agent"),
       model: studioLlmModelId(env),
       ...(env.STUDIO_LLM_REGION === "eu" ? { region: "eu" as const } : {}),
       maxSteps: MAX_CHAT_STEPS,
@@ -142,7 +146,7 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
     await warm.conn.sendRequest(
       "studio/session-init",
       {
-        ...sessionParams(scope, project, apiKey, workspace.files, workspace.kind ?? "agent"),
+        ...sessionParams(scope, project, apiKey, workspace),
         chatToken,
       },
       SESSION_INIT_TIMEOUT_MS,
@@ -253,11 +257,7 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
       // bogus project never reaches the registry, and before the spawn because
       // the spawn is exactly the duplicate this prevents.
       const adopt = (): Promise<BrokeredSession | null> =>
-        fleet.adopt(
-          scope,
-          project,
-          sessionParams(scope, project, apiKey, workspace.files, workspace.kind ?? "agent"),
-        );
+        fleet.adopt(scope, project, sessionParams(scope, project, apiKey, workspace));
       const adopted = await adopt();
       if (adopted) return adopted;
 

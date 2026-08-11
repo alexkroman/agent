@@ -33,7 +33,8 @@
  * - `/ws` — the host control channel, authenticated by the per-sandbox
  *   bearer token (AAI_GUEST_TOKEN, delivered via the exec env; the tunnel
  *   URL is public, so an upgrade without the token is rejected). JSON-RPC
- *   both ways: host→guest `studio/session-init`, `workspace/deploy`,
+ *   both ways (dispatch and the param schemas live in `harness-dispatch.ts`):
+ *   host→guest `studio/session-init`, `workspace/deploy`,
  *   `status`, and the `shutdown` notification; guest→host requests exist
  *   only for studio sessions (workspace sync, chat persistence). Bundle
  *   loading and tool trials are NOT RPC anymore: the studio's test_agent
@@ -68,138 +69,54 @@
 
 import { pathToFileURL } from "node:url";
 import { errorMessage } from "@alexkroman1/aai";
-import { formatSchemaIssues } from "@alexkroman1/aai/internal";
 import { createServer, type SessionRuntime } from "@alexkroman1/aai/runtime";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { type WebSocket, WebSocketServer } from "ws";
-import { z } from "zod";
 import { createIdleController, createManageHandler, readAgentBoot } from "./harness-agent-mode.ts";
 import { verifyBearer } from "./harness-auth.ts";
 import {
   emptyHarnessState,
   ensureRuntime,
   type HarnessState,
-  lazyWorkflows,
   loadBundle,
 } from "./harness-bundle.ts";
 import { installCrashGuards } from "./harness-crash-guards.ts";
-import {
-  handleHostResponse,
-  rejectAllPendingHostRequests,
-  sendError,
-  sendResponse,
-  setHostSend,
-} from "./harness-rpc.ts";
-import type {
-  GuestRuntime,
-  JsonRpcMessage,
-  JsonRpcNotification,
-  JsonRpcRequest,
-  JsonRpcResponse,
-} from "./harness-types.ts";
+import { dispatchMessage } from "./harness-dispatch.ts";
+import { rejectAllPendingHostRequests, setHostSend } from "./harness-rpc.ts";
+import type { GuestRuntime, JsonRpcMessage } from "./harness-types.ts";
 import {
   AGENT_IDLE_EXIT_MS,
   AGENT_IDLE_POLL_MS,
   HARNESS_ORPHAN_POLL_MS,
   HARNESS_ORPHAN_TIMEOUT_MS,
 } from "./limits.ts";
-import { withBuildDir } from "./studio-build.ts";
-import { handleStudioRequest, initStudioSession } from "./studio-chat.ts";
-import { deployWorkspaceDir } from "./studio-publish.ts";
-import { handleSessionInitRequest, SessionInitParamsSchema } from "./studio-session-init.ts";
-import { materializeWorkspace } from "./studio-workspace-fs.ts";
+import { handleStudioRequest } from "./studio-chat.ts";
+import { handleSessionInitRequest } from "./studio-session-init.ts";
 import { executeTool } from "./trial.ts";
 
-// ---- Control-channel dispatch -----------------------------------------------
-
-// The wire params arrive as `unknown` — Zod at the receiving site is the
-// contract. Each schema lives next to its handler and validates EVERY field
-// of the params the handler forwards.
-
-const DeployParamsSchema = z.object({
-  files: z.record(z.string(), z.string()),
-  serverUrl: z.string(),
-  apiKey: z.string(),
-  slug: z.string().optional(),
-  /**
-   * Auto-preview deploys only — see `deployWorkspaceDir`. Additive and
-   * optional, so an older host that never sends it still publishes (absent
-   * reads as "production", the safe default).
-   */
-  allowPreviewSlug: z.boolean().optional(),
-});
-
-/** Resolve and settle a single incoming JSON-RPC request. */
-export async function handleRequest(req: JsonRpcRequest, state: HarnessState): Promise<void> {
-  switch (req.method) {
-    // Publish: run `aai deploy` IN THIS SANDBOX against a materialized
-    // snapshot of the workspace (see studio-publish.ts) — the literal CLI,
-    // so studio publishes and laptop deploys are one path, and the CLI's
-    // output rides back for the chat.
-    case "workspace/deploy": {
-      const parsed = DeployParamsSchema.safeParse(req.params);
-      if (!parsed.success) {
-        sendError(
-          req.id,
-          -32_602,
-          `workspace/deploy: invalid params — ${formatSchemaIssues(parsed.error.issues)}`,
-        );
-        break;
-      }
-      const { files, serverUrl, apiKey, slug, allowPreviewSlug } = parsed.data;
-      const result = await withBuildDir(files, materializeWorkspace, (dir) =>
-        deployWorkspaceDir(dir, { serverUrl, apiKey, slug, allowPreviewSlug }),
-      );
-      sendResponse(req.id, result);
-      break;
-    }
-
-    case "studio/session-init": {
-      const parsed = SessionInitParamsSchema.safeParse(req.params);
-      if (!parsed.success) {
-        sendError(
-          req.id,
-          -32_602,
-          `studio/session-init: invalid params — ${formatSchemaIssues(parsed.error.issues)}`,
-        );
-        break;
-      }
-      state.studio = await initStudioSession(parsed.data);
-      sendResponse(req.id, { ok: true });
-      break;
-    }
-
-    default:
-      sendError(req.id, -32_601, `Method not found: ${req.method}`);
-  }
-}
-
-export function handleNotification(notif: JsonRpcNotification): void {
-  // The frame came off the wire — a malformed notification with no string
-  // `method` must be ignored, not allowed to throw and kill the handler.
-  if (typeof notif?.method !== "string") return;
-  if (notif.method === "shutdown") process.exit(0);
-}
-
-export function dispatchMessage(msg: JsonRpcMessage, state: HarnessState): void {
-  // Incoming response to a host RPC request we sent (studio sync/persist)
-  if ("id" in msg && !("method" in msg)) {
-    handleHostResponse(msg as JsonRpcResponse);
-    return;
-  }
-  // Notification (no id)
-  if (!("id" in msg)) {
-    handleNotification(msg as JsonRpcNotification);
-    return;
-  }
-  // Request — handle concurrently so the socket keeps draining.
-  const req = msg as JsonRpcRequest;
-  void handleRequest(req, state).catch((err) => {
-    sendError(req.id, -32_603, errorMessage(err));
-  });
-}
-
 // ---- Servers -------------------------------------------------------------
+
+/**
+ * The bundle's workflow engine, or undefined when the runtime cannot be built.
+ *
+ * Resolving it here — rather than only from `startSession` — is what makes the
+ * workflow HTTP API reachable on a STATIC-page app at all: such an app never
+ * starts a session, so a runtime built only by `startSession` would never exist
+ * and every `/workflows/*` request would 404 on a perfectly good agent.
+ * `ensureRuntime` memoizes, so this is a property read after the first.
+ *
+ * A failure resolves undefined rather than throwing — the API then answers the
+ * same 404 a bundle with no workflows gets, and a request cannot crash the
+ * guest. (`lazyRuntime.startSession` turns the same failure into a close frame,
+ * which is the equivalent for a socket.)
+ */
+function workflowEngine(state: HarnessState): SessionRuntime["workflows"] {
+  try {
+    return ensureRuntime(state).workflows as SessionRuntime["workflows"];
+  } catch (err) {
+    console.error(`workflow API unavailable: ${errorMessage(err)}`);
+  }
+}
 
 /**
  * The session-facing runtime handed to `createServer` — a lazy facade over
@@ -243,6 +160,10 @@ export function lazyRuntime(
         return;
       }
       runtime.startSession(ws, opts);
+    },
+    /** Lazy, and deliberately a GETTER — see {@link workflowEngine}. */
+    get workflows() {
+      return workflowEngine(state);
     },
     shutdown: async () => {
       await state.runtime?.shutdown();
@@ -300,7 +221,6 @@ async function mainAgent(port: number, host: string, token: string): Promise<voi
       // page is answered here and proxied by the platform's client-config.
       page: state.agent?.page,
     }),
-    workflows: lazyWorkflows(state),
     request: createManageHandler({
       token,
       activeSessions: () => state.activeSessions,
@@ -421,11 +341,6 @@ function main(): void {
   // and the studio chat surface claimed via the request hook.
   const server = createServer({
     runtime: lazyRuntime(state),
-    // Same surface as agent mode, for the same reason `/session` is here: a
-    // workspace being tested in the studio should serve what it will serve once
-    // published, and the two `createServer` calls diverging is how one of them
-    // silently stops offering something.
-    workflows: lazyWorkflows(state),
     request: (req, res, url, method) =>
       // Ahead of the chat surface: the install route is gated by the HOST
       // token and MINTS the chat token the chat surface checks, so it cannot

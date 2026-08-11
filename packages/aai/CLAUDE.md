@@ -723,7 +723,7 @@ redeploy into a graveyard of runs one step from finishing.
 mounted by `createServer` so `aai dev`, a self-hosted server and every deployed
 guest serve it identically — the same reasoning `/phone` is mounted there):
 
-```
+```text
 GET  /workflows            → { workflows: [{ name, description? }] }
 POST /workflows/runs       → { runId }        body: { workflow, input? }
 GET  /workflows/runs/:id   → a WorkflowRunSnapshot
@@ -772,8 +772,9 @@ before changing either.
 
 ## A page can be STATIC — `agent({ page })`
 
-`page: "static"` says the agent's front door is an ordinary web page rather than a
-voice session, and it is the declaration that makes a workflow app coherent:
+`page: "static"` says the agent's front door is an ordinary web page rather
+than a voice session, and it is the declaration that makes a workflow app
+coherent:
 
 - **Both voice surfaces are REFUSED** rather than left listening. `/websocket` is
   completed and then declined with a protocol error naming the reason (a bare
@@ -781,12 +782,15 @@ voice session, and it is the declaration that makes a workflow app coherent:
   the frame log explaining it), and `/phone` — otherwise on by default — is not
   routed at all, since a carrier has nothing to read a refusal from. A static app
   declares no STT/LLM/TTS, so a session it accepted is one it could not serve.
-- **It rides `GET /client-config`**, so the browser knows BEFORE it mounts:
-  `page: "static"` plus the declared `workflows` listing. Absent means `"voice"`,
-  so a response from a server predating the field reads as one. The listing is
-  served ONLY for a static page, and that is laziness rather than taste —
-  resolving the engine builds the guest's runtime, and a voice agent's
-  client-config is fetched before every connect.
+- **It changes NOTHING about `GET /client-config`**, and it was tried the other
+  way first. A `page: "static"` + `workflows` listing pair on that response looks
+  like what a browser needs before it mounts, and no browser reads it: a static
+  page's `client.tsx` mounts with `page()`, which fetches no config at all, and
+  `createWorkflowApi` reads the listing from `GET /workflows` — the API's own
+  route, which a programmatic caller uses too. So the pair was a second
+  declaration channel for something already on the wire, and filling it meant
+  resolving the engine (i.e. building a guest's runtime) on a request that never
+  needed one.
 - **It is serializable** (`AgentConfigSchema`), not host-only, because it is a
   declaration about the surface exactly like `name` and `greeting`. The
   `workflows` record beside it is host-only for the opposite reason: those are

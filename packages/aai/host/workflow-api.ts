@@ -42,6 +42,7 @@
 import { timingSafeEqual } from "node:crypto";
 import type http from "node:http";
 import { errorMessage } from "../sdk/utils.ts";
+import type { WorkflowSummary } from "../sdk/workflow.ts";
 import type { Logger } from "./runtime-config.ts";
 
 /** Path prefix every route here lives under. */
@@ -91,7 +92,7 @@ export type WorkflowApiEngine = {
     | undefined
   >;
   putBlob(contentType: string, base64: string): Promise<string>;
-  listing(): { name: string; description?: string }[];
+  listing(): WorkflowSummary[];
 };
 
 export type WorkflowApiOptions = {

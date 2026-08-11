@@ -155,6 +155,11 @@ export type WorkflowContext = {
    * Call it INSIDE a step only when the bytes are what the step works on; the
    * returned value must not itself be returned from the step (see above).
    *
+   * `bytes` owns its `ArrayBuffer` exclusively, so it can be handed straight to
+   * a `fetch` body, a `Blob` part or a `FormData` entry — no `new
+   * Uint8Array(...)` re-copy, which is what a pooled Node `Buffer` would
+   * otherwise force on every caller.
+   *
    * @example
    * ```ts
    * import type { WorkflowContext } from "@alexkroman1/aai";
@@ -168,7 +173,9 @@ export type WorkflowContext = {
    * });
    * ```
    */
-  blob(blobId: string): Promise<{ contentType: string; bytes: Uint8Array } | undefined>;
+  blob(
+    blobId: string,
+  ): Promise<{ contentType: string; bytes: Uint8Array<ArrayBuffer> } | undefined>;
   /**
    * Delete an uploaded blob now that the run is done with it.
    *
@@ -229,6 +236,24 @@ export type WorkflowRunSnapshot = {
   wakeAt?: number;
   /** How many steps this run has journaled — enough to render coarse progress. */
   stepsCompleted: number;
+};
+
+/**
+ * One declared workflow, as `GET /workflows` lists it.
+ *
+ * Here rather than in `host/` because both ends need it and only one of them is
+ * a Node process: the API serves it, and a static page's client renders a form
+ * from it. It was an inline `{ name: string; description?: string }` at three
+ * host sites plus a fourth copy in `aai-ui`, which is four definitions of a
+ * wire shape.
+ *
+ * @public
+ */
+export type WorkflowSummary = {
+  /** Key the workflow is declared under in `agent({ workflows })`. */
+  name: string;
+  /** The workflow's own `description`, when it declared one. */
+  description?: string;
 };
 
 /**

@@ -207,8 +207,11 @@ voice agents without the CLI:
   describe, with the chat history as evidence for the other reading.
 
   **The workflow prompt is an ADDENDUM, not a second preamble**
-  (`WORKFLOW_PREAMBLE_ADDENDUM` in `studio-preamble.ts`, inserted between the
-  preamble and the scaffold guide). Most of the preamble is about being a good
+  (`WORKFLOW_PREAMBLE_ADDENDUM` in `studio-preamble-workflow.ts`, inserted
+  between the preamble and the scaffold guide by `KIND_ADDENDUM` — a total
+  `Record<StudioProjectKind, string>`, so a third kind is a compile error rather
+  than a project silently getting the voice-shaped prompt). Most of the preamble
+  is about being a good
   coding agent here — the tool loop, `test_agent`, debugging, secrets, design,
   refusals — and none of it changes because the artifact is a web app; forking it
   would mean two copies of ~400 lines that must not drift, and the copy that
@@ -220,6 +223,15 @@ voice agents without the CLI:
   outranks the reference" ordering while still overriding the voice-shaped
   preamble text. `studio-prompt.test.ts` pins both directions — the substitutions
   AND that an agent project gets none of them.
+
+  **It carries no code examples and no workflow-body rules.** The guide
+  concatenated after it already holds both file shapes, the replay rules, the
+  blob ordering and the HTTP API ("Durable workflows" and "Workflow apps" in
+  `scaffold/CLAUDE.md`), and it had all of that a second time — ~110 lines that
+  could disagree with the SDK's own guide inside one prompt, in the one place the
+  guide is the authority. What is left is only what the guide cannot say: which
+  of the preamble's instructions this project overrides, and where to read the
+  rest.
 
 - **No MCP.** The studio's coding agent has no MCP integration (the docs
   MCP server it once connected to was removed). The system prompt embeds a

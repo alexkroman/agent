@@ -118,12 +118,9 @@ const transcribe = workflow({
         const form = new FormData();
         // `audio/pcm` is raw S16LE, which is what the page uploads — so the
         // rate and channel count must ride the `config` part; a WAV would carry
-        // them in its own header instead.
-        // Copied into an ArrayBuffer-backed view: `ctx.blob` hands back a
-        // `Uint8Array` over whatever buffer the journal read produced, and a
-        // `Blob` part will not accept a SharedArrayBuffer-backed one.
-        const bytes = new Uint8Array(audio.bytes);
-        form.append("audio", new Blob([bytes], { type: "audio/pcm" }), "chunk.pcm");
+        // them in its own header instead. `ctx.blob` hands back bytes that own
+        // their buffer, so they go straight into the part with no re-copy.
+        form.append("audio", new Blob([audio.bytes], { type: "audio/pcm" }), "chunk.pcm");
         form.append(
           "config",
           new Blob([JSON.stringify({ sample_rate: sampleRate, channels: 1 })], {

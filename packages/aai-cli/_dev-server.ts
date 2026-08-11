@@ -325,7 +325,6 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       // workflow API instead — dev must match, or `aai dev` is the one place
       // the page opens a microphone it will never have in production.
       ...(agentDef.page === undefined ? {} : { page: agentDef.page }),
-      workflows: () => runtime.workflows,
       ...clientDirOpt,
     });
   }

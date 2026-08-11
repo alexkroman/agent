@@ -37,24 +37,6 @@ export const ClientConfigResponseSchema = z.object({
    * client falls back to the same-origin `websocket` path.
    */
   sessionUrl: z.string().optional(),
-  /**
-   * What the page is — `"voice"` (a session opens on load) or `"static"` (an
-   * ordinary page over the workflow API, no socket). Absent means `"voice"`,
-   * so a response from a server predating the field reads as one.
-   *
-   * The browser needs this BEFORE it mounts: a static page must not open a
-   * microphone, and a voice page must not render a form where its transcript
-   * goes. It rides this endpoint rather than a second one because the default
-   * client already blocks on this fetch to render its shell.
-   */
-  page: z.enum(["voice", "static"]).optional(),
-  /**
-   * Workflows this app declares, for a page (or a programmatic caller) that
-   * lists them without knowing the agent's source. Absent when none are
-   * declared — never an empty array, so "no workflows" and "an older server"
-   * read the same way and neither renders an empty picker.
-   */
-  workflows: z.array(z.object({ name: z.string(), description: z.string().optional() })).optional(),
 });
 
 /** Parsed body of `GET /client-config`. */
@@ -71,17 +53,6 @@ export function buildClientConfig(src: {
   name?: string | undefined;
   greeting?: string | undefined;
   sessionUrl?: string | undefined;
-  page?: "voice" | "static" | undefined;
-  workflows?: readonly { name: string; description?: string | undefined }[] | undefined;
 }): ClientConfigResponse {
-  return omitUndefined({
-    name: src.name,
-    greeting: src.greeting,
-    sessionUrl: src.sessionUrl,
-    page: src.page,
-    // Normalized to absent, so a voice agent with no workflows and a server
-    // predating the field produce the identical response — the alternative is
-    // a client that renders an empty workflow picker for every agent.
-    workflows: src.workflows && src.workflows.length > 0 ? [...src.workflows] : undefined,
-  });
+  return omitUndefined({ name: src.name, greeting: src.greeting, sessionUrl: src.sessionUrl });
 }

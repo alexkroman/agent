@@ -13,33 +13,28 @@
  * which is what makes {@link useWorkflowRun} a poll rather than a subscription.
  */
 
+import type { WorkflowRunSnapshot, WorkflowSummary } from "@alexkroman1/aai";
 import { useEffect, useState } from "react";
 import { pageBaseUrl } from "./_utils.ts";
+import { buildAgentUrl } from "./client-config.ts";
 
 /**
- * A run's observable state, mirroring the SDK's `WorkflowRunSnapshot`.
+ * A run's observable state, and one declared workflow.
  *
- * Declared here rather than imported from `@alexkroman1/aai` on purpose: this
- * package must stay importable in a browser bundle without pulling the host
- * SDK's graph (zod, node builtins) in behind one type.
+ * Aliased from the SDK rather than restated. The earlier copies were justified as
+ * keeping the host SDK's graph out of the browser bundle, which is wrong twice
+ * over: `import type` is erased entirely, and this package already *value*-imports
+ * from `@alexkroman1/aai` in five modules. What they really cost was a second
+ * definition of seven fields and a five-member status union with nothing
+ * asserting they agree — so a status added to the SDK would never reach the
+ * browser type.
+ *
+ * `WorkflowRun` keeps the shorter name because it is what a page's own code
+ * writes; nothing in a browser needs the word "snapshot" to know a poll returns
+ * one.
  */
-export type WorkflowRun = {
-  runId: string;
-  /** Key the workflow was declared under in `agent({ workflows })`. */
-  workflow: string;
-  status: "pending" | "running" | "sleeping" | "completed" | "failed";
-  /** The run function's return value. Present only once `completed`. */
-  output?: unknown;
-  /** Failure message. Present only once `failed`. */
-  error?: string;
-  /** When a `sleeping` run becomes due, epoch ms. */
-  wakeAt?: number;
-  /** Journaled steps so far — enough for coarse progress. */
-  stepsCompleted: number;
-};
-
-/** One declared workflow, as `GET /workflows` lists it. */
-export type WorkflowSummary = { name: string; description?: string };
+export type WorkflowRun = WorkflowRunSnapshot;
+export type { WorkflowSummary } from "@alexkroman1/aai";
 
 /** A run status nothing will change again. */
 export function isTerminal(run: WorkflowRun | undefined): boolean {
@@ -86,11 +81,6 @@ export type WorkflowApi = {
   ): Promise<{ blobId: string; bytes: number }>;
 };
 
-/** Strip one trailing slash so `${base}/workflows` never doubles it. */
-function normalizeBase(url: string): string {
-  return url.endsWith("/") ? url.slice(0, -1) : url;
-}
-
 /**
  * Read the server's error sentence out of a failed response.
  *
@@ -116,7 +106,10 @@ async function failure(res: Response): Promise<Error> {
  * @public
  */
 export function createWorkflowApi(opts: WorkflowApiOptions = {}): WorkflowApi {
-  const base = `${normalizeBase(opts.baseUrl ?? pageBaseUrl())}/workflows`;
+  // `buildAgentUrl` is this package's own resolver for "a path under the agent's
+  // base URL" — the same one the session's endpoints go through. A second
+  // trailing-slash rule over the same `pageBaseUrl()` value is how the two drift.
+  const base = buildAgentUrl(opts.baseUrl ?? pageBaseUrl(), "workflows").toString();
   const auth: Record<string, string> = opts.token ? { Authorization: `Bearer ${opts.token}` } : {};
 
   return {
@@ -154,7 +147,10 @@ export function createWorkflowApi(opts: WorkflowApiOptions = {}): WorkflowApi {
       const res = await fetch(`${base}/blobs`, {
         method: "POST",
         headers: { ...auth, "Content-Type": contentType },
-        body: new Blob([bytes], { type: contentType }),
+        // Sent as-is: every accepted type is already a valid `BodyInit` and the
+        // header is set above, so wrapping it in a `Blob` bought nothing and
+        // copied the whole payload — ~2 MB per chunk in the transcription page.
+        body: bytes,
       });
       if (!res.ok) throw await failure(res);
       return (await res.json()) as { blobId: string; bytes: number };

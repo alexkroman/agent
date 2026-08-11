@@ -30,11 +30,7 @@ import {
   startOrRefuseHostSession,
 } from "./server-upgrade.ts";
 import { handleTelephonyUpgrade } from "./telephony/telephony-server.ts";
-import {
-  createWorkflowApi,
-  WORKFLOW_API_TOKEN_ENV,
-  type WorkflowApiEngine,
-} from "./workflow-api.ts";
+import { createWorkflowApi, WORKFLOW_API_TOKEN_ENV } from "./workflow-api.ts";
 import { asSessionWebSocket } from "./ws-handler.ts";
 
 /**
@@ -44,7 +40,7 @@ import { asSessionWebSocket } from "./ws-handler.ts";
  * Narrowed to these two methods (rather than demanding a full
  * `AgentRuntime`) so an embedder can supply a lazily-built runtime facade.
  */
-export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown">;
+export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown" | "workflows">;
 
 // Re-exported from its own module so `@alexkroman1/aai/runtime` and existing
 // importers are unchanged by the split.
@@ -140,22 +136,12 @@ export type ServerOptions = {
   /**
    * What this server's page IS — see `AgentDef.page`. Defaults to `"voice"`.
    *
-   * `"static"` REFUSES both voice surfaces (`/websocket` and `/phone`) instead
-   * of leaving them listening, and reports itself in `GET /client-config` so the
-   * browser knows not to open a microphone. It is passed here rather than read
-   * off an agent because {@link SessionRuntime} is deliberately narrowed to two
-   * methods — `createServer` cannot see the agent (see `createAgentServer`).
+   * `"static"` REFUSES both voice surfaces instead of leaving them listening: a
+   * static app declares no STT/LLM/TTS, so a session it accepted is one it could
+   * not serve. It is passed here rather than read off an agent because
+   * {@link SessionRuntime} is deliberately narrowed (see `createAgentServer`).
    */
   page?: "voice" | "static";
-  /**
-   * Resolve the agent's workflow engine, mounting the workflow HTTP API
-   * (`/workflows/*` — see `host/workflow-api.ts`) over it.
-   *
-   * A function because the guest harness's runtime is lazy: for a static app the
-   * first thing that needs a runtime is a request to this API rather than a
-   * session. Omitted, or resolving undefined, leaves the routes answering 404.
-   */
-  workflows?: () => WorkflowApiEngine | undefined;
 };
 
 /** Handle returned by {@link createServer}. */
@@ -226,7 +212,12 @@ export function createServer(options: ServerOptions): AgentServer {
   const defaultHtml = `<!DOCTYPE html><html><body><h1>${escapeHtml(name)}</h1><p>Agent server running.</p></body></html>`;
 
   const workflowApi = createWorkflowApi({
-    engine: options.workflows ?? (() => undefined),
+    // Read off the RUNTIME, per request. `SessionRuntime` is already the lazy
+    // seam — the guest harness supplies a facade that builds its runtime on
+    // first use — so a second `workflows` option would have been a parallel
+    // channel for the same thing, and two channels can disagree about which
+    // engine this server is serving.
+    engine: () => runtime.workflows,
     ...omitUndefined({ token: env?.[WORKFLOW_API_TOKEN_ENV] }),
     logger,
   });
@@ -234,24 +225,7 @@ export function createServer(options: ServerOptions): AgentServer {
   // Pre-connection client config: how the default client should talk to
   // this agent (see sdk/client-config.ts).
   function sendClientConfig(res: http.ServerResponse): void {
-    // The workflow LISTING is served only for a static page, and the reason is
-    // laziness rather than taste: resolving the engine builds the guest's
-    // runtime, and a voice agent's client-config is fetched before every
-    // connect — so listing there would make the pre-connection lookup eagerly
-    // build a runtime that the first session was going to build anyway. A
-    // static page has no session to defer to, and its page needs the list to
-    // render at all.
-    sendJson(
-      res,
-      200,
-      buildClientConfig({
-        name,
-        greeting: options.greeting,
-        ...(isStatic
-          ? { page: "static" as const, workflows: options.workflows?.()?.listing() }
-          : {}),
-      }),
-    );
+    sendJson(res, 200, buildClientConfig({ name, greeting: options.greeting }));
   }
 
   async function handleRequest(
@@ -326,11 +300,12 @@ export function createServer(options: ServerOptions): AgentServer {
     if (options.upgrade?.(req, socket, head)) return;
 
     const url = req.url?.split("?")[0] ?? "";
-    // A static page declares no STT/LLM/TTS, so every voice surface is refused
-    // rather than left listening — including telephony, which is otherwise on by
-    // default. Refusing on `/websocket` SAYS so (below); a carrier gets nothing
-    // to say it to, so the route simply is not there.
-    const telephony = (options.telephony ?? true) && !isStatic;
+    // A static page declares no STT/LLM/TTS, so telephony defaults OFF for one —
+    // but as a default, not a veto: `?? ` leaves an explicit `telephony: true`
+    // honoured rather than silently discarded by another option. Refusing on
+    // `/websocket` SAYS so (below); a carrier has nothing to read a refusal
+    // from, so for it the route simply is not there.
+    const telephony = options.telephony ?? !isStatic;
     if (handleTelephonyUpgrade({ req, socket, head, wss, runtime, logger, enabled: telephony })) {
       return;
     }

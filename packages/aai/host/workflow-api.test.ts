@@ -15,13 +15,22 @@ import { silentLogger } from "./_test-utils.ts";
 import { createServer, type SessionRuntime } from "./server.ts";
 import { MAX_WORKFLOW_BLOB_BYTES, type WorkflowApiEngine } from "./workflow-api.ts";
 
-/** A runtime that is never used: no test here opens a session. */
-const unusedRuntime: SessionRuntime = {
-  startSession: () => {
-    throw new Error("no session should be started by a workflow API test");
-  },
-  shutdown: () => Promise.resolve(),
-};
+/**
+ * A runtime that starts no session and carries the engine under test.
+ *
+ * The engine is read off the RUNTIME rather than passed to `createServer`
+ * separately — that is the one channel, so these tests exercise the same lookup
+ * a guest's lazy facade goes through.
+ */
+function runtimeWith(engine?: WorkflowApiEngine | undefined): SessionRuntime {
+  return {
+    startSession: () => {
+      throw new Error("no session should be started by a workflow API test");
+    },
+    ...(engine ? { workflows: engine } : {}),
+    shutdown: () => Promise.resolve(),
+  };
+}
 
 type FakeEngine = WorkflowApiEngine & {
   started: { workflow: string; input: unknown }[];
@@ -92,9 +101,8 @@ describe("workflow HTTP API", () => {
     opts: { engine?: WorkflowApiEngine | undefined; env?: Record<string, string> } = {},
   ): Promise<string> {
     server = createServer({
-      runtime: unusedRuntime,
+      runtime: runtimeWith(opts.engine),
       logger: silentLogger,
-      workflows: () => opts.engine,
       ...(opts.env ? { env: opts.env } : {}),
     });
     await server.listen(0);
@@ -282,9 +290,8 @@ describe("workflow HTTP API", () => {
     engine.get = () => Promise.reject(new Error("journal unreachable"));
     const errors = vi.fn();
     server = createServer({
-      runtime: unusedRuntime,
+      runtime: runtimeWith(engine),
       logger: { ...silentLogger, error: errors },
-      workflows: () => engine,
     });
     await server.listen(0);
     const res = await req(`http://localhost:${server.port}/workflows/runs/run-1`);
