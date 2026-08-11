@@ -69,16 +69,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { errorMessage } from "@alexkroman1/aai";
 import { createKeyedLock, withLock } from "@alexkroman1/aai/utils";
-import { envWithoutGuestToken, runCapped } from "./studio-spawn.ts";
-
-/** Wall-clock limit for the one install this module runs. */
-const INSTALL_TIMEOUT_MS = 110_000;
-
-/** Output tail kept from npm (errors print last). */
-const INSTALL_OUTPUT_CAP = 4000;
-
-/** npm package name: optional scope, then the name. No version part. */
-const DEPENDENCY_NAME_RE = /^(@[a-z0-9~][\w.~-]*\/)?[a-z0-9~][\w.~-]*$/;
+import { NPM_TIMEOUT_MS, PACKAGE_NAME_RE, runNpm } from "./studio-spawn.ts";
 
 /**
  * The version specs worth copying into the shared manifest: semver ranges and
@@ -126,6 +117,9 @@ function dependenciesOf(manifest: unknown): Record<string, string> {
   return declared && typeof declared === "object" ? (declared as Record<string, string>) : {};
 }
 
+/** One package the install could not satisfy, with npm's own explanation. */
+type InstallFailure = { name: string; output: string };
+
 export type DependencyPlan = {
   /** `name → spec` for the packages to add to the shared manifest. */
   install: Record<string, string>;
@@ -152,7 +146,7 @@ export function planWorkspaceDependencies(
   const skipped: string[] = [];
   for (const [name, spec] of Object.entries(dependenciesOf(manifest))) {
     if (isSatisfied(name, String(spec))) continue;
-    if (!DEPENDENCY_NAME_RE.test(name)) {
+    if (!PACKAGE_NAME_RE.test(name)) {
       skipped.push(`${name}: not a valid npm package name`);
     } else if (typeof spec !== "string" || !VERSION_SPEC_RE.test(spec)) {
       skipped.push(`${name}: "${String(spec)}" is not a version or range this can install`);
@@ -205,38 +199,26 @@ export async function ensureWorkspaceDependencies(
   if (manifest === null) return null;
 
   const { sharedRoot, toolchainModules } = opts;
-  const satisfiedBy = (staged: Record<string, string>) => (name: string, spec: string) =>
-    (toolchainModules !== null && existsSync(path.join(toolchainModules, name))) ||
-    existsSync(path.join(dir, "node_modules", name)) ||
-    (staged[name] === spec && existsSync(path.join(sharedRoot, "node_modules", name)));
-
-  const stagedPath = sharedManifestPath(sharedRoot);
-  const plan = planWorkspaceDependencies(
-    manifest,
-    satisfiedBy(dependenciesOf(await readJson(stagedPath))),
-  );
-  if (Object.keys(plan.install).length === 0) {
-    return plan.skipped.length === 0 ? null : describeMissing([], plan, "");
-  }
-
-  const failures = await withLock(installLock, sharedRoot, async () => {
-    // Re-planned inside the lock, against a FRESHLY read staged manifest: an
-    // overlapping build may have installed exactly these while this one
-    // waited, and re-running npm for a tree that already satisfies us is the
-    // whole cost this module exists to avoid.
-    const fresh = planWorkspaceDependencies(
+  // Planned INSIDE the lock, against a freshly read staged manifest: an
+  // overlapping build may have installed exactly these while this one waited,
+  // and re-running npm for a tree that already satisfies us is the whole cost
+  // this module exists to avoid. Nothing outside the lock needs the plan —
+  // `installShared` already no-ops on an empty one — so there is one plan, and
+  // it is the current one.
+  const { failures, skipped } = await withLock(installLock, sharedRoot, async () => {
+    const staged = dependenciesOf(await readJson(sharedManifestPath(sharedRoot)));
+    const plan = planWorkspaceDependencies(
       manifest,
-      satisfiedBy(dependenciesOf(await readJson(stagedPath))),
-    ).install;
-    return Object.keys(fresh).length === 0 ? [] : await installShared(sharedRoot, fresh);
+      (name, spec) =>
+        (toolchainModules !== null && existsSync(path.join(toolchainModules, name))) ||
+        existsSync(path.join(dir, "node_modules", name)) ||
+        (staged[name] === spec && existsSync(path.join(sharedRoot, "node_modules", name))),
+    );
+    return { failures: await installShared(sharedRoot, plan.install), skipped: plan.skipped };
   });
 
-  if (failures.length === 0 && plan.skipped.length === 0) return null;
-  return describeMissing(
-    failures.map((f) => f.name),
-    plan,
-    failures.map((f) => `${f.name}: ${f.output || "(npm produced no output)"}`).join("\n"),
-  );
+  if (failures.length === 0 && skipped.length === 0) return null;
+  return describeMissing(failures, skipped);
 }
 
 /**
@@ -258,16 +240,13 @@ export async function ensureWorkspaceDependencies(
 async function installShared(
   sharedRoot: string,
   specs: Record<string, string>,
-): Promise<{ name: string; output: string }[]> {
-  const failures: { name: string; output: string }[] = [];
+): Promise<InstallFailure[]> {
+  const failures: InstallFailure[] = [];
   for (const [name, spec] of Object.entries(specs)) {
     const { ok, output } = await installOne(sharedRoot, name, spec);
     if (ok) continue;
     failures.push({ name, output });
-    await stage(sharedRoot, (deps) => {
-      delete deps[name];
-      return deps;
-    });
+    await stage(sharedRoot, name, null);
   }
   return failures;
 }
@@ -289,31 +268,21 @@ async function installOne(
   spec: string,
 ): Promise<{ ok: boolean; output: string }> {
   try {
-    await stage(sharedRoot, (deps) => ({ ...deps, [name]: spec }));
+    await stage(sharedRoot, name, spec);
   } catch (err) {
     return { ok: false, output: `could not stage the install manifest: ${errorMessage(err)}` };
   }
   try {
-    const result = await runCapped(
-      "npm",
-      // `--omit=peer` for the same reason as `--omit=dev`: a peer dependency
-      // says "the host provides this", and here the host is the baked
-      // toolchain. Installed, a package's `react` peer would hoist into the
-      // shared root and SHADOW the toolchain's for every workspace under it,
-      // silently changing the React the client bundle is built against. Left
-      // out, a peer the toolchain really lacks fails the build by name, which
-      // the agent can answer with `add_dependency`.
-      ["install", "--omit=dev", "--omit=peer", "--no-audit", "--no-fund", "--loglevel=error"],
-      {
-        cwd: sharedRoot,
-        env: envWithoutGuestToken(),
-        timeoutMs: INSTALL_TIMEOUT_MS,
-        cap: INSTALL_OUTPUT_CAP,
-        combineStreams: true,
-      },
-    );
+    // `--omit=peer` for the same reason as `--omit=dev`: a peer dependency
+    // says "the host provides this", and here the host is the baked toolchain.
+    // Installed, a package's `react` peer would hoist into the shared root and
+    // SHADOW the toolchain's for every workspace under it, silently changing
+    // the React the client bundle is built against. Left out, a peer the
+    // toolchain really lacks fails the build by name, which the agent can
+    // answer with `add_dependency`.
+    const result = await runNpm(sharedRoot, ["install", "--omit=dev", "--omit=peer"]);
     return result.signal
-      ? { ok: false, output: `killed by ${result.signal} after ${INSTALL_TIMEOUT_MS}ms` }
+      ? { ok: false, output: `killed by ${result.signal} after ${NPM_TIMEOUT_MS}ms` }
       : { ok: result.exitCode === 0, output: result.stdout.trim() };
   } catch (err) {
     return { ok: false, output: errorMessage(err) };
@@ -329,13 +298,12 @@ async function installOne(
  * packages would uninstall an earlier one's, out from under a build still
  * importing it.
  */
-async function stage(
-  sharedRoot: string,
-  update: (deps: Record<string, string>) => Record<string, string>,
-): Promise<void> {
+async function stage(sharedRoot: string, name: string, spec: string | null): Promise<void> {
   const manifestPath = sharedManifestPath(sharedRoot);
   await mkdir(sharedRoot, { recursive: true });
-  const dependencies = update(dependenciesOf(await readJson(manifestPath)));
+  const dependencies = dependenciesOf(await readJson(manifestPath));
+  if (spec === null) delete dependencies[name];
+  else dependencies[name] = spec;
   await writeFile(
     manifestPath,
     `${JSON.stringify(
@@ -348,17 +316,17 @@ async function stage(
 }
 
 /** The chat-facing diagnostic: what is unusable, why, and npm's own tail. */
-function describeMissing(missing: string[], plan: DependencyPlan, output: string): string {
+function describeMissing(failures: InstallFailure[], skipped: string[]): string {
   const lines: string[] = [];
-  if (missing.length > 0) {
+  if (failures.length > 0) {
     lines.push(
-      `Could not install ${missing.join(", ")} — declared in package.json, but not ` +
-        "resolvable, so any import of them will fail to build. Check the name and " +
-        "version, or remove the entry.",
-      output || "(npm produced no output)",
+      `Could not install ${failures.map((f) => f.name).join(", ")} — declared in ` +
+        "package.json, but not resolvable, so any import of them will fail to build. " +
+        "Check the name and version, or remove the entry.",
+      ...failures.map((f) => `${f.name}: ${f.output || "(npm produced no output)"}`),
     );
   }
-  for (const note of plan.skipped) lines.push(`Skipped ${note}`);
+  for (const note of skipped) lines.push(`Skipped ${note}`);
   return lines.join("\n");
 }
 

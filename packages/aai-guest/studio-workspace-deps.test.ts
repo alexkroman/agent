@@ -7,7 +7,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { runCapped } from "./studio-spawn.ts";
+import { npmResult } from "./_test-utils.ts";
+import { runNpm } from "./studio-spawn.ts";
 import {
   ensureWorkspaceDependencies,
   planWorkspaceDependencies,
@@ -16,18 +17,10 @@ import {
 
 vi.mock("./studio-spawn.ts", async (importOriginal) => {
   const mod = await importOriginal<typeof import("./studio-spawn.ts")>();
-  return { ...mod, runCapped: vi.fn() };
+  return { ...mod, runNpm: vi.fn() };
 });
 
-const runCappedMock = vi.mocked(runCapped);
-
-const npmResult = (over: Partial<Awaited<ReturnType<typeof runCapped>>> = {}) => ({
-  exitCode: 0,
-  signal: null,
-  stdout: "",
-  stderr: "",
-  ...over,
-});
+const runNpmMock = vi.mocked(runNpm);
 
 let dir: string;
 let sharedRoot: string;
@@ -37,7 +30,7 @@ beforeEach(async () => {
   // `restoreMocks` covers `vi.spyOn`, not a `vi.fn()` installed by a module
   // mock factory — without this, a previous test's implementation and call
   // count leak into the ones asserting npm was never spawned.
-  runCappedMock.mockReset();
+  runNpmMock.mockReset();
   sharedRoot = await mkdtemp(path.join(tmpdir(), "aai-workspaces-"));
   dir = path.join(sharedRoot, "session-1");
   await mkdir(dir, { recursive: true });
@@ -65,7 +58,7 @@ const installedLocally = (name: string): Promise<string | undefined> =>
  * alone deliberately does not count — see the version-bump test below.
  */
 async function installedShared(name: string, spec = "*"): Promise<void> {
-  await mkdir(path.join(sharedRoot, "node_modules", name), { recursive: true });
+  await landFiles(name);
   const staged = await sharedDependencies().catch(() => ({}) as Record<string, string>);
   await writeFile(
     path.join(sharedRoot, "package.json"),
@@ -88,6 +81,13 @@ async function sharedDependencies(): Promise<Record<string, string>> {
   const raw = await readFile(path.join(sharedRoot, "package.json"), "utf-8");
   return (JSON.parse(raw) as { dependencies?: Record<string, string> }).dependencies ?? {};
 }
+
+/** What a successful npm run does: land `name`'s files, then report `over`. */
+const npmLands = (name: string, over: Partial<Awaited<ReturnType<typeof runNpm>>> = {}) =>
+  runNpmMock.mockImplementation(async () => {
+    await landFiles(name);
+    return npmResult(over);
+  });
 
 describe("planWorkspaceDependencies", () => {
   test("plans the declared packages nothing can resolve, with their specs", () => {
@@ -156,12 +156,12 @@ describe("ensureWorkspaceDependencies", () => {
     await installedInToolchain("react");
 
     await expect(ensureWorkspaceDependencies(dir, opts())).resolves.toBeNull();
-    expect(runCappedMock).not.toHaveBeenCalled();
+    expect(runNpmMock).not.toHaveBeenCalled();
   });
 
   test("does not spawn npm when there is no manifest to reify", async () => {
     await expect(ensureWorkspaceDependencies(dir, opts())).resolves.toBeNull();
-    expect(runCappedMock).not.toHaveBeenCalled();
+    expect(runNpmMock).not.toHaveBeenCalled();
   });
 
   test("stages only the missing packages, and installs in the shared root", async () => {
@@ -170,17 +170,12 @@ describe("ensureWorkspaceDependencies", () => {
     // against 358ms / 28 KB) and let one bad entry block every other package.
     await manifest({ dependencies: { ms: "^2.1.3", react: "19.2.8" } });
     await installedInToolchain("react");
-    runCappedMock.mockImplementation(async () => {
-      await landFiles("ms");
-      return npmResult({ stdout: "added 1 package\n" });
-    });
+    npmLands("ms", { stdout: "added 1 package\n" });
 
     await expect(ensureWorkspaceDependencies(dir, opts())).resolves.toBeNull();
-    expect(runCappedMock).toHaveBeenCalledWith(
-      "npm",
-      ["install", "--omit=dev", "--omit=peer", "--no-audit", "--no-fund", "--loglevel=error"],
-      expect.objectContaining({ cwd: sharedRoot, combineStreams: true }),
-    );
+    // In the SHARED root, not the workspace — and the standing flag tail is
+    // runNpm's contract, asserted once in studio-spawn.test.ts.
+    expect(runNpmMock).toHaveBeenCalledWith(sharedRoot, ["install", "--omit=dev", "--omit=peer"]);
     await expect(sharedDependencies()).resolves.toEqual({ ms: "^2.1.3" });
     // The workspace's own manifest is the user's file and is never rewritten.
     const workspacePkg = JSON.parse(await readFile(path.join(dir, "package.json"), "utf-8"));
@@ -194,10 +189,7 @@ describe("ensureWorkspaceDependencies", () => {
       "utf-8",
     );
     await manifest({ dependencies: { ms: "^2.1.3" } });
-    runCappedMock.mockImplementation(async () => {
-      await landFiles("ms");
-      return npmResult();
-    });
+    npmLands("ms");
 
     await ensureWorkspaceDependencies(dir, opts());
 
@@ -216,23 +208,23 @@ describe("ensureWorkspaceDependencies", () => {
     await installedInToolchain("@alexkroman1/aai");
 
     await expect(ensureWorkspaceDependencies(dir, opts())).resolves.toBeNull();
-    expect(runCappedMock).not.toHaveBeenCalled();
+    expect(runNpmMock).not.toHaveBeenCalled();
   });
 
   test("an unresolvable toolchain dir means nothing is provided — everything installs", async () => {
     await manifest({ dependencies: { ms: "^2.1.3", react: "19.2.8" } });
-    runCappedMock.mockResolvedValue(npmResult());
+    runNpmMock.mockResolvedValue(npmResult());
 
     await expect(
       ensureWorkspaceDependencies(dir, { sharedRoot, toolchainModules: null }),
     ).resolves.toBeNull();
     // Including `react`, which a resolvable toolchain would have provided.
-    expect(runCappedMock).toHaveBeenCalledTimes(2);
+    expect(runNpmMock).toHaveBeenCalledTimes(2);
   });
 
   test("reports what is still missing, with npm's output, when the install fails", async () => {
     await manifest({ dependencies: { nope: "^1.0.0" } });
-    runCappedMock.mockResolvedValue(npmResult({ exitCode: 1, stdout: "E404 not found\n" }));
+    runNpmMock.mockResolvedValue(npmResult({ exitCode: 1, stdout: "E404 not found\n" }));
 
     const warning = await ensureWorkspaceDependencies(dir, opts());
 
@@ -242,14 +234,14 @@ describe("ensureWorkspaceDependencies", () => {
 
   test("a killed install names the signal rather than reporting silence", async () => {
     await manifest({ dependencies: { nope: "^1.0.0" } });
-    runCappedMock.mockResolvedValue(npmResult({ signal: "SIGTERM", stdout: "" }));
+    runNpmMock.mockResolvedValue(npmResult({ signal: "SIGTERM", stdout: "" }));
 
     await expect(ensureWorkspaceDependencies(dir, opts())).resolves.toContain("SIGTERM");
   });
 
   test("a spawn that throws is a warning, never a rejection", async () => {
     await manifest({ dependencies: { nope: "^1.0.0" } });
-    runCappedMock.mockRejectedValue(new Error("npm: not found"));
+    runNpmMock.mockRejectedValue(new Error("npm: not found"));
 
     await expect(ensureWorkspaceDependencies(dir, opts())).resolves.toContain("npm: not found");
   });
@@ -260,10 +252,7 @@ describe("ensureWorkspaceDependencies", () => {
     // So exit 0 — npm satisfied the range it was given — is the predicate, and
     // a failed postinstall is reported rather than assumed harmless.
     await manifest({ dependencies: { ms: "^2.1.3" } });
-    runCappedMock.mockImplementation(async () => {
-      await landFiles("ms");
-      return npmResult({ exitCode: 1, stdout: "postinstall failed\n" });
-    });
+    npmLands("ms", { exitCode: 1, stdout: "postinstall failed\n" });
 
     const warning = await ensureWorkspaceDependencies(dir, opts());
 
@@ -279,10 +268,10 @@ describe("ensureWorkspaceDependencies", () => {
     // still carried 3.6.0, silently.
     await installedShared("date-fns", "3.6.0");
     await manifest({ dependencies: { "date-fns": "4.1.0" } });
-    runCappedMock.mockResolvedValue(npmResult());
+    runNpmMock.mockResolvedValue(npmResult());
 
     await expect(ensureWorkspaceDependencies(dir, opts())).resolves.toBeNull();
-    expect(runCappedMock).toHaveBeenCalledOnce();
+    expect(runNpmMock).toHaveBeenCalledOnce();
     await expect(sharedDependencies()).resolves.toEqual({ "date-fns": "4.1.0" });
   });
 
@@ -291,7 +280,7 @@ describe("ensureWorkspaceDependencies", () => {
     await manifest({ dependencies: { "date-fns": "4.1.0" } });
 
     await expect(ensureWorkspaceDependencies(dir, opts())).resolves.toBeNull();
-    expect(runCappedMock).not.toHaveBeenCalled();
+    expect(runNpmMock).not.toHaveBeenCalled();
   });
 
   test("a toolchain package is never reinstalled for a spec change", async () => {
@@ -301,17 +290,17 @@ describe("ensureWorkspaceDependencies", () => {
     await manifest({ dependencies: { zod: "3.0.0" } });
 
     await expect(ensureWorkspaceDependencies(dir, opts())).resolves.toBeNull();
-    expect(runCappedMock).not.toHaveBeenCalled();
+    expect(runNpmMock).not.toHaveBeenCalled();
   });
 
   test("a bad entry costs only itself — one npm run per missing package", async () => {
     // Staged together, npm resolves the manifest as a WHOLE and the bogus name
     // takes the good one down with it (verified against the real registry).
     await manifest({ dependencies: { ms: "^2.1.3", nope: "^9.9.9" } });
-    runCappedMock.mockImplementation(async (_cmd, _args, o) => {
+    runNpmMock.mockImplementation(async (cwd) => {
       const staged = await sharedDependencies();
       if ("ms" in staged) await landFiles("ms");
-      expect(o.cwd).toBe(sharedRoot);
+      expect(cwd).toBe(sharedRoot);
       return "nope" in staged
         ? npmResult({ exitCode: 1, stdout: "E404 not found\n" })
         : npmResult();
@@ -319,7 +308,7 @@ describe("ensureWorkspaceDependencies", () => {
 
     const warning = await ensureWorkspaceDependencies(dir, opts());
 
-    expect(runCappedMock).toHaveBeenCalledTimes(2);
+    expect(runNpmMock).toHaveBeenCalledTimes(2);
     expect(warning).toContain("Could not install nope");
     expect(warning).not.toContain("Could not install ms");
     // And the failure does not linger: left staged, it would be in the file
@@ -334,10 +323,7 @@ describe("ensureWorkspaceDependencies", () => {
     // would be raced — and the second install is pure cost once the first has
     // already satisfied the tree.
     await manifest({ dependencies: { ms: "^2.1.3" } });
-    runCappedMock.mockImplementation(async () => {
-      await landFiles("ms");
-      return npmResult();
-    });
+    npmLands("ms");
 
     const results = await Promise.all([
       ensureWorkspaceDependencies(dir, opts()),
@@ -345,7 +331,7 @@ describe("ensureWorkspaceDependencies", () => {
     ]);
 
     expect(results).toEqual([null, null]);
-    expect(runCappedMock).toHaveBeenCalledOnce();
+    expect(runNpmMock).toHaveBeenCalledOnce();
   });
 
   test("a refused spec is reported even when nothing needed installing", async () => {
@@ -354,7 +340,7 @@ describe("ensureWorkspaceDependencies", () => {
     const warning = await ensureWorkspaceDependencies(dir, opts());
 
     expect(warning).toContain("Skipped a:");
-    expect(runCappedMock).not.toHaveBeenCalled();
+    expect(runNpmMock).not.toHaveBeenCalled();
   });
 });
 

@@ -11,13 +11,14 @@ import { safeFetch } from "@alexkroman1/aai/runtime";
 import type { ToolSet } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { npmResult } from "./_test-utils.ts";
 import { MAX_STUDIO_FILE_BYTES } from "./limits.ts";
 import { createDesignInspirationTool, createProjectTools } from "./studio-project-tools.ts";
-import { runCapped } from "./studio-spawn.ts";
+import { runNpm } from "./studio-spawn.ts";
 
 vi.mock("./studio-spawn.ts", async (importOriginal) => {
   const mod = await importOriginal<typeof import("./studio-spawn.ts")>();
-  return { ...mod, runCapped: vi.fn() };
+  return { ...mod, runNpm: vi.fn() };
 });
 
 vi.mock("@alexkroman1/aai/runtime", async (importOriginal) => {
@@ -25,7 +26,7 @@ vi.mock("@alexkroman1/aai/runtime", async (importOriginal) => {
   return { ...mod, safeFetch: vi.fn() };
 });
 
-const runCappedMock = vi.mocked(runCapped);
+const runNpmMock = vi.mocked(runNpm);
 const safeFetchMock = vi.mocked(safeFetch);
 
 let dir: string;
@@ -46,37 +47,27 @@ function execute(name: string, args: unknown): Promise<unknown> {
   return Promise.resolve(t.execute(args as never, {} as never));
 }
 
-const npmResult = (over: Partial<Awaited<ReturnType<typeof runCapped>>> = {}) => ({
-  exitCode: 0,
-  signal: null,
-  stdout: "",
-  stderr: "",
-  ...over,
-});
-
 describe("add_dependency / remove_dependency (spawn mocked)", () => {
   test("a clean install reports success with npm's output", async () => {
-    runCappedMock.mockResolvedValue(npmResult({ stdout: "added 1 package\n" }));
+    runNpmMock.mockResolvedValue(npmResult({ stdout: "added 1 package\n" }));
 
     const result = await execute("add_dependency", { package: "date-fns" });
 
     expect(result).toBe("npm install date-fns succeeded\nadded 1 package");
-    expect(runCappedMock).toHaveBeenCalledWith(
-      "npm",
-      ["install", "date-fns", "--no-audit", "--no-fund", "--loglevel=error"],
-      expect.objectContaining({ cwd: dir, combineStreams: true }),
-    );
+    // The standing flag tail and option bag are runNpm's contract, asserted
+    // once in studio-spawn.test.ts; what this tool owns is the verb and spec.
+    expect(runNpmMock).toHaveBeenCalledWith(dir, ["install", "date-fns"]);
   });
 
   test("a clean install with no output stays a bare success line", async () => {
-    runCappedMock.mockResolvedValue(npmResult());
+    runNpmMock.mockResolvedValue(npmResult());
     expect(await execute("remove_dependency", { package: "date-fns" })).toBe(
       "npm uninstall date-fns succeeded",
     );
   });
 
   test("a nonzero exit reports the code and npm's tail", async () => {
-    runCappedMock.mockResolvedValue(npmResult({ exitCode: 1, stdout: "E404 not found\n" }));
+    runNpmMock.mockResolvedValue(npmResult({ exitCode: 1, stdout: "E404 not found\n" }));
 
     const result = await execute("add_dependency", { package: "no-such-pkg" });
 
@@ -84,12 +75,12 @@ describe("add_dependency / remove_dependency (spawn mocked)", () => {
   });
 
   test("a nonzero exit with no output says so", async () => {
-    runCappedMock.mockResolvedValue(npmResult({ exitCode: 7 }));
+    runNpmMock.mockResolvedValue(npmResult({ exitCode: 7 }));
     expect(await execute("add_dependency", { package: "quiet-pkg" })).toContain("(no output)");
   });
 
   test("a timeout kill is annotated with the signal", async () => {
-    runCappedMock.mockResolvedValue(
+    runNpmMock.mockResolvedValue(
       npmResult({ exitCode: null, signal: "SIGTERM", stdout: "partial" }),
     );
 
@@ -100,7 +91,7 @@ describe("add_dependency / remove_dependency (spawn mocked)", () => {
   });
 
   test("a spawn failure surfaces as an error string, not a throw", async () => {
-    runCappedMock.mockRejectedValue(new Error("spawn npm ENOENT"));
+    runNpmMock.mockRejectedValue(new Error("spawn npm ENOENT"));
     expect(await execute("add_dependency", { package: "x" })).toBe("Error: spawn npm ENOENT");
   });
 });
@@ -109,7 +100,7 @@ describe("update_dependencies (spawn mocked)", () => {
   // These assert on WHETHER and WITH WHAT npm was spawned, so the shared mock
   // must not carry calls in from a sibling test.
   beforeEach(() => {
-    runCappedMock.mockReset();
+    runNpmMock.mockReset();
   });
 
   const manifest = (deps: Record<string, string>, dev: Record<string, string> = {}) =>
@@ -120,7 +111,7 @@ describe("update_dependencies (spawn mocked)", () => {
 
   /** Stand in for npm: succeed, and rewrite the manifest the way it would. */
   const installsTo = (after: Record<string, string>, stdout = "changed 2 packages\n") =>
-    runCappedMock.mockImplementation(async () => {
+    runNpmMock.mockImplementation(async () => {
       await manifest(after);
       return npmResult({ stdout });
     });
@@ -132,14 +123,11 @@ describe("update_dependencies (spawn mocked)", () => {
     const result = String(await execute("update_dependencies", {}));
 
     // One invocation for the whole set, each name pinned to @latest by us.
-    expect(runCappedMock).toHaveBeenCalledTimes(1);
-    expect(runCappedMock.mock.calls[0]?.[1]).toEqual([
+    expect(runNpmMock).toHaveBeenCalledTimes(1);
+    expect(runNpmMock.mock.calls[0]?.[1]).toEqual([
       "install",
       "fake-timers@latest",
       "date-fns@latest",
-      "--no-audit",
-      "--no-fund",
-      "--loglevel=error",
     ]);
     expect(result).toContain("date-fns: ^2.0.0 → ^4.1.0");
     expect(result).toContain("fake-timers: ^1.0.0 (unchanged — already latest)");
@@ -155,13 +143,7 @@ describe("update_dependencies (spawn mocked)", () => {
 
     const result = String(await execute("update_dependencies", { packages: ["date-fns"] }));
 
-    expect(runCappedMock.mock.calls[0]?.[1]).toEqual([
-      "install",
-      "date-fns@latest",
-      "--no-audit",
-      "--no-fund",
-      "--loglevel=error",
-    ]);
+    expect(runNpmMock.mock.calls[0]?.[1]).toEqual(["install", "date-fns@latest"]);
     expect(result).toContain("date-fns: ^2.0.0 → ^4.1.0");
     expect(result).not.toContain("nanoid");
   });
@@ -174,7 +156,7 @@ describe("update_dependencies (spawn mocked)", () => {
       await execute("update_dependencies", { packages: ["date-fns", "never-installed"] }),
     );
 
-    expect(runCappedMock.mock.calls[0]?.[1]).not.toContain("never-installed@latest");
+    expect(runNpmMock.mock.calls[0]?.[1]).not.toContain("never-installed@latest");
     expect(result).toContain("use add_dependency to install: never-installed");
   });
 
@@ -187,14 +169,14 @@ describe("update_dependencies (spawn mocked)", () => {
 
     // Bumping these shadows the baked toolchain with an untested build, and
     // the next ensureProjectShape reconcile would revert the pins anyway.
-    expect(runCappedMock).not.toHaveBeenCalled();
+    expect(runNpmMock).not.toHaveBeenCalled();
     expect(result).toContain("No dependencies to update.");
     expect(result).toContain("Left pinned");
   });
 
   test("a failed install reports npm's tail and claims no updates", async () => {
     await manifest({ "date-fns": "^2.0.0" });
-    runCappedMock.mockResolvedValue(npmResult({ exitCode: 1, stdout: "ERESOLVE conflict\n" }));
+    runNpmMock.mockResolvedValue(npmResult({ exitCode: 1, stdout: "ERESOLVE conflict\n" }));
 
     const result = String(await execute("update_dependencies", {}));
 
@@ -208,7 +190,7 @@ describe("update_dependencies (spawn mocked)", () => {
     // script fails AFTER — claiming nothing changed there sends the agent
     // looking for a version it already has.
     await manifest({ "date-fns": "^2.0.0" });
-    runCappedMock.mockImplementation(async () => {
+    runNpmMock.mockImplementation(async () => {
       await manifest({ "date-fns": "^4.1.0" });
       return npmResult({ exitCode: 1, stdout: "postinstall failed\n" });
     });
@@ -225,45 +207,44 @@ describe("update_dependencies (spawn mocked)", () => {
 
     const result = String(await execute("update_dependencies", {}));
 
-    expect(runCappedMock).not.toHaveBeenCalled();
+    expect(runNpmMock).not.toHaveBeenCalled();
     expect(result).toContain("not valid JSON");
   });
 
   test("a spawn failure surfaces as an error string", async () => {
     await manifest({ "date-fns": "^2.0.0" });
-    runCappedMock.mockRejectedValue(new Error("spawn npm ENOENT"));
+    runNpmMock.mockRejectedValue(new Error("spawn npm ENOENT"));
     expect(await execute("update_dependencies", {})).toBe("Error: spawn npm ENOENT");
   });
 });
 
 describe("npm_info (spawn mocked)", () => {
   test("returns the registry fields npm printed", async () => {
-    runCappedMock.mockResolvedValue(npmResult({ stdout: "name = 'zod'\nversion = '4.0.0'\n" }));
+    runNpmMock.mockResolvedValue(npmResult({ stdout: "name = 'zod'\nversion = '4.0.0'\n" }));
 
     const result = await execute("npm_info", { package: "zod" });
 
     expect(result).toBe("name = 'zod'\nversion = '4.0.0'");
-    expect(runCappedMock).toHaveBeenCalledWith(
-      "npm",
+    expect(runNpmMock).toHaveBeenCalledWith(
+      dir,
       expect.arrayContaining(["view", "zod", "name", "version", "peerDependencies"]),
-      expect.objectContaining({ cwd: dir }),
     );
   });
 
   test("an empty answer names the package rather than returning nothing", async () => {
-    runCappedMock.mockResolvedValue(npmResult());
+    runNpmMock.mockResolvedValue(npmResult());
     expect(await execute("npm_info", { package: "ghost" })).toBe("No registry metadata for ghost");
   });
 
   test("a nonzero exit reports the code and output", async () => {
-    runCappedMock.mockResolvedValue(npmResult({ exitCode: 1, stdout: "E404\n" }));
+    runNpmMock.mockResolvedValue(npmResult({ exitCode: 1, stdout: "E404\n" }));
     expect(await execute("npm_info", { package: "ghost" })).toBe(
       "npm view ghost failed [exit code 1]\nE404",
     );
   });
 
   test("a spawn failure surfaces as an error string", async () => {
-    runCappedMock.mockRejectedValue(new Error("boom"));
+    runNpmMock.mockRejectedValue(new Error("boom"));
     expect(await execute("npm_info", { package: "zod" })).toBe("Error: boom");
   });
 });

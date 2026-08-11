@@ -46,6 +46,7 @@ import {
   buildWorkspaceDir,
   toolchainModules,
   typecheckWorkspaceDir,
+  workspaceDependencyOptions,
   workspacesRoot,
 } from "./studio-build.ts";
 import { compactMessages, needsCompaction } from "./studio-compaction.ts";
@@ -227,10 +228,7 @@ export async function initStudioSession(params: StudioSessionParams): Promise<St
   // whatever package.json declares before the first build reads an import.
   // Non-fatal: a session is still usable when one dependency will not install,
   // and the build that needs it says so where the coding agent can act on it.
-  const depWarning = await ensureWorkspaceDependencies(dir, {
-    sharedRoot: workspacesRoot(),
-    toolchainModules: toolchainModules(),
-  });
+  const depWarning = await ensureWorkspaceDependencies(dir, workspaceDependencyOptions());
   if (depWarning !== null) console.error(`studio workspace dependencies: ${depWarning}`);
   // Pinned only once the install actually succeeded: a rejected first install
   // must not brand the sandbox with an identity it never served.

@@ -233,7 +233,6 @@ describe("buildWorkspaceDir", () => {
       },
       (dir) => buildWorkspaceDir(dir, { worker: true, client: false }),
     );
-    expect(result.buildError).toContain("Could not install ms");
-    expect(result.buildError?.indexOf("Could not install ms")).toBe(0);
+    expect(result.buildError).toMatch(/^Could not install ms/);
   });
 });

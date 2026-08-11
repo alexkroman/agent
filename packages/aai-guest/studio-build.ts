@@ -32,7 +32,11 @@ import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { errorMessage } from "@alexkroman1/aai";
 import { annotateDiagnostics, type ExportResolver } from "./studio-diagnostics.ts";
-import { ensureWorkspaceDependencies, withDependencyWarning } from "./studio-workspace-deps.ts";
+import {
+  ensureWorkspaceDependencies,
+  type WorkspaceDependencyOptions,
+  withDependencyWarning,
+} from "./studio-workspace-deps.ts";
 
 /** Result of one guest build; `buildError` is prose the coding agent can act on. */
 export type GuestBuildResult = {
@@ -94,6 +98,20 @@ export function toolchainModules(): string | null {
   return root === null ? null : path.join(root, "node_modules");
 }
 
+/**
+ * The guest's dependency layout, for every site that prepares a workspace to
+ * be built (session install, `test_agent` build, Publish).
+ *
+ * It lives here because this module already owns both accessors, and it is a
+ * function rather than a constant so the two stay resolved-on-use. The pair
+ * IS the contract, so a fourth caller must not have to re-derive it —
+ * `studio-workspace-deps.ts` takes it as options rather than importing these,
+ * because this module imports IT.
+ */
+export function workspaceDependencyOptions(): WorkspaceDependencyOptions {
+  return { sharedRoot: workspacesRoot(), toolchainModules: toolchainModules() };
+}
+
 // Memoized lazy load: pool-spawned warm harnesses must not pay the Vite
 // import at boot, and a missing toolchain should fail the BUILD (a message
 // the coding agent sees), not the harness.
@@ -141,10 +159,7 @@ export async function buildWorkspaceDir(
   // Whatever package.json declares has to be on disk before either pass reads
   // an import — the agent may have edited the manifest by hand rather than
   // through `add_dependency`. A no-op unless something is genuinely missing.
-  const depWarning = await ensureWorkspaceDependencies(dir, {
-    sharedRoot: workspacesRoot(),
-    toolchainModules: toolchainModules(),
-  });
+  const depWarning = await ensureWorkspaceDependencies(dir, workspaceDependencyOptions());
   // Type errors first, as their own failure: the bundlers strip types
   // unchecked, so this is the only gate that catches runtime-working-but-
   // wrong code — and the message is exactly what the coding agent needs.

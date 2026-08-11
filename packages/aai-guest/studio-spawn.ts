@@ -73,6 +73,42 @@ export function runCapped(
   });
 }
 
+/** Wall-clock limit for one npm invocation. */
+export const NPM_TIMEOUT_MS = 110_000;
+
+/** Output tail kept from npm (errors print last). */
+export const NPM_OUTPUT_CAP = 4000;
+
+/**
+ * npm package NAME: optional scope, then the name. No version part.
+ *
+ * Shared rather than per-caller because it is npm's vocabulary, not any one
+ * tool's policy — it was written out twice, byte for byte, in
+ * `studio-project-tools.ts` and `studio-workspace-deps.ts`.
+ */
+export const PACKAGE_NAME_RE = /^(@[a-z0-9~][\w.~-]*\/)?[a-z0-9~][\w.~-]*$/;
+
+/**
+ * Run one npm command with this package's standing flags and policy.
+ *
+ * Every npm spawn in the guest goes through here. It existed twice — once in
+ * `studio-project-tools.ts` for the dependency tools and once inline in
+ * `studio-workspace-deps.ts` — and the copies had ALREADY drifted on how a
+ * killed child reads, which is the exact failure this module's header says it
+ * was created to end. `signal` stays on the result so a caller can still
+ * choose its own wording; what is shared is the flag tail, the env, the
+ * timeout and the cap.
+ */
+export function runNpm(dir: string, args: string[]): Promise<SpawnCappedResult> {
+  return runCapped("npm", [...args, "--no-audit", "--no-fund", "--loglevel=error"], {
+    cwd: dir,
+    env: envWithoutGuestToken(),
+    timeoutMs: NPM_TIMEOUT_MS,
+    cap: NPM_OUTPUT_CAP,
+    combineStreams: true,
+  });
+}
+
 /** The last non-empty stdout line parsed as JSON — the one-line envelope
  * contract the build child and the CLI's `--json` mode share. */
 export function parseLastJsonLine<T>(stdout: string): T | null {
