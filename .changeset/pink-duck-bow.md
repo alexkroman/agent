@@ -11,32 +11,22 @@ lost whenever the directory was rebuilt: `materializeWorkspace` opens with
 `rm -rf` (session refresh, replica takeover), and Publish builds a fresh
 directory from the store snapshot. Because the worker bundle is built with
 `noExternal`, the absent package was not externalized but a hard build failure
-naming a dependency the manifest plainly declares — so an agent could test
-fine and then fail to publish, and a project pushed from a laptop could not
-build at all.
+naming a dependency the manifest plainly declares — so an agent could test fine
+and then fail to publish, and a project pushed from a laptop could not build at
+all. `npm install --omit=dev` now runs in the workspace whenever something it
+declares is missing.
 
-Missing dependencies are now installed into the shared workspaces root, which
-sits on every workspace's and build dir's resolution path. Only packages the
-baked toolchain does not already provide are fetched (measured: 358ms/28 KB
-against 25s/156 MB for reifying the workspace manifest), each in its own npm
-run so one unreachable entry cannot fail the others, and a package that did
-not install is removed from the shared manifest again. A dependency counts as
-satisfied only when the version it was installed for is the version now
-declared, so bumping a pin takes effect instead of silently republishing the
-old build. A failed install warns rather than throwing, and the warning is
-prepended to a failing build or publish.
+That is viable because the workspace manifest no longer declares the platform's
+own packages. It used to pin them so they could be read, and npm reifies
+whatever manifest it reads — so every install re-fetched the whole SDK tree.
+Dropping them takes adding one package from 25s/156 MB to 451ms/28 KB, takes
+`add_dependency` from 28s/202 MB to 3.8s/28 MB, and retires
+`reconcileWorkspacePins`, whose only job was keeping those pins fresh. Both
+readers the declaration served are covered elsewhere: the studio prompt lists
+what is preinstalled, and `aai pull` fills the manifest in per entry from the
+scaffold.
 
-Two related fixes: `Cannot find module` (TS2307) now carries a hint pointing at
+Also: `Cannot find module` (TS2307) now carries a hint pointing at
 `add_dependency`, and the guest no longer syncs package-manager lockfiles into
 the project — `npm install` leaves a ~100 KB `package-lock.json` that was the
 bulk of every turn's sync payload and landed in pnpm projects via `aai pull`.
-
-Hardening from a follow-up review: the shared install tree is scoped per
-process (it is keyed off the harness file's location, and the subprocess
-backend runs one harness for every sandbox on the machine, so two projects
-could prune each other's packages); the install budget covers the whole
-reconciliation rather than each package, with a shorter one on the
-session-install path the host abandons at 30s; the lock acquire has a deadline
-so a second page open does not queue behind work nobody is waiting on; a failed
-spec is remembered briefly so the same doomed install is not re-run on every
-build; and a package that hoists over a toolchain copy is logged.

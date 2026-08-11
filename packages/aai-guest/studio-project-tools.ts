@@ -44,14 +44,12 @@ const PACKAGE_SPEC_RE = /^(@[a-z0-9~][\w.~-]*\/)?[a-z0-9~][\w.~-]*(@[\w.^~<>=* -
 /**
  * Packages whose versions the PLATFORM owns, never the registry.
  *
- * These are pinned to the versions installed in the baked toolchain
- * (`resolveWorkspaceDependencies`), and `ensureProjectShape` reconciles the
- * pins on every settled write — so "update these to latest" is both futile
- * (the next reconcile rewrites them back) and actively harmful in the window
- * before it: `npm install` reifies the whole manifest, and a newer SDK,
- * React, or Tailwind materialized into a workspace-local `node_modules`
- * SHADOWS the baked copy the harness resolved and the build was tested
- * against. See `reconcileWorkspacePins` for the full argument.
+ * A workspace manifest does not declare them — they resolve from the baked
+ * toolchain above it (see `WORKSPACE_DEPENDENCIES`) — so ordinarily none of
+ * them reaches this tool at all. The guard is for the workspace that names one
+ * by hand: bumping it would install a newer SDK, React or Tailwind into the
+ * workspace's own `node_modules`, which SHADOWS the baked copy the harness
+ * resolved and the build was tested against.
  */
 const TOOLCHAIN_MANAGED: ReadonlySet<string> = new Set(WORKSPACE_DEPENDENCIES);
 

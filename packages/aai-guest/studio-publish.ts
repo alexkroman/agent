@@ -134,8 +134,7 @@ export async function deployWorkspaceDir(
   // This directory is a FRESH materialization of the store snapshot, so it has
   // no node_modules at all — whatever the manifest declares beyond the baked
   // toolchain has to be installed here or `aai deploy`'s bundler cannot resolve
-  // it. Ordered after `ensureProjectShape`, which pins the toolchain-managed
-  // entries to their installed versions first (see `reconcileWorkspacePins`).
+  // it. Ordered after `ensureProjectShape`, so the manifest exists to install.
   const depWarning = await ensureWorkspaceDependencies(dir, workspaceDependencyOptions());
   // Every failure exit carries the dependency warning, and the success exit
   // does not — stated once here rather than restated at each `return`, so a

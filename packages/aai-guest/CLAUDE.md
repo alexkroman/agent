@@ -82,10 +82,10 @@ the CLI to read belongs in that subpath too, not in a `JSON.stringify` here.
 
 ## A workspace's own package.json is REIFIED, not just read
 
-`studio-workspace-deps.ts` installs whatever a workspace's `dependencies`
-declare that nothing above it already provides, and it runs wherever a
-workspace is prepared to be built: `initStudioSession`, `deployWorkspaceDir`
-(Publish), and `buildWorkspaceDir` (`test_agent`).
+`studio-workspace-deps.ts` runs `npm install --omit=dev` in the workspace when
+anything its `dependencies` declare is missing, and it runs wherever a workspace
+is prepared to be built: `initStudioSession`, `deployWorkspaceDir` (Publish),
+and `buildWorkspaceDir` (`test_agent`).
 
 **Declaring a dependency used to be the easy half.** The only thing that ever
 put a package on disk was `add_dependency` running in that exact directory, in
@@ -93,107 +93,63 @@ that exact session — and a workspace directory survives neither boundary it ha
 to cross. `materializeWorkspace` opens with `rm -rf`, so a session RE-install (a
 page refresh, a replica taking the session over) deletes `node_modules` while
 package.json goes on declaring what used to be in it; Publish builds a FRESH
-directory from the store snapshot (`withBuildDir`) that never had one at all;
-and a project pushed with `aai push` arrives with a manifest whose dependencies
-were only ever installed on a laptop. The worker bundle is built
+directory from the store snapshot (`withBuildDir`) that never had one; and a
+project pushed with `aai push` arrives with a manifest whose dependencies were
+only ever installed on a laptop. The worker bundle is built
 `ssr: { noExternal: true }` — everything is bundled, because the guest that
-loads it has no node_modules — so the missing package is not externalized, it is
-a hard `Rolldown failed to resolve import "ms"` naming a dependency the manifest
+loads it has no node_modules — so the missing package is not externalized but a
+hard `Rolldown failed to resolve import "ms"`, naming a dependency the manifest
 plainly declares. **The agent tested fine and Publish died**, which is the worst
 shape that failure could take.
 
-Three decisions, the middle one measured:
+**The whole mechanism is one `npm install`, and that is only viable because the
+workspace manifest declares nothing but the workspace's own packages.** The
+platform's six (`WORKSPACE_DEPENDENCIES` in `studio-project-shape.ts`) resolve
+from the toolchain `node_modules` above every workspace, and leaving them
+undeclared is what keeps this cheap: npm reifies whatever manifest it reads, so
+adding one small package costs **451ms and 28 KB** without them against **25s
+and 156 MB** with. They used to be pinned in purely so they could be READ, and
+that one documentary choice is what made everything expensive — including
+`add_dependency`, which dropped from **28s / 202 MB to 3.8s / 28 MB** when they
+came out. Both readers it served are covered elsewhere: the studio prompt lists
+what is preinstalled, and `aai pull` fills the manifest in per entry from the
+scaffold (`mergeScaffoldManifest`), which is where a laptop's versions belong.
 
-- **`dependencies` only.** Those are what `agent.ts` and `client.tsx` import.
-  `devDependencies` are the toolchain (vite, typescript, vitest, the
-  `@types/*`), baked into the image and resolved by walk-up — a pushed scaffold
-  manifest declares all of them, and fetching that set per publish would be a
-  large download arriving back where we started. Hence `--omit=dev`.
-- **The install goes to the SHARED `.workspaces/` root and names only what is
-  missing.** `npm install` reifies the WHOLE manifest it reads — there is no
-  flag that adds one package without resolving the rest — and in a workspace
-  the rest is the toolchain: installing `ms` there took **25s and 156 MB**, of
-  which all but 28 KB was a registry copy of the SDK, React and Tailwind
-  already sitting one directory up. Through a manifest naming only `ms`:
-  **358ms and 28 KB**. It also retires a hazard rather than managing it: no
-  toolchain package is shadowed by a workspace-local copy, which is what
-  `reconcileWorkspacePins` otherwise has to keep us on the right side of.
-  (`--omit=peer` is there for the same reason — an installed `react` peer would
-  hoist into the shared root and shadow the toolchain's for every workspace
-  under it, silently changing the React the client bundle is built against.)
-  The root is on every workspace's and build dir's resolution path (they are
-  created UNDER it) while being outside all of them, so nothing here syncs to
-  the store, the `rm -rf` cannot reach it, and a package installed during the
-  session is already there when Publish materializes its fresh directory. A
-  sandbox serves one project, so the sharing is with itself.
-- **One npm run PER PACKAGE, and a failure is un-staged again.** npm resolves a
-  manifest as a WHOLE, so anything staged together shares a fate: a bogus name
-  beside `ms` and `date-fns` left all three uninstalled (measured against the
-  real registry — this is why the first version of this note, which claimed
-  narrowing the manifest was enough, was wrong). A run each costs a few hundred
-  milliseconds against a warm tree and makes a bad entry cost only itself. The
-  un-staging is the half that is easy to miss: left in the shared manifest, one
-  unreachable entry is in the file EVERY later install reads, so it would
-  permanently break installing anything else in the sandbox rather than failing
-  once.
+That also retired `reconcileWorkspacePins`, whose whole job was keeping those
+pins fresh so a stale one could not materialize an old SDK over the baked copy.
+
+**An intermediate version of this staged each missing package into a separate
+shared manifest one directory up and ran npm once per package**, to work around
+the reification the pins forced. It needed spec validation, per-package runs,
+un-staging, failure memoization, per-process scoping and a hoist/shadow check —
+seven mechanisms, all downstream of declaring six packages that did not need
+declaring. If any of them looks necessary again, check first whether the
+manifest has grown platform-owned entries.
+
+What remains, and why:
+
+- **`--omit=dev`.** `devDependencies` are the toolchain (vite, typescript,
+  vitest, the `@types/*`), baked into the image. `ensureProjectShape` writes
+  none, but a pushed project carries the scaffold's whole block.
+- **A budget, and a shorter one for session-init.** The host abandons
+  session-init at 30s (`ADOPT_TIMEOUT_MS`) or 60s (`SESSION_INIT_TIMEOUT_MS`)
+  and it runs on EVERY page open, so that path passes
+  `SESSION_INSTALL_BUDGET_MS` (20s): a slow registry degrades the install —
+  reported through the warning, which is non-fatal — rather than failing the
+  session.
+- **A per-directory lock with an acquire deadline.** npm takes no lock of its
+  own. The deadline is why the no-op path must NOT take the lock: a call with
+  no work could otherwise fail on contention.
+- **Presence, not version satisfaction, decides "missing".** That is npm's own
+  rule for a tree it already reified — `npm install` is what reconciles a
+  changed spec, and every path that changes one runs back through here.
 - **A failed install WARNS, it does not throw.** A manifest can name a package
   no source file imports, and failing a publish over one would regress against
-  the build that used to succeed by ignoring the manifest entirely. The warning
-  is prepended to a FAILING build or publish only (`withDependencyWarning`) —
+  the build that used to succeed by ignoring the manifest. The warning is
+  prepended to a FAILING build or publish only (`withDependencyWarning`) —
   it is usually that failure's cause and reads far better than the bundler's
   bare "failed to resolve import", while putting it on a green one would train
   the reader to skip the line.
-- **"Satisfied" is not "present", and the difference shipped a wrong bundle.**
-  The shared root outlives the build dirs that read it, so a package installed
-  for one publish is still sitting there at the next — and an `existsSync`
-  therefore answered "already handled" for a workspace that had since CHANGED
-  the version it asks for. Measured: pin `date-fns` 3.6.0, publish, bump the
-  manifest to 4.1.0, publish again — the second bundle still carried 3.6.0,
-  silently. So the shared root only counts when the spec it was STAGED with is
-  the spec now declared, which needs no semver matcher because the staged
-  manifest is the one npm resolved. The toolchain and the workspace's own
-  `node_modules` still answer on presence (the platform owns those versions;
-  the workspace's copy is what `add_dependency` reified from this same
-  manifest). Consequently npm's **exit code** is the success predicate — on a
-  version change the directory is already there carrying the old version, so
-  presence proves nothing.
-
-- **The shared root is per PROCESS (`.workspaces/<pid>/`), and that is what
-  makes "shared with itself" true.** The argument for one tree is that a
-  sandbox serves one project — but the path is a property of the harness FILE,
-  and under the subprocess backend every sandbox on the machine execs the same
-  `packages/aai-guest/dist/harness.mjs`. Without the pid, N processes serving N
-  projects share one staged manifest, and `npm install` PRUNES what that
-  manifest no longer declares — so one project's install uninstalls another's
-  out from under a build importing it, and `installLock` is in-process so it
-  cannot see the other. The session and build dirs carried the pid in their own
-  names for exactly this reason; it lives in one place now.
-- **The install budget is for the WHOLE reconciliation, not per package**, and
-  the lock acquire has a deadline. One npm run per package at `NPM_TIMEOUT_MS`
-  meant three unreachable packages could block a caller ~330s; session-init's
-  host gives up at 30s (`ADOPT_TIMEOUT_MS`) or 60s
-  (`SESSION_INIT_TIMEOUT_MS`) and runs on EVERY page open, so it passes
-  `SESSION_INSTALL_BUDGET_MS` (20s) and the rest are reported unattempted
-  rather than run past a deadline nobody is waiting on any more. The acquire
-  deadline stops a second page open queueing behind an install its own caller
-  has already abandoned — which is also why the no-op path must NOT take the
-  lock, or a call with no work could fail on contention.
-- **A failed spec is remembered for a minute** (`failedInstalls`, keyed
-  `name@spec`). Un-staging a failure is required, but it also erases the only
-  record that it was tried, so the same doomed npm run re-spawned on every
-  `test_agent` — the loop the coding agent runs while repairing a build. The
-  key includes the spec so an edited version retries at once, and the TTL is
-  short so a registry blip is not cached for the sandbox's life.
-- **Hoisted packages that shadow the toolchain are logged.** `--omit=peer`
-  closes one instance of the mechanism; an ordinary transitive dependency uses
-  the same one, so a user package depending on `react` lands it in the shared
-  root ABOVE the toolchain and the client bundle silently builds against a
-  registry copy. `warnOnShadowedToolchain` checks the mechanism — top-level
-  entries that also exist in the toolchain — which is what makes the
-  "no shadowing" claim above checkable rather than asserted. It logs rather
-  than warning through `describeMissing`, because a shadowed package does not
-  FAIL the build (that is the problem with it) and the chat-facing channel only
-  surfaces on failure.
 
 **A missing dependency's first symptom is TS2307, and it has a hint**
 (`studio-diagnostics.ts`). `Cannot find module 'date-fns'` fires at the
@@ -202,38 +158,16 @@ typecheck gate before the bundler says anything, and the hint names
 the half that matters here is RECORDING the package in package.json, which is
 what makes it survive a refresh and a Publish.
 
-**Lockfiles do not sync** (`snapshotWorkspace` passes `isLockfile`). This is
-the guest's one departure from its own walk, and it is not cosmetic:
-`add_dependency` runs `npm install`, which reifies the whole manifest, so the
-`package-lock.json` it leaves measured **92 KB after one dependency and 101 KB
-after three** — the overwhelming bulk of every turn's sync payload, ~40% of the
-256 KB per-file cap, a file `read_file` can spend context on, and, since `aai
-pull` materializes whatever the row holds, an npm lockfile landing in a project
-whose package.json declares pnpm. `walkWorkspace` still shows it, because that
-one backs `list_files`/`grep`; only the SYNC has a reason to drop it. Push's
-other local-only rule, `.env`, deliberately does NOT apply here — the coding
-agent may have written that file itself.
-
-**Known cost, unfixed: `add_dependency` is the slow half of this.** It runs
-`npm install <spec>` in the WORKSPACE, which reifies the whole manifest —
-measured **28s and 202 MB across 150 packages** to add `date-fns`, nearly all
-of it a redundant registry copy of the SDK, React, Tailwind and every provider
-SDK already baked one directory up (and a workspace-local copy of the SDK that
-shadows the baked one, safe only while `reconcileWorkspacePins` keeps the pins
-exact). The same package through the shared root costs **358ms and 28 KB**.
-Rerouting the tool through `ensureWorkspaceDependencies` would collapse that
-and leave ONE place custom dependencies live; the reason it has not been done
-is `--omit=peer`, which is right for a reconciliation pass over an existing
-manifest and wrong for a package a human just asked for — a peer the toolchain
-does not carry would silently not be installed. Settle that before rerouting.
-
-Specs that name a LOCATION rather than a version (`file:../x`, `git+ssh://…`,
-`github:owner/repo`, `npm:alias@1`) are refused by name: they resolve relative
-to the directory npm reads them from, and this reads them from the shared root
-rather than the workspace that wrote them, so carrying one across would quietly
-mean something else. `add_dependency` is unchanged and still installs into the
-workspace — this module only fills in what a manifest declares and nothing has
-installed.
+**Lockfiles do not sync** (`snapshotWorkspace` passes `isLockfile`). This is the
+guest's one departure from its own walk, and it is not cosmetic: `npm install`
+leaves a `package-lock.json` measured at **92 KB after one dependency and 101 KB
+after three** — the bulk of every turn's sync payload, ~40% of the 256 KB
+per-file cap, a file `read_file` can spend context on, and, since `aai pull`
+materializes whatever the row holds, an npm lockfile landing in a project whose
+package.json declares pnpm. `walkWorkspace` still shows it, because that one
+backs `list_files`/`grep`; only the SYNC has a reason to drop it. Push's other
+local-only rule, `.env`, deliberately does NOT apply here — the coding agent may
+have written that file itself.
 
 ## The `run_code` executor (`trial.ts`)
 

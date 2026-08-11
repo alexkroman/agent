@@ -63,23 +63,11 @@ type Toolchain = {
  * and only that location — has the toolchain's `node_modules` above it, then
  * one level per process id.
  *
- * **The pid level is load-bearing, not tidiness.** This root also holds the
- * shared `node_modules` and `package.json` that `studio-workspace-deps.ts`
- * installs a workspace's declared dependencies into, and that tree is shared by
- * everything created UNDER it. In production that is exactly one project — a
- * sandbox serves one, and its identity is pinned at first install. But the path
- * is a property of the HARNESS FILE, not of the sandbox: under the subprocess
- * backend every sandbox on the machine execs the same
- * `packages/aai-guest/dist/harness.mjs`, so without the pid, N processes
- * serving N different projects share one staged manifest — and `npm install`
- * PRUNES whatever that manifest no longer declares, so one project's install
- * uninstalls another's out from under a build that is importing it. The
- * in-process `installLock` cannot see across processes either. Scoping the root
- * to the process makes the lock sufficient by construction and makes the
- * "one project" premise true rather than merely usually true.
- *
- * The child names carried the pid before this (`session-<pid>`,
- * `build-<pid>-<n>`) for the same reason; it lives in one place now.
+ * The pid separates two harness processes' scratch trees. It has to be
+ * somewhere: under the subprocess backend every sandbox on the machine execs
+ * the same `packages/aai-guest/dist/harness.mjs`, so this path is shared by
+ * every one of them. It used to live in the child names (`session-<pid>`,
+ * `build-<pid>-<n>`); one level up is the same guarantee said once.
  */
 export function workspacesRoot(): string {
   return path.join(import.meta.dirname, ".workspaces", String(process.pid));
@@ -118,17 +106,13 @@ export function toolchainModules(): string | null {
 }
 
 /**
- * The guest's dependency layout, for every site that prepares a workspace to
- * be built (session install, `test_agent` build, Publish).
- *
- * It lives here because this module already owns both accessors, and it is a
- * function rather than a constant so the two stay resolved-on-use. The pair
- * IS the contract, so a fourth caller must not have to re-derive it —
- * `studio-workspace-deps.ts` takes it as options rather than importing these,
- * because this module imports IT.
+ * The guest's dependency layout, for every site that prepares a workspace to be
+ * built (session install, `test_agent` build, Publish). A function rather than
+ * a constant so it stays resolved-on-use, and passed as options rather than
+ * imported by `studio-workspace-deps.ts`, because this module imports IT.
  */
 export function workspaceDependencyOptions(): WorkspaceDependencyOptions {
-  return { sharedRoot: workspacesRoot(), toolchainModules: toolchainModules() };
+  return { toolchainModules: toolchainModules() };
 }
 
 // Memoized lazy load: pool-spawned warm harnesses must not pay the Vite
