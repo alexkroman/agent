@@ -116,6 +116,7 @@ export default agent({
   toolChoice?: ToolChoice;                   // "auto" (default) | "required" | "none"
                                              // | { type: "tool", toolName }
   idleTimeoutMs?: number;                    // disconnect after inactivity (ms)
+  persistSessions?: boolean;                 // keep sessions resumable across a restart (default false; requires storage)
   silenceTimeoutMs?: number;                 // pipeline only — assistant speaks up after this much user silence (ms)
   silencePrompt?: string;                    // instruction injected on silence timeout (requires silenceTimeoutMs)
   minBargeInWords?: number;                  // pipeline only — words before user speech interrupts the reply (default 2)

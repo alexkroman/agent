@@ -9,25 +9,20 @@
 
 import pTimeout, { TimeoutError } from "p-timeout";
 import { toAgentConfig } from "../sdk/_internal-types.ts";
-import { assertProviderTriple, type SessionMode } from "../sdk/config-rules.ts";
 import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../sdk/constants.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { createOwnedMap } from "../sdk/owned-map.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "../sdk/protocol.ts";
-import { defaultProviders } from "../sdk/providers/_default-providers.ts";
-import type { LlmProvider, SttProvider, TtsProvider } from "../sdk/providers.ts";
 import { buildSystemPrompt } from "../sdk/system-prompt.ts";
-import type { AgentDef } from "../sdk/types.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import { createPostgresDb } from "./postgres-db.ts";
 import { describeResolvedProviders } from "./providers/_provider-settings.ts";
-import { resolveLlm, resolveStt, resolveTts } from "./providers/resolve.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "./runtime-config.ts";
+import { resolveEffectiveProviders, resolvePipelineProviders } from "./runtime-providers.ts";
 import { setupTools } from "./runtime-tools.ts";
 import {
   createTransportFactory,
-  type ResolvedPipelineProviders,
   type TransportSessionOpts,
   usesAssemblyS2s,
 } from "./runtime-transport.ts";
@@ -46,71 +41,6 @@ export type {
 } from "./runtime-types.ts";
 
 // ─── Runtime implementation ──────────────────────────────────────────────────
-
-/**
- * Determine the effective STT/LLM/TTS providers and session mode. Providers
- * come from RuntimeOptions (platform path) or fall back to the agent's own
- * fields (the `aai dev` path passes no provider opts), so a declared pipeline
- * agent isn't silently downgraded to S2S.
- */
-function resolveEffectiveProviders(
-  opts: RuntimeOptions,
-  agent: AgentDef,
-): {
-  stt: SttProvider | undefined;
-  llm: LlmProvider | undefined;
-  tts: TtsProvider | undefined;
-  s2s: AgentDef["s2s"];
-  mode: SessionMode;
-} {
-  const stt = opts.stt ?? agent.stt;
-  const llm = opts.llm ?? agent.llm;
-  const tts = opts.tts ?? agent.tts;
-  // A full provider triple passed as RuntimeOptions replaces the agent's
-  // session-mode declaration entirely, `s2s` field included — the platform
-  // path uses opts as an override, not a merge.
-  const s2s = stt && llm && tts ? undefined : agent.s2s;
-  // Pipeline stages not declared anywhere → filled from the all-AssemblyAI
-  // pipeline, matching toAgentConfig. S2S requires an explicit
-  // `s2s` descriptor (`assemblyAIS2s()`), so a config that loses its
-  // providers can no longer silently run S2S — this mirrors, not replaces,
-  // the "never let S2S be a fallback" rule in runtime-transport.ts.
-  const defaults = defaultProviders({ stt, llm, tts, s2s });
-  if (defaults) {
-    return {
-      stt: stt ?? defaults.stt,
-      llm: llm ?? defaults.llm,
-      tts: tts ?? defaults.tts,
-      s2s: undefined,
-      mode: "pipeline",
-    };
-  }
-  return { stt, llm, tts, s2s, mode: assertProviderTriple(stt, llm, tts, s2s) };
-}
-
-/**
- * Resolve the three pipeline provider instances once per runtime (reused
- * across sessions). Returns null unless the mode is pipeline and all three
- * providers are present.
- */
-function resolvePipelineProviders(
-  p: {
-    mode: SessionMode;
-    stt: SttProvider | undefined;
-    llm: LlmProvider | undefined;
-    tts: TtsProvider | undefined;
-  },
-  env: Record<string, string>,
-): ResolvedPipelineProviders | null {
-  if (p.mode !== "pipeline" || !(p.stt && p.llm && p.tts)) return null;
-  // The STT/TTS env vars travel with their openers, so nothing downstream has
-  // to keep the raw descriptors around just to re-derive a credential.
-  return {
-    stt: resolveStt(p.stt),
-    llm: resolveLlm(p.llm, env),
-    tts: resolveTts(p.tts),
-  };
-}
 
 /**
  * Create an agent runtime — the execution engine for a voice agent.
@@ -224,11 +154,17 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // Per-session tool state (self-hosted mode only); cleaned up on session
   // end, but only after the resume grace window — see session-state-sweeps.ts.
   const stateMap = new Map<string, Record<string, unknown>>();
-  // Mirrors the two things a resume needs to a durable store when one is
-  // configured, so a `?sessionId=` reconnect can be served by a different
-  // process than started the session. Inert without one — see
-  // session-persistence.ts and RuntimeOptions.sessionStore.
-  const persistence = createSessionPersistence({ store: opts.sessionStore, stateMap, logger });
+  // Mirrors the two things a resume needs to a durable store, so a
+  // `?sessionId=` reconnect can be served by a different process than started
+  // the session. Inert unless the agent opted in (or a caller injected a
+  // store) — see session-persistence.ts and `resolveSessionStore`.
+  const persistence = createSessionPersistence({
+    sessionStore: opts.sessionStore,
+    persistSessions: agentConfig.persistSessions,
+    db: resolvedDb,
+    stateMap,
+    logger,
+  });
   // The store discards a session on the SAME deadline as the in-process map,
   // or it would keep answering `load` for a session the runtime forgot.
   const stateSweeps = createStateSweeps(stateMap, persistence.forget);

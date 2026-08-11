@@ -84,6 +84,7 @@ export const AgentConfigSchema = z.object({
   toolChoice: ToolChoiceSchema.optional(),
   builtinTools: z.array(BuiltinToolSchema).readonly().optional(),
   idleTimeoutMs: z.number().nonnegative().optional(),
+  persistSessions: z.boolean().optional(),
   silenceTimeoutMs: z.number().positive().optional(),
   silencePrompt: z.string().optional(),
   minBargeInWords: z.number().int().min(1).optional(),

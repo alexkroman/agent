@@ -14,6 +14,7 @@ import type { Db } from "../sdk/db.ts";
 import {
   createDbSessionStore,
   createMemorySessionStore,
+  resolveSessionStore,
   type SessionSnapshot,
   serializeSnapshot,
 } from "./session-store.ts";
@@ -174,5 +175,56 @@ describe("serializeSnapshot", () => {
     };
     expect(serializeSnapshot({ state })).toHaveProperty("error");
     expect(state.hostile.toJSON).toHaveBeenCalled();
+  });
+});
+
+describe("resolveSessionStore", () => {
+  const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+
+  test("an injected store wins over everything, database or not", () => {
+    const explicit = createMemorySessionStore();
+    expect(
+      resolveSessionStore({ explicit, persistSessions: undefined, db: undefined, logger }),
+    ).toBe(explicit);
+  });
+
+  test("off by default — an agent that did not ask keeps the pre-store behaviour", () => {
+    expect(
+      resolveSessionStore({
+        explicit: undefined,
+        persistSessions: undefined,
+        db: fakeDb(),
+        logger,
+      }),
+    ).toBeUndefined();
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  test("persistSessions with storage builds a database-backed store", async () => {
+    const db = fakeDb();
+    const store = resolveSessionStore({
+      explicit: undefined,
+      persistSessions: true,
+      db,
+      logger,
+    });
+    expect(store).toBeDefined();
+    // It is really the Postgres one, over the handle it was given.
+    await store?.save("s1", { state: { a: 1 } });
+    expect(db.sql.some((q) => q.includes("create table if not exists"))).toBe(true);
+  });
+
+  test("persistSessions WITHOUT storage warns and degrades — never throws", () => {
+    // Failing a deploy over a resumability feature would be a far worse trade
+    // than the startup line it costs to say so.
+    const warn = vi.fn();
+    const store = resolveSessionStore({
+      explicit: undefined,
+      persistSessions: true,
+      db: undefined,
+      logger: { ...logger, warn },
+    });
+    expect(store).toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("aai storage enable"));
   });
 });

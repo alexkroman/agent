@@ -29,7 +29,7 @@ function fakeCore(): StartableSession & { started: ReturnType<typeof vi.fn> } {
 function setup(store?: SessionStore) {
   const stateMap = new Map<string, Record<string, unknown>>();
   const logger = fakeLogger();
-  const persistence = createSessionPersistence({ store, stateMap, logger });
+  const persistence = createSessionPersistence({ sessionStore: store, stateMap, logger });
   return { stateMap, logger, persistence };
 }
 

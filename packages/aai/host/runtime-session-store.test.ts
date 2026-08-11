@@ -13,6 +13,7 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
+import type { Db } from "../sdk/db.ts";
 import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
 import { makeAgent, makeClientSink, makeMockHandle, silentLogger } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";
@@ -146,6 +147,91 @@ describe("durable resume across a process restart", () => {
       expect((await store.load("s2"))?.state).toEqual({ n: 1 });
     });
     expect((await store.load("s1"))?.state).toEqual({ n: 1 });
+    await runtime.shutdown();
+  });
+});
+
+/**
+ * An in-memory stand-in for the app database, answering the four statements
+ * `createDbSessionStore` issues. Enough to prove the SQL round-trips through
+ * the store's own code rather than through a hand-held fake.
+ */
+function fakeAppDb(): Db {
+  const rows = new Map<string, unknown>();
+  return {
+    query: (<T>(sql: string, params: unknown[] = []) => {
+      const id = params[0] as string;
+      if (sql.includes("create table")) return Promise.resolve([] as T[]);
+      if (sql.includes("select snapshot")) {
+        const snapshot = rows.get(id);
+        return Promise.resolve((snapshot === undefined ? [] : [{ snapshot }]) as T[]);
+      }
+      if (sql.includes("insert into")) {
+        rows.set(id, JSON.parse(params[1] as string));
+        return Promise.resolve([] as T[]);
+      }
+      // The two deletes: by session id, and the opportunistic expiry sweep
+      // (which has no id to remove and is a no-op against a fresh map).
+      if (sql.startsWith("delete from") && typeof id === "string" && rows.has(id)) rows.delete(id);
+      return Promise.resolve([] as T[]);
+    }) as Db["query"],
+  };
+}
+
+describe("the deployed path: agent({ persistSessions: true })", () => {
+  /** A runtime holding no `sessionStore` — exactly what the guest harness builds. */
+  async function runDeployed(db: Db | undefined, sessionId: string) {
+    const { handles, callbacks } = spyConnect();
+    const runtime = createRuntime({
+      agent: makeAgent({
+        s2s: assemblyAIS2s(),
+        persistSessions: true,
+        tools: countingAgent().tools,
+      }),
+      env: ENV,
+      logger: silentLogger,
+      ...(db ? { db } : {}),
+    });
+    const session = runtime.createSession({ id: sessionId, agent: "a", client: makeClientSink() });
+    await session.start();
+    return { runtime, handles, callbacks };
+  }
+
+  test("resumes across a restart with no sessionStore option anywhere", async () => {
+    // The whole point of the config field: it rides the ordinary agent config
+    // into a deployed guest, and the runtime builds the store over the `Db` it
+    // already opened for `ctx.db`. No server or harness change involved.
+    const db = fakeAppDb();
+
+    const first = await runDeployed(db, "s1");
+    first.callbacks[0]?.onSessionReady("prov-1");
+    expect(await first.runtime.executeTool("bump", {}, "s1", [])).toBe("1");
+    await vi.waitFor(async () => {
+      expect(await db.query("select snapshot from t where session_id = $1", ["s1"])).toHaveLength(
+        1,
+      );
+    });
+    await first.runtime.shutdown();
+    vi.restoreAllMocks();
+
+    const second = await runDeployed(db, "s1");
+    expect(second.handles[0]?.resumeSession).toHaveBeenCalledWith("prov-1");
+    expect(await second.runtime.executeTool("bump", {}, "s1", [])).toBe("2");
+    await second.runtime.shutdown();
+  });
+
+  test("without storage it warns once at startup and runs unchanged", async () => {
+    const warn = vi.fn();
+    spyConnect();
+    const runtime = createRuntime({
+      agent: makeAgent({ s2s: assemblyAIS2s(), persistSessions: true }),
+      env: ENV,
+      logger: { ...silentLogger, warn },
+    });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("aai storage enable"));
+    // Not fatal: the agent still starts and serves sessions.
+    const session = runtime.createSession({ id: "s1", agent: "a", client: makeClientSink() });
+    await expect(session.start()).resolves.toBeUndefined();
     await runtime.shutdown();
   });
 });

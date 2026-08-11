@@ -17,14 +17,27 @@
  */
 
 import { type CoalescingRunner, createCoalescingRunner } from "../sdk/coalescing-runner.ts";
+import type { Db } from "../sdk/db.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import type { Logger } from "./runtime-config.ts";
-import { type SessionSnapshot, type SessionStore, serializeSnapshot } from "./session-store.ts";
+import {
+  resolveSessionStore,
+  type SessionSnapshot,
+  type SessionStore,
+  serializeSnapshot,
+} from "./session-store.ts";
 
 /** What {@link createSessionPersistence} needs from the runtime. */
 export type SessionPersistenceDeps = {
-  /** Absent means no durable resume: every method below becomes a no-op. */
-  store: SessionStore | undefined;
+  /**
+   * A store the caller injected. Wins over `persistSessions`, and is the only
+   * way a runtime with no database persists at all.
+   */
+  sessionStore: SessionStore | undefined;
+  /** The agent's `persistSessions` opt-in. */
+  persistSessions?: boolean | undefined;
+  /** The runtime's resolved `ctx.db` handle; undefined when storage is off. */
+  db?: Db | undefined;
   /** The runtime's live per-session `ctx.state` map — hydration installs into it. */
   stateMap: Map<string, Record<string, unknown>>;
   logger: Logger;
@@ -91,17 +104,23 @@ function inertPersistence(): SessionPersistence {
  * @internal
  */
 export function createSessionPersistence(deps: SessionPersistenceDeps): SessionPersistence {
+  const store = resolveSessionStore({
+    explicit: deps.sessionStore,
+    persistSessions: deps.persistSessions,
+    db: deps.db,
+    logger: deps.logger,
+  });
   // Split rather than guarded inline so the implementation below takes a
   // non-optional store: TypeScript does not carry a narrowing into the
   // closures this builds, and the alternative is a non-null assertion at
   // every use.
-  return deps.store === undefined ? inertPersistence() : storePersistence(deps.store, deps);
+  return store === undefined ? inertPersistence() : storePersistence(store, deps);
 }
 
-/** The real implementation, for a runtime that configured a store. */
+/** The real implementation, for a runtime that resolved a store. */
 function storePersistence(
   store: SessionStore,
-  deps: Omit<SessionPersistenceDeps, "store">,
+  deps: Pick<SessionPersistenceDeps, "stateMap" | "logger">,
 ): SessionPersistence {
   const { stateMap, logger } = deps;
 

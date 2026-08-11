@@ -13,6 +13,7 @@ exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
   "minBargeInWords",
   "mode",
   "name",
+  "persistSessions",
   "preemptiveGeneration",
   "requiredEnv",
   "resumeFalseInterruption",

@@ -414,6 +414,26 @@ export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
    */
   idleTimeoutMs?: number;
   /**
+   * Keep this agent's sessions resumable across a RESTART of the process
+   * running them — a redeploy, a crash, a replaced sandbox — and not only
+   * across a dropped socket. Off by default.
+   *
+   * A reconnect already restores `ctx.state` and the S2S provider session
+   * within the resume grace window, but both live in memory, so a restarted
+   * agent answers the same reconnect connected and having forgotten the
+   * conversation. Setting this mirrors them to the app's database, from which
+   * the replacement process reads them back.
+   *
+   * **Requires storage** (`aai storage enable`, or `DATABASE_URL` under
+   * `aai dev`) — snapshots live in the app's own schema and count toward its
+   * usage. With storage off this warns at startup and the agent runs
+   * unchanged; it is never fatal.
+   *
+   * State must be JSON-serializable to survive: a `Map`, a `Set`, or a cycle
+   * in `ctx.state` is reported once and leaves that session un-persisted.
+   */
+  persistSessions?: boolean;
+  /**
    * Pipeline mode only. When set, the assistant proactively takes a turn
    * after this many ms of user silence (no speech since the last reply
    * finished). Unset disables the behavior. Nudges are capped at

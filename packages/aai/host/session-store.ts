@@ -27,6 +27,7 @@
 import { SESSION_RESUME_GRACE_MS } from "../sdk/constants.ts";
 import type { Db } from "../sdk/db.ts";
 import { errorMessage } from "../sdk/utils.ts";
+import type { Logger } from "./runtime-config.ts";
 
 /**
  * What a replacement process needs to rebuild a session the caller is
@@ -238,6 +239,53 @@ export function createDbSessionStore(opts: CreateDbSessionStoreOptions): Session
       await db.query(`delete from ${table} where session_id = $1`, [sessionId]);
     },
   };
+}
+
+/** What {@link resolveSessionStore} weighs. */
+export type ResolveSessionStoreOptions = {
+  /** A store the caller injected. Always wins — an explicit choice is final. */
+  explicit: SessionStore | undefined;
+  /** The agent's `persistSessions` opt-in. */
+  persistSessions: boolean | undefined;
+  /** The runtime's resolved `ctx.db` handle; undefined when storage is off. */
+  db: Db | undefined;
+  logger: Logger;
+};
+
+/**
+ * Decide which {@link SessionStore} a runtime should use, if any.
+ *
+ * This is what makes `agent({ persistSessions: true })` reach a DEPLOYED agent
+ * with no platform plumbing at all: the field rides the ordinary agent config
+ * into the guest, the runtime already opens a `Db` from the `DATABASE_URL` in
+ * the agent's boot env, and the store is built over that same handle. The
+ * identical path runs under `aai dev` off the project `.env`, so durable
+ * resume cannot behave differently in development than in production.
+ *
+ * Reusing the resolved `Db` rather than opening a second connection is
+ * deliberate: a separate pool would double a guest's connection footprint
+ * against a per-app role whose `connection limit` is set at provisioning
+ * (`APP_DB_CONNECTION_LIMIT`), for two consumers of the same database.
+ *
+ * Asking for persistence with no storage WARNS and returns undefined rather
+ * than throwing. The agent is otherwise fine — it just resumes the way it did
+ * before — and failing a deploy over a resumability feature would be a far
+ * worse trade than the one line of startup log it costs to say so.
+ *
+ * @internal
+ */
+export function resolveSessionStore(opts: ResolveSessionStoreOptions): SessionStore | undefined {
+  if (opts.explicit) return opts.explicit;
+  if (opts.persistSessions !== true) return;
+  if (!opts.db) {
+    opts.logger.warn(
+      "persistSessions is set but storage is not enabled — sessions will not survive a restart. " +
+        "Enable it with `aai storage enable` (CLI) or Settings → Database in the studio; " +
+        "under `aai dev`, set DATABASE_URL in the project .env.",
+    );
+    return;
+  }
+  return createDbSessionStore({ db: opts.db });
 }
 
 /**

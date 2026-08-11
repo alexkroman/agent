@@ -693,27 +693,29 @@ replacing it. See the root guide's concurrency-primitives entry for the two
 properties that are load-bearing (the factory must clone a shared default;
 `projection` hands the callback a real value, not the slot).
 
-## Resume survives the socket by default, the PROCESS only with a store
+## Resume survives the socket by default, the PROCESS only if asked
 
-A `?sessionId=<id>` reconnect restores `ctx.state` (the runtime's `stateMap`,
-held for `SESSION_RESUME_GRACE_MS`) and, in S2S mode, the provider session id a
-transient close resumes into. Both live in process memory, so both cover a
-dropped SOCKET and nothing else: a guest that RESTARTS answers the same
-reconnect **connected and amnesiac**, which is worse for the caller than an
-honest disconnect. `RuntimeOptions.sessionStore` externalizes those two values;
-omit it and the runtime is unchanged, inert wiring included. It is a GAP, not a
-handover — no history, no in-flight turn, no audio — so a restart still costs
-whatever the replacement takes to boot and dial; what it buys is that the gap
-ends with the conversation intact. The platform wires no store yet.
+A `?sessionId=<id>` reconnect restores `ctx.state` and, in S2S mode, the
+provider session id a transient close resumes into. Both live in process
+memory, so both cover a dropped SOCKET and nothing else: a guest that RESTARTS
+answers the same reconnect **connected and amnesiac**, worse for the caller
+than an honest disconnect. `agent({ persistSessions: true })` externalizes them
+to the app's database — off by default, and off with a startup warning when
+storage is not enabled, never fatal. It shortens the GAP rather than closing
+it: no history, no in-flight turn, no audio, so a restart still costs the
+replacement's boot and dial; what it buys is that the gap ends with the
+conversation intact.
 
-`host/session-store.ts`, `host/session-persistence.ts` and
-`transports/s2s-cold-resume.ts` carry the decisions in full. The two that cost
-most if re-derived wrong: **snapshots are JSON, not `structuredClone`** (the two
-disagree on `Map`, `Set` and cycles, so cloning makes a state shape work all
-through dev and come back `{}` the first time it hits Postgres, with nothing
-raised at either end), and **a refused COLD resume falls back to a fresh
-session while a mid-session one stays fatal** — converging them is how durable
-resume becomes worse than none.
+**No platform or guest-harness change was needed, and none should be**: the
+field rides the ordinary agent config into the guest, and `resolveSessionStore`
+builds the store over the `Db` the runtime already opened from `DATABASE_URL` —
+the same handle `ctx.db` uses, not a second pool against a role with a
+provisioned connection limit. `aai dev` takes the identical path off the
+project `.env`. Read `host/session-store.ts`, `host/session-persistence.ts` and
+`transports/s2s-cold-resume.ts` before changing any of it; they carry the
+decisions, including the two that cost most if re-derived wrong (snapshots are
+JSON, not `structuredClone`; a refused COLD resume opens a fresh session while
+a mid-session one stays fatal).
 
 ## Storage (`ctx.db`)
 
