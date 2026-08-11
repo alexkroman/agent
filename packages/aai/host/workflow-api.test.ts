@@ -13,7 +13,11 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { silentLogger } from "./_test-utils.ts";
 import { createServer, type SessionRuntime } from "./server.ts";
-import { MAX_WORKFLOW_BLOB_BYTES, type WorkflowApiEngine } from "./workflow-api.ts";
+import {
+  MAX_WORKFLOW_BLOB_BYTES,
+  MAX_WORKFLOW_INPUT_BYTES,
+  type WorkflowApiEngine,
+} from "./workflow-api.ts";
 
 /**
  * A runtime that starts no session and carries the engine under test.
@@ -204,6 +208,27 @@ describe("workflow HTTP API", () => {
     // chunking an upload has to tell those apart.
     expect(res.status).toBe(413);
     expect(engine.blobs).toEqual([]);
+  });
+
+  test("an oversized run INPUT is 413 too, not an opaque 500", async () => {
+    const engine = makeEngine();
+    const base = await boot({ engine });
+    // Found by driving a real server: `/blobs` mapped the over-limit rejection
+    // to 413 and `/runs` did not, so a page posting too much input got
+    // "Internal server error" — indistinguishable from a broken agent. The
+    // mapping lives in the router for that reason, so every route that reads a
+    // body inherits it; this asserts the route that did not have it.
+    const res = await req(`${base}/workflows/runs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        workflow: "digest",
+        input: { pad: "x".repeat(MAX_WORKFLOW_INPUT_BYTES) },
+      }),
+    });
+    expect(res.status).toBe(413);
+    expect(String(res.body)).toContain(`exceeds ${MAX_WORKFLOW_INPUT_BYTES}`);
+    expect(engine.started).toEqual([]);
   });
 
   test("the cap is counted from the STREAM, not from Content-Length", async () => {

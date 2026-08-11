@@ -156,6 +156,13 @@ function bearerMatches(header: string | undefined, token: string): boolean {
  * and be thrown away. An endless upload is bounded by Node's own
  * `server.requestTimeout`.
  */
+class BodyTooLargeError extends Error {
+  constructor(limit: number) {
+    super(`body exceeds ${limit} bytes`);
+    this.name = "BodyTooLargeError";
+  }
+}
+
 function readBody(req: http.IncomingMessage, limit: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     let chunks: Buffer[] | null = [];
@@ -171,7 +178,7 @@ function readBody(req: http.IncomingMessage, limit: number): Promise<Buffer> {
       chunks?.push(chunk);
     });
     req.on("end", () => {
-      if (chunks === null) reject(new Error(`body exceeds ${limit} bytes`));
+      if (chunks === null) reject(new BodyTooLargeError(limit));
       else resolve(Buffer.concat(chunks));
     });
     req.on("error", reject);
@@ -219,15 +226,9 @@ async function putBlob(
   res: http.ServerResponse,
   engine: WorkflowApiEngine,
 ): Promise<void> {
-  let body: Buffer;
-  try {
-    body = await readBody(req, MAX_WORKFLOW_BLOB_BYTES);
-  } catch (err) {
-    // 413 rather than 400: the request was well-formed and too big, and the
-    // caller (a page chunking an upload) needs to tell those apart.
-    sendJson(res, 413, { error: errorMessage(err) });
-    return;
-  }
+  // An over-limit body answers 413 through the router's own mapping — see the
+  // `BodyTooLargeError` branch there.
+  const body = await readBody(req, MAX_WORKFLOW_BLOB_BYTES);
   if (body.length === 0) {
     sendJson(res, 400, { error: "Blob body is empty" });
     return;
@@ -340,6 +341,16 @@ export function createWorkflowApi(
   return (req, res, url, method) => {
     if (url !== WORKFLOW_API_PREFIX && !url.startsWith(`${WORKFLOW_API_PREFIX}/`)) return false;
     route(req, res, url, method).catch((err: unknown) => {
+      // 413 rather than 400 or 500: the request was well-formed and too big, and
+      // a page chunking an upload has to tell "this file is too big" apart from
+      // "the agent is broken". Mapped HERE rather than in each route that reads a
+      // body, because the route that forgot to is exactly how this was found —
+      // `POST /workflows/runs` answered an over-limit input with an opaque 500
+      // while `/blobs` answered 413, from two copies of one decision.
+      if (err instanceof BodyTooLargeError && !res.headersSent) {
+        sendJson(res, 413, { error: err.message });
+        return;
+      }
       logger.error("Workflow API request failed", { error: errorMessage(err) });
       try {
         if (res.headersSent) res.destroy();

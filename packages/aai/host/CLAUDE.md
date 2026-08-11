@@ -1,16 +1,20 @@
-# packages/aai/host — transport test harnesses
+# packages/aai/host — transport harnesses, and the workflow engine
 
 The randomized and replay-based harnesses that exercise `host/`'s transports
-end to end. They live in their own guide because `packages/aai/CLAUDE.md` sits
-at the 120,000-character cap (`pnpm check:claude-md`) and these three sections
-are the most self-contained thing in it — everything else in that file
-describes behaviour an author has to know while writing an agent, while this
-describes how the transports are *tested*. The package guide keeps a pointer
-here; the root guide's "Package-specific suites" table names this file.
+end to end, plus the workflow engine/store/API internals. They live in their own
+guide because `packages/aai/CLAUDE.md` sits at the 120,000-character cap
+(`pnpm check:claude-md`) and these are the most self-contained sections in it:
+everything else in that file describes behaviour an author has to know while
+writing an agent, while these describe how the transports are *tested* and how
+the workflow machinery works underneath the authoring API. The package guide
+keeps a pointer here; the root guide's "Package-specific suites" table names
+this file.
 
 Everything else about `host/` — session modes, the defaults table, telephony,
-SSRF, the self-hosted server, `ctx.state`, durable workflows — stays in
-`packages/aai/CLAUDE.md`. Read that first.
+SSRF, the self-hosted server, `ctx.state` — stays in `packages/aai/CLAUDE.md`.
+Read that first. The workflow ENGINE, store and HTTP API are documented below;
+the authoring contract for `workflow()` (what a step is, the replay rules) stays
+in the package guide, which points here.
 
 ## Pipeline-transport interleaving fuzz
 
@@ -152,3 +156,92 @@ that are replayed through the real orchestration layer. Key helpers:
 - `makeMockHandle()` — creates mock S2S WebSocket using nanoevents
 - `replayFixtureMessages()` — dispatches fixture JSON as typed events
 - `createFixtureSession()` — wires a real Runtime to mocked S2S
+
+## Workflow engine, store and HTTP API
+
+**Recovery is lease-based, not timer-based.** A claim
+(`WORKFLOW_LEASE_MS`, 120s) is what stops two sandboxes replaying one run, and
+a `running` run whose lease EXPIRED is claimable again — that is the whole
+mechanism by which a dead sandbox's run continues, and why the status set has no
+"crashed". `runDue()` runs once per runtime boot and sweeps due sleepers,
+unclaimed runs, and abandoned ones. A drain therefore must NOT fail an in-flight
+run: `close()` aborts `ctx.signal`, the catch leaves the run `running` with its
+journal intact, and the next host resumes it. Marking it failed would turn every
+redeploy into a graveyard of runs one step from finishing.
+
+**A run is started over HTTP as well as from a tool** (`host/workflow-api.ts`,
+mounted by `createServer` so `aai dev`, a self-hosted server and every deployed
+guest serve it identically — the same reasoning `/phone` is mounted there):
+
+```text
+GET  /workflows            → { workflows: [{ name, description? }] }
+POST /workflows/runs       → { runId }        body: { workflow, input? }
+GET  /workflows/runs/:id   → a WorkflowRunSnapshot
+POST /workflows/blobs      → { blobId, bytes }  body: raw bytes
+```
+
+That closes the "no trigger surface" gap this section used to record: a cron job,
+a webhook relay, a script or a page can all start a run. What is still NOT wired
+is the platform WAKING an idle-exited sandbox for a due sleeper — a wake timer
+only fires while this host lives (`MAX_WAKE_TIMER_MS`, 60s; past that recovery is
+`runDue()`'s on the next boot), so a long sleep resumes when something next
+brings the agent up rather than on time. The substrate for that exists in the
+platform Postgres (`pg_cron`, `pgmq`, `pg_net` — see
+`packages/aai-server/CLAUDE.md`).
+
+**`/blobs` exists because bytes may not travel in the journal, and that is the
+one non-obvious thing about this surface.** Replay re-reads every step output and
+the run input on every resume, so audio or a document in either is re-read
+forever and counts against `MAX_DB_RESULT_ROWS`. A browser cannot reach `ctx.db`
+to put them anywhere else. So an upload lands in `aai_workflow_blobs` (the app's
+own schema), the run is started naming the id, and the workflow reads it with
+`ctx.blob(id)` INSIDE the step that needs it and `ctx.releaseBlob(id)` when done.
+Blobs are swept on age (`WORKFLOW_BLOB_TTL_MS`, 24h, from `runDue()`) because an
+upload whose run was never started is referenced by nothing. Note releasing must
+happen AFTER the step that consumed it is journaled, never inside it: inside, a
+crash between the API call and the journal write leaves the retry with nothing to
+read, which turns at-least-once into a run that can never finish
+(`transcription-desk`'s loop says so in place).
+
+**The API is as public as `/websocket`, and an operator can close it.** A page
+carries no credential — it is served to anyone with the URL, exactly like the
+voice client — so requiring one by default would mean no static page could work,
+and the existing posture is identical (anyone who knows a slug can open a voice
+session and spend the tenant's provider budget). The genuine difference is the
+COST SHAPE: a run outlives the request that started it, so a loop of cheap POSTs
+queues far more work than a loop of sessions can. `AAI_WORKFLOW_API_TOKEN` in the
+agent env makes every route require it as a bearer, checked BEFORE the engine is
+resolved so an unauthenticated caller cannot even make a guest build its runtime.
+Fail-OPEN when unset is the documented default, not an oversight.
+
+The body caps (`MAX_WORKFLOW_INPUT_BYTES`, `MAX_WORKFLOW_BLOB_BYTES`) are counted
+from the STREAM rather than from `Content-Length`, and an over-limit body is
+discarded as it arrives rather than answered by destroying the socket — both
+decisions are argued on `readBody`'s own doc comment, which is where to read
+before changing either.
+
+**The 413 is mapped in the ROUTER, not per route**, because the route that forgot
+to is how the split was found: `/blobs` caught the over-limit rejection and
+`/runs` did not, so an oversized input answered `500 Internal server error` —
+"the agent is broken" where the caller needed "this body is too big". `readBody`
+rejects with a private `BodyTooLargeError` and the router's catch turns it into
+the 413, so a fifth route that reads a body inherits it.
+
+**Every jsonb parameter in the store is bound `::text::jsonb`, and the whole
+journal is wrong without it.** Bound straight to `$n::jsonb`, the `postgres`
+driver JSON-encodes the string the store already stringified — so a run input
+comes back as a STRING (a `run` body that iterates it dies on "not iterable"), a
+step returning `"text"` replays as `"\"text\""`, and a completed run's `output`
+reaches the HTTP API double-encoded. Every JSON type is affected, measured
+against a real Postgres 16.
+
+**Nothing in the unit suite can see it**, which is the part worth remembering:
+the engine's specs run on the in-memory store (`_workflow-test-utils.ts`), which
+holds JS values directly, so a fake that is more permissive than the driver
+beneath it hid a bug on the only production path. It was found by standing up a
+real Postgres and running a real agent, and it is pinned as statement TEXT in
+`workflow-store.test.ts` — including a sweep asserting that NO write binds a
+parameter directly to `::jsonb`, so a fourth jsonb column cannot reintroduce it.
+The full argument, including why passing the raw value instead is worse (a step
+returning a bare `true` fails with "cannot cast type boolean to jsonb"), is on
+`createPostgresWorkflowStore`.

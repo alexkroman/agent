@@ -146,6 +146,34 @@ const CREATE_DUE_INDEX = `create index if not exists aai_workflow_runs_due
   where status in ('pending', 'sleeping', 'running')`;
 
 /**
+ * Every jsonb parameter is bound `::text::jsonb`, and the `::text` is
+ * LOAD-BEARING — it reads like a no-op and is the difference between a journal
+ * that works and one that silently double-encodes everything in it.
+ *
+ * `postgres` (the driver behind {@link Db}) decides a parameter's encoding from
+ * the type Postgres infers for it. Bound straight to `$3::jsonb`, the JS string
+ * this code passes is JSON-ENCODED BY THE DRIVER, so a `{"a":1}` arrives as the
+ * jsonb *string* `"{\"a\":1}"` — our `JSON.stringify` and the driver's are two
+ * encodings of one value. Measured against a real Postgres 16, every type is
+ * affected: an object input comes back as a string (so a run whose `run` body
+ * iterates it dies on "not iterable"), a step returning `"text"` replays as
+ * `"\"text\""`, and a completed run's `output` reaches `GET /workflows/runs/:id`
+ * as a string. Interposing `::text` makes Postgres infer `text` for the
+ * parameter, so the driver sends the bytes as-is and the cast parses them once.
+ *
+ * Passing the raw value instead (letting the driver do the only encoding) is the
+ * obvious alternative and is WRONG here: `Db` is one `query(sql, params)` with no
+ * per-parameter type channel, so a step returning a bare `true` fails with
+ * "cannot cast type boolean to jsonb", and a step returning a plain string would
+ * have its text parsed as JSON. `stringify` + `::text::jsonb` is the only
+ * spelling of the four that round-trips object, string, number, boolean, array,
+ * null AND undefined.
+ *
+ * None of this is reachable by the engine's own suite, which runs on the
+ * in-memory store (`_workflow-test-utils.ts`) and holds JS values directly — so
+ * the statements are asserted as TEXT in `workflow-store.test.ts`. A fake that
+ * stores what it is handed cannot see an encoding bug in the driver beneath it.
+ *
  * Journal backed by the app's Postgres schema.
  *
  * @internal
@@ -164,7 +192,7 @@ export function createPostgresWorkflowStore(db: Db): WorkflowStore {
 
     async create(runId: string, workflow: string, input: unknown): Promise<void> {
       await db.query(
-        "insert into aai_workflow_runs (run_id, workflow, input) values ($1, $2, $3::jsonb)",
+        "insert into aai_workflow_runs (run_id, workflow, input) values ($1, $2, $3::text::jsonb)",
         [runId, workflow, JSON.stringify(input ?? null)],
       );
     },
@@ -210,7 +238,7 @@ export function createPostgresWorkflowStore(db: Db): WorkflowStore {
 
     async recordStep(runId: string, stepId: string, output: unknown): Promise<number> {
       await db.query(
-        `insert into aai_workflow_steps (run_id, step_id, output) values ($1, $2, $3::jsonb)
+        `insert into aai_workflow_steps (run_id, step_id, output) values ($1, $2, $3::text::jsonb)
            on conflict (run_id, step_id) do update set output = excluded.output`,
         [runId, stepId, JSON.stringify(output ?? null)],
       );
@@ -240,7 +268,7 @@ export function createPostgresWorkflowStore(db: Db): WorkflowStore {
     async complete(runId: string, output: unknown): Promise<void> {
       await db.query(
         `update aai_workflow_runs
-            set status = 'completed', output = $2::jsonb, lease_until = null,
+            set status = 'completed', output = $2::text::jsonb, lease_until = null,
                 wake_at = null, updated_at = now()
           where run_id = $1`,
         [runId, JSON.stringify(output ?? null)],

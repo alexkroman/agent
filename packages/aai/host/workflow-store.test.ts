@@ -71,7 +71,9 @@ describe("create", () => {
     await createPostgresWorkflowStore(q.db).create("r1", "digest", { topic: "ai" });
 
     expect(q.sql(0)).toContain("insert into aai_workflow_runs");
-    expect(q.sql(0)).toContain("$3::jsonb");
+    // `::text::jsonb`, never `::jsonb` — see the jsonb-encoding block on
+    // `createPostgresWorkflowStore` and the sweep at the bottom of this file.
+    expect(q.sql(0)).toContain("$3::text::jsonb");
     expect(q.params(0)).toEqual(["r1", "digest", '{"topic":"ai"}']);
   });
 
@@ -147,6 +149,7 @@ describe("recordStep", () => {
 
     expect(count).toBe(4);
     expect(q.sql(0)).toContain("on conflict (run_id, step_id) do update");
+    expect(q.sql(0)).toContain("$3::text::jsonb");
     expect(q.params(0)).toEqual(["r1", "s:a#0", '"out"']);
     // Recounted from the steps table rather than incremented, so a retried
     // upsert cannot inflate the total.
@@ -179,6 +182,7 @@ describe("terminal transitions", () => {
 
     expect(q.sql(0)).toContain("status = 'completed'");
     expect(q.sql(0)).toContain("wake_at = null");
+    expect(q.sql(0)).toContain("output = $2::text::jsonb");
     expect(q.params(0)).toEqual(["r1", '{"ok":1}']);
   });
 
@@ -245,5 +249,57 @@ describe("get", () => {
 
     expect(snapshot).not.toHaveProperty("output");
     expect(snapshot?.status).toBe("running");
+  });
+});
+
+/**
+ * The one rule that holds for every write in this module, asserted over all of
+ * them rather than per statement — a fourth jsonb column added with a plain
+ * `::jsonb` cast is the bug this file exists to catch, and three spot checks
+ * would not see it.
+ *
+ * Why the text step matters is argued on `createPostgresWorkflowStore`: bound
+ * straight to `$n::jsonb`, the driver JSON-encodes the string this module
+ * already stringified, so everything in the journal comes back double-encoded.
+ * The engine's own suite runs on the in-memory store and cannot reach it.
+ */
+describe("every jsonb parameter is bound through ::text", () => {
+  test("no write binds a parameter directly to ::jsonb", async () => {
+    const q = recordingDb([[], [{ steps_completed: 1 }]]);
+    const store = createPostgresWorkflowStore(q.db);
+
+    // Every method that writes a jsonb column.
+    await store.create("r1", "digest", { topic: "ai" });
+    await store.recordStep("r1", "s:a#0", "out");
+    await store.complete("r1", { ok: 1 });
+
+    const offenders: string[] = [];
+    for (let i = 0; i < q.count(); i++) {
+      const sql = q.sql(i);
+      // `$3::jsonb` with no `::text` in front of it. A cast that is not on a
+      // parameter (`count(*)::int`) is not what this looks for.
+      if (/\$\d+::jsonb/.test(sql)) offenders.push(sql);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  test("a stringified value is what gets bound, for every JSON type", async () => {
+    // The pairing the cast exists to make correct: this module encodes ONCE,
+    // and the text cast is what stops the driver encoding a second time.
+    const cases: [unknown, string][] = [
+      [{ a: 1 }, '{"a":1}'],
+      ["text", '"text"'],
+      [42, "42"],
+      [true, "true"],
+      [[1, 2], "[1,2]"],
+      [null, "null"],
+      [undefined, "null"],
+    ];
+    for (const [value, encoded] of cases) {
+      const q = recordingDb([[], [{ steps_completed: 1 }]]);
+      await createPostgresWorkflowStore(q.db).recordStep("r1", "s:a#0", value);
+      expect(q.params(0)[2], `step output ${JSON.stringify(value)}`).toBe(encoded);
+      expect(q.sql(0)).toContain("$3::text::jsonb");
+    }
   });
 });

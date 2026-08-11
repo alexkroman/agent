@@ -709,66 +709,19 @@ consequences an author has to know, all in that file's module doc and
   throws past 1000 rows, and a journal that cannot be read in full looks like a
   run with no history — i.e. every completed step runs a second time.
 
-**Recovery is lease-based, not timer-based.** A claim
-(`WORKFLOW_LEASE_MS`, 120s) is what stops two sandboxes replaying one run, and
-a `running` run whose lease EXPIRED is claimable again — that is the whole
-mechanism by which a dead sandbox's run continues, and why the status set has no
-"crashed". `runDue()` runs once per runtime boot and sweeps due sleepers,
-unclaimed runs, and abandoned ones. A drain therefore must NOT fail an in-flight
-run: `close()` aborts `ctx.signal`, the catch leaves the run `running` with its
-journal intact, and the next host resumes it. Marking it failed would turn every
-redeploy into a graveyard of runs one step from finishing.
+**The mechanism under all of this lives in `packages/aai/host/CLAUDE.md`** —
+lease-based recovery, the HTTP surface and its caps, how `/blobs` is stored, and
+the jsonb-encoding rule the whole journal depends on. What stays here is the
+authoring contract; go there before changing the engine, the store or the API.
 
-**A run is started over HTTP as well as from a tool** (`host/workflow-api.ts`,
-mounted by `createServer` so `aai dev`, a self-hosted server and every deployed
-guest serve it identically — the same reasoning `/phone` is mounted there):
-
-```text
-GET  /workflows            → { workflows: [{ name, description? }] }
-POST /workflows/runs       → { runId }        body: { workflow, input? }
-GET  /workflows/runs/:id   → a WorkflowRunSnapshot
-POST /workflows/blobs      → { blobId, bytes }  body: raw bytes
-```
-
-That closes the "no trigger surface" gap this section used to record: a cron job,
-a webhook relay, a script or a page can all start a run. What is still NOT wired
-is the platform WAKING an idle-exited sandbox for a due sleeper — a wake timer
-only fires while this host lives (`MAX_WAKE_TIMER_MS`, 60s; past that recovery is
-`runDue()`'s on the next boot), so a long sleep resumes when something next
-brings the agent up rather than on time. The substrate for that exists in the
-platform Postgres (`pg_cron`, `pgmq`, `pg_net` — see
-`packages/aai-server/CLAUDE.md`).
-
-**`/blobs` exists because bytes may not travel in the journal, and that is the
-one non-obvious thing about this surface.** Replay re-reads every step output and
-the run input on every resume, so audio or a document in either is re-read
-forever and counts against `MAX_DB_RESULT_ROWS`. A browser cannot reach `ctx.db`
-to put them anywhere else. So an upload lands in `aai_workflow_blobs` (the app's
-own schema), the run is started naming the id, and the workflow reads it with
-`ctx.blob(id)` INSIDE the step that needs it and `ctx.releaseBlob(id)` when done.
-Blobs are swept on age (`WORKFLOW_BLOB_TTL_MS`, 24h, from `runDue()`) because an
-upload whose run was never started is referenced by nothing. Note releasing must
-happen AFTER the step that consumed it is journaled, never inside it: inside, a
-crash between the API call and the journal write leaves the retry with nothing to
-read, which turns at-least-once into a run that can never finish
+Two author-facing rules from it, because getting them wrong is silent. **Bytes
+may not travel in the journal**: the run input and every step output are re-read
+on each replay, so a page uploads to `/workflows/blobs` first and passes the id,
+and the run reads it with `ctx.blob(id)` inside the step that needs it. And
+**`ctx.releaseBlob(id)` goes AFTER that step has returned, never inside it** —
+inside, a crash between the release and the journal write leaves the retry with
+nothing to read, which turns at-least-once into a run that can never finish
 (`transcription-desk`'s loop says so in place).
-
-**The API is as public as `/websocket`, and an operator can close it.** A page
-carries no credential — it is served to anyone with the URL, exactly like the
-voice client — so requiring one by default would mean no static page could work,
-and the existing posture is identical (anyone who knows a slug can open a voice
-session and spend the tenant's provider budget). The genuine difference is the
-COST SHAPE: a run outlives the request that started it, so a loop of cheap POSTs
-queues far more work than a loop of sessions can. `AAI_WORKFLOW_API_TOKEN` in the
-agent env makes every route require it as a bearer, checked BEFORE the engine is
-resolved so an unauthenticated caller cannot even make a guest build its runtime.
-Fail-OPEN when unset is the documented default, not an oversight.
-
-The body caps (`MAX_WORKFLOW_INPUT_BYTES`, `MAX_WORKFLOW_BLOB_BYTES`) are counted
-from the STREAM rather than from `Content-Length`, and an over-limit body is
-discarded as it arrives rather than answered by destroying the socket — both
-decisions are argued on `readBody`'s own doc comment, which is where to read
-before changing either.
 
 ## A page can be STATIC — `agent({ page })`
 
@@ -1336,16 +1289,19 @@ barge-in against itself.
 unused and the pipeline falls back to its open-loop estimate; and DTMF is
 ignored rather than surfaced as a custom event.
 
-## Transport test harnesses live in `host/CLAUDE.md`
+## Transport harnesses and the workflow engine live in `host/CLAUDE.md`
 
 The three harnesses that exercise the transports end to end — the
 **pipeline-transport interleaving fuzz**, the **S2S property test**, and the
 **fixture replay** pattern in `host/` — are documented in
 `packages/aai/host/CLAUDE.md`, which Claude Code loads when you work in that
-directory. They moved there when this guide reached the 120,000-character cap
+directory, alongside the **workflow engine, store and HTTP API** internals. Both
+moved there when this guide reached the 120,000-character cap
 (`pnpm check:claude-md`); nothing was cut. Read that file before extending
 either randomized suite — both carry coverage floors, and an all-green run
-against a broken generator is the failure mode they exist to make visible.
+against a broken generator is the failure mode they exist to make visible — and
+before touching the workflow store, whose jsonb-encoding rule no unit test can
+observe.
 
 ## One canonical config schema, deny-list boundaries
 
