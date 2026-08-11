@@ -519,3 +519,107 @@ describe("S2sTransport reconnect", () => {
     expect(callbacks.onAgentTranscriptPartial).not.toHaveBeenCalled();
   });
 });
+
+describe("S2sTransport cold resume (across a process restart)", () => {
+  test("presents the prior process's id instead of opening a fresh session", async () => {
+    const { callbacks, handles } = setupSpiedTransport();
+    const t = createS2sTransport(
+      makeTransportOptions({ callbacks, resumeProviderSession: () => "sess_prev" }),
+    );
+    await t.start();
+
+    const h = expectAt(handles, 0, "handle");
+    expect(h.resumeSession).toHaveBeenCalledWith("sess_prev");
+    expect(h.updateSession).not.toHaveBeenCalled();
+  });
+
+  test("an absent or empty prior id opens an ordinary session", async () => {
+    for (const prior of [undefined, ""]) {
+      const { callbacks, handles } = setupSpiedTransport();
+      const t = createS2sTransport(
+        makeTransportOptions({ callbacks, resumeProviderSession: () => prior }),
+      );
+      await t.start();
+      const h = expectAt(handles, 0, "handle");
+      expect(h.updateSession, `prior: ${JSON.stringify(prior)}`).toHaveBeenCalled();
+      expect(h.resumeSession).not.toHaveBeenCalled();
+      vi.restoreAllMocks();
+    }
+  });
+
+  test("reports every ready id, so the next restart has one to present", async () => {
+    const onProviderSession = vi.fn();
+    const { callbacks, capturedCallbacks } = setupSpiedTransport();
+    const t = createS2sTransport(makeTransportOptions({ callbacks, onProviderSession }));
+    await t.start();
+
+    expectAt(capturedCallbacks, 0, "callbacks").onSessionReady("sess_new");
+    expect(onProviderSession).toHaveBeenCalledWith("sess_new");
+  });
+
+  test("a REFUSED cold resume opens a fresh session rather than ending the call", async () => {
+    // The service keeps a session ~30s after a disconnect, so a restart
+    // outlasting that is the ordinary case. Ending the call over it would make
+    // durable resume strictly worse than no resume at all.
+    const { callbacks, handles, capturedCallbacks } = setupSpiedTransport();
+    const t = createS2sTransport(
+      makeTransportOptions({ callbacks, resumeProviderSession: () => "sess_gone" }),
+    );
+    await t.start();
+
+    expectAt(capturedCallbacks, 0, "callbacks").onSessionExpired();
+
+    await vi.waitFor(() => {
+      expect(handles.length).toBe(2);
+    });
+    const fresh = expectAt(handles, 1, "fresh handle");
+    // The replacement is a NEW session, never a retry of the refused id —
+    // which would loop forever against a session that no longer exists.
+    expect(fresh.updateSession).toHaveBeenCalled();
+    expect(fresh.resumeSession).not.toHaveBeenCalled();
+    expect(callbacks.onError).not.toHaveBeenCalled();
+  });
+
+  test("the refused link is dropped before its replacement opens", async () => {
+    // `session_not_found` is reported IN BAND and leaves the socket open, so
+    // without this the replacement overwrites `handle` and strands a live
+    // (billed) provider socket for the life of the process.
+    const { callbacks, handles, capturedCallbacks } = setupSpiedTransport();
+    const t = createS2sTransport(
+      makeTransportOptions({ callbacks, resumeProviderSession: () => "sess_gone" }),
+    );
+    await t.start();
+
+    const refused = expectAt(handles, 0, "refused handle");
+    expectAt(capturedCallbacks, 0, "callbacks").onSessionExpired();
+
+    await vi.waitFor(() => {
+      expect(handles.length).toBe(2);
+    });
+    expect(refused.close).toHaveBeenCalled();
+  });
+
+  test("a MID-SESSION resume refusal is still fatal — the two must not converge", async () => {
+    // The cold branch exists because the two failures differ: this one has
+    // lost a live conversation and has nothing to fall back to.
+    const { callbacks, capturedCallbacks } = setupSpiedTransport();
+    const t = createS2sTransport(makeTransportOptions({ callbacks }));
+    await t.start();
+
+    const cb1 = expectAt(capturedCallbacks, 0, "first callbacks");
+    cb1.onSessionReady("sess_live");
+    cb1.onClose(1005, "");
+
+    await vi.waitFor(() => {
+      expect(capturedCallbacks.length).toBe(2);
+    });
+    expectAt(capturedCallbacks, 1, "resume callbacks").onSessionExpired();
+
+    await vi.waitFor(() => {
+      expect(callbacks.onError).toHaveBeenCalledWith(
+        "connection",
+        expect.stringContaining("resume failed"),
+      );
+    });
+  });
+});

@@ -93,6 +93,17 @@ type ToolSetupDeps = {
   sinkMap: OwnedMap<string, ClientSink>;
   /** Per-session tool state (self-hosted mode only); cleaned up on session end. */
   stateMap: Map<string, Record<string, unknown>>;
+  /**
+   * Called after every settled tool call with the session whose state may
+   * have changed — the durable-resume mirror (see session-persistence.ts).
+   *
+   * Paired with the `syncStateToClient` push below rather than with a
+   * mutation, for the same reason that one is: `ctx.state` is mutated in
+   * place, so a tool call ending is the only moment the runtime can observe.
+   * Unconditional, and deduping is the mirror's job — most tool calls change
+   * nothing, and a comparison here would be a second copy of that logic.
+   */
+  onStateChanged?: (sessionId: string) => void;
 };
 
 /**
@@ -290,8 +301,11 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
     } finally {
       // In `finally` so a throwing tool still publishes what it changed
       // before it failed — a half-applied mutation the UI is not showing is
-      // worse than one it is.
+      // worse than one it is. The durable mirror follows the same rule, and
+      // for the stronger version of the same reason: a state change a crash
+      // is about to make permanent is exactly the one worth having written.
       syncStateToClient(liveSink(), getState(sid));
+      deps.onStateChanged?.(sid);
     }
   };
   /**

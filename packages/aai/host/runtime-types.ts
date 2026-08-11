@@ -15,6 +15,7 @@ import type { AgentDef } from "../sdk/types.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
 import type { SessionCore } from "./session-core.ts";
+import type { SessionStore } from "./session-store.ts";
 import type { ExecuteTool } from "./tool-executor.ts";
 import type { CreateOpenaiRealtimeWebSocket } from "./transports/openai-realtime-transport.ts";
 import type { SessionWebSocket } from "./ws-handler.ts";
@@ -91,6 +92,18 @@ export type RuntimeOptions = {
    * `ctx.db` access throws.
    */
   db?: Db | undefined;
+  /**
+   * Where per-session resume state (`ctx.state` plus the provider's session
+   * id) is mirrored, so a `?sessionId=<id>` reconnect can be served by a
+   * DIFFERENT process than the one that started the session.
+   *
+   * Omitted — the default — resume still works across a dropped socket, from
+   * the in-process map the runtime keeps for `SESSION_RESUME_GRACE_MS`; it
+   * just cannot survive that process going away. Set it when a restart
+   * (redeploy, crash, sandbox replacement) must not cost the conversation.
+   * `createDbSessionStore({ db })` is the ready-made Postgres implementation.
+   */
+  sessionStore?: SessionStore | undefined;
   /**
    * Custom WebSocket factory for the S2S connection (testing seam).
    * @internal

@@ -21,8 +21,19 @@ export type StateSweeps = {
   clear(): void;
 };
 
-/** Create the sweep scheduler over the runtime's per-session state map. */
-export function createStateSweeps(stateMap: Map<string, Record<string, unknown>>): StateSweeps {
+/**
+ * Create the sweep scheduler over the runtime's per-session state map.
+ *
+ * `onReclaim` runs when a session's state is actually dropped, so a durable
+ * {@link SessionStore} discards its copy on the SAME deadline as the
+ * in-process one. Without it a store would keep answering `load` for a
+ * session the runtime has already forgotten, silently extending how long a
+ * session is resumable past the window this module exists to enforce.
+ */
+export function createStateSweeps(
+  stateMap: Map<string, Record<string, unknown>>,
+  onReclaim?: (sessionId: string) => void,
+): StateSweeps {
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
 
   function cancel(sessionId: string): void {
@@ -37,6 +48,7 @@ export function createStateSweeps(stateMap: Map<string, Record<string, unknown>>
     const timer = setTimeout(() => {
       timers.delete(sessionId);
       stateMap.delete(sessionId);
+      onReclaim?.(sessionId);
     }, SESSION_RESUME_GRACE_MS);
     // A pending sweep must never hold the event loop open (e.g. a finished
     // CLI process) — clear() reclaims everything on shutdown anyway.

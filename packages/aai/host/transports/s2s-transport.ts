@@ -13,6 +13,7 @@ import {
   type S2sHandle,
   type S2sSessionConfig,
 } from "../s2s.ts";
+import { createColdResume } from "./s2s-cold-resume.ts";
 import type { Transport, TransportCallbacks } from "./types.ts";
 
 /** @internal Exposed for testing — allows spying on connectS2s in unit tests. */
@@ -31,6 +32,21 @@ export type S2sTransportOptions = {
   agent: string;
   createWebSocket?: CreateS2sWebSocket;
   logger?: Logger;
+  /**
+   * A provider session id left behind by an EARLIER PROCESS, for a resume
+   * that crosses a restart (see host/session-store.ts). When it returns an
+   * id, `start()` opens with `session.resume` instead of `session.update`.
+   * A thunk, not a value: the transport is constructed synchronously from the
+   * socket's `open` handler while the id loads asynchronously inside
+   * `start()`, so anything captured at construction is always pre-hydration.
+   */
+  resumeProviderSession?: () => string | undefined;
+  /**
+   * Called with each `session.ready` id so the caller can persist it — the
+   * only place the provider's id is observable, and without it a replacement
+   * process has nothing to resume into.
+   */
+  onProviderSession?: (providerSessionId: string) => void;
 };
 
 /**
@@ -84,6 +100,9 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
   // Aborted by stop() to abandon a handshake that has not completed yet — see
   // stop() and `ConnectS2sOptions.signal`.
   const teardown = new AbortController();
+  // Rejoining a provider session a previous PROCESS opened, and why it must
+  // fail differently from a mid-session resume — see s2s-cold-resume.ts.
+  const cold = createColdResume(opts.resumeProviderSession);
 
   /**
    * Redeliver tool results the dead socket dropped — the restored provider
@@ -150,9 +169,16 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
       onSessionReady: whileLive((id) => {
         const isFirstReady = providerSessionId === null;
         providerSessionId = id;
+        // A ready session is one a replacement process could rejoin, so the
+        // id goes out before anything else here — including on a resume,
+        // where the service may hand back a different id than we presented.
+        opts.onProviderSession?.(id);
         if (reconnecting) {
           reconnecting = false;
-          log.info("S2S resumed", { sid: opts.sid, sessionId: id });
+          log.info(cold.end() ? "S2S resumed across a restart" : "S2S resumed", {
+            sid: opts.sid,
+            sessionId: id,
+          });
         } else if (isFirstReady) {
           log.info("S2S session ready", { sid: opts.sid, sessionId: id });
         }
@@ -252,6 +278,28 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
     if (!reconnecting) return;
     reconnecting = false;
     providerSessionId = null;
+    // A refused COLD resume is not a dead session — see s2s-cold-resume.ts for
+    // why this is the ordinary case rather than an error.
+    if (cold.end()) {
+      log.warn("S2S restart resume refused; opening a fresh provider session", {
+        sid: opts.sid,
+        agent: opts.agent,
+        detail,
+      });
+      // Drop the refused link first. Unlike the mid-session resume path —
+      // reached FROM a close, so the socket is already gone —
+      // `session_not_found` is reported in band and leaves this socket OPEN,
+      // and `connect()` would overwrite `handle` and strand a live (billed)
+      // socket for the life of the process. Same hazard `endSession` documents.
+      handle?.close();
+      handle = null;
+      // `cold.take()` is latched, so this opens a normal `session.update`
+      // rather than retrying the id just refused.
+      void start().catch((err: unknown) => {
+        endSession(`S2S fresh session after refused resume failed: ${errorMessage(err)}`);
+      });
+      return;
+    }
     endSession(detail);
   }
 
@@ -385,7 +433,20 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
   }
 
   function start(): Promise<void> {
-    return connect((h) => h.updateSession(opts.sessionConfig));
+    const prior = cold.take();
+    if (prior === undefined) {
+      return connect((h) => h.updateSession(opts.sessionConfig));
+    }
+    // Both flags make a close-before-ready read as a failed resume rather than
+    // a fatal idle close (`emitFatalClose`), so `failResume` takes the cold
+    // branch above instead of ending the session.
+    reconnecting = true;
+    cold.begin();
+    log.info("S2S resuming a session from a previous process", {
+      sid: opts.sid,
+      prevSessionId: prior,
+    });
+    return connect((h) => h.resumeSession(prior));
   }
 
   async function stop(): Promise<void> {

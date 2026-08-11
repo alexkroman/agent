@@ -33,6 +33,7 @@ import {
 } from "./runtime-transport.ts";
 import type { Runtime, RuntimeOptions, SessionStartOptions } from "./runtime-types.ts";
 import { createSessionCore, type SessionCore } from "./session-core.ts";
+import { createSessionPersistence } from "./session-persistence.ts";
 import { createStateSweeps } from "./session-state-sweeps.ts";
 import type { TransportCallbacks } from "./transports/types.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
@@ -223,7 +224,14 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // Per-session tool state (self-hosted mode only); cleaned up on session
   // end, but only after the resume grace window — see session-state-sweeps.ts.
   const stateMap = new Map<string, Record<string, unknown>>();
-  const stateSweeps = createStateSweeps(stateMap);
+  // Mirrors the two things a resume needs to a durable store when one is
+  // configured, so a `?sessionId=` reconnect can be served by a different
+  // process than started the session. Inert without one — see
+  // session-persistence.ts and RuntimeOptions.sessionStore.
+  const persistence = createSessionPersistence({ store: opts.sessionStore, stateMap, logger });
+  // The store discards a session on the SAME deadline as the in-process map,
+  // or it would keep answering `load` for a session the runtime forgot.
+  const stateSweeps = createStateSweeps(stateMap, persistence.forget);
 
   const { executeTool, toolSchemas, toolGuidance, pushStateSnapshot } = setupTools({
     agent,
@@ -235,6 +243,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     logger,
     sinkMap,
     stateMap,
+    onStateChanged: persistence.touch,
   });
 
   // Resolve pipeline providers once per runtime (not per session). Each
@@ -356,7 +365,9 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     };
 
     const transport = buildTransport({
-      sessionOpts,
+      // The provider-session hooks ride on sessionOpts; only the AssemblyAI
+      // S2S branch reads them (see TransportSessionOpts).
+      sessionOpts: { ...sessionOpts, ...persistence.providerSession(sessionOpts.id) },
       systemPrompt,
       callbacks,
     });
@@ -371,6 +382,14 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       logger,
       ...(opts.onToolResult ? { onToolResult: opts.onToolResult } : {}),
     });
+
+    // Durable resume only: read the stored snapshot before the transport
+    // connects, so a cold `session.resume` has an id to present and the first
+    // tool call sees the restored `ctx.state`. The push above was a no-op on
+    // this path (nothing was live to show yet), so it repeats after hydration.
+    persistence.wrapStart(core, sessionOpts.id, () =>
+      pushStateSnapshot?.(sessionOpts.id, sessionOpts.client),
+    );
 
     // Tie map cleanup to the session's own stop() so it happens on every
     // teardown path — including a direct `runtime.createSession()` caller that

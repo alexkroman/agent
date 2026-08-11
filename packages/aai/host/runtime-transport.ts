@@ -69,6 +69,14 @@ export type TransportSessionOpts = {
   agent: string;
   client: ClientSink;
   skipGreeting?: boolean;
+  /**
+   * Durable-resume hooks, supplied by the runtime's session persistence and
+   * read only by the AssemblyAI S2S branch — it is the one transport holding
+   * a provider-side session another process could rejoin. Pipeline mode's
+   * STT/LLM/TTS streams are per-turn, so there is nothing to carry across.
+   */
+  resumeProviderSession?: () => string | undefined;
+  onProviderSession?: (providerSessionId: string) => void;
 };
 
 /** Arguments to one `buildTransport` call (one per session). */
@@ -222,6 +230,10 @@ export function createTransportFactory(
       callbacks,
       sid: sessionOpts.id,
       agent: sessionOpts.agent,
+      ...omitUndefined({
+        resumeProviderSession: sessionOpts.resumeProviderSession,
+        onProviderSession: sessionOpts.onProviderSession,
+      }),
       ...(createWebSocket ? { createWebSocket } : {}),
       logger,
     });

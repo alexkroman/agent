@@ -43,34 +43,11 @@ Sandbox — the same runtime as the host and `aai dev` — loading the agent's
 ESM bundle directly; the Modal sandbox (not a language runtime permission
 model) is the security boundary.
 
-## Package exports
+## Package exports (subpath → file mapping)
 
-Subpath exports consumed by sibling packages and user agents:
-
-- `.` — `agent()`, `tool()` helpers, `sessionSlot()`, `Db`, types, utils,
-  constants
-- `./utils` — zod-free utilities, `createKeyedLock`, `isToolFailure`,
-  `pushCapped`, platform slug contract (fast CLI startup path)
-- `./testing` — `createToolContext()` / `createUnusedDb()` for testing a tool's
-  `execute`; published so a user's agent project can import it
-- `./runtime` — full Node.js runtime engine (barrel → 11 host/ modules)
-- `./protocol` — wire-format Zod schemas, `lenientParse()`, `ClientEvent`
-- `./manifest` — `toAgentConfig()`, `agentToolsToSchemas()`, config schemas
-- `./stt` — pipeline-mode STT provider factories (e.g. `assemblyAIStt`)
-- `./llm` — pipeline-mode LLM provider factories (e.g. `anthropic`)
-- `./tts` — pipeline-mode TTS provider factories (e.g. `cartesia`)
-- `./s2s` — S2S provider factories (`openaiRealtime`)
-- `./tools` — keyless network builtins callable from user tool code
-- `./internal` — infrastructure shared with sibling packages (epochs,
-  owned maps, WS upgrade parsing, schema-issue formatting); not a public
-  API, kept off the root barrel so authoring autocomplete stays small.
-  The env brands live on `./runtime` instead — they appear in its public
-  signatures (`RuntimeOptions`, `withHostCredentialFallback`)
-
-## Subpath export → file mapping
-
-Tracing imports through barrel files can be confusing. Here's the map
-of subpath exports in `aai/package.json`:
+The subpath exports sibling packages and user agents consume, and what each
+resolves to. This table is the only list — a second, prose copy lived above it
+and had already drifted (it omitted `./slugify`):
 
 | Import path | Resolves to | What it contains |
 | --- | --- | --- |
@@ -86,7 +63,7 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/tts` | `sdk/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`, `assemblyAITts`) |
 | `@alexkroman1/aai/s2s` | `sdk/providers/s2s-barrel.ts` | S2S provider factories + types (`openaiRealtime`; `assemblyAIS2s` is on the root export) |
 | `@alexkroman1/aai/tools` | `host/agent-tools.ts` (direct, not a barrel) | Keyless network builtins callable from user tool code: `fetchJson`, `visitWebpage`, `webSearch` |
-| `@alexkroman1/aai/internal` | `internal.ts` → 5 modules | Cross-package infrastructure (`createEpoch`, `createOwnedMap`, `createCoalescingRunner`, `parseWsUpgradeParams`, `formatSchemaIssues`). Not public API, not semver-covered, excluded from the docs |
+| `@alexkroman1/aai/internal` | `internal.ts` → 5 modules | Cross-package infrastructure (`createEpoch`, `createOwnedMap`, `createCoalescingRunner`, `parseWsUpgradeParams`, `formatSchemaIssues`). Not public API, not semver-covered, excluded from the docs. Kept off the root barrel so authoring autocomplete stays small; the env brands live on `./runtime` instead, since they appear in its public signatures (`RuntimeOptions`, `withHostCredentialFallback`) |
 
 ## Session modes
 
@@ -202,10 +179,9 @@ present in the `agent()` config:
   `interactive` diagram shows neither tool-turn reply emitting it — the service
   matches the latter.
 
-  **`transcript.agent.delta` DOES arrive, and it is the remedy.** This guide said
-  the opposite — "not implemented: zero frames arrive even for a plain greeting
-  reply", with an instruction not to re-add the accumulator removed in #a42cdbd3.
-  Re-measured 2026-08-06 against the live service with a standalone client
+  **`transcript.agent.delta` DOES arrive, and it is the remedy.** This guide
+  said the opposite, and told readers not to re-add the accumulator removed in
+  #a42cdbd3. Re-measured 2026-08-06 against the live service with a standalone client
   (`tau2-bench/scripts/vaapi_delta_probe.py`, no SDK): a bare greeting reply —
   the exact case named as producing none — emits one frame per word carrying
   `start_ms`/`end_ms`. Over one 215s retail session, 511 frames across 20
@@ -624,11 +600,9 @@ Read it there; do not restate it here, and do not trust a voice name that
 isn't in it.
 
 That instruction is the whole point of the constant. This section used to
-carry its own table — `ivy`, `sam`, `mia`, `jack`, `sophie`, `oliver` and a
-dozen more — of which every entry was either deprecated or had never
+carry its own table, of which every entry was either deprecated or had never
 existed, and it claimed a `voice:` field on `agent()` that the SDK does not
-have. The provider's doc comment carried a *different* wrong list
-(`azelma`, `cosette`, `fantine`, `javert`, …, none published). Two
+have; the provider's doc comment carried a *different* wrong list. Two
 hand-maintained lists, both fiction, both pointed at by anyone looking for a
 voice.
 
@@ -718,6 +692,28 @@ makes the state exist before the first tool call, which
 replacing it. See the root guide's concurrency-primitives entry for the two
 properties that are load-bearing (the factory must clone a shared default;
 `projection` hands the callback a real value, not the slot).
+
+## Resume survives the socket by default, the PROCESS only with a store
+
+A `?sessionId=<id>` reconnect restores `ctx.state` (the runtime's `stateMap`,
+held for `SESSION_RESUME_GRACE_MS`) and, in S2S mode, the provider session id a
+transient close resumes into. Both live in process memory, so both cover a
+dropped SOCKET and nothing else: a guest that RESTARTS answers the same
+reconnect **connected and amnesiac**, which is worse for the caller than an
+honest disconnect. `RuntimeOptions.sessionStore` externalizes those two values;
+omit it and the runtime is unchanged, inert wiring included. It is a GAP, not a
+handover — no history, no in-flight turn, no audio — so a restart still costs
+whatever the replacement takes to boot and dial; what it buys is that the gap
+ends with the conversation intact. The platform wires no store yet.
+
+`host/session-store.ts`, `host/session-persistence.ts` and
+`transports/s2s-cold-resume.ts` carry the decisions in full. The two that cost
+most if re-derived wrong: **snapshots are JSON, not `structuredClone`** (the two
+disagree on `Map`, `Set` and cycles, so cloning makes a state shape work all
+through dev and come back `{}` the first time it hits Postgres, with nothing
+raised at either end), and **a refused COLD resume falls back to a fresh
+session while a mid-session one stays fatal** — converging them is how durable
+resume becomes worse than none.
 
 ## Storage (`ctx.db`)
 

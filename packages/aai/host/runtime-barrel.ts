@@ -101,6 +101,13 @@ export {
 } from "./server.ts";
 export { createSessionCore, type SessionCore, type SessionCoreOptions } from "./session-core.ts";
 export {
+  type CreateDbSessionStoreOptions,
+  createDbSessionStore,
+  createMemorySessionStore,
+  type SessionSnapshot,
+  type SessionStore,
+} from "./session-store.ts";
+export {
   builtinFetch,
   CONTAINED_ENV,
   isPrivateIp,
