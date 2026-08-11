@@ -58,12 +58,31 @@ type Toolchain = {
 };
 
 /**
- * Root under which workspaces materialize: a dot-directory next to this
- * module (→ next to the bundled harness.mjs), because that location — and
- * only that location — has the toolchain's `node_modules` above it.
+ * Root under which THIS PROCESS's workspaces materialize: a dot-directory next
+ * to this module (→ next to the bundled harness.mjs), because that location —
+ * and only that location — has the toolchain's `node_modules` above it, then
+ * one level per process id.
+ *
+ * **The pid level is load-bearing, not tidiness.** This root also holds the
+ * shared `node_modules` and `package.json` that `studio-workspace-deps.ts`
+ * installs a workspace's declared dependencies into, and that tree is shared by
+ * everything created UNDER it. In production that is exactly one project — a
+ * sandbox serves one, and its identity is pinned at first install. But the path
+ * is a property of the HARNESS FILE, not of the sandbox: under the subprocess
+ * backend every sandbox on the machine execs the same
+ * `packages/aai-guest/dist/harness.mjs`, so without the pid, N processes
+ * serving N different projects share one staged manifest — and `npm install`
+ * PRUNES whatever that manifest no longer declares, so one project's install
+ * uninstalls another's out from under a build that is importing it. The
+ * in-process `installLock` cannot see across processes either. Scoping the root
+ * to the process makes the lock sufficient by construction and makes the
+ * "one project" premise true rather than merely usually true.
+ *
+ * The child names carried the pid before this (`session-<pid>`,
+ * `build-<pid>-<n>`) for the same reason; it lives in one place now.
  */
 export function workspacesRoot(): string {
-  return path.join(import.meta.dirname, ".workspaces");
+  return path.join(import.meta.dirname, ".workspaces", String(process.pid));
 }
 
 /**
@@ -235,7 +254,7 @@ export async function withBuildDir<T>(
   materialize: (dir: string, files: Record<string, string>) => Promise<void>,
   fn: (dir: string) => Promise<T>,
 ): Promise<T> {
-  const dir = path.join(workspacesRoot(), `build-${process.pid}-${++buildSeq}`);
+  const dir = path.join(workspacesRoot(), `build-${++buildSeq}`);
   await mkdir(dir, { recursive: true });
   try {
     await materialize(dir, files);

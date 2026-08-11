@@ -30,3 +30,13 @@ Two related fixes: `Cannot find module` (TS2307) now carries a hint pointing at
 `add_dependency`, and the guest no longer syncs package-manager lockfiles into
 the project — `npm install` leaves a ~100 KB `package-lock.json` that was the
 bulk of every turn's sync payload and landed in pnpm projects via `aai pull`.
+
+Hardening from a follow-up review: the shared install tree is scoped per
+process (it is keyed off the harness file's location, and the subprocess
+backend runs one harness for every sandbox on the machine, so two projects
+could prune each other's packages); the install budget covers the whole
+reconciliation rather than each package, with a shorter one on the
+session-install path the host abandons at 30s; the lock acquire has a deadline
+so a second page open does not queue behind work nobody is waiting on; a failed
+spec is remembered briefly so the same doomed install is not re-run on every
+build; and a package that hoists over a toolchain copy is logged.

@@ -12,6 +12,7 @@ import { runNpm } from "./studio-spawn.ts";
 import {
   ensureWorkspaceDependencies,
   planWorkspaceDependencies,
+  resetFailedInstalls,
   withDependencyWarning,
 } from "./studio-workspace-deps.ts";
 
@@ -31,6 +32,9 @@ beforeEach(async () => {
   // mock factory — without this, a previous test's implementation and call
   // count leak into the ones asserting npm was never spawned.
   runNpmMock.mockReset();
+  // The failed-spec memo is module scope by design (it spans builds within one
+  // process), so a test's failure would otherwise be remembered by the next.
+  resetFailedInstalls();
   sharedRoot = await mkdtemp(path.join(tmpdir(), "aai-workspaces-"));
   dir = path.join(sharedRoot, "session-1");
   await mkdir(dir, { recursive: true });
@@ -175,7 +179,11 @@ describe("ensureWorkspaceDependencies", () => {
     await expect(ensureWorkspaceDependencies(dir, opts())).resolves.toBeNull();
     // In the SHARED root, not the workspace — and the standing flag tail is
     // runNpm's contract, asserted once in studio-spawn.test.ts.
-    expect(runNpmMock).toHaveBeenCalledWith(sharedRoot, ["install", "--omit=dev", "--omit=peer"]);
+    expect(runNpmMock).toHaveBeenCalledWith(
+      sharedRoot,
+      ["install", "--omit=dev", "--omit=peer"],
+      expect.any(Number),
+    );
     await expect(sharedDependencies()).resolves.toEqual({ ms: "^2.1.3" });
     // The workspace's own manifest is the user's file and is never rewritten.
     const workspacePkg = JSON.parse(await readFile(path.join(dir, "package.json"), "utf-8"));
@@ -341,6 +349,84 @@ describe("ensureWorkspaceDependencies", () => {
 
     expect(warning).toContain("Skipped a:");
     expect(runNpmMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("budget, memo and shadowing", () => {
+  test("a failed spec is not re-attempted on the next build", async () => {
+    // Un-staging a failure erases the only record it was tried, so without the
+    // memo the same doomed npm run re-spawns on every `test_agent` — which is
+    // exactly what the coding agent loops on while repairing a build.
+    await manifest({ dependencies: { nope: "^1.0.0" } });
+    runNpmMock.mockResolvedValue(npmResult({ exitCode: 1, stdout: "E404 not found\n" }));
+
+    const first = await ensureWorkspaceDependencies(dir, opts());
+    const second = await ensureWorkspaceDependencies(dir, opts());
+
+    expect(runNpmMock).toHaveBeenCalledOnce();
+    expect(second).toContain("Could not install nope");
+    expect(second).toContain("E404 not found");
+    expect(second).toBe(first);
+  });
+
+  test("changing the spec retries immediately — the memo is keyed by name@spec", async () => {
+    await manifest({ dependencies: { nope: "^1.0.0" } });
+    runNpmMock.mockResolvedValue(npmResult({ exitCode: 1, stdout: "E404\n" }));
+    await ensureWorkspaceDependencies(dir, opts());
+
+    await manifest({ dependencies: { nope: "^2.0.0" } });
+    await ensureWorkspaceDependencies(dir, opts());
+
+    expect(runNpmMock).toHaveBeenCalledTimes(2);
+  });
+
+  test("the budget is for the whole run, not per package", async () => {
+    // Three packages at the per-package cap could block a caller for ~330s
+    // against a host that gives up at 30s.
+    await manifest({ dependencies: { a: "1", b: "1", c: "1" } });
+    runNpmMock.mockImplementation(async (_root, _args, timeoutMs) => {
+      // Burn the whole budget on the first package.
+      vi.setSystemTime(Date.now() + (timeoutMs ?? 0));
+      return npmResult({ signal: "SIGTERM" });
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const warning = await ensureWorkspaceDependencies(dir, { ...opts(), budgetMs: 5000 });
+      expect(runNpmMock).toHaveBeenCalledOnce();
+      expect(warning).toContain("the 5000ms install budget was spent");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a package that hoists over the toolchain is logged for the operator", async () => {
+    // `--omit=peer` closes one instance of this; an ordinary transitive
+    // dependency uses the same mechanism and would silently change what the
+    // client bundle is built against.
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await manifest({ dependencies: { ms: "^2.1.3" } });
+    await installedInToolchain("react");
+    runNpmMock.mockImplementation(async () => {
+      await landFiles("ms");
+      await landFiles("react"); // hoisted by ms, shadowing the toolchain
+      return npmResult();
+    });
+
+    await ensureWorkspaceDependencies(dir, opts());
+
+    expect(err).toHaveBeenCalledWith(expect.stringContaining("react"));
+    expect(err.mock.calls[0]?.[0]).toContain("shadow");
+  });
+
+  test("nothing is logged when the install shadows nothing", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await manifest({ dependencies: { ms: "^2.1.3" } });
+    await installedInToolchain("react");
+    npmLands("ms");
+
+    await ensureWorkspaceDependencies(dir, opts());
+
+    expect(err).not.toHaveBeenCalled();
   });
 });
 

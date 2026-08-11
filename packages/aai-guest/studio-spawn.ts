@@ -97,13 +97,18 @@ export const PACKAGE_NAME_RE = /^(@[a-z0-9~][\w.~-]*\/)?[a-z0-9~][\w.~-]*$/;
  * killed child reads, which is the exact failure this module's header says it
  * was created to end. `signal` stays on the result so a caller can still
  * choose its own wording; what is shared is the flag tail, the env, the
- * timeout and the cap.
+ * default timeout and the cap. `timeoutMs` overrides the default for a caller
+ * spending one budget across several runs.
  */
-export function runNpm(dir: string, args: string[]): Promise<SpawnCappedResult> {
+export function runNpm(
+  dir: string,
+  args: string[],
+  timeoutMs = NPM_TIMEOUT_MS,
+): Promise<SpawnCappedResult> {
   return runCapped("npm", [...args, "--no-audit", "--no-fund", "--loglevel=error"], {
     cwd: dir,
     env: envWithoutGuestToken(),
-    timeoutMs: NPM_TIMEOUT_MS,
+    timeoutMs,
     cap: NPM_OUTPUT_CAP,
     combineStreams: true,
   });

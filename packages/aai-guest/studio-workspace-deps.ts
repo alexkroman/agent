@@ -53,23 +53,44 @@
  *   PER PACKAGE: staging two missing packages together would put them back in
  *   one resolution, where a bogus name takes the good one down with it.
  *
- * The root (`.workspaces/`) is the directory every session workspace and every
- * Publish build dir is created UNDER, so its `node_modules` is on all of their
- * resolution paths by Node's ordinary walk-up — verified, not assumed — while
- * being outside every one of them, so nothing here syncs to the store and
- * `materializeWorkspace`'s `rm -rf` cannot reach it. A sandbox serves exactly
- * one project (its identity is pinned at first install), so sharing the tree
- * across that project's session and its publish builds is sharing it with
- * itself — and it means a package installed once during the session is already
- * there when Publish materializes its fresh directory.
+ * The root (`.workspaces/<pid>/`) is the directory every session workspace and
+ * every Publish build dir is created UNDER, so its `node_modules` is on all of
+ * their resolution paths by Node's ordinary walk-up — verified, not assumed —
+ * while being outside every one of them, so nothing here syncs to the store and
+ * `materializeWorkspace`'s `rm -rf` cannot reach it. A package installed once
+ * during the session is therefore already there when Publish materializes its
+ * fresh directory.
+ *
+ * **The `<pid>` is what makes "shared with itself" true** (see
+ * `workspacesRoot`). The argument for sharing is that a sandbox serves exactly
+ * one project — but the path is a property of the harness FILE, and under the
+ * subprocess backend every sandbox on the machine runs the same one. Without
+ * the pid, two projects share a staged manifest that `npm install` prunes
+ * against, and `installLock` is in-process so it cannot see the other. Scoping
+ * the root to the process makes the premise hold and the lock sufficient.
+ *
+ * This module decides WHAT a workspace still needs and reports what it could
+ * not get; `studio-shared-install.ts` owns how a package gets into the shared
+ * tree — the staged manifest, the npm run, the budget, the failure memo, and
+ * the shadowing check.
  */
 
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { errorMessage } from "@alexkroman1/aai";
 import { createKeyedLock, withLock } from "@alexkroman1/aai/utils";
-import { NPM_TIMEOUT_MS, PACKAGE_NAME_RE, runNpm } from "./studio-spawn.ts";
+import {
+  dependenciesOf,
+  type InstallFailure,
+  installShared,
+  LOCK_ACQUIRE_TIMEOUT_MS,
+  readJson,
+  rememberedFailure,
+  sharedManifestPath,
+} from "./studio-shared-install.ts";
+import { PACKAGE_NAME_RE } from "./studio-spawn.ts";
+
+export { resetFailedInstalls, SESSION_INSTALL_BUDGET_MS } from "./studio-shared-install.ts";
 
 /**
  * The version specs worth copying into the shared manifest: semver ranges and
@@ -88,37 +109,18 @@ import { NPM_TIMEOUT_MS, PACKAGE_NAME_RE, runNpm } from "./studio-spawn.ts";
  */
 const VERSION_SPEC_RE = /^[\w.^~<>=*+ |-]*$/;
 
-/**
- * Where the shared install lives, and the two files it owns. Named off the
- * workspaces root the caller passes in, so this module stays clear of
- * `studio-build.ts`, which calls it.
- */
-const sharedManifestPath = (sharedRoot: string): string => path.join(sharedRoot, "package.json");
-
 export type WorkspaceDependencyOptions = {
-  /** The `.workspaces/` root every workspace and build dir sits under. */
+  /** This process's workspaces root — every workspace and build dir sits under it. */
   sharedRoot: string;
   /** The baked toolchain's `node_modules`, or null when it can't be found. */
   toolchainModules: string | null;
+  /**
+   * Wall-clock budget for the whole reconciliation, across every package.
+   * Defaults to {@link DEFAULT_INSTALL_BUDGET_MS}; the session-install path
+   * passes {@link SESSION_INSTALL_BUDGET_MS}.
+   */
+  budgetMs?: number | undefined;
 };
-
-/** Read and parse a JSON file, or null when it is missing/unparseable. */
-async function readJson(file: string): Promise<unknown | null> {
-  try {
-    return JSON.parse(await readFile(file, "utf-8")) as unknown;
-  } catch {
-    return null;
-  }
-}
-
-/** A manifest's `dependencies` as a plain record — `{}` for any other shape. */
-function dependenciesOf(manifest: unknown): Record<string, string> {
-  const declared = (manifest as { dependencies?: unknown } | null)?.dependencies;
-  return declared && typeof declared === "object" ? (declared as Record<string, string>) : {};
-}
-
-/** One package the install could not satisfy, with npm's own explanation. */
-type InstallFailure = { name: string; output: string };
 
 export type DependencyPlan = {
   /** `name → spec` for the packages to add to the shared manifest. */
@@ -199,120 +201,72 @@ export async function ensureWorkspaceDependencies(
   if (manifest === null) return null;
 
   const { sharedRoot, toolchainModules } = opts;
-  // Planned INSIDE the lock, against a freshly read staged manifest: an
-  // overlapping build may have installed exactly these while this one waited,
-  // and re-running npm for a tree that already satisfies us is the whole cost
-  // this module exists to avoid. Nothing outside the lock needs the plan —
-  // `installShared` already no-ops on an empty one — so there is one plan, and
-  // it is the current one.
-  const { failures, skipped } = await withLock(installLock, sharedRoot, async () => {
+  /** Plan against the tree as it is right now. Cheap: reads one small file. */
+  const planNow = async (): Promise<DependencyPlan> => {
     const staged = dependenciesOf(await readJson(sharedManifestPath(sharedRoot)));
-    const plan = planWorkspaceDependencies(
+    return planWorkspaceDependencies(
       manifest,
       (name, spec) =>
         (toolchainModules !== null && existsSync(path.join(toolchainModules, name))) ||
         existsSync(path.join(dir, "node_modules", name)) ||
         (staged[name] === spec && existsSync(path.join(sharedRoot, "node_modules", name))),
     );
-    return { failures: await installShared(sharedRoot, plan.install), skipped: plan.skipped };
-  });
+  };
 
-  if (failures.length === 0 && skipped.length === 0) return null;
-  return describeMissing(failures, skipped);
+  // The common case is that nothing needs installing, and it must not take the
+  // lock: with an acquire deadline (below) a no-op call could otherwise FAIL on
+  // a contended lock while having no work to do.
+  const first = await planNow();
+  const remembered = rememberFailures(first.install);
+  if (Object.keys(first.install).length === 0) {
+    return describeMissing(remembered, first.skipped) || null;
+  }
+
+  let failures: InstallFailure[];
+  let skipped = first.skipped;
+  try {
+    ({ failures, skipped } = await withLock(
+      installLock,
+      sharedRoot,
+      async () => {
+        // Re-planned inside the lock: an overlapping build may have installed
+        // exactly these while this one waited, and re-running npm for a tree
+        // that already satisfies us is the whole cost this module avoids.
+        const fresh = await planNow();
+        return {
+          failures: await installShared(sharedRoot, fresh.install, opts),
+          skipped: fresh.skipped,
+        };
+      },
+      { timeoutMs: LOCK_ACQUIRE_TIMEOUT_MS },
+    ));
+  } catch (err) {
+    // Only the acquire can throw here — `installShared` reports per package.
+    // Another caller is installing; say so rather than failing the build, and
+    // let the next call re-plan against whatever they land.
+    failures = Object.keys(first.install).map((name) => ({
+      name,
+      output: `another build is installing dependencies: ${errorMessage(err)}`,
+    }));
+  }
+
+  return describeMissing([...remembered, ...failures], skipped) || null;
 }
 
 /**
- * Install `specs` into the shared root, ONE PACKAGE PER npm RUN, and report
- * what each failure said.
- *
- * One at a time because npm resolves a manifest as a WHOLE: staged together,
- * a single unreachable package fails the install of every other one in the
- * file — verified, not assumed (a bogus name alongside `ms` and `date-fns`
- * left all three uninstalled). One run each costs a few hundred milliseconds
- * per package against a warm tree, and it is what makes a bad manifest entry
- * cost only itself.
- *
- * A package that did not arrive is REMOVED from the staged manifest again.
- * Left in, it is not merely a failure once — it is in the file every later
- * install reads, so one bad entry would permanently break installing anything
- * else in this sandbox.
+ * The subset of `specs` this process has already tried and failed, dropped
+ * from `specs` so they are not re-attempted. See {@link failedInstalls}.
  */
-async function installShared(
-  sharedRoot: string,
-  specs: Record<string, string>,
-): Promise<InstallFailure[]> {
-  const failures: InstallFailure[] = [];
+function rememberFailures(specs: Record<string, string>): InstallFailure[] {
+  const now = Date.now();
+  const out: InstallFailure[] = [];
   for (const [name, spec] of Object.entries(specs)) {
-    const { ok, output } = await installOne(sharedRoot, name, spec);
-    if (ok) continue;
-    failures.push({ name, output });
-    await stage(sharedRoot, name, null);
+    const output = rememberedFailure(name, spec, now);
+    if (output === undefined) continue;
+    out.push({ name, output });
+    delete specs[name];
   }
-  return failures;
-}
-
-/**
- * Stage one package into the shared manifest and reify it.
- *
- * Success is npm's **exit code**, not "is the directory there now". Those came
- * apart once the spec started mattering: on a version change the directory is
- * already present carrying the OLD version, so presence proves nothing, while
- * exit 0 means npm satisfied the range it was given. The cost is that a
- * package whose postinstall script fails is reported even though its files
- * landed — a false alarm on a failing build, against silently shipping a
- * version the manifest does not ask for.
- */
-async function installOne(
-  sharedRoot: string,
-  name: string,
-  spec: string,
-): Promise<{ ok: boolean; output: string }> {
-  try {
-    await stage(sharedRoot, name, spec);
-  } catch (err) {
-    return { ok: false, output: `could not stage the install manifest: ${errorMessage(err)}` };
-  }
-  try {
-    // `--omit=peer` for the same reason as `--omit=dev`: a peer dependency
-    // says "the host provides this", and here the host is the baked toolchain.
-    // Installed, a package's `react` peer would hoist into the shared root and
-    // SHADOW the toolchain's for every workspace under it, silently changing
-    // the React the client bundle is built against. Left out, a peer the
-    // toolchain really lacks fails the build by name, which the agent can
-    // answer with `add_dependency`.
-    const result = await runNpm(sharedRoot, ["install", "--omit=dev", "--omit=peer"]);
-    return result.signal
-      ? { ok: false, output: `killed by ${result.signal} after ${NPM_TIMEOUT_MS}ms` }
-      : { ok: result.exitCode === 0, output: result.stdout.trim() };
-  } catch (err) {
-    return { ok: false, output: errorMessage(err) };
-  }
-}
-
-/**
- * Read-modify-write the shared manifest's `dependencies`.
- *
- * Modified rather than replaced: the tree is shared across this project's
- * session workspace and its publish build dirs, and npm PRUNES whatever the
- * manifest it reads no longer declares — so writing only the current call's
- * packages would uninstall an earlier one's, out from under a build still
- * importing it.
- */
-async function stage(sharedRoot: string, name: string, spec: string | null): Promise<void> {
-  const manifestPath = sharedManifestPath(sharedRoot);
-  await mkdir(sharedRoot, { recursive: true });
-  const dependencies = dependenciesOf(await readJson(manifestPath));
-  if (spec === null) delete dependencies[name];
-  else dependencies[name] = spec;
-  await writeFile(
-    manifestPath,
-    `${JSON.stringify(
-      { name: "aai-workspace-deps", private: true, type: "module", dependencies },
-      null,
-      2,
-    )}\n`,
-    "utf-8",
-  );
+  return out;
 }
 
 /** The chat-facing diagnostic: what is unusable, why, and npm's own tail. */

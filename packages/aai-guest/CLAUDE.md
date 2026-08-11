@@ -158,6 +158,43 @@ Three decisions, the middle one measured:
   version change the directory is already there carrying the old version, so
   presence proves nothing.
 
+- **The shared root is per PROCESS (`.workspaces/<pid>/`), and that is what
+  makes "shared with itself" true.** The argument for one tree is that a
+  sandbox serves one project — but the path is a property of the harness FILE,
+  and under the subprocess backend every sandbox on the machine execs the same
+  `packages/aai-guest/dist/harness.mjs`. Without the pid, N processes serving N
+  projects share one staged manifest, and `npm install` PRUNES what that
+  manifest no longer declares — so one project's install uninstalls another's
+  out from under a build importing it, and `installLock` is in-process so it
+  cannot see the other. The session and build dirs carried the pid in their own
+  names for exactly this reason; it lives in one place now.
+- **The install budget is for the WHOLE reconciliation, not per package**, and
+  the lock acquire has a deadline. One npm run per package at `NPM_TIMEOUT_MS`
+  meant three unreachable packages could block a caller ~330s; session-init's
+  host gives up at 30s (`ADOPT_TIMEOUT_MS`) or 60s
+  (`SESSION_INIT_TIMEOUT_MS`) and runs on EVERY page open, so it passes
+  `SESSION_INSTALL_BUDGET_MS` (20s) and the rest are reported unattempted
+  rather than run past a deadline nobody is waiting on any more. The acquire
+  deadline stops a second page open queueing behind an install its own caller
+  has already abandoned — which is also why the no-op path must NOT take the
+  lock, or a call with no work could fail on contention.
+- **A failed spec is remembered for a minute** (`failedInstalls`, keyed
+  `name@spec`). Un-staging a failure is required, but it also erases the only
+  record that it was tried, so the same doomed npm run re-spawned on every
+  `test_agent` — the loop the coding agent runs while repairing a build. The
+  key includes the spec so an edited version retries at once, and the TTL is
+  short so a registry blip is not cached for the sandbox's life.
+- **Hoisted packages that shadow the toolchain are logged.** `--omit=peer`
+  closes one instance of the mechanism; an ordinary transitive dependency uses
+  the same one, so a user package depending on `react` lands it in the shared
+  root ABOVE the toolchain and the client bundle silently builds against a
+  registry copy. `warnOnShadowedToolchain` checks the mechanism — top-level
+  entries that also exist in the toolchain — which is what makes the
+  "no shadowing" claim above checkable rather than asserted. It logs rather
+  than warning through `describeMissing`, because a shadowed package does not
+  FAIL the build (that is the problem with it) and the chat-facing channel only
+  surfaces on failure.
+
 **A missing dependency's first symptom is TS2307, and it has a hint**
 (`studio-diagnostics.ts`). `Cannot find module 'date-fns'` fires at the
 typecheck gate before the bundler says anything, and the hint names

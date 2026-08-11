@@ -64,7 +64,7 @@ import {
   TURN_IN_FLIGHT_CODE,
   TURN_IN_FLIGHT_STATUS,
 } from "./studio-turn-stream.ts";
-import { ensureWorkspaceDependencies } from "./studio-workspace-deps.ts";
+import { ensureWorkspaceDependencies, SESSION_INSTALL_BUDGET_MS } from "./studio-workspace-deps.ts";
 import { materializeWorkspace } from "./studio-workspace-fs.ts";
 import type { TypecheckFn } from "./studio-write-diagnostics.ts";
 
@@ -216,7 +216,7 @@ export async function initStudioSession(params: StudioSessionParams): Promise<St
   // Under the workspaces root, NOT os.tmpdir(): builds run in-guest through
   // the aai CLI bundlers, and only this root has the toolchain's
   // node_modules above it for the workspace's bare imports to resolve.
-  const dir = path.join(workspacesRoot(), `session-${process.pid}`);
+  const dir = path.join(workspacesRoot(), "session");
   await materializeWorkspace(dir, params.files);
   // Complete the workspace into a real project (package.json, tsconfig,
   // …) — same shape `aai init` scaffolds; the files sync back to the
@@ -228,7 +228,13 @@ export async function initStudioSession(params: StudioSessionParams): Promise<St
   // whatever package.json declares before the first build reads an import.
   // Non-fatal: a session is still usable when one dependency will not install,
   // and the build that needs it says so where the coding agent can act on it.
-  const depWarning = await ensureWorkspaceDependencies(dir, workspaceDependencyOptions());
+  const depWarning = await ensureWorkspaceDependencies(dir, {
+    ...workspaceDependencyOptions(),
+    // The host abandons session-init well before npm's own cap, and this runs
+    // on every page open — a slow registry must degrade the install, not the
+    // session. See SESSION_INSTALL_BUDGET_MS.
+    budgetMs: SESSION_INSTALL_BUDGET_MS,
+  });
   if (depWarning !== null) console.error(`studio workspace dependencies: ${depWarning}`);
   // Pinned only once the install actually succeeded: a rejected first install
   // must not brand the sandbox with an identity it never served.
