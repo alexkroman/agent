@@ -316,9 +316,13 @@ export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
   greeting: string;
   /**
    * Bias prompt for transcription — use it to teach the transcriber the agent's
-   * own vocabulary (product names, spelled-out identifiers). Defaults to empty
-   * (unbiased transcription); see {@link DEFAULT_STT_PROMPT} for what an
-   * effective prompt looks like.
+   * own vocabulary (product names, spelled-out identifiers). Defaults to
+   * {@link DEFAULT_STT_PROMPT}, which covers spelled-out identifiers; set `""`
+   * to transcribe unbiased.
+   *
+   * **Replace the default if your callers do not spell identifiers out.** A
+   * prompt naming vocabulary that never occurs biases the transcript toward it,
+   * which is worse than no prompt at all — see {@link DEFAULT_STT_PROMPT}.
    *
    * Honoured in both session modes: the pipeline passes it to its STT stage,
    * S2S sends it as `input.transcription_prompt` (trimmed to that field's
