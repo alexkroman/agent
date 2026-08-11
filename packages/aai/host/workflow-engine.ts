@@ -116,6 +116,21 @@ export type WorkflowEngine = WorkflowClient & {
    */
   runDue(): Promise<number>;
   /**
+   * Is there durable work in flight, or about to be?
+   *
+   * True while a run is executing here, and while a near-term wake timer is
+   * armed (a `ctx.sleep` inside {@link MAX_WAKE_TIMER_MS}). It exists for one
+   * caller: the guest's idle-exit controller, which otherwise measures
+   * "does anybody need me" as the live SESSION count — and a static-page app
+   * has no sessions by construction, so a five-minute timer was killing
+   * healthy long runs and then paying the lease to recover them.
+   *
+   * Deliberately NOT true for a long sleeper. Holding a billed container open
+   * for a six-hour `ctx.sleep` is the thing `sleep` releases the run to avoid;
+   * that case wants an external wake, not a pinned sandbox.
+   */
+  busy(): boolean;
+  /**
    * Store bytes for a run to work on and resolve the id that names them — see
    * {@link WorkflowStore.putBlob} for why they may not ride the journal.
    *
@@ -428,6 +443,12 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
       const blobId = crypto.randomUUID();
       await store.putBlob(blobId, contentType, base64);
       return blobId;
+    },
+
+    busy(): boolean {
+      // `timers` holds only armed wake timers (`scheduleWake`), and a step
+      // retrying its backoff is inside `execute`, so `inFlight` covers it.
+      return inFlight.size > 0 || timers.size > 0;
     },
 
     listing(): WorkflowSummary[] {

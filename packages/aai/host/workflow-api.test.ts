@@ -73,6 +73,8 @@ function makeEngine(declared = ["digest"]): FakeEngine {
       blobs.push({ contentType, base64 });
       return Promise.resolve(`blob-${blobs.length}`);
     },
+    // The API never calls it; the host's idle controller does.
+    busy: () => false,
     listing: () => declared.map((name) => ({ name, description: `${name} does a thing` })),
   };
 }

@@ -172,6 +172,29 @@ export type IdleController = {
   stop: () => void;
 };
 
+/** Inputs to {@link createIdleController}. */
+export type IdleControllerOptions = {
+  activeSessions: () => number;
+  /**
+   * Durable work in flight or imminent (the workflow engine's `busy()`).
+   *
+   * Defers the IDLE exit only. A DRAIN still exits with work in flight, and
+   * that is the correct trade rather than an oversight: a drain retires this
+   * sandbox for a redeploy, the journal makes every run resumable on the
+   * replacement, and holding a blue-green handover open for a three-hour run
+   * would stall the deploy to save work that is not lost. Hence the check sits
+   * AFTER the drain branch below — order is the whole implementation.
+   *
+   * Optional so studio mode, which has no engine, passes nothing.
+   */
+  pendingWork?: (() => boolean) | undefined;
+  idleExitMs: number;
+  pollMs: number;
+  /** Injectable for tests. Defaults to `process.exit`. */
+  exit?: (code: number) => void;
+  now?: () => number;
+};
+
 /**
  * Guest-owned lifecycle: exit 0 once idle past `idleExitMs` (0 disables); a
  * requested drain exits as soon as the sessions hit zero, or at the drain's
@@ -179,15 +202,16 @@ export type IdleController = {
  * guest enforces the budget on itself). This replaces the control-channel
  * orphan timeout — an agent-mode guest has no host socket, so "nobody needs
  * me" is measured by its own session count.
+ *
+ * **Sessions are not the only work, and reading them as such broke durable
+ * runs.** A `page: "static"` app has no sessions BY CONSTRUCTION, so an agent
+ * whose whole job is workflow runs looked permanently idle: the five-minute
+ * timer fired mid-run, every time, and the run then waited out a 120s lease
+ * plus a visitor before continuing. {@link IdleControllerOptions.pendingWork}
+ * is the second input — see its own doc for why it defers the idle exit but
+ * deliberately does NOT hold a drain.
  */
-export function createIdleController(opts: {
-  activeSessions: () => number;
-  idleExitMs: number;
-  pollMs: number;
-  /** Injectable for tests. Defaults to `process.exit`. */
-  exit?: (code: number) => void;
-  now?: () => number;
-}): IdleController {
+export function createIdleController(opts: IdleControllerOptions): IdleController {
   const exit = opts.exit ?? ((code: number) => process.exit(code));
   const now = opts.now ?? Date.now;
   let draining = false;
@@ -207,6 +231,12 @@ export function createIdleController(opts: {
     if (draining) {
       console.error("agent guest drained: no live sessions; exiting");
       exit(0);
+      return;
+    }
+    // Deliberately after the drain branch: durable work postpones idle
+    // reclamation, never a retirement.
+    if (opts.pendingWork?.()) {
+      lastBusy = now();
       return;
     }
     if (opts.idleExitMs > 0 && now() - lastBusy > opts.idleExitMs) {

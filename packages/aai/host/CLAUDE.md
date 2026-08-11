@@ -181,13 +181,34 @@ POST /workflows/blobs      → { blobId, bytes }  body: raw bytes
 ```
 
 That closes the "no trigger surface" gap this section used to record: a cron job,
-a webhook relay, a script or a page can all start a run. What is still NOT wired
-is the platform WAKING an idle-exited sandbox for a due sleeper — a wake timer
-only fires while this host lives (`MAX_WAKE_TIMER_MS`, 60s; past that recovery is
-`runDue()`'s on the next boot), so a long sleep resumes when something next
-brings the agent up rather than on time. The substrate for that exists in the
-platform Postgres (`pg_cron`, `pgmq`, `pg_net` — see
-`packages/aai-server/CLAUDE.md`).
+a webhook relay, a script or a page can all start a run.
+
+**A run that is EXECUTING no longer needs a visitor to finish, and that used to
+be the dominant gap.** The guest measured "does anybody need me" by its live
+SESSION count, and a `page: "static"` app has none by construction — so the
+five-minute idle timer fired mid-run every time, and the journal then paid a
+120s lease plus a visitor to continue. `WorkflowEngine.busy()` is the second
+input to that decision (true while a run is in flight or a near-term wake timer
+is armed), read by the guest's idle controller through
+`SessionRuntime.workflows`. Verified against a real Postgres: a 12-second run
+held its sandbox open under a 3-second idle window with zero sessions, and the
+guest still exited 3 seconds after the run completed.
+
+Two properties that decision has to keep. It defers the IDLE exit and NOT a
+DRAIN — a drain retires the sandbox for a redeploy, every run is resumable on
+the replacement, and holding a blue-green handover open for a three-hour run
+would stall the deploy to save work that is not lost. And `busy()` is FALSE for
+a sleeper past `MAX_WAKE_TIMER_MS` (60s): holding a billed container open for a
+six-hour `ctx.sleep` is exactly what suspending the run releases it to avoid.
+
+**What is still NOT wired is the platform WAKING a sandbox that is gone** — for
+a long sleeper, or for a run abandoned by a crash, an OOM or a redeploy. Those
+resume on the next boot (`runDue()`), so they wait for whatever next brings the
+agent up. The substrate exists in the platform Postgres (`pg_cron`, `pgmq`,
+`pg_net` — see `packages/aai-server/CLAUDE.md`), and the discovery half is
+already demonstrated there: the orphan-preview sweep reaches each app's own
+schema through the `app-db:<slug>` vault secret, with an identifier-shape
+assertion so a corrupt meta cannot steer it.
 
 **`/blobs` exists because bytes may not travel in the journal, and that is the
 one non-obvious thing about this surface.** Replay re-reads every step output and

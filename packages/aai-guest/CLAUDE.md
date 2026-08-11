@@ -298,12 +298,33 @@ pin and versioned by `GUEST_CONTRACT_VERSION` (additive changes only):
   `AAI_GUEST_IDLE_EXIT_MS` on the SERVER, which `agentBootEnv` forwards into
   the guest's exec env — a guest reads only what it is handed at exec, so
   setting it on the platform process is what reaches BOTH backends) with
-  zero sessions —
+  zero sessions AND no durable work in flight (`createIdleController`'s
+  `pendingWork`, wired to the bundle's `WorkflowEngine.busy()` — see below) —
   this IS idle reclamation, not a backstop (the host's per-slot idle timers
   were deleted); the exit surfaces host-side as `onSandboxLost`, which
   detaches the slot, and the next broker call rebuilds it. A drained guest
   refuses new direct-dial sessions (close 1013 → the client re-brokers) and
   exits the moment it empties or at its drain deadline.
+
+  **Sessions alone were the wrong measure, and a `page: "static"` app is the
+  proof.** Such an app has no sessions by construction, so a guest whose entire
+  job is workflow runs looked permanently idle: the five-minute timer fired
+  mid-run every time, and the run then waited out a 120s lease PLUS a visitor to
+  continue — the platform manufacturing the failure the journal exists to
+  survive. `hasPendingWork` reads the ALREADY-BUILT runtime
+  (`state.runtime?.workflows`), never `ensureRuntime`: this runs on the idle poll
+  several times a minute for every guest, and going through the lazy builder
+  would construct a runtime eagerly for agents that never asked for one.
+
+  Two properties it has to keep. It defers the IDLE exit and **not a drain** — a
+  drain retires this sandbox for a redeploy, the journal makes every run
+  resumable on the replacement, and holding a handover open for a three-hour run
+  would stall the deploy to save work that is not lost (the check therefore sits
+  after the drain branch, and a test pins that order). And it is FALSE for a
+  sleeper past `MAX_WAKE_TIMER_MS`: holding a billed container for a six-hour
+  `ctx.sleep` is exactly what suspending the run releases it to avoid, so that
+  case still wants an external wake — see `packages/aai/host/CLAUDE.md`.
+
 - **Redeploys hand over BLUE-GREEN** (`handoverSlot` in
   sandbox-resolve.ts): the agents-row change event boots the NEW deploy's
   sandbox and waits for its readiness before detaching the old one, so a

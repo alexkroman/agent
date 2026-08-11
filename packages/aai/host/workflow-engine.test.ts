@@ -414,3 +414,95 @@ describe("shutdown", () => {
     expect(store.row(runId).status).toBe("pending");
   });
 });
+
+/**
+ * `busy()` is what stops a guest reclaiming itself out from under a live run.
+ *
+ * The guest's idle controller measures "does anybody need me" by the SESSION
+ * count, and a `page: "static"` app has none by construction — so before this
+ * existed, a five-minute timer killed every run longer than five minutes and
+ * the journal then paid a 120s lease plus a visitor to continue. These assert
+ * the two edges: true while work is really in flight, and false the moment
+ * nothing is, so it cannot pin a sandbox open forever.
+ */
+describe("busy", () => {
+  test("false with nothing running", () => {
+    const { engine } = makeEngine({
+      w: workflow({ input: z.object({}), run: () => Promise.resolve(1) }),
+    });
+    expect(engine.busy()).toBe(false);
+  });
+
+  test("true while a step is in flight, false once the run completes", async () => {
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { engine } = makeEngine({
+      w: workflow({
+        input: z.object({}),
+        run: async (_input, ctx) => {
+          await ctx.step("slow", async () => {
+            await gate;
+            return "done";
+          });
+          return "ok";
+        },
+      }),
+    });
+
+    await engine.start("w", {});
+    await drain();
+    // The step is parked on the gate — this is the window a five-minute idle
+    // timer used to fire in.
+    expect(engine.busy()).toBe(true);
+
+    release?.();
+    await drain();
+    expect(engine.busy()).toBe(false);
+  });
+
+  test("true while a NEAR-term wake timer is armed, so a short sleep survives", async () => {
+    const { engine } = makeEngine({
+      w: workflow({
+        input: z.object({}),
+        run: async (_input, ctx) => {
+          await ctx.step("before", () => 1);
+          // Inside MAX_WAKE_TIMER_MS, so the engine holds a timer for it.
+          await ctx.sleep(5000);
+          await ctx.step("after", () => 2);
+          return "ok";
+        },
+      }),
+    });
+
+    await engine.start("w", {});
+    await drain();
+    // Sleeping, not executing — but work is imminent and this host owns it.
+    expect(engine.busy()).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(5000);
+    await drain();
+    expect(engine.busy()).toBe(false);
+  });
+
+  test("false for a LONG sleeper — that case wants an external wake, not a pinned sandbox", async () => {
+    const { engine } = makeEngine({
+      w: workflow({
+        input: z.object({}),
+        run: async (_input, ctx) => {
+          await ctx.step("before", () => 1);
+          // Past MAX_WAKE_TIMER_MS: no timer is armed, so nothing here is
+          // waiting on THIS host. Holding a billed container for six hours is
+          // exactly what `sleep` releases the run to avoid.
+          await ctx.sleep(6 * 60 * 60_000);
+          return "ok";
+        },
+      }),
+    });
+
+    await engine.start("w", {});
+    await drain();
+    expect(engine.busy()).toBe(false);
+  });
+});

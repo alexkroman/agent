@@ -438,6 +438,7 @@ describe("createServer with page: static", () => {
           get: () => Promise.resolve(undefined),
           putBlob: () => Promise.resolve("b"),
           listing: () => [{ name: "transcribe" }],
+          busy: () => false,
         },
       },
       logger: silentLogger,

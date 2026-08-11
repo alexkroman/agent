@@ -119,6 +119,22 @@ function workflowEngine(state: HarnessState): SessionRuntime["workflows"] {
 }
 
 /**
+ * Is durable work in flight? Read WITHOUT building a runtime.
+ *
+ * The distinction from {@link workflowEngine} is the whole point: this runs on
+ * the idle poll, several times a minute, for the life of every guest. Going
+ * through `ensureRuntime` would BUILD the runtime on the first tick — eagerly,
+ * for every agent, before any request had asked for one — which defeats the
+ * laziness the facade exists for and would log a failure on a guest whose
+ * bundle carries no provider credentials. A run can only be in flight if the
+ * runtime already exists, so an absent one is an honest `false`.
+ */
+function hasPendingWork(state: HarnessState): boolean {
+  const engine = state.runtime?.workflows as SessionRuntime["workflows"];
+  return engine?.busy() ?? false;
+}
+
+/**
  * The session-facing runtime handed to `createServer` — a lazy facade over
  * `ensureRuntime` so the real runtime is built on the FIRST session (with
  * the loaded bundle's env), plus the live-session count the host's idle
@@ -187,6 +203,9 @@ async function mainAgent(port: number, host: string, token: string): Promise<voi
   const rawIdle = Number(process.env.AAI_GUEST_IDLE_EXIT_MS ?? AGENT_IDLE_EXIT_MS);
   const idle = createIdleController({
     activeSessions: () => state.activeSessions,
+    // A static-page app has no sessions at all, so without this an in-flight
+    // run is indistinguishable from an idle guest — see `pendingWork`'s doc.
+    pendingWork: () => hasPendingWork(state),
     idleExitMs: Number.isFinite(rawIdle) && rawIdle >= 0 ? rawIdle : AGENT_IDLE_EXIT_MS,
     pollMs: AGENT_IDLE_POLL_MS,
   });

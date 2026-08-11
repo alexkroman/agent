@@ -74,8 +74,12 @@ export const MAX_WORKFLOW_INPUT_BYTES = 64 * 1024;
 export const MAX_WORKFLOW_BLOB_BYTES = 16 * 1024 * 1024;
 
 /**
- * The engine slice this API needs — {@link WorkflowClient} (`start`/`get`, what
- * tool code sees as `ctx.workflows`) plus the two the HTTP surface adds.
+ * The engine slice a HOST needs — {@link WorkflowClient} (`start`/`get`, what
+ * tool code sees as `ctx.workflows`) plus the three a host adds.
+ *
+ * Named for this API because that is its biggest consumer, but `busy()` is not
+ * an API concern: the guest harness reads it to decide whether it may idle-exit,
+ * and this is the type a host sees an engine through (`SessionRuntime`).
  *
  * Spelled as an intersection rather than restated structurally. The restated
  * version was `WorkflowRunSnapshot` copied field for field with `status` widened
@@ -85,6 +89,8 @@ export const MAX_WORKFLOW_BLOB_BYTES = 16 * 1024 * 1024;
 export type WorkflowApiEngine = WorkflowClient & {
   putBlob(contentType: string, base64: string): Promise<string>;
   listing(): WorkflowSummary[];
+  /** Durable work in flight or imminent — see `WorkflowEngine.busy`. */
+  busy(): boolean;
 };
 
 export type WorkflowApiOptions = {

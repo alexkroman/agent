@@ -309,6 +309,58 @@ describe("createIdleController", () => {
     }
   });
 
+  /**
+   * The pair that matters: durable work postpones IDLE reclamation and does not
+   * postpone a DRAIN. Both directions are asserted, because getting either one
+   * wrong is silent — a run killed mid-flight looks like a slow run, and a
+   * redeploy held open by a three-hour run looks like a stuck deploy.
+   */
+  test("pending workflow work keeps resetting the idle clock, with no sessions", () => {
+    vi.useFakeTimers();
+    const exit = vi.fn();
+    let busy = true;
+    try {
+      const ctl = createIdleController({
+        // A static-page app: no sessions, ever.
+        activeSessions: () => 0,
+        pendingWork: () => busy,
+        idleExitMs: 10_000,
+        pollMs: 1000,
+        exit,
+      });
+      vi.advanceTimersByTime(60_000);
+      expect(exit).not.toHaveBeenCalled();
+      busy = false;
+      vi.advanceTimersByTime(12_000);
+      expect(exit).toHaveBeenCalledWith(0);
+      ctl.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a drain still exits with work in flight — the journal makes it resumable", () => {
+    vi.useFakeTimers();
+    const exit = vi.fn();
+    try {
+      const ctl = createIdleController({
+        activeSessions: () => 0,
+        pendingWork: () => true, // never settles
+        idleExitMs: 0,
+        pollMs: 1000,
+        exit,
+      });
+      ctl.startDrain();
+      vi.advanceTimersByTime(1000);
+      // Holding a blue-green handover for a long run would stall the deploy to
+      // save work the next sandbox resumes anyway.
+      expect(exit).toHaveBeenCalledWith(0);
+      ctl.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("idleExitMs 0 disables idle self-exit", () => {
     vi.useFakeTimers();
     const exit = vi.fn();
