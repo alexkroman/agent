@@ -2,12 +2,19 @@
 // Specs for the per-turn LLM timing line. The value of this trace is that a
 // stalled turn can be attributed at all, so what matters is that the marks
 // distinguish the causes — not the exact numbers.
+//
+// The marks now come from the AI SDK's telemetry integration rather than from
+// counting stream parts, so these drive `trace.telemetry.onLanguageModelCallEnd`
+// with the event shape `streamText` passes it. That is the contract worth
+// pinning: a hand-rolled part allow-list is exactly what this replaced, after
+// it spent two benchmark runs reporting `firstPartMs: 0`.
 
+import type { LanguageModelCallEndEvent } from "ai";
 import { describe, expect, test, vi } from "vitest";
 import { createTurnTrace } from "./pipeline-llm-trace.ts";
 
 /** A logger that records `info` calls, plus a clock the test drives. */
-function setup(adopted = false): {
+function setup(): {
   info: ReturnType<typeof vi.fn>;
   trace: ReturnType<typeof createTurnTrace>;
   advance(ms: number): void;
@@ -17,7 +24,6 @@ function setup(adopted = false): {
   const trace = createTurnTrace({
     log: { info, debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
     sid: "s1",
-    adopted,
     now: () => t,
   });
   return {
@@ -29,116 +35,126 @@ function setup(adopted = false): {
   };
 }
 
+/**
+ * One `onLanguageModelCallEnd` event, narrowed to the fields the trace reads.
+ * Cast because the real event carries the whole model call — prompt, provider
+ * metadata, response id — none of which this module looks at, and restating it
+ * would pin the SDK's shape rather than our use of it.
+ */
+function callEnd(opts: {
+  timeToFirstOutputMs?: number | undefined;
+  toolCall?: boolean;
+  inputTokens?: number;
+  outputTokens?: number;
+}): LanguageModelCallEndEvent {
+  return {
+    performance: { timeToFirstOutputMs: opts.timeToFirstOutputMs },
+    usage: { inputTokens: opts.inputTokens ?? 0, outputTokens: opts.outputTokens ?? 0 },
+    content: opts.toolCall ? [{ type: "tool-call" }] : [{ type: "text", text: "hi" }],
+  } as unknown as LanguageModelCallEndEvent;
+}
+
 const meta = (info: ReturnType<typeof vi.fn>): Record<string, unknown> =>
   info.mock.calls[0]?.[1] as Record<string, unknown>;
 
+const end = (trace: ReturnType<typeof createTurnTrace>, event: LanguageModelCallEndEvent): void => {
+  void trace.telemetry.onLanguageModelCallEnd?.(event);
+};
+
 describe("createTurnTrace", () => {
-  test("times the first part and the first tool call separately", () => {
+  test("reports the SDK's time-to-first-output and the wall clock to the first tool call", () => {
     const { info, trace, advance } = setup();
     advance(900);
-    trace.onPart("text-delta");
+    end(trace, callEnd({ timeToFirstOutputMs: 640 }));
     advance(600);
-    trace.onPart("tool-call");
+    end(trace, callEnd({ toolCall: true }));
     advance(500);
-    trace.done({ steps: 2, aborted: false });
+    trace.done({ adopted: false, aborted: false });
 
     expect(meta(info)).toMatchObject({
       sid: "s1",
       adopted: false,
-      firstPartMs: 900,
+      // Measured inside the provider call, not from the turn's start — that is
+      // the whole reason it comes from the SDK.
+      firstOutputMs: 640,
       firstToolMs: 1500,
       totalMs: 2000,
       steps: 2,
     });
   });
 
-  test("keeps the FIRST of each mark, not the last", () => {
-    const { info, trace, advance } = setup();
-    advance(100);
-    trace.onPart("text-delta");
-    advance(100);
-    trace.onPart("text-delta");
-    advance(100);
-    trace.onPart("tool-call");
-    advance(100);
-    trace.onPart("tool-call");
-    trace.done({ steps: 1, aborted: false });
-    expect(meta(info)).toMatchObject({ firstPartMs: 100, firstToolMs: 300 });
+  test("counts one step per model call, which is what a step IS", () => {
+    const { info, trace } = setup();
+    end(trace, callEnd({ toolCall: true }));
+    end(trace, callEnd({ toolCall: true }));
+    end(trace, callEnd({}));
+    trace.done({ adopted: false, aborted: false });
+    expect(meta(info)).toMatchObject({ steps: 3 });
   });
 
-  test("a turn that produced nothing OMITS the marks rather than reporting zero", () => {
-    // The distinction this preserves: a turn that died before the model
-    // emitted anything is a different animal from one that answered
-    // instantly, and a 0 would average in as the fast case — which is exactly
-    // the confusion this trace exists to remove.
-    const { info, trace, advance } = setup();
-    advance(8000);
-    trace.done({ steps: 0, aborted: true });
-    const m = meta(info);
-    expect(m).toMatchObject({ totalMs: 8000, steps: 0, aborted: true });
-    expect(m).not.toHaveProperty("firstPartMs");
-    expect(m).not.toHaveProperty("firstToolMs");
+  test("takes time-to-first-output from the FIRST call only", () => {
+    // Later calls are separated by tool execution; "how long until the model
+    // started producing" is a question about the first request.
+    const { info, trace } = setup();
+    end(trace, callEnd({ timeToFirstOutputMs: 300, toolCall: true }));
+    end(trace, callEnd({ timeToFirstOutputMs: 4000 }));
+    trace.done({ adopted: false, aborted: false });
+    expect(meta(info)).toMatchObject({ firstOutputMs: 300 });
   });
 
-  // The AI SDK enqueues `start` and `start-step` synchronously out of
-  // `streamText`, before the request has a response, so timing them made
-  // `firstPartMs` a measure of our own bookkeeping: every real turn logged 0-2
-  // beside a `firstToolMs` of 600-1200. That reads as an instant model, which
-  // is the opposite of what the mark exists to report — and it is invisible,
-  // because a plausible number is present.
-  test("SDK lifecycle parts do not stop the clock; the model's first part does", () => {
+  test("omits a mark that never happened rather than logging a zero", () => {
+    // A turn that produced nothing is a different animal from one that
+    // produced its first token instantly, and a zero averages in as the fast
+    // case. The SDK reports `timeToFirstOutputMs: undefined` for a
+    // non-streaming call, which must not become 0 either.
     const { info, trace, advance } = setup();
-    trace.onPart("start");
-    trace.onPart("start-step");
-    advance(1100);
-    trace.onPart("text-delta");
-    trace.done({ steps: 1, aborted: false });
-    expect(meta(info)).toMatchObject({ firstPartMs: 1100 });
+    advance(120);
+    end(trace, callEnd({ timeToFirstOutputMs: undefined }));
+    trace.done({ adopted: false, aborted: true });
+
+    const logged = meta(info);
+    expect(logged).not.toHaveProperty("firstOutputMs");
+    expect(logged).not.toHaveProperty("firstToolMs");
+    expect(logged).toMatchObject({ totalMs: 120, aborted: true });
   });
 
-  // A turn whose only outcome is a provider error still reached the provider,
-  // and how long that took is the number worth having.
-  test("an error part stops the clock", () => {
+  test("a turn that never reached the provider still logs, with no marks", () => {
     const { info, trace, advance } = setup();
-    trace.onPart("start");
-    advance(700);
-    trace.onPart("error");
-    trace.done({ steps: 0, aborted: false });
-    expect(meta(info)).toMatchObject({ firstPartMs: 700 });
+    advance(40);
+    trace.done({ adopted: false, aborted: true });
+    expect(meta(info)).toMatchObject({ totalMs: 40, steps: 0, aborted: true });
   });
 
-  // A turn that only ever emitted lifecycle parts produced NOTHING, and must
-  // report that the same way an empty turn does — not as an instant one.
-  test("lifecycle parts alone leave the mark absent", () => {
-    const { info, trace, advance } = setup();
-    trace.onPart("start");
-    trace.onPart("start-step");
-    trace.onPart("finish-step");
-    advance(4000);
-    trace.done({ steps: 0, aborted: true });
-    expect(meta(info)).not.toHaveProperty("firstPartMs");
+  test("sums token usage across the turn's calls", () => {
+    // The hand-rolled version could not see this at all; it is what makes a
+    // turn's COST readable beside its latency.
+    const { info, trace } = setup();
+    end(trace, callEnd({ inputTokens: 900, outputTokens: 20, toolCall: true }));
+    end(trace, callEnd({ inputTokens: 1100, outputTokens: 45 }));
+    trace.done({ adopted: false, aborted: false });
+    expect(meta(info)).toMatchObject({ inputTokens: 2000, outputTokens: 65 });
   });
 
-  test("a text-only turn reports no tool mark", () => {
-    const { info, trace, advance } = setup();
-    advance(300);
-    trace.onPart("text-delta");
-    trace.done({ steps: 0, aborted: false });
-    expect(meta(info)).toMatchObject({ firstPartMs: 300 });
-    expect(meta(info)).not.toHaveProperty("firstToolMs");
+  test("omits token counts entirely when the provider reported none", () => {
+    const { info, trace } = setup();
+    end(trace, callEnd({}));
+    trace.done({ adopted: false, aborted: false });
+    expect(meta(info)).not.toHaveProperty("inputTokens");
   });
 
-  test("adoption is recorded, since an adopted turn's TTFP means something else", () => {
-    const { info, trace } = setup(true);
-    trace.done({ steps: 0, aborted: false });
+  test("`adopted` is decided at done(), because that is when it is known", () => {
+    // The trace belongs to the REQUEST — a speculation starts one and hands it
+    // over — so whether the turn adopted it is only settled at the end.
+    const { info, trace } = setup();
+    end(trace, callEnd({ timeToFirstOutputMs: 10 }));
+    trace.done({ adopted: true, aborted: false });
     expect(meta(info)).toMatchObject({ adopted: true });
   });
 
-  test("done() is idempotent — one line per turn however often it unwinds", () => {
+  test("done is idempotent", () => {
     const { info, trace } = setup();
-    trace.done({ steps: 1, aborted: false });
-    trace.done({ steps: 9, aborted: true });
+    trace.done({ adopted: false, aborted: false });
+    trace.done({ adopted: false, aborted: false });
     expect(info).toHaveBeenCalledTimes(1);
-    expect(meta(info)).toMatchObject({ steps: 1 });
   });
 });

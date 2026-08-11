@@ -6,6 +6,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { PREEMPTIVE_CONFIDENCE_THRESHOLD } from "../../sdk/constants.ts";
 import { silentLogger } from "../_test-utils.ts";
+import { createTurnTrace } from "./pipeline-llm-trace.ts";
 import {
   createSpeculationController,
   type SpeculationControllerDeps,
@@ -29,6 +30,7 @@ function fakeStream(prompt: string): FakeStream {
   return {
     prompt,
     ageMs: () => 42,
+    trace: createTurnTrace({ log: silentLogger, sid: "s" }),
     poisoned: () => poisoned,
     aborted: () => aborted,
     abort,
@@ -37,6 +39,7 @@ function fakeStream(prompt: string): FakeStream {
         /* nothing to replay in the policy specs */
       },
       steps: async () => [],
+      trace: createTurnTrace({ log: silentLogger, sid: "s" }),
       // The policy specs never reach the late-poison restart; the real
       // implementation aborts the underlying request here.
       abandon: abort,

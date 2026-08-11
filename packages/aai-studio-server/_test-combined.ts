@@ -16,7 +16,7 @@ import type { WorkspaceStore } from "aai-server/workspace-store";
 import { createStudioApp, type StudioAppOpts } from "./studio-app.ts";
 
 /** Combined-mode harness: agent orchestrator + studio app in one fetch. */
-type CombinedOverrides = Partial<OrchestratorOpts> & {
+type CombinedOverrides = Omit<Partial<OrchestratorOpts>, "analytics"> & {
   // The studio stores are the studio's, not the orchestrator's — see
   // StudioHonoEnv. Accepted here because this harness builds both apps.
   workspaces?: WorkspaceStore;
@@ -29,11 +29,46 @@ type CombinedOverrides = Partial<OrchestratorOpts> & {
   previewQueue?: StudioAppOpts["previewQueue"];
   studioRateLimiters?: StudioAppOpts["studioRateLimiters"];
   replicaId?: string;
+  /**
+   * One analytics store, wired to BOTH surfaces the way production does — and
+   * with the authority split production has: the agent orchestrator gets the
+   * ingest secret (it accepts guest batches), the studio gets the store alone
+   * (it only ever reads). The two `analytics` options have different shapes
+   * for exactly that reason, which is why this key replaces the inherited one
+   * rather than being passed through.
+   */
+  analytics?: StudioAppOpts["analytics"];
+  /** Ingest secret for the AGENT surface; absent leaves `POST /analytics/ingest` 404ing. */
+  analyticsIngestSecret?: string;
 };
+
+/**
+ * The AGENT surface's analytics binding: the same store the studio reads,
+ * plus the ingest secret only that surface has (it accepts guest batches).
+ */
+function agentAnalytics(
+  overrides: CombinedOverrides,
+): Partial<Pick<OrchestratorOpts, "analytics">> {
+  if (!overrides.analytics) return {};
+  const { analyticsIngestSecret: secret } = overrides;
+  return {
+    analytics: {
+      store: overrides.analytics,
+      ...(secret === undefined ? {} : { ingestSecret: secret }),
+    },
+  };
+}
 
 export async function createTestCombined(overrides: CombinedOverrides = {}) {
   const secrets = overrides.secrets ?? createMemorySecretStore();
-  const orch = await createTestOrchestrator({ ...overrides, secrets });
+  // Destructured out so the spread below cannot carry the STUDIO shape of
+  // `analytics` (a bare store) into the orchestrator, which wants a binding.
+  const { analytics, analyticsIngestSecret: _secret, ...orchestratorOverrides } = overrides;
+  const orch = await createTestOrchestrator({
+    ...orchestratorOverrides,
+    secrets,
+    ...agentAnalytics(overrides),
+  });
   const { app: studioApp, dispose: disposeStudio } = createStudioApp({
     store: overrides.store ?? orch.store,
     workspaces: overrides.workspaces ?? orch.workspaces,
@@ -51,6 +86,7 @@ export async function createTestCombined(overrides: CombinedOverrides = {}) {
       studioSessionRegistry: overrides.studioSessionRegistry,
     }),
     ...(overrides.previewQueue && { previewQueue: overrides.previewQueue }),
+    ...(analytics && { analytics }),
     ...(overrides.replicaId && { replicaId: overrides.replicaId }),
   });
   const fetch: TestFetch = async (input, init) => {

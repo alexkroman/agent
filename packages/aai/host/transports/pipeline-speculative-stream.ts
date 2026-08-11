@@ -22,6 +22,7 @@
 import type { Logger } from "../runtime-config.ts";
 import type { AdoptedLlmStream, LlmRequest, StepResult, TapeEntry } from "./pipeline-llm-stream.ts";
 import { startLlmStream } from "./pipeline-llm-stream.ts";
+import { createTurnTrace, type TurnTrace } from "./pipeline-llm-trace.ts";
 
 /** One in-flight (or settled) speculative generation. */
 export interface SpeculativeStream {
@@ -29,6 +30,12 @@ export interface SpeculativeStream {
   readonly prompt: string;
   /** ms since the speculation was launched, for the adoption log's head start. */
   ageMs(): number;
+  /**
+   * The speculation's own turn trace. Handed to the real turn on adoption, so
+   * the log line reports the timings of the request that actually ran (see
+   * `consumeLlmStream`); a discarded speculation never emits one.
+   */
+  trace: TurnTrace;
   /**
    * The tape saw something that makes the whole speculation unusable: a
    * `tool-call` part, or an `error` part.
@@ -103,8 +110,10 @@ export function startSpeculativeStream(
     arrival.resolve();
   }
 
+  const trace = createTurnTrace({ log, sid: req.sid });
   const started = startLlmStream({
     ...req,
+    trace,
     signal: AbortSignal.any([sessionSignal, ctl.signal]),
     // Step markers are taped in arrival order so a replay fires
     // `onStepPersisted` exactly where the live run would have. With no
@@ -144,6 +153,7 @@ export function startSpeculativeStream(
   return {
     prompt: userText,
     ageMs: () => Date.now() - startedAt,
+    trace,
     poisoned: () => poisoned,
     aborted: () => ctl.signal.aborted || sessionSignal.aborted,
     abort: () => ctl.abort(),
@@ -158,6 +168,7 @@ export function startSpeculativeStream(
       return {
         entries: follow,
         steps: (): Promise<readonly StepResult[]> => started.steps,
+        trace,
         // The turn keeps running; only this request stops. `startLlmStream`
         // already observes `steps`' rejection, so the AbortError it settles
         // with cannot surface as an unhandled rejection.

@@ -9,6 +9,7 @@ import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel } from "../_pipeline-test-fakes.ts";
 import { makeLogger, silentLogger } from "../_test-utils.ts";
 import { type AdoptedLlmStream, consumeLlmStream, type TapeEntry } from "./pipeline-llm-stream.ts";
+import { createTurnTrace } from "./pipeline-llm-trace.ts";
 import { createStreamPartHandler, type StreamPart } from "./pipeline-stream-parts.ts";
 
 describe("LLM stream error reporting", () => {
@@ -229,6 +230,42 @@ describe("LLM stream error reporting", () => {
   });
 });
 
+/**
+ * The turn's timing line comes from the AI SDK's telemetry integration, which
+ * means the SDK has to actually CALL it. That is not something the trace's own
+ * unit spec can show — it drives the callback directly — and it is exactly the
+ * kind of wiring that reads correct and silently does nothing: a turn with no
+ * marks is indistinguishable from a turn nobody timed.
+ */
+describe("per-turn LLM timing is fed by the SDK, not by counting parts", () => {
+  test("a real streamText run logs one line with the model's own numbers", async () => {
+    const log = makeLogger();
+    await consumeLlmStream({
+      llm: createFakeLanguageModel({ script: [{ type: "text", text: "hello there" }] }),
+      systemPrompt: "s",
+      messages: [{ role: "user", content: "hi" }],
+      tools: {},
+      toolChoice: "auto",
+      temperature: undefined,
+      repairToolCall: async () => null,
+      maxSteps: 1,
+      sendTtsText: () => undefined,
+      callbacks: { onToolCall: () => undefined },
+      emitError: () => undefined,
+      log,
+      sid: "sid-trace",
+      signal: new AbortController().signal,
+      onDelta: () => undefined,
+    });
+
+    const turn = log.info.mock.calls.find((call) => call[0] === "LLM turn");
+    expect(turn).toBeDefined();
+    // One model call ran, so the SDK reported one — the count the hand-rolled
+    // version derived from `collected.length`.
+    expect(turn?.[1]).toMatchObject({ sid: "sid-trace", adopted: false, steps: 1 });
+  });
+});
+
 describe("preemptive generation: poison arriving AFTER adoption", () => {
   // `SpeculativeStream.poisoned()` is consulted once, at the adoption instant,
   // but the speculation is still streaming when a turn adopts it — so a
@@ -242,6 +279,7 @@ describe("preemptive generation: poison arriving AFTER adoption", () => {
         for (const part of parts) yield { kind: "part", part };
       },
       steps: () => Promise.resolve([]),
+      trace: createTurnTrace({ log: silentLogger, sid: "s" }),
       abandon,
     };
   }

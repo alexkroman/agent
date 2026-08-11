@@ -762,6 +762,17 @@ plus a `GROUP BY` answers those; an endpoint cannot enumerate them.
    RETURNED a `ToolFailure` are all one typed answer — that last one checked
    with `isToolFailure` against the real object rather than its JSON.
 
+   **A reply has THREE outcomes, not two**, and the third is what stops the
+   pane lying about the commonest way a call ends. `reply_done` is completed
+   (`ok: true`), `cancelled` is interrupted (`ok: false`, plus a `barge_in`
+   when the caller could hear it) — and a session torn down MID-REPLY is
+   ABANDONED: `ok` absent (NULL), `data->>'abandoned'`, and no `barge_in`.
+   Folded into "interrupted", a caller who simply hung up while the agent was
+   talking inflated both the interrupted count (`summarize` reads
+   `ok === false`) and the `barge_in` kind the tool description defines as
+   *the caller interrupted the agent* — in the direction that makes an agent
+   look worse than it is.
+
    The limit that comes with it: only tool calls this runtime EXECUTES are
    reported. In relay mode (`aai dev`'s host mode) a custom tool runs in the
    client, so nothing host-side sees its outcome and only the builtins would be
@@ -821,11 +832,21 @@ Five decisions worth keeping:
   connection's `search_path`. (2) `pg_catalog` IS always on it, which is the
   hole the wrapper leaves open, so every `pg_`-prefixed identifier is
   rejected — that rule is not generic hygiene. (3) One statement only, reading
-  only; a data-modifying CTE is legal SQL inside a `with`. What this does NOT
-  claim is to be a substitute for a read-only role: the statement runs on the
-  platform's own owner connection, so a hole here is a hole in the control
-  plane. A dedicated `aai_analytics_reader` login role granted `select` on
-  exactly this table is the structural fix, and it is the follow-up.
+  only; a data-modifying CTE is legal SQL inside a `with`.
+
+  **The keyword scan is only as good as the MASKING under it, and that masking
+  has to be one left-to-right pass.** It was a chain of independent `replace`s,
+  and no ORDER of those is correct: comments-first (what shipped) let a literal
+  containing `--` blank the rest of the line for the scanner while Postgres
+  read it as data — `where body = 'x--' union all select rolname from pg_roles`
+  validated clean and returned `pg_roles`, verified end to end under the reader
+  role — while literals-first lets an apostrophe inside a comment (`-- don't`)
+  open a literal that swallows the query. Only a scanner consuming each
+  construct in SOURCE ORDER sees what Postgres sees. It also REFUSES what it
+  cannot parse unambiguously (an unterminated literal or comment, an
+  `E'…'`/`U&'…'` escape-string whose backslash rules move where the literal
+  ends) rather than guessing: guessing long hides real SQL from the scan, which
+  is the bypass.
 - **"Analytics is off" and "nobody called this agent" must never render
   alike.** Both are all-zeroes; showing zeroes for a disabled deployment tells
   a user their agent has no users, which is a lie shaped like data. The
@@ -870,7 +891,9 @@ What the per-app pattern DOES contribute is its second half, and this feature
 uses it:
 
 - **`aai_analytics_reader`** — a NOLOGIN role holding `select` on exactly this
-  one table. Ad-hoc model SQL runs under `set local role` on a reserved
+  one table. It is what makes the SQL guard above defence in depth rather than
+  the only line: a hole in the scanner is then a hole in a role that can read
+  one table's rows for the caller's own slugs, not in the control plane. Ad-hoc model SQL runs under `set local role` on a reserved
   connection (`runAsReader` in `analytics-store.ts`), so it is no longer the
   table owner's statement. That is what makes the RLS policy apply at all:
   owners bypass policies, and every other table in `aai_platform` has RLS
@@ -906,10 +929,21 @@ index. Three consequences worth carrying:
   `events` CTE both do.
 - **Creating ahead is the real availability knob.** Ingest fails outright on a
   row matching no partition, so the lead time is how long that job may be
-  broken before analytics stops arriving. A default partition sits under it as
-  a backstop, and the job warns when it is non-empty rather than sweeping it —
-  attaching a partition whose range the default already holds rows for is an
-  error, so that is a condition to fix rather than hide.
+  broken before analytics stops arriving. The MIGRATION creates the first
+  week itself, and the job creates a week ahead AND a retention window behind
+  — the trailing half is what gives a rescued row a home.
+- **A non-empty default partition is DRAINED, and this is the sharpest edge in
+  the whole feature.** `create table … partition of …` must prove no row in the
+  default belongs to the new bound and RAISES rather than moving them, so the
+  first row that ever lands there aborts the whole `do $$` block on its first
+  create — every later run identically. Partition creation stops, retention
+  stops, and the "fell behind" warning at the end is never reached: permanent,
+  silent, and reached by the ORDINARY path (ingest starts when the deploy
+  lands; the job runs at :34). The job therefore detaches the default, creates,
+  re-homes its rows through the parent, and re-attaches it empty — the same
+  detach/move/re-attach `pg_partman` performs. Covered against a real Postgres
+  in `aai-server/agent-events-partitions.integration.test.ts`; no unit test can
+  see it, because the failure lives in Postgres's constraint validation.
 
 **What was considered and is NOT the right tool here.** Supabase's analytics
 buckets (Iceberg) and Logflare are for volumes and access patterns this is not:

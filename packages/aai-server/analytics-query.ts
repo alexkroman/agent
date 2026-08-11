@@ -42,12 +42,7 @@
  * `packages/aai-server/CLAUDE.md`.
  */
 
-import {
-  ANALYTICS_QUERY_ROW_CAP,
-  type LogRow,
-  SUMMARY_ROW_CAP,
-  type SummaryRow,
-} from "./analytics-store.ts";
+import { ANALYTICS_QUERY_ROW_CAP } from "./analytics-store.ts";
 
 /** Schemas and identifier prefixes a scoped query may never name. */
 const FORBIDDEN_IDENTIFIERS = [
@@ -100,18 +95,145 @@ const FORBIDDEN_KEYWORDS = [
 const MAX_SQL_CHARS = 4000;
 
 /**
- * Strip string literals and comments before scanning for identifiers. A
- * transcript filter (`where body ilike '%delete my account%'`) is a legitimate
- * query and must not be rejected for the word inside the quotes — which is
- * exactly the false positive that would push someone to weaken the rules.
+ * Blank out string literals and comments so the keyword and identifier scans
+ * below see only SQL a caller can execute.
+ *
+ * Masking exists for the false positive: a transcript filter
+ * (`where body ilike '%delete my account%'`) is a legitimate query and must
+ * not be rejected for a word inside the quotes — that rejection is exactly
+ * what would push someone to weaken the real rules.
+ *
+ * **It is ONE left-to-right pass, and it has to be.** This was a chain of
+ * independent `replace`s, and no ORDER of those is correct — each order breaks
+ * the other construct, in the direction that matters:
+ *
+ * - comments first (what shipped): a `--` inside a literal blanked the rest of
+ *   the line for the scanner while Postgres read it as data, so
+ *   `where body = 'x--' union all select rolname from pg_roles` validated
+ *   clean and returned `pg_roles`;
+ * - literals first: an apostrophe inside a comment (`-- don't`) opens a
+ *   literal that swallows everything to the next quote.
+ *
+ * Only a scanner that consumes each construct **in source order** sees what
+ * Postgres sees.
+ *
+ * **An ambiguity is a REFUSAL, never a guess.** Every case this cannot parse —
+ * an unterminated literal or comment, an escape-string prefix (`E'…'`, `U&'…'`)
+ * whose backslash rules change where the literal ends — returns an error
+ * instead of masking. Guessing long is a bypass (real SQL hidden from the
+ * scanner) and guessing short is a false positive; a message the model can act
+ * on is neither, and nothing that belongs in an analytics query needs those
+ * forms.
  */
-function maskLiterals(sql: string): string {
-  return sql
-    .replace(/--[^\n]*/g, " ")
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/'(?:[^']|'')*'/g, "''")
-    .replace(/\$\$[\s\S]*?\$\$/g, "''")
-    .replace(/"(?:[^"]|"")*"/g, '""');
+/**
+ * What one construct's scanner did: the text to emit in its place and where
+ * to resume, or the refusal that ends the whole scan. `null` means "not this
+ * construct" — the next scanner gets a turn.
+ */
+type Scan = { emit: string; next: number } | { error: string } | null;
+
+/** Consume a quoted run ending at the next unescaped `quote`; `''` doubles. */
+function closeQuoted(sql: string, start: number, quote: string): number {
+  let j = start + 1;
+  while (j < sql.length) {
+    if (sql[j] !== quote) {
+      j += 1;
+    } else if (sql[j + 1] === quote) {
+      j += 2;
+    } else {
+      return j + 1;
+    }
+  }
+  return -1;
+}
+
+function scanLineComment(sql: string, i: number): Scan {
+  if (!(sql[i] === "-" && sql[i + 1] === "-")) return null;
+  const end = sql.indexOf("\n", i);
+  // The newline itself is left in place: it is what ends the comment, and
+  // dropping it would join two lines into one token.
+  return { emit: " ", next: end === -1 ? sql.length : end };
+}
+
+/** Block comments NEST in Postgres, unlike C. */
+function scanBlockComment(sql: string, i: number): Scan {
+  if (!(sql[i] === "/" && sql[i + 1] === "*")) return null;
+  let depth = 1;
+  let j = i + 2;
+  while (j < sql.length && depth > 0) {
+    if (sql[j] === "/" && sql[j + 1] === "*") {
+      depth += 1;
+      j += 2;
+    } else if (sql[j] === "*" && sql[j + 1] === "/") {
+      depth -= 1;
+      j += 2;
+    } else {
+      j += 1;
+    }
+  }
+  if (depth > 0) return { error: "Unterminated block comment (`/*`)." };
+  return { emit: " ", next: j };
+}
+
+function scanDollarQuoted(sql: string, i: number): Scan {
+  if (sql[i] !== "$") return null;
+  const tag = /^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/.exec(sql.slice(i))?.[0];
+  if (tag === undefined) return null;
+  const end = sql.indexOf(tag, i + tag.length);
+  if (end === -1) return { error: "Unterminated dollar-quoted string." };
+  return { emit: "''", next: end + tag.length };
+}
+
+function scanSingleQuoted(sql: string, i: number): Scan {
+  if (sql[i] !== "'") return null;
+  // A letter or `&` fused to the quote is a literal PREFIX (`E'…'`, `U&'…'`,
+  // `B'…'`), and `E` changes what a backslash means — i.e. where the literal
+  // ends. Refused rather than parsed two ways.
+  const before = sql[i - 1];
+  if (before !== undefined && /[A-Za-z&]/.test(before)) {
+    return { error: "Escape-string literals (`E'…'`, `U&'…'`) are not allowed." };
+  }
+  const end = closeQuoted(sql, i, "'");
+  if (end === -1) return { error: "Unterminated string literal (`'`)." };
+  return { emit: "''", next: end };
+}
+
+function scanDoubleQuoted(sql: string, i: number): Scan {
+  if (sql[i] !== '"') return null;
+  const end = closeQuoted(sql, i, '"');
+  if (end === -1) return { error: 'Unterminated quoted identifier (`"`).' };
+  return { emit: '""', next: end };
+}
+
+/**
+ * In source order, which is the whole point — see {@link maskLiterals}. Two
+ * scanners never both match at one position, so the order within this array
+ * is arbitrary; the order they run in RELATIVE TO THE INPUT is not.
+ */
+const SCANNERS = [
+  scanLineComment,
+  scanBlockComment,
+  scanDollarQuoted,
+  scanSingleQuoted,
+  scanDoubleQuoted,
+];
+
+function maskLiterals(sql: string): { masked: string } | { error: string } {
+  let out = "";
+  let i = 0;
+  outer: while (i < sql.length) {
+    for (const scan of SCANNERS) {
+      const result = scan(sql, i);
+      if (result === null) continue;
+      if ("error" in result) return result;
+      out += result.emit;
+      i = result.next;
+      continue outer;
+    }
+    out += sql[i];
+    i += 1;
+  }
+  return { masked: out };
 }
 
 /**
@@ -126,7 +248,9 @@ export function validateAnalyticsSql(sql: string): string | null {
     return `Query too long (${trimmed.length} chars; max ${MAX_SQL_CHARS}).`;
   }
 
-  const masked = maskLiterals(trimmed);
+  const scan = maskLiterals(trimmed);
+  if ("error" in scan) return scan.error;
+  const masked = scan.masked;
 
   // One statement. A trailing semicolon is idiomatic and harmless; anything
   // after it is a second statement outside the scoping wrapper.
@@ -183,7 +307,22 @@ export const ANALYTICS_COLUMNS = [
 /** The CTE's select list, joined once rather than per query. */
 const ANALYTICS_COLUMN_LIST = ANALYTICS_COLUMNS.join(", ");
 
-export type ScopedAnalyticsQuery = { sql: string; params: unknown[] };
+export type ScopedAnalyticsQuery = {
+  sql: string;
+  params: unknown[];
+  /**
+   * The row cap actually compiled into {@link ScopedAnalyticsQuery.sql} — the
+   * caller's `limit` clamped to {@link ANALYTICS_QUERY_ROW_CAP}.
+   *
+   * Carried rather than re-derived because the store is what decides
+   * `truncated`, and it has no other way to know: reading the module cap
+   * instead means a caller-supplied limit can never report truncation. Every
+   * `query_analytics` call sends `limit: 100`, so the statement ran
+   * `limit 101`, 101 rows came back, and the model was told `truncated: false`
+   * every time.
+   */
+  limit: number;
+};
 
 /**
  * Wrap a validated statement so it can only see this caller's rows.
@@ -213,239 +352,6 @@ select * from (
 ${opts.sql.trim().replace(/;\s*$/, "")}
 ) as _scoped limit ${limit + 1}`,
     params: [[...opts.slugs], String(opts.retentionDays)],
-  };
-}
-
-// ─── The default view ────────────────────────────────────────────────────────
-
-export type ToolStat = {
-  name: string;
-  calls: number;
-  errors: number;
-  p50Ms: number | null;
-  p95Ms: number | null;
-};
-
-export type DailyStat = { day: string; sessions: number; turns: number; errors: number };
-
-export type SessionStat = {
-  sessionId: string;
-  startedAt: number;
-  durationMs: number | null;
-  turns: number;
-  errors: number;
-  endReason: string | null;
-};
-
-export type AnalyticsSummary = {
-  windowDays: number;
-  /** True when the row cap trimmed the window — the numbers describe a sample. */
-  sampled: boolean;
-  sessions: { count: number; medianDurationMs: number | null };
-  turns: {
-    count: number;
-    interrupted: number;
-    p50FirstAudioMs: number | null;
-    p95FirstAudioMs: number | null;
-  };
-  tools: ToolStat[];
-  errors: { name: string; count: number }[];
-  daily: DailyStat[];
-  recentSessions: SessionStat[];
-  logs: LogRow[];
-};
-
-/** Nearest-rank percentile over a copy; null for an empty sample. */
-export function percentile(values: readonly number[], p: number): number | null {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const rank = Math.ceil((p / 100) * sorted.length);
-  return sorted[Math.min(Math.max(rank, 1), sorted.length) - 1] ?? null;
-}
-
-function bumpCount(counts: Map<string, number>, key: string): void {
-  counts.set(key, (counts.get(key) ?? 0) + 1);
-}
-
-/** UTC day key. Deliberately UTC: rows are compared across replicas and users. */
-function dayOf(ts: number): string {
-  return new Date(ts).toISOString().slice(0, 10);
-}
-
-/**
- * Reduce the raw window into the pane's default view.
- *
- * Shared by both stores on purpose — see the module doc on `analytics-store.ts`
- * for why this is not two SQL aggregations.
- */
-/**
- * The running totals {@link summarize} folds rows into.
- *
- * A named accumulator rather than a dozen closure variables, so the per-kind
- * handling can live OUTSIDE the fold as a plain function — which is what
- * keeps either half small enough to read (and, incidentally, under the
- * complexity lint, which counts a nested closure against its parent).
- */
-type Totals = {
-  sessionDurations: number[];
-  firstAudio: number[];
-  toolDurations: Map<string, number[]>;
-  toolCalls: Map<string, number>;
-  toolErrors: Map<string, number>;
-  errorCounts: Map<string, number>;
-  daily: Map<string, DailyStat>;
-  sessions: Map<string, SessionStat>;
-  turnCount: number;
-  interrupted: number;
-};
-
-function emptyTotals(): Totals {
-  return {
-    sessionDurations: [],
-    firstAudio: [],
-    toolDurations: new Map(),
-    toolCalls: new Map(),
-    toolErrors: new Map(),
-    errorCounts: new Map(),
-    daily: new Map(),
-    sessions: new Map(),
-    turnCount: 0,
-    interrupted: 0,
-  };
-}
-
-/** The day bucket for a timestamp, created on first use. */
-function dayFor(totals: Totals, ts: number): DailyStat {
-  const key = dayOf(ts);
-  const existing = totals.daily.get(key);
-  if (existing) return existing;
-  const created: DailyStat = { day: key, sessions: 0, turns: 0, errors: 0 };
-  totals.daily.set(key, created);
-  return created;
-}
-
-/**
- * The session a row belongs to, created on first use.
- *
- * Rows arrive NEWEST FIRST, so `startedAt` is the minimum seen rather than
- * the first: taking the first would report every session as starting when it
- * ended.
- */
-function sessionFor(totals: Totals, row: SummaryRow): SessionStat {
-  const existing = totals.sessions.get(row.sessionId);
-  if (existing) {
-    existing.startedAt = Math.min(existing.startedAt, row.ts);
-    return existing;
-  }
-  const created: SessionStat = {
-    sessionId: row.sessionId,
-    startedAt: row.ts,
-    durationMs: null,
-    turns: 0,
-    errors: 0,
-    endReason: null,
-  };
-  totals.sessions.set(row.sessionId, created);
-  return created;
-}
-
-/** Fold one tool call into the per-tool stats. */
-function applyToolCall(totals: Totals, row: SummaryRow): void {
-  const name = row.name ?? "(unnamed)";
-  bumpCount(totals.toolCalls, name);
-  if (row.ok === false) bumpCount(totals.toolErrors, name);
-  if (row.durationMs === null) return;
-  const list = totals.toolDurations.get(name) ?? [];
-  list.push(row.durationMs);
-  totals.toolDurations.set(name, list);
-}
-
-/** Fold one row in. Unknown kinds are ignored — a guest may ship a newer one. */
-function applyRow(totals: Totals, row: SummaryRow): void {
-  const session = sessionFor(totals, row);
-  switch (row.kind) {
-    case "session_start":
-      dayFor(totals, row.ts).sessions += 1;
-      return;
-    case "session_end":
-      if (row.durationMs !== null) {
-        totals.sessionDurations.push(row.durationMs);
-        session.durationMs = row.durationMs;
-      }
-      session.endReason = row.name;
-      return;
-    case "agent_turn":
-      totals.turnCount += 1;
-      session.turns = Math.max(session.turns, row.turn);
-      dayFor(totals, row.ts).turns += 1;
-      if (row.ok === false) totals.interrupted += 1;
-      if (row.firstAudioMs !== null) totals.firstAudio.push(row.firstAudioMs);
-      return;
-    case "tool_call":
-      applyToolCall(totals, row);
-      return;
-    case "error":
-      bumpCount(totals.errorCounts, row.name ?? "unknown");
-      dayFor(totals, row.ts).errors += 1;
-      session.errors += 1;
-      return;
-    default:
-      return;
-  }
-}
-
-/** Per-tool stats, commonest tool first. */
-function toolStats(totals: Totals): ToolStat[] {
-  return [...totals.toolCalls.entries()]
-    .map(([name, calls]) => ({
-      name,
-      calls,
-      errors: totals.toolErrors.get(name) ?? 0,
-      p50Ms: percentile(totals.toolDurations.get(name) ?? [], 50),
-      p95Ms: percentile(totals.toolDurations.get(name) ?? [], 95),
-    }))
-    .sort((a, b) => b.calls - a.calls);
-}
-
-/**
- * Reduce the raw window into the pane's default view.
- *
- * Shared by both stores on purpose — see the module doc on
- * `analytics-store.ts` for why this is not two SQL aggregations.
- */
-/** How many sessions the pane lists. */
-const RECENT_SESSION_LIMIT = 25;
-
-export function summarize(opts: {
-  rows: readonly SummaryRow[];
-  logs: readonly LogRow[];
-  windowDays: number;
-}): AnalyticsSummary {
-  const { rows, logs, windowDays } = opts;
-  const totals = emptyTotals();
-  for (const row of rows) applyRow(totals, row);
-
-  return {
-    windowDays,
-    sampled: rows.length >= SUMMARY_ROW_CAP,
-    sessions: {
-      count: totals.sessions.size,
-      medianDurationMs: percentile(totals.sessionDurations, 50),
-    },
-    turns: {
-      count: totals.turnCount,
-      interrupted: totals.interrupted,
-      p50FirstAudioMs: percentile(totals.firstAudio, 50),
-      p95FirstAudioMs: percentile(totals.firstAudio, 95),
-    },
-    tools: toolStats(totals),
-    errors: [...totals.errorCounts.entries()]
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count),
-    daily: [...totals.daily.values()].sort((a, b) => a.day.localeCompare(b.day)),
-    recentSessions: [...totals.sessions.values()]
-      .sort((a, b) => b.startedAt - a.startedAt)
-      .slice(0, RECENT_SESSION_LIMIT),
-    logs: [...logs],
+    limit,
   };
 }

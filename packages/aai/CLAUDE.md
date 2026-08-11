@@ -612,15 +612,22 @@ descriptor's `apiKeyEnv` now, like every other stage; they resolve through
 `resolveS2sEnvVar`, so the key a session reads is by construction the key
 the preflight asked for.
 
-## Session analytics
+## Observability, and the rule that it is never a hand-rolled wrapper
 
-`host/analytics.ts` + `host/runtime-analytics.ts` record a session's turns,
-tool outcomes, errors, time-to-first-audio and logs with NO author
-instrumentation, by decorating the `ClientSink` and `Logger` and taking each
-tool call's `ok` from `executeToolCall` itself (`ToolCallOutcome` →
-`ToolSetupDeps.onToolCall`) rather than re-parsing its result string. Opt-in
-via `RuntimeOptions.analytics`; absent, nothing is wrapped and no reporter is
-allocated. The whole feature: `packages/aai-studio-server/CLAUDE.md`.
+**Session analytics** (`host/analytics.ts` + `host/runtime-analytics.ts`)
+record a session's turns, tool outcomes, errors, time-to-first-audio and logs
+with NO author instrumentation, by decorating the `ClientSink` and `Logger`
+and taking each tool call's `ok` from `executeToolCall` itself
+(`ToolCallOutcome` → `ToolSetupDeps.onToolCall`). Opt-in via
+`RuntimeOptions.analytics`; the whole feature, the three reply outcomes
+included, is in `packages/aai-studio-server/CLAUDE.md`.
+
+**LLM calls ride the AI SDK's own seams.** Turn timing is a `telemetry`
+integration on `streamText` (`transports/pipeline-llm-trace.ts`), one-shot
+generations get one too (`sdk/llm-telemetry.ts`, on `/internal` so the guest
+can use it without the runtime barrel), and provider warnings go through
+`AI_SDK_LOG_WARNINGS` (`host/llm-warnings.ts`). Each module's doc carries what
+the hand-rolled version got wrong.
 
 ## Voices
 
@@ -735,24 +742,22 @@ at once — see the Database-card note in
 `aai dev`) gives its tools `ctx.db` — a SQL handle
 (`query<T>(sql, params?)`, `$1` placeholders) backed by a per-app schema in
 the platform's Supabase Postgres. Accessing `ctx.db` without storage
-enabled throws with that enablement guidance. On the platform each app
-gets its own schema + login role (search_path pinned, 10s
-statement_timeout); credentials live in Supabase Vault. Session-scoped
-scratch belongs in `ctx.state` (or the `remember`/`recall` builtins, now
-in-memory per-session).
+enabled throws with that enablement guidance. The platform half — the per-app
+schema + login role, its caps, and the Vault credential — is
+`aai-server/app-database.ts` and that package's guide. Session-scoped scratch
+belongs in `ctx.state` (or the `remember`/`recall` builtins, now in-memory
+per-session).
 
 There is no Vector store anymore — `ctx.vector`, the `vector:` agent field,
 the `@alexkroman1/aai/vector` subpath, and the platform-owned
 `PINECONE_API_KEY` were all removed. If retrieval comes back it will be a
 Supabase (pgvector) store following the same path as `ctx.db`: per-app
 schema, platform-provisioned credentials in Vault.
-`ctx.db` connects DIRECTLY from the guest: the app's own scoped Postgres
-credentials (role/search_path pinned at provisioning) ride into the guest as
-`DATABASE_URL` in the agent's boot env, and the bundle's runtime opens its
-own connection — exactly as `aai dev` does with a project `.env`. The old
-host-proxied `db/query` RPC is gone: it kept a versioned RPC in the
-harness↔bundle contract to protect a credential that only reaches the
-tenant's own data anyway.
+`ctx.db` connects DIRECTLY from the guest — `DATABASE_URL` in the agent's boot
+env, the bundle's own runtime opening the connection, exactly as `aai dev`
+does with a project `.env`. The host-proxied `db/query` RPC is gone: it kept a
+versioned RPC in the harness↔bundle contract to protect a credential that only
+reaches the tenant's own data anyway.
 
 ## Guest network access
 
@@ -1341,17 +1346,6 @@ it generates.
   replacing it), and one that rejected where the real executor always RESOLVES
   with a `toolError(...)` string. Check the real collaborator's contract before
   believing a finding.
-
-## Fixture replay testing (`host/`)
-
-Tests in `packages/aai/host/` use a **hybrid mock** pattern: a real
-`Runtime` and tool executor with mocked S2S WebSocket connections. JSON
-fixtures in `host/fixtures/` contain recorded AssemblyAI API messages
-that are replayed through the real orchestration layer. Key helpers:
-
-- `makeMockHandle()` — creates mock S2S WebSocket using nanoevents
-- `replayFixtureMessages()` — dispatches fixture JSON as typed events
-- `createFixtureSession()` — wires a real Runtime to mocked S2S
 
 ## One canonical config schema, deny-list boundaries
 

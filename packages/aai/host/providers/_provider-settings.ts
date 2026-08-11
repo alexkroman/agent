@@ -56,6 +56,8 @@ import {
 } from "../../sdk/providers/tts/cartesia.ts";
 import { RIME_KIND, type RimeOptions, resolveRimeSettings } from "../../sdk/providers/tts/rime.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "../../sdk/providers.ts";
+import { installProviderWarningLogger } from "../llm-warnings.ts";
+import type { Logger } from "../runtime-config.ts";
 
 /** A stage's reported settings: plain JSON-safe values, never a credential. */
 export type ProviderSettings = Record<string, unknown>;
@@ -133,4 +135,27 @@ export function describeResolvedProviders(resolved: {
   // languages, no keyterms — see the S2S section of packages/aai/CLAUDE.md),
   // so there is nothing to fill in and the kind is the whole story.
   return { s2s: describe({}, resolved.s2s) ?? { kind: "assemblyai" } };
+}
+
+/**
+ * Report what this session is running under, once per runtime — BOTH halves.
+ *
+ * `describeResolvedProviders` above says what we asked the providers for;
+ * `installProviderWarningLogger` is what says which of it they refused. They
+ * answer one question ("which settings is this session really using") and are
+ * installed together so a reader of either finds the other. Warning routing is
+ * process-global and idempotent — see llm-warnings.ts — so calling this per
+ * runtime is safe, which matters because `aai dev` rebuilds one per save.
+ */
+export function reportResolvedProviders(
+  logger: Logger,
+  slug: string,
+  resolved: Parameters<typeof describeResolvedProviders>[0],
+): void {
+  logger.info("Session mode resolved", {
+    slug,
+    mode: resolved.mode,
+    ...describeResolvedProviders(resolved),
+  });
+  installProviderWarningLogger(logger);
 }

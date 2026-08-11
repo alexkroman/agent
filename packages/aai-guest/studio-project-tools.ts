@@ -26,6 +26,7 @@ import { safeFetch } from "@alexkroman1/aai/runtime";
 import { generateText, type LanguageModel, type ToolSet, tool } from "ai";
 import { z } from "zod";
 import { MAX_STUDIO_FILE_BYTES } from "./limits.ts";
+import { studioGenerationTelemetry } from "./studio-generation-telemetry.ts";
 import { WORKSPACE_DEPENDENCIES } from "./studio-project-shape.ts";
 import { NPM_TIMEOUT_MS, PACKAGE_NAME_RE, runNpm } from "./studio-spawn.ts";
 import { STUDIO_TOOL_DESCRIPTIONS } from "./studio-tool-descriptions.ts";
@@ -371,6 +372,7 @@ export function createDesignInspirationTool(model: LanguageModel): ToolSet {
         try {
           const { text } = await generateText({
             model,
+            ...studioGenerationTelemetry("design-inspiration"),
             system: DESIGN_BRIEF_SYSTEM,
             prompt: `Goal: ${goal}${context ? `\nContext: ${context}` : ""}`,
             ...(opts?.abortSignal ? { abortSignal: opts.abortSignal } : {}),

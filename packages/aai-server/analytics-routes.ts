@@ -23,6 +23,7 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { zValidator } from "@hono/zod-validator";
 import type { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { parseBearer } from "./_bearer.ts";
 import type { AnalyticsRow } from "./analytics-store.ts";
@@ -38,6 +39,28 @@ import { SLUG_PATTERN_SOURCE } from "./schemas.ts";
 export const MAX_BATCH_ROWS = 500;
 
 const MAX_TEXT = 4000;
+
+/**
+ * Serialized cap on one event's `data` object.
+ *
+ * It was `z.record(z.string(), z.unknown())` with no bound at all, which is
+ * the one field in this schema that could carry an arbitrary amount: every
+ * other one is a `.max()`-ed string or a number. The runtime clamps each
+ * VALUE to 1000 characters, and this is the boundary that does not trust it —
+ * nothing stops a guest sending ten thousand keys of a thousand characters.
+ */
+const MAX_DATA_CHARS = 4000;
+
+/**
+ * Wire cap on one shipment, DERIVED from what the schema already permits
+ * rather than picked: the largest legal batch is {@link MAX_BATCH_ROWS} rows
+ * each carrying a `text`, a `data`, and the small fixed fields, so anything
+ * past this is a body the validator was always going to reject.
+ *
+ * Deriving it is what keeps it honest — a hand-chosen number silently becomes
+ * the real row cap the day someone raises {@link MAX_BATCH_ROWS}.
+ */
+export const MAX_INGEST_BODY_BYTES = MAX_BATCH_ROWS * (MAX_TEXT + MAX_DATA_CHARS + 1024);
 
 /**
  * The wire shape, kept deliberately close to the column list: this is the
@@ -59,7 +82,12 @@ const EventSchema = z.object({
   name: z.string().max(200).optional(),
   text: z.string().max(MAX_TEXT).optional(),
   ok: z.boolean().optional(),
-  data: z.record(z.string(), z.unknown()).optional(),
+  data: z
+    .record(z.string(), z.unknown())
+    .refine((value) => JSON.stringify(value).length <= MAX_DATA_CHARS, {
+      message: `data must serialize to at most ${MAX_DATA_CHARS} characters`,
+    })
+    .optional(),
 });
 
 const IngestBodySchema = z.object({
@@ -72,51 +100,68 @@ export type AnalyticsIngestBody = z.infer<typeof IngestBodySchema>;
 
 /** Register the ingest route. No-op wiring is impossible — see the 404 below. */
 export function registerAnalyticsIngest(app: Hono<HonoEnv>): void {
-  app.post("/analytics/ingest", zValidator("json", IngestBodySchema), async (c) => {
-    const analytics = c.env.analytics;
-    // No binding, or a read-only one (the studio service is handed the store
-    // without the ingest secret): the feature is off for THIS app. A 404
-    // rather than a 500 — the guest treats it as "stop shipping", which is
-    // exactly right, and a deployment with no platform database is not broken.
-    const ingestSecret = analytics?.ingestSecret;
-    if (!(analytics && ingestSecret)) return c.json({ error: "Analytics is not enabled" }, 404);
+  app.post(
+    "/analytics/ingest",
+    // FIRST, ahead of the validator, and declared HERE rather than in
+    // orchestrator.ts so the route carries its own bound.
+    //
+    // The token cannot be checked any earlier than it is: it authorizes one
+    // slug and the slug is in the BODY, so verifying it means parsing first.
+    // That ordering is fine and the size bound is what makes it fine — without
+    // one, an unauthenticated caller chose how much JSON this process would
+    // parse. (The only other body-limited route, `/deploy`, is limited in
+    // orchestrator.ts because it needs the gzip middleware around it too.)
+    bodyLimit({
+      maxSize: MAX_INGEST_BODY_BYTES,
+      onError: (c) => c.json({ error: "Batch too large" }, 413),
+    }),
+    zValidator("json", IngestBodySchema),
+    async (c) => {
+      const analytics = c.env.analytics;
+      // No binding, or a read-only one (the studio service is handed the store
+      // without the ingest secret): the feature is off for THIS app. A 404
+      // rather than a 500 — the guest treats it as "stop shipping", which is
+      // exactly right, and a deployment with no platform database is not broken.
+      const ingestSecret = analytics?.ingestSecret;
+      if (!(analytics && ingestSecret)) return c.json({ error: "Analytics is not enabled" }, 404);
 
-    const body = c.req.valid("json");
-    const token = parseBearer(c.req.raw.headers.get("authorization"));
-    // Verified against the slug the BODY claims, which is what binds the
-    // capability to one agent. Reading the slug from the token instead would
-    // be the same check written the wrong way round.
-    if (!(token && verifyAnalyticsToken(ingestSecret, body.slug, token))) {
-      return c.json({ error: "Unauthorized" }, 401);
-    }
+      const body = c.req.valid("json");
+      const token = parseBearer(c.req.raw.headers.get("authorization"));
+      // Verified against the slug the BODY claims, which is what binds the
+      // capability to one agent. Reading the slug from the token instead would
+      // be the same check written the wrong way round.
+      if (!(token && verifyAnalyticsToken(ingestSecret, body.slug, token))) {
+        return c.json({ error: "Unauthorized" }, 401);
+      }
 
-    const rows: AnalyticsRow[] = body.events.map((event) => ({
-      slug: body.slug,
-      agentVersion: body.agentVersion,
-      sessionId: event.sessionId,
-      ts: event.ts,
-      kind: event.kind,
-      turn: event.turn,
-      durationMs: event.durationMs,
-      level: event.level,
-      name: event.name,
-      body: event.text,
-      ok: event.ok,
-      data: event.data,
-    }));
-
-    try {
-      await analytics.store.append(rows);
-    } catch (err) {
-      // Logged, not surfaced: the guest cannot act on a storage failure and
-      // must not stall a session retrying one.
-      console.warn("analytics ingest failed", {
+      const rows: AnalyticsRow[] = body.events.map((event) => ({
         slug: body.slug,
-        rows: rows.length,
-        error: errorMessage(err),
-      });
-      return c.json({ accepted: 0 }, 202);
-    }
-    return c.json({ accepted: rows.length }, 202);
-  });
+        agentVersion: body.agentVersion,
+        sessionId: event.sessionId,
+        ts: event.ts,
+        kind: event.kind,
+        turn: event.turn,
+        durationMs: event.durationMs,
+        level: event.level,
+        name: event.name,
+        body: event.text,
+        ok: event.ok,
+        data: event.data,
+      }));
+
+      try {
+        await analytics.store.append(rows);
+      } catch (err) {
+        // Logged, not surfaced: the guest cannot act on a storage failure and
+        // must not stall a session retrying one.
+        console.warn("analytics ingest failed", {
+          slug: body.slug,
+          rows: rows.length,
+          error: errorMessage(err),
+        });
+        return c.json({ accepted: 0 }, 202);
+      }
+      return c.json({ accepted: rows.length }, 202);
+    },
+  );
 }

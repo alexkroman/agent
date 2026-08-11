@@ -102,6 +102,67 @@ describe("Analytics pane", () => {
     expect(screen.getByText("tool")).toBeTruthy();
   });
 
+  test("renders the per-day bars and the recent-session table", async () => {
+    // The two surfaces an author actually looks at first — "is traffic
+    // growing" and "what happened in the last few calls" — and neither had a
+    // test, so every cell renderer in SESSION_COLUMNS was unexercised.
+    const startedAt = Date.UTC(2026, 7, 10, 14, 30);
+    stubFetch({
+      "/studio/projects/demo/analytics": () =>
+        jsonResponse({
+          ...EMPTY_SUMMARY,
+          slugs: ["demo"],
+          daily: [
+            { day: "2026-08-09", sessions: 4, turns: 12, errors: 0 },
+            { day: "2026-08-10", sessions: 8, turns: 30, errors: 1 },
+          ],
+          recentSessions: [
+            {
+              sessionId: "s-1",
+              startedAt,
+              durationMs: 95_000,
+              turns: 6,
+              errors: 1,
+              endReason: "idle_timeout",
+            },
+          ],
+        }),
+    });
+    renderPane();
+
+    // One bar per day, labelled so the shape is readable without a tooltip.
+    const bars = await screen.findByLabelText("Sessions per day");
+    expect(bars.querySelectorAll("li")).toHaveLength(2);
+    expect(screen.getByTitle("2026-08-10: 8 sessions, 30 turns, 1 errors")).toBeTruthy();
+
+    // The session row, through every SESSION_COLUMNS cell.
+    expect(screen.getByText("idle_timeout")).toBeTruthy();
+    expect(screen.getByText("1m 35s")).toBeTruthy();
+  });
+
+  test("a session that ended for no recorded reason renders a dash, not blank", async () => {
+    stubFetch({
+      "/studio/projects/demo/analytics": () =>
+        jsonResponse({
+          ...EMPTY_SUMMARY,
+          slugs: ["demo"],
+          recentSessions: [
+            {
+              sessionId: "s-2",
+              startedAt: Date.now(),
+              durationMs: null,
+              turns: 0,
+              errors: 0,
+            },
+          ],
+        }),
+    });
+    renderPane();
+    // Two dashes: the unknown length and the unknown end reason. An empty cell
+    // reads as a rendering bug rather than as an absent value.
+    await waitFor(() => expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2));
+  });
+
   test("surfaces a failed read", async () => {
     stubFetch({
       "/studio/projects/demo/analytics": () =>

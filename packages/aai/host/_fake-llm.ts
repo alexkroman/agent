@@ -142,7 +142,10 @@ export function createFakeLanguageModel(
   options:
     | { script: ScriptedPart[]; delayMs?: number }
     | { steps: ScriptedPart[][]; delayMs?: number },
-): LanguageModel & { readonly calls: readonly Record<string, unknown>[] } {
+  // The OBJECT form of `LanguageModel`, not the union with a model-id string:
+  // this builds a `specificationVersion: "v3"` model, and the wider type made
+  // it unusable with `wrapLanguageModel` (which cannot wrap a string).
+): Exclude<LanguageModel, string> & { readonly calls: readonly Record<string, unknown>[] } {
   const delayMs = options.delayMs;
   const steps: ScriptedPart[][] = "steps" in options ? options.steps : [options.script];
   let stepIndex = 0;
@@ -172,5 +175,7 @@ export function createFakeLanguageModel(
       return { stream };
     },
   };
-  return model as unknown as LanguageModel & { readonly calls: readonly Record<string, unknown>[] };
+  return model as unknown as Exclude<LanguageModel, string> & {
+    readonly calls: readonly Record<string, unknown>[];
+  };
 }

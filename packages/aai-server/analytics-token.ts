@@ -50,11 +50,20 @@ export function mintAnalyticsToken(secret: string, slug: string): string {
  * Constant-time check that `token` is the one this slug should carry.
  *
  * `timingSafeEqual` throws on a length mismatch, which would itself leak
- * length — so the comparison is over fixed-width buffers of the hex digests
- * and a wrong-length token fails the cheap check first.
+ * length — so a wrong-length token fails a cheap check first.
+ *
+ * **That check counts BYTES, and the byte length is the only one that
+ * matters.** It compared `String.length` (UTF-16 code units) while
+ * `timingSafeEqual` compares the encoded buffers, and the two disagree for
+ * any non-ASCII input: a 64-character token of multibyte characters passed
+ * the guard and then threw `RangeError: Input buffers must have the same byte
+ * length` — a 500, from an unauthenticated public route, where the answer is
+ * a 401. Encoding once and measuring the buffer makes the guard and the
+ * comparison agree by construction.
  */
 export function verifyAnalyticsToken(secret: string, slug: string, token: string): boolean {
-  const expected = mintAnalyticsToken(secret, slug);
-  if (token.length !== expected.length) return false;
-  return timingSafeEqual(Buffer.from(token, "utf-8"), Buffer.from(expected, "utf-8"));
+  const expected = Buffer.from(mintAnalyticsToken(secret, slug), "utf-8");
+  const presented = Buffer.from(token, "utf-8");
+  if (presented.byteLength !== expected.byteLength) return false;
+  return timingSafeEqual(presented, expected);
 }

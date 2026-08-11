@@ -36,6 +36,23 @@ describe("analytics ingest tokens", () => {
     expect(verifyAnalyticsToken(SECRET, "a", "short")).toBe(false);
   });
 
+  test("a multibyte token of the right CHARACTER length is a rejection, not a throw", () => {
+    // The guard used String.length (UTF-16 code units) while timingSafeEqual
+    // compares encoded bytes. A 64-character multibyte token cleared the guard
+    // and threw `RangeError: Input buffers must have the same byte length` —
+    // a 500 from an unauthenticated public route, where 401 is the answer.
+    const expected = mintAnalyticsToken(SECRET, "a");
+    // Repeated to the same UTF-16 LENGTH, which is what the old guard read —
+    // the emoji is a surrogate pair, so it takes half as many of them.
+    for (const filler of ["é", "√", "🙂"]) {
+      const sameChars = filler.repeat(expected.length / filler.length);
+      expect(sameChars.length).toBe(expected.length);
+      expect(Buffer.byteLength(sameChars)).not.toBe(Buffer.byteLength(expected));
+      expect(() => verifyAnalyticsToken(SECRET, "a", sameChars)).not.toThrow();
+      expect(verifyAnalyticsToken(SECRET, "a", sameChars)).toBe(false);
+    }
+  });
+
   test("does not leak the secret into the token", () => {
     expect(mintAnalyticsToken(SECRET, "a")).not.toContain(SECRET);
   });

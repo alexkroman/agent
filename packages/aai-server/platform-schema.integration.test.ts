@@ -320,17 +320,49 @@ describeIfPg("the platform migration applies and the stores work against it", ()
     // the running database agrees, by checking the tables' owners/existence
     // after a full round of store traffic. A store that lazily created its own
     // table would have had to do it above.
+    //
+    // PARTITIONS are excluded rather than listed: `agent_events` is range
+    // partitioned by day, so its children are named after dates and the set
+    // changes every time the clock does — an exact list of them would be a
+    // test that fails tomorrow. `pg_inherits` is what tells a partition from a
+    // declared table; the parent and the default backstop are both named
+    // below, so nothing about the partitioned table goes unasserted.
     const tables = await sql(
-      `select table_name from information_schema.tables
-       where table_schema = 'aai_platform' order by table_name`,
+      `select c.relname from pg_class c
+         join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'aai_platform'
+          and c.relkind in ('r', 'p')
+          and not exists (select 1 from pg_inherits i where i.inhrelid = c.oid)
+        order by c.relname`,
     );
-    expect(tables.map((r) => String(r.table_name))).toEqual([
+    expect(tables.map((r) => String(r.relname))).toEqual([
+      "agent_events",
       "agents",
       "studio_chats",
       "studio_rate_limits",
       "studio_sessions",
       "studio_workspaces",
     ]);
+  });
+
+  test("agent_events is partitioned, with the default backstop attached", async () => {
+    const [parent] = await sql(
+      "select relkind::text as kind from pg_class where oid = 'aai_platform.agent_events'::regclass",
+    );
+    // 'p' — a partitioned table. If this ever reads 'r', retention silently
+    // stopped being `drop table` on a partition and became nothing at all.
+    expect(parent?.kind).toBe("p");
+
+    const children = await sql(
+      `select c.relname from pg_class c
+         join pg_inherits i on i.inhrelid = c.oid
+        where i.inhparent = 'aai_platform.agent_events'::regclass`,
+    );
+    const names = children.map((r) => String(r.relname));
+    expect(names).toContain("agent_events_default");
+    // The migration creates the first week itself, so a fresh deployment never
+    // writes into the default — see agent-events-partitions.integration.test.ts.
+    expect(names.filter((n) => /^agent_events_\d{8}$/.test(n)).length).toBeGreaterThan(0);
   });
 });
 

@@ -13,11 +13,13 @@
 import { generateObject, generateText, jsonSchema, type LanguageModel } from "ai";
 import type { ProviderEnv } from "../sdk/env-types.ts";
 import type { GenerateOptions, GenerateResult } from "../sdk/generate.ts";
+import { oneShotTelemetry } from "../sdk/llm-telemetry.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { normalizeLlm } from "../sdk/providers/llm/from-string.ts";
 import type { LlmProvider } from "../sdk/providers.ts";
 import { isConvertibleSchema, toToolJsonSchema } from "../sdk/schema.ts";
 import { resolveLlm } from "./providers/resolve.ts";
+import type { Logger } from "./runtime-config.ts";
 
 /**
  * The host-side `ctx.generate` implementation — takes `GenerateOptions` and
@@ -46,6 +48,13 @@ export type CreateGenerateFnOptions = {
   llm?: LlmProvider | undefined;
   /** Env the provider credential resolves from (agent env / providerEnv). */
   env: ProviderEnv;
+  /**
+   * The runtime's logger. Absent means a generation call is invisible, which
+   * is what this path was: no timing, no error line, no request id — so a tool
+   * whose `ctx.generate` was failing looked to its author like a tool that
+   * returned nothing, with the server log silent beside it.
+   */
+  logger?: Logger | undefined;
 };
 
 function isDescriptor(value: unknown): value is LlmProvider {
@@ -104,9 +113,16 @@ export function createGenerateFn(opts: CreateGenerateFnOptions): HostGenerateFn 
 
   return async (options, callOpts): Promise<GenerateResult> => {
     const model = resolveModel(options.llm ? normalizeLlm(options.llm) : opts.llm);
+    const telemetry = opts.logger
+      ? {
+          isEnabled: true,
+          integrations: [oneShotTelemetry({ log: opts.logger, label: "ctx.generate" })],
+        }
+      : undefined;
     const common = {
       model,
       prompt: options.prompt,
+      ...(telemetry ? { telemetry } : {}),
       ...omitUndefined({
         system: options.system,
         temperature: options.temperature,

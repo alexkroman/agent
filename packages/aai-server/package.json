@@ -69,6 +69,7 @@
     "./schemas": "./schemas.ts",
     "./slug-generate": "./slug-generate.ts",
     "./analytics-query": "./analytics-query.ts",
+    "./analytics-summary": "./analytics-summary.ts",
     "./analytics-store": "./analytics-store.ts",
     "./api-key-verify": "./api-key-verify.ts",
     "./app-middleware": "./app-middleware.ts",

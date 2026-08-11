@@ -14,6 +14,7 @@
  * @internal Test infrastructure, not part of any public API.
  */
 
+import { type LanguageModel, wrapLanguageModel } from "ai";
 import type { createFakeLanguageModel, FakeTtsProvider } from "../_pipeline-test-fakes.ts";
 import type { TransportCallbacks } from "../transports/types.ts";
 
@@ -353,38 +354,49 @@ export function checkPrompt(prompt: readonly unknown[], mon: Monitor): void {
   if (prompt.length >= 201) mon.hit("llmRequestAtHistoryCap");
 }
 
-/** Wrap the fake model so every request is validated and every stream tracked. */
+/**
+ * The fake model with every request validated and every stream tracked.
+ *
+ * `wrapLanguageModel` rather than reassigning `llm.doStream`, which is what
+ * this did: the monkey-patch needed a double cast to reach past the model's
+ * own type, and it MUTATED the caller's model, so the instrumentation was
+ * invisible at the call site and impossible to compose with a second wrapper.
+ * `wrapStream` is the vendor's own seam for exactly this interception, and it
+ * hands the params already normalized.
+ */
 export function instrumentLlm(
   llm: ReturnType<typeof createFakeLanguageModel>,
   stepText: readonly string[],
   mon: Monitor,
   refusals: readonly boolean[],
-): void {
-  const llmObj = llm as unknown as { doStream: (o: unknown) => Promise<unknown> };
-  const rawDoStream = llmObj.doStream;
+): LanguageModel {
   let requests = 0;
-  llmObj.doStream = async (o) => {
-    const opts = o as { prompt?: unknown; abortSignal?: AbortSignal };
-    mon.hit("llmRequest");
-    // A request that never produces a stream at all. Reported by the catch in
-    // `consumeLlmStream` rather than the stream-part handler — a separate
-    // reporter, and the other half of what the fatality oracle checks: both end
-    // the TURN, neither ends the session.
-    if (refusals[requests++ % refusals.length] === true) {
-      mon.hit("llmRefused");
-      throw new Error("provider refused the connection");
-    }
-    if (Array.isArray(opts.prompt)) checkPrompt(opts.prompt, mon);
-    for (const problem of promptProblems(opts.prompt)) mon.flag(`LLM request: ${problem}`);
-    if (mon.current !== null) mon.current.expected += stepText[mon.consumedSteps] ?? "";
-    mon.consumedSteps++;
+  return wrapLanguageModel({
+    model: llm,
+    middleware: {
+      async wrapStream({ doStream, params }) {
+        mon.hit("llmRequest");
+        // A request that never produces a stream at all. Reported by the catch
+        // in `consumeLlmStream` rather than the stream-part handler — a
+        // separate reporter, and the other half of what the fatality oracle
+        // checks: both end the TURN, neither ends the session.
+        if (refusals[requests++ % refusals.length] === true) {
+          mon.hit("llmRefused");
+          throw new Error("provider refused the connection");
+        }
+        if (Array.isArray(params.prompt)) checkPrompt(params.prompt, mon);
+        for (const problem of promptProblems(params.prompt)) mon.flag(`LLM request: ${problem}`);
+        if (mon.current !== null) mon.current.expected += stepText[mon.consumedSteps] ?? "";
+        mon.consumedSteps++;
 
-    mon.liveStreams++;
-    mon.maxLiveStreams = Math.max(mon.maxLiveStreams, mon.liveStreams);
-    const result = (await rawDoStream.call(llm, o)) as { stream: ReadableStream<unknown> };
-    const stream = trackStreamLifetime(result.stream, opts.abortSignal, () => {
-      mon.liveStreams--;
-    });
-    return { ...result, stream };
-  };
+        mon.liveStreams++;
+        mon.maxLiveStreams = Math.max(mon.maxLiveStreams, mon.liveStreams);
+        const result = await doStream();
+        const stream = trackStreamLifetime(result.stream, params.abortSignal, () => {
+          mon.liveStreams--;
+        }) as typeof result.stream;
+        return { ...result, stream };
+      },
+    },
+  });
 }

@@ -22,6 +22,7 @@ export {
   createCoalescingRunner,
 } from "./sdk/coalescing-runner.ts";
 export { createEpoch, type Epoch } from "./sdk/epoch.ts";
+export { oneShotTelemetry, type TelemetryLogger } from "./sdk/llm-telemetry.ts";
 export { createOwnedMap, type OwnedMap } from "./sdk/owned-map.ts";
 export { formatSchemaIssues } from "./sdk/schema.ts";
 export { parseWsUpgradeParams } from "./sdk/ws-upgrade.ts";

@@ -382,7 +382,12 @@ Each package has distinct test helpers tailored to its domain:
   reporting when a field is ADDED, which is the failure a shared builder exists
   to prevent. Its own spec asserts the field LIST, since that is the contract.
 - **`aai/host/_test-utils.ts`** — `flush()` (microtask yield), `makeTool()`,
-  `makeAgent()`, `makeConfig()`, fixture replay helpers for S2S mocking
+  `makeAgent()`, `makeConfig()`, plus the S2S **fixture replay** helpers:
+  `makeMockHandle()` (a mock S2S WebSocket over nanoevents),
+  `replayFixtureMessages()` (dispatches `host/fixtures/`'s recorded
+  AssemblyAI JSON as typed events) and `createFixtureSession()` (wires a REAL
+  `Runtime` and tool executor to that mock). The hybrid shape is the point —
+  everything but the provider socket is the real orchestration layer
 - **`aai-cli/_test-utils.ts`** — `withTempDir()` (temp dir + cleanup),
   `silenceSteps()`, `silenced()`, `makeBundle()`. The dev-server specs share
   their mock scaffolding (fake chokidar, runtime/server mocks) via
@@ -849,7 +854,7 @@ documented in that package's guide, not here:
 
 | Suite | Guide |
 | --- | --- |
-| Pipeline-transport interleaving fuzz, fixture replay (`host/fixtures/`) | `packages/aai/CLAUDE.md` |
+| Pipeline-transport interleaving fuzz, the S2S property test | `packages/aai/CLAUDE.md` |
 | Browser session / audio fuzz harnesses (`fuzz-*.test.ts`, worklet stress) | `packages/aai-ui/CLAUDE.md` |
 | Studio starter evals (`scripts/starter-eval/`), studio concurrency fuzz | `packages/aai-studio-server/CLAUDE.md` |
 | Sandbox/SSRF boundary tests, and why there is no load or chaos tier | `packages/aai-server/CLAUDE.md` |

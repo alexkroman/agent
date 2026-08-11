@@ -72,7 +72,11 @@ export type AnalyticsEvent = {
   name?: string | undefined;
   /** Transcript text, error message, or log message. Truncated. */
   text?: string | undefined;
-  /** Did it succeed? Tool calls, and agent turns that were not interrupted. */
+  /**
+   * Did it succeed? A tool call's outcome, and for an `agent_turn` whether
+   * the reply COMPLETED — false when the caller interrupted it, and ABSENT
+   * (null in the column) when the session ended mid-reply, which is neither.
+   */
   ok?: boolean | undefined;
   /** Everything kind-specific. Small by construction — see the caps below. */
   data?: Record<string, unknown> | undefined;
@@ -204,26 +208,45 @@ export function createSessionAnalytics(opts: SessionAnalyticsOptions): SessionAn
     return { ts: now(), sessionId, kind, turn };
   }
 
-  /** Close out the reply in flight, if any. Shared by `reply_done`/`cancelled`. */
-  function settleReply(interrupted: boolean): void {
+  /**
+   * How a reply stopped. THREE outcomes, not two, and the third is the one
+   * that was missing: a session torn down mid-reply is not a barge-in.
+   *
+   * It was folded into `interrupted`, so every caller who simply hung up while
+   * the agent was talking — the most ordinary way a call ends — produced a
+   * `barge_in` row and an `ok: false` turn. Both numbers are ones a pane is
+   * read for ("how often does my agent get cut off"), and both were inflated
+   * by the same event, in the direction that makes an agent look worse than it
+   * is. `barge_in` is documented to the model as *the caller interrupted*; if
+   * it also means *the call ended*, it means nothing.
+   */
+  type ReplyOutcome = "completed" | "interrupted" | "abandoned";
+
+  /** Close out the reply in flight, if any. */
+  function settleReply(outcome: ReplyOutcome): void {
     if (turnAt === null) return;
     const at = turnAt;
     turnAt = null;
     record({
       ...base("agent_turn"),
       durationMs: now() - at,
-      ok: !interrupted,
+      // `ok` is "the reply completed". Absent — NULL in the column — for an
+      // abandoned one, which is neither: `summarize` counts `ok === false` as
+      // interrupted, so a third value is what keeps that count honest without
+      // widening what the summary reads.
+      ...(outcome === "abandoned" ? {} : { ok: outcome === "completed" }),
       text: replyText ? clip(replyText) : undefined,
       data: {
         // Absent rather than zero when no audio was ever sent: a turn that
         // produced nothing has no latency, and averaging a zero into the
         // percentiles is how a broken agent looks fast.
         ...(firstAudioMs === null ? {} : { firstAudioMs }),
-        ...(interrupted ? { interrupted: true } : {}),
+        ...(outcome === "interrupted" ? { interrupted: true } : {}),
+        ...(outcome === "abandoned" ? { abandoned: true } : {}),
       },
     });
     // The caller can only have interrupted something they could hear.
-    if (interrupted && firstAudioMs !== null) {
+    if (outcome === "interrupted" && firstAudioMs !== null) {
       record({ ...base("barge_in"), durationMs: now() - at });
     }
     replyText = "";
@@ -245,8 +268,10 @@ export function createSessionAnalytics(opts: SessionAnalyticsOptions): SessionAn
       case "user_transcript": {
         // A new user turn while a reply is still open means that reply never
         // formally finished (an S2S provider that just moves on). Settle it
-        // rather than losing it, so turns and replies stay paired.
-        settleReply(false);
+        // rather than losing it, so turns and replies stay paired — as
+        // COMPLETED, because the provider moving on is how that transport says
+        // the reply finished, not an interruption.
+        settleReply("completed");
         turn += 1;
         turnAt = now();
         record({ ...base("user_turn"), text: clip(event.text) });
@@ -256,10 +281,10 @@ export function createSessionAnalytics(opts: SessionAnalyticsOptions): SessionAn
         replyText = event.text;
         break;
       case "reply_done":
-        settleReply(false);
+        settleReply("completed");
         break;
       case "cancelled":
-        settleReply(true);
+        settleReply("interrupted");
         break;
       case "error":
         errorCount += 1;
@@ -297,7 +322,10 @@ export function createSessionAnalytics(opts: SessionAnalyticsOptions): SessionAn
         // A session torn down mid-reply still owes an `agent_turn` row —
         // without this, every hang-up-while-the-agent-is-talking session is
         // simply missing its last turn, which is the turn worth looking at.
-        settleReply(true);
+        // ABANDONED, not interrupted: the caller hung up, they did not cut the
+        // agent off, and conflating the two inflates both numbers a pane is
+        // read for (see `ReplyOutcome`).
+        settleReply("abandoned");
         record({
           ...base("session_end"),
           durationMs: now() - sessionStart,

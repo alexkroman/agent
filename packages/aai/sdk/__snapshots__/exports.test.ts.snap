@@ -130,6 +130,7 @@ exports[`export surface stability > @alexkroman1/aai/internal export 1`] = `
   "createEpoch",
   "createOwnedMap",
   "formatSchemaIssues",
+  "oneShotTelemetry",
   "parseWsUpgradeParams",
 ]
 `;

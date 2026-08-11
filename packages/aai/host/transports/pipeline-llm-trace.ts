@@ -11,97 +11,105 @@
  * against a benchmark's artifacts by hand, which is how this loop spent an
  * afternoon before the numbers existed.
  *
- * Split into its own module rather than added to `pipeline-llm-stream.ts`
- * because that file sits at 473 of the repo's 500-line cap, and observability
- * is the wrong thing to spend the last 27 lines on.
+ * ## The numbers come from the AI SDK, not from counting stream parts
  *
- * Deliberately ONE line per turn, at info, and no per-part logging: these run
- * on every reply of every session, and a per-delta trace would bury the
+ * This module used to time the turn by watching `fullStream` go past, which
+ * meant maintaining an allow-list of "parts the MODEL produced" — because
+ * `streamText` enqueues `start` and `start-step` SYNCHRONOUSLY, before the
+ * HTTP request has a response. Every turn logged `firstPartMs: 0`-`2` beside a
+ * `firstToolMs` of 600-1200, which reads as an instant model and is just the
+ * SDK's own bookkeeping. Two benchmark runs' worth of turns were logged that
+ * way, so the one number that would have decomposed their latency was absent
+ * while appearing present.
+ *
+ * `ai@7`'s telemetry integrations report it directly and correctly:
+ * `onLanguageModelCallEnd` is scoped to the provider call alone, and its
+ * `performance.timeToFirstOutputMs` is measured where only the SDK can measure
+ * it. That deletes the allow-list, deletes the per-part callback and the
+ * `trace` parameter it was threaded through, and adds token accounting the
+ * hand-rolled version could not see at all.
+ *
+ * **One difference worth knowing rather than papering over**: `firstToolMs` is
+ * now stamped when the model call CONTAINING the first tool call ends, where
+ * it used to be stamped when the `tool-call` part arrived. It is a slightly
+ * later — and better defined — instant, and it still answers the question the
+ * field exists for ("did the model choose to act rather than speak, and how
+ * long did deciding take"). Do not compare it across that change.
+ *
+ * Deliberately ONE line per turn, at info, and no per-call logging: these run
+ * on every reply of every session, and a line per step would bury the
  * `Pipeline turn committed` / barge-in lines that make a server log readable.
- * The three marks are the ones that discriminate between the causes above —
- * time to the first stream part (the model started producing), time to the
- * first tool call (it chose to act rather than speak), and total.
  */
 
-import type { Logger } from "../runtime-config.ts";
+import type { Telemetry } from "ai";
+import type { Logger } from "./../runtime-config.ts";
 
 /** Per-turn timing recorder — see {@link createTurnTrace}. */
 export interface TurnTrace {
   /**
-   * A stream part arrived; the first part the MODEL produced stops the
-   * time-to-first-part clock. See {@link isModelPart} for why not every part
-   * qualifies.
+   * The telemetry integration to hand `streamText`. Per CALL rather than
+   * registered globally (`registerTelemetry`), because these numbers belong to
+   * one turn of one session and a process-wide integration would have to
+   * correlate them back.
    */
-  onPart(kind: string): void;
-  /** Emit the turn's one summary line. Idempotent. */
-  done(opts: { steps: number; aborted: boolean }): void;
+  telemetry: Telemetry;
+  /**
+   * Emit the turn's one summary line. Idempotent.
+   *
+   * `adopted` distinguishes a turn that inherited a speculation's
+   * already-running request from one that opened its own: their
+   * time-to-first-output means different things and averaging the two hides
+   * both.
+   */
+  done(opts: { adopted: boolean; aborted: boolean }): void;
 }
 
-/**
- * Does this stream part mean the MODEL produced something?
- *
- * `firstPartMs` exists to answer "did the model start generating, or is the
- * gateway sitting on the request" — and it answered neither while it timed
- * every part, because the AI SDK enqueues `start` and `start-step` from
- * `streamText` synchronously, before the HTTP request has a response. Every
- * turn therefore logged `firstPartMs: 0`-`2` beside a `firstToolMs` of 600-1200,
- * which reads as an instant model and is just the SDK's own bookkeeping. Two
- * benchmark runs' worth of turns were logged that way, so the one number that
- * would have decomposed their latency was absent while appearing present —
- * the failure mode the module doc warns about, in the module itself.
- *
- * Content parts only, then. `error` counts: a stream that fails is a stream
- * that reached the provider, and timing it is the point.
- */
-function isModelPart(kind: string): boolean {
-  return (
-    kind === "text-delta" ||
-    kind === "reasoning-delta" ||
-    kind === "tool-call" ||
-    kind === "tool-input-start" ||
-    kind === "error"
-  );
-}
-
-/**
- * Start timing a turn.
- *
- * `adopted` distinguishes a turn that inherited a speculation's already-running
- * request from one that opened its own, because their time-to-first-part means
- * different things and averaging the two hides both.
- */
+/** Start timing a turn. */
 export function createTurnTrace(deps: {
   log: Logger;
   sid: string;
-  adopted: boolean;
   now?: (() => number) | undefined;
 }): TurnTrace {
   const now = deps.now ?? Date.now;
   const startedAt = now();
-  let firstPartMs: number | undefined;
+  let firstOutputMs: number | undefined;
   let firstToolMs: number | undefined;
+  let calls = 0;
+  let inputTokens = 0;
+  let outputTokens = 0;
   let finished = false;
 
   return {
-    onPart(kind: string): void {
-      if (!isModelPart(kind)) return;
-      firstPartMs ??= now() - startedAt;
-      if (kind === "tool-call") firstToolMs ??= now() - startedAt;
+    telemetry: {
+      onLanguageModelCallEnd(event) {
+        calls += 1;
+        // From the FIRST call only: on a multi-step turn the later ones are
+        // separated by tool execution, and "how long until the model started
+        // producing" is a question about the first request.
+        firstOutputMs ??= event.performance.timeToFirstOutputMs;
+        inputTokens += event.usage.inputTokens ?? 0;
+        outputTokens += event.usage.outputTokens ?? 0;
+        if (firstToolMs === undefined && event.content.some((part) => part.type === "tool-call")) {
+          firstToolMs = now() - startedAt;
+        }
+      },
     },
-    done({ steps, aborted }): void {
+
+    done({ adopted, aborted }): void {
       if (finished) return;
       finished = true;
       deps.log.info("LLM turn", {
         sid: deps.sid,
-        adopted: deps.adopted,
+        adopted,
         // Absent rather than 0 when nothing arrived: a turn that produced no
-        // part at all (aborted early, or a request that died) is a different
-        // animal from one that produced its first part instantly, and a zero
+        // output at all (aborted early, or a request that died) is a different
+        // animal from one that produced its first token instantly, and a zero
         // would average in as if it were the fast case.
-        ...(firstPartMs === undefined ? {} : { firstPartMs }),
+        ...(firstOutputMs === undefined ? {} : { firstOutputMs }),
         ...(firstToolMs === undefined ? {} : { firstToolMs }),
         totalMs: now() - startedAt,
-        steps,
+        steps: calls,
+        ...(inputTokens || outputTokens ? { inputTokens, outputTokens } : {}),
         ...(aborted ? { aborted: true } : {}),
       });
     },

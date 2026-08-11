@@ -55,7 +55,7 @@ Columns:
   level          text        log level, for kind='log'
   name           text        tool name / error code / agent name / session end reason
   body           text        transcript, error message, tool result, or log message
-  ok             boolean     tool succeeded; agent_turn NOT interrupted
+  ok             boolean     tool succeeded; agent_turn completed (NULL = abandoned)
   data           jsonb       kind-specific extras
 
 Kinds:
@@ -68,7 +68,9 @@ Kinds:
                                         data->>'firstAudioMs' = user finished → FIRST AUDIO
                                         (the silence the caller actually heard — the
                                         latency metric that matters),
-                                        ok = false when the caller barged in,
+                                        ok = true completed / false the caller barged in
+                                        / NULL the session ended mid-reply
+                                        (data->>'abandoned'), which is NOT a barge-in,
                                         body = what the agent said
   tool_call      one tool execution.    name = tool, duration_ms = how long,
                                         ok = whether it succeeded, body = the result
@@ -149,7 +151,14 @@ export function createAnalyticsTools(deps: AnalyticsToolDeps): ToolSet {
           .int()
           .positive()
           .optional()
-          .describe(`Max rows (default ${DEFAULT_LIMIT}, capped server-side at 1000)`),
+          // No figure: the cap lives in aai-server (`ANALYTICS_QUERY_ROW_CAP`)
+          // and this package must not import from there, so a number written
+          // here is a second copy that drifts — it already had, naming 1000
+          // against a schema that rejected anything over 999.
+          .describe(
+            `Max rows (default ${DEFAULT_LIMIT}). Larger values are clamped server-side; ` +
+              "check `truncated` in the result.",
+          ),
       }),
       execute: async ({ sql, limit }) => {
         const url = `${serverUrl.replace(/\/+$/, "")}/studio/projects/${encodeURIComponent(deps.project)}/analytics/query`;

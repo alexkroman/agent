@@ -30,6 +30,7 @@ import {
   type LanguageModel,
   parsePartialJson,
 } from "ai";
+import { studioGenerationTelemetry } from "./studio-generation-telemetry.ts";
 
 /** Fenced code blocks the model sometimes wraps arguments in. */
 const FENCE = /^\s*```(?:json)?\s*([\s\S]*?)\s*```\s*$/;
@@ -128,6 +129,7 @@ export function createToolCallRepair(model: LanguageModel) {
       const schema = await inputSchema({ toolName: toolCall.toolName });
       const { object } = await generateObject({
         model,
+        ...studioGenerationTelemetry("studio-tool-repair"),
         schema: jsonSchema(schema),
         prompt: [
           `The arguments below for the tool "${toolCall.toolName}" are not valid JSON.`,

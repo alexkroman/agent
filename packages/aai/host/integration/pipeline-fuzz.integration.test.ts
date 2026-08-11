@@ -261,8 +261,12 @@ async function runOne(
   const stt: FakeSttProvider = createFakeSttProvider();
   const tts: FakeTtsProvider = createFakeTtsProvider();
   const { steps: script, stepText } = buildScript(input.script, runId);
-  const llm = createFakeLanguageModel({ steps: script, delayMs: 1 });
-  instrumentLlm(llm, stepText, mon, input.refusals);
+  const llm = instrumentLlm(
+    createFakeLanguageModel({ steps: script, delayMs: 1 }),
+    stepText,
+    mon,
+    input.refusals,
+  );
 
   // Bias toward the rare state a uniform random walk barely reaches: a barge-in
   // landing INSIDE a tool execution.

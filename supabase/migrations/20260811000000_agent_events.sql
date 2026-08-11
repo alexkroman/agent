@@ -129,12 +129,37 @@ create index if not exists agent_events_session
 
 -- The backstop partition. Inserts land here if the maintenance job has been
 -- dead long enough to exhaust the partitions it creates ahead of time; without
--- it, that outage would turn into failing ingest. It should always be empty,
--- and `aai-maintain-agent-events` reports it when it is not. It is never
--- dropped: attaching a new partition while the default holds matching rows is
--- an error, so a non-empty default is a condition to notice, not to sweep.
+-- it, that outage would turn into failing ingest.
+--
+-- It is never dropped, and a non-empty one is not merely a condition to
+-- report: attaching a partition while the default holds rows matching its
+-- bound is an ERROR, so rows caught here make every later `create … partition
+-- of` fail until they are moved out. `aai-maintain-agent-events` therefore
+-- DRAINS it (detach, create, re-home, re-attach) rather than warning about it.
 create table if not exists aai_platform.agent_events_default
   partition of aai_platform.agent_events default;
+
+-- The first day's partitions, created here rather than left to the first cron
+-- run. Ingest begins the moment this migration is pushed and the deploy goes
+-- out, while `aai-maintain-agent-events` runs at :34 — so without these, every
+-- row written in that gap lands in the default and the job's first act is the
+-- drain above. That drain is correct and it is not free (an ACCESS EXCLUSIVE
+-- detach plus a re-insert of everything ingested since the push), and paying
+-- it on every fresh deployment is a strange thing to design in when one loop
+-- here removes the window entirely.
+do $$
+declare
+  day date;
+begin
+  for day in
+    select generate_series(current_date, current_date + 7, interval '1 day')::date
+  loop
+    execute format(
+      'create table if not exists aai_platform.%I partition of aai_platform.agent_events for values from (%L) to (%L)',
+      'agent_events_' || to_char(day, 'YYYYMMDD'), day, day + 1
+    );
+  end loop;
+end $$;
 
 -- ── Row-level security ──────────────────────────────────────────────────────
 --

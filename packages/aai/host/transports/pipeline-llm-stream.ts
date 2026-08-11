@@ -28,7 +28,7 @@ import type { ToolChoice } from "../../sdk/types.ts";
 import { errorMessage } from "../../sdk/utils.ts";
 import type { Logger } from "../runtime-config.ts";
 import { drainEntries, partsAsEntries } from "./pipeline-llm-drain.ts";
-import { createTurnTrace } from "./pipeline-llm-trace.ts";
+import { createTurnTrace, type TurnTrace } from "./pipeline-llm-trace.ts";
 import { createToolCallRepair } from "./pipeline-repair.ts";
 import { smoothTextStream } from "./pipeline-smooth.ts";
 import { createTtsTextCoalescer } from "./pipeline-stream.ts";
@@ -137,6 +137,13 @@ export interface AdoptedLlmStream {
   /** `result.steps`, for the same final gather the ordinary path does. */
   steps(): Promise<readonly StepResult[]>;
   /**
+   * The timings of the request that really ran. Adoption hands the whole trace
+   * over rather than starting a new one, because a trace created at adoption
+   * would measure the tape replay — this process re-reading its own buffer —
+   * and report it as model latency.
+   */
+  trace: TurnTrace;
+  /**
    * Abandon the adopted run WITHOUT aborting the turn that adopted it.
    *
    * `adopt()` re-parents the speculation onto the turn's signal, so by this
@@ -181,7 +188,11 @@ export type LlmRequest = Pick<
   | "log"
   | "sid"
   | "signal"
-> & { onStep?: ((messages: readonly ModelMessage[]) => void) | undefined };
+> & {
+  onStep?: ((messages: readonly ModelMessage[]) => void) | undefined;
+  /** Per-turn timing, attached to the request — see pipeline-llm-trace.ts. */
+  trace?: TurnTrace | undefined;
+};
 
 /**
  * Assemble and launch one `streamText` request.
@@ -215,6 +226,9 @@ export function startLlmStream(req: LlmRequest): StartedLlmStream {
     stopWhen: stepCountIs(req.maxSteps + 1),
     prepareStep: forceFinalAnswer(req.maxSteps, req.log, req.sid),
     abortSignal: req.signal,
+    // Per CALL, not `registerTelemetry`: these numbers belong to one turn of
+    // one session. Nothing is exported anywhere (pipeline-llm-trace.ts).
+    ...(req.trace ? { telemetry: { isEnabled: true, integrations: [req.trace.telemetry] } } : {}),
     onStepFinish: (step) => {
       collected.push(...step.response.messages);
       req.onStep?.(step.response.messages);
@@ -365,12 +379,19 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     for (;;) {
       let entries: AsyncIterable<TapeEntry>;
       let steps: Promise<readonly StepResult[]>;
+      // The trace belongs to the REQUEST, so an adopted turn reports the
+      // speculation's own timings — a fresh one here would time the tape
+      // replay, i.e. how fast this process re-reads a buffer.
+      let trace: TurnTrace;
       if (useAdopted) {
         entries = useAdopted.entries();
         steps = useAdopted.steps();
+        trace = useAdopted.trace;
       } else {
+        trace = createTurnTrace({ log, sid });
         const started = startLlmStream({
           ...params,
+          trace,
           onStep: (messages) => {
             collected.push(...messages);
             onStepPersisted?.();
@@ -405,15 +426,13 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
       // only repair: the preamble cannot be spliced onto a fresh request (that
       // is the same request-parity argument that makes adoption legitimate in
       // the first place), so the run is abandoned whole.
-      const trace = createTurnTrace({ log, sid, adopted: useAdopted !== undefined });
       const { lateToolCall, spokeBeforeRestart } = await drainEntries(entries, handler, {
         adopted: useAdopted !== undefined,
         signal,
         collected,
         onStepPersisted,
-        trace,
       });
-      trace.done({ steps: collected.length, aborted: signal.aborted });
+      trace.done({ adopted: useAdopted !== undefined, aborted: signal.aborted });
       if (lateToolCall && useAdopted && !signal.aborted) {
         handler.dispose();
         useAdopted.abandon();

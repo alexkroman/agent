@@ -144,6 +144,7 @@ function setupGenerate(deps: ToolSetupDeps): HostGenerateFn {
   return createGenerateFn({
     llm: deps.llm,
     env: deps.providerEnv,
+    logger: deps.logger,
   });
 }
 

@@ -1,5 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 import {
+  ANALYTICS_QUERY_ROW_CAP,
   type AnalyticsRow,
   type AnalyticsStore,
   createMemoryAnalyticsStore,
@@ -213,6 +214,33 @@ describe("runProjectAnalyticsQuery", () => {
     // Also passed out-of-band, because that is what the RLS policy is applied
     // with — the CTE filter alone is a predicate, not an enforcement.
     expect(seen[0]?.slugs).toEqual(["my-project"]);
+  });
+
+  // The tool's description promises "clamped server-side"; the route used to
+  // 400 instead, which the guest surfaces to the model as an opaque HTTP 400.
+  test("an over-large limit is clamped rather than refused", async () => {
+    const seen: ScopedQueryRequest[] = [];
+    const recording: AnalyticsStore = {
+      ...createMemoryAnalyticsStore(),
+      runScoped: (request) => {
+        seen.push(request);
+        return Promise.resolve({ columns: [], rows: [], truncated: false });
+      },
+    };
+    const ctx = await setup({ analytics: recording });
+    await ctx.deploy("my-project", KEY);
+    await ctx.writeWorkspace({ deployedSlug: "my-project" });
+
+    const outcome = await runProjectAnalyticsQuery(ctx.env, {
+      ...request,
+      sql: "select count(*) from events",
+      limit: 999_999,
+    });
+    expect(outcome).toMatchObject({ ok: true });
+    // The statement carries the clamped value, and the store is told what it
+    // is — which is what makes `truncated` mean anything.
+    expect(seen[0]?.limit).toBe(ANALYTICS_QUERY_ROW_CAP);
+    expect(seen[0]?.sql).toContain(`limit ${ANALYTICS_QUERY_ROW_CAP + 1}`);
   });
 
   test("returns a database error to the caller instead of throwing", async () => {

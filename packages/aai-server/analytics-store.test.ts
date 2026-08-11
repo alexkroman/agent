@@ -13,7 +13,11 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { createMemoryAnalyticsStore, createPostgresAnalyticsStore } from "./analytics-store.ts";
+import {
+  ANALYTICS_QUERY_ROW_CAP,
+  createMemoryAnalyticsStore,
+  createPostgresAnalyticsStore,
+} from "./analytics-store.ts";
 import type { AdminDb } from "./platform-lock.ts";
 import type { SqlExec } from "./secret-store.ts";
 
@@ -52,7 +56,12 @@ function storeWith(db: AdminDb) {
   return { pooled, store: createPostgresAnalyticsStore(pooled, db) };
 }
 
-const REQUEST = { sql: "select * from x", params: ["p"], slugs: ["a", "a-preview"] };
+const REQUEST = {
+  sql: "select * from x",
+  params: ["p"],
+  slugs: ["a", "a-preview"],
+  limit: ANALYTICS_QUERY_ROW_CAP,
+};
 
 describe("ad-hoc queries run as the reader role", () => {
   test("sets the scope BEFORE switching role, so the reader cannot widen it", async () => {
@@ -111,6 +120,30 @@ describe("ad-hoc queries run as the reader role", () => {
     await expect(store.runScoped({ ...REQUEST, sql: "boom" })).rejects.toThrow("syntax error");
     expect(statements).toContain("rollback");
     expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  // `truncated` is the model's only signal that its result was cut, and it
+  // was permanently false: the store compared against the MODULE cap while the
+  // statement carried the caller's own. `query_analytics` always sends
+  // `limit: 100`, so 101 rows came back and 101 > 1000 is never true.
+  test.each([
+    [3, 4, true],
+    [3, 3, false],
+  ])("reports truncation against the statement's own limit (%i)", async (limit, rows, cut) => {
+    const reserved: Reserved = {
+      query: <T = Record<string, unknown>>(sql: string) =>
+        Promise.resolve(
+          (sql === "select * from x"
+            ? Array.from({ length: rows }, (_, i) => ({ n: i }))
+            : []) as T[],
+        ),
+      release: vi.fn(),
+    };
+    const { store } = storeWith({ reserve: () => Promise.resolve(reserved) });
+    const result = await store.runScoped({ ...REQUEST, limit });
+    expect(result.truncated).toBe(cut);
+    // And the probe row never reaches the caller.
+    expect(result.rows.length).toBe(Math.min(rows, limit));
   });
 
   test("does not use the pooled executor at all", async () => {

@@ -5,8 +5,6 @@ import { describe, expect, test } from "vitest";
 import {
   ANALYTICS_COLUMNS,
   buildScopedAnalyticsQuery,
-  percentile,
-  summarize,
   validateAnalyticsSql,
 } from "./analytics-query.ts";
 import {
@@ -15,6 +13,7 @@ import {
   SUMMARY_ROW_CAP,
   type SummaryRow,
 } from "./analytics-store.ts";
+import { percentile, summarize } from "./analytics-summary.ts";
 
 function row(over: Partial<SummaryRow> & Pick<SummaryRow, "kind">): SummaryRow {
   return {
@@ -83,6 +82,55 @@ describe("validateAnalyticsSql", () => {
 
   test("does not mistake a comment for a statement", () => {
     expect(validateAnalyticsSql("select 1 from events -- delete everything")).toBeNull();
+  });
+
+  // Masking is ONE left-to-right pass because no ORDER of independent
+  // replaces is correct, and the wrong one was a real bypass: stripping `--`
+  // comments first let a literal CONTAINING `--` blank the rest of the line
+  // for the scanner while Postgres read it as data. Verified end to end under
+  // `set local role aai_analytics_reader` — it returned pg_roles.
+  test.each([
+    ["select * from events where body = 'x--' union all select rolname from pg_roles"],
+    ["select 1 from events where body = 'a/*' , (select rolname from pg_roles)"],
+  ])("a comment opener inside a literal cannot hide what follows it: %s", (sql) => {
+    expect(validateAnalyticsSql(sql)).toMatch(/pg_/);
+  });
+
+  test("a literal containing `--` cannot hide a second statement either", () => {
+    expect(validateAnalyticsSql("select 1 from events where body = 'a--' ; drop table x")).toMatch(
+      /one statement/i,
+    );
+  });
+
+  // The other order breaks the other construct — an apostrophe inside a
+  // comment would open a literal that swallows the rest of the query — so
+  // this is the case that fails if the scanner is ever unwound into replaces.
+  test("an apostrophe inside a comment does not open a literal", () => {
+    expect(validateAnalyticsSql("select turn from events -- don't worry")).toBeNull();
+    expect(
+      validateAnalyticsSql("select turn from events /* it's fine */ where turn > 0"),
+    ).toBeNull();
+  });
+
+  test("block comments nest, as they do in Postgres", () => {
+    expect(
+      validateAnalyticsSql("select 1 from events /* a /* b */ c */ where turn > 0"),
+    ).toBeNull();
+  });
+
+  // An ambiguity the scanner cannot resolve is a REFUSAL, never a guess:
+  // guessing long hides real SQL from the scan (a bypass) and guessing short
+  // rejects legitimate queries. A message the model can act on is neither.
+  test.each([
+    ["select 1 from events where body = 'unterminated", /unterminated string/i],
+    ["select 1 from events /* unterminated", /unterminated block/i],
+    // E'' changes what a backslash means, i.e. where the literal ENDS.
+    [
+      "select 1 from events where body = E'x\\'' union select rolname from pg_roles",
+      /escape-string/i,
+    ],
+  ] as [string, RegExp][])("refuses what it cannot parse unambiguously: %s", (sql, message) => {
+    expect(validateAnalyticsSql(sql)).toMatch(message);
   });
 
   test("refuses an empty or oversized query", () => {

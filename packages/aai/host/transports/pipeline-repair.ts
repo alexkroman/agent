@@ -19,6 +19,7 @@ import {
   type ToolCallRepairFunction,
   type ToolSet,
 } from "ai";
+import { oneShotTelemetry } from "../../sdk/llm-telemetry.ts";
 import { errorMessage } from "../../sdk/utils.ts";
 import type { Logger } from "../runtime-config.ts";
 
@@ -44,6 +45,13 @@ export function createToolCallRepair(
       const abortSignal = getAbortSignal?.();
       const { object } = await generateObject({
         model,
+        // The `catch` below already reports a repair that FAILED; this reports
+        // one that succeeded slowly, which is the other half of "why was that
+        // turn 4 seconds longer than the model took".
+        telemetry: {
+          isEnabled: true,
+          integrations: [oneShotTelemetry({ log, label: "tool-repair" })],
+        },
         schema: jsonSchema(schema),
         ...(abortSignal ? { abortSignal } : {}),
         prompt:

@@ -258,16 +258,27 @@ describe("session analytics", () => {
     expect(h.of("session_end")[0]?.name).toBe("idle_timeout");
   });
 
-  test("a session torn down mid-reply still emits that turn", () => {
+  test("a session torn down mid-reply still emits that turn, as ABANDONED", () => {
     // Otherwise every hang-up-while-the-agent-is-talking session is missing
-    // exactly the turn worth looking at.
+    // exactly the turn worth looking at — but a hang-up is not a barge-in.
+    // Folded together, the most ordinary way a call ends inflated both the
+    // interrupted count (`ok === false`) and the `barge_in` kind, which is
+    // documented to the model as "the caller interrupted the agent".
     const h = harness();
     const client = h.analytics.wrapSink(fakeSink());
     client.event({ type: "user_transcript", text: "hello?" });
     h.advance(120);
     client.playAudioChunk(new Uint8Array([1]));
     h.analytics.end();
-    expect(h.of("agent_turn")[0]).toMatchObject({ ok: false, data: { interrupted: true } });
+
+    const turn = h.of("agent_turn")[0];
+    expect(turn?.data).toMatchObject({ abandoned: true });
+    expect(turn?.data).not.toHaveProperty("interrupted");
+    // Absent, not false: `summarize` counts `ok === false` as interrupted.
+    expect(turn?.ok).toBeUndefined();
+    // The audio it had already played is still measured.
+    expect(turn?.data).toMatchObject({ firstAudioMs: 120 });
+    expect(h.of("barge_in")).toEqual([]);
   });
 
   test("end is idempotent", () => {

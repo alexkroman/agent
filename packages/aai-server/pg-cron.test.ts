@@ -128,16 +128,32 @@ test("every job name carries the prefix boot diffs on", () => {
 
 test("agent_events retention drops partitions rather than deleting rows", () => {
   // A bulk delete on the platform's highest-write table leaves as many dead
-  // tuples as it removes rows; dropping a partition frees its files.
+  // tuples as it removes rows; dropping a partition frees its files. The
+  // lookahead keeps `agent_events_default` out of it — draining the DETACHED
+  // backstop is a delete of a handful of stranded rows, not of the table.
   const job = platformCronJobs().find((j) => j.name === "aai-maintain-agent-events");
   expect(job?.command).toContain("drop table if exists");
-  expect(job?.command).not.toMatch(/delete\s+from\s+aai_platform\.agent_events/);
+  expect(job?.command).not.toMatch(/delete\s+from\s+aai_platform\.agent_events\b(?!_)/);
   // It creates ahead too: ingest FAILS on a row matching no partition, so the
   // lead time is how long this job may be broken before analytics stops.
   expect(job?.command).toContain("partition of aai_platform.agent_events");
   expect(job?.command).toContain("current_date +");
-  // And it names the fallen-behind condition rather than hiding it.
-  expect(job?.command).toContain("agent_events_default");
+  // ...and BEHIND, so a drained row still inside retention has a home.
+  expect(job?.command).toContain("current_date -");
+});
+
+test("a non-empty default partition is drained, not just reported", () => {
+  // `create table … partition of …` REFUSES while the default holds a row
+  // matching the new bound, so the first row that lands there makes every
+  // later run abort on its first create — permanently, and before reaching
+  // any warning. Behaviour is covered against a real Postgres in
+  // agent-events-partitions.integration.test.ts; this pins that the job still
+  // contains the detach/re-attach that makes it possible at all.
+  const job = platformCronJobs().find((j) => j.name === "aai-maintain-agent-events");
+  expect(job?.command).toContain("detach partition aai_platform.agent_events_default");
+  expect(job?.command).toContain("attach partition aai_platform.agent_events_default default");
+  // Re-homed through the PARENT, so each row lands in its own day.
+  expect(job?.command).toMatch(/insert\s+into\s+aai_platform\.agent_events\b(?!_)/);
 });
 
 test("the cron-history sweep prunes pg_cron's own run log", () => {

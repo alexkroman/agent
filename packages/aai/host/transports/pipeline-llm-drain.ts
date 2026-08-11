@@ -30,8 +30,6 @@ export async function drainEntries(
     signal: AbortSignal;
     collected: ModelMessage[];
     onStepPersisted?: (() => void) | undefined;
-    /** Per-turn timing; sees every part, including the ones handled below. */
-    trace?: { onPart(kind: string): void } | undefined;
   },
 ): Promise<{ lateToolCall: boolean; spokeBeforeRestart: boolean }> {
   let lateToolCall = false;
@@ -47,9 +45,6 @@ export async function drainEntries(
       opts.onStepPersisted?.();
       continue;
     }
-    // Before the adopted-run break below, so a late tool call is still timed —
-    // that turn is about to be restarted and its cost is the thing worth seeing.
-    opts.trace?.onPart(entry.part.type);
     if (opts.adopted && entry.part.type === "tool-call") {
       lateToolCall = true;
       break;

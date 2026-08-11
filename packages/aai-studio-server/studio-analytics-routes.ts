@@ -20,7 +20,6 @@
  */
 
 import { zValidator } from "@hono/zod-validator";
-import { ANALYTICS_QUERY_ROW_CAP } from "aai-server/analytics-store";
 import type { Hono } from "hono";
 import { z } from "zod";
 import {
@@ -32,7 +31,19 @@ import type { StudioHonoEnv } from "./studio-context.ts";
 
 const QueryBodySchema = z.object({
   sql: z.string().min(1).max(4000),
-  limit: z.number().int().positive().max(ANALYTICS_QUERY_ROW_CAP).optional(),
+  /**
+   * CLAMPED, not rejected — `buildScopedAnalyticsQuery` already does
+   * `Math.min(limit, ANALYTICS_QUERY_ROW_CAP)`, and the result says
+   * `truncated: true`.
+   *
+   * A `.max(ANALYTICS_QUERY_ROW_CAP)` here turned an over-large limit into a
+   * 400 the guest's tool layer surfaces to the model as an opaque `HTTP 400`,
+   * while the tool's own description promised "capped server-side" — so the
+   * caller was told the number would be clamped and then rejected for it.
+   * Clamping is also the more useful answer: rows plus a truncation flag beats
+   * an error the model has to guess its way out of.
+   */
+  limit: z.number().int().positive().optional(),
 });
 
 /** Bindings read off the REQUEST env, matching `databaseEnvFor`'s reasoning. */

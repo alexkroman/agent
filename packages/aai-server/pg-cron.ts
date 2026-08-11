@@ -172,13 +172,25 @@ const SWEEP_CRON_HISTORY =
  * install it, so the plpgsql below stands in for `create_parent` plus a
  * retention setting. If it lands, this is what it replaces.
  *
- * Two properties are load-bearing:
+ * Three properties are load-bearing:
  *
  * - **It creates ahead**, {@link PARTITION_LEAD_DAYS} days of them. Ingest
  *   fails outright on a row matching no partition, so the lead is how long
  *   this job may be broken before analytics stops arriving — a week rather
  *   than the hour its schedule alone would buy, with the default partition as
  *   the backstop under that.
+ * - **It DRAINS the default partition rather than reporting it**, and that is
+ *   the difference between a backstop and a trap. `create table … partition
+ *   of …` must prove that no row in the default belongs to the new bound, and
+ *   it RAISES rather than moving them — so the first row that ever lands in
+ *   the default makes every later run abort on its first `create`, which
+ *   stops partition creation, stops retention, and never reaches the warning
+ *   that would have said so. The state is permanent and silent. It is reached
+ *   the ordinary way too, not only after a week-long outage: the day the
+ *   migration is pushed, ingest starts before this job's first run. So the
+ *   default is detached, the partitions are created, its rows are routed back
+ *   through the parent, and it is re-attached empty — the same detach/move/
+ *   re-attach `pg_partman`'s maintenance does, for the same reason.
  * - **It drops only partitions wholly past retention**, computed from each
  *   partition's own upper bound in the catalog rather than parsed out of its
  *   name — so a naming change here cannot become a delete of live data.
@@ -186,21 +198,70 @@ const SWEEP_CRON_HISTORY =
 export const ANALYTICS_RETENTION_DAYS = 7;
 
 /** Days of partitions kept pre-created ahead of today. */
-const PARTITION_LEAD_DAYS = 7;
+export const PARTITION_LEAD_DAYS = 7;
+
+/**
+ * Partitions are also created BACKWARD across the retention window, not just
+ * ahead. They cost nothing when they already exist, none of them is old enough
+ * for the drop loop below to reclaim (a partition for `today - 7` has upper
+ * bound `today - 6`), and they are what gives every rescued row a home: a
+ * drain that had to discard rows still inside retention because their day had
+ * no partition would be a data loss dressed as maintenance.
+ */
+const PARTITION_TRAIL_DAYS = ANALYTICS_RETENTION_DAYS;
 
 const MAINTAIN_AGENT_EVENTS = `do $$
 declare
   day date;
   part record;
+  drained boolean;
+  moved bigint := 0;
+  expired bigint := 0;
 begin
+  -- Detached BEFORE the creates, which is the whole point: with the default
+  -- out of the partition tree there is nothing for \`create … partition of\`
+  -- to validate against, so the creates below cannot fail on rows the default
+  -- is holding. It all runs in one transaction, and today's partition exists
+  -- before the re-attach, so a concurrent insert always has somewhere to go.
+  drained := exists (select 1 from aai_platform.agent_events_default limit 1);
+  if drained then
+    alter table aai_platform.agent_events
+      detach partition aai_platform.agent_events_default;
+  end if;
+
   for day in
-    select generate_series(current_date, current_date + ${PARTITION_LEAD_DAYS}, interval '1 day')::date
+    select generate_series(
+             current_date - ${PARTITION_TRAIL_DAYS},
+             current_date + ${PARTITION_LEAD_DAYS},
+             interval '1 day')::date
   loop
     execute format(
       'create table if not exists aai_platform.%I partition of aai_platform.agent_events for values from (%L) to (%L)',
       'agent_events_' || to_char(day, 'YYYYMMDD'), day, day + 1
     );
   end loop;
+
+  if drained then
+    -- DELETE … RETURNING rather than a copy, so what remains afterwards is
+    -- exactly the set that found no home — the two counts below are then a
+    -- partition of the rows, not a total and an overlapping subset.
+    -- Re-inserted through the PARENT so each row lands in its own day.
+    with rehomed as (
+      delete from aai_platform.agent_events_default
+       where received_at >= current_date - ${PARTITION_TRAIL_DAYS}
+         and received_at < current_date + ${PARTITION_LEAD_DAYS} + 1
+      returning *
+    )
+    insert into aai_platform.agent_events select * from rehomed;
+    get diagnostics moved = row_count;
+    -- Anything left is older than retention would have kept anyway; the
+    -- truncate is what makes the re-attach's own validation scan trivial.
+    select count(*) into expired from aai_platform.agent_events_default;
+    truncate aai_platform.agent_events_default;
+    alter table aai_platform.agent_events
+      attach partition aai_platform.agent_events_default default;
+    raise warning 'aai_platform.agent_events_default drained: % row(s) rehomed, % past retention dropped', moved, expired;
+  end if;
 
   for part in
     select c.relname,
@@ -217,10 +278,6 @@ begin
       execute format('drop table if exists aai_platform.%I', part.relname);
     end if;
   end loop;
-
-  if exists (select 1 from aai_platform.agent_events_default limit 1) then
-    raise warning 'aai_platform.agent_events_default is not empty: partition maintenance fell behind';
-  end if;
 end $$`;
 
 /**

@@ -25,13 +25,9 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import {
-  type AnalyticsSummary,
-  buildScopedAnalyticsQuery,
-  summarize,
-  validateAnalyticsSql,
-} from "aai-server/analytics-query";
+import { buildScopedAnalyticsQuery, validateAnalyticsSql } from "aai-server/analytics-query";
 import type { AnalyticsQueryResult, AnalyticsStore } from "aai-server/analytics-store";
+import { type AnalyticsSummary, summarize } from "aai-server/analytics-summary";
 import type { BundleStore } from "aai-server/store-types";
 import type { WorkspaceStore } from "aai-server/workspace-store";
 import { ownedProjectSlugs } from "./studio-project-slugs.ts";

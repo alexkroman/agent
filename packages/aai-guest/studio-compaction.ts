@@ -27,6 +27,7 @@
  */
 
 import { generateText, type LanguageModel, type ModelMessage } from "ai";
+import { studioGenerationTelemetry } from "./studio-generation-telemetry.ts";
 
 /**
  * Rough token estimate. Deliberately a heuristic: the exact count depends on
@@ -100,6 +101,7 @@ export async function compactMessages(
   try {
     const { text } = await generateText({
       model,
+      ...studioGenerationTelemetry("studio-compaction"),
       prompt: [
         "Summarize this portion of a coding session so the agent can continue",
         "without re-reading it. Be specific and factual — keep file names, the",

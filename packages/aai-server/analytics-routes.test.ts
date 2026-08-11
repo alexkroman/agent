@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { Hono } from "hono";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { registerAnalyticsIngest } from "./analytics-routes.ts";
+import { MAX_INGEST_BODY_BYTES, registerAnalyticsIngest } from "./analytics-routes.ts";
 import { type AnalyticsStore, createMemoryAnalyticsStore } from "./analytics-store.ts";
 import { mintAnalyticsToken } from "./analytics-token.ts";
 import type { HonoEnv } from "./context.ts";
@@ -149,6 +149,42 @@ describe("POST /analytics/ingest", () => {
     );
     expect(res.status).toBe(202);
     await expect(res.json()).resolves.toEqual({ accepted: 0 });
+  });
+});
+
+describe("the ingest body is bounded", () => {
+  test("an oversized body is refused before it is parsed", async () => {
+    const h = harness();
+    const res = await h.post(
+      { slug: SLUG, events: [event({ text: "x".repeat(MAX_INGEST_BODY_BYTES) })] },
+      mintAnalyticsToken(SECRET, SLUG),
+    );
+    // 413 rather than the schema's 400: bodyLimit runs first, which is the
+    // point — an unauthenticated caller must not choose how much JSON this
+    // process parses, and the token cannot be checked before the parse
+    // because the slug it authorizes is in the body.
+    expect(res.status).toBe(413);
+  });
+
+  test("an unbounded `data` object is refused by the schema", async () => {
+    const h = harness();
+    const data = Object.fromEntries(
+      Array.from({ length: 500 }, (_, i) => [`k${i}`, "v".repeat(100)]),
+    );
+    const res = await h.post(
+      { slug: SLUG, events: [event({ data })] },
+      mintAnalyticsToken(SECRET, SLUG),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  test("an ordinary batch is nowhere near either bound", async () => {
+    const h = harness();
+    const res = await h.post(
+      { slug: SLUG, events: [event({ text: "hello", data: { firstAudioMs: 420 } })] },
+      mintAnalyticsToken(SECRET, SLUG),
+    );
+    expect(res.status).toBe(202);
   });
 });
 

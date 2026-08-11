@@ -21,7 +21,7 @@ import { buildSystemPrompt } from "../sdk/system-prompt.ts";
 import type { AgentDef } from "../sdk/types.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import { createPostgresDb } from "./postgres-db.ts";
-import { describeResolvedProviders } from "./providers/_provider-settings.ts";
+import { reportResolvedProviders } from "./providers/_provider-settings.ts";
 import { resolveLlm, resolveStt, resolveTts } from "./providers/resolve.ts";
 import { createRuntimeAnalytics } from "./runtime-analytics.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "./runtime-config.ts";
@@ -154,7 +154,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   const effectiveProviders = resolveEffectiveProviders(opts, agent);
 
   const slug = agent.name;
-  /** Session analytics — inert (identity wrappers) without a sink. */
+  /** Session analytics — inert without a sink. */
   const analytics = createRuntimeAnalytics(opts.analytics);
   // Credentials resolve from `providerEnv` (defaults to `env`); `env` alone is
   // what agent tool code sees as `ctx.env`. See RuntimeOptions.providerEnv.
@@ -190,25 +190,14 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     s2s: effectiveProviders.s2s,
   });
 
-  // Report the resolved mode once per runtime. A pipeline agent whose providers
-  // fail to reach the runtime does not error — before the pipeline-by-default
-  // flip it ran a perfectly healthy S2S session instead — so "which transport
-  // is this agent on" has to be answerable from one log line rather than
-  // inferred from the shape of the message stream.
-  //
-  // Each stage reports its EFFECTIVE settings, not just its kind: almost every
-  // one of them is a default nobody wrote down (endpointing window, Voice
-  // Focus threshold, gateway model id, TTS voice), and those are the values a
-  // misbehaving session gets blamed on. See _provider-settings.ts.
-  logger.info("Session mode resolved", {
-    slug,
-    mode: effectiveProviders.mode,
-    ...describeResolvedProviders(effectiveProviders),
-  });
-  // Owned maps because teardown is async on both: a reconnect resuming the
-  // same session id re-claims the key while the old session's stop() drains,
-  // and release-by-claim is what keeps that drain from evicting the
-  // successor's entry (see sdk/owned-map.ts).
+  // What this session is running under, once per runtime — the resolved mode,
+  // each stage's EFFECTIVE settings, and (from the same call) the provider's
+  // own report of anything it refused to honour. See _provider-settings.ts for
+  // why the settings and not just the kinds.
+  reportResolvedProviders(logger, slug, effectiveProviders);
+  // Owned maps because teardown is async on both: a reconnect resuming the same
+  // session id re-claims the key while the old session's stop() drains, and
+  // release-by-claim keeps that drain from evicting the successor's entry.
   const sessions = createOwnedMap<string, SessionCore>();
   const sinkMap = createOwnedMap<string, ClientSink>();
   // The Voice Agent API accepts exactly one sample rate and honours no

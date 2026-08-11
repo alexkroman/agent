@@ -89,6 +89,14 @@ export type ScopedQueryRequest = {
   sql: string;
   params: readonly unknown[];
   slugs: readonly string[];
+  /**
+   * The row cap the statement itself carries (`buildScopedAnalyticsQuery`
+   * compiles `limit + 1` so one extra row distinguishes "exactly at the cap"
+   * from "truncated"). Required, not defaulted: a store that fell back to the
+   * module cap would report `truncated: false` for every caller-supplied
+   * limit, which is the one thing this flag exists to say.
+   */
+  limit: number;
 };
 
 export type AnalyticsQueryResult = {
@@ -342,10 +350,13 @@ export function createPostgresAnalyticsStore(sql: SqlExec, db: AdminDb): Analyti
 
     async runScoped(request) {
       const rows = await runAsReader(db, readerSlots, request);
+      // Against the STATEMENT'S own limit, never the module cap — the
+      // statement asked for `limit + 1`, so the extra row is exactly the
+      // signal, and only this number knows what `limit` was.
       return {
         columns: rows[0] ? Object.keys(rows[0]) : [],
-        rows: rows.slice(0, ANALYTICS_QUERY_ROW_CAP),
-        truncated: rows.length > ANALYTICS_QUERY_ROW_CAP,
+        rows: rows.slice(0, request.limit),
+        truncated: rows.length > request.limit,
       };
     },
   };
