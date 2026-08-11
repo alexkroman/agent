@@ -10,9 +10,9 @@ import { ASSEMBLYAI_LLM_DEFAULT_MODEL, assemblyAILlm } from "./assemblyai.ts";
 const TOOLS_REQUIRE_NO_REASONING_IDS = ["gpt-5.6-luna", "gpt-5.6-terra"];
 
 describe("assemblyAILlm (LLM factory)", () => {
-  it("defaults the model to gpt-5.6-terra", () => {
-    expect(ASSEMBLYAI_LLM_DEFAULT_MODEL).toBe("gpt-5.6-terra");
-    expect(assemblyAILlm().options.model).toBe("gpt-5.6-terra");
+  it("defaults the model to qwen3-next-80b-a3b", () => {
+    expect(ASSEMBLYAI_LLM_DEFAULT_MODEL).toBe("qwen3-next-80b-a3b");
+    expect(assemblyAILlm().options.model).toBe("qwen3-next-80b-a3b");
   });
 
   it("keeps an explicit model", () => {

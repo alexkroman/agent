@@ -50,18 +50,18 @@ export const ASSEMBLYAI_LLM_GATEWAY_EU_URL = "https://llm-gateway.eu.assemblyai.
  * `TOOLS_REQUIRE_NO_REASONING` is keyed by model id: a default inside
  * that set makes the bare `assemblyAILlm()` carry an implicit
  * `reasoningEffort: "none"`, and one outside it carry none at all.
- * `gpt-5.6-terra` is INSIDE the set, so a bare `assemblyAILlm()` — and every
- * unset pipeline stage, and the `llm: "<id>"` string shorthand — now carries
- * that fill. Without it the descriptor 500s on every tool-calling turn, which
- * is why the fill and this id must be read together: `gpt-5.5` (the previous
- * default, and the one before `gpt-5.6-luna`) is OUTSIDE the set and needs no
- * switch flipped for it.
+ * `qwen3-next-80b-a3b` is OUTSIDE the set — it accepts a tool-carrying request
+ * at any effort, including its own server-side default — so a bare
+ * `assemblyAILlm()`, every unset pipeline stage, and the `llm: "<id>"` string
+ * shorthand now send no `reasoning_effort` at all. Move the default back to a
+ * `gpt-5.6` id and that fill becomes load-bearing again: without it the
+ * descriptor 500s on every tool-calling turn.
  *
  * Only the raw factory is affected either way: `assemblyAIPipeline()` passes
  * `"none"` explicitly, for latency rather than for that constraint, so the
  * pipeline behaves identically whichever side of the set the default sits on.
  */
-export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "gpt-5.6-terra";
+export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "qwen3-next-80b-a3b";
 
 /**
  * Reasoning effort accepted by the gateway's GPT-5-family models, including
@@ -161,10 +161,9 @@ export interface AssemblyAILlmOptions {
    * other effort, and streaming reports that as a bare 500. Setting a
    * non-`none` effort on one of them is honoured, and breaks tool calls. See
    * `TOOLS_REQUIRE_NO_REASONING`. The default model
-   * ({@link ASSEMBLYAI_LLM_DEFAULT_MODEL}) IS one of them, so this exception is
-   * the live path: a bare `assemblyAILlm()` carries `"none"`, and the rule
-   * above ("unset sends no parameter") applies only once a model outside the
-   * set is named.
+   * ({@link ASSEMBLYAI_LLM_DEFAULT_MODEL}) is NOT one of them, so the rule
+   * above is the live path — a bare `assemblyAILlm()` sends no parameter — and
+   * this exception applies only once a `gpt-5.6` id is named.
    */
   reasoningEffort?: AssemblyAIReasoningEffort;
   /**
