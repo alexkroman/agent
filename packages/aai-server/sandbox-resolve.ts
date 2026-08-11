@@ -15,8 +15,11 @@
 
 import { debug } from "./_debug-log.ts";
 import type { AgentRecord } from "./agent-store.ts";
+import { mintAnalyticsToken } from "./analytics-token.ts";
 import { type AppDatabases, type AppDbMeta, parseAppDbMeta } from "./app-database.ts";
 import { BROKER_READY_TIMEOUT_MS, resolveHarnessPath } from "./constants.ts";
+import type { AnalyticsBinding } from "./context.ts";
+import { knownPublicOrigin } from "./public-origin.ts";
 import { createSandbox, type Sandbox } from "./sandbox.ts";
 import type { SandboxDirectory } from "./sandbox-directory.ts";
 import {
@@ -28,7 +31,11 @@ import {
   terminateSlot,
   withSlugLock,
 } from "./sandbox-slots.ts";
-import { guestUnderstandsBundleUrl, type WorkerSource } from "./sandbox-vm.ts";
+import {
+  type GuestAnalyticsTarget,
+  guestUnderstandsBundleUrl,
+  type WorkerSource,
+} from "./sandbox-vm.ts";
 import { appDbSecretName, type SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
 
@@ -54,6 +61,12 @@ export type ResolveSandboxOpts = {
   secrets?: SecretStore;
   /** Per-app database opener; absent when SUPABASE_DB_URL is unset. */
   appDb?: AppDatabases;
+  /**
+   * Session analytics. Only the ingest SECRET is read here — the per-slug
+   * token is minted at spawn (below), so the secret stops at this layer and
+   * never travels further down toward the guest.
+   */
+  analytics?: AnalyticsBinding;
   /**
    * How long a broker call waits on a booting sandbox before answering 503.
    * Defaults to {@link BROKER_READY_TIMEOUT_MS}; injectable for tests, which
@@ -195,6 +208,33 @@ export function loadBundleParts(
  * installs the sandbox in the same task, so the async callback can only fire
  * after the install.)
  */
+/**
+ * The guest's analytics shipping target, or nothing.
+ *
+ * Nothing when the feature is off, and nothing when this process cannot name
+ * its own public origin yet — a guest given a URL it cannot reach would
+ * buffer and drop rows for its whole life, which is strictly worse than
+ * recording none. See `knownPublicOrigin` for why the request-less case is
+ * covered in practice.
+ */
+function analyticsTarget(
+  slug: string,
+  version: number,
+  opts: ResolveSandboxOpts,
+): { analytics?: GuestAnalyticsTarget } {
+  const origin = opts.analytics ? knownPublicOrigin() : undefined;
+  if (!(opts.analytics && origin)) return {};
+  return {
+    analytics: {
+      url: `${origin}/analytics/ingest`,
+      // Minted per spawn: the token authorizes exactly this slug.
+      token: mintAnalyticsToken(opts.analytics.ingestSecret, slug),
+      slug,
+      version,
+    },
+  };
+}
+
 function buildSandboxFromParts(
   slug: string,
   parts: BundleParts,
@@ -221,6 +261,10 @@ function buildSandboxFromParts(
     worker: parts.worker,
     env,
     slug,
+    // Minted HERE, per spawn: the token authorizes exactly this slug, and
+    // deriving it at the last moment keeps the platform's ingest secret out
+    // of every layer below this one.
+    ...analyticsTarget(slug, parts.version, opts),
     // The deploy version is half the fleet-wide sandbox NAME, which is what
     // keeps one deploy to one sandbox platform-wide (sandbox-directory.ts) and
     // still lets a blue-green handover run two versions at once.

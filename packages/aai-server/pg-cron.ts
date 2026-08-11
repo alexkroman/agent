@@ -156,6 +156,24 @@ const SWEEP_CRON_HISTORY =
   "delete from cron.job_run_details where end_time < now() - interval '7 days'";
 
 /**
+ * Session analytics past their retention window.
+ *
+ * `agent_events` is the platform's highest-write table and its rows carry
+ * end-user speech, so retention is a PRODUCT decision rather than a storage
+ * one: {@link ANALYTICS_RETENTION_DAYS} days, which covers the
+ * week-over-week comparison the studio's Analytics pane is built around and
+ * stops the table from quietly becoming a transcript archive.
+ *
+ * It sweeps on `received_at`, not `ts`. `ts` is reported by the guest, so a
+ * skewed clock could otherwise park a row outside the window in either
+ * direction — deleted on arrival, or retained indefinitely. Hourly rather
+ * than daily so the delete is many small batches instead of one large one.
+ */
+export const ANALYTICS_RETENTION_DAYS = 7;
+
+const SWEEP_AGENT_EVENTS = `delete from aai_platform.agent_events where received_at < now() - interval '${ANALYTICS_RETENTION_DAYS} days'`;
+
+/**
  * Terminate runaway tenant queries.
  *
  * Provisioning sets `statement_timeout = '10s'` on each app role, and that is
@@ -300,6 +318,7 @@ export function platformCronJobs(opts: { storage?: PlatformCronStorage } = {}): 
       command: SWEEP_PREVIEW_ARCHIVE,
     },
     { name: "aai-sweep-cron-history", schedule: "52 4 * * *", command: SWEEP_CRON_HISTORY },
+    { name: "aai-sweep-agent-events", schedule: "34 * * * *", command: SWEEP_AGENT_EVENTS },
     {
       name: "aai-sweep-app-db-runaways",
       schedule: "*/5 * * * *",

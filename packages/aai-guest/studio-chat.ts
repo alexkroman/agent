@@ -42,6 +42,7 @@ import {
 } from "ai";
 import { verifyBearer } from "./harness-auth.ts";
 import { hostRequest } from "./harness-rpc.ts";
+import { createAnalyticsTools } from "./studio-analytics-tool.ts";
 import {
   buildWorkspaceDir,
   toolchainModules,
@@ -102,6 +103,7 @@ export type StudioSessionParams = {
   model: string;
   region?: "eu" | undefined;
   maxSteps: number;
+  serverUrl?: string | undefined; // platform origin — where query_analytics calls back
 };
 
 export type StudioSession = StudioSessionParams & { dir: string };
@@ -123,13 +125,6 @@ export type StudioChatDeps = {
   typecheck?: TypecheckFn;
 };
 
-/**
- * Initialize (or replace) the harness's studio session: materialize the
- * workspace to a scratch dir and remember the turn configuration. Called by
- * the `studio/session-init` control-channel request — repeat calls reset
- * the workspace to the store's current files (the broker re-inits on every
- * page session so the sandbox never serves a stale tree).
- */
 /**
  * The concrete on-disk paths the coding agent can read, appended to the
  * host-composed system prompt.
@@ -205,6 +200,13 @@ export function resetSessionIdentity(): void {
   installedFor = null;
 }
 
+/**
+ * Initialize (or replace) the harness's studio session: materialize the
+ * workspace to a scratch dir and remember the turn configuration. Called by
+ * the `studio/session-init` control-channel request — repeat calls reset
+ * the workspace to the store's current files (the broker re-inits on every
+ * page session so the sandbox never serves a stale tree).
+ */
 export async function initStudioSession(params: StudioSessionParams): Promise<StudioSession> {
   const identity = { scope: params.scope, project: params.project };
   if (
@@ -354,6 +356,7 @@ async function runTurn(
         // Same post-copy diagnostics backend the write tools use.
         typecheck,
       }),
+      ...createAnalyticsTools(session),
       ...createStudioTools({
         dir: session.dir,
         // Post-write diagnostics: the same tsc pass builds run, so a type

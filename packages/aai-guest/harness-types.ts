@@ -78,6 +78,14 @@ export type CreateGuestRuntime = (opts: {
   env: Record<string, string>;
   db?: DbAdapter;
   runCode?: (code: string) => Promise<string | { error: string }>;
+  /**
+   * Where the runtime records session analytics. Typed `unknown` because the
+   * bundle's OWN SDK defines the sink, and that SDK may predate the option
+   * entirely — an older `createRuntime` simply ignores the extra key (the
+   * wrapper spreads opts), which is what makes this additive to a contract
+   * frozen per deploy.
+   */
+  analytics?: unknown;
 }) => GuestRuntime;
 
 // ---- JSON-RPC 2.0 message shapes --------------------------------------------

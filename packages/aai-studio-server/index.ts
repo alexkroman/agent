@@ -88,6 +88,7 @@ function studioAppOpts(base: ServiceConfig, isDraining: () => boolean): StudioAp
     ...(base.auth && { auth: base.auth }),
     ...(base.keyVerifier && { keyVerifier: base.keyVerifier }),
     ...(base.appDb && { appDb: base.appDb }),
+    ...(base.analytics && { analytics: base.analytics }),
     ...(base.slugLock && { slugLock: base.slugLock }),
     ...(rateLimiters && { studioRateLimiters: rateLimiters }),
     ...(sessionRegistry && { studioSessionRegistry: sessionRegistry }),

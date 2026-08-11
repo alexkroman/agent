@@ -10,6 +10,7 @@
  */
 
 import type { Context } from "hono";
+import type { AnalyticsStore } from "./analytics-store.ts";
 import type { ApiKeyVerifier } from "./api-key-verify.ts";
 import type { AppDatabases } from "./app-database.ts";
 import type { SlugMutationLock } from "./platform-lock.ts";
@@ -50,6 +51,13 @@ export type HonoEnv = {
      * reason the production builder returns one unless explicitly told not to.
      */
     keyVerifier?: ApiKeyVerifier;
+    /**
+     * Session analytics for deployed agents. Absent means the feature is off
+     * for this deployment: guests are told no ingest endpoint, the ingest
+     * route 404s, and the studio's Analytics pane reports it as unavailable
+     * rather than as an agent with no traffic.
+     */
+    analytics?: AnalyticsBinding;
   };
   Variables: {
     slug: string;
@@ -60,6 +68,17 @@ export type HonoEnv = {
      */
     userId?: string;
   };
+};
+
+/**
+ * The analytics feature's two halves: where rows go, and the secret that
+ * mints the per-slug ingest tokens guests present (analytics-token.ts). They
+ * travel together because a store with no secret cannot be written to and a
+ * secret with no store has nothing to authorize.
+ */
+export type AnalyticsBinding = {
+  store: AnalyticsStore;
+  ingestSecret: string;
 };
 
 /** Typed context for route handlers using the platform {@link HonoEnv}. */

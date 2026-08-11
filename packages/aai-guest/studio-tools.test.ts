@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { createAnalyticsTools } from "./studio-analytics-tool.ts";
 import { createGuestWebTools } from "./studio-chat.ts";
 import { createDesignInspirationTool, createProjectTools } from "./studio-project-tools.ts";
 import { createTemplateTools } from "./studio-template-tools.ts";
@@ -181,6 +182,7 @@ describe("guest workspace tools", () => {
     const { tools, dir } = await makeTools({});
     // The same merge runTurn performs — every family, studio tools last.
     const merged = {
+      ...createAnalyticsTools({ serverUrl: "https://platform", project: "p", apiKey: "k" }),
       ...createGuestWebTools(),
       ...createDesignInspirationTool({} as never),
       ...createProjectTools({ dir }),

@@ -98,6 +98,21 @@ export type AgentSpawnOptions = {
    * already-deployed bundle. Ignored by the subprocess backend.
    */
   imageTag?: string | undefined;
+  /** Session-analytics shipping target; absent turns recording off. */
+  analytics?: GuestAnalyticsTarget | undefined;
+};
+
+/**
+ * What a guest needs to ship analytics: an absolute ingest URL on the
+ * platform's public origin, a token authorizing exactly this slug, and the
+ * deploy generation to stamp on every row. Minted per spawn by
+ * `sandbox-resolve.ts` so the platform's ingest SECRET stops there.
+ */
+export type GuestAnalyticsTarget = {
+  url: string;
+  token: string;
+  slug: string;
+  version: number;
 };
 
 // ── The backend contract ─────────────────────────────────────────────────────
@@ -113,6 +128,8 @@ export type BackendAgentSpawn = {
   imageTag?: string | undefined;
   /** Modal only — the fleet-wide sandbox name (see sandbox-directory.ts). */
   name?: string | undefined;
+  /** Session-analytics shipping target, forwarded into the guest's exec env. */
+  analytics?: GuestAnalyticsTarget | undefined;
 };
 
 /**
@@ -282,6 +299,7 @@ export async function spawnAgentServer(
     spawners,
   )({
     harnessPath: opts.harnessPath,
+    analytics: opts.analytics,
     slug: opts.slug,
     // The blob store is content-addressed and the hash rides on the source
     // (see WorkerSource); the guest verifies before loading, which extends

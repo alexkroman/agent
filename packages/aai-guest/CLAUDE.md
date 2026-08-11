@@ -409,6 +409,43 @@ this package's.
   keeps the path covered on any runner by spawning the harness there directly
   and publishing through the real CLI to a real listening orchestrator.
 
+## Shipping session analytics
+
+`analytics-shipper.ts` drains the runtime's analytics buffer to the
+platform's `POST /analytics/ingest`. It is the ONLY outbound platform call an
+agent-mode guest makes — a deployed guest holds no control channel — and the
+whole design follows from "must not affect the call in progress". The feature
+end to end is documented in `packages/aai-studio-server/CLAUDE.md`.
+
+- **At-most-once, deliberately.** A failed shipment is dropped, not retried.
+  A platform outage is exactly when every guest would otherwise be growing a
+  retry queue at once, inside a memory cap (see the burst-range note in
+  `packages/aai-server/CLAUDE.md`) — turning a monitoring degradation into
+  agents dying mid-call. The buffer is capped for the same reason and drops
+  the OLDEST rows: the newest are what the pane is being looked at for.
+- **Three flush triggers, and the third is the one that gets forgotten**: a
+  timer, a full batch, and SHUTDOWN. Without the last, every session loses
+  the rows that say how it ENDED, which is the question the pane exists to
+  answer. It hangs off `createIdleController`'s injectable `exit`, because
+  both ways this process ends go through it — and NOT off
+  `process.on("beforeExit")`, which `process.exit()` never fires, nor
+  `"exit"`, which cannot await.
+- **The timer is `unref`'d.** The guest's idle self-exit decides when this
+  process ends; a live interval would outvote it.
+- **Flushes are serialized by CHAINING, not coalesced onto the in-flight
+  one.** Returning the running promise looks equivalent and is not: that
+  shipment took its batch before the caller's rows arrived, so `stop()`'s
+  drain loop sees no progress and gives up with rows still buffered.
+- **Absent config = nothing recorded.** `analyticsShipperFromEnv` returns
+  `undefined` unless the spawner set all of `AAI_ANALYTICS_URL`/`_TOKEN`/
+  `_SLUG`, and the runtime is then handed no sink at all — a guest that
+  buffers rows it can never ship is worse than one that records none.
+
+**The bundle's own SDK may predate the option**, which is why
+`CreateGuestRuntime.analytics` is typed `unknown`: the wrapper spreads its
+opts into `createRuntime`, so an older bundle ignores the extra key. That is
+what makes this additive to a contract frozen per deploy.
+
 ## Fetching its own bundle
 
 The guest pulls its own worker bundle from a signed Storage URL rather than

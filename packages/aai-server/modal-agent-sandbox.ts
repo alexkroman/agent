@@ -27,7 +27,7 @@ import {
 import { guestExecBaseEnv, HARNESS_REMOTE_PATH } from "./modal-harness-image.ts";
 import { SandboxUnavailableError } from "./sandbox-errors.ts";
 import { resolveSandboxRole } from "./sandbox-role.ts";
-import type { WorkerSource } from "./sandbox-vm.ts";
+import type { GuestAnalyticsTarget, WorkerSource } from "./sandbox-vm.ts";
 import {
   type AgentServerHandle,
   agentBootEnv,
@@ -66,6 +66,8 @@ export async function spawnModalAgentServer(
      * spawner needs no error handling of its own.
      */
     name: string;
+    /** Session-analytics shipping target, forwarded into the guest exec env. */
+    analytics?: GuestAnalyticsTarget | undefined;
   },
   ctx?: ModalSpawnContext,
   fetchFn?: GuestFetch,
@@ -133,6 +135,7 @@ export async function spawnModalAgentServer(
                 : { path: AGENT_BUNDLE_REMOTE_PATH },
             bundleSha256: opts.worker.sha256,
             envPath: AGENT_ENV_REMOTE_PATH,
+            analytics: opts.analytics,
           }),
           ...guestExecBaseEnv(),
         },

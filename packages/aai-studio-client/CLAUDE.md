@@ -408,6 +408,26 @@ segmented control switches between — `preview.tsx`, `code-view.tsx`,
   twin of the 401 storm the module header describes. A stream that stayed up
   10s still resets, so the promptness the reset exists for is intact.
 
+- **The Analytics pane shows the deployed agents' real sessions**
+  (`analytics.tsx` → `GET /studio/projects/:project/analytics`), 7 days, both
+  environments. The server side and the reasoning are in
+  `packages/aai-studio-server/CLAUDE.md`; three things are the client's own.
+  - **"Analytics is off" and "nobody has called this agent" are rendered
+    DIFFERENTLY**, and that is most of the conditional logic in the file.
+    Both are all-zeroes on the wire; showing zeroes for a disabled deployment
+    tells a user their agent has no users, which is a lie shaped like data.
+    `unavailable` and an empty `slugs` are the two branches, both taken before
+    a single number renders.
+  - **The headline number is time to FIRST AUDIO**, labelled "caller stops →
+    first audio" rather than left to be read as turn duration. It is the one
+    metric a voice agent's author acts on, and the label is what stops it
+    being mistaken for the reply length beside it.
+  - **It POLLS on a slow interval and offers a Refresh.** Analytics has no
+    push: the workspace SSE stream carries workspace changes and a phone call
+    is not one, so a live-looking pane would be a lie about freshness. The
+    bars are inline SVG-free `<li>` heights — a charting library for seven
+    numbers would be the largest thing in this bundle.
+
 ## Surviving a platform deploy (`stale-build.ts`)
 
 A chunk URL is only valid while the container image holding it is running,

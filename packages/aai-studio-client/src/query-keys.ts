@@ -18,4 +18,5 @@ export const queryKeys = {
   toolLabels: (url: string | undefined) => ["tool-labels", url] as const,
   secrets: (project: string) => ["secrets", project] as const,
   database: (project: string) => ["database", project] as const,
+  analytics: (project: string) => ["analytics", project] as const,
 };

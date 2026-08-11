@@ -68,6 +68,8 @@
     "./rpc-schemas": "./rpc-schemas.ts",
     "./schemas": "./schemas.ts",
     "./slug-generate": "./slug-generate.ts",
+    "./analytics-query": "./analytics-query.ts",
+    "./analytics-store": "./analytics-store.ts",
     "./api-key-verify": "./api-key-verify.ts",
     "./app-middleware": "./app-middleware.ts",
     "./client-ip": "./client-ip.ts",

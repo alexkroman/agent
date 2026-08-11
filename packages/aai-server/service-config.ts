@@ -7,11 +7,16 @@
  * storage, Vault, locks, or change-stream wiring.
  */
 
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { errorMessage } from "@alexkroman1/aai";
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
 import { assertServiceRoleKey, isLocalDev, requireEnv } from "./_boot.ts";
 import { type AgentRows, createMemoryAgentRows, createPgAgentRows } from "./agent-store.ts";
+import {
+  type AnalyticsStore,
+  createMemoryAnalyticsStore,
+  createPostgresAnalyticsStore,
+} from "./analytics-store.ts";
 import { createApiKeyVerifierFromEnv } from "./api-key-verify.ts";
 import { type AppDatabases, type AppDbTarget, createAppDatabases } from "./app-database.ts";
 import {
@@ -217,6 +222,8 @@ function bootstrapPlatformDb(sql: SqlExec, env: NodeJS.ProcessEnv): void {
  */
 export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   secrets: SecretStore;
+  /** Session analytics for deployed agents (aai_platform.agent_events). */
+  analytics: AnalyticsStore;
   /** The agents table (deploy records). Postgres in production, memory in dev. */
   agents: AgentRows;
   workspaces: WorkspaceStore;
@@ -239,6 +246,7 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
     );
     return {
       secrets: createMemorySecretStore(),
+      analytics: createMemoryAnalyticsStore(),
       ...buildMemoryStores(),
       slugLock: localSlugLock,
     };
@@ -257,6 +265,10 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   if (localDev) {
     return {
       secrets: createMemorySecretStore(),
+      // The one exception to "local dev is all memory": rows go to the real
+      // table when a database is configured, because the ad-hoc SQL surface
+      // is the whole point of the feature and only Postgres can evaluate it.
+      analytics: createPostgresAnalyticsStore(exec),
       ...buildMemoryStores(),
       appDb: createAppDatabases({
         url,
@@ -273,6 +285,7 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   bootstrapPlatformDb(exec, env);
   return {
     secrets: createVaultSecretStore(exec),
+    analytics: createPostgresAnalyticsStore(exec),
     agents: createPgAgentRows(exec),
     workspaces: createPgWorkspaceStore(exec),
     chats: createPgChatStore(exec),
@@ -306,6 +319,30 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   };
 }
 
+/**
+ * The secret the per-slug analytics ingest tokens are derived from
+ * (analytics-token.ts).
+ *
+ * `ANALYTICS_INGEST_SECRET` when set. Otherwise DERIVED from the service-role
+ * key, which every production deployment already has and no guest ever sees:
+ * `HMAC(serviceRoleKey, "aai-analytics-ingest")`. Deriving rather than
+ * generating is what makes it identical on every replica with no bootstrap,
+ * no table, and no read on the ingest hot path — a randomly generated secret
+ * would have to be stored and fetched, and a per-replica one would reject
+ * every token minted by a different replica.
+ *
+ * It is a one-way derivation, so a leaked ingest token still reveals nothing
+ * about the key it came from. Absent both inputs (local dev with no Supabase)
+ * the feature is simply off.
+ */
+export function resolveAnalyticsIngestSecret(env: NodeJS.ProcessEnv): string | undefined {
+  const explicit = env.ANALYTICS_INGEST_SECRET?.trim();
+  if (explicit) return explicit;
+  const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  if (!serviceRoleKey) return;
+  return createHmac("sha256", serviceRoleKey).update("aai-analytics-ingest").digest("hex");
+}
+
 /** Assemble the shared service bindings from the environment. */
 export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
   // One key, two consumers that both need service-role authority (Storage
@@ -317,7 +354,9 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
     assertServiceRoleKey(env.SUPABASE_SERVICE_ROLE_KEY);
   }
   const storage = buildStorage(env);
-  const { secrets, agents, workspaces, chats, events, appDb, slugLock, sql } = buildPlatformDb(env);
+  const { secrets, analytics, agents, workspaces, chats, events, appDb, slugLock, sql } =
+    buildPlatformDb(env);
+  const ingestSecret = resolveAnalyticsIngestSecret(env);
   const slots = createSlotCache();
   // Per-process, not per-host: Modal can run several containers of the same
   // app anywhere, and two of them sharing an identity is exactly the failure
@@ -358,6 +397,7 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
     ...(keyVerifier && { keyVerifier }),
     slugLock,
     replicaId,
+    ...(ingestSecret && { analytics: { store: analytics, ingestSecret } }),
     ...(appDb && { appDb }),
     ...(sql && { sql }),
     ...(directory && { directory }),

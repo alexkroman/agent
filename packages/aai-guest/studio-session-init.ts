@@ -53,6 +53,8 @@ export const SessionInitParamsSchema = z.object({
   project: z.string(),
   files: z.record(z.string(), z.string()),
   apiKey: z.string(),
+  /** Platform public origin for the analytics tool's call back; optional. */
+  serverUrl: z.string().optional(),
   chatToken: z.string().min(1),
   system: z.string(),
   model: z.string(),

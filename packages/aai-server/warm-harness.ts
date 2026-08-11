@@ -270,6 +270,23 @@ export function agentBootEnv(
     bundle: { path: string } | { url: string };
     bundleSha256: string;
     envPath: string;
+    /**
+     * Session-analytics shipping, when the platform has it configured. All
+     * four values or none: the guest treats a partial set as "not
+     * configured" and records nothing, which is the right failure — a guest
+     * that buffers rows it can never ship is worse than one that never
+     * records them.
+     */
+    analytics?:
+      | {
+          /** Absolute ingest URL on the platform's PUBLIC origin. */
+          url: string;
+          /** The slug-scoped ingest token (analytics-token.ts). */
+          token: string;
+          slug: string;
+          version: number;
+        }
+      | undefined;
   },
   /** The server's own environment; injectable for tests. */
   serverEnv: NodeJS.ProcessEnv = process.env,
@@ -285,6 +302,14 @@ export function agentBootEnv(
     AAI_BUNDLE_SHA256: opts.bundleSha256,
     AAI_AGENT_ENV_PATH: opts.envPath,
     ...(idleExitMs ? { AAI_GUEST_IDLE_EXIT_MS: idleExitMs } : {}),
+    ...(opts.analytics
+      ? {
+          AAI_ANALYTICS_URL: opts.analytics.url,
+          AAI_ANALYTICS_TOKEN: opts.analytics.token,
+          AAI_ANALYTICS_SLUG: opts.analytics.slug,
+          AAI_ANALYTICS_VERSION: String(opts.analytics.version),
+        }
+      : {}),
   };
 }
 

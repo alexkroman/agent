@@ -125,11 +125,12 @@ export function PublishMenu(props: PublishMenuProps) {
  * lay out. Nothing here gates on a build or a deploy — Delete project has to
  * work before anything has ever been published.
  */
-export type StudioTab = "preview" | "code" | "settings";
+export type StudioTab = "preview" | "code" | "analytics" | "settings";
 
 const TABS: { id: StudioTab; label: string }[] = [
   { id: "preview", label: "Preview" },
   { id: "code", label: "Code" },
+  { id: "analytics", label: "Analytics" },
   { id: "settings", label: "Settings" },
 ];
 

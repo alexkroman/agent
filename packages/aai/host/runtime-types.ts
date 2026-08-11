@@ -12,6 +12,7 @@ import type { AgentEnv, ProviderEnv } from "../sdk/env-types.ts";
 import type { ClientSink, ReadyConfig } from "../sdk/protocol.ts";
 import type { LlmProvider, SttProvider, TtsProvider } from "../sdk/providers.ts";
 import type { AgentDef } from "../sdk/types.ts";
+import type { AnalyticsSink } from "./analytics.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
 import type { SessionCore } from "./session-core.ts";
@@ -103,6 +104,17 @@ export type RuntimeOptions = {
   createOpenaiRealtimeWebSocket?: CreateOpenaiRealtimeWebSocket | undefined;
   /** Structured logger for runtime and session logs. Defaults to the console. */
   logger?: Logger | undefined;
+  /**
+   * Where per-session analytics rows go (`host/analytics.ts`). When set, the
+   * runtime decorates the client sink, the tool executor, and the logger so
+   * every session emits transcripts, turn latencies, tool outcomes, errors
+   * and log lines with NO instrumentation in the agent's own code. Omit and
+   * nothing is recorded and nothing is wrapped.
+   *
+   * The platform sets this in the guest, which batches and ships to
+   * `POST /analytics/ingest`; a self-hosted caller can pass any sink.
+   */
+  analytics?: AnalyticsSink | undefined;
   /** S2S endpoint URL and audio sample rates. Defaults to `DEFAULT_S2S_CONFIG`. */
   s2sConfig?: S2SConfig | undefined;
   /**

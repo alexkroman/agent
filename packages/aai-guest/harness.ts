@@ -73,6 +73,7 @@ import { createServer, type SessionRuntime } from "@alexkroman1/aai/runtime";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { type WebSocket, WebSocketServer } from "ws";
 import { z } from "zod";
+import { analyticsShipperFromEnv } from "./analytics-shipper.ts";
 import { createIdleController, createManageHandler, readAgentBoot } from "./harness-agent-mode.ts";
 import { verifyBearer } from "./harness-auth.ts";
 import {
@@ -262,11 +263,29 @@ export function lazyRuntime(
 async function mainAgent(port: number, host: string, token: string): Promise<void> {
   const state = emptyHarnessState();
 
+  // Session analytics, when the spawner configured shipping. Built BEFORE the
+  // bundle loads so the sink is on the state by the time `ensureRuntime`
+  // reads it, and torn down on every exit path below — the last rows of a
+  // session say how it ended, which is the half a missed flush loses.
+  const shipper = analyticsShipperFromEnv();
+  state.analytics = shipper?.sink ?? null;
+
   const rawIdle = Number(process.env.AAI_GUEST_IDLE_EXIT_MS ?? AGENT_IDLE_EXIT_MS);
   const idle = createIdleController({
     activeSessions: () => state.activeSessions,
     idleExitMs: Number.isFinite(rawIdle) && rawIdle >= 0 ? rawIdle : AGENT_IDLE_EXIT_MS,
     pollMs: AGENT_IDLE_POLL_MS,
+    // Every way this process ends goes through here — the idle self-exit AND
+    // the drain deadline — so this is where the last rows are flushed. It has
+    // to be the exit hook rather than `process.on("beforeExit")`, which
+    // `process.exit()` does not fire at all, or `"exit"`, which cannot await:
+    // both would silently lose exactly the `session_end` rows that say how a
+    // conversation finished. Bounded by the shipper's own request timeout.
+    ...(shipper && {
+      exit: (code: number) => {
+        void shipper.stop().finally(() => process.exit(code));
+      },
+    }),
   });
 
   const boot = await readAgentBoot();

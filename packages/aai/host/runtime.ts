@@ -23,6 +23,7 @@ import { errorMessage } from "../sdk/utils.ts";
 import { createPostgresDb } from "./postgres-db.ts";
 import { describeResolvedProviders } from "./providers/_provider-settings.ts";
 import { resolveLlm, resolveStt, resolveTts } from "./providers/resolve.ts";
+import { createRuntimeAnalytics } from "./runtime-analytics.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "./runtime-config.ts";
 import { setupTools } from "./runtime-tools.ts";
 import {
@@ -153,6 +154,8 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   const effectiveProviders = resolveEffectiveProviders(opts, agent);
 
   const slug = agent.name;
+  /** Session analytics — inert (identity wrappers) without a sink. */
+  const analytics = createRuntimeAnalytics(opts.analytics);
   // Credentials resolve from `providerEnv` (defaults to `env`); `env` alone is
   // what agent tool code sees as `ctx.env`. See RuntimeOptions.providerEnv.
   const providerEnv = opts.providerEnv ?? env;
@@ -225,7 +228,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   const stateMap = new Map<string, Record<string, unknown>>();
   const stateSweeps = createStateSweeps(stateMap);
 
-  const { executeTool, toolSchemas, toolGuidance, pushStateSnapshot } = setupTools({
+  const tools = setupTools({
     agent,
     opts,
     llm: effectiveProviders.llm,
@@ -236,6 +239,9 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     sinkMap,
     stateMap,
   });
+
+  const { toolSchemas, toolGuidance, pushStateSnapshot } = tools;
+  const executeTool = analytics.wrapExecuteTool(tools.executeTool);
 
   // Resolve pipeline providers once per runtime (not per session). Each
   // session reuses the same opener / LanguageModel — the opener's `open()`
@@ -286,11 +292,15 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     return promptCache.text;
   }
 
-  function createSession(sessionOpts: TransportSessionOpts): SessionCore {
+  function createSession(rawSessionOpts: TransportSessionOpts): SessionCore {
+    // Substitutes the client sink with the recording one — see attachSession.
+    const session = analytics.attachSession(rawSessionOpts);
+    const { sessionOpts, recorder } = session;
     // A resume under this id (same key, new socket) reclaims its tool state —
     // cancel the sweep the previous session's stop() scheduled.
     stateSweeps.cancel(sessionOpts.id);
     const releaseSink = sinkMap.claim(sessionOpts.id, sessionOpts.client);
+    recorder?.start();
     // A resumed session still holds its state, and the new socket has never
     // seen it — without this the client renders empty until some later tool
     // call happens to change something, which it may never do.
@@ -368,7 +378,9 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       agentConfig,
       executeTool,
       transport,
-      logger,
+      // Only the SESSION-scoped logger is recorded: its lines carry a session
+      // id, which is what makes them joinable against the metric rows.
+      logger: recorder ? recorder.wrapLogger(logger) : logger,
       ...(opts.onToolResult ? { onToolResult: opts.onToolResult } : {}),
     });
 
@@ -385,6 +397,11 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       try {
         await stopCore();
       } finally {
+        // Closed out BEFORE the sink release, and unconditionally: the row is
+        // this session's own record, so a resume having re-claimed the id
+        // (which is what makes releaseSink return false) must not swallow it.
+        recorder?.end();
+        session.release();
         if (releaseSink()) {
           // Tool state outlives the socket: keep it for the resume grace
           // window so a `?sessionId=<id>` reconnect finds its ctx.state.
@@ -431,6 +448,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   function releaseResources(): void {
     sessions.clear();
     sinkMap.clear();
+    analytics.clear();
     // Force-close on timeout skips the per-session stop wrapper's stateMap
     // cleanup (its sink-identity check fails against the cleared map), so clear
     // it here too or timed-out sessions leak their tool state permanently.

@@ -33,13 +33,14 @@ import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import { z } from "zod";
 import { createSemaphore } from "./_semaphore.ts";
+import { registerAnalyticsIngest } from "./analytics-routes.ts";
 import type { ApiKeyVerifier } from "./api-key-verify.ts";
 import type { AppDatabases } from "./app-database.ts";
 import { addHealthRoute, applyPlatformMiddleware, bindFetchEnv } from "./app-middleware.ts";
 import { createAgentClientConfigHandler } from "./client-config-handler.ts";
 import { clientIp } from "./client-ip.ts";
 import { DEPLOY_BODY_CONCURRENCY, DEPLOY_BODY_WAIT_MS, resolveHarnessPath } from "./constants.ts";
-import type { HonoEnv } from "./context.ts";
+import type { AnalyticsBinding, HonoEnv } from "./context.ts";
 import { handleDelete } from "./delete.ts";
 import { handleDeployNew } from "./deploy.ts";
 import { gzipRequestMw, MAX_INFLATED_BODY_BYTES } from "./gzip-request.ts";
@@ -126,6 +127,13 @@ export type OrchestratorOpts = {
    * tests) leaves every replica independent — correct for a single process.
    */
   directory?: SandboxDirectory;
+  /**
+   * Session analytics: where a guest's shipped rows go, plus the secret its
+   * per-slug ingest token is derived from. Absent turns the feature off end
+   * to end — no ingest route, no token handed to a spawn, and the studio
+   * reports it unavailable rather than showing an agent as having no traffic.
+   */
+  analytics?: AnalyticsBinding;
   /** Allowed CORS origins. Defaults to `["*"]` (any origin). */
   allowedOrigins?: string[];
   /**
@@ -167,6 +175,12 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // are still reserved slugs (RESERVED_SLUGS) so no agent route can shadow the
   // namespace — see studio-paths.ts.
   app.get("/", (c) => c.json({ service: "aai-agent", studio: "not served by this app" }));
+
+  // Guest-written session analytics. Registered here rather than under
+  // `/:slug` because the slug rides in the BODY: the ingest token authorizes
+  // one slug and is verified against what the body claims, so a slug in the
+  // path would be a second, unauthenticated copy of the same fact.
+  registerAnalyticsIngest(app);
 
   // Cap the on-the-wire deploy body (compressed or not) before anything
   // buffers it. gzipRequestMw separately caps the DECOMPRESSED size, so a

@@ -68,6 +68,46 @@ export function resolvePublicOrigin(req: Request, env: NodeJS.ProcessEnv = proce
 }
 
 /**
+ * The last public origin this process actually served a request on.
+ *
+ * **For the paths that need the origin but have no Request**, of which there
+ * is exactly one class: spawning a guest. A deployed agent's sandbox has to be
+ * told an absolute URL to ship its analytics to, and the spawn happens inside
+ * `resolveSandbox` — reached from the broker (which does have a request) and
+ * from the change stream's blue-green handover (which does not).
+ *
+ * `AAI_PUBLIC_ORIGIN` is still the answer whenever it is set, and a
+ * self-hosted deployment should set it. Production does not, and the reason
+ * this is safe there rather than merely convenient: Modal gives a container no
+ * way to learn its own public hostname except from a request, and a replica
+ * cannot reach the handover path without having ALREADY served a broker
+ * request for that slug — the handover only fires for a slug this replica
+ * holds a resident for. So the cell is populated by the time the request-less
+ * path runs.
+ *
+ * A wrong value costs shipped analytics, never a session: the guest posts
+ * somewhere that 404s or refuses the token, drops the batch, and the call
+ * continues. That is why learning it from traffic is acceptable HERE and is
+ * not how the deploy origin is resolved.
+ */
+let lastServedOrigin: string | null = null;
+
+/** Record the origin of a served request. Called by the platform middleware. */
+export function rememberPublicOrigin(req: Request, env: NodeJS.ProcessEnv = process.env): void {
+  lastServedOrigin = resolvePublicOrigin(req, env);
+}
+
+/**
+ * The public origin outside a request: operator config first, then the last
+ * one served. `undefined` before this process has served anything.
+ */
+export function knownPublicOrigin(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const configured = env.AAI_PUBLIC_ORIGIN?.trim();
+  if (configured) return configured.replace(/\/+$/, "");
+  return lastServedOrigin ?? undefined;
+}
+
+/**
  * The public origin split into the two `X-Forwarded-*` values a downstream
  * service needs, so a proxy forwards what the CLIENT saw rather than the
  * cleartext hop it received.

@@ -19,7 +19,9 @@
 import { randomBytes } from "node:crypto";
 import { errorMessage } from "@alexkroman1/aai";
 import type { createOwnedMap } from "@alexkroman1/aai/internal";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { resolveHarnessPath } from "aai-server/constants";
+import { knownPublicOrigin } from "aai-server/public-origin";
 import { SandboxNameTakenError, studioSandboxName } from "aai-server/sandbox-directory";
 import type { spawnWarmHarness, WarmHarness } from "aai-server/sandbox-vm";
 import type { WorkspaceStore } from "aai-server/workspace-store";
@@ -99,6 +101,10 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
       project,
       files,
       apiKey,
+      // The origin the guest's analytics tool calls back on. Learned from
+      // served traffic (see knownPublicOrigin) — every path that installs a
+      // session is request-driven, so it is populated by the time this runs.
+      ...omitUndefined({ serverUrl: knownPublicOrigin() }),
       system: studioSystemPrompt(),
       model: studioLlmModelId(env),
       ...(env.STUDIO_LLM_REGION === "eu" ? { region: "eu" as const } : {}),

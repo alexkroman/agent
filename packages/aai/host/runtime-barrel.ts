@@ -27,6 +27,13 @@ export {
   type AgentServerOptions,
   createAgentServer,
 } from "./agent-server.ts";
+export {
+  type AnalyticsEvent,
+  type AnalyticsEventKind,
+  type AnalyticsSink,
+  createSessionAnalytics,
+  type SessionAnalytics,
+} from "./analytics.ts";
 export type { RunCodeExecutor } from "./builtin-run-code.ts";
 export {
   type BuiltinToolOptions,

@@ -25,6 +25,7 @@ import type { ApiKeyVerifier } from "aai-server/api-key-verify";
 import type { AppDatabases } from "aai-server/app-database";
 import { addHealthRoute, applyPlatformMiddleware, bindFetchEnv } from "aai-server/app-middleware";
 import type { ChatStore } from "aai-server/chat-store";
+import type { AnalyticsBinding } from "aai-server/context";
 import { createMemoryPlatformEvents, type PlatformEvents } from "aai-server/platform-events";
 import { createMutationLock, localSlugLock, type SlugMutationLock } from "aai-server/platform-lock";
 import { createMemorySecretStore, type SecretStore } from "aai-server/secret-store";
@@ -64,6 +65,13 @@ export type StudioAppOpts = {
   keyVerifier?: ApiKeyVerifier;
   /** Per-app database provisioning; absent when SUPABASE_DB_URL is unset. */
   appDb?: AppDatabases;
+  /**
+   * Session analytics — the Analytics pane and the coding agent's
+   * `query_analytics` read through it. Absent makes both report the feature
+   * off, which is deliberately distinguishable from "this agent has no
+   * traffic" (see studio-analytics.ts).
+   */
+  analytics?: AnalyticsBinding;
   /** Cross-service slug mutation lock — MUST be the shared Postgres lock in production. */
   slugLock?: SlugMutationLock;
   studioRateLimiters?: StudioRateLimiters;
@@ -122,6 +130,7 @@ export function createStudioApp(opts: StudioAppOpts): {
     ...(opts.auth && { auth: opts.auth }),
     ...(opts.keyVerifier && { keyVerifier: opts.keyVerifier }),
     ...(opts.appDb && { appDb: opts.appDb }),
+    ...(opts.analytics && { analytics: opts.analytics }),
     // Wrapped exactly as the agent service wraps it: holding the lock must
     // also drop this replica's cached view of the slug, or a mutation
     // read-modify-writes off a pre-lock snapshot (see createMutationLock).

@@ -47,6 +47,13 @@ export type StudioSessionInitParams = {
   apiKey: string;
   /** Per-session bearer for the guest's public chat surface. */
   chatToken: string;
+  /**
+   * The platform's PUBLIC origin, so the coding agent's `query_analytics`
+   * tool can call back into `/studio/projects/:project/analytics/query` on
+   * the caller's own key. Absent leaves the guest without the tool rather
+   * than with one that dials a guessed origin.
+   */
+  serverUrl?: string;
   system: string;
   model: string;
   region?: "eu";

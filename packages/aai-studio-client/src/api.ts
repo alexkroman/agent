@@ -72,6 +72,46 @@ export type DatabaseState = {
   warning?: string;
 };
 
+/**
+ * `GET /studio/projects/:project/analytics` — the Analytics pane's data.
+ *
+ * Mirrors `AnalyticsSummary` in aai-server/analytics-query.ts. `unavailable`
+ * is set when the deployment has no analytics store at all, and the pane must
+ * render that DIFFERENTLY from an agent with no traffic: identical zeroes
+ * would tell a user their agent has no users.
+ */
+export type AnalyticsSummary = {
+  windowDays: number;
+  sampled: boolean;
+  slugs: string[];
+  unavailable?: string;
+  sessions: { count: number; medianDurationMs: number | null; totalTurns: number };
+  turns: {
+    count: number;
+    interrupted: number;
+    p50FirstAudioMs: number | null;
+    p95FirstAudioMs: number | null;
+  };
+  tools: {
+    name: string;
+    calls: number;
+    errors: number;
+    p50Ms: number | null;
+    p95Ms: number | null;
+  }[];
+  errors: { name: string; count: number }[];
+  daily: { day: string; sessions: number; turns: number; errors: number }[];
+  recentSessions: {
+    sessionId: string;
+    startedAt: number;
+    durationMs: number | null;
+    turns: number;
+    errors: number;
+    endReason: string | null;
+  }[];
+  logs: { ts: number; sessionId: string; level: string; message: string }[];
+};
+
 /** `GET /studio/status` — which LLM the studio's chat runs on. */
 export type StudioStatus = {
   provider?: string;
@@ -388,6 +428,15 @@ export const api = {
    * two deployed agents, and the switch can be flipped before either exists
    * (see aai-studio-server/studio-database.ts).
    */
+  /**
+   * The Analytics pane's default view: a 7-day summary over the project's
+   * production AND preview agents. Deliberately one request — the pane has
+   * no partial states to render, so a second endpoint would only add a way
+   * for half of it to be stale.
+   */
+  getAnalytics: (key: string, project: string) =>
+    request<AnalyticsSummary>(key, `/projects/${encodeURIComponent(project)}/analytics`),
+
   getDatabase: (key: string, project: string) =>
     request<DatabaseState>(key, `/projects/${encodeURIComponent(project)}/database`),
 

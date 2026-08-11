@@ -1679,6 +1679,15 @@ checked with `guestUnderstandsBundleUrl` before being handed a URL it cannot
 read — is documented with the guest: see "Fetching its own bundle" in
 `packages/aai-guest/CLAUDE.md`.
 
+### Session analytics — `POST /analytics/ingest`
+
+The one route written by an untrusted GUEST. Authorized by a per-slug HMAC
+token (`analytics-token.ts`) verified against the slug in the BODY, capped per
+batch, and always 202 — a guest must not retry a storage failure into a live
+call. Rows land in `aai_platform.agent_events`, swept at 7 days
+(`aai-sweep-agent-events`). Store, query guard and the whole product surface:
+`packages/aai-studio-server/CLAUDE.md`.
+
 ### Telephony — `GET/POST /:slug/phone`
 
 A carrier points a phone number at this route; it brokers the agent's sandbox

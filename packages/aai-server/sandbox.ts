@@ -15,7 +15,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import pTimeout from "p-timeout";
 import { debug } from "./_debug-log.ts";
 import { resolveHarnessPath, SANDBOX_TEARDOWN_READY_MS } from "./constants.ts";
-import { spawnAgentServer, type WorkerSource } from "./sandbox-vm.ts";
+import { type GuestAnalyticsTarget, spawnAgentServer, type WorkerSource } from "./sandbox-vm.ts";
 import type { AgentServerHandle } from "./warm-harness.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────
@@ -38,6 +38,8 @@ export type SandboxOptions = {
    * see AgentSpawnOptions.imageTag).
    */
   imageTag?: string | undefined;
+  /** Where this guest ships session analytics; absent turns recording off. */
+  analytics?: GuestAnalyticsTarget | undefined;
   /**
    * Called when the sandbox becomes permanently unusable — either the VM
    * failed to start (rejected `vmReady`) or the guest process exited after a
@@ -98,6 +100,7 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     env,
     harnessPath: resolveHarnessPath(),
     imageTag: opts.imageTag,
+    analytics: opts.analytics,
   });
 
   // "Unusable" is one state with two causes (never started / died later), so

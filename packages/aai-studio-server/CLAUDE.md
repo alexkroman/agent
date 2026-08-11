@@ -728,6 +728,81 @@ there is no platform database — dev and tests are a single process with no
 peers. The agent path needs no such identity: a NAME answers "does this
 exist", never "who made it".
 
+## Analytics: what a deployed agent actually does
+
+The Analytics pane (next to Preview/Code) and the coding agent's
+`query_analytics` tool are two views of ONE table,
+`aai_platform.agent_events`. The point of the feature is the second view: a
+fixed pane answers the questions someone anticipated, and the questions an
+agent's author has are shaped by their agent ("which tool fails for callers
+who mention refunds", "did p95 latency move after the last publish"). A table
+plus a `GROUP BY` answers those; an endpoint cannot enumerate them.
+
+**The path, end to end:**
+
+1. **The runtime records** (`aai/host/analytics.ts`, wired by
+   `aai/host/runtime-analytics.ts`). No author instrumentation anywhere — the
+   recorder DECORATES three seams that already exist: the session's
+   `ClientSink` (which carries the whole `ClientEvent` stream *and* the raw
+   audio frames), `ExecuteTool`, and the session-scoped `Logger`. Kinds:
+   `session_start`, `session_end`, `user_turn`, `agent_turn`, `tool_call`,
+   `barge_in`, `error`, `log`.
+2. **The guest ships** (`aai-guest/analytics-shipper.ts`), batching to
+   `POST /analytics/ingest` on a per-slug HMAC token minted at spawn
+   (`aai-server/analytics-token.ts`), configured through four
+   `AAI_ANALYTICS_*` boot-env vars.
+3. **The platform stores** (`aai-server/analytics-store.ts`), with a 7-day
+   retention sweep (`aai-sweep-agent-events`).
+4. **The studio reads** (`studio-analytics.ts` + `studio-analytics-routes.ts`)
+   — `GET …/analytics` for the pane, `POST …/analytics/query` for the tool.
+
+Five decisions worth keeping:
+
+- **The measurement that matters is TIME TO FIRST AUDIO**, not turn duration
+  — the silence a caller sits through after they stop talking. Neither end of
+  it is reported by anything: the start is the committed `user_transcript` and
+  the end is the first PCM frame at the sink, and BOTH cross the sink
+  decorator, which is why that seam was chosen over adding timers anywhere.
+  It is stored under `data->>'firstAudioMs'` and is **absent, never zero**,
+  when a turn produced no audio at all — averaging a zero in is how a broken
+  silent agent scores as the fleet's fastest.
+- **A project is TWO agents**, so every read resolves the production and
+  preview slugs and queries both — and checks ownership per slug with
+  `verifySlugOwner` first. A workspace document is a file the user can write,
+  so `deployedSlug` is a CLAIM; reading it unchecked would make this route an
+  oracle for another tenant's transcripts.
+- **Model-authored SQL is guarded in three independent ways**
+  (`aai-server/analytics-query.ts`), because a prompt-injected coding agent is
+  a realistic author of it. (1) The statement runs wrapped in a CTE named
+  `events`, already filtered to the caller's slugs — and reaching a platform
+  table needs a schema qualifier, since `aai_platform` is not on the
+  connection's `search_path`. (2) `pg_catalog` IS always on it, which is the
+  hole the wrapper leaves open, so every `pg_`-prefixed identifier is
+  rejected — that rule is not generic hygiene. (3) One statement only, reading
+  only; a data-modifying CTE is legal SQL inside a `with`. What this does NOT
+  claim is to be a substitute for a read-only role: the statement runs on the
+  platform's own owner connection, so a hole here is a hole in the control
+  plane. A dedicated `aai_analytics_reader` login role granted `select` on
+  exactly this table is the structural fix, and it is the follow-up.
+- **"Analytics is off" and "nobody called this agent" must never render
+  alike.** Both are all-zeroes; showing zeroes for a disabled deployment tells
+  a user their agent has no users, which is a lie shaped like data. The
+  summary carries `unavailable` for the first, an empty `slugs` for the
+  second, and the pane branches on both before it renders a single number.
+- **A refused query answers 200 with an `error` string**, not a 4xx. The
+  caller is usually an LLM and the refusal is addressed to it ("`pg_`
+  identifiers are not allowed; select from `events`"); the guest's tool layer
+  turns a non-2xx into a thrown error whose text the model sees far less
+  reliably. A malformed REQUEST — no `sql` at all — is still a 400, because
+  that one is the caller's bug rather than the model's.
+
+**Retention is SEVEN DAYS and is a product decision, not a storage one.** The
+rows carry end-user speech. Long enough for the week-over-week comparison the
+pane is built around, short enough that the table cannot quietly become a
+transcript archive nobody chose to keep. Anything that reads this data — a
+new pane, a new tool — inherits that, and lengthening the window is a
+privacy decision before it is a capacity one.
+
 ## Studio starter evals (scripts/starter-eval/)
 
 The LLM-judge codegen suite (`studio-eval.test.ts`, vitest-evals) was

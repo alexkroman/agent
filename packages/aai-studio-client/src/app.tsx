@@ -9,6 +9,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UIMessage } from "ai";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { AccountMenu } from "./account-menu.tsx";
+import { AnalyticsPane } from "./analytics.tsx";
 import { api, type ChatSession, type ProjectData, type StudioStatus } from "./api.ts";
 import { ApiError, errorText, isTransientError } from "./api-error.ts";
 import { ChatPanel, type NotifyChat } from "./chat.tsx";
@@ -454,6 +455,7 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
               />
             </Suspense>
           )}
+          {tab === "analytics" && <AnalyticsPane bearer={bearer} project={project} />}
           {tab === "settings" && (
             <SettingsPane
               bearer={bearer}

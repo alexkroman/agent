@@ -612,6 +612,14 @@ descriptor's `apiKeyEnv` now, like every other stage; they resolve through
 `resolveS2sEnvVar`, so the key a session reads is by construction the key
 the preflight asked for.
 
+## Session analytics
+
+`host/analytics.ts` + `host/runtime-analytics.ts` record a session's turns,
+tool outcomes, errors, time-to-first-audio and logs with NO author
+instrumentation, by decorating the `ClientSink`, `ExecuteTool` and `Logger`.
+Opt-in via `RuntimeOptions.analytics`; absent, nothing is wrapped. The whole
+feature: `packages/aai-studio-server/CLAUDE.md`.
+
 ## Voices
 
 **`ASSEMBLYAI_TTS_VOICES` in `sdk/providers/tts/assemblyai.ts` is the list.**

@@ -54,6 +54,13 @@ export type HarnessState = {
   /** Live client-session connections (host idle eviction asks). */
   activeSessions: number;
   /**
+   * Where the runtime should record session analytics — the shipper's sink
+   * in agent mode when the spawner configured one, null otherwise. Held on
+   * the state because `ensureRuntime` builds the runtime lazily, long after
+   * boot decided whether shipping was configured.
+   */
+  analytics: unknown;
+  /**
    * The studio coding-agent session, installed by `studio/session-init` —
    * workspace dir, the caller's key (chat bearer + LLM credential), and
    * turn config. Null on non-studio sandboxes; `/studio/chat` answers 409.
@@ -69,6 +76,7 @@ export function emptyHarnessState(): HarnessState {
     env: Object.freeze({}),
     runtime: null,
     activeSessions: 0,
+    analytics: null,
     studio: null,
   };
 }
@@ -141,6 +149,9 @@ export function ensureRuntime(state: HarnessState): GuestRuntime {
   state.runtime ??= state.createRuntime({
     env: { ...state.env },
     runCode,
+    // Absent unless the spawner configured shipping, and an older bundle's
+    // SDK ignores it either way — see CreateGuestRuntime.analytics.
+    ...(state.analytics ? { analytics: state.analytics } : {}),
   });
   return state.runtime;
 }
