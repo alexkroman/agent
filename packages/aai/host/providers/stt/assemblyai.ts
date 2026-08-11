@@ -195,12 +195,10 @@ function buildTranscriberParams(
   if (settings.languages) {
     params.languageCodes = settings.languages;
   }
-  // Contextual biasing is ON by default: an agent that sets no sttPrompt gets
-  // DEFAULT_STT_PROMPT (spelled-out identifiers), and `sttPrompt: ""` is the
-  // opt-out that sends no `prompt` at all. The `??` is a backstop for callers
-  // that reach this opener without going through `agent()` — that is where the
-  // default is really applied, so both session modes get it rather than the
-  // pipeline alone. DEFAULT_STT_PROMPT documents what it buys and costs.
+  // Contextual biasing is opt-in: DEFAULT_STT_PROMPT is empty, so an agent
+  // that sets no sttPrompt sends no `prompt` at all — as does `sttPrompt: ""`.
+  // DEFAULT_STT_PROMPT documents what a useful prompt buys and costs, and why
+  // the generic default that briefly lived there was reverted.
   const sttPrompt = openOpts.sttPrompt ?? DEFAULT_STT_PROMPT;
   if (sttPrompt) params.prompt = sttPrompt;
   if (initialAgentContext !== undefined) params.agentContext = initialAgentContext;

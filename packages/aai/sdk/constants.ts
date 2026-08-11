@@ -426,38 +426,36 @@ export const MAX_CLIENT_WS_BUFFERED_BYTES = 4 * 1024 * 1024;
 export const MAX_PROVIDER_WS_BUFFERED_BYTES = 1024 * 1024;
 
 /**
- * Default streaming STT `prompt` — biases transcription toward spelled-out
- * identifiers. Applied in BOTH session modes (`sdk/define.ts` puts it on the
- * agent definition, so the pipeline sends it as `prompt` and S2S as
- * `input.transcription_prompt`). Override per agent with `sttPrompt`, or set
- * `sttPrompt: ""` to transcribe unbiased.
+ * Default streaming STT `prompt` — deliberately empty: transcription is
+ * unbiased in BOTH session modes unless an agent sets `sttPrompt` (the
+ * pipeline sends it as `prompt`, S2S as `input.transcription_prompt`).
  *
- * The failure it covers is the pipeline's quietest: a caller spelling out a
+ * Worth knowing what an agent gives up by leaving it empty. Spoken identifiers
+ * are the pipeline's quietest transcription failure: a caller spelling out a
  * confirmation code lands in an *interim* turn, and the formatted final turn
  * can revise those characters away entirely, so the code reaches the LLM
  * missing rather than misheard. The model still has a required tool argument to
  * fill, so it substitutes something plausible — in the worst case the example
  * value from the tool's own schema — and the turn fails with no error anywhere.
- * Reproduced against FDB-v3: a spelled order ID was dropped from every final
- * turn and the agent called the tool with the schema's example value; adding
- * this prompt took a 5-scenario slice from 40% to 80% strict pass.
+ * (Reproduced against FDB-v3: a spelled order ID was dropped from every final
+ * turn, and the agent called the tool with the schema's example value.)
  *
- * **Two caveats this default is knowingly trading against.** A generic prompt
- * measured no better than none, and the version that works is specific to the
- * agent's own vocabulary, showing the spelled→joined form: `"Callers read order
- * IDs out character by character: 'K L 4 7 2' is KL472. Never omit a spoken
- * identifier."` And a prompt naming vocabulary the caller never uses is worse
- * than empty, because it biases the transcript toward that vocabulary — so an
- * agent whose callers never spell identifiers (support chat, ordering, triage)
- * should set its own `sttPrompt` or clear it. The default is chosen on the
- * grounds that silently dropping an identifier is a worse failure than a mild
- * bias toward alphanumeric codes.
+ * A prompt only helps when it is specific to the agent's own vocabulary, and
+ * showing the spelled→joined form is what makes it stick, e.g.
+ * `"Callers read order IDs out character by character: 'K L 4 7 2' is KL472.
+ * Never omit a spoken identifier."` A generic version of the same instruction
+ * measured no better than none, which is why there is no default here — and
+ * why an unrelated prompt is worse than empty: it biases the transcript
+ * toward vocabulary the caller never used.
+ *
+ * **A generic spelled-identifier default was shipped and reverted**, which is
+ * the measurement worth keeping: it took an FDB-v3 5-scenario slice from 40% to
+ * 80% strict pass, and that win does not transfer to a line whose callers never
+ * spell anything, where the same prose steers the transcript toward
+ * alphanumeric codes that were never said. Biasing is the agent author's call
+ * because only they know the vocabulary; a host-side default can only guess.
  */
-export const DEFAULT_STT_PROMPT =
-  "The caller often reads out identifiers letter by letter: order IDs, " +
-  "booking references, product codes and passport numbers such as " +
-  "'P O 999', 'A B C 1 2 3' or 'E 7 7 2 2 1 1'. Transcribe every spoken " +
-  "identifier as one contiguous uppercase alphanumeric code and never omit it.";
+export const DEFAULT_STT_PROMPT = "";
 
 /** @internal */
 export const WS_OPEN = 1;
