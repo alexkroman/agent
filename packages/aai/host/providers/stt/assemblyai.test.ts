@@ -19,6 +19,7 @@ import {
 } from "../../../sdk/constants.ts";
 import {
   ASSEMBLYAI_STREAMING_EU_URL,
+  ASSEMBLYAI_STT_DEFAULT_MODEL,
   assemblyAIStt,
 } from "../../../sdk/providers/stt/assemblyai.ts";
 import { flush } from "../../_test-utils.ts";
@@ -380,6 +381,37 @@ describe("assemblyAIStt STT adapter — agent_context (Universal-3.5 Pro only)",
     session.updateAgentContext?.("Sure, I can help with that.");
     expect(fake.updateConfigurationCalls).toEqual([]);
 
+    await session.close();
+  });
+});
+
+describe("assemblyAIStt STT adapter — speech model", () => {
+  test("a descriptor naming no model still dials universal-3-5-pro", async () => {
+    // The only DIRECT pin on what `speech_model` carries. The settings log
+    // (`runtime.test.ts`, "logs each stage's effective settings") asserts the
+    // same id, but it reads `resolveAssemblyAISttSettings` — so it stays green
+    // if the resolver is right and the mapping onto the SDK's parameter name
+    // is not. Every other test in this file passes `model` explicitly, which
+    // is exactly the case that cannot see a broken default.
+    const session = await openSession({});
+    expect(fakeOf(session).params.speechModel).toBe("universal-3-5-pro");
+    expect(ASSEMBLYAI_STT_DEFAULT_MODEL).toBe("universal-3-5-pro");
+    await session.close();
+  });
+
+  test("the parameter is never omitted — the SDK skips it when undefined", async () => {
+    // `assemblyai`'s transcriber only sets the query param under
+    // `speechModel !== undefined`, so an omitted key is a session running on
+    // whatever the service defaults to, with nothing on our side to show for
+    // it. Unlike `prompt`/`languageCodes`, this key is unconditional.
+    const session = await openSession({});
+    expect("speechModel" in fakeOf(session).params).toBe(true);
+    await session.close();
+  });
+
+  test("an agent's own model replaces the default", async () => {
+    const session = await openSession({ model: "u3-rt-pro" });
+    expect(fakeOf(session).params.speechModel).toBe("u3-rt-pro");
     await session.close();
   });
 });
