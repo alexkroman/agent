@@ -33,6 +33,7 @@ export {
   type AnalyticsSink,
   createSessionAnalytics,
   type SessionAnalytics,
+  type SessionAnalyticsOptions,
 } from "./analytics.ts";
 export type { RunCodeExecutor } from "./builtin-run-code.ts";
 export {
