@@ -1,0 +1,514 @@
+// @vitest-environment jsdom
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * Specs for the static page's workflow client.
+ *
+ * Two halves with different hazards. `createWorkflowApi` is request shaping —
+ * what goes on the wire, and which non-2xx answers are FAILURES as opposed to
+ * answers (a 404 from `get` is "no such run yet", which a page polling an id it
+ * just started hits legitimately). `useWorkflowRun` is a loop, so its specs are
+ * about what it does over TIME: it stops on a terminal status, it re-arms from
+ * the settled read rather than on an interval, and it survives a failed read.
+ *
+ * The loop runs on virtual time throughout — see "A spec that observes a TIMER
+ * runs on virtual time" in the root guide. Nothing here waits out a real
+ * millisecond.
+ */
+
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import {
+  createWorkflowApi,
+  DEFAULT_WORKFLOW_POLL_MS,
+  isTerminal,
+  useWorkflowRun,
+  type WorkflowApi,
+  type WorkflowRun,
+} from "./workflow-client.ts";
+
+const BASE = "https://agent.example/app";
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+/**
+ * Spy on `fetch`, answering with `responses` in order (the last one repeats).
+ *
+ * A spy rather than `vi.stubGlobal` because `restoreMocks` undoes a spy for
+ * free while `unstubGlobals` is not set in the shared config — so a stub would
+ * need the hand-rolled teardown the root guide forbids.
+ */
+function stubFetch(...responses: Response[]) {
+  let i = 0;
+  return vi.spyOn(globalThis, "fetch").mockImplementation(() => {
+    const next = responses[Math.min(i, responses.length - 1)];
+    i += 1;
+    return Promise.resolve(next ?? json({}));
+  });
+}
+
+/** The URL a recorded `fetch` call was made against. */
+function urlOf(spy: ReturnType<typeof stubFetch>, call = 0): string {
+  return String(spy.mock.calls[call]?.[0]);
+}
+
+function initOf(spy: ReturnType<typeof stubFetch>, call = 0): RequestInit {
+  return (spy.mock.calls[call]?.[1] ?? {}) as RequestInit;
+}
+
+function headersOf(spy: ReturnType<typeof stubFetch>, call = 0): Record<string, string> {
+  return (initOf(spy, call).headers ?? {}) as Record<string, string>;
+}
+
+describe("isTerminal", () => {
+  it.each([
+    ["completed", true],
+    ["failed", true],
+    ["running", false],
+    ["pending", false],
+  ] as const)("%s -> %s", (status, expected) => {
+    expect(isTerminal({ status } as WorkflowRun)).toBe(expected);
+  });
+
+  it("an absent run is not terminal — nothing has been read yet", () => {
+    expect(isTerminal(undefined)).toBe(false);
+  });
+});
+
+describe("createWorkflowApi URL + auth", () => {
+  it.each([
+    ["no trailing slash", BASE],
+    ["a trailing slash", `${BASE}/`],
+  ])("resolves the same /workflows path from a base with %s", async (_label, baseUrl) => {
+    const spy = stubFetch(json({ workflows: [] }));
+    await createWorkflowApi({ baseUrl }).list();
+    expect(urlOf(spy)).toBe("https://agent.example/app/workflows");
+  });
+
+  it("defaults to the page's own origin and path", async () => {
+    const spy = stubFetch(json({ workflows: [] }));
+    await createWorkflowApi().list();
+    expect(urlOf(spy)).toBe(`${location.origin}${location.pathname}workflows`);
+  });
+
+  it("sends a bearer on every route when a token is given", async () => {
+    const spy = stubFetch(json({ workflows: [] }), json({ runId: "r1" }));
+    const api = createWorkflowApi({ baseUrl: BASE, token: "sekret" });
+    await api.list();
+    await api.start("w");
+    expect(headersOf(spy, 0).Authorization).toBe("Bearer sekret");
+    expect(headersOf(spy, 1).Authorization).toBe("Bearer sekret");
+  });
+
+  it("sends no Authorization header without a token — a public page has none", async () => {
+    const spy = stubFetch(json({ workflows: [] }));
+    await createWorkflowApi({ baseUrl: BASE }).list();
+    expect(headersOf(spy)).not.toHaveProperty("Authorization");
+  });
+});
+
+describe("createWorkflowApi.list", () => {
+  it("returns the declared workflows", async () => {
+    const workflows = [{ name: "review", description: "Post-call review" }];
+    stubFetch(json({ workflows }));
+    await expect(createWorkflowApi({ baseUrl: BASE }).list()).resolves.toEqual(workflows);
+  });
+
+  it("degrades a body with no workflows key to an empty list", async () => {
+    stubFetch(json({}));
+    await expect(createWorkflowApi({ baseUrl: BASE }).list()).resolves.toEqual([]);
+  });
+});
+
+describe("createWorkflowApi.start", () => {
+  it("resolves the run id without waiting for the run", async () => {
+    stubFetch(json({ runId: "run-7" }));
+    await expect(createWorkflowApi({ baseUrl: BASE }).start("review")).resolves.toBe("run-7");
+  });
+
+  it("posts to /runs as JSON", async () => {
+    const spy = stubFetch(json({ runId: "r" }));
+    await createWorkflowApi({ baseUrl: BASE }).start("review", { blobId: "b1" });
+    expect(urlOf(spy)).toBe("https://agent.example/app/workflows/runs");
+    expect(initOf(spy).method).toBe("POST");
+    expect(headersOf(spy)["Content-Type"]).toBe("application/json");
+  });
+
+  it("omits input entirely when none is given", async () => {
+    const spy = stubFetch(json({ runId: "r" }));
+    await createWorkflowApi({ baseUrl: BASE }).start("review");
+    expect(initOf(spy).body).toBe(JSON.stringify({ workflow: "review" }));
+  });
+
+  it("carries the input when given", async () => {
+    const spy = stubFetch(json({ runId: "r" }));
+    await createWorkflowApi({ baseUrl: BASE }).start("review", { ms: 5 });
+    expect(initOf(spy).body).toBe(JSON.stringify({ workflow: "review", input: { ms: 5 } }));
+  });
+});
+
+describe("createWorkflowApi.get", () => {
+  it("returns the snapshot", async () => {
+    const run = { runId: "r1", status: "completed", output: 42 };
+    stubFetch(json(run));
+    await expect(createWorkflowApi({ baseUrl: BASE }).get("r1")).resolves.toEqual(run);
+  });
+
+  it("answers undefined for a 404 — an unknown id is an ANSWER, not a failure", async () => {
+    stubFetch(new Response("", { status: 404 }));
+    await expect(createWorkflowApi({ baseUrl: BASE }).get("nope")).resolves.toBeUndefined();
+  });
+
+  it("percent-encodes the id into the path", async () => {
+    const spy = stubFetch(json({ status: "running" }));
+    await createWorkflowApi({ baseUrl: BASE }).get("a/b c");
+    expect(urlOf(spy)).toBe("https://agent.example/app/workflows/runs/a%2Fb%20c");
+  });
+});
+
+describe("createWorkflowApi.upload", () => {
+  it("resolves the blob id naming the bytes", async () => {
+    stubFetch(json({ blobId: "b-1", bytes: 3 }));
+    const api = createWorkflowApi({ baseUrl: BASE });
+    await expect(api.upload(new Uint8Array([1, 2, 3]))).resolves.toEqual({
+      blobId: "b-1",
+      bytes: 3,
+    });
+  });
+
+  it("sends the payload AS-IS rather than copying it into a Blob", async () => {
+    const spy = stubFetch(json({ blobId: "b", bytes: 2 }));
+    const bytes = new Uint8Array([7, 8]);
+    await createWorkflowApi({ baseUrl: BASE }).upload(bytes, "audio/pcm");
+    // Identity, not equality: wrapping copied the whole payload — ~2 MB per
+    // chunk in the transcription page.
+    expect(initOf(spy).body).toBe(bytes);
+    expect(headersOf(spy)["Content-Type"]).toBe("audio/pcm");
+  });
+
+  it("defaults the content type to octet-stream", async () => {
+    const spy = stubFetch(json({ blobId: "b", bytes: 0 }));
+    await createWorkflowApi({ baseUrl: BASE }).upload("hi");
+    expect(headersOf(spy)["Content-Type"]).toBe("application/octet-stream");
+  });
+});
+
+describe("createWorkflowApi failures", () => {
+  it("throws the server's own error sentence — it names the fix", async () => {
+    stubFetch(json({ error: 'Unknown workflow "revue". Declared: review' }, 400));
+    await expect(createWorkflowApi({ baseUrl: BASE }).start("revue")).rejects.toThrow(
+      'Unknown workflow "revue". Declared: review',
+    );
+  });
+
+  it("falls back to the status for a non-JSON body — a proxy in front of the agent", async () => {
+    stubFetch(new Response("<html>502 Bad Gateway</html>", { status: 502 }));
+    await expect(createWorkflowApi({ baseUrl: BASE }).list()).rejects.toThrow(
+      "Workflow API 502: <html>502 Bad Gateway</html>",
+    );
+  });
+
+  it("falls back to the status when JSON carries no error string", async () => {
+    stubFetch(json({ detail: "nope" }, 500));
+    await expect(createWorkflowApi({ baseUrl: BASE }).list()).rejects.toThrow(
+      /^Workflow API 500: /,
+    );
+  });
+
+  it("truncates a long body to 200 characters", async () => {
+    stubFetch(new Response("x".repeat(500), { status: 413 }));
+    // Asserted as an exact message rather than `rejects.toThrow`, which matches
+    // a SUBSTRING — a body truncated to 300 would satisfy that and not this.
+    const message = await createWorkflowApi({ baseUrl: BASE })
+      .upload("big")
+      .catch((e: unknown) => (e instanceof Error ? e.message : String(e)));
+    expect(message).toBe(`Workflow API 413: ${"x".repeat(200)}`);
+  });
+
+  it("reports the bare status when the body is empty", async () => {
+    stubFetch(new Response("", { status: 401 }));
+    await expect(createWorkflowApi({ baseUrl: BASE }).list()).rejects.toThrow("Workflow API 401");
+  });
+
+  it("a get failure that is not a 404 still throws", async () => {
+    stubFetch(json({ error: "boom" }, 500));
+    await expect(createWorkflowApi({ baseUrl: BASE }).get("r")).rejects.toThrow("boom");
+  });
+});
+
+/** A `WorkflowApi` whose `get` is scripted, for the polling specs. */
+function fakeApi(get: WorkflowApi["get"]): WorkflowApi {
+  return {
+    get,
+    list: () => Promise.reject(new Error("unused")),
+    start: () => Promise.reject(new Error("unused")),
+    upload: () => Promise.reject(new Error("unused")),
+  };
+}
+
+/** Scripted snapshots, one per `get` call; the last repeats. */
+function scriptedApi(...statuses: WorkflowRun["status"][]) {
+  const get = vi.fn((runId: string) => {
+    const at = Math.min(get.mock.calls.length - 1, statuses.length - 1);
+    return Promise.resolve({ runId, status: statuses[at] } as WorkflowRun);
+  });
+  return { api: fakeApi(get), get };
+}
+
+describe("useWorkflowRun", () => {
+  it("reads the run once immediately", async () => {
+    vi.useFakeTimers();
+    try {
+      const { api, get } = scriptedApi("completed");
+      const { result } = renderHook(() => useWorkflowRun("r1", { api }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(get).toHaveBeenCalledTimes(1);
+      expect(result.current.run?.status).toBe("completed");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("polls a live run and STOPS once it is terminal", async () => {
+    vi.useFakeTimers();
+    try {
+      const { api, get } = scriptedApi("running", "running", "completed");
+      renderHook(() => useWorkflowRun("r1", { api, intervalMs: 1000 }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2500);
+      });
+      expect(get).toHaveBeenCalledTimes(3);
+      // A finished run must cost nothing for as long as the page stays open.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      expect(get).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("re-arms from the SETTLED read, so a slow response cannot stack polls", async () => {
+    vi.useFakeTimers();
+    try {
+      const gate = Promise.withResolvers<WorkflowRun | undefined>();
+      const get = vi.fn(() => gate.promise);
+      const api = fakeApi(get);
+      renderHook(() => useWorkflowRun("r1", { api, intervalMs: 100 }));
+      // Ten intervals elapse while the first read is still in flight.
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(get).toHaveBeenCalledTimes(1);
+      // Settling it arms the NEXT read, which is the other half of the rule:
+      // one read in flight, and the timer starts when that read lands.
+      // Resolved as an unknown id so nothing re-renders — this spec is about
+      // the loop, and a state update here would need an `act` the rejection
+      // note below explains away.
+      gate.resolve(undefined);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(get).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps polling while the id is unknown — the page can race the journal write", async () => {
+    vi.useFakeTimers();
+    try {
+      const get = vi.fn((): Promise<WorkflowRun | undefined> => Promise.resolve(undefined));
+      const api = fakeApi(get);
+      const { result } = renderHook(() => useWorkflowRun("r1", { api, intervalMs: 50 }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(120);
+      });
+      expect(get.mock.calls.length).toBeGreaterThan(1);
+      expect(result.current.run).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // The two rejection specs below run on REAL timers and settle with `waitFor`,
+  // which is the one place this file departs from virtual time. `await act()`
+  // never resolves once a read has rejected — measured with real timers too, so
+  // it is `act` and a rejected continuation rather than the clock — and these
+  // two observe a state transition rather than a timer window, so a tiny
+  // interval plus `waitFor` costs no wall-clock time worth naming. Every spec
+  // that observes the INTERVAL itself stays on fake timers.
+  it("REPORTS a failed read and retries it — giving up would strand a live run", async () => {
+    const get = vi
+      .fn<WorkflowApi["get"]>()
+      .mockRejectedValueOnce(new Error("sandbox booting"))
+      .mockResolvedValue({ runId: "r1", status: "completed" } as WorkflowRun);
+    // Wide enough that the reported error is observable before the retry
+    // clears it — at a 1ms interval the recovery outran the assertion.
+    const api = fakeApi(get);
+    const { result } = renderHook(() => useWorkflowRun("r1", { api, intervalMs: 150 }));
+    await waitFor(() => expect(result.current.error).toBe("sandbox booting"));
+    // Cleared by the next successful read, which also lands the run.
+    await waitFor(() => expect(result.current.run?.status).toBe("completed"));
+    expect(result.current.error).toBeUndefined();
+  });
+
+  it("stringifies a non-Error rejection", async () => {
+    const get = vi.fn(() => Promise.reject("plain string"));
+    const api = fakeApi(get) as WorkflowApi;
+    const { result } = renderHook(() => useWorkflowRun("r1", { api, intervalMs: 1 }));
+    await waitFor(() => expect(result.current.error).toBe("plain string"));
+  });
+
+  it("clears the previous run when the id changes", async () => {
+    vi.useFakeTimers();
+    try {
+      const { api } = scriptedApi("completed");
+      const { result, rerender } = renderHook(
+        ({ id }: { id: string }) => useWorkflowRun(id, { api }),
+        { initialProps: { id: "r1" } },
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.run?.runId).toBe("r1");
+      // A new id must not show the previous run's state for one frame — that is
+      // what makes "started, still waiting" read as "completed".
+      rerender({ id: "r2" });
+      expect(result.current.run).toBeUndefined();
+      // Flushed so the new id's first read lands inside `act` — and it proves
+      // the poll followed the id rather than staying on the old one.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.run?.runId).toBe("r2");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("polls nothing when no run has been started", async () => {
+    vi.useFakeTimers();
+    try {
+      const { api, get } = scriptedApi("running");
+      const { result } = renderHook(() => useWorkflowRun(undefined, { api, intervalMs: 10 }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+      expect(get).not.toHaveBeenCalled();
+      expect(result.current.polling).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops the loop on unmount", async () => {
+    vi.useFakeTimers();
+    try {
+      const { api, get } = scriptedApi("running");
+      const { unmount } = renderHook(() => useWorkflowRun("r1", { api, intervalMs: 100 }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(get).toHaveBeenCalledTimes(1);
+      unmount();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(get).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // The three guards for a read that settles AFTER the loop was stopped. The
+  // page is gone by then, so the only observable consequences are the ones
+  // asserted here: no re-arm (a leaked loop would poll a closed page forever)
+  // and no state write (React warns, and it would resurrect a stale run).
+  it("drops a read that resolves after unmount, and does not re-arm", async () => {
+    vi.useFakeTimers();
+    try {
+      const gate = Promise.withResolvers<WorkflowRun | undefined>();
+      const get = vi.fn(() => gate.promise);
+      const api = fakeApi(get);
+      const { unmount } = renderHook(() => useWorkflowRun("r1", { api, intervalMs: 100 }));
+      await vi.advanceTimersByTimeAsync(0);
+      unmount();
+      // A non-terminal run: were the guard missing, this would re-arm the timer.
+      gate.resolve({ runId: "r1", status: "running" } as WorkflowRun);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(get).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("drops a rejection that settles after unmount", async () => {
+    vi.useFakeTimers();
+    try {
+      const gate = Promise.withResolvers<WorkflowRun | undefined>();
+      const get = vi.fn(() => gate.promise);
+      const api = fakeApi(get);
+      const { unmount } = renderHook(() => useWorkflowRun("r1", { api, intervalMs: 100 }));
+      await vi.advanceTimersByTimeAsync(0);
+      unmount();
+      gate.reject(new Error("too late"));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(get).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports polling while a run is live and false once it is terminal", async () => {
+    vi.useFakeTimers();
+    try {
+      const { api } = scriptedApi("running", "completed");
+      const { result } = renderHook(() => useWorkflowRun("r1", { api, intervalMs: 100 }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.polling).toBe(true);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(100);
+      });
+      expect(result.current.polling).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("defaults the interval to DEFAULT_WORKFLOW_POLL_MS", async () => {
+    vi.useFakeTimers();
+    try {
+      const { api, get } = scriptedApi("running");
+      renderHook(() => useWorkflowRun("r1", { api }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(DEFAULT_WORKFLOW_POLL_MS - 1);
+      });
+      expect(get).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(get).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("builds its own client when none is passed", async () => {
+    vi.useFakeTimers();
+    try {
+      const spy = stubFetch(json({ runId: "r1", status: "completed" }));
+      renderHook(() => useWorkflowRun("r1"));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(urlOf(spy)).toBe(`${location.origin}${location.pathname}workflows/runs/r1`);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

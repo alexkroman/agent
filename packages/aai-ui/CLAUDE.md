@@ -62,6 +62,27 @@ forever), the timer is re-armed from the SETTLED read rather than on an interval
 REPORTED but retried — a dropped request against a booting sandbox is the common
 case, and giving up would strand a live run.
 
+**Pass `useWorkflowRun` a `api` built ONCE, at module scope.** The hook's effect
+deps are `[runId, api, intervalMs]`, so an inline
+`useWorkflowRun(id, { api: createWorkflowApi() })` is a new object every render:
+the effect tears down and restarts on each one, and because it opens by clearing
+state (`setRun(undefined)`), each restart re-renders and schedules the next — a
+hot loop of HTTP requests against the agent, with `error` wiped before anything
+can read it. `transcription-desk` and the `page()` doc example both hoist it
+(`const api = createWorkflowApi()` above the component), which is why nothing
+ships broken; the specs hoist it for the same reason, and two of them silently
+passed on the churn before they did.
+
+**Two rules for testing this hook, both learned the hard way.** `await act()`
+NEVER RESOLVES once a polled read has rejected — measured with real timers as
+well, so it is `act` plus a rejected continuation rather than the clock — so the
+failed-read specs settle with `waitFor` instead. And a `waitFor` on a transient
+value needs an interval wide enough to observe it: at `intervalMs: 1` the retry
+cleared the reported error before the first poll of the assertion ran. Everything
+that observes the INTERVAL itself still runs on fake timers, asserting call
+counts rather than rendered state (which needs no `act`, so it sidesteps the
+first rule entirely).
+
 **Bytes go through `api.upload()`, never into the run input.** The input is
 journaled and replayed, so the page uploads first and passes the returned
 `blobId` — see the `/blobs` note in `packages/aai/CLAUDE.md`. `transcription-desk`
