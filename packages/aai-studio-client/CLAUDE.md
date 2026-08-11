@@ -27,6 +27,14 @@ segmented control switches between — `preview.tsx`, `code-view.tsx`,
   width. Nothing on the pane gates on a build or a deploy: Delete project
   has to work before anything has ever been published, so Settings is
   reachable whenever a project is open.
+- **The sections are in a FIXED order, and copy points into it**: Work
+  locally, Phone number, Database, Secrets, Danger zone — setting up first,
+  provider keys after, destruction last. The order is not cosmetic: the Phone
+  card sends the reader to "Secrets **below**" twice (its blurb, and the
+  per-carrier missing-secret hint), which was pointing the wrong way while
+  Secrets sat at the top. `settings.test.tsx` asserts the sequence of card
+  titles, so moving one means updating that list — and re-reading any copy
+  that names a neighbour's direction.
 - **Secrets have their own section; storage has none.** Agent secrets are
   managed in the Settings pane's Secrets card, which talks to the project
   route (`/studio/projects/:project/secret`) and posts a note into the chat on
