@@ -183,28 +183,23 @@ describe("session analytics", () => {
     expect(inner.events).toHaveLength(1);
   });
 
-  test("times tool calls and reads the failure off the wire format", async () => {
+  // The outcome is DECIDED in tool-executor.ts (see its own spec); this side
+  // only has to carry it through unchanged. Reading `ok` off the result
+  // string is precisely what that split removed.
+  test("records the tool outcome the executor reported, whatever the result reads like", () => {
     const h = harness();
-    // toolError's pre-serialized shape is what the executor returns for a
-    // failure — NOT the ToolFailure object isToolFailure narrows.
-    const execute = h.analytics.wrapExecuteTool(async (name) => {
-      h.advance(75);
-      return name === "bad" ? toolError("no such order") : "ok";
+    h.analytics.recordToolCall({ name: "good", ok: true, durationMs: 75, result: "ok" });
+    h.analytics.recordToolCall({
+      name: "bad",
+      ok: false,
+      durationMs: 30,
+      result: toolError("no such order"),
     });
-    await execute("good", {}, "sess-1");
-    await execute("bad", {}, "sess-1");
 
     expect(h.of("tool_call")).toMatchObject([
-      { name: "good", ok: true, durationMs: 75 },
-      { name: "bad", ok: false, durationMs: 75 },
+      { name: "good", ok: true, durationMs: 75, text: "ok" },
+      { name: "bad", ok: false, durationMs: 30 },
     ]);
-  });
-
-  test("records a thrown tool call and rethrows it", async () => {
-    const h = harness();
-    const execute = h.analytics.wrapExecuteTool(() => Promise.reject(new Error("boom")));
-    await expect(execute("t", {}, "sess-1")).rejects.toThrow("boom");
-    expect(h.of("tool_call")[0]).toMatchObject({ name: "t", ok: false, text: "boom" });
   });
 
   test("records log lines and still calls the underlying logger", () => {
@@ -244,7 +239,7 @@ describe("session analytics", () => {
     client.event({ type: "user_transcript", text: "hi" });
     client.event({ type: "reply_done" });
     client.event({ type: "error", code: "tool", message: "x" });
-    await h.analytics.wrapExecuteTool(async () => "ok")("t", {}, "sess-1");
+    h.analytics.recordToolCall({ name: "t", ok: true, durationMs: 5, result: "ok" });
     h.advance(9000);
     h.analytics.end("client_closed");
 

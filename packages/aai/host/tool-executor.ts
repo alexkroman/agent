@@ -14,7 +14,7 @@ import { STORAGE_DISABLED_MESSAGE } from "../sdk/db.ts";
 import type { GenerateFn, GenerateOptions, GenerateResult } from "../sdk/generate.ts";
 import { formatSchemaIssues } from "../sdk/schema.ts";
 import type { Message, ToolContext, ToolDef } from "../sdk/types.ts";
-import { errorDetail, errorMessage, toolError } from "../sdk/utils.ts";
+import { errorDetail, errorMessage, isToolFailure, toolError } from "../sdk/utils.ts";
 import type { HostGenerateFn } from "./generate.ts";
 import type { Logger } from "./runtime-config.ts";
 
@@ -23,6 +23,28 @@ export type { ExecuteTool, ExecuteToolOptions } from "../sdk/_internal-types.ts"
 // setImmediate rather than setTimeout(0): same yield-to-I/O semantics without
 // Node's ~1ms timer clamp — saves a couple of ms on every tool call.
 const yieldTick = (): Promise<void> => new Promise((r) => setImmediate(r));
+
+/**
+ * What one tool call did, reported from INSIDE the executor.
+ *
+ * `ok` is the reason this exists. The executor's return value is a STRING —
+ * `stringifyResult` of whatever the tool produced, or `toolError`'s
+ * `'{"error":"…"}'` — and every observer above this line can only recover the
+ * outcome by parsing that back, which duplicates the wire format in a place
+ * that is never exercised when the format changes. Here it is known directly:
+ * a thrown or timed-out call, a cancelled one, arguments that failed
+ * validation, and a tool that RETURNED a {@link isToolFailure} value are all
+ * the same answer, and the last of those is checked against the real object
+ * rather than its serialization.
+ */
+export type ToolCallOutcome = {
+  /** Did the call produce a usable result? */
+  ok: boolean;
+  /** Wall-clock milliseconds from entry to settle, timeout included. */
+  durationMs: number;
+  /** The stringified result — the exact bytes the caller is about to get. */
+  result: string;
+};
 
 type ExecuteToolCallOptions = {
   tool: ToolDef;
@@ -38,6 +60,13 @@ type ExecuteToolCallOptions = {
   /** Turn-scoped cancellation: unblocks the await (and is exposed to the tool
    *  as `ctx.signal`) when the issuing turn is cancelled or the session stops. */
   signal?: AbortSignal | undefined;
+  /**
+   * Called exactly once with {@link ToolCallOutcome} before this function
+   * returns — on every path, including the ones that never reach the tool.
+   * Never throws into the call: a reporter that fails must cost an
+   * observation, not a tool result.
+   */
+  onOutcome?: ((outcome: ToolCallOutcome) => void) | undefined;
 };
 
 // Takes the per-call signal as a REQUIRED narrowing of the options bag:
@@ -103,11 +132,29 @@ export async function executeToolCall(
   options: ExecuteToolCallOptions,
 ): Promise<string> {
   const { tool, logger } = options;
+  const startedAt = Date.now();
+  /**
+   * The one exit. Every `return` below goes through it so the reporter cannot
+   * be forgotten on a path — including the two that never invoke the tool —
+   * and so the outcome and the returned bytes can never disagree.
+   */
+  const settle = (result: string, ok: boolean): string => {
+    try {
+      options.onOutcome?.({ ok, durationMs: Date.now() - startedAt, result });
+    } catch {
+      /* an observer must never break a tool call */
+    }
+    return result;
+  };
+
   const schema = tool.inputSchema ?? EMPTY_PARAMS;
   // The spec allows a sync or async validate; await normalizes both.
   const parsed = await schema["~standard"].validate(args);
   if (parsed.issues) {
-    return toolError(`Invalid arguments for tool "${name}": ${formatSchemaIssues(parsed.issues)}`);
+    return settle(
+      toolError(`Invalid arguments for tool "${name}": ${formatSchemaIssues(parsed.issues)}`),
+      false,
+    );
   }
 
   // Per-call controller, exposed to the tool as ctx.signal. It follows the
@@ -126,7 +173,7 @@ export async function executeToolCall(
     const ctx = buildToolContext({ ...options, signal: callController.signal });
     await yieldTick();
     if (callController.signal.aborted) {
-      return toolError(`Tool "${name}" was cancelled before it ran`);
+      return settle(toolError(`Tool "${name}" was cancelled before it ran`), false);
     }
     // The signal makes the await settle promptly on barge-in/reset/stop; the
     // underlying execute keeps running unless it observes ctx.signal itself.
@@ -136,7 +183,11 @@ export async function executeToolCall(
       signal: callController.signal,
     });
     await yieldTick();
-    return stringifyResult(result);
+    // Checked on the VALUE, not on its serialization: a tool that returns
+    // `{ error }` (the `ToolFailure` shape five templates use) did not
+    // succeed, and this is the last point at which that is a typed question
+    // rather than a string to re-parse.
+    return settle(stringifyResult(result), !isToolFailure(result));
   } catch (err: unknown) {
     // The call is over (timeout or failure): fire the per-call signal so a
     // still-running execute can observe ctx.signal and stop its side effects.
@@ -146,7 +197,7 @@ export async function executeToolCall(
     } else {
       console.warn(`[tool-executor] Tool execution failed: ${name}`, err);
     }
-    return toolError(errorMessage(err));
+    return settle(toolError(errorMessage(err)), false);
   } finally {
     // The turn signal outlives this call; drop the follower or every tool
     // call in the reply leaks a listener on it.

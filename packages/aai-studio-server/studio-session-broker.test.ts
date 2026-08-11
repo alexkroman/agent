@@ -130,7 +130,7 @@ describe("studio session broker", () => {
     const { syncWorkspaceSource } = await import("./studio-workspace.ts");
     await syncWorkspaceSource(workspaces, SCOPE, PROJECT, { "agent.ts": "// pushed" });
 
-    expect(await broker.refreshSession(SCOPE, PROJECT, "k")).toBe(true);
+    expect(await broker.refreshSession(SCOPE, PROJECT, "k", "https://platform.test")).toBe(true);
     expect(spawn).toHaveBeenCalledTimes(1);
     const inits = guest.requests.filter((r) => r.method === "studio/session-init");
     expect(inits).toHaveLength(2);
@@ -141,7 +141,7 @@ describe("studio session broker", () => {
 
   test("refreshSession never spawns — no live sandbox means nothing is stale", async () => {
     const { broker, spawn } = await makeBroker([fakeGuest()]);
-    expect(await broker.refreshSession(SCOPE, PROJECT, "k")).toBe(false);
+    expect(await broker.refreshSession(SCOPE, PROJECT, "k", "https://platform.test")).toBe(false);
     expect(spawn).not.toHaveBeenCalled();
     await broker.dispose();
   });

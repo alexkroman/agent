@@ -129,7 +129,17 @@ export type StudioSessionBroker = {
    * guest materializes its tree once, at install, so a session brokered
    * earlier serves pre-edit files AND syncs them back at end of turn.
    */
-  refreshSession(scope: string, project: string, apiKey: string): Promise<boolean>;
+  refreshSession(
+    scope: string,
+    project: string,
+    apiKey: string,
+    /**
+     * This platform's public origin, from the request driving the edit. A
+     * re-install replaces everything the guest was told, the analytics
+     * callback origin included, so an omitted one would blank it.
+     */
+    serverUrl: string,
+  ): Promise<boolean>;
   /**
    * Fire-and-forget: deploy the workspace's current files to the project's
    * PREVIEW slug (editor saves take this path; agent turns schedule via the
@@ -263,16 +273,22 @@ export function createStudioSessionBroker(
       // Per project, not global: brokering one project must never queue
       // behind another project's Modal spawn.
       return withLock(sessionLock, key, () =>
-        ensureSessionLocked(key, scope, project, apiKey, { preview }),
+        // `preview.serverUrl` IS this request's public origin (see
+        // `previewOrigin`), so the session install and the preview deploy can
+        // never be told two different platforms.
+        ensureSessionLocked(key, scope, project, apiKey, {
+          preview,
+          ...(preview && { serverUrl: preview.serverUrl }),
+        }),
       );
     },
 
-    async refreshSession(scope, project, apiKey) {
+    async refreshSession(scope, project, apiKey, serverUrl) {
       const key = projectKey(scope, project);
       // Under the SAME lock as ensureSession, so a refresh can never install
       // over an in-flight broker.
       const session = await withLock(sessionLock, key, () =>
-        ensureSessionLocked(key, scope, project, apiKey, { allowSpawn: false }),
+        ensureSessionLocked(key, scope, project, apiKey, { allowSpawn: false, serverUrl }),
       );
       return session !== null;
     },

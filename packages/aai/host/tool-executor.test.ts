@@ -234,3 +234,62 @@ describe("executeToolCall — cancellation", () => {
     expect(JSON.parse(result)).toMatchObject({ error: expect.stringMatching(/abort/i) });
   });
 });
+
+describe("onOutcome", () => {
+  function outcomes(extra?: Record<string, unknown>) {
+    const onOutcome = vi.fn();
+    return { onOutcome, extra: { ...extra, onOutcome } };
+  }
+
+  test("reports a plain result as ok, with the bytes the caller gets", async () => {
+    const { onOutcome, extra } = outcomes();
+    const result = await run("t", {}, makeTool({ execute: () => ({ count: 42 }) }), extra);
+    expect(onOutcome).toHaveBeenCalledTimes(1);
+    expect(onOutcome.mock.calls[0]?.[0]).toMatchObject({ ok: true, result });
+  });
+
+  // This is the case the old string-parsing observer got right only by
+  // accident and the reason the report lives down here: a tool that RETURNS
+  // `{ error }` never threw, and its serialization is indistinguishable from
+  // a successful tool that happens to return an object with an `error` key
+  // only if you are looking at the string.
+  test("a returned ToolFailure is not ok", async () => {
+    const { onOutcome, extra } = outcomes();
+    await run("t", {}, makeTool({ execute: () => ({ error: "no such order" }) }), extra);
+    expect(onOutcome.mock.calls[0]?.[0]).toMatchObject({ ok: false });
+  });
+
+  test.each([
+    [
+      "a thrown tool",
+      makeTool({
+        execute: () => {
+          throw new Error("boom");
+        },
+      }),
+    ],
+    ["a tool whose args do not validate", makeTool({ inputSchema: z.object({ a: z.string() }) })],
+  ])("reports %s as not ok", async (_label, tool) => {
+    const { onOutcome, extra } = outcomes();
+    await run("t", {}, tool, extra);
+    expect(onOutcome).toHaveBeenCalledTimes(1);
+    expect(onOutcome.mock.calls[0]?.[0]).toMatchObject({ ok: false });
+  });
+
+  test("reports a call cancelled before it ran, which never reaches the tool", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const { onOutcome, extra } = outcomes({ signal: controller.signal });
+    await run("t", {}, makeTool({ execute: () => "unreachable" }), extra);
+    expect(onOutcome.mock.calls[0]?.[0]).toMatchObject({ ok: false });
+  });
+
+  test("a throwing reporter costs the observation, never the tool result", async () => {
+    const onOutcome = vi.fn(() => {
+      throw new Error("observer is broken");
+    });
+    await expect(run("t", {}, makeTool({ execute: () => "hello" }), { onOutcome })).resolves.toBe(
+      "hello",
+    );
+  });
+});

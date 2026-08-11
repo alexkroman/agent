@@ -21,7 +21,6 @@ import { errorMessage } from "@alexkroman1/aai";
 import type { createOwnedMap } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { resolveHarnessPath } from "aai-server/constants";
-import { knownPublicOrigin } from "aai-server/public-origin";
 import { SandboxNameTakenError, studioSandboxName } from "aai-server/sandbox-directory";
 import type { spawnWarmHarness, WarmHarness } from "aai-server/sandbox-vm";
 import type { WorkspaceStore } from "aai-server/workspace-store";
@@ -73,7 +72,18 @@ export type SessionInstaller = {
     scope: string,
     project: string,
     apiKey: string,
-    opts?: { preview?: PreviewOrigin | undefined; allowSpawn?: boolean },
+    opts?: {
+      preview?: PreviewOrigin | undefined;
+      allowSpawn?: boolean;
+      /**
+       * This platform's public origin, as the CALLER'S request resolved it —
+       * what the guest's `query_analytics` tool calls back on. Every path that
+       * installs a session is request-driven, so it is always available; it is
+       * threaded rather than learned from a module-level "last origin served"
+       * cell so a session is told the origin its own caller reached us on.
+       */
+      serverUrl?: string | undefined;
+    },
   ): Promise<BrokeredSession | null>;
 };
 
@@ -92,6 +102,7 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
     project: string,
     apiKey: string,
     files: Record<string, string>,
+    serverUrl: string | undefined,
   ) {
     return {
       // The guest pins (scope, project) on its first install and refuses any
@@ -101,10 +112,9 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
       project,
       files,
       apiKey,
-      // The origin the guest's analytics tool calls back on. Learned from
-      // served traffic (see knownPublicOrigin) — every path that installs a
-      // session is request-driven, so it is populated by the time this runs.
-      ...omitUndefined({ serverUrl: knownPublicOrigin() }),
+      // The origin the guest's analytics tool calls back on, carried from the
+      // request that asked for this session.
+      ...omitUndefined({ serverUrl }),
       system: studioSystemPrompt(),
       model: studioLlmModelId(env),
       ...(env.STUDIO_LLM_REGION === "eu" ? { region: "eu" as const } : {}),
@@ -132,6 +142,7 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
     scope: string,
     project: string,
     apiKey: string,
+    serverUrl: string | undefined,
     /** Pre-read workspace; the cold path reads it BEFORE spawning a sandbox. */
     known?: Awaited<ReturnType<typeof getWorkspace>>,
     /** This sandbox's existing token; absent on a cold spawn. */
@@ -142,7 +153,7 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
     const chatToken = existingToken ?? randomBytes(32).toString("base64url");
     await warm.conn.sendRequest(
       "studio/session-init",
-      { ...sessionParams(scope, project, apiKey, workspace.files), chatToken },
+      { ...sessionParams(scope, project, apiKey, workspace.files, serverUrl), chatToken },
       SESSION_INIT_TIMEOUT_MS,
     );
     return chatToken;
@@ -159,6 +170,7 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
     scope: string,
     project: string,
     apiKey: string,
+    serverUrl: string | undefined,
     preview?: PreviewOrigin,
   ): Promise<BrokeredSession | null> {
     const existing = sessions.get(key);
@@ -169,6 +181,7 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
         scope,
         project,
         apiKey,
+        serverUrl,
         undefined,
         existing.chatToken,
       );
@@ -220,11 +233,12 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
     scope: string,
     project: string,
     apiKey: string,
+    serverUrl: string | undefined,
     workspace: Awaited<ReturnType<typeof getWorkspace>>,
   ): Promise<string | null> {
     try {
       wire(warm, key, scope, project);
-      const token = await initSession(warm, scope, project, apiKey, workspace);
+      const token = await initSession(warm, scope, project, apiKey, serverUrl, workspace);
       if (token !== null) return token;
     } catch (err) {
       await warm[Symbol.asyncDispose]();
@@ -236,8 +250,8 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
 
   return {
     async ensureSessionLocked(key, scope, project, apiKey, opts = {}) {
-      const { preview, allowSpawn = true } = opts;
-      const reused = await reuseSession(key, scope, project, apiKey, preview);
+      const { preview, allowSpawn = true, serverUrl } = opts;
+      const reused = await reuseSession(key, scope, project, apiKey, serverUrl, preview);
       if (reused) return reused;
 
       // Check the project exists BEFORE taking a sandbox. Spawning first and
@@ -251,7 +265,11 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
       // bogus project never reaches the registry, and before the spawn because
       // the spawn is exactly the duplicate this prevents.
       const adopt = (): Promise<BrokeredSession | null> =>
-        fleet.adopt(scope, project, sessionParams(scope, project, apiKey, workspace.files));
+        fleet.adopt(
+          scope,
+          project,
+          sessionParams(scope, project, apiKey, workspace.files, serverUrl),
+        );
       const adopted = await adopt();
       if (adopted) return adopted;
 
@@ -263,7 +281,7 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
       // create — adopt the winner (see spawnNamed).
       if (!warm) return await adopt();
 
-      const token = await installOrDispose(warm, key, scope, project, apiKey, workspace);
+      const token = await installOrDispose(warm, key, scope, project, apiKey, serverUrl, workspace);
       if (token === null) return null;
       const url = chatUrlForGuest(warm.guestOrigin);
       const entry: SessionEntry = {

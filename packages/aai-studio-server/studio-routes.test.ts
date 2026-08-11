@@ -404,7 +404,14 @@ describe("project CRUD", () => {
     // A push edits the workspace from OUTSIDE the studio, so the project's
     // live coding-agent sandbox has to be re-installed with the pushed tree —
     // otherwise its next end-of-turn sync writes the pre-push files back.
-    expect(refreshSessionMock).toHaveBeenCalledWith(studioScope("key1"), "pushed", "key1");
+    // The public origin rides along: a re-install replaces everything the
+    // guest was told, so an omitted one would blank its analytics callback.
+    expect(refreshSessionMock).toHaveBeenCalledWith(
+      studioScope("key1"),
+      "pushed",
+      "key1",
+      "http://localhost",
+    );
     // GET returns the same fast-forward token the push did.
     const got = (await (
       await authFetch(fetch, "/studio/projects/pushed", { method: "GET" })

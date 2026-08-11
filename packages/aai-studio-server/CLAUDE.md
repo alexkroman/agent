@@ -742,15 +742,57 @@ plus a `GROUP BY` answers those; an endpoint cannot enumerate them.
 
 1. **The runtime records** (`aai/host/analytics.ts`, wired by
    `aai/host/runtime-analytics.ts`). No author instrumentation anywhere — the
-   recorder DECORATES three seams that already exist: the session's
-   `ClientSink` (which carries the whole `ClientEvent` stream *and* the raw
-   audio frames), `ExecuteTool`, and the session-scoped `Logger`. Kinds:
+   recorder DECORATES two seams that already exist (the session's `ClientSink`,
+   which carries the whole `ClientEvent` stream *and* the raw audio frames, and
+   the session-scoped `Logger`) and is HANDED the third. Kinds:
    `session_start`, `session_end`, `user_turn`, `agent_turn`, `tool_call`,
    `barge_in`, `error`, `log`.
+
+   **Tool calls are the handed one, and the reason is that `ok` does not
+   survive serialization.** `ExecuteTool` returns a STRING — `stringifyResult`
+   of whatever the tool produced, or `toolError`'s `'{"error":"…"}'` — so a
+   decorator wrapped around it can only recover the outcome by parsing that
+   back, which is a second copy of `toolError`'s wire format living somewhere
+   nothing exercises on the day the format changes, and whose failure mode is
+   scoring every failed tool call as a success. `executeToolCall` reports a
+   `ToolCallOutcome` from inside itself instead (through
+   `ToolSetupDeps.onToolCall`, one call per settled tool call, on every exit
+   path including the ones that never reach the tool), where a thrown call, a
+   timeout, a cancellation, arguments that failed validation and a tool that
+   RETURNED a `ToolFailure` are all one typed answer — that last one checked
+   with `isToolFailure` against the real object rather than its JSON.
+
+   The limit that comes with it: only tool calls this runtime EXECUTES are
+   reported. In relay mode (`aai dev`'s host mode) a custom tool runs in the
+   client, so nothing host-side sees its outcome and only the builtins would be
+   recorded. Nothing observes that path today — relay mode builds its own
+   runtime with no `analytics` — but a consumer must not read an empty tool
+   table there as "this agent called no tools".
 2. **The guest ships** (`aai-guest/analytics-shipper.ts`), batching to
    `POST /analytics/ingest` on a per-slug HMAC token minted at spawn
    (`aai-server/analytics-token.ts`), configured through four
    `AAI_ANALYTICS_*` boot-env vars.
+
+   **Those four keys are built beside the token, not by the spawn chain**
+   (`aai-server/analytics-boot.ts`). `agentBootEnv` takes ONE opaque
+   `Record<string, string>` for everything that is not the core boot
+   convention, and spreads it FIRST so a feature can never shadow
+   `AAI_GUEST_TOKEN` or repoint `AAI_BUNDLE_URL`. Before that, one feature's
+   four strings were a typed field on `SandboxOptions`, `AgentSpawnOptions`
+   AND `BackendAgentSpawn` plus a passthrough in both spawners — seven files
+   to move a value none of them look at.
+
+   **The ingest URL must be ABSOLUTE, which a container behind Modal can only
+   learn from a request.** So the origin travels with the caller
+   (`ResolveSandboxOpts.publicOrigin`, from `resolvePublicOrigin` at each of
+   the three broker entry points) and is stamped on the slot
+   (`AgentSlot.publicOrigin`) for the one spawn that has no request: the
+   change stream's blue-green handover, which only ever fires for a slug this
+   replica already brokered. It was a module-level "last origin served
+   anywhere" cell written by middleware on every request; a per-slot stamp
+   costs nothing and tells a guest the origin its own agent was brokered on.
+   An absent origin configures NOTHING rather than guessing — a guest that
+   buffers rows it can never ship is worse than one that records none.
 3. **The platform stores** (`aai-server/analytics-store.ts`), with a 7-day
    retention sweep (`aai-sweep-agent-events`).
 4. **The studio reads** (`studio-analytics.ts` + `studio-analytics-routes.ts`)

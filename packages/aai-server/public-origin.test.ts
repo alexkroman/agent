@@ -1,7 +1,11 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { describe, expect, test } from "vitest";
-import { publicForwardedHeaders, resolvePublicOrigin } from "./public-origin.ts";
+import {
+  publicForwardedHeaders,
+  publicOriginFromHeaders,
+  resolvePublicOrigin,
+} from "./public-origin.ts";
 
 /** A request as the app sees it behind Modal: cleartext, public Host header. */
 function behindTls(path = "/deploy", headers: Record<string, string> = {}): Request {
@@ -52,6 +56,31 @@ describe("resolvePublicOrigin", () => {
     expect(resolvePublicOrigin(behindTls(), { AAI_PUBLIC_ORIGIN: "  " })).toBe(
       "https://agent.example.modal.run",
     );
+  });
+});
+
+describe("publicOriginFromHeaders", () => {
+  // The WebSocket upgrade path never builds a `Request` — it holds a raw Node
+  // IncomingMessage — and it is a broker entry point, so a cold upgrade spawns
+  // a guest that has to be told where to ship its analytics.
+  test("resolves from a bare host plus forwarding headers", () => {
+    const headers: Record<string, string> = { "x-forwarded-proto": "https" };
+    expect(publicOriginFromHeaders("agent.example.modal.run", (n) => headers[n], {})).toBe(
+      "https://agent.example.modal.run",
+    );
+  });
+
+  test("agrees with the Request form on every rule it owns", () => {
+    for (const [host, headers] of [
+      ["agent.example.modal.run", {}],
+      ["localhost:8080", {}],
+      ["agent.example.modal.run", { "x-forwarded-host": "public.test, inner.test" }],
+    ] as [string, Record<string, string>][]) {
+      const req = new Request(`http://${host}/x`, { headers });
+      expect(publicOriginFromHeaders(host, (n) => headers[n], {})).toBe(
+        resolvePublicOrigin(req, {}),
+      );
+    }
   });
 });
 

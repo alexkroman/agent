@@ -23,7 +23,7 @@ import { sleep } from "./_sleep.ts";
 import { GUEST_ROUTES, guestHttpUrl, guestWsUrl } from "./guest-routes.ts";
 import type { GuestRpcSchema } from "./rpc-schemas.ts";
 import { createRpcConnection, type RpcWebSocket } from "./rpc-transport.ts";
-import type { GuestAnalyticsTarget, WarmHarness } from "./sandbox-vm.ts";
+import type { WarmHarness } from "./sandbox-vm.ts";
 
 /** Budget for the harness WebSocket to become dialable after exec. */
 const GUEST_DIAL_TIMEOUT_MS = 30_000;
@@ -271,18 +271,29 @@ export function agentBootEnv(
     bundleSha256: string;
     envPath: string;
     /**
-     * Session-analytics shipping, when the platform has it configured. All of
-     * it or none: the guest treats a partial set as "not configured" and
-     * records nothing, which is the right failure — a guest that buffers rows
-     * it can never ship is worse than one that never records them.
+     * Extra guest boot env — the OPAQUE channel for everything that is not
+     * the core boot convention.
+     *
+     * Each feature that needs the guest to know something builds its own keys
+     * beside itself (`analyticsBootEnv` in analytics-boot.ts is the first),
+     * and the layers between there and the sandbox carry this record without
+     * naming a key. Before it, one feature's four strings were a typed field
+     * on `SandboxOptions`, `AgentSpawnOptions` AND `BackendAgentSpawn`, plus a
+     * `foo: opts.foo` in both spawners — seven files to move a value none of
+     * them look at, and the third such passthrough on the same chain.
+     *
+     * Spread FIRST, deliberately: the core keys below overwrite it, so no
+     * feature can shadow `AAI_GUEST_TOKEN` or point `AAI_BUNDLE_URL`
+     * somewhere else, whatever it puts in here.
      */
-    analytics?: GuestAnalyticsTarget | undefined;
+    bootEnv?: Record<string, string> | undefined;
   },
   /** The server's own environment; injectable for tests. */
   serverEnv: NodeJS.ProcessEnv = process.env,
 ): Record<string, string> {
   const idleExitMs = serverEnv.AAI_GUEST_IDLE_EXIT_MS?.trim();
   return {
+    ...opts.bootEnv,
     AAI_GUEST_MODE: "agent",
     AAI_GUEST_TOKEN: opts.token,
     AAI_GUEST_PORT: String(opts.port),
@@ -292,14 +303,6 @@ export function agentBootEnv(
     AAI_BUNDLE_SHA256: opts.bundleSha256,
     AAI_AGENT_ENV_PATH: opts.envPath,
     ...(idleExitMs ? { AAI_GUEST_IDLE_EXIT_MS: idleExitMs } : {}),
-    ...(opts.analytics
-      ? {
-          AAI_ANALYTICS_URL: opts.analytics.url,
-          AAI_ANALYTICS_TOKEN: opts.analytics.token,
-          AAI_ANALYTICS_SLUG: opts.analytics.slug,
-          AAI_ANALYTICS_VERSION: String(opts.analytics.version),
-        }
-      : {}),
   };
 }
 

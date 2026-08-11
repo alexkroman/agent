@@ -29,6 +29,7 @@ import { HTTPException } from "hono/http-exception";
 import { TtlCache } from "./_ttl-cache.ts";
 import type { AppContext } from "./context.ts";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";
+import { resolvePublicOrigin } from "./public-origin.ts";
 import { brokerSessionUrl } from "./sandbox-broker.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
 
@@ -85,7 +86,13 @@ export function createAgentClientConfigHandler(
 
   return async (c, broker) => {
     const slug = c.var.slug;
-    const brokered = await brokerSessionUrl(slug, broker);
+    // A cold broker SPAWNS the guest, which has to be told an absolute URL to
+    // ship its analytics to — and this request is the only thing that knows
+    // what browsers reach this platform on (see public-origin.ts).
+    const brokered = await brokerSessionUrl(slug, {
+      ...broker,
+      publicOrigin: resolvePublicOrigin(c.req.raw),
+    });
 
     if (!brokered.ok) {
       if (brokered.status === 404) {

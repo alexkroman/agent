@@ -61,7 +61,7 @@ import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
 import { parseSandboxLimitsFromEnv } from "./modal-sandbox-env.ts";
 import { SandboxUnavailableError } from "./sandbox-errors.ts";
 import { resolveSandboxRole, type SpawnIdentity } from "./sandbox-role.ts";
-import type { GuestAnalyticsTarget, WarmHarness, WorkerSource } from "./sandbox-vm.ts";
+import type { WarmHarness, WorkerSource } from "./sandbox-vm.ts";
 import {
   type AgentServerHandle,
   agentBootEnv,
@@ -268,8 +268,8 @@ export async function spawnSubprocessAgentServer(
     slug: string;
     worker: WorkerSource;
     agentEnv: Record<string, string>;
-    /** Session-analytics shipping target, forwarded into the guest exec env. */
-    analytics?: GuestAnalyticsTarget | undefined;
+    /** Extra guest boot env, forwarded verbatim into the exec env. */
+    bootEnv?: Record<string, string> | undefined;
   },
   ctx: SubprocessSpawnContext = realContext(),
   fetchFn?: GuestFetch,
@@ -298,7 +298,7 @@ export async function spawnSubprocessAgentServer(
       harnessPath: opts.harnessPath,
       memoryLimitMiB: limits.memoryLimitMiB,
       extraEnv: agentBootEnv({
-        analytics: opts.analytics,
+        bootEnv: opts.bootEnv,
         token,
         port,
         bundle: opts.worker.kind === "url" ? { url: opts.worker.url } : { path: bundlePath },

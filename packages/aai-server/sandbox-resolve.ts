@@ -15,11 +15,11 @@
 
 import { debug } from "./_debug-log.ts";
 import type { AgentRecord } from "./agent-store.ts";
+import { analyticsBootEnv } from "./analytics-boot.ts";
 import { mintAnalyticsToken } from "./analytics-token.ts";
 import { type AppDatabases, type AppDbMeta, parseAppDbMeta } from "./app-database.ts";
 import { BROKER_READY_TIMEOUT_MS, resolveHarnessPath } from "./constants.ts";
 import type { AnalyticsBinding } from "./context.ts";
-import { knownPublicOrigin } from "./public-origin.ts";
 import { createSandbox, type Sandbox } from "./sandbox.ts";
 import type { SandboxDirectory } from "./sandbox-directory.ts";
 import {
@@ -31,11 +31,7 @@ import {
   terminateSlot,
   withSlugLock,
 } from "./sandbox-slots.ts";
-import {
-  type GuestAnalyticsTarget,
-  guestUnderstandsBundleUrl,
-  type WorkerSource,
-} from "./sandbox-vm.ts";
+import { guestUnderstandsBundleUrl, type WorkerSource } from "./sandbox-vm.ts";
 import { appDbSecretName, type SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
 
@@ -67,6 +63,13 @@ export type ResolveSandboxOpts = {
    * never travels further down toward the guest.
    */
   analytics?: AnalyticsBinding;
+  /**
+   * The public origin the request driving this resolution arrived on
+   * (`resolvePublicOrigin`). Every broker entry point has one; the change
+   * stream's handover does not and reads the slot's stamp instead (see
+   * {@link AgentSlot.publicOrigin}).
+   */
+  publicOrigin?: string | undefined;
   /**
    * How long a broker call waits on a booting sandbox before answering 503.
    * Defaults to {@link BROKER_READY_TIMEOUT_MS}; injectable for tests, which
@@ -209,33 +212,36 @@ export function loadBundleParts(
  * after the install.)
  */
 /**
- * The guest's analytics shipping target, or nothing.
+ * The guest's boot env for shipping analytics, or nothing.
  *
- * Nothing when the feature is off, and nothing when this process cannot name
- * its own public origin yet — a guest given a URL it cannot reach would
+ * Nothing when the feature is off, and nothing when the caller could not name
+ * this platform's public origin — a guest given a URL it cannot reach would
  * buffer and drop rows for its whole life, which is strictly worse than
- * recording none. See `knownPublicOrigin` for why the request-less case is
- * covered in practice.
+ * recording none. See {@link AgentSlot.publicOrigin} for where the origin
+ * comes from on the one path that has no request.
+ *
+ * This is the LAST layer that knows the keys: from here down the spawn chain
+ * carries an opaque `Record<string, string>` (see `agentBootEnv`).
  */
 function analyticsTarget(
   slug: string,
   version: number,
   opts: ResolveSandboxOpts,
-): { analytics?: GuestAnalyticsTarget } {
+): { bootEnv?: Record<string, string> } {
   // No secret means no way to mint a token this platform would accept, so a
   // guest configured to ship would only drop batches (the studio service's
   // read-only binding is exactly that case — it never spawns agents either).
   const ingestSecret = opts.analytics?.ingestSecret;
-  const origin = ingestSecret ? knownPublicOrigin() : undefined;
+  const origin = opts.publicOrigin;
   if (!(ingestSecret && origin)) return {};
   return {
-    analytics: {
+    bootEnv: analyticsBootEnv({
       url: `${origin}/analytics/ingest`,
       // Minted per spawn: the token authorizes exactly this slug.
       token: mintAnalyticsToken(ingestSecret, slug),
       slug,
       version,
-    },
+    }),
   };
 }
 
@@ -352,6 +358,10 @@ async function rebuildSlot(
 
     slot.version = parts.version;
     slot.sandbox = sandbox;
+    // Stamped only when this rebuild had a request behind it, so a rebuild
+    // that did not cannot ERASE what an earlier broker learned — which is the
+    // whole value of keeping it on the slot.
+    if (opts.publicOrigin !== undefined) slot.publicOrigin = opts.publicOrigin;
     return sandbox;
   } catch (err) {
     if (created) deleteSlot(slots, slug);

@@ -52,59 +52,40 @@ function isLoopback(host: string): boolean {
  * First value of an `X-Forwarded-*` header. These accumulate through proxy
  * chains ("https, http"); the client-facing hop is the first entry.
  */
-function firstForwarded(value: string | null): string {
+function firstForwarded(value: string | undefined): string {
   return value?.split(",")[0]?.trim() ?? "";
+}
+
+/**
+ * Resolve the public origin from a request's own host plus its forwarding
+ * headers, with no trailing slash.
+ *
+ * The header-callback form exists for the WebSocket upgrade path, which is
+ * handed a raw Node `IncomingMessage` and never becomes a `Request` (see
+ * orchestrator-ws.ts). {@link resolvePublicOrigin} is this function with a
+ * `Request` in front of it, and is what everything else should call — the
+ * resolution ORDER lives here once either way.
+ */
+export function publicOriginFromHeaders(
+  requestHost: string,
+  header: (name: string) => string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const configured = env.AAI_PUBLIC_ORIGIN?.trim();
+  if (configured) return configured.replace(/\/+$/, "");
+  const host = firstForwarded(header("x-forwarded-host")) || requestHost;
+  const proto =
+    firstForwarded(header("x-forwarded-proto")) || (isLoopback(host) ? "http" : "https");
+  return `${proto}://${host}`;
 }
 
 /** Resolve the public origin for a request, with no trailing slash. */
 export function resolvePublicOrigin(req: Request, env: NodeJS.ProcessEnv = process.env): string {
-  const configured = env.AAI_PUBLIC_ORIGIN?.trim();
-  if (configured) return configured.replace(/\/+$/, "");
-  const url = new URL(req.url);
-  const host = firstForwarded(req.headers.get("x-forwarded-host")) || url.host;
-  const proto =
-    firstForwarded(req.headers.get("x-forwarded-proto")) || (isLoopback(host) ? "http" : "https");
-  return `${proto}://${host}`;
-}
-
-/**
- * The last public origin this process actually served a request on.
- *
- * **For the paths that need the origin but have no Request**, of which there
- * is exactly one class: spawning a guest. A deployed agent's sandbox has to be
- * told an absolute URL to ship its analytics to, and the spawn happens inside
- * `resolveSandbox` — reached from the broker (which does have a request) and
- * from the change stream's blue-green handover (which does not).
- *
- * `AAI_PUBLIC_ORIGIN` is still the answer whenever it is set, and a
- * self-hosted deployment should set it. Production does not, and the reason
- * this is safe there rather than merely convenient: Modal gives a container no
- * way to learn its own public hostname except from a request, and a replica
- * cannot reach the handover path without having ALREADY served a broker
- * request for that slug — the handover only fires for a slug this replica
- * holds a resident for. So the cell is populated by the time the request-less
- * path runs.
- *
- * A wrong value costs shipped analytics, never a session: the guest posts
- * somewhere that 404s or refuses the token, drops the batch, and the call
- * continues. That is why learning it from traffic is acceptable HERE and is
- * not how the deploy origin is resolved.
- */
-let lastServedOrigin: string | null = null;
-
-/** Record the origin of a served request. Called by the platform middleware. */
-export function rememberPublicOrigin(req: Request, env: NodeJS.ProcessEnv = process.env): void {
-  lastServedOrigin = resolvePublicOrigin(req, env);
-}
-
-/**
- * The public origin outside a request: operator config first, then the last
- * one served. `undefined` before this process has served anything.
- */
-export function knownPublicOrigin(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  const configured = env.AAI_PUBLIC_ORIGIN?.trim();
-  if (configured) return configured.replace(/\/+$/, "");
-  return lastServedOrigin ?? undefined;
+  return publicOriginFromHeaders(
+    new URL(req.url).host,
+    (name) => req.headers.get(name) ?? undefined,
+    env,
+  );
 }
 
 /**

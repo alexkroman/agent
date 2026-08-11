@@ -98,27 +98,12 @@ export type AgentSpawnOptions = {
    * already-deployed bundle. Ignored by the subprocess backend.
    */
   imageTag?: string | undefined;
-  /** Session-analytics shipping target; absent turns recording off. */
-  analytics?: GuestAnalyticsTarget | undefined;
-};
-
-/**
- * What a guest needs to ship analytics: an absolute ingest URL on the
- * platform's public origin, a token authorizing exactly one slug, and the
- * deploy generation to stamp on every row. Minted per spawn by
- * `sandbox-resolve.ts` so the platform's ingest SECRET stops there.
- *
- * It carries its own `slug` even though the spawn objects it rides on have
- * one: the token and the slug it authorizes have to be minted together (see
- * `analyticsTarget`), and splitting them so `agentBootEnv` re-derives the
- * slug from its own argument would put the pair's two halves in two places
- * with nothing reconciling them.
- */
-export type GuestAnalyticsTarget = {
-  url: string;
-  token: string;
-  slug: string;
-  version: number;
+  /**
+   * Extra guest boot env, opaque to every layer between here and
+   * `agentBootEnv` — see its doc for why this is a record rather than a field
+   * per feature.
+   */
+  bootEnv?: Record<string, string> | undefined;
 };
 
 // ── The backend contract ─────────────────────────────────────────────────────
@@ -134,8 +119,8 @@ export type BackendAgentSpawn = {
   imageTag?: string | undefined;
   /** Modal only — the fleet-wide sandbox name (see sandbox-directory.ts). */
   name?: string | undefined;
-  /** Session-analytics shipping target, forwarded into the guest's exec env. */
-  analytics?: GuestAnalyticsTarget | undefined;
+  /** Extra guest boot env, forwarded verbatim into the exec env. */
+  bootEnv?: Record<string, string> | undefined;
 };
 
 /**
@@ -305,7 +290,7 @@ export async function spawnAgentServer(
     spawners,
   )({
     harnessPath: opts.harnessPath,
-    analytics: opts.analytics,
+    bootEnv: opts.bootEnv,
     slug: opts.slug,
     // The blob store is content-addressed and the hash rides on the source
     // (see WorkerSource); the guest verifies before loading, which extends

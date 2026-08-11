@@ -11,10 +11,10 @@
  * enabled analytics pays one branch per session and nothing else.
  */
 
-import type { ExecuteTool } from "../sdk/agent-config.ts";
 import { createOwnedMap } from "../sdk/owned-map.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { type AnalyticsSink, createSessionAnalytics, type SessionAnalytics } from "./analytics.ts";
+import type { ToolCallReport } from "./runtime-tools.ts";
 
 export type RuntimeAnalytics = {
   /**
@@ -42,16 +42,17 @@ export type RuntimeAnalytics = {
     sessionOpts: T,
   ): { sessionOpts: T; recorder: SessionAnalytics | null; release: () => void };
   /**
-   * Time every tool call, whichever transport runs it.
+   * `ToolSetupDeps.onToolCall` for this runtime, or undefined when analytics
+   * is off — so a runtime with no sink allocates nothing per tool call.
    *
-   * Wrapped ONCE, at runtime scope, rather than per session: pipeline-mode
-   * tools execute inside `streamText`, which closes over the runtime-level
-   * executor, so a per-session wrapper would silently cover S2S sessions only
-   * — and tool reliability is exactly the metric a pipeline agent's author
-   * asks for. `ExecuteTool` carries the session id, so the per-session
-   * recorder is a lookup rather than a capture.
+   * Runtime-scoped rather than per session, because the tool executor is:
+   * pipeline-mode tools run inside `streamText`, which closes over the
+   * runtime-level executor, so a per-session reporter would silently cover
+   * S2S sessions only — and tool reliability is exactly the metric a pipeline
+   * agent's author asks for. The report carries its session id, so finding
+   * the recorder is a lookup rather than a capture.
    */
-  wrapExecuteTool(execute: ExecuteTool): ExecuteTool;
+  toolCallReporter(): ((report: ToolCallReport) => void) | undefined;
   /** Drop every recorder — the runtime's own `releaseResources`. */
   clear(): void;
 };
@@ -74,12 +75,13 @@ export function createRuntimeAnalytics(sink: AnalyticsSink | undefined): Runtime
       };
     },
 
-    wrapExecuteTool(execute) {
-      if (!sink) return execute;
-      return (name, args, sessionId, messages, callOpts) => {
-        const recorder = sessionId === undefined ? undefined : recorders.get(sessionId);
-        const wrapped = recorder ? recorder.wrapExecuteTool(execute) : execute;
-        return wrapped(name, args, sessionId, messages, callOpts);
+    toolCallReporter() {
+      if (!sink) return;
+      return (report) => {
+        // A sessionless call (a one-shot trial, a builtin invoked outside a
+        // session) has no conversation to belong to and is dropped rather
+        // than attributed to one.
+        recorders.get(report.sessionId)?.recordToolCall(report);
       };
     },
 

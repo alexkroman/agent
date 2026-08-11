@@ -24,6 +24,7 @@
  */
 
 import { answerUpgrade } from "./_upgrade-reply.ts";
+import { publicOriginFromHeaders } from "./public-origin.ts";
 import { brokerSessionUrl } from "./sandbox-broker.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
 import { SLUG_PATTERN_SOURCE } from "./schemas.ts";
@@ -55,10 +56,11 @@ export type WsUpgrades = {
 async function answerRedirectUpgrade(
   rawUrl: string,
   slug: string,
+  publicOrigin: string,
   socket: import("node:stream").Duplex,
   opts: WsUpgradeOpts,
 ): Promise<void> {
-  const brokered = await brokerSessionUrl(slug, opts.broker);
+  const brokered = await brokerSessionUrl(slug, { ...opts.broker, publicOrigin });
   const sessionUrl = brokered.ok ? brokered.sessionUrl : undefined;
   let status = "302 Found";
   if (!brokered.ok) {
@@ -79,6 +81,11 @@ async function answerRedirectUpgrade(
     ? `sessions connect directly to the agent: follow the Location redirect, or GET /${slug}/client-config names the current sessionUrl\n`
     : `sessions connect directly to the agent: GET /${slug}/client-config names the current sessionUrl\n`;
   answerUpgrade(socket, status, body, extraHeaders);
+}
+
+/** Node lower-cases header names and may hand back a list for repeats. */
+function firstHeader(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }
 
 export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
@@ -104,7 +111,13 @@ export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
     // Every upgrade is answered with a handshake response (redirect or a
     // real error status), never a completed session. Answering the handshake
     // (rather than a bare RST) is what keeps failures diagnosable.
-    await answerRedirectUpgrade(rawUrl, slug, socket, opts);
+    // An upgrade never becomes a `Request`, so the origin is read off the raw
+    // headers — a cold broker here SPAWNS the guest, and a guest with no
+    // origin ships no analytics for the life of that sandbox.
+    const publicOrigin = publicOriginFromHeaders(req.headers.host ?? "", (name) =>
+      firstHeader(req.headers[name]),
+    );
+    await answerRedirectUpgrade(rawUrl, slug, publicOrigin, socket, opts);
   }
 
   const injectWebSocket = (server: import("node:http").Server) => {

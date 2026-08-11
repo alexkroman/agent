@@ -260,16 +260,26 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // the storage-status route (and anything else reading secrets) works.
   const secrets = opts.secrets ?? createMemorySecretStore();
 
-  // The broker's dependency set, assembled ONCE and shared by both consumers
-  // (the client-config route and the /:slug/websocket redirect path): every
-  // field is optional, so a per-site conditional spread that drops one
-  // compiles clean — one object makes a new broker dependency one edit.
+  // The broker's dependency set, assembled ONCE and shared by all three
+  // consumers (client-config, the phone webhook, the /:slug/websocket
+  // redirect): every field is optional, so a per-site conditional spread that
+  // drops one compiles clean — one object makes a new broker dependency one
+  // edit.
+  //
+  // `analytics` is the one that proves the point. It was passed to
+  // `watchAgentInvalidation` (which takes the whole `opts`) and left out
+  // HERE, so a redeploy's handover configured a guest to ship rows while
+  // every ordinary cold broker — the path that spawns nearly every sandbox —
+  // configured none, and nothing anywhere said so: analytics is best-effort
+  // by design, so an unconfigured guest is indistinguishable from an agent
+  // with no traffic.
   const brokerOpts: ResolveSandboxOpts = {
     slots: opts.slots,
     store: opts.store,
     secrets,
     ...(opts.appDb && { appDb: opts.appDb }),
     ...(opts.directory && { directory: opts.directory }),
+    ...(opts.analytics && { analytics: opts.analytics }),
     // Same predicate `/health` reports on, so "the proxy has been told to
     // stop routing here" and "stop booting sandboxes" can never disagree.
     ...(opts.isDraining && { isDraining: opts.isDraining }),

@@ -11,11 +11,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createMemoryAnalyticsStore } from "./analytics-store.ts";
 import { createMemoryPlatformEvents } from "./platform-events.ts";
 import { brokerSessionUrl } from "./sandbox-broker.ts";
 import { createMemorySandboxDirectory, SandboxNameTakenError } from "./sandbox-directory.ts";
 import { watchAgentInvalidation } from "./sandbox-invalidate.ts";
-import { resolveSandbox } from "./sandbox-resolve.ts";
+import { type ResolveSandboxOpts, resolveSandbox } from "./sandbox-resolve.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { appDbSecretName, createMemorySecretStore } from "./secret-store.ts";
 import { createTestStore } from "./test-utils.ts";
@@ -37,7 +38,12 @@ vi.mock("./sandbox-vm.ts", async (importOriginal) => ({
   spawnAgentServer: mockSpawnAgentServer,
 }));
 
-async function seedAgent(slug: string) {
+/**
+ * `extra` is merged into the deps BOTH the resolver and the change-stream
+ * watcher run with — the two must agree, and the bug that motivated the
+ * parameter was them not agreeing (see `brokerOpts` in orchestrator.ts).
+ */
+async function seedAgent(slug: string, extra?: Partial<ResolveSandboxOpts>) {
   const memory = createMemoryPlatformEvents();
   // The real signal that a change event has been delivered AND its handler
   // has finished — this file used to spin 20 microtasks and hope.
@@ -67,7 +73,7 @@ async function seedAgent(slug: string) {
   // Spy that calls through: the watcher's cache drop must actually happen
   // for the rebuild to read the freshly deployed record.
   const invalidate = vi.spyOn(store, "invalidate");
-  const deps = { slots: createSlotCache(), store };
+  const deps = { slots: createSlotCache(), store, ...extra };
   const unwatch = watchAgentInvalidation(memory.events, deps);
   return {
     ...deps,
@@ -157,6 +163,72 @@ describe("storage (ctx.db) delivery", () => {
       env: Record<string, string>;
     };
     expect(vmOpts.env).toEqual({});
+    await sandbox?.shutdown();
+    deps.unwatch();
+  });
+});
+
+/**
+ * A guest is told where to ship its analytics as boot env, and the URL has to
+ * be an ABSOLUTE origin — which a container behind Modal can only learn from a
+ * request. The origin therefore travels with the caller and is stamped on the
+ * slot, rather than being read out of a module-level "last origin served
+ * anywhere" cell.
+ */
+describe("analytics boot env", () => {
+  const analytics = {
+    store: createMemoryAnalyticsStore(),
+    ingestSecret: "s".repeat(32),
+  };
+  const bootEnvOf = (call: number): Record<string, string> => {
+    const spawn = mockSpawnAgentServer.mock.calls[call]?.[0] as
+      | { bootEnv?: Record<string, string> }
+      | undefined;
+    return spawn?.bootEnv ?? {};
+  };
+
+  it("names the caller's own origin, per slug", async () => {
+    const deps = await seedAgent("shipper");
+    mockSpawnAgentServer.mockClear();
+    const sandbox = await resolveSandbox("shipper", {
+      ...deps,
+      analytics,
+      publicOrigin: "https://agent.example.modal.run",
+    });
+    expect(bootEnvOf(0)).toMatchObject({
+      AAI_ANALYTICS_URL: "https://agent.example.modal.run/analytics/ingest",
+      AAI_ANALYTICS_SLUG: "shipper",
+    });
+    await sandbox?.shutdown();
+    deps.unwatch();
+  });
+
+  // The change stream's blue-green handover is the ONE spawn with no request
+  // behind it. It only ever fires for a slug this replica already brokered, so
+  // the slot the broker stamped is where the origin comes from.
+  it("survives a redeploy's handover, which has no request of its own", async () => {
+    const deps = await seedAgent("handed-over", { analytics });
+    const opts = { ...deps, publicOrigin: "https://agent.example.modal.run" };
+    const sandbox = await resolveSandbox("handed-over", opts);
+    expect(sandbox).not.toBeNull();
+    mockSpawnAgentServer.mockClear();
+
+    await deps.redeploy();
+
+    expect(mockSpawnAgentServer).toHaveBeenCalledTimes(1);
+    expect(bootEnvOf(0)).toMatchObject({
+      AAI_ANALYTICS_URL: "https://agent.example.modal.run/analytics/ingest",
+    });
+    deps.unwatch();
+  });
+
+  // Better none than a URL the guest cannot reach: a configured shipper that
+  // can never ship buffers rows for the life of the sandbox.
+  it("configures nothing when the caller could not name an origin", async () => {
+    const deps = await seedAgent("originless");
+    mockSpawnAgentServer.mockClear();
+    const sandbox = await resolveSandbox("originless", { ...deps, analytics });
+    expect(bootEnvOf(0)).toEqual({});
     await sandbox?.shutdown();
     deps.unwatch();
   });

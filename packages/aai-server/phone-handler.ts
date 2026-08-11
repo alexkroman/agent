@@ -161,6 +161,9 @@ export function createPhoneHandler(
     const brokered = await brokerSessionUrl(slug, {
       ...broker,
       readyTimeoutMs: PHONE_READY_TIMEOUT_MS,
+      // Same origin the signature check above was composed from: a cold call
+      // spawns the guest, which needs it to ship analytics.
+      publicOrigin: origin,
     });
 
     if (brokered.ok) {

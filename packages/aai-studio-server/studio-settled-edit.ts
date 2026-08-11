@@ -31,9 +31,11 @@ export function onSettledEdit(
   scope: string,
   project: string,
 ): void {
-  broker.refreshSession(scope, project, c.var.apiKey).catch((err: unknown) => {
-    console.warn("Studio: live session refresh failed", { project, error: errorMessage(err) });
-  });
+  broker
+    .refreshSession(scope, project, c.var.apiKey, requestPublicOrigin(c))
+    .catch((err: unknown) => {
+      console.warn("Studio: live session refresh failed", { project, error: errorMessage(err) });
+    });
   schedulePreviewFor(broker, c, scope, project);
 }
 

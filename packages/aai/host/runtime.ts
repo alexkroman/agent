@@ -238,10 +238,10 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     logger,
     sinkMap,
     stateMap,
+    onToolCall: analytics.toolCallReporter(),
   });
 
-  const { toolSchemas, toolGuidance, pushStateSnapshot } = tools;
-  const executeTool = analytics.wrapExecuteTool(tools.executeTool);
+  const { toolSchemas, toolGuidance, pushStateSnapshot, executeTool } = tools;
 
   // Resolve pipeline providers once per runtime (not per session). Each
   // session reuses the same opener / LanguageModel — the opener's `open()`

@@ -138,4 +138,35 @@ describe("agentBootEnv", () => {
       "AAI_GUEST_IDLE_EXIT_MS",
     );
   });
+
+  it("carries a feature's boot env through without naming any of its keys", () => {
+    const env = agentBootEnv({ ...boot, bootEnv: { AAI_ANALYTICS_URL: "https://p/i" } }, {});
+    expect(env.AAI_ANALYTICS_URL).toBe("https://p/i");
+    expect(env.AAI_GUEST_TOKEN).toBe("tok");
+  });
+
+  // The channel is opaque, so nothing upstream validates what goes into it —
+  // which makes "core keys win" the whole of the guarantee that a feature (or
+  // a bug in one) cannot repoint the guest at another bundle or hand it a
+  // token it was not issued.
+  it("lets no boot-env key shadow a core one", () => {
+    const env = agentBootEnv(
+      {
+        ...boot,
+        bootEnv: {
+          AAI_GUEST_TOKEN: "stolen",
+          AAI_BUNDLE_PATH: "/evil.mjs",
+          AAI_BUNDLE_SHA256: "0".repeat(64),
+          AAI_GUEST_MODE: "studio",
+        },
+      },
+      {},
+    );
+    expect(env).toMatchObject({
+      AAI_GUEST_TOKEN: "tok",
+      AAI_BUNDLE_PATH: "/b/bundle.mjs",
+      AAI_BUNDLE_SHA256: "abc",
+      AAI_GUEST_MODE: "agent",
+    });
+  });
 });

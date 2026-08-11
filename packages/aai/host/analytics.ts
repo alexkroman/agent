@@ -11,8 +11,9 @@
  *   which already carries the complete `ClientEvent` stream (transcripts,
  *   tool calls, errors, cancellations) plus the raw audio frames — and the
  *   audio frames are what make time-to-first-audio measurable at all.
- * - {@link SessionAnalytics.wrapExecuteTool} wraps `ExecuteTool`, the one
- *   funnel every tool call goes through in both self-hosted and relay modes.
+ * - {@link SessionAnalytics.recordToolCall} takes the outcome the tool
+ *   executor reports from inside itself (`ToolCallOutcome`), which is the one
+ *   place `ok` is a typed question rather than a result string to re-parse.
  * - {@link SessionAnalytics.wrapLogger} wraps the injected {@link Logger}, so
  *   the runtime's own log lines land in the same store as the metrics and a
  *   spike in one can be read against the other.
@@ -32,7 +33,6 @@
  * jitter.
  */
 
-import type { ExecuteTool } from "../sdk/agent-config.ts";
 import type { ClientEvent, ClientSink } from "../sdk/protocol.ts";
 import type { Logger, LogLevel } from "./runtime-config.ts";
 
@@ -134,29 +134,20 @@ export type SessionAnalytics = {
   end(reason?: string): void;
   /** Decorate the client sink so events and audio frames are observed. */
   wrapSink(client: ClientSink): ClientSink;
-  /** Decorate `ExecuteTool` so every tool call is timed and its outcome recorded. */
-  wrapExecuteTool(execute: ExecuteTool): ExecuteTool;
+  /**
+   * Record one settled tool call, as the executor reported it.
+   *
+   * A row rather than a decorator because `ok` is not recoverable above the
+   * executor: by then the result is `stringifyResult`'s or `toolError`'s
+   * string, and reading the outcome back out of it means owning a second copy
+   * of that wire format — one that is never exercised on the day the format
+   * changes, and whose failure mode is reporting every failed tool call as a
+   * success. See `ToolCallOutcome` in tool-executor.ts.
+   */
+  recordToolCall(call: { name: string; ok: boolean; durationMs: number; result: string }): void;
   /** Decorate a logger so its lines land beside the metrics. */
   wrapLogger(logger: Logger): Logger;
 };
-
-/**
- * A tool result is a STRING on this seam — the host serializes before it
- * returns — so success is read back off the wire format `toolError` writes.
- * That is deliberately not `isToolFailure`: this sees `toolError`'s
- * pre-serialized `'{"error":"…"}'`, which that guard returns false for (see
- * `sdk/utils.ts`). Getting this backwards would report every failure as a
- * success, which is the one thing a reliability metric must not do.
- */
-function resultLooksOk(result: string): boolean {
-  if (!result.startsWith("{")) return true;
-  try {
-    const parsed: unknown = JSON.parse(result);
-    return !(parsed !== null && typeof parsed === "object" && "error" in parsed);
-  } catch {
-    return true;
-  }
-}
 
 /**
  * Build the recorder for one session.
@@ -339,37 +330,17 @@ export function createSessionAnalytics(opts: SessionAnalyticsOptions): SessionAn
       };
     },
 
-    wrapExecuteTool(execute) {
-      return async (name, args, sid, messages, execOpts) => {
-        const startedAt = now();
-        let result: string;
-        try {
-          result = await execute(name, args, sid, messages, execOpts);
-        } catch (err) {
-          safely(() => {
-            toolCount += 1;
-            record({
-              ...base("tool_call"),
-              durationMs: now() - startedAt,
-              name,
-              ok: false,
-              text: clip(err instanceof Error ? err.message : String(err)),
-            });
-          });
-          throw err;
-        }
-        safely(() => {
-          toolCount += 1;
-          record({
-            ...base("tool_call"),
-            durationMs: now() - startedAt,
-            name,
-            ok: resultLooksOk(result),
-            text: clip(result),
-          });
+    recordToolCall(call) {
+      safely(() => {
+        toolCount += 1;
+        record({
+          ...base("tool_call"),
+          durationMs: call.durationMs,
+          name: call.name,
+          ok: call.ok,
+          text: clip(call.result),
         });
-        return result;
-      };
+      });
     },
 
     wrapLogger(logger) {

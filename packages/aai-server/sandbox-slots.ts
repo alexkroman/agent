@@ -35,6 +35,23 @@ export type AgentSlot = {
    * replica or service, or a delete (version reads null).
    */
   version?: number;
+  /**
+   * The public origin of the REQUEST that last built this slot's sandbox
+   * (`resolvePublicOrigin`), remembered for the one path that needs an origin
+   * and has no request: the change stream's blue-green handover.
+   *
+   * Modal gives a container no way to learn its own public hostname except
+   * from a request, and a handover only ever fires for a slug this replica
+   * already holds a resident for — so by construction a brokered request came
+   * first and stamped this. It is per SLOT rather than a module-level "last
+   * origin served anywhere" for the obvious reason: the origin a guest is told
+   * to call back on should be the one its own agent was brokered on, not
+   * whatever request happened to land most recently.
+   *
+   * Absent is safe — the only consumer (`analyticsTarget`) treats it as "do
+   * not configure shipping", which costs rows and never a session.
+   */
+  publicOrigin?: string | undefined;
 };
 
 // An OwnedMap because a redeploy replaces the slot object under the same

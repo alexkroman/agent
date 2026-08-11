@@ -13,7 +13,6 @@ import { secureHeaders } from "hono/secure-headers";
 import type { HonoEnv } from "./context.ts";
 import { createErrorHandler } from "./error-handler.ts";
 import type { PlatformEvents } from "./platform-events.ts";
-import { rememberPublicOrigin } from "./public-origin.ts";
 
 export function applyPlatformMiddleware<E extends HonoEnv>(
   // Generic over the env so a service that ADDS bindings (the studio's
@@ -22,14 +21,6 @@ export function applyPlatformMiddleware<E extends HonoEnv>(
   app: Hono<E>,
   allowedOrigins: string[] | undefined,
 ): void {
-  // Learn this process's public origin from the traffic it serves — the only
-  // way a container behind Modal can know it, and needed by the request-less
-  // guest-spawn path (see knownPublicOrigin).
-  app.use("*", async (c, next) => {
-    rememberPublicOrigin(c.req.raw);
-    await next();
-  });
-
   app.use(
     "*",
     cors({

@@ -616,9 +616,11 @@ the preflight asked for.
 
 `host/analytics.ts` + `host/runtime-analytics.ts` record a session's turns,
 tool outcomes, errors, time-to-first-audio and logs with NO author
-instrumentation, by decorating the `ClientSink`, `ExecuteTool` and `Logger`.
-Opt-in via `RuntimeOptions.analytics`; absent, nothing is wrapped. The whole
-feature: `packages/aai-studio-server/CLAUDE.md`.
+instrumentation, by decorating the `ClientSink` and `Logger` and taking each
+tool call's `ok` from `executeToolCall` itself (`ToolCallOutcome` →
+`ToolSetupDeps.onToolCall`) rather than re-parsing its result string. Opt-in
+via `RuntimeOptions.analytics`; absent, nothing is wrapped and no reporter is
+allocated. The whole feature: `packages/aai-studio-server/CLAUDE.md`.
 
 ## Voices
 

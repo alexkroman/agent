@@ -9,7 +9,7 @@
  * session id when the send happens, not the one that held it at dispatch.
  */
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { createOwnedMap } from "../sdk/owned-map.ts";
 import type { ClientEvent, ClientSink } from "../sdk/protocol.ts";
 import type { AgentDef } from "../sdk/types.ts";
@@ -142,5 +142,61 @@ describe("self-hosted tool surface: sends follow the live sink", () => {
       { type: "custom_event", event: "progress", data: 1 },
       { type: "agent_state", state: { count: 1 } },
     ]);
+  });
+});
+
+/**
+ * `onToolCall` is what session analytics reads, and it exists because `ok`
+ * cannot be recovered above this layer: `ExecuteTool` returns a string, so an
+ * observer wrapped around it has to re-parse `toolError`'s wire format — a
+ * second copy of that format, in a place nothing exercises on the day it
+ * changes, whose failure mode is scoring every failed tool call as a success.
+ */
+describe("self-hosted tool surface: settled tool calls are reported", () => {
+  function toolRuntime(tools: Record<string, unknown>) {
+    const onToolCall = vi.fn();
+    const agent = makeAgent({ tools } as Partial<AgentDef>);
+    const { executeTool } = setupTools({
+      agent,
+      opts: { agent, env: {} },
+      env: {},
+      providerEnv: {},
+      resolvedDb: undefined,
+      logger: consoleLogger,
+      sinkMap: createOwnedMap<string, ClientSink>(),
+      stateMap: new Map<string, Record<string, unknown>>(),
+      onToolCall,
+    } as never);
+    return { executeTool, onToolCall };
+  }
+
+  test("carries the session, the name and a true outcome for a plain result", async () => {
+    const { executeTool, onToolCall } = toolRuntime({
+      lookup: { description: "look something up", execute: () => "found it" },
+    });
+    await executeTool("lookup", {}, SID, []);
+    expect(onToolCall).toHaveBeenCalledTimes(1);
+    expect(onToolCall.mock.calls[0]?.[0]).toMatchObject({
+      sessionId: SID,
+      name: "lookup",
+      ok: true,
+      result: "found it",
+    });
+  });
+
+  test("a tool that RETURNS a failure is reported as one, not as a result", async () => {
+    const { executeTool, onToolCall } = toolRuntime({
+      lookup: { description: "look something up", execute: () => ({ error: "no such order" }) },
+    });
+    await executeTool("lookup", {}, SID, []);
+    expect(onToolCall.mock.calls[0]?.[0]).toMatchObject({ name: "lookup", ok: false });
+  });
+
+  // A hallucinated tool name never reaches the executor, and is invisible
+  // everywhere else — it is exactly what this table gets read for.
+  test("an unknown tool is reported rather than answered silently", async () => {
+    const { executeTool, onToolCall } = toolRuntime({});
+    await executeTool("no_such_tool", {}, SID, []);
+    expect(onToolCall.mock.calls[0]?.[0]).toMatchObject({ name: "no_such_tool", ok: false });
   });
 });

@@ -1,13 +1,33 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { Hono } from "hono";
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { registerAnalyticsIngest } from "./analytics-routes.ts";
 import { type AnalyticsStore, createMemoryAnalyticsStore } from "./analytics-store.ts";
 import { mintAnalyticsToken } from "./analytics-token.ts";
 import type { HonoEnv } from "./context.ts";
 import { localSlugLock } from "./platform-lock.ts";
 import { createMemorySecretStore } from "./secret-store.ts";
-import { createTestStore } from "./test-utils.ts";
+import { createTestOrchestrator, createTestStore, deploy } from "./test-utils.ts";
+
+/** Boot envs handed to every spawn in this file — see the last describe. */
+const { spawnedBootEnvs } = vi.hoisted(() => ({
+  spawnedBootEnvs: [] as Record<string, string>[],
+}));
+
+vi.mock("./sandbox-vm.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./sandbox-vm.ts")>()),
+  spawnAgentServer: (opts: { bootEnv?: Record<string, string> }) => {
+    spawnedBootEnvs.push(opts.bootEnv ?? {});
+    return Promise.resolve({
+      sessionUrl: "wss://tunnel.test:443/websocket",
+      activeSessions: () => Promise.resolve(0),
+      drain: () => Promise.resolve(),
+      shutdown: () => Promise.resolve(),
+      alive: () => true,
+      onExit: () => undefined,
+    });
+  },
+}));
 
 const SECRET = "ingest-secret";
 const SLUG = "my-agent";
@@ -129,5 +149,39 @@ describe("POST /analytics/ingest", () => {
     );
     expect(res.status).toBe(202);
     await expect(res.json()).resolves.toEqual({ accepted: 0 });
+  });
+});
+
+/**
+ * The other half of the ingest contract: a guest only ever POSTs here because
+ * the SPAWN told it to, and that wiring runs through `brokerOpts` in
+ * orchestrator.ts.
+ *
+ * Worth a test at this distance because the failure is invisible from both
+ * ends. `analytics` was passed to the change-stream watcher and omitted from
+ * `brokerOpts`, so the ordinary cold broker — which spawns nearly every
+ * sandbox — configured no shipper at all: the route above stayed correct, the
+ * guest stayed correct, and the pane simply reported an agent with no traffic.
+ */
+describe("the broker configures a spawned guest to ship", () => {
+  test("a cold client-config broker hands the guest an ingest URL and token", async () => {
+    spawnedBootEnvs.length = 0;
+    const { fetch } = await createTestOrchestrator({
+      analytics: { store: createMemoryAnalyticsStore(), ingestSecret: SECRET },
+      // The guest's own /client-config proxy is not what this covers.
+      guestConfigFetch: () => Promise.resolve(new Response(null, { status: 503 })),
+    });
+    await deploy(fetch, { body: { slug: SLUG, worker: 'export default { name: "t" };' } });
+
+    // Modal forwards cleartext to the container with the public Host, which
+    // is exactly the case `resolvePublicOrigin` exists for.
+    const res = await fetch(`http://agent.example.modal.run/${SLUG}/client-config`);
+    expect(res.status).toBe(200);
+
+    const bootEnv = spawnedBootEnvs[0] ?? {};
+    expect(bootEnv.AAI_ANALYTICS_URL).toBe("https://agent.example.modal.run/analytics/ingest");
+    // The token authorizes exactly this slug — the ingest route verifies it
+    // against the slug in the BODY.
+    expect(bootEnv.AAI_ANALYTICS_TOKEN).toBe(mintAnalyticsToken(SECRET, SLUG));
   });
 });

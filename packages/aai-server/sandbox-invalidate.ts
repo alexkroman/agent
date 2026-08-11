@@ -165,7 +165,11 @@ async function handoverSlot(
   }
   let replacement: Sandbox;
   try {
-    replacement = buildSlotSandbox(slug, parts, opts);
+    // The one spawn with no request behind it, so the origin comes off the
+    // slot the broker stamped (see `AgentSlot.publicOrigin`) — a handover only
+    // ever fires for a slug this replica already holds a resident for, so a
+    // brokered request came first by construction.
+    replacement = buildSlotSandbox(slug, parts, { ...opts, publicOrigin: slot.publicOrigin });
   } catch (err) {
     // Draining: leave the old resident attached and untouched. Retiring it to
     // honour a deploy this process will not live to serve would cut its live

@@ -651,7 +651,11 @@ down, like the file-length allowlist.
   only `X-Forwarded-For`, never `X-Forwarded-Proto`), so `new URL(c.req.url)`
   is **always** `http:` in a handler, whatever the browser used. Resolution
   order: `AAI_PUBLIC_ORIGIN` → `x-forwarded-host`/`-proto` (a real proxy in
-  front) → infer, loopback being the only `http`.
+  front) → infer, loopback being the only `http`. A path with no `Request`
+  takes the origin from its CALLER rather than a module cell (the guest-spawn
+  case is in `aai-studio-server/CLAUDE.md`); `publicOriginFromHeaders` is the
+  same resolver for the WebSocket upgrade, which holds a raw
+  `IncomingMessage`.
 
   Both places that had rolled their own cost real outages. Studio **Publish
   died on `401 Missing Authorization header` from its own platform**: the

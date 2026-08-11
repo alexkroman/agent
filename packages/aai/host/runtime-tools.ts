@@ -24,7 +24,19 @@ import { createStateSync } from "./_state-sync.ts";
 import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "./builtin-tools.ts";
 import { createGenerateFn, type HostGenerateFn } from "./generate.ts";
 import type { RuntimeOptions } from "./runtime-types.ts";
-import { type ExecuteTool, executeToolCall } from "./tool-executor.ts";
+import { type ExecuteTool, executeToolCall, type ToolCallOutcome } from "./tool-executor.ts";
+
+/**
+ * A settled tool call, reported to whoever asked for one — today the session
+ * analytics recorder, which is why the row carries the session it belongs to.
+ *
+ * It is reported from BELOW the executor rather than derived by decorating
+ * `ExecuteTool` from above: `ok` is only a typed question inside
+ * `executeToolCall` (see {@link ToolCallOutcome}), and the wrapper that used
+ * to read it back off the result string owned a second copy of `toolError`'s
+ * wire format.
+ */
+export type ToolCallReport = ToolCallOutcome & { sessionId: string; name: string };
 
 /**
  * Merge the agent's builtins with the tools a mode dispatches itself — the
@@ -93,7 +105,36 @@ type ToolSetupDeps = {
   sinkMap: OwnedMap<string, ClientSink>;
   /** Per-session tool state (self-hosted mode only); cleaned up on session end. */
   stateMap: Map<string, Record<string, unknown>>;
+  /**
+   * Called once per tool call this runtime EXECUTES. Absent turns the
+   * reporting off entirely, which is what an agent with no analytics sink
+   * gets.
+   *
+   * "Executes" is the limit worth knowing: in relay mode a custom tool runs in
+   * the CLIENT (`createRelayExecuteTool`), so nothing here ever sees its
+   * outcome and only the host-side builtins are reported. Nothing observes
+   * this today on that path — relay mode is `aai dev`'s host mode, which
+   * builds its own runtime with no `analytics` — but a future consumer must
+   * not read an empty tool table as "this agent called no tools".
+   */
+  onToolCall?: ((report: ToolCallReport) => void) | undefined;
 };
+
+/**
+ * The per-call `onOutcome` for a tool this runtime runs itself, or undefined
+ * when nobody is listening — so a runtime without analytics allocates no
+ * closure per tool call.
+ */
+function outcomeReporter(
+  deps: ToolSetupDeps,
+  name: string,
+  sessionId: string,
+): ((outcome: ToolCallOutcome) => void) | undefined {
+  const report = deps.onToolCall;
+  return report === undefined
+    ? undefined
+    : (outcome: ToolCallOutcome) => report({ ...outcome, sessionId, name });
+}
 
 /**
  * Build the ctx.generate implementation for this runtime: the agent's
@@ -136,6 +177,7 @@ function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): To
         generate,
         logger,
         signal: callOpts?.signal,
+        onOutcome: outcomeReporter(deps, name, sessionId ?? ""),
       });
     }
     // Delegate custom tools (and run_code) to the isolate via RPC. Forward
@@ -248,8 +290,15 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
 
   const executeTool: ExecuteTool = async (name, args, sessionId, messages, callOpts) => {
     const tool = allTools[name];
-    if (!tool) return toolError(`Unknown tool: ${name}`);
     const sid = sessionId ?? "";
+    if (!tool) {
+      // Reported like any other failed call — the model hallucinating a tool
+      // name is exactly the kind of thing an author looks at this table for,
+      // and it is invisible everywhere else.
+      const result = toolError(`Unknown tool: ${name}`);
+      deps.onToolCall?.({ sessionId: sid, name, ok: false, durationMs: 0, result });
+      return result;
+    }
     /**
      * Resolved per send, never captured at dispatch. A tool call routinely
      * outlives the socket that issued it (it may run for the whole tool
@@ -284,6 +333,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
         },
         // Turn cancellation (barge-in/reset/stop) unblocks the tool await.
         signal: callOpts?.signal,
+        onOutcome: outcomeReporter(deps, name, sid),
       });
     try {
       return await run();
