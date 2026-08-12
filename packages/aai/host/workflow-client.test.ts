@@ -11,6 +11,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
+import type { ToolInputSchema } from "../sdk/schema.ts";
 import { type WorkflowBody, type WorkflowDef, workflow } from "../sdk/workflow.ts";
 import { createWorkflowClient, type WdkAdapter, type WdkRunRecord } from "./workflow-client.ts";
 import { createMemoryKeyStore, type WorkflowKeyStore } from "./workflow-keys.ts";
@@ -288,12 +289,21 @@ describe("listing declared workflows", () => {
   test("a schema that cannot convert warns rather than taking the listing down", () => {
     // The listing feeds `workflow_status` as well as a page's form, so an
     // unconvertible schema must not make the status tool unusable.
-    const unconvertible = {
-      run: body("workflow//./workflows/x//x"),
-      input: {
-        "~standard": { version: 1, vendor: "nope", validate: (v: unknown) => ({ value: v }) },
+    // A REAL Standard Schema that simply cannot convert: zod converts natively
+    // and other vendors need a `toJsonSchema()`, so one with neither validates
+    // fine and fails the JSON Schema step. Built type-safely rather than cast,
+    // which is what keeps the escape-hatch ratchet where it is.
+    const unconvertibleInput: ToolInputSchema = {
+      "~standard": {
+        version: 1,
+        vendor: "no-json-schema",
+        validate: (value: unknown) => ({ value: value as Record<string, unknown> }),
       },
-    } as unknown as WorkflowDef;
+    };
+    const unconvertible: WorkflowDef = {
+      run: body("workflow//./workflows/x//x"),
+      input: unconvertibleInput,
+    };
     const { client } = makeClient({ workflows: { unconvertible } });
     expect(() => client.listing()).not.toThrow();
     expect(client.listing()[0]?.inputSchema).toBeUndefined();
