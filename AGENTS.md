@@ -367,7 +367,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
 
 - **`pnpm check:invariants`** (`scripts/guard-invariants.mjs`, rules in
   `scripts/guard-invariants-rules.mjs`) — **the mechanical half of this file.**
-  Eleven numbered rules, each printing WHY the invariant exists and what to use
+  Twelve numbered rules, each printing WHY the invariant exists and what to use
   instead, so a violation is self-correcting and a reviewer never re-explains
   it. Every one used to live only as prose here, and prose is enforcement
   exactly as long as somebody remembers it at review time.
@@ -385,10 +385,11 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 9 | no `tails.get(k) ?? Promise.resolve()` | `createKeyedLock()` / `slot.update` |
   | 10 | `research/**.md` needs `issue`/`status`/`last_updated` | see `research/README.md` |
   | 11 | no hardcoded `/tmp` in shipped source | `join(tmpdir(), …)` |
+  | 12 | every guest route literal is in `GUEST_ROUTES` | declare it + its exposure |
 
   Rule IDs are **stable**: a deleted rule leaves its number retired rather than
   letting a later rule inherit it, because the numbers appear in commit messages
-  and in the baseline. Rules 1, 7 and 10 are at zero and enforced absolutely;
+  and in the baseline. Rules 1, 7, 10 and 12 are at zero and enforced absolutely;
   the rest carry per-file baselines with the same `--update`-only-lowers
   contract as `check:hatches`. Every baselined occurrence is
   legitimate and says so in the JSON — three spread-ternaries where **the guard
@@ -1592,6 +1593,22 @@ describes a gate that is not there. A missing entry is a compile error, and
 beside a platform route that does forward. Declare the methods from the guest's
 dispatch; making the platform match is then a failing test rather than a
 production 404.
+
+**Only the PLATFORM half of that is verified by a test; the upstream half is a
+guard.** `guest-routes.test.ts` introspects the real orchestrator app, so
+"declared `proxied` but not registered" and "registered but declared otherwise"
+both fail. What it cannot check is whether `GUEST_ROUTES` still describes the
+guest — that list is transcribed by hand, and it cannot be derived, because
+`aai-server` may not import guest source. It had already drifted:
+`GET /studio/tools` was a real guest route in neither table, and the `satisfies`
+could not catch it (that compile error fires for a KEY with no exposure entry,
+never for a route nobody wrote down), so the studio client reached it by
+rewriting another route's URL — the exact surgery `guest-routes.ts` says the
+table exists to end. `guard-invariants.mjs` rule 12 closes it by reading both
+trees as TEXT, which respects the boundary the same way `sync-agent-guide.mjs`
+does. Methods stay declarative: the guest dispatches with `if (url === X)`
+chains, so there is no table to derive verbs from, and a route can still be
+declared with the wrong ones — it can no longer be absent.
 
 **A route's exposure is decided by WHO CALLS IT, not by what it does.** The
 three workflow routes are the worked example, and they split: the DevKit's
