@@ -779,6 +779,14 @@ consequences an author has to know, all in that file's module doc and
   string. The `Journalable<T>` type is the compile-time half and is advisory —
   `T extends Journalable<T>` is a circular constraint TypeScript rejects, so reach
   for it with `satisfies` when you want the check in the editor too.
+- **A long `ctx.sleep` resumes ON TIME on the platform, and at the next boot
+  elsewhere.** The engine releases a sleep past its in-process wake timer (60s)
+  and recovers it in `runDue()`, which runs at boot — so the platform runs a
+  sweep that finds agents with a due run and boots them
+  (`aai-server/workflow-wake.ts`; `WORKFLOW_WAKE_POLL_MS` is the lateness). A
+  self-hosted `createServer` has no such sweep, so there a long sleep waits for
+  the next boot. This used to be unwired everywhere, which made "durable" mean
+  not-lost rather than runs-on-time.
 - **Storage is required**, since the journal is what makes a run durable — two
   tables in the app's own schema (`aai_workflow_runs`, `aai_workflow_steps`,
   `host/workflow-store.ts`). An agent that declares workflows without storage

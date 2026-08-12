@@ -32,6 +32,7 @@ import {
 } from "aai-server/service-config";
 import { isStudioPath } from "aai-server/studio-paths";
 import { teardownSandboxes } from "aai-server/teardown-sandboxes";
+import { startWorkflowWake } from "aai-server/workflow-wake";
 import { createStudioApp, type StudioAppOpts } from "./studio-app.ts";
 import { createPgPreviewQueue } from "./studio-preview-queue.ts";
 import {
@@ -119,7 +120,15 @@ async function main(): Promise<void> {
   // The broker's per-project coding-agent sandboxes are this process's to
   // release: without the dispose they outlive it and burn their orphan
   // timeout (billed, on Modal) on every scale-in.
+  // Resume workflow runs whose wake time has passed. Without this, a `ctx.sleep`
+  // longer than the engine's in-process timer waits for a VISITOR — the run is
+  // durable either way, but it resumes when someone next phones the agent rather
+  // than when it is due. See workflow-wake.ts for why this cannot be a pg_cron
+  // job and cannot ask the guest.
+  const wake = startWorkflowWake({ ...base, port });
+
   const teardown = async (): Promise<void> => {
+    wake.stop();
     await teardownSandboxes({ slots: base.slots, broker: { dispose: disposeStudio } });
     await base.events.close();
   };

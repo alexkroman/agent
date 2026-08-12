@@ -10,6 +10,7 @@ import {
 } from "./_workflow-test-utils.ts";
 import {
   createWorkflowEngine,
+  MAX_DUE_RUNS,
   MAX_WAKE_TIMER_MS,
   WORKFLOW_LEASE_MS,
   type WorkflowEngine,
@@ -426,6 +427,45 @@ describe("claiming and recovery", () => {
 
     const snapshot = asStatus(await engine.get("gone"), "failed");
     expect(snapshot.error).toContain('unknown workflow "removed-by-redeploy"');
+    engine.close();
+  });
+
+  test("drains a backlog larger than one due query, in one call", async () => {
+    // `MAX_DUE_RUNS` bounds one QUERY, not the backlog. A single batch made
+    // recovery depend on how often the agent happens to boot — 100 runs abandoned
+    // by a redeploy needed five boots — and `runDue` answered 20, so nothing
+    // reported the other 80.
+    const body = vi.fn(() => "done");
+    const { engine, store } = makeEngine({ orphan: workflow({ run: body }) });
+    const backlog = MAX_DUE_RUNS * 2 + 3;
+    for (let i = 0; i < backlog; i++) {
+      await store.create(`stranded-${i}`, "orphan", null);
+      const run = store.row(`stranded-${i}`);
+      run.status = "running";
+      run.leaseUntil = Date.now() - 1;
+    }
+
+    expect(await engine.runDue()).toBe(backlog);
+    await drain();
+
+    expect(body).toHaveBeenCalledTimes(backlog);
+    for (let i = 0; i < backlog; i++) {
+      expect(asStatus(await engine.get(`stranded-${i}`), "completed").output).toBe("done");
+    }
+    engine.close();
+  });
+
+  test("stops sweeping once a batch comes back short", async () => {
+    // The loop's terminating condition is a SHORT batch, so a drained queue costs
+    // exactly one extra query rather than `MAX_DUE_SWEEPS` of them.
+    const { engine, store } = makeEngine({ orphan: workflow({ run: () => "done" }) });
+    await store.create("only-one", "orphan", null);
+    store.row("only-one").status = "pending";
+    const due = vi.spyOn(store, "due");
+
+    expect(await engine.runDue()).toBe(1);
+
+    expect(due).toHaveBeenCalledTimes(1);
     engine.close();
   });
 

@@ -39,11 +39,18 @@ const HARD_LIMIT = 150_000;
 /** 20% under the hard limit — headroom for the next section. */
 const BUDGET = 120_000;
 
-// Four globs rather than one brace pattern, so a miss is obvious: the root
+// Five globs rather than one brace pattern, so a miss is obvious: the root
 // guide, one per workspace package, the directory-scoped guides one level
 // inside a package (`packages/aai/host/CLAUDE.md` — what a package guide splits
-// into when it reaches the cap), and the scaffold guide shipped to users. The
-// last two overlap on the scaffold's own key, which the object spread dedupes.
+// into when it reaches the cap), the scaffold guide shipped to users, and
+// repo-root directory guides (`supabase/CLAUDE.md`, which aai-server's guide
+// split into for the same reason). The middle two overlap on the scaffold's own
+// key, which the object spread dedupes.
+//
+// The last glob is deliberately not `../../*/CLAUDE.md`-only-in-theory: a guide
+// outside the gate is a guide that grows past 150k unnoticed, which is the exact
+// failure this file exists to prevent, so a section moved OUT of a package has to
+// land somewhere still discovered.
 // `import.meta.glob` is a compile-time transform, so every argument has to be
 // a literal — the options object cannot be hoisted into a shared constant.
 const guides: Record<string, string> = {
@@ -51,6 +58,7 @@ const guides: Record<string, string> = {
   ...import.meta.glob("../*/CLAUDE.md", { query: "?raw", import: "default", eager: true }),
   ...import.meta.glob("../*/*/CLAUDE.md", { query: "?raw", import: "default", eager: true }),
   ...import.meta.glob("../*/scaffold/CLAUDE.md", { query: "?raw", import: "default", eager: true }),
+  ...import.meta.glob("../../*/CLAUDE.md", { query: "?raw", import: "default", eager: true }),
 };
 
 /**
@@ -84,6 +92,10 @@ describe("CLAUDE.md size", () => {
     expect(entries.map((e) => e.path)).toContain("packages/aai-templates/CLAUDE.md");
     // A guide nested inside a package, which the one-level glob cannot see.
     expect(entries.map((e) => e.path)).toContain("packages/aai/host/CLAUDE.md");
+    // A guide OUTSIDE `packages/` — what aai-server's split into when it hit the
+    // cap. A section moved somewhere the globs miss is a section that grows past
+    // 150k unnoticed, which is the failure this file exists to prevent.
+    expect(entries.map((e) => e.path)).toContain("supabase/CLAUDE.md");
     expect(entries.length).toBeGreaterThanOrEqual(10);
   });
 

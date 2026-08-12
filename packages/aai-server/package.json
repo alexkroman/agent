@@ -65,6 +65,7 @@
     "./sandbox-directory": "./sandbox-directory.ts",
     "./sandbox-vm": "./sandbox-vm.ts",
     "./teardown-sandboxes": "./teardown-sandboxes.ts",
+    "./workflow-wake": "./workflow-wake.ts",
     "./rpc-schemas": "./rpc-schemas.ts",
     "./schemas": "./schemas.ts",
     "./slug-generate": "./slug-generate.ts",

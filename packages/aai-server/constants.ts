@@ -267,3 +267,60 @@ export const MAX_PLATFORM_DB_CONNECTIONS = 80;
 export function platformDbConnectionsPerReplica(extraAppDbTargets = 0): number {
   return ADMIN_POOL_MAX + SLUG_LOCK_POOL_MAX + extraAppDbTargets * APP_DB_TARGET_POOL_MAX;
 }
+
+/**
+ * How often the workflow wake sweep looks for agents with a run come due
+ * (`workflow-wake.ts`).
+ *
+ * This is the LATENESS an author sees on a `ctx.sleep` longer than the engine's
+ * in-process wake timer: the run resumes within one tick of its wake time rather
+ * than at it. Half a minute is chosen against what the sweep costs — one catalog
+ * query plus one union query per app-database cluster, both indexed — and against
+ * what it replaces, which was "whenever somebody next visits the agent".
+ *
+ * Override with `WORKFLOW_WAKE_POLL_MS`; `0` disables the sweep, which is what
+ * local dev wants (a subprocess guest is already running).
+ */
+export const WORKFLOW_WAKE_POLL_MS = envMs(process.env.WORKFLOW_WAKE_POLL_MS, 30_000);
+
+/**
+ * Agents one wake tick considers.
+ *
+ * A bound on the candidate ENUMERATION, not on the fleet: slugs come back in a
+ * stable order (`order by slug`), so a fleet past this is swept across ticks
+ * rather than partially forever. Raise it before the fleet approaches it — a
+ * candidate that never makes the window is an agent whose runs never resume.
+ */
+export const MAX_WAKE_CANDIDATE_SLUGS = 500;
+
+/**
+ * Agents one tick will BOOT.
+ *
+ * The sweep's only expensive act is starting sandboxes, and a redeploy that
+ * abandons runs across many agents would otherwise ask for all of them at once.
+ * The rest are picked up next tick; a durable run's only cost for waiting is
+ * lateness.
+ */
+export const MAX_WAKE_PER_TICK = 5;
+
+/**
+ * How long an uploaded workflow blob survives without a run consuming it.
+ *
+ * Mirrors the SDK's own `WORKFLOW_BLOB_TTL_MS` — the sweep counts an expired blob
+ * as a reason to wake an agent, because `runDue()` is what prunes them and it only
+ * runs at boot. Kept as a separate constant rather than imported so the platform
+ * does not take a value-level dependency on the SDK's host module for one number;
+ * `workflow-wake.test.ts` pins that the two agree.
+ */
+export const WORKFLOW_BLOB_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Deadline on one wake request (`workflow-wake.ts`).
+ *
+ * It is a loopback `GET /:slug/workflows`, which BROKERS — so the budget has to
+ * clear a cold sandbox boot, not a proxy hop. Sized against
+ * `BROKER_READY_TIMEOUT_MS` rather than against the request: a wake that gives up
+ * early has still started the boot, and the next tick finds the run either
+ * running or still due.
+ */
+export const WAKE_REQUEST_TIMEOUT_MS = envMs(process.env.WAKE_REQUEST_TIMEOUT_MS, 120_000);

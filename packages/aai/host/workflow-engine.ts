@@ -17,9 +17,12 @@
  * What this deliberately does NOT do is keep the process alive for a sleeping
  * run. A wake timer only fires while this host lives; anything longer than
  * {@link MAX_WAKE_TIMER_MS} — or anything at all after the sandbox exits — is
- * recovered by `runDue()` on the next boot. Waking an idle sandbox to serve a
- * due run is the platform's job and is not wired yet; see "Durable workflows"
- * in `packages/aai/CLAUDE.md`.
+ * recovered by `runDue()` on the next boot. **Booting the sandbox at the right
+ * moment is the platform's job, and it is wired**: `aai-server/workflow-wake.ts`
+ * sweeps for agents whose journal has a due run and brokers them, so a long
+ * `ctx.sleep` resumes within a tick of its wake time rather than whenever someone
+ * next visits the agent. Self-hosted `createServer` has no such sweep, so there a
+ * long sleep still waits for the next boot.
  */
 
 import type { Db } from "../sdk/db.ts";
@@ -52,8 +55,19 @@ export const WORKFLOW_LEASE_MS = 120_000;
 /** Longest in-process wake timer; past this, recovery is `runDue()`'s job. */
 export const MAX_WAKE_TIMER_MS = 60_000;
 
-/** Runs one `runDue()` sweep may execute, bounding a cold start's fan-out. */
+/** Runs one `due()` query may return, bounding a cold start's fan-out. */
 export const MAX_DUE_RUNS = 20;
+
+/**
+ * Batches one `runDue()` may drain — `MAX_DUE_RUNS` × this is the ceiling on
+ * runs recovered per boot.
+ *
+ * A BACKSTOP rather than the mechanism: the loop stops on the first short batch,
+ * and every run it claims leaves `due()`'s predicate, so a healthy store drains
+ * to empty well inside this. It exists so a store that misreports (a `due()` that
+ * keeps returning a run nothing can claim) cannot spin the sweep forever.
+ */
+export const MAX_DUE_SWEEPS = 25;
 
 /**
  * Clamp a caller's `limit` into range.
@@ -330,6 +344,38 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
     await store.fail(runId, message);
   }
 
+  /**
+   * Execute every due run, in batches, and resolve how many.
+   *
+   * Batched because `MAX_DUE_RUNS` bounds one QUERY and not the backlog. It used
+   * to be a single batch, which silently made recovery depend on how often the
+   * agent happens to boot: 100 runs abandoned by a redeploy needed five boots to
+   * finish, and `runDue` answered 20, so nothing reported the other 80.
+   *
+   * PROGRESS is what makes this terminate, not the cap. Every id the loop claims
+   * leaves `due()`'s predicate before the next query, whichever way it goes —
+   * completed and failed are terminal, a suspended run's `wake_at` moves into the
+   * future, and one abandoned mid-step holds a fresh lease. A run that cannot be
+   * claimed at all belongs to another executor and is not ours to drain. So
+   * `MAX_DUE_SWEEPS` is a backstop against a store that misreports rather than the
+   * mechanism.
+   */
+  async function drainDueRuns(): Promise<number> {
+    let total = 0;
+    for (let sweep = 0; sweep < MAX_DUE_SWEEPS; sweep++) {
+      if (shutdown.aborted) break;
+      const ids = await store.due(MAX_DUE_RUNS);
+      if (ids.length === 0) break;
+      // Sequential: a cold start recovering a backlog should not open a
+      // connection per run against a pool of four.
+      for (const id of ids) await execute(id);
+      total += ids.length;
+      // A short batch means the queue is drained; only a FULL one implies more.
+      if (ids.length < MAX_DUE_RUNS) break;
+    }
+    return total;
+  }
+
   /** Validate `input` against the workflow's schema, if it declared one. */
   async function validate(name: string, def: WorkflowDef, input: unknown): Promise<unknown> {
     if (!def.input) return input;
@@ -429,7 +475,6 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
     async runDue(): Promise<number> {
       if (Object.keys(workflows).length === 0) return 0;
       await ensureTables();
-      const ids = await store.due(MAX_DUE_RUNS);
       // Abandoned uploads are swept here rather than on a timer of their own:
       // boot is already the moment this engine reconciles what the last life of
       // the app left behind, and a sweep that only runs on a timer never runs
@@ -438,10 +483,7 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
       await store.pruneBlobs(WORKFLOW_BLOB_TTL_MS).catch((err: unknown) => {
         logger.error("workflow blob prune failed", { error: errorMessage(err) });
       });
-      // Sequential: a cold start recovering a backlog should not open a
-      // connection per run against a pool of four.
-      for (const id of ids) await execute(id);
-      return ids.length;
+      return await drainDueRuns();
     },
 
     close(): void {

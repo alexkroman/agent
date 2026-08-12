@@ -383,6 +383,7 @@ rather than here:
 | `packages/aai-studio-server/CLAUDE.md` | Browser studio: workspaces, coding agent, previews, Publish, LLM selection, studio evals |
 | `packages/aai-studio-client/CLAUDE.md` | Studio front-end: panes, composer queue, CSP, preview probing |
 | `packages/aai-templates/CLAUDE.md` | Templates + scaffold packaging. Note `scaffold/CLAUDE.md` is a product artifact, not repo docs |
+| `supabase/CLAUDE.md` | The platform's Supabase project: where we diverge from Supabase's own recommendations, and the settings the code depends on but cannot assert. The one guide outside `packages/` — it sits with the migrations it constrains |
 
 ## Conventions
 

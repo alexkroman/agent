@@ -11,7 +11,7 @@
 
 import type { Context } from "hono";
 import type { ApiKeyVerifier } from "./api-key-verify.ts";
-import type { AppDatabases } from "./app-database.ts";
+import type { AppDatabases, AppDbTarget } from "./app-database.ts";
 import type { SlugMutationLock } from "./platform-lock.ts";
 import type { SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
@@ -33,6 +33,12 @@ export type HonoEnv = {
     secrets: SecretStore;
     /** Per-app database provisioning. Absent when SUPABASE_DB_URL is unset. */
     appDb?: AppDatabases;
+    /**
+     * Every configured app-database cluster — the workflow wake sweep's only
+     * route to "which schemas on this cluster have work". Absent with no
+     * platform database, exactly like `appDb`.
+     */
+    appDbTargets?: readonly AppDbTarget[];
     /**
      * Serializes per-slug mutations (deploy/delete/secret/storage). Postgres
      * lease in production so replicas exclude each other; in-process in dev.

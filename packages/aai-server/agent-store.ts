@@ -57,6 +57,20 @@ export type AgentRows = {
   delete(slug: string): Promise<void>;
   /** Current version, or null when the agent does not exist (deleted). */
   getVersion(slug: string): Promise<number | null>;
+  /**
+   * Every deployed slug, oldest first, bounded by `limit`.
+   *
+   * For the workflow wake sweep (`workflow-wake.ts`), which has to turn "some
+   * app has a run due" into "boot that app" without reading tenant data to find
+   * the candidates. Slugs are the platform's own record; the schema name is
+   * derived from one (`appDbIdentifier`), so this is the enumeration that makes a
+   * schema-scoped journal query possible at all — the identifier is a one-way
+   * hash, so the reverse direction does not exist.
+   *
+   * Oldest first so a fleet larger than `limit` is swept in a stable order rather
+   * than a shuffling window.
+   */
+  listSlugs(limit: number): Promise<string[]>;
 };
 
 const TABLE = "aai_platform.agents";
@@ -89,6 +103,8 @@ function jsonColumn(value: unknown): unknown {
 }
 
 /** Postgres-backed agent rows over the platform admin connection. */
+const LIST_SLUGS_SQL = `select slug from ${TABLE} order by slug limit $1`;
+
 export function createPgAgentRows(sql: SqlExec): AgentRows {
   return {
     async get(slug) {
@@ -135,6 +151,11 @@ export function createPgAgentRows(sql: SqlExec): AgentRows {
       const raw = rows[0]?.version;
       return raw == null ? null : Number(raw);
     },
+
+    async listSlugs(limit) {
+      const rows = await sql(LIST_SLUGS_SQL, [limit]);
+      return rows.map((row) => String(row.slug));
+    },
   };
 }
 
@@ -165,6 +186,11 @@ export function createMemoryAgentRows(): AgentRows {
     },
     getVersion(slug) {
       return Promise.resolve(rows.get(slug)?.version ?? null);
+    },
+    listSlugs(limit) {
+      // Sorted, matching the Postgres `order by slug` — a Map's insertion order
+      // would make the fake's window shuffle where the real one is stable.
+      return Promise.resolve([...rows.keys()].sort().slice(0, limit));
     },
   };
 }

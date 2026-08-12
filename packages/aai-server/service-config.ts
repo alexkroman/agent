@@ -87,6 +87,16 @@ export type ServiceConfig = OrchestratorOpts & {
   workspaces: WorkspaceStore;
   chats: ChatStore;
   /**
+   * The deploy records, for the workflow WAKE SWEEP.
+   *
+   * Alongside `workspaces`/`chats` and deliberately not in `HonoEnv`: no route
+   * reads it (the bundle store already wraps it for the ones that do), and the one
+   * service-level consumer is `startWorkflowWakeSweep`, which needs to enumerate
+   * slugs to derive their journal schemas — see `workflow-wake.ts` for why the
+   * candidate set cannot come from anywhere else.
+   */
+  agents: AgentRows;
+  /**
    * Cross-replica change notifications: Supabase Realtime in production,
    * an in-process emitter paired with the memory stores in dev/tests. The
    * entries wire it into sandbox invalidation (`watchAgentInvalidation`)
@@ -224,6 +234,16 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   /** Change notifications — see ServiceConfig.events. */
   events: PlatformEvents;
   appDb?: AppDatabases;
+  /**
+   * Every configured app-database cluster, for the workflow wake sweep.
+   *
+   * `createAppDatabases` keeps its own target list private (nothing else needs
+   * to know where an app is placed — the app's own locator answers that), but the
+   * sweep asks a question no single app can answer: which schemas on THIS cluster
+   * have work. So the list is surfaced here rather than reconstructed, which would
+   * be a second copy of the placement configuration.
+   */
+  appDbTargets?: readonly AppDbTarget[];
   /** Cross-replica slug mutation lock; in-process without a platform db. */
   slugLock: SlugMutationLock;
   /** Platform admin SQL executor (production only) — see ServiceConfig.sql. */
@@ -263,6 +283,7 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
         sql: exec,
         extraTargets: parseExtraAppDbTargets(env.APP_DB_URLS),
       }),
+      appDbTargets: [{ url, sql: exec }, ...parseExtraAppDbTargets(env.APP_DB_URLS)],
       slugLock: localSlugLock,
     };
   }
@@ -288,6 +309,7 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
       // app-db:<slug> locator, so agent code never notices placement.
       extraTargets: parseExtraAppDbTargets(env.APP_DB_URLS),
     }),
+    appDbTargets: [{ url, sql: exec }, ...parseExtraAppDbTargets(env.APP_DB_URLS)],
     // Cross-request coordination lives in Postgres too, so any replica (and
     // either service) can serve any request: per-slug mutation exclusion
     // survives replica restarts and scale-out. (Cross-replica sandbox
@@ -317,7 +339,8 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
     assertServiceRoleKey(env.SUPABASE_SERVICE_ROLE_KEY);
   }
   const storage = buildStorage(env);
-  const { secrets, agents, workspaces, chats, events, appDb, slugLock, sql } = buildPlatformDb(env);
+  const { secrets, agents, workspaces, chats, events, appDb, appDbTargets, slugLock, sql } =
+    buildPlatformDb(env);
   const slots = createSlotCache();
   // Per-process, not per-host: Modal can run several containers of the same
   // app anywhere, and two of them sharing an identity is exactly the failure
@@ -346,6 +369,7 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
   const keyVerifier = createApiKeyVerifierFromEnv(env, { localDev: isLocalDev(env) });
   return {
     slots,
+    agents,
     // Blob storage serves deploy artifacts only (content-addressed worker +
     // client-file blobs); the deploy records live in the agents table and
     // studio workspaces/chats in Postgres via `workspaces`/`chats`.
@@ -359,6 +383,7 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
     slugLock,
     replicaId,
     ...(appDb && { appDb }),
+    ...(appDbTargets && { appDbTargets }),
     ...(sql && { sql }),
     ...(directory && { directory }),
   };
