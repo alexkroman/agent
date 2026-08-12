@@ -20,6 +20,7 @@
     "@alexkroman1/aai-ui": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^6.0.4",
+    "@workflow/world-postgres": "4.3.3",
     "ai": "^7.0.41",
     "diff": "^9.0.0",
     "p-timeout": "^7.0.1",

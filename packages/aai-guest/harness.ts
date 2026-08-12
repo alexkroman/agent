@@ -97,6 +97,7 @@ import type {
   JsonRpcResponse,
 } from "./harness-types.ts";
 import { handleWorkflowRequest } from "./harness-workflow.ts";
+import { configureWorkflowWorld, startWorkflowWorldIfDeclared } from "./harness-world.ts";
 import {
   AGENT_IDLE_EXIT_MS,
   AGENT_IDLE_POLL_MS,
@@ -271,7 +272,20 @@ async function mainAgent(port: number, host: string, token: string): Promise<voi
   });
 
   const boot = await readAgentBoot();
+
+  // BEFORE the bundle loads: `loadBundle` builds the workflow surface, which
+  // imports `workflow/runtime`, which resolves and CACHES a world from the
+  // environment. Configured after, a production guest would silently take the
+  // local world and write runs into a container about to be destroyed.
+  const world = configureWorkflowWorld({ databaseUrl: boot.env.DATABASE_URL, port });
+
   await loadBundle(state, { code: boot.code, env: boot.env });
+
+  // Gated on the bundle actually declaring workflows: migrating and subscribing
+  // a queue are both expensive and most agents have none. A failure is logged
+  // rather than thrown — the session surface is unaffected, and an agent whose
+  // workflows are broken should still answer the phone.
+  await startWorkflowWorldIfDeclared(state.workflows !== null, world);
 
   // A draining guest is detached from the broker, but a client holding its
   // old sessionUrl can still dial the tunnel directly — refuse with a "try
