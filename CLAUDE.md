@@ -142,11 +142,21 @@ cache restored every dependency's `dist`, and when that assumption fails the
 suite dies on a missing built artifact rather than rebuilding one.
 
 `pnpm check:local` uses the same script with `--local` flag, running a
-subset: build, typecheck, lint, publint, syncpack, sherif, knip, test —
-all in one turbo call with `--continue` (shows all failures at once).
+subset: build, typecheck, lint, publint, syncpack, sherif, knip,
+test:coverage — all in one turbo call with `--continue` (shows all failures
+at once). It ends by NAMING the gates it did not run (`check:attw`,
+`check:markdown`, `check:integration`, `check:e2e`, `docs`), because a green
+subset otherwise reads as a green branch and those are the failures hardest
+to predict from a diff.
+
+**Both modes run `test:coverage`, not `test`** — see the coverage ratchet
+below: the floors are what CI's test matrix gates on, so running plain `test`
+locally made a floor failure invisible until CI. It costs almost nothing
+(measured on aai-ui: 17.0s → 17.9s).
 
 `pnpm check:affected` uses turbo's `--affected` flag to only run tasks
-for packages changed since the default branch.
+for packages changed since the default branch (also `test:coverage`, same
+reason); `pnpm test:coverage:affected` is the coverage half on its own.
 
 ### Quality ratchets
 
@@ -282,6 +292,15 @@ evaluates the root `vitest.config.ts` thresholds. The only thing that does is
 a direct `pnpm vitest run --coverage` at the root. Keep them anyway: it is the
 only floor that sees the repo as one program. Just don't read them as the
 gate — they had drifted ~4 points under an actual nobody had measured.
+
+**And the floors are measured locally now, because for a long time they were
+not.** `scripts/check.sh` ran `test`, CI's matrix runs `test:coverage`, so the
+one gate a PR could not see coming was its own coverage: every suite green
+locally, `test (<pkg>)` red in CI. It happened — a new 300-line module in
+aai-ui landed at 1.44% line and 0% branch coverage, took the package under all
+four of its floors, and cost a whole follow-up commit to fix. Floors do not
+move to accommodate a PR, so the earlier that is known the cheaper it is. Both
+`check.sh` modes and `check:affected` run `test:coverage` now.
 
 ## Architecture
 

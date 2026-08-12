@@ -74,11 +74,21 @@ if [ "$MODE" = "--local" ]; then
   # dependency orphaned by a deletion. That failure mode is invisible while
   # you work (you are thinking about what to remove, not what removal
   # strands) and expensive to discover at push time.
+  #
+  # `test:coverage` rather than `test`, because CI's test matrix runs
+  # test:coverage and the per-package floors in each vitest.config.ts are what
+  # it gates on. Running plain `test` here made a coverage-floor failure
+  # STRUCTURALLY invisible until CI: a new module can be green in every suite
+  # and still take its package under a floor, which is a red `test (<pkg>)`
+  # against an all-passing local run — the same green-locally/red-in-CI shape
+  # this repo has already been bitten by twice (the root tsconfig missing from
+  # turbo's inputs, and snapshot `update: "none"`). It is close to free:
+  # measured on aai-ui, 17.0s → 17.9s.
   if ! pnpm exec turbo run \
     build typecheck lint check:publint \
     check:syncpack check:sherif check:knip \
     lint:scripts \
-    test \
+    test:coverage \
     --continue; then
     echo -e "\n${RED}Some checks failed.${NC}"
     exit 1
@@ -90,13 +100,26 @@ if [ "$MODE" = "--local" ]; then
   # the same ordering applies.
   pnpm run check:template-types || exit 1
   pnpm run check:doc-examples || exit 1
+  # Say what this run did NOT cover. `--local` is a subset by design, but a
+  # green subset reads as a green branch — and the gates left out are exactly
+  # the ones whose failures are hardest to guess from a diff (a broken
+  # `{@link}` fails `docs`, which treats warnings as errors; a route that only
+  # exists under `aai dev` fails `check:integration`). Naming them is the
+  # difference between choosing to skip a gate and forgetting it exists.
+  echo -e "\n${YELLOW}Not run by --local (CI will):${NC}"
+  echo "  check:attw          published export types"
+  echo "  check:markdown      markdownlint over every .md"
+  echo "  check:integration   real subsystems — HTTP, WebSockets, Postgres (pnpm test:pg)"
+  echo "  check:e2e           full process spawn + Playwright"
+  echo "  docs                TypeDoc, with treatWarningsAsErrors"
+  echo -e "  Run \`pnpm check\` for all of them.\n"
 else
   echo -e "\n${YELLOW}Running full CI checks (via turbo)${NC}"
   if ! pnpm exec turbo run \
     build typecheck lint check:publint check:attw \
     check:syncpack check:sherif check:knip check:markdown \
     lint:scripts \
-    test check:integration docs \
+    test:coverage check:integration docs \
     --continue; then
     echo -e "\n${RED}Some checks failed.${NC}"
     exit 1
