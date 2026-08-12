@@ -19,6 +19,30 @@
  *
  * Inspired by the 500-line gate in AssemblyAI/cli's scripts/check.sh.
  *
+ * ## It also reports HEADROOM, which is the half that changes behaviour
+ *
+ * A pass/fail gate tells you about a file you have already grown, and by then
+ * the split is a detour: you are deep in a feature, the seam has to be found
+ * under time pressure, and the diff that lands mixes a refactor into a change
+ * that was about something else. That is not hypothetical here — several
+ * branches have carried "moved X into its own module to stay under the cap" as
+ * an afterthought commit, and the repo's guides record the splits as forced.
+ *
+ * The fix is to say it EARLY. Two additions:
+ *
+ * - Every run prints the files closest to their cap (`--top N`, default 10),
+ *   with the lines remaining. On a repo where files sit AT the cap, that is
+ *   the difference between planning a split and discovering one.
+ * - `--staged` measures only what is staged and never fails, for the
+ *   pre-commit hook: it is a nudge while the file is still open, not a gate.
+ *   The gate is `pnpm check` at push time.
+ *
+ * `--json` prints the same measurements as data, for anything that wants to
+ * plan against them (a split list, a report) rather than read the table.
+ * `packages/aai-templates/file-length-gate.test.ts` is the spec for the parts
+ * that fail quietly: an advisory report goes nothing-red when it stops
+ * selecting files, and a deleted hook line is invisible.
+ *
  * Wired up as `pnpm check:file-length`.
  */
 
@@ -31,6 +55,26 @@ const ROOT = new URL("..", import.meta.url).pathname;
 // Caps. Tests get more headroom — exhaustive cases legitimately run long.
 const SOURCE_MAX = 500;
 const TEST_MAX = 700;
+
+/**
+ * A file at or past this fraction of its cap is reported as approaching it.
+ * 0.9 leaves 50 lines of warning on a source file and 70 on a test — roughly
+ * one function's worth, which is the scale at which "split this next" is still
+ * a cheap decision.
+ */
+const WARN_RATIO = 0.9;
+
+const args = process.argv.slice(2);
+const flag = (name) => args.includes(name);
+const STAGED = flag("--staged");
+const JSON_OUT = flag("--json");
+const ALL = flag("--all");
+const TOP = (() => {
+  const at = args.indexOf("--top");
+  if (at === -1) return 10;
+  const n = Number(args[at + 1]);
+  return Number.isInteger(n) && n > 0 ? n : 10;
+})();
 
 let allowlist;
 try {
@@ -48,11 +92,21 @@ const isExempt = (path) => path.startsWith("packages/aai-templates/templates/");
 /** Count lines the way `wc -l` does: one per newline, ignoring a trailing newline. */
 const countLines = (text) => text.split("\n").length - (text.endsWith("\n") ? 1 : 0);
 
-// `--others --exclude-standard` includes new, not-yet-committed files (but
-// not gitignored ones) so a freshly-added oversized file is caught too.
-const files = execFileSync(
-  "git",
-  [
+const git = (gitArgs) =>
+  execFileSync("git", gitArgs, { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
+    .split("\n")
+    .filter(Boolean);
+
+/** Only the file kinds this gate measures — the globs below in predicate form. */
+const isMeasured = (path) =>
+  (/^packages\/.*\.tsx?$/.test(path) || /^scripts\/.*\.(mjs|ts)$/.test(path)) &&
+  !path.includes("/dist/") &&
+  !isExempt(path);
+
+const listAll = () =>
+  // `--others --exclude-standard` includes new, not-yet-committed files (but
+  // not gitignored ones) so a freshly-added oversized file is caught too.
+  git([
     "ls-files",
     "--cached",
     "--others",
@@ -64,15 +118,20 @@ const files = execFileSync(
     // unreviewed 900-line harness hides, and two of them were exactly that.
     "scripts/**/*.mjs",
     "scripts/**/*.ts",
-  ],
-  { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
-)
-  .split("\n")
-  .filter((p) => p.length > 0 && !p.includes("/dist/") && !isExempt(p));
+  ]).filter((p) => !(p.includes("/dist/") || isExempt(p)));
+
+// Staged-only mode measures what this commit is about to record. `ACM` drops
+// deletions and renames-away, which have nothing on disk to measure.
+const listStaged = () =>
+  git(["diff", "--cached", "--name-only", "--diff-filter=ACM"]).filter(isMeasured);
+
+const files = [...new Set(STAGED ? listStaged() : listAll())].sort();
 
 const violations = [];
 const staleAllowlist = [];
 const seen = new Set();
+/** Every measured file: `{ path, lines, cap, ceiling, remaining }`. */
+const measured = [];
 
 for (const path of files) {
   let text;
@@ -86,10 +145,13 @@ for (const path of files) {
   }
   const lines = countLines(text);
   const cap = isTest(path) ? TEST_MAX : SOURCE_MAX;
+  // A grandfathered file's own ceiling is the line it may not cross, so that
+  // is the number its headroom is measured against.
+  const ceiling = path in allowlist ? allowlist[path] : cap;
+  measured.push({ path, lines, cap, ceiling, remaining: ceiling - lines });
 
   if (path in allowlist) {
     seen.add(path);
-    const ceiling = allowlist[path];
     if (lines > ceiling) {
       violations.push(
         `${path}: ${lines} lines exceeds its grandfathered ceiling of ${ceiling}. ` +
@@ -112,14 +174,73 @@ for (const path of files) {
   }
 }
 
-// Flag allowlist entries that no longer point at a real file.
-for (const path of Object.keys(allowlist)) {
-  if (path.startsWith("_")) continue;
-  if (!seen.has(path)) {
-    staleAllowlist.push(
-      `${path}: listed in file-length-allowlist.json but not found — remove the stale entry.`,
+// Flag allowlist entries that no longer point at a real file. Skipped in
+// staged mode, which measures a SUBSET: an entry for a file this commit does
+// not touch is not stale, it is simply not in scope.
+if (!STAGED) {
+  for (const path of Object.keys(allowlist)) {
+    if (path.startsWith("_")) continue;
+    if (!seen.has(path)) {
+      staleAllowlist.push(
+        `${path}: listed in file-length-allowlist.json but not found — remove the stale entry.`,
+      );
+    }
+  }
+}
+
+/** Files at or past WARN_RATIO of their own ceiling, tightest headroom first. */
+const nearCap = measured
+  .filter((m) => m.lines >= Math.floor(m.ceiling * WARN_RATIO) && m.remaining >= 0)
+  .sort((a, b) => a.remaining - b.remaining || a.path.localeCompare(b.path));
+
+if (JSON_OUT) {
+  console.log(
+    JSON.stringify(
+      {
+        caps: { source: SOURCE_MAX, test: TEST_MAX },
+        warnRatio: WARN_RATIO,
+        staged: STAGED,
+        counts: { measured: measured.length, nearCap: nearCap.length },
+        violations,
+        staleAllowlist,
+        nearCap: ALL ? nearCap : nearCap.slice(0, TOP),
+      },
+      null,
+      2,
+    ),
+  );
+  process.exit(violations.length > 0 || staleAllowlist.length > 0 ? 1 : 0);
+}
+
+/**
+ * The headroom report. Printed on success as well as failure, because its
+ * whole job is to be read BEFORE a file needs splitting: a file with 3 lines
+ * left is one that the next feature will have to split, and knowing that at
+ * the start of the change is what makes the split land as its own commit.
+ */
+function reportNearCap() {
+  if (nearCap.length === 0) return;
+  const shown = ALL ? nearCap : nearCap.slice(0, TOP);
+  const pct = (m) => Math.round((m.lines / m.ceiling) * 100);
+  const widest = Math.max(...shown.map((m) => m.path.length));
+  const scope = STAGED ? "staged file(s)" : "file(s)";
+  console.log(
+    `\ncheck-file-length: ${nearCap.length} ${scope} within ${Math.round((1 - WARN_RATIO) * 100)}% of the cap:\n`,
+  );
+  for (const m of shown) {
+    const left = m.remaining === 0 ? "AT THE CAP" : `${m.remaining} line(s) left`;
+    console.log(
+      `  ${m.path.padEnd(widest)}  ${String(m.lines).padStart(4)}/${m.ceiling}  ${String(pct(m)).padStart(3)}%  ${left}`,
     );
   }
+  if (!ALL && nearCap.length > shown.length) {
+    console.log(`  … and ${nearCap.length - shown.length} more (--all, or --top N)`);
+  }
+  console.log(
+    "\nPlan the split now rather than at the cap: pick the seam the file already\n" +
+      "has (a section banner, a leaf type, one exported group) and move it out in\n" +
+      "its own commit, before the change that would have forced it.\n",
+  );
 }
 
 if (violations.length > 0) {
@@ -128,6 +249,13 @@ if (violations.length > 0) {
   if (staleAllowlist.length > 0) {
     console.error("\ncheck-file-length: also tidy these allowlist entries:\n");
     for (const s of staleAllowlist) console.error(`  - ${s}`);
+  }
+  // Staged mode is a nudge, not a gate: it runs on every commit, and blocking
+  // a work-in-progress commit teaches `--no-verify`. `pnpm check` at push time
+  // is what enforces this.
+  if (STAGED) {
+    reportNearCap();
+    process.exit(0);
   }
   process.exit(1);
 }
@@ -138,4 +266,9 @@ if (staleAllowlist.length > 0) {
   process.exit(1);
 }
 
-console.log(`check-file-length: all files within caps (source ${SOURCE_MAX}, test ${TEST_MAX}). ✓`);
+if (!STAGED) {
+  console.log(
+    `check-file-length: all files within caps (source ${SOURCE_MAX}, test ${TEST_MAX}). ✓`,
+  );
+}
+reportNearCap();
