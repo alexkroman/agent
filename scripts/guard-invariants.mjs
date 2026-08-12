@@ -67,6 +67,12 @@
  *             or `slot.update` for the `ctx.state` case. The two parts that get
  *             missed are dropping the drained entry BY OWNERSHIP and resolving
  *             your own place in the chain when you abandon a timed-out acquire.
+ *   rule 11 — No hardcoded `/tmp` path in shipped source. On Windows `/tmp/x` is
+ *             DRIVE-RELATIVE and resolves to `D:\tmp\x`, which does not exist,
+ *             so the write fails with ENOENT. Use `join(tmpdir(), …)`. Two
+ *             shipped modules had it and both run on a developer's own machine
+ *             under `aai dev`. Baselined only for `modal-agent-sandbox.ts`,
+ *             whose paths name a location INSIDE the Linux sandbox.
  *   rule 10 — Every Markdown file under `research/` has YAML frontmatter with
  *             non-empty `issue` and `status` and an ISO `last_updated`.
  *             Research documents are implementation plans attached to tracked

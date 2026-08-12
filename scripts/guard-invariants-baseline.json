@@ -16,5 +16,8 @@
   },
   "rule8_handRolledOwnedMap": {
     "packages/aai-studio-server/studio-sse.ts": 1
+  },
+  "rule11_hardcodedTmp": {
+    "packages/aai-server/modal-agent-sandbox.ts": 2
   }
 }

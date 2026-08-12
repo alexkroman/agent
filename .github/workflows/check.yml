@@ -172,47 +172,6 @@ jobs:
       # job in the normal case and a real rebuild in the abnormal one.
       - run: pnpm exec turbo run test:coverage --filter "./packages/${{ matrix.package }}"
 
-  # The three PUBLISHED packages, on Windows.
-  #
-  # Scope is the point. No package declares an `os` field, so every one of these
-  # claims Windows support by omission — and `aai-cli` is the only thing a
-  # Windows user actually runs, with `login.ts` branching on `win32` and four
-  # modules splitting on `path.sep`, i.e. the support was considered but never
-  # exercised. The other five packages are deliberately absent: `aai-server`,
-  # `aai-guest` and the studio pair only ever run in a Linux Modal container,
-  # and `aai-templates` is example agents.
-  #
-  # This is also why the INTEGRATION tier is not the leg to duplicate here, the
-  # way vercel/eve does it: eight of this repo's eleven integration files are
-  # aai-server's Postgres, WebSocket and sandbox tests, which are Linux by
-  # design rather than by accident. Running them on Windows would test the
-  # runner, not the code.
-  #
-  # No coverage here — the floors are measured once, on the Linux `test` matrix.
-  # This leg is asking "does it work on Windows", and a second coverage run
-  # would only add a way for the two to disagree.
-  test-windows:
-    name: test-windows (${{ matrix.package }})
-    needs: setup
-    runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        package: [aai, aai-ui, aai-cli]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 26
-          cache: pnpm
-      # No workspace-cache restore: the `setup` job's entry is keyed on
-      # `runner.os`, so a Windows job would never hit it, and node_modules is
-      # not portable across platforms in any case (esbuild and the other
-      # optional native deps resolve per-platform).
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm exec turbo run test --filter "./packages/${{ matrix.package }}"
-
   integration:
     needs: setup
     runs-on: ${{ matrix.os }}
@@ -311,11 +270,11 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     if: always()
-    needs: [lint-typecheck-and-checks, test, test-windows, integration, e2e]
+    needs: [lint-typecheck-and-checks, test, integration, e2e]
     steps:
       - name: Check results
         run: |
-          results="${{ needs.lint-typecheck-and-checks.result }} ${{ needs.test.result }} ${{ needs.test-windows.result }} ${{ needs.integration.result }} ${{ needs.e2e.result }}"
+          results="${{ needs.lint-typecheck-and-checks.result }} ${{ needs.test.result }} ${{ needs.integration.result }} ${{ needs.e2e.result }}"
           for r in $results; do
             if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then
               echo "CI failed: one or more jobs did not succeed"

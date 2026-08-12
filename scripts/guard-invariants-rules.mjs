@@ -146,6 +146,28 @@ export const LINE_RULES = [
       "annotation or casts.",
   },
   {
+    id: 11,
+    key: "rule11_hardcodedTmp",
+    label: "hardcoded /tmp path",
+    // A `/tmp/...` string literal. `"` and a backtick both start one here.
+    re: '["`]/tmp/',
+    // SHIPPED source only. The hazard is a real filesystem write, and a spec
+    // handing `"/tmp/watched"` to a fake chokidar never touches the disk — eight
+    // files' worth of those made the first draft of this rule pure noise.
+    paths: [...SOURCE_PATHSPECS, ":!packages/**/*.test.ts", ":!packages/**/_*test-utils.ts"],
+    skipComments: true,
+    remedy:
+      "Use `join(tmpdir(), …)` from node:os + node:path.\n" +
+      "On Windows a bare `/tmp/x` is DRIVE-RELATIVE — it resolves to `D:\\tmp\\x`,\n" +
+      "which does not exist — so every write there fails with ENOENT. Two shipped\n" +
+      "modules had it (`workflow-serve.ts`, `harness-bundle.ts`) and both run on\n" +
+      "the developer's own machine under `aai dev`, not only in the Linux guest.\n" +
+      "Baseline an occurrence only when the path is INSIDE a container by\n" +
+      "construction — `modal-agent-sandbox.ts`'s remote paths name a location in\n" +
+      "the Linux sandbox, where `/tmp` is the correct literal and `tmpdir()` would\n" +
+      "wrongly describe the host.",
+  },
+  {
     id: 8,
     key: "rule8_handRolledOwnedMap",
     label: "hand-rolled owned-map eviction",

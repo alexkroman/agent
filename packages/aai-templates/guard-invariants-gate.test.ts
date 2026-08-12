@@ -113,6 +113,13 @@ const SAMPLES: Record<string, { matches: string[]; ignores: string[] }> = {
     matches: ["    const state = ctx.state as { count?: number };"],
     ignores: ["    const state = counterSlot.get(ctx);"],
   },
+  rule11_hardcodedTmp: {
+    matches: ["  const file = `/tmp/aai-bundle.mjs`;", '  harnessPath: "/tmp/harness.mjs",'],
+    ignores: [
+      "  const file = join(tmpdir(), name);",
+      '  const dir = mkdtempSync(join(os.tmpdir(), "aai-"));',
+    ],
+  },
   rule8_handRolledOwnedMap: {
     matches: ["      if (held.refs === 0 && entries.get(key) === held) entries.delete(key);"],
     ignores: ["      release();", "      if (map.get(key) === mine) return;"],

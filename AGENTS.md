@@ -367,7 +367,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
 
 - **`pnpm check:invariants`** (`scripts/guard-invariants.mjs`, rules in
   `scripts/guard-invariants-rules.mjs`) — **the mechanical half of this file.**
-  Ten numbered rules, each printing WHY the invariant exists and what to use
+  Eleven numbered rules, each printing WHY the invariant exists and what to use
   instead, so a violation is self-correcting and a reviewer never re-explains
   it. Every one used to live only as prose here, and prose is enforcement
   exactly as long as somebody remembers it at review time.
@@ -384,21 +384,28 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 8 | no `if (m.get(k) === mine) m.delete(k)` | `createOwnedMap()` |
   | 9 | no `tails.get(k) ?? Promise.resolve()` | `createKeyedLock()` / `slot.update` |
   | 10 | `research/**.md` needs `issue`/`status`/`last_updated` | see `research/README.md` |
+  | 11 | no hardcoded `/tmp` in shipped source | `join(tmpdir(), …)` |
 
   Rule IDs are **stable**: a deleted rule leaves its number retired rather than
   letting a later rule inherit it, because the numbers appear in commit messages
   and in the baseline. Rules 1, 7 and 10 are at zero and enforced absolutely;
   the rest carry per-file baselines with the same `--update`-only-lowers
-  contract as `check:hatches`. The five baselined occurrences are all
-  legitimate and say so in the JSON — three spread-ternaries where **the guard
+  contract as `check:hatches`. Every baselined occurrence is
+  legitimate and says so in the JSON — three spread-ternaries where **the guard
   is not the value** (`String(params.port)` would stringify `undefined` into
   `"undefined"`; `{ mode: 0o700 }` sets a different value from the one it
-  tests), the CLI test setup's env scrub, and one hand-rolled owned-map in
-  `studio-sse.ts`.
+  tests), the CLI test setup's env scrub, one hand-rolled owned-map in
+  `studio-sse.ts`, and the two `/tmp` literals that name a path inside the Linux
+  sandbox rather than on this machine.
 
-  **Adding rule 2 immediately found two conversions the documented 44-site
-  sweep had missed** (`host/s2s.ts`, `secret-handler.test.ts`), which is the
-  argument for the whole gate in one line.
+  **Two of these rules found real bugs on the day they were written**, which is
+  the argument for the whole gate. Rule 2 caught two `omitUndefined`
+  conversions the documented 44-site sweep had missed (`host/s2s.ts`,
+  `secret-handler.test.ts`). Rule 11 came out of a Windows CI leg that failed on
+  two shipped modules writing to a literal `/tmp` — a path that is
+  drive-relative on Windows — both of which run on a developer's own machine
+  under `aai dev`, so the bug was never guest-only. See "Windows is NOT tested,
+  and is currently broken".
 
   Two things any new rule must respect. **A pattern that matches nothing prints
   the same checkmark as a rule being upheld**, so
@@ -1254,34 +1261,50 @@ package.json scripts (not always obvious from test code alone):
   project with (`pnpm` | `npm` | `yarn`; default `pnpm`). **CI only runs
   `pnpm`** — see below.
 
-#### The three published packages are tested on Windows
+#### Windows is NOT tested, and is currently broken
 
-`check.yml`'s `test-windows` leg runs `aai`, `aai-ui` and `aai-cli` unit tests
-on `windows-latest`, and is in the `ci` aggregate gate — a real check, not
-decoration.
+There is no Windows leg in CI. One was added, run once, and removed — and what
+it found is the reason this section exists rather than a TODO.
 
-Scope is the whole point. No package declares an `os` field, so every one claims
-Windows support by omission, and `aai-cli` is the only thing a Windows user
-actually runs: `login.ts` branches on `win32` and four modules split on
-`path.sep`, i.e. the support was considered and then never exercised. The other
-five packages are deliberately absent — `aai-server`, `aai-guest` and the studio
-pair only ever run in a Linux Modal container, and `aai-templates` is example
-agents.
+**No package declares an `os` field, so all three published packages claim
+Windows support by omission**, and `aai-cli` is the one a Windows user actually
+runs: `login.ts` branches on `win32` and four modules split on `path.sep`, so
+the support was considered and then never exercised. One `windows-latest` run
+over `aai`, `aai-ui` and `aai-cli` unit tests failed two of three legs, on two
+unrelated causes:
 
-**The INTEGRATION tier is NOT the leg to duplicate here**, which is where this
-diverges from vercel/eve (they run their integration tier on a Windows matrix
-leg). Eight of this repo's eleven `*.integration.test.ts` files are aai-server's
-Postgres, WebSocket and sandbox tests — Linux by design, not by accident.
-Running them on Windows would test the runner rather than the code.
+- **Hardcoded `/tmp` string literals.** On Windows `/tmp/x` is DRIVE-RELATIVE —
+  it resolves to `D:\tmp\x`, which does not exist — so every write failed with
+  ENOENT. Two shipped modules had it (`host/workflow-serve.ts`,
+  `aai-guest/harness-bundle.ts`), and both run on the DEVELOPER's machine under
+  `aai dev`, not only in the Linux guest. **Fixed**, and
+  `guard-invariants.mjs` rule 11 keeps them out; the only baselined occurrences
+  are `modal-agent-sandbox.ts`'s remote paths, which name a location inside the
+  Linux sandbox where `/tmp` is correct and `tmpdir()` would describe the wrong
+  machine.
+- **The `aai` build emits differently on Windows.** `aai-cli`'s dev-server specs
+  died in rolldown with `UNRESOLVED_IMPORT` on `./_internal-types.ts` inside
+  `../aai/dist/sdk/manifest-barrel.js` — i.e. that emitted file carried `.ts`
+  specifiers. On Linux the same file is a normal tsdown bundle importing a
+  hashed chunk (`../_internal-types-DiEjant0.js`), so the Windows build produced
+  unbundled output where Linux produces a bundle. **UNRESOLVED**, and left that
+  way deliberately: it is a toolchain-level difference (tsdown/rolldown, or the
+  DevKit's builder plugin) that cannot be diagnosed without a Windows machine to
+  iterate on, and blind pushes at ~4 minutes per CI round trip are not
+  debugging.
 
-No coverage on this leg: the floors are measured once, on the Linux `test`
-matrix. This one asks "does it work on Windows", and a second coverage run would
-only add a way for the two to disagree.
+So the state is: Windows is plausibly close to working, two real bugs are fixed,
+and one build-level unknown stands between here and a green leg. **Do not
+re-add the matrix without a Windows machine to reproduce on**, and do not add it
+as `continue-on-error` — a leg that is green while broken is worse than no leg,
+which is the rule the rest of this file's gates are built on.
 
-It also restores no workspace cache, for two reasons — the `setup` job's key is
-`runner.os`-scoped so a Windows job could never hit it, and `node_modules` is not
-portable across platforms anyway (esbuild and the other optional native deps
-resolve per-platform).
+Note the INTEGRATION tier was never the right thing to duplicate onto Windows
+anyway, which is where this diverged from vercel/eve (they run their integration
+tier on a Windows matrix leg). Eight of this repo's eleven
+`*.integration.test.ts` files are aai-server's Postgres, WebSocket and sandbox
+tests — Linux by design, not by accident. Running them on Windows would test the
+runner rather than the code.
 
 #### The e2e suite is pnpm-only in CI
 

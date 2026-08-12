@@ -49,6 +49,8 @@
 
 import { writeFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { errorMessage } from "../sdk/utils.ts";
 
@@ -113,7 +115,13 @@ export async function loadWorkflowModule(
   code: string,
   label: string,
 ): Promise<Record<string, unknown>> {
-  const file = `/tmp/aai-${label}-${process.pid}-${++moduleSeq}.mjs`;
+  // `tmpdir()`, not a literal `/tmp`: on Windows that string is drive-relative
+  // and resolves to `D:\tmp`, which does not exist — every workflow load failed
+  // with ENOENT there. The DIRECTORY is not load-bearing (see "Why they cannot
+  // just go in /tmp" above: it is the specifier rewriting that makes the
+  // location irrelevant, and `tmpdir()` has no `node_modules` either), so this
+  // preserves the reasoning rather than working around it.
+  const file = join(tmpdir(), `aai-${label}-${process.pid}-${++moduleSeq}.mjs`);
   await writeFile(file, rewriteWorkflowImports(code), "utf-8");
   return (await import(pathToFileURL(file).href)) as Record<string, unknown>;
 }
