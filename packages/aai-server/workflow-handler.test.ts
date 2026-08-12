@@ -180,3 +180,83 @@ describe("handleAgentWorkflows", () => {
     expect(res.status).toBe(503);
   });
 });
+
+describe("method coverage and rate limiting", () => {
+  test("routes DELETE, so a page can cancel a run on a DEPLOYED agent", async () => {
+    // The route was registered for GET and POST only, so `api.cancel(runId)` — a
+    // DELETE — 404'd at the platform while the same page worked under `aai dev`,
+    // which serves the guest's routes directly. Every Stop button on a deployed
+    // agent was dead, and the guest's own route table had always answered it.
+    const slots = createSlotCache();
+    const seen: Forwarded[] = [];
+    const { fetch, store } = await createTestOrchestrator({
+      slots,
+      ...recordingGuest(seen, () => Response.json({ runId: "r1", cancelled: true })),
+    });
+    await seedResidentSandbox(fetch, store, slots, "my-agent");
+
+    const res = await fetch("/my-agent/workflows/runs/r1", { method: "DELETE" });
+
+    expect(res.status).toBe(200);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.method).toBe("DELETE");
+    expect(seen[0]?.url).toContain("/workflows/runs/r1");
+  });
+
+  test("refuses past the per-IP surface limit, WITHOUT brokering", async () => {
+    // Checked before the handler because brokering is the expensive part — it
+    // boots a sandbox. A limiter after it would bound the reply, not the work.
+    const slots = createSlotCache();
+    const seen: Forwarded[] = [];
+    const { fetch, store } = await createTestOrchestrator({
+      slots,
+      workflowRateLimiter: { check: () => Promise.resolve({ ok: false, retryAfterSeconds: 42 }) },
+      ...recordingGuest(seen, () => Response.json({ workflows: [] })),
+    });
+    await seedResidentSandbox(fetch, store, slots, "my-agent");
+
+    const res = await fetch("/my-agent/workflows");
+
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("42");
+    expect(seen).toEqual([]);
+  });
+
+  test("counts a run START against the tighter limit", async () => {
+    // A POST here queues work that outlives its request, so N POSTs buy far more
+    // than N requests' worth of compute — the asymmetry the API's own doc names.
+    const slots = createSlotCache();
+    const seen: Forwarded[] = [];
+    const asked: string[] = [];
+    const { fetch, store } = await createTestOrchestrator({
+      slots,
+      workflowRateLimiter: {
+        check: () => {
+          asked.push("surface");
+          return Promise.resolve({ ok: true });
+        },
+      },
+      workflowStartRateLimiter: {
+        check: () => {
+          asked.push("start");
+          return Promise.resolve({ ok: false, retryAfterSeconds: 7 });
+        },
+      },
+      ...recordingGuest(seen, () => Response.json({ runId: "r1" })),
+    });
+    await seedResidentSandbox(fetch, store, slots, "my-agent");
+
+    const started = await fetch("/my-agent/workflows/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workflow: "w" }),
+    });
+    const polled = await fetch("/my-agent/workflows/runs/r1");
+
+    // The start hit the tighter limiter and never reached the surface one; the
+    // poll took the surface limiter and went through.
+    expect(started.status).toBe(429);
+    expect(polled.status).toBe(200);
+    expect(asked).toEqual(["start", "surface"]);
+  });
+});

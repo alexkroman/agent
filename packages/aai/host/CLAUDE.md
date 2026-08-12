@@ -481,3 +481,51 @@ the first logged `column "correlation_key" … already exists` into a log the gu
 relays to the platform. That is the exact noise the filter exists to remove, from
 the exact caller it was written for, and no unit test can see it because the
 notice comes from the driver rather than from our code.
+
+## `speech_started` means "the agent is yielding", on BOTH transports
+
+The two transports derive this event differently and a client cannot tell them
+apart, so pipeline mode holds it back to match S2S rather than emitting what it
+happens to know. In S2S the service fires its speech-started the moment it stops
+generating, so the event coincides with a real interruption. Pipeline mode has
+no VAD and derives the edge from the STT transcript stream, where the FIRST
+non-empty partial opened it — one word of a cough, a backchannel, or a phrase
+the caller addressed to someone else in the room. `minBargeInWords` and
+`interruptionMinDurationMs` correctly declined to abort the reply for those, so
+the agent kept talking; the client had been told it stopped.
+
+**That divergence is not cosmetic, because clients act on it.** tau2-bench's
+harness DISCARDS its entire agent playout buffer on `speech_started` and has no
+`cancelled` handler at all — so the one event that really means "the agent
+stopped" is ignored, and the one that did not is treated as authoritative. A
+reply still being spoken was thrown away mid-sentence. `aai-ui` reads the same
+event as informational (it only clears the caption; playback stops on
+`cancelled`), which is why this never showed up in the browser.
+
+Measured by replaying the benchmark's own recorded caller audio against a live
+pipeline agent (the `scripts/voice-replay/` harness, since removed), on the
+run's 10 conversations richest
+in these signals: **184 `speech_started` against 87 `cancelled` — 53% of the
+events the client acted on were not interruptions at all.** The agent yielded
+to non-directed speech on 12 of 12 occasions and then sat silent a median 5.9s
+(these are real barge-outs, not inter-sentence gaps: only 2.5% of natural gaps
+between agent segments are ≤0.6s).
+
+So while the agent holds the floor the edge is HELD, and released only when a
+barge-in really fires (alongside `cancelled`) or when the agent stops speaking
+on its own — `createGatedSpeechEdges` in `pipeline-user-speech.ts`. While the
+agent is silent it passes straight through: there is no floor to yield and the
+event just means "listening". Live captions are unaffected either way, because
+`user_transcript_partial` is emitted independently of the gate.
+
+The property to preserve — and what the specs in `pipeline-voice-events.test.ts`
+pin — is that **the score no longer depends on how the client reads the event**.
+Across the panel, the spread between a client that truncates on
+`speech_started` and one that truncates on `cancelled` collapsed from up to
+**66.7 points** (R_Y 89.7% vs 46.7%; S_BC 33.3% vs 100%) to **≤2.7 points**
+(R_Y 44.1% both ways). Note which direction R_Y moved: the benchmark's
+flattering 90% yield rate was an ARTIFACT of the same bug that wrecked
+selectivity — truncating on a signal that arrives ~470ms after the first partial
+makes yields look instant. A correct client's yield rate against the old code
+was already 46.7%. Do not read the drop as a regression, and do not "fix" it by
+reverting the gate.

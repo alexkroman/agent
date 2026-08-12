@@ -1627,6 +1627,21 @@ workflow API through `createWorkflowApi()`, which builds every URL from
 `/client-config`. So they land on the platform, which had no route and answered
 `{"error":"Not found"}` to every upload from a deployed `transcription-desk`
 (`GUEST_ROUTES.workflows` claimed the opposite; its comment now records why).
+It is **rate-limited per client IP, twice** (`WORKFLOW_IP_RATE_LIMIT` /
+`WORKFLOW_START_IP_RATE_LIMIT`): the surface limit is sized for a POLLING page
+(`useWorkflowRun` reads every 2s), and starting a run takes a much tighter one,
+because a POST here queues work that OUTLIVES its request — N POSTs buy far more
+than N requests' worth of compute. Both are checked before the handler, so a
+refused request never brokers, and brokering is the expensive part: it boots a
+sandbox, which makes a loop of cheap GETs a loop of container starts. Postgres-
+backed in production for the same reason the deploy limiter is — an in-process
+limit multiplies by `MAX_CONTAINERS`.
+
+**The route answers DELETE as well as GET/POST**, and it did not: `api.cancel()`
+is a DELETE, so every Stop button on a DEPLOYED agent 404'd at the platform while
+the same page worked under `aai dev`, which serves the guest's routes directly.
+The guest's own table had always answered it.
+
 The handler's doc comment has the rest; two things to know here: bodies
 **stream** rather than buffer (`DEPLOY_BODY_CONCURRENCY` exists because the
 deploy path does not, and a blob upload is this API's whole point), and the

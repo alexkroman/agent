@@ -49,7 +49,13 @@ import { createWsUpgrades } from "./orchestrator-ws.ts";
 import { createPhoneHandler, PHONE_ROUTE } from "./phone-handler.ts";
 import type { PlatformEvents } from "./platform-events.ts";
 import { createMutationLock, localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
-import { createRateLimiter, DEPLOY_IP_RATE_LIMIT, type RateLimiter } from "./rate-limit.ts";
+import {
+  createRateLimiter,
+  DEPLOY_IP_RATE_LIMIT,
+  type RateLimiter,
+  WORKFLOW_IP_RATE_LIMIT,
+  WORKFLOW_START_IP_RATE_LIMIT,
+} from "./rate-limit.ts";
 import type { SandboxDirectory } from "./sandbox-directory.ts";
 import { watchAgentInvalidation } from "./sandbox-invalidate.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
@@ -97,6 +103,10 @@ export type OrchestratorOpts = {
    * is per-replica, which is correct for a single process and weak for ten.
    */
   deployRateLimiter?: RateLimiter;
+  /** Per-IP limiter for the whole `/:slug/workflows/*` surface. */
+  workflowRateLimiter?: RateLimiter;
+  /** Per-IP limiter for `POST /:slug/workflows/runs` — starting runs. */
+  workflowStartRateLimiter?: RateLimiter;
   /**
    * How many deploy bodies may be buffered and parsed at once, and how long a
    * caller waits for a slot. Defaults to the `DEPLOY_BODY_*` constants (both
@@ -303,11 +313,43 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // `AAI_WORKFLOW_API_TOKEN` gate is what closes it, and the bearer is
   // forwarded. See workflow-handler.ts.
   const handleWorkflows = createAgentWorkflowsHandler(opts.guestWorkflowFetch);
+  const workflowLimiter = opts.workflowRateLimiter ?? createRateLimiter(WORKFLOW_IP_RATE_LIMIT);
+  const workflowStartLimiter =
+    opts.workflowStartRateLimiter ?? createRateLimiter(WORKFLOW_START_IP_RATE_LIMIT);
+  /**
+   * Two limits, counted together.
+   *
+   * The surface limit is sized for a POLLING page (see `WORKFLOW_IP_RATE_LIMIT`);
+   * the start limit is much tighter, because a POST here queues work that
+   * outlives its request. A caller doing nothing but starting runs hits the
+   * second one first, which is the point of having both.
+   *
+   * The limits are checked BEFORE the handler, so a refused request never brokers
+   * — and brokering is the expensive part, since it boots a sandbox. A limiter
+   * placed after would be a rate limit on the reply rather than on the work.
+   */
+  const workflowRateMw = createMiddleware<HonoEnv>(async (c, next) => {
+    const ip = clientIp(c.req.raw);
+    const isStart =
+      c.req.method === "POST" && c.req.path.endsWith(`${GUEST_ROUTES.workflows}/runs`);
+    const verdict = await (isStart ? workflowStartLimiter : workflowLimiter).check(ip);
+    if (!verdict.ok) {
+      return c.json({ error: "Too many workflow requests — try again later" }, 429, {
+        "Retry-After": String(verdict.retryAfterSeconds),
+      });
+    }
+    await next();
+  });
   agents.on(
-    ["GET", "POST"],
+    // DELETE as well as GET/POST: `api.cancel(runId)` is a DELETE, so without it
+    // the platform 404'd every Stop button on a DEPLOYED agent while the same
+    // page worked under `aai dev` (which serves the guest's own routes directly).
+    // The guest's route table has always answered it.
+    ["GET", "POST", "DELETE"],
     // The guest's own constant, so the two sides of the proxy cannot name
     // different paths — the mismatch `guest-routes.ts` exists to prevent.
     [GUEST_ROUTES.workflows, `${GUEST_ROUTES.workflows}/:path{.+}`],
+    workflowRateMw,
     (c) => handleWorkflows(c, brokerOpts),
   );
   // Call-answering webhook: brokers the sandbox and answers with the TwiML

@@ -59,6 +59,42 @@ export const DEPLOY_IP_RATE_LIMIT = {
   windowMs: CLIENT_IP_RATE_LIMIT_WINDOW_MS,
 } as const;
 
+/**
+ * `/:slug/workflows/*`, per client IP — the whole surface.
+ *
+ * Sized for a POLLING page rather than for the abuse: `useWorkflowRun` reads every
+ * `DEFAULT_WORKFLOW_POLL_MS` (2s), so one tab watching one run legitimately spends
+ * ~150 requests per five-minute window, and an upload page makes a burst of them
+ * per chunk. 1200 leaves a tab several times its own headroom while still bounding
+ * what one address can drive.
+ *
+ * A limit at all, on a deliberately UNAUTHENTICATED surface, because of the cost
+ * shape `workflow-api.ts` documents: every request here BROKERS, which boots a
+ * sandbox if one is not resident, so a loop of cheap GETs is a loop of container
+ * starts. That is worse than the equivalent loop against `/websocket`, which at
+ * least holds a socket per session.
+ */
+export const WORKFLOW_IP_RATE_LIMIT = {
+  limit: 1200,
+  windowMs: CLIENT_IP_RATE_LIMIT_WINDOW_MS,
+} as const;
+
+/**
+ * `POST /:slug/workflows/runs` specifically — STARTING runs.
+ *
+ * Tighter than the surface limit because this is the request that queues durable
+ * work: a run outlives the request, so N POSTs buy far more than N requests' worth
+ * of compute, which is the asymmetry the workflow API's own doc calls out. 60 per
+ * five minutes is well past any page a human drives and well short of a loop.
+ *
+ * Counted IN ADDITION to the surface limit rather than instead of it — a caller
+ * doing nothing but starting runs must hit this one first.
+ */
+export const WORKFLOW_START_IP_RATE_LIMIT = {
+  limit: 60,
+  windowMs: CLIENT_IP_RATE_LIMIT_WINDOW_MS,
+} as const;
+
 type Window = { count: number; resetAt: number };
 
 export type RateLimitVerdict = { ok: true } | { ok: false; retryAfterSeconds: number };

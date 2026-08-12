@@ -21,7 +21,12 @@
 import { DEFAULT_PORT } from "aai-server/constants";
 import { createOrchestrator } from "aai-server/orchestrator";
 import { resolvePort } from "aai-server/platform-barrel";
-import { DEPLOY_IP_RATE_LIMIT, type RateLimiter } from "aai-server/rate-limit";
+import {
+  DEPLOY_IP_RATE_LIMIT,
+  type RateLimiter,
+  WORKFLOW_IP_RATE_LIMIT,
+  WORKFLOW_START_IP_RATE_LIMIT,
+} from "aai-server/rate-limit";
 import { startService } from "aai-server/serve-lifecycle";
 import {
   assertSandboxBackendOrWarn,
@@ -69,6 +74,32 @@ function buildRateLimiters(base: ServiceConfig): StudioRateLimiters | undefined 
 function buildDeployRateLimiter(base: ServiceConfig): RateLimiter | undefined {
   if (!base.sql) return;
   return createPgRateLimiter(base.sql, { name: "deploy-ip", ...DEPLOY_IP_RATE_LIMIT });
+}
+
+/**
+ * The workflow API's two per-IP limiters, Postgres-backed so a limit holds
+ * fleet-wide rather than multiplying by the replica count.
+ *
+ * The same reasoning as the deploy limiter: `MAX_CONTAINERS` is 10, so an
+ * in-process limiter is a limit of ten times the number written down — which for
+ * an ABUSE limit is the whole point of having one. Without a platform database
+ * the orchestrator falls back to its in-process default, which is correct for the
+ * single process that case implies.
+ */
+function buildWorkflowRateLimiters(
+  base: ServiceConfig,
+): { workflowRateLimiter: RateLimiter; workflowStartRateLimiter: RateLimiter } | undefined {
+  if (!base.sql) return;
+  return {
+    workflowRateLimiter: createPgRateLimiter(base.sql, {
+      name: "workflow-ip",
+      ...WORKFLOW_IP_RATE_LIMIT,
+    }),
+    workflowStartRateLimiter: createPgRateLimiter(base.sql, {
+      name: "workflow-start-ip",
+      ...WORKFLOW_START_IP_RATE_LIMIT,
+    }),
+  };
 }
 
 function studioAppOpts(base: ServiceConfig, isDraining: () => boolean): StudioAppOpts {
@@ -139,9 +170,11 @@ async function main(): Promise<void> {
   // `base.events` rides into the orchestrator, which wires the agents-row
   // change stream to sandbox invalidation.
   const deployRateLimiter = buildDeployRateLimiter(base);
+  const workflowLimiters = buildWorkflowRateLimiters(base);
   const orchestrator = createOrchestrator({
     ...base,
     ...(deployRateLimiter && { deployRateLimiter }),
+    ...workflowLimiters,
     isDraining: () => draining,
   });
   const combinedFetch = (req: Request): Response | Promise<Response> =>
