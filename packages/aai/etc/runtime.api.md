@@ -6,8 +6,10 @@
 
 import { Duplex } from 'node:stream';
 import http from 'node:http';
+import type { IncomingMessage } from 'node:http';
 import type { JSONSchema7 } from 'json-schema';
 import type { LanguageModel } from 'ai';
+import type { ServerResponse } from 'node:http';
 import { z } from 'zod';
 
 // @public
@@ -103,6 +105,14 @@ export type CloseableDb = Db & {
 };
 
 // @internal
+export function configureWorkflowWorld(opts: {
+    databaseUrl: string | undefined;
+    port: number;
+    dataDir?: string;
+    env?: NodeJS.ProcessEnv;
+}): WorldKind;
+
+// @internal
 export const consoleLogger: Logger;
 
 // @public
@@ -126,6 +136,9 @@ export type CreateGenerateFnOptions = {
 // @public
 export function createHostServer(options?: HostServerOptions): AgentServer;
 
+// @public
+export function createMemoryKeyStore(): WorkflowKeyStore;
+
 // @internal
 export function createPipelineTransport(opts: PipelineTransportOptions): Transport;
 
@@ -137,6 +150,9 @@ export type CreatePostgresDbOptions = {
     url: string;
     max?: number;
 };
+
+// @public
+export function createPostgresKeyStore(db: Db): WorkflowKeyStore;
 
 // @internal
 export function createRelayExecuteTool(opts: {
@@ -160,6 +176,12 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore;
 export function createTelephonyBridge(carrierSocket: SessionWebSocket, opts: TelephonyBridgeOptions): SessionWebSocket;
 
 // @internal
+export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClient;
+
+// @internal
+export function createWorkflowSurface(workflowCode: string | undefined, stepCode: string | undefined): Promise<WorkflowSurface | undefined>;
+
+// @internal
 export const debugLoggingEnabled: boolean;
 
 // @public
@@ -170,6 +192,9 @@ export const DEFAULT_LISTEN_HOST = "127.0.0.1";
 
 // @internal
 export const DEFAULT_S2S_CONFIG: S2SConfig;
+
+// @public
+export const DEFAULT_WORKFLOW_FIND_LIMIT = 20;
 
 // @public
 export type ExecuteTool = (name: string, args: Readonly<Record<string, unknown>>, sessionId?: string, messages?: readonly Message[], opts?: ExecuteToolOptions) => Promise<string>;
@@ -184,6 +209,9 @@ export interface ExecuteToolOptions {
     // (undocumented)
     toolCallId?: string;
 }
+
+// @internal
+export function handleWorkflowRequest(surface: WorkflowSurface | null | undefined, req: IncomingMessage, res: ServerResponse, url: string, method: string): boolean;
 
 // @public
 export type HostCredentialEnv = Record<string, string> & {
@@ -228,6 +256,9 @@ export type Logger = Record<LogLevel, LogFn>;
 
 // @public
 export type LogLevel = "info" | "warn" | "error" | "debug";
+
+// @public
+export const MAX_WORKFLOW_FIND_LIMIT = 100;
 
 // @public
 export type PassthroughServerOptions = {
@@ -335,6 +366,9 @@ export type ResolvedBuiltins = {
     schemas: ToolSchema[];
     guidance: string[];
 };
+
+// @public
+export function resolveKeyStore(db: Db | undefined): WorkflowKeyStore;
 
 // @public
 export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>): LanguageModel;
@@ -531,6 +565,9 @@ export function startTelephonySession(carrierSocket: SessionWebSocket, runtime: 
     logger?: Logger;
 }): void;
 
+// @internal
+export function startWorkflowWorldIfDeclared(hasWorkflows: boolean, kind: WorldKind): Promise<void>;
+
 // @public
 export const TELEPHONY_PATH = "/phone";
 
@@ -592,11 +629,67 @@ export type TransportSessionConfig = {
 // @public
 export const twilioCodec: CarrierCodec;
 
+// @public
+export type WdkAdapter = {
+    start(workflowId: string, args: unknown[]): Promise<string>;
+    getRun(runId: string): Promise<WdkRunRecord | undefined>;
+    listRuns(workflowName: string, limit: number): Promise<WdkRunRecord[]>;
+    cancel(runId: string): Promise<boolean>;
+    readOutput(runId: string): Promise<unknown>;
+};
+
+// @internal
+export function wdkAdapter(): WdkAdapter;
+
+// @public
+export type WdkRunRecord = {
+    runId: string;
+    workflowName: string;
+    status: "pending" | "running" | "completed" | "failed" | "cancelled";
+    createdAt: Date | number;
+    error?: {
+        message: string;
+    } | undefined;
+};
+
 // @internal
 export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions): void;
 
 // @public
 export function withHostCredentialFallback(env: Record<string, string>, hostEnv?: Record<string, string | undefined>): HostCredentialEnv;
+
+// @internal
+export const WORKFLOW_FLOW_PATH = "/.well-known/workflow/v1/flow";
+
+// @internal (undocumented)
+export const WORKFLOW_STEP_PATH = "/.well-known/workflow/v1/step";
+
+// @internal (undocumented)
+export const WORKFLOW_WEBHOOK_PREFIX = "/.well-known/workflow/v1/webhook/";
+
+// @public
+export type WorkflowClientOptions = {
+    workflows: Readonly<Record<string, WorkflowDef>>;
+    keys: WorkflowKeyStore;
+    wdk: WdkAdapter;
+    logger: Logger;
+};
+
+// @public
+export type WorkflowKeyStore = {
+    record(workflow: string, key: string, runId: string): Promise<void>;
+    lookup(workflow: string, key: string, limit: number): Promise<string[]>;
+};
+
+// @internal
+export type WorkflowSurface = {
+    flow: FetchHandler;
+    step: FetchHandler;
+    webhook: (token: string, req: Request) => Promise<Response>;
+};
+
+// @internal
+export type WorldKind = "postgres" | "local";
 
 // (No @packageDocumentation comment for this package)
 

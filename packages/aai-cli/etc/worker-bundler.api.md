@@ -15,6 +15,7 @@ export type BuildWorkerOptions = {
     configFile?: false;
     plugins?: PluginOption[];
     runtime?: boolean;
+    workflows?: WorkflowBundleOutput | undefined;
 };
 
 // (No @packageDocumentation comment for this package)

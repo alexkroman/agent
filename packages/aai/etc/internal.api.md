@@ -28,6 +28,9 @@ export interface Epoch {
 // @public
 export function formatSchemaIssues(issues: readonly StandardSchemaIssue[]): string;
 
+// @internal
+export const MISSING_WORKFLOW_ID_MESSAGE: string;
+
 // @internal (undocumented)
 export interface OwnedMap<K, V> {
     claim(key: K, value: V): () => boolean;
@@ -52,6 +55,12 @@ export function parseWsUpgradeParams(rawUrl: string): {
     resumeFrom?: string;
     skipGreeting: boolean;
 };
+
+// @internal
+export function rejectingWorkflows(message: string): WorkflowClient;
+
+// @internal
+export const WORKFLOWS_UNAVAILABLE_MESSAGE: string;
 
 // (No @packageDocumentation comment for this package)
 

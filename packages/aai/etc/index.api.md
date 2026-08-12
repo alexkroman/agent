@@ -32,10 +32,18 @@ export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
     toolChoice?: ToolChoice;
     tools: Readonly<Record<string, ToolDef<ToolInputSchema, NoInfer<S>>>>;
     tts?: TtsProvider;
+    workflows?: Readonly<Record<string, WorkflowDef>>;
 }
 
 // @public
 export type AgentParams<S = DefaultSessionState> = PipelineAgentParams<S> | S2sAgentParams<S>;
+
+// @public
+export type AnyWorkflowDef<R = unknown> = {
+    description?: string;
+    input?: ToolInputSchema;
+    run: WorkflowBody<never, R>;
+};
 
 // @public
 export const ASSEMBLYAI_S2S_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
@@ -214,6 +222,11 @@ export function errorMessage(err: unknown): string;
 export const FETCH_TIMEOUT_MS = 15000;
 
 // @public
+export type FindOptions = {
+    limit?: number;
+};
+
+// @public
 export type GenerateFn = {
     <S extends StandardSchemaV1>(options: GenerateOptions & {
         schema: S;
@@ -260,6 +273,9 @@ export type InferToolInput<T extends ToolDef<ToolInputSchema, DefaultSessionStat
 
 // @public
 export type InferToolOutput<T extends ToolDef<ToolInputSchema, DefaultSessionState>> = Awaited<ReturnType<T["execute"]>>;
+
+// @public
+export function isTerminal<R>(run: WorkflowRunSnapshot<R> | undefined): run is TerminalWorkflowRun<R>;
 
 // @internal
 export function isTextAssetPath(assetPath: string): boolean;
@@ -545,6 +561,11 @@ export interface StandardSchemaV1<Input = unknown, Output = Input> {
 }
 
 // @public
+export type StartOptions = {
+    key?: string;
+};
+
+// @public
 export const STORAGE_DISABLED_MESSAGE: string;
 
 // @internal (undocumented)
@@ -567,6 +588,14 @@ export const STT_FRAME_TARGET_MS = 100;
 
 // @internal
 export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;
+
+// @public
+export const TERMINAL_WORKFLOW_STATUSES: readonly ["completed", "failed", "cancelled"];
+
+// @public
+export type TerminalWorkflowRun<R = unknown> = Extract<WorkflowRunSnapshot<R>, {
+    status: "completed" | "failed" | "cancelled";
+}>;
 
 // @internal
 export function toArgsRecord(input: unknown): Record<string, unknown>;
@@ -613,6 +642,7 @@ export type ToolContext<S = DefaultSessionState> = {
     sessionId: string;
     send(event: string, data: unknown): void;
     signal: AbortSignal;
+    workflows: WorkflowClient;
 };
 
 // @public
@@ -644,6 +674,76 @@ export const VALID_SLUG_RE: RegExp;
 
 // @public
 export const withLock: <T>(lock: (key: string, opts?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, opts?: KeyedLockOptions) => Promise<T>;
+
+// @public
+export function workflow<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: WorkflowDef<P, R>): WorkflowDef<P, R>;
+
+// @public
+export type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
+    workflowId?: string;
+};
+
+// @public
+export type WorkflowClient = {
+    start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
+    input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
+    start(workflow: string, input?: unknown, options?: StartOptions): Promise<string>;
+    get<R>(runId: string, of: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
+    get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
+    find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
+    find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    recent<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
+    recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    cancel(runId: string): Promise<boolean>;
+    listing(): WorkflowSummary[];
+};
+
+// @public
+export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
+    description?: string;
+    input?: P;
+    run: WorkflowBody<InferSchemaOutput<P>, R>;
+};
+
+// @public
+export type WorkflowOutputOf<D> = D extends WorkflowDef<ToolInputSchema, infer R> ? Awaited<R> : never;
+
+// @public
+export type WorkflowRunBase = {
+    runId: string;
+    workflow: string;
+    createdAt: number;
+    key?: string;
+};
+
+// @public
+export type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
+    status: "pending" | "running";
+})
+/** `output` is what the workflow function returned. */
+| (WorkflowRunBase & {
+    status: "completed";
+    output: R;
+})
+/** `error` is the failure message. */
+| (WorkflowRunBase & {
+    status: "failed";
+    error: string;
+})
+/** Cancelled by {@link WorkflowClient.cancel}; it produced no output. */
+| (WorkflowRunBase & {
+    status: "cancelled";
+});
+
+// @public
+export type WorkflowRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+
+// @public
+export type WorkflowSummary = {
+    name: string;
+    description?: string;
+    inputSchema?: unknown;
+};
 
 // @internal
 export const WS_NORMAL_CLOSURE = 1000;

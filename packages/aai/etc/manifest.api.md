@@ -87,7 +87,7 @@ export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s
 export function assertSilencePolicy(mode: SessionMode, silenceTimeoutMs: number | undefined, silencePrompt: string | undefined): void;
 
 // @public
-export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "state", "syncState"];
+export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "state", "syncState", "workflows"];
 
 // @public
 export type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
