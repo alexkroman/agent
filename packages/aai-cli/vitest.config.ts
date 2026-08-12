@@ -10,7 +10,12 @@ export default defineConfig({
     // package.json name).
     name: "aai-cli",
     include: ["**/*.test.ts"],
-    exclude: ["e2e*.test.ts", "node_modules", "dist"],
+    // `**/*.integration.test.ts` is the tier convention (see the root guide):
+    // the unit config excludes it and `test:integration` selects it, so a new
+    // integration test needs no config edit. Note `integration.test.ts` and
+    // `integration-edge-cases.test.ts` in this package are deliberately UNIT
+    // tests — only the `.integration.` infix decides the tier.
+    exclude: ["e2e*.test.ts", "**/*.integration.test.ts", "node_modules", "dist"],
     // Isolates the global config dir (API key + approved servers) from the
     // developer's real one — see _test-setup.ts.
     setupFiles: ["./_test-setup.ts"],

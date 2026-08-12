@@ -35,6 +35,22 @@
  * So `workflowCode` is passed to `workflowEntrypoint()` in the guest and
  * `stepCode` is evaluated there to register its step functions.
  *
+ * ## The THIRD transform, which is the agent bundle's
+ *
+ * Those two are what the queue runs. The agent bundle needs a third —
+ * `applySwcTransform(…, "client")`, wired in as {@link workflowClientPlugin} —
+ * and without it the whole mechanism is inert: `ctx.workflows.start` reads the
+ * `workflowId` the compiler attaches to a directive body, and Vite bundling
+ * `workflows/research.ts` the ordinary way attaches nothing. The symptom is
+ * `MISSING_WORKFLOW_ID_MESSAGE` at the first `start()` — an agent that builds,
+ * deploys, boots and answers the phone, and cannot start a run.
+ *
+ * The plugin transforms EXACTLY the files the builder scanned (`inputFiles`),
+ * not "every file with a directive". Same list, same `moduleSpecifierRoot`,
+ * therefore the same ids by construction — a body outside `workflows/` cannot
+ * acquire an id that no flow bundle registered, which would trade a clear
+ * failure at `start()` for a run that enqueues and then fails at replay.
+ *
  * ## Config details that are not optional
  *
  * Each of these cost real time to find, and none fails in a way that names
@@ -52,7 +68,13 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { BaseBuilder } from "@workflow/builders";
+import {
+  applySwcTransform,
+  BaseBuilder,
+  detectWorkflowPatterns,
+  shouldTransformFile,
+} from "@workflow/builders";
+import type { Plugin } from "vite";
 
 /**
  * The directory a project's `"use workflow"` bodies live in.
@@ -103,6 +125,12 @@ export type WorkflowBundleOutput = {
    * studio's workflows card renders.
    */
   manifest: unknown;
+  /**
+   * The absolute paths the builder scanned — the agent bundle's client
+   * transform runs over exactly these. See the module doc's third-transform
+   * section for why it is this list and not a content sniff.
+   */
+  inputFiles: readonly string[];
 };
 
 /**
@@ -161,8 +189,54 @@ class AaiWorkflowBuilder extends BaseBuilder {
       fs.readFile(flowFile, "utf-8"),
       fs.readFile(stepFile, "utf-8"),
     ]);
-    this.output = { workflowCode, stepCode, manifest };
+    this.output = { workflowCode, stepCode, manifest, inputFiles };
   }
+}
+
+/**
+ * Attach the compiler's `workflowId`/`stepId` to the agent bundle's copy of
+ * each directive body — the third transform, see the module doc.
+ *
+ * `enforce: "pre"` so it sees the file before Vite's own TypeScript pass: the
+ * swc transform reads types itself (it is given the filename to infer syntax),
+ * and its output is plain JS that the later pass leaves alone.
+ *
+ * @internal
+ */
+export function workflowClientPlugin(cwd: string, inputFiles: readonly string[]): Plugin {
+  // Resolved once: Vite hands `transform` an id that may carry a query suffix
+  // and, on Windows, a different separator, so the comparison is against
+  // normalized absolute paths rather than the strings the builder produced.
+  const scanned = new Set(inputFiles.map((file) => path.resolve(cwd, file)));
+
+  return {
+    name: "aai:workflow-client",
+    enforce: "pre",
+    async transform(code: string, id: string) {
+      const file = path.resolve(id.split("?")[0] ?? id);
+      if (!scanned.has(file)) return;
+      // A scanned file need not hold a directive — `workflows/types.ts` beside
+      // the bodies is ordinary code, and running the transform over it would
+      // strip its types for no reason.
+      if (!shouldTransformFile(file, detectWorkflowPatterns(code))) return;
+
+      const { code: transformed } = await applySwcTransform(
+        // The RELATIVE path, because it is what the id is derived from — the
+        // absolute one would put this machine's home directory inside a
+        // workflowId, and the flow bundle (built with the same
+        // `moduleSpecifierRoot`) would then register a different id.
+        path.relative(cwd, file),
+        code,
+        "client",
+        file,
+        cwd,
+        cwd,
+      );
+      // No source map: the transform returns none, and inventing an identity
+      // map would claim line fidelity the stubbed body does not have.
+      return { code: transformed, map: null };
+    },
+  };
 }
 
 /**

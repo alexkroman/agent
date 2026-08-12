@@ -42,7 +42,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { build, type PluginOption, type Rollup } from "vite";
 import { withPreservedNodeEnv } from "./_vite-env.ts";
-import type { WorkflowBundleOutput } from "./workflow-bundler.ts";
+import { type WorkflowBundleOutput, workflowClientPlugin } from "./workflow-bundler.ts";
 
 /**
  * Options for worker bundling.
@@ -75,6 +75,11 @@ export type BuildWorkerOptions = {
    * Embedded in the worker as two string exports rather than shipped as extra
    * files, because the guest's `bundle/load` contract is ONE ESM string. See
    * `wrapperEntrySource`.
+   *
+   * It also switches on the client transform (`workflowClientPlugin`), which is
+   * what puts a `workflowId` on the agent's own copy of each body. Passing the
+   * strings without it produces a bundle that serves every workflow route and
+   * cannot start a run.
    */
   workflows?: WorkflowBundleOutput | undefined;
 };
@@ -134,6 +139,11 @@ export async function buildWorker(cwd: string, opts: BuildWorkerOptions = {}): P
     "utf-8",
   );
 
+  const plugins: PluginOption[] = [
+    ...(opts.plugins ?? []),
+    ...(opts.workflows ? [workflowClientPlugin(cwd, opts.workflows.inputFiles)] : []),
+  ];
+
   let result: Awaited<ReturnType<typeof build>>;
   try {
     result = await withPreservedNodeEnv(() =>
@@ -141,7 +151,11 @@ export async function buildWorker(cwd: string, opts: BuildWorkerOptions = {}): P
         root: cwd,
         logLevel: "silent",
         ...(opts.configFile === false && { configFile: false }),
-        ...(opts.plugins && { plugins: opts.plugins }),
+        // The client transform runs alongside whatever the caller supplied (the
+        // studio's import allowlist), not instead of it. The key stays absent
+        // when there is nothing to add, so a project's own `vite.config.ts`
+        // plugins are unaffected either way.
+        ...(plugins.length > 0 && { plugins }),
         // Bundle everything (the guest sandbox has no node_modules) EXCEPT
         // `node:` builtins, which the SSR build keeps external. Without the
         // SSR switch Vite treats this as a browser build and replaces the

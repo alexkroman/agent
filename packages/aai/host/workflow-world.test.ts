@@ -14,7 +14,7 @@ import {
   configureWorkflowWorld,
   startWorkflowWorldIfDeclared,
   startWorkflowWorldSafely,
-} from "./harness-world.ts";
+} from "./workflow-world.ts";
 
 /** A fresh env per case, so nothing leaks between them. */
 function env(over: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {

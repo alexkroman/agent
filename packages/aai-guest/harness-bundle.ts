@@ -10,8 +10,14 @@
 
 import { writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { errorMessage } from "@alexkroman1/aai";
+import {
+  createWorkflowSurface,
+  type SessionRuntime,
+  type WorkflowSurface,
+} from "@alexkroman1/aai/runtime";
+import type { WebSocket } from "ws";
 import type { AgentDef, CreateGuestRuntime, GuestRuntime } from "./harness-types.ts";
-import { createWorkflowSurface, type WorkflowSurface } from "./harness-workflow.ts";
 import type { StudioSession } from "./studio-chat.ts";
 import { runCode } from "./trial.ts";
 
@@ -164,4 +170,53 @@ export function ensureRuntime(state: HarnessState): GuestRuntime {
     runCode,
   });
   return state.runtime;
+}
+
+/**
+ * The session-facing runtime handed to `createServer` — a lazy facade over
+ * `ensureRuntime` so the real runtime is built on the FIRST session (with
+ * the loaded bundle's env), plus the live-session count the host's idle
+ * eviction asks for over `status`.
+ */
+export function lazyRuntime(
+  state: HarnessState,
+  hooks: {
+    /**
+     * Pre-session refusal, checked before anything starts: return a close
+     * code + reason to turn the session away (agent mode's drain refusal —
+     * 1013 "try again" makes the client re-broker onto the replacement).
+     * The one refusal path, shared with the runtime-build failure below.
+     */
+    refuse?: () => { code: number; reason: string } | null;
+  } = {},
+): SessionRuntime {
+  return {
+    startSession(ws, opts) {
+      const socket = ws as unknown as WebSocket;
+      const refusal = hooks.refuse?.();
+      if (refusal) {
+        socket.close(refusal.code, refusal.reason);
+        return;
+      }
+      state.activeSessions++;
+      socket.on("close", () => {
+        state.activeSessions = Math.max(0, state.activeSessions - 1);
+      });
+      let runtime: GuestRuntime;
+      try {
+        runtime = ensureRuntime(state);
+      } catch (err) {
+        // No bundle yet, or the runtime can't be built (missing provider
+        // credential, invalid config) — answer with a close frame naming
+        // the cause instead of a dangling socket.
+        console.error(`session refused: ${errorMessage(err)}`);
+        socket.close(1011, errorMessage(err).slice(0, 100));
+        return;
+      }
+      runtime.startSession(ws, opts);
+    },
+    shutdown: async () => {
+      await state.runtime?.shutdown();
+    },
+  };
 }

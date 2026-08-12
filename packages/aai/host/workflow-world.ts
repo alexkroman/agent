@@ -31,7 +31,7 @@
  * to reach us.
  */
 
-import { errorMessage } from "@alexkroman1/aai/utils";
+import { errorMessage } from "../sdk/utils.ts";
 
 /** What the DevKit reads to pick a world. */
 const TARGET_WORLD_ENV = "WORKFLOW_TARGET_WORLD";
@@ -39,6 +39,8 @@ const TARGET_WORLD_ENV = "WORKFLOW_TARGET_WORLD";
 const POSTGRES_URL_ENV = "WORKFLOW_POSTGRES_URL";
 /** Full base URL override for the local world's callbacks. */
 const LOCAL_BASE_URL_ENV = "WORKFLOW_LOCAL_BASE_URL";
+/** Where the local world keeps its run state. */
+const LOCAL_DATA_DIR_ENV = "WORKFLOW_LOCAL_DATA_DIR";
 
 /** The package name the DevKit resolves for the Postgres world. */
 const POSTGRES_WORLD = "@workflow/world-postgres";
@@ -64,6 +66,18 @@ export function configureWorkflowWorld(opts: {
   databaseUrl: string | undefined;
   /** The port this guest listens on, for the local world's callbacks. */
   port: number;
+  /**
+   * Where the local world keeps its run state. Defaults to the DevKit's own
+   * `.workflow-data` relative to `process.cwd()`.
+   *
+   * `aai dev` passes the project directory, because the two are not the same
+   * thing there: `--cwd` (and any wrapper script) leaves the shell's directory
+   * as the process cwd, so a project's durable runs would land wherever the
+   * developer happened to be standing and a second `aai dev` from elsewhere
+   * would silently see none of them. The guest passes nothing — its cwd is its
+   * own and the container is discarded either way.
+   */
+  dataDir?: string;
   env?: NodeJS.ProcessEnv;
 }): WorldKind {
   const env = opts.env ?? process.env;
@@ -84,6 +98,7 @@ export function configureWorkflowWorld(opts: {
   env[TARGET_WORLD_ENV] = "local";
   // Loopback, not the bind host: this URL is only ever dialled by this process.
   env[LOCAL_BASE_URL_ENV] ??= `http://127.0.0.1:${opts.port}`;
+  if (opts.dataDir !== undefined) env[LOCAL_DATA_DIR_ENV] ??= opts.dataDir;
   return "local";
 }
 
@@ -116,9 +131,9 @@ export async function startWorkflowWorld(kind: WorldKind): Promise<void> {
 /**
  * Start the world for a bundle that declares workflows, and only then.
  *
- * The `hasWorkflows` gate is a boolean rather than the harness state so this
- * module stays free of the bundle graph — `harness-bundle.ts` already imports
- * `harness-workflow.ts`, and reaching back the other way would close a cycle
+ * The `hasWorkflows` gate is a boolean rather than a harness state object so this
+ * module stays free of the guest's bundle graph — `harness-bundle.ts` already imports
+ * `workflow-serve.ts`, and reaching back the other way would close a cycle
  * for one field.
  *
  * @internal

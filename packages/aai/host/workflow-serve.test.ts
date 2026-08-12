@@ -11,14 +11,15 @@
 import { createServer } from "node:http";
 import { describe, expect, test, vi } from "vitest";
 import {
+  createWorkflowSurface,
   handleWorkflowRequest,
-  loadStepBundle,
+  loadWorkflowModule,
   rewriteWorkflowImports,
   WORKFLOW_FLOW_PATH,
   WORKFLOW_WEBHOOK_PREFIX,
   type WorkflowSurface,
   webhookToken,
-} from "./harness-workflow.ts";
+} from "./workflow-serve.ts";
 
 describe("rewriteWorkflowImports", () => {
   test("rewrites a bare DevKit import to an absolute file URL", () => {
@@ -86,12 +87,12 @@ describe("rewriteWorkflowImports", () => {
   });
 });
 
-describe("loadStepBundle", () => {
+describe("loadWorkflowModule", () => {
   test("evaluates the bundle, which is what registers its steps", async () => {
     // Registration is a top-level side effect and the module's exports are
     // never read, so evaluation IS the contract.
     const marker = `aai-step-load-${Date.now()}`;
-    await loadStepBundle(`globalThis[${JSON.stringify(marker)}] = true;`);
+    await loadWorkflowModule(`globalThis[${JSON.stringify(marker)}] = true;`, "steps");
     expect((globalThis as Record<string, unknown>)[marker]).toBe(true);
     delete (globalThis as Record<string, unknown>)[marker];
   });
@@ -99,9 +100,10 @@ describe("loadStepBundle", () => {
   test("loads a bundle whose DevKit import had to be rewritten", async () => {
     // The end-to-end shape: a bare import that would fail from /tmp untouched.
     const marker = `aai-step-wdk-${Date.now()}`;
-    await loadStepBundle(
+    await loadWorkflowModule(
       `import { sleep } from "workflow";\n` +
         `globalThis[${JSON.stringify(marker)}] = typeof sleep;`,
+      "steps",
     );
     expect((globalThis as Record<string, unknown>)[marker]).toBe("function");
     delete (globalThis as Record<string, unknown>)[marker];
@@ -110,14 +112,41 @@ describe("loadStepBundle", () => {
   test("a second load of different code is not served from the module cache", async () => {
     const a = `aai-step-a-${Date.now()}`;
     const b = `aai-step-b-${Date.now()}`;
-    await loadStepBundle(`globalThis[${JSON.stringify(a)}] = 1;`);
-    await loadStepBundle(`globalThis[${JSON.stringify(b)}] = 2;`);
+    await loadWorkflowModule(`globalThis[${JSON.stringify(a)}] = 1;`, "steps");
+    await loadWorkflowModule(`globalThis[${JSON.stringify(b)}] = 2;`, "steps");
     // Node caches by URL, so a fixed temp path would silently serve the first
     // bundle for the rest of the process — which in the studio's build→load
     // loop means testing the code you just replaced.
     expect((globalThis as Record<string, unknown>)[b]).toBe(2);
     delete (globalThis as Record<string, unknown>)[a];
     delete (globalThis as Record<string, unknown>)[b];
+  });
+
+  test("returns the module's exports, which is where the route handler is", async () => {
+    // Both builder outputs are ROUTE MODULES exporting POST — see the module
+    // doc. Handing the flow module's own source to `workflowEntrypoint` instead
+    // compiles it in a `node:vm` Script and every run dies at replay on
+    // "Cannot use import statement outside a module".
+    const mod = await loadWorkflowModule(`export const POST = () => "ok";`, "flows");
+    expect(typeof mod.POST).toBe("function");
+  });
+});
+
+describe("createWorkflowSurface", () => {
+  test("mounts nothing when the agent declares no workflows", async () => {
+    // Both halves are required: a project with no `workflows/` directory gets
+    // neither export, and half of one would be a bundling bug rather than an
+    // agent that should serve routes answering 500.
+    await expect(createWorkflowSurface(undefined, undefined)).resolves.toBeUndefined();
+    await expect(
+      createWorkflowSurface("export const POST = () => 1;", undefined),
+    ).resolves.toBeUndefined();
+  });
+
+  test("fails naming the bundle when a route module exports no POST", async () => {
+    await expect(
+      createWorkflowSurface("export const NOPE = 1;", "export const POST = () => 1;"),
+    ).rejects.toThrow(/flow bundle exported no POST/);
   });
 });
 

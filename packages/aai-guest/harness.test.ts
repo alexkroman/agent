@@ -5,12 +5,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { dispatchMessage, handleNotification, handleRequest, lazyRuntime } from "./harness.ts";
+import { dispatchMessage, handleNotification, handleRequest } from "./harness.ts";
 import { bearerToken } from "./harness-auth.ts";
 import {
   emptyHarnessState,
   ensureRuntime,
   type HarnessState,
+  lazyRuntime,
   loadBundle,
 } from "./harness-bundle.ts";
 import { rejectAllPendingHostRequests, setHostSend } from "./harness-rpc.ts";

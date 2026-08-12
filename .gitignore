@@ -3,6 +3,10 @@ dist/
 .aai/
 # Scratch dirs where the studio materializes a workspace for its client build
 .studio-build/
+# Local workflow world state (`aai dev` with no DATABASE_URL) and @swc/core's
+# plugin cache, both written into whatever project the workflow builder runs in
+.workflow-data/
+.swc/
 # Playwright MCP scratch output (screenshots, console logs)
 .playwright-mcp/
 # Local agent-tooling state, not project content

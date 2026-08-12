@@ -162,5 +162,21 @@ export {
   MAX_WORKFLOW_FIND_LIMIT,
   type WorkflowKeyStore,
 } from "./workflow-keys.ts";
+// Serving workflows, and choosing the world they live in. Shared rather than
+// guest-only because `aai dev` needs the identical wiring — and the CLI may not
+// import the guest (the dependency edge runs aai-guest -> aai-cli, never back).
+export {
+  createWorkflowSurface,
+  handleWorkflowRequest,
+  WORKFLOW_FLOW_PATH,
+  WORKFLOW_STEP_PATH,
+  WORKFLOW_WEBHOOK_PREFIX,
+  type WorkflowSurface,
+} from "./workflow-serve.ts";
 export { wdkAdapter } from "./workflow-wdk.ts";
+export {
+  configureWorkflowWorld,
+  startWorkflowWorldIfDeclared,
+  type WorldKind,
+} from "./workflow-world.ts";
 export { type SessionWebSocket, safeSend, wireSessionSocket } from "./ws-handler.ts";

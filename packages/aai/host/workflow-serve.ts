@@ -9,26 +9,37 @@
  * every tenant, so there is no `workflows/` directory in existence when it is
  * built. See `aai-cli/workflow-bundler.ts` for the other half.
  *
- * ## The two halves are loaded differently, and it is not symmetry for its own sake
+ * ## Both halves are ROUTE MODULES, and neither is raw workflow code
  *
- * - **Flow code** is handed to `workflowEntrypoint(code)`, which hosts it itself.
- *   Nothing here imports it.
- * - **Step code** has to be IMPORTED, because loading it is the point: the
- *   step-mode transform emits `registerStepFunction(...)` calls at the top level,
- *   and the step endpoint routes by looking those up. Nothing reads its exports.
+ * This is the thing to know before changing anything here, because the naming
+ * suggests otherwise and the failure is late and unhelpful. What
+ * `createWorkflowsBundle`/`createStepsBundle` emit is what the DevKit's own
+ * framework integrations mount as HTTP handlers: an ESM module exporting
+ * `POST`. The flow module holds the real workflow bundle as a STRING and calls
+ * `workflowEntrypoint(...)` on it itself; the step module ends in
+ * `export { stepEntrypoint as POST }` above its `registerStepFunction(...)`
+ * calls.
  *
- * ## Why the step bundle cannot just go in /tmp
+ * So both are imported and both contribute their `POST`, and calling
+ * `workflowEntrypoint(workflowCode)` here is a DOUBLE WRAP: the route module's
+ * own source goes into the `node:vm` `Script` that expects the inner bundle,
+ * and every run fails at replay with `SyntaxError: Cannot use import statement
+ * outside a module` pointing at a line of generated code. `bundleFinalOutput:
+ * false` does not change this — it means "do not bundle the route module's
+ * imports", not "do not emit one".
+ *
+ * ## Why they cannot just go in /tmp
  *
  * `harness-bundle.ts` writes the worker bundle to `/tmp/aai-bundle-*.mjs` and
  * imports it by file URL, which works because that bundle is FULLY INLINED —
  * `ssr.noExternal: true`, so it imports nothing but `node:` builtins.
  *
- * The step bundle is the opposite by design: the DevKit is left external so the
- * artifact stays ~7 KB instead of 12 MB (it resolves from this image instead).
- * So it carries real bare imports — and a module at `/tmp/x.mjs` resolves those
- * against `/tmp/node_modules` and `/node_modules`, neither of which exists. The
- * failure is `ERR_MODULE_NOT_FOUND` on `workflow`, from a path that looks
- * nothing like the guest.
+ * These two are the opposite by design: the DevKit is left external so the
+ * artifacts stay ~69 KB and ~7 KB instead of 3.7 MB and 12 MB (they resolve from
+ * this image instead). So they carry real bare imports — and a module at
+ * `/tmp/x.mjs` resolves those against `/tmp/node_modules` and `/node_modules`,
+ * neither of which exists. The failure is `ERR_MODULE_NOT_FOUND` on `workflow`,
+ * from a path that looks nothing like the guest.
  *
  * Rewriting the specifiers to absolute URLs is the fix that does not depend on
  * where the file lands or on the image's directory layout — the alternative,
@@ -39,10 +50,10 @@
 import { writeFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { pathToFileURL } from "node:url";
-import { errorMessage } from "@alexkroman1/aai/utils";
+import { errorMessage } from "../sdk/utils.ts";
 
 /** Distinct temp file per load — Node's module registry caches by URL. */
-let stepSeq = 0;
+let moduleSeq = 0;
 
 /**
  * Bare specifiers the step bundle may import, rewritten to this image's copies.
@@ -89,17 +100,34 @@ export function rewriteWorkflowImports(code: string): string {
 }
 
 /**
- * Load the step bundle so its step functions register.
+ * Write one of the builder's route modules to a temp file and import it.
  *
- * Resolves once the module has evaluated; the module object is discarded because
- * registration is a side effect and there is nothing to read.
+ * Both modules matter for their side effects as well as their exports — the
+ * step module's top-level `registerStepFunction(...)` calls are what make a step
+ * id dispatchable — so this always evaluates, and the caller decides what to
+ * read off the result.
  *
  * @internal
  */
-export async function loadStepBundle(stepCode: string): Promise<void> {
-  const file = `/tmp/aai-steps-${process.pid}-${++stepSeq}.mjs`;
-  await writeFile(file, rewriteWorkflowImports(stepCode), "utf-8");
-  await import(pathToFileURL(file).href);
+export async function loadWorkflowModule(
+  code: string,
+  label: string,
+): Promise<Record<string, unknown>> {
+  const file = `/tmp/aai-${label}-${process.pid}-${++moduleSeq}.mjs`;
+  await writeFile(file, rewriteWorkflowImports(code), "utf-8");
+  return (await import(pathToFileURL(file).href)) as Record<string, unknown>;
+}
+
+/** The `POST` export a builder route module owes, or a failure naming which one. */
+function routeHandler(mod: Record<string, unknown>, label: string): FetchHandler {
+  const post = mod.POST;
+  if (typeof post !== "function") {
+    // Reachable only if the builder's output shape changes, which is exactly
+    // when a bare `undefined is not a function` three layers down would cost
+    // the most to diagnose.
+    throw new Error(`Workflow ${label} bundle exported no POST handler`);
+  }
+  return post as FetchHandler;
 }
 
 /** The three paths the DevKit's queue calls back on. */
@@ -161,19 +189,19 @@ export async function createWorkflowSurface(
 ): Promise<WorkflowSurface | undefined> {
   if (!(workflowCode && stepCode)) return;
 
-  // Imported lazily: `workflow/runtime` resolves a World from the environment as
-  // it loads, and a guest serving an agent with no workflows must not pay that —
-  // nor fail on it when no world is configured.
-  const { stepEntrypoint, workflowEntrypoint } = await import("workflow/runtime");
+  // Imported lazily, like the two route modules below: `workflow/api` resolves a
+  // World from the environment as it loads, and a guest serving an agent with no
+  // workflows must not pay that — nor fail on it when no world is configured.
   const { resumeWebhook } = await import("workflow/api");
 
-  // Registration first: a flow replay can dispatch a step immediately, and an
+  // Steps first: a flow replay can dispatch a step immediately, and an
   // unregistered step id is a hard failure rather than a retry.
-  await loadStepBundle(stepCode);
+  const steps = await loadWorkflowModule(stepCode, "steps");
+  const flows = await loadWorkflowModule(workflowCode, "flows");
 
   return {
-    flow: workflowEntrypoint(workflowCode),
-    step: stepEntrypoint,
+    flow: routeHandler(flows, "flow"),
+    step: routeHandler(steps, "step"),
     webhook: (token: string, req: Request) => resumeWebhook(token, req),
   };
 }

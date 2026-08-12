@@ -27,9 +27,18 @@
 
 import { readFile, rm } from "node:fs/promises";
 import type http from "node:http";
+import {
+  configureWorkflowWorld,
+  createServer,
+  handleWorkflowRequest,
+  startWorkflowWorldIfDeclared,
+  type WorkflowSurface,
+} from "@alexkroman1/aai/runtime";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { verifyBearer } from "./harness-auth.ts";
+import { emptyHarnessState, lazyRuntime, loadBundle } from "./harness-bundle.ts";
 import { bundleSourceOf, readVerifiedBundle } from "./harness-bundle-source.ts";
-import { GUEST_CONTRACT_VERSION } from "./limits.ts";
+import { AGENT_IDLE_EXIT_MS, AGENT_IDLE_POLL_MS, GUEST_CONTRACT_VERSION } from "./limits.ts";
 
 // ---- Boot artifacts ----------------------------------------------------------
 
@@ -163,6 +172,26 @@ export function createManageHandler(
   };
 }
 
+/**
+ * Agent mode's whole `request` hook: the DevKit's queue callbacks, then the
+ * manage surface.
+ *
+ * Workflows go FIRST because the paths are disjoint and this is the hotter one
+ * on an agent that has any; unclaimed they would fall through to the server's
+ * 404 and every run would stall with nothing saying why. The workflow surface is
+ * read through a getter rather than passed by value because the bundle is loaded
+ * before this is built but the two are independently replaceable, and a captured
+ * `null` would leave a reloaded bundle's routes unmounted.
+ */
+export function createAgentRequestHandler(deps: {
+  manage: ManageDeps;
+  workflows: () => WorkflowSurface | null;
+}): (req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean {
+  const manage = createManageHandler(deps.manage);
+  return (req, res, url, method) =>
+    handleWorkflowRequest(deps.workflows(), req, res, url, method) || manage(req, res, url, method);
+}
+
 // ---- Idle / drain lifecycle ---------------------------------------------------
 
 export type IdleController = {
@@ -227,4 +256,74 @@ export function createIdleController(opts: {
     },
     stop: () => clearInterval(timer),
   };
+}
+
+/**
+ * AGENT MODE — the "guest is a server" contract (see harness-agent-mode.ts).
+ * Everything arrives at exec time: the bundle and env are read (and the
+ * bundle hash-verified) from files the spawner wrote into the sandbox, the
+ * bundle is loaded BEFORE listen (so a 200 from /health means "ready"), and
+ * there is NO host control channel — the platform's only surfaces are the
+ * public session endpoints and the token-gated /manage/* pair. Lifecycle is
+ * guest-owned: idle self-exit replaces the orphan timeout, and a drain
+ * refuses new sessions then exits with the last one.
+ */
+export async function mainAgent(port: number, host: string, token: string): Promise<void> {
+  const state = emptyHarnessState();
+
+  const rawIdle = Number(process.env.AAI_GUEST_IDLE_EXIT_MS ?? AGENT_IDLE_EXIT_MS);
+  const idle = createIdleController({
+    activeSessions: () => state.activeSessions,
+    idleExitMs: Number.isFinite(rawIdle) && rawIdle >= 0 ? rawIdle : AGENT_IDLE_EXIT_MS,
+    pollMs: AGENT_IDLE_POLL_MS,
+  });
+
+  const boot = await readAgentBoot();
+
+  // BEFORE the bundle loads: `loadBundle` builds the workflow surface, which
+  // imports `workflow/runtime`, which resolves and CACHES a world from the
+  // environment. Configured after, a production guest would silently take the
+  // local world and write runs into a container about to be destroyed.
+  const world = configureWorkflowWorld({ databaseUrl: boot.env.DATABASE_URL, port });
+
+  await loadBundle(state, { code: boot.code, env: boot.env });
+
+  // Gated on the bundle actually declaring workflows: migrating and subscribing
+  // a queue are both expensive and most agents have none. A failure is logged
+  // rather than thrown — the session surface is unaffected, and an agent whose
+  // workflows are broken should still answer the phone.
+  await startWorkflowWorldIfDeclared(state.workflows !== null, world);
+
+  // A draining guest is detached from the broker, but a client holding its
+  // old sessionUrl can still dial the tunnel directly — refuse with a "try
+  // again" close so the client re-brokers onto the replacement.
+  const runtime = lazyRuntime(state, {
+    refuse: () => (idle.isDraining() ? { code: 1013, reason: "draining" } : null),
+  });
+
+  const server = createServer({
+    runtime,
+    // The guest is the authority on the agent's public client config: the
+    // platform's `GET /:slug/client-config` broker PROXIES this server's
+    // own `/client-config` for name/greeting, so the bundle's live agent
+    // definition — interpreted by the bundle's own SDK — is what renders,
+    // and the host never reads fields out of the stored config.
+    //
+    // Both guards are load-bearing at RUNTIME even though `AgentDef` declares
+    // the two fields required: `state.agent` is a tenant object asserted to
+    // `AgentDef` at load (`harness-bundle.ts`), so a bundle can ship neither.
+    // The types cannot see that, which is why a checker will call these dead.
+    ...omitUndefined({ name: state.agent?.name, greeting: state.agent?.greeting }),
+    request: createAgentRequestHandler({
+      manage: {
+        token,
+        activeSessions: () => state.activeSessions,
+        isDraining: idle.isDraining,
+        startDrain: idle.startDrain,
+      },
+      workflows: () => state.workflows,
+    }),
+  });
+  await server.listen(port, host);
+  console.error(`agent-mode harness listening on ${host}:${port}`);
 }

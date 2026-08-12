@@ -69,18 +69,12 @@
 import { pathToFileURL } from "node:url";
 import { errorMessage } from "@alexkroman1/aai";
 import { formatSchemaIssues } from "@alexkroman1/aai/internal";
-import { createServer, type SessionRuntime } from "@alexkroman1/aai/runtime";
-import { omitUndefined } from "@alexkroman1/aai/utils";
+import { createServer } from "@alexkroman1/aai/runtime";
 import { type WebSocket, WebSocketServer } from "ws";
 import { z } from "zod";
-import { createIdleController, createManageHandler, readAgentBoot } from "./harness-agent-mode.ts";
+import { mainAgent } from "./harness-agent-mode.ts";
 import { verifyBearer } from "./harness-auth.ts";
-import {
-  emptyHarnessState,
-  ensureRuntime,
-  type HarnessState,
-  loadBundle,
-} from "./harness-bundle.ts";
+import { emptyHarnessState, type HarnessState, lazyRuntime, loadBundle } from "./harness-bundle.ts";
 import { installCrashGuards } from "./harness-crash-guards.ts";
 import {
   handleHostResponse,
@@ -90,20 +84,13 @@ import {
   setHostSend,
 } from "./harness-rpc.ts";
 import type {
-  GuestRuntime,
   JsonRpcMessage,
   JsonRpcNotification,
   JsonRpcRequest,
   JsonRpcResponse,
 } from "./harness-types.ts";
-import { handleWorkflowRequest } from "./harness-workflow.ts";
-import { configureWorkflowWorld, startWorkflowWorldIfDeclared } from "./harness-world.ts";
-import {
-  AGENT_IDLE_EXIT_MS,
-  AGENT_IDLE_POLL_MS,
-  HARNESS_ORPHAN_POLL_MS,
-  HARNESS_ORPHAN_TIMEOUT_MS,
-} from "./limits.ts";
+
+import { HARNESS_ORPHAN_POLL_MS, HARNESS_ORPHAN_TIMEOUT_MS } from "./limits.ts";
 import { withBuildDir } from "./studio-build.ts";
 import { handleStudioRequest, initStudioSession } from "./studio-chat.ts";
 import { deployWorkspaceDir } from "./studio-publish.ts";
@@ -201,128 +188,6 @@ export function dispatchMessage(msg: JsonRpcMessage, state: HarnessState): void 
 }
 
 // ---- Servers -------------------------------------------------------------
-
-/**
- * The session-facing runtime handed to `createServer` — a lazy facade over
- * `ensureRuntime` so the real runtime is built on the FIRST session (with
- * the loaded bundle's env), plus the live-session count the host's idle
- * eviction asks for over `status`.
- */
-export function lazyRuntime(
-  state: HarnessState,
-  hooks: {
-    /**
-     * Pre-session refusal, checked before anything starts: return a close
-     * code + reason to turn the session away (agent mode's drain refusal —
-     * 1013 "try again" makes the client re-broker onto the replacement).
-     * The one refusal path, shared with the runtime-build failure below.
-     */
-    refuse?: () => { code: number; reason: string } | null;
-  } = {},
-): SessionRuntime {
-  return {
-    startSession(ws, opts) {
-      const socket = ws as unknown as WebSocket;
-      const refusal = hooks.refuse?.();
-      if (refusal) {
-        socket.close(refusal.code, refusal.reason);
-        return;
-      }
-      state.activeSessions++;
-      socket.on("close", () => {
-        state.activeSessions = Math.max(0, state.activeSessions - 1);
-      });
-      let runtime: GuestRuntime;
-      try {
-        runtime = ensureRuntime(state);
-      } catch (err) {
-        // No bundle yet, or the runtime can't be built (missing provider
-        // credential, invalid config) — answer with a close frame naming
-        // the cause instead of a dangling socket.
-        console.error(`session refused: ${errorMessage(err)}`);
-        socket.close(1011, errorMessage(err).slice(0, 100));
-        return;
-      }
-      runtime.startSession(ws, opts);
-    },
-    shutdown: async () => {
-      await state.runtime?.shutdown();
-    },
-  };
-}
-
-/**
- * AGENT MODE — the "guest is a server" contract (see harness-agent-mode.ts).
- * Everything arrives at exec time: the bundle and env are read (and the
- * bundle hash-verified) from files the spawner wrote into the sandbox, the
- * bundle is loaded BEFORE listen (so a 200 from /health means "ready"), and
- * there is NO host control channel — the platform's only surfaces are the
- * public session endpoints and the token-gated /manage/* pair. Lifecycle is
- * guest-owned: idle self-exit replaces the orphan timeout, and a drain
- * refuses new sessions then exits with the last one.
- */
-async function mainAgent(port: number, host: string, token: string): Promise<void> {
-  const state = emptyHarnessState();
-
-  const rawIdle = Number(process.env.AAI_GUEST_IDLE_EXIT_MS ?? AGENT_IDLE_EXIT_MS);
-  const idle = createIdleController({
-    activeSessions: () => state.activeSessions,
-    idleExitMs: Number.isFinite(rawIdle) && rawIdle >= 0 ? rawIdle : AGENT_IDLE_EXIT_MS,
-    pollMs: AGENT_IDLE_POLL_MS,
-  });
-
-  const boot = await readAgentBoot();
-
-  // BEFORE the bundle loads: `loadBundle` builds the workflow surface, which
-  // imports `workflow/runtime`, which resolves and CACHES a world from the
-  // environment. Configured after, a production guest would silently take the
-  // local world and write runs into a container about to be destroyed.
-  const world = configureWorkflowWorld({ databaseUrl: boot.env.DATABASE_URL, port });
-
-  await loadBundle(state, { code: boot.code, env: boot.env });
-
-  // Gated on the bundle actually declaring workflows: migrating and subscribing
-  // a queue are both expensive and most agents have none. A failure is logged
-  // rather than thrown — the session surface is unaffected, and an agent whose
-  // workflows are broken should still answer the phone.
-  await startWorkflowWorldIfDeclared(state.workflows !== null, world);
-
-  // A draining guest is detached from the broker, but a client holding its
-  // old sessionUrl can still dial the tunnel directly — refuse with a "try
-  // again" close so the client re-brokers onto the replacement.
-  const runtime = lazyRuntime(state, {
-    refuse: () => (idle.isDraining() ? { code: 1013, reason: "draining" } : null),
-  });
-
-  const server = createServer({
-    runtime,
-    // The guest is the authority on the agent's public client config: the
-    // platform's `GET /:slug/client-config` broker PROXIES this server's
-    // own `/client-config` for name/greeting, so the bundle's live agent
-    // definition — interpreted by the bundle's own SDK — is what renders,
-    // and the host never reads fields out of the stored config.
-    //
-    // Both guards are load-bearing at RUNTIME even though `AgentDef` declares
-    // the two fields required: `state.agent` is a tenant object asserted to
-    // `AgentDef` at load (`harness-bundle.ts`), so a bundle can ship neither.
-    // The types cannot see that, which is why a checker will call these dead.
-    ...omitUndefined({ name: state.agent?.name, greeting: state.agent?.greeting }),
-    request: (req, res, url, method) =>
-      // The DevKit's queue calls these back; unclaimed they would fall through
-      // to the 404 and every run would stall with nothing saying why. Ahead of
-      // the manage surface because the paths are disjoint and this is the hotter
-      // one on an agent that has workflows.
-      handleWorkflowRequest(state.workflows, req, res, url, method) ||
-      createManageHandler({
-        token,
-        activeSessions: () => state.activeSessions,
-        isDraining: idle.isDraining,
-        startDrain: idle.startDrain,
-      })(req, res, url, method),
-  });
-  await server.listen(port, host);
-  console.error(`agent-mode harness listening on ${host}:${port}`);
-}
 
 function main(): void {
   installCrashGuards();
