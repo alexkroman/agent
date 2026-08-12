@@ -81,7 +81,7 @@ once, and the templates are now their reference use:
 | `createToolContext` (`@alexkroman1/aai/testing`) | the four suites that test tools directly — `dispatch-center`, `pizza-ordering`, `retail`, `solo-rpg` |
 | `useAgentState(fallback)` | `pizza-ordering`, `dispatch-center`, `retail`, `solo-rpg` |
 | `AutoScroll` | the three custom-chrome clients — `dispatch-center`, `retail`, `infocom-adventure` |
-| `workflow()` + `ctx.workflows` + `isTerminal` | `research-desk` — the only template with a `workflows/` directory (see below) |
+| `workflow()` + `ctx.workflows` + `isTerminal` | `research-desk` (the handoff — start a run, correlate it with `key`, read it back), `transcription-desk` (the fan-out, plus `cancel` and `WorkflowOutputOf`) — the two templates with a `workflows/` directory (see below) |
 
 **`research-desk` is the workflow template, and its shape is dictated by the
 Workflow DevKit rather than chosen.** The `"use workflow"` / `"use step"` bodies
@@ -101,6 +101,48 @@ throw made this template unimportable by its own spec. The check lives at
 
 Note the template needs `workflow` as a devDependency of THIS package to
 resolve at test time; a scaffolded project gets it as a real dependency.
+
+**`transcription-desk` is the second workflow template, and it exists for the
+rule a straight-line body cannot show: the DevKit correlates a journal entry to
+a step call by the ORDER the call was ISSUED in.** `createUseStep`
+(`@workflow/core/dist/step.js`) stamps each invocation with
+`step_${ctx.generateUlid()}` from a monotonic ULID factory seeded off the run's
+`startedAt` and the VM's replay-stable `Math.random`, so the Nth step call in a
+run gets the Nth id on the first execution and on every replay. The step's NAME
+is only cross-checked against that id, and a mismatch is `ReplayDivergenceError`
+rather than a silent re-run.
+
+Two things follow, and they are the template's whole content:
+`Promise.all(batch.map(step))` is safe (every call issued synchronously, in
+array order, whatever order they settle in), and **a work-stealing pool is not**
+— a worker issues its next call only after its previous one settles, so the
+issue order tracks completion order, which differs between a live run and a
+replay. Bounded concurrency therefore has to be sequential batches of
+`Promise.all`, which costs the tail of each batch and is the only deterministic
+option. This is the one piece of the pre-DevKit engine's API that did NOT
+survive the port: `ctx.step("chunk-3", …)` let a caller pin identity to a
+position, and nothing replaces it.
+
+It also demonstrates that a fan-out's WIDTH may come from a step's result
+(`splitRecording`), because that result is journaled — as against anything the
+body computes for itself, which is the ordinary determinism rule one level up.
+
+Its spec additionally exercises the BODY directly, which `research-desk`'s does
+not: imported through vitest with no bundler in the path, `transcribeFlow` is an
+ordinary async function and its `"use step"` calls are ordinary calls, so the
+assembly (every chunk in recording order, no dropped partial final batch) is
+testable while durability and replay are not. The spec says so in place, because
+a body test that looked like a durability test would be the worse failure.
+
+**A step cannot reach `ctx.env` or `ctx.db`, which is why both workflow
+templates stub their I/O.** A `"use step"` function is bundled and dispatched
+separately from the agent bundle and is handed no tool context, and the guest
+reads the agent's secrets into memory rather than into `process.env`
+(`harness-agent-mode.ts` deletes the env file after reading). So there is
+currently no way for a step to authenticate an outbound call, and
+`research-desk`'s comment that `ctx.db` is "available in a step" describes an
+intent rather than the implementation. Until that gap is closed, a template's
+steps are fixtures.
 
 The one thing a template may still hand-roll here is a **fallback that would
 cost the browser bundle**: `retail`'s client builds its empty view from a

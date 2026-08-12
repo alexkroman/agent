@@ -142,7 +142,6 @@
     "WS_OPEN",
     "WorkflowBody",
     "WorkflowDef",
-    "WorkflowOutputOf",
     "WorkflowRunBase",
     "WorkflowRunStatus",
     "WorkflowSummary",
