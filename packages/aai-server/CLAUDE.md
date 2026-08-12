@@ -60,6 +60,10 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
 - `sandbox-broker.ts` — `brokerSessionUrl`: slug → the public session URL a
   client dials, with the one failure taxonomy `GET /:slug/client-config` and
   the `/:slug/websocket` upgrade share. The platform's ONLY routing point
+- `workflow-webhook-handler.ts` — the durable-run webhook proxy (see
+  "Durable workflows" below): brokers a sandbox for a run whose guest exited
+  long ago and forwards one request to the guest's own webhook endpoint. The
+  only workflow route the platform serves
 - `phone-handler.ts` / `phone-signature.ts` — `GET/POST /:slug/phone`: the
   carrier call-answering webhook (see "Telephony" below) and its webhook
   authenticity checks
@@ -1480,62 +1484,14 @@ dispatcher are in `packages/aai/CLAUDE.md`, "Guest network access".
   backfill leaves a foreign mapping alone and links anyway (refusing would
   strand exactly the legacy accounts it exists to heal). Same-uid re-saves
   stay idempotent, so rotation is unaffected.
-- **Browser sessions are Supabase Auth** (`supabase-auth.ts`): GitHub
-  OAuth sign-in via supabase-js (`signInWithOAuth`) in the studio client.
-  The server verifies access tokens **two ways, and which one a route gets is
-  a security decision**:
-  - `verifyAccessToken` — the request path. `getClaims` (`@supabase/auth-js`),
-    which on a project using ASYMMETRIC JWT signing keys verifies the
-    signature locally against a process-cached JWKS and touches the network
-    not at all. Supabase's own guidance is to "prefer `getClaims` over
-    `getUser`, which always sends a request to the Auth server for each JWT",
-    and `GET /auth/v1/user` per token is what this replaced.
-  - `verifyAccessTokenFresh` — `GET /auth/v1/user`, uncached, used ONLY by
-    `requireStudioUser` (the three account routes). A signature check is
-    authoritative about who issued a token and when it expires and blind to
-    REVOCATION: a signed-out session stays cryptographically valid until
-    `exp`. Those routes read and rotate the account's AssemblyAI key and grant
-    a CLI one exchange for it, so they pay a round trip to see a sign-out at
-    once.
-
-  Two properties worth keeping. `getClaims` is safe on either kind of project
-  — on a symmetric (HS256) one it falls back to a server call by itself — and
-  that is also why the request path KEEPS its short TTL cache: on such a
-  project the cache is what stops a per-request round trip. **That cache entry
-  is capped at the token's own `exp`**, because `getClaims` validates expiry
-  only on a MISS — a flat TTL kept serving a token that expired 59 seconds
-  ago, making the bound the SUM of the two rather than the minimum. A
-  rejection keeps the flat TTL; there is no `exp` to read from a token that
-  did not verify. And a rejected
-  token and an unreachable Supabase are opposite answers, so only
-  `isAuthRetryableFetchError` throws (a 5xx to the caller); everything else
-  caches as a rejection. `storageKey` is set explicitly because auth-js caches
-  the JWKS in a PROCESS-GLOBAL map keyed by it rather than by URL — two
-  clients pointed at different projects would otherwise verify one project's
-  tokens against the other's keys.
-
-  Configured by
-  `SUPABASE_URL` + `SUPABASE_PUBLISHABLE_KEY`. Local dev (same `isLocalDev`
-  policy as the in-memory stores — production can never resolve it) falls
-  back to `createDevAuth`: the login screen mints self-describing
-  `dev.<base64url({id,email})>.dev` tokens, so `pnpm dev:aai-server`
-  needs no Supabase project while exercising the same middleware. The
-  studio's account surface (`GET /studio/auth`, `GET /studio/account`,
-  `PUT /studio/account/key`) authenticates the session WITHOUT requiring
-  a stored key — it is how the key gets set, as the mandatory onboarding
-  screen after sign-in.
-- **`aai login` never signs in and can never create an account** — it
-  LINKS an account that is already signed in to the browser studio
-  (device-link flow): the CLI mints an unguessable one-shot code, opens
-  `<server>/?cli-link=<code>`, and polls
-  `POST /studio/cli-link/exchange`; the signed-in (and key-onboarded)
-  browser session approves via `POST /studio/cli-link/approve`, which
-  grants that code ONE exchange for the account's stored API key. Grants
-  live in the SecretStore under the code's hash
-  (`cliLinkSecretName`), expire in 10 minutes, and are deleted on first
-  read. There is no `GET /studio/account/key` route anymore — the exchange
-  is the only way a raw key leaves the platform, and only to the terminal
-  that minted the code.
+- **Browser sessions are Supabase Auth**, and `aai login` LINKS an
+  already-signed-in browser account rather than signing anyone in — the
+  device-link flow whose grant is one exchange for the account's stored key.
+  Both are the STUDIO's auth surface and are documented with it:
+  `packages/aai-studio-server/CLAUDE.md`, "Studio auth". The mechanisms live
+  here (`supabase-auth.ts`, `middleware.ts`) because the shared core owns
+  them; the two verification paths, why one of them pays a round trip, and
+  the cli-link grant's lifetime are all there.
 - **Every AssemblyAI key on the platform is user-provided** — there is no
   platform-owned key, and with browser sessions the browser never holds
   one either: the key lives server-side against the account (Vault) and
@@ -1726,6 +1682,53 @@ request from, which behind Modal's TLS termination is never `c.req.url` — the
 handler composes it from `resolvePublicOrigin`, for the same reason everything
 else on this platform does (see "Never derive the public scheme from the
 request URL").
+
+### Durable workflows — `/:slug/.well-known/workflow/v1/webhook/:token`
+
+The Workflow DevKit runs entirely inside the guest (see
+`packages/aai/host/workflow-*.ts`); the platform's whole share of it is this
+one proxy, and which of the DevKit's three routes gets one is the decision
+worth keeping:
+
+- **`flow` and `step` get nothing** (`guest-internal` in
+  `GUEST_ROUTE_EXPOSURE`). They are queue callbacks the guest's own
+  graphile-worker dials on loopback, and they are unauthenticated *because*
+  loopback is the gate — a platform route would be an unauthenticated way to
+  replay another tenant's run or execute one of its steps. If a run's queue
+  ever moves out of the guest they need a route AND an authenticity check,
+  never one without the other.
+- **`webhook` is PROXIED**, because it is the one URL that leaves the system.
+
+**The proxy exists because the run outlives the SANDBOX.**
+`createWebhook()`'s URL goes to a payment provider or an approval mail and must
+still work weeks later; a Modal tunnel URL changes on every respawn, and agent
+mode self-exits after `AGENT_IDLE_EXIT_MS` with zero sessions. So the common
+case is a delivery arriving at a slug with NO sandbox, and
+`workflow-webhook-handler.ts` brokers one exactly as `GET /:slug/client-config`
+does — which works because run state lives in the app's own Postgres (the
+DevKit's Postgres world), not in guest memory: a freshly booted guest resumes a
+hook parked days ago. A still-booting sandbox is a **503 + `Retry-After`** (the
+boot continues and the sender's retry joins the same readiness promise) rather
+than the phone route's retry-in-the-response, because a webhook sender already
+has a retry loop and a carrier does not.
+
+A forward, not a redirect: senders differ on whether they follow one on a POST
+(and those that do may drop the body). Auth is the token and nothing else, at
+both ends — the DevKit is explicit that this is the endpoint's only
+authorization, and the posture matches `/client-config` and `/:slug/phone`
+beside it, so nothing is newly reachable; the body is capped
+(`MAX_WEBHOOK_BODY_BYTES`) before it is buffered, since the route is public
+and boots sandboxes.
+
+**Two gaps this deliberately leaves open.** The URL the DevKit MINTS still
+names the guest's own origin — `getWorkflowMetadata().url` is
+`http://localhost:<port>` off the running process, and its only override is
+Vercel's, which also switches on a replay watchdog that calls `process.exit(1)`
+inside what is also a voice guest. So an author composes the durable URL from
+the hook's `token` plus their agent's public origin; this route is what answers
+it. And a run that is still working when its guest goes idle stalls until
+something boots the guest again (a session, a call, the next webhook) — the
+queue polls from inside the sandbox, so nothing outside it advances a run.
 
 ### No warm pool — every spawn boots from the snapshot image
 

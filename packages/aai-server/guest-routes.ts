@@ -73,11 +73,31 @@ export type GuestRoute = (typeof GUEST_ROUTES)[keyof typeof GUEST_ROUTES];
  *   platform serves no path of its own for it.
  * - `host-only` — reached by the platform through the sandbox URL, never by a
  *   client, and bearer-gated.
+ * - `guest-internal` — dialled only from INSIDE the container, on loopback, by
+ *   the guest's own machinery. No caller outside the sandbox exists, so there
+ *   is nothing to route and nothing for the platform to authenticate. Distinct
+ *   from `host-only`, which says the PLATFORM dials it and implies a token
+ *   guarding it: writing one of these down as `host-only` would describe a
+ *   gate that is not there.
  */
 export type GuestRouteExposure =
-  | { via: "proxied"; methods: readonly ("GET" | "POST" | "PUT" | "DELETE" | "PATCH")[] }
+  | {
+      via: "proxied";
+      methods: readonly ("GET" | "POST" | "PUT" | "DELETE" | "PATCH")[];
+      /**
+       * Extra path pattern the PLATFORM route carries beyond the guest path.
+       *
+       * For a route whose last segment is a parameter the guest path is only a
+       * PREFIX — the guest parses the segment off it itself (`webhookToken` in
+       * `aai/host/workflow-serve.ts`) — so `/:slug<path>` alone would register
+       * a route no real request matches. Declaring the suffix keeps the parity
+       * test checking the path the platform must really answer.
+       */
+      suffix?: string;
+    }
   | { via: "direct-dial" }
-  | { via: "host-only" };
+  | { via: "host-only" }
+  | { via: "guest-internal" };
 
 /**
  * The exposure of every guest route, and the reason this table exists.
@@ -119,29 +139,61 @@ export const GUEST_ROUTE_EXPOSURE = {
   health: { via: "host-only" },
   clientConfig: { via: "proxied", methods: ["GET"] },
   // Nothing outside the sandbox calls these two: the DevKit's queue lives in
-  // the guest and dials its own server. Not `proxied` — a platform route would
-  // be an unauthenticated way for anyone to drive another tenant's run.
-  workflowFlow: { via: "host-only" },
-  workflowStep: { via: "host-only" },
-  // KNOWN GAP, and this declaration is the honest state rather than the target.
-  // A webhook URL is handed to a third party and must outlive the sandbox that
-  // minted it, so this has to become `proxied` under `/:slug` — a Modal tunnel
-  // URL changes on every respawn, so today a `createWebhook()` URL only survives
-  // under `aai dev`. Left `host-only` because that is what is true until the
-  // platform route exists; flipping it early would make `guest-routes.test.ts`
-  // assert a forward that is not there.
-  workflowWebhook: { via: "host-only" },
+  // the guest (graphile-worker polling the app database from inside this
+  // container) and dials its own server on loopback, so there is no caller to
+  // route for. Not `proxied` — a platform route would be an unauthenticated
+  // way for anyone to replay another tenant's run or execute one of its steps,
+  // and these two are unauthenticated precisely BECAUSE loopback is the whole
+  // gate. Not `host-only` either: the platform never dials them, and saying it
+  // does would claim a bearer check that does not exist. Reconsider only if a
+  // run's queue ever moves out of the guest — then they need a platform route
+  // AND an authenticity check of their own, not one without the other.
+  workflowFlow: { via: "guest-internal" },
+  workflowStep: { via: "guest-internal" },
+  // The one workflow route with a caller outside the container, and the reason
+  // it must be brokered rather than direct-dialled: a `createWebhook()` URL is
+  // handed to a THIRD PARTY (a payment provider, an approval mail) and has to
+  // keep working after the sandbox that minted it is gone. A Modal tunnel URL
+  // does not — it changes on every respawn — and a durable run is precisely the
+  // thing that outlives the call that started it, so the guest is usually not
+  // even running when the delivery arrives (agent mode self-exits on idle).
+  // The platform route boots one; see workflow-webhook-handler.ts.
+  workflowWebhook: {
+    via: "proxied",
+    // Whatever verb the far side chooses: the sender owns that decision, and
+    // the guest answers any method here (`pickWorkflowHandler` in
+    // `aai/host/workflow-serve.ts` gates only flow and step on POST).
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+    // The token segment — the only thing identifying the run, and the only
+    // authorization the DevKit performs on this endpoint.
+    suffix: "/:token",
+  },
   manageStatus: { via: "host-only" },
   manageDrain: { via: "host-only" },
 } satisfies Record<keyof typeof GUEST_ROUTES, GuestRouteExposure>;
 
-/** Path + methods for every route the platform must proxy under `/:slug`. */
-export function proxiedGuestRoutes(): { path: GuestRoute; methods: readonly string[] }[] {
+/**
+ * Path + methods for every route the platform must proxy under `/:slug`.
+ *
+ * The path is the PLATFORM's, suffix included (see `GuestRouteExposure`), so it
+ * is a plain string rather than a {@link GuestRoute}: `/:slug<path>` is what the
+ * orchestrator has to register for a request to match.
+ */
+export function proxiedGuestRoutes(): { path: string; methods: readonly string[] }[] {
   // flatMap rather than filter+map so `via` narrows `methods` into existence,
   // instead of needing an `in` check whose else-branch cannot be reached.
-  return Object.entries(GUEST_ROUTE_EXPOSURE).flatMap(([key, exposure]) =>
+  // Widened to the declared type before iterating: the literal object narrows
+  // each entry to its own exact shape, so `suffix` would not exist on the
+  // proxied entries that omit it.
+  const declared = GUEST_ROUTE_EXPOSURE as Record<keyof typeof GUEST_ROUTES, GuestRouteExposure>;
+  return Object.entries(declared).flatMap(([key, exposure]) =>
     exposure.via === "proxied"
-      ? [{ path: GUEST_ROUTES[key as keyof typeof GUEST_ROUTES], methods: exposure.methods }]
+      ? [
+          {
+            path: `${GUEST_ROUTES[key as keyof typeof GUEST_ROUTES]}${exposure.suffix ?? ""}`,
+            methods: exposure.methods,
+          },
+        ]
       : [],
   );
 }

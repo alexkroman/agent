@@ -66,6 +66,15 @@ describe("guest route exposure", () => {
     expect(proxied.length).toBeGreaterThan(0);
   });
 
+  test("a parameterized proxied route is declared with its suffix", () => {
+    // The guest path is a PREFIX for a route whose last segment is a parameter
+    // (the webhook token), so `/:slug<guest path>` alone would register a route
+    // no real request matches — and the parity test below would still pass,
+    // having checked the wrong path. The suffix is what keeps it honest.
+    const webhook = proxiedGuestRoutes().find((r) => r.path.includes("/webhook"));
+    expect(webhook?.path).toBe(`${GUEST_ROUTES.workflowWebhook}/:token`);
+  });
+
   test("the platform registers every proxied guest route, for every method", () => {
     const registered = registeredRoutes();
     for (const { path, methods } of proxiedGuestRoutes()) {
@@ -83,6 +92,15 @@ describe("guest route exposure", () => {
         ).toBe(true);
       }
     }
+  });
+
+  test("the queue's own callbacks stay off the platform", () => {
+    // Named rather than left to the generic reverse check below: `flow` and
+    // `step` are unauthenticated BECAUSE only the guest's own worker dials
+    // them on loopback, so a platform route for either is not a routing
+    // decision — it is an unauthenticated way to drive another tenant's run.
+    expect(GUEST_ROUTE_EXPOSURE.workflowFlow.via).toBe("guest-internal");
+    expect(GUEST_ROUTE_EXPOSURE.workflowStep.via).toBe("guest-internal");
   });
 
   test("a direct-dial or host-only route is not silently proxied instead", () => {

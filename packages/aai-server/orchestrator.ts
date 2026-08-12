@@ -15,6 +15,9 @@
  *   sandbox session URL (ensures the sandbox is running)
  * - `GET/POST /:slug/phone`     — carrier call-answering webhook: brokers the
  *   sandbox and answers with TwiML/TeXML pointing at its media-stream endpoint
+ * - `/:slug/.well-known/workflow/v1/webhook/:token` — durable-run webhook
+ *   delivery: brokers the sandbox (booting one for a run whose guest has long
+ *   since exited) and forwards the request to the guest's own endpoint
  * - `GET  /:slug/favicon.ico`    — agent page favicon (custom or default)
  * - `GET  /:slug/assets/:path`   — client static assets
  * - `DELETE /:slug/`             — owner: delete agent
@@ -42,6 +45,7 @@ import { DEPLOY_BODY_CONCURRENCY, DEPLOY_BODY_WAIT_MS, resolveHarnessPath } from
 import type { HonoEnv } from "./context.ts";
 import { handleDelete } from "./delete.ts";
 import { handleDeployNew } from "./deploy.ts";
+import { GUEST_ROUTE_EXPOSURE } from "./guest-routes.ts";
 import { gzipRequestMw, MAX_INFLATED_BODY_BYTES } from "./gzip-request.ts";
 import { authMw, existingOwnerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
@@ -75,6 +79,11 @@ import {
   handleAgentPage,
   handleClientAsset,
 } from "./transport-websocket.ts";
+import {
+  createWorkflowWebhookHandler,
+  MAX_WEBHOOK_BODY_BYTES,
+  WORKFLOW_WEBHOOK_ROUTE,
+} from "./workflow-webhook-handler.ts";
 
 export type OrchestratorOpts = {
   slots: SlotCache;
@@ -129,11 +138,14 @@ export type OrchestratorOpts = {
   /** Allowed CORS origins. Defaults to `["*"]` (any origin). */
   allowedOrigins?: string[];
   /**
-   * Test seam for the client-config broker's proxy fetch of the guest's own
-   * `/client-config` (name/greeting come from the GUEST, never the stored
-   * config — see client-config-handler.ts).
+   * Test seam for platform→guest HTTP: the client-config broker's proxy fetch
+   * of the guest's own `/client-config` (name/greeting come from the GUEST,
+   * never the stored config — see client-config-handler.ts) and the
+   * workflow-webhook forward. One option rather than one per route — both are
+   * the same hop to the same sandbox, and a second name here is how a new
+   * forwarding route ends up untestable by omission.
    */
-  guestConfigFetch?: typeof globalThis.fetch;
+  guestFetch?: typeof globalThis.fetch;
   /**
    * True once shutdown has begun. Fails `/health` so the platform's proxy
    * stops routing here. (Upgrades on `/:slug/websocket` are pure handshake
@@ -285,7 +297,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // Session broker: the live sandbox session URL (boots the sandbox on first
   // request) plus name/greeting PROXIED from the guest's own /client-config.
   // Same auth posture as the page and the session endpoint: none.
-  const handleAgentClientConfig = createAgentClientConfigHandler(opts.guestConfigFetch);
+  const handleAgentClientConfig = createAgentClientConfigHandler(opts.guestFetch);
   agents.get("/client-config", (c) => handleAgentClientConfig(c, brokerOpts));
   // Call-answering webhook: brokers the sandbox and answers with the TwiML
   // that points the carrier at the guest's own /phone endpoint. Same auth
@@ -295,6 +307,22 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // to configure, and a GET-configured number should work rather than 405.
   const handlePhone = createPhoneHandler({ store: opts.store });
   agents.on(["GET", "POST"], PHONE_ROUTE, (c) => handlePhone(c, brokerOpts));
+  // Durable-run webhook delivery. Same auth posture again — the DevKit's token
+  // is the only authorization on this endpoint, at the guest and here.
+  // The methods come STRAIGHT off the exposure declaration rather than being
+  // restated: the guest answers any verb the third party chose, and a platform
+  // route serving a subset of them is the exact bug guest-routes.ts exists to
+  // catch (a `DELETE` that worked in dev and 404'd deployed).
+  const handleWorkflowWebhook = createWorkflowWebhookHandler(opts.guestFetch);
+  agents.on(
+    [...GUEST_ROUTE_EXPOSURE.workflowWebhook.methods],
+    WORKFLOW_WEBHOOK_ROUTE,
+    bodyLimit({
+      maxSize: MAX_WEBHOOK_BODY_BYTES,
+      onError: (c) => c.json({ error: "Request body too large" }, 413),
+    }),
+    (c) => handleWorkflowWebhook(c, brokerOpts),
+  );
   agents.get("/favicon.ico", handleAgentFavicon);
   agents.get("/assets/:path{.+}", handleClientAsset);
   // GET /:slug/ stays on the top-level app — Hono's mergePath("/:slug", "/")
