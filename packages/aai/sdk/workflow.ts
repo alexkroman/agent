@@ -97,9 +97,9 @@ export {
  * without importing the engine. Typed as optional-but-present rather than
  * required because the property does not exist until the transform runs, and a
  * required field would make an untransformed function a compile error at the
- * declaration site — which is the wrong place to report it. {@link workflow}
- * checks it at runtime instead, where the error can say that the bundler plugin
- * is missing.
+ * declaration site — which is the wrong place to report it. `ctx.workflows.start`
+ * checks it instead, at the point the id is actually needed, where the error can
+ * say that the bundler plugin did not run.
  *
  * @typeParam I - The body's single input argument.
  * @typeParam R - What the body returns.
@@ -343,77 +343,21 @@ export type WorkflowClient = {
 };
 
 /**
- * A {@link WorkflowClient} whose every method rejects with `message`.
- *
- * What `ctx.workflows` IS when there is nothing behind it — no workflows
- * declared, no world configured, or a test that did not stub one. One factory
- * rather than a literal per site, because the literal wants writing three times
- * (the tool executor's stub, the host test helper's, and
- * `@alexkroman1/aai/testing`'s) and adding a method to the client would break
- * all three at once while each looked complete on its own.
- *
- * The message is the caller's because the cases want different ones: the
- * runtime's names the missing configuration, a test's names the missing stub.
- *
- * @public
- */
-export function rejectingWorkflows(message: string): WorkflowClient {
-  // One rejector shared by every method: they differ only in return type, and
-  // `never` satisfies all of them.
-  const reject = (): Promise<never> => Promise.reject(new Error(message));
-  // `listing` cannot reject — it is synchronous — and an empty list is the
-  // truthful answer for every case this factory covers.
-  return {
-    start: reject,
-    get: reject,
-    find: reject,
-    recent: reject,
-    cancel: reject,
-    listing: () => [],
-  };
-}
-
-/**
- * What `ctx.workflows` rejects with when there is no workflow backend behind it.
- *
- * Covers both reasons at once because a tool author cannot tell them apart from
- * inside a tool, and the remedy is the same read of the docs: the app declares no
- * `workflows`, or it declares some and no world is configured (no
- * `WORKFLOW_TARGET_WORLD` in production, no storage enabled).
- *
- * @internal
- */
-export const WORKFLOWS_UNAVAILABLE_MESSAGE =
-  "Workflows are not available for this app. Declare them with `agent({ workflows })`, " +
-  "and make sure storage is enabled (`aai storage enable`, or Settings → Database in " +
-  "the studio) so runs have somewhere to live.";
-
-/**
- * The error a declaration gets when its `run` carries no `workflowId`.
- *
- * Its own export because two layers throw it: {@link workflow} at declaration
- * time, and the client when it resolves a def it was handed. Naming the bundler
- * plugin is the whole value — the symptom otherwise is
- * `start` rejecting with WDK's own "invalid workflow function", which points an
- * agent author at the SDK rather than at their build.
- *
- * @internal
- */
-export const MISSING_WORKFLOW_ID_MESSAGE =
-  'workflow({ run }) was given a function with no "use workflow" directive, or the ' +
-  "Workflow DevKit bundler plugin did not run. Declare the body in a module under " +
-  '`workflows/`, put `"use workflow";` as its first statement, and make sure the ' +
-  "project is built by `aai build`/`aai dev` rather than a bare bundler.";
-
-/**
  * Declare a durable workflow.
  *
- * Nearly an identity function, exactly like {@link tool} — it returns the input
- * unchanged, and exists for type inference. The one thing it does at runtime is
- * check that `run` really was transformed, because that is the mistake with the
- * worst error message if left to be discovered later (see
- * {@link MISSING_WORKFLOW_ID_MESSAGE}). Workflows are named by the key they are
- * declared under, so this takes no `name`.
+ * An identity function for type inference, exactly like `tool()` — the returned
+ * object is the input unchanged. Workflows are named by the key they are declared
+ * under, so this takes no `name`.
+ *
+ * @remarks
+ * It deliberately does NOT check that `run` carries the compiler's `workflowId`.
+ * That check belongs where the id is USED (`ctx.workflows.start`, which throws
+ * naming the build), because a declaration-time throw makes merely IMPORTING an
+ * agent module fail wherever the Workflow DevKit transform has not run — which
+ * includes every unit test of a tool that starts a workflow, since vitest loads
+ * `agent.ts` as source with no bundler in the path. The first template to declare
+ * one is what surfaced this: the throw made the module unimportable by its own
+ * spec.
  *
  * @example
  * ```ts no-check
@@ -450,8 +394,5 @@ export const MISSING_WORKFLOW_ID_MESSAGE =
 export function workflow<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
   def: WorkflowDef<P, R>,
 ): WorkflowDef<P, R> {
-  if (typeof def.run !== "function" || !def.run.workflowId) {
-    throw new Error(MISSING_WORKFLOW_ID_MESSAGE);
-  }
   return def;
 }

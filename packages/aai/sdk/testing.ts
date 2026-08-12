@@ -17,7 +17,7 @@
 
 import type { Db } from "./db.ts";
 import type { DefaultSessionState, ToolContext } from "./types.ts";
-import { rejectingWorkflows } from "./workflow.ts";
+import { rejectingWorkflows } from "./workflow-unavailable.ts";
 
 /** One `ctx.send(event, data)` call, as recorded by {@link createToolContext}. */
 export interface SentEvent {

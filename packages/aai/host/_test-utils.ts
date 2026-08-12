@@ -8,7 +8,7 @@ import type { ClientEvent, ClientSink } from "../sdk/protocol.ts";
 import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
 import type { AgentDef, ToolContext, ToolDef } from "../sdk/types.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "../sdk/types.ts";
-import { rejectingWorkflows } from "../sdk/workflow.ts";
+import { rejectingWorkflows } from "../sdk/workflow-unavailable.ts";
 import { createRuntime } from "./runtime.ts";
 import type { ConnectS2sOptions, S2sCallbacks, S2sHandle } from "./s2s.ts";
 import type { SessionCore } from "./session-core.ts";

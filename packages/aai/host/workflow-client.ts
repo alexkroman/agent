@@ -23,16 +23,16 @@
 import type { Db } from "../sdk/db.ts";
 import { formatSchemaIssues, toToolJsonSchema } from "../sdk/schema.ts";
 import { errorMessage } from "../sdk/utils.ts";
-import {
-  type AnyWorkflowDef,
-  type FindOptions,
-  MISSING_WORKFLOW_ID_MESSAGE,
-  type StartOptions,
-  type WorkflowClient,
-  type WorkflowDef,
-  type WorkflowSummary,
+import type {
+  AnyWorkflowDef,
+  FindOptions,
+  StartOptions,
+  WorkflowClient,
+  WorkflowDef,
+  WorkflowSummary,
 } from "../sdk/workflow.ts";
 import type { WorkflowRunSnapshot } from "../sdk/workflow-run.ts";
+import { MISSING_WORKFLOW_ID_MESSAGE } from "../sdk/workflow-unavailable.ts";
 import type { Logger } from "./runtime-config.ts";
 import {
   createMemoryKeyStore,
@@ -52,7 +52,7 @@ export type WorkflowClientOptions = {
   keys: WorkflowKeyStore;
   /**
    * The WDK entry points, injected rather than imported so this module can be
-   * specified without a world. Production passes {@link wdkAdapter}.
+   * specified without a world. Production passes `wdkAdapter` (`workflow-wdk.ts`).
    */
   wdk: WdkAdapter;
   logger: Logger;
@@ -79,7 +79,7 @@ export type WdkAdapter = {
   /**
    * The completed run's return value, hydrated.
    *
-   * Separate from {@link getRun} because reading it costs a deserialization (and,
+   * Separate from `getRun` because reading it costs a deserialization (and,
    * with encryption on, a key resolution) that a `pending` run has no use for.
    */
   readOutput(runId: string): Promise<unknown>;
@@ -90,7 +90,7 @@ export type WdkAdapter = {
  *
  * `status` is typed as the WDK union rather than ours even though the two are
  * pinned equal (`workflow-status-align.test.ts`), because this type describes
- * what WDK returns; the mapping to ours is {@link toSnapshot}'s job.
+ * what WDK returns; the mapping to ours is `toSnapshot`'s job.
  */
 export type WdkRunRecord = {
   runId: string;
@@ -294,7 +294,7 @@ function safeJsonSchema(
   }
 }
 
-/** One message for both directions of {@link createWorkflowClient}'s name resolution. */
+/** One message for both directions of `createWorkflowClient`'s name resolution. */
 function unknownWorkflowMessage(named: string, declared: readonly string[]): string {
   const list = declared.length > 0 ? declared.join(", ") : "(none)";
   return `Workflow "${named}" is not declared on this agent. Declared workflows: ${list}.`;

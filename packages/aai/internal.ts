@@ -24,4 +24,14 @@ export {
 export { createEpoch, type Epoch } from "./sdk/epoch.ts";
 export { createOwnedMap, type OwnedMap } from "./sdk/owned-map.ts";
 export { formatSchemaIssues } from "./sdk/schema.ts";
+// The unavailable-workflows trio. Here rather than on the root barrel because all
+// three are `@internal`: their readers are the tool executor, the two
+// test-context builders, and the guest harness. Keeping them off the root also
+// keeps them out of the docs surface, which a `@public` `{@link}` to an
+// `@internal` symbol would otherwise fail the docs build over.
+export {
+  MISSING_WORKFLOW_ID_MESSAGE,
+  rejectingWorkflows,
+  WORKFLOWS_UNAVAILABLE_MESSAGE,
+} from "./sdk/workflow-unavailable.ts";
 export { parseWsUpgradeParams } from "./sdk/ws-upgrade.ts";

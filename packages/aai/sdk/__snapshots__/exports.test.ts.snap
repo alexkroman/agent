@@ -68,7 +68,6 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "MIC_BUFFER_SECONDS",
   "MIC_SEND_MAX_BUFFERED_BYTES",
   "MIC_SILENCE_PROBE_MS",
-  "MISSING_WORKFLOW_ID_MESSAGE",
   "PACER_BURST_MS",
   "PIPELINE_FLUSH_TIMEOUT_MS",
   "PIPELINE_PLAYBACK_GRACE_MS",
@@ -102,7 +101,6 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "TTS_RECONNECT_TIMEOUT_MS",
   "ToolChoiceSchema",
   "VALID_SLUG_RE",
-  "WORKFLOWS_UNAVAILABLE_MESSAGE",
   "WS_NORMAL_CLOSURE",
   "WS_OPEN",
   "agent",
@@ -119,7 +117,6 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "normalizeSpeechText",
   "omitUndefined",
   "pushCapped",
-  "rejectingWorkflows",
   "safeJsonParse",
   "sessionSlot",
   "toArgsRecord",
@@ -132,11 +129,14 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
 
 exports[`export surface stability > @alexkroman1/aai/internal export 1`] = `
 [
+  "MISSING_WORKFLOW_ID_MESSAGE",
+  "WORKFLOWS_UNAVAILABLE_MESSAGE",
   "createCoalescingRunner",
   "createEpoch",
   "createOwnedMap",
   "formatSchemaIssues",
   "parseWsUpgradeParams",
+  "rejectingWorkflows",
 ]
 `;
 

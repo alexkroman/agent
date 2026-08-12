@@ -15,11 +15,8 @@ import type { GenerateFn, GenerateOptions, GenerateResult } from "../sdk/generat
 import { formatSchemaIssues } from "../sdk/schema.ts";
 import type { Message, ToolContext, ToolDef } from "../sdk/types.ts";
 import { errorDetail, errorMessage, toolError } from "../sdk/utils.ts";
-import {
-  rejectingWorkflows,
-  WORKFLOWS_UNAVAILABLE_MESSAGE,
-  type WorkflowClient,
-} from "../sdk/workflow.ts";
+import type { WorkflowClient } from "../sdk/workflow.ts";
+import { rejectingWorkflows, WORKFLOWS_UNAVAILABLE_MESSAGE } from "../sdk/workflow-unavailable.ts";
 import type { HostGenerateFn } from "./generate.ts";
 import type { Logger } from "./runtime-config.ts";
 

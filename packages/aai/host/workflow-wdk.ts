@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The real {@link WdkAdapter} — the only module in this package that imports the
+ * The real `WdkAdapter` — the only module in this package that imports the
  * Workflow Development Kit's runtime entry points.
  *
  * Keeping it to one module is what lets `workflow-client.ts` be unit-tested with
