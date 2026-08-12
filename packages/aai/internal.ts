@@ -28,6 +28,5 @@ export { STORAGE_DISABLED_MESSAGE } from "./sdk/db.ts";
 export { createEpoch, type Epoch } from "./sdk/epoch.ts";
 export { createOwnedMap, type OwnedMap } from "./sdk/owned-map.ts";
 export { formatSchemaIssues } from "./sdk/schema.ts";
-export { toolInput, toolRun } from "./sdk/tool-fields.ts";
 export { WORKFLOWS_UNAVAILABLE_MESSAGE } from "./sdk/workflow-limits.ts";
 export { parseWsUpgradeParams } from "./sdk/ws-upgrade.ts";

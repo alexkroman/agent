@@ -9,7 +9,6 @@
 import { errorMessage } from "@alexkroman1/aai";
 import pTimeout from "p-timeout";
 import type { AgentDef, ToolContext, ToolDef } from "./harness-types.ts";
-import { toolDefInput, toolDefRun } from "./harness-types.ts";
 import { RUN_CODE_TIMEOUT_MS, STORAGE_DISABLED_MESSAGE, TOOL_TIMEOUT_MS } from "./limits.ts";
 
 // ---- run_code builtin -------------------------------------------------------
@@ -61,9 +60,8 @@ export async function runCode(code: string): Promise<string | { error: string }>
  * schema takes the args through unchanged, as the session path does.
  */
 async function validateTrialArgs(tool: ToolDef, args: unknown): Promise<unknown> {
-  const schema = toolDefInput(tool);
-  if (!schema) return args;
-  const parsed = await schema["~standard"].validate(args ?? {});
+  if (!tool.input) return args;
+  const parsed = await tool.input["~standard"].validate(args ?? {});
   if (parsed.issues) {
     throw new Error(`Invalid arguments: ${parsed.issues.map((i) => i.message).join("; ")}`);
   }
@@ -113,10 +111,6 @@ export async function executeTool(
   if (!tool) {
     return { error: `Unknown tool: ${req.name}`, state };
   }
-  const run = toolDefRun(tool);
-  if (!run) {
-    return { error: `Tool "${req.name}" has no \`run\` function`, state };
-  }
 
   const ctx: ToolContext = {
     env: opts.env,
@@ -142,7 +136,7 @@ export async function executeTool(
     // protocol error.
     const parsed = await validateTrialArgs(tool, req.args);
 
-    const result = await pTimeout(Promise.resolve(run(parsed, ctx)), {
+    const result = await pTimeout(Promise.resolve(tool.run(parsed, ctx)), {
       milliseconds: TOOL_TIMEOUT_MS,
       message: `Tool "${req.name}" timed out after ${TOOL_TIMEOUT_MS}ms`,
     });

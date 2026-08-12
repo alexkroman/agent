@@ -38,11 +38,11 @@ function makeAgent(overrides?: Partial<AgentDef>): AgentDef {
     tools: {
       echo: {
         description: "echo",
-        execute: (args) => `echo:${(args as { text: string }).text}`,
+        run: (args) => `echo:${(args as { text: string }).text}`,
       },
       mutate: {
         description: "bump ctx.state.count",
-        execute: (_args, ctx) => {
+        run: (_args, ctx) => {
           const state = ctx.state as { count?: number };
           state.count = (state.count ?? 0) + 1;
           return `count=${state.count}`;
@@ -50,7 +50,7 @@ function makeAgent(overrides?: Partial<AgentDef>): AgentDef {
       },
       explode: {
         description: "always throws",
-        execute: () => {
+        run: () => {
           throw new Error("kaboom");
         },
       },
@@ -171,7 +171,7 @@ describe("executeTool (one-shot trial)", () => {
       tools: {
         usesDb: {
           description: "touch ctx.db",
-          execute: (_args, ctx) => ctx.db.query("select 1"),
+          run: (_args, ctx) => ctx.db.query("select 1"),
         },
       },
     });
@@ -188,7 +188,7 @@ describe("executeTool (one-shot trial)", () => {
       tools: {
         readsEnv: {
           description: "reads env",
-          execute: (_args, ctx) => `who=${ctx.env.WHO}`,
+          run: (_args, ctx) => `who=${ctx.env.WHO}`,
         },
       },
     });
@@ -205,7 +205,7 @@ describe("executeTool (one-shot trial)", () => {
       tools: {
         notifies: {
           description: "sends to client",
-          execute: (_args, ctx) => {
+          run: (_args, ctx) => {
             ctx.send("evt", { x: 1 });
             return "sent";
           },
@@ -233,7 +233,7 @@ describe("loadBundle", () => {
         systemPrompt: "p",
         greeting: "g",
         tools: {
-          greet: { description: "greet", execute: (args, ctx) => "hello " + ctx.env.WHO },
+          greet: { description: "greet", run: (args, ctx) => "hello " + ctx.env.WHO },
         },
       };
     `;
@@ -255,7 +255,7 @@ describe("loadBundle", () => {
     const mk = (reply: string) =>
       `${FAKE_RUNTIME_EXPORT}
       export default { name: "x", systemPrompt: "p", greeting: "g",
-        tools: { t: { description: "t", execute: () => ${JSON.stringify(reply)} } } };`;
+        tools: { t: { description: "t", run: () => ${JSON.stringify(reply)} } } };`;
     await loadBundle(state, { code: mk("v1"), env: {} });
     await loadBundle(state, { code: mk("v2"), env: {} });
     const res = await executeTool(

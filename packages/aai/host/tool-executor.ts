@@ -12,7 +12,6 @@ import { TOOL_EXECUTION_TIMEOUT_MS } from "../sdk/constants.ts";
 import type { Db } from "../sdk/db.ts";
 import { STORAGE_DISABLED_MESSAGE } from "../sdk/db.ts";
 import { formatSchemaIssues } from "../sdk/schema.ts";
-import { toolInput, toolRun } from "../sdk/tool-fields.ts";
 import type { Message, ToolContext, ToolDef } from "../sdk/types.ts";
 import { errorDetail, errorMessage, toolError } from "../sdk/utils.ts";
 import { rejectingWorkflows, type WorkflowClient } from "../sdk/workflow.ts";
@@ -107,9 +106,7 @@ export async function executeToolCall(
   options: ExecuteToolCallOptions,
 ): Promise<string> {
   const { tool, logger } = options;
-  const run = toolRun(tool);
-  if (!run) return toolError(`Tool "${name}" has no \`run\` function`);
-  const schema = toolInput(tool) ?? EMPTY_PARAMS;
+  const schema = tool.input ?? EMPTY_PARAMS;
   // The spec allows a sync or async validate; await normalizes both.
   const parsed = await schema["~standard"].validate(args);
   if (parsed.issues) {
@@ -136,7 +133,7 @@ export async function executeToolCall(
     }
     // The signal makes the await settle promptly on barge-in/reset/stop; the
     // underlying handler keeps running unless it observes ctx.signal itself.
-    const result = await pTimeout(Promise.resolve(run(parsed.value, ctx)), {
+    const result = await pTimeout(Promise.resolve(tool.run(parsed.value, ctx)), {
       milliseconds: TOOL_EXECUTION_TIMEOUT_MS,
       message: `Tool "${name}" timed out after ${TOOL_EXECUTION_TIMEOUT_MS}ms`,
       signal: callController.signal,

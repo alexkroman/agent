@@ -1,7 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { mustRun } from "../host/_test-utils.ts";
 import { toAgentConfig } from "./agent-config.ts";
 import { DEFAULT_MAX_STEPS } from "./constants.ts";
 import { agent, tool } from "./define.ts";
@@ -22,7 +21,7 @@ describe("tool()", () => {
       run: ({ name }) => `Hello, ${name}!`,
     });
     expect(def.description).toBe("Greet someone");
-    expect(mustRun(def)({ name: "Alice" }, {} as never)).toBe("Hello, Alice!");
+    expect(def.run({ name: "Alice" }, {} as never)).toBe("Hello, Alice!");
   });
 
   test("works without parameters", () => {
@@ -32,41 +31,6 @@ describe("tool()", () => {
     });
     expect(def.description).toBe("No-param tool");
     expect(def.input).toBeUndefined();
-  });
-
-  test("the deprecated inputSchema/execute pair is rewritten to input/run", () => {
-    // Normalizing here is what lets every consumer read one spelling. The old
-    // keys are DROPPED rather than kept alongside — a def carrying both would
-    // leave each reader's `??` deciding which half is live.
-    const schema = z.object({ name: z.string() });
-    const def = tool({ description: "d", inputSchema: schema, execute: ({ name }) => name });
-    expect(def.input).toBe(schema);
-    expect(def).not.toHaveProperty("inputSchema");
-    expect(def).not.toHaveProperty("execute");
-    expect(mustRun(def)({ name: "Bo" }, {} as never)).toBe("Bo");
-  });
-
-  test("naming both input spellings is refused rather than resolved", () => {
-    const both = () =>
-      tool({
-        description: "d",
-        input: z.object({}),
-        inputSchema: z.object({}),
-        run: (): string => "x",
-      });
-    expect(both).toThrow("`inputSchema`");
-  });
-
-  test("naming both handler spellings is refused rather than resolved", () => {
-    const both = () =>
-      tool({ description: "d", run: (): string => "x", execute: (): string => "y" });
-    expect(both).toThrow("`execute`");
-  });
-
-  test("a def with no handler under either name is refused", () => {
-    // `tool()` is what makes `DefinedTool.run` non-optional honest, so the case
-    // the type rules out has to be rejected at runtime for a JS caller too.
-    expect(() => tool({ description: "d" })).toThrow("`run`");
   });
 });
 

@@ -20,19 +20,6 @@ describe("executeToolCall", () => {
     expect(await run("test", {}, makeTool({ run: () => "hello" }))).toBe("hello");
   });
 
-  test("calls the deprecated execute spelling, validating the deprecated schema", async () => {
-    // Same reason as `agentToolsToSchemas`: an agent that never went through
-    // `tool()` carries the old names, and a reader that only knows `run` would
-    // report it as a tool with no handler.
-    const tool: ToolDef = {
-      description: "greet",
-      inputSchema: z.object({ name: z.string() }),
-      execute: (args) => `hi ${(args as { name: string }).name}`,
-    };
-    expect(await run("greet", { name: "Bo" }, tool)).toBe("hi Bo");
-    expect(await run("greet", { name: 7 }, tool)).toContain("Invalid arguments");
-  });
-
   test("serializes non-string result as JSON", async () => {
     expect(await run("test", {}, makeTool({ run: () => ({ count: 42 }) }))).toBe('{"count":42}');
   });

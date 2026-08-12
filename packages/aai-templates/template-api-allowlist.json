@@ -16,7 +16,6 @@
     "DefaultSessionState",
     "DefaultToolResult",
     "DefaultedAgentField",
-    "DefinedTool",
     "DerivedStartToolOptions",
     "FindOptions",
     "GenerateFn",

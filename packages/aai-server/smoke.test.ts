@@ -52,8 +52,8 @@ describe("cross-package smoke: SDK → server deploy", () => {
       tools: {
         echo: {
           description: "Echo the input",
-          inputSchema: z.object({ text: z.string() }),
-          execute: ({ text }) => `echo:${text}`,
+          input: z.object({ text: z.string() }),
+          run: ({ text }) => `echo:${text}`,
         },
       },
     };
@@ -104,8 +104,8 @@ describe("cross-package smoke: SDK → server deploy", () => {
       tools: {
         search: {
           description: "Search",
-          inputSchema: z.object({ query: z.string() }),
-          execute: ({ query }) => query,
+          input: z.object({ query: z.string() }),
+          run: ({ query }) => query,
         },
       },
     };
@@ -164,12 +164,12 @@ describe("cross-package smoke: SDK → server deploy", () => {
       tools: {
         greet: {
           description: "Greet by name",
-          inputSchema: z.object({ name: z.string(), formal: z.boolean().optional() }),
-          execute: ({ name }) => `Hello, ${name}!`,
+          input: z.object({ name: z.string(), formal: z.boolean().optional() }),
+          run: ({ name }) => `Hello, ${name}!`,
         },
         noParams: {
           description: "No params tool",
-          execute: () => "done",
+          run: () => "done",
         },
       },
     };

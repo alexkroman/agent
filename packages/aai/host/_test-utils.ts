@@ -6,8 +6,6 @@ import { vi } from "vitest";
 import type { AgentConfig } from "../sdk/_internal-types.ts";
 import type { ClientEvent, ClientSink } from "../sdk/protocol.ts";
 import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
-import type { ToolInputSchema } from "../sdk/schema.ts";
-import { toolRun } from "../sdk/tool-fields.ts";
 import type { AgentDef, ToolContext, ToolDef } from "../sdk/types.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "../sdk/types.ts";
 import { rejectingWorkflows } from "../sdk/workflow.ts";
@@ -60,27 +58,6 @@ export function createMockToolContext(overrides?: Partial<ToolContext>): ToolCon
 
 export function makeTool(overrides?: Partial<ToolDef>): ToolDef {
   return { description: "test tool", run: () => "ok", ...overrides };
-}
-
-/**
- * A tool's handler, or a named failure.
- *
- * `ToolDef.run` is optional — `execute` is the other legal spelling — so every
- * direct call in a spec would otherwise need its own non-null assertion, and
- * those are exactly what the escape-hatch ratchet counts. The throw names the
- * tool, so a def that lost its handler says which one it was.
- *
- * A plain throw rather than `expect.fail`: Biome's `noMisplacedAssertion` reads
- * an assertion outside a `test()` body as a mistake, which is the right default
- * and wrong for a helper every test calls.
- */
-export function mustRun<P extends ToolInputSchema, S>(
-  def: ToolDef<P, S> | undefined,
-): NonNullable<ToolDef<P, S>["run"]> {
-  if (!def) throw new Error("mustRun: no such tool");
-  const run = toolRun(def);
-  if (!run) throw new Error(`mustRun: tool "${def.description}" has no run function`);
-  return run;
 }
 
 export function makeAgent(overrides?: Partial<AgentDef>): AgentDef {

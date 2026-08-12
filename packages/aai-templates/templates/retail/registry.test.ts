@@ -1,5 +1,5 @@
 import { isToolFailure, type ToolContext } from "@alexkroman1/aai";
-import { runTool } from "@alexkroman1/aai/testing";
+
 import { describe, expect, test } from "vitest";
 import retailAgent from "./agent.ts";
 import { retailSlot } from "./store.ts";
@@ -128,7 +128,7 @@ describe("the UI-update invariant", () => {
   test.each(registry)("%s increments callSeq and logs activity", async (name, def) => {
     const ctx = makeCtx();
     const before = retailSlot.get(ctx).callSeq;
-    await runTool(def, SAMPLE_ARGS[name] ?? {}, ctx);
+    await def.run(SAMPLE_ARGS[name] ?? {}, ctx);
     const state = retailSlot.get(ctx);
     expect(state.callSeq, `${name} did not bump callSeq`).toBe(before + 1);
     expect(state.activity.at(-1)?.tool, `${name} logged the wrong tool name`).toBe(name);
@@ -139,7 +139,7 @@ describe("the UI-update invariant", () => {
     // Catches a copy-paste where the retailTool `name` and the registry key
     // disagree — the activity feed would then attribute calls to the wrong tool.
     const ctx = makeCtx();
-    await runTool(def, SAMPLE_ARGS[name] ?? {}, ctx);
+    await def.run(SAMPLE_ARGS[name] ?? {}, ctx);
     expect(retailSlot.get(ctx).activity.at(-1)?.tool).toBe(name);
   });
 });
@@ -148,7 +148,7 @@ describe("the authentication gate", () => {
   test.each(registry.filter(([name]) => !PUBLIC_TOOLS.has(name)))(
     "%s refuses before the caller is identified",
     async (name, def) => {
-      const result = await runTool(def, SAMPLE_ARGS[name] ?? {}, makeCtx());
+      const result = await def.run(SAMPLE_ARGS[name] ?? {}, makeCtx());
       expect(isToolFailure(result), `${name} did not refuse`).toBe(true);
       if (!isToolFailure(result)) return;
       expect(result.error, `${name} refused for the wrong reason`).toContain(
@@ -160,7 +160,7 @@ describe("the authentication gate", () => {
   test.each(registry.filter(([name]) => PUBLIC_TOOLS.has(name)))(
     "%s does not require authentication",
     async (name, def) => {
-      const result = await runTool(def, SAMPLE_ARGS[name] ?? {}, makeCtx());
+      const result = await def.run(SAMPLE_ARGS[name] ?? {}, makeCtx());
       // A public tool may still fail on its own (deliberately bogus) arguments;
       // it must not fail on the GATE. Written as one unconditional assertion —
       // an `if (isToolFailure(result))` wrapper would pass vacuously for the tools

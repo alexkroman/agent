@@ -3,7 +3,6 @@ import { describe, expect, test, vi } from "vitest";
 import { createToolContext } from "../sdk/testing.ts";
 import type { WorkflowClient, WorkflowRunSnapshot } from "../sdk/workflow.ts";
 import { rejectingWorkflows } from "../sdk/workflow.ts";
-import { mustRun } from "./_test-utils.ts";
 import {
   createWorkflowStatus,
   MAX_WORKFLOW_STATUS_OUTPUT_CHARS,
@@ -59,7 +58,7 @@ async function execute(
   sessionId = "session-7",
 ): Promise<unknown> {
   const ctx = createToolContext({ workflows, sessionId });
-  return await mustRun(tool)(args, ctx);
+  return await tool.run(args, ctx);
 }
 
 describe("workflow_status", () => {

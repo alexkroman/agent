@@ -24,7 +24,7 @@
 
 import { tool } from "./define.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
-import type { DefinedTool, ToolContext } from "./types.ts";
+import type { ToolContext, ToolDef } from "./types.ts";
 import type { WorkflowDef } from "./workflow.ts";
 
 /** Options every {@link startTool} form takes. */
@@ -137,7 +137,7 @@ function asRunInput<I>(args: unknown): I {
  * (`TS7031`/`TS7006`) — silently discarding type safety inside the one function
  * that most needs it, in exchange for catching a mistake that is a one-line throw
  * away. So `T` defaults to `P` on a single signature (which is what makes the
- * plain form still return `DefinedTool<P>`), and the pairing is checked at
+ * plain form still return `ToolDef<P>`), and the pairing is checked at
  * construction. `workflow-tool.test-d.ts` pins the inference so the overload
  * version cannot be reintroduced without noticing.
  *
@@ -146,7 +146,7 @@ function asRunInput<I>(args: unknown): I {
 export function startTool<P extends ToolInputSchema, R, T extends ToolInputSchema = P>(
   workflow: WorkflowDef<P, R>,
   options: StartToolOptions & Partial<DerivedStartToolOptions<T, P>>,
-): DefinedTool<T> {
+): ToolDef<T> {
   const { description, reply = (runId: string) => ({ runId, status: "started" }) } = options;
   const keyOf = options.key ?? ((ctx: ToolContext) => ctx.sessionId);
   const derived = options.input;

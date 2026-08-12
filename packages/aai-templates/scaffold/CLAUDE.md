@@ -461,8 +461,8 @@ const myTool = tool({
 ```
 
 `input` and `run` are the same two field names `workflow()` takes — a tool and
-a workflow are the same declaration at two durations. The previous names,
-`inputSchema` and `execute`, still work and will be removed in the next major.
+a workflow are the same declaration at two durations. Both are required except
+`input`, which you omit for a no-arg tool.
 
 `run` may call `fetch` directly — tool code reaches external APIs the
 same way in `aai dev` and deployed.

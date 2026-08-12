@@ -103,38 +103,33 @@ const greet = tool({ description: "…", input: z.object({ name: z.string() }), 
 const digest = workflow({ input: z.object({ topic: z.string() }), run: async ({ topic }, ctx) => … });
 ```
 
-`inputSchema` and `execute` are the previous names for the two tool fields.
-They still work and are removed in the next major — the deprecation is on the
-`ToolDef` fields, so an editor says so at the call site.
+They were `inputSchema` and `execute`. **Those names are GONE, not deprecated**,
+and the reason is worth keeping because the alias looked like the smaller change
+and was not:
 
-**No consumer reads either field directly.** They go through `toolInput` /
-`toolRun` (`sdk/tool-fields.ts`, on `./internal`), and `tool()` collapses a def
-to the canonical spelling — so `ToolDef` is canonical for everything downstream
-of authoring, while a raw `export default {…}` agent that skipped `tool()` still
-loads. Two readers on one field under two names is exactly the shape that ships
-half-migrated: one call site updated, another still on the old name, and a tool
-that validates against no schema or cannot be called at all. Add a reader and it
-uses the accessors, or it will be the one that rots.
+- It doubles every READER. Each consumer has to check two fields, so the fix
+  needed accessors (`toolInput`/`toolRun`) plus a rule that nobody read a field
+  directly — and the reader that forgets fails SILENTLY, as a tool validating
+  against no schema or one that cannot be called at all.
+- It makes `run` optional, which spreads. That forced a second type for
+  "the thing `tool()` returns, which really does have a handler", a published
+  `runTool()` test helper, and a `mustRun()` in the SDK's own test utils, each
+  existing only because a field that is always there could not say so.
+- It leaves the codebase demonstrating both spellings, so the next author copies
+  whichever they land on.
+- And it does not remove the work — it defers a second migration, on a schedule
+  nobody is holding.
 
-**`tool()` returns a `DefinedTool`, whose `run` is NOT optional.** `ToolDef.run`
-has to be optional (`execute` is the other legal spelling), which would leave
-every author's own test writing `myTool.run!(args, ctx)` — a non-null assertion,
-i.e. the thing `pnpm check:hatches` counts, in the file a template teaches from.
-`tool()` rejects a def with no handler, so saying that in the type is free.
-For a def read back out of an agent's `tools` record (where the field really is
-optional) the published `runTool(def, args, ctx)` from `@alexkroman1/aai/testing`
-is the answer.
+So `run` is REQUIRED on `ToolDef`, every consumer reads `def.input` / `def.run`
+directly, and `tool()` is an identity function again. The guest's own mirror of
+the type (`aai-guest/harness-types.ts`, which describes the harness↔bundle
+contract) requires `run` too: a bundle whose tools lack one cannot have come from
+any `tool()` this harness will load.
 
-The guest harness keeps its OWN pair (`toolDefInput`/`toolDefRun` in
-`aai-guest/harness-types.ts`) rather than importing these: that file describes
-the harness↔bundle contract, where a bundle carries its own SDK version.
-Removing the field pair from the SDK does not license removing it there.
-
-**`startTool`'s options are the exception, deliberately.** Its schema option is
-still spelled `inputSchema`, because its `input` option is the *mapper* — the two
-cannot share a name. `startTool` goes away when a workflow becomes a tool
-directly, which resolves the collision; renaming it in the meantime would be a
-break on a symbol slated for deletion.
+**`startTool`'s schema option is still spelled `inputSchema`.** Not an alias — a
+different API, whose `input` option is the *mapper*, so the two cannot share a
+name. `startTool` goes away when a workflow becomes a tool directly, which is
+what resolves the collision.
 
 ### And ONE context: `AgentContext`
 

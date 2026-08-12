@@ -66,33 +66,19 @@ export type ToolInputSchemaLike = {
 /**
  * A tool as the harness reads one off a loaded bundle.
  *
- * Both field pairs are optional because the SDK accepts both spellings for one
- * major — `input`/`run` are canonical, `inputSchema`/`execute` the previous
- * names — and a bundle built against either SDK version has to load here. Read
- * them with {@link toolDefInput} / {@link toolDefRun}, never directly.
+ * `run` is required, matching the SDK: a bundle whose tools lack one cannot have
+ * been built by any `tool()` this harness will ever load.
  *
  * `parameters?: { parse }` used to sit here in place of the schema, long after
- * the SDK removed that field: so the trial runner's only argument validation
- * was reading a key no tool has carried in a long time, and every trial ran
+ * the SDK removed that field: so the trial runner's only argument validation was
+ * reading a key no tool has carried in a long time, and every trial ran
  * unvalidated.
  */
 export type ToolDef = {
   description: string;
   input?: ToolInputSchemaLike;
-  inputSchema?: ToolInputSchemaLike;
-  run?(args: unknown, ctx: ToolContext): Promise<unknown> | unknown;
-  execute?(args: unknown, ctx: ToolContext): Promise<unknown> | unknown;
+  run(args: unknown, ctx: ToolContext): Promise<unknown> | unknown;
 };
-
-/** The tool's input schema under either spelling. */
-export function toolDefInput(def: ToolDef): ToolInputSchemaLike | undefined {
-  return def.input ?? def.inputSchema;
-}
-
-/** The tool's handler under either spelling. */
-export function toolDefRun(def: ToolDef): NonNullable<ToolDef["run"]> | undefined {
-  return def.run ?? def.execute;
-}
 
 export type AgentDef = {
   name: string;

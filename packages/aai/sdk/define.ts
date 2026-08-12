@@ -7,25 +7,21 @@ import { omitUndefined } from "./omit-undefined.ts";
 import type { AssemblyAITtsVoice } from "./providers/tts/assemblyai.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import type { ToolInputSchema } from "./schema.ts";
-import { toolInput, toolRun } from "./tool-fields.ts";
 import {
   type AgentDef,
   DEFAULT_GREETING,
   DEFAULT_SYSTEM_PROMPT,
   type DefaultSessionState,
-  type DefinedTool,
   type ToolDef,
 } from "./types.ts";
 
 /**
  * Define a tool with a typed `input` schema and a `run` function.
  *
- * Normalizes and returns the definition: `input` and `run` are the canonical
- * fields, and the previous names (`inputSchema`, `execute`) are accepted for one
- * major and rewritten to them. The two canonical names are the ones
- * {@link workflow} uses, so a tool and a workflow differ by one word — see
- * {@link ToolDef}. The schema is any Standard Schema that converts to JSON
- * Schema; Zod is the documented default.
+ * Identity function for type inference — returns the definition unchanged. Its
+ * two field names are the ones {@link workflow} uses, so a tool and a workflow
+ * differ by one word (see {@link ToolDef}). The schema is any Standard Schema
+ * that converts to JSON Schema; Zod is the documented default.
  *
  * @example
  * ```ts
@@ -67,27 +63,8 @@ import {
  */
 export function tool<P extends ToolInputSchema = ToolInputSchema, S = DefaultSessionState>(
   def: ToolDef<P, S>,
-): DefinedTool<P, S> {
-  // Both spellings present is refused rather than resolved by precedence: an
-  // author who wrote each half in a different vocabulary has a half-finished
-  // rename, and picking a winner hides which half is live.
-  if (def.input !== undefined && def.inputSchema !== undefined) {
-    throw new Error(
-      "tool(): pass `input` or `inputSchema`, not both — `inputSchema` is the old name for `input`.",
-    );
-  }
-  if (def.run !== undefined && def.execute !== undefined) {
-    throw new Error(
-      "tool(): pass `run` or `execute`, not both — `execute` is the old name for `run`.",
-    );
-  }
-  const run = toolRun(def);
-  if (!run) throw new Error("tool(): needs a `run` function (previously named `execute`).");
-  // Built rather than spread, so the returned def carries ONLY the canonical
-  // keys: leaving the deprecated ones alongside would leave every consumer's
-  // `run ?? execute` deciding which half is live.
-  const input = toolInput(def);
-  return { description: def.description, ...(input === undefined ? {} : { input }), run };
+): ToolDef<P, S> {
+  return def;
 }
 
 /** The {@link AgentDef} fields `agent()` fills with defaults when omitted. */

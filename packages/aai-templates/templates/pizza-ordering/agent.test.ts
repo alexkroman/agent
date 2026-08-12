@@ -1,5 +1,5 @@
 import type { ToolContext, ToolDef } from "@alexkroman1/aai";
-import { createToolContext, runTool } from "@alexkroman1/aai/testing";
+import { createToolContext } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import agentDef from "./agent.ts";
 import {
@@ -29,7 +29,7 @@ function getTool(name: string): ToolDef {
 }
 
 async function run(name: string, args: Record<string, unknown>, ctx: ToolContext) {
-  return await runTool(getTool(name), args, ctx);
+  return await getTool(name).run(args, ctx);
 }
 
 const margherita: Omit<Pizza, "id"> = {

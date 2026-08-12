@@ -1,7 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
-import { mustRun } from "../host/_test-utils.ts";
 import { createToolContext } from "./testing.ts";
 import type { WorkflowClient } from "./workflow.ts";
 import { rejectingWorkflows, workflow } from "./workflow.ts";
@@ -45,7 +44,7 @@ describe("startTool", () => {
     const workflows = recordingWorkflows();
     const ctx = createToolContext({ workflows, sessionId: "session-9" });
 
-    await mustRun(startTool(digest, { description: "d" }))({ topic: "ai" }, ctx);
+    await startTool(digest, { description: "d" }).run({ topic: "ai" }, ctx);
 
     // The whole reason this helper exists: `workflow_status` can only report a
     // run that carries a key, and forgetting one fails silently — the run works
@@ -57,7 +56,7 @@ describe("startTool", () => {
 
   test("passes the workflow itself, not its name", async () => {
     const workflows = recordingWorkflows();
-    await mustRun(startTool(digest, { description: "d" }))(
+    await startTool(digest, { description: "d" }).run(
       { topic: "ai" },
       createToolContext({ workflows }),
     );
@@ -70,19 +69,17 @@ describe("startTool", () => {
     const workflows = recordingWorkflows();
     const ctx = createToolContext({ workflows, sessionId: "session-9" });
 
-    await mustRun(
-      startTool(digest, {
-        description: "d",
-        key: () => "account-42",
-      }),
-    )({ topic: "ai" }, ctx);
+    await startTool(digest, {
+      description: "d",
+      key: () => "account-42",
+    }).run({ topic: "ai" }, ctx);
 
     expect(workflows.started[0]?.key).toBe("account-42");
   });
 
   test("answers with the run id and a started marker by default", async () => {
     const workflows = recordingWorkflows();
-    const result = await mustRun(startTool(digest, { description: "d" }))(
+    const result = await startTool(digest, { description: "d" }).run(
       { topic: "ai" },
       createToolContext({ workflows }),
     );
@@ -96,7 +93,7 @@ describe("startTool", () => {
     const workflows = recordingWorkflows();
     const reply = vi.fn((runId: string) => `working on it (${runId})`);
 
-    const result = await mustRun(startTool(digest, { description: "d", reply }))(
+    const result = await startTool(digest, { description: "d", reply }).run(
       { topic: "ai" },
       createToolContext({ workflows }),
     );
@@ -131,13 +128,11 @@ describe("startTool", () => {
       const workflows = recordingWorkflows();
       const ctx = createToolContext({ workflows, sessionId: "session-4" });
 
-      await mustRun(
-        startTool(digest, {
-          description: "d",
-          inputSchema: brief,
-          input: ({ id }) => ({ topic: `topic-for-${id}` }),
-        }),
-      )({ id: "42" }, ctx);
+      await startTool(digest, {
+        description: "d",
+        inputSchema: brief,
+        input: ({ id }) => ({ topic: `topic-for-${id}` }),
+      }).run({ id: "42" }, ctx);
 
       // The workflow sees its own shape; the model never typed it.
       expect(workflows.started).toEqual([
@@ -151,13 +146,11 @@ describe("startTool", () => {
       // The case the overload exists for: the snapshot comes from `ctx`.
       ctx.state.pending = { topic: "from state" };
 
-      await mustRun(
-        startTool(digest, {
-          description: "d",
-          inputSchema: brief,
-          input: (_args, inner) => (inner.state.pending as { topic: string }) ?? { topic: "none" },
-        }),
-      )({ id: "42" }, ctx);
+      await startTool(digest, {
+        description: "d",
+        inputSchema: brief,
+        input: (_args, inner) => (inner.state.pending as { topic: string }) ?? { topic: "none" },
+      }).run({ id: "42" }, ctx);
 
       expect(workflows.started[0]?.input).toEqual({ topic: "from state" });
     });
@@ -165,13 +158,11 @@ describe("startTool", () => {
     test("awaits an async mapper", async () => {
       const workflows = recordingWorkflows();
 
-      await mustRun(
-        startTool(digest, {
-          description: "d",
-          inputSchema: brief,
-          input: ({ id }) => Promise.resolve({ topic: id }),
-        }),
-      )({ id: "async" }, createToolContext({ workflows }));
+      await startTool(digest, {
+        description: "d",
+        inputSchema: brief,
+        input: ({ id }) => Promise.resolve({ topic: id }),
+      }).run({ id: "async" }, createToolContext({ workflows }));
 
       // A mapper that reads a database or an API is the ordinary case, so a
       // returned promise must not reach `start()` as the input itself.
@@ -193,13 +184,11 @@ describe("startTool", () => {
     test("still keys the run to the session", async () => {
       const workflows = recordingWorkflows();
 
-      await mustRun(
-        startTool(digest, {
-          description: "d",
-          inputSchema: brief,
-          input: ({ id }) => ({ topic: id }),
-        }),
-      )({ id: "x" }, createToolContext({ workflows, sessionId: "session-2" }));
+      await startTool(digest, {
+        description: "d",
+        inputSchema: brief,
+        input: ({ id }) => ({ topic: id }),
+      }).run({ id: "x" }, createToolContext({ workflows, sessionId: "session-2" }));
 
       // The default that makes `workflow_status` able to report the run must not
       // depend on which overload was used.

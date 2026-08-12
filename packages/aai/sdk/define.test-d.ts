@@ -63,21 +63,9 @@ test("tool() types ctx.state from an annotated context", () => {
     },
   });
   expectTypeOf(add).toExtend<ToolDef<z.ZodObject<{ item: z.ZodString }>, Cart>>();
-  // `tool()` returns a DefinedTool, so `run` is not optional — which is what
-  // lets an author's own test call `add.run(args, ctx)` with no assertion.
-  expectTypeOf(add.run).toBeFunction();
-});
-
-test("the deprecated inputSchema/execute pair still types and normalizes", () => {
-  // The alias has to keep INFERRING, not merely be accepted: `item` is typed
-  // from `inputSchema`, and the result carries a required `run` like any other
-  // `tool()` call — which is what makes an old agent's tools still composable.
-  const add = tool({
-    description: "add",
-    inputSchema: z.object({ item: z.string() }),
-    execute: ({ item }) => item.length,
-  });
-  expectTypeOf<Parameters<typeof add.run>[0]>().toEqualTypeOf<{ item: string }>();
+  // `run` is REQUIRED on `ToolDef`, which is what lets an author's own test call
+  // `add.run(args, ctx)` with no assertion and every consumer read it with no
+  // guard. Pinned so it cannot quietly become optional again.
   expectTypeOf(add.run).toBeFunction();
 });
 

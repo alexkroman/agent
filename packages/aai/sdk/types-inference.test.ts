@@ -28,19 +28,6 @@ describe("ToolDef type inference", () => {
     expectTypeOf<InferToolInput<typeof _t>>().toEqualTypeOf<{ name: string; count: number }>();
   });
 
-  // The deprecated spelling has to keep inferring identically for the major it
-  // survives — `InferToolInput` reads whichever half is present, so a def on the
-  // old names is the case that proves the reader is not just following `run`.
-  test("the deprecated inputSchema/execute pair infers the same args", () => {
-    const _t: ToolDef<z.ZodObject<{ name: z.ZodString; count: z.ZodNumber }>> = {
-      description: "test",
-      inputSchema: z.object({ name: z.string(), count: z.number() }),
-      execute: (args) => args,
-    };
-
-    expectTypeOf<InferToolInput<typeof _t>>().toEqualTypeOf<{ name: string; count: number }>();
-  });
-
   test("ToolDef without parameters has unknown args", () => {
     const _t: ToolDef = {
       description: "test",
@@ -57,7 +44,7 @@ describe("ToolDef type inference", () => {
       run: (_args, ctx) => ctx,
     };
 
-    type Ctx = Parameters<NonNullable<typeof _t.run>>[1];
+    type Ctx = Parameters<typeof _t.run>[1];
     expectTypeOf<Ctx>().toMatchTypeOf<ToolContext>();
   });
 

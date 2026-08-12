@@ -27,7 +27,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { errorMessage } from "@alexkroman1/aai";
-import { formatSchemaIssues, toolInput, toolRun } from "@alexkroman1/aai/internal";
+import { formatSchemaIssues } from "@alexkroman1/aai/internal";
 import { ASSEMBLYAI_LLM_API_KEY_ENV, assemblyAILlm } from "@alexkroman1/aai/llm";
 import { resolveAllBuiltins, resolveLlm } from "@alexkroman1/aai/runtime";
 import {
@@ -267,15 +267,12 @@ export function createGuestWebTools(): ToolSet {
       description: schema.description,
       inputSchema: jsonSchema(schema.parameters),
       execute: async (args: unknown) => {
-        const run = toolRun(def);
-        if (!run) return { error: `Tool "${schema.name}" has no \`run\` function` };
-        const schemaIn = toolInput(def);
-        if (!schemaIn) return await run((args ?? {}) as never, ctx as never);
-        const parsed = await schemaIn["~standard"].validate(args ?? {});
+        if (!def.input) return await def.run((args ?? {}) as never, ctx as never);
+        const parsed = await def.input["~standard"].validate(args ?? {});
         if (parsed.issues) {
           return { error: `Invalid arguments: ${formatSchemaIssues(parsed.issues)}` };
         }
-        return await run(parsed.value as never, ctx as never);
+        return await def.run(parsed.value as never, ctx as never);
       },
     });
   }

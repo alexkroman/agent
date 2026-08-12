@@ -86,8 +86,12 @@ export type { ToolContext } from "./tool-context.ts";
  *
  * Those two names are deliberately the ones {@link WorkflowDef} uses: a tool and
  * a workflow are the same declaration at two durations, so the only word that
- * should differ between them is `tool` versus `workflow`. `inputSchema` and
- * `execute` are the previous spellings and still work — see the fields below.
+ * should differ between them is `tool` versus `workflow`. They were `inputSchema`
+ * and `execute`; those names are GONE rather than deprecated, because an accepted
+ * alias is not a smaller change than a rename — it doubles every reader (each
+ * consumer has to check two fields, and the one that forgets fails silently),
+ * makes the deprecation itself a thing to carry and eventually remove, and leaves
+ * the codebase demonstrating both spellings to the next author.
  *
  * @typeParam P - The tool's input schema: any
  *   [Standard Schema](https://standardschema.dev) that can convert to JSON
@@ -129,27 +133,17 @@ export type ToolDef<P extends ToolInputSchema = ToolInputSchema, S = DefaultSess
    * `MAX_TOOL_RESULT_CHARS` (4000) characters — longer results are
    * trimmed and end with a `[truncated]` marker.
    *
-   * Exactly one of `run` and `execute` is required; `tool()` throws naming the
-   * pair when neither or both are given.
+   * REQUIRED, and that is what keeps every consumer honest: `tool.run(args, ctx)`
+   * is callable with no guard, from the executor to an author's own test, so
+   * nothing needs an accessor that reads two fields or a non-null assertion.
    *
-   * Both handlers are declared METHOD-style (`run?(args, ctx)`, not
-   * `run?: (args, ctx) => …`) and must stay that way: a method signature is
-   * bivariant in its parameters, and under the strict checking a property-style
-   * function type gets, a tool written without a state type argument stops being
-   * assignable into a stateful agent's `tools` record — which is the ordinary
-   * case. `define.test-d.ts` pins it.
+   * Declared METHOD-style (`run(args, ctx)`, not `run: (args, ctx) => …`) and must
+   * stay that way: a method signature is bivariant in its parameters, and under
+   * the strict checking a property-style function type gets, a tool written
+   * without a state type argument stops being assignable into a stateful agent's
+   * `tools` record — which is the ordinary case. `define.test-d.ts` pins it.
    */
-  run?(args: InferSchemaOutput<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
-  /**
-   * @deprecated Renamed to `input`. Still accepted, and will be removed in the
-   * next major.
-   */
-  inputSchema?: P;
-  /**
-   * @deprecated Renamed to `run`. Still accepted, and will be removed in the
-   * next major.
-   */
-  execute?(args: InferSchemaOutput<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
+  run(args: InferSchemaOutput<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
 };
 
 /**
@@ -164,24 +158,7 @@ export type ToolDef<P extends ToolInputSchema = ToolInputSchema, S = DefaultSess
 export type ToolHandler<
   P extends ToolInputSchema = ToolInputSchema,
   S = DefaultSessionState,
-> = NonNullable<ToolDef<P, S>["run"]>;
-
-/**
- * What {@link tool} returns: a {@link ToolDef} whose `run` is not optional.
- *
- * `ToolDef.run` has to be optional, because `execute` is the other legal
- * spelling and a def may carry either — but `tool()` normalizes and REJECTS a
- * def with no handler, so its result always has one. Saying so in the type is
- * what lets an author's own test call `myTool.run(args, ctx)` directly instead of
- * asserting the field is there; without it every template test needed a non-null
- * assertion, which is the exact thing the escape-hatch ratchet counts.
- *
- * @public
- */
-export type DefinedTool<
-  P extends ToolInputSchema = ToolInputSchema,
-  S = DefaultSessionState,
-> = ToolDef<P, S> & Required<Pick<ToolDef<P, S>, "run">>;
+> = ToolDef<P, S>["run"];
 
 /**
  * The validated input type a tool's `run` receives — inferred from the tool's
@@ -203,7 +180,7 @@ export type DefinedTool<
  * @public
  */
 export type InferToolInput<T extends ToolDef<ToolInputSchema, DefaultSessionState>> = Parameters<
-  NonNullable<T["run"] | T["execute"]>
+  T["run"]
 >[0];
 
 /**
@@ -214,7 +191,7 @@ export type InferToolInput<T extends ToolDef<ToolInputSchema, DefaultSessionStat
  * @public
  */
 export type InferToolOutput<T extends ToolDef<ToolInputSchema, DefaultSessionState>> = Awaited<
-  ReturnType<NonNullable<T["run"] | T["execute"]>>
+  ReturnType<T["run"]>
 >;
 
 /**

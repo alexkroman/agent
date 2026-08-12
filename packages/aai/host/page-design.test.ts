@@ -6,7 +6,7 @@ import {
   MAX_DESIGN_HTML_CHARS,
   MAX_DESIGN_STYLESHEETS,
 } from "../sdk/constants.ts";
-import { createMockToolContext, mustRun } from "./_test-utils.ts";
+import { createMockToolContext } from "./_test-utils.ts";
 import { resolveAllBuiltins } from "./builtin-tools.ts";
 import { createGetPageDesign, extractStylesheetUrls } from "./page-design.ts";
 
@@ -29,7 +29,7 @@ function routedFetch(routes: Record<string, string | Response | Error>): typeof 
 
 function run(routes: Record<string, string | Response | Error>, url = PAGE_URL) {
   const def = createGetPageDesign(routedFetch(routes));
-  return mustRun(def)({ url }, createMockToolContext()) as Promise<Record<string, unknown>>;
+  return def.run({ url }, createMockToolContext()) as Promise<Record<string, unknown>>;
 }
 
 describe("extractStylesheetUrls", () => {

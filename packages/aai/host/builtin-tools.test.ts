@@ -1,8 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { describe, expect, test, vi } from "vitest";
-import { createMockToolContext, fakeFetch, mustRun } from "./_test-utils.ts";
-import { resolveAllBuiltins } from "./builtin-tools.ts";
+import type { ToolDef } from "../sdk/types.ts";
+import { createMockToolContext, fakeFetch } from "./_test-utils.ts";
+import { resolveAllBuiltins, type ToolDefRecord } from "./builtin-tools.ts";
 
 /** Mirrors the module-private SESSION_NOTES_TTL_MS in builtin-tools.ts. */
 const SESSION_NOTES_TTL_MS = 86_400_000;
@@ -25,9 +26,23 @@ function firstFetchCall(mockFetch: MockFetch): [string, RequestInit] {
   return mockFetch.mock.calls[0] as unknown as [string, RequestInit];
 }
 
+/**
+ * Resolve one builtin by name.
+ *
+ * `resolveAllBuiltins` returns a `Record<string, ToolDef>`, so an index read is
+ * `| undefined` — and that is a real possibility rather than something to assert
+ * away: an unrecognized name resolves to nothing. Naming it once keeps the ~20
+ * call sites below reading as what they are.
+ */
+function builtinDef(defs: ToolDefRecord, name: string): ToolDef {
+  const def = defs[name];
+  if (!def) throw new Error(`builtin "${name}" did not resolve`);
+  return def;
+}
+
 function runCode(code: string): Promise<unknown> {
   const { defs } = resolveAllBuiltins(["run_code"]);
-  return mustRun(defs.run_code)({ code }, createMockToolContext()) as Promise<unknown>;
+  return builtinDef(defs, "run_code").run({ code }, createMockToolContext()) as Promise<unknown>;
 }
 
 describe("resolveAllBuiltins schemas", () => {
@@ -107,7 +122,10 @@ describe("resolveAllBuiltins defs", () => {
       fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
-    const result = await mustRun(defs.fetch_json)({ url: "https://api.example.com/data" }, ctx);
+    const result = await builtinDef(defs, "fetch_json").run(
+      { url: "https://api.example.com/data" },
+      ctx,
+    );
     expect(result).toEqual(mockData);
   });
 
@@ -118,7 +136,10 @@ describe("resolveAllBuiltins defs", () => {
       fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
-    const result = await mustRun(defs.fetch_json)({ url: "https://api.example.com/fail" }, ctx);
+    const result = await builtinDef(defs, "fetch_json").run(
+      { url: "https://api.example.com/fail" },
+      ctx,
+    );
     expect(result).toEqual({
       error: "HTTP 500 Internal Server Error",
       url: "https://api.example.com/fail",
@@ -131,7 +152,10 @@ describe("resolveAllBuiltins defs", () => {
       fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
-    const result = await mustRun(defs.fetch_json)({ url: "https://api.example.com/text" }, ctx);
+    const result = await builtinDef(defs, "fetch_json").run(
+      { url: "https://api.example.com/text" },
+      ctx,
+    );
     expect(result).toEqual({
       error: "Response was not valid JSON",
       url: "https://api.example.com/text",
@@ -144,7 +168,7 @@ describe("resolveAllBuiltins defs", () => {
       fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
-    await mustRun(defs.fetch_json)(
+    await builtinDef(defs, "fetch_json").run(
       {
         url: "https://api.example.com",
         headers: { Accept: "application/json", "x-api-key": "tok" },
@@ -163,7 +187,7 @@ describe("resolveAllBuiltins defs", () => {
       fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
-    await mustRun(defs.fetch_json)(
+    await builtinDef(defs, "fetch_json").run(
       {
         url: "https://api.example.com",
         headers: { Authorization: "Bearer tok", Accept: "application/json" },
@@ -184,7 +208,10 @@ describe("resolveAllBuiltins defs", () => {
     const ctx = createMockToolContext();
     // SDK tools pass through — SSRF is enforced by the network adapter in
     // the platform sandbox and by the runtime's fetch in self-hosted mode.
-    await mustRun(defs.fetch_json)({ url: "http://169.254.169.254/latest/meta-data/" }, ctx);
+    await builtinDef(defs, "fetch_json").run(
+      { url: "http://169.254.169.254/latest/meta-data/" },
+      ctx,
+    );
     expect(mockFetch).toHaveBeenCalled();
   });
 
@@ -207,7 +234,7 @@ describe("resolveAllBuiltins defs", () => {
       fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext({ env: {} });
-    const result = await mustRun(defs.web_search)({ query: "test" }, ctx);
+    const result = await builtinDef(defs, "web_search").run({ query: "test" }, ctx);
     expect(Array.isArray(result)).toBe(true);
   });
 
@@ -218,7 +245,7 @@ describe("resolveAllBuiltins defs", () => {
       fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
-    const result = await mustRun(defs.web_search)({ query: "test" }, ctx);
+    const result = await builtinDef(defs, "web_search").run({ query: "test" }, ctx);
     expect(result).toEqual({ error: "Search request failed: 500 Internal Server Error" });
   });
 
@@ -228,7 +255,10 @@ describe("resolveAllBuiltins defs", () => {
       fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
-    const result = await mustRun(defs.web_search)({ query: "aai sdk", max_results: 2 }, ctx);
+    const result = await builtinDef(defs, "web_search").run(
+      { query: "aai sdk", max_results: 2 },
+      ctx,
+    );
     expect(result).toEqual([
       // uddg redirect decoded to the real URL; <b> highlight stripped in-word.
       { title: "Result 1", url: "https://example.com/1", description: "Desc & 1" },
@@ -249,7 +279,7 @@ describe("resolveAllBuiltins defs", () => {
       fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
-    const result = (await mustRun(defs.web_search)(
+    const result = (await builtinDef(defs, "web_search").run(
       { query: "q", max_results: 50 },
       ctx,
     )) as unknown[];
@@ -263,7 +293,7 @@ describe("resolveAllBuiltins defs", () => {
       fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
-    const result = await mustRun(defs.web_search)({ query: "q" }, ctx);
+    const result = await builtinDef(defs, "web_search").run({ query: "q" }, ctx);
     expect(result).toMatchObject({ error: expect.stringContaining("bot-detection") });
   });
 
@@ -276,7 +306,7 @@ describe("resolveAllBuiltins defs", () => {
       fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
-    const result = (await mustRun(defs.visit_webpage)(
+    const result = (await builtinDef(defs, "visit_webpage").run(
       { url: "https://example.com" },
       ctx,
     )) as Record<string, unknown>;
@@ -292,7 +322,10 @@ describe("resolveAllBuiltins defs", () => {
       fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
-    const result = await mustRun(defs.visit_webpage)({ url: "https://example.com/missing" }, ctx);
+    const result = await builtinDef(defs, "visit_webpage").run(
+      { url: "https://example.com/missing" },
+      ctx,
+    );
     expect(result).toEqual({
       error: "Failed to fetch: 404 Not Found",
       url: "https://example.com/missing",
@@ -309,7 +342,7 @@ describe("resolveAllBuiltins defs", () => {
       fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
-    const result = (await mustRun(defs.visit_webpage)(
+    const result = (await builtinDef(defs, "visit_webpage").run(
       { url: "https://example.com" },
       ctx,
     )) as Record<string, unknown>;
@@ -325,7 +358,7 @@ describe("resolveAllBuiltins defs", () => {
     expect(schemas.map((s) => s.name)).toContain("think");
     expect(guidance.some((g) => g.includes("think"))).toBe(true);
     // db is a throwing stub in the mock context — a no-op must not touch it.
-    const result = await mustRun(defs.think)(
+    const result = await builtinDef(defs, "think").run(
       { thought: "check the policy first" },
       createMockToolContext(),
     );
@@ -341,21 +374,21 @@ describe("resolveAllBuiltins defs", () => {
     const { defs } = resolveAllBuiltins(["remember", "recall"]);
     const ctx = createMockToolContext({ sessionId: "notes-basic" });
 
-    await mustRun(defs.remember)({ key: "user_id", value: "usr_123" }, ctx);
-    const saved = await mustRun(defs.remember)({ key: "res_code", value: "BOB12" }, ctx);
+    await builtinDef(defs, "remember").run({ key: "user_id", value: "usr_123" }, ctx);
+    const saved = await builtinDef(defs, "remember").run({ key: "res_code", value: "BOB12" }, ctx);
     expect(saved).toEqual({
       saved: "res_code",
       notes: { user_id: "usr_123", res_code: "BOB12" },
     });
 
-    expect(await mustRun(defs.recall)({ key: "user_id" }, ctx)).toEqual({
+    expect(await builtinDef(defs, "recall").run({ key: "user_id" }, ctx)).toEqual({
       key: "user_id",
       value: "usr_123",
     });
-    expect(await mustRun(defs.recall)({}, ctx)).toEqual({
+    expect(await builtinDef(defs, "recall").run({}, ctx)).toEqual({
       notes: { user_id: "usr_123", res_code: "BOB12" },
     });
-    expect(await mustRun(defs.recall)({ key: "missing" }, ctx)).toEqual({
+    expect(await builtinDef(defs, "recall").run({ key: "missing" }, ctx)).toEqual({
       key: "missing",
       value: null,
     });
@@ -366,10 +399,13 @@ describe("resolveAllBuiltins defs", () => {
     const s1 = createMockToolContext({ sessionId: "notes-iso-1" });
     const s2 = createMockToolContext({ sessionId: "notes-iso-2" });
 
-    await mustRun(defs.remember)({ key: "zip", value: "19122" }, s1);
-    await mustRun(defs.remember)({ key: "zip", value: "94103" }, s1);
-    expect(await mustRun(defs.recall)({ key: "zip" }, s1)).toEqual({ key: "zip", value: "94103" });
-    expect(await mustRun(defs.recall)({}, s2)).toEqual({ notes: {} });
+    await builtinDef(defs, "remember").run({ key: "zip", value: "19122" }, s1);
+    await builtinDef(defs, "remember").run({ key: "zip", value: "94103" }, s1);
+    expect(await builtinDef(defs, "recall").run({ key: "zip" }, s1)).toEqual({
+      key: "zip",
+      value: "94103",
+    });
+    expect(await builtinDef(defs, "recall").run({}, s2)).toEqual({ notes: {} });
   });
 
   test("two concurrent remember calls both persist", async () => {
@@ -380,11 +416,11 @@ describe("resolveAllBuiltins defs", () => {
     // them in parallel). Map updates are synchronous, so no per-key lock is
     // needed for both writes to land.
     await Promise.all([
-      mustRun(defs.remember)({ key: "user_id", value: "usr_1" }, ctx),
-      mustRun(defs.remember)({ key: "res_code", value: "BOB12" }, ctx),
+      builtinDef(defs, "remember").run({ key: "user_id", value: "usr_1" }, ctx),
+      builtinDef(defs, "remember").run({ key: "res_code", value: "BOB12" }, ctx),
     ]);
 
-    expect(await mustRun(defs.recall)({}, ctx)).toEqual({
+    expect(await builtinDef(defs, "recall").run({}, ctx)).toEqual({
       notes: { user_id: "usr_1", res_code: "BOB12" },
     });
   });
@@ -395,12 +431,14 @@ describe("resolveAllBuiltins defs", () => {
       const { defs } = resolveAllBuiltins(["remember", "recall"]);
       const ctx = createMockToolContext({ sessionId: "notes-ttl" });
 
-      await mustRun(defs.remember)({ key: "user_id", value: "usr_123" }, ctx);
+      await builtinDef(defs, "remember").run({ key: "user_id", value: "usr_123" }, ctx);
       vi.advanceTimersByTime(SESSION_NOTES_TTL_MS - 1);
-      expect(await mustRun(defs.recall)({}, ctx)).toEqual({ notes: { user_id: "usr_123" } });
+      expect(await builtinDef(defs, "recall").run({}, ctx)).toEqual({
+        notes: { user_id: "usr_123" },
+      });
 
       vi.advanceTimersByTime(2);
-      expect(await mustRun(defs.recall)({}, ctx)).toEqual({ notes: {} });
+      expect(await builtinDef(defs, "recall").run({}, ctx)).toEqual({ notes: {} });
     } finally {
       vi.useRealTimers();
     }
@@ -412,11 +450,15 @@ describe("resolveAllBuiltins defs", () => {
     const { defs, guidance } = resolveAllBuiltins(["calculate"]);
     const ctx = createMockToolContext();
     expect(guidance.some((g) => g.includes("calculate"))).toBe(true);
-    expect(await mustRun(defs.calculate)({ expression: "(75 + 120.40) * 1.0725" }, ctx)).toEqual({
+    expect(
+      await builtinDef(defs, "calculate").run({ expression: "(75 + 120.40) * 1.0725" }, ctx),
+    ).toEqual({
       expression: "(75 + 120.40) * 1.0725",
       result: 209.5665,
     });
-    const bad = (await mustRun(defs.calculate)({ expression: "1 +" }, ctx)) as { error: string };
+    const bad = (await builtinDef(defs, "calculate").run({ expression: "1 +" }, ctx)) as {
+      error: string;
+    };
     expect(bad.error).toMatch(/unexpected/i);
   });
 
@@ -433,7 +475,10 @@ describe("resolveAllBuiltins defs", () => {
       fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
-    const result = await mustRun(defs.visit_webpage)({ url: "https://evil.com/redirect" }, ctx);
+    const result = await builtinDef(defs, "visit_webpage").run(
+      { url: "https://evil.com/redirect" },
+      ctx,
+    );
     expect(result).toHaveProperty("content");
     expect((result as { content: string }).content).toContain("leaked-iam-creds");
   });
