@@ -798,29 +798,30 @@ consequences an author has to know, all in that file's module doc and
   self-hosted `createServer` has no such sweep, so there a long sleep waits for
   the next boot. This used to be unwired everywhere, which made "durable" mean
   not-lost rather than runs-on-time.
-- **Storage is required**, since the journal is what makes a run durable — two
-  tables in the app's own schema (`aai_workflow_runs`, `aai_workflow_steps`,
-  `host/workflow-store.ts`). An agent that declares workflows without storage
-  logs a warning and gets the rejecting `ctx.workflows`
-  (`WORKFLOWS_UNAVAILABLE_MESSAGE`) rather than failing to boot — a voice agent
-  whose workflows are misconfigured must still answer the phone.
+- **Storage is required in production, and NOT for `aai dev`** — the journal is
+  what makes a run durable: two tables in the app's own schema
+  (`aai_workflow_runs`, `aai_workflow_steps`, `host/workflow-store.ts`). A
+  deployed agent that declares workflows without storage logs a warning and gets
+  the rejecting `ctx.workflows` (`WORKFLOWS_UNAVAILABLE_MESSAGE`) rather than
+  failing to boot — a voice agent whose workflows are misconfigured must still
+  answer the phone. Locally, `aai dev` with no `DATABASE_URL` journals IN MEMORY
+  and says so loudly, so trying `workflow()` needs no database — `ctx.db` inside
+  such a run still throws the enablement message. Which journal a runtime gets,
+  and why the CLI rather than the SDK decides, is in `host/CLAUDE.md`.
 - **`MAX_WORKFLOW_STEPS` (500) is a hard cap, and it exists to stay under
   `MAX_DB_RESULT_ROWS`.** Replay reads the journal through `ctx.db`, which
   throws past 1000 rows, and a journal that cannot be read in full looks like a
   run with no history — i.e. every completed step runs a second time.
-- **`ctx.waitFor(name)` parks a run until something OUTSIDE it says to continue**,
-  and resolves with whatever that caller sent. The shape `sleep` cannot express:
-  an approval, a signature, a webhook from a job of unknown length. With `sleep`
-  those are a poll — wake, check, sleep — and every cycle spends entries against
-  `MAX_WORKFLOW_STEPS`, so a wait measured in days is not expressible at all; a
-  waitpoint costs ONE entry however long it waits. It does not return on the
-  replay that creates it, like `sleep`. The token that resolves it is an
-  unguessable single-use id, delivered by the `announce` option (which runs once,
-  journaled, while the run is still executing — the only moment the token exists
-  and the run can act) and redeemed at
-  `POST /workflows/signals/:token`. `timeoutMs` makes the wait THROW at its
-  deadline, which is an ordinary error a `try`/`catch` can turn into "chase them,
-  then give up"; without one it waits indefinitely and costs a row.
+- **`ctx.waitFor(name)` parks a run until something OUTSIDE it says to
+  continue**, and resolves with whatever that caller sent — an approval, a
+  signature, a webhook of unknown duration. With `sleep` those are a poll, and
+  every cycle spends entries against `MAX_WORKFLOW_STEPS`, so a wait measured in
+  days is not expressible; a waitpoint costs ONE entry however long it waits.
+  Like `sleep` it does not return on the replay that creates it. `announce`
+  delivers the token (it runs once, journaled, while the run can still act),
+  `POST /workflows/signals/:token` redeems it, and `timeoutMs` makes the wait
+  THROW at its deadline so a `try`/`catch` expresses "chase them, then give up".
+  The token's properties and the journal encoding are in `host/CLAUDE.md`.
 - **`ctx.continueAs(input)` is how work too long for one journal is expressed.**
   It ends this run and starts a fresh one of the same workflow — empty journal,
   inherited correlation key — and, like `sleep`, never returns: treat it as a

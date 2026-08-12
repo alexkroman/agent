@@ -332,6 +332,7 @@ exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
   "consoleLogger",
   "createAgentServer",
   "createConsoleLogger",
+  "createDevWorkflowStore",
   "createGenerateFn",
   "createHostServer",
   "createPipelineTransport",

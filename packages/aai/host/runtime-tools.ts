@@ -13,7 +13,7 @@ import {
   MAX_CLIENT_EVENT_NAME_LENGTH,
   MAX_CLIENT_EVENT_PAYLOAD_BYTES,
 } from "../sdk/constants.ts";
-import type { Db } from "../sdk/db.ts";
+import { type Db, STORAGE_DISABLED_MESSAGE } from "../sdk/db.ts";
 import type { AgentEnv, ProviderEnv } from "../sdk/env-types.ts";
 import type { OwnedMap } from "../sdk/owned-map.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
@@ -115,6 +115,18 @@ function setupGenerate(deps: ToolSetupDeps): HostGenerateFn {
 }
 
 /**
+ * A `ctx.db` that refuses, for a run journaled somewhere other than Postgres.
+ *
+ * The same message `ctx.db` gives a tool when storage is off, for the same
+ * reason: the fix is a setting, and naming it is the whole value of the error.
+ */
+function storageDisabledDb(): Db {
+  return {
+    query: () => Promise.reject(new Error(STORAGE_DISABLED_MESSAGE)),
+  };
+}
+
+/**
  * Build the workflow engine, or nothing.
  *
  * Nothing in two cases, and they are different failures: an agent that
@@ -127,7 +139,11 @@ function setupGenerate(deps: ToolSetupDeps): HostGenerateFn {
 function setupWorkflows(deps: ToolSetupDeps, generate: HostGenerateFn): WorkflowEngine | undefined {
   const workflows = deps.agent.workflows;
   if (!workflows || Object.keys(workflows).length === 0) return;
-  if (!deps.resolvedDb) {
+  // A caller-supplied journal wins, and `aai dev` is the only one that supplies
+  // it (see `RuntimeOptions.workflowStore`). It is checked BEFORE the storage
+  // guard below, because "no database" is exactly the case it exists for.
+  const injected = deps.opts.workflowStore;
+  if (!(deps.resolvedDb || injected)) {
     deps.logger.warn(
       `Agent declares ${Object.keys(workflows).length} workflow(s) but storage is not enabled; ` +
         "runs cannot be journaled and ctx.workflows will reject",
@@ -136,8 +152,12 @@ function setupWorkflows(deps: ToolSetupDeps, generate: HostGenerateFn): Workflow
   }
   return createWorkflowEngine({
     workflows,
-    store: createPostgresWorkflowStore(deps.resolvedDb),
-    db: deps.resolvedDb,
+    store: injected ?? createPostgresWorkflowStore(deps.resolvedDb as Db),
+    // `ctx.db` is the app's own SQL and an injected journal does not supply it:
+    // a workflow that queries a table still needs real storage, so it gets the
+    // enablement message rather than a second in-memory thing pretending to be
+    // a database. The durability primitives work either way.
+    db: deps.resolvedDb ?? storageDisabledDb(),
     env: Object.freeze({ ...deps.env }),
     generate,
     logger: deps.logger,

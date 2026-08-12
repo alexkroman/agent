@@ -16,10 +16,12 @@ import type { AgentDef } from "@alexkroman1/aai";
 import {
   type AgentServer,
   consoleLogger,
+  createDevWorkflowStore,
   createRuntime,
   createServer,
   type Logger,
   requiredProviderEnvVars,
+  type WorkflowStore,
   withHostCredentialFallback,
 } from "@alexkroman1/aai/runtime";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
@@ -134,6 +136,38 @@ async function resolveAgentEnv(root: string, agentDef: AgentDef): Promise<Record
  * keeps the old server. Evaluation goes through the memoizing evaluator so
  * a no-op save doesn't leak another module into the ESM registry.
  */
+/**
+ * The journal `aai dev` runs workflows on when the project has no database.
+ *
+ * Provisioning Postgres to try `workflow()` locally is friction with no upside:
+ * the store is a seam and an in-memory implementation already existed, so `aai
+ * dev` uses it and says so. Empty for an agent that declares no workflows (there
+ * is nothing to journal) and for one WITH a `DATABASE_URL`, which gets the real
+ * thing — a developer who went to the trouble of pointing at a database should be
+ * exercising the durable path, including across a restart.
+ *
+ * It is passed from HERE rather than defaulted in the SDK on purpose. The SDK
+ * cannot tell a dev machine from a deployed guest, and a durability guarantee
+ * that depends on that guess is the one failure shape worse than not having the
+ * primitive, because it only shows up on the day you ship. The platform's guest
+ * passes nothing.
+ */
+function devWorkflowStore(
+  agentDef: { workflows?: Record<string, unknown> | undefined },
+  env: Record<string, string>,
+  logger: Logger,
+): { workflowStore?: WorkflowStore } {
+  const declared = Object.keys(agentDef.workflows ?? {}).length;
+  if (declared === 0 || env.DATABASE_URL) return {};
+  logger.warn(
+    `Journaling ${declared} workflow(s) IN MEMORY — no DATABASE_URL in this project. ` +
+      "Runs are lost when the dev server restarts, and `ctx.db` inside a run will " +
+      "throw. Set DATABASE_URL (or `aai storage enable <slug>` once deployed) to " +
+      "exercise the durable path.",
+  );
+  return { workflowStore: createDevWorkflowStore() };
+}
+
 export async function loadAgentDef(
   cwd: string,
   evaluate: (code: string) => Promise<AgentDef>,
@@ -309,7 +343,13 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     // the platform (only what `.env` / `aai secret put` declares) and so can't
     // come to depend on a host-level variable that won't exist there.
     const providerEnv = withHostCredentialFallback(env);
-    const runtime = createRuntime({ agent: agentDef, env, providerEnv, logger: devLogger });
+    const runtime = createRuntime({
+      agent: agentDef,
+      env,
+      providerEnv,
+      logger: devLogger,
+      ...devWorkflowStore(agentDef, env, devLogger),
+    });
     return createServer({
       runtime,
       name: agentDef.name,

@@ -150,4 +150,14 @@ export {
   WORKFLOW_API_TOKEN_ENV,
   type WorkflowApiEngine,
 } from "./workflow-api.ts";
+/**
+ * The in-memory journal, for `aai dev` with no `DATABASE_URL`.
+ *
+ * Public here only so the CLI can pass it as `RuntimeOptions.workflowStore`; a
+ * deployed guest never does, which is what keeps a non-durable journal out of
+ * production. Typed as the plain `WorkflowStore` — see the module's own doc for
+ * why the wider spec-facing type stays unexported.
+ */
+export { createDevWorkflowStore } from "./workflow-memory-store.ts";
+export type { WorkflowStore } from "./workflow-store.ts";
 export { type SessionWebSocket, safeSend, wireSessionSocket } from "./ws-handler.ts";

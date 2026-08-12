@@ -241,6 +241,53 @@ recorded as `failed` over the status the caller asked for — and `recordStep` i
 deliberately NOT gated on a live status, because the step already ran and a journal
 that records what happened stays truthful for a run cancelled underneath it.
 
+**A waitpoint's token is the whole authorization, and the journal entry does
+double duty.** `ctx.waitFor` records the issued token under its own step id and
+throws `Parked`; `POST /workflows/signals/:token` claims it in ONE statement and
+overwrites the entry with the payload. So the entry's SHAPE is the state — a bare
+string is "still waiting" (and what a replay re-parks on, rather than minting a
+second token nobody holds), a `{ payload }` wrapper is the answer. Wrapped
+because a payload may itself be a string.
+
+Four properties, each of which was a decision:
+
+- **The route takes no run id.** The token column is unique, so the token alone
+  identifies the waitpoint; requiring both halves would mean handing out both and
+  would let a caller who knows a run id probe for its token.
+- **It is single-use** — cleared on resume — so a retrying webhook resolves the
+  wait once and cannot overwrite the journaled answer. The claim and the write are
+  one `update … returning`, so two concurrent deliveries produce one resume and
+  one `undefined`.
+- **`wait_step` rides beside the token** because the payload must be journaled
+  under the exact id the replay's `waitFor` will look for, and only the execution
+  that parked knows its ordinal.
+- **A timeout is an ordinary wake time**, so a parked run with a deadline is due
+  exactly like a sleeper, and `runDue()` plus the platform sweep recover it
+  with no second mechanism. A parked run is `sleeping` with no wake time
+  rather than a sixth status, so `isTerminal`, the page's poll, the builtin
+  and the studio card render it unchanged.
+
+**Which journal a runtime gets is the CLI's decision, never the SDK's**
+(`setupWorkflows` in `runtime-tools.ts`, `RuntimeOptions.workflowStore`). The
+default is Postgres; `aai dev` passes `createMemoryWorkflowStore()` when the
+project has no `DATABASE_URL`, so `workflow()` can be tried locally without
+provisioning a database. That store SHIPS (it used to be a fake in
+`_workflow-test-utils.ts`, which now re-exports it) precisely so a spec and the
+dev server exercise one implementation rather than a fake and a real one that can
+disagree.
+
+Two properties are load-bearing. **The SDK never chooses it**: it cannot tell a
+dev machine from a deployed guest, and a durability guarantee resting on that
+guess is the one failure shape worse than not having the primitive at all,
+because it only surfaces on the day you ship — so the guest passes nothing and
+non-durable journaling is unreachable in production by construction rather than
+by a warning. And **an injected journal does not supply `ctx.db`**: a workflow's
+own SQL still needs real storage, so `ctx.db` throws `STORAGE_DISABLED_MESSAGE`.
+That split is deliberate — `step`, `sleep` and `waitFor` are exercisable with no
+database, and the moment a run touches a table it is told which setting to set,
+which is a better answer than a second in-memory thing pretending to be a
+database.
+
 **`retry` is a RESUME, and only a terminal run is revivable.** It writes the run
 back to `pending` and re-queues it, keeping the journal — so replay
 short-circuits every step that already succeeded and a run that failed on step 27

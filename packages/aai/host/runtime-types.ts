@@ -18,6 +18,7 @@ import type { SessionCore } from "./session-core.ts";
 import type { ExecuteTool } from "./tool-executor.ts";
 import type { CreateOpenaiRealtimeWebSocket } from "./transports/openai-realtime-transport.ts";
 import type { WorkflowApiEngine } from "./workflow-api.ts";
+import type { WorkflowStore } from "./workflow-store.ts";
 import type { SessionWebSocket } from "./ws-handler.ts";
 
 /** Per-session options passed to {@link AgentRuntime.startSession}. */
@@ -96,6 +97,24 @@ export type RuntimeOptions = {
    * everything from the agent's own stored env.
    */
   providerEnv?: ProviderEnv | undefined;
+  /**
+   * Where the workflow journal lives, overriding the default Postgres store.
+   *
+   * The one caller is `aai dev` with no `DATABASE_URL`, which passes the
+   * in-memory journal so `workflow()` can be tried locally without provisioning
+   * a database (see `createMemoryWorkflowStore`). A deployed guest passes
+   * nothing, which is what keeps a non-durable journal unreachable in
+   * production — the guarantee must not depend on a deploy-time flag.
+   *
+   * Note this does NOT supply `ctx.db`: a workflow's own SQL still needs real
+   * storage, so with a memory journal and no database `ctx.db` throws the
+   * enablement message. That split is deliberate — the durability primitives
+   * (`step`, `sleep`, `waitFor`) are exercisable locally, and the moment a run
+   * touches a table it is told what to set.
+   *
+   * @internal
+   */
+  workflowStore?: WorkflowStore | undefined;
   /**
    * SQL database exposed to tool code as `ctx.db`. When omitted, the runtime
    * connects one itself from `DATABASE_URL` in the provider env (self-hosted
