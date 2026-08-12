@@ -17,6 +17,7 @@
 
 import type { Db } from "./db.ts";
 import type { DefaultSessionState, ToolContext } from "./types.ts";
+import { rejectingWorkflows } from "./workflow.ts";
 
 /** One `ctx.send(event, data)` call, as recorded by {@link createToolContext}. */
 export interface SentEvent {
@@ -118,6 +119,13 @@ export function createToolContext<S = DefaultSessionState>(
     // every caller, which is the point of the helper; a caller who cares passes
     // `state` and overrides it below.
     state: {} as S,
+    // Inert like `db` and `generate`: a tool that starts a workflow is testing
+    // that it starts one, so the default names itself in the rejection and a
+    // spec asserting the call passes its own stub.
+    workflows: rejectingWorkflows(
+      "ctx.workflows was not provided to createToolContext(). Pass `workflows` to " +
+        "assert what your tool starts.",
+    ),
     db: createUnusedDb(),
     generate: () =>
       Promise.reject(

@@ -35,6 +35,7 @@ import type { Runtime, RuntimeOptions, SessionStartOptions } from "./runtime-typ
 import { createSessionCore, type SessionCore } from "./session-core.ts";
 import { createStateSweeps } from "./session-state-sweeps.ts";
 import type { TransportCallbacks } from "./transports/types.ts";
+import { buildWorkflowClient } from "./workflow-runtime.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
 export type {
@@ -225,6 +226,12 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   const stateMap = new Map<string, Record<string, unknown>>();
   const stateSweeps = createStateSweeps(stateMap);
 
+  // `ctx.workflows`, built once per runtime rather than per session: a run
+  // outlives the session that started it, so nothing about the client is
+  // session-scoped. Undefined for an agent that declares none, which is what
+  // makes the executor's rejecting stub name the right reason.
+  const workflows = buildWorkflowClient(agent, resolvedDb, logger);
+
   const { executeTool, toolSchemas, toolGuidance, pushStateSnapshot } = setupTools({
     agent,
     opts,
@@ -232,6 +239,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     env,
     providerEnv,
     resolvedDb,
+    workflows,
     logger,
     sinkMap,
     stateMap,

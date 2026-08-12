@@ -102,6 +102,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "TTS_RECONNECT_TIMEOUT_MS",
   "ToolChoiceSchema",
   "VALID_SLUG_RE",
+  "WORKFLOWS_UNAVAILABLE_MESSAGE",
   "WS_NORMAL_CLOSURE",
   "WS_OPEN",
   "agent",

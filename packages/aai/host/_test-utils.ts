@@ -8,6 +8,7 @@ import type { ClientEvent, ClientSink } from "../sdk/protocol.ts";
 import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
 import type { AgentDef, ToolContext, ToolDef } from "../sdk/types.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "../sdk/types.ts";
+import { rejectingWorkflows } from "../sdk/workflow.ts";
 import { createRuntime } from "./runtime.ts";
 import type { ConnectS2sOptions, S2sCallbacks, S2sHandle } from "./s2s.ts";
 import type { SessionCore } from "./session-core.ts";
@@ -46,6 +47,9 @@ export function createMockToolContext(overrides?: Partial<ToolContext>): ToolCon
     messages: [],
     sessionId: "test-session",
     send: vi.fn(),
+    // Rejects rather than no-ops: a spec that reaches `ctx.workflows` without
+    // stubbing one is asserting against a fake, and the message says so.
+    workflows: rejectingWorkflows("ctx.workflows not mocked"),
     // A signal that never aborts — `ToolContext.signal` is non-optional, and
     // "this context cannot cancel" is spelled as a live-forever signal rather
     // than as an absent field.

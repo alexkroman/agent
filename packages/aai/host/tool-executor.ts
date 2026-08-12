@@ -15,6 +15,11 @@ import type { GenerateFn, GenerateOptions, GenerateResult } from "../sdk/generat
 import { formatSchemaIssues } from "../sdk/schema.ts";
 import type { Message, ToolContext, ToolDef } from "../sdk/types.ts";
 import { errorDetail, errorMessage, toolError } from "../sdk/utils.ts";
+import {
+  rejectingWorkflows,
+  WORKFLOWS_UNAVAILABLE_MESSAGE,
+  type WorkflowClient,
+} from "../sdk/workflow.ts";
 import type { HostGenerateFn } from "./generate.ts";
 import type { Logger } from "./runtime-config.ts";
 
@@ -38,6 +43,14 @@ type ExecuteToolCallOptions = {
   /** Turn-scoped cancellation: unblocks the await (and is exposed to the tool
    *  as `ctx.signal`) when the issuing turn is cancelled or the session stops. */
   signal?: AbortSignal | undefined;
+  /**
+   * Durable workflows (`ctx.workflows`). Absent contexts get a client whose
+   * every method rejects naming the missing configuration — an app that declares
+   * no workflows and one whose world is unset are both legitimately in that
+   * state, and a tool that reaches for it deserves the reason rather than a
+   * `TypeError` on `undefined.start`.
+   */
+  workflows?: WorkflowClient | undefined;
 };
 
 // Takes the per-call signal as a REQUIRED narrowing of the options bag:
@@ -45,11 +58,12 @@ type ExecuteToolCallOptions = {
 // context's signal is the per-call controller `executeToolCall` always builds,
 // which is what makes `ToolContext.signal` non-optional.
 function buildToolContext(opts: ExecuteToolCallOptions & { signal: AbortSignal }): ToolContext {
-  const { env, state, db, messages, sessionId, send, signal, generate } = opts;
+  const { env, state, db, messages, sessionId, send, signal, generate, workflows } = opts;
   return {
     env,
     state: state ?? {},
     signal,
+    workflows: workflows ?? rejectingWorkflows(WORKFLOWS_UNAVAILABLE_MESSAGE),
     get db(): Db {
       if (!db) {
         throw new Error(STORAGE_DISABLED_MESSAGE);

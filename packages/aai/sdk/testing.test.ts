@@ -17,6 +17,7 @@ describe("createToolContext", () => {
       "sessionId",
       "signal",
       "state",
+      "workflows",
     ]);
   });
 

@@ -374,6 +374,21 @@ export function rejectingWorkflows(message: string): WorkflowClient {
 }
 
 /**
+ * What `ctx.workflows` rejects with when there is no workflow backend behind it.
+ *
+ * Covers both reasons at once because a tool author cannot tell them apart from
+ * inside a tool, and the remedy is the same read of the docs: the app declares no
+ * `workflows`, or it declares some and no world is configured (no
+ * `WORKFLOW_TARGET_WORLD` in production, no storage enabled).
+ *
+ * @internal
+ */
+export const WORKFLOWS_UNAVAILABLE_MESSAGE =
+  "Workflows are not available for this app. Declare them with `agent({ workflows })`, " +
+  "and make sure storage is enabled (`aai storage enable`, or Settings → Database in " +
+  "the studio) so runs have somewhere to live.";
+
+/**
  * The error a declaration gets when its `run` carries no `workflowId`.
  *
  * Its own export because two layers throw it: {@link workflow} at declaration

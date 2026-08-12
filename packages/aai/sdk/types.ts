@@ -8,6 +8,7 @@ import type { Db } from "./db.ts";
 import type { GenerateFn } from "./generate.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
+import type { StartOptions, WorkflowClient, WorkflowDef } from "./workflow.ts";
 
 /**
  * Identifier for a built-in server-side tool.
@@ -186,6 +187,20 @@ export type ToolContext<S = DefaultSessionState> = {
    * never aborts rather than omitting the field.
    */
   signal: AbortSignal;
+  /**
+   * Start and inspect durable workflow runs — the way a tool hands off work that
+   * must outlive the call.
+   *
+   * A voice tool cannot do slow work inline: the caller is on the line. So it
+   * starts a run and answers in the same turn ("I've kicked that off, I'll text
+   * you"), and the run continues on the queue after the session ends. Pass
+   * `{ key: ctx.sessionId }` so a later turn — or a later CALL — can find it
+   * again; see {@link StartOptions.key}.
+   *
+   * Every method rejects when the app declares no workflows or has no workflow
+   * backend configured, naming which.
+   */
+  workflows: WorkflowClient;
 };
 
 /**
@@ -368,6 +383,20 @@ export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
    * becomes `unknown` again. Tools are still *checked* against `S`.
    */
   tools: Readonly<Record<string, ToolDef<ToolInputSchema, NoInfer<S>>>>;
+  /**
+   * Durable workflows this agent may start, keyed by workflow name.
+   *
+   * @remarks
+   * The key is the NAME — nothing else records it, which is what makes a rename
+   * a one-place change and what `ctx.workflows.start(def, …)` resolves a
+   * definition against by identity.
+   *
+   * Host-only, like `tools`, because a definition holds a function. The platform
+   * therefore never reads this record: a page's `GET /workflows` listing is
+   * served by the GUEST from its own live agent definition, the same way
+   * `name`/`greeting` are proxied rather than read from the stored config.
+   */
+  workflows?: Readonly<Record<string, WorkflowDef>>;
   /**
    * Factory creating this session's mutable state — the value tools read and
    * write as `ctx.state`. Called once per session; unset leaves `ctx.state`

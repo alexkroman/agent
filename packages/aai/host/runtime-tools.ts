@@ -20,6 +20,7 @@ import type { ClientSink } from "../sdk/protocol.ts";
 import type { LlmProvider } from "../sdk/providers.ts";
 import type { AgentDef, ToolDef } from "../sdk/types.ts";
 import { toolError } from "../sdk/utils.ts";
+import type { WorkflowClient } from "../sdk/workflow.ts";
 import { createStateSync } from "./_state-sync.ts";
 import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "./builtin-tools.ts";
 import { createGenerateFn, type HostGenerateFn } from "./generate.ts";
@@ -89,6 +90,12 @@ type ToolSetupDeps = {
   providerEnv: ProviderEnv;
   /** ctx.db when storage is enabled; undefined makes ctx.db access throw. */
   resolvedDb: Db | undefined;
+  /**
+   * `ctx.workflows`. Undefined when the agent declares no workflows, and the
+   * executor substitutes a client that rejects naming the reason — so this is
+   * "does this agent have workflows", not "is the option set".
+   */
+  workflows: WorkflowClient | undefined;
   logger: NonNullable<RuntimeOptions["logger"]>;
   sinkMap: OwnedMap<string, ClientSink>;
   /** Per-session tool state (self-hosted mode only); cleaned up on session end. */
@@ -108,7 +115,7 @@ function setupGenerate(deps: ToolSetupDeps): HostGenerateFn {
 
 /** Sandbox mode — custom tools are RPC-backed; builtins run host-side. */
 function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): ToolSetup {
-  const { agent, opts, env, resolvedDb, logger } = deps;
+  const { agent, opts, env, resolvedDb, workflows, logger } = deps;
   const builtinFetchOpt = opts.fetch ? { fetch: opts.fetch } : undefined;
   const generate = setupGenerate(deps);
   const resolved = mergeBuiltinSurface(agent, builtinFetchOpt, {
@@ -132,6 +139,7 @@ function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): To
         env: frozenEnv,
         sessionId: sessionId ?? "",
         db: resolvedDb,
+        workflows,
         messages,
         generate,
         logger,
@@ -153,7 +161,7 @@ function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): To
  * and schemas rather than emitting a duplicate schema name to the LLM.
  */
 function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
-  const { agent, opts, env, resolvedDb, logger, sinkMap, stateMap } = deps;
+  const { agent, opts, env, resolvedDb, workflows, logger, sinkMap, stateMap } = deps;
   const builtinOpts = {
     ...(opts.fetch ? { fetch: opts.fetch } : {}),
     // The guest harness runs this path INSIDE the sandbox and provides the
@@ -272,6 +280,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
         // db traffic is a TCP socket, not fetch, so the egress guard never
         // sees it — no exemption wrapper needed.
         db: resolvedDb,
+        workflows,
         messages,
         generate,
         logger,
