@@ -39,6 +39,23 @@ export const GUEST_ROUTES = {
   health: "/health",
   /** PUBLIC pre-connection client config (the SDK server's own route). */
   clientConfig: "/client-config",
+  /**
+   * Workflow-run replay, called back by the Workflow DevKit's queue.
+   *
+   * The caller is the guest's OWN worker (graphile-worker, polling the app
+   * database from inside this sandbox), not the platform and not a browser.
+   */
+  workflowFlow: "/.well-known/workflow/v1/flow",
+  /** One workflow step, called back by the same queue as `workflowFlow`. */
+  workflowStep: "/.well-known/workflow/v1/step",
+  /**
+   * Webhook delivery to a parked run — `createWebhook()`'s URL, minus its token.
+   *
+   * The only one of the three a THIRD PARTY calls: the URL is handed out of the
+   * system (a payment provider, an approval mail), so it has to keep working
+   * from the public internet.
+   */
+  workflowWebhook: "/.well-known/workflow/v1/webhook",
   /** Agent-mode management surface (bearer-gated): session count + drain. */
   manageStatus: "/manage/status",
   manageDrain: "/manage/drain",
@@ -101,6 +118,19 @@ export const GUEST_ROUTE_EXPOSURE = {
   // which only the host and Modal's readiness probe ever call.
   health: { via: "host-only" },
   clientConfig: { via: "proxied", methods: ["GET"] },
+  // Nothing outside the sandbox calls these two: the DevKit's queue lives in
+  // the guest and dials its own server. Not `proxied` — a platform route would
+  // be an unauthenticated way for anyone to drive another tenant's run.
+  workflowFlow: { via: "host-only" },
+  workflowStep: { via: "host-only" },
+  // KNOWN GAP, and this declaration is the honest state rather than the target.
+  // A webhook URL is handed to a third party and must outlive the sandbox that
+  // minted it, so this has to become `proxied` under `/:slug` — a Modal tunnel
+  // URL changes on every respawn, so today a `createWebhook()` URL only survives
+  // under `aai dev`. Left `host-only` because that is what is true until the
+  // platform route exists; flipping it early would make `guest-routes.test.ts`
+  // assert a forward that is not there.
+  workflowWebhook: { via: "host-only" },
   manageStatus: { via: "host-only" },
   manageDrain: { via: "host-only" },
 } satisfies Record<keyof typeof GUEST_ROUTES, GuestRouteExposure>;

@@ -96,6 +96,7 @@ import type {
   JsonRpcRequest,
   JsonRpcResponse,
 } from "./harness-types.ts";
+import { handleWorkflowRequest } from "./harness-workflow.ts";
 import {
   AGENT_IDLE_EXIT_MS,
   AGENT_IDLE_POLL_MS,
@@ -292,12 +293,18 @@ async function mainAgent(port: number, host: string, token: string): Promise<voi
     // `AgentDef` at load (`harness-bundle.ts`), so a bundle can ship neither.
     // The types cannot see that, which is why a checker will call these dead.
     ...omitUndefined({ name: state.agent?.name, greeting: state.agent?.greeting }),
-    request: createManageHandler({
-      token,
-      activeSessions: () => state.activeSessions,
-      isDraining: idle.isDraining,
-      startDrain: idle.startDrain,
-    }),
+    request: (req, res, url, method) =>
+      // The DevKit's queue calls these back; unclaimed they would fall through
+      // to the 404 and every run would stall with nothing saying why. Ahead of
+      // the manage surface because the paths are disjoint and this is the hotter
+      // one on an agent that has workflows.
+      handleWorkflowRequest(state.workflows, req, res, url, method) ||
+      createManageHandler({
+        token,
+        activeSessions: () => state.activeSessions,
+        isDraining: idle.isDraining,
+        startDrain: idle.startDrain,
+      })(req, res, url, method),
   });
   await server.listen(port, host);
   console.error(`agent-mode harness listening on ${host}:${port}`);

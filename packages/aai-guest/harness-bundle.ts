@@ -11,6 +11,7 @@
 import { writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import type { AgentDef, CreateGuestRuntime, GuestRuntime } from "./harness-types.ts";
+import { createWorkflowSurface, type WorkflowSurface } from "./harness-workflow.ts";
 import type { StudioSession } from "./studio-chat.ts";
 import { runCode } from "./trial.ts";
 
@@ -54,6 +55,14 @@ export type HarnessState = {
   /** Live client-session connections (host idle eviction asks). */
   activeSessions: number;
   /**
+   * The bundle's durable-workflow surface, or null when it declares none.
+   *
+   * Built at LOAD rather than lazily like the runtime: the DevKit's queue can
+   * call back the moment a run starts, and a route that 404s because the surface
+   * had not been built yet would look to the world like a lost message.
+   */
+  workflows: WorkflowSurface | null;
+  /**
    * The studio coding-agent session, installed by `studio/session-init` —
    * workspace dir, the caller's key (chat bearer + LLM credential), and
    * turn config. Null on non-studio sandboxes; `/studio/chat` answers 409.
@@ -69,6 +78,7 @@ export function emptyHarnessState(): HarnessState {
     env: Object.freeze({}),
     runtime: null,
     activeSessions: 0,
+    workflows: null,
     studio: null,
   };
 }
@@ -120,6 +130,17 @@ export async function loadBundle(
   state.agent = agent;
   state.createRuntime = createRuntime as CreateGuestRuntime;
   state.env = Object.freeze({ ...params.env });
+
+  // The compiled workflow surface rides the bundle as two string exports (see
+  // `aai-cli/workflow-bundler.ts`). Absent for a project with no `workflows/`
+  // directory, which is most of them.
+  const workflowCode = (mod as { __aaiWorkflowCode?: unknown }).__aaiWorkflowCode;
+  const stepCode = (mod as { __aaiStepCode?: unknown }).__aaiStepCode;
+  state.workflows =
+    (await createWorkflowSurface(
+      typeof workflowCode === "string" ? workflowCode : undefined,
+      typeof stepCode === "string" ? stepCode : undefined,
+    )) ?? null;
 
   const config = (mod as { __aaiConfig?: unknown }).__aaiConfig;
   return config === undefined ? {} : { config };
