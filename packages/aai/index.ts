@@ -13,10 +13,19 @@
  * also `@alexkroman1/aai/utils` for zod-free helpers usable in tool code.
  * Infrastructure shared with the sibling packages lives on
  * `@alexkroman1/aai/internal` and is not part of the public API.
+ *
+ * The numeric defaults and budgets are on `@alexkroman1/aai/limits`. They are
+ * re-exported here as well, for now — see the note on that export below.
  */
 
 // biome-ignore-all lint/performance/noReExportAll: barrel file by design
 
+// The ~106 numeric defaults and budgets. Also published as
+// `@alexkroman1/aai/limits`, which is the CANONICAL path: they are two thirds of
+// this barrel's 133 names, and an authoring surface whose autocomplete is
+// dominated by `MAX_CLIENT_WS_BUFFERED_BYTES` is one nobody can read. Kept here
+// too because removing them is a breaking change for every consumer that reads
+// one, so it belongs in a major rather than riding along with the new subpath.
 export * from "./sdk/constants.ts";
 export * from "./sdk/db.ts";
 export * from "./sdk/define.ts";

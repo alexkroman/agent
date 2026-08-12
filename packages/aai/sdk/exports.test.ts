@@ -27,6 +27,11 @@ const IMPORT_TIMEOUT_MS = 30_000;
 const SUBPATH_IMPORTS: ReadonlyArray<readonly [label: string, load: () => Promise<object>]> = [
   ["@alexkroman1/aai main", () => import("@alexkroman1/aai")],
   ["@alexkroman1/aai/utils", () => import("@alexkroman1/aai/utils")],
+  // The numeric surface. It is ALSO still on the root barrel, deliberately —
+  // this subpath is the canonical path and the root re-export is the
+  // compatibility one, so both snapshots exist and the root's shrinking is a
+  // separate, breaking decision rather than a side effect of adding this.
+  ["@alexkroman1/aai/limits", () => import("@alexkroman1/aai/limits")],
   ["@alexkroman1/aai/testing", () => import("@alexkroman1/aai/testing")],
   ["@alexkroman1/aai/protocol", () => import("@alexkroman1/aai/protocol")],
   ["@alexkroman1/aai/manifest", () => import("@alexkroman1/aai/manifest")],

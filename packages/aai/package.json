@@ -13,6 +13,11 @@
       "types": "./dist/sdk/utils.d.ts",
       "import": "./dist/sdk/utils.js"
     },
+    "./limits": {
+      "@dev/source": "./sdk/constants.ts",
+      "types": "./dist/sdk/constants.d.ts",
+      "import": "./dist/sdk/constants.js"
+    },
     "./testing": {
       "@dev/source": "./sdk/testing.ts",
       "types": "./dist/sdk/testing.d.ts",
