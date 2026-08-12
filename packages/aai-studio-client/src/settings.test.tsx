@@ -70,6 +70,7 @@ describe("SettingsPane", () => {
     expect(titles).toEqual([
       "Work locally",
       "API",
+      "Workflows",
       "Phone number",
       "Database",
       "Secrets",

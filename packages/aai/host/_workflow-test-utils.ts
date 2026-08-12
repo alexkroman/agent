@@ -237,6 +237,13 @@ export function createMemoryWorkflowStore(): MemoryWorkflowStore {
       return Promise.resolve(matched.slice(0, limit).map(([runId, run]) => snapshot(runId, run)));
     },
 
+    recent(workflow: string, limit: number): Promise<WorkflowRunSnapshot[]> {
+      // Newest first by the same reversal `findByKey` uses — see its comment.
+      const matched = [...runs.entries()].filter(([, run]) => run.workflow === workflow);
+      matched.reverse();
+      return Promise.resolve(matched.slice(0, limit).map(([runId, run]) => snapshot(runId, run)));
+    },
+
     putBlob(blobId: string, contentType: string, base64: string): Promise<void> {
       blobs.set(blobId, { contentType, base64, createdAt: Date.now() });
       return Promise.resolve();

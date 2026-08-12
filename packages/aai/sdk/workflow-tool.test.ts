@@ -105,4 +105,94 @@ describe("startTool", () => {
   test("carries the description through to the LLM", () => {
     expect(startTool(digest, { description: "Start research" }).description).toBe("Start research");
   });
+
+  describe("a derived input", () => {
+    // The run's input is the ONE handoff from session-scoped state to durable
+    // work — a workflow cannot read `ctx.state` — so an input assembled from the
+    // session has to be built by code. Asking the model for it instead means
+    // asking it to retype a structure it is only holding a reference to.
+    const brief = z.object({ id: z.string() });
+
+    test("shows the LLM the narrow schema, not the workflow's", () => {
+      const asked = startTool(digest, {
+        description: "d",
+        inputSchema: brief,
+        input: ({ id }) => ({ topic: id }),
+      });
+
+      expect(asked.inputSchema).toBe(brief);
+      expect(asked.inputSchema).not.toBe(digest.input);
+    });
+
+    test("starts the run with the MAPPED input", async () => {
+      const workflows = recordingWorkflows();
+      const ctx = createToolContext({ workflows, sessionId: "session-4" });
+
+      await startTool(digest, {
+        description: "d",
+        inputSchema: brief,
+        input: ({ id }) => ({ topic: `topic-for-${id}` }),
+      }).execute({ id: "42" }, ctx);
+
+      // The workflow sees its own shape; the model never typed it.
+      expect(workflows.started).toEqual([
+        { workflow: digest, input: { topic: "topic-for-42" }, key: "session-4" },
+      ]);
+    });
+
+    test("hands the mapper the live context, so it can read session state", async () => {
+      const workflows = recordingWorkflows();
+      const ctx = createToolContext({ workflows, sessionId: "session-7" });
+      // The case the overload exists for: the snapshot comes from `ctx`.
+      ctx.state.pending = { topic: "from state" };
+
+      await startTool(digest, {
+        description: "d",
+        inputSchema: brief,
+        input: (_args, inner) => (inner.state.pending as { topic: string }) ?? { topic: "none" },
+      }).execute({ id: "42" }, ctx);
+
+      expect(workflows.started[0]?.input).toEqual({ topic: "from state" });
+    });
+
+    test("awaits an async mapper", async () => {
+      const workflows = recordingWorkflows();
+
+      await startTool(digest, {
+        description: "d",
+        inputSchema: brief,
+        input: ({ id }) => Promise.resolve({ topic: id }),
+      }).execute({ id: "async" }, createToolContext({ workflows }));
+
+      // A mapper that reads a database or an API is the ordinary case, so a
+      // returned promise must not reach `start()` as the input itself.
+      expect(workflows.started[0]?.input).toEqual({ topic: "async" });
+    });
+
+    test("refuses a narrow schema with no mapper, at construction", () => {
+      // The pairing the type system cannot enforce on one signature (see the note
+      // on `startTool`). Unpaired, the tool would hand `start()` arguments its
+      // workflow never declared and the run would be rejected at the far end of a
+      // tool call — reported to the model as a failure whose cause is the tool
+      // definition. Throwing at module load turns that into a build failure.
+      // It type-checks, which is exactly why the throw has to exist.
+      expect(() => startTool(digest, { description: "d", inputSchema: brief })).toThrow(
+        "needs an `input` mapper",
+      );
+    });
+
+    test("still keys the run to the session", async () => {
+      const workflows = recordingWorkflows();
+
+      await startTool(digest, {
+        description: "d",
+        inputSchema: brief,
+        input: ({ id }) => ({ topic: id }),
+      }).execute({ id: "x" }, createToolContext({ workflows, sessionId: "session-2" }));
+
+      // The default that makes `workflow_status` able to report the run must not
+      // depend on which overload was used.
+      expect(workflows.started[0]?.key).toBe("session-2");
+    });
+  });
 });

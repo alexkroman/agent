@@ -54,10 +54,20 @@ export type CloseableDb = Db & {
  * SQLSTATEs an `IF NOT EXISTS` raises when the object is already there.
  *
  * `42P07` is duplicate_table (also duplicate_index — Postgres reuses it for
- * every relation kind) and `42710` is duplicate_object, which the same idiom
- * raises for types and constraints.
+ * every relation kind), `42710` is duplicate_object, which the same idiom raises
+ * for types and constraints, and `42701` is duplicate_COLUMN, raised by
+ * `alter table … add column if not exists`.
+ *
+ * That last one was missing, and the store it belongs to runs such a statement on
+ * every boot: `ADD_RUNS_KEY` (`workflow-store.ts`) adds `correlation_key` to a
+ * journal that predates the column, so every engine after the very first one
+ * logged `column "correlation_key" of relation "aai_workflow_runs" already
+ * exists` — the exact noise this filter exists to remove, from the exact caller
+ * it was written for. Found by running the durability suite against a real
+ * Postgres and reading the output; no unit test can see it, because the notice
+ * comes from the driver rather than from our code.
  */
-const EXPECTED_NOTICE_CODES = new Set(["42P07", "42710"]);
+const EXPECTED_NOTICE_CODES = new Set(["42P07", "42710", "42701"]);
 
 /**
  * postgres.js's notice handler.

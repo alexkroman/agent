@@ -140,16 +140,39 @@ custom-property record rather than inlining it: a fresh literal in the `style`
 prop is excess-property-checked against `CSSProperties`, which declares no
 custom properties. `aai-ui`'s `StyleWithVars` is the shape to copy.
 
-**It used to be a VOICE agent that started a run from a tool, and nothing
-demonstrates that any more.** `ctx.workflows.start()` / `.get()` from inside a
-tool — a turn kicking off durable work and answering the caller in the same
-breath — is still fully supported and covered by
-`packages/aai/host/workflow-engine.test.ts` plus `sdk/testing.ts`'s
-`createToolContext`, which defaults `ctx.workflows` for exactly that test. But
-`WorkflowClient` and `WorkflowRunSnapshot` are in
-`template-api-allowlist.json` now, and that is the honest record of the gap
-rather than a claim that the API is unused. A voice template that starts a run
-would close it; nothing here is blocked on one.
+**A VOICE agent starting a run from a tool is `dispatch-center`'s after-action
+report** (`templates/dispatch-center/after-action.ts`). The dispatcher resolves
+an incident, asks for the report, and hangs up; the run sleeps out a review
+window, drafts with `ctx.generate`, and files a row — outliving the session, the
+sandbox that served it, and any redeploy in between. It is the demonstration
+this guide recorded as MISSING for a while, and it went to the advanced template
+rather than to `pizza-ordering` for one reason: the journal needs storage, and
+adding a hard storage requirement to the template people run first is a worse
+trade than adding one to the twelve-tool incident console nobody reaches for on
+day one.
+
+Four things only it demonstrates, and each is a decision:
+
+- **`startTool(def, { inputSchema, input })`** — the derived form. The workflow's
+  input is a seven-field incident snapshot and only the id is a question anyone
+  can answer, so the model is asked for the id and the snapshot is assembled
+  from `ctx.state` by the mapper. The plain form would have the LLM retype a
+  timeline.
+- **The run INPUT is the handoff.** A workflow cannot read `ctx.state` — it is
+  swept `SESSION_RESUME_GRACE_MS` after the hangup — so a run that read the
+  incident later would find nothing. The snapshot is also a budget: it is
+  re-read on every replay, so the caller's name and phone are deliberately
+  absent (PII in a journal outlives the call that collected it) and the timeline
+  is capped.
+- **`builtinTools: ["workflow_status"]`** is what makes "is the report for four
+  ready?" answerable, because `startTool` keys every run to `ctx.sessionId` and
+  that builtin reads exactly that key.
+- **`ctx.sleep`** — the review window, and the only template that shows it. It is
+  what makes the run durable rather than merely asynchronous: the wake time is
+  journaled and the run is RELEASED, so nothing holds a billed sandbox across it.
+
+It degrades rather than breaks without storage: the agent still takes calls and
+manages incidents, and only this one tool fails — by telling the model so.
 
 ## What `tsconfig.json` includes is what gets type-checked
 

@@ -18,4 +18,12 @@ export const queryKeys = {
   toolLabels: (url: string | undefined) => ["tool-labels", url] as const,
   secrets: (project: string) => ["secrets", project] as const,
   database: (project: string) => ["database", project] as const,
+  /**
+   * Declared workflows and their recent runs, keyed by SLUG rather than project.
+   *
+   * The read goes to the agent's own workflow API (`/:slug/workflows`), not to a
+   * studio route, so the slug is what identifies the answer — and a project's
+   * preview and production agents are two different journals.
+   */
+  workflowRuns: (slug: string | undefined) => ["workflow-runs", slug] as const,
 };

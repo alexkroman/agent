@@ -96,6 +96,15 @@ export type WorkflowApi = {
   /** Runs of `workflow` started with `key`, newest first. */
   find(workflow: string, key: string, options?: { limit?: number }): Promise<WorkflowRun[]>;
   /**
+   * Runs of `workflow`, newest first, whatever key they carry.
+   *
+   * The operator's read where {@link find} is the agent's — a console has no
+   * correlation key to ask about, and most runs carry none (a page holds its own
+   * `runId`). Two methods rather than one nullable key, so a caller meaning "this
+   * session's runs" cannot silently widen to every session's.
+   */
+  recent(workflow: string, options?: { limit?: number }): Promise<WorkflowRun[]>;
+  /**
    * Stop a run, resolving whether this call is what ended it. A run that had
    * already finished answers false rather than failing — two tabs pressing Stop
    * is ordinary.
@@ -145,6 +154,26 @@ export function createWorkflowApi(opts: WorkflowApiOptions = {}): WorkflowApi {
   const base = buildAgentUrl(opts.baseUrl ?? pageBaseUrl(), "workflows").toString();
   const auth: Record<string, string> = opts.token ? { Authorization: `Bearer ${opts.token}` } : {};
 
+  /**
+   * `GET /runs` — shared by `find` and `recent`, which differ only in whether the
+   * query carries a `key`.
+   *
+   * One reader so the two cannot drift on the parts that are not the difference:
+   * the limit's encoding, the `{ runs }` envelope, and the empty-array fallback
+   * for a body that answered without one.
+   */
+  async function listRuns(
+    query: Record<string, string>,
+    limit: number | undefined,
+  ): Promise<WorkflowRun[]> {
+    const params = new URLSearchParams(query);
+    if (limit !== undefined) params.set("limit", String(limit));
+    const res = await fetch(`${base}/runs?${params.toString()}`, { headers: auth });
+    if (!res.ok) throw await failure(res);
+    const body = (await res.json()) as { runs?: WorkflowRun[] };
+    return body.runs ?? [];
+  }
+
   return {
     async list(): Promise<WorkflowSummary[]> {
       const res = await fetch(base, { headers: auth });
@@ -182,12 +211,12 @@ export function createWorkflowApi(opts: WorkflowApiOptions = {}): WorkflowApi {
       key: string,
       options?: { limit?: number },
     ): Promise<WorkflowRun[]> {
-      const query = new URLSearchParams({ workflow, key });
-      if (options?.limit !== undefined) query.set("limit", String(options.limit));
-      const res = await fetch(`${base}/runs?${query.toString()}`, { headers: auth });
-      if (!res.ok) throw await failure(res);
-      const body = (await res.json()) as { runs?: WorkflowRun[] };
-      return body.runs ?? [];
+      return await listRuns({ workflow, key }, options?.limit);
+    },
+
+    async recent(workflow: string, options?: { limit?: number }): Promise<WorkflowRun[]> {
+      // No `key` in the query is what selects the keyless read server-side.
+      return await listRuns({ workflow }, options?.limit);
     },
 
     async cancel(runId: string): Promise<boolean> {

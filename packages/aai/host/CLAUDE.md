@@ -375,3 +375,109 @@ parameter directly to `::jsonb`, so a fourth jsonb column cannot reintroduce it.
 The full argument, including why passing the raw value instead is worse (a step
 returning a bare `true` fails with "cannot cast type boolean to jsonb"), is on
 `createPostgresWorkflowStore`.
+
+## History records what was HEARD, not what was generated
+
+An interrupted reply lands in history as the words the caller is estimated to
+have actually heard, marked `[interrupted]` — not everything the model produced.
+A reply cut before anything was audible records **nothing at all** (its
+completed tool steps still do). That is LiveKit's rule, and it exists because
+TTS runs behind the text: a barge-in discards whatever is still in the
+provider's buffer, so the old record told the model it had delivered
+information the caller never got, and the model then never repeated it.
+
+**One cursor, one owner** — `host/transports/pipeline-heard.ts`
+(`createHeardTracker`). It answers exactly one question: given this reply's TTS
+text and its forwarded audio, which characters did the caller hear? History
+truncation and the false-interruption resume anchor (`buildTailResumePrompt`)
+are two READERS of that one answer, which is what keeps the resume prompt from
+quoting words the record denies. It also owns the playback clock, so the
+barge-in gate reads the same object.
+
+Two tiers of accuracy, decided at RUNTIME rather than by a capability flag:
+
+| provider | timings | cursor |
+| --- | --- | --- |
+| AssemblyAI TTS | `WordBoundaries` frames, parsed in `providers/tts/assemblyai-words.ts` | last word whose audio WHOLLY elapsed |
+| Cartesia | `add_timestamps` exists in the SDK, not wired up | proportional estimate, snapped to a word |
+| Rime | a `timestamps` frame exists, unmodelled | proportional estimate, snapped to a word |
+
+A provider that reports nothing degrades to exactly the estimate that was there
+before, so nothing regresses; the zero case needs no timings at all. Both
+roundings err toward UNDER-keeping, deliberately: over-keeping is the measured
+failure, while under-keeping costs a word or two of redundancy that the resume
+prompt's "without repeating what they already heard" absorbs.
+
+**The lag is `HEARD_AUDIO_LAG_MS` (750) and it is DERIVED, not measured** —
+`PLAYBACK_JITTER_MS` (400, real) plus an assumed sub-second network hop. It is
+the counterpart of `PIPELINE_PLAYBACK_GRACE_MS` with the opposite sign, and a
+separate constant on purpose: the grace errs late because a spurious cancel is
+harmless, while this one is subtracted from a position where erring either way
+costs. See both constants' docs.
+
+**The client's committed transcript and the history entry now diverge on
+purpose.** The caption still shows everything that reached TTS, because it was
+published as interims while the audio was being synthesized. It CANNOT be
+corrected after the fact to match the shorter record: emitting an
+`agent_transcript` after `cancelled` is the measured 19-of-73 double-transcript
+bug (`persistInterruptedTurn` in `pipeline-history.ts` — read it there).
+
+Two mechanisms this leans on: the audio gate (a cancelled turn's late audio AND
+its late word timings are both dropped by it, so no second epoch was invented),
+and `emitText`'s `record` flag, which now decides what may be truncated into
+history as well as what reaches `onDelta` — filler is audible, so it moves the
+heard POSITION, and is never recordable. The TTS coalescer flushes when that
+flag flips so no batched send ever mixes the two.
+
+**Not covered: a barge-in during the TTS drain.** `runTurn` has already
+committed the full text by then, so that case keeps `buildTailResumePrompt` as
+its only mitigation (which this change makes word-truthful). Fixing it means
+deferring the history commit until after the drain — a change to `runReply`'s
+body contract, deliberately separate.
+
+## Is a run really durable? — the restart suite
+
+Two files answer the question the whole mechanism is sold on, and they are the
+same property at two levels of realism:
+
+- **`host/workflow-restart.test.ts`** (unit) — the memory store, plus the OTHER
+  half of the guarantee.
+- **`host/integration/workflow-restart.integration.test.ts`** (`AAI_TEST_PG_URL`)
+  — the same property against a real Postgres journal.
+
+The harness is `host/_workflow-restart-harness.ts`; read its module doc before
+changing either. Four things worth carrying out of it:
+
+- **A restart is a new ENGINE over the same store, and that is not a shortcut.**
+  Everything the engine keeps in process is per-engine (`inFlight`,
+  `controllers`, wake `timers`, `namesOf`, the memoized `init()`, the context
+  factory), so `close()` plus a fresh `createWorkflowEngine` IS the production
+  event. The suite asserts on step BODIES rather than on the run's output for
+  that reason: an output can be perfectly correct while every step ran four
+  times.
+- **Where the crash lands is the experiment.** The workflow parks at a gate
+  BETWEEN steps, so the host dies with step `i` durable and nothing in flight —
+  the one instant where the guarantee is exactly-once. A crash INSIDE a step
+  body is at-least-once by design and has its own test; only the between-steps
+  case may assert a count of 1, and conflating them is how a suite comes to
+  "prove" a guarantee the engine does not make.
+- **The integration tier exists for the ENCODING, not for realism in general.**
+  The memory store holds JS values, so a step output that survives a restart in
+  the fake can come back double-encoded from Postgres and replay would hand the
+  resumed run a string where it wrote an object — the `::text::jsonb` hazard
+  `workflow-store.ts` documents, invisible above that line. Each journaled value
+  is therefore an object with a NUMBER read back numerically by the workflow
+  itself, so a bad round trip fails inside the run.
+- **Each restart takes a new connection POOL as well as a new engine** in the
+  integration tier, which is the other half of what a restarted process does not
+  keep. The lease is expired by hand between restarts; waiting out the real
+  `WORKFLOW_LEASE_MS` per step would cost two minutes to observe nothing, and
+  the claim rule exercised is `lease_until < now()` either way.
+
+**Running it is what found the `42701` notice leak.** `ADD_RUNS_KEY` is an
+`alter table … add column if not exists`, which raises duplicate_COLUMN — a
+SQLSTATE `postgres-db.ts`'s notice filter did not carry — so every engine after
+the first logged `column "correlation_key" … already exists` into a log the guest
+relays to the platform. That is the exact noise the filter exists to remove, from
+the exact caller it was written for, and no unit test can see it because the
+notice comes from the driver rather than from our code.

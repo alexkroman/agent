@@ -1,4 +1,5 @@
 import { agent } from "@alexkroman1/aai";
+import { afterAction, requestAfterAction } from "./after-action.ts";
 import { dashboardView, dispatchSlot } from "./shared.ts";
 import systemPrompt from "./system-prompt.md?raw";
 import { incidentAddNote } from "./tools/incident_add_note.ts";
@@ -29,9 +30,28 @@ export default agent({
 
   // The system prompt instructs the model to use web_search and run_code, so
   // they must be enabled here — the default builtin set does not include them.
-  builtinTools: ["think", "remember", "recall", "calculate", "web_search", "run_code"],
+  //
+  // `workflow_status` is what makes the after-action report answerable: the run
+  // outlives the call, so "is the report for four ready yet?" has to be readable
+  // from the journal rather than from `ctx.state`. It reports only runs keyed to
+  // THIS session, which is the key `startTool` sets by default.
+  builtinTools: [
+    "think",
+    "remember",
+    "recall",
+    "calculate",
+    "web_search",
+    "run_code",
+    "workflow_status",
+  ],
+
+  // Durable work this agent owns. Declared here rather than inferred from the
+  // tool: this record is the single source of the name the journal records, so a
+  // rename is one edit and a run started by an older bundle still resolves.
+  workflows: { after_action: afterAction },
 
   tools: {
+    after_action_report: requestAfterAction,
     incident_add_note: incidentAddNote,
     incident_create: incidentCreate,
     incident_escalate: incidentEscalate,

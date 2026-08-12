@@ -193,6 +193,7 @@ describe("rejectingWorkflows", () => {
       "find",
       "get",
       "listing",
+      "recent",
       "start",
     ]);
   });

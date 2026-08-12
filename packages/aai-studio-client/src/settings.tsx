@@ -28,6 +28,7 @@ import { DatabaseCard } from "./database-card.tsx";
 import { PhoneCard } from "./phone-card.tsx";
 import { queryKeys } from "./query-keys.ts";
 import { Card } from "./settings-card.tsx";
+import { WorkflowsCard } from "./workflows-card.tsx";
 
 /**
  * Secrets the PLATFORM manages, which this pane neither lists, deletes, nor
@@ -161,6 +162,10 @@ export function SettingsPane({
             preview's slug so the card has an answer before the first Publish,
             which is why it sits above the Phone card rather than beside it. */}
         <ApiCard deployedSlug={deployedSlug} previewSlug={previewSlug} />
+
+        {/* Directly after API: that card names the workflow endpoint, this one
+            says what is on it. */}
+        <WorkflowsCard deployedSlug={deployedSlug} previewSlug={previewSlug} />
 
         {/* Gated on a published slug, unlike the cards around it — a
             webhook URL is not an intent a later deploy can pick up. */}

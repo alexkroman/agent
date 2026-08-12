@@ -82,6 +82,17 @@ export type WorkflowStore = {
   /** Runs of one workflow carrying `key`, newest first. */
   findByKey(workflow: string, key: string, limit: number): Promise<WorkflowRunSnapshot[]>;
   /**
+   * Runs of one workflow, newest first, whatever key they carry.
+   *
+   * The OPERATOR's read, where {@link findByKey} is the agent's: a console asking
+   * "what has this workflow been doing" has no key to ask about, and most runs
+   * carry none at all (a page holds its own `runId`). Deliberately a separate
+   * method rather than `findByKey` with a nullable key — a keyless lookup is not a
+   * lookup that matched every key, and conflating them is how a caller meaning
+   * "this session's runs" silently reads every tenant session's instead.
+   */
+  recent(workflow: string, limit: number): Promise<WorkflowRunSnapshot[]>;
+  /**
    * Store bytes a caller uploaded, OUTSIDE the journal, and resolve their id.
    *
    * This exists because of what the journal is: replay reads every step row
@@ -191,6 +202,15 @@ const CREATE_KEY_INDEX = `create index if not exists aai_workflow_runs_key
   on aai_workflow_runs (workflow, correlation_key, created_at desc)
   where correlation_key is not null`;
 
+/**
+ * Index behind {@link WorkflowStore.recent}. NOT partial, unlike the key index
+ * below it: this read exists to answer for runs that carry no key, so the
+ * `where correlation_key is not null` that makes that one cheap would exclude
+ * exactly the rows this one is for.
+ */
+const CREATE_WORKFLOW_INDEX = `create index if not exists aai_workflow_runs_workflow
+  on aai_workflow_runs (workflow, created_at desc)`;
+
 /** One run row, as both reads select it. */
 type RunRow = {
   run_id: string;
@@ -284,6 +304,7 @@ export function createPostgresWorkflowStore(db: Db): WorkflowStore {
       await db.query(ADD_RUNS_KEY);
       await db.query(CREATE_STEPS);
       await db.query(CREATE_DUE_INDEX);
+      await db.query(CREATE_WORKFLOW_INDEX);
       await db.query(CREATE_KEY_INDEX);
       await db.query(CREATE_BLOBS);
       await db.query(CREATE_BLOBS_INDEX);
@@ -421,6 +442,17 @@ export function createPostgresWorkflowStore(db: Db): WorkflowStore {
           order by created_at desc
           limit $3`,
         [workflow, key, limit],
+      );
+      return rows.map(toSnapshot);
+    },
+
+    async recent(workflow: string, limit: number): Promise<WorkflowRunSnapshot[]> {
+      const rows = await db.query<RunRow>(
+        `select ${RUN_COLUMNS} from aai_workflow_runs
+          where workflow = $1
+          order by created_at desc
+          limit $2`,
+        [workflow, limit],
       );
       return rows.map(toSnapshot);
     },

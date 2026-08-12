@@ -59,6 +59,16 @@ describe("createPostgresDb", () => {
       const onnotice = noticeHandler();
       onnotice({ code: "42P07", severity: "NOTICE", message: 'relation "t" already exists' });
       onnotice({ code: "42710", severity: "NOTICE", message: 'type "e" already exists' });
+      // duplicate_COLUMN, from `alter table … add column if not exists`. Missing
+      // from the set at first, and the workflow store runs exactly such a
+      // statement on every boot (`ADD_RUNS_KEY`), so the caller this filter was
+      // written for was still logging one notice per engine. Verified against a
+      // real Postgres 16: that idiom raises 42701, not 42P07.
+      onnotice({
+        code: "42701",
+        severity: "NOTICE",
+        message: 'column "correlation_key" of relation "aai_workflow_runs" already exists',
+      });
       expect(warn).not.toHaveBeenCalled();
     });
 

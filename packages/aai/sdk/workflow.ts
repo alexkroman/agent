@@ -367,6 +367,24 @@ export type WorkflowClient = {
   ): Promise<WorkflowRunSnapshot<R>[]>;
   find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
   /**
+   * Runs of `workflow`, newest first, whatever key they carry.
+   *
+   * The OPERATOR's read where {@link find} is the agent's. A console — the
+   * studio's Settings pane, a `curl` — asking "what has this workflow been doing"
+   * holds no correlation key, and most runs carry none at all: a page keeps its
+   * own `runId`, so only a voice agent's runs are keyed.
+   *
+   * Deliberately its own method rather than `find` with an optional key, because
+   * a keyless lookup is not a lookup that matched every key. Sharing one method
+   * would let a caller meaning "this session's runs" read every session's the
+   * moment its key went `undefined` — a scoping bug with no symptom.
+   */
+  recent<P extends ToolInputSchema, R>(
+    workflow: WorkflowDef<P, R>,
+    options?: FindOptions,
+  ): Promise<WorkflowRunSnapshot<R>[]>;
+  recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+  /**
    * Stop a run. Resolves true when this call is what ended it, false when it
    * was already terminal (or no such run exists).
    *
@@ -411,7 +429,14 @@ export function rejectingWorkflows(message: string): WorkflowClient {
   const reject = (): Promise<never> => Promise.reject(new Error(message));
   // `listing` cannot reject — it is synchronous — and an empty list is the
   // truthful answer for every case this factory covers.
-  return { start: reject, get: reject, find: reject, cancel: reject, listing: () => [] };
+  return {
+    start: reject,
+    get: reject,
+    find: reject,
+    recent: reject,
+    cancel: reject,
+    listing: () => [],
+  };
 }
 
 /**

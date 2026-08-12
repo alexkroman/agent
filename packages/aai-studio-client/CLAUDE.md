@@ -55,8 +55,11 @@ and a third would be a row rather than another branch in five places.
   has to work before anything has ever been published, so Settings is
   reachable whenever a project is open.
 - **The sections are in a FIXED order, and copy points into it**: Work
-  locally, Phone number, Database, Secrets, Danger zone — setting up first,
-  provider keys after, destruction last. The order is not cosmetic: the Phone
+  locally, API, Workflows, Phone number, Database, Secrets, Danger zone —
+  setting up first, then where the agent lives and what it is doing, provider
+  keys after, destruction last. Workflows sits under API because that card names
+  the workflow endpoint and says nothing about what is on it. The order is not
+  cosmetic: the Phone
   card sends the reader to "Secrets **below**" twice (its blurb, and the
   per-carrier missing-secret hint), which was pointing the wrong way while
   Secrets sat at the top. `settings.test.tsx` asserts the sequence of card
@@ -140,6 +143,38 @@ and a third would be a row rather than another branch in five places.
     hashes (`verifySlugOwner`), exactly as the project-delete cascade does —
     a workspace naming a foreign slug must not become a lever on, or an
     oracle for, someone else's agent.
+- **The Workflows card is the only place a durable run's state shows up**
+  (`workflows-card.tsx`, directly under API — that card names the workflow
+  endpoint and says nothing about what is on it). Everything else the studio
+  shows is a live surface: the Preview pane frames a page or a voice client and
+  the transcript shows a conversation, while a run started an hour ago by a
+  caller who has since hung up appears in neither. Until this card the only way
+  to read the journal was `curl`.
+  - **It reads the AGENT's own API** (`/:slug/workflows`, brokered by the
+    platform — see "The workflow API is brokered too" in
+    `packages/aai-server/CLAUDE.md`), not a studio route. The two surfaces share
+    an origin by construction, so `connect-src 'self'` already permits it, and a
+    studio endpoint in front would be a second thing to keep in step with the
+    journal's shape.
+  - **Runs are listed WITHOUT a correlation key** (`ctx.workflows.recent`, the
+    keyless read). A console has none to ask about, and most runs carry none —
+    only a voice agent's are keyed, by `startTool` — so filtering by one would
+    show an empty list for every workflow app in the product.
+  - **Reading it can BOOT the agent's sandbox**, because brokering does. Accepted
+    rather than overlooked: the question is one only the agent can answer, and a
+    card that shows nothing until you press a button answers it less often than
+    it costs. Hence `staleTime: Infinity` plus a manual **Refresh runs** — a poll
+    would hold a container open for a pane nobody is watching, and every remount
+    of the pane would otherwise pay a broker call.
+  - **`sleeping` is translated into a wait, not left as an epoch.** It is the
+    state that makes these runs durable rather than slow (the run holds no
+    container), and a bare status beside a `wakeAt` reads as a stuck job. A
+    failed run shows its MESSAGE too — "failed" alone sends someone to the logs
+    for something already in hand.
+  - The agent's own error text is quoted verbatim, because a 404 (an agent that
+    declares no workflow API) and a 503 (a sandbox still booting) are different
+    answers and the text is the only thing separating them.
+
 - **The Phone number card hands out the carrier webhook URLs**
   (`phone-card.tsx`) — one per carrier, each with a copy button, pointing at
   the platform's `/:slug/phone` route (see "Telephony" in

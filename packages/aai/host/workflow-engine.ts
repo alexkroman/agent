@@ -56,6 +56,22 @@ export const MAX_WAKE_TIMER_MS = 60_000;
 export const MAX_DUE_RUNS = 20;
 
 /**
+ * Clamp a caller's `limit` into range.
+ *
+ * Clamped rather than validated: `find` is reached from tool code answering "is
+ * my thing ready yet?", and a caller's stray 10_000 should cost the ceiling
+ * instead of failing the turn. The ceiling itself is what keeps the read under
+ * `MAX_DB_RESULT_ROWS`. Shared with `recent` so the two reads cannot end up with
+ * different ideas of how many rows are safe.
+ */
+function clampFindLimit(requested: number | undefined): number {
+  return Math.min(
+    Math.max(1, Math.floor(requested ?? DEFAULT_WORKFLOW_FIND_LIMIT)),
+    MAX_WORKFLOW_FIND_LIMIT,
+  );
+}
+
+/**
  * How long an uploaded blob survives without a run consuming it.
  *
  * Sized against the runs, not the upload: a run that sleeps between steps can
@@ -365,13 +381,20 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
     ): Promise<WorkflowRunSnapshot<R>[]> {
       const name = resolveName(workflow as WorkflowDef | string);
       await ensureTables();
-      // Clamped rather than validated: this is reached from tool code answering
-      // "is my thing ready yet?", and a caller's stray 10_000 should cost the
-      // ceiling instead of failing the turn. The ceiling itself is what keeps the
-      // read under `MAX_DB_RESULT_ROWS`.
-      const requested = options?.limit ?? DEFAULT_WORKFLOW_FIND_LIMIT;
-      const limit = Math.min(Math.max(1, Math.floor(requested)), MAX_WORKFLOW_FIND_LIMIT);
-      return (await store.findByKey(name, key, limit)) as WorkflowRunSnapshot<R>[];
+      return (await store.findByKey(
+        name,
+        key,
+        clampFindLimit(options?.limit),
+      )) as WorkflowRunSnapshot<R>[];
+    },
+
+    async recent<R>(
+      workflow: AnyWorkflowDef<R> | string,
+      options?: FindOptions,
+    ): Promise<WorkflowRunSnapshot<R>[]> {
+      const name = resolveName(workflow as WorkflowDef | string);
+      await ensureTables();
+      return (await store.recent(name, clampFindLimit(options?.limit))) as WorkflowRunSnapshot<R>[];
     },
 
     async cancel(runId: string): Promise<boolean> {

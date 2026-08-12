@@ -51,7 +51,7 @@ describe("init", () => {
     const q = recordingDb();
     await createPostgresWorkflowStore(q.db).init();
 
-    expect(q.count()).toBe(7);
+    expect(q.count()).toBe(8);
     expect(q.sql(0)).toContain("create table if not exists aai_workflow_runs");
     // The correlation-key column is ADDED separately, and that is what makes a
     // journal created before it existed usable: `create table if not exists` on
@@ -61,14 +61,15 @@ describe("init", () => {
     expect(q.sql(1)).toContain("correlation_key");
     expect(q.sql(2)).toContain("create table if not exists aai_workflow_steps");
     expect(q.sql(3)).toContain("create index if not exists aai_workflow_runs_due");
-    expect(q.sql(4)).toContain("create index if not exists aai_workflow_runs_key");
+    expect(q.sql(4)).toContain("create index if not exists aai_workflow_runs_workflow");
+    expect(q.sql(5)).toContain("create index if not exists aai_workflow_runs_key");
     // The steps table's foreign key cannot be created before its target.
     expect(q.sql(2)).toContain("references aai_workflow_runs(run_id)");
     // Blobs are NOT a child of the runs table: one is written before the run
     // that names it exists, so a foreign key would reject every upload.
-    expect(q.sql(5)).toContain("create table if not exists aai_workflow_blobs");
-    expect(q.sql(5)).not.toContain("references");
-    expect(q.sql(6)).toContain("create index if not exists aai_workflow_blobs_created");
+    expect(q.sql(6)).toContain("create table if not exists aai_workflow_blobs");
+    expect(q.sql(6)).not.toContain("references");
+    expect(q.sql(7)).toContain("create index if not exists aai_workflow_blobs_created");
   });
 
   test("indexes correlation keys partially, so unkeyed runs cost nothing", async () => {
@@ -78,7 +79,10 @@ describe("init", () => {
     // Most runs carry no key — they are started by a page holding its own runId —
     // and indexing those nulls would tax every insert for a lookup that cannot
     // match them.
-    expect(q.sql(4)).toContain("where correlation_key is not null");
+    expect(q.sql(5)).toContain("where correlation_key is not null");
+    // And its keyless neighbour must NOT be partial: `recent` answers for exactly
+    // the rows that predicate excludes.
+    expect(q.sql(4)).not.toContain("where correlation_key");
   });
 });
 
@@ -257,6 +261,46 @@ describe("cancel", () => {
     // `returning` is what distinguishes them, and neither is an error.
     const q = recordingDb([[]]);
     await expect(createPostgresWorkflowStore(q.db).cancel("r1")).resolves.toBe(false);
+  });
+});
+
+describe("recent", () => {
+  test("filters by workflow ALONE, newest first, bounded by the limit", async () => {
+    const q = recordingDb([[]]);
+    await createPostgresWorkflowStore(q.db).recent("digest", 5);
+
+    // No `correlation_key` predicate at all — this read exists for runs that
+    // carry no key, which is most of them. A `correlation_key = null` would match
+    // none of the keyed ones and read as "no runs" on a busy voice agent.
+    expect(q.sql(0)).toContain("where workflow = $1");
+    expect(q.sql(0)).not.toContain("correlation_key =");
+    expect(q.sql(0)).toContain("order by created_at desc");
+    expect(q.sql(0)).toContain("limit $2");
+    expect(q.params(0)).toEqual(["digest", 5]);
+  });
+
+  test("maps rows through the same snapshot shape, key or no key", async () => {
+    const q = recordingDb([
+      [
+        {
+          run_id: "r9",
+          workflow: "digest",
+          status: "running",
+          output: null,
+          error: null,
+          correlation_key: null,
+          wake_at_ms: null,
+          steps_completed: 3,
+        },
+      ],
+    ]);
+    const runs = await createPostgresWorkflowStore(q.db).recent("digest", 5);
+
+    // `key` is ABSENT rather than null — the snapshot only carries it when the
+    // run has one, which is what a console renders as "no key".
+    expect(runs).toEqual([
+      { runId: "r9", workflow: "digest", status: "running", stepsCompleted: 3 },
+    ]);
   });
 });
 

@@ -320,10 +320,8 @@ async function findRuns(
   const params = new URLSearchParams((req.url ?? "").split("?")[1] ?? "");
   const workflow = params.get("workflow");
   const key = params.get("key");
-  if (!(workflow && key)) {
-    sendJson(res, 400, {
-      error: "Both `workflow` and `key` query parameters are required",
-    });
+  if (!workflow) {
+    sendJson(res, 400, { error: "A `workflow` query parameter is required" });
     return;
   }
   const limitParam = params.get("limit");
@@ -334,8 +332,16 @@ async function findRuns(
   }
   // An unknown workflow name is the caller's mistake, exactly as it is on
   // `POST /runs`, and carries the engine's message naming the declared ones.
+  const options = limit === undefined ? undefined : { limit };
   try {
-    const runs = await engine.find(workflow, key, limit === undefined ? undefined : { limit });
+    // `key` present narrows to that correlation key; absent lists the workflow's
+    // recent runs whatever key they carry — the operator's read (a console has no
+    // key to ask about, and an unkeyed run has none to be found by). Two methods
+    // rather than one nullable argument, so a caller meaning "this session" cannot
+    // silently widen to every session — see `WorkflowClient.recent`.
+    const runs = key
+      ? await engine.find(workflow, key, options)
+      : await engine.recent(workflow, options);
     sendJson(res, 200, { runs });
   } catch (err) {
     sendJson(res, 400, { error: errorMessage(err) });

@@ -701,10 +701,34 @@ built its own index in `ctx.db`. Pass `ctx.sessionId`, a phone number, an
 account id; keys are NOT unique — deduplicating is a decision only the caller
 can make.
 
+**`ctx.workflows.recent(def)` is the OPERATOR's read, and it is a separate method
+on purpose.** `find` answers "this session's runs"; `recent` answers "what has
+this workflow been doing", newest first, whatever key the runs carry — which is
+what a console has to ask, since it holds no correlation key and most runs carry
+none (a page keeps its own `runId`, so only a voice agent's runs are keyed). Not
+`find` with an optional key: a keyless lookup is not a lookup that matched every
+key, and sharing one method would let a caller meaning "this session" silently
+read every tenant session's runs the moment its key went `undefined`. On the
+wire the same split is `GET /workflows/runs?workflow=X` with and without
+`&key=`; the studio's Settings pane is the shipped consumer (see
+`packages/aai-studio-client/CLAUDE.md`).
+
 **`startTool(def, { description })` is the tool that starts one**
 (`sdk/workflow-tool.ts`). It exists for the KEY: it takes the workflow's own
 `inputSchema` and defaults the key to `ctx.sessionId`, and forgetting that key is
 silent — the run works and `workflow_status` can never report it.
+
+**Pass `inputSchema` + `input` together when the run's input comes from the
+SESSION rather than from the caller.** A workflow cannot read `ctx.state`, so the
+run input is the one handoff from session-scoped state to durable work — and that
+snapshot is built by code, not typed by an LLM. Equating the two schemas there
+asks the model to retype a structure it holds only as a reference
+(`dispatch-center`'s after-action report wants an `incidentId` and a forty-entry
+timeline; only the first is a question). The two fields are required together and
+that is checked at CONSTRUCTION rather than by the type system — written as
+overloads, the checker never fixes the tool's schema before it contextually types
+the mapper, so every mapper parameter came out implicitly `any`. That trade is
+recorded on `startTool` itself and pinned by `sdk/workflow-tool.test-d.ts`.
 
 **The model can read that itself** via the `workflow_status` builtin (`agent({
 builtinTools: ["workflow_status"] })`, `host/builtin-workflow-status.ts`), which
@@ -1023,61 +1047,16 @@ tracking every `conversation.item` id to delete, which is its own change.
 ## History records what was HEARD, not what was generated
 
 An interrupted reply lands in history as the words the caller is estimated to
-have actually heard, marked `[interrupted]` — not everything the model produced.
-A reply cut before anything was audible records **nothing at all** (its
-completed tool steps still do). That is LiveKit's rule, and it exists because
-TTS runs behind the text: a barge-in discards whatever is still in the
-provider's buffer, so the old record told the model it had delivered
-information the caller never got, and the model then never repeated it.
+have actually heard, marked `[interrupted]` — not everything the model produced;
+a reply cut before anything was audible records **nothing at all** (its completed
+tool steps still do). That is LiveKit's rule, and the reason is that TTS runs
+behind the text, so the old record told the model it had delivered information
+the caller never got.
 
-**One cursor, one owner** — `host/transports/pipeline-heard.ts`
-(`createHeardTracker`). It answers exactly one question: given this reply's TTS
-text and its forwarded audio, which characters did the caller hear? History
-truncation and the false-interruption resume anchor (`buildTailResumePrompt`)
-are two READERS of that one answer, which is what keeps the resume prompt from
-quoting words the record denies. It also owns the playback clock, so the
-barge-in gate reads the same object.
-
-Two tiers of accuracy, decided at RUNTIME rather than by a capability flag:
-
-| provider | timings | cursor |
-| --- | --- | --- |
-| AssemblyAI TTS | `WordBoundaries` frames, parsed in `providers/tts/assemblyai-words.ts` | last word whose audio WHOLLY elapsed |
-| Cartesia | `add_timestamps` exists in the SDK, not wired up | proportional estimate, snapped to a word |
-| Rime | a `timestamps` frame exists, unmodelled | proportional estimate, snapped to a word |
-
-A provider that reports nothing degrades to exactly the estimate that was there
-before, so nothing regresses; the zero case needs no timings at all. Both
-roundings err toward UNDER-keeping, deliberately: over-keeping is the measured
-failure, while under-keeping costs a word or two of redundancy that the resume
-prompt's "without repeating what they already heard" absorbs.
-
-**The lag is `HEARD_AUDIO_LAG_MS` (750) and it is DERIVED, not measured** —
-`PLAYBACK_JITTER_MS` (400, real) plus an assumed sub-second network hop. It is
-the counterpart of `PIPELINE_PLAYBACK_GRACE_MS` with the opposite sign, and a
-separate constant on purpose: the grace errs late because a spurious cancel is
-harmless, while this one is subtracted from a position where erring either way
-costs. See both constants' docs.
-
-**The client's committed transcript and the history entry now diverge on
-purpose.** The caption still shows everything that reached TTS, because it was
-published as interims while the audio was being synthesized. It CANNOT be
-corrected after the fact to match the shorter record: emitting an
-`agent_transcript` after `cancelled` is the measured 19-of-73 double-transcript
-bug (`persistInterruptedTurn` in `pipeline-history.ts` — read it there).
-
-Two mechanisms this leans on: the audio gate (a cancelled turn's late audio AND
-its late word timings are both dropped by it, so no second epoch was invented),
-and `emitText`'s `record` flag, which now decides what may be truncated into
-history as well as what reaches `onDelta` — filler is audible, so it moves the
-heard POSITION, and is never recordable. The TTS coalescer flushes when that
-flag flips so no batched send ever mixes the two.
-
-**Not covered: a barge-in during the TTS drain.** `runTurn` has already
-committed the full text by then, so that case keeps `buildTailResumePrompt` as
-its only mitigation (which this change makes word-truthful). Fixing it means
-deferring the history commit until after the drain — a change to `runReply`'s
-body contract, deliberately separate.
+**The mechanism is in `packages/aai/host/CLAUDE.md`** — the one heard cursor
+(`host/transports/pipeline-heard.ts`), its two accuracy tiers, `HEARD_AUDIO_LAG_MS`,
+and why the client's caption and the history entry now diverge on purpose. Moved
+there when this guide hit the 120,000-character cap; nothing was cut.
 
 ## `speech_started` means "the agent is yielding", on BOTH transports
 

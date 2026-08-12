@@ -45,6 +45,8 @@ type FakeEngine = WorkflowApiEngine & {
   started: { workflow: string; input: unknown; key?: string | undefined }[];
   blobs: { contentType: string; base64: string }[];
   found: { workflow: string; key: string; limit?: number | undefined }[];
+  /** `recent` calls — the keyless read the operator console uses. */
+  listed: { workflow: string; limit?: number | undefined }[];
 };
 
 /**
@@ -58,10 +60,12 @@ function makeEngine(declared = ["digest"]): FakeEngine {
   const started: { workflow: string; input: unknown; key?: string | undefined }[] = [];
   const blobs: { contentType: string; base64: string }[] = [];
   const found: { workflow: string; key: string; limit?: number | undefined }[] = [];
+  const listed: { workflow: string; limit?: number | undefined }[] = [];
   return {
     started,
     blobs,
     found,
+    listed,
     // Both are annotated rather than contextually typed: `WorkflowClient`'s
     // methods are OVERLOADED now (a workflow may be named by its definition or by
     // a string), and TypeScript cannot infer parameter types for an arrow from an
@@ -100,6 +104,22 @@ function makeEngine(declared = ["digest"]): FakeEngine {
       found.push({ workflow: name, key, limit: options?.limit });
       return Promise.resolve([
         { runId: "run-1", workflow: name, status: "completed", stepsCompleted: 1, output: 7, key },
+      ]);
+    },
+    recent: (
+      workflow: AnyWorkflowDef | string,
+      options?: { limit?: number },
+    ): Promise<WorkflowRunSnapshot[]> => {
+      const name = typeof workflow === "string" ? workflow : "<by-definition>";
+      if (!declared.includes(name)) {
+        return Promise.reject(
+          new Error(`Unknown workflow "${name}". Declared workflows: ${declared.join(", ")}`),
+        );
+      }
+      listed.push({ workflow: name, limit: options?.limit });
+      // No `key`, which is the case this read exists for: most runs carry none.
+      return Promise.resolve([
+        { runId: "run-9", workflow: name, status: "running", stepsCompleted: 3 },
       ]);
     },
     cancel: (runId: string) => Promise.resolve(runId === "run-1"),
@@ -480,14 +500,37 @@ describe("correlation keys over HTTP", () => {
     });
   });
 
-  test("requires both query parameters", async () => {
-    const base = await boot(makeEngine());
+  test("lists a workflow's recent runs when no key is given", async () => {
+    const engine = makeEngine();
+    const base = await boot(engine);
 
-    const missingKey = await req(`${base}/workflows/runs?workflow=digest`);
+    const res = await req(`${base}/workflows/runs?workflow=digest&limit=5`);
+
+    // The OPERATOR's read (the studio's Settings pane): no key, because a console
+    // has none to ask about and most runs carry none at all.
+    expect(res.status).toBe(200);
+    expect(engine.listed).toEqual([{ workflow: "digest", limit: 5 }]);
+    // And it went to `recent`, not to `find` with a widened key — the whole
+    // reason those are two methods.
+    expect(engine.found).toEqual([]);
+    expect(res.json).toEqual({
+      runs: [{ runId: "run-9", workflow: "digest", status: "running", stepsCompleted: 3 }],
+    });
+  });
+
+  test("requires the workflow parameter, key or no key", async () => {
+    const engine = makeEngine();
+    const base = await boot(engine);
+
     const missingWorkflow = await req(`${base}/workflows/runs?key=user-9`);
+    const nothingAtAll = await req(`${base}/workflows/runs`);
 
-    expect(missingKey.status).toBe(400);
+    // `workflow` names the journal rows to read and has no default; `key` is
+    // optional and selects which of the two reads runs.
     expect(missingWorkflow.status).toBe(400);
+    expect(nothingAtAll.status).toBe(400);
+    expect(engine.found).toEqual([]);
+    expect(engine.listed).toEqual([]);
   });
 
   test("reports an unknown workflow as the caller's mistake", async () => {
