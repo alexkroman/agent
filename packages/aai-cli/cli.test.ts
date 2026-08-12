@@ -38,7 +38,7 @@ function normalize(s: string): string {
 }
 
 describe("cli", () => {
-  test.each(["init", "dev", "test", "build", "deploy", "delete", "secret", "storage"])(
+  test.each(["init", "dev", "test", "build", "deploy", "delete", "secret", "storage", "workflow"])(
     "main command declares the %s subcommand",
     (cmd) => {
       const subs = mainCommand.subCommands as Record<string, unknown>;
@@ -60,6 +60,37 @@ describe("cli", () => {
     const subs = mainCommand.subCommands as Record<string, { args?: Record<string, unknown> }>;
     const deployCmd = subs.deploy;
     expect(deployCmd?.args?.server).toBeDefined();
+  });
+
+  test("workflow subcommand declares every verb an operator needs", () => {
+    // A durable run outlives every surface that can show it — the studio pane is
+    // one project's, and a page holds only the id it started — so the terminal
+    // has to be able to read AND steer, not just list.
+    const subs = mainCommand.subCommands as Record<
+      string,
+      { subCommands?: Record<string, unknown> }
+    >;
+    expect(Object.keys(subs.workflow?.subCommands ?? {}).sort()).toEqual([
+      "cancel",
+      "list",
+      "retry",
+      "runs",
+      "show",
+    ]);
+  });
+
+  test("every workflow verb takes --token, not the caller's API key", () => {
+    // The workflow API is the AGENT's surface with its own optional bearer
+    // (`AAI_WORKFLOW_API_TOKEN`). Sending a platform credential there would be
+    // useless and a leak, so `--token` is the only auth these commands offer.
+    const subs = mainCommand.subCommands as Record<
+      string,
+      { subCommands?: Record<string, { args?: Record<string, unknown> }> }
+    >;
+    const verbs = subs.workflow?.subCommands ?? {};
+    for (const [name, verb] of Object.entries(verbs)) {
+      expect(verb.args?.token, name).toBeDefined();
+    }
   });
 
   test("secret subcommand has nested subcommands", () => {

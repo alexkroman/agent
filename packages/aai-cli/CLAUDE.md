@@ -361,3 +361,27 @@ test. The same command already executed repo-controlled
 code regardless: `buildAgentBundle` does NOT pass `configFile: false` (only
 the guest's untrusted-workspace builds do), so the project's `vite.config.ts`
 runs at build time either way.
+
+## `aai workflow` talks to the AGENT's surface, not the platform's
+
+`workflow.ts` (`list`/`runs`/`show`/`cancel`/`retry`) is the only command group
+here that does NOT go through `apiRequest`, and that is the point rather than an
+oversight: `/:slug/workflows` is the agent's own API, brokered by the platform and
+unauthenticated unless the operator set `AAI_WORKFLOW_API_TOKEN`. The caller's
+AssemblyAI key authorizes nothing there, so sending it would be a platform
+credential on a route that does not want one — `--token` is the only auth these
+commands offer.
+
+Three things it inherits from that surface:
+
+- **`getServerInfo` is still what turns "this directory" into an origin plus a
+  PUBLISHED slug**, and it already refuses a never-deployed project with the
+  sentence naming `aai publish`. The slug is not the project's name, which is why
+  a hand-built `curl` was not a real alternative.
+- **Every request BROKERS**, so the first one may boot the agent's sandbox. Worth
+  knowing before scripting a loop; the platform rate-limits the surface for
+  exactly that reason.
+- **`runs` is the KEYLESS read** (`ctx.workflows.recent`) — a terminal holds no
+  correlation key, and most runs carry none. The agent's own error sentence is
+  preserved verbatim, because a 404 (declares no workflows) and a 503 (sandbox
+  still booting) are different answers and only the text separates them.

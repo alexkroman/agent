@@ -855,6 +855,20 @@ Starting a run by hand is still fine — `ctx.workflows.start(process, { url },
 resolves `true` when that call is what stopped the run and `false` when it had
 already finished, so it is safe to offer twice.
 
+**A run that failed is not finished with — `ctx.workflows.retry(runId)` sends a
+failed or cancelled run back to the queue.** It resumes from its last completed
+step rather than starting over, because the journal is kept, so retrying a run
+that died on step 27 costs step 27 and nothing before it. Offer it when a caller
+asks about work that failed for a reason that might not recur (a provider was
+down, a rate limit); do not loop on it, since a run that fails deterministically
+will fail again.
+
+**`ctx.workflows.recent(workflow)` lists runs without a key** — newest first,
+whatever key they carry. That is the read for "what has this workflow been
+doing"; `find` is the read for "what did THIS caller start". Reach for `recent`
+in an admin-style tool and `find` (or the `workflow_status` builtin) when
+answering the person on the phone, because `recent` would show them everybody's.
+
 `ctx.workflows.start()` resolves as soon as the run is recorded, so the tool
 answers the turn immediately — tell the caller it is running and that they can
 hang up. Never offer to wait on the line.
