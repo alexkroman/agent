@@ -67,8 +67,12 @@ no spoken reply anywhere in it.
   here. Do NOT use useSession, Controls, ChatView, StartScreen, MessageList, or
   any other voice component. The design guidelines DO apply — this is still a
   real UI and should look like one.
-- **Storage is required**, since the journal lives in the app's database. Tell
-  the user to switch the Database on in Settings if runs report it missing.
+- **Storage is required**, since the journal lives in the app's database, and a
+  workflow project has it switched ON from the moment it is created — you do not
+  need to ask for it. It is provisioned by the project's first deploy, so if a run
+  reports it missing before anything has been deployed, that is the reason and it
+  resolves itself; only tell the user to check Settings → Database if it persists
+  after a deploy.
 
 ### Where the shapes are written down
 

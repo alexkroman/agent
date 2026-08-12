@@ -88,6 +88,38 @@ describe("project database routes", () => {
     return combined;
   }
 
+  test("a WORKFLOW project asks for the database on creation; an agent project does not", async () => {
+    // The journal IS the durability, so a workflow project without storage boots,
+    // answers calls, and rejects every `ctx.workflows` call with
+    // `WORKFLOWS_UNAVAILABLE_MESSAGE` — inert at the one thing it exists for,
+    // with the fix two panes away. Storage is incidental to a voice agent, hence
+    // the default differs by kind rather than being on for everyone.
+    const { fetch, workspaces } = await createTestCombined();
+    await authFetch(fetch, "/studio/projects", { body: { name: "flow", kind: "workflow" } });
+    await authFetch(fetch, "/studio/projects", { body: { name: "voice" } });
+
+    const scope = studioScope("key1");
+    expect(await getWorkspace(workspaces, scope, "flow").then((w) => w?.databaseEnabled)).toBe(
+      true,
+    );
+    // Absent, not `false` — see StudioWorkspace.databaseEnabled.
+    expect(
+      await getWorkspace(workspaces, scope, "voice").then((w) => w?.databaseEnabled),
+    ).toBeUndefined();
+  });
+
+  test("creation stamps INTENT only — no slug exists yet to provision", async () => {
+    // Provisioning a slug nobody has claimed creates a schema outliving every
+    // cleanup path (both key off an agents row) that another tenant could inherit
+    // by claiming the name first. The first deploy provisions, through
+    // `reconcileProjectDatabase`.
+    const appDb = fakeAppDb();
+    const { fetch } = await createTestCombined({ appDb });
+    await authFetch(fetch, "/studio/projects", { body: { name: "flow", kind: "workflow" } });
+
+    expect(appDb.provision).not.toHaveBeenCalled();
+  });
+
   test("the database routes require auth", async () => {
     const { fetch } = await createTestCombined();
     expect((await fetch("/studio/projects/proj/database")).status).toBe(401);

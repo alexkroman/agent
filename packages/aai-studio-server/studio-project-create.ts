@@ -49,7 +49,21 @@ export async function claimProjectName(
       const workspace = await createWorkspace(store, scope, project, {
         files: starterFiles(),
         // Only `"workflow"` is stored; absent IS `"agent"` (StudioWorkspace.kind).
-        ...(req.kind === "workflow" ? { kind: req.kind } : {}),
+        // A workflow project also asks for the DATABASE up front, because the
+        // journal IS the durability: without storage an agent that declares
+        // workflows still boots and answers calls, and `ctx.workflows` rejects
+        // every call with `WORKFLOWS_UNAVAILABLE_MESSAGE` — so every workflow
+        // project the studio created was inert until the user happened to find
+        // Settings → Database, and the symptom (a tool that fails at the one thing
+        // the project exists to do) names a fix two panes away. Storage is
+        // incidental to a voice agent and load-bearing here, which is why the
+        // default differs by kind rather than being on for everyone.
+        //
+        // Only the INTENT is stamped, which is all that can be: no slug exists
+        // yet, and provisioning one nobody has claimed creates a schema outliving
+        // every cleanup path. `reconcileProjectDatabase` provisions each
+        // environment as its deploy claims the slug — see `studio-database.ts`.
+        ...(req.kind === "workflow" ? { kind: req.kind, databaseEnabled: true } : {}),
       });
       return { project, workspace };
     } catch (err) {
