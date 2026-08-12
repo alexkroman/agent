@@ -663,6 +663,72 @@ voice agents without the CLI:
   same problem (a tab whose lazy chunks were deleted by the rollout) is
   `stale-build.ts` — see `packages/aai-studio-client/CLAUDE.md`.
 
+### Studio auth
+
+Moved here from `packages/aai-server/CLAUDE.md` when that guide hit its size
+cap: the code is the shared core's (`supabase-auth.ts`, `middleware.ts`,
+`api-key-verify.ts`), the SUBJECT is this surface. The rules that are not
+studio-specific — a raw bearer is verified against AssemblyAI before it means
+anything, the two bearer forms and their one resolution point, and the
+key↔account mapping — stay in that guide's "Auth" block.
+
+- **Browser sessions are Supabase Auth** (`supabase-auth.ts`): GitHub
+  OAuth sign-in via supabase-js (`signInWithOAuth`) in the studio client.
+  The server verifies access tokens **two ways, and which one a route gets is
+  a security decision**:
+  - `verifyAccessToken` — the request path. `getClaims` (`@supabase/auth-js`),
+    which on a project using ASYMMETRIC JWT signing keys verifies the
+    signature locally against a process-cached JWKS and touches the network
+    not at all. Supabase's own guidance is to "prefer `getClaims` over
+    `getUser`, which always sends a request to the Auth server for each JWT",
+    and `GET /auth/v1/user` per token is what this replaced.
+  - `verifyAccessTokenFresh` — `GET /auth/v1/user`, uncached, used ONLY by
+    `requireStudioUser` (the three account routes). A signature check is
+    authoritative about who issued a token and when it expires and blind to
+    REVOCATION: a signed-out session stays cryptographically valid until
+    `exp`. Those routes read and rotate the account's AssemblyAI key and grant
+    a CLI one exchange for it, so they pay a round trip to see a sign-out at
+    once.
+
+  Two properties worth keeping. `getClaims` is safe on either kind of project
+  — on a symmetric (HS256) one it falls back to a server call by itself — and
+  that is also why the request path KEEPS its short TTL cache: on such a
+  project the cache is what stops a per-request round trip. **That cache entry
+  is capped at the token's own `exp`**, because `getClaims` validates expiry
+  only on a MISS — a flat TTL kept serving a token that expired 59 seconds
+  ago, making the bound the SUM of the two rather than the minimum. A
+  rejection keeps the flat TTL; there is no `exp` to read from a token that
+  did not verify. And a rejected
+  token and an unreachable Supabase are opposite answers, so only
+  `isAuthRetryableFetchError` throws (a 5xx to the caller); everything else
+  caches as a rejection. `storageKey` is set explicitly because auth-js caches
+  the JWKS in a PROCESS-GLOBAL map keyed by it rather than by URL — two
+  clients pointed at different projects would otherwise verify one project's
+  tokens against the other's keys.
+
+  Configured by
+  `SUPABASE_URL` + `SUPABASE_PUBLISHABLE_KEY`. Local dev (same `isLocalDev`
+  policy as the in-memory stores — production can never resolve it) falls
+  back to `createDevAuth`: the login screen mints self-describing
+  `dev.<base64url({id,email})>.dev` tokens, so `pnpm dev:aai-server`
+  needs no Supabase project while exercising the same middleware. The
+  studio's account surface (`GET /studio/auth`, `GET /studio/account`,
+  `PUT /studio/account/key`) authenticates the session WITHOUT requiring
+  a stored key — it is how the key gets set, as the mandatory onboarding
+  screen after sign-in.
+- **`aai login` never signs in and can never create an account** — it
+  LINKS an account that is already signed in to the browser studio
+  (device-link flow): the CLI mints an unguessable one-shot code, opens
+  `<server>/?cli-link=<code>`, and polls
+  `POST /studio/cli-link/exchange`; the signed-in (and key-onboarded)
+  browser session approves via `POST /studio/cli-link/approve`, which
+  grants that code ONE exchange for the account's stored API key. Grants
+  live in the SecretStore under the code's hash
+  (`cliLinkSecretName`), expire in 10 minutes, and are deleted on first
+  read. There is no `GET /studio/account/key` route anymore — the exchange
+  is the only way a raw key leaves the platform, and only to the terminal
+  that minted the code.
+
 ## One studio sandbox per project, fleet-wide
 
 The same problem hit the studio harder, and the fix is shaped differently

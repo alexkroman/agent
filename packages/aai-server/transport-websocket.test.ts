@@ -63,11 +63,11 @@ describe("handleAgentClientConfig", () => {
     // from the stored config, which is opaque to the host.
     const slots = createSlotCache();
     const guestUrls: string[] = [];
-    const guestConfigFetch: typeof globalThis.fetch = async (input) => {
+    const guestFetch: typeof globalThis.fetch = async (input) => {
       guestUrls.push(String(input));
       return Response.json({ name: "guest-agent", greeting: "hello from the bundle" });
     };
-    const { fetch, store } = await createTestOrchestrator({ slots, guestConfigFetch });
+    const { fetch, store } = await createTestOrchestrator({ slots, guestFetch });
     await seedResident(fetch, store, slots, "my-agent");
     const res = await fetch("/my-agent/client-config");
     expect(res.status).toBe(200);
@@ -83,10 +83,10 @@ describe("handleAgentClientConfig", () => {
 
   test("a guest that cannot answer its config degrades to sessionUrl only", async () => {
     const slots = createSlotCache();
-    const guestConfigFetch: typeof globalThis.fetch = async () => {
+    const guestFetch: typeof globalThis.fetch = async () => {
       throw new Error("guest not answering");
     };
-    const { fetch, store } = await createTestOrchestrator({ slots, guestConfigFetch });
+    const { fetch, store } = await createTestOrchestrator({ slots, guestFetch });
     await seedResident(fetch, store, slots, "my-agent");
     const res = await fetch("/my-agent/client-config");
     // Answered, with the one field a client cannot do without: the session

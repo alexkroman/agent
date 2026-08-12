@@ -1224,13 +1224,25 @@ guest that also answered DELETE, so a Stop button worked in dev and 404'd on
 every deployed agent.
 
 So `GUEST_ROUTE_EXPOSURE` (`packages/aai-server/guest-routes.ts`) declares each
-route as `proxied` (with the methods the GUEST answers), `direct-dial`, or
-`host-only`. A missing entry is a compile error, and
+route as `proxied` (with the methods the GUEST answers, plus the `suffix` when
+the platform path ends in a parameter), `direct-dial`, `host-only`, or
+`guest-internal` — dialled only from inside the container on loopback, which is
+a different claim from `host-only` and worth keeping apart: `host-only` says the
+platform dials it holding a token, so writing it on a loopback-only route
+describes a gate that is not there. A missing entry is a compile error, and
 `guest-routes.test.ts` asserts every proxied method is really registered under
 `/:slug` — plus the reverse, so a stale `direct-dial` declaration cannot sit
 beside a platform route that does forward. Declare the methods from the guest's
 dispatch; making the platform match is then a failing test rather than a
 production 404.
+
+**A route's exposure is decided by WHO CALLS IT, not by what it does.** The
+three workflow routes are the worked example, and they split: the DevKit's
+`flow` and `step` queue callbacks are `guest-internal` (the guest's own worker
+dials its own server, and they are unauthenticated *because* loopback is the
+whole gate — a platform route would hand anyone another tenant's run), while
+`webhook` is `proxied`, because its URL is handed to a third party and has to
+outlive the sandbox that minted it.
 
 ## Security architecture
 
