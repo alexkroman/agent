@@ -17,6 +17,7 @@ import { isTerminal, type WorkflowRunSnapshot, type WorkflowSummary } from "@ale
 import { useEffect, useRef, useState } from "react";
 import { pageBaseUrl } from "./_utils.ts";
 import { buildAgentUrl } from "./client-config.ts";
+import { watchRunEvents } from "./workflow-events.ts";
 
 /**
  * A run's observable state, and one declared workflow.
@@ -125,6 +126,15 @@ export type WorkflowApi = {
    */
   retry(runId: string): Promise<boolean>;
   /**
+   * Open a server-sent-event stream of one run's state.
+   *
+   * Resolves the raw `Response` rather than parsed frames, because what a caller
+   * needs to decide first is whether the agent SERVES this at all — an older
+   * deploy answers 404 and the caller falls back to polling, which is a normal
+   * path rather than an error.
+   */
+  watch(runId: string, signal?: AbortSignal): Promise<Response>;
+  /**
    * Upload bytes for a run to work on, resolving the id that names them.
    *
    * Needed because a run's input is JOURNALED and replayed on every resume, so
@@ -231,6 +241,13 @@ export function createWorkflowApi(opts: WorkflowApiOptions = {}): WorkflowApi {
     async recent(workflow: string, options?: { limit?: number }): Promise<WorkflowRun[]> {
       // No `key` in the query is what selects the keyless read server-side.
       return await listRuns({ workflow }, options?.limit);
+    },
+
+    watch(runId: string, signal?: AbortSignal): Promise<Response> {
+      return fetch(`${base}/runs/${encodeURIComponent(runId)}/events`, {
+        headers: { ...auth, Accept: "text/event-stream" },
+        ...(signal ? { signal } : {}),
+      });
     },
 
     async retry(runId: string): Promise<boolean> {
@@ -447,17 +464,29 @@ export function useWorkflowRun<R = unknown>(
       fallback ??= createWorkflowApi();
       return fallback;
     };
-    return pollUntilTerminal<R>(
+    const onRun = (next: WorkflowRun<R>): void => {
+      setRun(next);
+      setError(undefined);
+    };
+    // The stream first, the poll as its fallback. Both are stopped by the returned
+    // teardown, and only one is ever running: `watchRunEvents` hands over exactly
+    // once, and does not hand over after the run settled.
+    let stopPoll: (() => void) | undefined;
+    const stopStream = watchRunEvents<R>(
       getClient,
       runId,
-      intervalMs,
-      (next) => {
-        setRun(next);
-        setError(undefined);
-      },
-      setError,
+      onRun,
       () => setStopped(true),
+      () => {
+        stopPoll = pollUntilTerminal<R>(getClient, runId, intervalMs, onRun, setError, () =>
+          setStopped(true),
+        );
+      },
     );
+    return () => {
+      stopStream();
+      stopPoll?.();
+    };
   }, [runId, intervalMs]);
 
   return { run, error, polling: runId !== undefined && !stopped && !isTerminal(run) };

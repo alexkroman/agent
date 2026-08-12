@@ -93,7 +93,28 @@ button is the worked example. `api.find(workflow, key)` is the other half of
 `start`'s `key` option, for a page that would rather look a run up than remember
 its id across a reload.
 
-**`useWorkflowRun` POLLS, and that is not a limitation to fix.** A run is durable
+**`useWorkflowRun` PUSHES when it can, and POLLS when it cannot.** It opens
+`GET /workflows/runs/:id/events` (SSE) and takes its state from the stream; the
+poll below is the fallback, entered on any way a stream can fail — an agent
+deployed before the route existed (404), a proxy that buffers, a dropped
+connection, or the stream's own duration cap handing itself back. What that
+buys is specific: on the platform every polled read BROKERS, so N open tabs at
+`DEFAULT_WORKFLOW_POLL_MS` is N/2 brokered requests a second, each able to boot
+a sandbox. One stream per tab replaces all of it.
+
+SSE and not a WebSocket, because `page()` deliberately constructs no
+`SessionCore` — adding a socket here would put back the one thing that split
+exists to keep out, for a stream that is one-directional anyway. And a `fetch`
+stream rather than `EventSource`, for two reasons that both bite: `EventSource`
+cannot send an `Authorization` header (so an agent with
+`AAI_WORKFLOW_API_TOKEN` set would be unreachable) and it reconnects on its own
+schedule, fighting the caller's.
+
+**`done`/`missing` are final and `idle` is not**, which is the distinction that
+keeps a page from redialling a finished run: the first two mean the run is
+terminal or the id will never exist, and only `idle` falls back.
+
+**The poll is not a limitation to fix.** A run is durable
 and the page is not: it can complete while the tab is closed, on another sandbox,
 hours later. There is no socket to push down and nothing to reconnect — the
 `runId` is the whole state, so re-reading it is both the simplest and the most

@@ -14,6 +14,7 @@
  * GET    /workflows/runs       → { runs }          ?workflow=&key=&limit=
  * GET    /workflows/runs/:id   → a WorkflowRunSnapshot
  * DELETE /workflows/runs/:id   → { runId, cancelled }
+ * GET    /workflows/runs/:id/events → SSE: run | done | missing | idle
  * POST   /workflows/runs/:id/retry → { runId, retried }
  * POST   /workflows/signals/:token  → { signalled, runId? }  body: the payload
  * POST   /workflows/blobs      → { blobId, bytes } body: raw bytes
@@ -45,9 +46,26 @@
 
 import type http from "node:http";
 import { errorMessage } from "../sdk/utils.ts";
-import { WORKFLOWS_UNAVAILABLE_MESSAGE, type WorkflowClient } from "../sdk/workflow.ts";
+import { WORKFLOWS_UNAVAILABLE_MESSAGE } from "../sdk/workflow.ts";
 import type { Logger } from "./runtime-config.ts";
-import { BodyTooLargeError, bearerMatches, readBody, sendJson } from "./workflow-api-http.ts";
+import { streamRunEvents } from "./workflow-api-events.ts";
+import {
+  BodyTooLargeError,
+  bearerMatches,
+  MAX_WORKFLOW_INPUT_BYTES,
+  readBody,
+  sendJson,
+  type WorkflowApiEngine,
+} from "./workflow-api-http.ts";
+
+import { cancelRun, retryRun, signalWait } from "./workflow-api-mutations.ts";
+
+/**
+ * Re-exported so the public import paths are unchanged. They LIVE in
+ * `workflow-api-http.ts` because the mutation handlers need both, and importing
+ * them from here would close a cycle — this module imports those handlers.
+ */
+export { MAX_WORKFLOW_INPUT_BYTES, type WorkflowApiEngine } from "./workflow-api-http.ts";
 /** Path prefix every route here lives under. */
 export const WORKFLOW_API_PREFIX = "/workflows";
 
@@ -58,15 +76,6 @@ export const WORKFLOW_API_PREFIX = "/workflows";
 export const WORKFLOW_API_TOKEN_ENV = "AAI_WORKFLOW_API_TOKEN";
 
 /**
- * Largest `POST /workflows/runs` body.
- *
- * Small on purpose: a run input is journaled, so anything big enough to matter
- * belongs in a blob. A generous cap here would quietly re-open the failure the
- * blob route exists to prevent.
- */
-export const MAX_WORKFLOW_INPUT_BYTES = 64 * 1024;
-
-/**
  * Largest single blob.
  *
  * Sized against what a caller can usefully do with one rather than against the
@@ -75,33 +84,6 @@ export const MAX_WORKFLOW_INPUT_BYTES = 64 * 1024;
  * several times while keeping one request's peak memory bounded.
  */
 export const MAX_WORKFLOW_BLOB_BYTES = 16 * 1024 * 1024;
-
-/**
- * The engine slice a HOST needs — {@link WorkflowClient} (`start`/`get`, what
- * tool code sees as `ctx.workflows`) plus the three a host adds.
- *
- * Named for this API because that is its biggest consumer, but `busy()` is not
- * an API concern: the guest harness reads it to decide whether it may idle-exit,
- * and this is the type a host sees an engine through (`SessionRuntime`).
- *
- * Spelled as an intersection rather than restated structurally. The restated
- * version was `WorkflowRunSnapshot` copied field for field with `status` widened
- * to `string` — so a seventh field or a sixth status had to be propagated here by
- * hand, and the widening guaranteed it would still compile if nobody did.
- */
-export type WorkflowApiEngine = WorkflowClient & {
-  putBlob(contentType: string, base64: string): Promise<string>;
-  /** Durable work in flight or imminent — see `WorkflowEngine.busy`. */
-  busy(): boolean;
-  /**
-   * Resolve a waitpoint by token — see `WorkflowEngine.signal`.
-   *
-   * On the engine and not on `WorkflowClient` because the caller is always this
-   * API: a token leaves the system (an approval link, a provider's webhook URL)
-   * and comes back over the wire, never through tool code.
-   */
-  signal(token: string, payload: unknown): Promise<string | undefined>;
-};
 
 export type WorkflowApiOptions = {
   /**
@@ -227,79 +209,6 @@ async function readRun(
 }
 
 /**
- * `DELETE /workflows/runs/:id` — stop a run.
- *
- * 200 either way, carrying whether this call is what ended it: a run that was
- * already terminal is not an error (two tabs pressing Stop is ordinary), and a
- * 404 would conflate "no such run" with "already finished". A run id that never
- * existed answers `{ cancelled: false }` for the same reason `get` is the route
- * that reports existence.
- */
-async function cancelRun(
-  res: http.ServerResponse,
-  engine: WorkflowApiEngine,
-  runId: string,
-): Promise<void> {
-  const cancelled = runId ? await engine.cancel(runId) : false;
-  sendJson(res, 200, { runId, cancelled });
-}
-
-/**
- * `POST /workflows/runs/:id/retry` — send a terminal run back to the queue.
- *
- * 200 either way with `retried`, mirroring `cancelRun`: a run that is still live
- * (or already gone) is not an ERROR, it is an answer, and two operators pressing
- * Retry is as ordinary as two pressing Stop.
- */
-async function retryRun(
-  res: http.ServerResponse,
-  engine: WorkflowApiEngine,
-  runId: string,
-): Promise<void> {
-  const retried = runId ? await engine.retry(runId) : false;
-  sendJson(res, 200, { runId, retried });
-}
-
-/**
- * `POST /workflows/signals/:token` — resolve a waitpoint.
- *
- * The token is in the PATH rather than the body, so the whole thing is a URL you
- * can email, paste into a provider's webhook field, or curl. That is the point of
- * a waitpoint: the run is parked and whoever holds the token is the only thing
- * that can release it.
- *
- * **It is NOT under `/runs/:id`**, and that is deliberate: the token alone
- * identifies the waitpoint (the column is unique), so requiring the run id too
- * would mean handing out both halves and would let a caller who knows a run id
- * probe for its token. The run id comes back in the response instead, for a
- * caller that wants to poll the run afterwards.
- *
- * 200 with `signalled: false` for a token nothing is parked on — an unknown token,
- * one already used (they are single-use), or a wait that timed out and moved on.
- * A 404 would conflate those three, and a retrying webhook meets the second one
- * routinely, so this mirrors `cancelRun`/`retryRun`: not an error, an answer.
- */
-async function signalWait(
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
-  engine: WorkflowApiEngine,
-  token: string,
-): Promise<void> {
-  if (!token) {
-    sendJson(res, 400, { error: "A signal needs a token: POST /workflows/signals/<token>" });
-    return;
-  }
-  // The payload is whatever the caller sends, capped like a run input and
-  // journaled as the value `ctx.waitFor` returns. An empty body is legal and
-  // resolves the wait with `undefined` — plenty of waitpoints are a doorbell
-  // rather than a message.
-  const body = await readBody(req, MAX_WORKFLOW_INPUT_BYTES);
-  const payload = body.length === 0 ? undefined : (JSON.parse(body.toString("utf-8")) as unknown);
-  const runId = await engine.signal(token, payload);
-  sendJson(res, 200, { signalled: runId !== undefined, ...(runId ? { runId } : {}) });
-}
-
-/**
  * `GET /workflows/runs?workflow=<name>&key=<key>` — runs carrying a correlation
  * key, newest first.
  *
@@ -397,6 +306,21 @@ export function createWorkflowApi(
       method: "GET",
       matches: (url) => url === `${WORKFLOW_API_PREFIX}/runs`,
       run: (req, res, engine) => findRuns(req, res, engine),
+    },
+    {
+      // Ordered BEFORE the bare `/runs/:id` GET below, for the same reason the
+      // retry route precedes the DELETE: `/runs/<id>/events` starts with the
+      // prefix, so a prefix rule listed first would read "<id>/events" as an id.
+      method: "GET",
+      matches: (url) => url.startsWith(runsPrefix) && url.endsWith("/events"),
+      run: (_req, res, engine, url) => {
+        streamRunEvents(
+          res,
+          engine,
+          decodeURIComponent(url.slice(runsPrefix.length, -"/events".length)),
+        );
+        return Promise.resolve();
+      },
     },
     {
       method: "GET",

@@ -15,6 +15,7 @@
 
 import { timingSafeEqual } from "node:crypto";
 import type http from "node:http";
+import type { WorkflowClient } from "../sdk/workflow.ts";
 
 export function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "Content-Type": "application/json" });
@@ -84,3 +85,39 @@ export function readBody(req: http.IncomingMessage, limit: number): Promise<Buff
 }
 
 /** `POST /workflows/runs` — start a run and answer 202 with its id. */
+
+/**
+ * The engine slice a HOST needs — {@link WorkflowClient} (`start`/`get`, what
+ * tool code sees as `ctx.workflows`) plus the three a host adds.
+ *
+ * Named for this API because that is its biggest consumer, but `busy()` is not
+ * an API concern: the guest harness reads it to decide whether it may idle-exit,
+ * and this is the type a host sees an engine through (`SessionRuntime`).
+ *
+ * Spelled as an intersection rather than restated structurally. The restated
+ * version was `WorkflowRunSnapshot` copied field for field with `status` widened
+ * to `string` — so a seventh field or a sixth status had to be propagated here by
+ * hand, and the widening guaranteed it would still compile if nobody did.
+ */
+export type WorkflowApiEngine = WorkflowClient & {
+  putBlob(contentType: string, base64: string): Promise<string>;
+  /** Durable work in flight or imminent — see `WorkflowEngine.busy`. */
+  busy(): boolean;
+  /**
+   * Resolve a waitpoint by token — see `WorkflowEngine.signal`.
+   *
+   * On the engine and not on `WorkflowClient` because the caller is always this
+   * API: a token leaves the system (an approval link, a provider's webhook URL)
+   * and comes back over the wire, never through tool code.
+   */
+  signal(token: string, payload: unknown): Promise<string | undefined>;
+};
+
+/**
+ * Largest `POST /workflows/runs` body.
+ *
+ * Small on purpose: a run input is journaled, so anything big enough to matter
+ * belongs in a blob. A generous cap here would quietly re-open the failure the
+ * blob route exists to prevent.
+ */
+export const MAX_WORKFLOW_INPUT_BYTES = 64 * 1024;

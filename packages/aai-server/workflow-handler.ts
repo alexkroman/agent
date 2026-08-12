@@ -35,6 +35,7 @@ import { HTTPException } from "hono/http-exception";
 import { WORKFLOW_PROXY_TIMEOUT_MS } from "./constants.ts";
 import type { AppContext } from "./context.ts";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";
+import { registerLiveStream } from "./live-streams.ts";
 import { brokerSessionUrl } from "./sandbox-broker.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
 
@@ -141,9 +142,86 @@ export function createAgentWorkflowsHandler(
       throw unavailable(cause);
     }
 
+    const headers = pickHeaders(guestResponse.headers, FORWARDED_RESPONSE_HEADERS);
+    // A run-events stream is long-lived and terminates HERE, at this replica, so it
+    // owes `live-streams.ts` a registration: without one, `server.close()` waits it
+    // out and `process.exit` then DESTROYS the socket, cutting a chunked body before
+    // its terminating frame. That is a protocol error to whatever is reading, and in
+    // production the reader is Modal's in-container proxy, which surfaces it as a
+    // transfer-encoding failure with nothing tying it to a scale-in. The relayed
+    // stream is the same shape the removed split deployment needed
+    // `gracefulEventStream` for.
+    if (guestResponse.body && isEventStream(headers)) {
+      return relayLiveStream(guestResponse.body, guestResponse.status, headers);
+    }
     return new Response(guestResponse.body, {
       status: guestResponse.status,
-      headers: pickHeaders(guestResponse.headers, FORWARDED_RESPONSE_HEADERS),
+      headers,
     });
   };
+}
+
+/** Is this response a server-sent-event stream? */
+function isEventStream(headers: Headers): boolean {
+  return (headers.get("content-type") ?? "").toLowerCase().includes("text/event-stream");
+}
+
+/**
+ * Relay a guest's event stream through a body THIS replica can end gracefully.
+ *
+ * The guest's own `ReadableStream` cannot be handed over directly, because ending
+ * it on shutdown means closing the response we are streaming INTO, and only a
+ * stream we construct gives us that handle. So the bytes are piped and the
+ * controller is what `live-streams.ts` closes.
+ *
+ * Two properties. The registration is dropped when the stream ends on its own
+ * (`registerLiveStream`'s contract — a registry that only grows is a leak, and
+ * worse, would let shutdown end an already-finished response). And a shutdown that
+ * has ALREADY happened ends this stream synchronously, which is why a page that
+ * reconnects mid-shutdown — the modal case, since the client's backoff is shorter
+ * than the shutdown grace — gets a clean end rather than a held-open socket.
+ */
+function relayLiveStream(
+  body: ReadableStream<Uint8Array>,
+  status: number,
+  headers: Headers,
+): Response {
+  const reader = body.getReader();
+  let unregister = (): void => undefined;
+  const relayed = new ReadableStream<Uint8Array>({
+    start(controller) {
+      unregister = registerLiveStream(() => {
+        // Cancel the upstream read FIRST: closing the controller while a pump is
+        // awaiting `read()` would leave that pump enqueueing into a closed stream.
+        reader.cancel().catch(() => undefined);
+        try {
+          controller.close();
+        } catch {
+          // Already closed by the pump finishing at the same moment — harmless,
+          // and worth swallowing rather than surfacing as a shutdown error.
+        }
+      });
+      void (async () => {
+        try {
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            controller.enqueue(value);
+          }
+          controller.close();
+        } catch (err) {
+          controller.error(err);
+        } finally {
+          unregister();
+        }
+      })();
+    },
+    cancel(reason) {
+      // The CLIENT went away. Drop the upstream read and the registration; leaving
+      // either would hold a guest connection open for a page that is gone.
+      unregister();
+      return reader.cancel(reason);
+    },
+  });
+  return new Response(relayed, { status, headers });
 }

@@ -61,3 +61,32 @@ export function clampFindLimit(requested: number | undefined): number {
  * referenced by nothing and would otherwise sit in the app's schema forever.
  */
 export const WORKFLOW_BLOB_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * How often a run-events stream re-reads its run.
+ *
+ * Far tighter than the page's own poll interval, and cheaply so: this read is one
+ * indexed query against the database the run lives in, with no HTTP hop and no
+ * brokering in front of it — which is the cost the stream exists to remove.
+ */
+export const RUN_EVENT_POLL_MS = 500;
+
+/**
+ * Comment-frame cadence on a run-events stream.
+ *
+ * Nothing in the chain notices a departed client until data flows, so a stream
+ * watching a slow run would otherwise look alive indefinitely; it also keeps an
+ * idle proxy from reaping a healthy stream between two state changes.
+ */
+export const RUN_EVENT_HEARTBEAT_MS = 15_000;
+
+/**
+ * How long one run-events stream is held before it is ended cleanly.
+ *
+ * A run may sleep for hours, and a connection held that long is one nothing is
+ * maintaining — a proxy idle timeout, a closed laptop, a scale-in. Ending it
+ * hands the client back to its own reconnect, which is a path it already has,
+ * instead of pretending the link is live. Well inside the platform function's
+ * own call-duration ceiling.
+ */
+export const RUN_EVENT_STREAM_MAX_MS = 10 * 60_000;
