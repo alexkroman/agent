@@ -201,6 +201,9 @@ importers:
       '@clack/prompts':
         specifier: ^1.7.0
         version: 1.7.0
+      '@workflow/builders':
+        specifier: 4.1.7
+        version: 4.1.7(@opentelemetry/api@1.9.1)(ws@8.21.1)
       chokidar:
         specifier: ^5.0.0
         version: 5.0.0
@@ -9188,7 +9191,7 @@ snapshots:
 
   '@vercel/queue@0.3.1':
     dependencies:
-      '@vercel/oidc': 3.2.0
+      '@vercel/oidc': 3.8.4
       minimatch: 10.2.5
       mixpart: 0.0.6
       picocolors: 1.1.1

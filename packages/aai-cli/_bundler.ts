@@ -9,13 +9,23 @@ import type { AgentDef } from "@alexkroman1/aai";
 import { validateAgentExport } from "./_utils.ts";
 import { buildClient } from "./client-bundler.ts";
 import { type BuildWorkerOptions, buildWorker } from "./worker-bundler.ts";
+import { buildWorkflows, type WorkflowBundleOutput } from "./workflow-bundler.ts";
 
-/** Output from the bundler: worker ESM + client files. */
+/** Output from the bundler: worker ESM + client files + workflow artifacts. */
 export type DirectoryBundleOutput = {
   /** ESM bundle of agent.ts (tool execute functions + hook handlers). */
   worker: string;
   /** Static client files from Vite build. Empty if no client.tsx. */
   clientFiles: Record<string, string>;
+  /**
+   * The project's durable workflows, or undefined when it declares none.
+   *
+   * Built here rather than in the guest because the transform is per TENANT: the
+   * guest image is baked once and serves many agents, so there is no
+   * `workflows/` directory in existence when it is built. See
+   * `workflow-bundler.ts`.
+   */
+  workflows?: WorkflowBundleOutput;
 };
 
 /**
@@ -30,8 +40,15 @@ export async function buildAgentBundle(
   cwd: string,
   opts: BuildWorkerOptions = {},
 ): Promise<DirectoryBundleOutput> {
-  const [worker, clientFiles] = await Promise.all([buildWorker(cwd, opts), buildClient(cwd)]);
-  return { worker, clientFiles };
+  // All three in parallel: they read the same tree and write to disjoint
+  // scratch paths, and the workflow build is the slowest of the three on a
+  // project that has one.
+  const [worker, clientFiles, workflows] = await Promise.all([
+    buildWorker(cwd, opts),
+    buildClient(cwd),
+    buildWorkflows(cwd),
+  ]);
+  return { worker, clientFiles, ...(workflows && { workflows }) };
 }
 
 /**
