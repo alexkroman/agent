@@ -15,6 +15,7 @@ pnpm test                # Run all unit tests (vitest)
 pnpm lint                # Run Biome linter (all packages)
 pnpm typecheck           # Type-check all packages
 pnpm lint:fix            # Auto-fix lint issues
+pnpm check:konsistent    # Structural conventions (konsistent.json)
 pnpm check:local         # Fast pre-commit gate (single turbo invocation, max parallelism)
 pnpm check:affected      # Only check packages affected by changes since main
 ```
@@ -189,7 +190,7 @@ reason); `pnpm test:coverage:affected` is the coverage half on its own.
 ### Quality ratchets
 
 Beyond lint/typecheck/test, `scripts/check.sh` **and the CI check job** run
-four **gates** (all also runnable standalone) that hold the line on technical
+five **gates** (all also runnable standalone) that hold the line on technical
 debt; the first works by comparing the branch against its merge-base with
 `origin/main`, while the rest are absolute. They must stay wired into BOTH:
 for a long time they lived only in `check.sh`, which CI never invokes, so the
@@ -292,13 +293,52 @@ skipped them entirely.
   (over budget = refactor before adding more; over 150k = a guide is being
   truncated right now), that the root still links every package guide, and
   that the script and CI wiring still agree with it.
+- **`pnpm check:konsistent`** ([konsistent], config in root `konsistent.json`)
+  — enforces **structural** conventions: the shapes that are wrong only in
+  relation to their siblings, which is why no per-file tool can see them.
+  Biome lints statements and tsc type-checks a program; neither can say "every
+  module in this directory must look like the others." The fourteen
+  conventions cover the four things this repo restates by hand — the
+  per-package file set (`package.json`, `tsconfig.json`, `vitest.config.ts`,
+  `CLAUDE.md`, plus README/`tsconfig.build.json`/`tsdown.config.ts` on the
+  three published ones) and each `vitest.config.ts` importing `sharedConfig`;
+  `*-barrel.ts` files being pure re-export surfaces; the **dependency-graph
+  boundaries** under "Dependency flow" (aai imports no sibling, the CLI
+  imports neither server nor guest, the guest imports no server code, aai-ui
+  imports only the core SDK); and the repeated-by-construction shapes — every
+  STT/TTS/LLM/S2S provider module's `*_KIND` / `*_API_KEY_ENV` / `*Options` /
+  `*Provider` / factory / `resolve*Settings` set, every template's
+  `agent.ts` + `client.tsx`, and each `tools/<snake_case>.ts` exporting the
+  matching camelCase const. `pnpm check:konsistent-config` (`konsistent
+  validate`) checks the config against its schema without touching the tree.
 
-These are pure git/fs checks (no build needed), so they run up front and
+  Two things to know before editing `konsistent.json`. **A convention that
+  matches nothing passes** — a typo'd `paths` glob checks zero files and prints
+  the same "No violations found" as a healthy run, with no error anywhere, so
+  `packages/aai-templates/konsistent-config.test.ts` asserts every pattern's
+  literal prefix exists (plus that each convention is named, described, and
+  declares at least one predicate). And **the case maps compose**:
+  `kebabToCamelMap` is DERIVED from `kebabToPascalMap` when absent, so
+  declaring `openai: OpenAI` for the type names silently turns the expected
+  factory name into `openAI`. The identity entries in `kebabToCamelMap`
+  (`openai: openai`, `openrouter`, `elevenlabs`) look redundant and are what
+  keep `openai()` right.
+
+  The version is pinned **exactly** (`1.0.0-beta.4`, the registry's `latest`)
+  rather than caret-ranged, because a `^` range over a prerelease drifts onto
+  `1.0.0-beta.6` — which renames the predicates (`export` → `exportValues`,
+  `import` → `importValues`, `importFrom` → `importValuesFrom`). Read the
+  predicate catalog from `node_modules/konsistent/docs/`, not the GitHub
+  README, until that pin moves; the two disagree.
+
+  [konsistent]: https://github.com/vercel-labs/konsistent
+
+These are pure fs checks (no build needed), so they run up front and
 fail fast. To tighten quality over time, lower the entries in the
 file-length allowlist and delete escape hatches — both baselines are
 designed to only move one direction.
 
-A fifth ratchet lives in the vitest configs: **coverage thresholds**.
+A sixth ratchet lives in the vitest configs: **coverage thresholds**.
 Every package has floors — `aai-templates` was for a while the one that did
 not, so CI measured its coverage and threw the number away. Each package's
 `vitest.config.ts` declares per-package coverage floors

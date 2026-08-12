@@ -61,6 +61,13 @@ run_ratchets() {
   # bakes a different tree than the repo tested with. Pure JSON comparison —
   # no registry — so it belongs with the fast gates.
   pnpm run check:guest-toolchain || failed=1
+  # Structural conventions (konsistent.json): the shapes Biome and tsc cannot
+  # see because none of them is wrong WITHIN a file — a provider module that
+  # exports four of its five symbols, a *-barrel.ts that grew a local
+  # declaration, a package importing across a dependency-graph boundary the
+  # architecture forbids. Pure fs + AST scan over ~600 files in ~1s, no build,
+  # hence up here with the other fast gates.
+  pnpm run check:konsistent || failed=1
   return "$failed"
 }
 

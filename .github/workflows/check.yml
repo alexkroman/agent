@@ -110,12 +110,18 @@ jobs:
       # catches a lockfile that no longer matches the installed toolchain,
       # which would otherwise bake a different tree into every guest image
       # than the one this repo tested with.
+      # check:konsistent enforces konsistent.json — the structural conventions
+      # no per-file linter can see (a provider module missing one of its five
+      # exports, a *-barrel.ts with a local declaration, a cross-boundary
+      # import). It auto-emits ::error annotations here because GITHUB_ACTIONS
+      # is set, so violations land inline on the PR diff with no extra flags.
       - run: |
           pnpm run check:hatches
           pnpm run check:file-length
           pnpm run check:test-assertions
           pnpm run check:claude-md
           pnpm run check:guest-toolchain
+          pnpm run check:konsistent
 
   # Unit tests sharded by package — run in parallel
   test:
