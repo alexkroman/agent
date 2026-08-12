@@ -34,7 +34,8 @@
 
 import type { CloseableDb, ReservedDb } from "@alexkroman1/aai/runtime";
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, test } from "vitest";
+import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 import { sleep } from "./_sleep.ts";
 import {
   createPgSlugLock,
@@ -43,20 +44,11 @@ import {
   type SlugMutationLock,
 } from "./platform-lock.ts";
 
-const PG_URL = process.env.AAI_TEST_PG_URL;
-
 const ACQUIRE = "select pg_advisory_lock($1::int, hashtext($2)::int)";
 const TRY = "select pg_try_advisory_lock($1::int, hashtext($2)::int) as got";
 const UNLOCK = "select pg_advisory_unlock($1::int, hashtext($2)::int)";
 
-/**
- * Skipped only when no database is configured. CI's integration job runs a
- * Postgres service, so a skip THERE means the wiring broke — this file's
- * whole point is to not become one of the checks that exists without running.
- */
-const describeIfPg = PG_URL ? describe : describe.skip;
-
-describeIfPg("slug mutation lock over real Postgres advisory locks", () => {
+describeWithPg("slug mutation lock over real Postgres advisory locks", () => {
   /** The pool under test — what a replica's `AdminDb` is. */
   let db: CloseableDb;
   /** A separate pool for the "other replica" and for probing. */
@@ -65,9 +57,16 @@ describeIfPg("slug mutation lock over real Postgres advisory locks", () => {
   /** Connections a test parked a foreign lock on, released in afterEach. */
   let parked: { reserved: ReservedDb; slug: string }[] = [];
 
-  const url = PG_URL as string;
+  /**
+   * Read in `beforeAll`, not at the top of this body: vitest EXECUTES a
+   * `describe.skip` callback (it has to, to enumerate the tests it is skipping),
+   * so a `pgUrl()` up here would throw during collection on a machine with no
+   * database instead of skipping.
+   */
+  let url: string;
 
   beforeAll(() => {
+    url = pgUrl();
     // max:1 on the pool under test so a LEAKED reservation surfaces as a hang
     // rather than being absorbed by spare capacity.
     db = createPostgresDb({ url, max: 1 });

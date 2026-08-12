@@ -28,14 +28,12 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { CloseableDb } from "@alexkroman1/aai/runtime";
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test } from "vitest";
+import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 import { createPgAgentRows } from "./agent-store.ts";
 import { createPgChatStore } from "./chat-store.ts";
 import type { SqlExec } from "./secret-store.ts";
 import { createPgWorkspaceStore, WorkspaceConflictError } from "./workspace-store.ts";
-
-const PG_URL = process.env.AAI_TEST_PG_URL;
-const describeIfPg = PG_URL ? describe : describe.skip;
 
 const migrationsDir = path.resolve(import.meta.dirname, "../../supabase/migrations");
 
@@ -77,14 +75,21 @@ function migrationForStockPostgres(): { sql: string; stripped: number } {
   return { sql, stripped };
 }
 
-describeIfPg("the platform migration applies and the stores work against it", () => {
-  const adminUrl = PG_URL as string;
+describeWithPg("the platform migration applies and the stores work against it", () => {
+  /**
+   * Read inside the hooks, not at the top of this body: vitest EXECUTES a
+   * `describe.skip` callback (it has to, to enumerate the tests it is skipping),
+   * so a `pgUrl()` up here would throw during collection on a machine with no
+   * database instead of skipping.
+   */
+  let adminUrl: string;
   /** Connection to the throwaway database the migration is applied to. */
   let db: CloseableDb;
   let sql: SqlExec;
   let dbName: string;
 
   beforeAll(async () => {
+    adminUrl = pgUrl();
     // `create database` cannot run inside a transaction block, and needs a
     // connection to some OTHER database — hence the two-step.
     dbName = `aai_schema_test_${process.pid}_${Math.trunc(performance.now())}`;

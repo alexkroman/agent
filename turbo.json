@@ -165,8 +165,16 @@
       "dependsOn": [
         "build"
       ],
+      // AAI_REQUIRE_PG rides beside the URL for the reason the AAI_TEST_PM note
+      // below spells out: strict env mode strips an undeclared variable before
+      // the task starts, so CI's "a skip is a failure" enforcement would be
+      // silently inert — the failure mode it exists to prevent, one level up.
+      // In `env` rather than `globalPassThroughEnv` because it changes what the
+      // task DOES: a required run and a skippable one must not share a cache
+      // entry.
       "env": [
-        "AAI_TEST_PG_URL"
+        "AAI_TEST_PG_URL",
+        "AAI_REQUIRE_PG"
       ],
       "inputs": [
         "$TURBO_DEFAULT$",

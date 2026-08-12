@@ -25,8 +25,36 @@ pnpm check:affected      # Only check packages affected by changes since main
 | --- | --- | --- | --- |
 | Unit | `pnpm test` | Fast, mocked, co-located | 5s |
 | Integration | `pnpm test:integration` | Real subsystems (HTTP servers, WebSockets) | 30s |
+| Integration + a real Postgres | `pnpm test:pg` | The above, with `AAI_TEST_PG_URL` resolved | 30s |
 | E2E | `pnpm test:e2e` | Full process spawn + Playwright browser | 300s |
 | Templates | `pnpm test:templates` | Template agent example tests | 5s |
+
+**Five integration suites need a real Postgres, and without one they SKIP.**
+That tier is the only thing in the repo that can see a driver-level bug — an
+encoding that round-trips wrong, an advisory lock not held by the session that
+thinks it holds it — because an in-memory fake holds JS values and cannot be
+stricter than the driver beneath it. So a silent skip is the worst outcome
+available, and it was the default one: `pnpm test:integration` with no
+`AAI_TEST_PG_URL` prints a green run, and CI's Linux leg would also have passed
+if its `$GITHUB_ENV` export ever broke.
+
+- `pnpm test:pg` resolves a local database (the Supabase stack on 54322, a
+  server on 5432, or an explicit `AAI_TEST_PG_URL`) and runs the tier against
+  it. With nothing listening it prints the commands that start one rather than
+  starting one itself.
+- A skip ANNOUNCES itself, via `describeWithPg` from
+  `packages/aai-server/_pg-test-utils.ts` — the one spelling for the gate, in
+  place of the five hand-rolled copies of `PG_URL ? describe : describe.skip`.
+- `AAI_REQUIRE_PG` turns a skip into a hard failure. CI's Linux leg sets it
+  (and `pnpm test:pg` sets it for the run it starts), so "the wiring broke" is
+  red rather than quiet. It is declared in the `check:integration` task's `env`
+  in `turbo.json` — undeclared, strict env mode would strip it and the
+  enforcement would silently do nothing.
+
+Note vitest EXECUTES a `describe.skip` callback (it has to, to enumerate what
+it is skipping), so read `pgUrl()` inside a hook or a test, never at the top of
+a gated `describe` body — up there it throws during collection on a machine
+with no database, which fails the file instead of skipping it.
 
 ### Single-package shortcuts
 
