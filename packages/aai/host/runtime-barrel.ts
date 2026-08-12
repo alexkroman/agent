@@ -143,4 +143,24 @@ export type {
   TransportCallbacks,
   TransportSessionConfig,
 } from "./transports/types.ts";
+// The durable-workflow host side. `createWorkflowClient` is what becomes
+// `ctx.workflows`; `wdkAdapter`/`startWorkflowWorld` are the Workflow DevKit
+// bindings, separate so the client can be specified without a world. The key
+// store's two factories ride along because the guest picks between them —
+// Postgres on the platform, memory under `aai dev`.
+export {
+  createWorkflowClient,
+  resolveKeyStore,
+  type WdkAdapter,
+  type WdkRunRecord,
+  type WorkflowClientOptions,
+} from "./workflow-client.ts";
+export {
+  createMemoryKeyStore,
+  createPostgresKeyStore,
+  DEFAULT_WORKFLOW_FIND_LIMIT,
+  MAX_WORKFLOW_FIND_LIMIT,
+  type WorkflowKeyStore,
+} from "./workflow-keys.ts";
+export { startWorkflowWorld, wdkAdapter } from "./workflow-wdk.ts";
 export { type SessionWebSocket, safeSend, wireSessionSocket } from "./ws-handler.ts";

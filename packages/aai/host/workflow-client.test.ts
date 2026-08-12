@@ -1,0 +1,302 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * Specs for `ctx.workflows`.
+ *
+ * The Workflow DevKit is behind a `WdkAdapter` here, which is the point of that
+ * seam: what these assert is the TRANSLATION — name resolution, input validation
+ * before a run exists, the snapshot's discriminated shape, and the two failure
+ * decisions that are easy to get backwards (a key write that fails must not fail
+ * the start; a `find` result whose run has aged out must not fail the lookup).
+ */
+
+import { describe, expect, test, vi } from "vitest";
+import { z } from "zod";
+import { type WorkflowBody, type WorkflowDef, workflow } from "../sdk/workflow.ts";
+import { createWorkflowClient, type WdkAdapter, type WdkRunRecord } from "./workflow-client.ts";
+import { createMemoryKeyStore, type WorkflowKeyStore } from "./workflow-keys.ts";
+
+/** A `"use workflow"` body as the compiler leaves it — the id is what start reads. */
+function body<I, R>(id: string, result?: R): WorkflowBody<I, R> {
+  const fn = (() => Promise.resolve(result as R)) as WorkflowBody<I, R>;
+  fn.workflowId = id;
+  return fn;
+}
+
+const digest = workflow({
+  description: "Research a topic",
+  input: z.object({ topic: z.string() }),
+  run: body<{ topic: string }, { ok: true }>("workflow//./workflows/digest//digestFlow"),
+});
+
+/** A workflow with no schema, to pin that validation is skipped rather than failed. */
+const bare = workflow({ run: body("workflow//./workflows/bare//bareFlow") });
+
+const silentLogger = { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() };
+
+function record(over: Partial<WdkRunRecord> = {}): WdkRunRecord {
+  return {
+    runId: "wrun_1",
+    workflowName: "digest",
+    status: "pending",
+    createdAt: new Date("2026-08-12T00:00:00Z"),
+    ...over,
+  };
+}
+
+function makeAdapter(over: Partial<WdkAdapter> = {}): WdkAdapter {
+  return {
+    start: vi.fn(async () => "wrun_1"),
+    getRun: vi.fn(async () => record()),
+    listRuns: vi.fn(async () => []),
+    cancel: vi.fn(async () => true),
+    readOutput: vi.fn(async () => ({ ok: true })),
+    ...over,
+  };
+}
+
+function makeClient(
+  over: {
+    workflows?: Record<string, WorkflowDef>;
+    wdk?: Partial<WdkAdapter>;
+    keys?: WorkflowKeyStore;
+  } = {},
+) {
+  const wdk = makeAdapter(over.wdk);
+  const keys = over.keys ?? createMemoryKeyStore();
+  const client = createWorkflowClient({
+    workflows: over.workflows ?? { digest, bare },
+    keys,
+    wdk,
+    logger: silentLogger,
+  });
+  return { client, wdk, keys };
+}
+
+describe("starting a run", () => {
+  test("resolves the declared name from the definition by identity", async () => {
+    const { client, wdk, keys } = makeClient();
+    await client.start(digest, { topic: "otters" }, { key: "sess-1" });
+    // The workflowId reaches WDK; the NAME is what the key index records, so a
+    // workflow moved between modules keeps its keys.
+    expect(wdk.start).toHaveBeenCalledWith("workflow//./workflows/digest//digestFlow", [
+      { topic: "otters" },
+    ]);
+    expect(await keys.lookup("digest", "sess-1", 10)).toEqual(["wrun_1"]);
+  });
+
+  test("accepts the name as a string for a workflow that is data", async () => {
+    const { client, wdk } = makeClient();
+    await client.start("digest", { topic: "otters" });
+    expect(wdk.start).toHaveBeenCalledWith("workflow//./workflows/digest//digestFlow", [
+      { topic: "otters" },
+    ]);
+  });
+
+  test("rejects a workflow the agent does not declare, naming the declared set", async () => {
+    const { client, wdk } = makeClient();
+    await expect(client.start("nope")).rejects.toThrow(/not declared on this agent/);
+    await expect(client.start("nope")).rejects.toThrow(/digest, bare/);
+    expect(wdk.start).not.toHaveBeenCalled();
+  });
+
+  test("rejects a definition that was never wired into agent({ workflows })", async () => {
+    const orphan = workflow({ run: body("workflow//./workflows/orphan//orphanFlow") });
+    const { client, wdk } = makeClient();
+    await expect(client.start(orphan, {})).rejects.toThrow(/not declared on this agent/);
+    expect(wdk.start).not.toHaveBeenCalled();
+  });
+
+  test("validates the input BEFORE a run exists", async () => {
+    const { client, wdk } = makeClient();
+    // The whole reason validation is here and not in the body: a schema failure
+    // inside a queued body is a failed run found later.
+    await expect(client.start("digest", { topic: 42 })).rejects.toThrow(/Invalid input/);
+    expect(wdk.start).not.toHaveBeenCalled();
+  });
+
+  test("passes input through unvalidated for a workflow with no schema", async () => {
+    const { client, wdk } = makeClient();
+    await client.start(bare, {});
+    expect(wdk.start).toHaveBeenCalledWith("workflow//./workflows/bare//bareFlow", [{}]);
+  });
+
+  test("a failed key write warns and still returns the runId", async () => {
+    const keys: WorkflowKeyStore = {
+      record: vi.fn(async () => {
+        throw new Error("index unavailable");
+      }),
+      lookup: vi.fn(async () => []),
+    };
+    const { client } = makeClient({ keys });
+    // The run is already created at this point. Throwing would tell the caller
+    // nothing started while the work proceeds with no handle to it.
+    await expect(client.start(digest, { topic: "otters" }, { key: "k" })).resolves.toBe("wrun_1");
+    expect(silentLogger.warn).toHaveBeenCalled();
+  });
+
+  test("records no key when the caller passed none", async () => {
+    const keys: WorkflowKeyStore = {
+      record: vi.fn(async (): Promise<void> => undefined),
+      lookup: vi.fn(async () => []),
+    };
+    const { client } = makeClient({ keys });
+    await client.start(digest, { topic: "otters" });
+    expect(keys.record).not.toHaveBeenCalled();
+  });
+
+  test("rejects a body the WDK compiler never transformed, naming the build", async () => {
+    // `workflow()` guards this at declaration time, so reaching the client with
+    // one means the def was built by hand — which the studio's generated code
+    // could plausibly do.
+    const untransformed = { run: (() => Promise.resolve()) as WorkflowBody } as WorkflowDef;
+    const { client } = makeClient({ workflows: { untransformed } });
+    await expect(client.start("untransformed", {})).rejects.toThrow(/use workflow/);
+  });
+});
+
+describe("reading a run", () => {
+  test("a completed run narrows to a typed output", async () => {
+    const { client } = makeClient({
+      wdk: { getRun: async () => record({ status: "completed" }) },
+    });
+    const run = await client.get("wrun_1", digest);
+    expect(run?.status).toBe("completed");
+    if (run?.status === "completed") expect(run.output).toEqual({ ok: true });
+  });
+
+  test("a failed run carries the failure message", async () => {
+    const { client } = makeClient({
+      wdk: { getRun: async () => record({ status: "failed", error: { message: "boom" } }) },
+    });
+    const run = await client.get("wrun_1");
+    expect(run).toMatchObject({ status: "failed", error: "boom" });
+  });
+
+  test("a failed run with no message names the status rather than reading as empty", async () => {
+    const { client } = makeClient({
+      wdk: { getRun: async () => record({ status: "failed" }) },
+    });
+    const run = await client.get("wrun_1");
+    expect(run).toMatchObject({ status: "failed", error: "Workflow run failed" });
+  });
+
+  test("a non-terminal run does not read its output", async () => {
+    const readOutput = vi.fn(async () => ({ ok: true }));
+    const { client } = makeClient({ wdk: { readOutput } });
+    await client.get("wrun_1");
+    // `readOutput` polls a live run at 1s intervals with no ceiling, so a
+    // speculative read turns a snapshot into a wait for the whole run.
+    expect(readOutput).not.toHaveBeenCalled();
+  });
+
+  test("resolves undefined for a run that does not exist", async () => {
+    const { client } = makeClient({ wdk: { getRun: async () => undefined } });
+    expect(await client.get("wrun_missing")).toBeUndefined();
+  });
+
+  test("createdAt is epoch ms whether WDK reports a Date or a number", async () => {
+    const at = Date.UTC(2026, 7, 12);
+    for (const createdAt of [new Date(at), at]) {
+      const { client } = makeClient({ wdk: { getRun: async () => record({ createdAt }) } });
+      expect((await client.get("wrun_1"))?.createdAt).toBe(at);
+    }
+  });
+});
+
+describe("finding runs by correlation key", () => {
+  test("returns the keyed runs newest first, carrying the key", async () => {
+    const keys = createMemoryKeyStore();
+    await keys.record("digest", "caller-1", "wrun_old");
+    await keys.record("digest", "caller-1", "wrun_new");
+    const { client } = makeClient({
+      keys,
+      wdk: { getRun: async (runId) => record({ runId }) },
+    });
+    const runs = await client.find(digest, "caller-1");
+    expect(runs.map((r) => r.runId)).toEqual(["wrun_new", "wrun_old"]);
+    expect(runs.every((r) => r.key === "caller-1")).toBe(true);
+  });
+
+  test("drops an indexed run that has aged out rather than failing the lookup", async () => {
+    const keys = createMemoryKeyStore();
+    await keys.record("digest", "caller-1", "wrun_gone");
+    await keys.record("digest", "caller-1", "wrun_live");
+    const { client } = makeClient({
+      keys,
+      wdk: { getRun: async (runId) => (runId === "wrun_gone" ? undefined : record({ runId })) },
+    });
+    expect((await client.find(digest, "caller-1")).map((r) => r.runId)).toEqual(["wrun_live"]);
+  });
+
+  test("resolves empty for a key nothing was started with", async () => {
+    const { client } = makeClient();
+    expect(await client.find(digest, "never-used")).toEqual([]);
+  });
+
+  test("clamps the limit so one lookup cannot scan a whole history", async () => {
+    const keys = {
+      record: vi.fn(async (): Promise<void> => undefined),
+      lookup: vi.fn(async () => []),
+    };
+    const { client } = makeClient({ keys });
+    await client.find(digest, "k", { limit: 10_000 });
+    expect(keys.lookup).toHaveBeenCalledWith("digest", "k", 100);
+    await client.find(digest, "k", { limit: 0 });
+    expect(keys.lookup).toHaveBeenCalledWith("digest", "k", 1);
+  });
+});
+
+describe("recent runs", () => {
+  test("lists by workflow name, whatever key the runs carry", async () => {
+    const listRuns = vi.fn(async () => [record({ runId: "wrun_a" })]);
+    const { client } = makeClient({ wdk: { listRuns } });
+    const runs = await client.recent(digest, { limit: 5 });
+    expect(listRuns).toHaveBeenCalledWith("digest", 5);
+    // No key: a keyless listing is not a lookup that matched every key, so it
+    // must not present runs as if they were correlated to anything.
+    expect(runs[0]?.key).toBeUndefined();
+  });
+});
+
+describe("cancelling", () => {
+  test("reports whether this call is what ended the run", async () => {
+    const { client } = makeClient({ wdk: { cancel: async () => false } });
+    expect(await client.cancel("wrun_1")).toBe(false);
+  });
+});
+
+describe("listing declared workflows", () => {
+  test("names each workflow with its description and a JSON Schema for its input", () => {
+    const { client } = makeClient();
+    const listing = client.listing();
+    expect(listing).toHaveLength(2);
+    const [first] = listing;
+    expect(first?.name).toBe("digest");
+    expect(first?.description).toBe("Research a topic");
+    expect(first?.inputSchema).toMatchObject({
+      type: "object",
+      properties: { topic: { type: "string" } },
+    });
+  });
+
+  test("omits the schema for a workflow that declares none", () => {
+    const { client } = makeClient();
+    const bareSummary = client.listing().find((w) => w.name === "bare");
+    expect(bareSummary).toEqual({ name: "bare" });
+  });
+
+  test("a schema that cannot convert warns rather than taking the listing down", () => {
+    // The listing feeds `workflow_status` as well as a page's form, so an
+    // unconvertible schema must not make the status tool unusable.
+    const unconvertible = {
+      run: body("workflow//./workflows/x//x"),
+      input: {
+        "~standard": { version: 1, vendor: "nope", validate: (v: unknown) => ({ value: v }) },
+      },
+    } as unknown as WorkflowDef;
+    const { client } = makeClient({ workflows: { unconvertible } });
+    expect(() => client.listing()).not.toThrow();
+    expect(client.listing()[0]?.inputSchema).toBeUndefined();
+    expect(silentLogger.warn).toHaveBeenCalled();
+  });
+});
