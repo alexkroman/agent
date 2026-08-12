@@ -58,3 +58,18 @@ export const WORKFLOWS_UNAVAILABLE_MESSAGE =
   "No workflow engine is available for this app. Declare workflows with " +
   "`agent({ workflows })`, and enable storage with `aai storage enable` (or set " +
   "DATABASE_URL in the project .env under `aai dev`) — the run journal requires it.";
+
+/**
+ * Continuations one chain may make (`ctx.continueAs`).
+ *
+ * A RUNAWAY GUARD, not a design limit. An unconditional `continueAs` is an
+ * infinite chain of runs that bills forever, and it is easy to write — the first
+ * draft of this feature's own test did exactly that and hung the suite. Past this
+ * the chain fails with a message naming the cause, which is a bug report rather
+ * than a cost.
+ *
+ * Sized so it cannot be reached by accident by a real workload: 500 journal
+ * entries per run times this is a quarter of a million steps, which is far past
+ * anything a single logical job should be expressed as.
+ */
+export const MAX_CONTINUATIONS = 500;

@@ -124,7 +124,7 @@ describe("create", () => {
     // The absent correlation key binds SQL null, not `undefined`: the driver would
     // send the latter as the string "undefined", which is a key nothing can match
     // and which is indistinguishable from a real one in the index.
-    expect(q.params(0)).toEqual(["r1", "digest", '{"topic":"ai"}', null]);
+    expect(q.params(0)).toEqual(["r1", "digest", '{"topic":"ai"}', null, 0]);
   });
 
   test("stores a correlation key when one is given", async () => {
@@ -132,7 +132,7 @@ describe("create", () => {
     await createPostgresWorkflowStore(q.db).create("r1", "digest", null, "session-7");
 
     expect(q.sql(0)).toContain("correlation_key");
-    expect(q.params(0)).toEqual(["r1", "digest", "null", "session-7"]);
+    expect(q.params(0)).toEqual(["r1", "digest", "null", "session-7", 0]);
   });
 
   test("serializes an absent input as SQL-safe null, never the string undefined", async () => {
@@ -287,6 +287,26 @@ describe("cancel", () => {
     // `returning` is what distinguishes them, and neither is an error.
     const q = recordingDb([[]]);
     await expect(createPostgresWorkflowStore(q.db).cancel("r1")).resolves.toBe(false);
+  });
+});
+
+describe("continuationDepth", () => {
+  test("create carries the depth, and defaults it to 0", async () => {
+    const q = recordingDb();
+    const store = createPostgresWorkflowStore(q.db);
+    await store.create("r1", "w", null);
+    await store.create("r2", "w", null, "k", 7);
+
+    expect(q.params(0)?.[4]).toBe(0);
+    expect(q.params(1)?.[4]).toBe(7);
+    expect(q.sql(0)).toContain("continuation_depth");
+  });
+
+  test("reads it back, answering 0 for a run that does not exist", async () => {
+    const q = recordingDb([[{ continuation_depth: 3 }], []]);
+    const store = createPostgresWorkflowStore(q.db);
+    await expect(store.continuationDepth("r1")).resolves.toBe(3);
+    await expect(store.continuationDepth("gone")).resolves.toBe(0);
   });
 });
 

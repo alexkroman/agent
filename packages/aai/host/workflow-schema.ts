@@ -102,6 +102,17 @@ export const CREATE_KEY_INDEX = `create index if not exists aai_workflow_runs_ke
 export const CREATE_WORKFLOW_INDEX = `create index if not exists aai_workflow_runs_workflow
   on aai_workflow_runs (workflow, created_at desc)`;
 
+/**
+ * How many continuations deep this run is (`ctx.continueAs`).
+ *
+ * A column rather than a counter in the author's input, which is theirs. It exists
+ * because an unconditional `continueAs` is an INFINITE chain of runs that bills
+ * forever, and it is easy to write — the first draft of this feature's own test did
+ * it. `MAX_CONTINUATIONS` is what turns that into a failed run naming the cause.
+ */
+export const ADD_CONTINUATION_DEPTH =
+  "alter table aai_workflow_runs add column if not exists continuation_depth int not null default 0";
+
 /** Table recording which migrations this schema has run. */
 export const CREATE_MIGRATIONS = `create table if not exists aai_workflow_migrations (
   id text primary key,
@@ -146,4 +157,5 @@ export const MIGRATIONS: readonly { id: string; sql: string }[] = [
   { id: "0006-key-index", sql: CREATE_KEY_INDEX },
   { id: "0007-blobs", sql: CREATE_BLOBS },
   { id: "0008-blobs-index", sql: CREATE_BLOBS_INDEX },
+  { id: "0009-continuation-depth", sql: ADD_CONTINUATION_DEPTH },
 ];

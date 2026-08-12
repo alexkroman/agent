@@ -28,6 +28,8 @@ export type MemoryRun = {
   wakeAt?: number | undefined;
   leaseUntil?: number | undefined;
   steps: Map<string, unknown>;
+  /** Continuations deep — see the real store's `ADD_CONTINUATION_DEPTH`. */
+  continuationDepth?: number;
 };
 
 /** One uploaded blob, as the memory store holds it. */
@@ -132,9 +134,21 @@ export function createMemoryWorkflowStore(): MemoryWorkflowStore {
       workflow: string,
       input: unknown,
       key?: string | undefined,
+      continuationDepth = 0,
     ): Promise<void> {
-      runs.set(runId, { workflow, input, status: "pending", key, steps: new Map() });
+      runs.set(runId, {
+        workflow,
+        input,
+        status: "pending",
+        key,
+        steps: new Map(),
+        continuationDepth,
+      });
       return Promise.resolve();
+    },
+
+    continuationDepth(runId: string): Promise<number> {
+      return Promise.resolve(runs.get(runId)?.continuationDepth ?? 0);
     },
 
     claim(runId: string, leaseMs: number): Promise<ClaimedRun | undefined> {

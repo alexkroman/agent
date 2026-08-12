@@ -36,6 +36,25 @@ import type { WorkflowStore } from "./workflow-store.ts";
  * an author who caught it around a `sleep` would silently convert a suspension
  * into a completed run, so only the engine may recognize it.
  */
+/**
+ * Thrown by `ctx.continueAs()` to end this run and hand its work to a successor.
+ *
+ * A separate class from {@link Suspended} because the engine's answer is different
+ * in kind: a suspension RELEASES the run to be claimed again, while this one
+ * settles it and creates a new row. Sharing one class would make that a boolean on
+ * the error, i.e. two behaviours behind one name.
+ */
+export class ContinueAs extends Error {
+  /** The successor run's input. A field rather than a parameter property, which
+   * `erasableSyntaxOnly` forbids. */
+  readonly input: unknown;
+  constructor(input: unknown) {
+    super("workflow run continued as a new run");
+    this.name = "ContinueAs";
+    this.input = input;
+  }
+}
+
 export class Suspended extends Error {
   /** Epoch ms the run becomes due again. Declared as a field rather than a
    *  constructor parameter property, which `erasableSyntaxOnly` forbids. */
@@ -225,6 +244,13 @@ export function createContextFactory(deps: ExecutionDeps) {
         const output = await attempt(stepId, fn, options, signal, logger);
         await record(stepId, output);
         return output;
+      },
+      continueAs(input: unknown): never {
+        // Unwinds like `sleep` and journals NOTHING: the successor's identity is
+        // the engine's to mint (it needs the store), and journaling a decision
+        // that has not been acted on would leave a replay of THIS run continuing
+        // twice if the settle failed in between.
+        throw new ContinueAs(input);
       },
       async sleep(ms: number): Promise<void> {
         const stepId = nextId("t", "sleep");

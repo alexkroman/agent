@@ -808,6 +808,15 @@ consequences an author has to know, all in that file's module doc and
   `MAX_DB_RESULT_ROWS`.** Replay reads the journal through `ctx.db`, which
   throws past 1000 rows, and a journal that cannot be read in full looks like a
   run with no history — i.e. every completed step runs a second time.
+- **`ctx.continueAs(input)` is how work too long for one journal is expressed.**
+  It ends this run and starts a fresh one of the same workflow — empty journal,
+  inherited correlation key — and, like `sleep`, never returns: treat it as a
+  return and pass everything the successor needs as `input`, since it shares no
+  state with this one. The old run ends `completed` with
+  `{ continuedAs: <id> }`, so a caller polling it follows the chain instead of
+  seeing a run that stopped for no reason. It needs a TERMINATION CONDITION —
+  an unconditional `continueAs` is an infinite loop, and `MAX_CONTINUATIONS`
+  (500) fails the chain naming that rather than letting it run forever.
 
 **The mechanism under all of this lives in `packages/aai/host/CLAUDE.md`** —
 lease-based recovery, the HTTP surface and its caps, how `/blobs` is stored, and

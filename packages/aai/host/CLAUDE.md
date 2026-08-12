@@ -210,6 +210,7 @@ POST   /workflows/runs       → { runId }         body: { workflow, input?, key
 GET    /workflows/runs       → { runs }          ?workflow=&key=&limit=
 GET    /workflows/runs/:id   → a WorkflowRunSnapshot
 DELETE /workflows/runs/:id   → { runId, cancelled }
+POST   /workflows/runs/:id/retry → { runId, retried }
 POST   /workflows/blobs      → { blobId, bytes } body: raw bytes
 ```
 
@@ -239,6 +240,45 @@ from that. `execute` distinguishes "aborted by cancel" from "abandoned by drain"
 recorded as `failed` over the status the caller asked for — and `recordStep` is
 deliberately NOT gated on a live status, because the step already ran and a journal
 that records what happened stays truthful for a run cancelled underneath it.
+
+**`retry` is a RESUME, and only a terminal run is revivable.** It writes the run
+back to `pending` and re-queues it, keeping the journal — so replay
+short-circuits every step that already succeeded and a run that failed on step 27
+re-runs step 27 and nothing before it. Re-running completed work would be
+wasteful and, for a step with an external side effect, wrong: at-least-once is a
+per-step contract, not a per-click one. The status guard
+(`status in ('failed','cancelled')`) is what makes it safe — resetting a `running`
+run would give it two claimants, which is the one thing the lease exists to
+prevent — and the resolved boolean says whether this call is what revived it, so
+two operators pressing Retry is ordinary rather than a race.
+
+**Continue-as-new mints the successor BEFORE it completes the predecessor**
+(`workflow-continuation.ts`). That order is the whole decision: a crash between
+the two leaves the old run `running` with an expiring lease, so recovery replays
+it and continues again — one orphaned successor, which is exactly the
+at-least-once every step here already has. The other order loses the work
+outright, which is not recoverable from anywhere. Three more things it has to get
+right, none visible from `ctx.continueAs`:
+
+- **The chain is depth-capped, and the cap FAILS the run rather than stopping
+  it.** `continuation_depth` is a column (migration `0009`), incremented per
+  link, and past `MAX_CONTINUATIONS` (500) the run is failed naming
+  `ctx.continueAs` and the missing termination condition. A chain that merely
+  ended would read as a run that finished successfully. This guard was written
+  because the first test of the feature continued unconditionally and HUNG the
+  suite to its two-minute timeout — the runaway is the default failure, not an
+  edge case.
+- **The successor's input is validated HERE, and a rejection fails THIS run.**
+  The throw would otherwise escape the engine's `settleFailure` (itself running
+  from `execute`'s catch) and leave the run `running` with a live lease — a
+  handoff that silently becomes an abandoned run recovery replays. Catching it
+  also puts the error where an author looks, rather than on the successor's first
+  replay, which would be a run that exists and can never make progress.
+- **The predecessor ends `completed`, not in a status of its own**, with
+  `{ continuedAs: <id> }` as its output. A sixth status would have to be taught
+  to `isTerminal`, the page's poll, the `workflow_status` builtin and the studio
+  card, for a distinction only the output carries. The correlation key is
+  inherited, so `find` and the builtin follow the chain with nothing re-keyed.
 
 **A determinism violation is reported by comparing the journal against what a
 replay CLAIMED.** Step ids are `<kind>:<name>#<ordinal>` assigned by call order,
@@ -289,14 +329,20 @@ would stall the deploy to save work that is not lost. And `busy()` is FALSE for
 a sleeper past `MAX_WAKE_TIMER_MS` (60s): holding a billed container open for a
 six-hour `ctx.sleep` is exactly what suspending the run releases it to avoid.
 
-**What is still NOT wired is the platform WAKING a sandbox that is gone** — for
-a long sleeper, or for a run abandoned by a crash, an OOM or a redeploy. Those
-resume on the next boot (`runDue()`), so they wait for whatever next brings the
-agent up. The substrate exists in the platform Postgres (`pg_cron`, `pgmq`,
-`pg_net` — see `packages/aai-server/CLAUDE.md`), and the discovery half is
-already demonstrated there: the orphan-preview sweep reaches each app's own
-schema through the `app-db:<slug>` vault secret, with an identifier-shape
-assertion so a corrupt meta cannot steer it.
+**A sandbox that is GONE is woken by the platform, not by `runDue()` alone.** For
+a long sleeper, or a run abandoned by a crash, an OOM or a redeploy, there is no
+process left to hold a timer — so `runDue()` is only the recovery half, and what
+finds the work is `aai-server/workflow-wake.ts` sweeping each app's own schema and
+brokering the agents that have due work (see `packages/aai-server/CLAUDE.md`;
+`WORKFLOW_WAKE_POLL_MS` is the lateness an author sees). A self-hosted
+`createServer` has no such sweep, so there a long sleep really does wait for the
+next boot — which is what "durable" meant everywhere before this landed.
+
+**`runDue()` DRAINS rather than sweeping once.** It repeats up to `MAX_DUE_SWEEPS`
+(25) while a pass claimed anything, because one pass is bounded by the store's
+query limit: an agent that was down for hours comes back to more due runs than
+one batch holds, and stopping there left the remainder waiting for the boot after
+that. An expired blob counts as work too, so pruning is no longer boot-only.
 
 **`/blobs` exists because bytes may not travel in the journal, and that is the
 one non-obvious thing about this surface.** Replay re-reads every step output and

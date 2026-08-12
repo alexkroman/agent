@@ -155,6 +155,8 @@ export type TestWorkflowContext = WorkflowContext & {
   readonly steps: string[];
   /** Sleep durations `ctx.sleep` was asked for, in call order. */
   readonly sleeps: number[];
+  /** Inputs `ctx.continueAs` was called with — at most one, since it unwinds. */
+  readonly continuations: unknown[];
 };
 
 /**
@@ -199,6 +201,7 @@ export function createWorkflowContext(
 ): TestWorkflowContext {
   const steps: string[] = [];
   const sleeps: number[] = [];
+  const continuations: unknown[] = [];
   sessionCounter += 1;
   return {
     runId: `test-run-${sessionCounter}`,
@@ -233,8 +236,16 @@ export function createWorkflowContext(
     },
     blob: () => Promise.resolve(undefined),
     releaseBlob: () => Promise.resolve(true),
+    continueAs: (input: unknown): never => {
+      continuations.push(input);
+      // THROWS, like the real one: nothing after `continueAs` runs, so a fake
+      // that returned would let a spec pass on code the engine never reaches.
+      // Recorded first, so the input is observable from the catch.
+      throw new Error("ctx.continueAs unwound the run (test context)");
+    },
     steps,
     sleeps,
+    continuations,
     ...overrides,
   };
 }

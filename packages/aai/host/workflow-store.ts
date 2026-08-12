@@ -53,7 +53,16 @@ export type WorkflowStore = {
    * deliberately NOT unique: two runs may share one, and `findByKey` orders them
    * newest first.
    */
-  create(runId: string, workflow: string, input: unknown, key?: string | undefined): Promise<void>;
+  create(
+    runId: string,
+    workflow: string,
+    input: unknown,
+    key?: string | undefined,
+    /** Continuations deep — see `ADD_CONTINUATION_DEPTH`. Defaults to 0. */
+    continuationDepth?: number,
+  ): Promise<void>;
+  /** How many continuations deep `runId` is, or 0 when it does not exist. */
+  continuationDepth(runId: string): Promise<number>;
   /**
    * Take ownership of a run for `leaseMs`, returning it only if the claim
    * succeeded — the one guard against two sandboxes replaying one run.
@@ -250,12 +259,21 @@ export function createPostgresWorkflowStore(db: Db): WorkflowStore {
       workflow: string,
       input: unknown,
       key?: string | undefined,
+      continuationDepth = 0,
     ): Promise<void> {
       await db.query(
-        `insert into aai_workflow_runs (run_id, workflow, input, correlation_key)
-         values ($1, $2, $3::text::jsonb, $4)`,
-        [runId, workflow, JSON.stringify(input ?? null), key ?? null],
+        `insert into aai_workflow_runs (run_id, workflow, input, correlation_key, continuation_depth)
+         values ($1, $2, $3::text::jsonb, $4, $5)`,
+        [runId, workflow, JSON.stringify(input ?? null), key ?? null, continuationDepth],
       );
+    },
+
+    async continuationDepth(runId: string): Promise<number> {
+      const rows = await db.query<{ continuation_depth: number }>(
+        "select continuation_depth from aai_workflow_runs where run_id = $1",
+        [runId],
+      );
+      return Number(rows[0]?.continuation_depth ?? 0);
     },
 
     async claim(runId: string, leaseMs: number): Promise<ClaimedRun | undefined> {

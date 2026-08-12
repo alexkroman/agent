@@ -40,6 +40,7 @@ import type {
 } from "../sdk/workflow.ts";
 import type { HostGenerateFn } from "./generate.ts";
 import type { Logger } from "./runtime-config.ts";
+import { createContinuation } from "./workflow-continuation.ts";
 import {
   clampFindLimit,
   MAX_DUE_RUNS,
@@ -48,20 +49,22 @@ import {
   WORKFLOW_BLOB_TTL_MS,
   WORKFLOW_LEASE_MS,
 } from "./workflow-engine-limits.ts";
-import { createContextFactory, reportSequenceDrift, Suspended } from "./workflow-execution.ts";
+import {
+  ContinueAs,
+  createContextFactory,
+  reportSequenceDrift,
+  Suspended,
+} from "./workflow-execution.ts";
+import { createNameResolver } from "./workflow-names.ts";
 import type { WorkflowStore } from "./workflow-store.ts";
 
 /**
- * The engine's budgets and the find-limit clamp — see
- * `workflow-engine-limits.ts`. Re-exported because callers import them from here.
+ * The engine's budgets — see `workflow-engine-limits.ts` for what each one
+ * bounds. Re-exported because callers import them from here; only the three that
+ * really are imported through this path are listed, since a pass-through nobody
+ * uses is what `pnpm check:knip` reports.
  */
-export {
-  MAX_DUE_RUNS,
-  MAX_DUE_SWEEPS,
-  MAX_WAKE_TIMER_MS,
-  WORKFLOW_BLOB_TTL_MS,
-  WORKFLOW_LEASE_MS,
-} from "./workflow-engine-limits.ts";
+export { MAX_DUE_RUNS, MAX_WAKE_TIMER_MS, WORKFLOW_LEASE_MS } from "./workflow-engine-limits.ts";
 
 /** Everything the engine needs to execute a run. */
 export type WorkflowEngineOptions = {
@@ -147,62 +150,20 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
   // Built once per engine: the per-run machinery lives in `workflow-execution.ts`
   // and takes the engine's dependencies here rather than closing over them.
   const buildContext = createContextFactory({ store, db, env, generate, logger });
+  // The continuation's own module: one decision with three non-obvious failure
+  // modes, all recorded there.
+  const continueRun = createContinuation({
+    store,
+    validate: (name: string, input: unknown) =>
+      validate(name, workflows[name] as WorkflowDef, input),
+    execute: (id: string) => {
+      void execute(id).catch((err: unknown) => {
+        logger.error(`workflow run ${id} could not start`, { error: errorMessage(err) });
+      });
+    },
+  });
 
-  /**
-   * Declared name(s) for each workflow OBJECT, so a caller can pass the
-   * workflow itself instead of a string.
-   *
-   * `agent({ workflows })` stays the single source of the name the journal
-   * records — this is only the reverse direction of that same record, which is
-   * what keeps a rename a one-place edit. Built once per engine because the
-   * record is fixed for the life of a bundle.
-   */
-  const namesOf = new Map<WorkflowDef, string[]>();
-  for (const [name, def] of Object.entries(workflows)) {
-    const existing = namesOf.get(def);
-    if (existing) existing.push(name);
-    else namesOf.set(def, [name]);
-  }
-
-  /** The declared names, for an error message that can be acted on. */
-  function declaredNames(): string {
-    const known = Object.keys(workflows);
-    return known.length > 0 ? known.join(", ") : "none";
-  }
-
-  /**
-   * Resolve `start`/`find`'s first argument to a declared workflow name.
-   *
-   * Both spellings fail at the same boundary and say the same kind of thing: a
-   * name that is not declared, or a def that is not in the record (an author who
-   * built a workflow and forgot to declare it — the one mistake the typed
-   * overload cannot catch, since nothing links a bare `workflow()` result to an
-   * agent).
-   */
-  function resolveName(workflow: WorkflowDef | string): string {
-    if (typeof workflow === "string") {
-      if (!workflows[workflow]) {
-        throw new Error(`Unknown workflow "${workflow}". Declared workflows: ${declaredNames()}`);
-      }
-      return workflow;
-    }
-    const names = namesOf.get(workflow);
-    if (names === undefined || names[0] === undefined) {
-      throw new Error(
-        "This workflow is not declared on this agent — add it to `agent({ workflows })`. " +
-          `Declared workflows: ${declaredNames()}`,
-      );
-    }
-    // Two keys pointing at one object: the journal records ONE name, and picking
-    // either would make which one arbitrary. The author has to say.
-    if (names.length > 1) {
-      throw new Error(
-        `This workflow is declared under ${names.length} names (${names.join(", ")}). ` +
-          "Start it by name so the journal records which one, or declare it once.",
-      );
-    }
-    return names[0];
-  }
+  const resolveName = createNameResolver(workflows);
 
   /** Create the journal tables once per engine, and only if a workflow is used. */
   function ensureTables(): Promise<void> {
@@ -283,6 +244,15 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
    * only one of them is a failed run.
    */
   async function settleFailure(runId: string, err: unknown, cancelled: boolean): Promise<void> {
+    // Continued as a new run: this one is DONE, and its successor carries the
+    // work forward with an empty journal. Handled before the drain check below
+    // because the decision was the run's own rather than the host's — a shutdown
+    // landing in the same tick must not turn a completed handoff into an
+    // abandoned run, which would replay `run` and continue a second time.
+    if (err instanceof ContinueAs) {
+      await continueRun(runId, err.input);
+      return;
+    }
     // Suspended: more to do later, at a time already journaled.
     if (err instanceof Suspended) {
       await store.suspend(runId, err.wakeAt);
