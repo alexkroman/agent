@@ -7,9 +7,17 @@
 # build script without this entry. pnpm 10 reads `onlyBuiltDependencies`;
 # pnpm 11 renamed it to `allowBuilds` and ignores the old key, so both are
 # declared. This file also marks the project as its own pnpm workspace root.
+# `@swc/core` and `cbor-extract` arrive TRANSITIVELY, through the `workflow`
+# dependency the DevKit templates need. pnpm 11 makes an undeclared build script
+# a hard error (`ERR_PNPM_IGNORED_BUILDS`), so leaving them out fails the install
+# — which is the very first thing `aai init` does after writing these files.
 onlyBuiltDependencies:
+  - "@swc/core"
+  - cbor-extract
   - esbuild
 allowBuilds:
+  "@swc/core": true
+  cbor-extract: true
   esbuild: true
 
 # Exempt our own packages from pnpm's release-age quarantine, and ONLY ours.

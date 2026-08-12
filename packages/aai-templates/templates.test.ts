@@ -123,10 +123,28 @@ describe("scaffold pnpm-workspace.yaml", () => {
     expect(scaffoldWorkspaceYaml).not.toMatch(/^minimumReleaseAge:/m);
   });
 
-  test("keeps esbuild's build script approved under both pnpm 10 and 11", () => {
-    // pnpm 10 reads `onlyBuiltDependencies`, pnpm 11 `allowBuilds`; whichever
-    // one goes missing, the install fails on an unapproved build script.
-    expect(scaffoldWorkspaceYaml).toMatch(/^onlyBuiltDependencies:\n\s+- esbuild$/m);
-    expect(scaffoldWorkspaceYaml).toMatch(/^allowBuilds:\n\s+esbuild: true$/m);
-  });
+  // Every build script the scaffold's dependency tree contains, declared under
+  // BOTH key names. Asserted per package rather than as one exact block, so
+  // adding a fourth does not have to reproduce the file's formatting.
+  //
+  // `@swc/core` and `cbor-extract` are the transitive ones, pulled in by
+  // `workflow`. They were missing when the DevKit templates landed, and on
+  // pnpm 11 an undeclared build script is a hard `ERR_PNPM_IGNORED_BUILDS`, so
+  // `aai init` died at its own install step — a break that only reproduces
+  // OUTSIDE this repo, which is why it reached main. The e2e suite is the one
+  // tier that installs a scaffolded project for real, and it is what caught it.
+  test.each(["@swc/core", "cbor-extract", "esbuild"])(
+    "keeps %s's build script approved under both pnpm 10 and 11",
+    (pkg) => {
+      // pnpm 10 reads `onlyBuiltDependencies`, pnpm 11 `allowBuilds`; whichever
+      // one goes missing, the install fails on an unapproved build script.
+      const quoted = pkg.startsWith("@") ? `"${pkg}"` : pkg;
+      expect(scaffoldWorkspaceYaml).toMatch(
+        new RegExp(`^onlyBuiltDependencies:(\\n\\s+- .+)*\\n\\s+- ${quoted}$`, "m"),
+      );
+      expect(scaffoldWorkspaceYaml).toMatch(
+        new RegExp(`^allowBuilds:(\\n\\s+.+)*\\n\\s+${quoted}: true$`, "m"),
+      );
+    },
+  );
 });
