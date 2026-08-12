@@ -1,4 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
+
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { expect, test } from "vitest";
 import { authFetch, createTestOrchestrator, deployAgent, type TestFetch } from "./test-utils.ts";
 
@@ -15,7 +17,7 @@ async function deployAndAuth() {
 function secretReq(fetch: TestFetch, method: string, body?: unknown): Promise<Response> {
   return authFetch(fetch, "/my-agent/secret", {
     method,
-    ...(body !== undefined ? { body } : {}),
+    ...omitUndefined({ body }),
   });
 }
 

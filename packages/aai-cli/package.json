@@ -56,16 +56,16 @@
     "get-port": "^7.2.0",
     "ofetch": "^1.5.1",
     "p-debounce": "^5.1.0",
-    "p-timeout": "^7.0.1",
-    "vite": "^8.1.5",
-    "zod": "^4.4.3"
+    "p-timeout": "catalog:",
+    "vite": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "aai-templates": "workspace:*",
     "playwright": "^1.61.1",
-    "tsdown": "^0.22.13",
+    "tsdown": "catalog:",
     "verdaccio": "^6.8.0",
-    "vitest": "^4.1.10",
+    "vitest": "catalog:",
     "workflow": "4.8.2"
   },
   "peerDependencies": {

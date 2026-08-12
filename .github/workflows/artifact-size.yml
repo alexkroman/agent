@@ -1,0 +1,223 @@
+name: Artifact Size
+
+on:
+  workflow_dispatch: {}
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, labeled]
+    # Only what can move an artifact's size: the shipped packages, the
+    # dependency graph, and this job's own inputs. A docs-only PR skips a
+    # double workspace build. Safe to filter precisely because this check is
+    # NOT required — see the job comment below.
+    paths:
+      - ".github/workflows/artifact-size.yml"
+      - "package.json"
+      - "packages/aai/**"
+      - "packages/aai-cli/**"
+      - "packages/aai-guest/**"
+      - "packages/aai-templates/**"
+      - "packages/aai-ui/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "scripts/artifact-size-budget.mjs"
+      - "scripts/artifact-size-report.mjs"
+      - "scripts/ensure-guest-harness.mjs"
+
+concurrency:
+  group: artifact-size-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Deliberately NOT a required check, and deliberately not in check.yml.
+  #
+  # It builds the workspace twice — once at HEAD and once at the PR base, in a
+  # git worktree — so it is the slowest thing in CI by some margin, and folding
+  # it into the check workflow would put that cost on every PR including the
+  # docs-only ones. The `paths` filter below is what keeps it off those, and it
+  # can do that precisely BECAUSE it is not required: a required check with a
+  # paths filter sits permanently "expected" on the PRs it skips and blocks the
+  # merge. (vercel/eve solves the same problem the other way round — always
+  # trigger, decide relevance in a `changes` job, and let the skipped matrix
+  # legs satisfy the required check. That shape is needed when the job must be
+  # required; this one does not.)
+  analyze:
+    # Forks cannot read secrets and cannot be commented on with the default
+    # token, so the whole job would fail at the comment step. `labeled` runs
+    # only for the acknowledgement label — any other label would rebuild the
+    # world for nothing.
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.head.repo.fork == false &&
+       (github.event.action != 'labeled' ||
+        github.event.label.name == 'acknowledge-size-warning'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    env:
+      SIZE_ACK_LABEL: acknowledge-size-warning
+    steps:
+      # An acknowledgement must cover ONE COMMIT, not the branch. Without this,
+      # the first intentional regression would license every later one on the
+      # same PR — including ones the author never looked at.
+      - name: Clear a stale acknowledgement
+        if: >-
+          github.event_name == 'pull_request' && github.event.action == 'synchronize' &&
+          contains(github.event.pull_request.labels.*.name, 'acknowledge-size-warning')
+        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+        with:
+          script: |
+            try {
+              await github.rest.issues.removeLabel({
+                issue_number: context.issue.number,
+                name: process.env.SIZE_ACK_LABEL,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+              });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+            await core.summary
+              .addRaw(`Removed \`${process.env.SIZE_ACK_LABEL}\` — this commit must be acknowledged separately.`)
+              .write();
+
+      - name: Resolve acknowledgement
+        id: ack
+        run: |
+          if [ "${{ github.event.action }}" = "synchronize" ]; then
+            # The label was just removed above, whatever the event payload says.
+            echo "acknowledged=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ contains(github.event.pull_request.labels.*.name, 'acknowledge-size-warning') }}" = "true" ]; then
+            echo "acknowledged=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "acknowledged=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history: the base commit has to be checked out as a worktree.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec turbo run build
+      # `pnpm pack` measures what `files` + `prepack` actually produce, and the
+      # harness is not built by `turbo run build` at the root — aai-server's
+      # test globalSetup normally ensures it, and nothing here runs that.
+      - run: node scripts/ensure-guest-harness.mjs
+
+      # ---- the PR base, in a worktree ----------------------------------------
+      #
+      # A worktree rather than a second checkout: it shares the object store, so
+      # this costs a checkout rather than a clone, and the base's own
+      # pnpm-lock.yaml is installed against the base's own pnpm-workspace.yaml.
+      # Measuring HEAD's artifacts against a baseline built with HEAD's
+      # dependency tree would hide exactly the regressions this job exists for.
+      - name: Prepare base worktree
+        id: baseline
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          BASELINE_ROOT="$RUNNER_TEMP/aai-size-base"
+          rm -rf "$BASELINE_ROOT"
+          git worktree add --detach "$BASELINE_ROOT" "$BASE_SHA"
+          echo "root=$BASELINE_ROOT" >> "$GITHUB_OUTPUT"
+          echo "label=${BASE_REF} (${BASE_SHA:0:7})" >> "$GITHUB_OUTPUT"
+
+      # `continue-on-error`, because a base that does not build must not fail
+      # THIS PR — most often it means the base predates this workflow. The
+      # report then says it has no baseline and the budget enforces nothing,
+      # which the budget script reports out loud rather than passing silently.
+      - name: Build and measure the base
+        id: baseline_build
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        working-directory: ${{ steps.baseline.outputs.root }}
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec turbo run build
+          node scripts/ensure-guest-harness.mjs
+          node scripts/artifact-size-report.mjs \
+            --output-json "$RUNNER_TEMP/artifact-size-base.json"
+
+      - name: Note a missing baseline
+        if: github.event_name == 'pull_request' && steps.baseline_build.outcome != 'success'
+        run: |
+          echo "The pull request base failed to build or measure, so this run has no baseline comparison and the size budget is not enforced." >> "$GITHUB_STEP_SUMMARY"
+
+      # ---- report ------------------------------------------------------------
+      - name: Generate the report
+        env:
+          HAS_BASELINE: ${{ github.event_name == 'pull_request' && steps.baseline_build.outcome == 'success' }}
+          BASELINE_LABEL: ${{ steps.baseline.outputs.label }}
+        run: |
+          args=(--output-json "$RUNNER_TEMP/artifact-size.json" --output-markdown "$RUNNER_TEMP/artifact-size.md")
+          if [ "$HAS_BASELINE" = "true" ]; then
+            args+=(--baseline-json "$RUNNER_TEMP/artifact-size-base.json" --baseline-label "$BASELINE_LABEL")
+          fi
+          node scripts/artifact-size-report.mjs "${args[@]}"
+
+      - name: Publish the job summary
+        run: cat "$RUNNER_TEMP/artifact-size.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: artifact-size-report
+          path: |
+            ${{ runner.temp }}/artifact-size.json
+            ${{ runner.temp }}/artifact-size.md
+
+      # One comment, edited in place. A new comment per push buries the PR
+      # thread — the marker is how the existing one is found.
+      - name: Update the pull request comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+        with:
+          script: |
+            const fs = require("node:fs");
+            const marker = "<!-- aai-artifact-size -->";
+            const body = `${marker}\n${fs.readFileSync(`${process.env.RUNNER_TEMP}/artifact-size.md`, "utf8").trim()}`;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              per_page: 100,
+              repo: context.repo.repo,
+            });
+            const existing = comments.find(
+              (comment) => comment.user?.type === "Bot" && comment.body?.includes(marker),
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                body,
+                comment_id: existing.id,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+              });
+              return;
+            }
+            await github.rest.issues.createComment({
+              body,
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+
+      # Last, so the comment above is already posted when this fails.
+      - name: Enforce the budget
+        if: github.event_name == 'pull_request'
+        env:
+          ACKNOWLEDGED: ${{ steps.ack.outputs.acknowledged }}
+        run: |
+          args=(--report-json "$RUNNER_TEMP/artifact-size.json")
+          if [ "$ACKNOWLEDGED" = "true" ]; then
+            args+=(--acknowledged)
+          fi
+          node scripts/artifact-size-budget.mjs "${args[@]}"

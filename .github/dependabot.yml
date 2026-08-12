@@ -15,6 +15,19 @@ updates:
     # Limit open PRs so Dependabot doesn't flood the repo
     open-pull-requests-limit: 10
 
+  # Every `uses:` in .github/workflows is pinned to a commit SHA with the
+  # release in a trailing comment, and `guard-invariants.mjs` rule 10 fails a
+  # workflow that reuses a floating tag.
+  #
+  # A tag is mutable: `@v7` is a pointer the action's own maintainers (or
+  # anyone who takes over the account) can move, so trusting one grants every
+  # future version of that code the permissions of the job it runs in —
+  # including the release job's npm token. This is not hypothetical for CI
+  # actions; it is the standard shape of the attack.
+  #
+  # Dependabot is what makes pinning affordable: it bumps the SHA and rewrites
+  # the version comment in the same PR, so the pins do not rot into a reason to
+  # stop pinning.
   - package-ecosystem: github-actions
     directory: /
     schedule:

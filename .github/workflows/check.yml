@@ -15,11 +15,11 @@ jobs:
   setup:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26
           cache: pnpm
@@ -31,13 +31,13 @@ jobs:
       # (lint-typecheck-and-checks) never saved. tsc therefore ran cold on
       # every turbo cache miss. The cache now lives beside its producer.
       - name: Cache Turborepo
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .turbo
           key: turbo-${{ runner.os }}-${{ github.sha }}
           restore-keys: turbo-${{ runner.os }}-
       - run: pnpm exec turbo run build
-      - uses: actions/cache/save@v6
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             node_modules
@@ -50,15 +50,15 @@ jobs:
     needs: setup
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26
       - id: workspace-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             node_modules
@@ -73,7 +73,7 @@ jobs:
       # saves a fresh entry; a key that already exists is skipped on save, so a
       # SHA-less key would freeze the first run's buildinfo forever.
       - name: Cache TypeScript incremental build info
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .tsbuildinfo/
           key: tsbuildinfo-typecheck-${{ runner.os }}-${{ hashFiles('packages/*/tsconfig.json', 'tsconfig.json', 'pnpm-lock.yaml') }}-${{ github.sha }}
@@ -95,6 +95,17 @@ jobs:
           pnpm run check:sherif
           pnpm run check:markdown
           pnpm run check:publish-names
+          # PACKS the three publishable packages and reads the manifest back
+          # out of each tarball. `catalog:` and `workspace:` are pnpm-only
+          # protocols; pnpm rewrites them when it packs, and that rewrite is
+          # the only thing between the catalog in pnpm-workspace.yaml and a
+          # release that installs for nobody. publint reads the SOURCE
+          # manifest, so it cannot see this — and the symptom would be a 100%
+          # broken published version, found by consumers.
+          pnpm run check:publish-protocols
+          # Committed API reports for the 20 published entry points. Reads the
+          # emitted dist/*.d.ts, so it belongs after the build with publint.
+          pnpm run check:api-report
           pnpm run check:doc-examples
           # In scripts/check.sh since it was written, but missing here — the
           # same CI-never-invokes-check.sh gap the ratchets below document.
@@ -117,10 +128,12 @@ jobs:
       # is set, so violations land inline on the PR diff with no extra flags.
       - run: |
           pnpm run check:hatches
+          pnpm run check:invariants
           pnpm run check:file-length
           pnpm run check:test-assertions
           pnpm run check:claude-md
           pnpm run check:guest-toolchain
+          pnpm run check:agent-guide
           pnpm run check:konsistent
 
   # Unit tests sharded by package — run in parallel
@@ -132,15 +145,15 @@ jobs:
       matrix:
         package: [aai, aai-ui, aai-cli, aai-guest, aai-server, aai-studio-server, aai-studio-client, aai-templates]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26
       - id: workspace-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             node_modules
@@ -159,6 +172,47 @@ jobs:
       # job in the normal case and a real rebuild in the abnormal one.
       - run: pnpm exec turbo run test:coverage --filter "./packages/${{ matrix.package }}"
 
+  # The three PUBLISHED packages, on Windows.
+  #
+  # Scope is the point. No package declares an `os` field, so every one of these
+  # claims Windows support by omission — and `aai-cli` is the only thing a
+  # Windows user actually runs, with `login.ts` branching on `win32` and four
+  # modules splitting on `path.sep`, i.e. the support was considered but never
+  # exercised. The other five packages are deliberately absent: `aai-server`,
+  # `aai-guest` and the studio pair only ever run in a Linux Modal container,
+  # and `aai-templates` is example agents.
+  #
+  # This is also why the INTEGRATION tier is not the leg to duplicate here, the
+  # way vercel/eve does it: eight of this repo's eleven integration files are
+  # aai-server's Postgres, WebSocket and sandbox tests, which are Linux by
+  # design rather than by accident. Running them on Windows would test the
+  # runner, not the code.
+  #
+  # No coverage here — the floors are measured once, on the Linux `test` matrix.
+  # This leg is asking "does it work on Windows", and a second coverage run
+  # would only add a way for the two to disagree.
+  test-windows:
+    name: test-windows (${{ matrix.package }})
+    needs: setup
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [aai, aai-ui, aai-cli]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26
+          cache: pnpm
+      # No workspace-cache restore: the `setup` job's entry is keyed on
+      # `runner.os`, so a Windows job would never hit it, and node_modules is
+      # not portable across platforms in any case (esbuild and the other
+      # optional native deps resolve per-platform).
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec turbo run test --filter "./packages/${{ matrix.package }}"
+
   integration:
     needs: setup
     runs-on: ${{ matrix.os }}
@@ -169,15 +223,15 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         node: [26]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ matrix.node }}
       - id: workspace-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             node_modules
@@ -225,15 +279,15 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         node: [26]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ matrix.node }}
       - id: workspace-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             node_modules
@@ -243,7 +297,7 @@ jobs:
           key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec turbo run build
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('packages/aai-cli/package.json') }}
@@ -257,11 +311,11 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     if: always()
-    needs: [lint-typecheck-and-checks, test, integration, e2e]
+    needs: [lint-typecheck-and-checks, test, test-windows, integration, e2e]
     steps:
       - name: Check results
         run: |
-          results="${{ needs.lint-typecheck-and-checks.result }} ${{ needs.test.result }} ${{ needs.integration.result }} ${{ needs.e2e.result }}"
+          results="${{ needs.lint-typecheck-and-checks.result }} ${{ needs.test.result }} ${{ needs.test-windows.result }} ${{ needs.integration.result }} ${{ needs.e2e.result }}"
           for r in $results; do
             if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then
               echo "CI failed: one or more jobs did not succeed"

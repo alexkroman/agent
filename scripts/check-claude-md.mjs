@@ -1,13 +1,21 @@
 #!/usr/bin/env node
 
 /**
- * CLAUDE.md size gate.
+ * Agent-guide size gate.
  *
- * Every `CLAUDE.md` is loaded into an agent's context in full, and the tool
- * that reads them stops honouring one past ~150k characters — silently, which
- * is the whole problem: nothing warns, the guide is simply half-absent and the
+ * Every guide is loaded into an agent's context in full, and the tool that
+ * reads them stops honouring one past ~150k characters — silently, which is
+ * the whole problem: nothing warns, the guide is simply half-absent and the
  * agent works from whatever survived. The root file reached 233k that way, one
  * well-justified paragraph at a time.
+ *
+ * The ROOT guide is `AGENTS.md`; the root `CLAUDE.md` is a one-line
+ * `@AGENTS.md` import so both names resolve to one file. Package guides are
+ * `CLAUDE.md` (Claude Code auto-loads a package's guide when working in that
+ * directory). So the glob covers both names, and the root shim is checked for
+ * being a shim rather than measured — an 11-character file passing a 120k cap
+ * proves nothing, while a shim that grew back into a second copy of the guide
+ * is the actual failure this pattern invites.
  *
  * So the cap here is 20% UNDER that ceiling, leaving room for a section to be
  * added without the next author having to split a file mid-task. The fix when
@@ -63,10 +71,14 @@ const WARN_RATIO = 0.9;
 // times.
 const files = [
   ...new Set(
-    execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "*CLAUDE.md"], {
-      cwd: ROOT,
-      encoding: "utf8",
-    })
+    execFileSync(
+      "git",
+      ["ls-files", "--cached", "--others", "--exclude-standard", "*CLAUDE.md", "AGENTS.md"],
+      {
+        cwd: ROOT,
+        encoding: "utf8",
+      },
+    )
       .split("\n")
       .filter(Boolean)
       .filter((path) => !path.includes("node_modules/")),
@@ -74,8 +86,27 @@ const files = [
 ].sort();
 
 if (files.length === 0) {
-  console.error("check-claude-md: found no CLAUDE.md files — is the glob still right?");
+  console.error("check-claude-md: found no guide files — is the glob still right?");
   process.exit(1);
+}
+
+// The root shim must stay a shim. Both names have to resolve to ONE guide;
+// content pasted here would be loaded by Claude Code and by nothing else, so
+// the two would diverge with no symptom until an agent using another tool
+// worked from the older half.
+const ROOT_SHIM = "CLAUDE.md";
+const ROOT_GUIDE = "AGENTS.md";
+if (files.includes(ROOT_SHIM)) {
+  const shim = readFileSync(join(ROOT, ROOT_SHIM), "utf8").trim();
+  if (shim !== `@${ROOT_GUIDE}`) {
+    console.error(
+      `\ncheck-claude-md: ${ROOT_SHIM} must contain exactly "@${ROOT_GUIDE}" and nothing else.\n\n` +
+        `The root guide lives in ${ROOT_GUIDE} — the name every agent tool reads. ` +
+        `${ROOT_SHIM}\nimports it so Claude Code sees the same file. Put the content in ` +
+        `${ROOT_GUIDE}.\n`,
+    );
+    process.exit(1);
+  }
 }
 
 const guides = files.map((path) => {
@@ -93,7 +124,7 @@ const num = (n) => n.toLocaleString("en-US");
 
 const REMEDY =
   "Move a section into the owning package's CLAUDE.md and leave a pointer;\n" +
-  'see the root CLAUDE.md\'s "Package guides" table and "Updating CLAUDE.md".\n' +
+  'see the root AGENTS.md\'s "Package guides" table and "Updating AGENTS.md".\n' +
   "The scaffold guide is the one that has to be CUT instead — it ships to\n" +
   "users inside every `aai init` project and has no packages to push into.\n";
 

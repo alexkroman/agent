@@ -12,19 +12,22 @@ export default defineConfig({
     // file by glob, so the name must live here (else it defaults to the
     // package.json name).
     name: "aai-templates",
-    // The template glob is deliberately generic (any `*.test.ts` under a
-    // template directory), so a new template's test file is picked up on
-    // creation rather than needing this list extended per filename.
-    include: [
-      "templates.test.ts",
-      "template-api-coverage.test.ts",
-      "claude-md-limit.test.ts",
-      "escape-hatch-scope.test.ts",
-      "file-length-gate.test.ts",
-      "konsistent-config.test.ts",
-      "test-assertion-gate.test.ts",
-      "templates/*/*.test.ts",
-    ],
+    // BOTH globs, and neither is a filename list.
+    //
+    // `*.test.ts` covers this directory: the gate specs that hold the repo's
+    // repo-level scripts to their contracts (`claude-md-limit`,
+    // `escape-hatch-scope`, `file-length-gate`, `konsistent-config`,
+    // `test-assertion-gate`, `guard-invariants-gate`) plus this package's own
+    // suites. It used to be seven hand-written filenames, which is the same
+    // silent-omission trap this package's `tsconfig.json` already had and
+    // fixed the same way — three test files were listed nowhere and
+    // type-checked by nothing, under a comment describing exactly that. A gate
+    // spec nobody adds to a list is a gate spec that never runs, and its whole
+    // job is to notice when a gate has gone quiet.
+    //
+    // `templates/*/*.test.ts` covers each template's own tests, so a new
+    // template is picked up on creation.
+    include: ["*.test.ts", "templates/*/*.test.ts"],
     coverage: {
       exclude: [...sharedCoverageExclude, "scaffold/**"],
       // This package had NO floors at all — the only one in the repo — while

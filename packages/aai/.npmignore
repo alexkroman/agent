@@ -1,0 +1,11 @@
+# This package has no `files` field, so npm packs everything not excluded here.
+#
+# `etc/` holds the committed API Extractor reports (`pnpm api-report`) — a repo
+# artifact for reviewing signature changes, not something a consumer installs.
+# aai-ui and aai-cli need no equivalent line: both declare `files`, so their
+# tarballs already contain only what is listed.
+etc/
+
+# Turbo's per-package cache metadata. Not ours, never useful to a consumer, and
+# present only because a build ran before the pack.
+.turbo/

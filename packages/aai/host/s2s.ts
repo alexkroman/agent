@@ -11,6 +11,7 @@ import {
   WS_NORMAL_CLOSURE,
   WS_OPEN,
 } from "../sdk/constants.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { errorMessage, safeJsonParse } from "../sdk/utils.ts";
 import { createAudioSendGate } from "./_audio-gate.ts";
 import { base64ToUint8, uint8ToBase64 } from "./_base64.ts";
@@ -280,7 +281,7 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
           },
           output: {
             ...pcmAudio(config.outputSampleRate),
-            ...(voice !== undefined ? { voice } : {}),
+            ...omitUndefined({ voice }),
           },
         },
       });

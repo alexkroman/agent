@@ -51,6 +51,20 @@ const scaffoldGuide = import.meta.glob("./scaffold/CLAUDE.md", {
 })["./scaffold/CLAUDE.md"];
 
 /**
+ * The committed per-file budgets the gate now checks against.
+ *
+ * Imported as JSON rather than raw so a syntax error in the baseline fails
+ * here, in the ordinary test run, instead of at the next `pnpm check:hatches`.
+ */
+const baseline: Record<string, unknown> =
+  Object.values(
+    import.meta.glob<Record<string, unknown>>("../../scripts/escape-hatch-baseline.json", {
+      import: "default",
+      eager: true,
+    }),
+  )[0] ?? {};
+
+/**
  * Pull the gate's patterns out of its source: entries read
  * `{ label: "...", re: "..." }`. Parsed rather than duplicated so this suite
  * tests what actually ships.
@@ -99,11 +113,52 @@ describe("escape-hatch ratchet scope", () => {
     expect(script, "scripts markdown is no longer excluded").toContain(':!scripts/**/*.md"');
   });
 
-  test("built output and the script's own source stay excluded", () => {
-    // Pre-existing exclusions, asserted so a rewrite of PATHSPECS cannot drop
-    // them silently: `dist/` would count shipped bundles, and the script is the
-    // one remaining file whose source is a list of the patterns.
+  test("built output and the pattern-listing files stay excluded", () => {
+    // Asserted so a rewrite of PATHSPECS cannot drop them silently: `dist/`
+    // would count shipped bundles, and two files in the repo have a list of
+    // the patterns as their content — the script itself, and the baseline,
+    // whose per-pattern keys scored as four fresh hatches on the first run
+    // after the per-file conversion.
     expect(script).toContain(':!packages/**/dist/**"');
     expect(script).toContain(':!scripts/check-escape-hatches.mjs"');
+    expect(script).toContain(':!scripts/escape-hatch-baseline.json"');
+  });
+
+  test("the baseline covers every shipped pattern that has occurrences", () => {
+    // A pattern missing from the baseline is not an error (zero occurrences is
+    // the goal), but a pattern the baseline has never heard of, holding
+    // hundreds of hits, would mean the JSON and the script had drifted apart.
+    const labels = new Set(shippedPatterns(script ?? "").map((p) => p.label));
+    expect(labels.size).toBeGreaterThanOrEqual(7);
+    for (const key of Object.keys(baseline)) {
+      if (key.startsWith("_")) continue;
+      expect(labels, `baseline names "${key}", which is not a shipped pattern`).toContain(key);
+    }
+  });
+
+  test("the gate does not depend on git history", () => {
+    // It used to: the previous version resolved a merge base with origin/main
+    // and, failing that, printed "skipping ratchet" and exited 0 — a gate
+    // reporting success while checking nothing, in exactly the environments
+    // that get one commit of history (shallow CI clones, fresh worktrees).
+    //
+    // Asserted on the ARGV literal, not the word: the script's header explains
+    // at length why merge-base was abandoned, so a substring match on
+    // "merge-base" would be testing the prose. `["merge-base"` can only be a
+    // call.
+    expect(script, "the ratchet invokes git merge-base again").not.toContain('["merge-base"');
+    // And the positive half — a test that only forbids the old mechanism would
+    // pass just as well if the new one were deleted too.
+    expect(script, "the ratchet no longer reads the committed baseline").toContain(
+      "escape-hatch-baseline.json",
+    );
+  });
+
+  test("--update refuses to raise a count", () => {
+    // `--update` exists so giving headroom back is one command. If it also
+    // blessed additions, the ratchet would be advisory: every failure would
+    // have a one-command bypass, and the reviewable diff — the actual control
+    // on a deliberate increase — would never be produced.
+    expect(script).toContain("refusing to RAISE");
   });
 });
