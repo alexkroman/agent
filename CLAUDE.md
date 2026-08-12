@@ -1170,6 +1170,28 @@ catches the most common issues that historically required follow-up commits:
    caller went away, which is the case worth catching. `types` stays excluded
    pending an `@internal` tagging pass.
 
+## A new guest route must declare how the PLATFORM exposes it
+
+`aai dev` serves the guest's own routes directly, so a feature is developed
+against a server where the guest's dispatch table is the whole API. Deployed,
+almost nothing works that way: a browser voice socket and a carrier media
+stream are handed a sandbox URL, and every other caller has to be brokered,
+which means the orchestrator needs a `/:slug/…` route of its own. The gap is
+invisible in a diff and invisible to the feature's own tests, and it has landed
+twice — once as a whole guest surface nothing routed to (every request fell
+through to `app.notFound`), once as a platform route serving GET and POST for a
+guest that also answered DELETE, so a Stop button worked in dev and 404'd on
+every deployed agent.
+
+So `GUEST_ROUTE_EXPOSURE` (`packages/aai-server/guest-routes.ts`) declares each
+route as `proxied` (with the methods the GUEST answers), `direct-dial`, or
+`host-only`. A missing entry is a compile error, and
+`guest-routes.test.ts` asserts every proxied method is really registered under
+`/:slug` — plus the reverse, so a stale `direct-dial` declaration cannot sit
+beside a platform route that does forward. Declare the methods from the guest's
+dispatch; making the platform match is then a failing test rather than a
+production 404.
+
 ## Security architecture
 
 The security model is documented where the boundaries live:
