@@ -738,6 +738,17 @@ workflow to ask about, never whose runs to read — and shapes its report for a
 SPOKEN answer: `finished` stated beside `status`, and a sleeping run's wait in
 seconds rather than an epoch `wakeAt`. An unkeyed run is invisible to it.
 
+**`ctx.workflows.retry(runId)` sends a failed or cancelled run back to the
+queue**, resolving whether that call revived it. A RESUME rather than a restart:
+the journal is kept, so replay short-circuits every step that already succeeded
+and a run that failed on step 27 re-runs step 27 and nothing before it —
+re-running completed work would be wasteful and, for a step with an external side
+effect, wrong, since at-least-once is a per-step contract rather than a per-click
+one. Only a terminal run is revivable; resetting a live one would give it two
+claimants, which is the single thing the lease prevents. Before this a failed run
+was a dead end. On the wire it is `POST /workflows/runs/:id/retry`, and the
+studio's Settings pane offers it beside Stop.
+
 **`ctx.workflows.cancel(runId)` stops a run**, resolving whether that call is
 what ended it (false for one already terminal). `cancelled` is terminal: the
 journal is kept and the run is never claimed again. How promptly an executing

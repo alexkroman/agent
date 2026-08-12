@@ -111,6 +111,14 @@ export type WorkflowApi = {
    */
   cancel(runId: string): Promise<boolean>;
   /**
+   * Send a failed or cancelled run back to the queue, resolving whether this call
+   * revived it. A run that is still live answers false rather than failing.
+   *
+   * The journal is kept, so it resumes from its last completed step rather than
+   * starting over.
+   */
+  retry(runId: string): Promise<boolean>;
+  /**
    * Upload bytes for a run to work on, resolving the id that names them.
    *
    * Needed because a run's input is JOURNALED and replayed on every resume, so
@@ -217,6 +225,16 @@ export function createWorkflowApi(opts: WorkflowApiOptions = {}): WorkflowApi {
     async recent(workflow: string, options?: { limit?: number }): Promise<WorkflowRun[]> {
       // No `key` in the query is what selects the keyless read server-side.
       return await listRuns({ workflow }, options?.limit);
+    },
+
+    async retry(runId: string): Promise<boolean> {
+      const res = await fetch(`${base}/runs/${encodeURIComponent(runId)}/retry`, {
+        method: "POST",
+        headers: auth,
+      });
+      if (!res.ok) throw await failure(res);
+      const body = (await res.json()) as { retried?: boolean };
+      return body.retried === true;
     },
 
     async cancel(runId: string): Promise<boolean> {

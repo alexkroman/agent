@@ -438,6 +438,7 @@ describe("createServer with page: static", () => {
           get: () => Promise.resolve(undefined),
           find: () => Promise.resolve([]),
           recent: () => Promise.resolve([]),
+          retry: () => Promise.resolve(false),
           cancel: () => Promise.resolve(false),
           putBlob: () => Promise.resolve("b"),
           listing: () => [{ name: "transcribe" }],

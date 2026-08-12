@@ -22,7 +22,17 @@
 
 import type { Db } from "../sdk/db.ts";
 import type { WorkflowRunSnapshot, WorkflowRunStatus } from "../sdk/workflow.ts";
-
+import {
+  ADD_RUNS_KEY,
+  CREATE_BLOBS,
+  CREATE_BLOBS_INDEX,
+  CREATE_DUE_INDEX,
+  CREATE_KEY_INDEX,
+  CREATE_RUNS,
+  CREATE_STEPS,
+  CREATE_WORKFLOW_INDEX,
+  LIVE,
+} from "./workflow-schema.ts";
 /** A claimed run, as the engine needs it to start executing. */
 export type ClaimedRun = {
   runId: string;
@@ -69,6 +79,21 @@ export type WorkflowStore = {
   complete(runId: string, output: unknown): Promise<void>;
   /** Mark a run `failed` with a message. */
   fail(runId: string, error: string): Promise<void>;
+  /**
+   * Return a TERMINAL run to `pending` so an executor picks it up again,
+   * resolving whether this call is what revived it.
+   *
+   * The journal is KEPT, which is what makes this a resume rather than a restart:
+   * replay short-circuits every step that already succeeded, so a run that failed
+   * on step 27 re-runs step 27 and nothing before it. Re-running the completed
+   * work would be both wasteful and, for a step with an external side effect,
+   * wrong — the at-least-once contract is per step, not per operator click.
+   *
+   * Only `failed` and `cancelled` are revivable. A LIVE run must not be reset:
+   * one already executing would then have two claimants, which is the single thing
+   * the lease exists to prevent.
+   */
+  retry(runId: string): Promise<boolean>;
   /**
    * Mark a live run `cancelled`. Resolves whether this call is what ended it —
    * false for a run that was already terminal, or absent.
@@ -118,98 +143,6 @@ export type WorkflowStore = {
    */
   pruneBlobs(maxAgeMs: number): Promise<number>;
 };
-
-/**
- * Statuses a run can still move out of, as a SQL list.
- *
- * Read two ways, and both matter. A claim may only take over a LIVE run, which
- * is what makes a cancelled run stay cancelled. And the three settling writes
- * (`suspend`/`complete`/`fail`) require it too, so a run cancelled while another
- * replica was executing it cannot be resurrected by that replica's terminal
- * write landing afterwards — the work is wasted, the status is not overwritten.
- */
-const LIVE = "('pending', 'sleeping', 'running')";
-
-const CREATE_RUNS = `create table if not exists aai_workflow_runs (
-  run_id text primary key,
-  workflow text not null,
-  input jsonb,
-  status text not null default 'pending',
-  output jsonb,
-  error text,
-  correlation_key text,
-  wake_at timestamptz,
-  lease_until timestamptz,
-  steps_completed int not null default 0,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-)`;
-
-/**
- * Add `correlation_key` to a table created before it existed.
- *
- * `init()` is `create table if not exists`, so an app whose journal predates
- * this column would keep the old shape forever and every `start({ key })` would
- * fail on an unknown column. Idempotent, so it costs a no-op statement per
- * engine rather than a migration mechanism this package does not have.
- */
-const ADD_RUNS_KEY = "alter table aai_workflow_runs add column if not exists correlation_key text";
-
-const CREATE_STEPS = `create table if not exists aai_workflow_steps (
-  run_id text not null references aai_workflow_runs(run_id) on delete cascade,
-  step_id text not null,
-  output jsonb,
-  seq bigserial not null,
-  created_at timestamptz not null default now(),
-  primary key (run_id, step_id)
-)`;
-
-/**
- * Uploads a run works on, kept out of the journal (see
- * {@link WorkflowStore.putBlob}). Not a child of `aai_workflow_runs`: a blob is
- * written BEFORE the run that names it exists, so a foreign key would reject
- * every upload.
- */
-const CREATE_BLOBS = `create table if not exists aai_workflow_blobs (
-  blob_id text primary key,
-  content_type text not null,
-  data text not null,
-  bytes int not null,
-  created_at timestamptz not null default now()
-)`;
-
-/** For the age sweep — without it pruning scans every blob ever uploaded. */
-const CREATE_BLOBS_INDEX = `create index if not exists aai_workflow_blobs_created
-  on aai_workflow_blobs (created_at)`;
-
-/**
- * Partial index over exactly the rows {@link WorkflowStore.due} scans. Without
- * it that query is a full scan of every run the app has ever made, run on a
- * timer — and completed runs are kept (they are the run history a UI reads),
- * so the table only grows.
- */
-const CREATE_DUE_INDEX = `create index if not exists aai_workflow_runs_due
-  on aai_workflow_runs (wake_at, lease_until)
-  where status in ('pending', 'sleeping', 'running')`;
-
-/**
- * Index behind {@link WorkflowStore.findByKey}. Partial over rows that HAVE a
- * key, because most runs do not — an unkeyed run is started by a page that holds
- * its own `runId`, and indexing those nulls would cost every insert for a lookup
- * nothing can perform.
- */
-const CREATE_KEY_INDEX = `create index if not exists aai_workflow_runs_key
-  on aai_workflow_runs (workflow, correlation_key, created_at desc)
-  where correlation_key is not null`;
-
-/**
- * Index behind {@link WorkflowStore.recent}. NOT partial, unlike the key index
- * below it: this read exists to answer for runs that carry no key, so the
- * `where correlation_key is not null` that makes that one cheap would exclude
- * exactly the rows this one is for.
- */
-const CREATE_WORKFLOW_INDEX = `create index if not exists aai_workflow_runs_workflow
-  on aai_workflow_runs (workflow, created_at desc)`;
 
 /** One run row, as both reads select it. */
 type RunRow = {
@@ -420,6 +353,18 @@ export function createPostgresWorkflowStore(db: Db): WorkflowStore {
         `update aai_workflow_runs
             set status = 'cancelled', lease_until = null, wake_at = null, updated_at = now()
           where run_id = $1 and status in ${LIVE}
+          returning run_id`,
+        [runId],
+      );
+      return rows.length > 0;
+    },
+
+    async retry(runId: string): Promise<boolean> {
+      const rows = await db.query<{ run_id: string }>(
+        `update aai_workflow_runs
+            set status = 'pending', error = null, wake_at = null, lease_until = null,
+                updated_at = now()
+          where run_id = $1 and status in ('failed', 'cancelled')
           returning run_id`,
         [runId],
       );

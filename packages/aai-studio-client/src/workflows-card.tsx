@@ -26,7 +26,7 @@
 // when they matter, and a poll would hold a container open for a pane nobody is
 // watching.
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "./query-keys.ts";
 import { Card } from "./settings-card.tsx";
 
@@ -102,6 +102,31 @@ async function loadWorkflows(origin: string, slug: string): Promise<WorkflowRuns
   );
 }
 
+/**
+ * Stop a live run, or send a terminal one back to the queue.
+ *
+ * Both answer 200 with a boolean rather than failing when the run is in the wrong
+ * state, so two operators clicking is ordinary — see the routes' own docs. The
+ * boolean is not surfaced: what the operator wants to see is the run's new state,
+ * which the refetch below provides.
+ */
+async function act(
+  origin: string,
+  slug: string,
+  runId: string,
+  action: "cancel" | "retry",
+): Promise<void> {
+  const path = `${origin}/${slug}/workflows/runs/${encodeURIComponent(runId)}`;
+  const res = await fetch(action === "cancel" ? path : `${path}/retry`, {
+    method: action === "cancel" ? "DELETE" : "POST",
+    signal: AbortSignal.timeout(WORKFLOW_READ_TIMEOUT_MS),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`${res.status}${text ? `: ${text.slice(0, 200)}` : ""}`);
+  }
+}
+
 /** Colour by outcome — a failed run has to be findable without reading every row. */
 const STATUS_CLASS: Record<Run["status"], string> = {
   pending: "text-muted",
@@ -119,6 +144,11 @@ const STATUS_CLASS: Record<Run["status"], string> = {
  * durable rather than merely slow (the run is RELEASED, holding no container), and
  * a bare "sleeping" beside a `wakeAt` epoch reads as a stuck job.
  */
+/** Can this run still change on its own? Only a live run is stoppable. */
+function isLive(run: Run): boolean {
+  return run.status === "pending" || run.status === "running" || run.status === "sleeping";
+}
+
 function statusText(run: Run): string {
   if (run.status !== "sleeping") return run.status;
   const seconds = Math.max(0, Math.round((run.wakeAt ?? 0) - Date.now()) / 1000);
@@ -126,6 +156,7 @@ function statusText(run: Run): string {
 }
 
 export function WorkflowsCard({ deployedSlug, previewSlug }: WorkflowsCardProps) {
+  const queryClient = useQueryClient();
   // The studio and the agent surface are one origin by construction (see "One
   // public origin" in packages/aai-server/CLAUDE.md), so no round trip asks for it.
   const origin = window.location.origin;
@@ -140,6 +171,14 @@ export function WorkflowsCard({ deployedSlug, previewSlug }: WorkflowsCardProps)
     // the pane paying a broker call.
     staleTime: Number.POSITIVE_INFINITY,
     retry: false,
+  });
+
+  const mutate = useMutation({
+    mutationFn: ({ runId, action }: { runId: string; action: "cancel" | "retry" }) =>
+      act(origin, slug as string, runId, action),
+    // Re-read rather than patching the row: the run's new state is the server's
+    // to report, and a retried run may already have moved past `pending` by now.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.workflowRuns(slug) }),
   });
 
   if (slug === undefined) {
@@ -213,6 +252,36 @@ export function WorkflowsCard({ deployedSlug, previewSlug }: WorkflowsCardProps)
                       </span>
                       {/* The failure message, not just the status: "failed" alone
                           sends someone to the logs for something already in hand. */}
+                      {/* A live run can be stopped; a terminal one can be sent
+                          back. Before this the card was read-only, so a failed
+                          run was a dead end — the journal is kept, so a retry
+                          resumes from its last completed step rather than
+                          re-running work that already succeeded. */}
+                      <span className="ml-auto flex shrink-0 gap-1">
+                        {isLive(run) ? (
+                          <button
+                            type="button"
+                            className="btn px-2 py-0.5 text-[11px]"
+                            disabled={mutate.isPending}
+                            onClick={() => mutate.mutate({ runId: run.runId, action: "cancel" })}
+                            aria-label={`Stop run ${run.runId}`}
+                          >
+                            Stop
+                          </button>
+                        ) : (
+                          run.status !== "completed" && (
+                            <button
+                              type="button"
+                              className="btn px-2 py-0.5 text-[11px]"
+                              disabled={mutate.isPending}
+                              onClick={() => mutate.mutate({ runId: run.runId, action: "retry" })}
+                              aria-label={`Retry run ${run.runId}`}
+                            >
+                              Retry
+                            </button>
+                          )
+                        )}
+                      </span>
                       {run.status === "failed" && run.error !== undefined && (
                         <span className="min-w-0 basis-full text-[11px] break-words text-err">
                           {run.error}
@@ -225,6 +294,10 @@ export function WorkflowsCard({ deployedSlug, previewSlug }: WorkflowsCardProps)
             </li>
           ))}
         </ul>
+      )}
+
+      {mutate.isError && (
+        <p className="m-0 text-[13px] text-err">Could not update the run: {mutate.error.message}</p>
       )}
 
       <button

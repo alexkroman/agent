@@ -14,6 +14,7 @@
  * GET    /workflows/runs       → { runs }          ?workflow=&key=&limit=
  * GET    /workflows/runs/:id   → a WorkflowRunSnapshot
  * DELETE /workflows/runs/:id   → { runId, cancelled }
+ * POST   /workflows/runs/:id/retry → { runId, retried }
  * POST   /workflows/blobs      → { blobId, bytes } body: raw bytes
  * ```
  *
@@ -41,12 +42,11 @@
  * documented default, not an oversight — see the `token` option.
  */
 
-import { timingSafeEqual } from "node:crypto";
 import type http from "node:http";
 import { errorMessage } from "../sdk/utils.ts";
 import { WORKFLOWS_UNAVAILABLE_MESSAGE, type WorkflowClient } from "../sdk/workflow.ts";
 import type { Logger } from "./runtime-config.ts";
-
+import { BodyTooLargeError, bearerMatches, readBody, sendJson } from "./workflow-api-http.ts";
 /** Path prefix every route here lives under. */
 export const WORKFLOW_API_PREFIX = "/workflows";
 
@@ -139,74 +139,6 @@ export type WorkflowApiOptions = {
   logger: Logger;
 };
 
-function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, { "Content-Type": "application/json" });
-  res.end(JSON.stringify(body));
-}
-
-/**
- * Constant-time bearer check.
- *
- * Length is compared first because `timingSafeEqual` THROWS on a length
- * mismatch rather than returning false — and comparing lengths leaks only the
- * length, which a caller supplied anyway.
- */
-function bearerMatches(header: string | undefined, token: string): boolean {
-  const presented = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : "";
-  const a = Buffer.from(presented);
-  const b = Buffer.from(token);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
-/**
- * Read a request body, refusing anything past `limit`.
- *
- * Two decisions here, and both were arrived at by getting them wrong first.
- *
- * The size is counted **per chunk, never from `Content-Length`** — a client
- * controls that header independently of what it actually sends, so trusting it
- * means a lying header buffers the whole stream before anyone notices.
- *
- * And an over-limit body is **discarded as it arrives rather than answered by
- * destroying the socket**. What the cap has to bound is MEMORY, and dropping the
- * chunks does that completely; destroying the request additionally stops the
- * upload, which sounds strictly better and costs the thing that matters — the
- * client gets a socket error instead of the 413. For a page uploading a
- * recording in chunks that is the difference between "this file is too big" and
- * "something went wrong", so the bytes already in flight are allowed to arrive
- * and be thrown away. An endless upload is bounded by Node's own
- * `server.requestTimeout`.
- */
-class BodyTooLargeError extends Error {
-  constructor(limit: number) {
-    super(`body exceeds ${limit} bytes`);
-    this.name = "BodyTooLargeError";
-  }
-}
-
-function readBody(req: http.IncomingMessage, limit: number): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    let chunks: Buffer[] | null = [];
-    let size = 0;
-    req.on("data", (chunk: Buffer) => {
-      size += chunk.length;
-      if (size > limit) {
-        // Released here, not at `end`: holding a limit's worth of buffer for the
-        // rest of a large upload is the allocation this is meant to prevent.
-        chunks = null;
-        return;
-      }
-      chunks?.push(chunk);
-    });
-    req.on("end", () => {
-      if (chunks === null) reject(new BodyTooLargeError(limit));
-      else resolve(Buffer.concat(chunks));
-    });
-    req.on("error", reject);
-  });
-}
-
-/** `POST /workflows/runs` — start a run and answer 202 with its id. */
 async function startRun(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -301,6 +233,22 @@ async function cancelRun(
 ): Promise<void> {
   const cancelled = runId ? await engine.cancel(runId) : false;
   sendJson(res, 200, { runId, cancelled });
+}
+
+/**
+ * `POST /workflows/runs/:id/retry` — send a terminal run back to the queue.
+ *
+ * 200 either way with `retried`, mirroring `cancelRun`: a run that is still live
+ * (or already gone) is not an ERROR, it is an answer, and two operators pressing
+ * Retry is as ordinary as two pressing Stop.
+ */
+async function retryRun(
+  res: http.ServerResponse,
+  engine: WorkflowApiEngine,
+  runId: string,
+): Promise<void> {
+  const retried = runId ? await engine.retry(runId) : false;
+  sendJson(res, 200, { runId, retried });
 }
 
 /**
@@ -406,6 +354,15 @@ export function createWorkflowApi(
       matches: (url) => url.startsWith(runsPrefix),
       run: (_req, res, engine, url) =>
         readRun(res, engine, decodeURIComponent(url.slice(runsPrefix.length))),
+    },
+    {
+      // Ordered BEFORE the bare `/runs/:id` matches below, for the same reason the
+      // exact `/runs` match precedes them: `/runs/<id>/retry` starts with the
+      // prefix, so a prefix rule listed first would read "<id>/retry" as an id.
+      method: "POST",
+      matches: (url) => url.startsWith(runsPrefix) && url.endsWith("/retry"),
+      run: (_req, res, engine, url) =>
+        retryRun(res, engine, decodeURIComponent(url.slice(runsPrefix.length, -"/retry".length))),
     },
     {
       method: "DELETE",

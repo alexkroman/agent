@@ -325,6 +325,7 @@ function fakeApi(get: WorkflowApi["get"]): WorkflowApi {
     find: () => Promise.reject(new Error("unused")),
     recent: () => Promise.reject(new Error("unused")),
     cancel: () => Promise.reject(new Error("unused")),
+    retry: () => Promise.reject(new Error("unused")),
     upload: () => Promise.reject(new Error("unused")),
   };
 }

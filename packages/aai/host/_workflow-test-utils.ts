@@ -21,7 +21,7 @@ export type MemoryRun = {
   /** The correlation key `start({ key })` supplied, when it supplied one. */
   key?: string | undefined;
   output?: unknown;
-  error?: string;
+  error?: string | undefined;
   // Explicitly `| undefined` rather than merely optional: clearing a wake time
   // or a lease is an ASSIGNMENT of undefined here, which
   // `exactOptionalPropertyTypes` distinguishes from an absent property.
@@ -216,6 +216,19 @@ export function createMemoryWorkflowStore(): MemoryWorkflowStore {
       const run = runs.get(runId);
       if (!(run && LIVE.has(run.status))) return Promise.resolve(false);
       run.status = "cancelled";
+      run.wakeAt = undefined;
+      run.leaseUntil = undefined;
+      return Promise.resolve(true);
+    },
+
+    retry(runId: string): Promise<boolean> {
+      const run = runs.get(runId);
+      // Terminal only, and the steps map is left alone — see the real store's doc.
+      if (!(run && (run.status === "failed" || run.status === "cancelled"))) {
+        return Promise.resolve(false);
+      }
+      run.status = "pending";
+      run.error = undefined;
       run.wakeAt = undefined;
       run.leaseUntil = undefined;
       return Promise.resolve(true);

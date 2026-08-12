@@ -4,7 +4,7 @@
 // and how its recent runs are doing.
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { WorkflowsCard } from "./workflows-card.tsx";
 
@@ -134,6 +134,72 @@ describe("WorkflowsCard", () => {
     // run holds no container — and a bare status beside a `wakeAt` epoch reads as
     // a stuck job.
     await waitFor(() => expect(screen.getByText(/sleeping, resumes in 4[45]s/)).toBeTruthy());
+  });
+
+  test("stops a live run, and retries a terminal one", async () => {
+    // Before this the card was read-only, so a failed run was a dead end. A
+    // retried run keeps its journal, so it resumes from its last completed step.
+    const fetchMock = stubApi({
+      "/workflows/runs": {
+        runs: [
+          { runId: "live-1", workflow: "w", status: "running", stepsCompleted: 1 },
+          { runId: "dead-1", workflow: "w", status: "failed", stepsCompleted: 2, error: "boom" },
+        ],
+      },
+      "/workflows": { workflows: [{ name: "w" }] },
+    });
+    renderCard({ deployedSlug: "demo" });
+    await waitFor(() => expect(screen.getByLabelText("Stop run live-1")).toBeTruthy());
+
+    fireEvent.click(screen.getByLabelText("Stop run live-1"));
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          (call) =>
+            String(call[0]).endsWith("/runs/live-1") &&
+            (call[1] as RequestInit | undefined)?.method === "DELETE",
+        ),
+      ).toBe(true),
+    );
+
+    fireEvent.click(screen.getByLabelText("Retry run dead-1"));
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          (call) =>
+            String(call[0]).endsWith("/runs/dead-1/retry") &&
+            (call[1] as RequestInit | undefined)?.method === "POST",
+        ),
+      ).toBe(true),
+    );
+  });
+
+  test("offers neither action on a completed run", async () => {
+    // A finished run has nothing to stop and nothing to redo — offering Retry
+    // would invite re-running work that already succeeded.
+    stubApi({
+      "/workflows/runs": {
+        runs: [{ runId: "done-1", workflow: "w", status: "completed", stepsCompleted: 3 }],
+      },
+      "/workflows": { workflows: [{ name: "w" }] },
+    });
+    renderCard({ deployedSlug: "demo" });
+
+    await waitFor(() => expect(screen.getByText("completed")).toBeTruthy());
+    expect(screen.queryByLabelText("Stop run done-1")).toBeNull();
+    expect(screen.queryByLabelText("Retry run done-1")).toBeNull();
+  });
+
+  test("offers Retry on a cancelled run", async () => {
+    stubApi({
+      "/workflows/runs": {
+        runs: [{ runId: "stopped-1", workflow: "w", status: "cancelled", stepsCompleted: 1 }],
+      },
+      "/workflows": { workflows: [{ name: "w" }] },
+    });
+    renderCard({ deployedSlug: "demo" });
+
+    await waitFor(() => expect(screen.getByLabelText("Retry run stopped-1")).toBeTruthy());
   });
 
   test("says an agent declaring no workflows is fine", async () => {

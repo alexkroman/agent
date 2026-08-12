@@ -194,6 +194,7 @@ describe("rejectingWorkflows", () => {
       "get",
       "listing",
       "recent",
+      "retry",
       "start",
     ]);
   });

@@ -264,6 +264,29 @@ describe("cancel", () => {
   });
 });
 
+describe("retry", () => {
+  test("revives only a terminal run, and KEEPS the journal", async () => {
+    const q = recordingDb([[{ run_id: "r1" }]]);
+    await expect(createPostgresWorkflowStore(q.db).retry("r1")).resolves.toBe(true);
+
+    // Terminal only: resetting a LIVE run would give it two claimants, which is
+    // the one thing the lease exists to prevent.
+    expect(q.sql(0)).toContain("status in ('failed', 'cancelled')");
+    // A resume, not a restart — nothing touches aai_workflow_steps, so replay
+    // short-circuits every step that already succeeded.
+    expect(q.sql(0)).not.toContain("aai_workflow_steps");
+    // And the failure text goes, or the revived run would still read as failed.
+    expect(q.sql(0)).toContain("error = null");
+    expect(q.sql(0)).toContain("lease_until = null");
+    expect(q.params(0)).toEqual(["r1"]);
+  });
+
+  test("answers false for a run it could not revive", async () => {
+    const q = recordingDb([[]]);
+    await expect(createPostgresWorkflowStore(q.db).retry("live")).resolves.toBe(false);
+  });
+});
+
 describe("recent", () => {
   test("filters by workflow ALONE, newest first, bounded by the limit", async () => {
     const q = recordingDb([[]]);

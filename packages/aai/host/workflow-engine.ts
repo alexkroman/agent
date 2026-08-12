@@ -29,72 +29,39 @@ import type { Db } from "../sdk/db.ts";
 import type { ToolInputSchema } from "../sdk/schema.ts";
 import { formatSchemaIssues } from "../sdk/schema.ts";
 import { errorMessage } from "../sdk/utils.ts";
-import {
-  type AnyWorkflowDef,
-  DEFAULT_WORKFLOW_FIND_LIMIT,
-  type FindOptions,
-  MAX_WORKFLOW_FIND_LIMIT,
-  type StartOptions,
-  type WorkflowClient,
-  type WorkflowDef,
-  type WorkflowRunSnapshot,
-  type WorkflowSummary,
+import type {
+  AnyWorkflowDef,
+  FindOptions,
+  StartOptions,
+  WorkflowClient,
+  WorkflowDef,
+  WorkflowRunSnapshot,
+  WorkflowSummary,
 } from "../sdk/workflow.ts";
 import type { HostGenerateFn } from "./generate.ts";
 import type { Logger } from "./runtime-config.ts";
+import {
+  clampFindLimit,
+  MAX_DUE_RUNS,
+  MAX_DUE_SWEEPS,
+  MAX_WAKE_TIMER_MS,
+  WORKFLOW_BLOB_TTL_MS,
+  WORKFLOW_LEASE_MS,
+} from "./workflow-engine-limits.ts";
 import { createContextFactory, reportSequenceDrift, Suspended } from "./workflow-execution.ts";
 import type { WorkflowStore } from "./workflow-store.ts";
 
 /**
- * How long a claim is held before another executor may take the run over.
- * Long enough that an ordinary step (an LLM call, an HTTP fetch) cannot
- * outlive it, short enough that a dead sandbox's run is not stranded for long.
+ * The engine's budgets and the find-limit clamp — see
+ * `workflow-engine-limits.ts`. Re-exported because callers import them from here.
  */
-export const WORKFLOW_LEASE_MS = 120_000;
-
-/** Longest in-process wake timer; past this, recovery is `runDue()`'s job. */
-export const MAX_WAKE_TIMER_MS = 60_000;
-
-/** Runs one `due()` query may return, bounding a cold start's fan-out. */
-export const MAX_DUE_RUNS = 20;
-
-/**
- * Batches one `runDue()` may drain — `MAX_DUE_RUNS` × this is the ceiling on
- * runs recovered per boot.
- *
- * A BACKSTOP rather than the mechanism: the loop stops on the first short batch,
- * and every run it claims leaves `due()`'s predicate, so a healthy store drains
- * to empty well inside this. It exists so a store that misreports (a `due()` that
- * keeps returning a run nothing can claim) cannot spin the sweep forever.
- */
-export const MAX_DUE_SWEEPS = 25;
-
-/**
- * Clamp a caller's `limit` into range.
- *
- * Clamped rather than validated: `find` is reached from tool code answering "is
- * my thing ready yet?", and a caller's stray 10_000 should cost the ceiling
- * instead of failing the turn. The ceiling itself is what keeps the read under
- * `MAX_DB_RESULT_ROWS`. Shared with `recent` so the two reads cannot end up with
- * different ideas of how many rows are safe.
- */
-function clampFindLimit(requested: number | undefined): number {
-  return Math.min(
-    Math.max(1, Math.floor(requested ?? DEFAULT_WORKFLOW_FIND_LIMIT)),
-    MAX_WORKFLOW_FIND_LIMIT,
-  );
-}
-
-/**
- * How long an uploaded blob survives without a run consuming it.
- *
- * Sized against the runs, not the upload: a run that sleeps between steps can
- * legitimately take hours to reach the blob it was started with, so anything
- * shorter would delete an input out from under a live run. What it reclaims is
- * the upload nothing ever started — a closed tab, a failed `start()` — which is
- * referenced by nothing and would otherwise sit in the app's schema forever.
- */
-export const WORKFLOW_BLOB_TTL_MS = 24 * 60 * 60 * 1000;
+export {
+  MAX_DUE_RUNS,
+  MAX_DUE_SWEEPS,
+  MAX_WAKE_TIMER_MS,
+  WORKFLOW_BLOB_TTL_MS,
+  WORKFLOW_LEASE_MS,
+} from "./workflow-engine-limits.ts";
 
 /** Everything the engine needs to execute a run. */
 export type WorkflowEngineOptions = {
@@ -441,6 +408,22 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
       const name = resolveName(workflow as WorkflowDef | string);
       await ensureTables();
       return (await store.recent(name, clampFindLimit(options?.limit))) as WorkflowRunSnapshot<R>[];
+    },
+
+    async retry(runId: string): Promise<boolean> {
+      await ensureTables();
+      const revived = await store.retry(runId);
+      // Executed straight away rather than left to the next `runDue()`: an
+      // operator pressing Retry is asking for it now, and the run is `pending`
+      // with no lease, so this claim is uncontended. Not awaited, for the same
+      // reason `start` does not await — the caller wants the acknowledgement, not
+      // the outcome.
+      if (revived) {
+        void execute(runId).catch((err: unknown) => {
+          logger.error(`workflow run ${runId} could not resume`, { error: errorMessage(err) });
+        });
+      }
+      return revived;
     },
 
     async cancel(runId: string): Promise<boolean> {

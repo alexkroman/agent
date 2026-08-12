@@ -24,53 +24,17 @@ import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 import type { WorkflowRunSnapshot } from "./workflow-run.ts";
 
 /**
- * Default attempts for one {@link WorkflowContext.step} before the run fails.
- *
- * Three rather than one because the failures a step sees are overwhelmingly
- * transient (a provider 503, a pooler hiccup), and rather than unbounded
- * because a step that fails deterministically should surface as a failed run
- * an author can read, not as a retry loop that bills forever.
+ * Limits and the unavailable-engine message — see `workflow-limits.ts`.
+ * Re-exported here because this module is where an author meets them.
  */
-export const DEFAULT_STEP_MAX_ATTEMPTS = 3;
-
-/** Base delay for the exponential backoff between step attempts (ms). */
-export const DEFAULT_STEP_BACKOFF_MS = 500;
-
-/**
- * Steps one run may journal before it is failed deliberately.
- *
- * A hard cap rather than a soft one, because the failure it prevents is
- * silent: replay reads the journal back through `ctx.db`, which throws past
- * {@link MAX_DB_RESULT_ROWS} rows, and a journal that could not be read in
- * full would look like a run with no history — i.e. every completed step
- * would run a second time. A workflow that needs more iterations than this
- * should fan out into child runs rather than one long journal.
- */
-export const MAX_WORKFLOW_STEPS = 500;
-
-/** Runs {@link WorkflowClient.find} returns when the caller names no limit. */
-export const DEFAULT_WORKFLOW_FIND_LIMIT = 10;
-
-/**
- * Ceiling on {@link WorkflowClient.find}'s limit.
- *
- * The same reasoning as {@link MAX_WORKFLOW_STEPS}: the read goes through
- * `ctx.db`, which throws past `MAX_DB_RESULT_ROWS`, and a `find` that threw
- * would take out the tool call asking "is my thing ready yet?" rather than
- * answering it.
- */
-export const MAX_WORKFLOW_FIND_LIMIT = 100;
-
-/**
- * Error text a `ctx.workflows` call rejects with when the app has no engine —
- * no workflows declared, or storage disabled so the journal has nowhere to
- * live. One string so `aai dev` and the platform read identically, exactly
- * like {@link STORAGE_DISABLED_MESSAGE}.
- */
-export const WORKFLOWS_UNAVAILABLE_MESSAGE =
-  "No workflow engine is available for this app. Declare workflows with " +
-  "`agent({ workflows })`, and enable storage with `aai storage enable` (or set " +
-  "DATABASE_URL in the project .env under `aai dev`) — the run journal requires it.";
+export {
+  DEFAULT_STEP_BACKOFF_MS,
+  DEFAULT_STEP_MAX_ATTEMPTS,
+  DEFAULT_WORKFLOW_FIND_LIMIT,
+  MAX_WORKFLOW_FIND_LIMIT,
+  MAX_WORKFLOW_STEPS,
+  WORKFLOWS_UNAVAILABLE_MESSAGE,
+} from "./workflow-limits.ts";
 
 /**
  * A run's observable state — the status union, the terminal set, the snapshot a
@@ -385,6 +349,20 @@ export type WorkflowClient = {
   ): Promise<WorkflowRunSnapshot<R>[]>;
   recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
   /**
+   * Send a FAILED or CANCELLED run back to the queue, resolving whether this call
+   * is what revived it (false for one that is still live, or absent).
+   *
+   * A resume rather than a restart: the journal is kept, so replay short-circuits
+   * every step that already succeeded and the run re-runs from where it stopped.
+   * Re-running completed work would be wasteful and, for a step with an external
+   * side effect, wrong — at-least-once is a per-step contract, not a per-click one.
+   *
+   * The operator's counterpart to {@link cancel}: before it, a failed run was a
+   * dead end. Note this cannot repair a run whose WORKFLOW no longer exists in the
+   * deployed bundle — that failure recurs on the next attempt, by design.
+   */
+  retry(runId: string): Promise<boolean>;
+  /**
    * Stop a run. Resolves true when this call is what ended it, false when it
    * was already terminal (or no such run exists).
    *
@@ -434,6 +412,7 @@ export function rejectingWorkflows(message: string): WorkflowClient {
     get: reject,
     find: reject,
     recent: reject,
+    retry: reject,
     cancel: reject,
     listing: () => [],
   };

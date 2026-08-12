@@ -47,6 +47,8 @@ type FakeEngine = WorkflowApiEngine & {
   found: { workflow: string; key: string; limit?: number | undefined }[];
   /** `recent` calls — the keyless read the operator console uses. */
   listed: { workflow: string; limit?: number | undefined }[];
+  /** Run ids `retry` was asked to revive. */
+  revived: string[];
 };
 
 /**
@@ -61,11 +63,13 @@ function makeEngine(declared = ["digest"]): FakeEngine {
   const blobs: { contentType: string; base64: string }[] = [];
   const found: { workflow: string; key: string; limit?: number | undefined }[] = [];
   const listed: { workflow: string; limit?: number | undefined }[] = [];
+  const revived: string[] = [];
   return {
     started,
     blobs,
     found,
     listed,
+    revived,
     // Both are annotated rather than contextually typed: `WorkflowClient`'s
     // methods are OVERLOADED now (a workflow may be named by its definition or by
     // a string), and TypeScript cannot infer parameter types for an arrow from an
@@ -121,6 +125,10 @@ function makeEngine(declared = ["digest"]): FakeEngine {
       return Promise.resolve([
         { runId: "run-9", workflow: name, status: "running", stepsCompleted: 3 },
       ]);
+    },
+    retry: (runId: string) => {
+      revived.push(runId);
+      return Promise.resolve(runId === "run-1");
     },
     cancel: (runId: string) => Promise.resolve(runId === "run-1"),
     putBlob: (contentType, base64) => {
@@ -498,6 +506,35 @@ describe("correlation keys over HTTP", () => {
         },
       ],
     });
+  });
+
+  test("retries a run through POST /runs/:id/retry", async () => {
+    const engine = makeEngine();
+    const base = await boot(engine);
+
+    const res = await req(`${base}/workflows/runs/run-1/retry`, { method: "POST" });
+
+    expect(res.status).toBe(200);
+    expect(res.json).toEqual({ runId: "run-1", retried: true });
+    expect(engine.revived).toEqual(["run-1"]);
+  });
+
+  test("answers 200 with retried:false for a run in the wrong state", async () => {
+    // Not an error: two operators pressing Retry is as ordinary as two pressing
+    // Stop, and the run's state is the answer either way.
+    const base = await boot(makeEngine());
+    const res = await req(`${base}/workflows/runs/other/retry`, { method: "POST" });
+    expect(res.status).toBe(200);
+    expect(res.json).toEqual({ runId: "other", retried: false });
+  });
+
+  test("reads the id out of a retry path without swallowing the suffix", async () => {
+    // The retry route matches the same prefix as `GET /runs/:id`, so its rule has
+    // to be ordered first — otherwise the id would come back as "<id>/retry".
+    const engine = makeEngine();
+    const base = await boot(engine);
+    await req(`${base}/workflows/runs/a%2Fb/retry`, { method: "POST" });
+    expect(engine.revived).toEqual(["a/b"]);
   });
 
   test("lists a workflow's recent runs when no key is given", async () => {
