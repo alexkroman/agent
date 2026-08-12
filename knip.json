@@ -61,6 +61,16 @@
       "entry": [
         "**/*.test.ts",
         "_test-utils.ts"
+      ],
+      // `workflow` is a real devDependency that no source file imports: the
+      // workflow-bundler fixture symlinks this package's node_modules into a
+      // temp project so the Workflow DevKit resolves THERE. It has to be
+      // installed here for that to work — esbuild resolves an external import
+      // to decide it is a package at all, and the discovery pass reads the
+      // module to check it for directives — but an import in our own source
+      // would be a lie written to satisfy this gate.
+      "ignoreDependencies": [
+        "workflow"
       ]
     },
     "packages/aai-templates": {
