@@ -784,7 +784,7 @@ workflow is journaled, so it survives the end of the call and the machine that
 started it.
 
 ```ts
-import { agent, tool, workflow } from "@alexkroman1/aai";
+import { agent, startTool, tool, workflow } from "@alexkroman1/aai";
 import { z } from "zod";
 
 const process = workflow({
@@ -813,20 +813,23 @@ export default agent({
   name: "Desk",
   workflows: { process },
   tools: {
-    // The LLM cannot call a workflow directly — it calls a TOOL that starts one.
-    file_report: tool({
+    // The LLM cannot call a workflow directly — it calls a TOOL that starts one,
+    // and `startTool` IS that tool: it takes the workflow's own input schema and
+    // keys the run to this session, which is what makes `workflow_status` able to
+    // report it later.
+    file_report: startTool(process, {
       description: "Start processing a report. Returns a job id; does not wait.",
-      inputSchema: z.object({ url: z.string() }),
-      execute: async ({ url }, ctx) => {
-        const runId = await ctx.workflows.start("process", { url });
-        return { runId, status: "processing" };
-      },
     }),
+    // Only needed for a run the caller can name themselves — a job id they wrote
+    // down. For "is the thing I just asked for ready?", add
+    // `builtinTools: ["workflow_status"]` instead and delete this.
     check_report: tool({
       description: "Check on a report that is already processing.",
       inputSchema: z.object({ runId: z.string() }),
       execute: async ({ runId }, ctx) => {
-        const run = await ctx.workflows.get(runId);
+        // Passing `process` as well types `run.output` as the workflow's own
+        // return value instead of `unknown`.
+        const run = await ctx.workflows.get(runId, process);
         if (!run) return { error: `No job with id ${runId}` };
         if (run.status === "completed") return { status: "done", result: run.output };
         if (run.status === "failed") return { status: "failed", reason: run.error };
@@ -836,6 +839,21 @@ export default agent({
   },
 });
 ```
+
+**`startTool` and `workflow_status` are a pair.** The builtin can only report a
+run that carries a correlation key, and forgetting one fails SILENTLY — the run
+works, the tool answers, and "is it ready yet?" is unanswerable for the rest of
+the call. `startTool` defaults that key to `ctx.sessionId`, which is why it is
+worth using over the three lines it replaces. Pass `key` when the run belongs to
+something longer-lived than the session (a phone number, an account), and `reply`
+when the tool should answer with something other than the run id.
+
+Starting a run by hand is still fine — `ctx.workflows.start(process, { url },
+{ key: ctx.sessionId })` — when the tool does more than start it.
+
+**A caller who changes their mind needs `ctx.workflows.cancel(runId)`.** It
+resolves `true` when that call is what stopped the run and `false` when it had
+already finished, so it is safe to offer twice.
 
 `ctx.workflows.start()` resolves as soon as the run is recorded, so the tool
 answers the turn immediately — tell the caller it is running and that they can
@@ -857,7 +875,15 @@ Five rules, all of them things that bite later rather than at authoring time:
   `Math.random()` read directly in the workflow body. A name reused in a loop is
   fine: each iteration journals its own entry.
 - **Return small, JSON-serializable values from a step.** They are stored and
-  read back on the next replay; never return a whole result set.
+  read back on the next replay; never return a whole result set. A `Date`, `Map`,
+  `Set` or class method is REJECTED — the run fails on its first execution naming
+  the property, because otherwise the resume would silently get a different value.
+  Return an ISO string or an array of entries and rebuild it outside the step.
+- **A run's `runId` does not survive the call, but a KEY does.** Session state is
+  discarded shortly after the caller hangs up, so pass
+  `{ key: ctx.sessionId }` to `start` and read the runs back with
+  `ctx.workflows.find(process, key)`. Without a key, a run you started is only
+  findable by an id nothing is holding any more.
 - **Nothing after `ctx.sleep()` runs in the same pass.** The run unwinds there
   and replays from the top when it is due, so treat the code after a sleep as
   running in a later life of the run.

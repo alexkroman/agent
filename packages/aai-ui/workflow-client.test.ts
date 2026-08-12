@@ -240,12 +240,90 @@ describe("createWorkflowApi failures", () => {
   });
 });
 
+describe("createWorkflowApi.start options", () => {
+  it("puts a correlation key on the wire only when one is given", async () => {
+    const fetchSpy = stubFetch(json({ runId: "r1" }, 202), json({ runId: "r2" }, 202));
+    const api = createWorkflowApi({ baseUrl: BASE });
+
+    await api.start("review", { a: 1 }, { key: "user-9" });
+    await api.start("review", { a: 1 });
+
+    const withKey = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
+    const without = JSON.parse(String(fetchSpy.mock.calls[1]?.[1]?.body));
+    expect(withKey).toEqual({ workflow: "review", input: { a: 1 }, key: "user-9" });
+    // Absent rather than `null`: the route refuses a non-string key, and a page
+    // that passed none is not making a claim about one.
+    expect(without).toEqual({ workflow: "review", input: { a: 1 } });
+  });
+});
+
+describe("createWorkflowApi.find", () => {
+  it("sends the workflow, key and limit as query parameters", async () => {
+    const fetchSpy = stubFetch(json({ runs: [] }));
+    await createWorkflowApi({ baseUrl: BASE }).find("review", "user-9", { limit: 3 });
+
+    const url = new URL(String(fetchSpy.mock.calls[0]?.[0]));
+    expect(url.pathname).toBe("/app/workflows/runs");
+    expect(url.searchParams.get("workflow")).toBe("review");
+    expect(url.searchParams.get("key")).toBe("user-9");
+    expect(url.searchParams.get("limit")).toBe("3");
+  });
+
+  it("omits the limit when the caller names none", async () => {
+    const fetchSpy = stubFetch(json({ runs: [] }));
+    await createWorkflowApi({ baseUrl: BASE }).find("review", "user-9");
+
+    expect(new URL(String(fetchSpy.mock.calls[0]?.[0])).searchParams.has("limit")).toBe(false);
+  });
+
+  it("returns the runs, and an empty list for a body carrying none", async () => {
+    const runs = [{ runId: "r1", workflow: "review", status: "completed", stepsCompleted: 1 }];
+    stubFetch(json({ runs }), json({}));
+    const api = createWorkflowApi({ baseUrl: BASE });
+
+    await expect(api.find("review", "k")).resolves.toEqual(runs);
+    await expect(api.find("review", "k")).resolves.toEqual([]);
+  });
+
+  it("throws on a failure, carrying the server's sentence", async () => {
+    stubFetch(json({ error: "Declared workflows: digest" }, 400));
+    await expect(createWorkflowApi({ baseUrl: BASE }).find("nope", "k")).rejects.toThrow(
+      "Declared workflows: digest",
+    );
+  });
+});
+
+describe("createWorkflowApi.cancel", () => {
+  it("DELETEs the run and reports whether it stopped it", async () => {
+    const fetchSpy = stubFetch(json({ runId: "r1", cancelled: true }));
+
+    await expect(createWorkflowApi({ baseUrl: BASE }).cancel("r1")).resolves.toBe(true);
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toBe(`${BASE}/workflows/runs/r1`);
+    expect(fetchSpy.mock.calls[0]?.[1]?.method).toBe("DELETE");
+  });
+
+  it("reports false for a run that had already finished", async () => {
+    // Not an error: the route answers 200 either way, because two tabs pressing
+    // Stop is ordinary.
+    stubFetch(json({ runId: "r1", cancelled: false }));
+    await expect(createWorkflowApi({ baseUrl: BASE }).cancel("r1")).resolves.toBe(false);
+  });
+
+  it("encodes the run id", async () => {
+    const fetchSpy = stubFetch(json({ cancelled: false }));
+    await createWorkflowApi({ baseUrl: BASE }).cancel("a b/c");
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toContain("a%20b%2Fc");
+  });
+});
+
 /** A `WorkflowApi` whose `get` is scripted, for the polling specs. */
 function fakeApi(get: WorkflowApi["get"]): WorkflowApi {
   return {
     get,
     list: () => Promise.reject(new Error("unused")),
     start: () => Promise.reject(new Error("unused")),
+    find: () => Promise.reject(new Error("unused")),
+    cancel: () => Promise.reject(new Error("unused")),
     upload: () => Promise.reject(new Error("unused")),
   };
 }
@@ -562,6 +640,31 @@ describe("useWorkflowRun", () => {
         await vi.advanceTimersByTimeAsync(0);
       });
       expect(urlOf(spy)).toBe(`${location.origin}${location.pathname}workflows/runs/r1`);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("a cancelled run is finished", () => {
+  it("stops polling, because isTerminal comes from the SDK's own status union", async () => {
+    vi.useFakeTimers();
+    try {
+      // A second local copy of `isTerminal` listing only completed/failed would
+      // poll a cancelled run for as long as the page stayed open — which is why
+      // this one is re-exported from the SDK rather than defined here.
+      const { api, get } = scriptedApi("cancelled");
+      const { result } = renderHook(() => useWorkflowRun("r1", { api, intervalMs: 1000 }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.run?.status).toBe("cancelled");
+      expect(result.current.polling).toBe(false);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      expect(get).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }

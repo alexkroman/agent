@@ -11,7 +11,11 @@
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { WORKFLOWS_UNAVAILABLE_MESSAGE } from "../sdk/workflow.ts";
+import {
+  type AnyWorkflowDef,
+  WORKFLOWS_UNAVAILABLE_MESSAGE,
+  type WorkflowRunSnapshot,
+} from "../sdk/workflow.ts";
 import { silentLogger } from "./_test-utils.ts";
 import { createServer, type SessionRuntime } from "./server.ts";
 import {
@@ -38,8 +42,9 @@ function runtimeWith(engine?: WorkflowApiEngine | undefined): SessionRuntime {
 }
 
 type FakeEngine = WorkflowApiEngine & {
-  started: { workflow: string; input: unknown }[];
+  started: { workflow: string; input: unknown; key?: string | undefined }[];
   blobs: { contentType: string; base64: string }[];
+  found: { workflow: string; key: string; limit?: number | undefined }[];
 };
 
 /**
@@ -50,26 +55,54 @@ type FakeEngine = WorkflowApiEngine & {
  * behaviours under test.
  */
 function makeEngine(declared = ["digest"]): FakeEngine {
-  const started: { workflow: string; input: unknown }[] = [];
+  const started: { workflow: string; input: unknown; key?: string | undefined }[] = [];
   const blobs: { contentType: string; base64: string }[] = [];
+  const found: { workflow: string; key: string; limit?: number | undefined }[] = [];
   return {
     started,
     blobs,
-    start: (workflow, input) => {
-      if (!declared.includes(workflow)) {
+    found,
+    // Both are annotated rather than contextually typed: `WorkflowClient`'s
+    // methods are OVERLOADED now (a workflow may be named by its definition or by
+    // a string), and TypeScript cannot infer parameter types for an arrow from an
+    // overloaded target. The API only ever passes the string form.
+    start: (
+      workflow: AnyWorkflowDef | string,
+      input?: unknown,
+      options?: { key?: string },
+    ): Promise<string> => {
+      const name = typeof workflow === "string" ? workflow : "<by-definition>";
+      if (!declared.includes(name)) {
         return Promise.reject(
-          new Error(`Unknown workflow "${workflow}". Declared workflows: ${declared.join(", ")}`),
+          new Error(`Unknown workflow "${name}". Declared workflows: ${declared.join(", ")}`),
         );
       }
-      started.push({ workflow, input });
+      started.push({ workflow: name, input, key: options?.key });
       return Promise.resolve(`run-${started.length}`);
     },
-    get: (runId) =>
+    get: (runId: string): Promise<WorkflowRunSnapshot | undefined> =>
       Promise.resolve(
         runId === "run-1"
           ? { runId, workflow: "digest", status: "running", stepsCompleted: 2 }
           : undefined,
       ),
+    find: (
+      workflow: AnyWorkflowDef | string,
+      key: string,
+      options?: { limit?: number },
+    ): Promise<WorkflowRunSnapshot[]> => {
+      const name = typeof workflow === "string" ? workflow : "<by-definition>";
+      if (!declared.includes(name)) {
+        return Promise.reject(
+          new Error(`Unknown workflow "${name}". Declared workflows: ${declared.join(", ")}`),
+        );
+      }
+      found.push({ workflow: name, key, limit: options?.limit });
+      return Promise.resolve([
+        { runId: "run-1", workflow: name, status: "completed", stepsCompleted: 1, output: 7, key },
+      ]);
+    },
+    cancel: (runId: string) => Promise.resolve(runId === "run-1"),
     putBlob: (contentType, base64) => {
       blobs.push({ contentType, base64 });
       return Promise.resolve(`blob-${blobs.length}`);
@@ -377,5 +410,164 @@ describe("workflow HTTP API", () => {
     // Logged with the cause: the wire body deliberately says nothing specific.
     expect(errors).toHaveBeenCalled();
     expect(res.body).not.toContain("journal unreachable");
+  });
+});
+
+describe("correlation keys over HTTP", () => {
+  let server: ReturnType<typeof createServer> | null = null;
+
+  afterEach(async () => {
+    await server?.close();
+    server = null;
+  });
+
+  async function boot(engine: WorkflowApiEngine): Promise<string> {
+    server = createServer({ runtime: runtimeWith(engine), logger: silentLogger });
+    await server.listen(0);
+    return `http://localhost:${server.port}`;
+  }
+
+  test("forwards a key from the start body", async () => {
+    const engine = makeEngine();
+    const base = await boot(engine);
+
+    const res = await req(`${base}/workflows/runs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workflow: "digest", input: { topic: "ai" }, key: "user-9" }),
+    });
+
+    expect(res.status).toBe(202);
+    expect(engine.started).toEqual([{ workflow: "digest", input: { topic: "ai" }, key: "user-9" }]);
+  });
+
+  test("refuses a non-string key rather than coercing it", async () => {
+    const engine = makeEngine();
+    const base = await boot(engine);
+
+    const res = await req(`${base}/workflows/runs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workflow: "digest", key: 7 }),
+    });
+
+    // Coerced, `7` would be stored as "7" and never match the `find` a caller
+    // writes — a silent miss rather than a reported mistake.
+    expect(res.status).toBe(400);
+    expect(res.json).toEqual({ error: '"key" must be a string when present' });
+    expect(engine.started).toEqual([]);
+  });
+
+  test("finds runs by workflow and key", async () => {
+    const engine = makeEngine();
+    const base = await boot(engine);
+
+    const res = await req(`${base}/workflows/runs?workflow=digest&key=user-9&limit=3`);
+
+    expect(res.status).toBe(200);
+    expect(engine.found).toEqual([{ workflow: "digest", key: "user-9", limit: 3 }]);
+    expect(res.json).toEqual({
+      runs: [
+        {
+          runId: "run-1",
+          workflow: "digest",
+          status: "completed",
+          stepsCompleted: 1,
+          output: 7,
+          key: "user-9",
+        },
+      ],
+    });
+  });
+
+  test("requires both query parameters", async () => {
+    const base = await boot(makeEngine());
+
+    const missingKey = await req(`${base}/workflows/runs?workflow=digest`);
+    const missingWorkflow = await req(`${base}/workflows/runs?key=user-9`);
+
+    expect(missingKey.status).toBe(400);
+    expect(missingWorkflow.status).toBe(400);
+  });
+
+  test("reports an unknown workflow as the caller's mistake", async () => {
+    const base = await boot(makeEngine(["digest"]));
+
+    const res = await req(`${base}/workflows/runs?workflow=nope&key=user-9`);
+
+    // 400 with the engine's message, same as POST /runs — a 500 would read as
+    // "the agent is broken" for a name the caller got wrong.
+    expect(res.status).toBe(400);
+    expect(res.body).toContain("Declared workflows: digest");
+  });
+
+  test("rejects a non-numeric limit", async () => {
+    const base = await boot(makeEngine());
+    const res = await req(`${base}/workflows/runs?workflow=digest&key=k&limit=lots`);
+    expect(res.status).toBe(400);
+  });
+
+  test("the collection path is not mistaken for a run id", async () => {
+    // `GET /workflows/runs` and `GET /workflows/runs/:id` differ by one slash, and
+    // the prefix match for the latter must not swallow the former.
+    const engine = makeEngine();
+    const base = await boot(engine);
+
+    await req(`${base}/workflows/runs?workflow=digest&key=k`);
+
+    expect(engine.found).toHaveLength(1);
+  });
+});
+
+describe("cancelling over HTTP", () => {
+  let server: ReturnType<typeof createServer> | null = null;
+
+  afterEach(async () => {
+    await server?.close();
+    server = null;
+  });
+
+  async function boot(engine: WorkflowApiEngine): Promise<string> {
+    server = createServer({ runtime: runtimeWith(engine), logger: silentLogger });
+    await server.listen(0);
+    return `http://localhost:${server.port}`;
+  }
+
+  test("DELETE reports that it stopped a live run", async () => {
+    const base = await boot(makeEngine());
+    const res = await req(`${base}/workflows/runs/run-1`, { method: "DELETE" });
+
+    expect(res.status).toBe(200);
+    expect(res.json).toEqual({ runId: "run-1", cancelled: true });
+  });
+
+  test("DELETE on an already-finished run is 200 and false, not an error", async () => {
+    const base = await boot(makeEngine());
+    const res = await req(`${base}/workflows/runs/run-99`, { method: "DELETE" });
+
+    // Two tabs pressing Stop is ordinary, and a 404 would conflate "no such run"
+    // with "already done".
+    expect(res.status).toBe(200);
+    expect(res.json).toEqual({ runId: "run-99", cancelled: false });
+  });
+
+  test("a cancel is refused without the API token when one is set", async () => {
+    server = createServer({
+      runtime: runtimeWith(makeEngine()),
+      logger: silentLogger,
+      env: { AAI_WORKFLOW_API_TOKEN: "secret" },
+    });
+    await server.listen(0);
+    const base = `http://localhost:${server.port}`;
+
+    const denied = await req(`${base}/workflows/runs/run-1`, { method: "DELETE" });
+    const allowed = await req(`${base}/workflows/runs/run-1`, {
+      method: "DELETE",
+      headers: { Authorization: "Bearer secret" },
+    });
+
+    // Stopping someone else's work is exactly what the token exists to gate.
+    expect(denied.status).toBe(401);
+    expect(allowed.status).toBe(200);
   });
 });

@@ -18,6 +18,8 @@ export type MemoryRun = {
   workflow: string;
   input: unknown;
   status: WorkflowRunStatus;
+  /** The correlation key `start({ key })` supplied, when it supplied one. */
+  key?: string | undefined;
   output?: unknown;
   error?: string;
   // Explicitly `| undefined` rather than merely optional: clearing a wake time
@@ -50,7 +52,61 @@ export type MemoryWorkflowStore = WorkflowStore & {
   initCount: number;
 };
 
-const CLAIMABLE: ReadonlySet<WorkflowRunStatus> = new Set(["pending", "sleeping", "running"]);
+/**
+ * Statuses a run can still move out of — the fake's copy of the real store's
+ * `LIVE` list, and load-bearing for the same two reasons: a claim may only take
+ * over a live run, and the three settling writes must NO-OP on a terminal one so
+ * a cancel cannot be overwritten by a slower executor's `complete`.
+ */
+const LIVE: ReadonlySet<WorkflowRunStatus> = new Set(["pending", "sleeping", "running"]);
+
+/**
+ * Narrow a snapshot to one status, throwing when it is in another.
+ *
+ * `WorkflowRunSnapshot` is discriminated on `status`, so reading `.error` or
+ * `.output` requires establishing the status first — which every spec here wanted
+ * to assert anyway. Doing both in one call is what keeps the specs from
+ * re-asserting the status by hand and then reaching past the narrow; the throw
+ * names the status that DID come back, which is the thing a failure needs to say.
+ */
+export function asStatus<S extends WorkflowRunStatus>(
+  run: WorkflowRunSnapshot | undefined,
+  status: S,
+): Extract<WorkflowRunSnapshot, { status: S }> {
+  if (run === undefined) throw new Error(`expected a ${status} run, got no run at all`);
+  if (run.status !== status) {
+    throw new Error(`expected a ${status} run, got ${run.status}`);
+  }
+  return run as Extract<WorkflowRunSnapshot, { status: S }>;
+}
+
+/**
+ * Row -> snapshot, mirroring the real store's `toSnapshot`.
+ *
+ * Shared by `get` and `findByKey` for the same reason it is shared there: the
+ * snapshot is a discriminated union, so which fields exist is decided by the
+ * status in exactly one place.
+ */
+function snapshot(runId: string, run: MemoryRun): WorkflowRunSnapshot {
+  const base = {
+    runId,
+    workflow: run.workflow,
+    stepsCompleted: run.steps.size,
+    ...(run.key !== undefined ? { key: run.key } : {}),
+  };
+  switch (run.status) {
+    case "completed":
+      return { ...base, status: "completed", output: run.output };
+    case "failed":
+      return { ...base, status: "failed", error: run.error ?? "workflow run failed" };
+    case "sleeping":
+      return { ...base, status: "sleeping", wakeAt: run.wakeAt ?? 0 };
+    case "cancelled":
+      return { ...base, status: "cancelled" };
+    default:
+      return { ...base, status: run.status };
+  }
+}
 
 export function createMemoryWorkflowStore(): MemoryWorkflowStore {
   const runs = new Map<string, MemoryRun>();
@@ -71,14 +127,19 @@ export function createMemoryWorkflowStore(): MemoryWorkflowStore {
       return Promise.resolve();
     },
 
-    create(runId: string, workflow: string, input: unknown): Promise<void> {
-      runs.set(runId, { workflow, input, status: "pending", steps: new Map() });
+    create(
+      runId: string,
+      workflow: string,
+      input: unknown,
+      key?: string | undefined,
+    ): Promise<void> {
+      runs.set(runId, { workflow, input, status: "pending", key, steps: new Map() });
       return Promise.resolve();
     },
 
     claim(runId: string, leaseMs: number): Promise<ClaimedRun | undefined> {
       const run = runs.get(runId);
-      if (!(run && CLAIMABLE.has(run.status))) return Promise.resolve(undefined);
+      if (!(run && LIVE.has(run.status))) return Promise.resolve(undefined);
       // Not yet due, or still owned by a live lease — both are "someone else's".
       if (run.wakeAt !== undefined && run.wakeAt > Date.now()) return Promise.resolve(undefined);
       if (
@@ -121,7 +182,7 @@ export function createMemoryWorkflowStore(): MemoryWorkflowStore {
 
     suspend(runId: string, wakeAt: number): Promise<void> {
       const run = runs.get(runId);
-      if (run) {
+      if (run && LIVE.has(run.status)) {
         run.status = "sleeping";
         run.wakeAt = wakeAt;
         run.leaseUntil = undefined;
@@ -131,7 +192,7 @@ export function createMemoryWorkflowStore(): MemoryWorkflowStore {
 
     complete(runId: string, output: unknown): Promise<void> {
       const run = runs.get(runId);
-      if (run) {
+      if (run && LIVE.has(run.status)) {
         run.status = "completed";
         run.output = output;
         run.wakeAt = undefined;
@@ -142,7 +203,7 @@ export function createMemoryWorkflowStore(): MemoryWorkflowStore {
 
     fail(runId: string, error: string): Promise<void> {
       const run = runs.get(runId);
-      if (run) {
+      if (run && LIVE.has(run.status)) {
         run.status = "failed";
         run.error = error;
         run.wakeAt = undefined;
@@ -151,18 +212,29 @@ export function createMemoryWorkflowStore(): MemoryWorkflowStore {
       return Promise.resolve();
     },
 
+    cancel(runId: string): Promise<boolean> {
+      const run = runs.get(runId);
+      if (!(run && LIVE.has(run.status))) return Promise.resolve(false);
+      run.status = "cancelled";
+      run.wakeAt = undefined;
+      run.leaseUntil = undefined;
+      return Promise.resolve(true);
+    },
+
     get(runId: string): Promise<WorkflowRunSnapshot | undefined> {
       const run = runs.get(runId);
-      if (!run) return Promise.resolve(undefined);
-      return Promise.resolve({
-        runId,
-        workflow: run.workflow,
-        status: run.status,
-        stepsCompleted: run.steps.size,
-        ...(run.status === "completed" ? { output: run.output } : {}),
-        ...(run.status === "failed" && run.error !== undefined ? { error: run.error } : {}),
-        ...(run.status === "sleeping" && run.wakeAt !== undefined ? { wakeAt: run.wakeAt } : {}),
-      });
+      return Promise.resolve(run ? snapshot(runId, run) : undefined);
+    },
+
+    findByKey(workflow: string, key: string, limit: number): Promise<WorkflowRunSnapshot[]> {
+      // Newest first, which a Map gives by reversing insertion order — the same
+      // ordering the real store gets from `order by created_at desc`, without a
+      // clock the fake would have to fake.
+      const matched = [...runs.entries()].filter(
+        ([, run]) => run.workflow === workflow && run.key === key,
+      );
+      matched.reverse();
+      return Promise.resolve(matched.slice(0, limit).map(([runId, run]) => snapshot(runId, run)));
     },
 
     putBlob(blobId: string, contentType: string, base64: string): Promise<void> {

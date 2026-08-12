@@ -13,7 +13,7 @@
  * which is what makes {@link useWorkflowRun} a poll rather than a subscription.
  */
 
-import type { WorkflowRunSnapshot, WorkflowSummary } from "@alexkroman1/aai";
+import { isTerminal, type WorkflowRunSnapshot, type WorkflowSummary } from "@alexkroman1/aai";
 import { useEffect, useRef, useState } from "react";
 import { pageBaseUrl } from "./_utils.ts";
 import { buildAgentUrl } from "./client-config.ts";
@@ -32,14 +32,26 @@ import { buildAgentUrl } from "./client-config.ts";
  * `WorkflowRun` keeps the shorter name because it is what a page's own code
  * writes; nothing in a browser needs the word "snapshot" to know a poll returns
  * one.
+ *
+ * It is GENERIC on the run's output, and a page is expected to supply it — see
+ * {@link useWorkflowRun}. A browser cannot import the workflow definition the way
+ * tool code can (that module is the agent, and pulling it into the page bundle
+ * would drag the whole server graph in), so naming the output type is the one
+ * thing the page has to restate.
  */
-export type WorkflowRun = WorkflowRunSnapshot;
+export type WorkflowRun<R = unknown> = WorkflowRunSnapshot<R>;
 export type { WorkflowSummary } from "@alexkroman1/aai";
 
-/** A run status nothing will change again. */
-export function isTerminal(run: WorkflowRun | undefined): boolean {
-  return run?.status === "completed" || run?.status === "failed";
-}
+/**
+ * A run status nothing will change again.
+ *
+ * Re-exported from the SDK rather than defined here. It was a second
+ * implementation listing two of the terminal statuses, so adding `cancelled`
+ * would have left a cancelled run polled forever by a page while the agent
+ * considered it finished — the kind of drift a status predicate beside the status
+ * union cannot have.
+ */
+export { isTerminal } from "@alexkroman1/aai";
 
 export type WorkflowApiOptions = {
   /**
@@ -56,7 +68,7 @@ export type WorkflowApiOptions = {
   token?: string;
 };
 
-/** The four calls the API offers. */
+/** The calls the API offers. */
 export type WorkflowApi = {
   /** Declared workflows, name + description. */
   list(): Promise<WorkflowSummary[]>;
@@ -64,10 +76,31 @@ export type WorkflowApi = {
    * Start a run and resolve its id WITHOUT waiting for it — the point of the
    * mechanism. Rejects when the name is not declared or the input fails the
    * workflow's schema, both of which are 400s carrying the reason.
+   *
+   * `key` is a correlation handle the page chooses, so the run can be found again
+   * later without the id — a signed-in user, an upload, a device. Pass one when
+   * the page might be reloaded before the run finishes and you would rather look
+   * it up than remember the id.
    */
-  start(workflow: string, input?: unknown): Promise<string>;
-  /** Read a run's state. Resolves undefined for an unknown id. */
+  start(workflow: string, input?: unknown, options?: { key?: string }): Promise<string>;
+  /**
+   * Read a run's state. Resolves undefined for an unknown id.
+   *
+   * Deliberately NOT generic on the output, even though a page wants it typed:
+   * a generic METHOD has to be implemented generically, which made every test
+   * double and every hand-written stub of this client generic too. The type
+   * parameter lives on {@link useWorkflowRun} instead, which is where a page
+   * states what it expects anyway.
+   */
   get(runId: string): Promise<WorkflowRun | undefined>;
+  /** Runs of `workflow` started with `key`, newest first. */
+  find(workflow: string, key: string, options?: { limit?: number }): Promise<WorkflowRun[]>;
+  /**
+   * Stop a run, resolving whether this call is what ended it. A run that had
+   * already finished answers false rather than failing — two tabs pressing Stop
+   * is ordinary.
+   */
+  cancel(runId: string): Promise<boolean>;
   /**
    * Upload bytes for a run to work on, resolving the id that names them.
    *
@@ -120,11 +153,15 @@ export function createWorkflowApi(opts: WorkflowApiOptions = {}): WorkflowApi {
       return body.workflows ?? [];
     },
 
-    async start(workflow: string, input?: unknown): Promise<string> {
+    async start(workflow: string, input?: unknown, options?: { key?: string }): Promise<string> {
       const res = await fetch(`${base}/runs`, {
         method: "POST",
         headers: { ...auth, "Content-Type": "application/json" },
-        body: JSON.stringify(input === undefined ? { workflow } : { workflow, input }),
+        body: JSON.stringify({
+          workflow,
+          ...(input === undefined ? {} : { input }),
+          ...(options?.key === undefined ? {} : { key: options.key }),
+        }),
       });
       if (!res.ok) throw await failure(res);
       const body = (await res.json()) as { runId: string };
@@ -138,6 +175,29 @@ export function createWorkflowApi(opts: WorkflowApiOptions = {}): WorkflowApi {
       if (res.status === 404) return;
       if (!res.ok) throw await failure(res);
       return (await res.json()) as WorkflowRun;
+    },
+
+    async find(
+      workflow: string,
+      key: string,
+      options?: { limit?: number },
+    ): Promise<WorkflowRun[]> {
+      const query = new URLSearchParams({ workflow, key });
+      if (options?.limit !== undefined) query.set("limit", String(options.limit));
+      const res = await fetch(`${base}/runs?${query.toString()}`, { headers: auth });
+      if (!res.ok) throw await failure(res);
+      const body = (await res.json()) as { runs?: WorkflowRun[] };
+      return body.runs ?? [];
+    },
+
+    async cancel(runId: string): Promise<boolean> {
+      const res = await fetch(`${base}/runs/${encodeURIComponent(runId)}`, {
+        method: "DELETE",
+        headers: auth,
+      });
+      if (!res.ok) throw await failure(res);
+      const body = (await res.json()) as { cancelled?: boolean };
+      return body.cancelled === true;
     },
 
     async upload(
@@ -161,9 +221,9 @@ export function createWorkflowApi(opts: WorkflowApiOptions = {}): WorkflowApi {
 /** How often {@link useWorkflowRun} re-reads a live run. */
 export const DEFAULT_WORKFLOW_POLL_MS = 2000;
 
-export type UseWorkflowRunResult = {
+export type UseWorkflowRunResult<R = unknown> = {
   /** Latest snapshot, or undefined before the first read lands. */
-  run: WorkflowRun | undefined;
+  run: WorkflowRun<R> | undefined;
   /** The last read's failure, cleared by the next successful one. */
   error: string | undefined;
   /** True while a non-terminal run is still being polled. */
@@ -178,11 +238,11 @@ export type UseWorkflowRunResult = {
  * the whole loop's branching — and so the loop can be read (and reasoned about)
  * without React in the way.
  */
-function pollUntilTerminal(
+function pollUntilTerminal<R>(
   getClient: () => WorkflowApi,
   runId: string,
   intervalMs: number,
-  onRun: (run: WorkflowRun) => void,
+  onRun: (run: WorkflowRun<R>) => void,
   onError: (message: string) => void,
 ): () => void {
   let cancelled = false;
@@ -193,7 +253,11 @@ function pollUntilTerminal(
       // Resolved per read rather than captured once, so a caller that swaps
       // clients mid-run — a token arriving after login — is picked up on the
       // next poll without the loop restarting. See the ref in the hook.
-      const next = await getClient().get(runId);
+      // The generic is the PAGE's assertion about its own agent's workflow, which
+      // nothing in the browser can verify — the client reads JSON off a route that
+      // describes no output type. Narrowed once, here, rather than at every call
+      // site reading `run.output`.
+      const next = (await getClient().get(runId)) as WorkflowRun<R> | undefined;
       if (cancelled) return true;
       if (!next) return false;
       onRun(next);
@@ -235,14 +299,19 @@ function pollUntilTerminal(
  * Polling STOPS on a terminal status, so a finished run costs nothing; passing
  * `undefined` (nothing started yet) also costs nothing.
  *
+ * @typeParam R - The workflow's output type. Supplying it is what makes
+ *   `run.status === "completed"` narrow to a typed `run.output` instead of
+ *   `unknown` — the page has to name it because it cannot import the workflow
+ *   itself (see {@link WorkflowRun}).
+ *
  * @public
  */
-export function useWorkflowRun(
+export function useWorkflowRun<R = unknown>(
   runId: string | undefined,
   opts: { api?: WorkflowApi; intervalMs?: number } = {},
-): UseWorkflowRunResult {
+): UseWorkflowRunResult<R> {
   const { api, intervalMs = DEFAULT_WORKFLOW_POLL_MS } = opts;
-  const [run, setRun] = useState<WorkflowRun | undefined>(undefined);
+  const [run, setRun] = useState<WorkflowRun<R> | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
 
   /**
@@ -278,7 +347,7 @@ export function useWorkflowRun(
       fallback ??= createWorkflowApi();
       return fallback;
     };
-    return pollUntilTerminal(
+    return pollUntilTerminal<R>(
       getClient,
       runId,
       intervalMs,

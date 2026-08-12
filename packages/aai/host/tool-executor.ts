@@ -14,7 +14,11 @@ import { STORAGE_DISABLED_MESSAGE } from "../sdk/db.ts";
 import { formatSchemaIssues } from "../sdk/schema.ts";
 import type { Message, ToolContext, ToolDef } from "../sdk/types.ts";
 import { errorDetail, errorMessage, toolError } from "../sdk/utils.ts";
-import { WORKFLOWS_UNAVAILABLE_MESSAGE, type WorkflowClient } from "../sdk/workflow.ts";
+import {
+  rejectingWorkflows,
+  WORKFLOWS_UNAVAILABLE_MESSAGE,
+  type WorkflowClient,
+} from "../sdk/workflow.ts";
 import { type HostGenerateFn, toGenerateFn } from "./generate.ts";
 import type { Logger } from "./runtime-config.ts";
 
@@ -50,10 +54,7 @@ type ExecuteToolCallOptions = {
  * The `ctx.workflows` a context without an engine gets: every method rejects
  * with the same message, so dev and prod cannot describe the gap differently.
  */
-const UNAVAILABLE_WORKFLOWS: WorkflowClient = {
-  start: () => Promise.reject(new Error(WORKFLOWS_UNAVAILABLE_MESSAGE)),
-  get: () => Promise.reject(new Error(WORKFLOWS_UNAVAILABLE_MESSAGE)),
-};
+const UNAVAILABLE_WORKFLOWS: WorkflowClient = rejectingWorkflows(WORKFLOWS_UNAVAILABLE_MESSAGE);
 
 function buildToolContext(opts: ExecuteToolCallOptions & { signal: AbortSignal }): ToolContext {
   const { env, state, db, messages, sessionId, send, signal, generate, workflows } = opts;

@@ -43,7 +43,8 @@ export type BuiltinTool =
   | "think"
   | "remember"
   | "recall"
-  | "calculate";
+  | "calculate"
+  | "workflow_status";
 
 /**
  * How the LLM should select tools during a turn. Mirrors the Vercel AI

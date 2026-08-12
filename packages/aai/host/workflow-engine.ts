@@ -23,21 +23,23 @@
  */
 
 import type { Db } from "../sdk/db.ts";
+import type { ToolInputSchema } from "../sdk/schema.ts";
 import { formatSchemaIssues } from "../sdk/schema.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import {
-  DEFAULT_STEP_BACKOFF_MS,
-  DEFAULT_STEP_MAX_ATTEMPTS,
-  MAX_WORKFLOW_STEPS,
-  type StepOptions,
+  type AnyWorkflowDef,
+  DEFAULT_WORKFLOW_FIND_LIMIT,
+  type FindOptions,
+  MAX_WORKFLOW_FIND_LIMIT,
+  type StartOptions,
   type WorkflowClient,
-  type WorkflowContext,
   type WorkflowDef,
   type WorkflowRunSnapshot,
   type WorkflowSummary,
 } from "../sdk/workflow.ts";
-import { type HostGenerateFn, toGenerateFn } from "./generate.ts";
+import type { HostGenerateFn } from "./generate.ts";
 import type { Logger } from "./runtime-config.ts";
+import { createContextFactory, reportSequenceDrift, Suspended } from "./workflow-execution.ts";
 import type { WorkflowStore } from "./workflow-store.ts";
 
 /**
@@ -63,26 +65,6 @@ export const MAX_DUE_RUNS = 20;
  * referenced by nothing and would otherwise sit in the app's schema forever.
  */
 export const WORKFLOW_BLOB_TTL_MS = 24 * 60 * 60 * 1000;
-
-/**
- * Thrown by `ctx.sleep()` to unwind a run that has more to do later.
- *
- * A class rather than a sentinel value so it cannot be confused with an
- * author's own error, and NOT exported: an author who catches it around a
- * `sleep` would silently convert a suspension into a completed run, so the
- * only code that can recognize it is in this file.
- */
-class Suspended extends Error {
-  /** Epoch ms the run becomes due again. Declared as a field rather than a
-   *  constructor parameter property, which `erasableSyntaxOnly` forbids. */
-  readonly wakeAt: number;
-
-  constructor(wakeAt: number) {
-    super("workflow suspended");
-    this.name = "Suspended";
-    this.wakeAt = wakeAt;
-  }
-}
 
 /** Everything the engine needs to execute a run. */
 export type WorkflowEngineOptions = {
@@ -139,50 +121,12 @@ export type WorkflowEngine = WorkflowClient & {
    */
   putBlob(contentType: string, base64: string): Promise<string>;
   /**
-   * The workflows this engine can run, name + description — what
-   * `GET /workflows` serves and what a static page's client-config carries.
-   *
-   * On the engine rather than read off the agent def by each caller, so the
-   * HTTP API and `createServer` cannot disagree about what this app offers.
-   */
-  listing(): WorkflowSummary[];
-  /**
    * Stop: abort in-flight runs' `ctx.signal` and cancel pending wake timers.
    * Journaled state is untouched — an abandoned run resumes once its lease
    * expires, which is what makes a redeploy safe mid-run.
    */
   close(): void;
 };
-
-/**
- * The error a step raises once it is out of attempts.
- *
- * A shutdown mid-step is not a step failure: the run keeps its journal and
- * resumes from where it stopped, so the message says so rather than blaming the
- * step — and `execute` reads the same signal to leave the run claimable.
- */
-function stepFailure(stepId: string, maxAttempts: number, cause: unknown, aborted: boolean): Error {
-  if (aborted) {
-    return new Error(`workflow step "${stepId}" abandoned: host is shutting down`);
-  }
-  return new Error(
-    `workflow step "${stepId}" failed after ${maxAttempts} attempt(s): ${errorMessage(cause)}`,
-    { cause },
-  );
-}
-
-function delay(ms: number, signal: AbortSignal): Promise<void> {
-  if (ms <= 0) return Promise.resolve();
-  return new Promise((resolve) => {
-    const timer = setTimeout(finish, ms);
-    function finish(): void {
-      clearTimeout(timer);
-      signal.removeEventListener("abort", finish);
-      resolve();
-    }
-    signal.addEventListener("abort", finish, { once: true });
-  });
-}
 
 /**
  * Create the workflow engine for one runtime.
@@ -196,7 +140,72 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
   const timers = new Set<ReturnType<typeof setTimeout>>();
   /** Runs this process is already executing — saves a pointless claim attempt. */
   const inFlight = new Set<string>();
+  /**
+   * Abort handles for those executions, so `cancel` can stop one PROMPTLY here.
+   * A run in flight on another replica has no such handle and stops at its next
+   * terminal write instead, which the store refuses — see `WorkflowClient.cancel`.
+   */
+  const controllers = new Map<string, AbortController>();
   let initialized: Promise<void> | undefined;
+  // Built once per engine: the per-run machinery lives in `workflow-execution.ts`
+  // and takes the engine's dependencies here rather than closing over them.
+  const buildContext = createContextFactory({ store, db, env, generate, logger });
+
+  /**
+   * Declared name(s) for each workflow OBJECT, so a caller can pass the
+   * workflow itself instead of a string.
+   *
+   * `agent({ workflows })` stays the single source of the name the journal
+   * records — this is only the reverse direction of that same record, which is
+   * what keeps a rename a one-place edit. Built once per engine because the
+   * record is fixed for the life of a bundle.
+   */
+  const namesOf = new Map<WorkflowDef, string[]>();
+  for (const [name, def] of Object.entries(workflows)) {
+    const existing = namesOf.get(def);
+    if (existing) existing.push(name);
+    else namesOf.set(def, [name]);
+  }
+
+  /** The declared names, for an error message that can be acted on. */
+  function declaredNames(): string {
+    const known = Object.keys(workflows);
+    return known.length > 0 ? known.join(", ") : "none";
+  }
+
+  /**
+   * Resolve `start`/`find`'s first argument to a declared workflow name.
+   *
+   * Both spellings fail at the same boundary and say the same kind of thing: a
+   * name that is not declared, or a def that is not in the record (an author who
+   * built a workflow and forgot to declare it — the one mistake the typed
+   * overload cannot catch, since nothing links a bare `workflow()` result to an
+   * agent).
+   */
+  function resolveName(workflow: WorkflowDef | string): string {
+    if (typeof workflow === "string") {
+      if (!workflows[workflow]) {
+        throw new Error(`Unknown workflow "${workflow}". Declared workflows: ${declaredNames()}`);
+      }
+      return workflow;
+    }
+    const names = namesOf.get(workflow);
+    if (names === undefined || names[0] === undefined) {
+      throw new Error(
+        "This workflow is not declared on this agent — add it to `agent({ workflows })`. " +
+          `Declared workflows: ${declaredNames()}`,
+      );
+    }
+    // Two keys pointing at one object: the journal records ONE name, and picking
+    // either would make which one arbitrary. The author has to say.
+    if (names.length > 1) {
+      throw new Error(
+        `This workflow is declared under ${names.length} names (${names.join(", ")}). ` +
+          "Start it by name so the journal records which one, or declare it once.",
+      );
+    }
+    return names[0];
+  }
 
   /** Create the journal tables once per engine, and only if a workflow is used. */
   function ensureTables(): Promise<void> {
@@ -222,124 +231,6 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
     timers.add(timer);
   }
 
-  /** Run one step's function, retrying transient failures with backoff. */
-  async function attempt<T>(
-    stepId: string,
-    fn: () => Promise<T> | T,
-    options: StepOptions | undefined,
-    signal: AbortSignal,
-  ): Promise<T> {
-    const maxAttempts = options?.maxAttempts ?? DEFAULT_STEP_MAX_ATTEMPTS;
-    const backoffMs = options?.backoffMs ?? DEFAULT_STEP_BACKOFF_MS;
-    let last: unknown;
-    for (let n = 1; n <= maxAttempts; n++) {
-      if (signal.aborted) break;
-      try {
-        return await fn();
-      } catch (err) {
-        last = err;
-        logger.error(`workflow step "${stepId}" attempt ${n}/${maxAttempts} failed`, {
-          error: errorMessage(err),
-        });
-        if (n < maxAttempts) await delay(backoffMs * 2 ** (n - 1), signal);
-      }
-    }
-    throw stepFailure(stepId, maxAttempts, last, signal.aborted);
-  }
-
-  /** Build the context one execution of one run sees. */
-  function buildContext(
-    runId: string,
-    journal: Map<string, unknown>,
-    signal: AbortSignal,
-  ): WorkflowContext {
-    // Per-name call counters, so a step name reused in a loop yields one
-    // journal entry per iteration rather than replaying the first forever.
-    // Prefixed by kind (`s:` author step, `t:` timer) so a `sleep` can never
-    // collide with a step an author happened to name the same thing.
-    const ordinals = new Map<string, number>();
-    const nextId = (kind: "s" | "t", name: string): string => {
-      const key = `${kind}:${name}`;
-      const n = ordinals.get(key) ?? 0;
-      ordinals.set(key, n + 1);
-      return `${key}#${n}`;
-    };
-
-    /**
-     * Journal one entry and enforce the run's step cap.
-     *
-     * BOTH `step` and `sleep` go through here, because the cap is about the
-     * journal's SIZE rather than about author steps: replay reads every row
-     * back through `ctx.db`, so a run that sleeps in a loop overruns
-     * `MAX_DB_RESULT_ROWS` exactly as a run that steps in a loop does — and a
-     * journal that cannot be read in full replays as a run with no history.
-     */
-    const record = async (stepId: string, output: unknown): Promise<void> => {
-      const count = await store.recordStep(runId, stepId, output);
-      journal.set(stepId, output);
-      if (count >= MAX_WORKFLOW_STEPS) {
-        throw new Error(
-          `workflow run ${runId} exceeded ${MAX_WORKFLOW_STEPS} journal entries; ` +
-            "split the work into child runs",
-        );
-      }
-    };
-
-    return {
-      env,
-      db,
-      generate: toGenerateFn(generate, { signal }),
-      runId,
-      signal,
-      async blob(
-        blobId: string,
-      ): Promise<{ contentType: string; bytes: Uint8Array<ArrayBuffer> } | undefined> {
-        const stored = await store.getBlob(blobId);
-        if (!stored) return;
-        return {
-          contentType: stored.contentType,
-          // `new Uint8Array(buf)`, not `Uint8Array.from(buf)`: the latter goes
-          // through the iterator path element by element. The copy itself is
-          // NOT redundant — `Buffer.from(str, "base64")` may allocate out of
-          // Node's shared pool, so its `.buffer` is other buffers' too, and
-          // exclusive ownership is what lets this be typed `Uint8Array<
-          // ArrayBuffer>` and handed to a `fetch` body or a `Blob` without the
-          // caller re-copying it (see `WorkflowContext.blob`).
-          bytes: new Uint8Array(Buffer.from(stored.base64, "base64")),
-        };
-      },
-
-      releaseBlob(blobId: string): Promise<boolean> {
-        return store.deleteBlob(blobId);
-      },
-
-      async step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T> {
-        const stepId = nextId("s", name);
-        // Replay: a journaled step is a fact, and re-running it is exactly
-        // what durability is supposed to prevent.
-        if (journal.has(stepId)) return journal.get(stepId) as T;
-        const output = await attempt(stepId, fn, options, signal);
-        await record(stepId, output);
-        return output;
-      },
-      async sleep(ms: number): Promise<void> {
-        const stepId = nextId("t", "sleep");
-        const journaled = journal.get(stepId);
-        // Already scheduled on an earlier life of this run: either the wake
-        // time has passed (fall through and keep going) or it has not (suspend
-        // again, without moving the deadline — a resumed run must not have its
-        // sleep extended by however long it waited to be picked up).
-        if (typeof journaled === "number") {
-          if (Date.now() >= journaled) return;
-          throw new Suspended(journaled);
-        }
-        const wakeAt = Date.now() + Math.max(0, ms);
-        await record(stepId, wakeAt);
-        throw new Suspended(wakeAt);
-      },
-    };
-  }
-
   /**
    * Claim a run and execute it to its next boundary — completion, failure, or
    * suspension. A run this process cannot claim is someone else's; returning
@@ -348,6 +239,13 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
   async function execute(runId: string): Promise<void> {
     if (inFlight.has(runId) || shutdown.aborted) return;
     inFlight.add(runId);
+    // Per-run, so `cancel` can reach exactly this execution. Combined with the
+    // engine's shutdown signal rather than replacing it: a drain still abandons
+    // every run, and a cancel abandons one, and the workflow body sees both
+    // through the same `ctx.signal`.
+    const runController = new AbortController();
+    controllers.set(runId, runController);
+    const signal = AbortSignal.any([shutdown, runController.signal]);
     try {
       const claimed = await store.claim(runId, WORKFLOW_LEASE_MS);
       if (!claimed) return;
@@ -360,26 +258,34 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
         return;
       }
       const journal = await store.completedSteps(runId);
-      const ctx = buildContext(runId, journal, shutdown);
+      const { ctx, claimedSteps } = buildContext(runId, journal, signal);
       // The journal hands back `unknown` — it stores whatever jsonb round-trip
       // of the input `start()` validated against this workflow's own schema.
       // Narrowing to the declaration's own parameter type is the assertion
       // that `start()` already made good on.
       const input = claimed.input as Parameters<typeof def.run>[0];
-      const output = await def.run(input, ctx);
-      await store.complete(runId, output);
+      try {
+        const output = await def.run(input, ctx);
+        await store.complete(runId, output);
+      } finally {
+        // In a `finally` so the check covers every way out — completed, failed,
+        // and suspended — since a drifting sequence is not specific to any of
+        // them. Runs before the outer catch settles the run.
+        reportSequenceDrift(logger, claimed.workflow, runId, journal, claimedSteps);
+      }
     } catch (err) {
-      await settleFailure(runId, err);
+      await settleFailure(runId, err, runController.signal.aborted);
     } finally {
       inFlight.delete(runId);
+      controllers.delete(runId);
     }
   }
 
   /**
-   * Record how an execution that did not complete ended. Three outcomes, and
+   * Record how an execution that did not complete ended. Four outcomes, and
    * only one of them is a failed run.
    */
-  async function settleFailure(runId: string, err: unknown): Promise<void> {
+  async function settleFailure(runId: string, err: unknown, cancelled: boolean): Promise<void> {
     // Suspended: more to do later, at a time already journaled.
     if (err instanceof Suspended) {
       await store.suspend(runId, err.wakeAt);
@@ -393,6 +299,14 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
     // step from finishing.
     if (shutdown.aborted) {
       logger.error(`workflow run ${runId} abandoned mid-step; will resume after lease expiry`);
+      return;
+    }
+    // Cancelled: the store already holds the terminal status, and whatever the
+    // body threw on its way out of an aborted step is a CONSEQUENCE of the
+    // cancel rather than a failure worth recording over it. Writing `failed`
+    // here would also lose the distinction a caller asked for by cancelling.
+    if (cancelled) {
+      logger.error(`workflow run ${runId} cancelled mid-step`);
       return;
     }
     const message = errorMessage(err);
@@ -411,18 +325,18 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
   }
 
   return {
-    async start(name: string, input?: unknown): Promise<string> {
-      const def = workflows[name];
-      if (!def) {
-        const known = Object.keys(workflows);
-        throw new Error(
-          `Unknown workflow "${name}". Declared workflows: ${known.length > 0 ? known.join(", ") : "none"}`,
-        );
-      }
+    async start<P extends ToolInputSchema, R>(
+      workflow: WorkflowDef<P, R> | string,
+      input?: unknown,
+      options?: StartOptions,
+    ): Promise<string> {
+      const name = resolveName(workflow as WorkflowDef | string);
+      // Non-null: `resolveName` only returns a name the record holds.
+      const def = workflows[name] as WorkflowDef;
       const validated = await validate(name, def, input);
       await ensureTables();
       const runId = crypto.randomUUID();
-      await store.create(runId, name, validated);
+      await store.create(runId, name, validated, options?.key);
       // Deliberately not awaited — `start` resolves as soon as the run is
       // durable, which is the whole point: the caller is a tool answering a
       // turn, and the run outlives it. Failures are journaled by `execute`,
@@ -433,9 +347,41 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
       return runId;
     },
 
-    async get(runId: string): Promise<WorkflowRunSnapshot | undefined> {
+    // `_of` is type-only: it exists so `output` on a completed run is the
+    // workflow's own return type rather than `unknown`. The run's stored row is
+    // what says which workflow it belongs to, so nothing reads the argument.
+    async get<R>(
+      runId: string,
+      _of?: AnyWorkflowDef<R>,
+    ): Promise<WorkflowRunSnapshot<R> | undefined> {
       await ensureTables();
-      return store.get(runId);
+      return (await store.get(runId)) as WorkflowRunSnapshot<R> | undefined;
+    },
+
+    async find<R>(
+      workflow: AnyWorkflowDef<R> | string,
+      key: string,
+      options?: FindOptions,
+    ): Promise<WorkflowRunSnapshot<R>[]> {
+      const name = resolveName(workflow as WorkflowDef | string);
+      await ensureTables();
+      // Clamped rather than validated: this is reached from tool code answering
+      // "is my thing ready yet?", and a caller's stray 10_000 should cost the
+      // ceiling instead of failing the turn. The ceiling itself is what keeps the
+      // read under `MAX_DB_RESULT_ROWS`.
+      const requested = options?.limit ?? DEFAULT_WORKFLOW_FIND_LIMIT;
+      const limit = Math.min(Math.max(1, Math.floor(requested)), MAX_WORKFLOW_FIND_LIMIT);
+      return (await store.findByKey(name, key, limit)) as WorkflowRunSnapshot<R>[];
+    },
+
+    async cancel(runId: string): Promise<boolean> {
+      await ensureTables();
+      const stopped = await store.cancel(runId);
+      // Aborted unconditionally, not only when this call is what stopped it:
+      // another replica may have cancelled the run, and this process holds the
+      // only handle that can reach its `ctx.signal`.
+      controllers.get(runId)?.abort();
+      return stopped;
     },
 
     async putBlob(contentType: string, base64: string): Promise<string> {

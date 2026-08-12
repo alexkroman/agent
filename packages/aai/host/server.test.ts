@@ -436,6 +436,8 @@ describe("createServer with page: static", () => {
         workflows: {
           start: () => Promise.resolve("r"),
           get: () => Promise.resolve(undefined),
+          find: () => Promise.resolve([]),
+          cancel: () => Promise.resolve(false),
           putBlob: () => Promise.resolve("b"),
           listing: () => [{ name: "transcribe" }],
           busy: () => false,

@@ -45,3 +45,7 @@ export * from "./sdk/utils.ts";
 // Durable workflows: `workflow()` sits next to `agent()`/`tool()` because it
 // is the third thing an `agent.ts` declares, not a subsystem behind a subpath.
 export * from "./sdk/workflow.ts";
+// `startTool()` is beside them for the same reason — it is how a voice agent
+// reaches a workflow, and its default correlation key is what makes the
+// `workflow_status` builtin able to report the run.
+export * from "./sdk/workflow-tool.ts";

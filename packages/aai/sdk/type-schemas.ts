@@ -22,6 +22,7 @@ export const BuiltinToolSchema = z.enum([
   "remember",
   "recall",
   "calculate",
+  "workflow_status",
 ]);
 
 /** @internal Zod schema for `ToolChoice`. Exported for reuse in internal schemas. */

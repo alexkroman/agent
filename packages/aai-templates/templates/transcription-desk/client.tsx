@@ -155,7 +155,10 @@ function App() {
   // initializer React calls once, where the call form would re-read storage and
   // re-parse the list on every render.
   const [runs, setRuns] = useState(loadRuns);
-  const { run, error: pollError } = useWorkflowRun(runId, { api });
+  // The type parameter is what makes `run.output` a `TranscribeOutput` below —
+  // the page names its own workflow's return type, since it cannot import
+  // agent.ts without pulling the agent into the page bundle.
+  const { run, error: pollError } = useWorkflowRun<TranscribeOutput>(runId, { api });
 
   // Busy through the browser-side work AND while a started run is still going.
   // `isTerminal` is the SDK's own answer to "will this change again", so the two
@@ -205,7 +208,9 @@ function App() {
     }
   }
 
-  const output = run?.status === "completed" ? (run.output as TranscribeOutput) : undefined;
+  // No cast: `WorkflowRunSnapshot` is discriminated on `status`, so narrowing to
+  // "completed" is what produces a typed `output`.
+  const output = run?.status === "completed" ? run.output : undefined;
 
   /*
    * A file input's button is a PSEUDO-ELEMENT (`::file-selector-button`), which
@@ -269,10 +274,31 @@ function App() {
       )}
 
       {runId && !output && (
-        <p className="m-0 text-sm opacity-70" role="status">
-          Run <code className="font-aai-mono text-xs">{runId}</code> — {run?.status ?? "starting"}
-          {run ? `, ${run.stepsCompleted} chunk(s) transcribed` : ""}
-        </p>
+        <div className="flex items-center gap-3">
+          <p className="m-0 text-sm opacity-70" role="status">
+            Run <code className="font-aai-mono text-xs">{runId}</code> — {run?.status ?? "starting"}
+            {run ? `, ${run.stepsCompleted} chunk(s) transcribed` : ""}
+          </p>
+          {/* A long recording is minutes of work the page cannot take back any
+              other way: the run outlives this tab, so closing it abandons nothing.
+              `cancel` is what actually stops it. Kept enabled until the run is
+              terminal, and it never throws for a run that already finished — the
+              route answers `cancelled: false` rather than failing. */}
+          {!isTerminal(run) && (
+            <button
+              type="button"
+              className="cursor-pointer rounded-aai border px-2 py-1 text-xs"
+              style={{ background: theme.surface, borderColor: theme.border, color: theme.text }}
+              onClick={() => {
+                void api.cancel(runId).catch((err: unknown) => {
+                  setFailure(err instanceof Error ? err.message : String(err));
+                });
+              }}
+            >
+              Stop
+            </button>
+          )}
+        </div>
       )}
 
       {/* Three different failures, and they are not interchangeable: the browser
@@ -282,6 +308,9 @@ function App() {
       {failure && <p className="m-0 text-sm text-red-700">Could not start: {failure}</p>}
       {run?.status === "failed" && (
         <p className="m-0 text-sm text-red-700">Transcription failed: {run.error}</p>
+      )}
+      {run?.status === "cancelled" && (
+        <p className="m-0 text-sm opacity-70">Stopped. Nothing further will be charged.</p>
       )}
       {pollError && !output && (
         <p className="m-0 text-sm text-amber-700">Lost contact with the run — still retrying.</p>

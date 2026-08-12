@@ -32,6 +32,7 @@ import type { ToolDef } from "../sdk/types.ts";
 import { safeJsonParse } from "../sdk/utils.ts";
 import { calculate } from "./_calculate.ts";
 import { createRunCode, type RunCodeExecutor } from "./builtin-run-code.ts";
+import { createWorkflowStatus } from "./builtin-workflow-status.ts";
 import { createGetPageDesign } from "./page-design.ts";
 import { readNotes, writeNote } from "./session-notes.ts";
 import { builtinFetch } from "./ssrf.ts";
@@ -309,6 +310,10 @@ const STATIC_BUILTINS: Record<string, ToolDef & { guidance?: string }> = {
   remember: createRemember(),
   recall: createRecall(),
   calculate: createCalculate(),
+  // Reads `ctx.workflows` off the context like any other tool, so it needs no
+  // injection — the engine reaches it through the same field author tool code
+  // uses. See builtin-workflow-status.ts for why it is session-scoped.
+  workflow_status: createWorkflowStatus(),
 };
 
 /**

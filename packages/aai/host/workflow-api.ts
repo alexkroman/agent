@@ -9,10 +9,12 @@
  * get one surface rather than a page-only one plus an integration story:
  *
  * ```
- * GET  /workflows            → { workflows: [{ name, description? }] }
- * POST /workflows/runs       → { runId }              body: { workflow, input? }
- * GET  /workflows/runs/:id   → a WorkflowRunSnapshot
- * POST /workflows/blobs      → { blobId, bytes }      body: raw bytes
+ * GET    /workflows            → { workflows: [{ name, description? }] }
+ * POST   /workflows/runs       → { runId }         body: { workflow, input?, key? }
+ * GET    /workflows/runs       → { runs }          ?workflow=&key=&limit=
+ * GET    /workflows/runs/:id   → a WorkflowRunSnapshot
+ * DELETE /workflows/runs/:id   → { runId, cancelled }
+ * POST   /workflows/blobs      → { blobId, bytes } body: raw bytes
  * ```
  *
  * It is mounted by `createServer`, so `aai dev`, a self-hosted server and every
@@ -42,11 +44,7 @@
 import { timingSafeEqual } from "node:crypto";
 import type http from "node:http";
 import { errorMessage } from "../sdk/utils.ts";
-import {
-  WORKFLOWS_UNAVAILABLE_MESSAGE,
-  type WorkflowClient,
-  type WorkflowSummary,
-} from "../sdk/workflow.ts";
+import { WORKFLOWS_UNAVAILABLE_MESSAGE, type WorkflowClient } from "../sdk/workflow.ts";
 import type { Logger } from "./runtime-config.ts";
 
 /** Path prefix every route here lives under. */
@@ -92,7 +90,6 @@ export const MAX_WORKFLOW_BLOB_BYTES = 16 * 1024 * 1024;
  */
 export type WorkflowApiEngine = WorkflowClient & {
   putBlob(contentType: string, base64: string): Promise<string>;
-  listing(): WorkflowSummary[];
   /** Durable work in flight or imminent — see `WorkflowEngine.busy`. */
   busy(): boolean;
 };
@@ -223,9 +220,19 @@ async function startRun(
     sendJson(res, 400, { error: "Body must be JSON" });
     return;
   }
-  const { workflow, input } = (parsed ?? {}) as { workflow?: unknown; input?: unknown };
+  const { workflow, input, key } = (parsed ?? {}) as {
+    workflow?: unknown;
+    input?: unknown;
+    key?: unknown;
+  };
   if (typeof workflow !== "string") {
     sendJson(res, 400, { error: 'Body must name a workflow: { "workflow": "<name>", input? }' });
+    return;
+  }
+  // Refused rather than coerced: a non-string key would be stored as whatever
+  // `String()` made of it and then never match the `find` a caller writes.
+  if (key !== undefined && typeof key !== "string") {
+    sendJson(res, 400, { error: '"key" must be a string when present' });
     return;
   }
   // `start` rejects an unknown name and an input failing the workflow's own
@@ -234,7 +241,7 @@ async function startRun(
   // rather than 500s. Everything else is ours; the router's catch has it.
   let runId: string;
   try {
-    runId = await engine.start(workflow, input);
+    runId = await engine.start(workflow, input, key === undefined ? undefined : { key });
   } catch (err) {
     sendJson(res, 400, { error: errorMessage(err) });
     return;
@@ -276,6 +283,63 @@ async function readRun(
     return;
   }
   sendJson(res, 200, run);
+}
+
+/**
+ * `DELETE /workflows/runs/:id` — stop a run.
+ *
+ * 200 either way, carrying whether this call is what ended it: a run that was
+ * already terminal is not an error (two tabs pressing Stop is ordinary), and a
+ * 404 would conflate "no such run" with "already finished". A run id that never
+ * existed answers `{ cancelled: false }` for the same reason `get` is the route
+ * that reports existence.
+ */
+async function cancelRun(
+  res: http.ServerResponse,
+  engine: WorkflowApiEngine,
+  runId: string,
+): Promise<void> {
+  const cancelled = runId ? await engine.cancel(runId) : false;
+  sendJson(res, 200, { runId, cancelled });
+}
+
+/**
+ * `GET /workflows/runs?workflow=<name>&key=<key>` — runs carrying a correlation
+ * key, newest first.
+ *
+ * The query is read off `req.url` rather than the `url` argument, which the server
+ * has already stripped of its query string (`server.ts` splits on `?` before
+ * dispatching) — every other route here is an exact path match, so this is the
+ * first one that needs it.
+ */
+async function findRuns(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  engine: WorkflowApiEngine,
+): Promise<void> {
+  const params = new URLSearchParams((req.url ?? "").split("?")[1] ?? "");
+  const workflow = params.get("workflow");
+  const key = params.get("key");
+  if (!(workflow && key)) {
+    sendJson(res, 400, {
+      error: "Both `workflow` and `key` query parameters are required",
+    });
+    return;
+  }
+  const limitParam = params.get("limit");
+  const limit = limitParam === null ? undefined : Number(limitParam);
+  if (limit !== undefined && !Number.isFinite(limit)) {
+    sendJson(res, 400, { error: "`limit` must be a number" });
+    return;
+  }
+  // An unknown workflow name is the caller's mistake, exactly as it is on
+  // `POST /runs`, and carries the engine's message naming the declared ones.
+  try {
+    const runs = await engine.find(workflow, key, limit === undefined ? undefined : { limit });
+    sendJson(res, 200, { runs });
+  } catch (err) {
+    sendJson(res, 400, { error: errorMessage(err) });
+  }
 }
 
 /**
@@ -323,11 +387,25 @@ export function createWorkflowApi(
       matches: (url) => url === `${WORKFLOW_API_PREFIX}/runs`,
       run: (req, res, engine) => startRun(req, res, engine),
     },
+    // Before the `/runs/:id` prefix match below, and distinct from it: the
+    // collection path carries no id, so it cannot be confused with a run whose id
+    // is the empty string.
+    {
+      method: "GET",
+      matches: (url) => url === `${WORKFLOW_API_PREFIX}/runs`,
+      run: (req, res, engine) => findRuns(req, res, engine),
+    },
     {
       method: "GET",
       matches: (url) => url.startsWith(runsPrefix),
       run: (_req, res, engine, url) =>
         readRun(res, engine, decodeURIComponent(url.slice(runsPrefix.length))),
+    },
+    {
+      method: "DELETE",
+      matches: (url) => url.startsWith(runsPrefix),
+      run: (_req, res, engine, url) =>
+        cancelRun(res, engine, decodeURIComponent(url.slice(runsPrefix.length))),
     },
     {
       method: "POST",

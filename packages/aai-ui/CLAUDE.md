@@ -51,6 +51,32 @@ is otherwise identical (still `client.tsx`, still React, still Tailwind, and
 `ThemeProvider` is installed either way), which is why the workflow templates read
 like every other template.
 
+**The output type is the PAGE's to name.**
+`useWorkflowRun<TranscribeOutput>(runId, { api })` is what makes `run.status ===
+"completed"` narrow to a typed `run.output`, because `WorkflowRunSnapshot` is
+discriminated on `status` in the SDK — `transcription-desk` used to write
+`run.output as TranscribeOutput` and no longer casts. The page has to restate
+the type because it cannot import the workflow the way tool code can: that
+module is the agent, and pulling it into the page bundle would drag the whole
+server graph in. The generic sits on the HOOK and not on `WorkflowApi.get`,
+deliberately: a generic method has to be implemented generically, which made
+every test double and hand-written stub of the client generic too.
+
+**`isTerminal` is re-exported from the SDK, never redefined here.** The local copy
+listed two of the terminal statuses, so adding `cancelled` would have left a page
+polling a cancelled run forever while the agent considered it finished — the
+drift a status predicate beside its own status union cannot have.
+
+**`api.cancel(runId)` is how a page stops a run it started**, resolving whether
+that call is what ended it (false for one already finished — the route answers
+200 either way, since two tabs pressing Stop is ordinary). It matters more here
+than it looks: a run outlives the tab, so closing the page abandons nothing, and
+`cancel` is the
+only thing that actually stops minutes of billed work. `transcription-desk`'s Stop
+button is the worked example. `api.find(workflow, key)` is the other half of
+`start`'s `key` option, for a page that would rather look a run up than remember
+its id across a reload.
+
 **`useWorkflowRun` POLLS, and that is not a limitation to fix.** A run is durable
 and the page is not: it can complete while the tab is closed, on another sandbox,
 hours later. There is no socket to push down and nothing to reconnect — the

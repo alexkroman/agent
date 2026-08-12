@@ -17,7 +17,7 @@
 
 import type { Db } from "./db.ts";
 import type { DefaultSessionState, ToolContext } from "./types.ts";
-import type { WorkflowContext } from "./workflow.ts";
+import { findUnjournalable, rejectingWorkflows, type WorkflowContext } from "./workflow.ts";
 
 /** One `ctx.send(event, data)` call, as recorded by {@link createToolContext}. */
 export interface SentEvent {
@@ -130,20 +130,9 @@ export function createToolContext<S = DefaultSessionState>(
     // most worth defaulting: a tool that starts a workflow is testable without
     // the test knowing anything about the engine, and one that starts a
     // workflow it should not fails by name.
-    workflows: {
-      start: () =>
-        Promise.reject(
-          new Error(
-            "ctx.workflows was not stubbed for this test — pass `workflows` to createToolContext",
-          ),
-        ),
-      get: () =>
-        Promise.reject(
-          new Error(
-            "ctx.workflows was not stubbed for this test — pass `workflows` to createToolContext",
-          ),
-        ),
-    },
+    workflows: rejectingWorkflows(
+      "ctx.workflows was not stubbed for this test — pass `workflows` to createToolContext",
+    ),
     messages: [],
     // Never aborts: a test has no turn to cancel. Present rather than omitted
     // because it is always present at runtime, so a tool may read it.
@@ -224,7 +213,19 @@ export function createWorkflowContext(
     signal: new AbortController().signal,
     step: async <T>(name: string, fn: () => Promise<T> | T): Promise<T> => {
       steps.push(name);
-      return await fn();
+      const output = await fn();
+      // The same check the engine runs before journaling, so a step returning a
+      // `Date` or a `Map` fails in the author's own `pnpm test` rather than on a
+      // resume in production. It is the one piece of engine behaviour worth
+      // reproducing here, because it is the one a unit test can see.
+      const unjournalable = findUnjournalable(output);
+      if (unjournalable !== undefined) {
+        throw new Error(
+          `workflow step "${name}" returned ${unjournalable}, which the run journal cannot ` +
+            "store: step outputs are written as JSON and read back on the next replay.",
+        );
+      }
+      return output;
     },
     sleep: (ms: number) => {
       sleeps.push(ms);

@@ -676,9 +676,55 @@ removed unused; multi-step orchestration is composed directly over
 `workflow()` (`sdk/workflow.ts`, on the ROOT export beside `agent()`/`tool()` —
 not the deleted `@alexkroman1/aai/workflow` subpath named above) declares work
 that OUTLIVES the session that started it. Declared as `agent({ workflows })`,
-started from tool code as `ctx.workflows.start(name, input)`, which resolves as
+started from tool code as `ctx.workflows.start(digest, input)`, which resolves as
 soon as the run is journaled — so a tool answers its turn while the run keeps
-going past the hangup. `ctx.workflows.get(runId)` reads status back.
+going past the hangup. `ctx.workflows.get(runId, digest)` reads status back.
+
+**Pass the WORKFLOW, not its name.** Every `ctx.workflows` method is overloaded
+on `WorkflowDef | string`; the definition overload types the input against the
+workflow's own schema, types `output` against its return, and makes a
+misspelling a compile error rather than a rejected promise the model reads as a
+tool failure. `agent({ workflows })` remains the single source of the name the
+journal records — the def resolves to it by IDENTITY, so a rename is one edit
+and a def declared under two keys is refused rather than assigned an arbitrary
+one. The string overload stays for a name that genuinely is data. The def
+overload REQUIRES an input (`start(noop, {})` for a schemaless workflow):
+optional would let a schema-carrying workflow be started with none by omission.
+
+**A run's handle must outlive the session, and `ctx.state` does not** — so
+`start(def, input, { key })` records a correlation key and
+`ctx.workflows.find(def, key)` reads the runs back, newest first. Without it the
+guarantee the mechanism sells is unreachable from a voice agent: the `runId` a
+tool gets back naturally lands in `ctx.state`, which is swept
+`SESSION_RESUME_GRACE_MS` after the caller hangs up, so every agent wanting this
+built its own index in `ctx.db`. Pass `ctx.sessionId`, a phone number, an
+account id; keys are NOT unique — deduplicating is a decision only the caller
+can make.
+
+**`startTool(def, { description })` is the tool that starts one**
+(`sdk/workflow-tool.ts`). It exists for the KEY: it takes the workflow's own
+`inputSchema` and defaults the key to `ctx.sessionId`, and forgetting that key is
+silent — the run works and `workflow_status` can never report it.
+
+**The model can read that itself** via the `workflow_status` builtin (`agent({
+builtinTools: ["workflow_status"] })`, `host/builtin-workflow-status.ts`), which
+makes "is my transcript ready?" answerable without hand-written plumbing. It is
+scoped to the CURRENT session's key by construction — the model chooses which
+workflow to ask about, never whose runs to read — and shapes its report for a
+SPOKEN answer: `finished` stated beside `status`, and a sleeping run's wait in
+seconds rather than an epoch `wakeAt`. An unkeyed run is invisible to it.
+
+**`ctx.workflows.cancel(runId)` stops a run**, resolving whether that call is
+what ended it (false for one already terminal). `cancelled` is terminal: the
+journal is kept and the run is never claimed again. How promptly an executing
+run notices, and why a slower replica cannot revive it, is in `host/CLAUDE.md`.
+
+**A snapshot is DISCRIMINATED on `status`** (`WorkflowRunSnapshot<R>`): narrowing
+to `"completed"` gives a non-optional `output` typed as the workflow's own return,
+to `"failed"` a non-optional `error`. It was a flat object with four optional
+fields and the correlation stated only in prose, which every consumer paid for as
+a cast. `isTerminal(run)` is a type GUARD living beside the union, so a status
+added to one cannot be missed by the other.
 
 **The engine is replay-based** (`host/workflow-engine.ts`): the author's `run`
 function is called FROM THE TOP on every execution, and `ctx.step(name, fn)`
@@ -697,7 +743,18 @@ consequences an author has to know, all in that file's module doc and
   of a step or the input, never on `Date.now()`/`Math.random()` read in the
   workflow body. A name reused in a loop is disambiguated by call order
   (`s:fetch#0`, `s:fetch#1`); `sleep` gets a `t:` prefix so it can never collide
-  with a step of the same name.
+  with a step of the same name. **A violation is now REPORTED** — the engine logs
+  the journaled steps a replay never re-claimed, naming them (see
+  `host/CLAUDE.md`). It reports rather than prevents, so the rule is still the
+  author's.
+- **A step result must survive JSON, and that is CHECKED.**
+  `findUnjournalable` walks every output before it is journaled, so a step
+  returning a `Date`, `Map`, `Set`, `RegExp`, `bigint`, `symbol` or a method fails
+  the run on its FIRST execution with the property path named
+  (`a Date at the result.order.placed`) rather than quietly handing the resume a
+  string. The `Journalable<T>` type is the compile-time half and is advisory —
+  `T extends Journalable<T>` is a circular constraint TypeScript rejects, so reach
+  for it with `satisfies` when you want the check in the editor too.
 - **Storage is required**, since the journal is what makes a run durable — two
   tables in the app's own schema (`aai_workflow_runs`, `aai_workflow_steps`,
   `host/workflow-store.ts`). An agent that declares workflows without storage
@@ -1129,34 +1186,12 @@ defaults that affect agent behavior:
 
 ## Provider sockets disable permessage-deflate
 
-**`ws` defaults `perMessageDeflate` to TRUE on clients and FALSE on servers.**
-That asymmetry is the whole gotcha: inbound session sockets
-(`WebSocketServer` in `host/server.ts`) decline compression for free, while
-every outbound provider socket OFFERS it, and any provider whose server
-accepts leaves us holding a zlib deflate+inflate context per socket for the
-life of the session. Measured on 200 client sockets exchanging PCM16 frames,
-peer accepting vs declining: **+321 KiB RSS per socket** (405 vs 84) and
-**~4.5x the CPU** for the same audio (2223 ms vs 491 ms). Pipeline mode opens
-two provider sockets per session, so it is paid twice per concurrent call —
-more than every other per-session allocation combined, on the one path that
-scales with concurrency.
-
-It also buys nothing: these sockets carry PCM16, base64 of it, or an
-already-compressed codec. None of that deflates.
-
-So every provider-facing socket spreads `PROVIDER_WS_OPTIONS`
-(`host/_ws.ts`) — `defaultCreateHeaderWebSocket` (S2S + OpenAI Realtime),
-`providers/tts/rime.ts`, `providers/tts/assemblyai.ts`,
-`providers/stt/soniox.ts`. **A new provider that constructs its own `ws`
-client must do the same**; `host/_ws.test.ts` pins the wire behaviour against
-a server that offers the extension, and the three adapter suites assert the
-constructor option.
-
-The vendor-SDK providers (`assemblyai` STT, `@deepgram/sdk`,
-`@elevenlabs/elevenlabs-js`, `@cartesia/cartesia-js`) keep their WebSocket
-private and expose no option to pass through, so they are NOT covered — their
-compression behaviour is whatever the SDK and the provider negotiate. Worth
-re-checking if one of them shows unexplained per-session memory.
+**`ws` defaults `perMessageDeflate` to TRUE on clients and FALSE on servers**, so
+every outbound provider socket offers compression that buys nothing on PCM16 and
+costs +321 KiB RSS and ~4.5x CPU per socket when the peer accepts. A new provider
+that constructs its own `ws` client must spread `PROVIDER_WS_OPTIONS`
+(`host/_ws.ts`). The measurements, the four adapters that do it, and the
+vendor-SDK providers this cannot reach are in `packages/aai/host/CLAUDE.md`.
 
 ## Self-hosted server defaults (`aai/host/server.ts`)
 

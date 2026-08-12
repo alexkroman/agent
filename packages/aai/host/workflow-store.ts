@@ -40,14 +40,21 @@ export type ClaimedRun = {
 export type WorkflowStore = {
   /** Create the tables if they are absent. Idempotent; called once per engine. */
   init(): Promise<void>;
-  /** Insert a `pending` run. */
-  create(runId: string, workflow: string, input: unknown): Promise<void>;
+  /**
+   * Insert a `pending` run.
+   *
+   * `key` is the caller's own correlation handle (see `StartOptions.key`) and is
+   * deliberately NOT unique: two runs may share one, and `findByKey` orders them
+   * newest first.
+   */
+  create(runId: string, workflow: string, input: unknown, key?: string | undefined): Promise<void>;
   /**
    * Take ownership of a run for `leaseMs`, returning it only if the claim
    * succeeded — the one guard against two sandboxes replaying one run.
    *
    * Claimable means: `pending`, or `sleeping` and due, or `running` with an
-   * EXPIRED lease (the previous executor died). Terminal runs never are.
+   * EXPIRED lease (the previous executor died). Terminal runs never are, which
+   * is what makes `cancel` stick.
    */
   claim(runId: string, leaseMs: number): Promise<ClaimedRun | undefined>;
   /** Ids of runs ready to execute now — due sleepers, unclaimed and abandoned runs. */
@@ -62,8 +69,18 @@ export type WorkflowStore = {
   complete(runId: string, output: unknown): Promise<void>;
   /** Mark a run `failed` with a message. */
   fail(runId: string, error: string): Promise<void>;
+  /**
+   * Mark a live run `cancelled`. Resolves whether this call is what ended it —
+   * false for a run that was already terminal, or absent.
+   *
+   * The journal is kept: what the run did before it was stopped stays readable,
+   * and a cancelled run is never claimed again so nothing will add to it.
+   */
+  cancel(runId: string): Promise<boolean>;
   /** Read a run's observable state. */
   get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
+  /** Runs of one workflow carrying `key`, newest first. */
+  findByKey(workflow: string, key: string, limit: number): Promise<WorkflowRunSnapshot[]>;
   /**
    * Store bytes a caller uploaded, OUTSIDE the journal, and resolve their id.
    *
@@ -91,8 +108,16 @@ export type WorkflowStore = {
   pruneBlobs(maxAgeMs: number): Promise<number>;
 };
 
-/** Statuses a claim may take over, as a SQL list. */
-const CLAIMABLE = "('pending', 'sleeping', 'running')";
+/**
+ * Statuses a run can still move out of, as a SQL list.
+ *
+ * Read two ways, and both matter. A claim may only take over a LIVE run, which
+ * is what makes a cancelled run stay cancelled. And the three settling writes
+ * (`suspend`/`complete`/`fail`) require it too, so a run cancelled while another
+ * replica was executing it cannot be resurrected by that replica's terminal
+ * write landing afterwards — the work is wasted, the status is not overwritten.
+ */
+const LIVE = "('pending', 'sleeping', 'running')";
 
 const CREATE_RUNS = `create table if not exists aai_workflow_runs (
   run_id text primary key,
@@ -101,12 +126,23 @@ const CREATE_RUNS = `create table if not exists aai_workflow_runs (
   status text not null default 'pending',
   output jsonb,
   error text,
+  correlation_key text,
   wake_at timestamptz,
   lease_until timestamptz,
   steps_completed int not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 )`;
+
+/**
+ * Add `correlation_key` to a table created before it existed.
+ *
+ * `init()` is `create table if not exists`, so an app whose journal predates
+ * this column would keep the old shape forever and every `start({ key })` would
+ * fail on an unknown column. Idempotent, so it costs a no-op statement per
+ * engine rather than a migration mechanism this package does not have.
+ */
+const ADD_RUNS_KEY = "alter table aai_workflow_runs add column if not exists correlation_key text";
 
 const CREATE_STEPS = `create table if not exists aai_workflow_steps (
   run_id text not null references aai_workflow_runs(run_id) on delete cascade,
@@ -146,6 +182,67 @@ const CREATE_DUE_INDEX = `create index if not exists aai_workflow_runs_due
   where status in ('pending', 'sleeping', 'running')`;
 
 /**
+ * Index behind {@link WorkflowStore.findByKey}. Partial over rows that HAVE a
+ * key, because most runs do not — an unkeyed run is started by a page that holds
+ * its own `runId`, and indexing those nulls would cost every insert for a lookup
+ * nothing can perform.
+ */
+const CREATE_KEY_INDEX = `create index if not exists aai_workflow_runs_key
+  on aai_workflow_runs (workflow, correlation_key, created_at desc)
+  where correlation_key is not null`;
+
+/** One run row, as both reads select it. */
+type RunRow = {
+  run_id: string;
+  workflow: string;
+  status: WorkflowRunStatus;
+  output: unknown;
+  error: string | null;
+  correlation_key: string | null;
+  wake_at_ms: number | null;
+  steps_completed: number;
+};
+
+/** Columns both reads need, so the two cannot drift apart. */
+const RUN_COLUMNS = `run_id, workflow, status, output, error, correlation_key, steps_completed,
+                (extract(epoch from wake_at) * 1000)::float8 as wake_at_ms`;
+
+/**
+ * Row → {@link WorkflowRunSnapshot}.
+ *
+ * The snapshot is discriminated on `status`, which is what makes this a switch
+ * rather than the conditional spreads it replaced: a status-defined field is no
+ * longer "included when non-null" but required by the member it belongs to, so
+ * the type is what stops a failed run reporting a stale `output` column left by
+ * an earlier completed attempt of the same id.
+ *
+ * The two fallbacks are unreachable through this store's own writes (`fail`
+ * always records a message, `suspend` always records a wake time) and are chosen
+ * to be honest rather than defensive: a wake time nothing recorded means DUE NOW,
+ * and a failure with no message still has to say it failed.
+ */
+function toSnapshot(row: RunRow): WorkflowRunSnapshot {
+  const base = {
+    runId: row.run_id,
+    workflow: row.workflow,
+    stepsCompleted: row.steps_completed,
+    ...(row.correlation_key !== null ? { key: row.correlation_key } : {}),
+  };
+  switch (row.status) {
+    case "completed":
+      return { ...base, status: "completed", output: row.output };
+    case "failed":
+      return { ...base, status: "failed", error: row.error ?? "workflow run failed" };
+    case "sleeping":
+      return { ...base, status: "sleeping", wakeAt: row.wake_at_ms ?? 0 };
+    case "cancelled":
+      return { ...base, status: "cancelled" };
+    default:
+      return { ...base, status: row.status };
+  }
+}
+
+/**
  * Every jsonb parameter is bound `::text::jsonb`, and the `::text` is
  * LOAD-BEARING — it reads like a no-op and is the difference between a journal
  * that works and one that silently double-encodes everything in it.
@@ -182,18 +279,26 @@ export function createPostgresWorkflowStore(db: Db): WorkflowStore {
   return {
     async init(): Promise<void> {
       // Sequential rather than concurrent: the steps table's foreign key
-      // requires the runs table to exist first, and the index requires both.
+      // requires the runs table to exist first, and the indexes require both.
       await db.query(CREATE_RUNS);
+      await db.query(ADD_RUNS_KEY);
       await db.query(CREATE_STEPS);
       await db.query(CREATE_DUE_INDEX);
+      await db.query(CREATE_KEY_INDEX);
       await db.query(CREATE_BLOBS);
       await db.query(CREATE_BLOBS_INDEX);
     },
 
-    async create(runId: string, workflow: string, input: unknown): Promise<void> {
+    async create(
+      runId: string,
+      workflow: string,
+      input: unknown,
+      key?: string | undefined,
+    ): Promise<void> {
       await db.query(
-        "insert into aai_workflow_runs (run_id, workflow, input) values ($1, $2, $3::text::jsonb)",
-        [runId, workflow, JSON.stringify(input ?? null)],
+        `insert into aai_workflow_runs (run_id, workflow, input, correlation_key)
+         values ($1, $2, $3::text::jsonb, $4)`,
+        [runId, workflow, JSON.stringify(input ?? null), key ?? null],
       );
     },
 
@@ -204,7 +309,7 @@ export function createPostgresWorkflowStore(db: Db): WorkflowStore {
                 lease_until = now() + make_interval(secs => $2::float8),
                 updated_at = now()
           where run_id = $1
-            and status in ${CLAIMABLE}
+            and status in ${LIVE}
             and (wake_at is null or wake_at <= now())
             and (status <> 'running' or lease_until is null or lease_until < now())
           returning workflow, input`,
@@ -237,6 +342,10 @@ export function createPostgresWorkflowStore(db: Db): WorkflowStore {
     },
 
     async recordStep(runId: string, stepId: string, output: unknown): Promise<number> {
+      // Deliberately NOT gated on the run being live: the step already ran, and
+      // a journal that records what happened stays truthful even for a run that
+      // was cancelled underneath it. Nothing will claim it again, so nothing
+      // will read the extra row.
       await db.query(
         `insert into aai_workflow_steps (run_id, step_id, output) values ($1, $2, $3::text::jsonb)
            on conflict (run_id, step_id) do update set output = excluded.output`,
@@ -260,7 +369,7 @@ export function createPostgresWorkflowStore(db: Db): WorkflowStore {
                 wake_at = to_timestamp($2::float8 / 1000.0),
                 lease_until = null,
                 updated_at = now()
-          where run_id = $1`,
+          where run_id = $1 and status in ${LIVE}`,
         [runId, wakeAt],
       );
     },
@@ -270,7 +379,7 @@ export function createPostgresWorkflowStore(db: Db): WorkflowStore {
         `update aai_workflow_runs
             set status = 'completed', output = $2::text::jsonb, lease_until = null,
                 wake_at = null, updated_at = now()
-          where run_id = $1`,
+          where run_id = $1 and status in ${LIVE}`,
         [runId, JSON.stringify(output ?? null)],
       );
     },
@@ -280,39 +389,40 @@ export function createPostgresWorkflowStore(db: Db): WorkflowStore {
         `update aai_workflow_runs
             set status = 'failed', error = $2, lease_until = null,
                 wake_at = null, updated_at = now()
-          where run_id = $1`,
+          where run_id = $1 and status in ${LIVE}`,
         [runId, error],
       );
     },
 
+    async cancel(runId: string): Promise<boolean> {
+      const rows = await db.query<{ run_id: string }>(
+        `update aai_workflow_runs
+            set status = 'cancelled', lease_until = null, wake_at = null, updated_at = now()
+          where run_id = $1 and status in ${LIVE}
+          returning run_id`,
+        [runId],
+      );
+      return rows.length > 0;
+    },
+
     async get(runId: string): Promise<WorkflowRunSnapshot | undefined> {
-      const rows = await db.query<{
-        workflow: string;
-        status: WorkflowRunStatus;
-        output: unknown;
-        error: string | null;
-        wake_at_ms: number | null;
-        steps_completed: number;
-      }>(
-        `select workflow, status, output, error, steps_completed,
-                (extract(epoch from wake_at) * 1000)::float8 as wake_at_ms
-           from aai_workflow_runs where run_id = $1`,
+      const rows = await db.query<RunRow>(
+        `select ${RUN_COLUMNS} from aai_workflow_runs where run_id = $1`,
         [runId],
       );
       const row = rows[0];
-      if (!row) return;
-      // `output` and `error` are reported only in the state that defines them:
-      // a failed run's stale `output` column (from a prior completed attempt
-      // of the same id) would otherwise read as a result.
-      return {
-        runId,
-        workflow: row.workflow,
-        status: row.status,
-        stepsCompleted: row.steps_completed,
-        ...(row.status === "completed" ? { output: row.output } : {}),
-        ...(row.status === "failed" && row.error !== null ? { error: row.error } : {}),
-        ...(row.status === "sleeping" && row.wake_at_ms !== null ? { wakeAt: row.wake_at_ms } : {}),
-      };
+      return row ? toSnapshot(row) : undefined;
+    },
+
+    async findByKey(workflow: string, key: string, limit: number): Promise<WorkflowRunSnapshot[]> {
+      const rows = await db.query<RunRow>(
+        `select ${RUN_COLUMNS} from aai_workflow_runs
+          where workflow = $1 and correlation_key = $2
+          order by created_at desc
+          limit $3`,
+        [workflow, key, limit],
+      );
+      return rows.map(toSnapshot);
     },
 
     async putBlob(blobId: string, contentType: string, base64: string): Promise<void> {

@@ -157,6 +157,37 @@ that are replayed through the real orchestration layer. Key helpers:
 - `replayFixtureMessages()` — dispatches fixture JSON as typed events
 - `createFixtureSession()` — wires a real Runtime to mocked S2S
 
+## Provider sockets disable permessage-deflate
+
+**`ws` defaults `perMessageDeflate` to TRUE on clients and FALSE on servers.**
+That asymmetry is the whole gotcha: inbound session sockets
+(`WebSocketServer` in `host/server.ts`) decline compression for free, while
+every outbound provider socket OFFERS it, and any provider whose server
+accepts leaves us holding a zlib deflate+inflate context per socket for the
+life of the session. Measured on 200 client sockets exchanging PCM16 frames,
+peer accepting vs declining: **+321 KiB RSS per socket** (405 vs 84) and
+**~4.5x the CPU** for the same audio (2223 ms vs 491 ms). Pipeline mode opens
+two provider sockets per session, so it is paid twice per concurrent call —
+more than every other per-session allocation combined, on the one path that
+scales with concurrency.
+
+It also buys nothing: these sockets carry PCM16, base64 of it, or an
+already-compressed codec. None of that deflates.
+
+So every provider-facing socket spreads `PROVIDER_WS_OPTIONS`
+(`host/_ws.ts`) — `defaultCreateHeaderWebSocket` (S2S + OpenAI Realtime),
+`providers/tts/rime.ts`, `providers/tts/assemblyai.ts`,
+`providers/stt/soniox.ts`. **A new provider that constructs its own `ws`
+client must do the same**; `host/_ws.test.ts` pins the wire behaviour against
+a server that offers the extension, and the three adapter suites assert the
+constructor option.
+
+The vendor-SDK providers (`assemblyai` STT, `@deepgram/sdk`,
+`@elevenlabs/elevenlabs-js`, `@cartesia/cartesia-js`) keep their WebSocket
+private and expose no option to pass through, so they are NOT covered — their
+compression behaviour is whatever the SDK and the provider negotiate. Worth
+re-checking if one of them shows unexplained per-session memory.
+
 ## Workflow engine, store and HTTP API
 
 **Recovery is lease-based, not timer-based.** A claim
@@ -174,14 +205,71 @@ mounted by `createServer` so `aai dev`, a self-hosted server and every deployed
 guest serve it identically — the same reasoning `/phone` is mounted there):
 
 ```text
-GET  /workflows            → { workflows: [{ name, description? }] }
-POST /workflows/runs       → { runId }        body: { workflow, input? }
-GET  /workflows/runs/:id   → a WorkflowRunSnapshot
-POST /workflows/blobs      → { blobId, bytes }  body: raw bytes
+GET    /workflows            → { workflows: [{ name, description? }] }
+POST   /workflows/runs       → { runId }         body: { workflow, input?, key? }
+GET    /workflows/runs       → { runs }          ?workflow=&key=&limit=
+GET    /workflows/runs/:id   → a WorkflowRunSnapshot
+DELETE /workflows/runs/:id   → { runId, cancelled }
+POST   /workflows/blobs      → { blobId, bytes } body: raw bytes
 ```
 
 That closes the "no trigger surface" gap this section used to record: a cron job,
 a webhook relay, a script or a page can all start a run.
+
+Three shapes in that table are easy to get wrong. **`GET /runs` is the collection
+and `GET /runs/:id` is a member**, differing by one slash, so the exact match is
+ordered BEFORE the prefix match — otherwise the collection reads as a run whose
+id is the empty string. **The find route reads its query off `req.url`**, because
+`server.ts` splits the query off before dispatching and every other route here is
+an exact path match, so this is the first one that needs it. And **`DELETE`
+answers 200 either way**, carrying `cancelled: true|false`: a 404 would conflate
+"no such run" with "already finished", and two tabs pressing Stop is ordinary.
+
+**Cancellation is prompt only where the run is EXECUTING.** `cancel` writes the
+terminal status and then aborts that run's own `AbortController` — one per
+in-flight execution, combined with the engine's shutdown signal via
+`AbortSignal.any`, so a workflow body sees a drain and a cancel through the same
+`ctx.signal`. A run in flight on ANOTHER replica has no such handle here, and what
+stops it is the store rather than a signal: `suspend`/`complete`/`fail` all carry
+`status in ('pending','sleeping','running')`, so that replica finishes its current
+step and finds its terminal write refused. The status a caller reads is `cancelled`
+either way; the difference is only how much work was wasted. Two details follow
+from that. `execute` distinguishes "aborted by cancel" from "abandoned by drain"
+(the run's own controller, not the shared signal) so a cancelled run is not
+recorded as `failed` over the status the caller asked for — and `recordStep` is
+deliberately NOT gated on a live status, because the step already ran and a journal
+that records what happened stays truthful for a run cancelled underneath it.
+
+**A determinism violation is reported by comparing the journal against what a
+replay CLAIMED.** Step ids are `<kind>:<name>#<ordinal>` assigned by call order,
+so a body whose sequence varies between replays computes different ids: the
+lookup misses, the step runs a second time, and its earlier result is orphaned —
+silently, with the run still completing and its journal growing toward
+`MAX_WORKFLOW_STEPS`
+on every replay. So `buildContext` records every id it hands out and `execute`
+reports, in a `finally`, any journaled id nobody claimed. **It needs no exemption
+for a suspended run**, which is the non-obvious part: at every unwind point an
+execution has necessarily walked past every entry a previous life recorded, because
+the only way to reach a later `sleep` is through the earlier ones. It reports
+rather than throws — the work is already done, and failing the run would lose
+output over a warning.
+
+**A step output is refused before it is journaled if it cannot survive JSON**
+(`findUnjournalable`, in `sdk/workflow.ts` so `@alexkroman1/aai/testing`'s
+`createWorkflowContext` runs the same check in an author's own suite). Not retried:
+a `Date` or a `Map` is an authoring mistake, not a transient failure, and the whole
+point is to fail on THIS execution rather than hand the resume a different value.
+The walk reports the property path, unwinds its `seen` set per branch so a DAG is
+not mistaken for a cycle, and accepts `undefined` because the store writes it as
+`null`.
+
+**The correlation key is a column, added by an `alter table`** rather than only
+in `create table if not exists` — an app whose journal predates it would
+otherwise keep the old shape forever and fail every `start({ key })` on an
+unknown column.
+Its index is PARTIAL (`where correlation_key is not null`): most runs carry no key,
+and indexing those nulls would tax every insert for a lookup that cannot match
+them.
 
 **A run that is EXECUTING no longer needs a visitor to finish, and that used to
 be the dominant gap.** The guest measured "does anybody need me" by its live

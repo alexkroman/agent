@@ -8,6 +8,7 @@ import type { ClientEvent, ClientSink } from "../sdk/protocol.ts";
 import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
 import type { AgentDef, ToolContext, ToolDef } from "../sdk/types.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "../sdk/types.ts";
+import { rejectingWorkflows } from "../sdk/workflow.ts";
 import { createRuntime } from "./runtime.ts";
 import type { ConnectS2sOptions, S2sCallbacks, S2sHandle } from "./s2s.ts";
 import type { SessionCore } from "./session-core.ts";
@@ -43,10 +44,7 @@ export function createMockToolContext(overrides?: Partial<ToolContext>): ToolCon
     state: {},
     db: {} as never,
     generate: () => Promise.reject(new Error("generate not mocked")),
-    workflows: {
-      start: () => Promise.reject(new Error("workflows not mocked")),
-      get: () => Promise.reject(new Error("workflows not mocked")),
-    },
+    workflows: rejectingWorkflows("workflows not mocked"),
     messages: [],
     sessionId: "test-session",
     send: vi.fn(),

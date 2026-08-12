@@ -112,6 +112,7 @@ describe("type ↔ schema alignment", () => {
         "remember",
         "recall",
         "calculate",
+        "workflow_status",
       ]
     `);
   });

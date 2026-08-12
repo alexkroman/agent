@@ -3,7 +3,11 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import type { WorkflowDef } from "../sdk/workflow.ts";
 import { MAX_WORKFLOW_STEPS, workflow } from "../sdk/workflow.ts";
-import { createMemoryWorkflowStore, type MemoryWorkflowStore } from "./_workflow-test-utils.ts";
+import {
+  asStatus,
+  createMemoryWorkflowStore,
+  type MemoryWorkflowStore,
+} from "./_workflow-test-utils.ts";
 import {
   createWorkflowEngine,
   MAX_WAKE_TIMER_MS,
@@ -25,16 +29,29 @@ async function drain(rounds = 12): Promise<void> {
 function makeEngine(
   workflows: Record<string, WorkflowDef>,
   store: MemoryWorkflowStore = createMemoryWorkflowStore(),
-): { engine: WorkflowEngine; store: MemoryWorkflowStore } {
+): {
+  engine: WorkflowEngine;
+  store: MemoryWorkflowStore;
+  logger: { error: ReturnType<typeof vi.fn> };
+} {
+  // Returned rather than discarded: the determinism-drift report has no other
+  // observable effect — it deliberately does not fail the run — so the log IS the
+  // behaviour under test.
+  const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const engine = createWorkflowEngine({
     workflows,
     store,
     db: { query: () => Promise.resolve([]) },
     env: { API_KEY: "k" },
     generate: undefined,
-    logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    logger,
   });
-  return { engine, store };
+  return { engine, store, logger };
+}
+
+/** Every message `logger.error` received, joined — for a substring assertion. */
+function _loggedErrors(logger: { error: ReturnType<typeof vi.fn> }): string {
+  return logger.error.mock.calls.map((call) => String(call[0])).join("\n");
 }
 
 beforeEach(() => {
@@ -99,9 +116,8 @@ describe("run lifecycle", () => {
     const runId = await engine.start("boom");
     await drain();
 
-    const snapshot = await engine.get(runId);
-    expect(snapshot?.status).toBe("failed");
-    expect(snapshot?.error).toContain("nope");
+    const snapshot = asStatus(await engine.get(runId), "failed");
+    expect(snapshot.error).toContain("nope");
     engine.close();
   });
 
@@ -120,7 +136,7 @@ describe("run lifecycle", () => {
     const runId = await engine.start("each");
     await drain();
 
-    expect((await engine.get(runId))?.output).toEqual([2, 4, 6]);
+    expect(asStatus(await engine.get(runId), "completed").output).toEqual([2, 4, 6]);
     expect([...store.row(runId).steps.keys()]).toEqual(["s:double#0", "s:double#1", "s:double#2"]);
     engine.close();
   });
@@ -202,7 +218,7 @@ describe("parallel steps", () => {
     });
     // And the payoff: the run's own result is in call order, so a caller can
     // join the chunks without sorting them.
-    expect((await engine.get(runId))?.output).toBe("t0 t1 t2");
+    expect(asStatus(await engine.get(runId), "completed").output).toBe("t0 t1 t2");
     engine.close();
   });
 
@@ -260,9 +276,8 @@ describe("step retry", () => {
     await drain();
 
     expect(attempts).toBe(3);
-    const snapshot = await engine.get(runId);
-    expect(snapshot?.status).toBe("completed");
-    expect(snapshot?.output).toBe("ok");
+    const snapshot = asStatus(await engine.get(runId), "completed");
+    expect(snapshot.output).toBe("ok");
     expect(store.row(runId).steps.get("s:call#0")).toBe("ok");
     engine.close();
   });
@@ -282,9 +297,8 @@ describe("step retry", () => {
     await drain();
 
     expect(fn).toHaveBeenCalledTimes(2);
-    const snapshot = await engine.get(runId);
-    expect(snapshot?.status).toBe("failed");
-    expect(snapshot?.error).toMatch(/step "s:call#0" failed after 2 attempt\(s\).*always/s);
+    const snapshot = asStatus(await engine.get(runId), "failed");
+    expect(snapshot.error).toMatch(/step "s:call#0" failed after 2 attempt\(s\).*always/s);
     engine.close();
   });
 });
@@ -306,9 +320,8 @@ describe("durable sleep", () => {
     const runId = await engine.start("nap");
     await drain();
 
-    const sleeping = await engine.get(runId);
-    expect(sleeping?.status).toBe("sleeping");
-    expect(sleeping?.wakeAt).toBe(Date.now() + 10_000);
+    const sleeping = asStatus(await engine.get(runId), "sleeping");
+    expect(sleeping.wakeAt).toBe(Date.now() + 10_000);
     expect(before).toHaveBeenCalledTimes(1);
     expect(after).not.toHaveBeenCalled();
 
@@ -316,9 +329,8 @@ describe("durable sleep", () => {
     await vi.advanceTimersByTimeAsync(10_000);
     await drain();
 
-    const done = await engine.get(runId);
-    expect(done?.status).toBe("completed");
-    expect(done?.output).toBe("second");
+    const done = asStatus(await engine.get(runId), "completed");
+    expect(done.output).toBe("second");
     // The whole point: the pre-sleep step is journaled, not repeated.
     expect(before).toHaveBeenCalledTimes(1);
     expect(after).toHaveBeenCalledTimes(1);
@@ -412,9 +424,8 @@ describe("claiming and recovery", () => {
     await engine.runDue();
     await drain();
 
-    const snapshot = await engine.get("gone");
-    expect(snapshot?.status).toBe("failed");
-    expect(snapshot?.error).toContain('unknown workflow "removed-by-redeploy"');
+    const snapshot = asStatus(await engine.get("gone"), "failed");
+    expect(snapshot.error).toContain('unknown workflow "removed-by-redeploy"');
     engine.close();
   });
 
@@ -447,9 +458,8 @@ describe("claiming and recovery", () => {
     const runId = await engine.start("runaway");
     await drain(40);
 
-    const snapshot = await engine.get(runId);
-    expect(snapshot?.status).toBe("failed");
-    expect(snapshot?.error).toMatch(/exceeded 500 journal entries.*child runs/s);
+    const snapshot = asStatus(await engine.get(runId), "failed");
+    expect(snapshot.error).toMatch(/exceeded 500 journal entries.*child runs/s);
     engine.close();
   });
 

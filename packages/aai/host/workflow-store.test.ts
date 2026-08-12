@@ -51,17 +51,34 @@ describe("init", () => {
     const q = recordingDb();
     await createPostgresWorkflowStore(q.db).init();
 
-    expect(q.count()).toBe(5);
+    expect(q.count()).toBe(7);
     expect(q.sql(0)).toContain("create table if not exists aai_workflow_runs");
-    expect(q.sql(1)).toContain("create table if not exists aai_workflow_steps");
-    expect(q.sql(2)).toContain("create index if not exists aai_workflow_runs_due");
+    // The correlation-key column is ADDED separately, and that is what makes a
+    // journal created before it existed usable: `create table if not exists` on
+    // an older table is a no-op, so without this every `start({ key })` against
+    // it would fail on an unknown column.
+    expect(q.sql(1)).toContain("alter table aai_workflow_runs add column if not exists");
+    expect(q.sql(1)).toContain("correlation_key");
+    expect(q.sql(2)).toContain("create table if not exists aai_workflow_steps");
+    expect(q.sql(3)).toContain("create index if not exists aai_workflow_runs_due");
+    expect(q.sql(4)).toContain("create index if not exists aai_workflow_runs_key");
     // The steps table's foreign key cannot be created before its target.
-    expect(q.sql(1)).toContain("references aai_workflow_runs(run_id)");
+    expect(q.sql(2)).toContain("references aai_workflow_runs(run_id)");
     // Blobs are NOT a child of the runs table: one is written before the run
     // that names it exists, so a foreign key would reject every upload.
-    expect(q.sql(3)).toContain("create table if not exists aai_workflow_blobs");
-    expect(q.sql(3)).not.toContain("references");
-    expect(q.sql(4)).toContain("create index if not exists aai_workflow_blobs_created");
+    expect(q.sql(5)).toContain("create table if not exists aai_workflow_blobs");
+    expect(q.sql(5)).not.toContain("references");
+    expect(q.sql(6)).toContain("create index if not exists aai_workflow_blobs_created");
+  });
+
+  test("indexes correlation keys partially, so unkeyed runs cost nothing", async () => {
+    const q = recordingDb();
+    await createPostgresWorkflowStore(q.db).init();
+
+    // Most runs carry no key — they are started by a page holding its own runId —
+    // and indexing those nulls would tax every insert for a lookup that cannot
+    // match them.
+    expect(q.sql(4)).toContain("where correlation_key is not null");
   });
 });
 
@@ -74,7 +91,18 @@ describe("create", () => {
     // `::text::jsonb`, never `::jsonb` — see the jsonb-encoding block on
     // `createPostgresWorkflowStore` and the sweep at the bottom of this file.
     expect(q.sql(0)).toContain("$3::text::jsonb");
-    expect(q.params(0)).toEqual(["r1", "digest", '{"topic":"ai"}']);
+    // The absent correlation key binds SQL null, not `undefined`: the driver would
+    // send the latter as the string "undefined", which is a key nothing can match
+    // and which is indistinguishable from a real one in the index.
+    expect(q.params(0)).toEqual(["r1", "digest", '{"topic":"ai"}', null]);
+  });
+
+  test("stores a correlation key when one is given", async () => {
+    const q = recordingDb();
+    await createPostgresWorkflowStore(q.db).create("r1", "digest", null, "session-7");
+
+    expect(q.sql(0)).toContain("correlation_key");
+    expect(q.params(0)).toEqual(["r1", "digest", "null", "session-7"]);
   });
 
   test("serializes an absent input as SQL-safe null, never the string undefined", async () => {
@@ -195,12 +223,93 @@ describe("terminal transitions", () => {
   });
 });
 
+describe("the live guard", () => {
+  // Every settling write carries `status in ('pending','sleeping','running')`, and
+  // it is what makes a cancel stick: a run cancelled while another replica was
+  // executing it must not be resurrected when that replica's `complete` lands.
+  test.each([
+    ["suspend", (s: ReturnType<typeof createPostgresWorkflowStore>) => s.suspend("r1", 1)],
+    ["complete", (s: ReturnType<typeof createPostgresWorkflowStore>) => s.complete("r1", null)],
+    ["fail", (s: ReturnType<typeof createPostgresWorkflowStore>) => s.fail("r1", "boom")],
+    ["cancel", (s: ReturnType<typeof createPostgresWorkflowStore>) => s.cancel("r1")],
+  ])("%s only writes a run that is still live", async (_name, call) => {
+    const q = recordingDb();
+    await call(createPostgresWorkflowStore(q.db));
+
+    expect(q.sql(0)).toContain("status in ('pending', 'sleeping', 'running')");
+  });
+});
+
+describe("cancel", () => {
+  test("marks the run cancelled, clearing its lease and wake time", async () => {
+    const q = recordingDb([[{ run_id: "r1" }]]);
+    const cancelled = await createPostgresWorkflowStore(q.db).cancel("r1");
+
+    expect(cancelled).toBe(true);
+    expect(q.sql(0)).toContain("set status = 'cancelled'");
+    // Both cleared, or the due sweep would keep offering a terminal run.
+    expect(q.sql(0)).toContain("lease_until = null");
+    expect(q.sql(0)).toContain("wake_at = null");
+  });
+
+  test("resolves false when no live run matched", async () => {
+    // An already-terminal run, or one that never existed — the statement's own
+    // `returning` is what distinguishes them, and neither is an error.
+    const q = recordingDb([[]]);
+    await expect(createPostgresWorkflowStore(q.db).cancel("r1")).resolves.toBe(false);
+  });
+});
+
+describe("findByKey", () => {
+  test("filters by workflow and key, newest first, bounded by the limit", async () => {
+    const q = recordingDb([[]]);
+    await createPostgresWorkflowStore(q.db).findByKey("digest", "session-7", 5);
+
+    expect(q.sql(0)).toContain("where workflow = $1 and correlation_key = $2");
+    // Newest first: "is my thing ready?" is about the most recent run.
+    expect(q.sql(0)).toContain("order by created_at desc");
+    expect(q.sql(0)).toContain("limit $3");
+    expect(q.params(0)).toEqual(["digest", "session-7", 5]);
+  });
+
+  test("maps every row through the same snapshot shape `get` uses", async () => {
+    const q = recordingDb([
+      [
+        {
+          run_id: "r2",
+          workflow: "digest",
+          status: "completed",
+          output: { ok: 2 },
+          error: null,
+          correlation_key: "session-7",
+          wake_at_ms: null,
+          steps_completed: 4,
+        },
+      ],
+    ]);
+    const runs = await createPostgresWorkflowStore(q.db).findByKey("digest", "session-7", 5);
+
+    expect(runs).toEqual([
+      {
+        runId: "r2",
+        workflow: "digest",
+        status: "completed",
+        output: { ok: 2 },
+        key: "session-7",
+        stepsCompleted: 4,
+      },
+    ]);
+  });
+});
+
 describe("get", () => {
   const row = {
+    run_id: "r1",
     workflow: "digest",
     status: "completed",
     output: { ok: 1 },
     error: null,
+    correlation_key: null,
     wake_at_ms: null,
     steps_completed: 3,
   };
