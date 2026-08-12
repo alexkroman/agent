@@ -42,6 +42,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { build, type PluginOption, type Rollup } from "vite";
 import { withPreservedNodeEnv } from "./_vite-env.ts";
+import type { WorkflowBundleOutput } from "./workflow-bundler.ts";
 
 /**
  * Options for worker bundling.
@@ -68,6 +69,14 @@ export type BuildWorkerOptions = {
    * rebuild would turn the watch loop from sub-second into multi-second.
    */
   runtime?: boolean;
+  /**
+   * The project's compiled workflows, when it declares any.
+   *
+   * Embedded in the worker as two string exports rather than shipped as extra
+   * files, because the guest's `bundle/load` contract is ONE ESM string. See
+   * `wrapperEntrySource`.
+   */
+  workflows?: WorkflowBundleOutput | undefined;
 };
 
 /**
@@ -77,7 +86,7 @@ export type BuildWorkerOptions = {
  */
 const WRAPPER_ENTRY_REL = path.join(".aai", "worker-entry.ts");
 
-function wrapperEntrySource(runtime: boolean): string {
+function wrapperEntrySource(runtime: boolean, workflows: WorkflowBundleOutput | undefined): string {
   return `import def from "../agent.ts";
 import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
 ${runtime ? `import { createRuntime } from "@alexkroman1/aai/runtime";` : ""}
@@ -90,6 +99,17 @@ ${
   runtime
     ? `export const __aaiCreateRuntime = (opts: Record<string, unknown>) =>
   createRuntime({ ...opts, agent: def });
+`
+    : ""
+}${
+  workflows
+    ? `// The compiled workflow surface, carried as DATA. \`__aaiWorkflowCode\` goes to
+// \`workflowEntrypoint(code)\` and \`__aaiStepCode\` is evaluated by the guest so its
+// \`registerStepFunction\` calls run. Strings rather than modules because the guest
+// receives exactly one ESM string and never sees this project's filesystem.
+export const __aaiWorkflowCode = ${JSON.stringify(workflows.workflowCode)};
+export const __aaiStepCode = ${JSON.stringify(workflows.stepCode)};
+export const __aaiWorkflowManifest = ${JSON.stringify(JSON.stringify(workflows.manifest))};
 `
     : ""
 }`;
@@ -108,7 +128,11 @@ export async function buildWorker(cwd: string, opts: BuildWorkerOptions = {}): P
   const wrapperPath = path.join(cwd, WRAPPER_ENTRY_REL);
 
   await fs.mkdir(path.dirname(wrapperPath), { recursive: true });
-  await fs.writeFile(wrapperPath, wrapperEntrySource(opts.runtime !== false), "utf-8");
+  await fs.writeFile(
+    wrapperPath,
+    wrapperEntrySource(opts.runtime !== false, opts.workflows),
+    "utf-8",
+  );
 
   let result: Awaited<ReturnType<typeof build>>;
   try {

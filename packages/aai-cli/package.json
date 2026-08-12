@@ -63,7 +63,8 @@
     "playwright": "^1.61.1",
     "tsdown": "^0.22.13",
     "verdaccio": "^6.8.0",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "workflow": "4.8.2"
   },
   "peerDependencies": {
     "vitest": "^4.1.10"

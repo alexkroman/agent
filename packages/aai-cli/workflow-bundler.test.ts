@@ -16,33 +16,30 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { withTempDir } from "./_test-utils.ts";
+import { buildWorker } from "./worker-bundler.ts";
 import { buildWorkflows } from "./workflow-bundler.ts";
 
 /**
- * Make `workflow` resolvable from the temp project, as a real one has it.
+ * Symlink this package's node_modules into the fixture, the way `_build.test.ts`
+ * does — it is what makes `workflow` and `@alexkroman1/aai` resolvable there.
  *
- * Not incidental scaffolding: the WDK is marked EXTERNAL in both bundles, but
- * esbuild still resolves an external import to decide it is a package rather
- * than a relative path, and the discovery pass reads the module to check it for
- * directives. So a project that does not have it installed fails the build —
- * which is correct, and is why a scaffolded project declares it.
+ * Not incidental scaffolding for the WDK half: it is marked EXTERNAL in both
+ * bundles, but esbuild still resolves an external import to decide it is a
+ * package rather than a relative path, and the discovery pass reads the module
+ * to check it for directives. A project without it installed fails the build —
+ * correctly, which is why a scaffolded project declares it.
  */
-async function linkWorkflowPackage(dir: string): Promise<void> {
-  const resolved = path.resolve(
-    import.meta.dirname,
-    "..",
-    "aai-templates",
-    "node_modules",
-    "workflow",
+async function linkNodeModules(dir: string): Promise<void> {
+  await fs.symlink(
+    path.resolve(import.meta.dirname, "node_modules"),
+    path.join(dir, "node_modules"),
+    "dir",
   );
-  const target = path.join(dir, "node_modules", "workflow");
-  await fs.mkdir(path.dirname(target), { recursive: true });
-  await fs.symlink(resolved, target, "dir");
 }
 
 /** A minimal project with one workflow body and two steps. */
 async function writeProject(dir: string): Promise<void> {
-  await linkWorkflowPackage(dir);
+  await linkNodeModules(dir);
   await fs.mkdir(path.join(dir, "workflows"), { recursive: true });
   await fs.writeFile(
     path.join(dir, "workflows", "greet.ts"),
@@ -157,6 +154,42 @@ describe("buildWorkflows", () => {
       // would reach their working tree.
       const scratch = path.join(dir, ".aai", "workflow-build");
       await expect(fs.stat(scratch)).rejects.toThrow();
+    });
+  });
+});
+
+describe("the worker bundle carries the workflow artifacts", () => {
+  test("exports the flow code, the step code and the manifest", async () => {
+    await withTempDir(async (dir) => {
+      await writeProject(dir);
+      await fs.writeFile(
+        path.join(dir, "agent.ts"),
+        `import { agent } from "@alexkroman1/aai";\nexport default agent({ name: "T" });\n`,
+        "utf-8",
+      );
+      const workflows = await buildWorkflows(dir);
+      const worker = await buildWorker(dir, { runtime: false, workflows });
+
+      // The guest's `bundle/load` takes ONE ESM string, so the compiled workflow
+      // surface has to ride the worker as data rather than as sibling files.
+      expect(worker).toContain("__aaiWorkflowCode");
+      expect(worker).toContain("__aaiStepCode");
+      expect(worker).toContain("__aaiWorkflowManifest");
+    });
+  });
+
+  test("omits the exports entirely for a project with no workflows", async () => {
+    await withTempDir(async (dir) => {
+      await linkNodeModules(dir);
+      await fs.writeFile(
+        path.join(dir, "agent.ts"),
+        `import { agent } from "@alexkroman1/aai";\nexport default agent({ name: "T" });\n`,
+        "utf-8",
+      );
+      const worker = await buildWorker(dir, { runtime: false, workflows: undefined });
+      // Absent rather than empty: the guest reads their presence as "this agent
+      // has a workflow surface", and mounting routes for nothing is a bug.
+      expect(worker).not.toContain("__aaiWorkflowCode");
     });
   });
 });

@@ -40,14 +40,11 @@ export async function buildAgentBundle(
   cwd: string,
   opts: BuildWorkerOptions = {},
 ): Promise<DirectoryBundleOutput> {
-  // All three in parallel: they read the same tree and write to disjoint
-  // scratch paths, and the workflow build is the slowest of the three on a
-  // project that has one.
-  const [worker, clientFiles, workflows] = await Promise.all([
-    buildWorker(cwd, opts),
-    buildClient(cwd),
-    buildWorkflows(cwd),
-  ]);
+  // The workflow build has to finish FIRST: its output is embedded in the worker
+  // as string exports, because the guest's `bundle/load` takes one ESM string.
+  // The client build is independent, so it overlaps.
+  const [workflows, clientFiles] = await Promise.all([buildWorkflows(cwd), buildClient(cwd)]);
+  const worker = await buildWorker(cwd, { ...opts, workflows });
   return { worker, clientFiles, ...(workflows && { workflows }) };
 }
 
