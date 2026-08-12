@@ -808,6 +808,19 @@ consequences an author has to know, all in that file's module doc and
   `MAX_DB_RESULT_ROWS`.** Replay reads the journal through `ctx.db`, which
   throws past 1000 rows, and a journal that cannot be read in full looks like a
   run with no history — i.e. every completed step runs a second time.
+- **`ctx.waitFor(name)` parks a run until something OUTSIDE it says to continue**,
+  and resolves with whatever that caller sent. The shape `sleep` cannot express:
+  an approval, a signature, a webhook from a job of unknown length. With `sleep`
+  those are a poll — wake, check, sleep — and every cycle spends entries against
+  `MAX_WORKFLOW_STEPS`, so a wait measured in days is not expressible at all; a
+  waitpoint costs ONE entry however long it waits. It does not return on the
+  replay that creates it, like `sleep`. The token that resolves it is an
+  unguessable single-use id, delivered by the `announce` option (which runs once,
+  journaled, while the run is still executing — the only moment the token exists
+  and the run can act) and redeemed at
+  `POST /workflows/signals/:token`. `timeoutMs` makes the wait THROW at its
+  deadline, which is an ordinary error a `try`/`catch` can turn into "chase them,
+  then give up"; without one it waits indefinitely and costs a row.
 - **`ctx.continueAs(input)` is how work too long for one journal is expressed.**
   It ends this run and starts a fresh one of the same workflow — empty journal,
   inherited correlation key — and, like `sleep`, never returns: treat it as a

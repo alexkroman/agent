@@ -142,6 +142,67 @@ export type WorkflowContext = {
    */
   sleep(ms: number): Promise<void>;
   /**
+   * Park the run until something OUTSIDE it says to continue, and resolve with
+   * whatever that caller sent.
+   *
+   * A waitpoint, for the shape `sleep` cannot express: human-in-the-loop. An
+   * approval, a signature, a support reply, a webhook from a provider whose job
+   * takes an unknown length of time. Done with `sleep` those become a poll — wake,
+   * check, sleep again — and every cycle spends journal entries against
+   * {@link MAX_WORKFLOW_STEPS}, so a wait measured in days is not expressible at
+   * all. A waitpoint costs ONE entry however long it waits.
+   *
+   * Like {@link sleep} it does not return on the replay that creates it: the run is
+   * released, and it resumes when
+   * `POST /workflows/runs/:runId/signal` arrives with the token. The token is a
+   * fresh unguessable id per waitpoint and is what authorizes the resume, so it is
+   * safe to put in a URL you email someone — and it is SINGLE-USE, so a webhook
+   * that retries resolves the wait once.
+   *
+   * `name` identifies the waitpoint the same way a step name does, and is
+   * disambiguated by call order in a loop.
+   *
+   * With no `timeoutMs` the run waits indefinitely, which costs a row and nothing
+   * else. With one, the wait THROWS at the deadline — an ordinary error, so a
+   * `try`/`catch` around it is how you express "chase them, then give up".
+   *
+   * @example
+   * ```ts
+   * import { workflow } from "@alexkroman1/aai";
+   * import { z } from "zod";
+   *
+   * declare function emailApprovalLink(to: string, token: string): Promise<void>;
+   *
+   * export const refund = workflow({
+   *   input: z.object({ orderId: z.string(), approver: z.string() }),
+   *   async run({ orderId, approver }, ctx) {
+   *     const decision = await ctx.waitFor<{ approved: boolean }>("approval", {
+   *       timeoutMs: 7 * 24 * 60 * 60 * 1000,
+   *       // Runs once, before the run is released, with the token that resolves it.
+   *       announce: (token) => emailApprovalLink(approver, token),
+   *     });
+   *     return { orderId, approved: decision.approved };
+   *   },
+   * });
+   * ```
+   */
+  waitFor<T = unknown>(
+    name: string,
+    options?: {
+      timeoutMs?: number;
+      /**
+       * Deliver the token to whoever will resolve the wait — email a link, POST a
+       * webhook, write a row a UI reads.
+       *
+       * It runs ONCE per waitpoint (journaled like a step) before the run is
+       * released, which is the only moment at which the token exists and the run is
+       * still executing. Without it a caller has no way to learn the token at all,
+       * since `waitFor` does not return on the replay that creates it.
+       */
+      announce?: (token: string) => Promise<void> | void;
+    },
+  ): Promise<T>;
+  /**
    * End this run and start a FRESH one of the same workflow with `input`.
    *
    * Continue-as-new. The successor inherits this run's correlation key, so `find`

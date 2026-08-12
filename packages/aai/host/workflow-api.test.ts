@@ -49,6 +49,8 @@ type FakeEngine = WorkflowApiEngine & {
   listed: { workflow: string; limit?: number | undefined }[];
   /** Run ids `retry` was asked to revive. */
   revived: string[];
+  /** Waitpoint tokens `signal` was presented with, and their payloads. */
+  signalled: { token: string; payload: unknown }[];
 };
 
 /**
@@ -64,6 +66,7 @@ function makeEngine(declared = ["digest"]): FakeEngine {
   const found: { workflow: string; key: string; limit?: number | undefined }[] = [];
   const listed: { workflow: string; limit?: number | undefined }[] = [];
   const revived: string[] = [];
+  const signalled: { token: string; payload: unknown }[] = [];
   return {
     started,
     blobs,
@@ -137,6 +140,13 @@ function makeEngine(declared = ["digest"]): FakeEngine {
     },
     // The API never calls it; the host's idle controller does.
     busy: () => false,
+    signalled,
+    signal: (token: string, payload: unknown) => {
+      signalled.push({ token, payload });
+      // One token is parked; anything else is a token nothing is waiting on, which
+      // is the case a retrying webhook meets routinely.
+      return Promise.resolve(token === "good-token" ? "run-parked" : undefined);
+    },
     listing: () => declared.map((name) => ({ name, description: `${name} does a thing` })),
   };
 }

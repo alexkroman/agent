@@ -55,6 +55,82 @@ export class ContinueAs extends Error {
   }
 }
 
+/**
+ * A run parked on a WAITPOINT — released like a sleep, but woken by an HTTP
+ * signal rather than by a clock.
+ *
+ * Its own class rather than a `Suspended` carrying a token, on the same reasoning
+ * that split `ContinueAs` from `Suspended`: the engine does a different thing with
+ * it (`store.park` rather than `store.suspend`), and a field that changes which
+ * store call runs is two behaviours behind one name.
+ *
+ * `timeoutAt` rides along because a timeout IS an ordinary wake time — the due
+ * sweep recovers a timed-out waitpoint with no second mechanism.
+ */
+export class Parked extends Error {
+  /** The token that will resolve this waitpoint. Unguessable, single-use. */
+  readonly token: string;
+  /**
+   * The journal id the signalled payload must be recorded under.
+   *
+   * Carried on the error because only THIS execution knows the waitpoint's
+   * ordinal, and the resolving HTTP call — which may arrive days later, at a
+   * different sandbox — has to write the entry the next replay will look for.
+   */
+  readonly stepId: string;
+  /** Epoch ms the wait gives up, or undefined to wait indefinitely. */
+  readonly timeoutAt: number | undefined;
+
+  constructor(token: string, stepId: string, timeoutAt: number | undefined) {
+    super("workflow parked on a waitpoint");
+    this.name = "Parked";
+    this.token = token;
+    this.stepId = stepId;
+    this.timeoutAt = timeoutAt;
+  }
+}
+
+/** The paired journal entry holding a waitpoint's deadline. */
+function timeoutIdOf(stepId: string): string {
+  return `${stepId}!timeout`;
+}
+
+/** Has a recorded deadline passed? An absent one never has. */
+function timedOut(deadline: unknown): boolean {
+  return typeof deadline === "number" && Date.now() >= deadline;
+}
+
+/**
+ * A resolved waitpoint's entry: the payload, WRAPPED.
+ *
+ * Wrapped because a payload is caller-supplied and may legitimately be a string —
+ * the same shape `park` records as "still waiting" — so the two states have to be
+ * distinguishable by structure rather than by type. The key is `payload` and
+ * nothing else, so a caller's own `{ payload }` object still round-trips as a
+ * payload rather than being mistaken for the wrapper.
+ */
+export type SignalledWait = { payload: unknown };
+
+function isSignalled(entry: unknown): entry is SignalledWait {
+  return (
+    typeof entry === "object" &&
+    entry !== null &&
+    !Array.isArray(entry) &&
+    Object.keys(entry).length === 1 &&
+    "payload" in entry
+  );
+}
+
+/** Wrap a signalled payload for the journal — the one place the shape is minted. */
+export function wrapSignal(payload: unknown): SignalledWait {
+  return { payload };
+}
+
+/** The error a timed-out `ctx.waitFor` raises. Ordinary, so a step can catch it. */
+function waitTimeout(name: string): Error {
+  return new Error(`workflow waitpoint "${name}" timed out before it was signalled`);
+}
+
 export class Suspended extends Error {
   /** Epoch ms the run becomes due again. Declared as a field rather than a
    *  constructor parameter property, which `erasableSyntaxOnly` forbids. */
@@ -166,7 +242,7 @@ export function createContextFactory(deps: ExecutionDeps) {
      * author owns and the one failure that was previously silent.
      */
     const claimedSteps = new Set<string>();
-    const nextId = (kind: "s" | "t", name: string): string => {
+    const nextId = (kind: "s" | "t" | "w", name: string): string => {
       const key = `${kind}:${name}`;
       const n = ordinals.get(key) ?? 0;
       ordinals.set(key, n + 1);
@@ -206,6 +282,45 @@ export function createContextFactory(deps: ExecutionDeps) {
             "split the work into child runs",
         );
       }
+    };
+
+    /**
+     * Mint a waitpoint's token, journal it, announce it, and produce the
+     * {@link Parked} that unwinds the run.
+     *
+     * Its own function only because `waitFor` was over the cognitive-complexity
+     * cap with both halves inline; the split is replay-versus-first-execution,
+     * which is the same line every other durable primitive here is drawn on.
+     * Returns the error rather than throwing it, so the caller's `throw` keeps
+     * `waitFor`'s control flow visible at its own call site.
+     */
+    const freshWaitpoint = async (
+      stepId: string,
+      options:
+        | { timeoutMs?: number; announce?: (token: string) => Promise<void> | void }
+        | undefined,
+    ): Promise<Parked> => {
+      const token = crypto.randomUUID();
+      const timeoutAt =
+        options?.timeoutMs === undefined ? undefined : Date.now() + Math.max(0, options.timeoutMs);
+      // Journaled BEFORE `announce` runs, so a crash in between leaves a replay
+      // that re-parks on the SAME token and announces again — at-least-once, like
+      // every step. The other order can mint a token nobody ever receives, which
+      // is a wait that can only end by timing out.
+      await record(stepId, token);
+      // The deadline is its own entry, so the re-park above can read it without
+      // the token entry having to carry two values.
+      if (timeoutAt !== undefined) await record(timeoutIdOf(stepId), timeoutAt);
+      // Its own entry so `announce` runs once per WAITPOINT rather than once per
+      // replay: without it, every recovery of a parked run emails the approver
+      // again.
+      const announceId = `${stepId}!announce`;
+      claimedSteps.add(announceId);
+      if (options?.announce && !journal.has(announceId)) {
+        await options.announce(token);
+        await record(announceId, true);
+      }
+      return new Parked(token, stepId, timeoutAt);
     };
 
     const ctx: WorkflowContext = {
@@ -267,6 +382,28 @@ export function createContextFactory(deps: ExecutionDeps) {
         await record(stepId, wakeAt);
         throw new Suspended(wakeAt);
       },
+      async waitFor<T>(
+        name: string,
+        options?: { timeoutMs?: number; announce?: (token: string) => Promise<void> | void },
+      ): Promise<T> {
+        const stepId = nextId("w", name);
+        const journaled = journal.get(stepId);
+        // The waitpoint's journal entry is written TWICE and means two different
+        // things, which is what keeps one entry doing the whole job. `park` records
+        // the issued token (a string) so a replay can re-park on the SAME token
+        // rather than minting a second one that nobody holds; `signal` overwrites
+        // it with the caller's payload wrapped in `{ payload }`. So the shape is
+        // the state: a bare string is "still waiting", a wrapper is "resolved".
+        if (isSignalled(journaled)) return journaled.payload as T;
+        if (typeof journaled === "string") {
+          // Re-park on the recorded token. A timeout that already passed is a
+          // TIMEOUT, not another wait — the run is due, so falling through to park
+          // again would spin.
+          if (timedOut(journal.get(timeoutIdOf(stepId)))) throw waitTimeout(name);
+          throw new Parked(journaled, stepId, undefined);
+        }
+        throw await freshWaitpoint(stepId, options);
+      },
     };
     return { ctx, claimedSteps };
   };
@@ -309,7 +446,10 @@ export function reportSequenceDrift(
   // (`Promise.all` over `ctx.step`, the shape `transcription-desk` ships) named
   // every sibling the rejection cancelled: a real failure buried under a list of
   // invented determinism violations, on exactly the shape the docs recommend.
-  if (thrown !== undefined && !(thrown instanceof Suspended || thrown instanceof ContinueAs)) {
+  if (
+    thrown !== undefined &&
+    !(thrown instanceof Suspended || thrown instanceof ContinueAs || thrown instanceof Parked)
+  ) {
     return;
   }
   if (journal.size === 0) return;

@@ -157,6 +157,15 @@ export type TestWorkflowContext = WorkflowContext & {
   readonly sleeps: number[];
   /** Inputs `ctx.continueAs` was called with — at most one, since it unwinds. */
   readonly continuations: unknown[];
+  /**
+   * Waitpoint names `ctx.waitFor` reached, in call order.
+   *
+   * The default `waitFor` THROWS, like `continueAs`, because there is no honest
+   * way to resolve one in a unit test: a waitpoint is released and woken by an
+   * HTTP call, so a stub that returned a value would test a run body that never
+   * waits. Pass `waitFor` to script the answers a spec wants.
+   */
+  readonly waits: string[];
 };
 
 /**
@@ -202,6 +211,7 @@ export function createWorkflowContext(
   const steps: string[] = [];
   const sleeps: number[] = [];
   const continuations: unknown[] = [];
+  const waits: string[] = [];
   sessionCounter += 1;
   return {
     runId: `test-run-${sessionCounter}`,
@@ -243,9 +253,18 @@ export function createWorkflowContext(
       // Recorded first, so the input is observable from the catch.
       throw new Error("ctx.continueAs unwound the run (test context)");
     },
+    waitFor: (name: string): never => {
+      waits.push(name);
+      // THROWS for the same reason `continueAs` does: a waitpoint is RELEASED and
+      // woken by an HTTP signal, so nothing after it runs in this execution. A
+      // stub that resolved would let a spec pass on a body the engine never
+      // reaches on a first execution — pass `waitFor` to script the answer.
+      throw new Error(`ctx.waitFor("${name}") parked the run (test context)`);
+    },
     steps,
     sleeps,
     continuations,
+    waits,
     ...overrides,
   };
 }

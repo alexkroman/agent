@@ -20,6 +20,16 @@ export type MemoryRun = {
   status: WorkflowRunStatus;
   /** The correlation key `start({ key })` supplied, when it supplied one. */
   key?: string | undefined;
+  /**
+   * The token that will resume a run parked on `ctx.waitFor`.
+   *
+   * Explicitly `| undefined` for the same reason `wakeAt` is: clearing it on
+   * resume is what makes a token single-use, and an optional-only field cannot
+   * express "present and cleared" distinctly enough for the fake to model it.
+   */
+  waitToken?: string | undefined;
+  /** Journal id the signalled payload is recorded under — see `WorkflowStore.park`. */
+  waitStep?: string | undefined;
   output?: unknown;
   error?: string | undefined;
   // Explicitly `| undefined` rather than merely optional: clearing a wake time
@@ -192,6 +202,40 @@ export function createMemoryWorkflowStore(): MemoryWorkflowStore {
       if (!run) return Promise.resolve(0);
       run.steps.set(stepId, output);
       return Promise.resolve(run.steps.size);
+    },
+
+    park(runId: string, token: string, stepId: string, timeoutAt?: number): Promise<void> {
+      const run = runs.get(runId);
+      if (run && LIVE.has(run.status)) {
+        run.status = "sleeping";
+        run.waitToken = token;
+        run.waitStep = stepId;
+        // A timeout IS an ordinary wake time, which is what lets the due sweep
+        // recover a timed-out waitpoint with no second mechanism.
+        run.wakeAt = timeoutAt;
+        run.leaseUntil = undefined;
+      }
+      return Promise.resolve();
+    },
+
+    signal(token: string, payload: unknown): Promise<string | undefined> {
+      // Modelled on the SQL's predicate, both halves: parked AND sleeping. The
+      // token is cleared on resume, so a replayed webhook finds nothing — which
+      // is what makes it single-use rather than merely unguessable.
+      const entry = [...runs.entries()].find(
+        ([, run]) => run.waitToken === token && run.status === "sleeping",
+      );
+      if (!entry) return Promise.resolve(undefined);
+      const [runId, run] = entry;
+      const stepId = run.waitStep;
+      if (!stepId) return Promise.resolve(undefined);
+      run.status = "pending";
+      run.waitToken = undefined;
+      run.waitStep = undefined;
+      run.wakeAt = undefined;
+      run.leaseUntil = undefined;
+      run.steps.set(stepId, payload);
+      return Promise.resolve(runId);
     },
 
     suspend(runId: string, wakeAt: number): Promise<void> {

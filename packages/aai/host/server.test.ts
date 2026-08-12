@@ -443,6 +443,7 @@ describe("createServer with page: static", () => {
           putBlob: () => Promise.resolve("b"),
           listing: () => [{ name: "transcribe" }],
           busy: () => false,
+          signal: () => Promise.resolve(undefined),
         },
       },
       logger: silentLogger,

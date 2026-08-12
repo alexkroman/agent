@@ -52,8 +52,10 @@ import {
 import {
   ContinueAs,
   createContextFactory,
+  Parked,
   reportSequenceDrift,
   Suspended,
+  wrapSignal,
 } from "./workflow-execution.ts";
 import { createNameResolver } from "./workflow-names.ts";
 import type { WorkflowStore } from "./workflow-store.ts";
@@ -120,6 +122,16 @@ export type WorkflowEngine = WorkflowClient & {
    * bytes and no `ctx.db`: code inside the app writes its own rows.
    */
   putBlob(contentType: string, base64: string): Promise<string>;
+  /**
+   * Resolve a waitpoint by its token, journaling `payload` as the answer
+   * `ctx.waitFor` returns, and resolve the run id it released (or `undefined` for
+   * a token nothing is parked on).
+   *
+   * On the engine rather than on `WorkflowClient` because the caller is the HTTP
+   * API, never tool code: a token is handed OUT of the system — an approval link,
+   * a provider's webhook URL — and comes back over the wire.
+   */
+  signal(token: string, payload: unknown): Promise<string | undefined>;
   /**
    * Stop: abort in-flight runs' `ctx.signal` and cancel pending wake timers.
    * Journaled state is untouched — an abandoned run resumes once its lease
@@ -271,6 +283,15 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
       await continueRun(runId, err.input);
       return;
     }
+    // Parked on a waitpoint: released like a suspension, but woken by an HTTP
+    // signal rather than by the clock. A timeout, when the author set one, is an
+    // ordinary wake time — so a parked run with a deadline is scheduled exactly
+    // like a sleeper and the due sweep recovers it with no second mechanism.
+    if (err instanceof Parked) {
+      await store.park(runId, err.token, err.stepId, err.timeoutAt);
+      if (err.timeoutAt !== undefined) scheduleWake(runId, err.timeoutAt);
+      return;
+    }
     // Suspended: more to do later, at a time already journaled.
     if (err instanceof Suspended) {
       await store.suspend(runId, err.wakeAt);
@@ -406,6 +427,19 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
       // the outcome.
       if (revived) executeDetached(runId);
       return revived;
+    },
+
+    async signal(token: string, payload: unknown): Promise<string | undefined> {
+      await ensureTables();
+      // The payload is WRAPPED, because a caller's payload may itself be a string
+      // — the same shape `park` records as "still waiting" — so the two journal
+      // states have to be told apart by structure. `wrapSignal` is the one place
+      // that shape is minted.
+      const runId = await store.signal(token, wrapSignal(payload));
+      // Executed straight away for the same reason `retry` is: the signal is
+      // somebody waiting on an answer, and the run is `pending` with no lease.
+      if (runId !== undefined) executeDetached(runId);
+      return runId;
     },
 
     async cancel(runId: string): Promise<boolean> {

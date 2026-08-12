@@ -1,54 +1,10 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
-import type { WorkflowDef } from "../sdk/workflow.ts";
 import { MAX_WORKFLOW_STEPS, workflow } from "../sdk/workflow.ts";
-import {
-  asStatus,
-  createMemoryWorkflowStore,
-  type MemoryWorkflowStore,
-} from "./_workflow-test-utils.ts";
-import {
-  createWorkflowEngine,
-  MAX_DUE_RUNS,
-  MAX_WAKE_TIMER_MS,
-  WORKFLOW_LEASE_MS,
-  type WorkflowEngine,
-} from "./workflow-engine.ts";
-
-/**
- * Drain the microtask chain a run executes on, without spending wall-clock
- * time. `start()` deliberately does not await `execute` (that is the whole
- * point of it), so a spec has to pump the loop to observe the outcome —
- * `vi.waitFor` would poll in REAL time against fake timers, which is the one
- * thing the repo's timer guidance says not to do.
- */
-async function drain(rounds = 12): Promise<void> {
-  for (let i = 0; i < rounds; i++) await vi.advanceTimersByTimeAsync(0);
-}
-
-function makeEngine(
-  workflows: Record<string, WorkflowDef>,
-  store: MemoryWorkflowStore = createMemoryWorkflowStore(),
-): {
-  engine: WorkflowEngine;
-  store: MemoryWorkflowStore;
-  logger: { error: ReturnType<typeof vi.fn> };
-} {
-  // Returned rather than discarded: the determinism-drift report has no other
-  // observable effect — it deliberately does not fail the run — so the log IS the
-  // behaviour under test.
-  const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-  const engine = createWorkflowEngine({
-    workflows,
-    store,
-    db: { query: () => Promise.resolve([]) },
-    env: { API_KEY: "k" },
-    generate: undefined,
-    logger,
-  });
-  return { engine, store, logger };
-}
+import { drain, makeEngine } from "./_workflow-engine-harness.ts";
+import { asStatus, createMemoryWorkflowStore } from "./_workflow-test-utils.ts";
+import { MAX_DUE_RUNS, MAX_WAKE_TIMER_MS, WORKFLOW_LEASE_MS } from "./workflow-engine.ts";
 
 /** Every message `logger.error` received, joined — for a substring assertion. */
 function _loggedErrors(logger: { error: ReturnType<typeof vi.fn> }): string {

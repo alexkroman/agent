@@ -15,6 +15,7 @@
  * GET    /workflows/runs/:id   → a WorkflowRunSnapshot
  * DELETE /workflows/runs/:id   → { runId, cancelled }
  * POST   /workflows/runs/:id/retry → { runId, retried }
+ * POST   /workflows/signals/:token  → { signalled, runId? }  body: the payload
  * POST   /workflows/blobs      → { blobId, bytes } body: raw bytes
  * ```
  *
@@ -92,6 +93,14 @@ export type WorkflowApiEngine = WorkflowClient & {
   putBlob(contentType: string, base64: string): Promise<string>;
   /** Durable work in flight or imminent — see `WorkflowEngine.busy`. */
   busy(): boolean;
+  /**
+   * Resolve a waitpoint by token — see `WorkflowEngine.signal`.
+   *
+   * On the engine and not on `WorkflowClient` because the caller is always this
+   * API: a token leaves the system (an approval link, a provider's webhook URL)
+   * and comes back over the wire, never through tool code.
+   */
+  signal(token: string, payload: unknown): Promise<string | undefined>;
 };
 
 export type WorkflowApiOptions = {
@@ -252,6 +261,45 @@ async function retryRun(
 }
 
 /**
+ * `POST /workflows/signals/:token` — resolve a waitpoint.
+ *
+ * The token is in the PATH rather than the body, so the whole thing is a URL you
+ * can email, paste into a provider's webhook field, or curl. That is the point of
+ * a waitpoint: the run is parked and whoever holds the token is the only thing
+ * that can release it.
+ *
+ * **It is NOT under `/runs/:id`**, and that is deliberate: the token alone
+ * identifies the waitpoint (the column is unique), so requiring the run id too
+ * would mean handing out both halves and would let a caller who knows a run id
+ * probe for its token. The run id comes back in the response instead, for a
+ * caller that wants to poll the run afterwards.
+ *
+ * 200 with `signalled: false` for a token nothing is parked on — an unknown token,
+ * one already used (they are single-use), or a wait that timed out and moved on.
+ * A 404 would conflate those three, and a retrying webhook meets the second one
+ * routinely, so this mirrors `cancelRun`/`retryRun`: not an error, an answer.
+ */
+async function signalWait(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  engine: WorkflowApiEngine,
+  token: string,
+): Promise<void> {
+  if (!token) {
+    sendJson(res, 400, { error: "A signal needs a token: POST /workflows/signals/<token>" });
+    return;
+  }
+  // The payload is whatever the caller sends, capped like a run input and
+  // journaled as the value `ctx.waitFor` returns. An empty body is legal and
+  // resolves the wait with `undefined` — plenty of waitpoints are a doorbell
+  // rather than a message.
+  const body = await readBody(req, MAX_WORKFLOW_INPUT_BYTES);
+  const payload = body.length === 0 ? undefined : (JSON.parse(body.toString("utf-8")) as unknown);
+  const runId = await engine.signal(token, payload);
+  sendJson(res, 200, { signalled: runId !== undefined, ...(runId ? { runId } : {}) });
+}
+
+/**
  * `GET /workflows/runs?workflow=<name>&key=<key>` — runs carrying a correlation
  * key, newest first.
  *
@@ -312,6 +360,7 @@ export function createWorkflowApi(
 ): (req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean {
   const { engine: resolveEngine, token, logger } = opts;
   const runsPrefix = `${WORKFLOW_API_PREFIX}/runs/`;
+  const signalsPrefix = `${WORKFLOW_API_PREFIX}/signals/`;
 
   /**
    * The routes, as a table rather than an if/else chain.
@@ -369,6 +418,12 @@ export function createWorkflowApi(
       matches: (url) => url.startsWith(runsPrefix),
       run: (_req, res, engine, url) =>
         cancelRun(res, engine, decodeURIComponent(url.slice(runsPrefix.length))),
+    },
+    {
+      method: "POST",
+      matches: (url) => url.startsWith(signalsPrefix),
+      run: (req, res, engine, url) =>
+        signalWait(req, res, engine, decodeURIComponent(url.slice(signalsPrefix.length))),
     },
     {
       method: "POST",

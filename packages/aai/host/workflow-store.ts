@@ -21,7 +21,9 @@
  */
 
 import type { Db } from "../sdk/db.ts";
-import type { WorkflowRunSnapshot, WorkflowRunStatus } from "../sdk/workflow.ts";
+import type { WorkflowRunSnapshot } from "../sdk/workflow.ts";
+import { createBlobMethods } from "./workflow-blob-store.ts";
+import { createReadMethods } from "./workflow-read-store.ts";
 import {
   CREATE_MIGRATIONS,
   LIVE,
@@ -80,6 +82,32 @@ export type WorkflowStore = {
   recordStep(runId: string, stepId: string, output: unknown): Promise<number>;
   /** Release a run until `wakeAt` (epoch ms). */
   suspend(runId: string, wakeAt: number): Promise<void>;
+  /**
+   * Park a run on a WAITPOINT: released like a sleep, but woken by
+   * {@link signal} rather than by a clock.
+   *
+   * `timeoutAt` is optional and is an ordinary wake time, so a parked run with
+   * one is due at that instant exactly like a sleeper — which is what lets a
+   * timeout need no second mechanism. Without one the run waits indefinitely and
+   * costs a row.
+   */
+  park(runId: string, token: string, stepId: string, timeoutAt?: number): Promise<void>;
+  /**
+   * Resolve a waitpoint by its token, journaling `payload` as the step's output
+   * and returning the run to `pending`.
+   *
+   * Resolves the run id, or `undefined` when no run is parked on that token —
+   * which covers an unknown token, a run already resumed (the token is cleared,
+   * so it is single-use), and a run that timed out and moved on. All three are
+   * the same answer to the caller and none of them is an error: a webhook that
+   * retries is ordinary.
+   *
+   * The step id it journals under comes from the row (`wait_step`, written by
+   * {@link park}), not from the caller: the entry has to be the one the replay's
+   * `ctx.waitFor` will look for, and only the execution that parked knows its
+   * ordinal.
+   */
+  signal(token: string, payload: unknown): Promise<string | undefined>;
   /** Mark a run `completed` with its return value. */
   complete(runId: string, output: unknown): Promise<void>;
   /** Mark a run `failed` with a message. */
@@ -149,78 +177,6 @@ export type WorkflowStore = {
   pruneBlobs(maxAgeMs: number): Promise<number>;
 };
 
-/** One run row, as both reads select it. */
-type RunRow = {
-  run_id: string;
-  workflow: string;
-  status: WorkflowRunStatus;
-  output: unknown;
-  error: string | null;
-  correlation_key: string | null;
-  wake_at_ms: number | null;
-  steps_completed: number;
-};
-
-/**
- * Decoded byte length of a base64 payload, padding accounted for.
- *
- * `length * 3 / 4` is the length of an UNPADDED encoding, and every encoder in
- * the path (`btoa`, `Buffer.toString("base64")`) pads to a multiple of four — so
- * that formula overstates any payload whose length is not a multiple of 3 by one
- * or two bytes. That number is what `putBlob` stores and what the API's upload
- * response reports, while `ctx.blob(id)` hands the run the REAL bytes: a page
- * showing "1,048,578 bytes uploaded" for a 1,048,576-byte file, and a step
- * sizing a request from the stored figure, disagree with each other by a margin
- * no test on a 3-byte-aligned fixture can see.
- */
-export function base64ByteLength(base64: string): number {
-  const trimmed = base64.trimEnd();
-  if (trimmed.length === 0) return 0;
-  let padding = 0;
-  if (trimmed.endsWith("==")) padding = 2;
-  else if (trimmed.endsWith("=")) padding = 1;
-  return Math.floor((trimmed.length * 3) / 4) - padding;
-}
-
-/** Columns both reads need, so the two cannot drift apart. */
-const RUN_COLUMNS = `run_id, workflow, status, output, error, correlation_key, steps_completed,
-                (extract(epoch from wake_at) * 1000)::float8 as wake_at_ms`;
-
-/**
- * Row → {@link WorkflowRunSnapshot}.
- *
- * The snapshot is discriminated on `status`, which is what makes this a switch
- * rather than the conditional spreads it replaced: a status-defined field is no
- * longer "included when non-null" but required by the member it belongs to, so
- * the type is what stops a failed run reporting a stale `output` column left by
- * an earlier completed attempt of the same id.
- *
- * The two fallbacks are unreachable through this store's own writes (`fail`
- * always records a message, `suspend` always records a wake time) and are chosen
- * to be honest rather than defensive: a wake time nothing recorded means DUE NOW,
- * and a failure with no message still has to say it failed.
- */
-function toSnapshot(row: RunRow): WorkflowRunSnapshot {
-  const base = {
-    runId: row.run_id,
-    workflow: row.workflow,
-    stepsCompleted: row.steps_completed,
-    ...(row.correlation_key !== null ? { key: row.correlation_key } : {}),
-  };
-  switch (row.status) {
-    case "completed":
-      return { ...base, status: "completed", output: row.output };
-    case "failed":
-      return { ...base, status: "failed", error: row.error ?? "workflow run failed" };
-    case "sleeping":
-      return { ...base, status: "sleeping", wakeAt: row.wake_at_ms ?? 0 };
-    case "cancelled":
-      return { ...base, status: "cancelled" };
-    default:
-      return { ...base, status: row.status };
-  }
-}
-
 /**
  * Every jsonb parameter is bound `::text::jsonb`, and the `::text` is
  * LOAD-BEARING — it reads like a no-op and is the difference between a journal
@@ -255,6 +211,38 @@ function toSnapshot(row: RunRow): WorkflowRunSnapshot {
  * @internal
  */
 export function createPostgresWorkflowStore(db: Db): WorkflowStore {
+  /**
+   * Record one step's success. A local function rather than only a method, so
+   * `signal` below can journal a waitpoint's payload without reaching through
+   * `this` — the store is a returned object literal, where `this` is untyped
+   * under `noImplicitThis` and breaks the moment a caller destructures it.
+   */
+  async function recordStep(runId: string, stepId: string, output: unknown): Promise<number> {
+    // Deliberately NOT gated on the run being live: the step already ran, and a
+    // journal that records what happened stays truthful even for a run that was
+    // cancelled underneath it. Nothing will claim it again, so nothing will read
+    // the extra row.
+
+    // Deliberately NOT gated on the run being live: the step already ran, and
+    // a journal that records what happened stays truthful even for a run that
+    // was cancelled underneath it. Nothing will claim it again, so nothing
+    // will read the extra row.
+    await db.query(
+      `insert into aai_workflow_steps (run_id, step_id, output) values ($1, $2, $3::text::jsonb)
+         on conflict (run_id, step_id) do update set output = excluded.output`,
+      [runId, stepId, JSON.stringify(output ?? null)],
+    );
+    const rows = await db.query<{ steps_completed: number }>(
+      `update aai_workflow_runs
+          set steps_completed = (select count(*)::int from aai_workflow_steps where run_id = $1),
+              updated_at = now()
+        where run_id = $1
+        returning steps_completed`,
+      [runId],
+    );
+    return rows[0]?.steps_completed ?? 0;
+  }
+
   return {
     async init(): Promise<void> {
       // The ledger first, then only what it does not already record. See
@@ -336,25 +324,58 @@ export function createPostgresWorkflowStore(db: Db): WorkflowStore {
       return new Map(rows.map((r) => [r.step_id, r.output]));
     },
 
-    async recordStep(runId: string, stepId: string, output: unknown): Promise<number> {
-      // Deliberately NOT gated on the run being live: the step already ran, and
-      // a journal that records what happened stays truthful even for a run that
-      // was cancelled underneath it. Nothing will claim it again, so nothing
-      // will read the extra row.
+    recordStep,
+
+    async park(runId, token, stepId, timeoutAt): Promise<void> {
       await db.query(
-        `insert into aai_workflow_steps (run_id, step_id, output) values ($1, $2, $3::text::jsonb)
-           on conflict (run_id, step_id) do update set output = excluded.output`,
-        [runId, stepId, JSON.stringify(output ?? null)],
-      );
-      const rows = await db.query<{ steps_completed: number }>(
         `update aai_workflow_runs
-            set steps_completed = (select count(*)::int from aai_workflow_steps where run_id = $1),
+            set status = 'sleeping',
+                wait_token = $2,
+                wait_step = $3,
+                wake_at = case when $4::float8 is null
+                          then null else to_timestamp($4::float8 / 1000.0) end,
+                lease_until = null,
                 updated_at = now()
-          where run_id = $1
-          returning steps_completed`,
-        [runId],
+          where run_id = $1 and status in ${LIVE}`,
+        [runId, token, stepId, timeoutAt ?? null],
       );
-      return rows[0]?.steps_completed ?? 0;
+    },
+
+    async signal(token: string, payload: unknown): Promise<string | undefined> {
+      // One statement, so the claim of the token and the journal write cannot
+      // interleave with a second caller presenting the same token: the update's
+      // `wait_token = $1` predicate is what makes it single-use, and it is
+      // evaluated once. Two concurrent webhook deliveries therefore produce one
+      // resume and one `undefined`.
+      const rows = await db.query<{ run_id: string; wait_step: string | null }>(
+        `update aai_workflow_runs
+            set status = 'pending',
+                wait_token = null,
+                wait_step = null,
+                wake_at = null,
+                lease_until = null,
+                updated_at = now()
+          where wait_token = $1 and status = 'sleeping'
+      returning run_id, wait_step`,
+        [token],
+      );
+      const row = rows[0];
+      const runId = row?.run_id;
+      const stepId = row?.wait_step;
+      // `wait_step` is written by `park` in the same statement as the token, so a
+      // row carrying one and not the other cannot be produced by this code.
+      // Answered as "no such waitpoint" rather than asserted, because the
+      // alternative is throwing at a webhook that will simply retry.
+      if (runId === undefined || !stepId) return;
+      // Journaled AFTER the status flip, deliberately. The other order leaves a
+      // window where the payload is recorded against a run nobody has released,
+      // so a crash in between parks it forever holding an answer it will never
+      // read. This order's crash window instead leaves a `pending` run whose
+      // replay reaches `waitFor`, finds no entry, and parks again on a FRESH
+      // token — a lost signal, which the caller can retry, rather than a run
+      // that can never finish.
+      await recordStep(runId, stepId, payload);
+      return runId;
     },
 
     async suspend(runId: string, wakeAt: number): Promise<void> {
@@ -412,73 +433,8 @@ export function createPostgresWorkflowStore(db: Db): WorkflowStore {
       return rows.length > 0;
     },
 
-    async get(runId: string): Promise<WorkflowRunSnapshot | undefined> {
-      const rows = await db.query<RunRow>(
-        `select ${RUN_COLUMNS} from aai_workflow_runs where run_id = $1`,
-        [runId],
-      );
-      const row = rows[0];
-      return row ? toSnapshot(row) : undefined;
-    },
+    ...createReadMethods(db),
 
-    async findByKey(workflow: string, key: string, limit: number): Promise<WorkflowRunSnapshot[]> {
-      const rows = await db.query<RunRow>(
-        `select ${RUN_COLUMNS} from aai_workflow_runs
-          where workflow = $1 and correlation_key = $2
-          order by created_at desc
-          limit $3`,
-        [workflow, key, limit],
-      );
-      return rows.map(toSnapshot);
-    },
-
-    async recent(workflow: string, limit: number): Promise<WorkflowRunSnapshot[]> {
-      const rows = await db.query<RunRow>(
-        `select ${RUN_COLUMNS} from aai_workflow_runs
-          where workflow = $1
-          order by created_at desc
-          limit $2`,
-        [workflow, limit],
-      );
-      return rows.map(toSnapshot);
-    },
-
-    async putBlob(blobId: string, contentType: string, base64: string): Promise<void> {
-      await db.query(
-        `insert into aai_workflow_blobs (blob_id, content_type, data, bytes)
-         values ($1, $2, $3, $4)`,
-        // The byte count is stored rather than derived on read: every consumer
-        // wants it (a page reporting progress, a step sizing a request) and
-        // recovering it from base64 means decoding the whole payload.
-        [blobId, contentType, base64, base64ByteLength(base64)],
-      );
-    },
-
-    async getBlob(blobId: string): Promise<{ contentType: string; base64: string } | undefined> {
-      const rows = await db.query<{ content_type: string; data: string }>(
-        "select content_type, data from aai_workflow_blobs where blob_id = $1",
-        [blobId],
-      );
-      const row = rows[0];
-      return row ? { contentType: row.content_type, base64: row.data } : undefined;
-    },
-
-    async deleteBlob(blobId: string): Promise<boolean> {
-      const rows = await db.query<{ blob_id: string }>(
-        "delete from aai_workflow_blobs where blob_id = $1 returning blob_id",
-        [blobId],
-      );
-      return rows.length > 0;
-    },
-
-    async pruneBlobs(maxAgeMs: number): Promise<number> {
-      const rows = await db.query<{ blob_id: string }>(
-        `delete from aai_workflow_blobs
-          where created_at < now() - make_interval(secs => $1::float8)
-          returning blob_id`,
-        [maxAgeMs / 1000],
-      );
-      return rows.length;
-    },
+    ...createBlobMethods(db),
   };
 }

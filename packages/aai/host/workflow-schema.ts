@@ -113,6 +113,48 @@ export const CREATE_WORKFLOW_INDEX = `create index if not exists aai_workflow_ru
 export const ADD_CONTINUATION_DEPTH =
   "alter table aai_workflow_runs add column if not exists continuation_depth int not null default 0";
 
+/**
+ * The token that will resume a run parked on `ctx.waitFor`, and nothing else.
+ *
+ * A column rather than a sixth status: a waitpoint is a run that is `sleeping`
+ * with no wake time, which every consumer already renders correctly (`isTerminal`,
+ * the page's poll, the `workflow_status` builtin, the studio card). Teaching all
+ * four a new status for a distinction the token already carries is the trade
+ * `continueAs` declined for the same reason.
+ *
+ * It is UNIQUE because the token is a capability: `POST /runs/:id/signal` is as
+ * public as the rest of the workflow API, so what stops one caller resolving
+ * another's waitpoint is that the token is an unguessable v4 UUID they do not have.
+ * Unique also makes a token reachable without the run id, which is what lets a
+ * workflow hand out a bare URL (an approval link in an email) rather than one
+ * carrying both halves.
+ *
+ * Cleared on resume, so a token is single-use: a replayed webhook cannot resolve
+ * the same waitpoint twice, and a run parked on a LATER waitpoint cannot be
+ * resumed by an earlier one's token.
+ *
+ * `wait_step` rides beside it and is why resolving a waitpoint is ONE statement:
+ * the payload has to be journaled under the exact step id the replay's
+ * `ctx.waitFor` will look for, and only the execution that parked knows its
+ * ordinal. Recording it here is what lets `signal` claim the token and write the
+ * answer without a second round trip that a concurrent caller could interleave
+ * with.
+ */
+export const ADD_WAIT_TOKEN = `alter table aai_workflow_runs
+  add column if not exists wait_token text,
+  add column if not exists wait_step text`;
+
+/**
+ * Unique on the token, and PARTIAL so the nulls cost nothing.
+ *
+ * Almost no run is parked at any moment, and a non-partial unique index would
+ * make every run with no waitpoint compete for the same null — which Postgres
+ * permits (nulls are distinct) but which taxes every insert for a lookup that
+ * cannot match them. Same reasoning as the correlation-key index.
+ */
+export const CREATE_WAIT_TOKEN_INDEX = `create unique index if not exists aai_workflow_runs_wait_token
+  on aai_workflow_runs (wait_token) where wait_token is not null`;
+
 /** Table recording which migrations this schema has run. */
 export const CREATE_MIGRATIONS = `create table if not exists aai_workflow_migrations (
   id text primary key,
@@ -158,4 +200,6 @@ export const MIGRATIONS: readonly { id: string; sql: string }[] = [
   { id: "0007-blobs", sql: CREATE_BLOBS },
   { id: "0008-blobs-index", sql: CREATE_BLOBS_INDEX },
   { id: "0009-continuation-depth", sql: ADD_CONTINUATION_DEPTH },
+  { id: "0010-wait-token", sql: ADD_WAIT_TOKEN },
+  { id: "0011-wait-token-index", sql: CREATE_WAIT_TOKEN_INDEX },
 ];
