@@ -142,6 +142,15 @@ export type CreateDbSessionStoreOptions = {
 /** Table name segment: our own default or a caller's, never model input. */
 const SAFE_TABLE_RE = /^[a-z_][a-z0-9_]*$/;
 
+/** Parse a jsonb column that came back as a string; null when it will not. */
+function safeParse(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * A {@link SessionStore} backed by Postgres, over the same one-method `Db`
  * contract tool code sees as `ctx.db`.
@@ -200,7 +209,15 @@ export function createDbSessionStore(opts: CreateDbSessionStoreOptions): Session
           where session_id = $1 and updated_at > now() - ($2 || ' milliseconds')::interval`,
         [sessionId, String(ttlMs)],
       );
-      const snapshot = rows[0]?.snapshot;
+      const raw = rows[0]?.snapshot;
+      if (raw === undefined || raw === null) return null;
+      // Accept a STRING as well as an object, the same tolerance the platform's
+      // workspace and chat stores carry. postgres.js returns an object for a
+      // jsonb column, but a row written by an older build (or by anything that
+      // bound `$n::jsonb` instead of `$n::text::jsonb` — see `save`) holds a
+      // jsonb *string*, and silently reading that as "no snapshot" is exactly
+      // the failure this tolerance exists to survive.
+      const snapshot: unknown = typeof raw === "string" ? safeParse(raw) : raw;
       if (snapshot === null || typeof snapshot !== "object") return null;
       const { state, providerSessionId } = snapshot as Partial<SessionSnapshot>;
       // A row whose `state` is not an object is a snapshot written by
@@ -216,8 +233,20 @@ export function createDbSessionStore(opts: CreateDbSessionStoreOptions): Session
     async save(sessionId, snapshot) {
       await ensureTable();
       await db.query(
+        // **The cast is `::text::jsonb`, and the extra step is load-bearing.**
+        // Bound to a bare `$n::jsonb`, postgres.js resolves the parameter's
+        // type FROM that cast and JSON-encodes the string we already encoded —
+        // so the column ends up holding a jsonb *string* rather than an object.
+        // Measured against a real Postgres by the platform's own stores:
+        // `$n::jsonb` stores `jsonb_typeof = 'string'`, `$n::text::jsonb`
+        // stores an object (see aai-server/workspace-store.ts and
+        // jsonb-encoding.integration.test.ts, which exists because this shipped
+        // once already). It is invisible to any test with a fake `Db`: the bug
+        // lives strictly in the driver↔Postgres seam, and a double-encoded
+        // snapshot reads back as "no snapshot", so durable resume would restore
+        // NOTHING in production while every unit test stayed green.
         `insert into ${table} (session_id, snapshot, updated_at)
-         values ($1, $2::jsonb, now())
+         values ($1, $2::text::jsonb, now())
          on conflict (session_id)
          do update set snapshot = excluded.snapshot, updated_at = excluded.updated_at`,
         [sessionId, JSON.stringify(snapshot)],
