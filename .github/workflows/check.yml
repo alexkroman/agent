@@ -242,7 +242,10 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('packages/aai-cli/package.json') }}
       - run: pnpm --filter @alexkroman1/aai-cli exec playwright install --with-deps chromium
-      - run: pnpm exec turbo run check:e2e
+      # --concurrency=1: the e2e run republishes every publishable package from
+      # the live workspace, truncating shared dist/ directories while it does.
+      # Nothing may run beside it. Matches `pnpm test:e2e` and scripts/check.sh.
+      - run: pnpm exec turbo run check:e2e --concurrency=1
 
   # Single gate job for branch protection — add only "ci" as a required check
   ci:
