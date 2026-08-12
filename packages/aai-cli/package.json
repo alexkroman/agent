@@ -39,6 +39,8 @@
     "lint": "biome check .",
     "check:publint": "publint",
     "check:attw": "attw --pack --profile esm-only",
+    "test:integration": "VITEST_INCLUDE=**/*.integration.test.ts vitest run -c ../../vitest.slow.config.ts",
+    "check:integration": "pnpm run test:integration",
     "test:e2e": "VITEST_PROFILE=e2e VITEST_INCLUDE=e2e*.test.ts vitest run -c ../../vitest.slow.config.ts",
     "check:e2e": "pnpm run test:e2e"
   },
@@ -46,6 +48,7 @@
     "@alexkroman1/aai": "workspace:*",
     "@alexkroman1/aai-ui": "workspace:*",
     "@clack/prompts": "^1.7.0",
+    "@workflow/builders": "4.1.7",
     "chokidar": "^5.0.0",
     "citty": "^0.2.2",
     "env-paths": "^4.0.0",
@@ -62,7 +65,8 @@
     "playwright": "^1.61.1",
     "tsdown": "^0.22.13",
     "verdaccio": "^6.8.0",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "workflow": "4.8.2"
   },
   "peerDependencies": {
     "vitest": "^4.1.10"

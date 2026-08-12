@@ -42,7 +42,7 @@ vi.mock("./_utils.ts", async () => (await import("./_dev-server-test-utils.ts"))
 
 // ─── Imports under test (after mocks) ───────────────────────────────────────
 
-import { createDevLogger, loadAgentDef, startDevServer, watchDirectory } from "./_dev-server.ts";
+import { createDevLogger, loadWorker, startDevServer, watchDirectory } from "./_dev-server.ts";
 import { log } from "./_ui.ts";
 
 // 30s, not the 5s default: sibling suites run multi-second runtime-inlining
@@ -486,18 +486,22 @@ describe("dev server host mode gate", () => {
   });
 });
 
-describe("loadAgentDef", () => {
-  const fakeDef = (name: string) => ({ name, tools: {} }) as AgentDef;
+describe("loadWorker", () => {
+  const fakeWorker = (name: string) => ({
+    agent: { name, tools: {} } as AgentDef,
+    workflowCode: undefined,
+    stepCode: undefined,
+  });
 
   test("hands the Vite-built worker to the evaluator", async () => {
     await withTempDir(async (dir) => {
       await writeAgentTs(dir, "built-agent");
       const evaluated: string[] = [];
-      const def = await loadAgentDef(dir, async (code) => {
+      const worker = await loadWorker(dir, async (code) => {
         evaluated.push(code);
-        return fakeDef("built-agent");
+        return fakeWorker("built-agent");
       });
-      expect(def.name).toBe("built-agent");
+      expect(worker.agent.name).toBe("built-agent");
       expect(evaluated[0]).toContain("built-agent");
     });
   });
@@ -507,8 +511,22 @@ describe("loadAgentDef", () => {
       await writeAgentTs(dir);
       await fs.writeFile(path.join(dir, "agent.ts"), "export default {{{ nope\n");
       const evaluate = vi.fn();
-      await expect(loadAgentDef(dir, evaluate)).rejects.toThrow();
+      await expect(loadWorker(dir, evaluate)).rejects.toThrow();
       expect(evaluate).not.toHaveBeenCalled();
+    });
+  });
+
+  test("a project with no workflows/ directory carries no workflow code", async () => {
+    await withTempDir(async (dir) => {
+      await writeAgentTs(dir, "no-workflows");
+      const worker = await loadWorker(dir, async (code) => {
+        // The wrapper entry only emits the two exports when the build produced
+        // them, so their absence from the SOURCE is what the guest-side
+        // "declares no workflows" check reads.
+        expect(code).not.toContain("__aaiWorkflowCode");
+        return fakeWorker("no-workflows");
+      });
+      expect(worker.workflowCode).toBeUndefined();
     });
   });
 });

@@ -43,11 +43,20 @@ function hasPlaywrightBrowser(): boolean {
   }
 }
 
-// Representative subset: minimal baseline, stateful + tools, external tools + custom UI.
-// This tier only builds these two end-to-end. Config-level validation of EVERY
-// template (asset imports resolve, toAgentConfig accepts the config) lives in
-// packages/aai-templates/templates.test.ts (pnpm test:templates).
-const templates = ["simple", "web-researcher"];
+// Representative subset: minimal baseline, external tools + custom UI, and
+// durable workflows. This tier only builds these end-to-end. Config-level
+// validation of EVERY template (asset imports resolve, toAgentConfig accepts
+// the config) lives in packages/aai-templates/templates.test.ts
+// (pnpm test:templates).
+//
+// `research-desk` is here for one reason no in-tree test can cover: its
+// `workflows/research.ts` imports `workflow`, and a scaffolded project resolves
+// its dependencies from a real INSTALL of the published manifest rather than
+// from this repo's node_modules. Missing from the scaffold's `dependencies`,
+// the package resolves in every repo test and in nothing a user runs — the
+// build dies on `Could not resolve "workflow"` in the one place no CI job
+// looks.
+const templates = ["simple", "web-researcher", "research-desk"];
 
 let aaiBin: string;
 let tmpDir: string;
@@ -187,6 +196,57 @@ describe("self-hosted server: npm start", () => {
       expect(await ofetch(`http://127.0.0.1:${port}/`, { responseType: "text" })).toContain(
         "<!DOCTYPE html>",
       );
+    } finally {
+      child.kill();
+      await waitForExit(child);
+    }
+  });
+});
+
+describe("aai dev: a scaffolded workflow template", () => {
+  /**
+   * The question this answers is "can a user `aai init` a workflow template and
+   * `aai dev` it", and nothing else in the repo can: the in-tree integration
+   * test (`dev-workflow.integration.test.ts`) drives the same code against a
+   * fixture that resolves `workflow` from this workspace, and the `npm start`
+   * leg above runs `server.mjs`, which has no bundler and builds no workflows.
+   * Only here is the project scaffolded, installed from the published manifest,
+   * and served by the real `aai dev` process.
+   */
+  test("boots and mounts the DevKit's queue callbacks", async ({ skip }) => {
+    const projectDir = path.join(tmpDir, "_dev-workflow");
+    aai(aaiBin, ["init", projectDir, "-t", "research-desk", "--skip-deploy"], tmpDir);
+    try {
+      installDeps(registry, projectDir);
+    } catch (err) {
+      if (!isRegistryProxyFailure(err)) throw err;
+      skip(`pnpm install failed (registry proxy issue): ${String(err).slice(0, 200)}`);
+    }
+
+    // A fixed port, because `aai dev --port` is how a user picks one and the
+    // JSON line is what a script reads back; the range is chosen high enough to
+    // sit clear of the other servers this suite runs.
+    const port = 4820;
+    const child = spawn(process.execPath, [aaiBin, "dev", "--port", String(port), "--json"], {
+      cwd: projectDir,
+      env: { ...aaiEnv(), ASSEMBLYAI_API_KEY: "e2e-not-dialled" },
+      stdio: "pipe",
+    });
+    try {
+      // Booting at all is most of the assertion: `loadWorker` compiles
+      // `workflows/` BEFORE the server listens, so a project whose workflow
+      // build fails never answers /health.
+      await waitForHealth(`http://127.0.0.1:${port}/health`, child);
+
+      // Mounted-or-not is the distinction that matters. Unmounted, this falls
+      // through to the server's 404 and every run stalls forever with nothing
+      // logged — which is exactly how it behaved before the routes were wired.
+      const res = await fetch(`http://127.0.0.1:${port}/.well-known/workflow/v1/flow`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      expect(res.status).not.toBe(404);
     } finally {
       child.kill();
       await waitForExit(child);

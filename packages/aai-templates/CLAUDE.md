@@ -81,6 +81,26 @@ once, and the templates are now their reference use:
 | `createToolContext` (`@alexkroman1/aai/testing`) | the four suites that test tools directly — `dispatch-center`, `pizza-ordering`, `retail`, `solo-rpg` |
 | `useAgentState(fallback)` | `pizza-ordering`, `dispatch-center`, `retail`, `solo-rpg` |
 | `AutoScroll` | the three custom-chrome clients — `dispatch-center`, `retail`, `infocom-adventure` |
+| `workflow()` + `ctx.workflows` + `isTerminal` | `research-desk` — the only template with a `workflows/` directory (see below) |
+
+**`research-desk` is the workflow template, and its shape is dictated by the
+Workflow DevKit rather than chosen.** The `"use workflow"` / `"use step"` bodies
+live in `workflows/research.ts` because the WDK builder scans that directory at
+build time and rewrites what it finds; a body written in `agent.ts` is never
+transformed, so it runs inline once with no durability and nothing saying so.
+`agent.ts` holds only the declaration (`workflow({ description, input, run })`)
+and the two tools that start and read runs.
+
+Its spec stubs `ctx.workflows` rather than driving a real one, which is the only
+honest option: the real client needs a WDK world, and the bodies are only durable
+after the build has transformed them. That is also why **`workflow()` does not
+check for the compiler's `workflowId`** — `templates.test.ts` imports every
+`agent.ts` through vitest with no bundler in the path, so a declaration-time
+throw made this template unimportable by its own spec. The check lives at
+`ctx.workflows.start`, where the id is actually needed.
+
+Note the template needs `workflow` as a devDependency of THIS package to
+resolve at test time; a scaffolded project gets it as a real dependency.
 
 The one thing a template may still hand-roll here is a **fallback that would
 cost the browser bundle**: `retail`'s client builds its empty view from a

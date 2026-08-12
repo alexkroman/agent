@@ -42,3 +42,10 @@ export type {
 export * from "./sdk/session-slot.ts";
 export * from "./sdk/types.ts";
 export * from "./sdk/utils.ts";
+// `workflow()` and everything a caller of `ctx.workflows` reads. On the ROOT
+// barrel rather than a subpath because declaring a workflow sits beside
+// declaring a tool — an author writes both in `agent.ts`. The engine behind it
+// (the Workflow DevKit) is not re-exported from anywhere here: an author imports
+// `sleep`, `defineHook` and the directives from `workflow` directly, which keeps
+// this SDK from having to track that package's surface.
+export * from "./sdk/workflow.ts";

@@ -15,6 +15,26 @@ import {
 const scaffold = (file: string) =>
   readFile(path.resolve(import.meta.dirname, "../aai-templates/scaffold", file), "utf-8");
 
+/**
+ * Scaffold dependencies the platform does NOT own yet — the one legitimate
+ * asymmetry in the set below.
+ *
+ * `workflow` is in the scaffold because a laptop project needs it: `aai init -t
+ * research-desk` writes a `workflows/` directory that imports it, and without
+ * the declaration the build dies on `Could not resolve "workflow"`. It is not
+ * baked into the guest image because the guest cannot serve workflows yet —
+ * `GUEST_ROUTE_EXPOSURE` still declares the three routes `host-only` — and the
+ * package installs **223 MB** (its nestjs/sveltekit/next adapters, the TS
+ * plugin, date-fns, the aws smithy tree), which is not a cost to pay on every
+ * sandbox for a path nothing reaches.
+ *
+ * DELETE this set when the guest path lands: adding `workflow` to
+ * `WORKSPACE_DEPENDENCIES` and to `toolchain/package.json` is what puts a copy
+ * where `rewriteWorkflowImports` can resolve it, and this test is what will say
+ * so.
+ */
+const NOT_YET_PLATFORM_OWNED = new Set(["workflow"]);
+
 let dir: string;
 
 afterEach(async () => {
@@ -91,7 +111,11 @@ describe("scaffold deltas", () => {
     // contract: `update_dependencies` refuses to bump one a workspace names by
     // hand, so a package added to the scaffold and missed here would become
     // bumpable out from under the baked copy.
-    expect([...WORKSPACE_DEPENDENCIES].sort()).toEqual(Object.keys(dependencies).sort());
+    expect([...WORKSPACE_DEPENDENCIES].sort()).toEqual(
+      Object.keys(dependencies)
+        .filter((name) => !NOT_YET_PLATFORM_OWNED.has(name))
+        .sort(),
+    );
   });
 
   test("resolves the scaffold shipped inside the CLI tarball", () => {

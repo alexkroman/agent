@@ -10,6 +10,13 @@
 
 import { writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { errorMessage } from "@alexkroman1/aai";
+import {
+  createWorkflowSurface,
+  type SessionRuntime,
+  type WorkflowSurface,
+} from "@alexkroman1/aai/runtime";
+import type { WebSocket } from "ws";
 import type { AgentDef, CreateGuestRuntime, GuestRuntime } from "./harness-types.ts";
 import type { StudioSession } from "./studio-chat.ts";
 import { runCode } from "./trial.ts";
@@ -54,6 +61,14 @@ export type HarnessState = {
   /** Live client-session connections (host idle eviction asks). */
   activeSessions: number;
   /**
+   * The bundle's durable-workflow surface, or null when it declares none.
+   *
+   * Built at LOAD rather than lazily like the runtime: the DevKit's queue can
+   * call back the moment a run starts, and a route that 404s because the surface
+   * had not been built yet would look to the world like a lost message.
+   */
+  workflows: WorkflowSurface | null;
+  /**
    * The studio coding-agent session, installed by `studio/session-init` —
    * workspace dir, the caller's key (chat bearer + LLM credential), and
    * turn config. Null on non-studio sandboxes; `/studio/chat` answers 409.
@@ -69,6 +84,7 @@ export function emptyHarnessState(): HarnessState {
     env: Object.freeze({}),
     runtime: null,
     activeSessions: 0,
+    workflows: null,
     studio: null,
   };
 }
@@ -121,6 +137,17 @@ export async function loadBundle(
   state.createRuntime = createRuntime as CreateGuestRuntime;
   state.env = Object.freeze({ ...params.env });
 
+  // The compiled workflow surface rides the bundle as two string exports (see
+  // `aai-cli/workflow-bundler.ts`). Absent for a project with no `workflows/`
+  // directory, which is most of them.
+  const workflowCode = (mod as { __aaiWorkflowCode?: unknown }).__aaiWorkflowCode;
+  const stepCode = (mod as { __aaiStepCode?: unknown }).__aaiStepCode;
+  state.workflows =
+    (await createWorkflowSurface(
+      typeof workflowCode === "string" ? workflowCode : undefined,
+      typeof stepCode === "string" ? stepCode : undefined,
+    )) ?? null;
+
   const config = (mod as { __aaiConfig?: unknown }).__aaiConfig;
   return config === undefined ? {} : { config };
 }
@@ -143,4 +170,53 @@ export function ensureRuntime(state: HarnessState): GuestRuntime {
     runCode,
   });
   return state.runtime;
+}
+
+/**
+ * The session-facing runtime handed to `createServer` — a lazy facade over
+ * `ensureRuntime` so the real runtime is built on the FIRST session (with
+ * the loaded bundle's env), plus the live-session count the host's idle
+ * eviction asks for over `status`.
+ */
+export function lazyRuntime(
+  state: HarnessState,
+  hooks: {
+    /**
+     * Pre-session refusal, checked before anything starts: return a close
+     * code + reason to turn the session away (agent mode's drain refusal —
+     * 1013 "try again" makes the client re-broker onto the replacement).
+     * The one refusal path, shared with the runtime-build failure below.
+     */
+    refuse?: () => { code: number; reason: string } | null;
+  } = {},
+): SessionRuntime {
+  return {
+    startSession(ws, opts) {
+      const socket = ws as unknown as WebSocket;
+      const refusal = hooks.refuse?.();
+      if (refusal) {
+        socket.close(refusal.code, refusal.reason);
+        return;
+      }
+      state.activeSessions++;
+      socket.on("close", () => {
+        state.activeSessions = Math.max(0, state.activeSessions - 1);
+      });
+      let runtime: GuestRuntime;
+      try {
+        runtime = ensureRuntime(state);
+      } catch (err) {
+        // No bundle yet, or the runtime can't be built (missing provider
+        // credential, invalid config) — answer with a close frame naming
+        // the cause instead of a dangling socket.
+        console.error(`session refused: ${errorMessage(err)}`);
+        socket.close(1011, errorMessage(err).slice(0, 100));
+        return;
+      }
+      runtime.startSession(ws, opts);
+    },
+    shutdown: async () => {
+      await state.runtime?.shutdown();
+    },
+  };
 }

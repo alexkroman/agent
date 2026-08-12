@@ -15,11 +15,15 @@ import type { AgentDef } from "@alexkroman1/aai";
 // below, so a dynamic import inside startDevServer would defer nothing.
 import {
   type AgentServer,
+  configureWorkflowWorld,
   consoleLogger,
   createRuntime,
   createServer,
+  createWorkflowSurface,
+  handleWorkflowRequest,
   type Logger,
   requiredProviderEnvVars,
+  startWorkflowWorldIfDeclared,
   withHostCredentialFallback,
 } from "@alexkroman1/aai/runtime";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
@@ -27,7 +31,7 @@ import { type FSWatcher, watch } from "chokidar";
 import getPort, { portNumbers } from "get-port";
 import pDebounce from "p-debounce";
 import type { ViteDevServer } from "vite";
-import { createWorkerEvaluator } from "./_bundler.ts";
+import { createWorkerEvaluator, type EvaluatedWorker } from "./_bundler.ts";
 import { ensureApiKey } from "./_config.ts";
 import { fallbackHtmlPlugin } from "./_default-html.ts";
 import { devBindHost, devWatchEnabled, hostModeEnv } from "./_dev-env.ts";
@@ -36,6 +40,7 @@ import { resolveServerEnv } from "./_server-common.ts";
 import { log, notify, outputSilenced } from "./_ui.ts";
 import { errorCode, errorMessage } from "./_utils.ts";
 import { buildWorker } from "./worker-bundler.ts";
+import { buildWorkflows } from "./workflow-bundler.ts";
 
 // ─── Env loading ────────────────────────────────────────────────────────────
 
@@ -133,15 +138,23 @@ async function resolveAgentEnv(root: string, agentDef: AgentDef): Promise<Record
  * errors in the agent's code propagate — the restart loop reports them and
  * keeps the old server. Evaluation goes through the memoizing evaluator so
  * a no-op save doesn't leak another module into the ESM registry.
+ *
+ * The project's `workflows/` directory is compiled by the same pass deploy
+ * runs (`buildWorkflows`) and rides the bundle as two string exports, which is
+ * how `aai dev` serves a workflow at all: nothing here hands the bundle to a
+ * guest, so the CLI is both ends of that contract locally. A project with no
+ * `workflows/` directory pays nothing — `buildWorkflows` resolves `undefined`
+ * without starting a builder.
  */
-export async function loadAgentDef(
+export async function loadWorker(
   cwd: string,
-  evaluate: (code: string) => Promise<AgentDef>,
-): Promise<AgentDef> {
+  evaluate: (code: string) => Promise<EvaluatedWorker>,
+): Promise<EvaluatedWorker> {
+  const workflows = await buildWorkflows(cwd);
   // `runtime: false`: the dev server builds its runtime in-process from the
   // same installed SDK the wrapper would bundle, and inlining the runtime +
   // provider SDKs on every file-watch rebuild would make reloads multi-second.
-  return evaluate(await buildWorker(cwd, { runtime: false }));
+  return evaluate(await buildWorker(cwd, { runtime: false, workflows }));
 }
 
 // ─── File watching ──────────────────────────────────────────────────────────
@@ -293,10 +306,33 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
 
   const devLogger: Logger = createDevLogger(outputSilenced());
 
+  // The world is process-wide (`getWorld()` memoizes on first resolve) and its
+  // queue is a long-lived subscription, so it is started once for the lifetime
+  // of the dev server rather than per restart — a rebuild replaces the routes,
+  // not the storage behind them.
+  let workflowWorldStarted = false;
+
   /** Full build sequence, shared by initial startup and every restart. */
   async function buildServer(): Promise<AgentServer> {
-    const agentDef = await loadAgentDef(cwd, evaluateWorker);
+    const worker = await loadWorker(cwd, evaluateWorker);
+    const agentDef = worker.agent;
     const env = await resolveAgentEnv(cwd, agentDef);
+
+    // BEFORE `createWorkflowSurface`, which imports `workflow/runtime` and
+    // resolves a world from the environment as it loads — configured after, a
+    // project with a `DATABASE_URL` would silently take the local world and
+    // write its runs to `.workflow-data/` instead.
+    const world = configureWorkflowWorld({
+      databaseUrl: env.DATABASE_URL,
+      port: backendPort,
+      dataDir: path.join(cwd, ".workflow-data"),
+    });
+    const workflows = await createWorkflowSurface(worker.workflowCode, worker.stepCode);
+    if (workflows && !workflowWorldStarted) {
+      workflowWorldStarted = true;
+      await startWorkflowWorldIfDeclared(true, world);
+    }
+
     // Self-hosted only: let provider credentials exported in the shell reach
     // the resolvers without entering `ctx.env`. Keeping them out of `ctx.env`
     // preserves dev/prod parity — agent code sees the same keys it will see on
@@ -321,6 +357,11 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       hostBaseAgent: agentDef,
       // Served pre-connection via GET /client-config.
       greeting: agentDef.greeting,
+      // The DevKit's queue calls these back to replay a run and to execute a
+      // step; unclaimed they fall through to the 404 and every run stalls with
+      // nothing saying why. Returns false with no workflows, so an ordinary
+      // agent mounts nothing.
+      request: (req, res, url, method) => handleWorkflowRequest(workflows, req, res, url, method),
       ...clientDirOpt,
     });
   }

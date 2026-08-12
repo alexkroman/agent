@@ -115,7 +115,7 @@ export type AgentConfig = z.infer<typeof AgentConfigSchema>;
  * to `AgentDef` must appear either in `AgentConfigSchema` or here — the
  * type-level guard in the internal-types test enforces that subtraction.
  */
-export const HOST_ONLY_AGENT_FIELDS = ["tools", "state", "syncState"] as const;
+export const HOST_ONLY_AGENT_FIELDS = ["tools", "state", "syncState", "workflows"] as const;
 
 /** A host-only `AgentDef` field name stripped by `toAgentConfig` (`tools`, `state`). */
 export type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];

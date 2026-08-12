@@ -113,6 +113,15 @@ export function aaiRuntimeModule(): Record<string, unknown> {
     // The console-backed logger the dev server hands the runtime in human
     // mode (see createDevLogger); these specs only need it to exist.
     consoleLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+    // The workflow trio. Inert rather than absent: an agent with no
+    // `workflows/` directory is the case every spec in these files uses, and
+    // the real implementations would resolve a DevKit world just to answer
+    // "there is nothing to serve". `dev-workflow.integration.test.ts` covers
+    // the wired-up path against real bundles.
+    configureWorkflowWorld: vi.fn(() => "local"),
+    createWorkflowSurface: vi.fn(async () => undefined),
+    handleWorkflowRequest: vi.fn(() => false),
+    startWorkflowWorldIfDeclared: vi.fn(async () => undefined),
   };
 }
 

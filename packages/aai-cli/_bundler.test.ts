@@ -13,14 +13,14 @@ import { createWorkerEvaluator } from "./_bundler.ts";
 vi.setConfig({ testTimeout: 30_000 });
 
 describe("createWorkerEvaluator", () => {
-  test("byte-identical code returns the cached AgentDef without re-import", async () => {
+  test("byte-identical code returns the cached result without re-import", async () => {
     const evaluate = createWorkerEvaluator();
     const code = `export default { name: "memo-test", tools: {} };`;
     const first = await evaluate(code);
     const second = await evaluate(code);
     // Same object reference — a fresh import would produce a new object.
     expect(second).toBe(first);
-    expect(first.name).toBe("memo-test");
+    expect(first.agent.name).toBe("memo-test");
   });
 
   test("changed code re-evaluates and returns the new AgentDef", async () => {
@@ -28,7 +28,7 @@ describe("createWorkerEvaluator", () => {
     const first = await evaluate(`export default { name: "memo-v1", tools: {} };`);
     const second = await evaluate(`export default { name: "memo-v2", tools: {} };`);
     expect(second).not.toBe(first);
-    expect(second.name).toBe("memo-v2");
+    expect(second.agent.name).toBe("memo-v2");
   });
 
   test("invalid exports still throw and are not cached", async () => {
@@ -37,6 +37,17 @@ describe("createWorkerEvaluator", () => {
     await expect(evaluate(bad)).rejects.toThrow("agent.ts must export default");
     // Failure was not memoized as a success.
     await expect(evaluate(bad)).rejects.toThrow("agent.ts must export default");
+  });
+
+  test("carries the bundle's workflow exports, which the AgentDef cannot", async () => {
+    const evaluate = createWorkerEvaluator();
+    const worker = await evaluate(
+      `export default { name: "memo-wf", tools: {} };\n` +
+        `export const __aaiWorkflowCode = "flow";\n` +
+        `export const __aaiStepCode = "step";\n`,
+    );
+    expect(worker.workflowCode).toBe("flow");
+    expect(worker.stepCode).toBe("step");
   });
 });
 

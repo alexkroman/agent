@@ -40,6 +40,14 @@ export const IGNORED_WORKSPACE_DIRS: ReadonlySet<string> = new Set([
   ".git",
   "dist",
   ".aai",
+  // The local workflow world's run state under `aai dev` (`WORKFLOW_LOCAL_DATA_DIR`
+  // — see `host/workflow-world.ts`). It is a journal of runs, one file per event:
+  // machine state, unbounded, and meaningless anywhere but the machine that
+  // wrote it. Pushed, it would spend the 100-file workspace cap on it.
+  ".workflow-data",
+  // @swc/core's plugin cache, written into the project by the workflow builder.
+  // Same class: a build artifact of whoever last ran a build, not source.
+  ".swc",
 ]);
 
 /**
