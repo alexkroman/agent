@@ -8,16 +8,18 @@
  * here: the split is packaging, not a new surface.
  */
 
-import type { Db } from "./db.ts";
-import type { GenerateFn } from "./generate.ts";
+import type { AgentContext } from "./agent-context.ts";
 import type { DefaultSessionState, Message } from "./session-state.ts";
 import type { WorkflowClient } from "./workflow.ts";
 
 /**
  * Context passed to tool `run` functions.
  *
- * Provides access to the session environment, state, database, and
- * conversation history from within a tool's execute handler.
+ * {@link AgentContext} — `env`, `db`, `generate`, `signal` — plus everything that
+ * only makes sense inside a live session: the per-session state, the conversation
+ * so far, the client to push events to, and the handle for starting work that
+ * outlives the session. A helper that needs only the base four should be typed
+ * against `AgentContext` so a workflow can call it too.
  *
  * @typeParam S - The shape of per-session state created by the agent's
  *   `state` factory. Defaults to {@link DefaultSessionState}; annotate the
@@ -40,30 +42,9 @@ import type { WorkflowClient } from "./workflow.ts";
  *
  * @public
  */
-export type ToolContext<S = DefaultSessionState> = {
-  /**
-   * Environment variables available to this agent's tools (from `.env` under
-   * `aai dev`, `aai secret` in production). Custom keys a tool depends on
-   * should be declared in {@link AgentDef.requiredEnv} so a missing value
-   * fails at deploy time.
-   */
-  env: Readonly<Record<string, string>>;
+export interface ToolContext<S = DefaultSessionState> extends AgentContext {
   /** Mutable per-session state created by the agent's `state` factory. */
   state: S;
-  /**
-   * SQL database scoped to this app. Available when storage is enabled
-   * (`aai storage enable`, or Settings → Database in the studio); accessing
-   * it otherwise throws.
-   */
-  db: Db;
-  /**
-   * One-shot LLM generation, executed on the host (like `db`).
-   * Defaults to the agent's pipeline `llm`; pass `llm` in the options to use
-   * another provider (its API key must be in the agent's env). Throws when
-   * no LLM is configured or named. Pass a Zod `schema` for typed structured
-   * output ({@link GenerateFn}).
-   */
-  generate: GenerateFn;
   /**
    * Start and inspect durable workflow runs ({@link WorkflowClient}).
    *
@@ -86,19 +67,4 @@ export type ToolContext<S = DefaultSessionState> = {
    * dropped (with a warning log), not thrown.
    */
   send(event: string, data: unknown): void;
-  /**
-   * Cooperative cancellation signal. Aborts when the turn that issued this
-   * tool call is cancelled (barge-in, reset, or session stop), and also when
-   * the call itself settles exceptionally — above all on timeout. Long-running
-   * tools should pass it to `fetch` etc. so their work stops promptly.
-   *
-   * @remarks
-   * Always present. It was optional until it was checked: the executor builds
-   * a per-call `AbortController` on every path and there has never been a
-   * context without one, so the `?` only bought authors a `?.` on every
-   * `ctx.signal.aborted` and a `!` wherever a non-optional `AbortSignal` was
-   * wanted. A context that genuinely cannot cancel supplies a signal that
-   * never aborts rather than omitting the field.
-   */
-  signal: AbortSignal;
-};
+}

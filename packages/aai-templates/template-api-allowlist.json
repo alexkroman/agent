@@ -5,6 +5,7 @@
     "ASSEMBLYAI_S2S_API_KEY_ENV",
     "ASSEMBLYAI_S2S_KIND",
     "ASSEMBLYAI_S2S_SAMPLE_RATE",
+    "AgentContext",
     "AgentDef",
     "AgentParams",
     "AnyWorkflowDef",

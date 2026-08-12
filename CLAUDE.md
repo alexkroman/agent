@@ -374,8 +374,8 @@ rather than here:
 
 | Guide | Covers |
 | --- | --- |
-| `packages/aai/CLAUDE.md` | SDK layout (`sdk/` vs `host/`), subpath exports, session modes, STT/LLM/TTS/S2S providers, voices, `ctx.db`, `ctx.generate`, durable `workflow()`, guest network access + SSRF, the canonical agent-config schema, data flow, the defaults/magic-numbers table, self-hosted `createServer` defaults, telephony |
-| `packages/aai/host/CLAUDE.md` | The host-side transport test harnesses (pipeline interleaving fuzz, S2S property test, fixture replay) plus the workflow engine/store/API internals — lease recovery, the HTTP surface and its caps, and the jsonb rule the journal depends on. Split out of the guide above when it hit the size cap; `workflow()`'s authoring contract and everything else about `host/` stay there |
+| `packages/aai/CLAUDE.md` | SDK layout (`sdk/` vs `host/`), subpath exports, the `tool()`/`workflow()` vocabulary (`input`/`run`, `AgentContext`), session modes, STT/LLM/TTS/S2S providers, voices, `ctx.db`, `ctx.generate`, durable `workflow()`, guest network access + SSRF, the canonical agent-config schema, data flow, the defaults/magic-numbers table |
+| `packages/aai/host/CLAUDE.md` | The host-side transport test harnesses (pipeline interleaving fuzz, S2S property test, fixture replay) plus the workflow engine/store/API internals — lease recovery, the HTTP surface and its caps, and the jsonb rule the journal depends on. Also self-hosted `createServer`/`createHostServer` and telephony, both moved out of the guide above when it hit the size cap (pointers left in place); `workflow()`'s authoring contract stays there |
 | `packages/aai-ui/CLAUDE.md` | Browser session, client audio path (capture/playback worklets, pacing, jitter buffer), components, fuzz harnesses |
 | `packages/aai-cli/CLAUDE.md` | Subcommands, the studio round-trip (`push`/`pull`/`publish`/`delete`), bundling + Vite rules, credential destinations |
 | `packages/aai-guest/CLAUDE.md` | The guest harness: one binary / three modes, user-shipped runtime, dev-prod parity, agent guests as servers |

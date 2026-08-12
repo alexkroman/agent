@@ -74,8 +74,8 @@ test("the deprecated inputSchema/execute pair still types and normalizes", () =>
   // `tool()` call — which is what makes an old agent's tools still composable.
   const add = tool({
     description: "add",
-    input: z.object({ item: z.string() }),
-    run: ({ item }) => item.length,
+    inputSchema: z.object({ item: z.string() }),
+    execute: ({ item }) => item.length,
   });
   expectTypeOf<Parameters<typeof add.run>[0]>().toEqualTypeOf<{ item: string }>();
   expectTypeOf(add.run).toBeFunction();

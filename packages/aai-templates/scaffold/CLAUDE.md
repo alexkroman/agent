@@ -479,7 +479,37 @@ ctx.send(event: string, data: unknown): void   // push custom event to browser c
 ctx.generate(opts): Promise<{ text, object? }> // one-shot LLM call (host-side)
                                                // with a `schema`, `object` is REQUIRED and typed by it
 ctx.signal: AbortSignal                        // aborts on barge-in, reset, session stop, or this call's timeout
+ctx.workflows: WorkflowClient                  // start/read durable runs (see the Workflows section)
 ```
+
+**Four of those are shared with a workflow, and the shared half has a name.**
+`env`, `db`, `generate` and `signal` are `AgentContext`, which both a tool's `run`
+and a workflow's `run` receive — so a helper that only needs those is callable
+from either:
+
+```ts
+import type { AgentContext } from "@alexkroman1/aai";
+
+// Works inside a tool's `run` AND inside a workflow's `ctx.step`.
+export async function unitPrice(ctx: AgentContext, sku: string): Promise<number> {
+  const rows = await ctx.db.query<{ price: number }>(
+    "select price from items where sku = $1",
+    [sku],
+  );
+  return rows[0]?.price ?? 0;
+}
+```
+
+The rest of `ctx` is not shared, and the omissions are deliberate. `state`,
+`messages`, `sessionId` and `send` need a live session, which a workflow outlives.
+`step`, `sleep`, `waitFor` and `continueAs` need a journal, which a tool call does
+not have — so there is no `ctx.step` in a tool, on purpose: one that merely called
+your function would look portable while quietly turning exactly-once into
+at-least-once.
+
+Two things behave differently under the same type. `ctx.db` throws in a tool
+unless storage is enabled, and cannot be absent in a workflow. And `ctx.signal`
+aborts on a cancelled turn in a tool, on a drain or a cancelled run in a workflow.
 
 **Pass `ctx.signal` to anything slow.** It is always present — no `?.`
 needed — and forwarding it is what makes a tool stop work the caller has

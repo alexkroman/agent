@@ -1,7 +1,15 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expectTypeOf, test } from "vitest";
 import { z } from "zod";
-import type { AgentDef, InferToolInput, Message, ToolContext, ToolDef } from "./types.ts";
+import type {
+  AgentContext,
+  AgentDef,
+  InferToolInput,
+  Message,
+  ToolContext,
+  ToolDef,
+} from "./types.ts";
+import type { WorkflowContext } from "./workflow.ts";
 
 const baseAgent = {
   systemPrompt: "Be helpful.",
@@ -26,8 +34,8 @@ describe("ToolDef type inference", () => {
   test("the deprecated inputSchema/execute pair infers the same args", () => {
     const _t: ToolDef<z.ZodObject<{ name: z.ZodString; count: z.ZodNumber }>> = {
       description: "test",
-      input: z.object({ name: z.string(), count: z.number() }),
-      run: (args) => args,
+      inputSchema: z.object({ name: z.string(), count: z.number() }),
+      execute: (args) => args,
     };
 
     expectTypeOf<InferToolInput<typeof _t>>().toEqualTypeOf<{ name: string; count: number }>();
@@ -59,6 +67,26 @@ describe("ToolDef type inference", () => {
     expectTypeOf<ToolContext>().toHaveProperty("messages");
     expectTypeOf<ToolContext["messages"]>().toEqualTypeOf<readonly Message[]>();
     expectTypeOf<ToolContext["env"]>().toEqualTypeOf<Readonly<Record<string, string>>>();
+  });
+});
+
+describe("AgentContext is the surface a tool and a workflow share", () => {
+  test("both contexts satisfy it, so a helper typed against it takes either", () => {
+    // This is the whole content of "one context": the shared half is a type you
+    // can name and pass. Asserted from BOTH sides — either context drifting off
+    // the base (a renamed field, a narrowed `db`) breaks a helper that compiles
+    // today, and nothing else would report it.
+    expectTypeOf<ToolContext>().toExtend<AgentContext>();
+    expectTypeOf<WorkflowContext>().toExtend<AgentContext>();
+  });
+
+  test("the base carries exactly the four capabilities, and no session or durable ones", () => {
+    // The omissions are the design (see AgentContext's own doc): `step` on a tool
+    // context would make an exactly-once helper silently at-least-once, and
+    // `state`/`send` mean nothing in a run that outlives its session. A field
+    // added to the base is a claim that BOTH sides really provide it, so the list
+    // is pinned rather than spot-checked.
+    expectTypeOf<keyof AgentContext>().toEqualTypeOf<"env" | "db" | "generate" | "signal">();
   });
 });
 

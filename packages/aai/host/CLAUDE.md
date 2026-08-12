@@ -759,3 +759,92 @@ barge-in against itself.
 **Known gaps**, both deliberate: no `mark` frames, so `playback_progress` is
 unused and the pipeline falls back to its open-loop estimate; and DTMF is
 ignored rather than surfaced as a custom event.
+
+## Self-hosted server defaults (`aai/host/server.ts`)
+
+`createServer` has no request authentication of its own — it is the `aai dev`
+backend, not the managed platform. Two defaults exist because of that, and
+both are fail-closed:
+
+- **Binds loopback.** `listen(port, host = DEFAULT_LISTEN_HOST)` defaults to
+  `127.0.0.1`. Pass `"0.0.0.0"` deliberately to expose it; binding every
+  interface by default put a developer's agent (and the provider credentials
+  behind it) in reach of anyone on the same network. `aai dev` exposes this as
+  `AAI_DEV_HOST` for setups where loopback isn't reachable (e.g. running in a
+  container and connecting from the host).
+- **Host mode is opt-in.** A `?host=1` WebSocket lets the *client* supply the
+  agent definition (`systemPrompt`, `greeting`, relayed tool schemas) while the
+  session runs on the operator's credentials, so `isHostAllowed` requires an
+  explicit `AAI_ALLOW_HOST` of `1`/`true`/`yes`/`on`. Unset means off.
+  Harnesses (e.g. tau2) set it themselves. Note `resolveServerEnv` only
+  surfaces keys declared in `.env`, so `aai dev` passes the shell value through
+  explicitly (`hostModeEnv`) — otherwise exporting the variable the usual way
+  would have no effect.
+- **A host client may bring its own provider credentials**, and that is what
+  makes a host server safe to expose self-serve. The handshake's `credentials`
+  record (keyed by env var name) is merged over the server's env for that one
+  connection and WINS on conflict, so a server holding only `AAI_ALLOW_HOST`
+  runs every session on the caller's key — an unauthenticated client then has
+  no operator credential to spend, because there is none. Substituting a key
+  you own is not an escalation: it spends your quota and reveals nothing about
+  the operator's. `createHostServer` (`host/host-server.ts`) is that server in
+  one call and `examples/host-server` is the runnable shape.
+
+  **`createHostServer` exists because the three-line version was wrong three
+  ways.** Standing up a host-only server on `createServer` directly meant
+  remembering `AAI_ALLOW_HOST` (a stringly-typed flag guarding the only thing
+  the server does), inventing a placeholder `agent()` whose prompt is never
+  read just to carry provider descriptors, and hand-rolling a `SessionRuntime`
+  facade to decline the plain `/websocket` sessions it cannot serve. The
+  wrapper does all three once; `defaults` is the only knob, and it is typed to
+  exclude the four fields the handshake owns. Note the placeholder agent was
+  never needed even before the wrapper — see the `buildHostAgent` correction
+  below.
+
+  **The allowlist is load-bearing, not tidiness.** Names are screened against
+  `ALL_PROVIDER_ENV_VARS` — the same vocabulary bounding
+  `withHostCredentialFallback`, for the same reason. This record is merged into
+  the env the per-connection runtime is built from, and that env is read for
+  far more than provider keys: unbounded, a client sets `DATABASE_URL` and the
+  server opens `ctx.db` against a Postgres it controls, or sets
+  `AAI_ALLOW_HOST` and self-approves. So the gate is checked against the
+  SERVER's env before the merge, never the merged one. Unknown names are
+  REJECTED by name rather than dropped — a silent drop turns a typo
+  (`ASSEMBLYAI_KEY`) into a baffling provider-resolution failure two layers
+  down, and turns a genuine smuggling attempt into something the operator never
+  hears about.
+- **A host session with no base agent runs the DEFAULT PIPELINE, not S2S.**
+  `buildHostAgent`'s doc comment claimed the opposite until 2026-08 — it
+  predated the pipeline-by-default flip, and S2S has required an explicit `s2s`
+  descriptor ever since (see "Never let S2S be a fallback"). With no
+  `hostBaseAgent`, `createRuntime` fills all three stages from the
+  all-AssemblyAI pipeline, so one caller-supplied `ASSEMBLYAI_API_KEY` covers
+  STT, the LLM gateway and TTS. The stale comment had a real cost: it is what
+  made a placeholder `agent()` look mandatory on every host server.
+
+- **Host-mode audio pacing is the CLIENT'S declaration, and it defaults to
+  paced** (`HostConfig.audioLeadMs`: omitted = the pacer's real-time
+  `CLIENT_AUDIO_LEAD_MS`, a number = that lead, `null` = unpaced).
+
+  Unpaced used to be the blanket default, on the reasoning that a host-mode
+  client is programmatic and therefore keeps its own clock. That conflates two
+  different things: being programmatic does not mean consuming FASTER than the
+  wall clock, and only a client whose timeline runs ahead is starved by pacing.
+  For a client that drains at 1x it is destructive, because in S2S mode the
+  service synthesises a whole reply server-side and it arrives in one burst
+  (measured: up to 1118 audio frames in one tau2 tick, against 205 on the
+  pipeline transport, whose per-sentence TTS flush paces it inherently). tau2
+  plays 200ms per tick and buffers the rest, so the backlog grew to MINUTES — and
+  it DISCARDS that buffer on barge-in, so 36% of all agent audio was destroyed
+  unheard, p99 181s and max 272s per barge-in on a 215s call, against 18-23% and
+  a 15s max for the pipeline arms. The caller heard a fraction of the replies and
+  kept asking "are you still there?"; the S2S arm completed a reply for 0.53 of
+  caller turns where the pipeline managed 1.00, and 18% of its sessions completed
+  no reply at all. Pacing keeps the backlog on OUR side, where
+  `PacedAudioSink.clear()` drops it on barge-in instead of handing it over to be
+  thrown away.
+
+  So tau2 is not the case unpaced was written for: its `_async_run_tick` enforces
+  a MINIMUM tick duration, so it never runs ahead of the wall clock (measured
+  mean 315ms per 200ms tick — 0.63x real time). Reach for `null` only for a
+  harness that genuinely steps faster than real time.

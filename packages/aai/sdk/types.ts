@@ -59,18 +59,22 @@ export type BuiltinTool =
  */
 export type ToolChoice = "auto" | "required" | "none" | { type: "tool"; toolName: string };
 
-// These three are the LEAVES `tool-context.ts` also needs, so they live in
-// `session-state.ts`: importing them from here while this file imports
-// `ToolContext` from there is a type-level CYCLE, and a cycle across these
-// declarations does not merely warn — it silently degrades `ToolDef`'s state
-// parameter until two tools with incompatible state shapes are mutually
-// assignable (caught by `define.test-d.ts`'s variance assertion). Re-exported so
-// every existing import is unchanged.
+// Three groups re-exported so `@alexkroman1/aai` and every existing import stay
+// unchanged, in the order Biome's `organizeImports` wants (by module path):
+//
+// - `AgentContext` — the half `ToolContext` shares with `WorkflowContext`. It
+//   rides along here because an author reaching for one reaches for both.
+// - `DefaultSessionState`/`DefaultToolResult`/`Message` are the LEAVES
+//   `tool-context.ts` also needs, so they live in `session-state.ts`: importing
+//   them from here while this file imports `ToolContext` from there is a
+//   type-level CYCLE, and a cycle across these declarations does not merely warn
+//   — it silently degrades `ToolDef`'s state parameter until two tools with
+//   incompatible state shapes are mutually assignable (caught by
+//   `define.test-d.ts`'s variance assertion).
+// - `ToolContext` is the largest single type here and the one an author reads
+//   most, and this file was at the 500-line cap.
+export type { AgentContext } from "./agent-context.ts";
 export type { DefaultSessionState, DefaultToolResult, Message } from "./session-state.ts";
-
-// `ToolContext` lives in `tool-context.ts` — it is the largest single type here
-// and the one an author reads most, and this file was at the 500-line cap. It is
-// re-exported so `@alexkroman1/aai` and every existing import are unchanged.
 export type { ToolContext } from "./tool-context.ts";
 
 /**

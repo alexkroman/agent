@@ -10,41 +10,25 @@
  * `workflow.ts`, so no import path changes.
  */
 
-import type { Db } from "./db.ts";
-import type { GenerateFn } from "./generate.ts";
+import type { AgentContext } from "./agent-context.ts";
 import type { StepOptions } from "./workflow-steps.ts";
 
 /**
- * What a workflow's `run` receives — the same capabilities a tool's `execute`
- * gets (`env`, `db`, `generate`), plus the two that make it durable.
+ * What a workflow's `run` receives — {@link AgentContext} (`env`, `db`,
+ * `generate`, `signal`, exactly as a tool gets them) plus the capabilities that
+ * make the run durable.
+ *
+ * The base is deliberately the same TYPE a tool sees rather than a copy of the
+ * same four fields, so a helper needing only those is callable from either side.
+ * Two guarantees differ under one type and are documented there: `db` cannot be
+ * absent here (the journal lives in it), and `signal` aborts on a drain or a
+ * cancel rather than on a cancelled turn.
  *
  * @public
  */
-export type WorkflowContext = {
-  /**
-   * Environment variables for this app, exactly as `ctx.env` in a tool.
-   * Names a workflow depends on belong in `agent({ requiredEnv })` so a
-   * missing value fails at deploy time rather than mid-run.
-   */
-  env: Readonly<Record<string, string>>;
-  /**
-   * The app's SQL database. Always available inside a workflow: the journal
-   * that makes the run durable lives here, so a run cannot exist without it
-   * (unlike `ctx.db` in a tool, which throws when storage is off).
-   */
-  db: Db;
-  /** One-shot LLM generation, identical to `ctx.generate` in a tool. */
-  generate: GenerateFn;
+export interface WorkflowContext extends AgentContext {
   /** This run's id — the same value {@link WorkflowClient.start} resolved with. */
   runId: string;
-  /**
-   * Aborts when the host is shutting down, and when the run is CANCELLED
-   * ({@link WorkflowClient.cancel}) while this process is executing it. A long
-   * step should pass it to `fetch` so neither a drain nor a cancel waits out
-   * the full attempt; a drained run resumes from the last recorded step, so
-   * abandoning work here is safe either way.
-   */
-  signal: AbortSignal;
   /**
    * Run `fn` once per run and journal its result.
    *
@@ -240,4 +224,4 @@ export type WorkflowContext = {
    * ```
    */
   continueAs(input: unknown): never;
-};
+}
