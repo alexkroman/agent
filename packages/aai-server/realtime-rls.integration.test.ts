@@ -53,14 +53,17 @@ import path from "node:path";
 import type { CloseableDb } from "@alexkroman1/aai/runtime";
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
+import { PG_URL, pgUrl } from "./_pg-test-utils.ts";
 import type { PlatformEvents } from "./platform-events.ts";
 import { createRealtimePlatformEvents } from "./realtime-events.ts";
 
-const PG_URL = process.env.AAI_TEST_PG_URL;
 const SB_URL = process.env.AAI_TEST_SUPABASE_URL;
 const SB_SERVICE_KEY = process.env.AAI_TEST_SUPABASE_SERVICE_KEY;
 const SB_ANON_KEY = process.env.AAI_TEST_SUPABASE_ANON_KEY;
 
+// A CONJUNCTION, so it reads `PG_URL` rather than using `describeWithPg`: this
+// suite needs the whole local Supabase stack, not only a database. The import
+// still carries the loud skip and the AAI_REQUIRE_PG check for the PG half.
 const describeIfStack = PG_URL && SB_URL && SB_SERVICE_KEY ? describe : describe.skip;
 const describeIfAnon = SB_ANON_KEY ? describe : describe.skip;
 
@@ -140,7 +143,7 @@ describeIfStack("the platform change stream survives RLS being enabled", () => {
   }
 
   beforeAll(() => {
-    db = createPostgresDb({ url: PG_URL as string, max: 4 });
+    db = createPostgresDb({ url: pgUrl(), max: 4 });
   });
 
   afterEach(async () => {

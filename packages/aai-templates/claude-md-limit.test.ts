@@ -127,6 +127,22 @@ describe("CLAUDE.md size", () => {
       "string",
     );
     expect(Number(declared?.replaceAll("_", ""))).toBe(BUDGET);
+
+    // And it warns BEFORE the cap. A guide gains a paragraph as a side effect
+    // of shipping something else, so the author who trips the cap is never the
+    // one who filled it — and the fix is a documentation refactor landing
+    // inside an unrelated change. Two guides sit above 99% today, which is the
+    // state this warning exists to announce while there is still room to plan
+    // the split. It is advisory by design, so nothing else would notice it
+    // being deleted.
+    const ratio = Number(script.match(/const WARN_RATIO = ([\d.]+)/)?.[1]);
+    expect(
+      ratio,
+      "scripts/check-claude-md.mjs no longer declares WARN_RATIO",
+    ).toBeGreaterThanOrEqual(0.75);
+    expect(ratio).toBeLessThan(1);
+    // Derived from the constant rather than a second hardcoded threshold.
+    expect(script).toContain("MAX_CHARS * WARN_RATIO");
   });
 
   test("the gate is wired into both the local check and CI", () => {

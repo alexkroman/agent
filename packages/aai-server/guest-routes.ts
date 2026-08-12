@@ -46,6 +46,76 @@ export const GUEST_ROUTES = {
 
 export type GuestRoute = (typeof GUEST_ROUTES)[keyof typeof GUEST_ROUTES];
 
+/**
+ * How a caller reaches a guest route once the agent is DEPLOYED.
+ *
+ * - `proxied` — the platform must serve `/:slug<path>` for each listed method
+ *   and forward it to the guest. The methods are the ones the GUEST answers.
+ * - `direct-dial` — the caller connects to the sandbox tunnel itself, having
+ *   been handed the URL (a browser voice session; a carrier given TwiML). The
+ *   platform serves no path of its own for it.
+ * - `host-only` — reached by the platform through the sandbox URL, never by a
+ *   client, and bearer-gated.
+ */
+export type GuestRouteExposure =
+  | { via: "proxied"; methods: readonly ("GET" | "POST" | "PUT" | "DELETE" | "PATCH")[] }
+  | { via: "direct-dial" }
+  | { via: "host-only" };
+
+/**
+ * The exposure of every guest route, and the reason this table exists.
+ *
+ * `GUEST_ROUTES` above says a route exists; it says nothing about whether
+ * anything routes to it on the platform, and that gap has produced the same
+ * bug twice — both times as "works under `aai dev`, 404s once deployed", which
+ * is the most expensive shape available here, because `aai dev` serves the
+ * guest's own routes directly and is where every feature is developed:
+ *
+ * - A guest surface with NO platform route at all. Every request from a
+ *   deployed page fell through to `app.notFound` and read as an error from the
+ *   feature ("Could not start: Not found"), while `GUEST_ROUTES`'s own comment
+ *   asserted this could not happen — true of a caller that already knows the
+ *   sandbox URL, never true of one that has to be brokered.
+ * - A platform route answering only SOME of the methods the guest answers. A
+ *   `DELETE` (a Stop button) 404'd at the platform on every deployed agent
+ *   while working perfectly under `aai dev`.
+ *
+ * So a new guest route has to DECLARE its exposure — the `satisfies` below
+ * makes a missing entry a compile error — and `guest-routes.test.ts` asserts
+ * every `proxied` method is really registered under `/:slug`. Listing the
+ * methods the guest answers is what makes a half-routed surface fail: the
+ * declaration is written from the guest's dispatch, and the platform then has
+ * to match it.
+ */
+export const GUEST_ROUTE_EXPOSURE = {
+  control: { via: "host-only" },
+  session: { via: "direct-dial" },
+  // The carrier dials this after reading the TwiML that `POST /:slug/phone`
+  // answers with. That platform route is not a proxy of this one — it is the
+  // webhook that hands out this URL — so this route is a direct dial.
+  phone: { via: "direct-dial" },
+  studioChat: { via: "host-only" },
+  studioSessionInit: { via: "host-only" },
+  // `/:slug/health` exists on the platform but is the PLATFORM's answer about
+  // an agent (`handleAgentHealth`), not a forward of the guest's own probe,
+  // which only the host and Modal's readiness probe ever call.
+  health: { via: "host-only" },
+  clientConfig: { via: "proxied", methods: ["GET"] },
+  manageStatus: { via: "host-only" },
+  manageDrain: { via: "host-only" },
+} satisfies Record<keyof typeof GUEST_ROUTES, GuestRouteExposure>;
+
+/** Path + methods for every route the platform must proxy under `/:slug`. */
+export function proxiedGuestRoutes(): { path: GuestRoute; methods: readonly string[] }[] {
+  // flatMap rather than filter+map so `via` narrows `methods` into existence,
+  // instead of needing an `in` check whose else-branch cannot be reached.
+  return Object.entries(GUEST_ROUTE_EXPOSURE).flatMap(([key, exposure]) =>
+    exposure.via === "proxied"
+      ? [{ path: GUEST_ROUTES[key as keyof typeof GUEST_ROUTES], methods: exposure.methods }]
+      : [],
+  );
+}
+
 /** A guest WebSocket URL — `ws(s)://host:port/<route>`. */
 export function guestWsUrl(origin: string, route: GuestRoute): string {
   return `${origin}${route}`;

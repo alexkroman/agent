@@ -43,10 +43,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { CloseableDb } from "@alexkroman1/aai/runtime";
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
-
-const PG_URL = process.env.AAI_TEST_PG_URL;
-const describeIfPg = PG_URL ? describe : describe.skip;
+import { afterAll, beforeAll, expect, test } from "vitest";
+import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 
 const migrationsDir = path.resolve(import.meta.dirname, "../../supabase/migrations");
 
@@ -93,11 +91,11 @@ function declaredTables(sql: string): Set<string> {
   return declared;
 }
 
-describeIfPg("the platform schema has not drifted from its migrations", () => {
+describeWithPg("the platform schema has not drifted from its migrations", () => {
   let db: CloseableDb;
 
   beforeAll(() => {
-    db = createPostgresDb({ url: PG_URL as string, max: 2 });
+    db = createPostgresDb({ url: pgUrl(), max: 2 });
   });
 
   afterAll(async () => {

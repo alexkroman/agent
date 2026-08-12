@@ -25,8 +25,36 @@ pnpm check:affected      # Only check packages affected by changes since main
 | --- | --- | --- | --- |
 | Unit | `pnpm test` | Fast, mocked, co-located | 5s |
 | Integration | `pnpm test:integration` | Real subsystems (HTTP servers, WebSockets) | 30s |
+| Integration + a real Postgres | `pnpm test:pg` | The above, with `AAI_TEST_PG_URL` resolved | 30s |
 | E2E | `pnpm test:e2e` | Full process spawn + Playwright browser | 300s |
 | Templates | `pnpm test:templates` | Template agent example tests | 5s |
+
+**Five integration suites need a real Postgres, and without one they SKIP.**
+That tier is the only thing in the repo that can see a driver-level bug — an
+encoding that round-trips wrong, an advisory lock not held by the session that
+thinks it holds it — because an in-memory fake holds JS values and cannot be
+stricter than the driver beneath it. So a silent skip is the worst outcome
+available, and it was the default one: `pnpm test:integration` with no
+`AAI_TEST_PG_URL` prints a green run, and CI's Linux leg would also have passed
+if its `$GITHUB_ENV` export ever broke.
+
+- `pnpm test:pg` resolves a local database (the Supabase stack on 54322, a
+  server on 5432, or an explicit `AAI_TEST_PG_URL`) and runs the tier against
+  it. With nothing listening it prints the commands that start one rather than
+  starting one itself.
+- A skip ANNOUNCES itself, via `describeWithPg` from
+  `packages/aai-server/_pg-test-utils.ts` — the one spelling for the gate, in
+  place of the five hand-rolled copies of `PG_URL ? describe : describe.skip`.
+- `AAI_REQUIRE_PG` turns a skip into a hard failure. CI's Linux leg sets it
+  (and `pnpm test:pg` sets it for the run it starts), so "the wiring broke" is
+  red rather than quiet. It is declared in the `check:integration` task's `env`
+  in `turbo.json` — undeclared, strict env mode would strip it and the
+  enforcement would silently do nothing.
+
+Note vitest EXECUTES a `describe.skip` callback (it has to, to enumerate what
+it is skipping), so read `pgUrl()` inside a hook or a test, never at the top of
+a gated `describe` body — up there it throws during collection on a machine
+with no database, which fails the file instead of skipping it.
 
 ### Single-package shortcuts
 
@@ -142,11 +170,21 @@ cache restored every dependency's `dist`, and when that assumption fails the
 suite dies on a missing built artifact rather than rebuilding one.
 
 `pnpm check:local` uses the same script with `--local` flag, running a
-subset: build, typecheck, lint, publint, syncpack, sherif, knip, test —
-all in one turbo call with `--continue` (shows all failures at once).
+subset: build, typecheck, lint, publint, syncpack, sherif, knip,
+test:coverage — all in one turbo call with `--continue` (shows all failures
+at once). It ends by NAMING the gates it did not run (`check:attw`,
+`check:markdown`, `check:integration`, `check:e2e`, `docs`), because a green
+subset otherwise reads as a green branch and those are the failures hardest
+to predict from a diff.
+
+**Both modes run `test:coverage`, not `test`** — see the coverage ratchet
+below: the floors are what CI's test matrix gates on, so running plain `test`
+locally made a floor failure invisible until CI. It costs almost nothing
+(measured on aai-ui: 17.0s → 17.9s).
 
 `pnpm check:affected` uses turbo's `--affected` flag to only run tasks
-for packages changed since the default branch.
+for packages changed since the default branch (also `test:coverage`, same
+reason); `pnpm test:coverage:affected` is the coverage half on its own.
 
 ### Quality ratchets
 
@@ -282,6 +320,15 @@ evaluates the root `vitest.config.ts` thresholds. The only thing that does is
 a direct `pnpm vitest run --coverage` at the root. Keep them anyway: it is the
 only floor that sees the repo as one program. Just don't read them as the
 gate — they had drifted ~4 points under an actual nobody had measured.
+
+**And the floors are measured locally now, because for a long time they were
+not.** `scripts/check.sh` ran `test`, CI's matrix runs `test:coverage`, so the
+one gate a PR could not see coming was its own coverage: every suite green
+locally, `test (<pkg>)` red in CI. It happened — a new 300-line module in
+aai-ui landed at 1.44% line and 0% branch coverage, took the package under all
+four of its floors, and cost a whole follow-up commit to fix. Floors do not
+move to accommodate a PR, so the earlier that is known the cheaper it is. Both
+`check.sh` modes and `check:affected` run `test:coverage` now.
 
 ## Architecture
 
@@ -1122,6 +1169,28 @@ catches the most common issues that historically required follow-up commits:
    *not* reachable from a subpath export — an internal helper whose last
    caller went away, which is the case worth catching. `types` stays excluded
    pending an `@internal` tagging pass.
+
+## A new guest route must declare how the PLATFORM exposes it
+
+`aai dev` serves the guest's own routes directly, so a feature is developed
+against a server where the guest's dispatch table is the whole API. Deployed,
+almost nothing works that way: a browser voice socket and a carrier media
+stream are handed a sandbox URL, and every other caller has to be brokered,
+which means the orchestrator needs a `/:slug/…` route of its own. The gap is
+invisible in a diff and invisible to the feature's own tests, and it has landed
+twice — once as a whole guest surface nothing routed to (every request fell
+through to `app.notFound`), once as a platform route serving GET and POST for a
+guest that also answered DELETE, so a Stop button worked in dev and 404'd on
+every deployed agent.
+
+So `GUEST_ROUTE_EXPOSURE` (`packages/aai-server/guest-routes.ts`) declares each
+route as `proxied` (with the methods the GUEST answers), `direct-dial`, or
+`host-only`. A missing entry is a compile error, and
+`guest-routes.test.ts` asserts every proxied method is really registered under
+`/:slug` — plus the reverse, so a stale `direct-dial` declaration cannot sit
+beside a platform route that does forward. Declare the methods from the guest's
+dispatch; making the platform match is then a failing test rather than a
+production 404.
 
 ## Security architecture
 
