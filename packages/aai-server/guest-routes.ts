@@ -114,6 +114,12 @@ export const GUEST_ROUTE_EXPOSURE = {
   // which only the host and Modal's readiness probe ever call.
   health: { via: "host-only" },
   clientConfig: { via: "proxied", methods: ["GET"] },
+  // DELETE as well as GET/POST: `api.cancel(runId)` is a DELETE, and the
+  // platform answering only the first two 404'd every Stop button on a DEPLOYED
+  // agent while the same page worked under `aai dev`. That is the second bug
+  // this declaration exists to catch, and it is the one recorded in the suite's
+  // own header.
+  workflows: { via: "proxied", methods: ["GET", "POST", "DELETE"] },
   manageStatus: { via: "host-only" },
   manageDrain: { via: "host-only" },
 } satisfies Record<keyof typeof GUEST_ROUTES, GuestRouteExposure>;
