@@ -8,8 +8,17 @@
  * `ERR_MODULE_NOT_FOUND` from `/tmp` with nothing pointing back at this file.
  */
 
-import { describe, expect, test } from "vitest";
-import { loadStepBundle, rewriteWorkflowImports, webhookToken } from "./harness-workflow.ts";
+import { createServer } from "node:http";
+import { describe, expect, test, vi } from "vitest";
+import {
+  handleWorkflowRequest,
+  loadStepBundle,
+  rewriteWorkflowImports,
+  WORKFLOW_FLOW_PATH,
+  WORKFLOW_WEBHOOK_PREFIX,
+  type WorkflowSurface,
+  webhookToken,
+} from "./harness-workflow.ts";
 
 describe("rewriteWorkflowImports", () => {
   test("rewrites a bare DevKit import to an absolute file URL", () => {
@@ -134,5 +143,124 @@ describe("webhookToken", () => {
   test("returns undefined for any other path", () => {
     expect(webhookToken("/.well-known/workflow/v1/flow")).toBeUndefined();
     expect(webhookToken("/health")).toBeUndefined();
+  });
+});
+
+/**
+ * Serve `surface` from a REAL http server and return its base URL.
+ *
+ * A real server rather than fakes for node's `IncomingMessage`/`ServerResponse`:
+ * the adapter's whole job is turning those into a `Request` and a `Response`
+ * back again, and a hand-built pair proves nothing about the types the code
+ * actually meets — it also cannot be constructed without casting, which is the
+ * signal that the fake is the wrong tool.
+ */
+async function serving(
+  surface: WorkflowSurface | null | undefined,
+): Promise<{ url: string; close: () => Promise<void> }> {
+  const server = createServer((req, res) => {
+    const url = (req.url ?? "/").split("?")[0] ?? "/";
+    if (!handleWorkflowRequest(surface, req, res, url, req.method ?? "GET")) {
+      res.writeHead(404);
+      res.end("unclaimed");
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : 0;
+  return {
+    url: `http://127.0.0.1:${port}`,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
+}
+
+function surfaceOf(over: Partial<WorkflowSurface> = {}): WorkflowSurface {
+  return {
+    flow: vi.fn(async () => new Response("flow", { status: 200 })),
+    step: vi.fn(async () => new Response("step", { status: 200 })),
+    webhook: vi.fn(async () => new Response("hook", { status: 200 })),
+    ...over,
+  };
+}
+
+describe("handleWorkflowRequest", () => {
+  test("declines every request when the agent declares no workflows", async () => {
+    // Mounting routes that answer 500 would be worse than not mounting them:
+    // the queue retries a 5xx, so it would retry forever.
+    for (const surface of [undefined, null]) {
+      const s = await serving(surface);
+      const res = await fetch(`${s.url}${WORKFLOW_FLOW_PATH}`, { method: "POST" });
+      expect(res.status).toBe(404);
+      await s.close();
+    }
+  });
+
+  test("routes POST /flow to the flow handler and writes its response back", async () => {
+    const surface = surfaceOf();
+    const s = await serving(surface);
+    const res = await fetch(`${s.url}${WORKFLOW_FLOW_PATH}`, { method: "POST", body: "{}" });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("flow");
+    expect(surface.flow).toHaveBeenCalled();
+    await s.close();
+  });
+
+  test("passes the request body through to the handler", async () => {
+    // The queue's payload is the whole message — a dropped body is a run that
+    // never advances, with a 200 saying it did.
+    let seen: string | undefined;
+    const s = await serving(
+      surfaceOf({
+        flow: async (req) => {
+          seen = await req.text();
+          return new Response("ok");
+        },
+      }),
+    );
+    await fetch(`${s.url}${WORKFLOW_FLOW_PATH}`, { method: "POST", body: `{"runId":"abc"}` });
+    expect(seen).toBe(`{"runId":"abc"}`);
+    await s.close();
+  });
+
+  test("routes a webhook by token, whatever verb the far side used", async () => {
+    // The URL went to a third party, which picks its own method.
+    const surface = surfaceOf();
+    const s = await serving(surface);
+    const res = await fetch(`${s.url}${WORKFLOW_WEBHOOK_PREFIX}tok123`);
+    expect(res.status).toBe(200);
+    expect(surface.webhook).toHaveBeenCalledWith("tok123", expect.any(Request));
+    await s.close();
+  });
+
+  test("declines flow and step on a non-POST", async () => {
+    // They are queue callbacks, not a browsable surface.
+    const s = await serving(surfaceOf());
+    expect((await fetch(`${s.url}${WORKFLOW_FLOW_PATH}`)).status).toBe(404);
+    await s.close();
+  });
+
+  test("declines an unrelated path so it falls through to the rest of the server", async () => {
+    const s = await serving(surfaceOf());
+    expect((await fetch(`${s.url}/health`)).status).toBe(404);
+    await s.close();
+  });
+
+  test("answers 500 when a handler throws, rather than taking the guest down", async () => {
+    // These run off a node request event, so an unhandled rejection would kill
+    // the process mid-run. A 5xx is also what makes the world retry.
+    const errors: unknown[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...a) => errors.push(a));
+    const s = await serving(
+      surfaceOf({
+        flow: async () => {
+          throw new Error("boom");
+        },
+      }),
+    );
+    const res = await fetch(`${s.url}${WORKFLOW_FLOW_PATH}`, { method: "POST" });
+    expect(res.status).toBe(500);
+    expect(errors.length).toBeGreaterThan(0);
+    spy.mockRestore();
+    await s.close();
   });
 });

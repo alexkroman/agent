@@ -9,8 +9,12 @@
  * the real contract — the DevKit reads exactly these variables.
  */
 
-import { describe, expect, test } from "vitest";
-import { configureWorkflowWorld } from "./harness-world.ts";
+import { describe, expect, test, vi } from "vitest";
+import {
+  configureWorkflowWorld,
+  startWorkflowWorldIfDeclared,
+  startWorkflowWorldSafely,
+} from "./harness-world.ts";
 
 /** A fresh env per case, so nothing leaks between them. */
 function env(over: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
@@ -93,5 +97,28 @@ describe("configureWorkflowWorld", () => {
     const e = env();
     expect(configureWorkflowWorld({ databaseUrl: "", port: 3000, env: e })).toBe("local");
     expect(e.WORKFLOW_TARGET_WORLD).toBe("local");
+  });
+});
+
+describe("startWorkflowWorldIfDeclared", () => {
+  test("does nothing for an agent that declares no workflows", async () => {
+    // The gate matters: migrating and subscribing a queue are both expensive,
+    // and reaching a world at all would make every workflow-less agent pay for
+    // a feature it never asked for.
+    await expect(startWorkflowWorldIfDeclared(false, "postgres")).resolves.toBeUndefined();
+  });
+});
+
+describe("startWorkflowWorldSafely", () => {
+  test("reports a failure instead of throwing it", async () => {
+    // There is no world configured in this process, so starting one fails —
+    // which is the case under test. A guest whose workflows cannot start must
+    // still boot and answer the phone.
+    const errors: unknown[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args) => errors.push(args));
+    await expect(startWorkflowWorldSafely("postgres")).resolves.toBe(false);
+    // Silently returning false would leave an operator with no way to find out.
+    expect(errors.length).toBeGreaterThan(0);
+    spy.mockRestore();
   });
 });
