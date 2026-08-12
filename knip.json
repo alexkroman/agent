@@ -62,16 +62,10 @@
         "**/*.test.ts",
         "_test-utils.ts"
       ],
-      // `workflow` is a real devDependency that no source file imports: the
-      // workflow-bundler fixture symlinks this package's node_modules into a
-      // temp project so the Workflow DevKit resolves THERE. It has to be
-      // installed here for that to work — esbuild resolves an external import
-      // to decide it is a package at all, and the discovery pass reads the
-      // module to check it for directives — but an import in our own source
-      // would be a lie written to satisfy this gate.
-      "ignoreDependencies": [
-        "workflow"
-      ]
+      // `workflow` needs no entry here any more: `dev-workflow.integration.test.ts`
+      // imports `workflow/api` for real, to start a run against the dev server it
+      // just booted. It was ignored while the only use was a fixture project
+      // symlinking this package's node_modules so the DevKit resolved THERE.
     },
     "packages/aai-templates": {
       "ignore": [
@@ -87,13 +81,23 @@
         "**/*.test.ts"
       ],
       "includeEntryExports": true,
+      // The two workflow packages are RESOLVED, not imported. The serving code
+      // lives in `@alexkroman1/aai` (the CLI needs the identical wiring for
+      // `aai dev`, and may not import the guest), and tsdown bundles it in — but
+      // `rewriteWorkflowImports` calls `import.meta.resolve("workflow")` at
+      // runtime, from wherever `dist/harness.mjs` sits, to point a tenant's step
+      // bundle at a real copy. On the subprocess backend that walk-up lands in
+      // THIS package's node_modules, so the declaration is what puts one there.
+      // A string inside a bundled dependency is not something knip can see.
       "ignoreDependencies": [
         "@alexkroman1/aai-ui",
         "@types/react",
         "@types/react-dom",
+        "@workflow/world-postgres",
         "react",
         "react-dom",
-        "tailwindcss"
+        "tailwindcss",
+        "workflow"
       ]
     },
     "packages/aai-server": {
