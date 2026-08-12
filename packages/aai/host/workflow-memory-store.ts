@@ -38,6 +38,8 @@ export type MemoryRun = {
    * express "present and cleared" distinctly enough for the fake to model it.
    */
   waitToken?: string | undefined;
+  /** Who the run belongs to — see `ADD_OWNER_SCOPE`. Undefined for no identity. */
+  ownerScope?: string | undefined;
   /** Journal id the signalled payload is recorded under — see `WorkflowStore.park`. */
   waitStep?: string | undefined;
   output?: unknown;
@@ -110,6 +112,18 @@ function snapshot(runId: string, run: MemoryRun): WorkflowRunSnapshot {
   }
 }
 
+/**
+ * Does `run` satisfy a scoped read? Mirrors `scopeClause`'s SQL exactly.
+ *
+ * `undefined` is NO FILTER (an app with no identity, or the operator — see that
+ * function's doc), and a scoped read deliberately does NOT match a NULL-scoped
+ * run: one created before an app added `identify` belongs to nobody, and handing
+ * it to whichever user asks first is the leak the column exists to prevent.
+ */
+function inScope(run: MemoryRun, scope: string | undefined): boolean {
+  return scope === undefined || run.ownerScope === scope;
+}
+
 export function createMemoryWorkflowStore(): MemoryWorkflowStore {
   const runs = new Map<string, MemoryRun>();
   const blobs = new Map<string, MemoryBlob>();
@@ -135,6 +149,7 @@ export function createMemoryWorkflowStore(): MemoryWorkflowStore {
       input: unknown,
       key?: string | undefined,
       continuationDepth = 0,
+      ownerScope?: string | undefined,
     ): Promise<void> {
       runs.set(runId, {
         workflow,
@@ -143,8 +158,13 @@ export function createMemoryWorkflowStore(): MemoryWorkflowStore {
         key,
         steps: new Map(),
         continuationDepth,
+        ownerScope,
       });
       return Promise.resolve();
+    },
+
+    ownerScope(runId: string): Promise<string | undefined> {
+      return Promise.resolve(runs.get(runId)?.ownerScope);
     },
 
     continuationDepth(runId: string): Promise<number> {
@@ -260,21 +280,22 @@ export function createMemoryWorkflowStore(): MemoryWorkflowStore {
       return Promise.resolve();
     },
 
-    cancel(runId: string): Promise<boolean> {
+    cancel(runId: string, scope?: string | undefined): Promise<boolean> {
       const run = runs.get(runId);
-      if (!(run && LIVE.has(run.status))) return Promise.resolve(false);
+      if (!(run && LIVE.has(run.status) && inScope(run, scope))) return Promise.resolve(false);
       run.status = "cancelled";
       run.wakeAt = undefined;
       run.leaseUntil = undefined;
       return Promise.resolve(true);
     },
 
-    retry(runId: string): Promise<boolean> {
+    retry(runId: string, scope?: string | undefined): Promise<boolean> {
       const run = runs.get(runId);
       // Terminal only, and the steps map is left alone — see the real store's doc.
       if (!(run && (run.status === "failed" || run.status === "cancelled"))) {
         return Promise.resolve(false);
       }
+      if (!inScope(run, scope)) return Promise.resolve(false);
       run.status = "pending";
       run.error = undefined;
       run.wakeAt = undefined;
@@ -282,25 +303,36 @@ export function createMemoryWorkflowStore(): MemoryWorkflowStore {
       return Promise.resolve(true);
     },
 
-    get(runId: string): Promise<WorkflowRunSnapshot | undefined> {
+    get(runId: string, scope?: string | undefined): Promise<WorkflowRunSnapshot | undefined> {
       const run = runs.get(runId);
-      return Promise.resolve(run ? snapshot(runId, run) : undefined);
+      return Promise.resolve(run && inScope(run, scope) ? snapshot(runId, run) : undefined);
     },
 
-    findByKey(workflow: string, key: string, limit: number): Promise<WorkflowRunSnapshot[]> {
+    findByKey(
+      workflow: string,
+      key: string,
+      limit: number,
+      scope?: string | undefined,
+    ): Promise<WorkflowRunSnapshot[]> {
       // Newest first, which a Map gives by reversing insertion order — the same
       // ordering the real store gets from `order by created_at desc`, without a
       // clock the fake would have to fake.
       const matched = [...runs.entries()].filter(
-        ([, run]) => run.workflow === workflow && run.key === key,
+        ([, run]) => run.workflow === workflow && run.key === key && inScope(run, scope),
       );
       matched.reverse();
       return Promise.resolve(matched.slice(0, limit).map(([runId, run]) => snapshot(runId, run)));
     },
 
-    recent(workflow: string, limit: number): Promise<WorkflowRunSnapshot[]> {
+    recent(
+      workflow: string,
+      limit: number,
+      scope?: string | undefined,
+    ): Promise<WorkflowRunSnapshot[]> {
       // Newest first by the same reversal `findByKey` uses — see its comment.
-      const matched = [...runs.entries()].filter(([, run]) => run.workflow === workflow);
+      const matched = [...runs.entries()].filter(
+        ([, run]) => run.workflow === workflow && inScope(run, scope),
+      );
       matched.reverse();
       return Promise.resolve(matched.slice(0, limit).map(([runId, run]) => snapshot(runId, run)));
     },

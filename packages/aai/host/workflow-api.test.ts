@@ -51,6 +51,8 @@ type FakeEngine = WorkflowApiEngine & {
   revived: string[];
   /** Waitpoint tokens `signal` was presented with, and their payloads. */
   signalled: { token: string; payload: unknown }[];
+  /** Scopes the API asked `scoped()` for, in order — undefined means unscoped. */
+  scopes: (string | undefined)[];
 };
 
 /**
@@ -67,7 +69,8 @@ function makeEngine(declared = ["digest"]): FakeEngine {
   const listed: { workflow: string; limit?: number | undefined }[] = [];
   const revived: string[] = [];
   const signalled: { token: string; payload: unknown }[] = [];
-  return {
+  const scopes: (string | undefined)[] = [];
+  const engine: FakeEngine = {
     started,
     blobs,
     found,
@@ -140,7 +143,22 @@ function makeEngine(declared = ["digest"]): FakeEngine {
     },
     // The API never calls it; the host's idle controller does.
     busy: () => false,
+    /**
+     * Records the scope it was asked for and answers with the same recorder, so a
+     * spec can assert both that the API scoped its engine AND what the handlers
+     * then did. Returning `this`-like behaviour is right for a fake: the FILTERING
+     * is the real store's job, and the property under test here is that the API
+     * asks for the right scope.
+     */
+    scoped(scope: string | undefined) {
+      scopes.push(scope);
+      // No cast: `FakeEngine` extends `WorkflowApiEngine`, which already satisfies
+      // the narrower scoped surface — the annotation on `engine` below is what lets
+      // this self-reference type.
+      return engine;
+    },
     signalled,
+    scopes,
     signal: (token: string, payload: unknown) => {
       signalled.push({ token, payload });
       // One token is parked; anything else is a token nothing is waiting on, which
@@ -149,6 +167,7 @@ function makeEngine(declared = ["digest"]): FakeEngine {
     },
     listing: () => declared.map((name) => ({ name, description: `${name} does a thing` })),
   };
+  return engine;
 }
 
 async function req(

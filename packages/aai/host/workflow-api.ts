@@ -54,6 +54,7 @@ import {
   bearerMatches,
   MAX_WORKFLOW_INPUT_BYTES,
   readBody,
+  type ScopedApiEngine,
   sendJson,
   type WorkflowApiEngine,
 } from "./workflow-api-http.ts";
@@ -65,7 +66,11 @@ import { cancelRun, retryRun, signalWait } from "./workflow-api-mutations.ts";
  * `workflow-api-http.ts` because the mutation handlers need both, and importing
  * them from here would close a cycle — this module imports those handlers.
  */
-export { MAX_WORKFLOW_INPUT_BYTES, type WorkflowApiEngine } from "./workflow-api-http.ts";
+export {
+  MAX_WORKFLOW_INPUT_BYTES,
+  type ScopedApiEngine,
+  type WorkflowApiEngine,
+} from "./workflow-api-http.ts";
 /** Path prefix every route here lives under. */
 export const WORKFLOW_API_PREFIX = "/workflows";
 
@@ -122,8 +127,39 @@ export type WorkflowApiOptions = {
    */
   engine: () => WorkflowApiEngine | undefined;
   /**
+   * Resolve WHO is calling, from the request.
+   *
+   * The per-user half of this API. Without it the only posture available is
+   * all-or-nothing (`token` below, one shared bearer), and a shared bearer in a
+   * browser bundle is not a secret — so a page could serve a public toy or a
+   * single-tenant internal tool and nothing with a notion of *this user's* runs.
+   *
+   * The SDK deliberately supplies NO user model: these are the app's users, and
+   * binding them to a provider of ours would couple every deployed agent's auth to
+   * it. Verify whatever the app already has — its own JWT, a session cookie checked
+   * through `ctx.db`, a header its proxy sets — and return a stable id.
+   *
+   * **Declaring it makes this API fail CLOSED**: a request that is neither
+   * identified nor the operator (see `token`) is refused, where an app with no
+   * `identify` serves everyone. Returning `undefined` means "not identified", which
+   * is a 401, not an unscoped read.
+   *
+   * A run is stamped with the scope that STARTED it and every read and mutation
+   * filters on it, so one user cannot see, cancel, retry or signal another's run.
+   * Runs created before an app declared this carry no scope and are invisible to a
+   * scoped caller — handing them to whichever user asks first is the leak the
+   * mechanism exists to prevent.
+   */
+  identify?:
+    | ((req: http.IncomingMessage) => Promise<string | undefined> | string | undefined)
+    | undefined;
+  /**
    * Bearer required on every route. When undefined the API is OPEN — the
    * default, because a static page carries no credential (see the module doc).
+   *
+   * With `identify` declared this becomes the OPERATOR credential: a request
+   * carrying it reads and steers every run regardless of scope, which is what
+   * `aai workflow runs` and the studio card need.
    * Comes from {@link WORKFLOW_API_TOKEN_ENV} in the agent's env.
    */
   token?: string | undefined;
@@ -133,7 +169,7 @@ export type WorkflowApiOptions = {
 async function startRun(
   req: http.IncomingMessage,
   res: http.ServerResponse,
-  engine: WorkflowApiEngine,
+  engine: ScopedApiEngine,
 ): Promise<void> {
   const body = await readBody(req, MAX_WORKFLOW_INPUT_BYTES);
   let parsed: unknown;
@@ -178,7 +214,7 @@ async function startRun(
 async function putBlob(
   req: http.IncomingMessage,
   res: http.ServerResponse,
-  engine: WorkflowApiEngine,
+  engine: ScopedApiEngine,
 ): Promise<void> {
   // An over-limit body answers 413 through the router's own mapping — see the
   // `BodyTooLargeError` branch there.
@@ -197,7 +233,7 @@ async function putBlob(
 /** `GET /workflows/runs/:id` — read one run's state. */
 async function readRun(
   res: http.ServerResponse,
-  engine: WorkflowApiEngine,
+  engine: ScopedApiEngine,
   runId: string,
 ): Promise<void> {
   const run = runId ? await engine.get(runId) : undefined;
@@ -220,7 +256,7 @@ async function readRun(
 async function findRuns(
   req: http.IncomingMessage,
   res: http.ServerResponse,
-  engine: WorkflowApiEngine,
+  engine: ScopedApiEngine,
 ): Promise<void> {
   const params = new URLSearchParams((req.url ?? "").split("?")[1] ?? "");
   const workflow = params.get("workflow");
@@ -267,7 +303,7 @@ async function findRuns(
 export function createWorkflowApi(
   opts: WorkflowApiOptions,
 ): (req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean {
-  const { engine: resolveEngine, token, logger } = opts;
+  const { engine: resolveEngine, token, identify, logger } = opts;
   const runsPrefix = `${WORKFLOW_API_PREFIX}/runs/`;
   const signalsPrefix = `${WORKFLOW_API_PREFIX}/signals/`;
 
@@ -285,7 +321,7 @@ export function createWorkflowApi(
     run: (
       req: http.IncomingMessage,
       res: http.ServerResponse,
-      engine: WorkflowApiEngine,
+      engine: ScopedApiEngine,
       url: string,
     ) => Promise<void> | void;
   }[] = [
@@ -356,6 +392,44 @@ export function createWorkflowApi(
     },
   ];
 
+  /**
+   * Who is calling, and may they call at all?
+   *
+   * Three postures, and conflating them is the bug this exists to prevent. An app
+   * with neither `token` nor `identify` serves everyone unscoped — the documented
+   * default, since a static page carries no credential. An app with `token` alone
+   * is all-or-nothing. An app with `identify` fails CLOSED: a caller who is
+   * neither the OPERATOR (holding `token`, which is the app's credential and what
+   * `aai workflow` and the studio card use) nor identified is refused, rather than
+   * served an unscoped view of every user's runs.
+   *
+   * Its own function so `route` stays under the cognitive-complexity cap, and
+   * because "is this request allowed, and as whom" is one decision that should be
+   * readable in one place.
+   */
+  async function authorize(
+    req: http.IncomingMessage,
+  ): Promise<{ ok: true; scope: string | undefined } | { ok: false; error: string }> {
+    const isOperator = token !== undefined && bearerMatches(req.headers.authorization, token);
+    if (isOperator) return { ok: true, scope: undefined };
+    if (token !== undefined && identify === undefined) {
+      return { ok: false, error: "Missing or invalid workflow API token" };
+    }
+    if (identify === undefined) return { ok: true, scope: undefined };
+    let scope: string | undefined;
+    try {
+      scope = (await identify(req)) ?? undefined;
+    } catch (err) {
+      // An `identify` that threw has authorized nobody. Logged because it is the
+      // app's own code failing, and answered 401 rather than 500: the outcome is
+      // the same from the caller's side, and a 500 invites a retry loop.
+      logger.error("Workflow API identify failed", { error: errorMessage(err) });
+    }
+    return scope === undefined
+      ? { ok: false, error: "Not authenticated for this app's workflows" }
+      : { ok: true, scope };
+  }
+
   async function route(
     req: http.IncomingMessage,
     res: http.ServerResponse,
@@ -365,10 +439,12 @@ export function createWorkflowApi(
     // The token is checked BEFORE the engine is resolved: resolving builds the
     // runtime in the guest, which is work an unauthenticated caller must not be
     // able to trigger.
-    if (token !== undefined && !bearerMatches(req.headers.authorization, token)) {
-      sendJson(res, 401, { error: "Missing or invalid workflow API token" });
+    const authorized = await authorize(req);
+    if (!authorized.ok) {
+      sendJson(res, 401, { error: authorized.error });
       return;
     }
+    const scope = authorized.scope;
     // A resolver that THREW could not build the runtime — a misconfigured agent,
     // not an agent without workflows — so it answers 500 with the reason rather
     // than the 404 below, which would deny that the workflows exist. See
@@ -392,7 +468,9 @@ export function createWorkflowApi(
       sendJson(res, 404, { error: "Not found" });
       return;
     }
-    await matched.run(req, res, engine, url);
+    // The SCOPED engine — every read and mutation the handler makes is filtered to
+    // this caller. Unscoped for an app with no `identify`, and for the operator.
+    await matched.run(req, res, engine.scoped(scope), url);
   }
 
   return (req, res, url, method) => {

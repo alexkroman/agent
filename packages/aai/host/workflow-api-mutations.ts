@@ -15,8 +15,8 @@ import type http from "node:http";
 import {
   MAX_WORKFLOW_INPUT_BYTES,
   readBody,
+  type ScopedApiEngine,
   sendJson,
-  type WorkflowApiEngine,
 } from "./workflow-api-http.ts";
 
 /**
@@ -30,7 +30,7 @@ import {
  */
 export async function cancelRun(
   res: http.ServerResponse,
-  engine: WorkflowApiEngine,
+  engine: ScopedApiEngine,
   runId: string,
 ): Promise<void> {
   const cancelled = runId ? await engine.cancel(runId) : false;
@@ -46,7 +46,7 @@ export async function cancelRun(
  */
 export async function retryRun(
   res: http.ServerResponse,
-  engine: WorkflowApiEngine,
+  engine: ScopedApiEngine,
   runId: string,
 ): Promise<void> {
   const retried = runId ? await engine.retry(runId) : false;
@@ -75,7 +75,7 @@ export async function retryRun(
 export async function signalWait(
   req: http.IncomingMessage,
   res: http.ServerResponse,
-  engine: WorkflowApiEngine,
+  engine: ScopedApiEngine,
   token: string,
 ): Promise<void> {
   if (!token) {

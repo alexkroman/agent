@@ -405,6 +405,51 @@ crash between the API call and the journal write leaves the retry with nothing t
 read, which turns at-least-once into a run that can never finish
 (`transcription-desk`'s loop says so in place).
 
+**Per-user scoping is a SEAM plus an enforced guarantee, not a user model.**
+`WorkflowApiOptions.identify(req)` — reached from `createServer` as
+`identifyWorkflowCaller` — returns a stable id for whoever is calling, using
+whatever the app already has (its own JWT, a session cookie checked through
+`ctx.db`, a header its proxy sets). The SDK deliberately supplies no user model:
+these are the APP's users, and binding them to an auth provider of ours would
+couple every deployed agent to it.
+
+What the SDK does supply is enforcement. `owner_scope` is a COLUMN (migration
+`0012`), stamped at `start` and filtered on by every read and mutation —
+`get`, `find`, `recent`, `cancel`, `retry` — so one user cannot see or steer
+another's run. `get` answers `undefined` rather than throwing for a run that is
+not yours, because "no such run" and "not yours" have to be the same answer or
+the id leaks.
+
+Five properties, each a decision:
+
+- **It is its own column, not a convention over `correlation_key`.** That key is
+  author-chosen, deliberately non-unique, and already means something else
+  (`find` reads it). Overloading it would make one value carry both "which
+  conversation is this" and "who may read it", and the second must not be
+  something an author can widen by accident.
+- **Declaring `identify` makes the API fail CLOSED.** A caller who is neither
+  identified nor the operator is refused, where an app with no `identify` serves
+  everyone — the documented default, since a static page carries no credential.
+  An `identify` that THROWS has authorized nobody and answers 401, not 500: the
+  outcome is the same from the caller's side and a 500 invites a retry loop.
+- **The OPERATOR bypasses it.** `AAI_WORKFLOW_API_TOKEN` is the app's own
+  credential, and `aai workflow runs` plus the studio card have to read every
+  run; `authorize()` resolves the three postures in one place so the operator is
+  not an exception some later route forgets.
+- **A scoped read does not match NULL.** A run created before an app declared
+  `identify` belongs to nobody, and handing it to whichever user asks first is
+  the leak the column exists to prevent.
+- **A continuation INHERITS its predecessor's scope.** Without it,
+  `ctx.continueAs` launders a run out of its owner's view mid-chain — the
+  successor belongs to nobody, so the user who started the work stops seeing it
+  while an unscoped caller starts to. That is a silent ownership change rather
+  than a refusal, and it is what `workflow-scope.test.ts` caught.
+
+The scope reaches handlers as a per-request `ScopedApiEngine`
+(`WorkflowEngine.scoped`), which is narrower than the engine on purpose: a
+handler has no business re-scoping, and taking the wide type is how one ends up
+using the unscoped engine by accident.
+
 **The API is as public as `/websocket`, and an operator can close it.** A page
 carries no credential — it is served to anyone with the URL, exactly like the
 voice client — so requiring one by default would mean no static page could work,

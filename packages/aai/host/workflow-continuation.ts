@@ -63,7 +63,11 @@ export function createContinuation(deps: ContinuationDeps) {
       return;
     }
     const successor = crypto.randomUUID();
-    await store.create(successor, row.workflow, validated, row.key, depth);
+    // The owner is INHERITED. Without this the successor belongs to nobody: the
+    // user who started the work stops seeing it mid-chain while an unscoped caller
+    // starts to, which is a silent ownership change rather than a refusal.
+    const owner = await store.ownerScope(runId);
+    await store.create(successor, row.workflow, validated, row.key, depth, owner);
     // `completed`, not a status of its own: the run really is finished, and a
     // sixth status would have to be taught to `isTerminal`, the page's poll, the
     // builtin's report and the studio card — for a distinction only the output

@@ -91,6 +91,20 @@ export type ServerOptions = {
    */
   env?: Record<string, string>;
   /**
+   * Resolve WHO is calling the workflow API, from the request — the per-user half
+   * of that surface. See `WorkflowApiOptions.identify`, which this is passed
+   * straight to: declaring it makes the API fail CLOSED, and every run is stamped
+   * with the scope that started it so one user cannot read, cancel, retry or
+   * signal another's.
+   *
+   * A hook rather than a built-in user model, deliberately: these are the APP's
+   * users, and binding them to an auth provider of ours would couple every
+   * deployed agent to it.
+   */
+  identifyWorkflowCaller?:
+    | ((req: http.IncomingMessage) => Promise<string | undefined> | string | undefined)
+    | undefined;
+  /**
    * The deployed agent. Host-mode sessions inherit its `stt`/`llm`/`tts`
    * provider config so they run the operator's configured pipeline instead of
    * the default S2S path. Only prompt/greeting/tools come from the client.
@@ -205,7 +219,14 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
  * @public
  */
 export function createServer(options: ServerOptions): AgentServer {
-  const { runtime, clientDir, logger = consoleLogger, env, hostBaseAgent } = options;
+  const {
+    runtime,
+    clientDir,
+    logger = consoleLogger,
+    env,
+    hostBaseAgent,
+    identifyWorkflowCaller,
+  } = options;
   const name = options.name ?? "agent";
   const isStatic = options.page === "static";
 
@@ -218,7 +239,7 @@ export function createServer(options: ServerOptions): AgentServer {
     // channel for the same thing, and two channels can disagree about which
     // engine this server is serving.
     engine: () => runtime.workflows,
-    ...omitUndefined({ token: env?.[WORKFLOW_API_TOKEN_ENV] }),
+    ...omitUndefined({ token: env?.[WORKFLOW_API_TOKEN_ENV], identify: identifyWorkflowCaller }),
     logger,
   });
 

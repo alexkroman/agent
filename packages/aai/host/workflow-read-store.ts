@@ -16,6 +16,7 @@
 
 import type { Db } from "../sdk/db.ts";
 import type { WorkflowRunSnapshot, WorkflowRunStatus } from "../sdk/workflow.ts";
+import { scopeClause } from "./workflow-scope.ts";
 
 /** One run row, as both reads select it. */
 type RunRow = {
@@ -71,33 +72,43 @@ function toSnapshot(row: RunRow): WorkflowRunSnapshot {
 /** The read-only third of `WorkflowStore`, bound to one `Db`. */
 export function createReadMethods(db: Db) {
   return {
-    async get(runId: string): Promise<WorkflowRunSnapshot | undefined> {
+    async get(runId: string, scope?: string | undefined): Promise<WorkflowRunSnapshot | undefined> {
       const rows = await db.query<RunRow>(
-        `select ${RUN_COLUMNS} from aai_workflow_runs where run_id = $1`,
-        [runId],
+        `select ${RUN_COLUMNS} from aai_workflow_runs
+          where run_id = $1${scopeClause(scope, 2)}`,
+        scope === undefined ? [runId] : [runId, scope],
       );
       const row = rows[0];
       return row ? toSnapshot(row) : undefined;
     },
 
-    async findByKey(workflow: string, key: string, limit: number): Promise<WorkflowRunSnapshot[]> {
+    async findByKey(
+      workflow: string,
+      key: string,
+      limit: number,
+      scope?: string | undefined,
+    ): Promise<WorkflowRunSnapshot[]> {
       const rows = await db.query<RunRow>(
         `select ${RUN_COLUMNS} from aai_workflow_runs
-          where workflow = $1 and correlation_key = $2
+          where workflow = $1 and correlation_key = $2${scopeClause(scope, 4)}
           order by created_at desc
           limit $3`,
-        [workflow, key, limit],
+        scope === undefined ? [workflow, key, limit] : [workflow, key, limit, scope],
       );
       return rows.map(toSnapshot);
     },
 
-    async recent(workflow: string, limit: number): Promise<WorkflowRunSnapshot[]> {
+    async recent(
+      workflow: string,
+      limit: number,
+      scope?: string | undefined,
+    ): Promise<WorkflowRunSnapshot[]> {
       const rows = await db.query<RunRow>(
         `select ${RUN_COLUMNS} from aai_workflow_runs
-          where workflow = $1
+          where workflow = $1${scopeClause(scope, 3)}
           order by created_at desc
           limit $2`,
-        [workflow, limit],
+        scope === undefined ? [workflow, limit] : [workflow, limit, scope],
       );
       return rows.map(toSnapshot);
     },

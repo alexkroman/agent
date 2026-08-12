@@ -443,6 +443,11 @@ describe("createServer with page: static", () => {
           putBlob: () => Promise.resolve("b"),
           listing: () => [{ name: "transcribe" }],
           busy: () => false,
+          // Returns ITSELF: this stub stands in for an app that declares no
+          // `identify`, where every caller gets the unscoped client.
+          scoped() {
+            return this;
+          },
           signal: () => Promise.resolve(undefined),
         },
       },

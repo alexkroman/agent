@@ -124,7 +124,11 @@ describe("create", () => {
     // The absent correlation key binds SQL null, not `undefined`: the driver would
     // send the latter as the string "undefined", which is a key nothing can match
     // and which is indistinguishable from a real one in the index.
-    expect(q.params(0)).toEqual(["r1", "digest", '{"topic":"ai"}', null, 0]);
+    // The absent owner scope binds SQL null for the same reason, and that null is
+    // load-bearing: a scoped read deliberately does not match it, so a run created
+    // before an app declared `identify` belongs to nobody rather than to whichever
+    // user asks first.
+    expect(q.params(0)).toEqual(["r1", "digest", '{"topic":"ai"}', null, 0, null]);
   });
 
   test("stores a correlation key when one is given", async () => {
@@ -132,7 +136,7 @@ describe("create", () => {
     await createPostgresWorkflowStore(q.db).create("r1", "digest", null, "session-7");
 
     expect(q.sql(0)).toContain("correlation_key");
-    expect(q.params(0)).toEqual(["r1", "digest", "null", "session-7", 0]);
+    expect(q.params(0)).toEqual(["r1", "digest", "null", "session-7", 0, null]);
   });
 
   test("serializes an absent input as SQL-safe null, never the string undefined", async () => {

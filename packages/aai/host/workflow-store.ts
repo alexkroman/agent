@@ -1,4 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
+
 /**
  * The workflow journal — durable state for {@link WorkflowRunStatus} runs.
  *
@@ -31,6 +32,7 @@ import {
   RECORD_MIGRATION,
   SELECT_MIGRATIONS,
 } from "./workflow-schema.ts";
+import { scopeClause } from "./workflow-scope.ts";
 /** A claimed run, as the engine needs it to start executing. */
 export type ClaimedRun = {
   runId: string;
@@ -62,9 +64,25 @@ export type WorkflowStore = {
     key?: string | undefined,
     /** Continuations deep — see `ADD_CONTINUATION_DEPTH`. Defaults to 0. */
     continuationDepth?: number,
+    /**
+     * Who the run belongs to — see `ADD_OWNER_SCOPE`. Undefined for an app that
+     * declares no identity, which is every app until one adds `identify`.
+     */
+    ownerScope?: string | undefined,
   ): Promise<void>;
   /** How many continuations deep `runId` is, or 0 when it does not exist. */
   continuationDepth(runId: string): Promise<number>;
+  /**
+   * Who owns `runId`, or undefined for an unscoped run (and for one that does not
+   * exist).
+   *
+   * Read by `createContinuation` so a successor INHERITS its predecessor's owner.
+   * Without it continue-as-new launders a run out of its owner's view mid-chain:
+   * the successor would belong to nobody, becoming invisible to the user who
+   * started the work and visible to an unscoped caller — a silent ownership
+   * change, which is worse than a refusal.
+   */
+  ownerScope(runId: string): Promise<string | undefined>;
   /**
    * Take ownership of a run for `leaseMs`, returning it only if the claim
    * succeeded — the one guard against two sandboxes replaying one run.
@@ -126,7 +144,7 @@ export type WorkflowStore = {
    * one already executing would then have two claimants, which is the single thing
    * the lease exists to prevent.
    */
-  retry(runId: string): Promise<boolean>;
+  retry(runId: string, scope?: string | undefined): Promise<boolean>;
   /**
    * Mark a live run `cancelled`. Resolves whether this call is what ended it —
    * false for a run that was already terminal, or absent.
@@ -134,11 +152,16 @@ export type WorkflowStore = {
    * The journal is kept: what the run did before it was stopped stays readable,
    * and a cancelled run is never claimed again so nothing will add to it.
    */
-  cancel(runId: string): Promise<boolean>;
+  cancel(runId: string, scope?: string | undefined): Promise<boolean>;
   /** Read a run's observable state. */
-  get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
+  get(runId: string, scope?: string | undefined): Promise<WorkflowRunSnapshot | undefined>;
   /** Runs of one workflow carrying `key`, newest first. */
-  findByKey(workflow: string, key: string, limit: number): Promise<WorkflowRunSnapshot[]>;
+  findByKey(
+    workflow: string,
+    key: string,
+    limit: number,
+    scope?: string | undefined,
+  ): Promise<WorkflowRunSnapshot[]>;
   /**
    * Runs of one workflow, newest first, whatever key they carry.
    *
@@ -149,7 +172,11 @@ export type WorkflowStore = {
    * lookup that matched every key, and conflating them is how a caller meaning
    * "this session's runs" silently reads every tenant session's instead.
    */
-  recent(workflow: string, limit: number): Promise<WorkflowRunSnapshot[]>;
+  recent(
+    workflow: string,
+    limit: number,
+    scope?: string | undefined,
+  ): Promise<WorkflowRunSnapshot[]>;
   /**
    * Store bytes a caller uploaded, OUTSIDE the journal, and resolve their id.
    *
@@ -269,12 +296,29 @@ export function createPostgresWorkflowStore(db: Db): WorkflowStore {
       input: unknown,
       key?: string | undefined,
       continuationDepth = 0,
+      ownerScope?: string | undefined,
     ): Promise<void> {
       await db.query(
-        `insert into aai_workflow_runs (run_id, workflow, input, correlation_key, continuation_depth)
-         values ($1, $2, $3::text::jsonb, $4, $5)`,
-        [runId, workflow, JSON.stringify(input ?? null), key ?? null, continuationDepth],
+        `insert into aai_workflow_runs
+           (run_id, workflow, input, correlation_key, continuation_depth, owner_scope)
+         values ($1, $2, $3::text::jsonb, $4, $5, $6)`,
+        [
+          runId,
+          workflow,
+          JSON.stringify(input ?? null),
+          key ?? null,
+          continuationDepth,
+          ownerScope ?? null,
+        ],
       );
+    },
+
+    async ownerScope(runId: string): Promise<string | undefined> {
+      const rows = await db.query<{ owner_scope: string | null }>(
+        "select owner_scope from aai_workflow_runs where run_id = $1",
+        [runId],
+      );
+      return rows[0]?.owner_scope ?? undefined;
     },
 
     async continuationDepth(runId: string): Promise<number> {
@@ -410,25 +454,25 @@ export function createPostgresWorkflowStore(db: Db): WorkflowStore {
       );
     },
 
-    async cancel(runId: string): Promise<boolean> {
+    async cancel(runId: string, scope?: string | undefined): Promise<boolean> {
       const rows = await db.query<{ run_id: string }>(
         `update aai_workflow_runs
             set status = 'cancelled', lease_until = null, wake_at = null, updated_at = now()
-          where run_id = $1 and status in ${LIVE}
+          where run_id = $1 and status in ${LIVE}${scopeClause(scope, 2)}
           returning run_id`,
-        [runId],
+        scope === undefined ? [runId] : [runId, scope],
       );
       return rows.length > 0;
     },
 
-    async retry(runId: string): Promise<boolean> {
+    async retry(runId: string, scope?: string | undefined): Promise<boolean> {
       const rows = await db.query<{ run_id: string }>(
         `update aai_workflow_runs
             set status = 'pending', error = null, wake_at = null, lease_until = null,
                 updated_at = now()
-          where run_id = $1 and status in ('failed', 'cancelled')
+          where run_id = $1 and status in ('failed', 'cancelled')${scopeClause(scope, 2)}
           returning run_id`,
-        [runId],
+        scope === undefined ? [runId] : [runId, scope],
       );
       return rows.length > 0;
     },

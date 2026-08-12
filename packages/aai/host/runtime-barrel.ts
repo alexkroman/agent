@@ -146,6 +146,7 @@ export type {
 export {
   MAX_WORKFLOW_BLOB_BYTES,
   MAX_WORKFLOW_INPUT_BYTES,
+  type ScopedApiEngine,
   WORKFLOW_API_PREFIX,
   WORKFLOW_API_TOKEN_ENV,
   type WorkflowApiEngine,

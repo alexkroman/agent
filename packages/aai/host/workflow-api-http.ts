@@ -99,7 +99,25 @@ export function readBody(req: http.IncomingMessage, limit: number): Promise<Buff
  * to `string` — so a seventh field or a sixth status had to be propagated here by
  * hand, and the widening guaranteed it would still compile if nobody did.
  */
+/**
+ * What a route HANDLER is given: the client surface for one caller, and nothing
+ * else. Narrower than {@link WorkflowApiEngine} on purpose — a handler has no
+ * business reaching `busy()` or re-scoping, and taking the wide type is how a
+ * handler ends up using the unscoped engine by accident.
+ */
+export type ScopedApiEngine = WorkflowClient & {
+  signal(token: string, payload: unknown): Promise<string | undefined>;
+  putBlob(contentType: string, base64: string): Promise<string>;
+};
+
 export type WorkflowApiEngine = WorkflowClient & {
+  /**
+   * This engine filtered to one caller's identity — see `WorkflowEngine.scoped`.
+   *
+   * `undefined` returns the engine itself, which is what an app with no `identify`
+   * and what the operator both get.
+   */
+  scoped(scope: string | undefined): ScopedApiEngine;
   putBlob(contentType: string, base64: string): Promise<string>;
   /** Durable work in flight or imminent — see `WorkflowEngine.busy`. */
   busy(): boolean;

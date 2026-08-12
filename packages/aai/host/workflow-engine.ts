@@ -26,23 +26,14 @@
  */
 
 import type { Db } from "../sdk/db.ts";
-import type { ToolInputSchema } from "../sdk/schema.ts";
 import { formatSchemaIssues } from "../sdk/schema.ts";
 import { errorMessage } from "../sdk/utils.ts";
-import type {
-  AnyWorkflowDef,
-  FindOptions,
-  StartOptions,
-  WorkflowClient,
-  WorkflowDef,
-  WorkflowRunSnapshot,
-  WorkflowSummary,
-} from "../sdk/workflow.ts";
+import type { WorkflowClient, WorkflowDef } from "../sdk/workflow.ts";
 import type { HostGenerateFn } from "./generate.ts";
 import type { Logger } from "./runtime-config.ts";
+import { buildScopedClient } from "./workflow-client-scoped.ts";
 import { createContinuation } from "./workflow-continuation.ts";
 import {
-  clampFindLimit,
   MAX_DUE_RUNS,
   MAX_DUE_SWEEPS,
   MAX_WAKE_TIMER_MS,
@@ -55,7 +46,6 @@ import {
   Parked,
   reportSequenceDrift,
   Suspended,
-  wrapSignal,
 } from "./workflow-execution.ts";
 import { createNameResolver } from "./workflow-names.ts";
 import type { WorkflowStore } from "./workflow-store.ts";
@@ -92,7 +82,29 @@ export type WorkflowEngineOptions = {
  *
  * @internal
  */
+/**
+ * A {@link WorkflowEngine} bound to one caller's identity.
+ *
+ * Every read and mutation on it filters to that scope, and `start` stamps it. The
+ * API builds one per REQUEST from `identify`; tool code never sees this — a
+ * workflow started from a session belongs to the app, and `ctx.workflows` is the
+ * unscoped engine by construction.
+ */
+export type ScopedWorkflowEngine = WorkflowClient & {
+  signal(token: string, payload: unknown): Promise<string | undefined>;
+  putBlob(contentType: string, base64: string): Promise<string>;
+};
+
 export type WorkflowEngine = WorkflowClient & {
+  /**
+   * This engine, filtered to one caller's identity — see
+   * {@link ScopedWorkflowEngine}.
+   *
+   * `undefined` returns the engine itself, which is what an app with no
+   * `identify` and what the OPERATOR both get. Deciding which of those a request
+   * is belongs to the API, the only layer that has seen the bearer.
+   */
+  scoped(scope: string | undefined): ScopedWorkflowEngine;
   /**
    * Execute every run that is due now — due sleepers, runs never picked up,
    * and runs whose executor died holding a lease. This is cold-start recovery;
@@ -362,113 +374,39 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
     return parsed.value;
   }
 
+  const unscoped = buildScopedClient({
+    workflows,
+    store,
+    scope: undefined,
+    resolveName,
+    validate,
+    ensureTables,
+    executeDetached,
+    controllers,
+  });
+
   return {
-    async start<P extends ToolInputSchema, R>(
-      workflow: WorkflowDef<P, R> | string,
-      input?: unknown,
-      options?: StartOptions,
-    ): Promise<string> {
-      const name = resolveName(workflow as WorkflowDef | string);
-      // Non-null: `resolveName` only returns a name the record holds.
-      const def = workflows[name] as WorkflowDef;
-      const validated = await validate(name, def, input);
-      await ensureTables();
-      const runId = crypto.randomUUID();
-      await store.create(runId, name, validated, options?.key);
-      // Deliberately not awaited — `start` resolves as soon as the run is
-      // durable, which is the whole point: the caller is a tool answering a
-      // turn, and the run outlives it. Failures are journaled by `execute`,
-      // so what `executeDetached` catches is only a rejection it could not record.
-      executeDetached(runId);
-      return runId;
-    },
-
-    // `_of` is type-only: it exists so `output` on a completed run is the
-    // workflow's own return type rather than `unknown`. The run's stored row is
-    // what says which workflow it belongs to, so nothing reads the argument.
-    async get<R>(
-      runId: string,
-      _of?: AnyWorkflowDef<R>,
-    ): Promise<WorkflowRunSnapshot<R> | undefined> {
-      await ensureTables();
-      return (await store.get(runId)) as WorkflowRunSnapshot<R> | undefined;
-    },
-
-    async find<R>(
-      workflow: AnyWorkflowDef<R> | string,
-      key: string,
-      options?: FindOptions,
-    ): Promise<WorkflowRunSnapshot<R>[]> {
-      const name = resolveName(workflow as WorkflowDef | string);
-      await ensureTables();
-      return (await store.findByKey(
-        name,
-        key,
-        clampFindLimit(options?.limit),
-      )) as WorkflowRunSnapshot<R>[];
-    },
-
-    async recent<R>(
-      workflow: AnyWorkflowDef<R> | string,
-      options?: FindOptions,
-    ): Promise<WorkflowRunSnapshot<R>[]> {
-      const name = resolveName(workflow as WorkflowDef | string);
-      await ensureTables();
-      return (await store.recent(name, clampFindLimit(options?.limit))) as WorkflowRunSnapshot<R>[];
-    },
-
-    async retry(runId: string): Promise<boolean> {
-      await ensureTables();
-      const revived = await store.retry(runId);
-      // Executed straight away rather than left to the next `runDue()`: an
-      // operator pressing Retry is asking for it now, and the run is `pending`
-      // with no lease, so this claim is uncontended. Not awaited, for the same
-      // reason `start` does not await — the caller wants the acknowledgement, not
-      // the outcome.
-      if (revived) executeDetached(runId);
-      return revived;
-    },
-
-    async signal(token: string, payload: unknown): Promise<string | undefined> {
-      await ensureTables();
-      // The payload is WRAPPED, because a caller's payload may itself be a string
-      // — the same shape `park` records as "still waiting" — so the two journal
-      // states have to be told apart by structure. `wrapSignal` is the one place
-      // that shape is minted.
-      const runId = await store.signal(token, wrapSignal(payload));
-      // Executed straight away for the same reason `retry` is: the signal is
-      // somebody waiting on an answer, and the run is `pending` with no lease.
-      if (runId !== undefined) executeDetached(runId);
-      return runId;
-    },
-
-    async cancel(runId: string): Promise<boolean> {
-      await ensureTables();
-      const stopped = await store.cancel(runId);
-      // Aborted unconditionally, not only when this call is what stopped it:
-      // another replica may have cancelled the run, and this process holds the
-      // only handle that can reach its `ctx.signal`.
-      controllers.get(runId)?.abort();
-      return stopped;
-    },
-
-    async putBlob(contentType: string, base64: string): Promise<string> {
-      await ensureTables();
-      const blobId = crypto.randomUUID();
-      await store.putBlob(blobId, contentType, base64);
-      return blobId;
-    },
+    ...unscoped,
+    // Unscoped IS the engine: an app with no `identify`, and the operator, both get
+    // this one. Only an identified caller gets a filtered client.
+    scoped: (scope: string | undefined) =>
+      scope === undefined
+        ? unscoped
+        : buildScopedClient({
+            workflows,
+            store,
+            scope,
+            resolveName,
+            validate,
+            ensureTables,
+            executeDetached,
+            controllers,
+          }),
 
     busy(): boolean {
       // `timers` holds only armed wake timers (`scheduleWake`), and a step
       // retrying its backoff is inside `execute`, so `inFlight` covers it.
       return inFlight.size > 0 || timers.size > 0;
-    },
-
-    listing(): WorkflowSummary[] {
-      return Object.entries(workflows).map(([name, def]) =>
-        def.description === undefined ? { name } : { name, description: def.description },
-      );
     },
 
     async runDue(): Promise<number> {

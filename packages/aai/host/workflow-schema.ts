@@ -155,6 +155,40 @@ export const ADD_WAIT_TOKEN = `alter table aai_workflow_runs
 export const CREATE_WAIT_TOKEN_INDEX = `create unique index if not exists aai_workflow_runs_wait_token
   on aai_workflow_runs (wait_token) where wait_token is not null`;
 
+/**
+ * Who a run BELONGS to, when the app declares an identity.
+ *
+ * The per-user half of the workflow API. Without it the API can only be all-or-
+ * nothing (`AAI_WORKFLOW_API_TOKEN`, one shared bearer), and a shared bearer in a
+ * browser bundle is not a secret — so a public page could build a toy or a
+ * single-tenant internal tool and nothing with a notion of *this user's* runs.
+ *
+ * It is its own column rather than a convention layered onto `correlation_key`,
+ * which is deliberately author-chosen, deliberately NON-unique, and already means
+ * something else (`find` reads it). Overloading it would make one value carry both
+ * "which conversation is this" and "who may read it", and the second must not be
+ * something an author can accidentally widen.
+ *
+ * NULL means "no identity was declared when this run started", which is the
+ * ordinary state for every run made before an app added `identify` and for every
+ * agent that never will. Those runs stay readable by an unscoped caller and are
+ * invisible to a scoped one — see `scopeClause` in `workflow-store.ts` for why
+ * that asymmetry is the fail-closed direction.
+ */
+export const ADD_OWNER_SCOPE =
+  "alter table aai_workflow_runs add column if not exists owner_scope text";
+
+/**
+ * Scope-first index, PARTIAL on the scope being present.
+ *
+ * Every scoped read filters on it and then orders by recency, which is what the
+ * column order serves. Partial because an app that declares no identity writes
+ * NULL for every row, and indexing those nulls would tax its inserts for a lookup
+ * that can never match — the same reasoning as the correlation-key index.
+ */
+export const CREATE_OWNER_SCOPE_INDEX = `create index if not exists aai_workflow_runs_owner
+  on aai_workflow_runs (owner_scope, created_at desc) where owner_scope is not null`;
+
 /** Table recording which migrations this schema has run. */
 export const CREATE_MIGRATIONS = `create table if not exists aai_workflow_migrations (
   id text primary key,
@@ -202,4 +236,6 @@ export const MIGRATIONS: readonly { id: string; sql: string }[] = [
   { id: "0009-continuation-depth", sql: ADD_CONTINUATION_DEPTH },
   { id: "0010-wait-token", sql: ADD_WAIT_TOKEN },
   { id: "0011-wait-token-index", sql: CREATE_WAIT_TOKEN_INDEX },
+  { id: "0012-owner-scope", sql: ADD_OWNER_SCOPE },
+  { id: "0013-owner-scope-index", sql: CREATE_OWNER_SCOPE_INDEX },
 ];
