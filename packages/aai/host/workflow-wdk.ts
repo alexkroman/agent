@@ -98,23 +98,3 @@ export function wdkAdapter(): WdkAdapter {
     },
   };
 }
-
-/**
- * Start the world's queue subscription, when the configured world has one.
- *
- * The Postgres World's queue is graphile-worker POLLING the database, so nothing
- * runs until a long-lived process subscribes — `start()` is that subscription,
- * and without it a run sits `pending` forever with no error anywhere. The Local
- * World has no `start`, hence the optional call.
- *
- * **This is also the seam where the platform's sandbox lifetime meets WDK's
- * assumption of a long-lived server.** A Modal sandbox is idle-exited, so the
- * subscription dies with it and a run due in six hours has nobody polling for it;
- * booting the sandbox when work comes due is the platform's job, and is what
- * `aai-server`'s wake sweep exists for.
- *
- * @internal
- */
-export async function startWorkflowWorld(): Promise<void> {
-  await getWorld().start?.();
-}
