@@ -101,3 +101,49 @@ export const CREATE_KEY_INDEX = `create index if not exists aai_workflow_runs_ke
  */
 export const CREATE_WORKFLOW_INDEX = `create index if not exists aai_workflow_runs_workflow
   on aai_workflow_runs (workflow, created_at desc)`;
+
+/** Table recording which migrations this schema has run. */
+export const CREATE_MIGRATIONS = `create table if not exists aai_workflow_migrations (
+  id text primary key,
+  applied_at timestamptz not null default now()
+)`;
+
+/** Record one migration as applied. Concurrency-safe: two booting sandboxes race. */
+export const RECORD_MIGRATION =
+  "insert into aai_workflow_migrations (id) values ($1) on conflict (id) do nothing";
+
+/** Ids already applied, so `init()` runs only what is missing. */
+export const SELECT_MIGRATIONS = "select id from aai_workflow_migrations";
+
+/**
+ * The journal's migrations, in order, each applied ONCE.
+ *
+ * This replaced running every `create … if not exists` on every boot. That was
+ * idempotent and therefore looked free, and it was not: Postgres raises a NOTICE
+ * for each no-op, so a healthy app logged six or seven per engine into a log the
+ * guest relays to the platform — and the `alter table … add column if not exists`
+ * one (`42701`, duplicate_column) was missed by the driver's notice filter for a
+ * while, which is what made the cost visible. Nothing re-running means nothing to
+ * filter.
+ *
+ * **Every statement stays individually idempotent even so**, and that is not
+ * belt-and-braces — it is required. Apps deployed before this table existed
+ * already have the tables and no record of them, so `0001` and `0002` WILL run
+ * against a populated schema exactly once, and must be no-ops there rather than
+ * errors. A migration added later may drop the `if not exists` only if it can
+ * never meet a schema that already has it, which for a shipped SDK is never.
+ *
+ * Order matters: the steps table's foreign key needs the runs table, and every
+ * index needs its own table. Append only — an id that has been released is a
+ * fact about somebody's database.
+ */
+export const MIGRATIONS: readonly { id: string; sql: string }[] = [
+  { id: "0001-runs", sql: CREATE_RUNS },
+  { id: "0002-correlation-key", sql: ADD_RUNS_KEY },
+  { id: "0003-steps", sql: CREATE_STEPS },
+  { id: "0004-due-index", sql: CREATE_DUE_INDEX },
+  { id: "0005-workflow-index", sql: CREATE_WORKFLOW_INDEX },
+  { id: "0006-key-index", sql: CREATE_KEY_INDEX },
+  { id: "0007-blobs", sql: CREATE_BLOBS },
+  { id: "0008-blobs-index", sql: CREATE_BLOBS_INDEX },
+];

@@ -529,3 +529,34 @@ selectivity — truncating on a signal that arrives ~470ms after the first parti
 makes yields look instant. A correct client's yield rate against the old code
 was already 46.7%. Do not read the drop as a regression, and do not "fix" it by
 reverting the gate.
+
+## The journal's schema is MIGRATED, not re-created every boot
+
+`workflow-schema.ts` holds the DDL and an ordered `MIGRATIONS` list; `init()`
+creates a ledger table (`aai_workflow_migrations`), reads which ids are already
+applied, and runs only what is missing.
+
+It used to run every `create … if not exists` on every boot. That is idempotent
+and therefore looked free, and it was not: Postgres raises a NOTICE per no-op, so
+a healthy app logged six or seven per engine into a log the guest relays to the
+platform — and one of them (`42701`, from `alter table … add column if not
+exists`) was missed by the driver's notice filter, which is how the cost became
+visible at all. Nothing re-running is what removes them.
+
+Three properties to keep:
+
+- **Every statement stays individually idempotent**, and that is required rather
+  than defensive. Apps deployed before the ledger existed have the tables and no
+  record of them, so `0001` and `0002` will run against a populated schema exactly
+  once and must be no-ops there. A future migration may drop `if not exists` only
+  if it can never meet a schema that already has it, which for a shipped SDK is
+  never.
+- **Append only.** A released id is a fact about somebody's database. Order is
+  load-bearing too — the steps table's foreign key needs the runs table, and the
+  correlation-key index needs the column an earlier migration adds — and
+  `workflow-store.test.ts` pins both orderings.
+- **Dropping the journal means dropping the LEDGER with it.** A schema whose
+  record claims tables that are gone reads as fully migrated, so `init()` creates
+  nothing and every query fails with `relation "aai_workflow_runs" does not
+  exist`. That is the shape an operator hits after a manual `drop table`, and the
+  integration suite reproduced it by forgetting exactly this.

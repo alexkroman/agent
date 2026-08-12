@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import type { Db } from "../sdk/db.ts";
+import { MIGRATIONS } from "./workflow-schema.ts";
 import { createPostgresWorkflowStore } from "./workflow-store.ts";
 
 type Call = { sql: string; params: unknown[] };
@@ -47,42 +48,67 @@ function recordingDb(results: unknown[][] = []): {
 }
 
 describe("init", () => {
-  test("creates every table and index, runs before steps", async () => {
+  test("creates the ledger, then runs every migration once, recording each", async () => {
+    // Two rows per migration — the statement and its record — after the ledger's
+    // own create and the read of what is already applied.
     const q = recordingDb();
     await createPostgresWorkflowStore(q.db).init();
 
-    expect(q.count()).toBe(8);
-    expect(q.sql(0)).toContain("create table if not exists aai_workflow_runs");
-    // The correlation-key column is ADDED separately, and that is what makes a
-    // journal created before it existed usable: `create table if not exists` on
-    // an older table is a no-op, so without this every `start({ key })` against
-    // it would fail on an unknown column.
-    expect(q.sql(1)).toContain("alter table aai_workflow_runs add column if not exists");
-    expect(q.sql(1)).toContain("correlation_key");
-    expect(q.sql(2)).toContain("create table if not exists aai_workflow_steps");
-    expect(q.sql(3)).toContain("create index if not exists aai_workflow_runs_due");
-    expect(q.sql(4)).toContain("create index if not exists aai_workflow_runs_workflow");
-    expect(q.sql(5)).toContain("create index if not exists aai_workflow_runs_key");
-    // The steps table's foreign key cannot be created before its target.
-    expect(q.sql(2)).toContain("references aai_workflow_runs(run_id)");
-    // Blobs are NOT a child of the runs table: one is written before the run
-    // that names it exists, so a foreign key would reject every upload.
-    expect(q.sql(6)).toContain("create table if not exists aai_workflow_blobs");
-    expect(q.sql(6)).not.toContain("references");
-    expect(q.sql(7)).toContain("create index if not exists aai_workflow_blobs_created");
+    expect(q.sql(0)).toContain("create table if not exists aai_workflow_migrations");
+    expect(q.sql(1)).toContain("select id from aai_workflow_migrations");
+    expect(q.sql(2)).toContain("create table if not exists aai_workflow_runs");
+    expect(q.sql(3)).toContain("insert into aai_workflow_migrations");
+    expect(q.params(3)).toEqual(["0001-runs"]);
+    expect(q.count()).toBe(2 + MIGRATIONS.length * 2);
   });
 
-  test("indexes correlation keys partially, so unkeyed runs cost nothing", async () => {
-    const q = recordingDb();
+  test("runs NOTHING a second time", async () => {
+    // The whole point: `create … if not exists` on every boot is idempotent and
+    // not free — Postgres raises a NOTICE per no-op, and the guest relays its log
+    // to the platform. Nothing re-running is what removes them.
+    const applied = MIGRATIONS.map((m) => ({ id: m.id }));
+    const q = recordingDb([[], applied]);
     await createPostgresWorkflowStore(q.db).init();
 
+    // The ledger create and the read, and not one statement more.
+    expect(q.count()).toBe(2);
+  });
+
+  test("applies only the migrations a partially-migrated schema is missing", async () => {
+    const q = recordingDb([[], [{ id: "0001-runs" }, { id: "0002-correlation-key" }]]);
+    await createPostgresWorkflowStore(q.db).init();
+
+    // Two known, six to go — each with its record.
+    expect(q.count()).toBe(2 + (MIGRATIONS.length - 2) * 2);
+    expect(q.sql(2)).toContain("create table if not exists aai_workflow_steps");
+  });
+
+  test("every migration statement is idempotent, for schemas that predate the ledger", () => {
+    // Apps deployed before the ledger have the tables and no record of them, so
+    // `0001` and `0002` WILL run against a populated schema exactly once. A
+    // statement that errored there would fail every such app's first boot.
+    for (const migration of MIGRATIONS) {
+      expect(migration.sql, migration.id).toMatch(/if not exists/);
+    }
+  });
+
+  test("the steps table's foreign key cannot precede its target", () => {
+    const ids = MIGRATIONS.map((m) => m.id);
+    const runs = ids.indexOf("0001-runs");
+    const steps = ids.indexOf("0003-steps");
+    expect(runs).toBeLessThan(steps);
+    // And the correlation-key index needs the column the earlier migration adds.
+    expect(ids.indexOf("0002-correlation-key")).toBeLessThan(ids.indexOf("0006-key-index"));
+  });
+
+  test("indexes correlation keys partially, so unkeyed runs cost nothing", () => {
     // Most runs carry no key — they are started by a page holding its own runId —
     // and indexing those nulls would tax every insert for a lookup that cannot
-    // match them.
-    expect(q.sql(5)).toContain("where correlation_key is not null");
-    // And its keyless neighbour must NOT be partial: `recent` answers for exactly
-    // the rows that predicate excludes.
-    expect(q.sql(4)).not.toContain("where correlation_key");
+    // match them. Its keyless neighbour must NOT be partial: `recent` answers for
+    // exactly the rows that predicate excludes.
+    const byId = new Map(MIGRATIONS.map((m) => [m.id, m.sql]));
+    expect(byId.get("0006-key-index")).toContain("where correlation_key is not null");
+    expect(byId.get("0005-workflow-index")).not.toContain("where correlation_key");
   });
 });
 

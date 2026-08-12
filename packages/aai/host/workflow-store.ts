@@ -23,15 +23,11 @@
 import type { Db } from "../sdk/db.ts";
 import type { WorkflowRunSnapshot, WorkflowRunStatus } from "../sdk/workflow.ts";
 import {
-  ADD_RUNS_KEY,
-  CREATE_BLOBS,
-  CREATE_BLOBS_INDEX,
-  CREATE_DUE_INDEX,
-  CREATE_KEY_INDEX,
-  CREATE_RUNS,
-  CREATE_STEPS,
-  CREATE_WORKFLOW_INDEX,
+  CREATE_MIGRATIONS,
   LIVE,
+  MIGRATIONS,
+  RECORD_MIGRATION,
+  SELECT_MIGRATIONS,
 } from "./workflow-schema.ts";
 /** A claimed run, as the engine needs it to start executing. */
 export type ClaimedRun = {
@@ -231,16 +227,22 @@ function toSnapshot(row: RunRow): WorkflowRunSnapshot {
 export function createPostgresWorkflowStore(db: Db): WorkflowStore {
   return {
     async init(): Promise<void> {
-      // Sequential rather than concurrent: the steps table's foreign key
-      // requires the runs table to exist first, and the indexes require both.
-      await db.query(CREATE_RUNS);
-      await db.query(ADD_RUNS_KEY);
-      await db.query(CREATE_STEPS);
-      await db.query(CREATE_DUE_INDEX);
-      await db.query(CREATE_WORKFLOW_INDEX);
-      await db.query(CREATE_KEY_INDEX);
-      await db.query(CREATE_BLOBS);
-      await db.query(CREATE_BLOBS_INDEX);
+      // The ledger first, then only what it does not already record. See
+      // `MIGRATIONS` for why each statement is still individually idempotent, and
+      // why re-running them all on every boot was not free.
+      await db.query(CREATE_MIGRATIONS);
+      const applied = new Set(
+        (await db.query<{ id: string }>(SELECT_MIGRATIONS)).map((row) => row.id),
+      );
+      for (const migration of MIGRATIONS) {
+        if (applied.has(migration.id)) continue;
+        // Sequential, and recorded immediately after its own statement: a crash
+        // between two migrations must leave the earlier one recorded, or the next
+        // boot re-runs it — harmless here (they are idempotent) and not a property
+        // to lean on.
+        await db.query(migration.sql);
+        await db.query(RECORD_MIGRATION, [migration.id]);
+      }
     },
 
     async create(

@@ -53,7 +53,23 @@ const PG_URL = process.env.AAI_TEST_PG_URL;
 // and this suite is selected by the integration profile.
 const describeWithPg = PG_URL ? describe : describe.skip;
 
-const JOURNAL_TABLES = ["aai_workflow_steps", "aai_workflow_runs", "aai_workflow_blobs"] as const;
+/**
+ * Every table `init()` creates — the LEDGER included, and that is the part worth
+ * saying out loud.
+ *
+ * Dropping the journal without the ledger leaves a schema whose migration record
+ * claims tables that are gone, so the next `init()` reads "all applied" and
+ * creates nothing: every query then fails with `relation "aai_workflow_runs" does
+ * not exist`. Reproduced by omitting it here, which is exactly the shape an
+ * operator hits after a manual `drop table`. The recovery is to drop the ledger
+ * too — the migrations are idempotent, so re-running them is safe.
+ */
+const JOURNAL_TABLES = [
+  "aai_workflow_steps",
+  "aai_workflow_runs",
+  "aai_workflow_blobs",
+  "aai_workflow_migrations",
+] as const;
 
 /** A pool, plus the store over it — what one booted host holds. */
 function openHostDb(): { db: CloseableDb; store: ReturnType<typeof createPostgresWorkflowStore> } {
