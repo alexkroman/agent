@@ -105,7 +105,7 @@ describe("createRuntime shutdown", () => {
       tools: {
         increment: {
           description: "Increment counter",
-          execute: (_args, ctx) => {
+          run: (_args, ctx) => {
             const state = ctx.state as { counter: number };
             state.counter++;
             return String(state.counter);
@@ -113,7 +113,7 @@ describe("createRuntime shutdown", () => {
         },
         get_state: {
           description: "Get state",
-          execute: (_args, ctx) => JSON.stringify(ctx.state),
+          run: (_args, ctx) => JSON.stringify(ctx.state),
         },
       },
     });
@@ -152,7 +152,7 @@ describe("createRuntime createSession", () => {
       tools: {
         ping: {
           description: "Ping the client and bump state",
-          execute: (_args, ctx) => {
+          run: (_args, ctx) => {
             const state = ctx.state as { counter: number };
             state.counter++;
             ctx.send("ping", { n: state.counter });
@@ -194,8 +194,8 @@ describe("createRuntime createSession", () => {
       tools: {
         emit: {
           description: "Send a client event of a caller-chosen size",
-          inputSchema: z.object({ size: z.number() }),
-          execute: (args, ctx) => {
+          input: z.object({ size: z.number() }),
+          run: (args, ctx) => {
             ctx.send("big", { blob: "x".repeat((args as { size: number }).size) });
             return "sent";
           },
@@ -228,7 +228,7 @@ describe("createRuntime createSession", () => {
       tools: {
         increment: {
           description: "Bump state",
-          execute: (_args, ctx) => {
+          run: (_args, ctx) => {
             const state = ctx.state as { counter: number };
             state.counter++;
             return String(state.counter);
@@ -266,7 +266,7 @@ describe("createRuntime createSession", () => {
         tools: {
           increment: {
             description: "Bump state",
-            execute: (_args, ctx) => {
+            run: (_args, ctx) => {
               const state = ctx.state as { counter: number };
               state.counter++;
               return String(state.counter);
@@ -376,7 +376,7 @@ describe("createRuntime with custom options", () => {
       tools: {
         get_state: {
           description: "Get state",
-          execute: (_args, ctx) => JSON.stringify(ctx.state),
+          run: (_args, ctx) => JSON.stringify(ctx.state),
         },
       },
     });

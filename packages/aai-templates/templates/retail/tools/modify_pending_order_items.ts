@@ -19,7 +19,7 @@ export const modifyPendingOrderItems = retailTool({
     "modified at all. Collect EVERY item the caller wants changed into one call, read the whole " +
     "list and the price difference back, and get an explicit yes first. The item and replacement " +
     "lists are positional and must be the same length.",
-  inputSchema: z.object({
+  input: z.object({
     order_id: z
       .string()
       .max(120)
@@ -37,11 +37,11 @@ export const modifyPendingOrderItems = retailTool({
       .max(80)
       .describe("Method to charge or refund the price difference, e.g. 'gift_card_0000000'"),
   }),
-  // `execute` before `summary`: TS infers the wrapper's generic `R` from
-  // `execute`'s return type, and processes object literal properties in
+  // `run` before `summary`: TS infers the wrapper's generic `R` from
+  // `run`'s return type, and processes object literal properties in
   // source order — with `summary` first, `result` in its signature can't be
   // inferred and silently falls back to `unknown`.
-  execute: (args, ctx) => {
+  run: (args, ctx) => {
     const state = retailSlot.get(ctx);
     const user = authenticatedUser(state);
     if (isToolFailure(user)) return user;

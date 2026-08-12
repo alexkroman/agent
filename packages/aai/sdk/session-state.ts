@@ -14,7 +14,7 @@
 /**
  * A single message in the conversation history.
  *
- * Messages are passed to tool `execute` functions via
+ * Messages are passed to tool `run` functions via
  * {@link ToolContext.messages} to provide conversation context.
  *
  * @public
@@ -37,7 +37,7 @@ export type Message = {
  * genuinely dynamic bag created by the agent's `state` factory, and `tool()`
  * can only learn its real shape from an annotated context. The stricter
  * default made the ordinary spelling
- * (`execute: (a, ctx) => ctx.state.cart.push(a)`) a compile error even
+ * (`run: (a, ctx) => ctx.state.cart.push(a)`) a compile error even
  * though it runs correctly — and once `aai build`/`aai deploy` started
  * running the project's own `tsc`, that refused to publish working agents
  * without catching bugs.

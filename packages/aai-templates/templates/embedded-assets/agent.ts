@@ -22,7 +22,7 @@ export default agent({
   tools: {
     list_topics: tool({
       description: "List all available topics in the embedded FAQ knowledge base.",
-      async execute() {
+      async run() {
         return faqs.map((f) => f.question);
       },
     }),
@@ -30,10 +30,10 @@ export default agent({
     search_knowledge: tool({
       description:
         "Search the embedded FAQ knowledge base for an answer matching the user's question.",
-      inputSchema: z.object({
+      input: z.object({
         query: z.string().describe("The user's question to search for"),
       }),
-      async execute(args) {
+      async run(args) {
         // Score by word overlap — natural questions rarely match an FAQ
         // entry as an exact substring.
         const words = args.query

@@ -95,7 +95,7 @@ describe("setup_character", () => {
   test("running setup twice starts fresh: no duplicate ids, no stale resources, truthful return", async () => {
     const ctx = makeCtx();
 
-    await setupCharacter.execute(SETUP_ARGS, ctx);
+    await setupCharacter.run(SETUP_ARGS, ctx);
 
     // Simulate a played, damaged game between setups.
     const played = gameSlot.get(ctx);
@@ -105,10 +105,10 @@ describe("setup_character", () => {
     played.sceneCount = 42;
     gameSlot.set(ctx, played);
 
-    const result = (await setupCharacter.execute(
-      { ...SETUP_ARGS, playerName: "Luna" },
-      ctx,
-    )) as Record<string, unknown>;
+    const result = (await setupCharacter.run({ ...SETUP_ARGS, playerName: "Luna" }, ctx)) as Record<
+      string,
+      unknown
+    >;
 
     const state = gameSlot.get(ctx);
     expect(state.npcs).toHaveLength(1);
@@ -131,7 +131,7 @@ describe("setup_character", () => {
 
   test("stats are a permutation of [3,2,2,1,1] with the archetype's stat at 3", async () => {
     const ctx = makeCtx();
-    await setupCharacter.execute(SETUP_ARGS, ctx);
+    await setupCharacter.run(SETUP_ARGS, ctx);
     const state = gameSlot.get(ctx);
     const stats = [state.edge, state.heart, state.iron, state.shadow, state.wits];
     expect([...stats].sort()).toEqual([1, 1, 2, 2, 3]);
@@ -140,9 +140,9 @@ describe("setup_character", () => {
   });
 
   test("game state is scoped per session — a second session sees a fresh game", async () => {
-    await setupCharacter.execute(SETUP_ARGS, makeCtx("session-a"));
+    await setupCharacter.run(SETUP_ARGS, makeCtx("session-a"));
     // ctx.state is per-session by construction — a new session, a new game.
-    const other = (await checkState.execute({} as never, makeCtx("session-b"))) as {
+    const other = (await checkState.run({} as never, makeCtx("session-b"))) as {
       initialized: boolean;
     };
     expect(other.initialized).toBe(false);
@@ -266,7 +266,7 @@ describe("burn_momentum", () => {
     const ctx = makeCtx();
     seedRolledState(8, ctx); // 8 beats both dice (3, 5)
 
-    const result = (await burnMomentum.execute({} as never, ctx)) as Record<string, unknown>;
+    const result = (await burnMomentum.run({} as never, ctx)) as Record<string, unknown>;
     expect(result.burned).toBe(true);
     expect(result.newResultCode).toBe("STRONG_HIT");
 
@@ -280,7 +280,7 @@ describe("burn_momentum", () => {
   test("momentum beating only one die upgrades a MISS to WEAK_HIT", async () => {
     const ctx = makeCtx();
     seedRolledState(4, ctx); // beats 3, not 5
-    const result = (await burnMomentum.execute({} as never, ctx)) as Record<string, unknown>;
+    const result = (await burnMomentum.run({} as never, ctx)) as Record<string, unknown>;
     expect(result.newResultCode).toBe("WEAK_HIT");
   });
 
@@ -288,12 +288,12 @@ describe("burn_momentum", () => {
     const ctx = makeCtx();
 
     // No roll yet
-    let result = (await burnMomentum.execute({} as never, ctx)) as Record<string, unknown>;
+    let result = (await burnMomentum.run({} as never, ctx)) as Record<string, unknown>;
     expect(result.error).toMatch(/No recent action roll/);
 
     // Momentum too low to beat either die
     seedRolledState(2, ctx);
-    result = (await burnMomentum.execute({} as never, ctx)) as Record<string, unknown>;
+    result = (await burnMomentum.run({} as never, ctx)) as Record<string, unknown>;
     expect(result.error).toMatch(/not high enough/);
 
     // Strong hits cannot be upgraded
@@ -301,14 +301,14 @@ describe("burn_momentum", () => {
     const state = gameSlot.get(ctx);
     state.lastRoll!.result = "STRONG_HIT";
     gameSlot.set(ctx, state);
-    result = (await burnMomentum.execute({} as never, ctx)) as Record<string, unknown>;
+    result = (await burnMomentum.run({} as never, ctx)) as Record<string, unknown>;
     expect(result.error).toMatch(/already a Strong Hit/);
   });
 
   test("action_roll persists the roll so burn needs no dice arguments", async () => {
     const ctx = makeCtx();
     gameSlot.set(ctx, playingState());
-    await actionRoll.execute(
+    await actionRoll.run(
       { move: "clash", stat: "iron", position: "risky", effect: "standard", purpose: "attack" },
       ctx,
     );
@@ -366,9 +366,9 @@ describe("update_state", () => {
     const ctx = makeCtx();
     gameSlot.set(ctx, playingState()); // has clock_1
 
-    await updateState.execute({ addClockName: "Second" }, ctx); // clock_2
-    await updateState.execute({ removeClockName: "Doom" }, ctx); // removes clock_1
-    await updateState.execute({ addClockName: "Third" }, ctx);
+    await updateState.run({ addClockName: "Second" }, ctx); // clock_2
+    await updateState.run({ removeClockName: "Doom" }, ctx); // removes clock_1
+    await updateState.run({ addClockName: "Third" }, ctx);
 
     const state = gameSlot.get(ctx);
     const ids = state.clocks.map((c) => c.id);
@@ -382,7 +382,7 @@ describe("update_state", () => {
     state.clocks[0]!.filled = 3; // 3 of 4
     gameSlot.set(ctx, state);
 
-    const result = (await updateState.execute({ advanceClockName: "Doom" }, ctx)) as {
+    const result = (await updateState.run({ advanceClockName: "Doom" }, ctx)) as {
       clockEvents: { clock: string; trigger: string }[];
     };
     expect(result.clockEvents).toEqual([{ clock: "Doom", trigger: "The doom arrives" }]);
@@ -396,7 +396,7 @@ describe("update_state", () => {
     }
     gameSlot.set(ctx, state);
 
-    const result = (await updateState.execute({ addNpcName: "One Too Many" }, ctx)) as {
+    const result = (await updateState.run({ addNpcName: "One Too Many" }, ctx)) as {
       warnings?: string[];
     };
     expect(result.warnings?.[0]).toMatch(/NPC limit/);
@@ -405,7 +405,7 @@ describe("update_state", () => {
   });
 
   test("zod schemas reject out-of-range and malformed inputs", () => {
-    const params = updateState.inputSchema!;
+    const params = updateState.input!;
     expect(() => params.parse({ addClockSegments: 1 })).toThrow(); // below min
     expect(() => params.parse({ addClockSegments: 13 })).toThrow(); // above max
     expect(() => params.parse({ addClockSegments: 2.5 })).toThrow(); // non-integer
@@ -416,7 +416,7 @@ describe("update_state", () => {
       params.parse({ addClockSegments: 6, updateNpcBond: 4, timeOfDay: "night" }),
     ).toBeTruthy();
 
-    const slotParams = saveGame.inputSchema!;
+    const slotParams = saveGame.input!;
     expect(() => slotParams.parse({ slot: "../../etc" })).toThrow();
     expect(() => slotParams.parse({ slot: "a".repeat(40) })).toThrow();
     expect(slotParams.parse({ slot: "chapter-2" })).toBeTruthy();
@@ -435,20 +435,14 @@ describe("save_game / load_game", () => {
     played.playerName = "Kael";
     played.sceneCount = 7;
     gameSlot.set(sessionA, played);
-    const saved = (await saveGame.execute({ slot: "chapter-2" }, sessionA)) as Record<
-      string,
-      unknown
-    >;
+    const saved = (await saveGame.run({ slot: "chapter-2" }, sessionA)) as Record<string, unknown>;
     expect(saved.saved).toBe(true);
     expect(saved.slot).toBe("chapter-2");
     expect(rows.get("save:chapter-2")).toMatchObject({ playerName: "Kael", sceneCount: 7 });
 
     // Session B (fresh ctx.state, same app db) resumes it.
     const sessionB = makeCtx("session-b", db);
-    const loaded = (await loadGame.execute({ slot: "chapter-2" }, sessionB)) as Record<
-      string,
-      unknown
-    >;
+    const loaded = (await loadGame.run({ slot: "chapter-2" }, sessionB)) as Record<string, unknown>;
     expect(loaded.loaded).toBe(true);
     expect(loaded.playerName).toBe("Kael");
     expect(loaded.sceneCount).toBe(7);
@@ -457,7 +451,7 @@ describe("save_game / load_game", () => {
 
   test("loading a missing slot reports an error instead of resetting the game", async () => {
     const ctx = makeCtx();
-    const result = (await loadGame.execute({ slot: "nope" }, ctx)) as { error?: string };
+    const result = (await loadGame.run({ slot: "nope" }, ctx)) as { error?: string };
     expect(result.error).toMatch(/No save found/);
   });
 
@@ -465,9 +459,9 @@ describe("save_game / load_game", () => {
     const { db, rows } = makeDb();
     const ctx = makeCtx("session-a", db);
     gameSlot.set(ctx, playingState());
-    await saveGame.execute({}, ctx); // autosave
+    await saveGame.run({}, ctx); // autosave
     gameSlot.get(ctx).sceneCount = 9;
-    await saveGame.execute({}, ctx);
+    await saveGame.run({}, ctx);
     expect(rows.size).toBe(1);
     expect(rows.get("save:autosave")).toMatchObject({ sceneCount: 9 });
   });

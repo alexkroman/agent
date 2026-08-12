@@ -1,5 +1,5 @@
 import type { ToolContext, ToolDef } from "@alexkroman1/aai";
-import { createToolContext } from "@alexkroman1/aai/testing";
+import { createToolContext, runTool } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import agentDef from "./agent.ts";
 import {
@@ -29,7 +29,7 @@ function getTool(name: string): ToolDef {
 }
 
 async function run(name: string, args: Record<string, unknown>, ctx: ToolContext) {
-  return await getTool(name).execute(args, ctx);
+  return await runTool(getTool(name), args, ctx);
 }
 
 const margherita: Omit<Pizza, "id"> = {
@@ -71,10 +71,10 @@ describe("pricing (shared.ts)", () => {
   });
 
   test("add_pizza schema defaults quantity to 1 and rejects non-positive quantities", async () => {
-    const schema = getTool("add_pizza").inputSchema;
+    const schema = getTool("add_pizza").input;
     if (!schema) throw new Error("add_pizza has no input schema");
     // Validate through the Standard Schema contract — the vendor-neutral
-    // interface every inputSchema carries.
+    // interface every input schema carries.
     const validate = (value: unknown) => schema["~standard"].validate(value);
     const ok = await validate({ size: "small", crust: "thin", toppings: [] });
     if (ok.issues) throw new Error("expected valid input");

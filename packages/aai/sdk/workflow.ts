@@ -341,8 +341,8 @@ export function rejectingWorkflows(message: string): WorkflowClient {
  *   tools: {
  *     research: tool({
  *       description: "Kick off overnight research on a topic",
- *       inputSchema: z.object({ topic: z.string() }),
- *       execute: async ({ topic }, ctx) => {
+ *       input: z.object({ topic: z.string() }),
+ *       run: async ({ topic }, ctx) => {
  *         // The workflow itself, not its name: typed input, and a typo is a
  *         // compile error. `key` is what lets a later turn find this run.
  *         const runId = await ctx.workflows.start(digest, { topic }, { key: ctx.sessionId });

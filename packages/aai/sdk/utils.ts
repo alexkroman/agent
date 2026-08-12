@@ -88,7 +88,7 @@ export function toolError(message: string): string {
 /**
  * A tool result that reports a recoverable failure to the LLM.
  *
- * Return one from `execute` (instead of throwing) when the failure is
+ * Return one from `run` (instead of throwing) when the failure is
  * something the model should see and act on — "no order matches that
  * description, ask which one" — rather than an internal fault. The runtime
  * serializes it like any other result, so it reaches the model as

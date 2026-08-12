@@ -57,11 +57,11 @@ export default agent({
   tools: {
     recommend: tool({
       description: "Get recommendations for movies, music, or books based on mood.",
-      inputSchema: z.object({
+      input: z.object({
         category: z.enum(CATEGORIES),
         mood: z.enum(MOODS),
       }),
-      async execute(args, ctx) {
+      async run(args, ctx) {
         const result = {
           category: args.category,
           mood: args.mood,

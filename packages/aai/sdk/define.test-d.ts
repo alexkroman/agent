@@ -41,8 +41,8 @@ test("an unannotated tool can read state without a type error", () => {
   // `unknown`, which failed `aai build`'s typecheck on a working agent.
   const add = tool({
     description: "add",
-    inputSchema: z.object({ item: z.string() }),
-    execute: ({ item }, ctx) => {
+    input: z.object({ item: z.string() }),
+    run: ({ item }, ctx) => {
       expectTypeOf(ctx.state).toEqualTypeOf<DefaultSessionState>();
       ctx.state.cart.push(item); // the exact line that used to be TS18046
       return ctx.state.cart.length;
@@ -55,14 +55,30 @@ test("tool() types ctx.state from an annotated context", () => {
   type Cart = { items: string[] };
   const add = tool({
     description: "add",
-    inputSchema: z.object({ item: z.string() }),
-    execute: ({ item }, ctx: ToolContext<Cart>) => {
+    input: z.object({ item: z.string() }),
+    run: ({ item }, ctx: ToolContext<Cart>) => {
       expectTypeOf(ctx.state).toEqualTypeOf<Cart>();
       expectTypeOf(item).toEqualTypeOf<string>();
       return ctx.state.items.length;
     },
   });
-  expectTypeOf(add).toMatchObjectType<ToolDef<z.ZodObject<{ item: z.ZodString }>, Cart>>();
+  expectTypeOf(add).toExtend<ToolDef<z.ZodObject<{ item: z.ZodString }>, Cart>>();
+  // `tool()` returns a DefinedTool, so `run` is not optional — which is what
+  // lets an author's own test call `add.run(args, ctx)` with no assertion.
+  expectTypeOf(add.run).toBeFunction();
+});
+
+test("the deprecated inputSchema/execute pair still types and normalizes", () => {
+  // The alias has to keep INFERRING, not merely be accepted: `item` is typed
+  // from `inputSchema`, and the result carries a required `run` like any other
+  // `tool()` call — which is what makes an old agent's tools still composable.
+  const add = tool({
+    description: "add",
+    input: z.object({ item: z.string() }),
+    run: ({ item }) => item.length,
+  });
+  expectTypeOf<Parameters<typeof add.run>[0]>().toEqualTypeOf<{ item: string }>();
+  expectTypeOf(add.run).toBeFunction();
 });
 
 test("a tool expecting a different state shape is not an accepted tool", () => {
@@ -77,11 +93,11 @@ test("a tool expecting a different state shape is not an accepted tool", () => {
 });
 
 test("an unannotated tool still composes into a stateful agent", () => {
-  // `execute` is declared method-style (bivariant), so a tool written without
+  // `run` is declared method-style (bivariant), so a tool written without
   // the state type is not a hard error inside a typed agent — it just sees
   // untyped state. Locking this keeps the generic from becoming viral.
   type Cart = { items: string[] };
-  const ping = tool({ description: "p", execute: () => "pong" });
+  const ping = tool({ description: "p", run: () => "pong" });
   const def = agent({
     name: "t",
     state: (): Cart => ({ items: [] }),

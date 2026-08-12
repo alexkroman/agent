@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expectTypeOf, test } from "vitest";
 import { z } from "zod";
-import type { AgentDef, Message, ToolContext, ToolDef } from "./types.ts";
+import type { AgentDef, InferToolInput, Message, ToolContext, ToolDef } from "./types.ts";
 
 const baseAgent = {
   systemPrompt: "Be helpful.",
@@ -10,35 +10,46 @@ const baseAgent = {
 } as const;
 
 describe("ToolDef type inference", () => {
-  test("infers parameter types in execute args", () => {
+  test("infers parameter types in run args", () => {
     const _t: ToolDef<z.ZodObject<{ name: z.ZodString; count: z.ZodNumber }>> = {
       description: "test",
-      inputSchema: z.object({ name: z.string(), count: z.number() }),
-      execute: (args) => args,
+      input: z.object({ name: z.string(), count: z.number() }),
+      run: (args) => args,
     };
 
-    type Args = Parameters<typeof _t.execute>[0];
-    expectTypeOf<Args>().toEqualTypeOf<{ name: string; count: number }>();
+    expectTypeOf<InferToolInput<typeof _t>>().toEqualTypeOf<{ name: string; count: number }>();
+  });
+
+  // The deprecated spelling has to keep inferring identically for the major it
+  // survives — `InferToolInput` reads whichever half is present, so a def on the
+  // old names is the case that proves the reader is not just following `run`.
+  test("the deprecated inputSchema/execute pair infers the same args", () => {
+    const _t: ToolDef<z.ZodObject<{ name: z.ZodString; count: z.ZodNumber }>> = {
+      description: "test",
+      input: z.object({ name: z.string(), count: z.number() }),
+      run: (args) => args,
+    };
+
+    expectTypeOf<InferToolInput<typeof _t>>().toEqualTypeOf<{ name: string; count: number }>();
   });
 
   test("ToolDef without parameters has unknown args", () => {
     const _t: ToolDef = {
       description: "test",
-      execute: (args) => args,
+      run: (args) => args,
     };
 
-    type Args = Parameters<typeof _t.execute>[0];
-    expectTypeOf<Args>().toBeObject();
+    expectTypeOf<InferToolInput<typeof _t>>().toBeObject();
   });
 
-  test("execute receives ToolContext as second arg", () => {
+  test("run receives ToolContext as second arg", () => {
     const _t: ToolDef<z.ZodObject<{ x: z.ZodString }>> = {
       description: "test",
-      inputSchema: z.object({ x: z.string() }),
-      execute: (_args, ctx) => ctx,
+      input: z.object({ x: z.string() }),
+      run: (_args, ctx) => ctx,
     };
 
-    type Ctx = Parameters<typeof _t.execute>[1];
+    type Ctx = Parameters<NonNullable<typeof _t.run>>[1];
     expectTypeOf<Ctx>().toMatchTypeOf<ToolContext>();
   });
 
@@ -67,7 +78,7 @@ describe("AgentDef type inference", () => {
       tools: {
         inc: {
           description: "Increment",
-          execute: (_args, ctx) => {
+          run: (_args, ctx) => {
             expectTypeOf(ctx.state).toEqualTypeOf<MyState>();
           },
         },
@@ -78,8 +89,8 @@ describe("AgentDef type inference", () => {
   test("tools field accepts ToolDef objects", () => {
     const greet: ToolDef<z.ZodObject<{ name: z.ZodString }>> = {
       description: "Greet",
-      inputSchema: z.object({ name: z.string() }),
-      execute: ({ name }: { name: string }) => `Hello, ${name}!`,
+      input: z.object({ name: z.string() }),
+      run: ({ name }: { name: string }) => `Hello, ${name}!`,
     };
 
     const agent: AgentDef = { ...baseAgent, name: "with-tool", tools: { greet } };

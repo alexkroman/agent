@@ -20,10 +20,9 @@ async function createIncidentFor(
   ctx: ToolContext,
   description = "structure fire with heavy smoke",
 ): Promise<string> {
-  const result = (await incidentCreate.execute(
-    { location: "400 Oak Street", description },
-    ctx,
-  )) as { incidentId: string };
+  const result = (await incidentCreate.run({ location: "400 Oak Street", description }, ctx)) as {
+    incidentId: string;
+  };
   return result.incidentId;
 }
 
@@ -32,15 +31,15 @@ describe("dispatch-center template", () => {
     const { ctx } = makeCtx();
 
     const inc1 = await createIncidentFor(ctx);
-    await resourcesDispatch.execute({ incidentId: inc1, callsigns: ["Medic-1"] }, ctx);
+    await resourcesDispatch.run({ incidentId: inc1, callsigns: ["Medic-1"] }, ctx);
 
     // Medic-1 radios available, then is dispatched to a second incident.
-    await resourcesUpdateStatus.execute({ callsign: "Medic-1", status: "available" }, ctx);
+    await resourcesUpdateStatus.run({ callsign: "Medic-1", status: "available" }, ctx);
     const inc2 = await createIncidentFor(ctx, "cardiac arrest, not breathing");
-    await resourcesDispatch.execute({ incidentId: inc2, callsigns: ["Medic-1"] }, ctx);
+    await resourcesDispatch.run({ incidentId: inc2, callsigns: ["Medic-1"] }, ctx);
 
     // Resolving the first incident must not touch Medic-1 anymore.
-    await incidentUpdateStatus.execute({ incidentId: inc1, status: "resolved" }, ctx);
+    await incidentUpdateStatus.run({ incidentId: inc1, status: "resolved" }, ctx);
 
     const state = dispatchSlot.get(ctx);
     const medic1 = state.resources.find((r) => r.callsign === "Medic-1");
@@ -54,7 +53,7 @@ describe("dispatch-center template", () => {
     const { ctx } = makeCtx();
     const incidentId = await createIncidentFor(ctx, "cardiac arrest, patient not breathing");
 
-    const result = (await resourcesDispatch.execute({ incidentId, callsigns: ["auto"] }, ctx)) as {
+    const result = (await resourcesDispatch.run({ incidentId, callsigns: ["auto"] }, ctx)) as {
       dispatched: { callsign: string }[];
       failed?: { callsign: string; reason: string }[];
     };
@@ -71,8 +70,8 @@ describe("dispatch-center template", () => {
     // finished state, so neither incident's changes are half-applied when
     // the other's mutator runs.
     const [a, b] = (await Promise.all([
-      incidentCreate.execute({ location: "1 First St", description: "gas leak" }, ctx),
-      incidentCreate.execute({ location: "2 Second St", description: "vehicle crash" }, ctx),
+      incidentCreate.run({ location: "1 First St", description: "gas leak" }, ctx),
+      incidentCreate.run({ location: "2 Second St", description: "vehicle crash" }, ctx),
     ])) as { incidentId: string }[];
 
     const state = dispatchSlot.get(ctx);
@@ -83,17 +82,17 @@ describe("dispatch-center template", () => {
 
   test("negative casualty counts are rejected by the parameter schemas", () => {
     expect(
-      incidentTriage.inputSchema?.safeParse({ incidentId: "INC-0001", casualtyUpdate: -5 }).success,
+      incidentTriage.input?.safeParse({ incidentId: "INC-0001", casualtyUpdate: -5 }).success,
     ).toBe(false);
     expect(
-      incidentCreate.inputSchema?.safeParse({
+      incidentCreate.input?.safeParse({
         location: "1 First St",
         description: "fire",
         estimatedCasualties: -1,
       }).success,
     ).toBe(false);
     expect(
-      incidentUpdateStatus.inputSchema?.safeParse({
+      incidentUpdateStatus.input?.safeParse({
         incidentId: "INC-0001",
         status: "on_scene",
         casualtyUpdate: { confirmed: -2 },
@@ -105,11 +104,8 @@ describe("dispatch-center template", () => {
     const { ctx } = makeCtx();
     const incidentId = await createIncidentFor(ctx);
 
-    await incidentEscalate.execute(
-      { incidentId, reason: "spreading", requestMutualAid: true },
-      ctx,
-    );
-    await incidentEscalate.execute(
+    await incidentEscalate.run({ incidentId, reason: "spreading", requestMutualAid: true }, ctx);
+    await incidentEscalate.run(
       { incidentId, reason: "still spreading", requestMutualAid: true },
       ctx,
     );
@@ -124,20 +120,20 @@ describe("dispatch-center template", () => {
   test("resolved is terminal: no escalation, re-resolution, or dispatch", async () => {
     const { ctx } = makeCtx();
     const incidentId = await createIncidentFor(ctx);
-    await incidentUpdateStatus.execute({ incidentId, status: "resolved" }, ctx);
+    await incidentUpdateStatus.run({ incidentId, status: "resolved" }, ctx);
 
-    const escalated = (await incidentEscalate.execute({ incidentId, reason: "flare-up" }, ctx)) as {
+    const escalated = (await incidentEscalate.run({ incidentId, reason: "flare-up" }, ctx)) as {
       error?: string;
     };
     expect(escalated.error).toMatch(/resolved/);
 
-    const reResolved = (await incidentUpdateStatus.execute(
+    const reResolved = (await incidentUpdateStatus.run(
       { incidentId, status: "resolved" },
       ctx,
     )) as { error?: string };
     expect(reResolved.error).toMatch(/resolved/);
 
-    const dispatchedTo = (await resourcesDispatch.execute(
+    const dispatchedTo = (await resourcesDispatch.run(
       { incidentId, callsigns: ["Medic-1"] },
       ctx,
     )) as { error?: string };

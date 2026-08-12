@@ -9,15 +9,15 @@ export const getOrderDetails = retailTool({
     "Get the status and full details of one of the authenticated customer's orders. Accepts the " +
     "order id (e.g. '#W0000000' — note the leading '#'), or a spoken reference such as " +
     "'my pending order', 'the delivered one', or 'the second pending order'.",
-  inputSchema: z.object({
+  input: z.object({
     order_id: z
       .string()
       .max(120)
       .describe("Order id such as '#W0000000', or a spoken reference to one of their orders"),
   }),
-  // `execute` before `summary`: see find_user_id_by_email.ts for why the order
+  // `run` before `summary`: see find_user_id_by_email.ts for why the order
   // is load-bearing for the generic `result` type in `summary`.
-  execute: (args, ctx) => {
+  run: (args, ctx) => {
     const state = retailSlot.get(ctx);
     const order = resolveOrder(state, args.order_id);
     if (isToolFailure(order)) return order;

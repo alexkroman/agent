@@ -7,13 +7,13 @@ export const getItemDetails = retailTool({
   description:
     "Get one specific item's options, price and availability. Takes an ITEM id, which is not the " +
     "same as a product id.",
-  inputSchema: z.object({
+  input: z.object({
     item_id: z.string().max(60).describe("The item id, e.g. '1008292230'"),
   }),
   requiresAuth: false,
-  // `execute` before `summary`: see find_user_id_by_email.ts for why the order
+  // `run` before `summary`: see find_user_id_by_email.ts for why the order
   // is load-bearing for the generic `result` type in `summary`.
-  execute: (args, ctx) => {
+  run: (args, ctx) => {
     const found = findItem(retailSlot.get(ctx), args.item_id);
     if (isToolFailure(found)) return found;
     return {

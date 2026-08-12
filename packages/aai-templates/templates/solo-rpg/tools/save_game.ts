@@ -6,8 +6,8 @@ import { gameSlot, saveSlotKey, saveSlotParam, saveState } from "../shared.ts";
 // `aai dev`); the rest of the game works without it.
 export const saveGame = tool({
   description: "Save current game to persistent storage.",
-  inputSchema: z.object({ slot: saveSlotParam }),
-  async execute(args, ctx) {
+  input: z.object({ slot: saveSlotParam }),
+  async run(args, ctx) {
     const state = gameSlot.get(ctx);
     await saveState(ctx, saveSlotKey(args.slot), state);
     return {

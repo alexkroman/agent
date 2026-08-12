@@ -19,8 +19,8 @@ import { z } from "zod";
 
 const addNote = tool({
   description: "Save a note for the caller",
-  inputSchema: z.object({ text: z.string() }),
-  execute: ({ text }, ctx) => {
+  input: z.object({ text: z.string() }),
+  run: ({ text }, ctx) => {
     ctx.state.notes.push(text);
     return { saved: ctx.state.notes.length };
   },
@@ -39,7 +39,7 @@ export default agent({
   fields it runs the default all-AssemblyAI STT → LLM → TTS pipeline,
   billed to one `ASSEMBLYAI_API_KEY`; `voice: "michael"` picks its TTS
   voice.
-- `tool()` — a typed tool: Zod `inputSchema`, an `execute(args, ctx)` that
+- `tool()` — a typed tool: Zod `input` schema, a `run(args, ctx)` that
   runs server-side with access to `ctx.state`, `ctx.env`, `ctx.db` (opt-in
   SQL storage), `ctx.generate` (one-shot LLM calls), and `ctx.send`
   (push events to the browser client).

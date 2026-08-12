@@ -9,15 +9,15 @@ export const modifyUserAddress = retailTool({
     "Change the customer's default address, used for future orders. Read the new address back and " +
     "get an explicit yes before calling this. This does not change the address on any existing " +
     "order — use modify_pending_order_address for that.",
-  inputSchema: z.object({
+  input: z.object({
     user_id: z.string().max(100).describe("The user id, e.g. 'sara_doe_496'"),
     ...AddressFields,
   }),
-  // `execute` before `summary`: TS infers the wrapper's generic `R` from
-  // `execute`'s return type, and processes object literal properties in
+  // `run` before `summary`: TS infers the wrapper's generic `R` from
+  // `run`'s return type, and processes object literal properties in
   // source order — with `summary` first, `result` in its signature can't be
   // inferred and silently falls back to `unknown`.
-  execute: (args, ctx) => {
+  run: (args, ctx) => {
     const state = retailSlot.get(ctx);
     const user = authenticatedUser(state);
     if (isToolFailure(user)) return user;

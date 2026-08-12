@@ -15,7 +15,7 @@ import {
 export const incidentTriage = tool({
   description:
     "Triage an incident — confirm or override severity, type, hazards, and casualty count.",
-  inputSchema: z.object({
+  input: z.object({
     incidentId: z.string().max(20).describe("The incident ID"),
     severity: z.enum(SEVERITIES).describe("Confirmed severity after triage").optional(),
     type: z.enum(INCIDENT_TYPES).describe("Confirmed incident type").optional(),
@@ -27,7 +27,7 @@ export const incidentTriage = tool({
     casualtyUpdate: z.number().int().nonnegative().describe("Updated casualty count").optional(),
     notes: z.string().max(1000).describe("Triage notes").optional(),
   }),
-  async execute(args, ctx) {
+  async run(args, ctx) {
     return dispatchSlot.update(ctx, (state) => {
       const inc = findIncident(state, args.incidentId);
       if (isToolFailure(inc)) return inc;

@@ -6,23 +6,26 @@ import { DEFAULT_MAX_STEPS } from "./constants.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import type { AssemblyAITtsVoice } from "./providers/tts/assemblyai.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
-import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
+import type { ToolInputSchema } from "./schema.ts";
+import { toolInput, toolRun } from "./tool-fields.ts";
 import {
   type AgentDef,
   DEFAULT_GREETING,
   DEFAULT_SYSTEM_PROMPT,
   type DefaultSessionState,
-  type ToolContext,
+  type DefinedTool,
   type ToolDef,
 } from "./types.ts";
 
 /**
- * Define a tool with a typed input schema and execute function.
+ * Define a tool with a typed `input` schema and a `run` function.
  *
- * Identity function for type inference — returns the input unchanged.
- * Follows the Vercel AI SDK `tool()` pattern (`inputSchema` names the same
- * field it does there). The schema is any Standard Schema that converts to
- * JSON Schema; Zod is the documented default.
+ * Normalizes and returns the definition: `input` and `run` are the canonical
+ * fields, and the previous names (`inputSchema`, `execute`) are accepted for one
+ * major and rewritten to them. The two canonical names are the ones
+ * {@link workflow} uses, so a tool and a workflow differ by one word — see
+ * {@link ToolDef}. The schema is any Standard Schema that converts to JSON
+ * Schema; Zod is the documented default.
  *
  * @example
  * ```ts
@@ -31,15 +34,15 @@ import {
  *
  * const greet = tool({
  *   description: "Greet someone by name",
- *   inputSchema: z.object({ name: z.string() }),
- *   execute: ({ name }) => `Hello, ${name}!`,
+ *   input: z.object({ name: z.string() }),
+ *   run: ({ name }) => `Hello, ${name}!`,
  * });
  * ```
  *
  * @typeParam S - The agent's per-session state, so `ctx.state` is typed
  *   rather than `Record<string, unknown>`. Inferred when the handler
  *   annotates its context; otherwise pass it explicitly. A tool defined
- *   without it still composes into a stateful agent — `execute` is declared
+ *   without it still composes into a stateful agent — `run` is declared
  *   method-style, so it stays assignable — it just sees untyped state.
  *
  * @example Typed session state
@@ -51,9 +54,9 @@ import {
  *
  * const add = tool({
  *   description: "Add an item to the cart",
- *   inputSchema: z.object({ item: z.string() }),
+ *   input: z.object({ item: z.string() }),
  *   // The annotation is what infers S; `ctx.state.items` is string[] here.
- *   execute: ({ item }, ctx: ToolContext<Cart>) => {
+ *   run: ({ item }, ctx: ToolContext<Cart>) => {
  *     ctx.state.items.push(item);
  *     return ctx.state.items.length;
  *   },
@@ -62,12 +65,29 @@ import {
  *
  * @public
  */
-export function tool<P extends ToolInputSchema = ToolInputSchema, S = DefaultSessionState>(def: {
-  description: string;
-  inputSchema?: P;
-  execute(args: InferSchemaOutput<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
-}): ToolDef<P, S> {
-  return def;
+export function tool<P extends ToolInputSchema = ToolInputSchema, S = DefaultSessionState>(
+  def: ToolDef<P, S>,
+): DefinedTool<P, S> {
+  // Both spellings present is refused rather than resolved by precedence: an
+  // author who wrote each half in a different vocabulary has a half-finished
+  // rename, and picking a winner hides which half is live.
+  if (def.input !== undefined && def.inputSchema !== undefined) {
+    throw new Error(
+      "tool(): pass `input` or `inputSchema`, not both — `inputSchema` is the old name for `input`.",
+    );
+  }
+  if (def.run !== undefined && def.execute !== undefined) {
+    throw new Error(
+      "tool(): pass `run` or `execute`, not both — `execute` is the old name for `run`.",
+    );
+  }
+  const run = toolRun(def);
+  if (!run) throw new Error("tool(): needs a `run` function (previously named `execute`).");
+  // Built rather than spread, so the returned def carries ONLY the canonical
+  // keys: leaving the deprecated ones alongside would leave every consumer's
+  // `run ?? execute` deciding which half is live.
+  const input = toolInput(def);
+  return { description: def.description, ...(input === undefined ? {} : { input }), run };
 }
 
 /** The {@link AgentDef} fields `agent()` fills with defaults when omitted. */
@@ -220,8 +240,8 @@ export type S2sAgentParams<S = DefaultSessionState> = SharedAgentParams<S> & {
  *
  * const myTool = tool({
  *   description: "Echo a message",
- *   inputSchema: z.object({ message: z.string() }),
- *   execute: ({ message }) => message,
+ *   input: z.object({ message: z.string() }),
+ *   run: ({ message }) => message,
  * });
  *
  * export default agent({

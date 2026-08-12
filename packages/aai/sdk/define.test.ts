@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
+import { mustRun } from "../host/_test-utils.ts";
 import { toAgentConfig } from "./agent-config.ts";
 import { DEFAULT_MAX_STEPS } from "./constants.ts";
 import { agent, tool } from "./define.ts";
@@ -17,20 +18,55 @@ describe("tool()", () => {
   test("returns the definition unchanged", () => {
     const def = tool({
       description: "Greet someone",
-      inputSchema: z.object({ name: z.string() }),
-      execute: ({ name }) => `Hello, ${name}!`,
+      input: z.object({ name: z.string() }),
+      run: ({ name }) => `Hello, ${name}!`,
     });
     expect(def.description).toBe("Greet someone");
-    expect(def.execute({ name: "Alice" }, {} as never)).toBe("Hello, Alice!");
+    expect(mustRun(def)({ name: "Alice" }, {} as never)).toBe("Hello, Alice!");
   });
 
   test("works without parameters", () => {
     const def = tool({
       description: "No-param tool",
-      execute: () => "done",
+      run: () => "done",
     });
     expect(def.description).toBe("No-param tool");
-    expect(def.inputSchema).toBeUndefined();
+    expect(def.input).toBeUndefined();
+  });
+
+  test("the deprecated inputSchema/execute pair is rewritten to input/run", () => {
+    // Normalizing here is what lets every consumer read one spelling. The old
+    // keys are DROPPED rather than kept alongside — a def carrying both would
+    // leave each reader's `??` deciding which half is live.
+    const schema = z.object({ name: z.string() });
+    const def = tool({ description: "d", inputSchema: schema, execute: ({ name }) => name });
+    expect(def.input).toBe(schema);
+    expect(def).not.toHaveProperty("inputSchema");
+    expect(def).not.toHaveProperty("execute");
+    expect(mustRun(def)({ name: "Bo" }, {} as never)).toBe("Bo");
+  });
+
+  test("naming both input spellings is refused rather than resolved", () => {
+    const both = () =>
+      tool({
+        description: "d",
+        input: z.object({}),
+        inputSchema: z.object({}),
+        run: (): string => "x",
+      });
+    expect(both).toThrow("`inputSchema`");
+  });
+
+  test("naming both handler spellings is refused rather than resolved", () => {
+    const both = () =>
+      tool({ description: "d", run: (): string => "x", execute: (): string => "y" });
+    expect(both).toThrow("`execute`");
+  });
+
+  test("a def with no handler under either name is refused", () => {
+    // `tool()` is what makes `DefinedTool.run` non-optional honest, so the case
+    // the type rules out has to be rejected at runtime for a JS caller too.
+    expect(() => tool({ description: "d" })).toThrow("`run`");
   });
 });
 
@@ -132,8 +168,8 @@ describe("agent()", () => {
   test("preserves explicit values", () => {
     const greetTool = tool({
       description: "Greet",
-      inputSchema: z.object({ name: z.string() }),
-      execute: ({ name }) => `Hi ${name}`,
+      input: z.object({ name: z.string() }),
+      run: ({ name }) => `Hi ${name}`,
     });
     const def = agent({
       name: "Custom",

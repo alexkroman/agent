@@ -175,8 +175,8 @@ export function createWebSearch(
       "Search first rather than guessing.",
     description:
       "Search the web for current information, facts, news, or answers to questions. Returns a list of results with title, URL, and description. Use this when the user asks about something you don't know, need up-to-date information, or want to verify facts. No API key required.",
-    inputSchema: webSearchParams,
-    async execute(args) {
+    input: webSearchParams,
+    async run(args) {
       const { query, max_results: maxResults = 5 } = args;
       const count = Math.max(1, Math.min(maxResults, MAX_SEARCH_RESULTS));
       const primary = await searchEndpoint(fetchFn, DDG_HTML_ENDPOINT, query, HTML_FORMAT);

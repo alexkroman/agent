@@ -26,16 +26,16 @@ test("agentToolsToSchemas - converts tool definitions to OpenAI schema", () => {
   const tools: Record<string, ToolDef> = {
     get_weather: {
       description: "Get weather",
-      inputSchema: z.object({ city: z.string().describe("City") }),
-      execute: noop,
+      input: z.object({ city: z.string().describe("City") }),
+      run: noop,
     },
     set_alarm: {
       description: "Set alarm",
-      inputSchema: z.object({
+      input: z.object({
         time: z.string(),
         label: z.string().optional(),
       }),
-      execute: noop,
+      run: noop,
     },
   };
   const schemas = agentToolsToSchemas(tools);
@@ -43,6 +43,20 @@ test("agentToolsToSchemas - converts tool definitions to OpenAI schema", () => {
   expect(schemas[0]?.name).toBe("get_weather");
   expect(schemas[0]?.description).toBe("Get weather");
   expect(schemas[1]?.name).toBe("set_alarm");
+});
+
+test("agentToolsToSchemas - reads the deprecated inputSchema spelling", () => {
+  // A raw `export default {…}` agent skips `tool()`, so nothing normalizes its
+  // defs: the reader itself has to accept both names or such an agent ships a
+  // no-arg tool spec to the model with nothing reporting it.
+  const schemas = agentToolsToSchemas({
+    get_weather: {
+      description: "Get weather",
+      inputSchema: z.object({ city: z.string().describe("City") }),
+      execute: () => undefined,
+    },
+  });
+  expect(schemas[0]?.parameters).toMatchObject({ properties: { city: { description: "City" } } });
 });
 
 describe("AgentConfigSchema", () => {

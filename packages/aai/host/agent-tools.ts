@@ -45,6 +45,7 @@
  * @module tools
  */
 
+import { toolRun } from "../sdk/tool-fields.ts";
 import type { DefaultToolResult } from "../sdk/types.ts";
 import { resolveBuiltin } from "./builtin-tools.ts";
 
@@ -64,10 +65,11 @@ async function callBuiltin(
   options?: CallOptions,
 ) {
   const def = resolveBuiltin(name, options?.fetch ? { fetch: options.fetch } : undefined);
-  if (!def?.execute) throw new Error(`Builtin "${name}" is unavailable`);
+  const run = def && toolRun(def);
+  if (!run) throw new Error(`Builtin "${name}" is unavailable`);
   // `ctx` is unused by all three — they close over their fetch — so the cast
   // keeps callers from having to synthesize a ToolContext they do not have.
-  return await def.execute(args as never, undefined as never);
+  return await run(args as never, undefined as never);
 }
 
 /**

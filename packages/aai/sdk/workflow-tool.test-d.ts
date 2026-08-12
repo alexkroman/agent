@@ -12,7 +12,7 @@
 
 import { expectTypeOf, test } from "vitest";
 import { z } from "zod";
-import type { ToolDef } from "./types.ts";
+import type { DefinedTool, InferToolInput } from "./types.ts";
 import { workflow } from "./workflow.ts";
 import { type DerivedStartToolOptions, startTool } from "./workflow-tool.ts";
 
@@ -35,18 +35,18 @@ type RunInput = { topic: string; depth: number };
 
 test("the plain form takes the workflow's own schema", () => {
   const started = startTool(digest, { description: "d" });
-  expectTypeOf(started).toEqualTypeOf<ToolDef<typeof digestInput>>();
-  expectTypeOf<Parameters<typeof started.execute>[0]>().toEqualTypeOf<RunInput>();
+  expectTypeOf(started).toEqualTypeOf<DefinedTool<typeof digestInput>>();
+  expectTypeOf<InferToolInput<typeof started>>().toEqualTypeOf<RunInput>();
 });
 
-test("the derived form types the tool by inputSchema, not by the workflow", () => {
+test("the derived form types the tool by its own schema, not by the workflow", () => {
   const started = startTool(digest, {
     description: "d",
     inputSchema: brief,
     input: ({ id }) => ({ topic: id, depth: 1 }),
   });
-  expectTypeOf(started).toEqualTypeOf<ToolDef<typeof brief>>();
-  expectTypeOf<Parameters<typeof started.execute>[0]>().toEqualTypeOf<{ id: string }>();
+  expectTypeOf(started).toEqualTypeOf<DefinedTool<typeof brief>>();
+  expectTypeOf<InferToolInput<typeof started>>().toEqualTypeOf<{ id: string }>();
 });
 
 test("the mapper's argument is inferred from inputSchema", () => {

@@ -4,7 +4,7 @@ import { assertNotResolved, dispatchSlot, findIncident, logEvent } from "../shar
 
 export const incidentUpdateStatus = tool({
   description: "Update an incident's status (en_route, on_scene, resolved, escalated).",
-  inputSchema: z.object({
+  input: z.object({
     incidentId: z.string().max(20).describe("The incident ID"),
     status: z.enum(["en_route", "on_scene", "resolved", "escalated"]).describe("New status"),
     notes: z.string().max(1000).describe("Status update notes").optional(),
@@ -16,7 +16,7 @@ export const incidentUpdateStatus = tool({
       .describe("Updated casualty numbers")
       .optional(),
   }),
-  async execute(args, ctx) {
+  async run(args, ctx) {
     return dispatchSlot.update(ctx, (state) => {
       const inc = findIncident(state, args.incidentId);
       if (isToolFailure(inc)) return inc;

@@ -42,8 +42,8 @@ describe("type contracts", () => {
     const params = z.object({ city: z.string() });
     const t = tool({
       description: "weather",
-      inputSchema: params,
-      execute: (args) => {
+      input: params,
+      run: (args) => {
         expectTypeOf(args).toEqualTypeOf<{ city: string }>();
         return "ok";
       },
@@ -52,15 +52,15 @@ describe("type contracts", () => {
   });
 
   test("tool() works without parameters", () => {
-    const t = tool({ description: "no params", execute: () => "ok" });
+    const t = tool({ description: "no params", run: () => "ok" });
     expectTypeOf(t).toMatchTypeOf<ToolDef>();
   });
 
   test("agent() accepts tools record", () => {
     const t = tool({
       description: "echo",
-      inputSchema: z.object({ msg: z.string() }),
-      execute: ({ msg }) => msg,
+      input: z.object({ msg: z.string() }),
+      run: ({ msg }) => msg,
     });
     const def = agent({ name: "with-tools", tools: { echo: t } });
     expectTypeOf(def).toEqualTypeOf<AgentDef>();

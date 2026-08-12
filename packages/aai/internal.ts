@@ -24,4 +24,5 @@ export {
 export { createEpoch, type Epoch } from "./sdk/epoch.ts";
 export { createOwnedMap, type OwnedMap } from "./sdk/owned-map.ts";
 export { formatSchemaIssues } from "./sdk/schema.ts";
+export { toolInput, toolRun } from "./sdk/tool-fields.ts";
 export { parseWsUpgradeParams } from "./sdk/ws-upgrade.ts";

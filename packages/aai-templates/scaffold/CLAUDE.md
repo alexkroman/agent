@@ -454,13 +454,17 @@ import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
 const myTool = tool({
-  description: string;           // shown to LLM — decides when to call
-  inputSchema?: z.ZodObject;     // Zod schema (omit for no-arg tools)
-  execute(args, ctx): unknown;   // sync or async
+  description: string;         // shown to LLM — decides when to call
+  input?: z.ZodObject;         // Zod schema (omit for no-arg tools)
+  run(args, ctx): unknown;     // sync or async
 });
 ```
 
-`execute` may call `fetch` directly — tool code reaches external APIs the
+`input` and `run` are the same two field names `workflow()` takes — a tool and
+a workflow are the same declaration at two durations. The previous names,
+`inputSchema` and `execute`, still work and will be removed in the next major.
+
+`run` may call `fetch` directly — tool code reaches external APIs the
 same way in `aai dev` and deployed.
 
 ### `ctx` (ToolContext)
@@ -487,8 +491,8 @@ import { z } from "zod";
 
 export const lookup = tool({
   description: "Look up an order",
-  inputSchema: z.object({ id: z.string() }),
-  execute: async ({ id }, ctx) => {
+  input: z.object({ id: z.string() }),
+  run: async ({ id }, ctx) => {
     const res = await fetch(`https://api.example.com/orders/${id}`, {
       signal: ctx.signal,
     });
@@ -543,7 +547,7 @@ type State = { incidents: Incident[] };
 
 const listOpen = tool({
   description: "List open incidents",
-  execute: (_args, ctx: ToolContext<State>) => {
+  run: (_args, ctx: ToolContext<State>) => {
     // `i` infers as Incident, and `i.staus` would now be an error.
     return ctx.state.incidents.filter((i) => i.status === "open");
   },
@@ -583,10 +587,10 @@ export default agent({
   tools: {
     get_weather: tool({
       description: "Get current weather for a city",
-      inputSchema: z.object({
+      input: z.object({
         city: z.string().describe("City name"),
       }),
-      async execute({ city }, ctx) {
+      async run({ city }, ctx) {
         const resp = await fetch(
           `https://api.example.com/weather?q=${city}&key=${ctx.env.WEATHER_KEY}`,
         );
@@ -599,13 +603,13 @@ export default agent({
 
 **Calling the network builtins from your own tool code.** `web_search`,
 `visit_webpage` and `fetch_json` are declared to the MODEL — the LLM calls
-them, and they are not on `ctx`. When your own `execute` needs one, import
+them, and they are not on `ctx`. When your own `run` needs one, import
 it:
 
 ```ts no-check
 import { fetchJson, visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 
-execute: async ({ city }) => await fetchJson(`https://api.example.com/${city}`),
+run: async ({ city }) => await fetchJson(`https://api.example.com/${city}`),
 // Reading fields off the result needs no cast. Pass a shape when you want
 // it checked: `await fetchJson<Forecast>(url)`.
 ```
@@ -631,22 +635,22 @@ Wrapping `webSearch` in a single custom tool is the mistake to avoid — it
 replaces "the model searches as needed" with one fixed query-and-summarize
 pipeline, and no amount of prompting gets the flexibility back.
 
-**`inputSchema` is a Zod object, or absent.** The field itself is
+**`input` is a Zod object, or absent.** The field itself is
 optional, but its VALUE must be a plain `z.object(...)` — so all of these
 are type errors:
 
 ```ts no-check
-inputSchema: z.undefined(),                // ✗ ZodUndefined
-inputSchema: z.void(),                     // ✗
-inputSchema: z.object({ q: z.string() }).optional(),  // ✗ ZodOptional
+input: z.undefined(),                // ✗ ZodUndefined
+input: z.void(),                     // ✗
+input: z.object({ q: z.string() }).optional(),  // ✗ ZodOptional
 ```
 
-For a tool with no arguments write `tool({ description, execute })`, or
-`inputSchema: z.object({})` if you prefer it explicit. To make an individual
+For a tool with no arguments write `tool({ description, run })`, or
+`input: z.object({})` if you prefer it explicit. To make an individual
 argument optional, put `.optional()` on the FIELD, never on the object:
 `z.object({ notes: z.string().optional() })`.
 
-**Do not annotate `execute`'s return type.** Nothing needs it — the result
+**Do not annotate `run`'s return type.** Nothing needs it — the result
 is serialized to the model either way — and it reliably breaks the moment
 the tool also returns an error, because `Promise<DrugInfo>` does not accept
 `{ error: "not found" }`. Every such annotation eventually costs a build
@@ -663,8 +667,8 @@ import { z } from "zod";
 
 export const rollDice = tool({
   description: "Roll dice",
-  inputSchema: z.object({ sides: z.number() }),
-  execute({ sides }) {
+  input: z.object({ sides: z.number() }),
+  run({ sides }) {
     return Math.floor(Math.random() * sides) + 1;
   },
 });
@@ -703,7 +707,7 @@ something it has to notice and switch off.
 **Every builtin in this table is a tool the MODEL calls — not a function
 your code can call.** Listing one in `builtinTools` adds it to the model's
 tool set; it does not import anything into `agent.ts`. There is no
-`fetch_json()` you can call from a tool's `execute`.
+`fetch_json()` you can call from a tool's `run`.
 
 So the two ways to reach an API are genuinely different designs, and both
 are valid:
@@ -711,7 +715,7 @@ are valid:
 - **Declare the builtin** (`builtinTools: ["fetch_json"]`) when the MODEL
   should decide the URL and read the JSON — general lookups you cannot
   enumerate ahead of time.
-- **Write your own tool** whose `execute` calls `fetch` when YOU own the
+- **Write your own tool** whose `run` calls `fetch` when YOU own the
   URL and the shape — a specific endpoint, auth, or a response you want to
   reshape before the model sees it.
 
@@ -721,13 +725,13 @@ own tool code has open egress either way.
 
 ## Calling an external API from your own tool code
 
-`fetch` inside a tool's `execute` works directly — no declaration needed,
+`fetch` inside a tool's `run` works directly — no declaration needed,
 identical under `aai dev` and deployed. This is the right choice when your
 code owns the URL.
 
 Reaching for the `fetch_json` builtin instead is a different design, not a
 shortcut for the same one: it hands URL choice to the model. You cannot
-call it from `execute` — see the builtin table above.
+call it from `run` — see the builtin table above.
 
 ## Database API — `ctx.db`
 
@@ -825,8 +829,8 @@ export default agent({
     // `builtinTools: ["workflow_status"]` instead and delete this.
     check_report: tool({
       description: "Check on a report that is already processing.",
-      inputSchema: z.object({ runId: z.string() }),
-      execute: async ({ runId }, ctx) => {
+      input: z.object({ runId: z.string() }),
+      run: async ({ runId }, ctx) => {
         // Passing `process` as well types `run.output` as the workflow's own
         // return value instead of `unknown`.
         const run = await ctx.workflows.get(runId, process);
@@ -1253,7 +1257,7 @@ Never hardcode secrets in agent code.
 - **Local dev:** `.env` in project root. Only declared keys available via
   `ctx.env`.
 - **Production:** `npx @alexkroman1/aai-cli secret put NAME`
-- **Access:** `ctx.env.MY_KEY` in tool execute functions.
+- **Access:** `ctx.env.MY_KEY` in tool `run` functions.
 - **AssemblyAI key:** `npx @alexkroman1/aai-cli login` links your account and
   stores the key globally — the only way the CLI authenticates. No `.env`
   entry needed. For CI, point `AAI_CONFIG_DIR` at a config dir holding a
@@ -1286,7 +1290,7 @@ Patterns by agent type:
 
 Common mistakes when working in aai projects:
 
-- **Tool execute must return a value.** A missing return = `undefined` in
+- **A tool's `run` must return a value.** A missing return = `undefined` in
   LLM context = the model thinks the tool failed.
 - **Filter large API responses before returning them from tools.** Return
   values are injected into LLM context. Truncate, summarize, or extract
@@ -1324,7 +1328,7 @@ Common mistakes when working in aai projects:
 
 ## Constraints
 
-- Tool `execute` return values go into LLM context, capped at 4000 chars
+- Tool `run` return values go into LLM context, capped at 4000 chars
   (a truncation marker replaces the tail) — filter large API responses
 - Tool code uses plain `fetch` with open egress; the keyless web builtins
   screen private/internal IPs (SSRF) when running outside a sandbox
@@ -1335,5 +1339,5 @@ Common mistakes when working in aai projects:
   latency-sensitive agent. On reaching the cap the agent spends one more LLM
   step with tools switched off, so it answers with what it has instead of
   going silent mid-chain
-- Tool returns `undefined` if execute function has no return statement —
+- Tool returns `undefined` if the `run` function has no return statement —
   always return a value

@@ -40,11 +40,59 @@ export type ToolContext = {
   send(event: string, data: unknown): void;
 };
 
+/**
+ * The Standard Schema surface a tool's input schema exposes, narrowed to the one
+ * method the harness calls.
+ *
+ * Structural rather than the SDK's `ToolInputSchema`, for the same reason the
+ * rest of this file is: these types describe the harness↔bundle CONTRACT, and a
+ * bundle carries its own SDK version. What the harness may rely on is the
+ * Standard Schema method, which is versioned by the spec rather than by us.
+ */
+export type ToolInputSchemaLike = {
+  "~standard": {
+    validate(
+      value: unknown,
+    ):
+      | { value: unknown; issues?: undefined }
+      | { issues: readonly { readonly message: string }[] }
+      | Promise<
+          | { value: unknown; issues?: undefined }
+          | { issues: readonly { readonly message: string }[] }
+        >;
+  };
+};
+
+/**
+ * A tool as the harness reads one off a loaded bundle.
+ *
+ * Both field pairs are optional because the SDK accepts both spellings for one
+ * major — `input`/`run` are canonical, `inputSchema`/`execute` the previous
+ * names — and a bundle built against either SDK version has to load here. Read
+ * them with {@link toolDefInput} / {@link toolDefRun}, never directly.
+ *
+ * `parameters?: { parse }` used to sit here in place of the schema, long after
+ * the SDK removed that field: so the trial runner's only argument validation
+ * was reading a key no tool has carried in a long time, and every trial ran
+ * unvalidated.
+ */
 export type ToolDef = {
   description: string;
-  parameters?: { parse(args: unknown): unknown };
-  execute(args: unknown, ctx: ToolContext): Promise<unknown> | unknown;
+  input?: ToolInputSchemaLike;
+  inputSchema?: ToolInputSchemaLike;
+  run?(args: unknown, ctx: ToolContext): Promise<unknown> | unknown;
+  execute?(args: unknown, ctx: ToolContext): Promise<unknown> | unknown;
 };
+
+/** The tool's input schema under either spelling. */
+export function toolDefInput(def: ToolDef): ToolInputSchemaLike | undefined {
+  return def.input ?? def.inputSchema;
+}
+
+/** The tool's handler under either spelling. */
+export function toolDefRun(def: ToolDef): NonNullable<ToolDef["run"]> | undefined {
+  return def.run ?? def.execute;
+}
 
 export type AgentDef = {
   name: string;

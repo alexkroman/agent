@@ -8,11 +8,11 @@ export const listAllProductTypes = retailTool({
     "has variant items with their own item ids and options.",
   // Empty schema rather than omitting it: the wrapper has one code path, and
   // that is where the per-call UI-update invariant lives.
-  inputSchema: z.object({}),
+  input: z.object({}),
   requiresAuth: false,
-  // `execute` before `summary`: see find_user_id_by_email.ts for why the order
+  // `run` before `summary`: see find_user_id_by_email.ts for why the order
   // is load-bearing for the generic `result` type in `summary`.
-  execute: (_args, ctx) => {
+  run: (_args, ctx) => {
     const state = retailSlot.get(ctx);
     const entries = Object.values(state.store.products)
       .map((product) => [product.name, product.product_id] as const)

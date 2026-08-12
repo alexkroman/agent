@@ -145,6 +145,8 @@ exports[`export surface stability > @alexkroman1/aai/internal export 1`] = `
   "createOwnedMap",
   "formatSchemaIssues",
   "parseWsUpgradeParams",
+  "toolInput",
+  "toolRun",
 ]
 `;
 
@@ -403,6 +405,7 @@ exports[`export surface stability > @alexkroman1/aai/testing export 1`] = `
   "createToolContext",
   "createUnusedDb",
   "createWorkflowContext",
+  "runTool",
 ]
 `;
 

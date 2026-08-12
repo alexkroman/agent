@@ -17,7 +17,7 @@ export const modifyPendingOrderPayment = retailTool({
     "Change which payment method a pending order is charged to. The new method must be different " +
     "from the current one, and a gift card must hold enough to cover the whole order. The original " +
     "method is refunded. Read the change back and get an explicit yes before calling this.",
-  inputSchema: z.object({
+  input: z.object({
     order_id: z
       .string()
       .max(120)
@@ -27,11 +27,11 @@ export const modifyPendingOrderPayment = retailTool({
       .max(80)
       .describe("The new payment method id, e.g. 'gift_card_0000000'"),
   }),
-  // `execute` before `summary`: TS infers the wrapper's generic `R` from
-  // `execute`'s return type, and processes object literal properties in
+  // `run` before `summary`: TS infers the wrapper's generic `R` from
+  // `run`'s return type, and processes object literal properties in
   // source order — with `summary` first, `result` in its signature can't be
   // inferred and silently falls back to `unknown`.
-  execute: (args, ctx) => {
+  run: (args, ctx) => {
     const state = retailSlot.get(ctx);
     const user = authenticatedUser(state);
     if (isToolFailure(user)) return user;

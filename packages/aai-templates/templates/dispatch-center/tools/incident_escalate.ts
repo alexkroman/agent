@@ -11,7 +11,7 @@ import {
 
 export const incidentEscalate = tool({
   description: "Escalate an incident when it exceeds current capacity or severity increases.",
-  inputSchema: z.object({
+  input: z.object({
     incidentId: z.string().max(20).describe("The incident ID"),
     reason: z.string().max(1000).describe("Reason for escalation"),
     requestMutualAid: z
@@ -20,7 +20,7 @@ export const incidentEscalate = tool({
       .optional(),
     newSeverity: z.enum(["critical", "urgent"]).describe("Escalated severity level").optional(),
   }),
-  async execute(args, ctx) {
+  async run(args, ctx) {
     return dispatchSlot.update(ctx, (state) => {
       const inc = findIncident(state, args.incidentId);
       if (isToolFailure(inc)) return inc;

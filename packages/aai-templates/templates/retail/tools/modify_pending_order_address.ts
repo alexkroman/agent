@@ -9,18 +9,18 @@ export const modifyPendingOrderAddress = retailTool({
   description:
     "Change the shipping address of a pending order. Read the new address back to the caller and " +
     "get an explicit yes before calling this. This does not change the customer's default address.",
-  inputSchema: z.object({
+  input: z.object({
     order_id: z
       .string()
       .max(120)
       .describe("Order id such as '#W0000000', or a spoken reference to one of their orders"),
     ...AddressFields,
   }),
-  // `execute` before `summary`: TS infers the wrapper's generic `R` from
-  // `execute`'s return type, and processes object literal properties in
+  // `run` before `summary`: TS infers the wrapper's generic `R` from
+  // `run`'s return type, and processes object literal properties in
   // source order — with `summary` first, `result` in its signature can't be
   // inferred and silently falls back to `unknown`.
-  execute: (args, ctx) => {
+  run: (args, ctx) => {
     const state = retailSlot.get(ctx);
     const order = resolveOrder(state, args.order_id);
     if (isToolFailure(order)) return order;

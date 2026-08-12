@@ -14,6 +14,7 @@
 import { z } from "zod";
 import type { ToolSchema } from "./agent-config.ts";
 import { toToolJsonSchema } from "./schema.ts";
+import { toolInput } from "./tool-fields.ts";
 import type { ToolDef } from "./types.ts";
 
 export {
@@ -34,16 +35,17 @@ export function agentToolsToSchemas(tools: Readonly<Record<string, ToolDef>>): T
   return Object.entries(tools).map(([name, def]) => {
     // TypeScript catches this rename; an untypechecked JS agent would
     // otherwise silently ship a no-arg tool spec.
-    if ("parameters" in def && def.inputSchema === undefined) {
+    const input = toolInput(def);
+    if ("parameters" in def && input === undefined) {
       throw new Error(
-        `Tool "${name}" uses the removed \`parameters\` field — rename it to \`inputSchema\`.`,
+        `Tool "${name}" uses the removed \`parameters\` field — rename it to \`input\`.`,
       );
     }
     return {
       type: "function",
       name,
       description: def.description,
-      parameters: toToolJsonSchema(def.inputSchema ?? EMPTY_PARAMS),
+      parameters: toToolJsonSchema(input ?? EMPTY_PARAMS),
     };
   });
 }

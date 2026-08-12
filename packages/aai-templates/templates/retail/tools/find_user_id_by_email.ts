@@ -8,15 +8,15 @@ export const findUserIdByEmail = retailTool({
     "Find a customer's user id by their email address. This is how you authenticate the caller — " +
     "do it before anything else, even if they volunteer their user id. Prefer this over " +
     "find_user_id_by_name_zip unless they cannot remember the email.",
-  inputSchema: z.object({
+  input: z.object({
     email: z.string().max(200).describe("The customer's email, e.g. 'something@example.com'"),
   }),
   requiresAuth: false,
-  // `execute` must come before `summary` in this object literal: TS infers the
-  // wrapper's generic `R` from `execute`'s return type, and processes object
+  // `run` must come before `summary` in this object literal: TS infers the
+  // wrapper's generic `R` from `run`'s return type, and processes object
   // literal properties in source order — with `summary` first, `result` in its
   // signature can't be inferred and silently falls back to `unknown`.
-  execute: (args, ctx) => {
+  run: (args, ctx) => {
     const state = retailSlot.get(ctx);
     const target = args.email.trim().toLowerCase();
     const match = Object.values(state.store.users).find(

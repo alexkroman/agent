@@ -17,38 +17,49 @@ function run(
 
 describe("executeToolCall", () => {
   test("returns string result from tool", async () => {
-    expect(await run("test", {}, makeTool({ execute: () => "hello" }))).toBe("hello");
+    expect(await run("test", {}, makeTool({ run: () => "hello" }))).toBe("hello");
+  });
+
+  test("calls the deprecated execute spelling, validating the deprecated schema", async () => {
+    // Same reason as `agentToolsToSchemas`: an agent that never went through
+    // `tool()` carries the old names, and a reader that only knows `run` would
+    // report it as a tool with no handler.
+    const tool: ToolDef = {
+      description: "greet",
+      inputSchema: z.object({ name: z.string() }),
+      execute: (args) => `hi ${(args as { name: string }).name}`,
+    };
+    expect(await run("greet", { name: "Bo" }, tool)).toBe("hi Bo");
+    expect(await run("greet", { name: 7 }, tool)).toContain("Invalid arguments");
   });
 
   test("serializes non-string result as JSON", async () => {
-    expect(await run("test", {}, makeTool({ execute: () => ({ count: 42 }) }))).toBe(
-      '{"count":42}',
-    );
+    expect(await run("test", {}, makeTool({ run: () => ({ count: 42 }) }))).toBe('{"count":42}');
   });
 
   test("returns 'null' for null/undefined result", async () => {
-    expect(await run("test", {}, makeTool({ execute: () => null }))).toBe("null");
+    expect(await run("test", {}, makeTool({ run: () => null }))).toBe("null");
   });
 
   test("stringifies a non-JSON-serializable result instead of returning undefined", async () => {
     // JSON.stringify(function) is undefined — the String() fallback keeps the
     // contract that the provider always gets a string.
     const fn = () => "nope";
-    const result = await run("test", {}, makeTool({ execute: () => fn as unknown as string }));
+    const result = await run("test", {}, makeTool({ run: () => fn as unknown as string }));
     expect(typeof result).toBe("string");
     expect(result).toBe(String(fn));
   });
 
   test("validates args against parameter schema", async () => {
     const tool = makeTool({
-      inputSchema: z.object({ name: z.string() }),
-      execute: (args) => `hi ${(args as { name: string }).name}`,
+      input: z.object({ name: z.string() }),
+      run: (args) => `hi ${(args as { name: string }).name}`,
     });
     expect(await run("greet", { name: "alice" }, tool)).toBe("hi alice");
   });
 
   test("returns error for invalid args", async () => {
-    const tool = makeTool({ inputSchema: z.object({ name: z.string() }), execute: () => "ok" });
+    const tool = makeTool({ input: z.object({ name: z.string() }), run: () => "ok" });
     const result = await run("greet", { name: 123 }, tool);
     const parsed = JSON.parse(result);
     expect(parsed.error).toContain("Invalid arguments");
@@ -57,7 +68,7 @@ describe("executeToolCall", () => {
 
   test("returns error when tool throws", async () => {
     const tool = makeTool({
-      execute: () => {
+      run: () => {
         throw new Error("boom");
       },
     });
@@ -66,7 +77,7 @@ describe("executeToolCall", () => {
 
   test("returns error string when tool throws", async () => {
     const tool = makeTool({
-      execute: () => {
+      run: () => {
         throw new Error("string error");
       },
     });
@@ -74,18 +85,18 @@ describe("executeToolCall", () => {
   });
 
   test("passes env to tool context", async () => {
-    const tool = makeTool({ execute: (_args, ctx) => ctx.env.API_KEY ?? "missing" });
+    const tool = makeTool({ run: (_args, ctx) => ctx.env.API_KEY ?? "missing" });
     expect(await run("test", {}, tool, { env: { API_KEY: "secret" } })).toBe("secret");
   });
 
   test("passes messages to tool context", async () => {
-    const tool = makeTool({ execute: (_args, ctx) => String(ctx.messages.length) });
+    const tool = makeTool({ run: (_args, ctx) => String(ctx.messages.length) });
     expect(await run("test", {}, tool, { messages: [{ role: "user", content: "hi" }] })).toBe("1");
   });
 
   test("db throws when not provided", async () => {
     const tool = makeTool({
-      execute: (_args, ctx) => {
+      run: (_args, ctx) => {
         void ctx.db;
         return "no error";
       },
@@ -105,12 +116,12 @@ describe("executeToolCall", () => {
     ["start", (ctx: ToolContext) => ctx.workflows.start("digest", {})],
     ["get", (ctx: ToolContext) => ctx.workflows.get("run-1")],
   ])("ctx.workflows.%s rejects with the unavailable message with no engine", async (_m, call) => {
-    const result = await run("test", {}, makeTool({ execute: (_args, ctx) => call(ctx) }));
+    const result = await run("test", {}, makeTool({ run: (_args, ctx) => call(ctx) }));
     expect(JSON.parse(result)).toEqual({ error: WORKFLOWS_UNAVAILABLE_MESSAGE });
   });
 
   test("ctx.generate rejects when no host generation is wired", async () => {
-    const tool = makeTool({ execute: (_args, ctx) => ctx.generate({ prompt: "hi" }) });
+    const tool = makeTool({ run: (_args, ctx) => ctx.generate({ prompt: "hi" }) });
     const result = await run("test", {}, tool);
     expect(JSON.parse(result)).toEqual({
       error: "generate is not available in this execution context",
@@ -120,7 +131,7 @@ describe("executeToolCall", () => {
   test("ctx.workflows forwards to the engine when one is wired", async () => {
     const start = vi.fn(() => Promise.resolve("run-1"));
     const tool = makeTool({
-      execute: (_args, ctx) => ctx.workflows.start("digest", { topic: "ai" }),
+      run: (_args, ctx) => ctx.workflows.start("digest", { topic: "ai" }),
     });
     const result = await run("test", {}, tool, {
       workflows: { start, get: () => Promise.resolve(undefined) },
@@ -131,7 +142,7 @@ describe("executeToolCall", () => {
 
   test("handles async tool execution", async () => {
     const tool = makeTool({
-      execute: async () => {
+      run: async () => {
         await sleep(10);
         return "async result";
       },
@@ -142,7 +153,7 @@ describe("executeToolCall", () => {
   test("times out tool that runs longer than TOOL_EXECUTION_TIMEOUT_MS", async () => {
     vi.useFakeTimers();
     const tool = makeTool({
-      execute: () =>
+      run: () =>
         new Promise<never>(() => {
           /* never resolves */
         }),
@@ -156,7 +167,7 @@ describe("executeToolCall", () => {
   test("ctx.send calls the send callback", async () => {
     const sends: Array<{ event: string; data: unknown }> = [];
     const tool = makeTool({
-      execute: (_args, ctx) => {
+      run: (_args, ctx) => {
         ctx.send("game_state", { hp: 10 });
         return "ok";
       },
@@ -170,7 +181,7 @@ describe("executeToolCall", () => {
 
   test("ctx.send is a no-op when no send callback provided", async () => {
     const tool = makeTool({
-      execute: (_args, ctx) => {
+      run: (_args, ctx) => {
         ctx.send("test", {});
         return "ok";
       },
@@ -187,7 +198,7 @@ describe("executeToolCall — cancellation", () => {
     let seen: AbortSignal | undefined;
     const gate = Promise.withResolvers<string>();
     const tool = makeTool({
-      execute: (_args, ctx) => {
+      run: (_args, ctx) => {
         seen = ctx.signal;
         return gate.promise;
       },
@@ -211,7 +222,7 @@ describe("executeToolCall — cancellation", () => {
     try {
       let seen: AbortSignal | undefined;
       const tool = makeTool({
-        execute: (_args, ctx) => {
+        run: (_args, ctx) => {
           seen = ctx.signal;
           return new Promise<never>(() => {
             /* never resolves */
@@ -230,26 +241,26 @@ describe("executeToolCall — cancellation", () => {
   });
 
   test("ctx.signal is provided even when the caller passes none", async () => {
-    const tool = makeTool({ execute: (_args, ctx) => String(ctx.signal !== undefined) });
+    const tool = makeTool({ run: (_args, ctx) => String(ctx.signal !== undefined) });
     expect(await run("probe", {}, tool)).toBe("true");
   });
 
   test("a pre-aborted signal short-circuits before the tool runs", async () => {
     const controller = new AbortController();
     controller.abort();
-    const execute = vi.fn(() => "should not run");
-    const result = await run("skip", {}, makeTool({ execute }), { signal: controller.signal });
+    const handler = vi.fn(() => "should not run");
+    const result = await run("skip", {}, makeTool({ run: handler }), { signal: controller.signal });
     expect(JSON.parse(result)).toMatchObject({
       error: expect.stringContaining("cancelled before it ran"),
     });
-    expect(execute).not.toHaveBeenCalled();
+    expect(handler).not.toHaveBeenCalled();
   });
 
   test("aborting mid-flight settles a hung tool with a tool error", async () => {
     const controller = new AbortController();
     let started = false;
     const tool = makeTool({
-      execute: () => {
+      run: () => {
         started = true;
         return new Promise<never>(() => {
           /* never resolves */

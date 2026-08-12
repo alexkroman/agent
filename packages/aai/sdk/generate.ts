@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * The `ctx.generate` capability contract — one-shot LLM text/object
- * generation available to tool `execute` functions.
+ * generation available to tool `run` functions.
  *
  * Like `ctx.db`, generation always executes wherever the runtime runs —
  * in-process under `aai dev`, inside the guest sandbox on the platform —
@@ -19,7 +19,7 @@
  *
  * const summarize = tool({
  *   description: "Summarize the conversation so far",
- *   execute: async (_args, ctx) => {
+ *   run: async (_args, ctx) => {
  *     const { object } = await ctx.generate({
  *       prompt: ctx.messages.map((m) => `${m.role}: ${m.content}`).join("\n"),
  *       schema: z.object({ summary: z.string(), sentiment: z.string() }),

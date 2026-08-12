@@ -61,8 +61,8 @@ function createVisitWebpage(
       "Use visit_webpage to read the full content of a URL when search snippets are not detailed enough.",
     description:
       "Fetch a webpage and return its content as clean text. Use this to read the full content of a URL found via web_search, or any link the user shares. Good for reading articles, documentation, blog posts, or product pages.",
-    inputSchema: visitWebpageParams,
-    async execute(args, _ctx) {
+    input: visitWebpageParams,
+    async run(args, _ctx) {
       const { url } = args;
       const resp = await fetchFn(url, {
         headers: { "User-Agent": TOOL_USER_AGENT, Accept: HTML_ACCEPT },
@@ -128,8 +128,8 @@ function createFetchJson(
     guidance: "Use fetch_json to call REST APIs and retrieve structured JSON data.",
     description:
       "Call a REST API endpoint via HTTP GET and return the JSON response. Use this to fetch structured data from APIs — for example, weather data, stock prices, exchange rates, or any public JSON API. Supports custom headers for authenticated APIs.",
-    inputSchema: fetchJsonParams,
-    async execute(args, _ctx) {
+    input: fetchJsonParams,
+    async run(args, _ctx) {
       const { url, headers } = args;
       const safeHeaders = sanitizeHeaders(headers);
       const resp = await fetchFn(url, {
@@ -173,8 +173,8 @@ function createThink(): ToolDef<typeof thinkParams> & { guidance: string } {
       "Use the tool to think about something. It will not obtain new information or change the " +
       "database, but just append the thought to the log. Use it when complex reasoning or some " +
       "cache memory is needed.",
-    inputSchema: thinkParams,
-    execute() {
+    input: thinkParams,
+    run() {
       return "ok";
     },
   };
@@ -203,8 +203,8 @@ function createRemember(): ToolDef<typeof rememberParams> & { guidance: string }
       "order_id, reservation_code). Overwrites any previous value for that key and returns all " +
       "notes. Use it right after a value is confirmed, so later steps can recall the exact " +
       "value instead of re-reading a noisy transcript.",
-    inputSchema: rememberParams,
-    execute(args, ctx) {
+    input: rememberParams,
+    run(args, ctx) {
       const notes = writeNote(ctx.sessionId, args.key, args.value);
       return { saved: args.key, notes: { ...notes } };
     },
@@ -221,8 +221,8 @@ function createRecall(): ToolDef<typeof recallParams> & { guidance: string } {
       "Read private session notes saved with remember. Pass a key to get one value, or no key " +
       "to list every saved note. Notes are per-session and never shown to the customer.",
     guidance: "",
-    inputSchema: recallParams,
-    execute(args, ctx) {
+    input: recallParams,
+    run(args, ctx) {
       const notes = readNotes(ctx);
       if (args.key !== undefined) return { key: args.key, value: notes[args.key] ?? null };
       return { notes: { ...notes } };
@@ -247,8 +247,8 @@ function createCalculate(): ToolDef<typeof calculateParams> & { guidance: string
       "Evaluate an arithmetic expression and return the exact numeric result. Supports + - * " +
       "/ % (remainder), ^ (power), parentheses, unary minus, and decimal numbers (currency " +
       "symbols and commas are ignored). Use for ALL math: totals, differences, taxes, refunds.",
-    inputSchema: calculateParams,
-    execute(args) {
+    input: calculateParams,
+    run(args) {
       const result = calculate(args.expression);
       if (!result.ok) return { error: result.error, expression: args.expression };
       return { expression: args.expression, result: result.value };

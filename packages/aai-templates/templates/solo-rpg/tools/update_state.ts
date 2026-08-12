@@ -22,7 +22,7 @@ import {
 export const updateState = tool({
   description:
     "Lightweight state sync for during gameplay. Handles location changes, NPC additions, clock additions, time changes, and session log entries. Resource changes (health/spirit/supply/momentum) are auto-applied by action_roll — only use those fields here for manual adjustments like resting or trading. Pass only what changed.",
-  inputSchema: z.object({
+  input: z.object({
     location: z.string().max(200).describe("New location name").optional(),
     locationDesc: z.string().max(500).describe("Short location description").optional(),
     timeOfDay: z.enum(TIME_PHASES).describe("New time of day").optional(),
@@ -54,7 +54,7 @@ export const updateState = tool({
     storyComplete: z.boolean().describe("Mark story as complete").optional(),
     logEntry: z.string().max(500).describe("Short log entry for this scene").optional(),
   }),
-  async execute(args, ctx) {
+  async run(args, ctx) {
     const state = gameSlot.get(ctx);
     const warnings: string[] = [];
     const clockEvents: { clock: string; trigger: string }[] = [];

@@ -123,8 +123,8 @@ export function createWorkflowStatus(): ToolDef<typeof workflowStatusParams> & {
     description:
       "Check the status of background work started earlier in this conversation. " +
       "Reports each run's progress, and its result once it has finished.",
-    inputSchema: workflowStatusParams,
-    execute: async ({ workflow }, ctx) => {
+    input: workflowStatusParams,
+    run: async ({ workflow }, ctx) => {
       // Naming one workflow narrows the read; omitting it asks about all of them,
       // which is what a caller's "is it ready?" actually means when an agent
       // declares more than one. The names come from the engine rather than the

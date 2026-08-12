@@ -6,7 +6,7 @@ import {
   MAX_DESIGN_HTML_CHARS,
   MAX_DESIGN_STYLESHEETS,
 } from "../sdk/constants.ts";
-import { createMockToolContext } from "./_test-utils.ts";
+import { createMockToolContext, mustRun } from "./_test-utils.ts";
 import { resolveAllBuiltins } from "./builtin-tools.ts";
 import { createGetPageDesign, extractStylesheetUrls } from "./page-design.ts";
 
@@ -29,7 +29,7 @@ function routedFetch(routes: Record<string, string | Response | Error>): typeof 
 
 function run(routes: Record<string, string | Response | Error>, url = PAGE_URL) {
   const def = createGetPageDesign(routedFetch(routes));
-  return def.execute({ url }, createMockToolContext()) as Promise<Record<string, unknown>>;
+  return mustRun(def)({ url }, createMockToolContext()) as Promise<Record<string, unknown>>;
 }
 
 describe("extractStylesheetUrls", () => {
@@ -194,7 +194,7 @@ describe("get_page_design", () => {
 
   test("is registered as a builtin with schema and guidance", () => {
     const { defs, schemas, guidance } = resolveAllBuiltins(["get_page_design"]);
-    expect(defs.get_page_design?.execute).toBeTypeOf("function");
+    expect(defs.get_page_design?.run).toBeTypeOf("function");
     expect(schemas.map((s) => s.name)).toEqual(["get_page_design"]);
     expect(guidance.some((g) => g.includes("get_page_design"))).toBe(true);
   });

@@ -17,10 +17,10 @@ export default agent({
   tools: {
     game_state_drop: tool({
       description: "Remove an item from the player's inventory.",
-      inputSchema: z.object({
+      input: z.object({
         value: z.string().describe("Item name to drop"),
       }),
-      async execute(args, ctx) {
+      async run(args, ctx) {
         const g = gameSlot.get(ctx);
         g.inventory = g.inventory.filter((i) => i !== args.value);
         return { inventory: g.inventory };
@@ -29,10 +29,10 @@ export default agent({
 
     game_state_flag: tool({
       description: "Set a game flag to true, used for tracking puzzle and event state.",
-      inputSchema: z.object({
+      input: z.object({
         value: z.string().describe("Flag name to set"),
       }),
-      async execute(args, ctx) {
+      async run(args, ctx) {
         const g = gameSlot.get(ctx);
         g.flags[args.value] = true;
         return { flags: g.flags };
@@ -42,7 +42,7 @@ export default agent({
     game_state_get: tool({
       description:
         "Read the current game state including inventory, current room, score, moves, flags, and recent history.",
-      async execute(_args, ctx) {
+      async run(_args, ctx) {
         const g = gameSlot.get(ctx);
         return {
           currentRoom: g.currentRoom,
@@ -57,10 +57,10 @@ export default agent({
 
     game_state_history: tool({
       description: "Log a player command to the history and increment the move counter.",
-      inputSchema: z.object({
+      input: z.object({
         value: z.string().describe("Command text to log"),
       }),
-      async execute(args, ctx) {
+      async run(args, ctx) {
         const g = gameSlot.get(ctx);
         recordCommand(g, args.value);
         g.moves++;
@@ -70,10 +70,10 @@ export default agent({
 
     game_state_move: tool({
       description: "Move the player to a new room and increment the move counter.",
-      inputSchema: z.object({
+      input: z.object({
         value: z.string().describe("Room name to move to"),
       }),
-      async execute(args, ctx) {
+      async run(args, ctx) {
         const g = gameSlot.get(ctx);
         g.currentRoom = args.value;
         g.moves++;
@@ -84,7 +84,7 @@ export default agent({
     game_state_restart: tool({
       description:
         "Reset the game to the beginning: empty inventory, zero score and moves, all flags cleared. Use when the player asks to restart, quit, or start a new game.",
-      async execute(_args, ctx) {
+      async run(_args, ctx) {
         const g = gameSlot.reset(ctx);
         return { restarted: true, currentRoom: g.currentRoom };
       },
@@ -92,10 +92,10 @@ export default agent({
 
     game_state_score: tool({
       description: "Add points to the player's score.",
-      inputSchema: z.object({
+      input: z.object({
         value: z.number().describe("Points to add"),
       }),
-      async execute(args, ctx) {
+      async run(args, ctx) {
         const g = gameSlot.get(ctx);
         g.score += args.value;
         return { score: g.score };
@@ -104,10 +104,10 @@ export default agent({
 
     game_state_take: tool({
       description: "Add an item to the player's inventory.",
-      inputSchema: z.object({
+      input: z.object({
         value: z.string().describe("Item name to take"),
       }),
-      async execute(args, ctx) {
+      async run(args, ctx) {
         const g = gameSlot.get(ctx);
         if (!g.inventory.includes(args.value)) g.inventory.push(args.value);
         return { inventory: g.inventory };

@@ -29,7 +29,7 @@ export const DEFAULT_TTS_SAMPLE_RATE = 24_000;
  */
 export const ASSEMBLYAI_S2S_SAMPLE_RATE = 24_000;
 
-/** Wall-clock budget (ms) for one tool `execute` call before it is aborted. */
+/** Wall-clock budget (ms) for one tool `run` call before it is aborted. */
 export const TOOL_EXECUTION_TIMEOUT_MS = 30_000;
 /** Deadline (ms) for `session.start()` — providers must be open by then. */
 export const DEFAULT_SESSION_START_TIMEOUT_MS = 10_000;

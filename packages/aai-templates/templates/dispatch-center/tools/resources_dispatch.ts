@@ -12,7 +12,7 @@ import {
 export const resourcesDispatch = tool({
   description:
     "Dispatch units to an incident. Can auto-dispatch recommended resources or manually specify callsigns.",
-  inputSchema: z.object({
+  input: z.object({
     incidentId: z.string().max(20).describe("The incident ID"),
     callsigns: z
       .array(z.string().max(50))
@@ -30,7 +30,7 @@ export const resourcesDispatch = tool({
       .describe("Dispatch priority — affects simulated ETA")
       .optional(),
   }),
-  async execute(args, ctx) {
+  async run(args, ctx) {
     return dispatchSlot.update(ctx, (state) => {
       const inc = findIncident(state, args.incidentId);
       if (isToolFailure(inc)) return inc;

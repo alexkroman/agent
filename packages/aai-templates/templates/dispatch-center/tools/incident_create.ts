@@ -13,7 +13,7 @@ import {
 
 export const incidentCreate = tool({
   description: "Create a new incident from an incoming emergency call.",
-  inputSchema: z.object({
+  input: z.object({
     location: z.string().max(300).describe("Address or location description"),
     description: z.string().max(2000).describe("Nature of the emergency as described by caller"),
     callerName: z.string().max(120).describe("Caller's name").optional(),
@@ -30,7 +30,7 @@ export const incidentCreate = tool({
       .describe("Known hazards: fire, chemical, electrical, structural, weapons")
       .optional(),
   }),
-  async execute(args, ctx) {
+  async run(args, ctx) {
     return dispatchSlot.update(ctx, (state) => {
       const recSeverity = recommendSeverity(args.description);
       const recType = recommendType(args.description);

@@ -34,7 +34,7 @@ export default agent({
   tools: {
     add_pizza: tool({
       description: "Add a pizza to the order. Use when the customer has decided on a pizza.",
-      inputSchema: z.object({
+      input: z.object({
         size: sizes,
         crust: crusts,
         toppings: z
@@ -42,7 +42,7 @@ export default agent({
           .describe("List of topping names, e.g. ['pepperoni', 'mushrooms']"),
         quantity: z.number().int().min(1).default(1),
       }),
-      async execute(args, ctx) {
+      async run(args, ctx) {
         const order = orderSlot.get(ctx);
 
         const pizza: Pizza = {
@@ -66,7 +66,7 @@ export default agent({
     place_order: tool({
       description:
         "Place the final order. Use when the customer confirms they are done and ready to order.",
-      async execute(_args, ctx) {
+      async run(_args, ctx) {
         const order = orderSlot.get(ctx);
         const pizzas = order.pizzas;
         if (pizzas.length === 0) return { error: "Cannot place an empty order." };
@@ -92,10 +92,10 @@ export default agent({
 
     remove_pizza: tool({
       description: "Remove a pizza from the order by its ID.",
-      inputSchema: z.object({
+      input: z.object({
         pizza_id: z.number().describe("The pizza ID to remove"),
       }),
-      async execute(args, ctx) {
+      async run(args, ctx) {
         const order = orderSlot.get(ctx);
         const idx = order.pizzas.findIndex((p) => p.id === args.pizza_id);
         if (idx === -1) return { error: "Pizza not found in the order." };
@@ -112,10 +112,10 @@ export default agent({
 
     set_customer_name: tool({
       description: "Set the customer name for the order.",
-      inputSchema: z.object({
+      input: z.object({
         name: z.string(),
       }),
-      async execute(args, ctx) {
+      async run(args, ctx) {
         orderSlot.get(ctx).customerName = args.name;
         return { name: args.name };
       },
@@ -123,14 +123,14 @@ export default agent({
 
     update_pizza: tool({
       description: "Update an existing pizza in the order. Only provided fields are changed.",
-      inputSchema: z.object({
+      input: z.object({
         pizza_id: z.number(),
         size: sizes.optional(),
         crust: crusts.optional(),
         toppings: z.array(z.string()).optional(),
         quantity: z.number().int().min(1).optional(),
       }),
-      async execute(args, ctx) {
+      async run(args, ctx) {
         const order = orderSlot.get(ctx);
         const idx = order.pizzas.findIndex((p) => p.id === args.pizza_id);
         if (idx === -1) return { error: "Pizza not found in the order." };
@@ -152,7 +152,7 @@ export default agent({
 
     view_order: tool({
       description: "View the current order summary with all pizzas and total price.",
-      async execute(_args, ctx) {
+      async run(_args, ctx) {
         const pizzas = orderSlot.get(ctx).pizzas;
         if (pizzas.length === 0) return { message: "The order is empty." };
 

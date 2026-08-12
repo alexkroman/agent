@@ -4,12 +4,12 @@ import { dispatchSlot, logEvent, RESOURCE_STATUSES } from "../shared.ts";
 
 export const resourcesUpdateStatus = tool({
   description: "Update a resource unit's status when it radios in.",
-  inputSchema: z.object({
+  input: z.object({
     callsign: z.string().max(50).describe("The resource callsign"),
     status: z.enum(RESOURCE_STATUSES).describe("New status"),
     notes: z.string().max(1000).describe("Status notes").optional(),
   }),
-  async execute(args, ctx) {
+  async run(args, ctx) {
     return dispatchSlot.update(ctx, (state) => {
       const resource = state.resources.find(
         (r) => r.callsign.toLowerCase() === args.callsign.toLowerCase(),

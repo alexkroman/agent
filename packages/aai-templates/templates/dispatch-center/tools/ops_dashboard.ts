@@ -4,7 +4,7 @@ import { dispatchSlot, incidentAgeMinutes, resourceBrief, resourceUtilization } 
 export const opsDashboard = tool({
   description:
     "Get the full operational dashboard: alert level, resource utilization, active incidents, and available resources.",
-  async execute(_args, ctx) {
+  async run(_args, ctx) {
     const state = dispatchSlot.get(ctx);
 
     const activeIncidents = Object.values(state.incidents)

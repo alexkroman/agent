@@ -91,7 +91,7 @@ describe("createRuntime — pipeline onToolCall wiring", () => {
     });
     const client = makeClientSink();
     const exec = createRuntime({
-      agent: makeAgent({ tools: { lookup: { description: "Look up", execute: () => "ok" } } }),
+      agent: makeAgent({ tools: { lookup: { description: "Look up", run: () => "ok" } } }),
       env: fakes.env,
       stt: fakes.stt,
       tts: fakes.tts,

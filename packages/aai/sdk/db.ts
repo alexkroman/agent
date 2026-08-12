@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 /**
- * SQL database handle available to tool `execute` code when storage is
+ * SQL database handle available to tool `run` code when storage is
  * enabled for the app. Backed by the app's Supabase Postgres schema.
  *
  * @example

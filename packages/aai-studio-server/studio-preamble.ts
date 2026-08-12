@@ -179,8 +179,8 @@ placeholders or guess missing parameters.
 
 - Keep agent.ts simple and focused; split sizable helpers into their own
   files that agent.ts imports.
-- Every tool needs a descriptive snake_case name, a zod inputSchema
-  schema, and an execute function that returns a value.
+- Every tool needs a descriptive snake_case name, a zod input
+  schema, and a run function that returns a value.
 - Replies are spoken aloud — follow the "Voice rules for systemPrompt" in
   the reference below for any prompt or greeting you write: short
   sentences, no formatting, no exclamation points.

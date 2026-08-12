@@ -80,8 +80,8 @@ describe("createRuntime", () => {
       tools: {
         add: {
           description: "Add two numbers",
-          inputSchema: z.object({ a: z.number(), b: z.number() }),
-          execute: ({ a, b }: { a: number; b: number }) => String(a + b),
+          input: z.object({ a: z.number(), b: z.number() }),
+          run: ({ a, b }: { a: number; b: number }) => String(a + b),
         },
       },
     });
@@ -97,7 +97,7 @@ describe("createRuntime", () => {
       tools: {
         read_db: {
           description: "Read from the database",
-          execute: async (_args, ctx) => {
+          run: async (_args, ctx) => {
             const rows = await ctx.db.query<{ value: string }>("select value from t");
             return rows[0]?.value ?? "missing";
           },
@@ -116,7 +116,7 @@ describe("createRuntime", () => {
       tools: {
         dump_env: {
           description: "Return the env keys visible to tool code",
-          execute: (_args, ctx) => Object.keys(ctx.env).sort().join(","),
+          run: (_args, ctx) => Object.keys(ctx.env).sort().join(","),
         },
       },
     });
@@ -133,7 +133,7 @@ describe("createRuntime", () => {
       tools: {
         dump_env: {
           description: "Return the env keys visible to tool code",
-          execute: (_args, ctx) => Object.keys(ctx.env).sort().join(","),
+          run: (_args, ctx) => Object.keys(ctx.env).sort().join(","),
         },
       },
     });
@@ -145,7 +145,7 @@ describe("createRuntime", () => {
     const agent = makeAgent({
       builtinTools: ["run_code"],
       tools: {
-        custom: { description: "Custom", execute: () => "ok" },
+        custom: { description: "Custom", run: () => "ok" },
       },
     });
     const exec = createRuntime({ agent, env: {} });
@@ -160,7 +160,7 @@ describe("createRuntime", () => {
       tools: {
         get_state: {
           description: "Get state",
-          execute: (_args, ctx) => JSON.stringify(ctx.state),
+          run: (_args, ctx) => JSON.stringify(ctx.state),
         },
       },
     });
@@ -181,7 +181,7 @@ describe("createRuntime", () => {
       tools: {
         bump: {
           description: "Bump a counter on ctx.state",
-          execute: (_args, ctx) => {
+          run: (_args, ctx) => {
             ctx.state.n = ((ctx.state.n ?? 0) as number) + 1;
             return String(ctx.state.n);
           },
@@ -200,7 +200,7 @@ describe("createRuntime", () => {
       tools: {
         echo_messages: {
           description: "Echo messages",
-          execute: (_args, ctx) => JSON.stringify(ctx.messages),
+          run: (_args, ctx) => JSON.stringify(ctx.messages),
         },
       },
     });
@@ -242,7 +242,7 @@ describe("createRuntime", () => {
       tools: {
         get_env: {
           description: "Get env",
-          execute: (_args, ctx) => ctx.env.MY_VAR ?? "missing",
+          run: (_args, ctx) => ctx.env.MY_VAR ?? "missing",
         },
       },
     });
@@ -312,24 +312,24 @@ describe("createRuntime", () => {
 });
 
 /**
- * A tool whose `execute` resolves to something other than the declared
+ * A tool whose `run` resolves to something other than the declared
  * `string`, for the coercion paths below. Agent bundles are not typechecked by
  * either bundler, so these values really do reach `executeToolCall` in
  * production — the cast stages that, and stays at this one seam; the
  * escape-hatch ratchet counts every occurrence.
  */
 function toolReturning(description: string, value: unknown): ToolDef {
-  return { description, execute: () => value as unknown as string };
+  return { description, run: () => value as unknown as string };
 }
 
 describe("executeToolCall", () => {
-  test("returns 'null' when tool execute returns null", async () => {
+  test("returns 'null' when tool run returns null", async () => {
     const tool = toolReturning("Returns null", null);
     const result = await executeToolCall("nullTool", {}, { tool, env: {} });
     expect(result).toBe("null");
   });
 
-  test("returns 'null' when tool execute returns undefined", async () => {
+  test("returns 'null' when tool run returns undefined", async () => {
     const tool = toolReturning("Returns undefined", undefined);
     const result = await executeToolCall("undefinedTool", {}, { tool, env: {} });
     expect(result).toBe("null");
@@ -350,8 +350,8 @@ describe("executeToolCall", () => {
   test("returns validation error for invalid args", async () => {
     const tool: ToolDef = {
       description: "Requires number",
-      inputSchema: z.object({ n: z.number() }),
-      execute: ({ n }: { n: number }) => String(n),
+      input: z.object({ n: z.number() }),
+      run: ({ n }: { n: number }) => String(n),
     };
     const result = await executeToolCall("typedTool", { n: "not-a-number" }, { tool, env: {} });
     expect(result).toContain("error");
@@ -362,8 +362,8 @@ describe("executeToolCall", () => {
   test("returns validation error with path info for nested args", async () => {
     const tool: ToolDef = {
       description: "Requires nested object",
-      inputSchema: z.object({ config: z.object({ port: z.number() }) }),
-      execute: () => "ok",
+      input: z.object({ config: z.object({ port: z.number() }) }),
+      run: () => "ok",
     };
     const result = await executeToolCall(
       "nestedTool",
@@ -376,7 +376,7 @@ describe("executeToolCall", () => {
   test("logs error with logger when tool throws", async () => {
     const tool: ToolDef = {
       description: "Throws error",
-      execute: () => {
+      run: () => {
         throw new Error("boom");
       },
     };
@@ -393,7 +393,7 @@ describe("executeToolCall", () => {
   test("logs to console.warn when no logger provided", async () => {
     const tool: ToolDef = {
       description: "Throws error",
-      execute: () => {
+      run: () => {
         throw new Error("no-logger-boom");
       },
     };
@@ -410,7 +410,7 @@ describe("executeToolCall", () => {
   test("throws storage-not-enabled when db is not provided and tool accesses it", async () => {
     const tool: ToolDef = {
       description: "Access the database",
-      execute: async (_args, ctx) => {
+      run: async (_args, ctx) => {
         await ctx.db.query("select 1");
         return "ok";
       },
@@ -424,7 +424,7 @@ describe("executeToolCall", () => {
   test("uses default empty state when state not provided", async () => {
     const tool: ToolDef = {
       description: "Get state",
-      execute: (_args, ctx) => JSON.stringify(ctx.state),
+      run: (_args, ctx) => JSON.stringify(ctx.state),
     };
     const result = await executeToolCall("stateTool", {}, { tool, env: {} });
     expect(JSON.parse(result)).toEqual({});
@@ -433,7 +433,7 @@ describe("executeToolCall", () => {
   test("uses default empty messages when messages not provided", async () => {
     const tool: ToolDef = {
       description: "Get messages",
-      execute: (_args, ctx) => JSON.stringify(ctx.messages),
+      run: (_args, ctx) => JSON.stringify(ctx.messages),
     };
     const result = await executeToolCall("msgTool", {}, { tool, env: {} });
     expect(JSON.parse(result)).toEqual([]);
@@ -445,7 +445,7 @@ describe("executeToolCall", () => {
     // read each other's notes.
     const tool: ToolDef = {
       description: "Get sessionId",
-      execute: (_args, ctx) => ctx.sessionId,
+      run: (_args, ctx) => ctx.sessionId,
     };
     const first = await executeToolCall("sidTool", {}, { tool, env: {} });
     const second = await executeToolCall("sidTool", {}, { tool, env: {} });
@@ -456,7 +456,7 @@ describe("executeToolCall", () => {
   test("tool with no parameters schema accepts any args", async () => {
     const tool: Parameters<typeof executeToolCall>[2]["tool"] = {
       description: "No params",
-      execute: () => "ok",
+      run: () => "ok",
     };
     const result = await executeToolCall("noParamsTool", { any: "thing" }, { tool, env: {} });
     expect(result).toBe("ok");

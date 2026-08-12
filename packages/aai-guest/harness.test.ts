@@ -127,12 +127,11 @@ describe("executeTool (one-shot trial)", () => {
       tools: {
         strict: {
           description: "strict params",
-          parameters: {
-            parse: () => {
-              throw new Error("bad args");
-            },
-          },
-          execute: () => "never",
+          // A Standard Schema that always reports an issue — the shape the SDK's
+          // `input` carries, and the one a trial validates against now that
+          // `parameters: { parse }` (removed from the SDK long ago) is gone.
+          input: { "~standard": { validate: () => ({ issues: [{ message: "bad args" }] }) } },
+          run: () => "never",
         },
       },
     });
@@ -141,7 +140,7 @@ describe("executeTool (one-shot trial)", () => {
       { name: "strict", args: { wrong: true }, sessionId: "s1", state: {} },
       TRIAL_OPTS,
     );
-    expect(res.error).toBe("bad args");
+    expect(res.error).toBe("Invalid arguments: bad args");
   });
 
   test("run_code executes in the guest and captures console output", async () => {

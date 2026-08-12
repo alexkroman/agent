@@ -38,8 +38,8 @@ import { z } from "zod";
 
 const lookup = tool({
   description: "Look up an order by id",
-  inputSchema: z.object({ orderId: z.string() }),
-  execute: async ({ orderId }, ctx) => \`Order \${orderId} is on its way\`,
+  input: z.object({ orderId: z.string() }),
+  run: async ({ orderId }, ctx) => \`Order \${orderId} is on its way\`,
 });
 
 export default agent({

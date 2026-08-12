@@ -205,12 +205,12 @@ const THEMES = [
 export const oracle = tool({
   description:
     "Consult the oracle for narrative inspiration. Generates random prompts from thematic tables.",
-  inputSchema: z.object({
+  input: z.object({
     type: z
       .enum(["action_theme", "npc_reaction", "scene_twist", "yes_no", "chaos_check"])
       .describe("Type of oracle consultation"),
   }),
-  async execute(args, ctx) {
+  async run(args, ctx) {
     if (args.type === "yes_no") {
       const roll = d(6);
       const answer = roll <= 2 ? "No" : roll <= 4 ? "Yes, but with a complication" : "Yes";

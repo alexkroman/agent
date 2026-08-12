@@ -8,7 +8,8 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import pTimeout from "p-timeout";
-import type { AgentDef, ToolContext } from "./harness-types.ts";
+import type { AgentDef, ToolContext, ToolDef } from "./harness-types.ts";
+import { toolDefInput, toolDefRun } from "./harness-types.ts";
 import { RUN_CODE_TIMEOUT_MS, STORAGE_DISABLED_MESSAGE, TOOL_TIMEOUT_MS } from "./limits.ts";
 
 // ---- run_code builtin -------------------------------------------------------
@@ -50,6 +51,24 @@ export async function runCode(code: string): Promise<string | { error: string }>
 }
 
 // ---- One-shot tool trials (studio test_agent) -------------------------------
+
+/**
+ * Validate a trial's args against the tool's own `input` schema.
+ *
+ * Throws on an invalid value, because the caller runs this inside the try that
+ * turns a throw into a `{ error }` tool result — an invalid argument is
+ * something the model repairs, not a JSON-RPC protocol failure. A tool with no
+ * schema takes the args through unchanged, as the session path does.
+ */
+async function validateTrialArgs(tool: ToolDef, args: unknown): Promise<unknown> {
+  const schema = toolDefInput(tool);
+  if (!schema) return args;
+  const parsed = await schema["~standard"].validate(args ?? {});
+  if (parsed.issues) {
+    throw new Error(`Invalid arguments: ${parsed.issues.map((i) => i.message).join("; ")}`);
+  }
+  return parsed.value;
+}
 
 export type ToolCallRequest = {
   name: string;
@@ -94,6 +113,10 @@ export async function executeTool(
   if (!tool) {
     return { error: `Unknown tool: ${req.name}`, state };
   }
+  const run = toolDefRun(tool);
+  if (!run) {
+    return { error: `Tool "${req.name}" has no \`run\` function`, state };
+  }
 
   const ctx: ToolContext = {
     env: opts.env,
@@ -117,12 +140,9 @@ export async function executeTool(
     // Parse inside the try: invalid LLM-supplied args must surface as a
     // `{ error }` tool result (which the LLM can repair), not as a JSON-RPC
     // protocol error.
-    const parsed =
-      tool.parameters && typeof tool.parameters.parse === "function"
-        ? tool.parameters.parse(req.args)
-        : req.args;
+    const parsed = await validateTrialArgs(tool, req.args);
 
-    const result = await pTimeout(Promise.resolve(tool.execute(parsed, ctx)), {
+    const result = await pTimeout(Promise.resolve(run(parsed, ctx)), {
       milliseconds: TOOL_TIMEOUT_MS,
       message: `Tool "${req.name}" timed out after ${TOOL_TIMEOUT_MS}ms`,
     });

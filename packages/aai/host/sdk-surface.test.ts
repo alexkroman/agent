@@ -23,8 +23,8 @@ describe("SDK integration: AgentDef → tool execution", () => {
       tools: {
         greet: {
           description: "Greet by name",
-          inputSchema: z.object({ name: z.string() }),
-          execute: ({ name }: { name: string }) => `Hello, ${name}!`,
+          input: z.object({ name: z.string() }),
+          run: ({ name }: { name: string }) => `Hello, ${name}!`,
         },
       },
     };
@@ -57,16 +57,16 @@ describe("SDK integration: AgentDef → tool execution", () => {
       tools: {
         save: {
           description: "Save a value",
-          inputSchema: z.object({ key: z.string(), value: z.string() }),
-          execute: async ({ key, value }: { key: string; value: string }, ctx) => {
+          input: z.object({ key: z.string(), value: z.string() }),
+          run: async ({ key, value }: { key: string; value: string }, ctx) => {
             await ctx.db.query("insert into vals (key, value) values ($1, $2)", [key, value]);
             return "saved";
           },
         },
         load: {
           description: "Load a value",
-          inputSchema: z.object({ key: z.string() }),
-          execute: async ({ key }: { key: string }, ctx) => {
+          input: z.object({ key: z.string() }),
+          run: async ({ key }: { key: string }, ctx) => {
             const rows = await ctx.db.query<{ value: string }>(
               "select value from vals where key = $1",
               [key],
@@ -92,7 +92,7 @@ describe("SDK integration: AgentDef → tool execution", () => {
       tools: {
         check_key: {
           description: "Check API key",
-          execute: (_args, ctx) => ctx.env.API_KEY ?? "missing",
+          run: (_args, ctx) => ctx.env.API_KEY ?? "missing",
         },
       },
     };
@@ -115,7 +115,7 @@ describe("SDK integration: AgentDef → tool execution", () => {
       tools: {
         increment: {
           description: "Increment counter",
-          execute: (_args, ctx) => {
+          run: (_args, ctx) => {
             ctx.state.count += 1;
             return String(ctx.state.count);
           },
@@ -151,8 +151,8 @@ describe("SDK integration: AgentDef → tool execution", () => {
       tools: {
         typed: {
           description: "Typed tool",
-          inputSchema: z.object({ count: z.number() }),
-          execute: ({ count }: { count: number }) => String(count * 2),
+          input: z.object({ count: z.number() }),
+          run: ({ count }: { count: number }) => String(count * 2),
         },
       },
     };
@@ -191,7 +191,7 @@ describe("SDK integration: AgentDef → tool execution", () => {
       maxSteps: 5,
       builtinTools: ["run_code"],
       tools: {
-        custom: { description: "Custom tool", execute: () => "custom result" },
+        custom: { description: "Custom tool", run: () => "custom result" },
       },
     };
 
@@ -221,7 +221,7 @@ describe("SDK integration: AgentDef → tool execution", () => {
       tools: {
         count_msgs: {
           description: "Count messages",
-          execute: (_args, ctx) => String(ctx.messages.length),
+          run: (_args, ctx) => String(ctx.messages.length),
         },
       },
     };

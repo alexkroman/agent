@@ -18,7 +18,7 @@ describe("runtime executeTool — cancellation (self-hosted tools)", () => {
       agent: makeAgent({
         tools: {
           probe: makeTool({
-            execute: (_args, ctx) => {
+            run: (_args, ctx) => {
               seen = ctx.signal;
               return gate.promise;
             },
@@ -48,7 +48,7 @@ describe("runtime executeTool — cancellation (self-hosted tools)", () => {
       agent: makeAgent({
         tools: {
           hang: makeTool({
-            execute: () =>
+            run: () =>
               new Promise<never>(() => {
                 /* never resolves */
               }),

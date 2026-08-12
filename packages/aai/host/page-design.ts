@@ -43,7 +43,7 @@ const COMMENT_RE = /<!--[\s\S]*?-->/g;
  * arrives as `&`), copes with `>` inside quoted attribute values, and skips
  * `<link>` text sitting inside `<script>` rawtext. This is the ONLY parsed
  * read of the page — the returned markup stays the raw fetched bytes (see
- * `execute`), never a parse/serialize round-trip.
+ * `run`), never a parse/serialize round-trip.
  */
 export function extractStylesheetUrls(html: string, baseUrl: string): string[] {
   const urls: string[] = [];
@@ -121,8 +121,8 @@ export function createGetPageDesign(
       "names and inline styles kept), its <style> blocks, and its linked stylesheets. Use this " +
       "to study or mimic another website's design — colors, fonts, layout, spacing. For " +
       "reading a page's text content, use visit_webpage instead.",
-    inputSchema: getPageDesignParams,
-    async execute(args, _ctx) {
+    input: getPageDesignParams,
+    async run(args, _ctx) {
       const { url } = args;
       const resp = await fetchFn(url, {
         headers: { "User-Agent": TOOL_USER_AGENT, Accept: HTML_ACCEPT },

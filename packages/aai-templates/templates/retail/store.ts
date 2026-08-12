@@ -152,12 +152,12 @@ interface RetailToolSpec<S extends z.ZodType<Record<string, unknown>>, R> {
   description: string;
   /** Required even for no-arg tools — pass `z.object({})`. One code path in the
    *  wrapper is worth more than saving a line at one call site. */
-  inputSchema: S;
+  input: S;
   /** Default true. Only the two finder tools and the three catalog tools opt
    *  out; everything else touches customer data. */
   requiresAuth?: boolean;
   summary: (args: z.output<S>, result: R) => string;
-  execute: (args: z.output<S>, ctx: ToolContext) => R | Promise<R>;
+  run: (args: z.output<S>, ctx: ToolContext) => R | Promise<R>;
 }
 
 function record(state: RetailState, name: string, summary: string): void {
@@ -187,19 +187,19 @@ export function retailTool<S extends z.ZodType<Record<string, unknown>>, R>(
   const requiresAuth = spec.requiresAuth ?? true;
   return tool({
     description: spec.description,
-    inputSchema: spec.inputSchema,
+    input: spec.input,
     // `retailSlot.update` is the only caller of the serialized region in this
     // template, which is what keeps `update`'s non-reentrancy unreachable: a
     // tool body cannot nest another `update` on this slot, because tool bodies
-    // are `spec.execute` and always run INSIDE this one.
-    execute: (args, ctx) =>
+    // are `spec.run` and always run INSIDE this one.
+    run: (args, ctx) =>
       retailSlot.update(ctx, async (state) => {
         const typedArgs = args as z.output<S>;
         if (requiresAuth && !state.authenticatedUserId) {
           record(state, spec.name, "blocked: not authenticated");
           return { error: NOT_AUTHENTICATED };
         }
-        const result = await spec.execute(typedArgs, ctx);
+        const result = await spec.run(typedArgs, ctx);
         record(
           state,
           spec.name,

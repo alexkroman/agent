@@ -14,7 +14,7 @@ export const cancelPendingOrder = retailTool({
     "check the status first. The reason must be either 'no longer needed' or 'ordered by mistake'. " +
     "State the order, its total and the refund destination to the caller and get an explicit yes " +
     "before calling this.",
-  inputSchema: z.object({
+  input: z.object({
     order_id: z
       .string()
       .max(120)
@@ -23,11 +23,11 @@ export const cancelPendingOrder = retailTool({
       .enum(CANCEL_REASONS)
       .describe("Either 'no longer needed' or 'ordered by mistake' — no other reason is accepted"),
   }),
-  // `execute` before `summary`: TS infers the wrapper's generic `R` from
-  // `execute`'s return type, and processes object literal properties in
+  // `run` before `summary`: TS infers the wrapper's generic `R` from
+  // `run`'s return type, and processes object literal properties in
   // source order — with `summary` first, `result` in its signature can't be
   // inferred and silently falls back to `unknown`.
-  execute: (args, ctx) => {
+  run: (args, ctx) => {
     const state = retailSlot.get(ctx);
     const user = authenticatedUser(state);
     if (isToolFailure(user)) return user;

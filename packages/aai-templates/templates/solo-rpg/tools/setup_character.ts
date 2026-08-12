@@ -21,7 +21,7 @@ import {
 export const setupCharacter = tool({
   description:
     "Set up the entire game in one call. Starts a completely fresh game (any previous unsaved game is replaced), generates stats, initializes state, and marks the game as ready. After this returns, just narrate the opening scene. No need to call update_state — everything is already done.",
-  inputSchema: z.object({
+  input: z.object({
     genre: z.string().max(100).describe("Chosen genre code or custom description"),
     tone: z.string().max(100).describe("Chosen tone code or custom description"),
     archetype: z.string().max(100).describe("Chosen archetype code or custom description"),
@@ -53,7 +53,7 @@ export const setupCharacter = tool({
     contentLines: z.string().max(1000).optional(),
     kidMode: z.boolean().optional(),
   }),
-  async execute(args, ctx) {
+  async run(args, ctx) {
     // Always start from a pristine state — re-running setup begins a new
     // story instead of layering NPCs/clocks onto a stale one.
     const state = structuredClone(DEFAULT_STATE);

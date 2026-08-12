@@ -698,3 +698,64 @@ Three properties to keep:
   nothing and every query fails with `relation "aai_workflow_runs" does not
   exist`. That is the shape an operator hits after a manual `drop table`, and the
   integration suite reproduced it by forgetting exactly this.
+
+## Telephony: a phone call is an ordinary session
+
+`WS /phone` (`host/telephony/`) accepts a carrier's bidirectional media
+stream — Twilio Media Streams, Telnyx media streaming — and runs it as an
+ordinary session. `createServer` serves it by default, so `aai dev`, a
+self-hosted server and every deployed agent all answer phone calls with no
+per-agent configuration. The platform half (the TwiML webhook that points a
+carrier here) is in `packages/aai-server/CLAUDE.md`.
+
+**Nothing in the session stack knows about telephony, and that is the whole
+design.** `SessionCore` talks to a `ClientSink`; `wireSessionSocket` talks to
+a `SessionWebSocket`. So the adapter is a socket-shaped SHIM
+(`createTelephonyBridge`) that speaks the client protocol on one side and the
+carrier's JSON framing on the other, handed straight to
+`runtime.startSession`. Turn-taking, barge-in, tool calls, the audio pacer and
+its ordering rules, session eviction, keepalives, start timeouts and teardown
+are not reimplemented for phone — a call gets them because it runs the same
+code the browser does. Resist adding a telephony branch anywhere below the
+bridge; if one seems necessary, the bridge is the wrong shape.
+
+Four things that are easy to get wrong here, each of which was a decision:
+
+- **Pacing stays ON.** A carrier accepts audio far faster than it plays it and
+  buffers the rest — exactly the shape that made unpaced host-mode sessions
+  destroy 36% of all agent audio (see "Host-mode audio pacing" above): the
+  backlog builds on the FAR side, where `PacedAudioSink.clear()` cannot reach
+  it. So the bridge sets no `audioLeadMs` and a barge-in additionally sends the
+  carrier's own `clear` frame, which is the only way to drop what it already
+  holds. Without that frame the caller talks over an agent that keeps speaking
+  for seconds after being interrupted.
+- **The rates are LEARNED from the `config` frame**, not configured. The first
+  thing any runtime sends a session is `{ sampleRate, ttsSampleRate }`, so the
+  bridge builds its converters from that — which lets one adapter serve a
+  16 kHz pipeline agent and a 24 kHz S2S agent, and avoids plumbing a rate
+  through `createServer`, whose runtime is a LAZY facade in the guest harness
+  and cannot answer a rate question before the first session exists.
+- **Downsampling must low-pass first** (`telephony/resample.ts`). Decimating
+  24 kHz TTS to 8 kHz without it folds everything above 4 kHz back into the
+  speech band; measured, a 6 kHz tone lands at 2 kHz at FULL amplitude. It
+  reads as a poor phone line rather than as a defect, which is how it ships.
+  Upsampling needs no filter — the carrier already band-limits to ~3.4 kHz.
+  Both converters are STATEFUL and must stay so: rebuilt per 20 ms chunk they
+  put a click at every boundary, 50 a second.
+- **This does not contradict "the host does not resample"** (see the S2S
+  section). That rule says rate conversion belongs at the EDGE, because every
+  client owns its own rate and asking it to send the advertised one is cheaper
+  and more honest. A carrier is the one client that cannot comply — 8 kHz
+  μ-law is what the PSTN carries — and the bridge IS the edge. The rule put
+  the conversion exactly here.
+
+Adding a carrier is one `CarrierCodec` in `telephony/carriers.ts` and nothing
+else. Two properties they all owe: decoding NEVER throws (a carrier is free to
+add frame types, and a throw off a socket event takes the host down mid-call),
+and a media frame on a non-`inbound` track is DROPPED — a both-tracks stream
+otherwise transcribes the agent as the caller and every reply reads as a
+barge-in against itself.
+
+**Known gaps**, both deliberate: no `mark` frames, so `playback_progress` is
+unused and the pipeline falls back to its open-loop estimate; and DTMF is
+ignored rather than surfaced as a custom event.

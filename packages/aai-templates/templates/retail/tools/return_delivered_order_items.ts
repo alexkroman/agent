@@ -18,7 +18,7 @@ export const returnDeliveredOrderItems = retailTool({
     "customer's gift cards. Confirm the exact item list and the refund destination with an " +
     "explicit yes before calling this. The customer gets an email explaining how to send the " +
     "items back.",
-  inputSchema: z.object({
+  input: z.object({
     order_id: z
       .string()
       .max(120)
@@ -32,11 +32,11 @@ export const returnDeliveredOrderItems = retailTool({
       .max(80)
       .describe("Where the refund goes — the original method, or one of their gift cards"),
   }),
-  // `execute` before `summary`: TS infers the wrapper's generic `R` from
-  // `execute`'s return type, and processes object literal properties in
+  // `run` before `summary`: TS infers the wrapper's generic `R` from
+  // `run`'s return type, and processes object literal properties in
   // source order — with `summary` first, `result` in its signature can't be
   // inferred and silently falls back to `unknown`.
-  execute: (args, ctx) => {
+  run: (args, ctx) => {
     const state = retailSlot.get(ctx);
     const user = authenticatedUser(state);
     if (isToolFailure(user)) return user;

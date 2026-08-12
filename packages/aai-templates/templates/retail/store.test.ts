@@ -162,33 +162,33 @@ describe("retailTool", () => {
   const echo = retailTool({
     name: "echo",
     description: "test tool",
-    inputSchema: z.object({ value: z.string() }),
+    input: z.object({ value: z.string() }),
     requiresAuth: false,
     summary: (args) => `echoed ${args.value}`,
-    execute: (args) => ({ echoed: args.value }),
+    run: (args) => ({ echoed: args.value }),
   });
 
   const gated = retailTool({
     name: "gated",
     description: "test tool needing auth",
-    inputSchema: z.object({}),
+    input: z.object({}),
     summary: () => "ran",
-    execute: () => ({ ok: true }),
+    run: () => ({ ok: true }),
   });
 
   const failing = retailTool({
     name: "failing",
     description: "test tool that returns an error",
-    inputSchema: z.object({}),
+    input: z.object({}),
     requiresAuth: false,
     summary: () => "should not be used",
-    execute: () => ({ error: "nope" }),
+    run: () => ({ error: "nope" }),
   });
 
   test("increments callSeq and logs activity on every call", async () => {
     const ctx = makeCtx();
-    await echo.execute({ value: "a" }, ctx);
-    await echo.execute({ value: "b" }, ctx);
+    await echo.run({ value: "a" }, ctx);
+    await echo.run({ value: "b" }, ctx);
     const state = retailSlot.get(ctx);
     expect(state.callSeq).toBe(2);
     expect(state.activity.map((a) => a.summary)).toEqual(["echoed a", "echoed b"]);
@@ -197,21 +197,21 @@ describe("retailTool", () => {
 
   test("a repeated identical call still changes the projection", async () => {
     const ctx = makeCtx();
-    await echo.execute({ value: "same" }, ctx);
+    await echo.run({ value: "same" }, ctx);
     const first = retailSlot.get(ctx).callSeq;
-    await echo.execute({ value: "same" }, ctx);
+    await echo.run({ value: "same" }, ctx);
     expect(retailSlot.get(ctx).callSeq).toBeGreaterThan(first);
   });
 
-  test("defaults to requiring authentication and does not run execute when blocked", async () => {
+  test("defaults to requiring authentication and does not run the handler when blocked", async () => {
     const ctx = makeCtx();
-    const result = await gated.execute({}, ctx);
+    const result = await gated.run({}, ctx);
     expect(isToolFailure(result) && result.error).toContain("find_user_id_by_email");
   });
 
   test("a blocked call is still logged and still bumps callSeq", async () => {
     const ctx = makeCtx();
-    await gated.execute({}, ctx);
+    await gated.run({}, ctx);
     const state = retailSlot.get(ctx);
     expect(state.callSeq).toBe(1);
     expect(state.activity[0]?.summary).toContain("blocked");
@@ -220,19 +220,19 @@ describe("retailTool", () => {
   test("runs once authenticated", async () => {
     const ctx = makeCtx();
     retailSlot.get(ctx).authenticatedUserId = "olivia_ito_3591";
-    const result = await gated.execute({}, ctx);
+    const result = await gated.run({}, ctx);
     expect(result).toEqual({ ok: true });
   });
 
   test("an error result is logged as an error, not through summary()", async () => {
     const ctx = makeCtx();
-    await failing.execute({}, ctx);
+    await failing.run({}, ctx);
     expect(retailSlot.get(ctx).activity[0]?.summary).toBe("error: nope");
   });
 
   test("activity is capped so a long call cannot grow the payload", async () => {
     const ctx = makeCtx();
-    for (let i = 0; i < 15; i++) await echo.execute({ value: String(i) }, ctx);
+    for (let i = 0; i < 15; i++) await echo.run({ value: String(i) }, ctx);
     const state = retailSlot.get(ctx);
     expect(state.callSeq).toBe(15);
     expect(state.activity).toHaveLength(10);
@@ -241,7 +241,7 @@ describe("retailTool", () => {
 
   test("concurrent calls serialize — no lost increments", async () => {
     const ctx = makeCtx();
-    await Promise.all(Array.from({ length: 8 }, (_, i) => echo.execute({ value: String(i) }, ctx)));
+    await Promise.all(Array.from({ length: 8 }, (_, i) => echo.run({ value: String(i) }, ctx)));
     const state = retailSlot.get(ctx);
     expect(state.callSeq).toBe(8);
     expect(new Set(state.activity.map((a) => a.seq)).size).toBe(state.activity.length);

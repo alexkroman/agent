@@ -15,7 +15,7 @@ boundary** — this split is critical for sandbox security:
   `protocol.ts`, `system-prompt.ts`,
   `ws-upgrade.ts`, `_internal-types.ts`, `agent-config.ts` (the canonical
   serializable config + `toAgentConfig`), `schema.ts` (Standard Schema
-  acceptance: `inputSchema` validation + JSON Schema conversion),
+  acceptance: `input` schema validation + JSON Schema conversion),
   `define.ts` (`agent()` and `tool()` helpers for authoring `agent.ts`
   files).
 - **`host/`** — host-only modules that **require Node.js APIs** (`node:vm`,
@@ -52,7 +52,7 @@ Subpath exports consumed by sibling packages and user agents:
 - `./utils` — zod-free utilities, `createKeyedLock`, `isToolFailure`,
   `pushCapped`, platform slug contract (fast CLI startup path)
 - `./testing` — `createToolContext()` / `createUnusedDb()` for testing a tool's
-  `execute`; published so a user's agent project can import it
+  `run`; published so a user's agent project can import it
 - `./runtime` — full Node.js runtime engine (barrel → 11 host/ modules)
 - `./protocol` — wire-format Zod schemas, `lenientParse()`, `ClientEvent`
 - `./manifest` — `toAgentConfig()`, `agentToolsToSchemas()`, config schemas
@@ -62,10 +62,55 @@ Subpath exports consumed by sibling packages and user agents:
 - `./s2s` — S2S provider factories (`openaiRealtime`)
 - `./tools` — keyless network builtins callable from user tool code
 - `./internal` — infrastructure shared with sibling packages (epochs,
-  owned maps, WS upgrade parsing, schema-issue formatting); not a public
-  API, kept off the root barrel so authoring autocomplete stays small.
-  The env brands live on `./runtime` instead — they appear in its public
-  signatures (`RuntimeOptions`, `withHostCredentialFallback`)
+  owned maps, WS upgrade parsing, schema-issue formatting, the tool-field
+  accessors); not a public API, kept off the root barrel so authoring
+  autocomplete stays small. The env brands live on `./runtime` instead — they
+  appear in its public signatures (`RuntimeOptions`,
+  `withHostCredentialFallback`)
+
+## `tool()` and `workflow()` differ by ONE word
+
+A tool and a workflow are the same declaration at two durations, so the only
+word that should differ between them is `tool` versus `workflow`. Both take
+**`input`** (the schema) and **`run`** (the body):
+
+```ts no-check
+const greet = tool({ description: "…", input: z.object({ name: z.string() }), run: ({ name }) => … });
+const digest = workflow({ input: z.object({ topic: z.string() }), run: async ({ topic }, ctx) => … });
+```
+
+`inputSchema` and `execute` are the previous names for the two tool fields.
+They still work and are removed in the next major — the deprecation is on the
+`ToolDef` fields, so an editor says so at the call site.
+
+**No consumer reads either field directly.** They go through `toolInput` /
+`toolRun` (`sdk/tool-fields.ts`, on `./internal`), and `tool()` collapses a def
+to the canonical spelling — so `ToolDef` is canonical for everything downstream
+of authoring, while a raw `export default {…}` agent that skipped `tool()` still
+loads. Two readers on one field under two names is exactly the shape that ships
+half-migrated: one call site updated, another still on the old name, and a tool
+that validates against no schema or cannot be called at all. Add a reader and it
+uses the accessors, or it will be the one that rots.
+
+**`tool()` returns a `DefinedTool`, whose `run` is NOT optional.** `ToolDef.run`
+has to be optional (`execute` is the other legal spelling), which would leave
+every author's own test writing `myTool.run!(args, ctx)` — a non-null assertion,
+i.e. the thing `pnpm check:hatches` counts, in the file a template teaches from.
+`tool()` rejects a def with no handler, so saying that in the type is free.
+For a def read back out of an agent's `tools` record (where the field really is
+optional) the published `runTool(def, args, ctx)` from `@alexkroman1/aai/testing`
+is the answer.
+
+The guest harness keeps its OWN pair (`toolDefInput`/`toolDefRun` in
+`aai-guest/harness-types.ts`) rather than importing these: that file describes
+the harness↔bundle contract, where a bundle carries its own SDK version.
+Removing the field pair from the SDK does not license removing it there.
+
+**`startTool`'s options are the exception, deliberately.** Its schema option is
+still spelled `inputSchema`, because its `input` option is the *mapper* — the two
+cannot share a name. `startTool` goes away when a workflow becomes a tool
+directly, which resolves the collision; renaming it in the meantime would be a
+break on a symbol slated for deletion.
 
 ## Subpath export → file mapping
 
@@ -75,7 +120,7 @@ of subpath exports in `aai/package.json`:
 | Import path | Resolves to | What it contains |
 | --- | --- | --- |
 | `@alexkroman1/aai` | `packages/aai/index.ts` → 6 modules | Types, Db, utils, constants, `agent()`/`tool()` helpers |
-| `@alexkroman1/aai/testing` | `sdk/testing.ts` (direct) | `createToolContext(overrides?)` — a full `ToolContext` for testing a tool's `execute` in isolation, with inert defaults, a recording `send` (`ctx.sent`), and a distinct `sessionId` per call — plus `createUnusedDb()`, the rejecting `db` it defaults to. PUBLISHED rather than an internal `_test-utils.ts` because the audience is an agent author's own project, which is also why it carries no vitest dependency (`send` records into an array; pass `vi.fn()` to override). See the `_test-utils.ts` section of the root guide |
+| `@alexkroman1/aai/testing` | `sdk/testing.ts` (direct) | `createToolContext(overrides?)` — a full `ToolContext` for testing a tool's `run` in isolation, with inert defaults, a recording `send` (`ctx.sent`), and a distinct `sessionId` per call — plus `createUnusedDb()`, the rejecting `db` it defaults to. PUBLISHED rather than an internal `_test-utils.ts` because the audience is an agent author's own project, which is also why it carries no vitest dependency (`send` records into an array; pass `vi.fn()` to override). See the `_test-utils.ts` section of the root guide |
 | `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | Zod-free utilities (`errorMessage`, `errorDetail`, …); `ToolFailure`/`isToolFailure` (the `{ error: string }` a tool returns for a recoverable failure, and the guard for a propagated one — NOT `toolError`, which returns the pre-serialized wire string, so `isToolFailure(toolError(m))` is false); `pushCapped` (append to a `ctx.state` list holding a cap, in place); `createKeyedLock`/`withLock` (`sdk/keyed-lock.ts`), the per-key serializer a stateful agent needs because the LLM loop runs a step's tool calls concurrently; and the two contracts BOTH ends of a platform interaction must derive identically: the slug shape (`VALID_SLUG_RE`, `RESERVED_SLUGS` from `sdk/slug.ts`) and the `aai login` confirmation code (`linkConfirmationCode` from `sdk/cli-link.ts` — the terminal prints it, the studio's approval gate shows it, and the point is that they match). Kept clear of zod so the CLI can load it on every invocation without paying that startup cost — `p-timeout` (2.4 KB, no dependencies), which backs the lock's acquire deadline, is the one exception and is measured against that rule rather than around it |
 | `@alexkroman1/aai/slugify` | `host/slugify.ts` (direct) | `slugifyName` — how a human name BECOMES a slug (transliterating, `decamelize: false`), for the CLI, the platform server, and the studio. Separate from the contract in `sdk/slug.ts` on purpose: that one is dependency-free and rides every agent bundle, this one pulls the transliteration tables. Nothing on the SDK hot path may import it |
 | `@alexkroman1/aai/runtime` | `host/runtime-barrel.ts` → 11 modules | Full Node.js runtime: session, S2S, server, tools, WS handler |
@@ -649,7 +694,7 @@ descriptor — `voice` is a compile error there.
 
 ## `ctx.generate` (one-shot LLM generation)
 
-Tool `execute` code gets one-shot LLM generation via `ctx.generate` — a
+Tool `run` code gets one-shot LLM generation via `ctx.generate` — a
 **runtime capability like `ctx.db`**. One implementation,
 `createGenerateFn` (`host/generate.ts`, exported from `/runtime`), runs
 wherever the runtime runs — inside the guest sandbox on the platform,
@@ -1272,64 +1317,20 @@ both are fail-closed:
 
 ## Telephony: a phone call is an ordinary session
 
-`WS /phone` (`host/telephony/`) accepts a carrier's bidirectional media
-stream — Twilio Media Streams, Telnyx media streaming — and runs it as an
-ordinary session. `createServer` serves it by default, so `aai dev`, a
-self-hosted server and every deployed agent all answer phone calls with no
-per-agent configuration. The platform half (the TwiML webhook that points a
-carrier here) is in `packages/aai-server/CLAUDE.md`.
+`WS /phone` (`host/telephony/`) accepts a carrier's bidirectional media stream —
+Twilio Media Streams, Telnyx media streaming — and runs it as an ordinary
+session. `createServer` serves it by default, so `aai dev`, a self-hosted server
+and every deployed agent all answer phone calls with no per-agent configuration.
+The platform half (the TwiML webhook that points a carrier here) is in
+`packages/aai-server/CLAUDE.md`.
 
 **Nothing in the session stack knows about telephony, and that is the whole
-design.** `SessionCore` talks to a `ClientSink`; `wireSessionSocket` talks to
-a `SessionWebSocket`. So the adapter is a socket-shaped SHIM
-(`createTelephonyBridge`) that speaks the client protocol on one side and the
-carrier's JSON framing on the other, handed straight to
-`runtime.startSession`. Turn-taking, barge-in, tool calls, the audio pacer and
-its ordering rules, session eviction, keepalives, start timeouts and teardown
-are not reimplemented for phone — a call gets them because it runs the same
-code the browser does. Resist adding a telephony branch anywhere below the
-bridge; if one seems necessary, the bridge is the wrong shape.
-
-Four things that are easy to get wrong here, each of which was a decision:
-
-- **Pacing stays ON.** A carrier accepts audio far faster than it plays it and
-  buffers the rest — exactly the shape that made unpaced host-mode sessions
-  destroy 36% of all agent audio (see "Host-mode audio pacing" above): the
-  backlog builds on the FAR side, where `PacedAudioSink.clear()` cannot reach
-  it. So the bridge sets no `audioLeadMs` and a barge-in additionally sends the
-  carrier's own `clear` frame, which is the only way to drop what it already
-  holds. Without that frame the caller talks over an agent that keeps speaking
-  for seconds after being interrupted.
-- **The rates are LEARNED from the `config` frame**, not configured. The first
-  thing any runtime sends a session is `{ sampleRate, ttsSampleRate }`, so the
-  bridge builds its converters from that — which lets one adapter serve a
-  16 kHz pipeline agent and a 24 kHz S2S agent, and avoids plumbing a rate
-  through `createServer`, whose runtime is a LAZY facade in the guest harness
-  and cannot answer a rate question before the first session exists.
-- **Downsampling must low-pass first** (`telephony/resample.ts`). Decimating
-  24 kHz TTS to 8 kHz without it folds everything above 4 kHz back into the
-  speech band; measured, a 6 kHz tone lands at 2 kHz at FULL amplitude. It
-  reads as a poor phone line rather than as a defect, which is how it ships.
-  Upsampling needs no filter — the carrier already band-limits to ~3.4 kHz.
-  Both converters are STATEFUL and must stay so: rebuilt per 20 ms chunk they
-  put a click at every boundary, 50 a second.
-- **This does not contradict "the host does not resample"** (see the S2S
-  section). That rule says rate conversion belongs at the EDGE, because every
-  client owns its own rate and asking it to send the advertised one is cheaper
-  and more honest. A carrier is the one client that cannot comply — 8 kHz
-  μ-law is what the PSTN carries — and the bridge IS the edge. The rule put
-  the conversion exactly here.
-
-Adding a carrier is one `CarrierCodec` in `telephony/carriers.ts` and nothing
-else. Two properties they all owe: decoding NEVER throws (a carrier is free to
-add frame types, and a throw off a socket event takes the host down mid-call),
-and a media frame on a non-`inbound` track is DROPPED — a both-tracks stream
-otherwise transcribes the agent as the caller and every reply reads as a
-barge-in against itself.
-
-**Known gaps**, both deliberate: no `mark` frames, so `playback_progress` is
-unused and the pipeline falls back to its open-loop estimate; and DTMF is
-ignored rather than surfaced as a custom event.
+design** — the adapter is a socket-shaped shim. The four decisions that make it
+work (pacing stays on, the rates are LEARNED from the `config` frame,
+downsampling must low-pass first, and why this does not contradict "the host
+does not resample"), plus what adding a carrier costs and the two known gaps,
+are in `packages/aai/host/CLAUDE.md`. Moved there when this guide reached the
+120,000-character cap; nothing was cut.
 
 ## Transport harnesses and the workflow engine live in `host/CLAUDE.md`
 

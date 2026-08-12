@@ -7,15 +7,15 @@ export const findUserIdByNameZip = retailTool({
   description:
     "Find a customer's user id by first name, last name and zip code. Use this only when the " +
     "caller cannot remember the email address on the account.",
-  inputSchema: z.object({
+  input: z.object({
     first_name: z.string().max(100).describe("First name, e.g. 'John'"),
     last_name: z.string().max(100).describe("Last name, e.g. 'Doe'"),
     zip: z.string().max(20).describe("Zip code, e.g. '12345'"),
   }),
   requiresAuth: false,
-  // `execute` before `summary`: see find_user_id_by_email.ts for why the order
+  // `run` before `summary`: see find_user_id_by_email.ts for why the order
   // is load-bearing for the generic `result` type in `summary`.
-  execute: (args, ctx) => {
+  run: (args, ctx) => {
     const state = retailSlot.get(ctx);
     const first = args.first_name.trim().toLowerCase();
     const last = args.last_name.trim().toLowerCase();

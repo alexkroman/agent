@@ -27,20 +27,20 @@ export const CONFORMANCE_AGENT: AgentDef = {
   tools: {
     echo: {
       description: "Echo input",
-      inputSchema: z.object({ text: z.string() }),
-      execute: ({ text }: { text: string }) => `echo:${text}`,
+      input: z.object({ text: z.string() }),
+      run: ({ text }: { text: string }) => `echo:${text}`,
     },
     get_env: {
       description: "Get MY_VAR from env",
-      execute: (_args: unknown, ctx) => ctx.env.MY_VAR ?? "missing",
+      run: (_args: unknown, ctx) => ctx.env.MY_VAR ?? "missing",
     },
     get_state: {
       description: "Get session state",
-      execute: (_args: unknown, ctx) => JSON.stringify(ctx.state),
+      run: (_args: unknown, ctx) => JSON.stringify(ctx.state),
     },
     echo_messages: {
       description: "Return messages as JSON",
-      execute: (_args: unknown, ctx) => JSON.stringify(ctx.messages),
+      run: (_args: unknown, ctx) => JSON.stringify(ctx.messages),
     },
   },
 };

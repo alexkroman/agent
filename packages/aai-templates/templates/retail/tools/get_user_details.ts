@@ -7,12 +7,12 @@ export const getUserDetails = retailTool({
   description:
     "Get the authenticated customer's profile: name, email, default address, payment methods " +
     "(with gift-card balances) and their order ids with each order's status.",
-  inputSchema: z.object({
+  input: z.object({
     user_id: z.string().max(100).describe("The user id, e.g. 'sara_doe_496'"),
   }),
-  // `execute` before `summary`: see find_user_id_by_email.ts for why the order
+  // `run` before `summary`: see find_user_id_by_email.ts for why the order
   // is load-bearing for the generic `result` type in `summary`.
-  execute: (args, ctx) => {
+  run: (args, ctx) => {
     const state = retailSlot.get(ctx);
     const user = authenticatedUser(state);
     if (isToolFailure(user)) return user;

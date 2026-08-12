@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `ToolContext` — the second argument every tool's `execute` receives.
+ * `ToolContext` — the second argument every tool's `run` receives.
  *
  * Its own module because it is the biggest type in `types.ts` and the one an
  * author reads most often, and that file was at the file-length cap. Re-exported
@@ -14,7 +14,7 @@ import type { DefaultSessionState, Message } from "./session-state.ts";
 import type { WorkflowClient } from "./workflow.ts";
 
 /**
- * Context passed to tool `execute` functions.
+ * Context passed to tool `run` functions.
  *
  * Provides access to the session environment, state, database, and
  * conversation history from within a tool's execute handler.
@@ -30,8 +30,8 @@ import type { WorkflowClient } from "./workflow.ts";
  *
  * const lookupNote = tool({
  *   description: "Look up a note from the database",
- *   inputSchema: z.object({ id: z.string() }),
- *   execute: async ({ id }, ctx) => {
+ *   input: z.object({ id: z.string() }),
+ *   run: async ({ id }, ctx) => {
  *     const rows = await ctx.db.query("select body from notes where id = $1", [id]);
  *     return { id, note: rows[0] ?? null };
  *   },

@@ -113,8 +113,8 @@ export interface SessionSlot<K extends string, T> {
    *
    * export const addItem = tool({
    *   description: "Add an item to the cart",
-   *   inputSchema: z.object({ sku: z.string() }),
-   *   execute: (args, ctx) =>
+   *   input: z.object({ sku: z.string() }),
+   *   run: (args, ctx) =>
    *     cartSlot.update(ctx, async (cart) => {
    *       const priced = await Promise.resolve(args.sku);
    *       cart.items.push(priced);
@@ -191,8 +191,8 @@ export interface SessionSlotOptions<T> {
  *
  * export const addItem = tool({
  *   description: "Add an item to the cart",
- *   inputSchema: z.object({ item: z.string() }),
- *   execute: ({ item }, ctx) => {
+ *   input: z.object({ item: z.string() }),
+ *   run: ({ item }, ctx) => {
  *     const cart = cartSlot.get(ctx);
  *     cart.items.push(item);
  *     return { count: cart.items.length };

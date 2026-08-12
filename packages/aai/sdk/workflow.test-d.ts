@@ -71,9 +71,9 @@ test("workflows compose into agent() and are reachable from tool code", () => {
     workflows: { digest },
     tools: {
       research: tool({
-        inputSchema: z.object({ topic: z.string() }),
+        input: z.object({ topic: z.string() }),
         description: "Start research",
-        execute: (args, ctx) => {
+        run: (args, ctx) => {
           expectTypeOf(ctx.workflows).toEqualTypeOf<WorkflowClient>();
           // Naming the WORKFLOW rather than a string: this is the call whose
           // input is checked against the workflow's own schema.

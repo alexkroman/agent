@@ -32,8 +32,8 @@ export function createRunCode(
       "run_code executes JavaScript (not Python). Always write JavaScript.",
     description:
       "Execute JavaScript code in a sandbox and return the output. Use this for calculations, data transformations, string manipulation, or any task that benefits from running code. Output is captured from console.log().",
-    inputSchema: runCodeParams,
-    async execute({ code }) {
+    input: runCodeParams,
+    async run({ code }) {
       if (!runCode) {
         return {
           error:

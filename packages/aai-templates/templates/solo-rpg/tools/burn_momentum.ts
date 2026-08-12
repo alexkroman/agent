@@ -11,7 +11,7 @@ import {
 export const burnMomentum = tool({
   description:
     "Burn momentum to upgrade the most recent action roll. Only valid when current momentum beats the roll's challenge dice (both dice for a full upgrade, one for Miss to Weak Hit). Reverts the original result's consequences, applies the upgraded result, and resets momentum to +2.",
-  async execute(_args, ctx) {
+  async run(_args, ctx) {
     const state = gameSlot.get(ctx);
     const last = state.lastRoll;
     if (!last) return { error: "No recent action roll to upgrade. Roll first." };

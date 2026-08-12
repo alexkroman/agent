@@ -2,7 +2,7 @@
 /**
  * Test helpers for agent code (the `@alexkroman1/aai/testing` subpath).
  *
- * A tool's `execute` takes a {@link ToolContext}, so testing one means building
+ * A tool's `run` takes a {@link ToolContext}, so testing one means building
  * one. Every field is supplied at runtime and most tests care about exactly
  * two of them (`state`, `sessionId`), which is why the hand-rolled version of
  * this ends up as `{ … } as unknown as ToolContext` — a cast that also stops
@@ -16,8 +16,39 @@
  */
 
 import type { Db } from "./db.ts";
-import type { DefaultSessionState, ToolContext } from "./types.ts";
+import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
+import { toolRun } from "./tool-fields.ts";
+import type { DefaultSessionState, ToolContext, ToolDef } from "./types.ts";
 import { findUnjournalable, rejectingWorkflows, type WorkflowContext } from "./workflow.ts";
+
+/**
+ * Call a tool's handler with validated-shaped args and a context.
+ *
+ * `ToolDef.run` is OPTIONAL — `execute` is the other legal spelling for one more
+ * major — so `myTool.run(args, ctx)` does not compile for a def read out of an
+ * agent's `tools` record, and a test would otherwise reach for a non-null
+ * assertion at every call. This resolves whichever spelling the def carries and
+ * throws naming the tool when it carries neither.
+ *
+ * A def that came straight from `tool()` needs none of this: that returns a
+ * `DefinedTool`, whose `run` is not optional, so `myTool.run(args, ctx)` is the
+ * shorter thing to write and the one the templates use.
+ *
+ * @public
+ */
+export async function runTool<P extends ToolInputSchema, S>(
+  def: ToolDef<P, S> | undefined,
+  args: InferSchemaOutput<P>,
+  ctx: ToolContext<S>,
+): Promise<unknown> {
+  const run = def && toolRun(def);
+  if (!(def && run)) {
+    throw new Error(
+      `runTool: ${def ? `"${def.description}" has no run function` : "no such tool"}`,
+    );
+  }
+  return await run(args, ctx);
+}
 
 /** One `ctx.send(event, data)` call, as recorded by {@link createToolContext}. */
 export interface SentEvent {
@@ -29,7 +60,7 @@ export interface SentEvent {
  * A {@link ToolContext} that records what its tools sent.
  *
  * Assignable to `ToolContext` wherever one is required, so it passes straight
- * to `execute`.
+ * to `run`.
  *
  * @public
  */
@@ -58,7 +89,7 @@ export function createUnusedDb(): Db {
 let sessionCounter = 0;
 
 /**
- * Build a {@link ToolContext} for testing a tool's `execute` in isolation.
+ * Build a {@link ToolContext} for testing a tool's `run` in isolation.
  *
  * Defaults are chosen so the context is inert: empty `env`, empty `state`,
  * `db`/`generate`/`workflows` that reject with a message naming themselves, a
@@ -82,7 +113,7 @@ let sessionCounter = 0;
  *
  * test("add_item appends to this session's cart", async () => {
  *   const ctx = createToolContext();
- *   await addItem.execute({ item: "apple" }, ctx);
+ *   await addItem.run({ item: "apple" }, ctx);
  *   expect(ctx.state).toEqual({ cart: { items: ["apple"] } });
  * });
  * ```
@@ -95,7 +126,7 @@ let sessionCounter = 0;
  *
  * test("recommend pushes its picks to the client", async () => {
  *   const ctx = createToolContext();
- *   await recommend.execute({ mood: "chill" }, ctx);
+ *   await recommend.run({ mood: "chill" }, ctx);
  *   expect(ctx.sent).toEqual([{ event: "recommendations", data: expect.anything() }]);
  * });
  * ```

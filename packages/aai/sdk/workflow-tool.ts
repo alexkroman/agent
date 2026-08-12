@@ -16,7 +16,7 @@
  * `start` — a page's run legitimately has no session to key on. So it is
  * defaulted HERE, at the one call site that always does.
  *
- * The second thing it removes is a duplicated schema: the tool's `inputSchema`
+ * The second thing it removes is a duplicated schema: the tool's `input`
  * IS the workflow's `input`, so an author who writes the tool by hand either
  * restates the schema or widens it and loses the validation `start` would have
  * done anyway.
@@ -24,7 +24,7 @@
 
 import { tool } from "./define.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
-import type { ToolContext, ToolDef } from "./types.ts";
+import type { DefinedTool, ToolContext } from "./types.ts";
 import type { WorkflowDef } from "./workflow.ts";
 
 /** Options every {@link startTool} form takes. */
@@ -102,7 +102,7 @@ function asRunInput<I>(args: unknown): I {
 /**
  * Build the tool that starts `workflow`.
  *
- * The tool's `inputSchema` is the workflow's own, so the LLM is shown exactly
+ * The tool's `input` schema is the workflow's own, so the LLM is shown exactly
  * the arguments the run validates against, and the run is keyed to the session
  * by default.
  *
@@ -137,7 +137,7 @@ function asRunInput<I>(args: unknown): I {
  * (`TS7031`/`TS7006`) — silently discarding type safety inside the one function
  * that most needs it, in exchange for catching a mistake that is a one-line throw
  * away. So `T` defaults to `P` on a single signature (which is what makes the
- * plain form still return `ToolDef<P>`), and the pairing is checked at
+ * plain form still return `DefinedTool<P>`), and the pairing is checked at
  * construction. `workflow-tool.test-d.ts` pins the inference so the overload
  * version cannot be reintroduced without noticing.
  *
@@ -146,7 +146,7 @@ function asRunInput<I>(args: unknown): I {
 export function startTool<P extends ToolInputSchema, R, T extends ToolInputSchema = P>(
   workflow: WorkflowDef<P, R>,
   options: StartToolOptions & Partial<DerivedStartToolOptions<T, P>>,
-): ToolDef<T> {
+): DefinedTool<T> {
   const { description, reply = (runId: string) => ({ runId, status: "started" }) } = options;
   const keyOf = options.key ?? ((ctx: ToolContext) => ctx.sessionId);
   const derived = options.input;
@@ -162,15 +162,20 @@ export function startTool<P extends ToolInputSchema, R, T extends ToolInputSchem
         "(drop both to take the workflow's schema as the tool's).",
     );
   }
-  // `inputSchema` is present only when a schema exists on one side or the other —
-  // it is optional on both, so a schemaless workflow with no override yields a
+  // `input` is present only when a schema exists on one side or the other — it
+  // is optional on both, so a schemaless workflow with no override yields a
   // schemaless tool rather than an empty object schema the LLM would read as
   // "takes no arguments".
-  const inputSchema = options.inputSchema ?? workflow.input;
+  //
+  // Note the OPTION is still `inputSchema` while the FIELD it becomes is `input`:
+  // this helper's `input` option is the mapper, so the two cannot share a name.
+  // `startTool` goes away when a workflow becomes a tool directly, which is what
+  // resolves the collision rather than a rename here.
+  const schema = options.inputSchema ?? workflow.input;
   return tool<T>({
     description,
-    ...(inputSchema === undefined ? {} : { inputSchema: inputSchema as T }),
-    execute: async (args: InferSchemaOutput<T>, ctx: ToolContext) => {
+    ...(schema === undefined ? {} : { input: schema as T }),
+    run: async (args: InferSchemaOutput<T>, ctx: ToolContext) => {
       // With no mapper `T` defaults to `P`, so the tool's own arguments ARE the
       // run's input — an equality the checker cannot see from inside the body,
       // hence the seam. The other way to instantiate `T` apart from `P` without a

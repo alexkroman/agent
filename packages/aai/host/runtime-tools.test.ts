@@ -64,7 +64,7 @@ describe("self-hosted tool surface: sends follow the live sink", () => {
       tools: {
         bump: {
           description: "bump the counter",
-          execute: async (_args: unknown, ctx: { state: { count: number } }) => {
+          run: async (_args: unknown, ctx: { state: { count: number } }) => {
             await parked;
             ctx.state.count += 1;
             return "ok";
@@ -96,7 +96,7 @@ describe("self-hosted tool surface: sends follow the live sink", () => {
       tools: {
         ping: {
           description: "emit a custom event",
-          execute: async (_args: unknown, ctx: { send: (e: string, d: unknown) => void }) => {
+          run: async (_args: unknown, ctx: { send: (e: string, d: unknown) => void }) => {
             await parked;
             ctx.send("progress", { done: true });
             return "ok";
@@ -125,7 +125,7 @@ describe("self-hosted tool surface: sends follow the live sink", () => {
       tools: {
         bump: {
           description: "bump the counter",
-          execute: (_args: unknown, ctx: { state: { count: number }; send: unknown }) => {
+          run: (_args: unknown, ctx: { state: { count: number }; send: unknown }) => {
             ctx.state.count += 1;
             (ctx.send as (e: string, d: unknown) => void)("progress", 1);
             return "ok";

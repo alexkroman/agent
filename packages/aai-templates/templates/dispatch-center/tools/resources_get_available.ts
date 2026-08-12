@@ -4,13 +4,13 @@ import { dispatchSlot, RESOURCE_TYPES } from "../shared.ts";
 
 export const resourcesGetAvailable = tool({
   description: "List available resources, optionally filtered by type.",
-  inputSchema: z.object({
+  input: z.object({
     type: z
       .enum([...RESOURCE_TYPES, "all"])
       .describe("Filter by resource type, or 'all'")
       .optional(),
   }),
-  async execute(args, ctx) {
+  async run(args, ctx) {
     const state = dispatchSlot.get(ctx);
     let resources = state.resources;
     if (args.type && args.type !== "all") {

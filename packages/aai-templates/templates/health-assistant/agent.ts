@@ -85,13 +85,13 @@ export default agent({
     check_drug_interaction: tool({
       description:
         "Check for interactions between two or more medications using FDA drug label data. Looks up each drug's official label and reports where one drug's Drug Interactions section mentions another. Absence of a mention does not guarantee safety.",
-      inputSchema: z.object({
+      input: z.object({
         drugs: z
           .array(z.string().min(1))
           .min(2)
           .describe("Medication names to check, e.g. ['ibuprofen', 'warfarin']"),
       }),
-      async execute(args) {
+      async run(args) {
         const names = args.drugs.map((d) => d.trim().toLowerCase()).filter((d) => d.length > 0);
         if (names.length < 2) {
           return { error: "Provide at least two medication names to check." };
@@ -141,12 +141,12 @@ export default agent({
     medication_lookup: tool({
       description:
         "Look up detailed information about a single medication, including purpose, warnings, dosage, side effects, and manufacturer. Works with both generic and brand names.",
-      inputSchema: z.object({
+      input: z.object({
         name: z
           .string()
           .describe("Medication name (generic or brand, e.g. 'ibuprofen' or 'Advil')"),
       }),
-      async execute(args) {
+      async run(args) {
         const drug = await fetchFdaLabel(args.name);
         if (!drug) {
           return { error: `No FDA data found for: ${args.name}` };

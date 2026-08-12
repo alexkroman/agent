@@ -9,10 +9,10 @@ import {
 
 export const incidentGet = tool({
   description: "Get full details on a specific incident including timeline and assigned resources.",
-  inputSchema: z.object({
+  input: z.object({
     incidentId: z.string().max(20).describe("The incident ID"),
   }),
-  async execute(args, ctx) {
+  async run(args, ctx) {
     const state = dispatchSlot.get(ctx);
     const inc = findIncident(state, args.incidentId);
     if (isToolFailure(inc)) return inc;

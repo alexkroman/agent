@@ -28,8 +28,8 @@ import { z } from "zod";
 
 const getWeather = tool({
   description: "Get current weather for a city",
-  inputSchema: z.object({ city: z.string().describe("City name") }),
-  execute: async ({ city }) => {
+  input: z.object({ city: z.string().describe("City name") }),
+  run: async ({ city }) => {
     const res = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1`);
     return await res.json();
   },
