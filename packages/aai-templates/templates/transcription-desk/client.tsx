@@ -26,8 +26,18 @@
  */
 
 import "@alexkroman1/aai-ui/styles.css";
-import { createWorkflowApi, isTerminal, page, useTheme, useWorkflowRun } from "@alexkroman1/aai-ui";
+import {
+  createWorkflowApi,
+  isTerminal,
+  page,
+  useTheme,
+  useWorkflowRun,
+  type WorkflowOutputOf,
+} from "@alexkroman1/aai-ui";
 import { type CSSProperties, useState } from "react";
+// Type-only, so it is ERASED: naming the workflow costs this bundle nothing and
+// keeps the page's idea of the output identical to the agent's by construction.
+import type { transcribe } from "./agent.ts";
 import { fixedChunks, MIN_SILENCE_MS, planChunks, type Span } from "./chunker.ts";
 import { loadRuns, rememberRun } from "./runs.ts";
 import { speechRegions } from "./vad.ts";
@@ -45,14 +55,6 @@ const CHUNK_SECONDS = 60;
 const SAMPLE_RATE = 16_000;
 
 const api = createWorkflowApi();
-
-/** What the run's `output` looks like once it completes (see agent.ts). */
-type TranscribeOutput = {
-  label: string;
-  chunks: number;
-  words: number;
-  transcript: string;
-};
 
 /** Progress the page can honestly report while a run is in flight. */
 type Progress = {
@@ -155,10 +157,12 @@ function App() {
   // initializer React calls once, where the call form would re-read storage and
   // re-parse the list on every render.
   const [runs, setRuns] = useState(loadRuns);
-  // The type parameter is what makes `run.output` a `TranscribeOutput` below —
-  // the page names its own workflow's return type, since it cannot import
-  // agent.ts without pulling the agent into the page bundle.
-  const { run, error: pollError } = useWorkflowRun<TranscribeOutput>(runId, { api });
+  // The type parameter is what makes `run.output` typed below, and it is DERIVED
+  // from the workflow rather than restated — a second copy of the shape had
+  // nothing checking the two agreed.
+  const { run, error: pollError } = useWorkflowRun<WorkflowOutputOf<typeof transcribe>>(runId, {
+    api,
+  });
 
   // Busy through the browser-side work AND while a started run is still going.
   // `isTerminal` is the SDK's own answer to "will this change again", so the two

@@ -33,14 +33,20 @@ import { buildAgentUrl } from "./client-config.ts";
  * writes; nothing in a browser needs the word "snapshot" to know a poll returns
  * one.
  *
- * It is GENERIC on the run's output, and a page is expected to supply it — see
- * {@link useWorkflowRun}. A browser cannot import the workflow definition the way
- * tool code can (that module is the agent, and pulling it into the page bundle
- * would drag the whole server graph in), so naming the output type is the one
- * thing the page has to restate.
+ * It is GENERIC on the run's output, and a page supplies it — see
+ * {@link useWorkflowRun}. It does NOT have to restate it: `import type` is erased,
+ * so a page can name the workflow itself and derive the rest with
+ * {@link WorkflowOutputOf}, pulling no server graph into the bundle. This comment
+ * used to say the opposite, on the same wrong premise the `WorkflowRunSnapshot`
+ * copies above were justified by.
  */
 export type WorkflowRun<R = unknown> = WorkflowRunSnapshot<R>;
-export type { WorkflowSummary } from "@alexkroman1/aai";
+/**
+ * A workflow's own output type — re-exported so a page needs ONE import to type
+ * its runs. See the SDK's own doc: a type-only import of `agent.ts` is erased, so
+ * deriving the type costs the browser bundle nothing.
+ */
+export type { WorkflowOutputOf, WorkflowSummary } from "@alexkroman1/aai";
 
 /**
  * A run status nothing will change again.

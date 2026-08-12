@@ -82,6 +82,7 @@ export {
   useWorkflowRun,
   type WorkflowApi,
   type WorkflowApiOptions,
+  type WorkflowOutputOf,
   type WorkflowRun,
   type WorkflowSummary,
 } from "./workflow-client.ts";

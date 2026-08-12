@@ -73,6 +73,45 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
 export type AnyWorkflowDef<R = unknown> = WorkflowDef<ToolInputSchema, R>;
 
 /**
+ * A workflow's OUTPUT type, for a page that polls its runs.
+ *
+ * This is the end-to-end typing a static page was missing. `useWorkflowRun<R>`
+ * makes `run.status === "completed"` narrow to a typed `run.output`, and the page
+ * had to name `R` by hand — restating a shape the agent module already declares,
+ * with nothing checking the two agree.
+ *
+ * It needs no build step and no generated `.d.ts`, because the reason the page
+ * "cannot import the agent" does not survive contact with `import type`: a
+ * type-only import is ERASED, so it drags no server graph into the browser
+ * bundle. That is the same correction `aai-ui` already made when it stopped
+ * restating `WorkflowRunSnapshot` — the premise was wrong there for the same
+ * reason it is wrong here.
+ *
+ * Export the workflow from `agent.ts` (a `const` declared with `workflow()`
+ * already is one) and the page derives the rest:
+ *
+ * @example
+ * ```ts no-check
+ * // agent.ts
+ * export const transcribe = workflow({ input: …, run: () => ({ text: "…" }) });
+ *
+ * // client.tsx — `import type` is erased, so nothing server-side is bundled.
+ * import type { WorkflowOutputOf } from "@alexkroman1/aai";
+ * import type { transcribe } from "./agent.ts";
+ *
+ * const run = useWorkflowRun<WorkflowOutputOf<typeof transcribe>>(runId, { api });
+ * if (run?.status === "completed") console.log(run.output.text); // typed
+ * ```
+ *
+ * `Awaited` because a `run` body may be sync or async and the snapshot always
+ * holds the settled value.
+ *
+ * @public
+ */
+export type WorkflowOutputOf<D> =
+  D extends WorkflowDef<ToolInputSchema, infer R> ? Awaited<R> : never;
+
+/**
  * One declared workflow, as `GET /workflows` lists it.
  *
  * Here rather than in `host/` because both ends need it and only one of them is

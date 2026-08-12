@@ -111,7 +111,11 @@ function authHeader(env: Readonly<Record<string, string>>): string {
  * by its POSITION rather than disambiguated by call order, the chunks may be
  * transcribed in any order and by any number of workers without that changing.
  */
-const transcribe = workflow({
+/**
+ * Exported so `client.tsx` can DERIVE its output type — `import type` is erased,
+ * so naming it from the page bundles nothing server-side. See `WorkflowOutputOf`.
+ */
+export const transcribe = workflow({
   description: "Transcribe an uploaded recording by sending each chunk to the Sync API",
   input: z.object({
     /** Blob ids from `/workflows/blobs`, in playback order — see the module doc. */

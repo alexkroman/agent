@@ -51,16 +51,32 @@ is otherwise identical (still `client.tsx`, still React, still Tailwind, and
 `ThemeProvider` is installed either way), which is why the workflow templates read
 like every other template.
 
-**The output type is the PAGE's to name.**
-`useWorkflowRun<TranscribeOutput>(runId, { api })` is what makes `run.status ===
+**The output type is the PAGE's to name — and it should DERIVE it, not restate
+it.** `useWorkflowRun<R>(runId, { api })` is what makes `run.status ===
 "completed"` narrow to a typed `run.output`, because `WorkflowRunSnapshot` is
 discriminated on `status` in the SDK — `transcription-desk` used to write
-`run.output as TranscribeOutput` and no longer casts. The page has to restate
-the type because it cannot import the workflow the way tool code can: that
-module is the agent, and pulling it into the page bundle would drag the whole
-server graph in. The generic sits on the HOOK and not on `WorkflowApi.get`,
-deliberately: a generic method has to be implemented generically, which made
-every test double and hand-written stub of the client generic too.
+`run.output as TranscribeOutput` and no longer casts. Name the WORKFLOW and let
+the type follow:
+
+```ts no-check
+import type { WorkflowOutputOf } from "@alexkroman1/aai-ui";
+import type { transcribe } from "./agent.ts";
+
+const run = useWorkflowRun<WorkflowOutputOf<typeof transcribe>>(runId, { api });
+```
+
+This section said the opposite for a while — that a page must hand-write the
+type "because it cannot import the workflow the way tool code can: that module is
+the agent, and pulling it into the page bundle would drag the whole server graph
+in". That premise does not survive `import type`, which is ERASED and pulls in
+nothing, and it is the SAME wrong premise the `WorkflowRunSnapshot` copies two
+paragraphs up were justified by. So it needs no generated `.d.ts` and no build
+step; a hand-restated type was simply a second declaration of a shape the agent
+already owns, with nothing checking the two agree.
+
+The generic sits on the HOOK and not on `WorkflowApi.get`, deliberately: a
+generic method has to be implemented generically, which made every test double
+and hand-written stub of the client generic too.
 
 **`isTerminal` is re-exported from the SDK, never redefined here.** The local copy
 listed two of the terminal statuses, so adding `cancelled` would have left a page
