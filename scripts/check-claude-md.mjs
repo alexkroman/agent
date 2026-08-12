@@ -37,6 +37,25 @@ const ROOT = new URL("..", import.meta.url).pathname;
 /** 20% under the 150k limit. */
 const MAX_CHARS = 120_000;
 
+/**
+ * A guide at or past this fraction of the cap is reported as nearly full.
+ *
+ * The pass/fail line alone is not enough here, and the reason is specific to
+ * how these files grow. A guide gains a paragraph as a SIDE EFFECT of shipping
+ * something else — you fixed a subtle thing, you write down why — so the author
+ * who trips the cap is never the author who filled it, and the fix (move a
+ * section into the owning package's guide, leave a pointer) is a documentation
+ * refactor landing inside an unrelated change. Two guides have been at 99-100%
+ * for some time; #1058 hit that twice, splitting `aai/CLAUDE.md` at 100% and
+ * `aai-server/CLAUDE.md` at 99.9%, both mid-branch and neither related to the
+ * feature.
+ *
+ * So a nearly-full guide is announced while there is still room to plan the
+ * split, and every run prints the remaining characters rather than a bare
+ * percentage: "1,022 chars left" is a decision, "99% of cap" is a shrug.
+ */
+const WARN_RATIO = 0.9;
+
 // `--others --exclude-standard` includes new, not-yet-committed files (but not
 // gitignored ones), so a freshly-added oversized guide is caught too.
 // Deduped: during a conflicted merge or rebase `--cached` lists a path once per
@@ -59,31 +78,55 @@ if (files.length === 0) {
   process.exit(1);
 }
 
-const violations = [];
-for (const path of files) {
+const guides = files.map((path) => {
   const size = readFileSync(join(ROOT, path), "utf8").length;
-  if (size > MAX_CHARS) violations.push({ path, size });
-}
+  return { path, size, remaining: MAX_CHARS - size };
+});
+
+const violations = guides.filter((g) => g.size > MAX_CHARS);
+const nearlyFull = guides
+  .filter((g) => g.size <= MAX_CHARS && g.size >= MAX_CHARS * WARN_RATIO)
+  .sort((a, b) => a.remaining - b.remaining);
 
 const pct = (size) => Math.round((size / MAX_CHARS) * 100);
+const num = (n) => n.toLocaleString("en-US");
+
+const REMEDY =
+  "Move a section into the owning package's CLAUDE.md and leave a pointer;\n" +
+  'see the root CLAUDE.md\'s "Package guides" table and "Updating CLAUDE.md".\n' +
+  "The scaffold guide is the one that has to be CUT instead — it ships to\n" +
+  "users inside every `aai init` project and has no packages to push into.\n";
 
 if (violations.length > 0) {
   console.error(
-    `\ncheck-claude-md: ${violations.length} file(s) over the ${MAX_CHARS} char cap:\n`,
+    `\ncheck-claude-md: ${violations.length} file(s) over the ${num(MAX_CHARS)} char cap:\n`,
   );
   for (const { path, size } of violations) {
-    console.error(`  ${path} — ${size} chars (${pct(size)}% of cap)`);
+    console.error(`  ${path} — ${num(size)} chars (${pct(size)}% of cap)`);
   }
-  console.error(
-    "\nMove sections into the owning package's CLAUDE.md and leave a pointer;\n" +
-      'see the root CLAUDE.md\'s "Package guides" table and "Updating CLAUDE.md".\n',
-  );
+  console.error(`\n${REMEDY}`);
   process.exit(1);
 }
 
-const widest = Math.max(...files.map((f) => f.length));
-for (const path of files) {
-  const size = readFileSync(join(ROOT, path), "utf8").length;
-  console.log(`  ${path.padEnd(widest)}  ${String(size).padStart(7)} chars  ${pct(size)}% of cap`);
+const widest = Math.max(...guides.map((g) => g.path.length));
+for (const { path, size, remaining } of guides) {
+  console.log(
+    `  ${path.padEnd(widest)}  ${num(size).padStart(8)} chars  ${String(pct(size)).padStart(3)}%  ` +
+      `${num(remaining).padStart(8)} left`,
+  );
 }
-console.log(`\ncheck-claude-md: ${files.length} file(s) within the ${MAX_CHARS} char cap.`);
+console.log(`\ncheck-claude-md: ${files.length} file(s) within the ${num(MAX_CHARS)} char cap.`);
+
+// A warning, not a failure: the guide is still readable in full, and failing
+// here would block the author who merely arrived last. It is loud because the
+// alternative is finding out from a gate in the middle of an unrelated change.
+if (nearlyFull.length > 0) {
+  console.warn(
+    `\ncheck-claude-md: ${nearlyFull.length} guide(s) past ${Math.round(WARN_RATIO * 100)}% of the cap — ` +
+      "split before adding more:\n",
+  );
+  for (const { path, size, remaining } of nearlyFull) {
+    console.warn(`  ${path} — ${num(size)} chars, only ${num(remaining)} left (${pct(size)}%)`);
+  }
+  console.warn(`\n${REMEDY}`);
+}
