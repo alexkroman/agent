@@ -268,6 +268,16 @@ export function createWorkflowApi(opts: WorkflowApiOptions = {}): WorkflowApi {
 /** How often {@link useWorkflowRun} re-reads a live run. */
 export const DEFAULT_WORKFLOW_POLL_MS = 2000;
 
+/**
+ * Consecutive "no such run" reads {@link useWorkflowRun} tolerates before giving
+ * up on the id.
+ *
+ * Small on purpose: a 404 is a stable answer, so the budget exists only to
+ * absorb a first read that races the write — not to keep hoping. Unbounded, a
+ * stale id polls (and, on the platform, BROKERS) for as long as the tab is open.
+ */
+export const MAX_MISSING_READS = 3;
+
 export type UseWorkflowRunResult<R = unknown> = {
   /** Latest snapshot, or undefined before the first read lands. */
   run: WorkflowRun<R> | undefined;
@@ -291,9 +301,29 @@ function pollUntilTerminal<R>(
   intervalMs: number,
   onRun: (run: WorkflowRun<R>) => void,
   onError: (message: string) => void,
+  onStopped: () => void,
 ): () => void {
   let cancelled = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let missing = 0;
+
+  /**
+   * A read that came back empty. Resolves whether the loop should STOP.
+   *
+   * A 404 is a STABLE answer — the journal is durable, so a run the agent does not
+   * know about now will not appear later — and retrying it unbounded is how a
+   * stale id (one restored from `localStorage`, or one whose agent was redeployed
+   * onto a fresh database) polls forever: the page stays `polling` and therefore
+   * busy, and on the platform every read BROKERS, so a closed tab's worth of dead
+   * ids keeps sandboxes resident. A small budget is kept anyway, because the first
+   * read can race a replica that has not yet seen the run.
+   */
+  const onMissing = (): boolean => {
+    missing += 1;
+    if (missing < MAX_MISSING_READS) return false;
+    if (!cancelled) onError(`No workflow run ${runId}`);
+    return true;
+  };
 
   const read = async (): Promise<boolean> => {
     try {
@@ -306,7 +336,8 @@ function pollUntilTerminal<R>(
       // site reading `run.output`.
       const next = (await getClient().get(runId)) as WorkflowRun<R> | undefined;
       if (cancelled) return true;
-      if (!next) return false;
+      if (!next) return onMissing();
+      missing = 0;
       onRun(next);
       // Terminal: nothing will change again, so stop rather than poll a
       // finished run for as long as the page stays open.
@@ -320,7 +351,14 @@ function pollUntilTerminal<R>(
   };
 
   const tick = async (): Promise<void> => {
-    if (await read()) return;
+    if (await read()) {
+      // Stopped on its own — a terminal run, or an id the agent will never know.
+      // Reported because `polling` cannot be derived from the snapshot alone:
+      // giving up on a MISSING id leaves `run` undefined, which reads as "still
+      // waiting" and left the page permanently busy.
+      if (!cancelled) onStopped();
+      return;
+    }
     if (cancelled) return;
     // Re-armed from the SETTLED read rather than on an interval, so a slow
     // response cannot stack overlapping polls.
@@ -360,6 +398,14 @@ export function useWorkflowRun<R = unknown>(
   const { api, intervalMs = DEFAULT_WORKFLOW_POLL_MS } = opts;
   const [run, setRun] = useState<WorkflowRun<R> | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
+  /**
+   * Has the loop stopped for a reason the snapshot does not show?
+   *
+   * Only one such reason exists — an id the agent kept reporting as unknown, past
+   * {@link MAX_MISSING_READS} — and it leaves `run` undefined, so `polling`
+   * derived from `isTerminal(run)` alone stays true forever.
+   */
+  const [stopped, setStopped] = useState(false);
 
   /**
    * The caller's client, held in a ref rather than named as an effect
@@ -383,6 +429,7 @@ export function useWorkflowRun<R = unknown>(
     // what makes the "started, still waiting" moment read as "completed".
     setRun(undefined);
     setError(undefined);
+    setStopped(false);
     if (!runId) return;
     // The no-client default is built lazily and ONCE per loop — as a render-time
     // default it would be a fresh object per render, the same hazard the ref
@@ -403,8 +450,9 @@ export function useWorkflowRun<R = unknown>(
         setError(undefined);
       },
       setError,
+      () => setStopped(true),
     );
   }, [runId, intervalMs]);
 
-  return { run, error, polling: runId !== undefined && !isTerminal(run) };
+  return { run, error, polling: runId !== undefined && !stopped && !isTerminal(run) };
 }

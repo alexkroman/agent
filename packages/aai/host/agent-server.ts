@@ -29,6 +29,7 @@ import type { AgentEnv, ProviderEnv } from "../sdk/env-types.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { createRuntime, type RuntimeOptions } from "./runtime.ts";
 import { type AgentServer, createServer, type PassthroughServerOptions } from "./server.ts";
+import { WORKFLOW_API_TOKEN_ENV } from "./workflow-api.ts";
 
 /** Configuration for {@link createAgentServer}. */
 // An interface rather than an intersection: TypeDoc documents inherited
@@ -103,10 +104,17 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     runtime,
     // Read off the agent rather than asked for again — see the module doc.
     name: agent.name,
-    // Forwarded for the workflow API's optional bearer
-    // (`AAI_WORKFLOW_API_TOKEN`). It does NOT enable host mode, which is a
-    // separate opt-in (`AAI_ALLOW_HOST`) — see `ServerOptions.env`.
-    env,
+    // ONLY the workflow-API token, never the whole agent env — the same
+    // narrowing the guest harness applies, for the same reason. `createServer`
+    // gates host mode on `env && isHostAllowed(env)`, so forwarding the agent's
+    // env wholesale ENABLES `?host=1` for any agent whose env happens to set
+    // `AAI_ALLOW_HOST` — letting an unauthenticated client supply its own
+    // system prompt and tool schemas and run them on this operator's
+    // credentials. `createAgentServer` passed no `env` at all before the
+    // workflow API needed its bearer here, so one key is also exactly the
+    // previous behaviour rather than a new restriction. An operator who really
+    // wants host mode has `createHostServer` (or `createServer` directly).
+    env: omitUndefined({ [WORKFLOW_API_TOKEN_ENV]: env[WORKFLOW_API_TOKEN_ENV] }),
     ...omitUndefined({
       greeting: agent.greeting,
       page: agent.page,

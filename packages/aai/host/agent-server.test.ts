@@ -18,7 +18,9 @@ import { createAgentServer } from "./agent-server.ts";
 const ENV = { ASSEMBLYAI_API_KEY: "sk-test" };
 
 async function withServer(
-  options: Omit<Parameters<typeof createAgentServer>[0], "env"> & { env?: typeof ENV },
+  options: Omit<Parameters<typeof createAgentServer>[0], "env"> & {
+    env?: Record<string, string>;
+  },
   run: (baseUrl: string) => Promise<void>,
 ): Promise<void> {
   const server = createAgentServer({ env: ENV, logger: silentLogger, ...options });
@@ -31,6 +33,27 @@ async function withServer(
 }
 
 describe("createAgentServer", () => {
+  test("an agent env setting AAI_ALLOW_HOST does not open host mode", async () => {
+    // `createServer` gates host mode on `env && isHostAllowed(env)`, and this
+    // wrapper forwards `env` only for the workflow API's optional bearer — so
+    // forwarding it wholesale would let an unauthenticated `?host=1` client
+    // supply its own system prompt and tool schemas and run them on THIS
+    // operator's credentials, for any agent whose env happens to carry the flag.
+    // It passed no `env` at all before the workflow token needed one here, so
+    // refusing is also the pre-existing behaviour.
+    const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
+
+    await withServer({ agent: myAgent, env: { ...ENV, AAI_ALLOW_HOST: "1" } }, async (baseUrl) => {
+      const ws = new WebSocket(`${baseUrl.replace("http", "ws")}/websocket?host=1`);
+      const closed = await new Promise<{ code: number }>((resolve) => {
+        ws.addEventListener("close", (e: CloseEvent) => resolve({ code: e.code }));
+        ws.addEventListener("error", () => resolve({ code: 0 }));
+      });
+      // Refused rather than upgraded into a host session.
+      expect(closed.code).not.toBe(1000);
+    });
+  });
+
   test("serves the agent's own name and greeting without being told them", async () => {
     const myAgent = agent({
       name: "Support",

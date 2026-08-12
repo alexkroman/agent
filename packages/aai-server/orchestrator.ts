@@ -83,6 +83,7 @@ import {
   handleClientAsset,
 } from "./transport-websocket.ts";
 import { createAgentWorkflowsHandler } from "./workflow-handler.ts";
+import { WAKE_INTERNAL_HEADER, wakeInternalToken } from "./workflow-wake.ts";
 
 export type OrchestratorOpts = {
   slots: SlotCache;
@@ -329,14 +330,29 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
    * placed after would be a rate limit on the reply rather than on the work.
    */
   const workflowRateMw = createMiddleware<HonoEnv>(async (c, next) => {
+    // The wake sweep's own loopback request is exempt: it carries no
+    // `X-Forwarded-For`, so it would be metered in the single
+    // `UNKNOWN_CLIENT_IP` bucket that `WORKFLOW_IP_RATE_LIMIT` sizes for one
+    // polling page — shared across every replica's sweep. The token exists only
+    // in this process's memory, so the header cannot be forged from outside.
+    if (c.req.header(WAKE_INTERNAL_HEADER) === wakeInternalToken()) return await next();
     const ip = clientIp(c.req.raw);
     const isStart =
       c.req.method === "POST" && c.req.path.endsWith(`${GUEST_ROUTES.workflows}/runs`);
-    const verdict = await (isStart ? workflowStartLimiter : workflowLimiter).check(ip);
-    if (!verdict.ok) {
-      return c.json({ error: "Too many workflow requests — try again later" }, 429, {
-        "Retry-After": String(verdict.retryAfterSeconds),
-      });
+    // BOTH limiters, in ascending tightness. `WORKFLOW_START_IP_RATE_LIMIT`'s own
+    // doc says it is counted IN ADDITION to the surface limit, and a ternary made
+    // it counted INSTEAD — so `POST /runs`, the one route that queues work
+    // outliving its request, was the only route escaping the surface cap
+    // entirely. Ordering matters: the surface limiter must be checked first so a
+    // flood of starts consumes the shared budget it is supposed to consume.
+    const limiters = isStart ? [workflowLimiter, workflowStartLimiter] : [workflowLimiter];
+    for (const limiter of limiters) {
+      const verdict = await limiter.check(ip);
+      if (!verdict.ok) {
+        return c.json({ error: "Too many workflow requests — try again later" }, 429, {
+          "Retry-After": String(verdict.retryAfterSeconds),
+        });
+      }
     }
     await next();
   });

@@ -299,7 +299,19 @@ export function reportSequenceDrift(
   runId: string,
   journal: Map<string, unknown>,
   claimedSteps: Set<string>,
+  thrown?: unknown,
 ): void {
+  // Only for a boundary the RUN chose. An unclaimed journal entry means "a replay
+  // walked past a step this one did not", which holds on completion and on both
+  // control-flow unwinds — `sleep`/`continueAs` are reachable only THROUGH every
+  // earlier entry — and does NOT hold on a failure, which abandons the rest of the
+  // body by definition. Reported unconditionally, a run whose steps are CONCURRENT
+  // (`Promise.all` over `ctx.step`, the shape `transcription-desk` ships) named
+  // every sibling the rejection cancelled: a real failure buried under a list of
+  // invented determinism violations, on exactly the shape the docs recommend.
+  if (thrown !== undefined && !(thrown instanceof Suspended || thrown instanceof ContinueAs)) {
+    return;
+  }
   if (journal.size === 0) return;
   const orphaned = [...journal.keys()].filter((id) => !claimedSteps.has(id));
   if (orphaned.length === 0) return;

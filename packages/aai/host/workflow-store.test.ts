@@ -525,3 +525,23 @@ describe("every jsonb parameter is bound through ::text", () => {
     }
   });
 });
+
+describe("base64ByteLength", () => {
+  test("accounts for padding, which `length * 3 / 4` does not", async () => {
+    const { base64ByteLength } = await import("./workflow-store.ts");
+    // `length * 3 / 4` is the UNPADDED length, so every payload whose byte count
+    // is not a multiple of 3 was overstated by one or two — the figure `putBlob`
+    // stores and the upload response reports, against the real bytes
+    // `ctx.blob(id)` hands the run. A 3-byte-aligned fixture cannot see it.
+    for (const bytes of [0, 1, 2, 3, 4, 5, 6, 7, 100, 1024, 1_048_576]) {
+      const base64 = Buffer.from(new Uint8Array(bytes)).toString("base64");
+      expect(base64ByteLength(base64), `${bytes} bytes`).toBe(bytes);
+    }
+  });
+
+  test("tolerates trailing whitespace, which a wire payload can carry", async () => {
+    const { base64ByteLength } = await import("./workflow-store.ts");
+    expect(base64ByteLength(`${Buffer.from("hello").toString("base64")}\n`)).toBe(5);
+    expect(base64ByteLength("   ")).toBe(0);
+  });
+});

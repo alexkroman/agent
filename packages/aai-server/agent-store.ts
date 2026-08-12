@@ -58,7 +58,7 @@ export type AgentRows = {
   /** Current version, or null when the agent does not exist (deleted). */
   getVersion(slug: string): Promise<number | null>;
   /**
-   * Every deployed slug, oldest first, bounded by `limit`.
+   * Deployed slugs in SLUG ORDER, bounded by `limit`, starting after `after`.
    *
    * For the workflow wake sweep (`workflow-wake.ts`), which has to turn "some
    * app has a run due" into "boot that app" without reading tenant data to find
@@ -67,10 +67,18 @@ export type AgentRows = {
    * schema-scoped journal query possible at all — the identifier is a one-way
    * hash, so the reverse direction does not exist.
    *
-   * Oldest first so a fleet larger than `limit` is swept in a stable order rather
-   * than a shuffling window.
+   * **`after` is what makes a fleet past `limit` reachable, and it is not
+   * optional in spirit.** Slug order alone is stable, which is necessary and not
+   * sufficient: without a cursor every tick returns the SAME first page forever,
+   * so an agent sorting past `MAX_WAKE_CANDIDATE_SLUGS` is never a wake candidate
+   * and its runs never resume — the exact failure the bound's doc promised was
+   * only lateness. The caller advances the cursor per tick and wraps at the end.
+   *
+   * Slug order rather than age order: it is the primary key, so the scan is an
+   * index walk with no extra column, and for a rotating cursor the only property
+   * that matters is that the order does not change between ticks.
    */
-  listSlugs(limit: number): Promise<string[]>;
+  listSlugs(limit: number, after?: string): Promise<string[]>;
 };
 
 const TABLE = "aai_platform.agents";
@@ -102,9 +110,13 @@ function jsonColumn(value: unknown): unknown {
   }
 }
 
-/** Postgres-backed agent rows over the platform admin connection. */
-const LIST_SLUGS_SQL = `select slug from ${TABLE} order by slug limit $1`;
+// `$2` is the exclusive cursor; `null` starts from the beginning. Compared as
+// text so one statement serves both cases without a second query shape.
+const LIST_SLUGS_SQL = `select slug from ${TABLE}
+ where $2::text is null or slug > $2::text
+ order by slug limit $1`;
 
+/** Postgres-backed agent rows over the platform admin connection. */
 export function createPgAgentRows(sql: SqlExec): AgentRows {
   return {
     async get(slug) {
@@ -152,8 +164,8 @@ export function createPgAgentRows(sql: SqlExec): AgentRows {
       return raw == null ? null : Number(raw);
     },
 
-    async listSlugs(limit) {
-      const rows = await sql(LIST_SLUGS_SQL, [limit]);
+    async listSlugs(limit, after) {
+      const rows = await sql(LIST_SLUGS_SQL, [limit, after ?? null]);
       return rows.map((row) => String(row.slug));
     },
   };
@@ -187,10 +199,14 @@ export function createMemoryAgentRows(): AgentRows {
     getVersion(slug) {
       return Promise.resolve(rows.get(slug)?.version ?? null);
     },
-    listSlugs(limit) {
+    listSlugs(limit, after) {
       // Sorted, matching the Postgres `order by slug` — a Map's insertion order
-      // would make the fake's window shuffle where the real one is stable.
-      return Promise.resolve([...rows.keys()].sort().slice(0, limit));
+      // would make the fake's window shuffle where the real one is stable — and
+      // filtered by the same exclusive cursor, so a test can observe a sweep
+      // advancing across ticks rather than only the first page.
+      const ordered = [...rows.keys()].sort();
+      const page = after === undefined ? ordered : ordered.filter((slug) => slug > after);
+      return Promise.resolve(page.slice(0, limit));
     },
   };
 }

@@ -156,11 +156,7 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
     store,
     validate: (name: string, input: unknown) =>
       validate(name, workflows[name] as WorkflowDef, input),
-    execute: (id: string) => {
-      void execute(id).catch((err: unknown) => {
-        logger.error(`workflow run ${id} could not start`, { error: errorMessage(err) });
-      });
-    },
+    execute: (id: string) => executeDetached(id),
   });
 
   const resolveName = createNameResolver(workflows);
@@ -171,6 +167,23 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
     return initialized;
   }
 
+  /**
+   * Start a run without awaiting it, and never as a bare `void`.
+   *
+   * `execute` settles a failing RUN itself, so anything that reaches here is a
+   * failure of the machinery around it — `claim`, `fail` or `suspend` losing the
+   * database — and a bare `void` turns that into an unhandled rejection. Under
+   * `aai dev` and a self-hosted `createServer` that TERMINATES THE PROCESS
+   * (Node's default), so one transient Postgres blip at a wake boundary takes
+   * the whole agent down; a deployed guest survives only because its crash
+   * guards happen to be installed. Every detached start goes through here.
+   */
+  function executeDetached(runId: string): void {
+    void execute(runId).catch((err: unknown) => {
+      logger.error(`workflow run ${runId} could not start`, { error: errorMessage(err) });
+    });
+  }
+
   /** Re-enter `execute` when a sleeping run comes due, if it is soon enough. */
   function scheduleWake(runId: string, wakeAt: number): void {
     const wait = wakeAt - Date.now();
@@ -178,7 +191,7 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
     const timer = setTimeout(
       () => {
         timers.delete(timer);
-        void execute(runId);
+        executeDetached(runId);
       },
       Math.max(0, wait),
     );
@@ -222,14 +235,19 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
       // Narrowing to the declaration's own parameter type is the assertion
       // that `start()` already made good on.
       const input = claimed.input as Parameters<typeof def.run>[0];
+      let thrown: unknown;
       try {
         const output = await def.run(input, ctx);
         await store.complete(runId, output);
+      } catch (err) {
+        thrown = err;
+        throw err;
       } finally {
-        // In a `finally` so the check covers every way out — completed, failed,
-        // and suspended — since a drifting sequence is not specific to any of
-        // them. Runs before the outer catch settles the run.
-        reportSequenceDrift(logger, claimed.workflow, runId, journal, claimedSteps);
+        // In a `finally` so it covers every way out, and handed WHAT was thrown so
+        // it can tell a boundary the run chose from one it fell out of — see
+        // `reportSequenceDrift`, which owns that decision. Runs before the outer
+        // catch settles the run.
+        reportSequenceDrift(logger, claimed.workflow, runId, journal, claimedSteps, thrown);
       }
     } catch (err) {
       await settleFailure(runId, err, runController.signal.aborted);
@@ -339,10 +357,8 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
       // Deliberately not awaited — `start` resolves as soon as the run is
       // durable, which is the whole point: the caller is a tool answering a
       // turn, and the run outlives it. Failures are journaled by `execute`,
-      // so the catch here is only for a rejection it could not record.
-      void execute(runId).catch((err: unknown) => {
-        logger.error(`workflow run ${runId} could not start`, { error: errorMessage(err) });
-      });
+      // so what `executeDetached` catches is only a rejection it could not record.
+      executeDetached(runId);
       return runId;
     },
 
@@ -388,11 +404,7 @@ export function createWorkflowEngine(opts: WorkflowEngineOptions): WorkflowEngin
       // with no lease, so this claim is uncontended. Not awaited, for the same
       // reason `start` does not await — the caller wants the acknowledgement, not
       // the outcome.
-      if (revived) {
-        void execute(runId).catch((err: unknown) => {
-          logger.error(`workflow run ${runId} could not resume`, { error: errorMessage(err) });
-        });
-      }
+      if (revived) executeDetached(runId);
       return revived;
     },
 

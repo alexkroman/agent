@@ -13,8 +13,13 @@
 import { describe, expect, test, vi } from "vitest";
 import { type AgentRows, createMemoryAgentRows } from "./agent-store.ts";
 import { type AppDbTarget, appDbIdentifier } from "./app-database.ts";
-import { MAX_WAKE_PER_TICK, WORKFLOW_BLOB_TTL_MS } from "./constants.ts";
-import { startWorkflowWake, sweepWorkflowWakes } from "./workflow-wake.ts";
+import { MAX_WAKE_CANDIDATE_SLUGS, MAX_WAKE_PER_TICK, WORKFLOW_BLOB_TTL_MS } from "./constants.ts";
+import {
+  startWorkflowWake,
+  sweepWorkflowWakes,
+  wakeInternalToken,
+  wakeReachedGuest,
+} from "./workflow-wake.ts";
 
 const silent = { info: vi.fn(), error: vi.fn() };
 
@@ -34,21 +39,38 @@ async function agentsWith(slugs: string[]): Promise<AgentRows> {
 }
 
 /**
- * A cluster that reports `withJournal` as having the table and `withWork` as
- * having something due.
+ * A cluster that reports `withJournal` as having the journal tables and
+ * `withWork` as having something due.
  *
  * The two queries are told apart by shape rather than by call order, because the
  * order is an implementation detail the sweep is free to change.
+ *
+ * The catalog answer is PER TABLE, matching the real query — a schema can carry
+ * `aai_workflow_runs` and not `aai_workflow_blobs` (a journal predating migration
+ * `0007-blobs`, or an `init()` that applied partway), and naming a table a schema
+ * lacks aborts the whole union rather than its own branch. `opts.withoutBlobs`
+ * is how a spec builds that schema.
  */
-function fakeCluster(withJournal: string[], withWork: string[]): AppDbTarget & { calls: string[] } {
+function fakeCluster(
+  withJournal: string[],
+  withWork: string[],
+  opts: { withoutBlobs?: string[] } = {},
+): AppDbTarget & { calls: string[] } {
   const calls: string[] = [];
+  const withoutBlobs = new Set(opts.withoutBlobs ?? []);
   const sql = vi.fn((query: string, params?: unknown[]) => {
     calls.push(query);
     if (query.includes("pg_namespace")) {
       const asked = (params?.[1] ?? []) as string[];
-      return Promise.resolve(
-        withJournal.filter((s) => asked.includes(s)).map((schema) => ({ schema })),
-      );
+      const rows: { schema: string; table_name: string }[] = [];
+      for (const schema of withJournal) {
+        if (!asked.includes(schema)) continue;
+        rows.push({ schema, table_name: "aai_workflow_runs" });
+        if (!withoutBlobs.has(schema)) {
+          rows.push({ schema, table_name: "aai_workflow_blobs" });
+        }
+      }
+      return Promise.resolve(rows);
     }
     // The union query: answer with whichever of its branches has work.
     return Promise.resolve(withWork.filter((s) => query.includes(s)).map((schema) => ({ schema })));
@@ -196,8 +218,80 @@ describe("sweepWorkflowWakes", () => {
       logger: silent,
     });
 
-    expect(result).toEqual({ woken: [], deferred: 0 });
+    expect(result).toEqual({ woken: [], deferred: 0, nextCursor: undefined });
     expect(cluster.calls).toEqual([]);
+  });
+
+  test("a schema missing the blobs table is still probed for due runs", async () => {
+    // The catalog pre-check asked only about `aai_workflow_runs` while every
+    // branch also named `aai_workflow_blobs`, so ONE schema without the blobs
+    // table (a journal predating migration `0007-blobs`) made the union a parse
+    // error — and the cluster-level `catch` swallowed it, so no agent on that
+    // whole cluster was ever woken again, the failing app included.
+    const agents = await agentsWith(["old", "new"]);
+    const oldSchema = appDbIdentifier("old");
+    const cluster = fakeCluster([oldSchema, appDbIdentifier("new")], [oldSchema], {
+      withoutBlobs: [oldSchema],
+    });
+    const logger = { info: vi.fn(), error: vi.fn() };
+
+    const result = await sweepWorkflowWakes({
+      agents,
+      targets: [cluster],
+      wake: () => Promise.resolve(),
+      logger,
+    });
+
+    expect(result.woken).toEqual(["old"]);
+    // Its branch probes runs and NOT blobs, which is what keeps the statement
+    // parseable; the other schema's branch still probes both.
+    const union = cluster.calls.find((q) => q.includes("union all")) ?? "";
+    const oldBranch = union.split("union all").find((b) => b.includes(oldSchema)) ?? "";
+    expect(oldBranch).toContain("aai_workflow_runs");
+    expect(oldBranch).not.toContain("aai_workflow_blobs");
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  test("advances its candidate window across ticks, so a fleet past the cap is reachable", async () => {
+    // With no cursor every tick re-read the SAME first page, so an agent sorting
+    // past `MAX_WAKE_CANDIDATE_SLUGS` was never a candidate and its runs never
+    // resumed — which the cap's own doc claimed was merely lateness.
+    // A real over-cap fleet rather than a shrunken cap: the wrap condition is
+    // `page.length < MAX_WAKE_CANDIDATE_SLUGS`, so a faked page size cannot
+    // exercise it.
+    const slugs = Array.from(
+      { length: MAX_WAKE_CANDIDATE_SLUGS + 2 },
+      // Padded so lexical order (what both stores sort by) matches numeric order.
+      (_unused, i) => `app-${String(i).padStart(4, "0")}`,
+    );
+    const agents = await agentsWith(slugs);
+    // Nothing to wake: the candidate WINDOW is the subject, not the brokering.
+    const cluster = fakeCluster([], []);
+    const asked: (string | undefined)[] = [];
+    const rows: AgentRows = {
+      ...agents,
+      listSlugs(limit, after) {
+        asked.push(after);
+        return agents.listSlugs(limit, after);
+      },
+    };
+    const opts = {
+      agents: rows,
+      targets: [cluster],
+      wake: () => Promise.resolve(),
+      logger: silent,
+    };
+
+    const first = await sweepWorkflowWakes(opts);
+    // A full page, so the next tick resumes after its last slug.
+    const lastOfFirstPage = slugs[MAX_WAKE_CANDIDATE_SLUGS - 1];
+    expect(first.nextCursor).toBe(lastOfFirstPage);
+
+    const second = await sweepWorkflowWakes(opts, WORKFLOW_BLOB_TTL_MS, first.nextCursor);
+    // Two slugs left — a short page — so the tick after that starts over rather
+    // than sitting past the end of the fleet forever.
+    expect(second.nextCursor).toBeUndefined();
+    expect(asked).toEqual([undefined, lastOfFirstPage]);
   });
 
   test("the blob cutoff it sends matches the SDK's own TTL", () => {
@@ -227,5 +321,28 @@ describe("startWorkflowWake", () => {
     });
     expect(() => handle.stop()).not.toThrow();
     expect(cluster.calls).toEqual([]);
+  });
+});
+
+describe("wakeReachedGuest", () => {
+  test("only the two statuses that never brokered count as a miss", () => {
+    // The sweep used to discard the status entirely, so a `429` from our OWN
+    // limiter — checked BEFORE the handler, so nothing was brokered — and a `503`
+    // from a broker that could not boot were both recorded as woken. The run stays
+    // due, so the sweep then logged the same false success on every later tick.
+    expect(wakeReachedGuest(429)).toBe(false);
+    expect(wakeReachedGuest(503)).toBe(false);
+    // Every other answer came FROM a live guest (or its own token gate), so the
+    // boot — which is the whole action — did happen.
+    for (const status of [200, 204, 400, 401, 403, 404, 500]) {
+      expect(wakeReachedGuest(status), String(status)).toBe(true);
+    }
+  });
+
+  test("the internal header token is stable within a process and not a constant", () => {
+    // Stable, or the limiter's equality check never matches; per-process, so it
+    // cannot be replayed from outside the container that minted it.
+    expect(wakeInternalToken()).toBe(wakeInternalToken());
+    expect(wakeInternalToken()).toMatch(/^[0-9a-f-]{36}$/);
   });
 });

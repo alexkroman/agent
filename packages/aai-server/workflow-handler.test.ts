@@ -253,10 +253,49 @@ describe("method coverage and rate limiting", () => {
     });
     const polled = await fetch("/my-agent/workflows/runs/r1");
 
-    // The start hit the tighter limiter and never reached the surface one; the
-    // poll took the surface limiter and went through.
+    // A start is counted against BOTH, surface first — `WORKFLOW_START_IP_RATE_LIMIT`
+    // says it is counted IN ADDITION, and a ternary made it counted INSTEAD, so
+    // `POST /runs` was the one route escaping the surface cap entirely. Surface
+    // first so a flood of starts consumes the shared budget it is meant to.
     expect(started.status).toBe(429);
     expect(polled.status).toBe(200);
-    expect(asked).toEqual(["start", "surface"]);
+    expect(asked).toEqual(["surface", "start", "surface"]);
+  });
+
+  test("a start refused by the SURFACE limit never reaches the start limiter", async () => {
+    // The corollary of checking both: the shared budget is the outer gate, so a
+    // caller already over it is refused without a second round trip to Postgres
+    // (each `check` is an upsert in production).
+    const slots = createSlotCache();
+    const seen: Forwarded[] = [];
+    const asked: string[] = [];
+    const { fetch, store } = await createTestOrchestrator({
+      slots,
+      workflowRateLimiter: {
+        check: () => {
+          asked.push("surface");
+          return Promise.resolve({ ok: false, retryAfterSeconds: 9 });
+        },
+      },
+      workflowStartRateLimiter: {
+        check: () => {
+          asked.push("start");
+          return Promise.resolve({ ok: true });
+        },
+      },
+      ...recordingGuest(seen, () => Response.json({ runId: "r1" })),
+    });
+    await seedResidentSandbox(fetch, store, slots, "my-agent");
+
+    const res = await fetch("/my-agent/workflows/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workflow: "w" }),
+    });
+
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("9");
+    expect(asked).toEqual(["surface"]);
+    expect(seen).toEqual([]);
   });
 });

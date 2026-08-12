@@ -21,6 +21,7 @@ import {
   createWorkflowApi,
   DEFAULT_WORKFLOW_POLL_MS,
   isTerminal,
+  MAX_MISSING_READS,
   useWorkflowRun,
   type WorkflowApi,
   type WorkflowRun,
@@ -397,17 +398,40 @@ describe("useWorkflowRun", () => {
     }
   });
 
-  it("keeps polling while the id is unknown — the page can race the journal write", async () => {
+  it("retries an unknown id briefly — the page can race the journal write", async () => {
     vi.useFakeTimers();
     try {
       const get = vi.fn((): Promise<WorkflowRun | undefined> => Promise.resolve(undefined));
       const api = fakeApi(get);
       const { result } = renderHook(() => useWorkflowRun("r1", { api, intervalMs: 50 }));
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(120);
+        await vi.advanceTimersByTimeAsync(60);
       });
       expect(get.mock.calls.length).toBeGreaterThan(1);
       expect(result.current.run).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("gives up on an id the agent keeps saying it does not have", async () => {
+    vi.useFakeTimers();
+    try {
+      // A 404 is a STABLE answer — the journal is durable — so retrying it
+      // unbounded is how a stale id (restored from `localStorage`, or one whose
+      // agent was redeployed onto a fresh database) polls forever: `polling`
+      // stays true so the page stays busy, and on the platform every read
+      // BROKERS, keeping a sandbox resident for a run that does not exist.
+      const get = vi.fn((): Promise<WorkflowRun | undefined> => Promise.resolve(undefined));
+      const api = fakeApi(get);
+      const { result } = renderHook(() => useWorkflowRun("r1", { api, intervalMs: 10 }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+
+      expect(get).toHaveBeenCalledTimes(MAX_MISSING_READS);
+      expect(result.current.polling).toBe(false);
+      expect(result.current.error).toContain("r1");
     } finally {
       vi.useRealTimers();
     }

@@ -645,3 +645,40 @@ describe("busy", () => {
     expect(engine.busy()).toBe(false);
   });
 });
+
+describe("determinism drift is reported for a boundary the RUN chose", () => {
+  test("a run that FAILS early does not report the steps it never reached", async () => {
+    // The report lived in a `finally`, so it ran the moment `def.run` rejected —
+    // and every journaled step the failure unwound past looked like a step no
+    // replay had claimed. A real failure then arrived buried under a list of
+    // invented determinism violations, and with concurrent steps (`Promise.all`
+    // over `ctx.step`, the shape `transcription-desk` ships) that list is every
+    // sibling the rejection cancelled.
+    const failing = workflow({
+      input: z.object({}),
+      run: (_input, ctx) =>
+        ctx.step(
+          "first",
+          () => {
+            throw new Error("nope");
+          },
+          { maxAttempts: 1 },
+        ),
+    });
+    const store = createMemoryWorkflowStore();
+    const { engine, logger } = makeEngine({ failing }, store);
+
+    const runId = await engine.start(failing, {});
+    // Journal entries from an earlier life of this run, which this execution
+    // unwinds before reaching.
+    await store.recordStep(runId, "s:later#0", "recorded");
+    await store.recordStep(runId, "s:later#1", "recorded");
+    await drain(40);
+
+    expect(asStatus(await engine.get(runId), "failed").error).toContain("nope");
+    const drift = logger.error.mock.calls.filter(([message]) =>
+      String(message).includes("did not replay"),
+    );
+    expect(drift).toEqual([]);
+  });
+});
