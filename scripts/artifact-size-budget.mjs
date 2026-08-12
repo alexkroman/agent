@@ -26,7 +26,7 @@
 
 import { readFileSync } from "node:fs";
 
-import { formatBytes, REPORT_KIND } from "./artifact-size-report.mjs";
+import { formatBytes, formatRatioPercent, REPORT_KIND } from "./artifact-size-format.mjs";
 
 function parseArgs(argv) {
   const args = { acknowledged: false };
@@ -41,11 +41,6 @@ function parseArgs(argv) {
     }
   }
   return args;
-}
-
-function formatRatioPercent(ratio) {
-  if (!Number.isFinite(ratio)) return "new";
-  return `${(ratio * 100).toFixed(1)}%`;
 }
 
 function describe(check) {

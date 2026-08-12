@@ -64,14 +64,14 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { gzipSync } from "node:zlib";
+import {
+  REPORT_KIND,
+  REPORT_SCHEMA_VERSION,
+  SIZE_BUDGET_THRESHOLD,
+} from "./artifact-size-format.mjs";
+import { renderMarkdown } from "./artifact-size-markdown.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
-
-export const REPORT_KIND = "aai-artifact-size-report";
-export const REPORT_SCHEMA_VERSION = 1;
-
-/** Fractional growth a single metric may show before the budget fails. */
-export const SIZE_BUDGET_THRESHOLD = 0.1;
 
 /**
  * The one bundle that is not a published package: the guest harness.
@@ -102,22 +102,6 @@ function parseArgs(argv) {
     i += 1;
   }
   return args;
-}
-
-export function formatBytes(bytes) {
-  if (bytes < 1000) return `${bytes} B`;
-  if (bytes < 1_000_000) return `${(bytes / 1000).toFixed(1)} kB`;
-  return `${(bytes / 1_000_000).toFixed(2)} MB`;
-}
-
-export function formatSignedBytes(bytes) {
-  if (bytes === 0) return "—";
-  return `${bytes > 0 ? "+" : "-"}${formatBytes(Math.abs(bytes))}`;
-}
-
-function formatRatioPercent(ratio) {
-  if (!Number.isFinite(ratio)) return "new";
-  return `${(ratio * 100).toFixed(1)}%`;
 }
 
 /** Total bytes and file count of a directory tree. */
@@ -305,113 +289,6 @@ export function compareReports(current, baselineReport, baselineLabel) {
     packages: packageResults.map((r) => r.row),
     checks: [...bundleResults, ...packageResults].flatMap((r) => r.checks),
   };
-}
-
-// ---------------------------------------------------------------------------
-// Markdown
-// ---------------------------------------------------------------------------
-
-function markdownTable(rows) {
-  return rows.map((cells) => `| ${cells.join(" | ")} |`).join("\n");
-}
-
-/** A signed byte delta, or an em dash when there is no baseline row. */
-function deltaCell(comparison) {
-  return comparison ? formatSignedBytes(comparison.delta) : "—";
-}
-
-/** A signed count delta, or an em dash when unchanged or unavailable. */
-function countDeltaCell(comparison) {
-  if (!comparison || comparison.delta === 0) return "—";
-  return `${comparison.delta > 0 ? "+" : ""}${comparison.delta}`;
-}
-
-function renderBundles(bundles) {
-  const lines = ["", "### Bundles", ""];
-  lines.push(
-    markdownTable([
-      ["Bundle", "Raw", "Δ", "Gzip", "Δ"],
-      ["---", "---:", "---:", "---:", "---:"],
-      ...bundles.map((b) => [
-        `\`${b.name}\``,
-        formatBytes(b.rawBytes),
-        deltaCell(b.rawComparison),
-        formatBytes(b.gzipBytes),
-        deltaCell(b.gzipComparison),
-      ]),
-    ]),
-  );
-  for (const b of bundles) {
-    if (b.note) lines.push("", `\`${b.name}\` — ${b.note}.`);
-  }
-  return lines;
-}
-
-function renderPackages(packages) {
-  return [
-    "",
-    "### Published packages",
-    "",
-    markdownTable([
-      ["Package", "Packed", "Δ", "Unpacked", "Δ", "Files", "Δ"],
-      ["---", "---:", "---:", "---:", "---:", "---:", "---:"],
-      ...packages.map((p) => [
-        `\`${p.name}\``,
-        formatBytes(p.packedBytes),
-        deltaCell(p.packedComparison),
-        formatBytes(p.unpackedBytes),
-        deltaCell(p.unpackedComparison),
-        String(p.fileCount),
-        countDeltaCell(p.fileCountComparison),
-      ]),
-    ]),
-  ];
-}
-
-function renderDependencyChanges(packages) {
-  const changed = packages.filter(
-    (p) => (p.addedDependencies?.length ?? 0) > 0 || (p.removedDependencies?.length ?? 0) > 0,
-  );
-  if (changed.length === 0) return [];
-  const lines = ["", "### Runtime dependency changes", ""];
-  for (const p of changed) {
-    for (const d of p.addedDependencies ?? []) lines.push(`- **added** \`${p.name}\` → \`${d}\``);
-    for (const d of p.removedDependencies ?? []) lines.push(`- removed \`${p.name}\` → \`${d}\``);
-  }
-  return lines;
-}
-
-function renderBudget(checks, hasBaseline) {
-  if (checks.length === 0) return hasBaseline ? ["", "No budget regressions. ✓"] : [];
-  const lines = ["", "### ⚠️ Budget", ""];
-  for (const check of checks) {
-    lines.push(
-      check.kind === "runtime-dependency"
-        ? `- New runtime dependency \`${check.dependency}\` in \`${check.package}\`. Runtime dependencies land in every consumer's tree — prefer bundling it or moving it to devDependencies.`
-        : `- \`${check.metric}\` grew ${formatRatioPercent(check.increaseRatio)} (${formatBytes(check.baseline)} → ${formatBytes(check.current)}), over the ${formatRatioPercent(check.thresholdRatio)} limit.`,
-    );
-  }
-  lines.push(
-    "",
-    "If the growth is intended, add the `acknowledge-size-warning` label. It is " +
-      "removed automatically on the next push, so each commit is acknowledged on " +
-      "its own.",
-  );
-  return lines;
-}
-
-export function renderMarkdown(report, comparison) {
-  const label = comparison?.baselineLabel;
-  return `${[
-    "## Artifact size",
-    label != null
-      ? `Compared against \`${label}\`. A metric growing more than ${formatRatioPercent(SIZE_BUDGET_THRESHOLD)}, or a new runtime dependency, fails the budget.`
-      : "_No baseline available — sizes are reported without a comparison._",
-    ...renderBundles(comparison?.bundles ?? report.bundles),
-    ...renderPackages(comparison?.packages ?? report.packages),
-    ...renderDependencyChanges(comparison?.packages ?? report.packages),
-    ...renderBudget(comparison?.checks ?? [], label != null),
-  ].join("\n")}\n`;
 }
 
 // ---------------------------------------------------------------------------
