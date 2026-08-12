@@ -144,7 +144,13 @@ else
   # hit it because check.yml already gives e2e its own job; the exposure was
   # local `pnpm check` (i.e. pre-push) whenever check:e2e was a cache MISS,
   # which is every fresh worktree and every first run after a clone.
-  if ! pnpm exec turbo run check:e2e; then
+  #
+  # `--concurrency=1` is the same rule stated inside the invocation: nothing
+  # may run beside the e2e task, not even a sibling turbo task that this
+  # invocation pulls in itself. `build` is already a cache hit by the time we
+  # get here (the combined run above built everything), so serializing costs
+  # nothing and the flag matches `pnpm test:e2e` and the CI e2e job.
+  if ! pnpm exec turbo run check:e2e --concurrency=1; then
     echo -e "\n${RED}Some checks failed.${NC}"
     exit 1
   fi
