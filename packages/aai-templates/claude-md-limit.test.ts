@@ -1,7 +1,14 @@
 // Copyright 2026 the AAI authors. MIT license.
 /// <reference types="vite/client" />
 /**
- * Every `CLAUDE.md` must stay small enough to be read WHOLE.
+ * Every agent guide must stay small enough to be read WHOLE.
+ *
+ * The ROOT guide is `AGENTS.md` — the name every agent tool reads — and the
+ * root `CLAUDE.md` is a one-line `@AGENTS.md` import so Claude Code resolves
+ * the same file. Package guides stay `CLAUDE.md`, which is what Claude Code
+ * auto-loads when working in that directory. The last test here pins the shim:
+ * content pasted into it would be read by Claude Code and by nothing else, so
+ * the two copies would diverge with no symptom.
  *
  * An agent loads these guides into its context in full, and past ~150k
  * characters the rest of the file is dropped — silently. That is the whole
@@ -40,14 +47,22 @@ const HARD_LIMIT = 150_000;
 const BUDGET = 120_000;
 
 // Three globs rather than one brace pattern, so a miss is obvious: the root
-// guide, one per workspace package, and the scaffold guide shipped to users.
-// `import.meta.glob` is a compile-time transform, so every argument has to be
-// a literal — the options object cannot be hoisted into a shared constant.
+// guide (AGENTS.md), one per workspace package, and the scaffold guide shipped
+// to users. `import.meta.glob` is a compile-time transform, so every argument
+// has to be a literal — the options object cannot be hoisted into a shared
+// constant.
 const guides: Record<string, string> = {
-  ...import.meta.glob("../../CLAUDE.md", { query: "?raw", import: "default", eager: true }),
+  ...import.meta.glob("../../AGENTS.md", { query: "?raw", import: "default", eager: true }),
   ...import.meta.glob("../*/CLAUDE.md", { query: "?raw", import: "default", eager: true }),
   ...import.meta.glob("../*/scaffold/CLAUDE.md", { query: "?raw", import: "default", eager: true }),
 };
+
+/** The root `CLAUDE.md` shim, read separately — it is pinned, not measured. */
+const rootShim = import.meta.glob("../../CLAUDE.md", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+})["../../CLAUDE.md"];
 
 /**
  * Normalize a glob key to a repo-relative path, so a failure names the file
@@ -71,10 +86,10 @@ const remedy =
   'the root guide\'s "Package guides" table (see "Updating CLAUDE.md"). Only ' +
   "the scaffold guide, which ships to users, has to be cut instead.";
 
-describe("CLAUDE.md size", () => {
+describe("agent guide size", () => {
   test("the guides are discovered", () => {
     // A broken glob would make every assertion below vacuously pass.
-    expect(entries.map((e) => e.path)).toContain("CLAUDE.md");
+    expect(entries.map((e) => e.path)).toContain("AGENTS.md");
     expect(entries.map((e) => e.path)).toContain("packages/aai/CLAUDE.md");
     expect(entries.map((e) => e.path)).toContain("packages/aai-templates/scaffold/CLAUDE.md");
     expect(entries.map((e) => e.path)).toContain("packages/aai-templates/CLAUDE.md");
@@ -97,9 +112,17 @@ describe("CLAUDE.md size", () => {
     ).toBeLessThanOrEqual(BUDGET);
   });
 
+  test("the root CLAUDE.md is only an import of AGENTS.md", () => {
+    // Both names must resolve to ONE guide. A CLAUDE.md that grew content back
+    // would be loaded by Claude Code and ignored by every other agent tool, so
+    // the divergence has no symptom until an agent reads the stale half.
+    expect(rootShim, "root CLAUDE.md not found").toBeTypeOf("string");
+    expect(rootShim?.trim()).toBe("@AGENTS.md");
+  });
+
   test("the root guide points at every package guide", () => {
-    const root = guides["../../CLAUDE.md"];
-    if (!root) throw new Error("root CLAUDE.md not found");
+    const root = guides["../../AGENTS.md"];
+    if (!root) throw new Error("root AGENTS.md not found");
     // A package guide nothing links to is a guide nobody opens: the root's
     // table is the only index, since Claude Code only auto-loads a package's
     // guide once you are already working in that directory.

@@ -47,6 +47,11 @@ NC='\033[0m'
 run_ratchets() {
   local failed=0
   pnpm run check:hatches || failed=1
+  # The mechanical half of AGENTS.md. Every rule in guard-invariants.mjs used to
+  # live only as prose in that file, which is enforcement exactly as long as a
+  # reviewer remembers it — and the guide is 78k characters. Pure git-grep + fs,
+  # so it belongs with the other fast gates.
+  pnpm run check:invariants || failed=1
   pnpm run check:file-length || failed=1
   # A test with no assertion passes whatever the code does, while counting in
   # the suite total and in coverage — indistinguishable from real coverage at
@@ -61,6 +66,12 @@ run_ratchets() {
   # bakes a different tree than the repo tested with. Pure JSON comparison —
   # no registry — so it belongs with the fast gates.
   pnpm run check:guest-toolchain || failed=1
+  # The agent-authoring guide also ships INSIDE the @alexkroman1/aai tarball, so
+  # a project that has updated its SDK can read guidance matching the version it
+  # actually resolved rather than the copy `aai init` froze in. Same silent-
+  # staleness shape as the toolchain lockfile above, hence the same treatment:
+  # a committed copy plus a comparison. Pure file read.
+  pnpm run check:agent-guide || failed=1
   # Structural conventions (konsistent.json): the shapes Biome and tsc cannot
   # see because none of them is wrong WITHIN a file — a provider module that
   # exports four of its five symbols, a *-barrel.ts that grew a local
@@ -101,6 +112,16 @@ if [ "$MODE" = "--local" ]; then
     exit 1
   fi
   pnpm run check:publish-names
+  # After build, and it PACKS: `catalog:` / `workspace:` are pnpm-only
+  # protocols that pnpm rewrites when it makes a tarball, and that rewrite is
+  # the only thing between the catalog and a release that installs for nobody.
+  # publint reads the SOURCE manifest, so it cannot see this.
+  pnpm run check:publish-protocols || exit 1
+  # Also after build: it reads the emitted dist/*.d.ts. A committed API report
+  # per published entry point, so a SIGNATURE change is a reviewable diff —
+  # exports.test.ts pins names, publint/attw check packaging, and neither sees
+  # a widened parameter or a newly optional field.
+  pnpm run check:api-report || exit 1
   # After build on purpose: the scaffold tsconfig has no `@dev/source`
   # condition, so templates resolve the PUBLISHED types here, exactly as a
   # scaffolded project does. Doc examples compile under the same config, so
@@ -162,6 +183,16 @@ else
     exit 1
   fi
   pnpm run check:publish-names
+  # After build, and it PACKS: `catalog:` / `workspace:` are pnpm-only
+  # protocols that pnpm rewrites when it makes a tarball, and that rewrite is
+  # the only thing between the catalog and a release that installs for nobody.
+  # publint reads the SOURCE manifest, so it cannot see this.
+  pnpm run check:publish-protocols || exit 1
+  # Also after build: it reads the emitted dist/*.d.ts. A committed API report
+  # per published entry point, so a SIGNATURE change is a reviewable diff —
+  # exports.test.ts pins names, publint/attw check packaging, and neither sees
+  # a widened parameter or a newly optional field.
+  pnpm run check:api-report || exit 1
   pnpm run check:template-types || exit 1
   pnpm run check:doc-examples || exit 1
 fi

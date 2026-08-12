@@ -23,3 +23,127 @@ ignoredBuiltDependencies:
 
 overrides:
   unrun: 0.2.39
+
+# A newly published version is quarantined for two days before this workspace
+# will resolve it.
+#
+# This is the cheap half of supply-chain defence, and it covers the case
+# `onlyBuiltDependencies` above cannot: a hijacked release does not need an
+# install script when the package is imported by our own code at build or test
+# time. Nearly every npm account compromise is caught and yanked within hours,
+# so the window is almost the entire exposure — and nothing here needs a
+# version the day it ships.
+#
+# It applies to RESOLUTION, so it only bites when the lockfile is being
+# changed: `pnpm install --frozen-lockfile` (CI, and every job in the check
+# workflow) is unaffected. A deliberate same-day bump adds a
+# `minimumReleaseAgeExclude` entry WITH a note saying why, rather than lowering
+# this number.
+#
+# There is deliberately NO `minimumReleaseAgeExclude` here, and the absence is
+# the interesting part — an exemption for our own packages is what you would
+# reach for first, and it would be dead config. This workspace resolves
+# `@alexkroman1/*` through `workspace:*`, never from the registry, so the
+# quarantine never sees them. The place that DOES need the exemption is
+# `packages/aai-templates/scaffold/pnpm-workspace.yaml`, which ships to users
+# and pins `^<newest>`: see that package's CLAUDE.md for the
+# `ERR_PNPM_NO_MATURE_MATCHING_VERSION` failure it prevents.
+#
+# The e2e suite is likewise unaffected, and not by luck — it already sets
+# `NPM_CONFIG_MINIMUM_RELEASE_AGE=0` and `--config.minimumReleaseAge=0`
+# (`aai-cli/_e2e-test-utils.ts`) because the tarballs it publishes to its mock
+# verdaccio are seconds old by construction and the age check has no way to
+# know the registry is ours.
+# 24 hours, and the number is MEASURED against this repo rather than picked.
+#
+# 2880 (48h) was tried first and does not work here: it blocks a lockfile update
+# whenever anything in the tree is fresh, INCLUDING TRANSITIVES, and the tree
+# moves that fast. Landing this branch on top of the Workflow DevKit change
+# (#1065) hit it twice — `workflow@4.8.2` itself, then `@vercel/oidc` two levels
+# down — so any branch touching package.json in the day after such a landing
+# could not regenerate the lockfile at all. 1440 installs cleanly; 720 and 360
+# were not needed. Re-measure before raising it.
+#
+# The residual exposure is a release compromised and yanked inside 24 hours,
+# against a class of attack usually caught in hours. That is the trade, stated
+# rather than implied by a round number.
+minimumReleaseAge: 1440
+
+# Shared dependency versions live HERE, once, and packages reference them as
+# `catalog:`.
+#
+# syncpack still runs, and it is what keeps a package from BYPASSING the
+# catalog: syncpack 15 reads these entries natively and reports a literal range
+# on a catalogued dependency as `DiffersToCatalog` (verified by A/B — setting
+# aai-cli's zod to `^4.0.0` fails the lint). So the two `sameRange`
+# versionGroups that used to police zod and ws by hand are gone; the catalog
+# makes that drift unrepresentable, and a rule comparing `catalog:` against the
+# range it resolves to reported a mismatch on every correct package. The
+# failure being removed is a real recurring one: the PR-workflow notes below
+# open with "when bumping a dependency, also update the scaffold" precisely
+# because a half-applied bump was the most common reason a branch needed a
+# follow-up commit.
+#
+# Two things deliberately stay OUT of the catalog:
+#
+#   * peerDependencies. `react`, `react-dom`, `tailwindcss` and `vitest` are
+#     declared as peers with wider floors (`^19.0.0`, `^4.0.0`) than the
+#     devDependency the repo builds against. Those are compatibility
+#     statements about what a CONSUMER may bring, not versions we pick;
+#     `catalog:` would silently narrow them to our own pin and break installs
+#     for anyone a minor behind. `.syncpackrc.json` ignores peer ranges for the
+#     same reason.
+#
+#   * `workflow` and `@workflow/world-postgres`, for now. Both are shared and
+#     exactly pinned, so they belong here — but they were published inside the
+#     quarantine window above, and CONVERTING a specifier to `catalog:` forces
+#     re-resolution, which the quarantine then refuses. So they stay literal
+#     until they age out. Worth knowing generally: a dependency cannot join the
+#     catalog on the day it lands.
+#
+#   * `docs`'s TypeScript, which is pinned to the 6.x line on purpose — TypeDoc
+#     needs the JS compiler API that TS 7 does not ship. It uses the named
+#     `typedoc` catalog below so the split is declared in one place rather than
+#     looking like an oversight (`check:sherif` ignores `aai-docs` to allow it).
+#
+# `catalog:` is a workspace protocol, so it must never reach npm. pnpm rewrites
+# it to the resolved version when packing, and `check:catalog-publish` proves
+# that on the real tarballs rather than trusting it.
+catalog:
+  "@hono/zod-validator": ^0.9.0
+  "@tailwindcss/vite": ^4.3.3
+  "@testing-library/dom": ^10.4.1
+  "@testing-library/react": ^16.3.2
+  "@types/json-schema": ^7.0.15
+  "@types/mime-types": ^3.0.1
+  "@types/node": ^26.1.1
+  "@types/react": ^19.2.17
+  "@types/react-dom": ^19.2.3
+  "@types/ws": ^8.18.1
+  "@vitejs/plugin-react": ^6.0.4
+  ai: ^7.0.41
+  clsx: ^2.1.1
+  eventsource-parser: ^3.1.0
+  fast-check: ^4.9.0
+  hono: ^4.12.31
+  jsdom: ^29.1.1
+  mime-types: ^3.0.2
+  p-timeout: ^7.0.1
+  react: ^19.2.8
+  react-dom: ^19.2.8
+  tailwindcss: ^4.3.2
+  tsdown: ^0.22.13
+  typescript: ^7.0.2
+  use-stick-to-bottom: ^1.1.6
+  vite: ^8.1.5
+  vitest: ^4.1.10
+  ws: ^8.21.1
+  zod: ^4.4.3
+
+catalogs:
+  # The one deliberate TypeScript split in the repo. `docs/` needs the JS
+  # TypeScript compiler API (the one TS 5/6 shipped) because TypeDoc is built
+  # on it; the TS 7 native compiler does not expose it. Kept as a named
+  # catalog so the exception is a declaration rather than a stray literal.
+  typedoc:
+    typescript: ~6.0.0

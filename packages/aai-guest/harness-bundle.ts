@@ -9,6 +9,8 @@
  */
 
 import { writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { errorMessage } from "@alexkroman1/aai";
 import {
@@ -33,7 +35,12 @@ let bundleSeq = 0;
  * load → try loop) must load the NEW code.
  */
 async function importBundleModule(code: string): Promise<Record<string, unknown>> {
-  const path = `/tmp/aai-bundle-${process.pid}-${++bundleSeq}.mjs`;
+  // `tmpdir()`, not a literal `/tmp`. The guest itself is always Linux, but this
+  // same function runs on the DEVELOPER's machine under `aai dev`, where the
+  // literal is drive-relative on Windows and resolves to a `D:\tmp` that does
+  // not exist. The bundle is fully inlined (`ssr.noExternal: true`), so the
+  // directory carries no resolution meaning here.
+  const path = join(tmpdir(), `aai-bundle-${process.pid}-${++bundleSeq}.mjs`);
   await writeFile(path, code, "utf-8");
   return await import(pathToFileURL(path).href);
 }

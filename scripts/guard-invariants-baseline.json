@@ -1,0 +1,23 @@
+{
+  "_description": "Per-file baselines for the mechanical invariants in scripts/guard-invariants.mjs. A file may hold FEWER occurrences than recorded here; it may never hold more; a file absent from a rule may hold none. Counts only ratchet DOWN — `node scripts/guard-invariants.mjs --update` lowers them to match the tree and refuses to raise any, so blessing an addition needs a hand edit that lands in a reviewable diff. Rules 1, 7 and 10 appear nowhere here: they are at zero and enforced absolutely.",
+  "rule2_spreadTernary": {
+    "packages/aai-cli/_utils.ts": 1,
+    "packages/aai-server/subprocess-sandbox.ts": 1,
+    "packages/aai-server/test-utils.ts": 1
+  },
+  "rule4_inlineTickPromise": {
+    "packages/aai-studio-client/src/_test-utils.ts": 1,
+    "packages/aai-studio-server/_studio-preview-test-utils.ts": 1,
+    "packages/aai-studio-server/studio-concurrency-fuzz.test.ts": 2,
+    "packages/aai-studio-server/studio-session-broker.test.ts": 2
+  },
+  "rule5_deleteProcessEnv": {
+    "packages/aai-cli/_test-setup.ts": 1
+  },
+  "rule8_handRolledOwnedMap": {
+    "packages/aai-studio-server/studio-sse.ts": 1
+  },
+  "rule11_hardcodedTmp": {
+    "packages/aai-server/modal-agent-sandbox.ts": 2
+  }
+}

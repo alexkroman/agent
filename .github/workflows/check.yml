@@ -15,11 +15,11 @@ jobs:
   setup:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26
           cache: pnpm
@@ -31,13 +31,13 @@ jobs:
       # (lint-typecheck-and-checks) never saved. tsc therefore ran cold on
       # every turbo cache miss. The cache now lives beside its producer.
       - name: Cache Turborepo
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .turbo
           key: turbo-${{ runner.os }}-${{ github.sha }}
           restore-keys: turbo-${{ runner.os }}-
       - run: pnpm exec turbo run build
-      - uses: actions/cache/save@v6
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             node_modules
@@ -50,15 +50,15 @@ jobs:
     needs: setup
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26
       - id: workspace-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             node_modules
@@ -73,7 +73,7 @@ jobs:
       # saves a fresh entry; a key that already exists is skipped on save, so a
       # SHA-less key would freeze the first run's buildinfo forever.
       - name: Cache TypeScript incremental build info
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .tsbuildinfo/
           key: tsbuildinfo-typecheck-${{ runner.os }}-${{ hashFiles('packages/*/tsconfig.json', 'tsconfig.json', 'pnpm-lock.yaml') }}-${{ github.sha }}
@@ -95,6 +95,17 @@ jobs:
           pnpm run check:sherif
           pnpm run check:markdown
           pnpm run check:publish-names
+          # PACKS the three publishable packages and reads the manifest back
+          # out of each tarball. `catalog:` and `workspace:` are pnpm-only
+          # protocols; pnpm rewrites them when it packs, and that rewrite is
+          # the only thing between the catalog in pnpm-workspace.yaml and a
+          # release that installs for nobody. publint reads the SOURCE
+          # manifest, so it cannot see this — and the symptom would be a 100%
+          # broken published version, found by consumers.
+          pnpm run check:publish-protocols
+          # Committed API reports for the 20 published entry points. Reads the
+          # emitted dist/*.d.ts, so it belongs after the build with publint.
+          pnpm run check:api-report
           pnpm run check:doc-examples
           # In scripts/check.sh since it was written, but missing here — the
           # same CI-never-invokes-check.sh gap the ratchets below document.
@@ -117,10 +128,12 @@ jobs:
       # is set, so violations land inline on the PR diff with no extra flags.
       - run: |
           pnpm run check:hatches
+          pnpm run check:invariants
           pnpm run check:file-length
           pnpm run check:test-assertions
           pnpm run check:claude-md
           pnpm run check:guest-toolchain
+          pnpm run check:agent-guide
           pnpm run check:konsistent
 
   # Unit tests sharded by package — run in parallel
@@ -132,15 +145,15 @@ jobs:
       matrix:
         package: [aai, aai-ui, aai-cli, aai-guest, aai-server, aai-studio-server, aai-studio-client, aai-templates]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26
       - id: workspace-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             node_modules
@@ -169,15 +182,15 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         node: [26]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ matrix.node }}
       - id: workspace-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             node_modules
@@ -225,15 +238,15 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         node: [26]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ matrix.node }}
       - id: workspace-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             node_modules
@@ -243,7 +256,7 @@ jobs:
           key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec turbo run build
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('packages/aai-cli/package.json') }}

@@ -41,6 +41,13 @@
     "ANTHROPIC_API_KEY",
     "GUEST_HARNESS_PATH",
     "TURBO_HASH",
+    // Ambient CI marker, not a behaviour switch: the fs gates (`check:invariants`,
+    // `check:konsistent`) read it only to decide whether to also emit
+    // `::error file=…` annotations so violations land inline on the PR diff.
+    // The pass/fail is identical either way, which is exactly why this belongs
+    // here and not in a task's `env` — putting it there would fragment every
+    // task's cache between local and CI runs for a formatting difference.
+    "GITHUB_ACTIONS",
     "AAI_ORIGIN",
     "AAI_STEP_CAP_HINT"
   ],

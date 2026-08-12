@@ -5,9 +5,9 @@
     // This package's suites are the only ones that read files OUTSIDE their own
     // package, and none of those files were hashed — so the gates that guard
     // the gates were served from cache exactly when the thing they check
-    // changed. `claude-md-limit.test.ts` globs `../../CLAUDE.md` and
-    // `../*/CLAUDE.md` (the 120k cap, and the assertion that the root still
-    // links every package guide); `test-assertion-gate.test.ts` and
+    // changed. `claude-md-limit.test.ts` globs `../../AGENTS.md`,
+    // `../../CLAUDE.md` and `../*/CLAUDE.md` (the 120k cap, the assertion that
+    // the root still links every package guide, and the pin on the root shim); `test-assertion-gate.test.ts` and
     // `escape-hatch-scope.test.ts` spec `scripts/check-*.mjs` and assert the
     // script, `scripts/check.sh`, root `package.json` and the CI check job
     // still agree with each other; `konsistent-config.test.ts` reads
@@ -21,6 +21,7 @@
       "inputs": [
         "$TURBO_DEFAULT$",
         "../../vitest.shared.ts",
+        "$TURBO_ROOT$/AGENTS.md",
         "$TURBO_ROOT$/CLAUDE.md",
         "$TURBO_ROOT$/packages/*/CLAUDE.md",
         "$TURBO_ROOT$/package.json",
@@ -35,6 +36,7 @@
       "inputs": [
         "$TURBO_DEFAULT$",
         "../../vitest.shared.ts",
+        "$TURBO_ROOT$/AGENTS.md",
         "$TURBO_ROOT$/CLAUDE.md",
         "$TURBO_ROOT$/packages/*/CLAUDE.md",
         "$TURBO_ROOT$/package.json",
