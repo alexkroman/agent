@@ -10,7 +10,8 @@
     // links every package guide); `test-assertion-gate.test.ts` and
     // `escape-hatch-scope.test.ts` spec `scripts/check-*.mjs` and assert the
     // script, `scripts/check.sh`, root `package.json` and the CI check job
-    // still agree with each other. Touching any of them left
+    // still agree with each other; `konsistent-config.test.ts` reads
+    // `konsistent.json` the same way. Touching any of them left
     // `aai-templates#test` at an identical hash.
     //
     // Markdown is re-included (the root task drops it) because a CLAUDE.md IS
@@ -23,6 +24,7 @@
         "$TURBO_ROOT$/CLAUDE.md",
         "$TURBO_ROOT$/packages/*/CLAUDE.md",
         "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/konsistent.json",
         "$TURBO_ROOT$/scripts/**",
         "$TURBO_ROOT$/.github/workflows/check.yml"
       ],
@@ -36,6 +38,7 @@
         "$TURBO_ROOT$/CLAUDE.md",
         "$TURBO_ROOT$/packages/*/CLAUDE.md",
         "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/konsistent.json",
         "$TURBO_ROOT$/scripts/**",
         "$TURBO_ROOT$/.github/workflows/check.yml"
       ],

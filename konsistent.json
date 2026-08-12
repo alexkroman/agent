@@ -1,0 +1,241 @@
+{
+  "$schema": "node_modules/konsistent/konsistent.schema.json",
+  "version": "v1",
+  "kebabToPascalMap": {
+    "assemblyai": "AssemblyAI",
+    "elevenlabs": "ElevenLabs",
+    "openai": "OpenAI",
+    "openrouter": "OpenRouter"
+  },
+  "kebabToCamelMap": {
+    "assemblyai": "assemblyAI",
+    "elevenlabs": "elevenlabs",
+    "openai": "openai",
+    "openrouter": "openrouter"
+  },
+  "conventions": [
+    {
+      "name": "workspace-package-layout",
+      "description": "Every package under packages/ carries the same four files. package.json and tsconfig.json are the build contract; CLAUDE.md is the package guide the root guide links (check:claude-md asserts the link); vitest.config.ts is where the suite is defined once, since the root config discovers suites by glob rather than declaring them.",
+      "paths": "packages/{packageName}",
+      "must": {
+        "haveType": "directory",
+        "haveFiles": ["package.json", "tsconfig.json", "vitest.config.ts", "CLAUDE.md"]
+      }
+    },
+    {
+      "name": "package-vitest-config",
+      "description": "Each package's vitest.config.ts spreads the shared config rather than re-declaring it: writing test:{} without ...sharedConfig.test REPLACES the shared object, which is how every package silently lost `reporters`.",
+      "paths": "packages/{packageName}/vitest.config.ts",
+      "must": {
+        "import": [
+          { "name": "defineConfig", "from": "vitest/config" },
+          { "name": "sharedConfig", "from": "../../vitest.shared.ts" }
+        ]
+      }
+    },
+    {
+      "name": "publishable-package-layout",
+      "description": "The three published packages additionally carry a README (npm's landing page), a tsconfig.build.json (the declaration emit, and the only program that rejects a cross-package relative import) and a tsdown.config.ts.",
+      "paths": ["packages/aai", "packages/aai-ui", "packages/aai-cli"],
+      "must": {
+        "haveType": "directory",
+        "haveFiles": ["README.md", "tsconfig.build.json", "tsdown.config.ts"]
+      }
+    },
+    {
+      "name": "barrel-files",
+      "description": "A *-barrel.ts file is a pure re-export surface. A local declaration in one is a symbol with no home module, invisible to the follow-the-re-export-chain rule the import conventions rest on.",
+      "paths": ["packages/*/*-barrel.ts", "packages/*/*/*-barrel.ts"],
+      "must": {
+        "areBarrelFiles": true
+      }
+    },
+    {
+      "name": "core-package-boundary",
+      "description": "packages/aai is the base of the dependency graph — every other package depends on it and it depends on none of them.",
+      "paths": ["packages/aai/*.ts", "packages/aai/host/**/*.ts", "packages/aai/sdk/**/*.ts"],
+      "mustNot": {
+        "importFrom": [
+          "@alexkroman1/aai-ui",
+          "@alexkroman1/aai-ui/*",
+          "@alexkroman1/aai-cli",
+          "@alexkroman1/aai-cli/*",
+          "aai-guest",
+          "aai-guest/*",
+          "aai-server",
+          "aai-studio-client",
+          "aai-studio-server"
+        ]
+      }
+    },
+    {
+      "name": "cli-package-boundary",
+      "description": "The CLI must never import from the server or the guest. The one edge between them runs the other way (aai-guest imports the CLI's public build-hook subpaths), and it is a hard boundary because the CLI ships to users while the server and guest are private platform code.",
+      "paths": "packages/aai-cli/*.ts",
+      "mustNot": {
+        "importFrom": [
+          "aai-guest",
+          "aai-guest/*",
+          "aai-server",
+          "aai-studio-client",
+          "aai-studio-server"
+        ]
+      }
+    },
+    {
+      "name": "guest-package-boundary",
+      "description": "The guest never imports server code — that hard boundary is the reason the guest is its own package. aai-server depends on aai-guest only to resolve its built artifact, never to import guest source.",
+      "paths": "packages/aai-guest/*.ts",
+      "mustNot": {
+        "importFrom": ["aai-server", "aai-studio-client", "aai-studio-server"]
+      }
+    },
+    {
+      "name": "browser-package-boundary",
+      "description": "aai-ui is a browser client. It may depend on the core SDK and nothing else in the workspace — a platform or CLI import here would pull server code into a browser bundle.",
+      "paths": [
+        "packages/aai-ui/*.ts",
+        "packages/aai-ui/*.tsx",
+        "packages/aai-ui/components/**/*.ts",
+        "packages/aai-ui/components/**/*.tsx",
+        "packages/aai-ui/worklets/**/*.ts"
+      ],
+      "mustNot": {
+        "importFrom": [
+          "@alexkroman1/aai-cli",
+          "@alexkroman1/aai-cli/*",
+          "aai-guest",
+          "aai-guest/*",
+          "aai-server",
+          "aai-studio-client",
+          "aai-studio-server"
+        ]
+      }
+    },
+    {
+      "name": "llm-providers",
+      "description": "Every LLM provider module exports the same four-symbol shape. assemblyai.ts is excluded: it is the one vendor with a module per kind, so its symbols carry a kind infix (ASSEMBLYAI_LLM_KIND) the shared template cannot express.",
+      "paths": [
+        "packages/aai/sdk/providers/llm/{providerId}.ts",
+        "!packages/aai/sdk/providers/llm/assemblyai.ts",
+        "!packages/aai/sdk/providers/llm/from-string.ts",
+        "!packages/aai/sdk/providers/llm/gateway-models.ts",
+        "!packages/aai/sdk/providers/llm/*.test.ts"
+      ],
+      "must": {
+        "exportConstants": [
+          "${providerId.toConstantCase()}_KIND",
+          "${providerId.toConstantCase()}_API_KEY_ENV"
+        ],
+        "exportInterfaces": ["${providerId.toPascalCase()}Options"],
+        "exportTypes": ["${providerId.toPascalCase()}Provider"],
+        "exportFunctions": ["${providerId.toCamelCase()}"]
+      }
+    },
+    {
+      "name": "stt-providers",
+      "description": "Every STT provider module exports the provider shape plus the resolve*Settings helper the pipeline transport calls to fold a provider's options into its session defaults.",
+      "paths": [
+        "packages/aai/sdk/providers/stt/{providerId}.ts",
+        "!packages/aai/sdk/providers/stt/assemblyai.ts",
+        "!packages/aai/sdk/providers/stt/*.test.ts"
+      ],
+      "must": {
+        "exportConstants": [
+          "${providerId.toConstantCase()}_KIND",
+          "${providerId.toConstantCase()}_API_KEY_ENV",
+          "${providerId.toConstantCase()}_DEFAULT_MODEL"
+        ],
+        "exportInterfaces": ["${providerId.toPascalCase()}Options"],
+        "exportTypes": ["${providerId.toPascalCase()}Provider"],
+        "exportFunctions": [
+          "${providerId.toCamelCase()}",
+          "resolve${providerId.toPascalCase()}Settings"
+        ]
+      }
+    },
+    {
+      "name": "tts-providers",
+      "description": "Every TTS provider module exports the STT shape plus a default voice — the one setting a TTS provider cannot infer.",
+      "paths": [
+        "packages/aai/sdk/providers/tts/{providerId}.ts",
+        "!packages/aai/sdk/providers/tts/assemblyai.ts",
+        "!packages/aai/sdk/providers/tts/*.test.ts"
+      ],
+      "must": {
+        "exportConstants": [
+          "${providerId.toConstantCase()}_KIND",
+          "${providerId.toConstantCase()}_API_KEY_ENV",
+          "${providerId.toConstantCase()}_DEFAULT_MODEL",
+          "${providerId.toConstantCase()}_DEFAULT_VOICE"
+        ],
+        "exportInterfaces": ["${providerId.toPascalCase()}Options"],
+        "exportTypes": ["${providerId.toPascalCase()}Provider"],
+        "exportFunctions": [
+          "${providerId.toCamelCase()}",
+          "resolve${providerId.toPascalCase()}Settings"
+        ]
+      }
+    },
+    {
+      "name": "s2s-providers",
+      "description": "S2S providers take the same kind/env-var pair as the pipeline providers. Options is a type rather than an interface here, because an S2S provider's options mirror the vendor's own session shape.",
+      "paths": [
+        "packages/aai/sdk/providers/s2s/{providerId}.ts",
+        "!packages/aai/sdk/providers/s2s/assemblyai.ts",
+        "!packages/aai/sdk/providers/s2s/*.test.ts"
+      ],
+      "must": {
+        "exportConstants": [
+          "${providerId.toConstantCase()}_KIND",
+          "${providerId.toConstantCase()}_API_KEY_ENV"
+        ],
+        "exportTypes": [
+          "${providerId.toPascalCase()}Options",
+          "${providerId.toPascalCase()}Provider"
+        ],
+        "exportFunctions": ["${providerId.toCamelCase()}"]
+      }
+    },
+    {
+      "name": "agent-templates",
+      "description": "Every template is a complete agent project a user can scaffold: agent.ts is its entry, client.tsx (when present) is the browser half, and each tools/ file is one tool.",
+      "paths": "packages/aai-templates/templates/{templateName}",
+      "must": [
+        {
+          "name": "template-entry",
+          "must": {
+            "haveType": "directory",
+            "haveFiles": ["agent.ts"]
+          }
+        },
+        {
+          "name": "agent-default-export",
+          "for": { "files": "agent.ts" },
+          "must": {
+            "export": ["default"],
+            "import": [{ "name": "agent", "from": "@alexkroman1/aai" }]
+          }
+        },
+        {
+          "name": "client-entry",
+          "if": { "hasFile": "client.tsx" },
+          "for": { "files": "client.tsx" },
+          "must": {
+            "import": [{ "name": "client", "from": "@alexkroman1/aai-ui" }],
+            "importFrom": ["@alexkroman1/aai-ui/styles.css"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "template-tools",
+      "description": "A tools/ file is named for the snake_case tool name the LLM sees (Biome's filename convention is overridden for exactly this reason) and exports one const named for it in camelCase.",
+      "paths": "packages/aai-templates/templates/{templateName}/tools/{toolName}.ts",
+      "must": {
+        "exportConstants": ["${toolName.toCamelCase()}"]
+      }
+    }
+  ]
+}

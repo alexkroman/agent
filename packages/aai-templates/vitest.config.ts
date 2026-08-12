@@ -21,6 +21,7 @@ export default defineConfig({
       "claude-md-limit.test.ts",
       "escape-hatch-scope.test.ts",
       "file-length-gate.test.ts",
+      "konsistent-config.test.ts",
       "test-assertion-gate.test.ts",
       "templates/*/*.test.ts",
     ],
