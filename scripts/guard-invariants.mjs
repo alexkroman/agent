@@ -67,16 +67,22 @@
  *             or `slot.update` for the `ctx.state` case. The two parts that get
  *             missed are dropping the drained entry BY OWNERSHIP and resolving
  *             your own place in the chain when you abandon a timed-out acquire.
- *   rule 11 — No hardcoded `/tmp` path in shipped source. On Windows `/tmp/x` is
+ *   rule 10 — Every Markdown file under `research/` has YAML frontmatter with
+ *             non-empty `issue` and `status` and an ISO `last_updated`.
+ *             Research documents are implementation plans attached to tracked
+ *             work, not an unowned parallel backlog. *   rule 11 — No hardcoded `/tmp` path in shipped source. On Windows `/tmp/x` is
  *             DRIVE-RELATIVE and resolves to `D:\tmp\x`, which does not exist,
  *             so the write fails with ENOENT. Use `join(tmpdir(), …)`. Two
  *             shipped modules had it and both run on a developer's own machine
  *             under `aai dev`. Baselined only for `modal-agent-sandbox.ts`,
  *             whose paths name a location INSIDE the Linux sandbox.
- *   rule 10 — Every Markdown file under `research/` has YAML frontmatter with
- *             non-empty `issue` and `status` and an ISO `last_updated`.
- *             Research documents are implementation plans attached to tracked
- *             work, not an unowned parallel backlog.
+ *   rule 12 — Every route literal in the guest's own dispatch is declared in
+ *             `GUEST_ROUTES` (`packages/aai-server/guest-routes.ts`). The
+ *             exposure table is verified against the PLATFORM; its upstream
+ *             half is transcribed by hand and nothing checked it, which is how
+ *             `GET /studio/tools` came to be a real guest route in neither
+ *             table. `aai-server` may not import guest source, so this reads
+ *             both trees as text.
  *
  * Baselines for rules with pre-existing violations live in
  * `guard-invariants-baseline.json`. Counts there may only SHRINK. `--update`
@@ -95,6 +101,7 @@ import { LINE_RULES } from "./guard-invariants-rules.mjs";
 import {
   scanResearchFrontmatter,
   scanSymlinks,
+  scanUndeclaredGuestRoutes,
   scanUnpinnedActions,
 } from "./guard-invariants-scanners.mjs";
 
@@ -203,6 +210,23 @@ const ABSOLUTE_RULES = [
       "A tag is a mutable pointer, so `@v7` grants every future version of that\n" +
       "code the permissions of the job it runs in — including the release job's\n" +
       "npm token. Dependabot bumps the SHA and the comment together.",
+  },
+  {
+    id: 12,
+    label: "undeclared guest route",
+    scan: scanUndeclaredGuestRoutes,
+    remedy:
+      "Add the path to `GUEST_ROUTES` in packages/aai-server/guest-routes.ts and\n" +
+      "give it an exposure in `GUEST_ROUTE_EXPOSURE` (the `satisfies` makes the\n" +
+      "second half a compile error once the first is done).\n\n" +
+      "The exposure is decided by WHO CALLS IT: `direct-dial` when a browser or a\n" +
+      "carrier dials the sandbox having been handed the URL, `proxied` when the\n" +
+      "platform must serve `/:slug<path>` and forward it, `host-only` when only\n" +
+      "the platform dials it holding a token, `guest-internal` when nothing\n" +
+      "outside the container calls it at all.\n\n" +
+      "A literal ending in `/` is a prefix gate and passes only while a declared\n" +
+      "route lives under it — a prefix dispatch is how the guest's real surface\n" +
+      "gets wider than the table without any one literal being new.",
   },
   {
     id: 10,

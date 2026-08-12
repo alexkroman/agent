@@ -74,6 +74,29 @@ const shippedLineRules = (): LineRule[] =>
   )[0] ?? [];
 
 /**
+ * Rule 12's decision function, imported as a real value.
+ *
+ * The scanner rules (1, 7, 10, 12) have no `re` to sample, so the
+ * positive/negative discipline the line rules get has to come from exercising
+ * the logic directly. Rule 12 is the one worth it: the others ask a single
+ * yes/no question of a file, while this one parses two sources and diffs them,
+ * and every part of that can go quietly empty — a renamed `GUEST_ROUTES`
+ * binding, a pathspec that stops matching, a prefix rule that swallows
+ * everything. It is split into a pure half for exactly this.
+ */
+const findUndeclaredGuestRoutes = Object.values(
+  import.meta.glob<
+    (
+      literals: { file: string; line: number; literal: string }[],
+      declared: Set<string>,
+    ) => { file: string; line: number; text: string }[]
+  >("../../scripts/guard-invariants-scanners.mjs", {
+    import: "findUndeclaredGuestRoutes",
+    eager: true,
+  }),
+)[0];
+
+/**
  * One positive and one negative sample per rule, keyed by the rule's `key`.
  *
  * The positives are written to look like the real anti-pattern rather than
@@ -204,6 +227,54 @@ describe("guard-invariants gate", () => {
     // would have a one-command bypass and the reviewable diff that gates a
     // deliberate increase would never be produced.
     expect(script).toContain("refusing to RAISE");
+  });
+
+  describe("rule 12 — undeclared guest routes", () => {
+    const at = (literal: string) => [{ file: "guest.ts", line: 1, literal }];
+    const declared = new Set(["/ws", "/studio/chat", "/manage/status", "/manage/drain"]);
+
+    test("the pure half is importable", () => {
+      expect(findUndeclaredGuestRoutes, "findUndeclaredGuestRoutes not exported").toBeTypeOf(
+        "function",
+      );
+    });
+
+    test("flags a route the table does not declare", () => {
+      // The real finding this rule was written for: `/studio/tools` served by
+      // the guest and present in neither table.
+      const found = findUndeclaredGuestRoutes?.(at("/studio/tools"), declared) ?? [];
+      expect(found).toHaveLength(1);
+      expect(found[0]?.text).toContain("/studio/tools");
+    });
+
+    test("spares a declared route", () => {
+      expect(findUndeclaredGuestRoutes?.(at("/studio/chat"), declared)).toHaveLength(0);
+    });
+
+    test("spares the bare root, which is the default case and not a route", () => {
+      expect(findUndeclaredGuestRoutes?.(at("/"), declared)).toHaveLength(0);
+    });
+
+    test("spares a prefix gate that has declared routes under it", () => {
+      // `url.startsWith("/manage/")` — legitimate, because manageStatus and
+      // manageDrain are both declared beneath it.
+      expect(findUndeclaredGuestRoutes?.(at("/manage/"), declared)).toHaveLength(0);
+    });
+
+    test("flags a prefix gate with nothing declared under it", () => {
+      // The case a literal-only scan misses: a new `startsWith` dispatch widens
+      // the guest's surface without any single new route literal.
+      const found = findUndeclaredGuestRoutes?.(at("/admin/"), declared) ?? [];
+      expect(found).toHaveLength(1);
+      expect(found[0]?.text).toContain("prefix dispatch");
+    });
+
+    test("an empty declared set flags everything rather than passing", () => {
+      // If the GUEST_ROUTES parse ever returns nothing, the rule must not go
+      // quiet. The scanner throws on a zero-route parse; this pins the
+      // decision function's half of that contract.
+      expect(findUndeclaredGuestRoutes?.(at("/ws"), new Set())).toHaveLength(1);
+    });
   });
 
   test("the gate is wired into both the local check and CI", () => {

@@ -29,6 +29,18 @@ export const GUEST_ROUTES = {
   /** PUBLIC studio coding-agent chat (SSE), bearer-gated by the caller's key. */
   studioChat: "/studio/chat",
   /**
+   * PUBLIC tool-name → label map for the studio's activity view, gated by the
+   * same chat token as `studioChat` and served by the same handler.
+   *
+   * It existed as a guest route for some time before it existed HERE, which is
+   * what `guard-invariants.mjs` rule 12 now prevents: the `satisfies` below
+   * only catches a key with no exposure entry, never a route nobody wrote down.
+   * While it was undeclared the studio client reached it by rewriting another
+   * route's URL (`sessionUrl.replace(/\/chat$/, "/tools")`) — the exact URL
+   * surgery this module's opening comment says the table exists to end.
+   */
+  studioTools: "/studio/tools",
+  /**
    * Studio session install, bearer-gated by the PER-SANDBOX HOST TOKEN. The
    * HTTP twin of the `studio/session-init` RPC, for the replica that does not
    * hold this guest's single control socket (see aai-guest/
@@ -131,7 +143,17 @@ export const GUEST_ROUTE_EXPOSURE = {
   // answers with. That platform route is not a proxy of this one — it is the
   // webhook that hands out this URL — so this route is a direct dial.
   phone: { via: "direct-dial" },
-  studioChat: { via: "host-only" },
+  // Both studio surfaces are dialled by the BROWSER, straight at the sandbox
+  // tunnel, holding the chat token the session install minted — which is why
+  // `studio-static.ts` has to put the sandbox origin in the page's
+  // `connect-src` at all ("the browser talks straight to the project's
+  // sandbox, the same way voice sessions connect directly to a deployed
+  // agent"). `studioChat` said `host-only` here, which claims the opposite:
+  // that the platform dials it and no client does. Same shape as the mistake
+  // the `guest-internal` note above warns about — an exposure that describes a
+  // gate other than the one that is there.
+  studioChat: { via: "direct-dial" },
+  studioTools: { via: "direct-dial" },
   studioSessionInit: { via: "host-only" },
   // `/:slug/health` exists on the platform but is the PLATFORM's answer about
   // an agent (`handleAgentHealth`), not a forward of the guest's own probe,
