@@ -130,9 +130,15 @@ function routeHandler(mod: Record<string, unknown>, label: string): FetchHandler
   return post as FetchHandler;
 }
 
-/** The three paths the DevKit's queue calls back on. */
+/**
+ * The three paths the DevKit's queue calls back on.
+ *
+ * @internal
+ */
 export const WORKFLOW_FLOW_PATH = "/.well-known/workflow/v1/flow";
+/** @internal */
 export const WORKFLOW_STEP_PATH = "/.well-known/workflow/v1/step";
+/** @internal */
 export const WORKFLOW_WEBHOOK_PREFIX = "/.well-known/workflow/v1/webhook/";
 
 /**
@@ -153,10 +159,18 @@ export function webhookToken(pathname: string): string | undefined {
   return decodeURIComponent(token);
 }
 
-/** A fetch-style handler, which is what every DevKit entrypoint is. */
+/**
+ * A fetch-style handler, which is what every DevKit entrypoint is.
+ *
+ * @internal
+ */
 export type FetchHandler = (req: Request) => Promise<Response>;
 
-/** The workflow surface one loaded bundle exposes. */
+/**
+ * The workflow surface one loaded bundle exposes.
+ *
+ * @internal
+ */
 export type WorkflowSurface = {
   /** `POST /.well-known/workflow/v1/flow` — replays a run. */
   flow: FetchHandler;

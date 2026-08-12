@@ -45,7 +45,11 @@ const LOCAL_DATA_DIR_ENV = "WORKFLOW_LOCAL_DATA_DIR";
 /** The package name the DevKit resolves for the Postgres world. */
 const POSTGRES_WORLD = "@workflow/world-postgres";
 
-/** Which world this guest is configured for. */
+/**
+ * Which world this guest is configured for.
+ *
+ * @internal
+ */
 export type WorldKind = "postgres" | "local";
 
 /**
