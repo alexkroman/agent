@@ -8,7 +8,7 @@
 
 import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { AGENT_FAVICON } from "@alexkroman1/aai";
+import { AGENT_FAVICON } from "@alexkroman1/aai/limits";
 import type { Plugin } from "vite";
 import { errorMessage } from "./_utils.ts";
 

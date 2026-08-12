@@ -3,7 +3,7 @@
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { AGENT_FAVICON } from "@alexkroman1/aai";
+import { AGENT_FAVICON } from "@alexkroman1/aai/limits";
 import type { Connect, ViteDevServer } from "vite";
 import { describe, expect, test, vi } from "vitest";
 import { DEFAULT_HTML, fallbackHtmlPlugin, writeTempHtml } from "./_default-html.ts";

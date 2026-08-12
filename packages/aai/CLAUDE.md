@@ -47,8 +47,32 @@ model) is the security boundary.
 
 Subpath exports consumed by sibling packages and user agents:
 
-- `.` — `agent()`, `tool()` helpers, `sessionSlot()`, `Db`, types, utils,
-  constants
+- `.` — `agent()`, `tool()`, `workflow()`, `sessionSlot()`, `Db`, the authoring
+  types, the tool-code helpers. **32 runtime names**, and no budgets — see
+  `./limits`
+- `./limits` — every default and budget the SDK reads (`sdk/limits-barrel.ts`).
+  **The root carries none of them.** They were on both and are now here only: 96
+  budgets against ~30 authoring names meant `agent`, `tool` and `workflow` were
+  three entries in an autocomplete list led by `MAX_CLIENT_WS_BUFFERED_BYTES`.
+  Two `DEFAULT_*` stay on the root and are exceptions because they are not
+  budgets — `DEFAULT_SYSTEM_PROMPT` and `DEFAULT_GREETING` are the TEXT `agent()`
+  defaults to, which an author reads in order to extend it. The three other
+  non-`constants.ts` names that stay are `ASSEMBLYAI_S2S_KIND` /
+  `ASSEMBLYAI_S2S_API_KEY_ENV` (they ride the root-exported S2S descriptor
+  module, and splitting a module's own identity constants off it is arbitrary)
+  and `TERMINAL_WORKFLOW_STATUSES` (authoring data paired with `isTerminal`).
+  The slug contract went to `./utils`, which was already its documented home,
+  and the two thrown-message sentences to `./internal`, because nothing an author
+  WRITES imports them.
+
+  **`{@link CONSTANT}` no longer resolves from the root entry point, and TypeDoc
+  fails the build over it.** Cross-entry-point links do not resolve in either
+  direction — adding `dist/sdk/limits-barrel.d.ts` as an entry point (which is
+  needed anyway, or the constants go undocumented) does not fix it and produces
+  the mirror-image warnings from `/limits` back into `index`. So the 25 affected
+  references in `AgentDef`, `PipelineVoiceTuning`, `StepOptions`, `FindOptions`,
+  `ToolContext.send` and `WorkflowContext` are CODE SPANS now. Write a new one as
+  a code span too.
 - `./utils` — zod-free utilities, `createKeyedLock`, `isToolFailure`,
   `pushCapped`, platform slug contract (fast CLI startup path)
 - `./testing` — `createToolContext()` / `createUnusedDb()` for testing a tool's
@@ -155,7 +179,8 @@ of subpath exports in `aai/package.json`:
 
 | Import path | Resolves to | What it contains |
 | --- | --- | --- |
-| `@alexkroman1/aai` | `packages/aai/index.ts` → 6 modules | Types, Db, utils, constants, `agent()`/`tool()` helpers |
+| `@alexkroman1/aai` | `packages/aai/index.ts` → 9 modules | The authoring surface and nothing else: `agent()`/`tool()`/`workflow()`, `sessionSlot()`, `startTool()`, the types, the tool-code helpers. 32 runtime names |
+| `@alexkroman1/aai/limits` | `sdk/limits-barrel.ts` → `constants.ts` + `workflow-limits.ts` + two names | Every default and budget: the ~88 in `constants.ts`, the six workflow limits (`MAX_WORKFLOW_STEPS`, `MAX_CONTINUATIONS`, the step retry pair, the find pair), `MAX_DB_RESULT_ROWS` and `MAX_SLUG_LENGTH`. A barrel because the numbers do not all live in one module and moving them would separate each from the doc comment explaining what it bounds |
 | `@alexkroman1/aai/testing` | `sdk/testing.ts` (direct) | `createToolContext(overrides?)` — a full `ToolContext` for testing a tool's `run` in isolation, with inert defaults, a recording `send` (`ctx.sent`), and a distinct `sessionId` per call — plus `createUnusedDb()`, the rejecting `db` it defaults to. PUBLISHED rather than an internal `_test-utils.ts` because the audience is an agent author's own project, which is also why it carries no vitest dependency (`send` records into an array; pass `vi.fn()` to override). See the `_test-utils.ts` section of the root guide |
 | `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | Zod-free utilities (`errorMessage`, `errorDetail`, …); `ToolFailure`/`isToolFailure` (the `{ error: string }` a tool returns for a recoverable failure, and the guard for a propagated one — NOT `toolError`, which returns the pre-serialized wire string, so `isToolFailure(toolError(m))` is false); `pushCapped` (append to a `ctx.state` list holding a cap, in place); `createKeyedLock`/`withLock` (`sdk/keyed-lock.ts`), the per-key serializer a stateful agent needs because the LLM loop runs a step's tool calls concurrently; and the two contracts BOTH ends of a platform interaction must derive identically: the slug shape (`VALID_SLUG_RE`, `RESERVED_SLUGS` from `sdk/slug.ts`) and the `aai login` confirmation code (`linkConfirmationCode` from `sdk/cli-link.ts` — the terminal prints it, the studio's approval gate shows it, and the point is that they match). Kept clear of zod so the CLI can load it on every invocation without paying that startup cost — `p-timeout` (2.4 KB, no dependencies), which backs the lock's acquire deadline, is the one exception and is measured against that rule rather than around it |
 | `@alexkroman1/aai/slugify` | `host/slugify.ts` (direct) | `slugifyName` — how a human name BECOMES a slug (transliterating, `decamelize: false`), for the CLI, the platform server, and the studio. Separate from the contract in `sdk/slug.ts` on purpose: that one is dependency-free and rides every agent bundle, this one pulls the transliteration tables. Nothing on the SDK hot path may import it |
@@ -1228,10 +1253,13 @@ server locally. Audio path depends on the session mode (see above):
 
 ## Default values and magic numbers
 
-All numeric constants live in `packages/aai/sdk/constants.ts` (client-audio
+Most numeric constants live in `packages/aai/sdk/constants.ts` (client-audio
 budgets are split into `sdk/client-audio-constants.ts` for file-length reasons
-and re-exported from `constants.ts`, so the import path is unchanged). Key
-defaults that affect agent behavior:
+and re-exported from `constants.ts`, so the import path is unchanged); the
+workflow limits are in `sdk/workflow-limits.ts`. **Import any of them from
+`@alexkroman1/aai/limits`**, which barrels both plus `MAX_DB_RESULT_ROWS` and
+`MAX_SLUG_LENGTH` — the ROOT export carries no budgets at all. Key defaults that
+affect agent behavior:
 
 | Default | Value | Where applied | Notes |
 | --- | --- | --- | --- |

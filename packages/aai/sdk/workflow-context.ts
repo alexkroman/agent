@@ -133,7 +133,7 @@ export interface WorkflowContext extends AgentContext {
    * approval, a signature, a support reply, a webhook from a provider whose job
    * takes an unknown length of time. Done with `sleep` those become a poll — wake,
    * check, sleep again — and every cycle spends journal entries against
-   * {@link MAX_WORKFLOW_STEPS}, so a wait measured in days is not expressible at
+   * `MAX_WORKFLOW_STEPS`, so a wait measured in days is not expressible at
    * all. A waitpoint costs ONE entry however long it waits.
    *
    * Like {@link sleep} it does not return on the replay that creates it: the run is
@@ -191,7 +191,7 @@ export interface WorkflowContext extends AgentContext {
    *
    * Continue-as-new. The successor inherits this run's correlation key, so `find`
    * and the `workflow_status` builtin keep answering, and it starts with an EMPTY
-   * journal — which is the point. {@link MAX_WORKFLOW_STEPS} is a hard cap sized
+   * journal — which is the point. `MAX_WORKFLOW_STEPS` is a hard cap sized
    * under the row limit replay reads the journal through, so a loop over a
    * thousand items is not expressible as ONE run at all; splitting it at a
    * checkpoint is.

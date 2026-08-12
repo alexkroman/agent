@@ -17,12 +17,12 @@
 export type StepOptions = {
   /**
    * Attempts before the step gives up and fails the run. Defaults to
-   * {@link DEFAULT_STEP_MAX_ATTEMPTS}.
+   * `DEFAULT_STEP_MAX_ATTEMPTS`.
    */
   maxAttempts?: number;
   /**
    * Base backoff between attempts, doubled each time. Defaults to
-   * {@link DEFAULT_STEP_BACKOFF_MS}.
+   * `DEFAULT_STEP_BACKOFF_MS`.
    */
   backoffMs?: number;
 };

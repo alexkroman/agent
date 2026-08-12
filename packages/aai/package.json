@@ -14,9 +14,9 @@
       "import": "./dist/sdk/utils.js"
     },
     "./limits": {
-      "@dev/source": "./sdk/constants.ts",
-      "types": "./dist/sdk/constants.d.ts",
-      "import": "./dist/sdk/constants.js"
+      "@dev/source": "./sdk/limits-barrel.ts",
+      "types": "./dist/sdk/limits-barrel.d.ts",
+      "import": "./dist/sdk/limits-barrel.js"
     },
     "./testing": {
       "@dev/source": "./sdk/testing.ts",

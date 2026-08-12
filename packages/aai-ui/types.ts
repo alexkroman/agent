@@ -19,7 +19,7 @@ export {
   PLAYBACK_JITTER_MS,
   PLAYBACK_PROGRESS_INTERVAL_MS,
   PLAYBACK_REFILL_MS,
-} from "@alexkroman1/aai";
+} from "@alexkroman1/aai/limits";
 
 /**
  * `getUserMedia` audio constraints for every capture path in this package.

@@ -23,7 +23,7 @@ export interface PipelineVoiceTuning {
   /**
    * Pipeline mode only. Minimum words in an interim transcript before user
    * speech barges in on (aborts) the agent's in-flight reply. Defaults to
-   * {@link DEFAULT_MIN_BARGE_IN_WORDS} (2) so one-word backchannels ("yeah",
+   * `DEFAULT_MIN_BARGE_IN_WORDS` (2) so one-word backchannels ("yeah",
    * "mm-hmm") don't cut the agent off; set 1 to interrupt on any word.
    */
   minBargeInWords?: number;
@@ -32,7 +32,7 @@ export interface PipelineVoiceTuning {
    * first interim transcript) before an interim-triggered barge-in aborts the
    * agent's reply — a duration gate alongside `minBargeInWords`, mirroring
    * LiveKit's `min_interruption_duration`. Committed turns (STT finals) are
-   * never gated. Defaults to {@link DEFAULT_INTERRUPTION_MIN_DURATION_MS}
+   * never gated. Defaults to `DEFAULT_INTERRUPTION_MIN_DURATION_MS`
    * (500); set 0 to disable the gate.
    */
   interruptionMinDurationMs?: number;
@@ -47,14 +47,14 @@ export interface PipelineVoiceTuning {
    * Pipeline mode only. Phrase spoken when the turn's LLM stream fails, so a
    * provider outage hands the conversation back instead of going silent — a
    * failed turn produces no text, so nothing would otherwise reach TTS.
-   * Defaults to {@link DEFAULT_ERROR_PHRASE}; set `""` to disable.
+   * Defaults to `DEFAULT_ERROR_PHRASE`; set `""` to disable.
    */
   errorPhrase?: string;
   /**
    * Pipeline mode only. Phrase spoken when a provider fails to open, so a session that cannot
    * start says so instead of holding an open line in silence. Only reachable when TTS itself
    * came up — the usual case, since STT and TTS open independently. Defaults to
-   * {@link DEFAULT_START_FAILURE_PHRASE}; set `""` to disable.
+   * `DEFAULT_START_FAILURE_PHRASE`; set `""` to disable.
    */
   startFailurePhrase?: string;
   /**
@@ -78,7 +78,7 @@ export interface PipelineVoiceTuning {
    * **STILL UNMEASURED in this repo — the default is ON by decision, not by a
    * number.** Nothing here has measured what it saves. Two numbers bound the
    * window it aims at and neither is a claim about the saving: STT endpointing
-   * withholds a final for {@link DEFAULT_MIN_TURN_SILENCE_MS} (1600) after the
+   * withholds a final for `DEFAULT_MIN_TURN_SILENCE_MS` (1600) after the
    * caller stops, and LLM time-to-first-text is p50 1.10s / mean 1.42s
    * (tau2-bench retail, the measurement recorded on
    * `DEFAULT_DEAD_AIR_COVER_MS`). Whether a high-confidence interim actually
@@ -102,7 +102,7 @@ export interface PipelineVoiceTuning {
    *
    * Its reach is therefore BOUNDED BY A MEASUREMENT rather than shown by one:
    * across 815 replies in two tau2-bench retail runs, 28-33% of replies called a
-   * tool at all (the distribution recorded on {@link DEFAULT_MAX_STEPS}), so at
+   * tool at all (the distribution recorded on `DEFAULT_MAX_STEPS`), so at
    * most the remaining 67-72% can ever be accelerated. On a tool-calling agent
    * this buys nothing and costs one extra billed LLM request per speculating
    * utterance; at most 2 speculations per utterance is the cap.

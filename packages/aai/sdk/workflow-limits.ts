@@ -11,7 +11,7 @@
  */
 
 /**
- * Default attempts for one {@link WorkflowContext.step} before the run fails.
+ * Default attempts for one `WorkflowContext.step` before the run fails.
  *
  * Three rather than one because the failures a step sees are overwhelmingly
  * transient (a provider 503, a pooler hiccup), and rather than unbounded
@@ -35,13 +35,13 @@ export const DEFAULT_STEP_BACKOFF_MS = 500;
  */
 export const MAX_WORKFLOW_STEPS = 500;
 
-/** Runs {@link WorkflowClient.find} returns when the caller names no limit. */
+/** Runs `WorkflowClient.find` returns when the caller names no limit. */
 export const DEFAULT_WORKFLOW_FIND_LIMIT = 10;
 
 /**
- * Ceiling on {@link WorkflowClient.find}'s limit.
+ * Ceiling on `WorkflowClient.find`'s limit.
  *
- * The same reasoning as {@link MAX_WORKFLOW_STEPS}: the read goes through
+ * The same reasoning as `MAX_WORKFLOW_STEPS`: the read goes through
  * `ctx.db`, which throws past `MAX_DB_RESULT_ROWS`, and a `find` that threw
  * would take out the tool call asking "is my thing ready yet?" rather than
  * answering it.

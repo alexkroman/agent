@@ -2,7 +2,8 @@
 
 import { createRequire } from "node:module";
 import path from "node:path";
-import { AGENT_CSP, isTextAssetPath } from "@alexkroman1/aai";
+import { isTextAssetPath } from "@alexkroman1/aai";
+import { AGENT_CSP } from "@alexkroman1/aai/limits";
 import { HTTPException } from "hono/http-exception";
 import mime from "mime-types";
 import { createCachedDirReader } from "./_static-files.ts";

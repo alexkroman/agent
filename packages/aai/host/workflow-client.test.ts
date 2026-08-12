@@ -11,7 +11,8 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import type { WorkflowDef } from "../sdk/workflow.ts";
-import { MAX_WORKFLOW_FIND_LIMIT, workflow } from "../sdk/workflow.ts";
+import { workflow } from "../sdk/workflow.ts";
+import { MAX_WORKFLOW_FIND_LIMIT } from "../sdk/workflow-limits.ts";
 import {
   asStatus,
   createMemoryWorkflowStore,

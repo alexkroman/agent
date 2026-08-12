@@ -3,7 +3,7 @@
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { AGENT_FAVICON } from "@alexkroman1/aai";
+import { AGENT_FAVICON } from "@alexkroman1/aai/limits";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { build, type Plugin } from "vite";

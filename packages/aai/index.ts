@@ -14,20 +14,24 @@
  * Infrastructure shared with the sibling packages lives on
  * `@alexkroman1/aai/internal` and is not part of the public API.
  *
- * The numeric defaults and budgets are on `@alexkroman1/aai/limits`. They are
- * re-exported here as well, for now — see the note on that export below.
+ * **Every numeric default and budget is on `@alexkroman1/aai/limits`, and only
+ * there.** They were re-exported here too and are no longer: 96 of them against
+ * ~30 authoring names, so `agent`, `tool` and `workflow` were three entries in an
+ * autocomplete list led by `MAX_CLIENT_WS_BUFFERED_BYTES`. A barrel whose job is
+ * to be READ cannot also be the place every constant lives; `import { … } from
+ * "@alexkroman1/aai/limits"` is the whole migration.
+ *
+ * Two exceptions stay, and they are exceptions because they are not budgets:
+ * `DEFAULT_SYSTEM_PROMPT` and `DEFAULT_GREETING` are the TEXT `agent()` defaults
+ * to, which an author reads in order to extend or replace it.
  */
 
 // biome-ignore-all lint/performance/noReExportAll: barrel file by design
 
-// The ~106 numeric defaults and budgets. Also published as
-// `@alexkroman1/aai/limits`, which is the CANONICAL path: they are two thirds of
-// this barrel's 133 names, and an authoring surface whose autocomplete is
-// dominated by `MAX_CLIENT_WS_BUFFERED_BYTES` is one nobody can read. Kept here
-// too because removing them is a breaking change for every consumer that reads
-// one, so it belongs in a major rather than riding along with the new subpath.
-export * from "./sdk/constants.ts";
-export * from "./sdk/db.ts";
+// `Db` and the two type-level things beside it. NOT `export *`: that module also
+// holds `MAX_DB_RESULT_ROWS` (a budget — `/limits`) and
+// `STORAGE_DISABLED_MESSAGE` (a thrown sentence nobody imports — `/internal`).
+export type { Db } from "./sdk/db.ts";
 export * from "./sdk/define.ts";
 export * from "./sdk/generate.ts";
 // The one preset that belongs next to `agent()` rather than behind a provider
@@ -50,7 +54,30 @@ export type {
 // multi-file agent reads its own session state, not an optional utility.
 export * from "./sdk/session-slot.ts";
 export * from "./sdk/types.ts";
-export * from "./sdk/utils.ts";
+// The tool-code helpers. NOT `export *`: that module also re-exports the platform
+// SLUG CONTRACT (`RESERVED_SLUGS`, `VALID_SLUG_RE`, `PREVIEW_SLUG_SUFFIX`,
+// `MAX_SLUG_LENGTH`), whose documented home is `@alexkroman1/aai/utils` — the CLI
+// and the platform read it there, and an agent author never reads it at all.
+export {
+  capToolResult,
+  createKeyedLock,
+  errorDetail,
+  errorMessage,
+  isTextAssetPath,
+  isToolFailure,
+  type KeyedLock,
+  type KeyedLockOptions,
+  KeyedLockTimeoutError,
+  linkConfirmationCode,
+  normalizeSpeechText,
+  omitUndefined,
+  pushCapped,
+  safeJsonParse,
+  type ToolFailure,
+  toArgsRecord,
+  toolError,
+  withLock,
+} from "./sdk/utils.ts";
 // Durable workflows: `workflow()` sits next to `agent()`/`tool()` because it
 // is the third thing an `agent.ts` declares, not a subsystem behind a subpath.
 export * from "./sdk/workflow.ts";

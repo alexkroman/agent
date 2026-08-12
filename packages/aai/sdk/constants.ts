@@ -298,7 +298,7 @@ export const DEFAULT_START_FAILURE_PHRASE =
  * Minimum sustained speech before an interim-triggered barge-in aborts the
  * agent's reply (pipeline mode) — measured from the utterance's first partial,
  * LiveKit's `min_interruption_duration` analog. A companion to
- * {@link DEFAULT_MIN_BARGE_IN_WORDS}: that one asks "is this enough words to be
+ * `DEFAULT_MIN_BARGE_IN_WORDS`: that one asks "is this enough words to be
  * an interruption", this one asks "has it lasted long enough to be speech at
  * all". Committed turns (STT finals) are never gated, so nothing the caller
  * actually said is lost — a gated barge-in only means the agent finishes its

@@ -28,7 +28,7 @@ import type { WorkflowDef } from "./workflow.ts";
  * - `"calculate"` — Safely evaluate an arithmetic expression (no code execution).
  *
  * When `builtinTools` is not set, NONE are enabled
- * ({@link DEFAULT_BUILTIN_TOOLS} is empty) — a built-in is something an agent
+ * (`DEFAULT_BUILTIN_TOOLS` is empty) — a built-in is something an agent
  * asks for rather than something it has to notice and switch off. Name the
  * ones you want; `[]` and omitting the field mean the same thing.
  *
@@ -126,7 +126,7 @@ export type ToolDef<P extends ToolInputSchema = ToolInputSchema, S = DefaultSess
   /**
    * Function that runs the tool and returns a result. The result is
    * JSON-serialized for the LLM and the client, and capped at
-   * {@link MAX_TOOL_RESULT_CHARS} (4000) characters — longer results are
+   * `MAX_TOOL_RESULT_CHARS` (4000) characters — longer results are
    * trimmed and end with a `[truncated]` marker.
    *
    * Exactly one of `run` and `execute` is required; `tool()` throws naming the
@@ -261,7 +261,7 @@ export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
   /**
    * Bias prompt for transcription — use it to teach the transcriber the agent's
    * own vocabulary (product names, spelled-out identifiers). Defaults to empty
-   * (unbiased transcription); see {@link DEFAULT_STT_PROMPT} for what an
+   * (unbiased transcription); see `DEFAULT_STT_PROMPT` for what an
    * effective prompt looks like, and why a generic default is worse than none.
    *
    * Honoured in both session modes: the pipeline passes it to its STT stage,
@@ -274,14 +274,14 @@ export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
   sttPrompt?: string;
   /**
    * Max TOOL-CALLING steps per reply — bounds runaway tool loops. Defaults to
-   * {@link DEFAULT_MAX_STEPS} (10). On reaching the cap the pipeline spends one
+   * `DEFAULT_MAX_STEPS` (10). On reaching the cap the pipeline spends one
    * more step with `toolChoice: "none"`, so a capped turn still answers rather
    * than stopping mid-chain in silence.
    */
   maxSteps: number;
   /**
    * How the LLM selects tools each step. Defaults to `"auto"`
-   * ({@link DEFAULT_TOOL_CHOICE}): the model decides when to call a tool.
+   * (`DEFAULT_TOOL_CHOICE`): the model decides when to call a tool.
    * Honored in pipeline mode and by the OpenAI Realtime transport; the
    * AssemblyAI S2S service runs the tool loop service-side and does not
    * take a tool-choice parameter.
@@ -289,7 +289,7 @@ export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
   toolChoice?: ToolChoice;
   /**
    * Built-in server-side tools enabled for this agent. Unset enables NONE
-   * ({@link DEFAULT_BUILTIN_TOOLS} is empty) — a built-in is something an agent
+   * (`DEFAULT_BUILTIN_TOOLS` is empty) — a built-in is something an agent
    * asks for rather than something it has to notice and switch off, so `[]` and
    * omitting the field mean the same thing. See {@link BuiltinTool} for the
    * catalog.
@@ -380,7 +380,7 @@ export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
   /**
    * How long the session may go with no inbound audio before it is closed
    * (ms). Measures silence, not call length — re-armed on every audio frame.
-   * Defaults to {@link DEFAULT_IDLE_TIMEOUT_MS} (300 000, 5 minutes); `0` or
+   * Defaults to `DEFAULT_IDLE_TIMEOUT_MS` (300 000, 5 minutes); `0` or
    * a non-finite value disables the timer entirely.
    */
   idleTimeoutMs?: number;
@@ -395,7 +395,7 @@ export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
   /**
    * Instruction injected as a synthetic user turn when `silenceTimeoutMs`
    * elapses. Never shown as a user transcript. Defaults to
-   * {@link DEFAULT_SILENCE_PROMPT}. Requires `silenceTimeoutMs`.
+   * `DEFAULT_SILENCE_PROMPT`. Requires `silenceTimeoutMs`.
    */
   silencePrompt?: string;
   /**

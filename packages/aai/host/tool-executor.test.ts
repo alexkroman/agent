@@ -2,7 +2,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import type { ToolContext, ToolDef } from "../sdk/types.ts";
-import { WORKFLOWS_UNAVAILABLE_MESSAGE } from "../sdk/workflow.ts";
+import { WORKFLOWS_UNAVAILABLE_MESSAGE } from "../sdk/workflow-limits.ts";
 import { makeTool, sleep } from "./_test-utils.ts";
 import { executeToolCall } from "./tool-executor.ts";
 

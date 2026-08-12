@@ -11,11 +11,8 @@
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest";
-import {
-  type AnyWorkflowDef,
-  WORKFLOWS_UNAVAILABLE_MESSAGE,
-  type WorkflowRunSnapshot,
-} from "../sdk/workflow.ts";
+import type { AnyWorkflowDef, WorkflowRunSnapshot } from "../sdk/workflow.ts";
+import { WORKFLOWS_UNAVAILABLE_MESSAGE } from "../sdk/workflow-limits.ts";
 import { silentLogger } from "./_test-utils.ts";
 import { createServer, type SessionRuntime } from "./server.ts";
 import {

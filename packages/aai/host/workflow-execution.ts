@@ -16,13 +16,12 @@
 import type { Db } from "../sdk/db.ts";
 import { findUnjournalable } from "../sdk/journalable.ts";
 import { errorMessage } from "../sdk/utils.ts";
+import type { StepOptions, WorkflowContext } from "../sdk/workflow.ts";
 import {
   DEFAULT_STEP_BACKOFF_MS,
   DEFAULT_STEP_MAX_ATTEMPTS,
   MAX_WORKFLOW_STEPS,
-  type StepOptions,
-  type WorkflowContext,
-} from "../sdk/workflow.ts";
+} from "../sdk/workflow-limits.ts";
 import { type HostGenerateFn, toGenerateFn } from "./generate.ts";
 import type { Logger } from "./runtime-config.ts";
 import type { WorkflowStore } from "./workflow-store.ts";
@@ -417,7 +416,7 @@ export function createContextFactory(deps: ExecutionDeps) {
  * different ids — the journal lookup misses, and the step runs a second time
  * with its earlier result orphaned. Nothing reported that: the run still
  * completed, having silently re-done work and grown its journal toward
- * {@link MAX_WORKFLOW_STEPS} on every replay.
+ * `MAX_WORKFLOW_STEPS` on every replay.
  *
  * A journaled id nobody claimed is exactly that signature. At every unwind
  * point — completion, failure, and suspension alike — an execution has

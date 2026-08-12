@@ -333,7 +333,7 @@ export const TTS_RECONNECT_TIMEOUT_MS = 8000;
  * Watchdog for the pipeline speaking edge: how long after the last STT partial
  * to force `speech_stopped` when no non-empty final ever arrives. Genuine
  * utterances close the edge when their final commits, well inside this window
- * (provider endpointing — e.g. {@link DEFAULT_MIN_TURN_SILENCE_MS} — plus
+ * (provider endpointing — e.g. `DEFAULT_MIN_TURN_SILENCE_MS` — plus
  * final latency); this only bounds the leak for noise partials that never
  * commit.
  *
@@ -349,7 +349,7 @@ export const TTS_RECONNECT_TIMEOUT_MS = 8000;
  * `min_turn_silence` are measured from roughly the same instant: the window
  * restarted on every partial, and the last partial lands at about the end of
  * speech, after which the STT provider withholds a genuine barge-in's final for
- * its endpointing window ({@link DEFAULT_MIN_TURN_SILENCE_MS}, 1600 today; 2000
+ * its endpointing window (`DEFAULT_MIN_TURN_SILENCE_MS`, 1600 today; 2000
  * when this was written — then exactly the recovery window's default). The two
  * deadlines were therefore separated only by the difference between partial and
  * final latency, a few hundred ms in either direction: EVERY genuine barge-in

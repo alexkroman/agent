@@ -46,7 +46,7 @@
 
 import type http from "node:http";
 import { errorMessage } from "../sdk/utils.ts";
-import { WORKFLOWS_UNAVAILABLE_MESSAGE } from "../sdk/workflow.ts";
+import { WORKFLOWS_UNAVAILABLE_MESSAGE } from "../sdk/workflow-limits.ts";
 import type { Logger } from "./runtime-config.ts";
 import { streamRunEvents } from "./workflow-api-events.ts";
 import {
@@ -103,7 +103,7 @@ export type WorkflowApiOptions = {
    * common one, because declaring a workflow is the part an author does not
    * forget. A deployed `transcription-desk` with storage off reported it for
    * every upload, and the sentence sends its reader to look at the code they
-   * just wrote correctly. So the answer is {@link WORKFLOWS_UNAVAILABLE_MESSAGE},
+   * just wrote correctly. So the answer is `WORKFLOWS_UNAVAILABLE_MESSAGE`,
    * which names both halves and both fixes — the same sentence `ctx.workflows`
    * rejects with, so the tool path and this one cannot disagree about a
    * condition they share. Narrowing it further would take a second signal from

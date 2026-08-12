@@ -154,7 +154,7 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
  * content (`max_turn_silence`). This is the pause-tolerance knob: it bounds
  * only utterances that never read as complete, so raising it is paid for by
  * hesitant speech alone and costs an ordinary finished sentence nothing —
- * unlike {@link DEFAULT_MIN_TURN_SILENCE_MS}, which taxes every turn.
+ * unlike `DEFAULT_MIN_TURN_SILENCE_MS`, which taxes every turn.
  *
  * 3000 keeps the ~3s of pause tolerance the 3000 `min_turn_silence` was
  * reaching for, and applies it where it actually lands. The service default is
@@ -169,7 +169,7 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
  * runs. 3000 was a 500 ms trim off that, deliberate but never measured on its
  * own, carrying an explicit revert condition: *splits reappearing on hesitant,
  * non-spelling utterances while spelled identifiers stay intact*, the asymmetry
- * that distinguishes this ceiling from {@link DEFAULT_MIN_TURN_SILENCE_MS}.
+ * that distinguishes this ceiling from `DEFAULT_MIN_TURN_SILENCE_MS`.
  *
  * That is precisely what the retail run at 3000 produced (aligning every
  * committed final against its gold utterance with `scripts/stt_errors.py`, 40

@@ -1,7 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
-import { MAX_WORKFLOW_STEPS, workflow } from "../sdk/workflow.ts";
+import { workflow } from "../sdk/workflow.ts";
+import { MAX_WORKFLOW_STEPS } from "../sdk/workflow-limits.ts";
 import { drain, makeEngine } from "./_workflow-engine-harness.ts";
 import { asStatus, createMemoryWorkflowStore } from "./_workflow-test-utils.ts";
 import { MAX_DUE_RUNS, MAX_WAKE_TIMER_MS, WORKFLOW_LEASE_MS } from "./workflow-engine.ts";

@@ -2,17 +2,19 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import {
-  DEFAULT_STEP_BACKOFF_MS,
-  DEFAULT_STEP_MAX_ATTEMPTS,
   findUnjournalable,
   isTerminal,
-  MAX_WORKFLOW_STEPS,
   rejectingWorkflows,
   TERMINAL_WORKFLOW_STATUSES,
-  WORKFLOWS_UNAVAILABLE_MESSAGE,
   type WorkflowRunStatus,
   workflow,
 } from "./workflow.ts";
+import {
+  DEFAULT_STEP_BACKOFF_MS,
+  DEFAULT_STEP_MAX_ATTEMPTS,
+  MAX_WORKFLOW_STEPS,
+  WORKFLOWS_UNAVAILABLE_MESSAGE,
+} from "./workflow-limits.ts";
 
 describe("workflow()", () => {
   test("returns its definition unchanged", () => {

@@ -17,19 +17,12 @@ export { findUnjournalable, type Journalable } from "./journalable.ts";
  * because this module is the one an author imports.
  */
 export type { WorkflowContext } from "./workflow-context.ts";
-/**
- * Limits and the unavailable-engine message — see `workflow-limits.ts`.
- * Re-exported here because this module is where an author meets them.
- */
-export {
-  DEFAULT_STEP_BACKOFF_MS,
-  DEFAULT_STEP_MAX_ATTEMPTS,
-  DEFAULT_WORKFLOW_FIND_LIMIT,
-  MAX_CONTINUATIONS,
-  MAX_WORKFLOW_FIND_LIMIT,
-  MAX_WORKFLOW_STEPS,
-  WORKFLOWS_UNAVAILABLE_MESSAGE,
-} from "./workflow-limits.ts";
+// The numeric limits are NOT re-exported here, deliberately: this module rides
+// the root barrel, and the root no longer carries budgets — they live on
+// `@alexkroman1/aai/limits`, which is the one place to look for a number. The
+// unavailable-engine message is not re-exported either; nothing an author writes
+// imports it, and its readers (the guest harness, this SDK's own specs) reach it
+// through `@alexkroman1/aai/internal`. See `sdk/workflow-limits.ts`.
 /**
  * A run's observable state — the status union, the terminal set, the snapshot a
  * caller reads and its guard. Re-exported because `ctx.workflows` returns them.
@@ -154,8 +147,8 @@ export type StartOptions = {
 export type FindOptions = {
   /**
    * Most runs to return, newest first. Defaults to
-   * {@link DEFAULT_WORKFLOW_FIND_LIMIT} and is clamped to
-   * {@link MAX_WORKFLOW_FIND_LIMIT}.
+   * `DEFAULT_WORKFLOW_FIND_LIMIT` and is clamped to
+   * `MAX_WORKFLOW_FIND_LIMIT`.
    */
   limit?: number;
 };
@@ -282,7 +275,7 @@ export type WorkflowClient = {
  * What `ctx.workflows` IS when there is no engine behind it — no workflows
  * declared, storage off, or a test that did not stub one. One factory rather
  * than a literal per site, because the literal was written three times (the tool
- * executor's {@link WORKFLOWS_UNAVAILABLE_MESSAGE} stub, the host test helper's,
+ * executor's `WORKFLOWS_UNAVAILABLE_MESSAGE` stub, the host test helper's,
  * and `@alexkroman1/aai/testing`'s) and adding a method to the client broke all
  * three at once while each looked complete on its own.
  *

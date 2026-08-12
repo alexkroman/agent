@@ -2,6 +2,7 @@
   "$schema": "https://typedoc.org/schema.json",
   "entryPoints": [
     "dist/index.d.ts",
+    "dist/sdk/limits-barrel.d.ts",
     "dist/sdk/utils.d.ts",
     "dist/sdk/testing.d.ts",
     "dist/sdk/protocol.d.ts",

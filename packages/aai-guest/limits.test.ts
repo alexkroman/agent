@@ -3,7 +3,8 @@
 // so it cannot import the SDK constants it mirrors. These assertions are what
 // stops the two sides drifting: they are the reason the duplication is safe.
 
-import { STORAGE_DISABLED_MESSAGE, TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai";
+import { STORAGE_DISABLED_MESSAGE } from "@alexkroman1/aai/internal";
+import { TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai/limits";
 import { describe, expect, test } from "vitest";
 import * as limits from "./limits.ts";
 
