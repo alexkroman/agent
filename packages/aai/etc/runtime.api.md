@@ -176,6 +176,9 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore;
 export function createTelephonyBridge(carrierSocket: SessionWebSocket, opts: TelephonyBridgeOptions): SessionWebSocket;
 
 // @internal
+export function createWakeHintPublisher(opts?: WakeHintOptions): WakeHintPublisher;
+
+// @internal
 export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClient;
 
 // @internal
@@ -209,6 +212,9 @@ export interface ExecuteToolOptions {
     // (undocumented)
     toolCallId?: string;
 }
+
+// @internal
+export const GRAPHILE_JOB_EXPIRY = "4 hours";
 
 // @internal
 export function handleWorkflowRequest(surface: WorkflowSurface | null | undefined, req: IncomingMessage, res: ServerResponse, url: string, method: string): boolean;
@@ -629,6 +635,20 @@ export type TransportSessionConfig = {
 // @public
 export const twilioCodec: CarrierCodec;
 
+// @internal
+export type WakeHintOptions = {
+    databaseUrl?: string | undefined;
+    db?: Db | undefined;
+    logger?: Logger | undefined;
+    intervalMs?: number | undefined;
+};
+
+// @internal
+export type WakeHintPublisher = {
+    publish(): Promise<void>;
+    close(): Promise<void>;
+};
+
 // @public
 export type WdkAdapter = {
     start(workflowId: string, args: unknown[]): Promise<string>;
@@ -663,6 +683,9 @@ export const WORKFLOW_FLOW_PATH = "/.well-known/workflow/v1/flow";
 
 // @internal (undocumented)
 export const WORKFLOW_STEP_PATH = "/.well-known/workflow/v1/step";
+
+// @internal
+export const WORKFLOW_WAKE_TABLE = "aai_workflow_wake";
 
 // @internal (undocumented)
 export const WORKFLOW_WEBHOOK_PREFIX = "/.well-known/workflow/v1/webhook/";

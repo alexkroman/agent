@@ -51,7 +51,12 @@ import { authMw, existingOwnerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
 import { createPhoneHandler, PHONE_ROUTE } from "./phone-handler.ts";
 import type { PlatformEvents } from "./platform-events.ts";
-import { createMutationLock, localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
+import {
+  type AdminDb,
+  createMutationLock,
+  localSlugLock,
+  type SlugMutationLock,
+} from "./platform-lock.ts";
 import { createRateLimiter, DEPLOY_IP_RATE_LIMIT, type RateLimiter } from "./rate-limit.ts";
 import type { SandboxDirectory } from "./sandbox-directory.ts";
 import { watchAgentInvalidation } from "./sandbox-invalidate.ts";
@@ -79,6 +84,7 @@ import {
   handleAgentPage,
   handleClientAsset,
 } from "./transport-websocket.ts";
+import { startWorkflowWakeSweep } from "./workflow-wake.ts";
 import {
   createWorkflowWebhookHandler,
   MAX_WEBHOOK_BODY_BYTES,
@@ -135,6 +141,20 @@ export type OrchestratorOpts = {
    * tests) leaves every replica independent — correct for a single process.
    */
   directory?: SandboxDirectory;
+  /**
+   * The platform admin connection, for the durable-workflow wake sweep
+   * (workflow-wake.ts) — the one thing in this process that boots a sandbox on a
+   * SCHEDULE rather than for a caller. Absent (no platform database: local dev,
+   * tests) leaves the sweep unstarted, which is correct there: `aai dev` runs the
+   * DevKit's local world, whose queue lives in that process's own memory.
+   */
+  adminDb?: AdminDb;
+  /**
+   * How many EXTRA `APP_DB_URLS` placement clusters are configured. The wake
+   * sweep reads the primary cluster only and warns naming that gap, rather than
+   * silently never waking the apps placed elsewhere.
+   */
+  extraAppDbClusters?: number;
   /** Allowed CORS origins. Defaults to `["*"]` (any origin). */
   allowedOrigins?: string[];
   /**
@@ -272,6 +292,20 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     // stop routing here" and "stop booting sandboxes" can never disagree.
     ...(opts.isDraining && { isDraining: opts.isDraining }),
   };
+
+  // Durable runs whose sandbox is long gone (workflow-wake.ts). Wired here for
+  // the same reason `watchAgentInvalidation` is: it lives for the process and
+  // belongs to the AGENT surface, so no entry has to remember it. A composition
+  // with no platform database starts nothing.
+  startWorkflowWakeSweep({
+    store: opts.store,
+    broker: brokerOpts,
+    ...(opts.adminDb && { adminDb: opts.adminDb }),
+    ...(opts.isDraining && { isDraining: opts.isDraining }),
+    ...(opts.extraAppDbClusters !== undefined && {
+      extraAppDbClusters: opts.extraAppDbClusters,
+    }),
+  });
 
   const agents = new Hono<HonoEnv>();
   agents.use("*", slugMw);

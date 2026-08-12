@@ -304,6 +304,25 @@ pin and versioned by `GUEST_CONTRACT_VERSION` (additive changes only):
   detaches the slot, and the next broker call rebuilds it. A drained guest
   refuses new direct-dial sessions (close 1013 → the client re-brokers) and
   exits the moment it empties or at its drain deadline.
+
+  **"Busy" is sessions PLUS in-flight durable-workflow callbacks**
+  (`createWorkflowActivity`, counted by `createIdleController` for both the idle
+  window and a drain). A run the platform woke this sandbox for has no session
+  at all (`aai-server/CLAUDE.md`, "Waking a run whose sandbox is gone"), so
+  counting sessions alone made the wake nearly worthless: the guest exited five
+  minutes into an hour-long run, mid-step, leaving the job locked until
+  graphile-worker's 4-hour expiry let another worker rescue it. Settlement is
+  the response's `close` rather than `finish`, so an aborted callback releases
+  the count instead of pinning the sandbox alive for its whole Modal timeout.
+  A drain's DEADLINE still wins — bounded work, not unbounded.
+
+  **A workflow guest also publishes a wake HINT** — the earliest time its queue
+  could next have claimable work, written into its own `ctx.db` schema for the
+  platform's wake sweep to read (`aai/host/workflow-wake-hint.ts`). Published
+  once at boot (so a hint a killed guest never wrote is repaired by any boot)
+  and after every queue callback, which is exactly when the answer changed.
+  Only for an agent that declares workflows AND has a database: the local world's
+  queue is in memory, so there is nothing outside the process to wake it for.
 - **Redeploys hand over BLUE-GREEN** (`handoverSlot` in
   sandbox-resolve.ts): the agents-row change event boots the NEW deploy's
   sandbox and waits for its readiness before detaching the old one, so a

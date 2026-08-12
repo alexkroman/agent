@@ -166,6 +166,83 @@ export const SANDBOX_TEARDOWN_READY_MS = envMs(process.env.SANDBOX_TEARDOWN_READ
  */
 export const SHUTDOWN_TEARDOWN_TIMEOUT_MS = envMs(process.env.SHUTDOWN_TEARDOWN_TIMEOUT_MS, 20_000);
 
+// ── Durable-workflow wake sweep (workflow-wake.ts) ───────────────────────────
+
+/**
+ * How often the replica looks for durable-run work that has come due.
+ *
+ * This is the whole latency budget of a wake: a run sleeping until 09:00 resumes
+ * at 09:00 plus up to one interval plus a boot. A minute is far below anything a
+ * `sleep()`-scale workflow cares about and keeps the sweep's cost — one catalog
+ * query plus one read per workflow-using app, on ONE replica (the pass is
+ * leader-elected) — negligible.
+ *
+ * Override with `WORKFLOW_WAKE_INTERVAL_MS`; **0 disables the sweep entirely**,
+ * which is the honest kill switch: nothing else in the platform boots a sandbox
+ * for a parked run, so turning this off means durable runs advance only when
+ * something else happens to wake the agent.
+ */
+export const WORKFLOW_WAKE_INTERVAL_MS = envMs(process.env.WORKFLOW_WAKE_INTERVAL_MS, 60_000);
+
+/**
+ * How long the sweep leaves a slug alone after waking it.
+ *
+ * The bound on a wake LOOP, which is the one way this sweep could cost real
+ * money: the hint is written by the guest after each queue callback, so a guest
+ * that boots and cannot run its world (a world that fails to start, a bundle
+ * whose workflows throw at load) never rewrites it and stays due forever.
+ * Without a backoff that is a sandbox per interval, indefinitely.
+ *
+ * Ten minutes is twice `AGENT_IDLE_EXIT_MS`, so a woken guest that had nothing
+ * to do has already self-exited before its slug is eligible again — the retry
+ * costs one boot per ten minutes rather than one per minute, and a run that
+ * really was resumed rewrites the hint long before then. Override with
+ * `WORKFLOW_WAKE_RETRY_MS`.
+ */
+export const WORKFLOW_WAKE_RETRY_MS = envMs(process.env.WORKFLOW_WAKE_RETRY_MS, 600_000);
+
+/**
+ * How long the sweep's own statements may run.
+ *
+ * The hint table lives in the TENANT's schema and the tenant's role owns it (see
+ * `aai/host/workflow-wake-hint.ts`), so its size is not the platform's to
+ * control: a tenant that grows it turns the platform's `min(wake_at)` into a
+ * scan. Set on the sweep's reserved connection inside a transaction (`set
+ * local`), so it cannot leak onto a pooled connection the way a bare `set`
+ * would, and so one tenant's read failing is one tenant's wake lost rather than
+ * the whole pass. Override with `WORKFLOW_WAKE_READ_TIMEOUT_MS`.
+ */
+export const WORKFLOW_WAKE_READ_TIMEOUT_MS = envMs(process.env.WORKFLOW_WAKE_READ_TIMEOUT_MS, 5000);
+
+/**
+ * How long a wake waits for the sandbox it just asked for.
+ *
+ * The sweep is not a client: nothing is holding a request open for the answer,
+ * and it only needs the boot STARTED — the next tick's hint read is what says
+ * whether the run advanced. So it does NOT inherit
+ * {@link BROKER_READY_TIMEOUT_MS} (20s), which a tick with
+ * {@link WORKFLOW_WAKE_MAX_PER_TICK} cold slugs would spend minutes of, serially,
+ * overrunning its own interval. Long enough that a LIVE resident (URL already
+ * resolved) still answers `ok`, short enough to be free; timing out cancels
+ * nothing, since the sandbox is attached to its slot and keeps booting.
+ * Override with `WORKFLOW_WAKE_READY_MS`; 0 restores waiting for the whole boot.
+ */
+export const WORKFLOW_WAKE_READY_MS = envMs(process.env.WORKFLOW_WAKE_READY_MS, 500);
+
+/**
+ * How many sandboxes one sweep tick may boot.
+ *
+ * Bounds the burst, not the work: anything over the cap is due on the next tick
+ * (ordering is by slug, so the cap cannot starve one agent forever — a woken
+ * slug enters its backoff and yields its place). Sized above any plausible
+ * simultaneous-due count and below the point where a tick would spawn faster
+ * than Modal schedules. Override with `WORKFLOW_WAKE_MAX_PER_TICK`.
+ */
+export const WORKFLOW_WAKE_MAX_PER_TICK = (() => {
+  const raw = Number(process.env.WORKFLOW_WAKE_MAX_PER_TICK);
+  return Number.isInteger(raw) && raw >= 1 ? raw : 10;
+})();
+
 /**
  * Locate the built Node guest harness — the `aai-guest` workspace package's
  * single-file artifact (overridable via GUEST_HARNESS_PATH). Resolved

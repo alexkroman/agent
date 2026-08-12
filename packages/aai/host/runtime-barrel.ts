@@ -173,6 +173,16 @@ export {
   WORKFLOW_WEBHOOK_PREFIX,
   type WorkflowSurface,
 } from "./workflow-serve.ts";
+// The wake hint. Exported for BOTH ends: the guest builds the publisher, and
+// the platform's wake sweep reads the table this names (see workflow-wake-hint.ts
+// — one spelling, so a rename cannot be two edits that disagree).
+export {
+  createWakeHintPublisher,
+  GRAPHILE_JOB_EXPIRY,
+  type WakeHintOptions,
+  type WakeHintPublisher,
+  WORKFLOW_WAKE_TABLE,
+} from "./workflow-wake-hint.ts";
 export { wdkAdapter } from "./workflow-wdk.ts";
 export {
   configureWorkflowWorld,
