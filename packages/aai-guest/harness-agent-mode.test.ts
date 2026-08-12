@@ -4,11 +4,14 @@ import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import type http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { WORKFLOW_FLOW_PATH } from "@alexkroman1/aai/runtime";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
 import {
+  createAgentRequestHandler,
   createIdleController,
   createManageHandler,
+  createWorkflowActivity,
   MANAGE_DRAIN_PATH,
   MANAGE_STATUS_PATH,
   readAgentBoot,
@@ -140,10 +143,24 @@ type FakeRes = {
   statusCode: number | undefined;
   body: string;
   res: http.ServerResponse;
+  /** Fire the `close` listeners, as ending a real response does. */
+  close: () => void;
 };
 
+/**
+ * The ONE fake response, `close` listeners included.
+ *
+ * Extended rather than copied for the workflow-activity specs: a second literal
+ * would need a second cast to `http.ServerResponse`, and a concentration of
+ * identical casts is a missing typed seam (see the escape-hatch ratchet in the
+ * root CLAUDE.md).
+ */
 function fakeRes(): FakeRes {
-  const out: FakeRes = { statusCode: undefined, body: "" } as FakeRes;
+  const listeners: (() => void)[] = [];
+  const close = (): void => {
+    for (const listener of listeners.splice(0)) listener();
+  };
+  const out: FakeRes = { statusCode: undefined, body: "", close } as FakeRes;
   out.res = {
     writeHead(status: number) {
       out.statusCode = status;
@@ -151,15 +168,33 @@ function fakeRes(): FakeRes {
     },
     end(body?: string) {
       out.body = body ?? "";
+      // A real response emits `close` when it finishes, which is what settles
+      // the workflow-activity count.
+      close();
+    },
+    once(event: string, listener: () => void) {
+      if (event === "close") listeners.push(listener);
+      return this;
     },
   } as unknown as http.ServerResponse;
   return out;
 }
 
-function fakeReq(auth?: string, url?: string): http.IncomingMessage {
+/**
+ * The ONE fake request. `method`/`body` exist for the workflow routes, which
+ * read a body off the stream — same single-cast rule as `fakeRes` above.
+ */
+function fakeReq(
+  auth?: string,
+  url?: string,
+  opts: { method?: string } = {},
+): http.IncomingMessage {
   return {
     headers: auth ? { authorization: auth } : {},
-    ...omitUndefined({ url }),
+    ...omitUndefined({ url, method: opts.method }),
+    async *[Symbol.asyncIterator]() {
+      // No chunks: a queue callback's payload is irrelevant to the routing.
+    },
   } as http.IncomingMessage;
 }
 
@@ -240,6 +275,92 @@ describe("createManageHandler", () => {
   });
 });
 
+// ── Workflow activity ──────────────────────────────────────────────────────
+
+describe("createWorkflowActivity", () => {
+  test("counts a callback until its response closes", () => {
+    const activity = createWorkflowActivity();
+    const first = fakeRes();
+    const second = fakeRes();
+
+    activity.begin(first.res);
+    activity.begin(second.res);
+    expect(activity.inFlight()).toBe(2);
+
+    first.close();
+    expect(activity.inFlight()).toBe(1);
+    second.close();
+    expect(activity.inFlight()).toBe(0);
+  });
+
+  test("settles on a socket that died rather than a response that finished", () => {
+    // `close` fires either way — which is the point. Waiting for `finish` would
+    // leak the count on an aborted mid-step callback and pin the sandbox alive
+    // for the rest of its Modal timeout.
+    const activity = createWorkflowActivity();
+    const aborted = fakeRes();
+    activity.begin(aborted.res);
+    aborted.close();
+    expect(activity.inFlight()).toBe(0);
+  });
+
+  test("notifies on each settle, which is when the queue's next wake changed", () => {
+    const onSettled = vi.fn();
+    const activity = createWorkflowActivity(onSettled);
+    const one = fakeRes();
+    activity.begin(one.res);
+    expect(onSettled).not.toHaveBeenCalled();
+    one.close();
+    expect(onSettled).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("createAgentRequestHandler", () => {
+  const surface = {
+    flow: () => Promise.resolve(new Response("{}", { status: 200 })),
+    step: () => Promise.resolve(new Response("{}", { status: 200 })),
+    webhook: () => Promise.resolve(new Response("{}", { status: 200 })),
+  };
+
+  const manage = {
+    token: "secret-token",
+    activeSessions: () => 0,
+    isDraining: () => false,
+    startDrain: vi.fn(),
+  };
+
+  test("tracks a claimed workflow callback as in-flight work", async () => {
+    const activity = createWorkflowActivity();
+    const handler = createAgentRequestHandler({ manage, workflows: () => surface, activity });
+    const out = fakeRes();
+
+    expect(
+      handler(
+        fakeReq(undefined, WORKFLOW_FLOW_PATH, { method: "POST" }),
+        out.res,
+        WORKFLOW_FLOW_PATH,
+        "POST",
+      ),
+    ).toBe(true);
+    expect(activity.inFlight()).toBe(1);
+
+    // The handler serves in the background, so its own `res.end` is what
+    // settles the count — no test-side prodding.
+    await vi.waitFor(() => expect(activity.inFlight()).toBe(0));
+  });
+
+  test("does not count manage or unclaimed requests", () => {
+    const activity = createWorkflowActivity();
+    const handler = createAgentRequestHandler({ manage, workflows: () => surface, activity });
+
+    expect(handler(fakeReq("Bearer secret-token"), fakeRes().res, MANAGE_STATUS_PATH, "GET")).toBe(
+      true,
+    );
+    expect(handler(fakeReq(), fakeRes().res, "/websocket", "GET")).toBe(false);
+    expect(activity.inFlight()).toBe(0);
+  });
+});
+
 // ── Idle / drain lifecycle ──────────────────────────────────────────────────
 
 describe("createIdleController", () => {
@@ -302,6 +423,80 @@ describe("createIdleController", () => {
       expect(exit).not.toHaveBeenCalled(); // sessions still live
       sessions = 0;
       vi.advanceTimersByTime(1000);
+      expect(exit).toHaveBeenCalledWith(0);
+      ctl.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a workflow callback in flight keeps the idle clock reset", () => {
+    // Without this a wake buys at most one idle window of progress: the guest
+    // the platform woke for a run has no session, so it exits mid-step and the
+    // job stays locked until graphile-worker's 4-hour expiry.
+    vi.useFakeTimers();
+    const exit = vi.fn();
+    let workflows = 1;
+    try {
+      const ctl = createIdleController({
+        activeSessions: () => 0,
+        activeWorkflows: () => workflows,
+        idleExitMs: 10_000,
+        pollMs: 1000,
+        exit,
+      });
+      vi.advanceTimersByTime(60_000);
+      expect(exit).not.toHaveBeenCalled();
+      workflows = 0;
+      vi.advanceTimersByTime(12_000);
+      expect(exit).toHaveBeenCalledWith(0);
+      ctl.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a drain waits out a workflow callback, then exits", () => {
+    // A drain means "finish what you are doing, bounded by the deadline", and a
+    // step is exactly that — so workflow work counts for the drain too.
+    vi.useFakeTimers();
+    const exit = vi.fn();
+    let workflows = 1;
+    try {
+      const ctl = createIdleController({
+        activeSessions: () => 0,
+        activeWorkflows: () => workflows,
+        idleExitMs: 0,
+        pollMs: 1000,
+        exit,
+      });
+      ctl.startDrain();
+      vi.advanceTimersByTime(5000);
+      expect(exit).not.toHaveBeenCalled();
+      workflows = 0;
+      vi.advanceTimersByTime(1000);
+      expect(exit).toHaveBeenCalledWith(0);
+      ctl.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("the drain deadline still wins over workflow work", () => {
+    vi.useFakeTimers();
+    const exit = vi.fn();
+    try {
+      const ctl = createIdleController({
+        activeSessions: () => 0,
+        activeWorkflows: () => 1, // never settles
+        idleExitMs: 0,
+        pollMs: 1000,
+        exit,
+      });
+      ctl.startDrain(5000);
+      vi.advanceTimersByTime(4000);
+      expect(exit).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(2000);
       expect(exit).toHaveBeenCalledWith(0);
       ctl.stop();
     } finally {

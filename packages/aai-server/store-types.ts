@@ -50,6 +50,12 @@ export type BundleStore = {
    * bytes).
    */
   getWorkerUrl(slug: string, ttlSeconds: number): Promise<string | null>;
+  /**
+   * Every deployed slug (`AgentRows.slugs`) — uncached, and the only read here
+   * that is not per-slug. One caller: the durable-workflow wake sweep, which
+   * needs slug→schema for every agent because the reverse is a one-way hash.
+   */
+  listSlugs(): Promise<string[]>;
   getClientFile(slug: string, filePath: string): Promise<string | null>;
   deleteAgent(slug: string): Promise<void>;
   getEnv(slug: string): Promise<Record<string, string> | null>;

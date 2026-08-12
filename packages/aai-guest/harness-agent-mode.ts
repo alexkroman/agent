@@ -29,7 +29,9 @@ import { readFile, rm } from "node:fs/promises";
 import type http from "node:http";
 import {
   configureWorkflowWorld,
+  consoleLogger,
   createServer,
+  createWakeHintPublisher,
   handleWorkflowRequest,
   startWorkflowWorldIfDeclared,
   type WorkflowSurface,
@@ -173,6 +175,56 @@ export function createManageHandler(
 }
 
 /**
+ * Workflow work in flight, so the idle controller can see it.
+ *
+ * A guest measures "nobody needs me" by its session count, which is the whole
+ * truth for a voice agent and half of it for one with durable workflows: a run
+ * woken by the platform (`aai-server/workflow-wake.ts`) has NO session, so
+ * without this the sandbox self-exits five minutes into an hour-long run —
+ * mid-step, leaving the job locked until graphile-worker's 4-hour expiry lets
+ * another worker rescue it. The wake would then have bought at most one idle
+ * window of progress per sweep.
+ *
+ * Settlement is the RESPONSE's `close`, which fires whether the handler answered
+ * or the socket died, so a callback cannot leak the counter and pin a sandbox
+ * alive forever. It is also the completion signal `handleWorkflowRequest` itself
+ * does not give: it returns `true` synchronously and serves in the background.
+ *
+ * @internal
+ */
+export type WorkflowActivity = {
+  /** Callbacks currently being served. */
+  inFlight: () => number;
+  /** Note one claimed workflow request; its response settles it. */
+  begin: (res: http.ServerResponse) => void;
+};
+
+/**
+ * Track in-flight workflow callbacks, notifying `onSettled` as each finishes.
+ *
+ * `onSettled` is where the wake hint is republished: a callback finishing is
+ * exactly the moment the queue's next-claimable time changed, so it is both the
+ * cheapest and the most accurate trigger available.
+ *
+ * @internal
+ */
+export function createWorkflowActivity(onSettled?: () => void): WorkflowActivity {
+  let inFlight = 0;
+  return {
+    inFlight: () => inFlight,
+    begin(res) {
+      inFlight += 1;
+      // `once`, and on `close` rather than `finish`: a response that never
+      // finishes (an aborted connection mid-step) must still release the count.
+      res.once("close", () => {
+        inFlight -= 1;
+        onSettled?.();
+      });
+    },
+  };
+}
+
+/**
  * Agent mode's whole `request` hook: the DevKit's queue callbacks, then the
  * manage surface.
  *
@@ -186,10 +238,17 @@ export function createManageHandler(
 export function createAgentRequestHandler(deps: {
   manage: ManageDeps;
   workflows: () => WorkflowSurface | null;
+  /** Absent leaves workflow work invisible to the idle controller — tests only. */
+  activity?: WorkflowActivity | undefined;
 }): (req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean {
   const manage = createManageHandler(deps.manage);
-  return (req, res, url, method) =>
-    handleWorkflowRequest(deps.workflows(), req, res, url, method) || manage(req, res, url, method);
+  return (req, res, url, method) => {
+    if (handleWorkflowRequest(deps.workflows(), req, res, url, method)) {
+      deps.activity?.begin(res);
+      return true;
+    }
+    return manage(req, res, url, method);
+  };
 }
 
 // ---- Idle / drain lifecycle ---------------------------------------------------
@@ -211,6 +270,15 @@ export type IdleController = {
  */
 export function createIdleController(opts: {
   activeSessions: () => number;
+  /**
+   * Durable-workflow callbacks in flight (see {@link createWorkflowActivity}).
+   *
+   * Counted as busy for BOTH windows, and the drain half is deliberate rather
+   * than incidental: a drain means "finish what you are doing, bounded by the
+   * deadline", and a step the platform woke this sandbox to run is exactly that.
+   * Absent means "this guest has no workflows", not "ignore them".
+   */
+  activeWorkflows?: (() => number) | undefined;
   idleExitMs: number;
   pollMs: number;
   /** Injectable for tests. Defaults to `process.exit`. */
@@ -222,6 +290,7 @@ export function createIdleController(opts: {
   let draining = false;
   let drainDeadline = Number.POSITIVE_INFINITY;
   let lastBusy = now();
+  const busy = (): number => opts.activeSessions() + (opts.activeWorkflows?.() ?? 0);
 
   const tick = (): void => {
     if (draining && now() >= drainDeadline) {
@@ -229,7 +298,7 @@ export function createIdleController(opts: {
       exit(0);
       return;
     }
-    if (opts.activeSessions() > 0) {
+    if (busy() > 0) {
       lastBusy = now();
       return;
     }
@@ -271,9 +340,18 @@ export function createIdleController(opts: {
 export async function mainAgent(port: number, host: string, token: string): Promise<void> {
   const state = emptyHarnessState();
 
+  // The publisher needs the agent's DATABASE_URL, which arrives with the boot
+  // artifacts below — while the idle controller has to arm BEFORE them, so a
+  // guest whose bundle never loads still has a clock. Hence the indirection:
+  // the activity tracker exists from the start and its settle callback finds a
+  // publisher once there is one.
+  let publishWakeHint: () => void = () => undefined;
+  const activity = createWorkflowActivity(() => publishWakeHint());
+
   const rawIdle = Number(process.env.AAI_GUEST_IDLE_EXIT_MS ?? AGENT_IDLE_EXIT_MS);
   const idle = createIdleController({
     activeSessions: () => state.activeSessions,
+    activeWorkflows: activity.inFlight,
     idleExitMs: Number.isFinite(rawIdle) && rawIdle >= 0 ? rawIdle : AGENT_IDLE_EXIT_MS,
     pollMs: AGENT_IDLE_POLL_MS,
   });
@@ -293,6 +371,22 @@ export async function mainAgent(port: number, host: string, token: string): Prom
   // rather than thrown — the session surface is unaffected, and an agent whose
   // workflows are broken should still answer the phone.
   await startWorkflowWorldIfDeclared(state.workflows !== null, world);
+
+  // The wake hint — how a run whose sandbox is gone gets a process again (see
+  // `aai/host/workflow-wake-hint.ts` for the design, and
+  // `aai-server/workflow-wake.ts` for the reader). Only for an agent that
+  // declares workflows AND has a database: the local world's queue is in memory,
+  // so there is nothing for the platform to wake it for. Published once here so a
+  // hint a previously killed guest never got to write is repaired by any boot,
+  // then after every queue callback.
+  if (state.workflows !== null && boot.env.DATABASE_URL) {
+    const wake = createWakeHintPublisher({
+      databaseUrl: boot.env.DATABASE_URL,
+      logger: consoleLogger,
+    });
+    publishWakeHint = () => void wake.publish();
+    publishWakeHint();
+  }
 
   // A draining guest is detached from the broker, but a client holding its
   // old sessionUrl can still dial the tunnel directly — refuse with a "try
@@ -322,6 +416,7 @@ export async function mainAgent(port: number, host: string, token: string): Prom
         startDrain: idle.startDrain,
       },
       workflows: () => state.workflows,
+      activity,
     }),
   });
   await server.listen(port, host);

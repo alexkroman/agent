@@ -64,6 +64,11 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   "Durable workflows" below): brokers a sandbox for a run whose guest exited
   long ago and forwards one request to the guest's own webhook endpoint. The
   only workflow route the platform serves
+- `workflow-wake.ts` — the durable-run wake sweep (see "Waking a run whose
+  sandbox is gone" below): the one thing here that boots a sandbox on a
+  SCHEDULE rather than for a caller. Leader-elected per tick, reads a
+  guest-published wake hint out of each app's own schema, and wakes through
+  `brokerSessionUrl` like every other caller
 - `phone-handler.ts` / `phone-signature.ts` — `GET/POST /:slug/phone`: the
   carrier call-answering webhook (see "Telephony" below) and its webhook
   authenticity checks
@@ -820,114 +825,28 @@ down, like the file-length allowlist.
 - **Shutdown ENDS long-lived responses; it must never let the process exit
   destroy them** (`live-streams.ts`, wired into `serve-lifecycle.ts`). SSE
   streams never end on their own, so `server.close()` waited out
-  `SHUTDOWN_CLOSE_FALLBACK_MS` and `process.exit(0)` then destroyed the
-  sockets — cutting each chunked body before its terminating `0\r\n\r\n`.
-  That is a protocol error to whatever is reading, and in production the
-  reader is Modal's in-container ASGI proxy, which surfaced it as a recurring
-  unretrieved-task `ClientPayloadError: Response payload is not completed:
-  <TransferEncodingError: 400, 'Not enough data to satisfy transfer length
-  header.'>` on `GET /studio/projects/<x>/events`, with nothing tying it to a
-  replica scale-in. The studio's SSE pusher (`studio-sse.ts`) registers; with
-  both surfaces in one process that is the only place a stream is owned. (The
-  split deployment additionally relayed proxied streams through one it owned —
-  `gracefulEventStream`, `text/event-stream` only so assets and JSON stayed
-  zero-copy — because the browser's connection terminated at the agent replica;
-  reviving the split owes that back.) Ending them is also what lets
-  `server.close()` complete, so shutdown stops hitting the fallback timer at
-  all. The client sees a clean stream end and resubscribes on its existing
-  backoff (`useEventStream`). Any future long-lived response owes the same
-  registration — the wire-level guard is `live-streams.test.ts`, which reads
-  raw socket bytes because a handler-level assertion passes with the bug
-  present.
-
-  Three properties of the ending itself, each of which was a hole that put the
-  truncation back while the registry looked correct:
-  - **It runs FIRST, before the service teardown.** Ending a stream is
-    synchronous and depends on nothing, while `onShutdown` sleeps
-    `SHUTDOWN_GRACE_MS` and then awaits one drain request per resident guest —
-    seconds at best, and up to `SHUTDOWN_TEARDOWN_TIMEOUT_MS` when a guest is
-    unreachable or still booting (it was genuinely unbounded before that
-    deadline existed). Modal SIGKILLs the container when its stop grace lapses,
-    so ending them *after* the teardown made the graceful end contingent on
-    sandbox teardown finishing in time — which is a bound now, but still not a
-    dependency worth having.
-  - **The registry LATCHES closed.** Nothing drains it twice, so a stream
-    registered after shutdown began would be held open until the exit destroyed
-    it; `registerLiveStream` therefore ends a late arrival on the spot instead.
-    That is not the rare case — the client's first reconnect backoff is 3s and
-    shutdown deliberately keeps serving for `SHUTDOWN_GRACE_MS`, so a
-    resubscribe landing mid-shutdown is the MODAL case. (`resetLiveStreams` is
-    a test-only seam for the latch.)
-  - **The crash path ends them too** (`installProcessSafetyNets` in
-    `service-config.ts`): `uncaughtException` → `process.exit(1)` destroys
-    sockets exactly as a scale-in does.
+  `SHUTDOWN_CLOSE_FALLBACK_MS` and `process.exit(0)` destroyed the sockets,
+  cutting each chunked body before its terminating `0\r\n\r\n` — a protocol
+  error to whatever is reading. Three properties of the ending are each a hole
+  that put the truncation back while the registry looked correct: it runs FIRST
+  (before the sandbox teardown, which sleeps and then awaits a drain per
+  guest), the registry LATCHES closed (so a stream registered mid-shutdown is
+  ended on the spot rather than held until the exit), and the crash path ends
+  them too (`installProcessSafetyNets`). **Any future long-lived response owes
+  the same registration**; the guard is `live-streams.test.ts`, which reads raw
+  socket bytes because a handler-level assertion passes with the bug present.
 - **A long-lived connection is ONE Modal input, so the function `timeout`
-  bounds CALL DURATION** — not request latency. The app therefore sets it
-  explicitly (`FUNCTION_TIMEOUT_SECS` = 4h, matching
-  `DEFAULT_SANDBOX_TIMEOUT_MS`). Left unset, Modal's default is **300s**, and it
-  severed every in-process session (the old `?host=1` host mode, since
-  removed) at exactly five minutes, mid-word — the client saw a bare "not
-  connected" and the server logged nothing, because nothing in our code did
-  it. No session runs in the server process anymore — browser voice sessions
-  dial the guest sandbox's tunnel directly, and `/:slug/websocket` upgrades
-  are handshake redirects — but the studio's SSE streams sit under the same
-  cap, so it stays pinned rather than inherited. The sandbox layer hit the same
-  trap first and documents it in `modal-sandbox-env.ts`.
-
-  **The 4h ceiling is load-bearing for the studio's event streams, which is a
-  trap for anyone re-splitting the deployment.** The removed studio app set 30
-  min, reasoned as headroom for a cold-sandbox Publish on the premise that
-  "nothing here is long-lived by design" — true of WebSockets (chat streams
-  browser→guest directly) and false of `GET /studio/events` and
-  `GET /studio/projects/:project/events`, which a browser holds open for as long
-  as a project is on screen and which did not exist when that value was set. It
-  never bit, because combined mode serves those routes under the 4h. A revived
-  studio service would start reaping them at 30 minutes.
-
-  **Most `TransferEncodingError`s in the log are NOT truncation we caused.**
-  Measured over 6h of production `aai-server-web` logs (2026-08-05): 38 SSE
-  stream completions, 40 of these errors, pairing 1:1 by timestamp — at every
-  duration from 25s to 1375s, and continuing across a redeploy that shipped the
-  registry above. Modal's `_proxy_http_request.send_response()` is still
-  iterating the upstream body when the client goes away, and Modal never awaits
-  that task ("Task exception was never retrieved"), so ONE lands in the log per
-  abandoned stream. The browser is already gone when it fires. Two corollaries
-  before treating a spike as a regression: **join it to Modal's request log
-  first** — the `duration` on the completion line at the same second is the
-  stream's whole lifetime, which is what separates a client abort (any
-  duration, all of them multiples of `SSE_HEARTBEAT_MS`, because nothing in the
-  chain notices a departed client until data flows) from a real deadline (a
-  tight cluster at one value); and a rise in the count usually means a client is
-  churning subscriptions, not that a stream was cut.
-
-  **So the container COLLAPSES each one to a single line**
-  (`install_proxy_noise_filter` in `scripts/modal_image.py`, installed at the
-  top of `server()` in `modal_deploy.py`). Left whole they are the log's
-  dominant content and they crowd out the thing you opened it for: across one
-  60-minute production window they were ~600 of ~3,200 lines while the service
-  served **zero 5xx** — and the window in question also held 13 failed
-  container starts and a `crash-looping` line that took a targeted grep to
-  find. The twenty-odd frames are Modal and aiohttp internals, identical every
-  time and actionable never.
-
-  **Collapsed, NOT dropped**, because the count and the timing are the entire
-  diagnostic — the rule above is to join a RISE to the request log, and a
-  deleted record makes that impossible. It stays a record on the `asyncio`
-  logger, at the same level, carrying its exception type; only the traceback
-  goes. It is also matched on TWO discriminators (the exception name **and**
-  `_proxy_http_request` in the record), so it can never decay into swallowing
-  asyncio errors: one of our own tasks dying the same way, or Modal's proxy
-  task dying of anything else, still prints in full. `modal-image-inputs.test.ts`
-  pins all three properties, which is worth the ceremony because every way this
-  rots is silent and in the same direction — toward eating a traceback you
-  needed, in a log nobody reads until an incident.
-
-  **Capping the streams' own lifetime was considered and rejected.** It cannot
-  reduce the above — a tab close still aborts whatever stream is open — while
-  `projectPayload` carries `files: workspace.files`, so every forced recycle
-  re-sends the whole workspace file map to every open tab. If a split studio
-  service ever ships, raise its function timeout rather than adding a cap under
-  it.
+  bounds CALL DURATION** — not request latency, which is why the app pins
+  `FUNCTION_TIMEOUT_SECS` (4h, matching `DEFAULT_SANDBOX_TIMEOUT_MS`) rather
+  than inheriting Modal's 300s default. Nothing long-lived runs in this process
+  today — voice sessions dial the guest tunnel directly and `/:slug/websocket`
+  upgrades are handshake redirects — so the only responses under that cap are
+  the STUDIO's two event streams. Their whole story, including why 4h is
+  load-bearing for a revived split deployment, what the recurring
+  `TransferEncodingError`s in the log are (mostly not truncation we caused),
+  the log filter that collapses them, and why capping a stream's own lifetime
+  was rejected, is in `packages/aai-studio-server/CLAUDE.md`, "Long-lived
+  responses (SSE)".
 
 ## Modal sandbox notes
 
@@ -1720,15 +1639,89 @@ beside it, so nothing is newly reachable; the body is capped
 (`MAX_WEBHOOK_BODY_BYTES`) before it is buffered, since the route is public
 and boots sandboxes.
 
-**Two gaps this deliberately leaves open.** The URL the DevKit MINTS still
+**One gap this deliberately leaves open.** The URL the DevKit MINTS still
 names the guest's own origin — `getWorkflowMetadata().url` is
 `http://localhost:<port>` off the running process, and its only override is
 Vercel's, which also switches on a replay watchdog that calls `process.exit(1)`
 inside what is also a voice guest. So an author composes the durable URL from
 the hook's `token` plus their agent's public origin; this route is what answers
-it. And a run that is still working when its guest goes idle stalls until
-something boots the guest again (a session, a call, the next webhook) — the
-queue polls from inside the sandbox, so nothing outside it advances a run.
+it. (The other gap this section used to name — a parked run that nothing ever
+boots the guest for — is what the wake sweep below closes.)
+
+### Waking a run whose sandbox is gone — `workflow-wake.ts`
+
+A webhook is a delivery, so the proxy above has a caller to react to. A
+`sleep()` has nobody: the queue is graphile-worker POLLING the app's database
+from inside the sandbox, and an agent guest self-exits after
+`AGENT_IDLE_EXIT_MS` with zero sessions, so a run asleep until tomorrow has no
+process polling for it and never resumes — with no error, no log, and
+`ctx.workflows.get(runId)` still reporting `running`. The sweep is the thing
+that notices the TIME.
+
+**It detects due work and BOOTS the sandbox; it does not run the queue.** The
+alternative — the replica polling the queue on the tenant's behalf — was
+rejected on the boundary, not on cost: it would execute tenant step bodies in
+the process holding the service-role Postgres credential, Vault, and Modal's
+tokens. What the chosen shape costs is priced in the module doc, and the number
+to know before designing on top of it is **one sandbox per wake, billed for at
+least one idle window** — a workflow that sleeps 24 times pays 24 boots and
+24 × 5 minutes of guest lifetime. That is inherent to durable runs on ephemeral
+sandboxes; the lever is `AAI_GUEST_IDLE_EXIT_MS`, not the sweep.
+
+**The platform cannot ask the queue, so the GUEST answers.** The DevKit's
+`graphile_worker` schema is per-DATABASE and its rows carry no tenant column, so
+"which of these jobs is agent X's" is answerable only inside the process whose
+world it is. Each workflow guest therefore reduces its whole queue to one
+timestamp — the earliest moment a job could be claimed — and upserts it into
+`aai_workflow_wake` in the app's own `ctx.db` schema
+(`aai/host/workflow-wake-hint.ts` owns that contract, including why a locked job
+is dated from graphile-worker's 4-hour job expiry and why a job past
+`max_attempts` counts for nothing). The sweep reads that one column on the
+platform's admin connection. The hint is tenant-writable and is treated as a
+HINT: the only thing it can cause is a boot of the tenant's OWN agent, which
+`GET /:slug/client-config` can already cause, and forging a neighbour's is
+impossible by construction — the schema name is `appDbIdentifier(slug)` and the
+slug comes from the agents table.
+
+Four properties, each the answer to a way this could go wrong:
+
+- **It cannot resurrect a deleted agent**: candidates come from the agents
+  TABLE, so a deleted one is not in the list (its schema outlives the row until
+  the orphan sweep, and is skipped for having no slug), and behind that
+  `brokerSessionUrl` answers 404 for a slug with no bundle.
+- **It cannot fight the blue-green handover**, because waking IS
+  `brokerSessionUrl` — the one routing point, which serves a live resident
+  as-is, joins a boot in flight, routes to a live PEER rather than duplicating,
+  and refuses while draining. The sweep touches no slot itself.
+- **A wake LOOP is bounded twice** (`WORKFLOW_WAKE_RETRY_MS` per slug,
+  `WORKFLOW_WAKE_MAX_PER_TICK` per tick): a guest that boots and cannot run its
+  world never rewrites its hint, so without the backoff it is a sandbox per
+  interval, indefinitely.
+- **One replica sweeps per tick**, via a transaction-scoped advisory try-lock on
+  the reserved admin connection that also carries the pass's `set local
+  statement_timeout` — so neither can leak onto a pooled connection (the hazard
+  `platform-lock.ts` documents). Efficiency, not correctness:
+  `brokerSessionUrl` is idempotent fleet-wide, which is why a lost lock is a
+  silent skip.
+
+**Each tenant's read sits in a SAVEPOINT, and that is not tidiness.** The hint
+table is tenant-owned, so a dropped, reshaped, or hugely-grown one makes that
+read fail — and a failed statement aborts the whole transaction, which without a
+savepoint means the first broken tenant costs EVERY later tenant its wake in the
+same pass: a cross-tenant denial of the only mechanism a parked run has.
+
+**Two things it does not cover, both inherited.** Apps on an extra
+`APP_DB_URLS` cluster are not swept — those pool their own connections, which
+the fleet budget cannot afford (`platform-db-budget.test.ts` fails for one extra
+target), so there are none, and boot WARNS naming the gap. And a step lost with
+its container stays lost for graphile-worker's 4-hour job expiry, since no other
+worker may claim a locked job before then — any boot for another reason repairs
+it sooner, because the Postgres world re-enqueues active runs on `start()`.
+
+**The guest half is a lifecycle change too**: in-flight workflow callbacks count
+as busy for both the idle window and a drain (`packages/aai-guest/CLAUDE.md`).
+Without that a wake buys at most one idle window of progress — the woken guest
+has no session, so it would exit mid-step.
 
 ### No warm pool — every spawn boots from the snapshot image
 

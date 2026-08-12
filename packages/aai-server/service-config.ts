@@ -41,6 +41,7 @@ import {
   withWorkspaceEvents,
 } from "./platform-events.ts";
 import {
+  type AdminDb,
   assertSessionModeUrl,
   createPgSlugLock,
   localSlugLock,
@@ -228,6 +229,15 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   slugLock: SlugMutationLock;
   /** Platform admin SQL executor (production only) — see ServiceConfig.sql. */
   sql?: SqlExec;
+  /**
+   * The admin pool itself, for the one consumer that needs a RESERVED
+   * connection rather than a statement: the durable-workflow wake sweep, whose
+   * pass is one transaction holding an advisory lock and a `set local`
+   * statement timeout (workflow-wake.ts).
+   */
+  adminDb?: AdminDb;
+  /** Extra `APP_DB_URLS` clusters — see OrchestratorOpts.extraAppDbClusters. */
+  extraAppDbClusters?: number;
 } {
   const url = env.SUPABASE_DB_URL;
   if (!url) {
@@ -254,16 +264,17 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   const admin = createPostgresDb({ url, max: ADMIN_POOL_MAX });
   const exec: SqlExec = (query, params) => admin.query(query, params);
   const localDev = isLocalDev(env);
+  const extraTargets = parseExtraAppDbTargets(env.APP_DB_URLS);
   if (localDev) {
     return {
       secrets: createMemorySecretStore(),
       ...buildMemoryStores(),
-      appDb: createAppDatabases({
-        url,
-        sql: exec,
-        extraTargets: parseExtraAppDbTargets(env.APP_DB_URLS),
-      }),
+      appDb: createAppDatabases({ url, sql: exec, extraTargets }),
       slugLock: localSlugLock,
+      // Local dev with SUPABASE_DB_URL set really does have per-app schemas, so
+      // a durable run parked there is wakeable exactly as it is in production.
+      adminDb: admin,
+      extraAppDbClusters: extraTargets.length,
     };
   }
   // Production: change notifications ride Supabase Realtime — the Postgres
@@ -286,7 +297,7 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
       // Cellular sharding: APP_DB_URLS lists additional Supabase clusters
       // new apps may be placed on. Each app's cluster is recorded in its
       // app-db:<slug> locator, so agent code never notices placement.
-      extraTargets: parseExtraAppDbTargets(env.APP_DB_URLS),
+      extraTargets,
     }),
     // Cross-request coordination lives in Postgres too, so any replica (and
     // either service) can serve any request: per-slug mutation exclusion
@@ -303,6 +314,12 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
     // acquires queue only against each other.
     slugLock: createPgSlugLock(createPostgresDb({ url, max: SLUG_LOCK_POOL_MAX })),
     sql: exec,
+    // The admin POOL, not another one: the wake sweep reserves one connection
+    // from it for the read phase of a tick, so the fleet-wide connection budget
+    // (MAX_PLATFORM_DB_CONNECTIONS, currently exactly at its ceiling) is
+    // unchanged by this feature.
+    adminDb: admin,
+    extraAppDbClusters: extraTargets.length,
   };
 }
 
@@ -317,7 +334,18 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
     assertServiceRoleKey(env.SUPABASE_SERVICE_ROLE_KEY);
   }
   const storage = buildStorage(env);
-  const { secrets, agents, workspaces, chats, events, appDb, slugLock, sql } = buildPlatformDb(env);
+  const {
+    secrets,
+    agents,
+    workspaces,
+    chats,
+    events,
+    appDb,
+    slugLock,
+    sql,
+    adminDb,
+    extraAppDbClusters,
+  } = buildPlatformDb(env);
   const slots = createSlotCache();
   // Per-process, not per-host: Modal can run several containers of the same
   // app anywhere, and two of them sharing an identity is exactly the failure
@@ -360,6 +388,8 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
     replicaId,
     ...(appDb && { appDb }),
     ...(sql && { sql }),
+    ...(adminDb && { adminDb }),
+    ...(extraAppDbClusters !== undefined && { extraAppDbClusters }),
     ...(directory && { directory }),
   };
 }
