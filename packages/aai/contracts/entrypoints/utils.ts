@@ -2,9 +2,11 @@
 /**
  * Capability contract: `utils`.
  *
- * The zero-dependency helpers a tool body may reach for, plus the two contracts
- * both ends of a platform interaction have to derive identically (the slug
- * shape and the `aai login` confirmation code).
+ * The zero-dependency helpers a tool body — or a `"use step"` body, which is
+ * what `mapInBatches`, `stepEnv`/`requireStepEnv` and `stepGenerate` are for —
+ * may reach for, plus the two contracts both ends of a platform interaction
+ * have to derive identically (the slug shape and the `aai login` confirmation
+ * code).
  *
  * Re-exported from `@alexkroman1/aai/utils`. This file is not shipped and nothing
  * imports it — it exists so `pnpm check:api-contracts` can extract a report
@@ -27,8 +29,13 @@ export {
   PREVIEW_SLUG_SUFFIX,
   pushCapped,
   RESERVED_SLUGS,
+  requireStepEnv,
   responseErrorMessage,
+  StepGenerateError,
+  type StepGenerateOptions,
   safeJsonParse,
+  stepEnv,
+  stepGenerate,
   VALID_SLUG_RE,
   withLock,
 } from "../../sdk/utils.ts";

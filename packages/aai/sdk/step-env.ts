@@ -1,0 +1,148 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * The agent's env, reachable from inside a `"use step"` function.
+ *
+ * This is the one thing a durable workflow could not do. A step is bundled and
+ * dispatched separately from the agent bundle and is handed no `ToolContext`, so
+ * it had no way to read the agent's own secrets — which meant no step anywhere
+ * could authenticate an outbound call, and every workflow template's I/O was a
+ * fixture with a comment explaining why. `AgentDef.requiredEnv`'s own doc said a
+ * step "reads keys like any other Node code", which was a claim about
+ * `process.env` and false in the two places it mattered: the guest reads the
+ * agent env into memory and DELETES the file (`harness-agent-mode.ts`), and
+ * `aai dev` resolves `.env` without exporting it.
+ *
+ * ## Why a global slot rather than a module-level one
+ *
+ * The step artifact is built by the Workflow DevKit's own builder
+ * (`aai-cli/workflow-bundler.ts`), which externalizes only `workflow` and
+ * `@workflow/*` and BUNDLES everything else — this module included. So the copy
+ * of it a step imports is a different module instance from the one the guest's
+ * runtime imports, and a module-level `let` would be published into one and read
+ * from the other. `Symbol.for` is registry-wide, so both instances name the same
+ * slot; the two run in the same process and the same realm (the step bundle is
+ * imported by `createWorkflowSurface`, see `host/workflow-serve.ts`), which is
+ * what makes a global work at all here.
+ *
+ * ## Publishing REPLACES; an unpublished slot falls back to `process.env`
+ *
+ * Once a host has published an env, that record is the whole answer — there is
+ * no per-key fallback, deliberately, because the parity rule `ctx.env` already
+ * follows is the one an author has to be able to reason about: what a step can
+ * read is exactly what `.env` and `aai secret put` declare, so a key that works
+ * under `aai dev` still works after a deploy.
+ *
+ * An UNPUBLISHED slot is a different situation and not the same tradeoff: it
+ * means no agent env exists in this process at all — a spec calling an exported
+ * step directly, or a script — and answering `undefined` there would make every
+ * step untestable without reaching for the publisher. So that case reads
+ * `process.env`, which is what such a caller already controls.
+ */
+
+/**
+ * The registry-wide slot. Prefixed with the package name so a second copy of
+ * this SDK in the same process (a linked workspace, a mismatched install) shares
+ * it rather than shadowing it.
+ */
+const STEP_ENV_SLOT = Symbol.for("@alexkroman1/aai.stepEnv");
+
+/** The shape stored in the slot. `undefined` means nothing has published. */
+type StepEnvSlot = { [STEP_ENV_SLOT]?: Readonly<Record<string, string>> };
+
+/**
+ * `process.env` where there is a process, an empty record otherwise.
+ *
+ * Reached off `globalThis` rather than named directly because this module is in
+ * `sdk/`, which the browser client's bundle pulls: a bare `process.env` there is
+ * a `ReferenceError` at load, not a missing key.
+ */
+function processEnv(): Record<string, string | undefined> {
+  return (
+    (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {}
+  );
+}
+
+/**
+ * Publish the agent env for this process's `"use step"` functions.
+ *
+ * Called by whatever assembled the env and is about to serve workflows — the
+ * guest harness at bundle load, `aai dev` on every rebuild. Publishing again
+ * REPLACES, which is what a redeploy or a dev-server restart means; a step
+ * reads the slot per call, so a step already in flight during a replace sees
+ * whichever value it reads and there is nothing to reconcile.
+ *
+ * Values that are `undefined` are dropped rather than stored, so
+ * {@link stepEnv} cannot answer with a key that is present and empty of
+ * meaning — the same rule `resolveServerEnv` applies to a declared-but-unset
+ * `.env` entry.
+ *
+ * @internal — a host concern, exported from `@alexkroman1/aai/runtime`. An
+ * agent author calls {@link stepEnv}.
+ */
+export function publishStepEnv(env: Readonly<Record<string, string | undefined>>): void {
+  const published: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (value !== undefined) published[key] = value;
+  }
+  (globalThis as StepEnvSlot)[STEP_ENV_SLOT] = Object.freeze(published);
+}
+
+/**
+ * Read one key of the agent's env from inside a `"use step"` function.
+ *
+ * @example
+ * ```ts
+ * import { stepEnv } from "@alexkroman1/aai/utils";
+ *
+ * export async function fetchReport(id: string): Promise<string> {
+ *   "use step";
+ *   const base = stepEnv("REPORT_BASE_URL") ?? "https://reports.example.com";
+ *   return await (await fetch(`${base}/${id}`)).text();
+ * }
+ * ```
+ *
+ * @param name - The env key, as declared in `.env` or set with
+ *   `aai secret put`. Listing it in `agent({ requiredEnv })` is what makes a
+ *   deploy check it is there.
+ * @returns The value, or `undefined` when the agent env does not declare it.
+ * @public
+ */
+export function stepEnv(name: string): string | undefined {
+  const published = (globalThis as StepEnvSlot)[STEP_ENV_SLOT];
+  // See the module doc: no per-key fallback once an env is published, so a key
+  // absent from the agent's env reads the same in dev as it does deployed.
+  return published ? published[name] : processEnv()[name];
+}
+
+/**
+ * {@link stepEnv}, failing by name when the key is not set.
+ *
+ * The failure a step wants for a credential: an absent key is not transient, so
+ * it should say which key and how to set it rather than surface three layers
+ * down as an HTTP 401 the DevKit then retries.
+ *
+ * It throws a plain `Error` rather than the DevKit's `FatalError` on purpose —
+ * this module is dependency-free and must stay importable from a tool body and a
+ * spec, neither of which has a workflow around it. A step that wants the retries
+ * skipped wraps the call:
+ *
+ * ```ts no-check
+ * try {
+ *   key = requireStepEnv("ASSEMBLYAI_API_KEY");
+ * } catch (err) {
+ *   throw new FatalError(errorMessage(err));
+ * }
+ * ```
+ *
+ * @public
+ */
+export function requireStepEnv(name: string): string {
+  const value = stepEnv(name);
+  if (!value) {
+    throw new Error(
+      `Missing ${name} in the agent env. Add it to .env for \`aai dev\`, or run \`aai secret put ${name}\`, ` +
+        "and list it in `requiredEnv` so a deploy checks it.",
+    );
+  }
+  return value;
+}

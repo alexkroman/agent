@@ -337,8 +337,8 @@ export type WorkflowAppMisuse<K extends string> =
  * `greeting` (both served by `GET /client-config`, so a page can render its
  * shell from the agent — `page()` does not fetch it the way `client()` does, so
  * a page that wants them calls `fetchClientConfig()` itself), `workflows`, and
- * `requiredEnv` (a `"use step"` body reads keys like any other Node code, and a
- * deploy still checks they are present).
+ * `requiredEnv` (a `"use step"` body reads keys with `stepEnv` from
+ * `@alexkroman1/aai/utils`, and a deploy still checks they are present).
  *
  * `workflows` is REQUIRED here, unlike on {@link AgentDef}: a workflow app whose
  * whole API is `/workflows/*` and which declares none serves a form with nothing

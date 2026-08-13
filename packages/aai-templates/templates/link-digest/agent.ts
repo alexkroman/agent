@@ -30,6 +30,20 @@
  * which is ERASED at build time, so naming it pulls no server graph into the
  * browser bundle. Nothing is generated and nothing is restated.
  *
+ * ## What it needs
+ *
+ * `ASSEMBLYAI_API_KEY` in the agent env — `.env` under `aai dev`, `aai secret
+ * put ASSEMBLYAI_API_KEY` once deployed — because the run really reads the page
+ * and really summarizes it with a model. `requiredEnv` below is what makes a
+ * deploy check for it rather than letting the first run find out, and it is
+ * load-bearing here in a way it is not for a voice agent: a workflow app
+ * declares no providers, so nothing else in its config names a credential.
+ *
+ * A step is handed no `ToolContext`, so it reads that key with `requireStepEnv`
+ * rather than `ctx.env`; see `workflows/digest.ts` and `research-desk`'s module
+ * doc for the one thing that changes under `aai dev` (the key has to be in
+ * `.env`, not just your shell).
+ *
  * Requires storage (`aai storage enable`, or `DATABASE_URL` under `aai dev`) —
  * runs and the correlation-key index both live there.
  */
@@ -48,7 +62,7 @@ import { digestFlow } from "./workflows/digest.ts";
  * written against.
  */
 export const digest = workflow({
-  description: "Summarize a link, sit on it briefly, then file the digest",
+  description: "Read a link, reduce it to a headline and three points, then file the digest",
   input: z.object({
     url: z.url().describe("The link to digest"),
   }),
@@ -59,4 +73,7 @@ export default workflowApp({
   name: "Link Digest",
   // The whole product. A workflow app is an agent whose work happens here.
   workflows: { digest },
+  // Checked at deploy time. A workflow app declares no providers, so this is the
+  // only thing that can name the credential its steps read.
+  requiredEnv: ["ASSEMBLYAI_API_KEY"],
 });

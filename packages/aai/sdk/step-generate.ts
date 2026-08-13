@@ -1,0 +1,225 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * One model call, from inside a `"use step"` function.
+ *
+ * `ctx.generate` is the SDK's answer for tool code, and a step cannot use it: a
+ * step is bundled and dispatched separately from the agent bundle and is handed
+ * no `ToolContext`. So every workflow that wanted a model hand-rolled the same
+ * forty lines — the gateway URL, the bearer, the message array, the reasoning
+ * setting, a deadline, the retryable/terminal split, and the "the gateway
+ * answered 200 with an empty completion" case that only shows up in production.
+ * Two templates had written it before this existed, and they had already
+ * diverged on the last two.
+ *
+ * ## Why this is a `fetch` and not `ctx.generate`'s AI SDK client
+ *
+ * A step artifact is built by the Workflow DevKit's builder, which externalizes
+ * only `workflow` and `@workflow/*` and bundles everything else — so it is ~7 KB
+ * today, and pulling `ai` plus an `@ai-sdk/*` provider into it would be
+ * megabytes on every deploy for one chat completion. The AssemblyAI LLM Gateway
+ * is OpenAI-compatible, so one `fetch` covers it, and this module stays
+ * dependency-free (which is also what keeps it on `@alexkroman1/aai/utils`,
+ * the subpath a step imports from — see `sdk/utils.ts`'s own doc).
+ *
+ * The cost is that this is deliberately NOT `ctx.generate`: no tools, no
+ * structured output, no provider choice beyond the gateway's own catalog. A step
+ * that needs those should import the AI SDK itself and accept the bundle.
+ *
+ * ## The credential
+ *
+ * `ASSEMBLYAI_API_KEY` out of the agent env, via {@link stepEnv} — so a voice
+ * agent's workflow authenticates with the same key its pipeline already uses and
+ * needs no second secret. Under `aai dev` that means `.env`, not the shell; see
+ * `sdk/step-env.ts` for why the parity rule is drawn there.
+ */
+
+import { omitUndefined } from "./omit-undefined.ts";
+import {
+  ASSEMBLYAI_LLM_API_KEY_ENV,
+  ASSEMBLYAI_LLM_DEFAULT_MODEL,
+  ASSEMBLYAI_LLM_GATEWAY_URL,
+} from "./providers/llm/assemblyai.ts";
+import { requireStepEnv } from "./step-env.ts";
+
+/** A model call's deadline. `fetch` has none, and a hung step never ends. */
+const DEFAULT_TIMEOUT_MS = 60_000;
+
+/** How much of a failure body is worth quoting back. */
+const MAX_ERROR_BODY_CHARS = 200;
+
+/** Options for {@link stepGenerate}. */
+export type StepGenerateOptions = {
+  /**
+   * The system instruction. Omitted entirely when unset, rather than sent
+   * empty — an empty system message is a message the model still reads.
+   */
+  system?: string;
+  /**
+   * Gateway model id. Defaults to `ASSEMBLYAI_LLM_DEFAULT_MODEL`, the same one
+   * an agent's own pipeline resolves, so a workflow and its agent do not
+   * silently run on different models.
+   */
+  model?: string;
+  /**
+   * Env key holding the AssemblyAI API key. Defaults to `ASSEMBLYAI_API_KEY`
+   * — the same name every AssemblyAI stage reads.
+   */
+  apiKeyEnv?: string;
+  /** Gateway base URL, e.g. `ASSEMBLYAI_LLM_GATEWAY_EU_URL` for EU residency. */
+  gatewayUrl?: string;
+  /** Request deadline in milliseconds. Defaults to 60s. */
+  timeoutMs?: number;
+  /**
+   * Sampling temperature, forwarded only when set. Left to the model's own
+   * default otherwise, which is what an unset knob should mean.
+   */
+  temperature?: number;
+  /** Cap on the reply, forwarded only when set. */
+  maxTokens?: number;
+};
+
+/**
+ * A model call that failed, with the one thing a step has to decide from.
+ *
+ * `retryable` is the whole point. The Workflow DevKit retries a step that throws
+ * and a caller has to choose between letting it (a rate limit, a 5xx) and
+ * refusing (a bad key, a rejected request) — and getting that backwards is
+ * either five pointless attempts against a 401 or one attempt against a blip.
+ *
+ * It is a BOOLEAN on the error rather than a `FatalError` thrown for you,
+ * because `FatalError` belongs to `workflow` and importing it here would put the
+ * DevKit on the CLI's zero-dependency startup path. The mapping is one line at
+ * the call site:
+ *
+ * ```ts no-check
+ * try {
+ *   return await stepGenerate(prompt, { system });
+ * } catch (err) {
+ *   if (err instanceof StepGenerateError && !err.retryable) throw new FatalError(err.message);
+ *   throw err;
+ * }
+ * ```
+ *
+ * @public
+ */
+export class StepGenerateError extends Error {
+  /** The gateway's status, when there was a response at all. */
+  readonly status: number | undefined;
+  /** Will another attempt plausibly answer differently? */
+  readonly retryable: boolean;
+
+  constructor(
+    message: string,
+    opts: { status?: number | undefined; retryable: boolean; cause?: unknown },
+  ) {
+    super(message, opts.cause === undefined ? undefined : { cause: opts.cause });
+    this.name = "StepGenerateError";
+    this.status = opts.status;
+    this.retryable = opts.retryable;
+  }
+}
+
+/**
+ * Ask the AssemblyAI LLM Gateway one question and return its reply.
+ *
+ * @example
+ * ```ts
+ * import { StepGenerateError, stepGenerate } from "@alexkroman1/aai/utils";
+ * import { FatalError } from "workflow";
+ *
+ * export async function summarize(text: string): Promise<string> {
+ *   "use step";
+ *   try {
+ *     return await stepGenerate(text, { system: "Summarize in two sentences." });
+ *   } catch (err) {
+ *     if (err instanceof StepGenerateError && !err.retryable) throw new FatalError(err.message);
+ *     throw err;
+ *   }
+ * }
+ * ```
+ *
+ * @param prompt - The user message.
+ * @returns The reply, trimmed. Never empty — a 200 carrying no content is a
+ *   {@link StepGenerateError} with `retryable: true`, because it is a real and
+ *   transient thing a gateway does and a step returning `""` would file a blank
+ *   report and report success.
+ * @throws {StepGenerateError} On any non-2xx, on an empty completion, and on a
+ *   missing API key (`retryable: false` — three more attempts find the same gap).
+ * @public
+ */
+export async function stepGenerate(
+  prompt: string,
+  opts: StepGenerateOptions = {},
+): Promise<string> {
+  const base = opts.gatewayUrl ?? ASSEMBLYAI_LLM_GATEWAY_URL;
+  const response = await fetch(`${base}/chat/completions`, {
+    method: "POST",
+    headers: {
+      // The gateway is OpenAI-compatible, so the key is a BEARER here — unlike
+      // AssemblyAI's streaming sockets, which take it raw. Getting this wrong is
+      // a 401 that reads like a wrong key.
+      Authorization: `Bearer ${apiKey(opts.apiKeyEnv ?? ASSEMBLYAI_LLM_API_KEY_ENV)}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: opts.model ?? ASSEMBLYAI_LLM_DEFAULT_MODEL,
+      messages: [
+        // An ARRAY, so `omitUndefined` does not apply: an empty system message
+        // is a message the model still reads, so an unset one is dropped rather
+        // than sent blank.
+        ...(opts.system === undefined ? [] : [{ role: "system", content: opts.system }]),
+        { role: "user", content: prompt },
+      ],
+      // The same setting the shipped voice pipeline sends, and for the same
+      // measured reason: on a hybrid-thinking model, reasoning roughly doubles
+      // time to first token for no gain on work shaped like this. See
+      // `packages/aai/CLAUDE.md`'s `assemblyAILlm` rows.
+      reasoning_effort: "none",
+      // `omitUndefined` rather than two spread-ternaries: an unset knob must be
+      // ABSENT from the body, not present as `undefined`, and this is the one
+      // spelling of that (`guard-invariants.mjs` rule 2).
+      ...omitUndefined({ temperature: opts.temperature, max_tokens: opts.maxTokens }),
+    }),
+    signal: AbortSignal.timeout(opts.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+  });
+  if (!response.ok) throw await gatewayFailure(response);
+
+  const body = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+  const content = body.choices?.[0]?.message?.content?.trim();
+  if (!content) {
+    throw new StepGenerateError("The gateway returned an empty completion.", {
+      status: response.status,
+      retryable: true,
+    });
+  }
+  return content;
+}
+
+/** The key, or the one failure a retry cannot fix. */
+function apiKey(name: string): string {
+  try {
+    return requireStepEnv(name);
+  } catch (err: unknown) {
+    throw new StepGenerateError(err instanceof Error ? err.message : String(err), {
+      retryable: false,
+      cause: err,
+    });
+  }
+}
+
+/**
+ * The gateway's failure, with whatever it said about it.
+ *
+ * The split every retrying caller has to make: a 401 or a 400 answers the same
+ * way on the fourth attempt, while a rate limit or a 5xx is exactly what retries
+ * are for. A 408 counts as transient — it is the far side saying "too slow",
+ * not "no".
+ */
+async function gatewayFailure(response: Response): Promise<StepGenerateError> {
+  const body = (await response.text().catch(() => "")).slice(0, MAX_ERROR_BODY_CHARS);
+  const status = response.status;
+  return new StepGenerateError(`LLM gateway failed: HTTP ${status}${body ? ` — ${body}` : ""}`, {
+    status,
+    retryable: status === 408 || status === 429 || status >= 500,
+  });
+}

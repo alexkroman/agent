@@ -238,6 +238,7 @@
     "DEFAULT_WORKFLOW_POLL_MS",
     "Field",
     "FieldShell",
+    "FileField",
     "FileRead",
     "FileValue",
     "FormProps",

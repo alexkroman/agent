@@ -23,6 +23,11 @@
 // platform server). It is consumed directly by sibling test files.
 
 export type { AgentEnv, HostCredentialEnv, ProviderEnv } from "../sdk/env-types.ts";
+// The publisher half of the step env — the READER (`stepEnv`) is authoring API
+// on `@alexkroman1/aai/utils`, and lives in `sdk/` because the step bundle
+// bundles it. Only a host calls this: the guest at bundle load, `aai dev` on
+// every rebuild.
+export { publishStepEnv } from "../sdk/step-env.ts";
 export {
   type AgentServerOptions,
   createAgentServer,

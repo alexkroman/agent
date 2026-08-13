@@ -122,6 +122,12 @@ export function aaiRuntimeModule(): Record<string, unknown> {
     createWorkflowSurface: vi.fn(async () => undefined),
     handleWorkflowRequest: vi.fn(() => false),
     startWorkflowWorldIfDeclared: vi.fn(async () => undefined),
+    // What a `"use step"` body reads with `stepEnv()`. Inert for the same
+    // reason as the trio above — these specs serve no workflows — but it must
+    // be PRESENT: a mocked module answers a missing export with a throw, so
+    // omitting it fails every spec that reaches `buildServer` rather than the
+    // one that cares.
+    publishStepEnv: vi.fn(),
     // `viteDevConfig` uses this as a proxy KEY, so it has to be a string here
     // or the config these specs build has a hole in it. Spelled out rather
     // than imported: this module IS the factory for the

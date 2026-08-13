@@ -9,12 +9,20 @@
  * passes the correlation key, that the status tool narrows a snapshot correctly
  * before reading it aloud, and that the two tools reaching PAST a status (the
  * progress stream, the early wake) ask for what a voice reply can use.
+ *
+ * The STEPS are exercised separately, and directly: imported through vitest with
+ * no bundler in the path, a `"use step"` function is an ordinary async function,
+ * so its prompt handling, its parsing and its `FatalError` guards are all
+ * testable — while durability, suspension and replay are not. The body itself is
+ * not driven here for that reason; `aai-cli`'s `dev-workflow.integration.test.ts`
+ * builds a project and runs one.
  */
 
 import type { WorkflowClient, WorkflowRunSnapshot } from "@alexkroman1/aai";
 import { createStubWorkflows, createToolContext } from "@alexkroman1/aai/testing";
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import agentDef, { research } from "./agent.ts";
+import { investigate, planAngles, synthesize } from "./workflows/research.ts";
 
 /**
  * A `ctx.workflows` that records `start` and answers `find` from a fixture.
@@ -215,5 +223,111 @@ describe("file_it_now", () => {
     const result = await agentDef.tools.file_it_now?.execute({}, createToolContext({ workflows }));
     expect(result).toMatchObject({ note: "Nothing started yet." });
     expect(workflows.wakeUp).not.toHaveBeenCalled();
+  });
+});
+
+describe("the steps that call the model", () => {
+  beforeEach(() => {
+    // `stepEnv` falls back to the process env when no host has published one,
+    // which is exactly the case a spec is. `unstubEnvs` clears it per test.
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
+  });
+
+  /** A gateway that answers with `content`, recording what it was asked. */
+  function stubGateway(content: string, status = 200) {
+    const calls: { url: string; body: Record<string, unknown> }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) => {
+        calls.push({ url, body: JSON.parse(String(init.body)) as Record<string, unknown> });
+        return new Response(
+          status === 200
+            ? JSON.stringify({ choices: [{ message: { content } }] })
+            : JSON.stringify({ error: "nope" }),
+          { status, headers: { "Content-Type": "application/json" } },
+        );
+      }),
+    );
+    return calls;
+  }
+
+  test("planAngles asks the gateway and returns one angle per line", async () => {
+    const calls = stubGateway("How otters use tools\nOtter population trends\nRiver habitat loss");
+    const angles = await planAngles("otters");
+
+    expect(angles).toEqual([
+      "How otters use tools",
+      "Otter population trends",
+      "River habitat loss",
+    ]);
+    expect(calls[0]?.url).toContain("/chat/completions");
+    // The key is a BEARER here — the gateway is OpenAI-compatible, unlike
+    // AssemblyAI's streaming sockets, which take the key raw.
+    expect(calls).toHaveLength(1);
+  });
+
+  test("planAngles normalizes a list that came back numbered anyway", async () => {
+    // A retry would most likely produce the same shape, so this is repaired
+    // rather than rejected.
+    stubGateway("1. First angle\n2) Second angle\n- Third angle");
+    expect(await planAngles("otters")).toEqual(["First angle", "Second angle", "Third angle"]);
+  });
+
+  test("planAngles fails FATALLY when the model returns nothing usable", async () => {
+    // Not empty — an empty completion is `ask`'s failure, one layer down. This
+    // is a reply that LOOKS like a list and parses to nothing.
+    stubGateway("-\n*");
+    await expect(planAngles("otters")).rejects.toThrow(/no angles/);
+  });
+
+  test("investigate carries the topic and the angle into the prompt", async () => {
+    const calls = stubGateway("Otters crack shellfish with stones.");
+    const note = await investigate("otters", "How otters use tools");
+
+    expect(note).toEqual({
+      angle: "How otters use tools",
+      note: "Otters crack shellfish with stones.",
+    });
+    const messages = calls[0]?.body.messages as { role: string; content: string }[];
+    expect(messages.at(-1)?.content).toContain("How otters use tools");
+    expect(messages.at(-1)?.content).toContain("otters");
+  });
+
+  test("investigate retries beyond the default, because a rate limit is expected", () => {
+    expect(investigate.maxRetries).toBeGreaterThan(3);
+  });
+
+  test("a rate limit throws plainly, so the step is retried", async () => {
+    stubGateway("", 429);
+    await expect(investigate("otters", "tools")).rejects.toThrow(/HTTP 429/);
+  });
+
+  test("a rejected request fails FATALLY rather than being retried five times", async () => {
+    stubGateway("", 401);
+    await expect(investigate("otters", "tools")).rejects.toThrow(/HTTP 401/);
+  });
+
+  test("a missing key fails FATALLY, naming the key", async () => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "");
+    stubGateway("anything");
+    await expect(investigate("otters", "tools")).rejects.toThrow(/ASSEMBLYAI_API_KEY/);
+  });
+
+  test("synthesize reduces every note, so nothing researched is dropped", async () => {
+    const calls = stubGateway("Otters are clever and declining.");
+    const summary = await synthesize("otters", [
+      { angle: "tools", note: "They use stones." },
+      { angle: "population", note: "Numbers are falling." },
+    ]);
+
+    expect(summary).toBe("Otters are clever and declining.");
+    const messages = calls[0]?.body.messages as { role: string; content: string }[];
+    expect(messages.at(-1)?.content).toContain("They use stones.");
+    expect(messages.at(-1)?.content).toContain("Numbers are falling.");
+  });
+
+  test("an empty completion throws rather than filing a blank report", async () => {
+    stubGateway("");
+    await expect(synthesize("otters", [])).rejects.toThrow(/empty completion/);
   });
 });

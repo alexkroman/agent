@@ -78,7 +78,7 @@ of subpath exports in `aai/package.json`:
 | --- | --- | --- |
 | `@alexkroman1/aai` | `packages/aai/index.ts` | The AUTHORING surface, and only that: `agent()`/`tool()`/`sessionSlot()`/`workflow()`, the types they take and return, `assemblyAIPipeline()`/`assemblyAIS2s()`, and the `DEFAULT_*` constants that document an `agent()` field. Eight modules by `export *`, plus NAMED subsets of `sdk/constants.ts` and `sdk/utils.ts` — see "The root barrel is curated" below |
 | `@alexkroman1/aai/testing` | `sdk/testing.ts` (direct) | `createToolContext(overrides?)` — a full `ToolContext` for testing a tool's `execute` in isolation, with inert defaults, a recording `send` (`ctx.sent`), and a distinct `sessionId` per call — plus `createUnusedDb()`, the rejecting `db` it defaults to, and `createStubWorkflows(overrides?)`, the same thing for `ctx.workflows` (see its own doc for why a hand-written stub of that client goes stale). PUBLISHED rather than an internal `_test-utils.ts` because the audience is an agent author's own project, which is also why it carries no vitest dependency (`send` records into an array; pass `vi.fn()` to override). See the `_test-utils.ts` section of the root guide |
-| `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | The zod-free half of the SDK, which is what makes it the CLI's import path (`p-timeout`, 2.4 KB with no dependencies and backing the lock's acquire deadline, is the one measured exception). Three groups: the tool-code helpers the root also re-exports (`errorMessage`, `errorDetail`, `safeJsonParse`, `toolFailure`/`isToolFailure`, `pushCapped`, `createKeyedLock`/`withLock`); the framework's own wire helpers, `@internal` and root-invisible (`capToolResult`, `toArgsRecord`, `isTextAssetPath`, `normalizeSpeechText`, `omitUndefined`, and `serializeToolFailure` — the pre-serialized `'{"error":…}'` the host emits for a tool that threw, which `isToolFailure` deliberately does NOT narrow); and the two contracts BOTH ends of a platform interaction must derive identically — the slug shape (`VALID_SLUG_RE`, `RESERVED_SLUGS`, `sdk/slug.ts`) and the `aai login` confirmation code (`linkConfirmationCode`, `sdk/cli-link.ts`; the terminal prints it, the studio's approval gate shows it, and the point is that they match) |
+| `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | The zod-free half of the SDK, which is what makes it the CLI's import path (`p-timeout`, 2.4 KB with no dependencies and backing the lock's acquire deadline, is the one measured exception). Four groups: the tool-code helpers the root also re-exports (`errorMessage`, `errorDetail`, `safeJsonParse`, `toolFailure`/`isToolFailure`, `pushCapped`, `createKeyedLock`/`withLock`); the STEP surface, which a `workflows/*.ts` module imports from HERE rather than the root because it is bundled separately and the root barrel's graph would ride into the step bundle — `mapInBatches`, `stepEnv`/`requireStepEnv` (the agent env a step is handed no context to reach) and `stepGenerate` (`ctx.generate`'s counterpart, one `fetch` to the LLM gateway on the agent's own key, since the AI SDK would be megabytes in a ~7 KB artifact); `sdk/step-env.ts` and `sdk/step-generate.ts` carry the rest; the framework's own wire helpers, `@internal` and root-invisible (`capToolResult`, `toArgsRecord`, `isTextAssetPath`, `normalizeSpeechText`, `omitUndefined`, and `serializeToolFailure` — the pre-serialized `'{"error":…}'` the host emits for a tool that threw, which `isToolFailure` deliberately does NOT narrow); and the two contracts BOTH ends of a platform interaction must derive identically — the slug shape (`VALID_SLUG_RE`, `RESERVED_SLUGS`, `sdk/slug.ts`) and the `aai login` confirmation code (`linkConfirmationCode`, `sdk/cli-link.ts`; the terminal prints it, the studio's approval gate shows it, and the point is that they match) |
 | `@alexkroman1/aai/slugify` | `host/slugify.ts` (direct) | `slugifyName` — how a human name BECOMES a slug (transliterating, `decamelize: false`), for the CLI, the platform server, and the studio. Separate from the contract in `sdk/slug.ts` on purpose: that one is dependency-free and rides every agent bundle, this one pulls the transliteration tables. Nothing on the SDK hot path may import it |
 | `@alexkroman1/aai/runtime` | `host/runtime-barrel.ts` → 11 modules | Full Node.js runtime: session, S2S, server, tools, WS handler |
 | `@alexkroman1/aai/workflow-api` | `sdk/workflow-api-client.ts` (direct) | `createWorkflowApiClient` plus `WORKFLOW_API_PREFIX` — the CLIENT of the workflow HTTP API `host/workflow-api.ts` serves, shared by the browser client, the CLI and the studio; its module doc carries why |
@@ -1027,28 +1027,13 @@ defaults that affect agent behavior:
 
 ## Provider sockets disable permessage-deflate
 
-**`ws` defaults `perMessageDeflate` to TRUE on clients and FALSE on servers.**
-That asymmetry is the whole gotcha: inbound session sockets
-(`WebSocketServer` in `host/server.ts`) decline compression for free, while
-every outbound provider socket OFFERS it, and any provider whose server
-accepts leaves us holding a zlib deflate+inflate context per socket for the
-life of the session. Measured on 200 client sockets exchanging PCM16 frames,
-peer accepting vs declining: **+321 KiB RSS per socket** (405 vs 84) and
-**~4.5x the CPU** for the same audio (2223 ms vs 491 ms). Pipeline mode opens
-two provider sockets per session, so it is paid twice per concurrent call —
-more than every other per-session allocation combined, on the one path that
-scales with concurrency.
-
-It also buys nothing: these sockets carry PCM16, base64 of it, or an
-already-compressed codec. None of that deflates.
-
-So every provider-facing socket spreads `PROVIDER_WS_OPTIONS`
+**Every provider-facing `ws` client must spread `PROVIDER_WS_OPTIONS`**
 (`host/_ws.ts`) — `defaultCreateHeaderWebSocket` (S2S + OpenAI Realtime),
 `providers/tts/rime.ts`, `providers/tts/assemblyai.ts`,
-`providers/stt/soniox.ts`. **A new provider that constructs its own `ws`
-client must do the same**; `host/_ws.test.ts` pins the wire behaviour against
-a server that offers the extension, and the three adapter suites assert the
-constructor option.
+`providers/stt/soniox.ts`. That module's doc carries the measurement and the
+`ws` client/server default asymmetry behind the rule; this guide is at its cap.
+`host/_ws.test.ts` pins the wire behaviour against a server that offers the
+extension, and the three adapter suites assert the constructor option.
 
 The vendor-SDK providers (`assemblyai` STT, `@deepgram/sdk`,
 `@elevenlabs/elevenlabs-js`, `@cartesia/cartesia-js`) keep their WebSocket

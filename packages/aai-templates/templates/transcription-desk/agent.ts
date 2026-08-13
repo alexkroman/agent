@@ -1,30 +1,37 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * A WORKFLOW APP whose front door is an UPLOAD FORM.
+ * A WORKFLOW APP that really transcribes: point it at a recording and it comes
+ * back with the text.
  *
  * `link-digest` is the template to read first: it owns the shape —
  * `workflowApp()`, no session, no tools, a form that starts a run and a page
- * that watches it — and none of that is restated here. What this one adds is
- * the two things a real job-submission app needs and a one-field form does not:
+ * that watches it — and none of that is restated here. What this one adds is a
+ * workflow that does real, rate-limited, provider-shaped work:
+ * `workflows/transcribe.ts` splits the recording into pieces the sync API will
+ * accept, transcribes every piece in its own step, and stitches the results back
+ * together. Its module doc is where the argument lives.
  *
- * 1. **A file.** The page's `<FileField>` contributes a `{ name, type, size }`
- *    object, which is exactly what `upload` declares below, so the collected
- *    form values ARE the run input with no mapping in between. Note what it does
- *    NOT contribute: the bytes. A workflow's input is journaled and replayed on
- *    every resume, so a recording belongs in storage with its key in the input —
- *    that is the one seam a production version of this template has to fill in.
- * 2. **A webhook.** `workflows/transcribe.ts` submits the job to a transcription
- *    provider, PARKS, and is brought back by an HTTP callback — the shape of
- *    every real asynchronous API, and the thing a durable workflow exists for.
+ * ## What it needs
  *
- * ## The schema is the form
+ * - **`ASSEMBLYAI_API_KEY` in the agent env** — `.env` under `aai dev`,
+ *   `aai secret put ASSEMBLYAI_API_KEY` once deployed. `requiredEnv` below is
+ *   what makes a deploy check for it rather than letting the first run find out.
+ *   A step reads it with `requireStepEnv`; see `@alexkroman1/aai/utils`.
+ * - **Storage** (`aai storage enable`, or `DATABASE_URL` under `aai dev`) — runs
+ *   live there.
+ * - **A linear-PCM WAV behind a URL.** The cutting is arithmetic over byte
+ *   offsets, which is only possible on uncompressed audio; `workflows/wav.ts`
+ *   says so in more detail, and an unsupported file fails the run by name with
+ *   the `ffmpeg` line that fixes it.
  *
- * `<WorkflowFields>` renders one control per SCALAR property of the input schema
- * it reads from `GET /workflows`, so `requestedBy` and `redact` exist on the page
- * because they are declared here, and `.describe()` is what labels them. The
- * `upload` property is an object, which has no honest default control, so the
- * page writes that field itself. Both live in the same `<Form>`, because every
- * field in `@alexkroman1/aai-ui` is a plain named control.
+ * ## The URL is the input, and that is not a shortcut
+ *
+ * A workflow's input is journaled and replayed on every resume, so a recording's
+ * BYTES cannot live in it — they would be re-read for the life of the run, and
+ * the API's own body cap is 64 KB besides. The recording therefore stays behind
+ * a URL and each step fetches exactly the window it needs with an HTTP `Range`
+ * request, which is also what keeps sixty steps from downloading the same file
+ * sixty times.
  *
  * ## It is scriptable, which is the other half of having an API
  *
@@ -34,17 +41,43 @@
  * curl -X POST https://<your-agent>/workflows/runs \
  *   -H 'content-type: application/json' \
  *   -d '{"workflow":"transcribe","wait":30000,"input":{
- *        "upload":{"name":"standup.m4a","type":"audio/mp4","size":812000},
- *        "requestedBy":"alex","redact":true}}'
+ *        "recordingUrl":"https://example.com/standup.wav","languageCode":"en"}}'
  * ```
- *
- * Requires storage (`aai storage enable`, or `DATABASE_URL` under `aai dev`) —
- * runs live there.
  */
 
 import { workflow, workflowApp } from "@alexkroman1/aai";
 import { z } from "zod";
 import { transcribeFlow } from "./workflows/transcribe.ts";
+
+/**
+ * The languages the sync endpoint transcribes.
+ *
+ * An enum rather than a free string because `<WorkflowFields>` renders one as a
+ * `<SelectField>` — so the page's language picker exists because this line does
+ * — and because a code the endpoint does not know is a failed run rather than a
+ * rejected submission.
+ */
+const LANGUAGES = [
+  "en",
+  "es",
+  "de",
+  "fr",
+  "it",
+  "pt",
+  "tr",
+  "nl",
+  "sv",
+  "no",
+  "da",
+  "fi",
+  "hi",
+  "vi",
+  "ar",
+  "he",
+  "ja",
+  "ur",
+  "zh",
+] as const;
 
 /**
  * The declaration: schema, description, and the directive body.
@@ -54,18 +87,12 @@ import { transcribeFlow } from "./workflows/transcribe.ts";
  * bundles nothing server-side.
  */
 export const transcribe = workflow({
-  description: "Transcribe an uploaded recording and file the transcript",
+  description: "Transcribe a recording by splitting it into chunks the sync API accepts",
   input: z.object({
-    // An OBJECT property, so `<WorkflowFields>` skips it and the page writes the
-    // `<FileField>` that fills it. Its shape is exactly what that field
-    // contributes, which is what lets the page submit its values unmapped.
-    upload: z.object({
-      name: z.string().min(1),
-      type: z.string(),
-      size: z.number().int().positive(),
-    }),
-    requestedBy: z.string().min(1).describe("Who the transcript is filed under"),
-    redact: z.boolean().default(false).describe("Mask emails and phone numbers in the transcript"),
+    recordingUrl: z
+      .url()
+      .describe("URL of a linear-PCM WAV recording — the desk fetches it by byte range"),
+    languageCode: z.enum(LANGUAGES).default("en").describe("Language spoken in the recording"),
   }),
   run: transcribeFlow,
 });
@@ -73,4 +100,7 @@ export const transcribe = workflow({
 export default workflowApp({
   name: "Transcription Desk",
   workflows: { transcribe },
+  // Checked at deploy time, so a missing key is a warning naming it rather than
+  // a run that fails on its second step.
+  requiredEnv: ["ASSEMBLYAI_API_KEY"],
 });

@@ -12,11 +12,21 @@
  *
  * The workflow BODY is not tested here: it is only durable once the Workflow
  * DevKit's build has transformed it, so a unit test of it would exercise a plain
- * async function and prove nothing about replay.
+ * async function and prove nothing about replay. Its STEPS are, and directly —
+ * imported with no bundler in the path a `"use step"` function is an ordinary
+ * async function, so its HTML handling, its JSON contract with the model and its
+ * `FatalError` guards are all testable.
  */
 
-import { describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import agentDef, { digest } from "./agent.ts";
+import {
+  extractText,
+  extractTitle,
+  fetchArticle,
+  stripFence,
+  summarize,
+} from "./workflows/digest.ts";
 
 describe("the agent declares itself a workflow app", () => {
   test("its front door is a page, not a microphone", () => {
@@ -55,5 +65,167 @@ describe("the input schema", () => {
   test("carries a description, which is what a rendered form labels the field with", () => {
     expect(digest.description).toBeTruthy();
     expect(digest.input).toBeDefined();
+  });
+});
+
+describe("the agent declares the credential its steps read", () => {
+  test("so a deploy checks for it rather than the first run", () => {
+    // A workflow app declares no providers, so `requiredEnv` is the ONLY thing
+    // in its config that can name a credential.
+    expect(agentDef.requiredEnv).toContain("ASSEMBLYAI_API_KEY");
+  });
+});
+
+describe("extractText", () => {
+  test("drops script and style CONTENT, not just their tags", () => {
+    // Stripping tags alone leaves a page's JavaScript in the prompt — expensive,
+    // and a way to smuggle instructions past the reader.
+    const text = extractText(
+      "<html><head><style>body{color:red}</style></head><body><script>alert('x')</script><p>Real words here.</p></body></html>",
+    );
+    expect(text).toBe("Real words here.");
+  });
+
+  test("decodes &amp; LAST, so an escaped entity is not decoded twice", () => {
+    // `&amp;lt;` is a literal `&lt;` on the page; decoding `&amp;` first would
+    // turn it into a `<` the author never wrote.
+    expect(extractText("<p>a &amp;lt; b &amp; c</p>")).toBe("a &lt; b & c");
+  });
+
+  test("collapses whitespace, because HTML indentation is not prose", () => {
+    expect(extractText("<p>one</p>\n\n   <p>two</p>")).toBe("one two");
+  });
+
+  test("caps what crosses the queue to the next step", () => {
+    const huge = `<p>${"word ".repeat(20_000)}</p>`;
+    expect(extractText(huge).length).toBeLessThanOrEqual(24_000);
+  });
+});
+
+describe("extractTitle", () => {
+  test("reads the document title", () => {
+    expect(extractTitle("<html><title>  Otters &amp; tools </title></html>")).toBe(
+      "Otters & tools",
+    );
+  });
+
+  test("answers undefined when there is none, so the caller can fall back", () => {
+    expect(extractTitle("<html><body>hi</body></html>")).toBeUndefined();
+  });
+});
+
+describe("stripFence", () => {
+  test("unwraps a fence a model added anyway", () => {
+    expect(stripFence('```json\n{"a":1}\n```')).toBe('{"a":1}');
+  });
+
+  test("leaves unfenced JSON alone", () => {
+    expect(stripFence('{"a":1}')).toBe('{"a":1}');
+  });
+});
+
+describe("fetchArticle", () => {
+  /** A page server answering `html` with `status`. */
+  function stubPage(html: string, status = 200) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(html, { status, headers: { "Content-Type": "text/html" } })),
+    );
+  }
+
+  test("returns the page's title and its readable text", async () => {
+    stubPage(
+      `<html><title>Otters</title><body><p>${"Otters use tools. ".repeat(20)}</p></body></html>`,
+    );
+    const article = await fetchArticle("https://example.com/otters");
+    expect(article.title).toBe("Otters");
+    expect(article.text).toContain("Otters use tools.");
+    expect(article.url).toBe("https://example.com/otters");
+  });
+
+  test("falls back to the hostname when the page has no title", async () => {
+    stubPage(`<html><body><p>${"Otters use tools. ".repeat(20)}</p></body></html>`);
+    expect((await fetchArticle("https://example.com/otters")).title).toBe("example.com");
+  });
+
+  test("fails FATALLY on a page with no readable text", async () => {
+    // A JS-rendered site is the usual cause, and no number of attempts fixes it.
+    stubPage("<html><body><div id='root'></div></body></html>");
+    await expect(fetchArticle("https://example.com/app")).rejects.toThrow(/no readable text/);
+  });
+
+  test("fails FATALLY on a 404 and plainly on a 503", async () => {
+    stubPage("", 404);
+    await expect(fetchArticle("https://example.com/gone")).rejects.toThrow(/HTTP 404/);
+    stubPage("", 503);
+    await expect(fetchArticle("https://example.com/gone")).rejects.toThrow(/HTTP 503/);
+  });
+});
+
+describe("summarize", () => {
+  const ARTICLE = { url: "https://example.com/a", title: "Otters", text: "Otters use tools." };
+
+  beforeEach(() => {
+    // `stepEnv` falls back to the process env when no host has published one,
+    // which is exactly the case a spec is. `unstubEnvs` clears it per test.
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
+  });
+
+  /** A gateway answering with `content`. */
+  function stubGateway(content: string, status = 200) {
+    const calls: { url: string; init: RequestInit }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) => {
+        calls.push({ url, init });
+        return new Response(
+          status === 200 ? JSON.stringify({ choices: [{ message: { content } }] }) : "nope",
+          { status, headers: { "Content-Type": "application/json" } },
+        );
+      }),
+    );
+    return calls;
+  }
+
+  test("returns the headline and points the model produced", async () => {
+    const calls = stubGateway('{"headline":"Otters are clever","points":["a","b","c"]}');
+    const result = await summarize(ARTICLE);
+
+    expect(result).toEqual({
+      url: ARTICLE.url,
+      headline: "Otters are clever",
+      points: ["a", "b", "c"],
+    });
+    // The key is a BEARER here — the gateway is OpenAI-compatible, unlike
+    // AssemblyAI's streaming sockets, which take it raw.
+    const headers = calls[0]?.init.headers as Record<string, string> | undefined;
+    expect(headers?.Authorization).toBe("Bearer sk-test");
+  });
+
+  test("unwraps a fenced reply rather than failing on it", async () => {
+    stubGateway('```json\n{"headline":"H","points":["a"]}\n```');
+    expect((await summarize(ARTICLE)).headline).toBe("H");
+  });
+
+  test("throws PLAINLY when the model answered with prose, so the step retries", async () => {
+    // The distinction that is the whole retry policy: a model that ignored the
+    // format may well obey on the next attempt, where a 401 will not.
+    stubGateway("Here is a summary of the article about otters.");
+    await expect(summarize(ARTICLE)).rejects.toThrow(/JSON shape/);
+  });
+
+  test("rejects JSON of the wrong shape as firmly as no JSON at all", async () => {
+    stubGateway('{"headline":"H"}');
+    await expect(summarize(ARTICLE)).rejects.toThrow(/JSON shape/);
+  });
+
+  test("fails FATALLY with no API key rather than retrying five times", async () => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "");
+    stubGateway('{"headline":"H","points":["a"]}');
+    await expect(summarize(ARTICLE)).rejects.toThrow(/ASSEMBLYAI_API_KEY/);
+  });
+
+  test("retries beyond the default, because a rate limit and a bad format both happen", () => {
+    expect(summarize.maxRetries).toBeGreaterThan(3);
   });
 });

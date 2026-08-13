@@ -53,6 +53,7 @@ import { z } from "zod";
 import { researchFlow } from "./workflows/research.ts";
 import { callbackFlow } from "./workflows/callback.ts";
 import { fanOutFlow } from "./workflows/fan-out.ts";
+import { secretFlow } from "./workflows/secret.ts";
 
 export const research = workflow({
   description: "Research a topic",
@@ -72,11 +73,18 @@ export const fanOut = workflow({
   run: fanOutFlow,
 });
 
+export const secret = workflow({
+  description: "Read the agent env from inside a step",
+  input: z.object({}),
+  run: secretFlow,
+});
+
 export default agent({
   name: "dev-workflow-fixture",
   greeting: "hi",
   systemPrompt: "fixture",
-  workflows: { research, callback, fanOut },
+  workflows: { research, callback, fanOut, secret },
+  requiredEnv: ["FIXTURE_STEP_TOKEN"],
   tools: {},
 });
 `;
@@ -124,16 +132,18 @@ async function report(line: string) {
 `;
 
 /**
- * A run that PARKS on a webhook — the shape `transcription-desk` ships.
+ * A run that PARKS on a webhook.
  *
  * This is the one thing no unit test can reach: `createWebhook()` throws outside
- * a run, so a template's own spec cannot call a body that opens one. Only a real
- * world, a real queue and a real HTTP delivery exercise it.
+ * a run, so a spec cannot call a body that opens one. Only a real world, a real
+ * queue and a real HTTP delivery exercise it — and no template demonstrates the
+ * shape any more (`transcription-desk` used to, against a stub provider), so
+ * this fixture is the only place it is exercised at all.
  *
- * The step delivers its own callback, exactly as that template's provider stub
- * does, which makes this a test of the ORDERING as much as of the round trip:
- * `createWebhook()` registers nothing, so without the `getConflict()` claim
- * above it the delivery races a token nothing is listening on yet.
+ * The step delivers its own callback, which makes this a test of the ORDERING as
+ * much as of the round trip: `createWebhook()` registers nothing, so without the
+ * `getConflict()` claim above it the delivery races a token nothing is listening
+ * on yet.
  */
 const CALLBACK_TS = `
 import { createWebhook } from "workflow";
@@ -195,6 +205,37 @@ async function shout(word: string, index: number) {
 }
 `;
 
+/**
+ * A step reading the agent env — the property `sdk/step-env.test.ts` says it
+ * cannot assert.
+ *
+ * The whole seam is a `Symbol.for` global, and the reason it has to be one is
+ * that the STEP BUNDLE carries its own copy of `sdk/step-env.ts`: the WDK
+ * builder externalizes only `workflow` and `@workflow/*`, so the module the
+ * dev server publishes into and the module this step reads from are two
+ * different instances. Nothing below this tier has two of them.
+ *
+ * `FIXTURE_STEP_TOKEN` is declared only in the fixture's `.env`, never in
+ * `process.env`, so `stepEnv`'s unpublished-slot fallback cannot answer for it
+ * — if the global does not cross the bundle boundary this run fails.
+ */
+const SECRET_TS = `
+import { requireStepEnv, stepEnv } from "@alexkroman1/aai/utils";
+
+export async function secretFlow() {
+  "use workflow";
+  return await readSecret();
+}
+
+async function readSecret() {
+  "use step";
+  return {
+    token: requireStepEnv("FIXTURE_STEP_TOKEN"),
+    undeclared: stepEnv("FIXTURE_ABSENT_KEY") ?? "absent",
+  };
+}
+`;
+
 async function writeFixture(): Promise<void> {
   await fs.rm(FIXTURE, { recursive: true, force: true });
   await fs.mkdir(path.join(FIXTURE, "workflows"), { recursive: true });
@@ -202,6 +243,10 @@ async function writeFixture(): Promise<void> {
   await fs.writeFile(path.join(FIXTURE, "workflows", "research.ts"), WORKFLOW_TS);
   await fs.writeFile(path.join(FIXTURE, "workflows", "callback.ts"), CALLBACK_TS);
   await fs.writeFile(path.join(FIXTURE, "workflows", "fan-out.ts"), FAN_OUT_TS);
+  await fs.writeFile(path.join(FIXTURE, "workflows", "secret.ts"), SECRET_TS);
+  // The agent env `stepEnv` answers from. `resolveAgentEnv` surfaces DECLARED
+  // keys only, so this file is both the declaration and the value.
+  await fs.writeFile(path.join(FIXTURE, ".env"), "FIXTURE_STEP_TOKEN=from-dot-env\n");
   await fs.writeFile(
     path.join(FIXTURE, "package.json"),
     JSON.stringify({ name: "dev-workflow-fixture", type: "module", private: true }),
@@ -301,6 +346,7 @@ describe("aai dev serves the workflow HTTP API", () => {
       "callback",
       "fanOut",
       "research",
+      "secret",
     ]);
     // The zod schema, converted at listing time because the reader is a browser.
     // `<WorkflowFields>` renders one control per property of this.
@@ -391,6 +437,26 @@ describe("aai dev serves the workflow HTTP API", () => {
     expect(body.run).toMatchObject({
       status: "completed",
       output: { shouted: ["ONE", "TWO", "THREE", "FOUR", "FIVE"] },
+    });
+  }, 40_000);
+
+  test("a step reads the agent env, across the bundle boundary", async () => {
+    // See `SECRET_TS`. The key is in the fixture's `.env` and nowhere else, so
+    // a slot that did not cross from the dev server's copy of the SDK to the
+    // step bundle's copy fails this run rather than degrading.
+    const { status, body } = await api("/workflows/runs", {
+      method: "POST",
+      headers: JSON_POST,
+      body: JSON.stringify({ workflow: "secret", input: {}, wait: 30_000 }),
+    });
+
+    expect(status).toBe(200);
+    expect(body.run).toMatchObject({
+      status: "completed",
+      // `undeclared` is the other half of the contract: once an env is
+      // published there is no per-key fallback, so a key the agent does not
+      // declare reads as absent rather than as whatever the host exported.
+      output: { token: "from-dot-env", undeclared: "absent" },
     });
   }, 40_000);
 
