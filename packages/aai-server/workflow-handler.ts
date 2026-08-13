@@ -38,7 +38,7 @@ import {
   WORKFLOW_IP_RATE_LIMIT,
   WORKFLOW_START_IP_RATE_LIMIT,
 } from "./rate-limit.ts";
-import { brokerSessionUrl } from "./sandbox-broker.ts";
+import { AGENT_UNAVAILABLE_MESSAGE, brokerSessionUrlOrThrow } from "./sandbox-broker.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
 
 /**
@@ -70,9 +70,9 @@ const FORWARDED_RESPONSE_HEADERS = [
   "x-accel-buffering",
 ] as const;
 
-/** The 503 both the broker and the forward answer with — one sentence, one place. */
+/** The 503 the forward answers with — the broker's own sentence, not a second one. */
 function unavailable(cause?: unknown): HTTPException {
-  return new HTTPException(503, { message: "agent unavailable, retry shortly", cause });
+  return new HTTPException(503, { message: AGENT_UNAVAILABLE_MESSAGE, cause });
 }
 
 /**
@@ -85,11 +85,7 @@ function unavailable(cause?: unknown): HTTPException {
  * "retryable" is something the caller can actually act on here.
  */
 async function brokerGuestOrigin(slug: string, broker: ResolveSandboxOpts): Promise<string> {
-  const brokered = await brokerSessionUrl(slug, broker);
-  if (!brokered.ok) {
-    if (brokered.status === 404) throw new HTTPException(404, { message: `Not found: ${slug}` });
-    throw unavailable(brokered.cause);
-  }
+  const brokered = await brokerSessionUrlOrThrow(slug, broker);
   return new URL(guestHttpUrl(brokered.guestOrigin, GUEST_ROUTES.workflows)).origin;
 }
 

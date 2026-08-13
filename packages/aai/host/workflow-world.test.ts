@@ -10,11 +10,7 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import {
-  configureWorkflowWorld,
-  startWorkflowWorldIfDeclared,
-  startWorkflowWorldSafely,
-} from "./workflow-world.ts";
+import { configureWorkflowWorld, startWorkflowWorldIfDeclared } from "./workflow-world.ts";
 
 /** A fresh env per case, so nothing leaks between them. */
 function env(over: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
@@ -107,17 +103,15 @@ describe("startWorkflowWorldIfDeclared", () => {
     // a feature it never asked for.
     await expect(startWorkflowWorldIfDeclared(false, "postgres")).resolves.toBeUndefined();
   });
-});
 
-describe("startWorkflowWorldSafely", () => {
   test("reports a failure instead of throwing it", async () => {
     // There is no world configured in this process, so starting one fails —
     // which is the case under test. A guest whose workflows cannot start must
     // still boot and answer the phone.
     const errors: unknown[] = [];
     const spy = vi.spyOn(console, "error").mockImplementation((...args) => errors.push(args));
-    await expect(startWorkflowWorldSafely("postgres")).resolves.toBe(false);
-    // Silently returning false would leave an operator with no way to find out.
+    await expect(startWorkflowWorldIfDeclared(true, "postgres")).resolves.toBeUndefined();
+    // Swallowing it silently would leave an operator with no way to find out.
     expect(errors.length).toBeGreaterThan(0);
     spy.mockRestore();
   });

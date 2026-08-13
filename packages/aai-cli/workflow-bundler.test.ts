@@ -159,7 +159,7 @@ describe("buildWorkflows", () => {
 });
 
 describe("the worker bundle carries the workflow artifacts", () => {
-  test("exports the flow code, the step code and the manifest", async () => {
+  test("exports the flow code and the step code, and not the manifest", async () => {
     await withTempDir(async (dir) => {
       await writeProject(dir);
       await fs.writeFile(
@@ -174,7 +174,9 @@ describe("the worker bundle carries the workflow artifacts", () => {
       // surface has to ride the worker as data rather than as sibling files.
       expect(worker).toContain("__aaiWorkflowCode");
       expect(worker).toContain("__aaiStepCode");
-      expect(worker).toContain("__aaiWorkflowManifest");
+      // The manifest is deliberately NOT carried: nothing reads it, and it rode
+      // every deploy artifact double-encoded. See `WorkflowBundleOutput`.
+      expect(worker).not.toContain("__aaiWorkflowManifest");
     });
   });
 

@@ -66,6 +66,7 @@
 import { createCoalescingRunner } from "../sdk/coalescing-runner.ts";
 import type { Db } from "../sdk/db.ts";
 import { errorMessage } from "../sdk/utils.ts";
+import { ensureOnce } from "./_ensure-once.ts";
 import { type CloseableDb, createPostgresDb } from "./postgres-db.ts";
 import type { Logger } from "./runtime-config.ts";
 
@@ -226,22 +227,18 @@ export function createWakeHintPublisher(opts: WakeHintOptions = {}): WakeHintPub
     return { publish: () => Promise.resolve(), close: () => Promise.resolve() };
   }
 
-  let created: Promise<void> | undefined;
   let warned = false;
 
   /**
    * Create the table once per publisher.
    *
-   * Memoized on the PROMISE for the reason `workflow-keys.ts` spells out:
-   * concurrent `create table if not exists` on one name take conflicting locks,
-   * so a boolean flipped after the await is a deadlock rather than a race.
+   * `ensureOnce` owns the memo and the clear-on-rejection that the retry below
+   * depends on — a failed DDL must not be remembered as done, so that a
+   * transient privilege or connection fault is recoverable without a redeploy.
+   * That used to be a `created = undefined` in the runner's catch, i.e. the
+   * memo's own invariant maintained from outside it.
    */
-  // An arrow rather than a declaration: a hoisted `function` is defined before
-  // the `if (!db) return` above, so the narrowing does not reach it.
-  const ensureTable = (): Promise<void> => {
-    created ??= db.query(CREATE_TABLE_SQL).then(() => undefined);
-    return created;
-  };
+  const ensureTable = ensureOnce(() => db.query(CREATE_TABLE_SQL).then(() => undefined));
 
   const runner = createCoalescingRunner(async (): Promise<void> => {
     try {
@@ -260,10 +257,6 @@ export function createWakeHintPublisher(opts: WakeHintOptions = {}): WakeHintPub
         warned = true;
         logger?.warn?.("Workflow wake hint not published", { error: errorMessage(err) });
       }
-      // A failed DDL must not be remembered as done: the next publish retries
-      // it, which is what makes a transient privilege or connection fault
-      // recoverable without a redeploy.
-      created = undefined;
       return;
     }
     warned = false;

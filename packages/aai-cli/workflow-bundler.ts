@@ -120,9 +120,16 @@ export type WorkflowBundleOutput = {
   /**
    * The builder's manifest — `workflowId` per exported workflow, plus the step
    * graph. The ids are what `ctx.workflows.start` needs, and the SDK reads them
-   * off each body's own `workflowId` property; this is kept because it is also
-   * the only machine-readable list of what the project declares, which the
-   * studio's workflows card renders.
+   * off each body's own `workflowId` property, so nothing consumes this at
+   * runtime; it is the builder's own output, kept for inspection and asserted
+   * by this package's spec.
+   *
+   * It is deliberately NOT emitted into the worker bundle. It was, as a
+   * double-encoded `__aaiWorkflowManifest` string literal, on the stated
+   * grounds that "the studio's workflows card renders it" — which was never
+   * true (the card calls `GET /workflows`). Nothing anywhere read the export,
+   * so it was bytes in every deploy artifact, re-fetched and hash-verified on
+   * every cold guest boot, for no reader.
    */
   manifest: unknown;
   /**

@@ -67,6 +67,7 @@ import { WORKFLOWS_UNAVAILABLE_MESSAGE } from "../sdk/workflow-unavailable.ts";
 import type { Logger } from "./runtime-config.ts";
 import { streamRunEvents } from "./workflow-api-events.ts";
 import {
+  answerHandlerFailure,
   BodyTooLargeError,
   bearerMatches,
   MAX_WORKFLOW_INPUT_BYTES,
@@ -413,13 +414,7 @@ export function createWorkflowApi(
         sendJson(res, 413, { error: err.message });
         return;
       }
-      logger.error("Workflow API request failed", { error: errorMessage(err) });
-      try {
-        if (res.headersSent) res.destroy();
-        else sendJson(res, 500, { error: "Internal server error" });
-      } catch {
-        res.destroy();
-      }
+      answerHandlerFailure(res, logger, "Workflow API request failed", errorMessage(err));
     });
     return true;
   };
