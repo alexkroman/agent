@@ -1,6 +1,37 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 /**
+ * Packages resolved from the project root rather than from whichever
+ * `node_modules` happens to sit above the importing file.
+ *
+ * `@alexkroman1/aai-ui` declares React as a **peer** dependency — "my consumer
+ * supplies it" — but a bundler resolves the bare `react/jsx-runtime` import
+ * inside `aai-ui/dist/**` from that file's own real path, not from the
+ * consumer's. Deduping states the peer contract in terms the bundler enforces.
+ *
+ * Both Vite entry points need it, for failures that look nothing alike:
+ *
+ * - `buildClient` (`client-bundler.ts`): the studio's build root is nowhere
+ *   above `packages/aai-ui/dist`, and the production image installs prod deps
+ *   only, so aai-ui's own devDependency copy of React is pruned there. Publish
+ *   died with *"Rolldown failed to resolve import react/jsx-runtime"* while
+ *   every local build passed.
+ * - `viteDevConfig` (`_dev-server.ts`): a project whose SDK is LINKED rather
+ *   than installed — `aai init` run inside this monorepo, which is how a
+ *   template gets tested by hand — resolves aai-ui's React through the
+ *   workspace's own store, so the page loads two physically distinct copies of
+ *   the same version. Two Reacts break hooks: `useSession`/`useWorkflowRun`
+ *   throw *"Invalid hook call"*, `<ThemeProvider>` unmounts, and the agent
+ *   renders a BLANK PAGE whose console never names a package.
+ *
+ * An npm-installed project is unaffected either way, which is precisely why
+ * this stayed invisible: the resolution is correct until the SDK is linked or
+ * the tree is pruned. Guarded by `client-bundler.test.ts` (asserted against
+ * aai-ui's own manifest, so a peer added there without being added here fails).
+ */
+export const DEDUPED_PEERS = ["react", "react-dom"];
+
+/**
  * Run a Vite build without letting it mutate the calling process's env.
  *
  * Vite's `build()` sets `process.env.NODE_ENV = "production"` when NODE_ENV is

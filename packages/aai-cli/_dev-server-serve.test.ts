@@ -8,10 +8,12 @@
  */
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
+import { WORKFLOW_API_PREFIX } from "@alexkroman1/aai/runtime";
 import getPort from "get-port";
 import { describe, expect, test } from "vitest";
 import { agentEnvWarnings, startDevServer, viteDevConfig } from "./_dev-server.ts";
 import { linkSdkNodeModules, silenced, withTempDir } from "./_test-utils.ts";
+import { DEDUPED_PEERS } from "./_vite-env.ts";
 
 describe("agentEnvWarnings", () => {
   const DEFAULT_AGENT = {}; // no descriptors → default AssemblyAI pipeline → needs ASSEMBLYAI_API_KEY
@@ -68,6 +70,32 @@ describe("viteDevConfig", () => {
     const proxy = config.server?.proxy as Record<string, unknown>;
     // Without /client-config the default client can't learn the agent name.
     expect(proxy["/client-config"]).toBe("http://localhost:3001");
+  });
+
+  test("proxies the workflow API, the whole front door of a static app", () => {
+    const config = viteDevConfig("/proj", 3000, 3001);
+    const proxy = config.server?.proxy as Record<string, unknown>;
+    // A `page: "static"` agent has no socket: `page()` renders a form and every
+    // call it makes is a same-origin fetch under this prefix. Unproxied, Vite
+    // answers its own 404 and submitting the form fails with `Workflow API 404`
+    // while the backend serves the API correctly one port over.
+    expect(proxy["/workflows"]).toBe("http://localhost:3001");
+  });
+
+  test("the workflow proxy key is the prefix the API is actually served under", () => {
+    // Asserted against the SDK's own constant rather than restating "/workflows"
+    // — a rename there would otherwise leave a proxy entry pointing at a path
+    // nothing answers, which is the same silent failure by a new route.
+    const proxy = viteDevConfig("/proj", 3000, 3001).server?.proxy as Record<string, unknown>;
+    expect(Object.keys(proxy)).toContain(WORKFLOW_API_PREFIX);
+  });
+
+  test("dedupes React, so a linked SDK does not render a blank page", () => {
+    // aai-ui declares React as a peer; a project whose SDK is linked rather
+    // than installed otherwise resolves aai-ui's own copy, and two Reacts turn
+    // every hook in the page into "Invalid hook call" with a blank render.
+    // `buildClient` has always deduped — this is the dev half of the same rule.
+    expect(viteDevConfig("/proj", 3000, 3001).resolve?.dedupe).toEqual(DEDUPED_PEERS);
   });
 
   test("uses strictPort so the printed URL is never wrong", () => {
