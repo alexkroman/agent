@@ -1,5 +1,11 @@
 # aai-templates
 
+## 0.3.5
+
+### Patch Changes
+
+- 16bec88: Use the SDK's own `errorMessage` and `isToolFailure` where the guest harness and the retail template had hand-written copies of them.
+
 ## 0.3.4
 
 ### Patch Changes

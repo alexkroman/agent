@@ -1,5 +1,39 @@
 # @alexkroman1/aai-cli
 
+## 6.0.0
+
+### Minor Changes
+
+- d5667c4: aai build and aai deploy now compile a project's workflows/ directory into the two artifacts a guest needs to run durable workflows, with the Workflow DevKit left external so both stay small enough to ride the agent bundle.
+
+### Patch Changes
+
+- f086dfe: Simplify the three workflow templates: research-desk types its run snapshot with WorkflowOutputOf, transcription-desk drops two single-use result types and a hand-rolled hash, and every file step now agrees on one shape.
+- 549b5db: Proxy the workflow HTTP API and dedupe React in `aai dev`, so a `page: "static"` workflow app works locally
+- 16bec88: Workflow hooks report a failure's own message rather than `[object Object]` when a rejection is message-bearing without being an `Error` — `useWorkflowRun` and `useWorkflows`/`useWorkflowSubmit` now unwrap it with the SDK's `errorMessage` instead of a local `instanceof Error` ternary.
+- Updated dependencies [ae9e607]
+- Updated dependencies [263d86a]
+- Updated dependencies [9fe4d07]
+- Updated dependencies [b5fdd60]
+- Updated dependencies [8cf6ffa]
+- Updated dependencies [d325a71]
+- Updated dependencies [d5667c4]
+- Updated dependencies [49ac025]
+- Updated dependencies [f086dfe]
+- Updated dependencies [0c411f4]
+- Updated dependencies [f037d0b]
+- Updated dependencies [50282d6]
+- Updated dependencies [6182917]
+- Updated dependencies [9f74c34]
+- Updated dependencies [16bec88]
+- Updated dependencies [97339d9]
+- Updated dependencies [c48f243]
+- Updated dependencies [d5667c4]
+- Updated dependencies [16bec88]
+- Updated dependencies [e4fd8c5]
+  - @alexkroman1/aai@6.0.0
+  - @alexkroman1/aai-ui@6.0.0
+
 ## 5.14.0
 
 ### Patch Changes

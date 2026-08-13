@@ -12,23 +12,23 @@
     "publish:agent": "aai publish"
   },
   "dependencies": {
-    "@alexkroman1/aai": "^5.14.0",
-    "@alexkroman1/aai-ui": "^5.14.0",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
+    "@alexkroman1/aai": "^6.0.0",
+    "@alexkroman1/aai-ui": "^6.0.0",
+    "react": "catalog:",
+    "react-dom": "catalog:",
     "tailwindcss": "^4.0.0",
     "workflow": "4.8.2",
-    "zod": "^4.4.3"
+    "zod": "catalog:"
   },
   "devDependencies": {
-    "@alexkroman1/aai-cli": "^5.14.0",
-    "@tailwindcss/vite": "^4.3.3",
-    "@types/node": "^26.1.1",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.4",
-    "typescript": "^7.0.2",
-    "vite": "^8.1.5",
-    "vitest": "^4.1.10"
+    "@alexkroman1/aai-cli": "^6.0.0",
+    "@tailwindcss/vite": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
   }
 }

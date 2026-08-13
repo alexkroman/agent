@@ -1,5 +1,34 @@
 # @alexkroman1/aai-server
 
+## 3.5.8
+
+### Patch Changes
+
+- Updated dependencies [ae9e607]
+- Updated dependencies [263d86a]
+- Updated dependencies [9fe4d07]
+- Updated dependencies [b5fdd60]
+- Updated dependencies [8cf6ffa]
+- Updated dependencies [d325a71]
+- Updated dependencies [d5667c4]
+- Updated dependencies [16bec88]
+- Updated dependencies [49ac025]
+- Updated dependencies [f086dfe]
+- Updated dependencies [0c411f4]
+- Updated dependencies [f037d0b]
+- Updated dependencies [50282d6]
+- Updated dependencies [6182917]
+- Updated dependencies [9f74c34]
+- Updated dependencies [16bec88]
+- Updated dependencies [97339d9]
+- Updated dependencies [c48f243]
+- Updated dependencies [d5667c4]
+- Updated dependencies [16bec88]
+- Updated dependencies [e4fd8c5]
+  - @alexkroman1/aai@6.0.0
+  - aai-guest@0.4.15
+  - @alexkroman1/aai-ui@6.0.0
+
 ## 3.5.7
 
 ### Patch Changes
