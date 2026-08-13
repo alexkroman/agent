@@ -45,27 +45,29 @@ model) is the security boundary.
 
 ## Package exports
 
-Subpath exports consumed by sibling packages and user agents:
+Fourteen subpaths, mapped file-by-file in the table below. What decides which
+one a symbol lives on:
 
-- `.` — `agent()`, `tool()` helpers, `sessionSlot()`, `Db`, types, utils,
-  constants
-- `./utils` — zod-free utilities, `createKeyedLock`, `isToolFailure`,
-  `pushCapped`, platform slug contract (fast CLI startup path)
-- `./testing` — `createToolContext()` / `createUnusedDb()` for testing a tool's
-  `execute`; published so a user's agent project can import it
-- `./runtime` — full Node.js runtime engine (barrel → 11 host/ modules)
-- `./protocol` — wire-format Zod schemas, `lenientParse()`, `ClientEvent`
-- `./manifest` — `toAgentConfig()`, `agentToolsToSchemas()`, config schemas
-- `./stt` — pipeline-mode STT provider factories (e.g. `assemblyAIStt`)
-- `./llm` — pipeline-mode LLM provider factories (e.g. `anthropic`)
-- `./tts` — pipeline-mode TTS provider factories (e.g. `cartesia`)
-- `./s2s` — S2S provider factories (`openaiRealtime`)
-- `./tools` — keyless network builtins callable from user tool code
-- `./internal` — infrastructure shared with sibling packages (epochs,
-  owned maps, WS upgrade parsing, schema-issue formatting); not a public
-  API, kept off the root barrel so authoring autocomplete stays small.
-  The env brands live on `./runtime` instead — they appear in its public
-  signatures (`RuntimeOptions`, `withHostCredentialFallback`)
+### The root barrel is CURATED, and `export *` is what broke it
+
+`index.ts` re-exports eight modules wholesale and two — `sdk/constants.ts` and
+`sdk/utils.ts` — **by name**. Those two are the repo's SHARED modules (every
+magic number; the zod-free helpers the CLI loads on every invocation), so a
+wildcard put a jitter-buffer depth, a WebSocket close code and the platform's
+slug regex in an agent author's autocomplete beside `greeting`. Measured before
+the split: **175 exports, 71 of them `@internal`, and 160 unused by any of the
+fourteen templates** — eleven symbols covered every one. It is 92 now and
+**none is `@internal`**, which is the property to preserve.
+
+The membership test for anything added later: **a symbol belongs here if an
+`agent.ts`, a tool module, or a `workflow()` would NAME it.** A budget the
+framework enforces on its own does not qualify however public it is —
+`DEFAULT_MIN_BARGE_IN_WORDS` stayed because it documents `minBargeInWords`,
+`PLAYBACK_JITTER_MS` did not because no field sets it. Nothing was deleted:
+budgets went to `./internal`, the slug/CLI contracts and wire helpers stay on
+`./utils`, and `StandardSchemaV1` and its result/issue types stay in
+`sdk/schema.ts` — the ecosystem SPEC `tool()` accepts, not something an agent
+declares.
 
 ## Subpath export → file mapping
 
@@ -74,9 +76,9 @@ of subpath exports in `aai/package.json`:
 
 | Import path | Resolves to | What it contains |
 | --- | --- | --- |
-| `@alexkroman1/aai` | `packages/aai/index.ts` → 6 modules | Types, Db, utils, constants, `agent()`/`tool()` helpers |
+| `@alexkroman1/aai` | `packages/aai/index.ts` | The AUTHORING surface, and only that: `agent()`/`tool()`/`sessionSlot()`/`workflow()`, the types they take and return, `assemblyAIPipeline()`/`assemblyAIS2s()`, and the `DEFAULT_*` constants that document an `agent()` field. Eight modules by `export *`, plus NAMED subsets of `sdk/constants.ts` and `sdk/utils.ts` — see "The root barrel is curated" below |
 | `@alexkroman1/aai/testing` | `sdk/testing.ts` (direct) | `createToolContext(overrides?)` — a full `ToolContext` for testing a tool's `execute` in isolation, with inert defaults, a recording `send` (`ctx.sent`), and a distinct `sessionId` per call — plus `createUnusedDb()`, the rejecting `db` it defaults to. PUBLISHED rather than an internal `_test-utils.ts` because the audience is an agent author's own project, which is also why it carries no vitest dependency (`send` records into an array; pass `vi.fn()` to override). See the `_test-utils.ts` section of the root guide |
-| `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | Zod-free utilities (`errorMessage`, `errorDetail`, …); `ToolFailure`/`isToolFailure` (the `{ error: string }` a tool returns for a recoverable failure, and the guard for a propagated one — NOT `toolError`, which returns the pre-serialized wire string, so `isToolFailure(toolError(m))` is false); `pushCapped` (append to a `ctx.state` list holding a cap, in place); `createKeyedLock`/`withLock` (`sdk/keyed-lock.ts`), the per-key serializer a stateful agent needs because the LLM loop runs a step's tool calls concurrently; and the two contracts BOTH ends of a platform interaction must derive identically: the slug shape (`VALID_SLUG_RE`, `RESERVED_SLUGS` from `sdk/slug.ts`) and the `aai login` confirmation code (`linkConfirmationCode` from `sdk/cli-link.ts` — the terminal prints it, the studio's approval gate shows it, and the point is that they match). Kept clear of zod so the CLI can load it on every invocation without paying that startup cost — `p-timeout` (2.4 KB, no dependencies), which backs the lock's acquire deadline, is the one exception and is measured against that rule rather than around it |
+| `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | The zod-free half of the SDK, which is what makes it the CLI's import path (`p-timeout`, 2.4 KB with no dependencies and backing the lock's acquire deadline, is the one measured exception). Three groups: the tool-code helpers the root also re-exports (`errorMessage`, `errorDetail`, `safeJsonParse`, `toolFailure`/`isToolFailure`, `pushCapped`, `createKeyedLock`/`withLock`); the framework's own wire helpers, `@internal` and root-invisible (`capToolResult`, `toArgsRecord`, `isTextAssetPath`, `normalizeSpeechText`, `omitUndefined`, and `serializeToolFailure` — the pre-serialized `'{"error":…}'` the host emits for a tool that threw, which `isToolFailure` deliberately does NOT narrow); and the two contracts BOTH ends of a platform interaction must derive identically — the slug shape (`VALID_SLUG_RE`, `RESERVED_SLUGS`, `sdk/slug.ts`) and the `aai login` confirmation code (`linkConfirmationCode`, `sdk/cli-link.ts`; the terminal prints it, the studio's approval gate shows it, and the point is that they match) |
 | `@alexkroman1/aai/slugify` | `host/slugify.ts` (direct) | `slugifyName` — how a human name BECOMES a slug (transliterating, `decamelize: false`), for the CLI, the platform server, and the studio. Separate from the contract in `sdk/slug.ts` on purpose: that one is dependency-free and rides every agent bundle, this one pulls the transliteration tables. Nothing on the SDK hot path may import it |
 | `@alexkroman1/aai/runtime` | `host/runtime-barrel.ts` → 11 modules | Full Node.js runtime: session, S2S, server, tools, WS handler |
 | `@alexkroman1/aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `ClientEvent`, `ServerMessage` |
@@ -86,7 +88,7 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/tts` | `sdk/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`, `assemblyAITts`) |
 | `@alexkroman1/aai/s2s` | `sdk/providers/s2s-barrel.ts` | S2S provider factories + types (`openaiRealtime`; `assemblyAIS2s` is on the root export) |
 | `@alexkroman1/aai/tools` | `host/agent-tools.ts` (direct, not a barrel) | Keyless network builtins callable from user tool code: `fetchJson`, `visitWebpage`, `webSearch` |
-| `@alexkroman1/aai/internal` | `internal.ts` → 5 modules | Cross-package infrastructure (`createEpoch`, `createOwnedMap`, `createCoalescingRunner`, `parseWsUpgradeParams`, `formatSchemaIssues`). Not public API, not semver-covered, excluded from the docs |
+| `@alexkroman1/aai/internal` | `internal.ts` | Cross-package infrastructure (`createEpoch`, `createOwnedMap`, `createCoalescingRunner`, `parseWsUpgradeParams`, `formatSchemaIssues`) plus the framework BUDGETS the browser client needs (the client-audio constants, `AGENT_CSP`, `WS_OPEN`). Not public API, not semver-covered, excluded from the docs. The env brands live on `./runtime` instead — they appear in its public signatures (`RuntimeOptions`, `withHostCredentialFallback`) |
 
 ## Session modes
 
@@ -513,15 +515,14 @@ Reference providers shipped today:
     `reasoning_effort` as a hybrid-thinking model (`"none"` and `"low"` both
     verified 2026-08-06), and it has **no paired latency numbers and no price
     comparison here at all** — the same gap terra had. Luna's numbers, kept
-    because they bound the gpt-5.6 family:
-    $1/$6 per M against `gpt-5.5`'s $5/$30, and on time-to-first-token
-    (2026-08-06, 18 paired tool-calling turns, `reasoning_effort: "none"` on
-    both) p50 **832ms vs 999ms** — ~17%, not the multiple an early n=1 probe
-    suggested. `claude-opus-4-8` is 1217ms and `claude-sonnet-5` 1568ms at the
-    same settings. The 5x-looking gaps in the first measurements were an
-    ARTIFACT of comparing luna-with-`none` against `gpt-5.5` on its reasoning
-    DEFAULT (1786ms) — most of what looked like a model difference was the
-    reasoning setting, which this pipeline turns off regardless of model.
+    because they bound the gpt-5.6 family: $1/$6 per M against `gpt-5.5`'s
+    $5/$30, and time-to-first-token (2026-08-06, 18 paired tool-calling turns,
+    `reasoning_effort: "none"` on both) p50 **832ms vs 999ms** — ~17%, against
+    `claude-opus-4-8`'s 1217ms and `claude-sonnet-5`'s 1568ms. The 5x-looking
+    gaps in the first measurements were an ARTIFACT of comparing
+    luna-with-`none` against `gpt-5.5` on its reasoning DEFAULT (1786ms): most
+    of what looked like a model difference was the reasoning setting, which
+    this pipeline turns off regardless of model.
 
     **No default here has been chosen on answer quality**, which is the axis
     that should decide one — a tau2 run is what would settle it. The current
@@ -673,32 +674,26 @@ also works. `GenerateFn` is generic, so a Standard Schema call returns a
 typed `object`. Note zod 4.4 stamps `~standard` onto its plain
 `toJSONSchema()` OUTPUT too — schema detection keys off the `_zod` instance
 marker, never the `~standard` interface (`isConvertibleSchema`).
-(The pattern-combinator layer that once wrapped this —
-`@alexkroman1/aai/patterns`, earlier `@alexkroman1/aai/workflow` — was
-removed unused; multi-step orchestration is composed directly over
-`ctx.generate`.)
+(The pattern-combinator layer that once wrapped this was removed unused;
+multi-step orchestration is composed directly over `ctx.generate`.)
 
 ## `ctx.state` is ONE object per session — with or without a `state` factory
 
 `getState` in `host/runtime-tools.ts` memoizes the session's state object
-whichever way the agent declared it. Its `?? {}` predecessor only looked like
-a default: with no `AgentDef.state` factory nothing was ever stored, so every
-read minted a **fresh** `{}`. A tool wrote `ctx.state.cart = []`, the write
-succeeded, and the next call saw an empty object again — as did the
-`syncStateToClient` in the *same* call's `finally`, which calls `getState` a
-second time and therefore projected a different object from the one the tool
-had just mutated. `_state-sync.ts` keys `lastSent` by the state OBJECT in a
-`WeakMap`, so with a new object per call the unchanged-check never matched
-either: every tool call pushed an `agent_state` frame, carrying the empty
-projection, onto a socket that also carries 384 kbps of PCM.
+whichever way the agent declared it. Its `?? {}` predecessor only looked like a
+default: with no `AgentDef.state` factory nothing was ever stored, so every read
+minted a **fresh** `{}`. A tool's `ctx.state.cart = []` succeeded and the next
+call saw an empty object — as did the `syncStateToClient` in the *same* call's
+`finally`, which projected a different object from the one just mutated. And
+because `_state-sync.ts` keys `lastSent` by the state OBJECT in a `WeakMap`, the
+unchanged-check never matched either: every tool call pushed an `agent_state`
+frame carrying the empty projection onto a socket already carrying 384 kbps of
+PCM.
 
-Silent in the way that costs most — no throw, no log, and `AgentDef.state`'s
-own doc promises the opposite ("unset leaves `ctx.state` an empty object",
-one of them). **Four of the five shipped templates were on that path**:
-`infocom-adventure`, `solo-rpg`, `dispatch-center` and `pizza-ordering` all
-reach `ctx.state` through a `slot.x ??= …` helper and declare no factory, so
-the adventure game reset its room, inventory and score on every tool call
-while its `syncState` showed the client nothing.
+Silent in the way that costs most — no throw, no log — and **four of the five
+shipped templates were on that path**, declaring no factory, so the adventure
+game reset its room, inventory and score on every tool call while its
+`syncState` showed the client nothing.
 
 `stateMap.has(sid)` still means "this session has run a tool call" — what
 `pushStateSnapshot` reads it for — and the entry is reclaimed by the same
@@ -708,23 +703,13 @@ factory case and a template's own tests fake `ctx` with a persistent object,
 so nothing below the runtime can see it.
 
 **Reach for `sessionSlot()` rather than writing `ctx.state as StateSlot`**
-(`sdk/session-slot.ts`, root export). The `slot.x ??= …` helper named above is
-the shape every stateful template converged on, and the cast in it is not
-avoidable per-module: `tool()` learns the state type only from an annotated
-context (`ctx: ToolContext<S>`), so a tool in its own file cannot see the
-`state` factory's type — `retail` declares a factory and still cast. A slot puts
-the narrowing and the lazy install in one place: `slot.get(ctx)` returns the live
-object, `slot.set`/`slot.reset` replace it, `slot.read` and
-`slot.projection(fn)` are the `syncState` side, `slot.update(ctx, mutate)` is the
-per-session serialized mutation (with the slot's `after` hook for invariants
-every mutating tool would otherwise have to restore by hand), and
-`SlotStateOf<typeof slot>` is the state type. Declaring
-`state: () => ({ [slot.key]: slot.create() })` is still worth it — that is what
-makes the state exist before the first tool call, which
-`pushStateSnapshot` needs on resume — and composes with the slot rather than
-replacing it. See the root guide's concurrency-primitives entry for the two
-properties that are load-bearing (the factory must clone a shared default;
-`projection` hands the callback a real value, not the slot).
+(`sdk/session-slot.ts`, root export) — the `slot.x ??= …` helper named above is
+the shape every stateful template converged on, and its cast is not avoidable
+per-module, since `tool()` learns the state type only from an annotated context.
+A slot is the one typed seam, and `state`/`tool`/`updateTool` mean an agent
+never spells the state shape twice. **See the root guide's
+concurrency-primitives entry** for the whole API and its load-bearing
+properties.
 
 ## Storage (`ctx.db`)
 
@@ -744,9 +729,8 @@ scratch belongs in `ctx.state` (or the `remember`/`recall` builtins, now
 in-memory per-session).
 
 There is no Vector store anymore — `ctx.vector`, the `vector:` agent field,
-the `@alexkroman1/aai/vector` subpath, and the platform-owned
-`PINECONE_API_KEY` were all removed. If retrieval comes back it will be a
-Supabase (pgvector) store following the same path as `ctx.db`: per-app
+the `@alexkroman1/aai/vector` subpath and the platform-owned `PINECONE_API_KEY`
+were all removed. If retrieval returns it follows `ctx.db`'s path: per-app
 schema, platform-provisioned credentials in Vault.
 `ctx.db` connects DIRECTLY from the guest: the app's own scoped Postgres
 credentials (role/search_path pinned at provisioning) ride into the guest as
@@ -1341,8 +1325,8 @@ it generates.
   that ignored an ALREADY-aborted signal (which is exactly what a `tool.call`
   after a client cancel receives, since `onCancel` aborts the reply without
   replacing it), and one that rejected where the real executor always RESOLVES
-  with a `toolError(...)` string. Check the real collaborator's contract before
-  believing a finding.
+  with a `serializeToolFailure(...)` string. Check the real collaborator's
+  contract before believing a finding.
 
 ## Fixture replay testing (`host/`)
 

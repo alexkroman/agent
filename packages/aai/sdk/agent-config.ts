@@ -20,8 +20,8 @@ import { assertPipelineTuning, assertProviderTriple, assertSilencePolicy } from 
 import { defaultProviders } from "./providers/_default-providers.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
+import { BuiltinToolSchema, ToolChoiceSchema } from "./type-schemas.ts";
 import type { Message } from "./types.ts";
-import { BuiltinToolSchema, ToolChoiceSchema } from "./types.ts";
 
 /** Per-call options for an {@link ExecuteTool} invocation. */
 export interface ExecuteToolOptions {

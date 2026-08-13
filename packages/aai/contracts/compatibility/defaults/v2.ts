@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Frozen authoring example: `defaults` epoch 1.
+ * Frozen authoring example: `defaults` epoch 2.
  *
  * These constants are the published answer to "what happens if I leave this
  * field off", so they are read by callers who need to reproduce a default
@@ -14,6 +14,12 @@
  *
  * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
  * relative.
+ *
+ * Epoch 1 is DROPPED. Three of its constants moved to
+ * `@alexkroman1/aai/internal` — two client-audio budgets and a runtime deadline,
+ * none of which answers "what happens if I leave this field off", which is what
+ * this capability is for. They are still exported, still the same values, and a
+ * caller reproducing one imports it from there.
  */
 
 import {
@@ -28,7 +34,6 @@ import {
   DEFAULT_MAX_TURN_SILENCE_MS,
   DEFAULT_MIN_BARGE_IN_WORDS,
   DEFAULT_MIN_TURN_SILENCE_MS,
-  DEFAULT_SESSION_START_TIMEOUT_MS,
   DEFAULT_SILENCE_PROMPT,
   DEFAULT_START_FAILURE_PHRASE,
   DEFAULT_STT_PROMPT,
@@ -37,9 +42,7 @@ import {
   MAX_CLIENT_EVENT_NAME_LENGTH,
   MAX_CLIENT_EVENT_PAYLOAD_BYTES,
   MAX_DB_RESULT_ROWS,
-  MAX_PLAYBACK_BUFFERED_MS,
   MAX_TOOL_RESULT_CHARS,
-  PLAYBACK_PROGRESS_INTERVAL_MS,
   STORAGE_DISABLED_MESSAGE,
   TOOL_EXECUTION_TIMEOUT_MS,
   TOOL_RESULT_TRUNCATION_MARKER,
@@ -55,8 +58,6 @@ export const timings: Record<string, number> = {
   maxTurnSilenceMs: DEFAULT_MAX_TURN_SILENCE_MS,
   minBargeInWords: DEFAULT_MIN_BARGE_IN_WORDS,
   minTurnSilenceMs: DEFAULT_MIN_TURN_SILENCE_MS,
-  sessionStartTimeoutMs: DEFAULT_SESSION_START_TIMEOUT_MS,
-  playbackProgressIntervalMs: PLAYBACK_PROGRESS_INTERVAL_MS,
   toolExecutionTimeoutMs: TOOL_EXECUTION_TIMEOUT_MS,
 };
 
@@ -65,7 +66,6 @@ export const limits: Record<string, number> = {
   clientEventNameLength: MAX_CLIENT_EVENT_NAME_LENGTH,
   clientEventPayloadBytes: MAX_CLIENT_EVENT_PAYLOAD_BYTES,
   dbResultRows: MAX_DB_RESULT_ROWS,
-  playbackBufferedMs: MAX_PLAYBACK_BUFFERED_MS,
   toolResultChars: MAX_TOOL_RESULT_CHARS,
 };
 

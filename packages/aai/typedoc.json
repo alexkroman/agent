@@ -17,5 +17,6 @@
     "ai": {
       "LanguageModel": "https://ai-sdk.dev/docs/reference/ai-sdk-core/language-model"
     }
-  }
+  },
+  "intentionallyNotExported": ["StandardSchemaV1"]
 }

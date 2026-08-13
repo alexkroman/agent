@@ -4,13 +4,8 @@
 
 ```ts
 
-import { z } from 'zod';
-
 // @public
 export function agent<S = DefaultSessionState>(def: AgentParams<S>): AgentDef<S>;
-
-// @internal
-export const AGENT_CSP: string;
 
 // @public
 export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
@@ -273,9 +268,6 @@ export const ASSEMBLYAI_S2S_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
 // @public
 export const ASSEMBLYAI_S2S_KIND: "assemblyai";
 
-// @internal
-export const ASSEMBLYAI_S2S_SAMPLE_RATE = 24000;
-
 // @public
 const ASSEMBLYAI_TTS_KIND: "assemblyai";
 
@@ -455,30 +447,8 @@ type AssemblyAITtsVoice = keyof typeof ASSEMBLYAI_TTS_VOICES | (string & Record<
 // @public
 export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
 
-// @internal
-export const BuiltinToolSchema: z.ZodEnum<{
-    calculate: "calculate";
-    fetch_json: "fetch_json";
-    get_page_design: "get_page_design";
-    recall: "recall";
-    remember: "remember";
-    run_code: "run_code";
-    think: "think";
-    visit_webpage: "visit_webpage";
-    web_search: "web_search";
-}>;
-
-// @internal
-export function capToolResult(result: string): string;
-
-// @internal
-export const CAPTURE_STOP_ACK_TIMEOUT_MS = 250;
-
 // @public
 export function clampWorkflowWait(requested: number | undefined): number;
-
-// @internal
-export const CLIENT_AUDIO_LEAD_MS = 1000;
 
 // @public
 export function createKeyedLock(): KeyedLock;
@@ -488,32 +458,14 @@ export type Db = {
     query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
 };
 
-// @internal
-export const DEAD_AIR_COVER_MAX_MS = 8000;
-
-// @internal
-export const DEAD_AIR_COVER_PHRASES: readonly string[];
-
-// @internal
-export const DEAD_AIR_OPENING_PHRASE = "I'm checking on this.";
-
 // @public
 export const DEFAULT_BUILTIN_TOOLS: readonly [];
-
-// @internal
-export const DEFAULT_DEAD_AIR_COVER_MS = 5000;
 
 // @public
 export const DEFAULT_ERROR_PHRASE = "Sorry, I had a problem just then. Could you say that again?";
 
-// @internal
-export const DEFAULT_FALSE_INTERRUPTION_PROMPT: string;
-
 // @public
 export const DEFAULT_GREETING: string;
-
-// @internal
-export const DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS = 15000;
 
 // @public
 export const DEFAULT_IDLE_TIMEOUT_MS = 300000;
@@ -536,20 +488,8 @@ export const DEFAULT_MIN_BARGE_IN_WORDS = 2;
 // @public
 export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
 
-// @internal
-export const DEFAULT_RELAY_TOOL_TIMEOUT_MS = 120000;
-
-// @public
-export const DEFAULT_SESSION_START_TIMEOUT_MS = 10000;
-
-// @internal (undocumented)
-export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 30000;
-
 // @public
 export const DEFAULT_SILENCE_PROMPT: string;
-
-// @internal
-export const DEFAULT_SPEECH_IDLE_TIMEOUT_MS = 4000;
 
 // @public
 export const DEFAULT_START_FAILURE_PHRASE: string;
@@ -557,23 +497,11 @@ export const DEFAULT_START_FAILURE_PHRASE: string;
 // @public
 export const DEFAULT_STT_PROMPT = "";
 
-// @internal (undocumented)
-export const DEFAULT_STT_SAMPLE_RATE = 16000;
-
 // @public
 export const DEFAULT_SYSTEM_PROMPT: string;
 
 // @public
 export const DEFAULT_TOOL_CHOICE: "auto";
-
-// @internal (undocumented)
-export const DEFAULT_TTS_SAMPLE_RATE = 24000;
-
-// @internal
-export const DEFAULT_VOICE_FOCUS = "near-field";
-
-// @internal
-export const DEFAULT_VOICE_FOCUS_THRESHOLD = 0.9;
 
 // @public
 export type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "tools";
@@ -589,9 +517,6 @@ export function errorDetail(err: unknown): string;
 
 // @public
 export function errorMessage(err: unknown): string;
-
-// @internal (undocumented)
-export const FETCH_TIMEOUT_MS = 15000;
 
 // @public
 export type FindOptions = {
@@ -628,12 +553,6 @@ export type GenerateResult = {
     object?: unknown;
 };
 
-// @internal
-export const HEARD_AUDIO_LAG_MS = 750;
-
-// @internal
-export const HTML_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
-
 // @public
 export type InferAgentState<A> = A extends AgentDef<infer S> ? S : never;
 
@@ -648,9 +567,6 @@ export type InferToolOutput<T extends ToolDef<ToolInputSchema, DefaultSessionSta
 
 // @public
 export function isTerminal<R>(run: WorkflowRunSnapshot<R> | undefined): run is TerminalWorkflowRun<R>;
-
-// @internal
-export function isTextAssetPath(assetPath: string): boolean;
 
 // @public
 export function isToolFailure(value: unknown): value is ToolFailure;
@@ -673,18 +589,9 @@ export class KeyedLockTimeoutError extends Error {
 }
 
 // @public
-export function linkConfirmationCode(code: string): string;
-
-// @public
 type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "llm";
 };
-
-// @internal
-export const LOG_PREVIEW_CHARS = 200;
-
-// @internal
-export const MAX_AUDIO_SAMPLE_RATE = 192000;
 
 // @public
 export const MAX_CLIENT_EVENT_NAME_LENGTH = 256;
@@ -692,97 +599,20 @@ export const MAX_CLIENT_EVENT_NAME_LENGTH = 256;
 // @public
 export const MAX_CLIENT_EVENT_PAYLOAD_BYTES = 65536;
 
-// @internal
-export const MAX_CLIENT_WS_BUFFERED_BYTES: number;
-
-// @internal
-export const MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES = 3;
-
-// @internal
-export const MAX_CONSECUTIVE_SILENCE_NUDGES = 3;
-
 // @public
 export const MAX_DB_RESULT_ROWS = 1000;
-
-// @internal
-export const MAX_DESIGN_CSS_CHARS = 20000;
-
-// @internal
-export const MAX_DESIGN_HTML_CHARS = 30000;
-
-// @internal
-export const MAX_DESIGN_STYLESHEETS = 5;
-
-// @internal
-export const MAX_ERROR_MESSAGE_CHARS = 10000;
-
-// @internal (undocumented)
-export const MAX_HTML_BYTES = 200000;
-
-// @internal
-export const MAX_JSON_BYTES = 1000000;
-
-// @internal (undocumented)
-export const MAX_MESSAGE_BUFFER_SIZE = 100;
-
-// @internal (undocumented)
-export const MAX_PAGE_CHARS = 10000;
-
-// @public
-export const MAX_PLAYBACK_BUFFERED_MS = 600000;
-
-// @internal
-export const MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE = 2;
-
-// @internal
-export const MAX_PROVIDER_WS_BUFFERED_BYTES: number;
-
-// @public
-export const MAX_SLUG_LENGTH = 64;
 
 // @public
 export const MAX_TOOL_RESULT_CHARS = 4000;
 
-// @internal
-export const MAX_TRANSCRIPT_CHARS = 100000;
-
 // @public
 export const MAX_WORKFLOW_WAIT_MS = 60000;
-
-// @internal (undocumented)
-export const MAX_WS_PAYLOAD_BYTES: number;
 
 // @public
 export type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
 };
-
-// @internal
-export const MIC_BUFFER_SECONDS = 0.1;
-
-// @internal
-export const MIC_SEND_MAX_BUFFERED_BYTES: number;
-
-// @internal
-export const MIC_SILENCE_PROBE_MS = 1500;
-
-// @public
-export function normalizeSpeechText(text: string): string;
-
-// @public
-export function omitUndefined<T extends object>(obj: T): {
-    [K in keyof T]?: unknown extends T[K] ? NonNullable<unknown> | null : Exclude<T[K], undefined>;
-};
-
-// @internal
-export const PACER_BURST_MS = 200;
-
-// @internal
-export const PIPELINE_FLUSH_TIMEOUT_MS = 10000;
-
-// @internal
-export const PIPELINE_PLAYBACK_GRACE_MS = 750;
 
 // @public
 export type PipelineAgentParams<S = DefaultSessionState> = SharedAgentParams<S> & Partial<Pick<AgentDef<S>, PipelineOnlyField>> & {
@@ -815,36 +645,6 @@ export interface PipelineVoiceTuning {
     startFailurePhrase?: string;
 }
 
-// @internal
-export const PLAYBACK_BUFFER_SECONDS = 60;
-
-// @internal
-export const PLAYBACK_CONCEAL_FADE_MS = 40;
-
-// @internal
-export const PLAYBACK_CONCEAL_FLOOR = 0.001;
-
-// @internal
-export const PLAYBACK_DONE_MAX_WAIT_MS: number;
-
-// @internal
-export const PLAYBACK_DONE_POLL_MS = 1000;
-
-// @internal
-export const PLAYBACK_JITTER_MS = 400;
-
-// @public
-export const PLAYBACK_PROGRESS_INTERVAL_MS = 500;
-
-// @internal
-export const PLAYBACK_REFILL_MS = 200;
-
-// @internal
-export const PREEMPTIVE_CONFIDENCE_THRESHOLD = 0.9;
-
-// @public
-export const PREVIEW_SLUG_SUFFIX = "-preview";
-
 // @public
 interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
@@ -858,12 +658,6 @@ export type ProviderField = "stt" | "llm" | "tts" | "s2s" | "text";
 
 // @public
 export function pushCapped<T>(list: T[], item: T, max: number): T[];
-
-// @public
-export const RESERVED_SLUGS: ReadonlySet<string>;
-
-// @internal
-export const S2S_MAX_RESUME_ATTEMPTS = 5;
 
 // @public
 export type S2sAgentParams<S = DefaultSessionState> = SharedAgentParams<S> & {
@@ -885,12 +679,6 @@ type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 // @public
 export function safeJsonParse(text: string): unknown;
 
-// @internal
-export const SESSION_KEEPALIVE_INTERVAL_MS = 15000;
-
-// @internal
-export const SESSION_RESUME_GRACE_MS = 120000;
-
 // @public
 export interface SessionSlot<K extends string, T> {
     create(): T;
@@ -900,7 +688,10 @@ export interface SessionSlot<K extends string, T> {
     read(state: SlotState<K, T> | undefined): T;
     reset(ctx: ToolContext<SlotState<K, T>>): T;
     set(ctx: ToolContext<SlotState<K, T>>, value: T): T;
+    readonly state: () => SlotState<K, T>;
+    tool<P extends ToolInputSchema = ToolInputSchema>(def: SlotToolDef<P, K, T>): ToolDef<P, SlotState<K, T>>;
     update<R>(ctx: ToolContext<SlotState<K, T>>, mutate: (value: T) => R | Promise<R>): Promise<R>;
+    updateTool<P extends ToolInputSchema = ToolInputSchema>(def: SlotToolDef<P, K, T>): ToolDef<P, SlotState<K, T>>;
 }
 
 // @public
@@ -925,7 +716,14 @@ export type SlotState<K extends string, T> = {
 export type SlotStateOf<S> = S extends SessionSlot<infer K, infer T> ? SlotState<K, T> : never;
 
 // @public
-export interface StandardSchemaIssue {
+export interface SlotToolDef<P extends ToolInputSchema, K extends string, T> {
+    description: string;
+    execute(args: InferSchemaOutput<P>, value: T, ctx: ToolContext<SlotState<K, T>>): Promise<unknown> | unknown;
+    inputSchema?: P;
+}
+
+// @public
+interface StandardSchemaIssue {
     // (undocumented)
     readonly message: string;
     // (undocumented)
@@ -935,7 +733,7 @@ export interface StandardSchemaIssue {
 }
 
 // @public
-export type StandardSchemaResult<Output> = {
+type StandardSchemaResult<Output> = {
     readonly value: Output;
     readonly issues?: undefined;
 } | {
@@ -943,7 +741,7 @@ export type StandardSchemaResult<Output> = {
 };
 
 // @public
-export interface StandardSchemaV1<Input = unknown, Output = Input> {
+interface StandardSchemaV1<Input = unknown, Output = Input> {
     readonly "~standard": {
         readonly version: 1;
         readonly vendor: string;
@@ -963,31 +761,10 @@ export type StartOptions = {
 // @public
 export const STORAGE_DISABLED_MESSAGE: string;
 
-// @internal (undocumented)
-export const STT_CONNECT_MAX_RETRIES = 2;
-
-// @internal (undocumented)
-export const STT_CONNECT_RETRY_DELAY_MS = 500;
-
-// @internal
-export const STT_CONNECT_TIMEOUT_MS = 2500;
-
-// @internal (undocumented)
-export const STT_FRAME_FLOOR_MS = 50;
-
-// @internal (undocumented)
-export const STT_FRAME_MAX_MS = 1000;
-
-// @internal
-export const STT_FRAME_TARGET_MS = 100;
-
 // @public
 type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "stt";
 };
-
-// @internal
-export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;
 
 // @public
 export const TERMINAL_WORKFLOW_STATUSES: readonly ["completed", "failed", "cancelled"];
@@ -1010,9 +787,6 @@ export type TextAgentParams<S = DefaultSessionState> = Omit<SharedAgentParams<S>
     [K in PipelineOnlyField]?: PipelineOnlyMisuse<K, "text">;
 };
 
-// @internal
-export function toArgsRecord(input: unknown): Record<string, unknown>;
-
 // @public
 export function tool<P extends ToolInputSchema = ToolInputSchema, S = DefaultSessionState>(def: {
     description: string;
@@ -1026,24 +800,11 @@ export const TOOL_EXECUTION_TIMEOUT_MS = 30000;
 // @public
 export const TOOL_RESULT_TRUNCATION_MARKER = "\n[truncated]";
 
-// @internal
-export const TOOL_USER_AGENT = "Mozilla/5.0 (compatible; VoiceAgent/1.0; +https://github.com/AssemblyAI/aai)";
-
 // @public
 export type ToolChoice = "auto" | "required" | "none" | {
     type: "tool";
     toolName: string;
 };
-
-// @internal
-export const ToolChoiceSchema: z.ZodUnion<readonly [z.ZodEnum<{
-    auto: "auto";
-    none: "none";
-    required: "required";
-}>, z.ZodObject<{
-    type: z.ZodLiteral<"tool">;
-    toolName: z.ZodString;
-}, z.core.$strip>]>;
 
 // @public
 export type ToolContext<S = DefaultSessionState> = {
@@ -1066,29 +827,20 @@ export type ToolDef<P extends ToolInputSchema = ToolInputSchema, S = DefaultSess
 };
 
 // @public
-export function toolError(message: string): string;
-
-// @public
 export type ToolFailure = {
     error: string;
 };
 
 // @public
+export function toolFailure(message: string): ToolFailure;
+
+// @public
 export type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
-
-// @internal
-export const TTS_COALESCE_MAX_CHARS = 32;
-
-// @internal
-export const TTS_RECONNECT_TIMEOUT_MS = 8000;
 
 // @public
 type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "tts";
 };
-
-// @public
-export const VALID_SLUG_RE: RegExp;
 
 // @public
 export const withLock: <T>(lock: (key: string, opts?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, opts?: KeyedLockOptions) => Promise<T>;
@@ -1162,12 +914,6 @@ export type WorkflowSummary = {
     description?: string;
     inputSchema?: unknown;
 };
-
-// @internal
-export const WS_NORMAL_CLOSURE = 1000;
-
-// @internal (undocumented)
-export const WS_OPEN = 1;
 
 // (No @packageDocumentation comment for this package)
 

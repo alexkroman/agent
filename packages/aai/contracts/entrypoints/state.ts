@@ -16,5 +16,6 @@ export {
   type SessionSlotOptions,
   type SlotState,
   type SlotStateOf,
+  type SlotToolDef,
   sessionSlot,
 } from "../../index.ts";

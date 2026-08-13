@@ -7,7 +7,8 @@
  */
 
 import { createKeyedLock, withLock } from "./keyed-lock.ts";
-import type { ToolContext } from "./types.ts";
+import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
+import type { ToolContext, ToolDef } from "./types.ts";
 
 /**
  * The `ctx.state` shape a slot keyed `K` holding `T` requires: one optional
@@ -35,6 +36,32 @@ export type SlotState<K extends string, T> = { [P in K]?: T };
 export type SlotStateOf<S> = S extends SessionSlot<infer K, infer T> ? SlotState<K, T> : never;
 
 /**
+ * The authoring shape of a slot-backed tool: {@link ToolDef} with the slot's
+ * live value handed to `execute` directly.
+ *
+ * `value` comes SECOND because it is what a slot-backed tool body actually
+ * uses; most take `(args, cart)` and never mention `ctx` at all, which is the
+ * point. Putting it there rather than third cannot be got wrong silently — a
+ * body converted from `tool()` that still names its second parameter `ctx` is a
+ * type error the first time it reads `ctx.state`, since `T` is not a
+ * {@link ToolContext}.
+ *
+ * @public
+ */
+export interface SlotToolDef<P extends ToolInputSchema, K extends string, T> {
+  /** See {@link ToolDef.description} — what the model reads to decide to call it. */
+  description: string;
+  /** See {@link ToolDef.inputSchema}. */
+  inputSchema?: P;
+  /** The tool body, handed this session's slot value alongside the usual args. */
+  execute(
+    args: InferSchemaOutput<P>,
+    value: T,
+    ctx: ToolContext<SlotState<K, T>>,
+  ): Promise<unknown> | unknown;
+}
+
+/**
  * A named slot inside `ctx.state`, created by {@link sessionSlot}.
  *
  * @typeParam K - The property name the value is stored under.
@@ -47,6 +74,107 @@ export interface SessionSlot<K extends string, T> {
   readonly key: K;
   /** A fresh default value, as `get` would install one. */
   create(): T;
+  /**
+   * This slot's `AgentDef.state` factory — `agent({ state: cartSlot.state })`.
+   *
+   * Declaring `state` makes the session's state object exist BEFORE the first
+   * tool call, which is what `pushStateSnapshot` needs to have something to
+   * project on a resumed connection. The slot installs itself lazily either
+   * way, so this is not required — it is just the half that is easy to forget,
+   * and was: of the five shipped templates built on a slot, four omitted the
+   * hand-written `() => ({ [slot.key]: slot.create() })` this replaces, despite
+   * the guide telling them to write it. A property that is already correct
+   * cannot be forgotten in the same way.
+   *
+   * A factory rather than the slot itself because `AgentDef.state` IS a
+   * factory: handing it one keeps `S` inferred from the same position it has
+   * always been inferred from, so tools stay checked against the state shape
+   * with no widening anywhere.
+   *
+   * @example
+   * ```ts
+   * import { agent, sessionSlot } from "@alexkroman1/aai";
+   *
+   * const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
+   *
+   * export default agent({
+   *   name: "Shop",
+   *   state: cartSlot.state,
+   *   syncState: cartSlot.projection((cart) => ({ count: cart.items.length })),
+   * });
+   * ```
+   */
+  readonly state: () => SlotState<K, T>;
+  /**
+   * Define a tool over this slot: `execute` is handed the live value, so the
+   * body needs neither a `ToolContext<SlotStateOf<typeof slot>>` annotation nor
+   * an opening `slot.get(ctx)`.
+   *
+   * Those two lines are what a slot-backed tool in its own module costs today —
+   * every tool in every stateful template opens with them. The tool this
+   * returns is an ordinary {@link ToolDef}, so it drops into `agent({ tools })`
+   * unchanged.
+   *
+   * `get` semantics: fine for a synchronous read-modify-write, which cannot
+   * interleave. **A body that awaits between reading and writing wants
+   * {@link SessionSlot.updateTool} instead**, for the reason
+   * {@link SessionSlot.update} gives.
+   *
+   * @example
+   * ```ts
+   * import { sessionSlot } from "@alexkroman1/aai";
+   * import { z } from "zod";
+   *
+   * const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
+   *
+   * export const addItem = cartSlot.tool({
+   *   description: "Add an item to the cart",
+   *   inputSchema: z.object({ item: z.string() }),
+   *   execute: ({ item }, cart) => {
+   *     cart.items.push(item);
+   *     return { count: cart.items.length };
+   *   },
+   * });
+   * ```
+   */
+  tool<P extends ToolInputSchema = ToolInputSchema>(
+    def: SlotToolDef<P, K, T>,
+  ): ToolDef<P, SlotState<K, T>>;
+  /**
+   * {@link SessionSlot.tool}, with the body run inside
+   * {@link SessionSlot.update} — serialized per session, and followed by the
+   * slot's `after` hook.
+   *
+   * The one to reach for whenever the body AWAITS: the LLM loop runs a step's
+   * tool calls concurrently, so two async mutators of one slot interleave at
+   * every await and each reads what the other half-applied.
+   *
+   * **Inherits `update`'s non-reentrancy**, which is the one thing to hold in
+   * mind: a body that calls `update` (or another `updateTool`) on the SAME slot
+   * waits on a key only its own caller can release — a deadlock, not an error.
+   * Call the value you were handed, not back through the slot.
+   *
+   * @example
+   * ```ts
+   * import { sessionSlot } from "@alexkroman1/aai";
+   * import { z } from "zod";
+   *
+   * const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
+   *
+   * export const addItem = cartSlot.updateTool({
+   *   description: "Add an item to the cart",
+   *   inputSchema: z.object({ sku: z.string() }),
+   *   execute: async ({ sku }, cart) => {
+   *     const priced = await Promise.resolve(sku);
+   *     cart.items.push(priced);
+   *     return { count: cart.items.length };
+   *   },
+   * });
+   * ```
+   */
+  updateTool<P extends ToolInputSchema = ToolInputSchema>(
+    def: SlotToolDef<P, K, T>,
+  ): ToolDef<P, SlotState<K, T>>;
   /**
    * This session's live value, installing the default on first access.
    *
@@ -160,8 +288,12 @@ export interface SessionSlotOptions<T> {
  * ONE typed seam every module imports, and the lazy install with it.
  *
  * Declaring `state` on the agent is still worth doing (it makes the session's
- * state exist before the first tool call), and composes: pass
- * `() => ({ [slot.key]: slot.create() })`, or just let the slot install itself.
+ * state exist before the first tool call): pass {@link SessionSlot.state}, or
+ * just let the slot install itself on first access.
+ *
+ * {@link SessionSlot.tool} and {@link SessionSlot.updateTool} are the other
+ * half — a tool declared through them is handed the live value, so a tool
+ * module needs neither an annotated context nor a `slot.get(ctx)` line.
  *
  * @param key - The `ctx.state` property to occupy. Two slots must not share
  *   one key.
@@ -182,18 +314,16 @@ export interface SessionSlotOptions<T> {
  *
  * @example
  * ```ts no-check
- * // tools/add_item.ts — no cast, no lazy-init boilerplate.
+ * // tools/add_item.ts — no cast, no annotation, no lazy-init boilerplate.
  * // (`no-check`: the point of the example is the OTHER file, so it cannot be
  * // self-contained.)
- * import { tool } from "@alexkroman1/aai";
- * import { z } from "zod";
  * import { cartSlot } from "../shared.ts";
+ * import { z } from "zod";
  *
- * export const addItem = tool({
+ * export const addItem = cartSlot.tool({
  *   description: "Add an item to the cart",
  *   inputSchema: z.object({ item: z.string() }),
- *   execute: ({ item }, ctx) => {
- *     const cart = cartSlot.get(ctx);
+ *   execute: ({ item }, cart) => {
  *     cart.items.push(item);
  *     return { count: cart.items.length };
  *   },
@@ -230,10 +360,38 @@ export function sessionSlot<const K extends string, T>(
   // block another's — and `createKeyedLock` drops a key once its chain drains,
   // so a long-running agent does not accumulate one entry per session id.
   const lock = createKeyedLock();
+  const update = <R>(
+    ctx: ToolContext<SlotState<K, T>>,
+    mutate: (value: T) => R | Promise<R>,
+  ): Promise<R> =>
+    withLock(lock, ctx.sessionId, async () => {
+      const result = await mutate(get(ctx));
+      // Re-read rather than reusing what `mutate` was handed: a mutator that
+      // called `set` (a load, a restore) replaced the stored object, and the
+      // hook has to normalize what the slot NOW holds, not what it held when
+      // the mutation began.
+      options.after?.(get(ctx));
+      return result;
+    });
   return {
     key,
     create,
+    // `{ [key]: create() }` needs the computed key widened back to K — a
+    // computed property on an object literal types as `{ [x: string]: T }`.
+    state: () => ({ [key]: create() }) as SlotState<K, T>,
     get,
+    // Spreading the rest rather than restating `description`/`inputSchema`
+    // keeps `inputSchema`'s optionality EXACTLY as declared — rebuilding it
+    // field by field needs a spread ternary or an `omitUndefined` whose mapped
+    // type cannot resolve against a still-generic `P`.
+    tool: ({ execute, ...rest }) => ({
+      ...rest,
+      execute: (args, ctx) => execute(args, get(ctx), ctx),
+    }),
+    updateTool: ({ execute, ...rest }) => ({
+      ...rest,
+      execute: (args, ctx) => update(ctx, (value) => execute(args, value, ctx)),
+    }),
     set(ctx, value) {
       ctx.state[key] = value;
       return value;
@@ -247,16 +405,6 @@ export function sessionSlot<const K extends string, T>(
     projection(project) {
       return (state) => project(read(state));
     },
-    update(ctx, mutate) {
-      return withLock(lock, ctx.sessionId, async () => {
-        const result = await mutate(get(ctx));
-        // Re-read rather than reusing what `mutate` was handed: a mutator that
-        // called `set` (a load, a restore) replaced the stored object, and the
-        // hook has to normalize what the slot NOW holds, not what it held when
-        // the mutation began.
-        options.after?.(get(ctx));
-        return result;
-      });
-    },
+    update,
   };
 }

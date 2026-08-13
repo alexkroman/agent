@@ -1,5 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
-import { RESERVED_SLUGS } from "@alexkroman1/aai";
+import { RESERVED_SLUGS } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import { isStudioPath } from "./studio-paths.ts";
 

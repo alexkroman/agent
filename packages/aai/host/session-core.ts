@@ -3,11 +3,12 @@
 // and tool-step enforcement, bridging a Transport to the client protocol.
 
 import type { AgentConfig, ExecuteTool } from "../sdk/_internal-types.ts";
+import { serializeToolFailure } from "../sdk/_tool-failure-wire.ts";
 import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_HISTORY } from "../sdk/constants.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { ClientEvent, ClientSink, SessionErrorCode } from "../sdk/protocol.ts";
 import type { Message } from "../sdk/types.ts";
-import { capToolResult, errorMessage, toolError } from "../sdk/utils.ts";
+import { capToolResult, errorMessage } from "../sdk/utils.ts";
 import { createCoalescingTimer } from "./_timer.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
@@ -439,7 +440,9 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
         });
         activeReply.pendingTools.push({
           callId,
-          result: toolError("Maximum tool steps reached. Please respond to the user now."),
+          result: serializeToolFailure(
+            "Maximum tool steps reached. Please respond to the user now.",
+          ),
         });
         emit({ type: "tool_call_done", toolCallId: callId, result: "{}" });
         return;
@@ -461,7 +464,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
           emit({ type: "tool_call_done", toolCallId: callId, result: capToolResult(result) });
         } catch (err) {
           const message = errorMessage(err);
-          activeReply.pendingTools.push({ callId, result: toolError(message) });
+          activeReply.pendingTools.push({ callId, result: serializeToolFailure(message) });
           emit({ type: "tool_call_done", toolCallId: callId, result: capToolResult(message) });
         }
       })();

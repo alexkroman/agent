@@ -3,7 +3,8 @@ import { describe, expect, expectTypeOf, test } from "vitest";
 import type { z } from "zod";
 import { type AgentConfig, AgentConfigSchema, ToolSchemaSchema } from "./_internal-types.ts";
 import { type ReadyConfig, ReadyConfigSchema } from "./protocol.ts";
-import { type BuiltinTool, BuiltinToolSchema, type ToolChoice, ToolChoiceSchema } from "./types.ts";
+import { BuiltinToolSchema, ToolChoiceSchema } from "./type-schemas.ts";
+import type { BuiltinTool, ToolChoice } from "./types.ts";
 
 describe("AgentConfigSchema", () => {
   const valid: AgentConfig = {

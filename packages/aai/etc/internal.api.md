@@ -4,12 +4,18 @@
 
 ```ts
 
+// @internal
+export const AGENT_CSP: string;
+
 // @public
 type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
     run: WorkflowBody<never, R>;
 };
+
+// @internal
+export const CAPTURE_STOP_ACK_TIMEOUT_MS = 250;
 
 // @internal
 export interface CoalescingRunner<T> {
@@ -43,6 +49,18 @@ export function formatSchemaIssues(issues: readonly StandardSchemaIssue[]): stri
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
+// @public
+export const MAX_PLAYBACK_BUFFERED_MS = 600000;
+
+// @internal
+export const MIC_BUFFER_SECONDS = 0.1;
+
+// @internal
+export const MIC_SEND_MAX_BUFFERED_BYTES: number;
+
+// @internal
+export const MIC_SILENCE_PROBE_MS = 1500;
+
 // @internal
 export const MISSING_WORKFLOW_ID_MESSAGE: string;
 
@@ -70,6 +88,30 @@ export function parseWsUpgradeParams(rawUrl: string): {
     resumeFrom?: string;
     skipGreeting: boolean;
 };
+
+// @internal
+export const PLAYBACK_BUFFER_SECONDS = 60;
+
+// @internal
+export const PLAYBACK_CONCEAL_FADE_MS = 40;
+
+// @internal
+export const PLAYBACK_CONCEAL_FLOOR = 0.001;
+
+// @internal
+export const PLAYBACK_DONE_MAX_WAIT_MS: number;
+
+// @internal
+export const PLAYBACK_DONE_POLL_MS = 1000;
+
+// @internal
+export const PLAYBACK_JITTER_MS = 400;
+
+// @public
+export const PLAYBACK_PROGRESS_INTERVAL_MS = 500;
+
+// @internal
+export const PLAYBACK_REFILL_MS = 200;
 
 // @internal
 export function rejectingWorkflows(message: string): WorkflowClient;
@@ -176,6 +218,9 @@ type WorkflowSummary = {
     description?: string;
     inputSchema?: unknown;
 };
+
+// @internal (undocumented)
+export const WS_OPEN = 1;
 
 // (No @packageDocumentation comment for this package)
 

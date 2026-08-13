@@ -8,13 +8,14 @@
 
 import pTimeout from "p-timeout";
 import { EMPTY_PARAMS } from "../sdk/_internal-types.ts";
+import { serializeToolFailure } from "../sdk/_tool-failure-wire.ts";
 import { TOOL_EXECUTION_TIMEOUT_MS } from "../sdk/constants.ts";
 import type { Db } from "../sdk/db.ts";
 import { STORAGE_DISABLED_MESSAGE } from "../sdk/db.ts";
 import type { GenerateFn, GenerateOptions, GenerateResult } from "../sdk/generate.ts";
 import { formatSchemaIssues } from "../sdk/schema.ts";
 import type { Message, ToolContext, ToolDef } from "../sdk/types.ts";
-import { errorDetail, errorMessage, toolError } from "../sdk/utils.ts";
+import { errorDetail, errorMessage } from "../sdk/utils.ts";
 import type { WorkflowClient } from "../sdk/workflow.ts";
 import { rejectingWorkflows, WORKFLOWS_UNAVAILABLE_MESSAGE } from "../sdk/workflow-unavailable.ts";
 import type { HostGenerateFn } from "./generate.ts";
@@ -129,7 +130,9 @@ export async function executeToolCall(
   // The spec allows a sync or async validate; await normalizes both.
   const parsed = await schema["~standard"].validate(args);
   if (parsed.issues) {
-    return toolError(`Invalid arguments for tool "${name}": ${formatSchemaIssues(parsed.issues)}`);
+    return serializeToolFailure(
+      `Invalid arguments for tool "${name}": ${formatSchemaIssues(parsed.issues)}`,
+    );
   }
 
   // Per-call controller, exposed to the tool as ctx.signal. It follows the
@@ -148,7 +151,7 @@ export async function executeToolCall(
     const ctx = buildToolContext({ ...options, signal: callController.signal });
     await yieldTick();
     if (callController.signal.aborted) {
-      return toolError(`Tool "${name}" was cancelled before it ran`);
+      return serializeToolFailure(`Tool "${name}" was cancelled before it ran`);
     }
     // The signal makes the await settle promptly on barge-in/reset/stop; the
     // underlying execute keeps running unless it observes ctx.signal itself.
@@ -169,7 +172,7 @@ export async function executeToolCall(
     } else {
       console.warn(`[tool-executor] Tool execution failed: ${name}`, err);
     }
-    return toolError(errorMessage(err));
+    return serializeToolFailure(errorMessage(err));
   } finally {
     // The turn signal outlives this call; drop the follower or every tool
     // call in the reply leaks a listener on it.

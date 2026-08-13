@@ -5,7 +5,9 @@ import type { SessionErrorCode } from "@alexkroman1/aai/protocol";
 
 // Client audio/backpressure budgets live in the SDK's constants module,
 // next to the host-side halves of the same wire paths (e.g.
-// MAX_CLIENT_WS_BUFFERED_BYTES).
+// MAX_CLIENT_WS_BUFFERED_BYTES). On `/internal` rather than the SDK's root
+// barrel: they are framework budgets with no `agent()` field to set, and the
+// root is the authoring surface.
 export {
   CAPTURE_STOP_ACK_TIMEOUT_MS,
   MIC_BUFFER_SECONDS,
@@ -19,7 +21,7 @@ export {
   PLAYBACK_JITTER_MS,
   PLAYBACK_PROGRESS_INTERVAL_MS,
   PLAYBACK_REFILL_MS,
-} from "@alexkroman1/aai";
+} from "@alexkroman1/aai/internal";
 
 /**
  * `getUserMedia` audio constraints for every capture path in this package.

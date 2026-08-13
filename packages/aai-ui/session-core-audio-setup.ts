@@ -9,7 +9,8 @@
  * and connection lifecycle.
  */
 
-import { errorMessage, WS_OPEN } from "@alexkroman1/aai";
+import { errorMessage } from "@alexkroman1/aai";
+import { WS_OPEN } from "@alexkroman1/aai/internal";
 import type { ClientMessage } from "@alexkroman1/aai/protocol";
 import type { VoiceIO } from "./audio.ts";
 import type { ConnState, SessionSnapshot } from "./session-core-types.ts";

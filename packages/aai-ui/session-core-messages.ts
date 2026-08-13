@@ -10,13 +10,14 @@
  * exclusively through the injected `getSnapshot`/`updateState` deps.
  */
 
-import { DEFAULT_MAX_HISTORY, safeJsonParse, toArgsRecord } from "@alexkroman1/aai";
+import { DEFAULT_MAX_HISTORY, safeJsonParse } from "@alexkroman1/aai";
 import {
   type ClientEvent,
   lenientParse,
   type ServerMessage,
   ServerMessageSchema,
 } from "@alexkroman1/aai/protocol";
+import { toArgsRecord } from "@alexkroman1/aai/utils";
 import type { ConnState, SessionSnapshot } from "./session-core-types.ts";
 
 /** Cap on `customEvents` retained in the session snapshot to avoid unbounded growth. */

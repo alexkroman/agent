@@ -16,6 +16,9 @@ import { resourcesUpdateStatus } from "./tools/resources_update_status.ts";
 
 export default agent({
   name: "Dispatch Command Center",
+  // The board exists before the first tool call, so a resumed connection has
+  // something to project rather than an empty state object.
+  state: dispatchSlot.state,
   // One projection replaces eleven `ctx.send("incidents", ...)` calls, and
   // is the single place that decides caller PII stays server-side.
   syncState: dispatchSlot.projection(dashboardView),
