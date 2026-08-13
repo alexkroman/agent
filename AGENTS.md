@@ -201,7 +201,7 @@ reason); `pnpm test:coverage:affected` is the coverage half on its own.
 ### Quality ratchets
 
 Beyond lint/typecheck/test, `scripts/check.sh` **and the CI check job** run
-eight **gates** (all also runnable standalone) that hold the line on technical
+nine **gates** (all also runnable standalone) that hold the line on technical
 debt. Two compare against a COMMITTED PER-FILE BASELINE
 (`check:hatches`, `check:invariants`); the rest are absolute. They must stay
 wired into BOTH: for a long time they lived only in `check.sh`, which CI never
@@ -439,6 +439,22 @@ one commit of history. A file in the tree has no merge base and no such modes.
   `packages/aai-templates/scaffold/CLAUDE.md`. See "The authoring guide ships
   inside the SDK" below for why the copy exists. Same silent-staleness shape as
   `check:guest-toolchain`, hence the same treatment.
+- **`pnpm check:scaffold`** (`scripts/sync-scaffold-versions.mjs --check`) —
+  asserts `packages/aai-templates/scaffold/package.json` still matches the
+  workspace. Third file in this committed-copy shape and the only one that
+  SHIPS, so it is where a catalogued bump is applied twice.
+
+  Enforced by nothing until it broke: the script ran only from `version`,
+  unchecked, DURING a release — and the catalog migration had left it copying
+  the literal `"catalog:"` there, having read a range out of a package.json
+  without resolving it. npm has no such protocol, so the next release would
+  have shipped a scaffold that cannot install and `aai init` would have failed
+  at its own install step. `check:publish-protocols` cannot see this: it PACKS
+  the three publishable packages and reads the manifest pnpm rewrote, and this
+  file is DATA inside the aai-cli tarball, not a manifest pnpm packs. The
+  script resolves the catalog now and, separately, refuses any workspace
+  protocol left in the shipped manifest — `sharedDepSources` is hand-kept, so a
+  dependency outside it is synced by nothing and caught by nothing.
 
 These are pure fs checks (no build needed), so they run up front and
 fail fast. To tighten quality over time, lower the entries in the
@@ -891,9 +907,12 @@ versionGroups that used to police zod and ws are gone: the catalog makes that
 drift unrepresentable, and a rule comparing `catalog:` against the range it
 resolves to reported a mismatch on every correct package.
 
-`sync-scaffold-versions.mjs` stays exactly as it was. The scaffold ships to
-users and cannot use `catalog:`, so it is still the one place a bump has to be
-applied twice.
+`sync-scaffold-versions.mjs` carries a bump into the scaffold, which ships to
+users and cannot use `catalog:` — still the one place a bump is applied twice.
+It did NOT stay as it was, and the note that said so was the bug: reading a
+range out of a package.json now yields `catalog:`, which it copied verbatim
+into a manifest npm cannot resolve. See `check:scaffold` under "Quality
+ratchets".
 
 **`catalog:` must never reach npm, and `check:publish-protocols` proves it does
 not.** It is a pnpm protocol — npm treats `"zod": "catalog:"` as an
@@ -1779,8 +1798,10 @@ catches the most common issues that historically required follow-up commits:
 1. **Syncpack version drift**: When bumping a dependency, also update
    `packages/aai-templates/scaffold/package.json` if it has the same dep.
    Note syncpack does NOT check the scaffold (it is excluded in
-   `.syncpackrc.json`) — run `node scripts/sync-scaffold-versions.mjs`
-   to sync it (or `--check` to verify).
+   `.syncpackrc.json`) — run `pnpm sync:scaffold` to sync it. `check:scaffold`
+   now fails when it is stale, so this is a fix rather than something to
+   remember; the same bump usually also owes `pnpm sync:guest-toolchain`, which
+   `check:guest-toolchain` holds the same way.
 2. **Test assertion mismatches**: After changing output formats or error
    messages, run `pnpm test` and update affected assertions.
 3. **Lint in related files**: Pre-commit only lints staged files. Run

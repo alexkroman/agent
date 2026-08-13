@@ -10,6 +10,14 @@
  *   from what the repo actually builds and tests with. (The scaffold is
  *   deliberately excluded from syncpack — see .syncpackrc.json — so this
  *   script is the only guard.)
+ * - A `catalog:` specifier is RESOLVED to the range the catalog holds, never
+ *   copied. `catalog:` is a pnpm workspace protocol and the scaffold ships to
+ *   users, where npm reads it as an unsatisfiable range — so a catalogued
+ *   dependency is precisely the case this script has to translate. Copying it
+ *   verbatim is what the catalog migration silently started doing, and the
+ *   symptom would not have appeared here: this script runs UNCHECKED from the
+ *   `version` script after `changeset version`, so the first sign would have
+ *   been `aai init` failing at its own install step for every user.
  * - `packageManager` is copied from the root package.json.
  *
  * Run automatically after `changeset version` in the release workflow.
@@ -18,10 +26,12 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { parse as parseYaml } from "yaml";
 
 const checkOnly = process.argv.includes("--check");
 const root = new URL("..", import.meta.url).pathname;
 const scaffoldPath = join(root, "packages/aai-templates/scaffold/package.json");
+const workspacePath = join(root, "pnpm-workspace.yaml");
 
 /** Workspace packages whose *own* version the scaffold must track. */
 const pkgMap = {
@@ -67,6 +77,65 @@ function readJson(path) {
   }
 }
 
+/** The workspace catalogs, read once: `catalog` is the default, `catalogs` the named ones. */
+const workspace = (() => {
+  let text;
+  try {
+    text = readFileSync(workspacePath, "utf8");
+  } catch (err) {
+    console.error(`sync-scaffold-versions: failed to read ${workspacePath}: ${err.message}`);
+    process.exit(1);
+  }
+  try {
+    return parseYaml(text) ?? {};
+  } catch (err) {
+    console.error(`sync-scaffold-versions: failed to parse ${workspacePath}: ${err.message}`);
+    process.exit(1);
+  }
+})();
+
+/**
+ * Resolve a specifier to a literal range, translating `catalog:` (the default
+ * catalog) and `catalog:<name>` (a named one) into the range that catalog
+ * holds. Anything else is already literal and passes through.
+ *
+ * Failures exit rather than fall back: the caller is about to write this value
+ * into a manifest that ships, so an unresolved `catalog:` is worse than no
+ * write at all.
+ */
+function resolveSpecifier(spec, dep, source) {
+  if (!spec.startsWith("catalog:")) return spec;
+
+  const name = spec.slice("catalog:".length).trim() || "default";
+  const catalog = name === "default" ? workspace.catalog : workspace.catalogs?.[name];
+  if (!catalog) {
+    console.error(
+      `sync-scaffold-versions: ${source} declares "${dep}": "${spec}", but ` +
+        `pnpm-workspace.yaml has no ${name === "default" ? "`catalog:`" : `\`catalogs.${name}\``} block.`,
+    );
+    process.exit(1);
+  }
+
+  const range = catalog[dep];
+  if (typeof range !== "string" || range.length === 0) {
+    console.error(
+      `sync-scaffold-versions: ${source} declares "${dep}": "${spec}", but the ` +
+        `${name} catalog has no entry for "${dep}".`,
+    );
+    process.exit(1);
+  }
+  // Catalogs do not nest, so a `catalog:` here means the entry is malformed
+  // rather than that another lookup is owed.
+  if (range.startsWith("catalog:")) {
+    console.error(
+      `sync-scaffold-versions: the ${name} catalog maps "${dep}" to "${range}", ` +
+        "which is not a version range.",
+    );
+    process.exit(1);
+  }
+  return range;
+}
+
 const scaffold = readJson(scaffoldPath);
 let changed = false;
 
@@ -103,7 +172,32 @@ for (const [dep, pkgPath] of Object.entries(sharedDepSources)) {
     );
     process.exit(1);
   }
-  syncDep(dep, range, pkgPath);
+  syncDep(dep, resolveSpecifier(range, dep, pkgPath), pkgPath);
+}
+
+// Independently of the map above: NO specifier in the shipped manifest may be a
+// pnpm workspace protocol. `sharedDepSources` is hand-kept, so it only sees the
+// deps somebody remembered to list — a dep outside it that gets hand-edited to
+// `catalog:` is synced by nothing and caught by nothing else either. The three
+// publishable packages are covered by check:publish-protocols, which packs them
+// and reads the manifest pnpm rewrote; this file is DATA inside the aai-cli
+// tarball rather than a manifest pnpm packs, so no rewrite ever touches it.
+const workspaceProtocols = ["catalog:", "workspace:"];
+const leaked = [];
+for (const section of ["dependencies", "devDependencies", "peerDependencies"]) {
+  for (const [dep, spec] of Object.entries(scaffold[section] ?? {})) {
+    if (typeof spec === "string" && workspaceProtocols.some((p) => spec.startsWith(p))) {
+      leaked.push(`${section}.${dep}: ${spec}`);
+    }
+  }
+}
+if (leaked.length > 0) {
+  console.error(
+    "sync-scaffold-versions: the scaffold manifest ships to users, where a pnpm\n" +
+      "workspace protocol is an unsatisfiable range. Replace each with a literal range:",
+  );
+  for (const entry of leaked) console.error(`  ${entry}`);
+  process.exit(1);
 }
 
 const { packageManager } = readJson(join(root, "package.json"));

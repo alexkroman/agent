@@ -2,15 +2,16 @@
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-const generateObjectMock = vi.fn();
+const generateTextMock = vi.fn();
 
-// Mock `ai`: stub generateObject + NoSuchToolError.isInstance (a NoSuchTool
-// error is marked with `__noSuchTool`); keep everything else (jsonSchema) real.
+// Mock `ai`: stub generateText + NoSuchToolError.isInstance (a NoSuchTool
+// error is marked with `__noSuchTool`); keep everything else (jsonSchema,
+// Output) real.
 vi.mock("ai", async (importActual) => {
   const actual = await importActual<typeof import("ai")>();
   return {
     ...actual,
-    generateObject: (...args: unknown[]) => generateObjectMock(...args),
+    generateText: (...args: unknown[]) => generateTextMock(...args),
     NoSuchToolError: {
       isInstance: (e: unknown) => (e as { __noSuchTool?: boolean })?.__noSuchTool === true,
     },
@@ -33,15 +34,15 @@ function repairOptions(over: Record<string, unknown> = {}): never {
 }
 
 beforeEach(() => {
-  generateObjectMock.mockReset();
+  generateTextMock.mockReset();
 });
 
 describe("createToolCallRepair", () => {
   test("regenerates valid arguments on a schema-invalid tool call", async () => {
-    generateObjectMock.mockResolvedValue({ object: { x: 5 } });
+    generateTextMock.mockResolvedValue({ output: { x: 5 } });
     const repair = createToolCallRepair(model, log);
     const result = await repair(repairOptions());
-    expect(generateObjectMock).toHaveBeenCalledOnce();
+    expect(generateTextMock).toHaveBeenCalledOnce();
     expect(result).toEqual({
       toolCallId: "t1",
       toolName: "lookup",
@@ -53,31 +54,31 @@ describe("createToolCallRepair", () => {
     const repair = createToolCallRepair(model, log);
     const result = await repair(repairOptions({ error: { __noSuchTool: true } }));
     expect(result).toBeNull();
-    expect(generateObjectMock).not.toHaveBeenCalled();
+    expect(generateTextMock).not.toHaveBeenCalled();
   });
 
   test("returns null (and warns) when regeneration itself fails", async () => {
-    generateObjectMock.mockRejectedValue(new Error("model unavailable"));
+    generateTextMock.mockRejectedValue(new Error("model unavailable"));
     const repair = createToolCallRepair(model, log);
     const result = await repair(repairOptions());
     expect(result).toBeNull();
     expect(log.warn).toHaveBeenCalled();
   });
 
-  test("threads the turn's abort signal into generateObject", async () => {
-    generateObjectMock.mockResolvedValue({ object: { x: 5 } });
+  test("threads the turn's abort signal into generateText", async () => {
+    generateTextMock.mockResolvedValue({ output: { x: 5 } });
     const ctl = new AbortController();
     const repair = createToolCallRepair(model, log, () => ctl.signal);
     await repair(repairOptions());
-    const passed = generateObjectMock.mock.calls[0]?.[0] as { abortSignal?: AbortSignal };
+    const passed = generateTextMock.mock.calls[0]?.[0] as { abortSignal?: AbortSignal };
     expect(passed.abortSignal).toBe(ctl.signal);
   });
 
   test("omits abortSignal when the getter returns undefined", async () => {
-    generateObjectMock.mockResolvedValue({ object: { x: 5 } });
+    generateTextMock.mockResolvedValue({ output: { x: 5 } });
     const repair = createToolCallRepair(model, log, () => undefined);
     await repair(repairOptions());
-    const passed = generateObjectMock.mock.calls[0]?.[0] as { abortSignal?: AbortSignal };
+    const passed = generateTextMock.mock.calls[0]?.[0] as { abortSignal?: AbortSignal };
     expect(passed.abortSignal).toBeUndefined();
   });
 });

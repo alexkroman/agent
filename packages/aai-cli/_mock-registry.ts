@@ -79,11 +79,38 @@ listen: localhost:${port}
 
 type VerdaccioProcess = ResultPromise<{ ipc: true; stdout: "ignore"; stderr: "ignore" }>;
 
+/**
+ * Absolute path to verdaccio's CLI entry, resolved through its `bin` field.
+ *
+ * NOT `require.resolve("verdaccio/bin/verdaccio")`. That is a subpath, and
+ * verdaccio 6.9 narrowed its `exports` map to `.` and `./package.json` — so
+ * the subpath stopped resolving (`ERR_PACKAGE_PATH_NOT_EXPORTED`) even though
+ * `bin` still points at exactly that file. It fails at IMPORT time, taking the
+ * whole e2e suite down as a failed SUITE with all 19 tests skipped, which is a
+ * shape worth recognising: `pnpm check:local` never runs this tier, so only the
+ * pre-push hook or CI sees it.
+ *
+ * `./package.json` is exported (and a package that stops exporting it cannot be
+ * resolved by anything), so reading `bin` from there and joining it to the
+ * package root asks the package where its CLI is instead of guessing.
+ */
+function resolveVerdaccioBin(): string {
+  const manifestPath = require.resolve("verdaccio/package.json");
+  const { bin } = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
+    bin?: string | Record<string, string>;
+  };
+  const relative = typeof bin === "string" ? bin : bin?.verdaccio;
+  if (relative === undefined) {
+    throw new Error("mock registry: verdaccio's package.json declares no `bin` entry to run.");
+  }
+  return path.resolve(path.dirname(manifestPath), relative);
+}
+
 // The subprocess is returned wrapped in an object: a ResultPromise is itself
 // a thenable, so returning it bare would make the caller's `await` unwrap it
 // into a final Result instead of the live process handle.
 async function startServer(configPath: string): Promise<{ server: VerdaccioProcess }> {
-  const verdaccioEntry = require.resolve("verdaccio/bin/verdaccio");
+  const verdaccioEntry = resolveVerdaccioBin();
   const subprocess = execaNode(verdaccioEntry, ["-c", configPath], {
     ipc: true,
     stdout: "ignore",

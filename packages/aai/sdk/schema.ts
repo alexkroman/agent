@@ -9,7 +9,7 @@
  *
  * - **Validation** is the Standard Schema contract itself
  *   (`~standard.validate`), so every vendor works.
- * - **JSON Schema conversion** (for the LLM tool spec and `generateObject`)
+ * - **JSON Schema conversion** (for the LLM tool spec and structured output)
  *   is NOT part of the standard. {@link toToolJsonSchema} converts Zod
  *   natively (`z.toJSONSchema`) and duck-types a `toJsonSchema()` /
  *   `toJSONSchema()` method for vendors that expose one (ArkType does);
