@@ -33,6 +33,15 @@
  * `defineHook()`. The SDK's job is declaring the workflow and starting runs; the
  * durable execution belongs to `workflow`.
  *
+ * ## The research is real
+ *
+ * `workflows/research.ts` breaks the topic into angles, investigates each one in
+ * its own step, and reduces the notes — three model calls deep, through the same
+ * `ASSEMBLYAI_API_KEY` this agent's voice pipeline uses. A step is handed no
+ * `ToolContext`, so it reads that key with `requireStepEnv` rather than
+ * `ctx.env`; see that file's module doc for the one thing that changes under
+ * `aai dev` (the key has to be in `.env`, not just your shell).
+ *
  * Requires storage (`aai storage enable`, or `DATABASE_URL` under `aai dev`) —
  * runs and the key index both live there.
  */
@@ -57,7 +66,7 @@ import { researchFlow } from "./workflows/research.ts";
  * compile error instead of a rejected promise the model reads as a tool failure.
  */
 export const research = workflow({
-  description: "Research a topic, sit on it briefly, then file the findings",
+  description: "Research a topic across several angles, sit on it briefly, then file the findings",
   input: z.object({
     topic: z.string().min(3).describe("What to research"),
     requestedBy: z.string().describe("Who asked — used when filing the result"),

@@ -39,6 +39,12 @@ export {
 export { mapInBatches } from "./map-in-batches.ts";
 export { omitUndefined } from "./omit-undefined.ts";
 export { MAX_SLUG_LENGTH, PREVIEW_SLUG_SUFFIX, RESERVED_SLUGS, VALID_SLUG_RE } from "./slug.ts";
+export { requireStepEnv, stepEnv } from "./step-env.ts";
+export {
+  StepGenerateError,
+  type StepGenerateOptions,
+  stepGenerate,
+} from "./step-generate.ts";
 
 /** Extract an error message from an unknown thrown value. */
 export function errorMessage(err: unknown): string {

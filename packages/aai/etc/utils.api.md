@@ -63,6 +63,9 @@ export const PREVIEW_SLUG_SUFFIX = "-preview";
 export function pushCapped<T>(list: T[], item: T, max: number): T[];
 
 // @public
+export function requireStepEnv(name: string): string;
+
+// @public
 export const RESERVED_SLUGS: ReadonlySet<string>;
 
 // @public
@@ -70,6 +73,34 @@ export function responseErrorMessage(res: Response, label?: string): Promise<str
 
 // @public
 export function safeJsonParse(text: string): unknown;
+
+// @public
+export function stepEnv(name: string): string | undefined;
+
+// @public
+export function stepGenerate(prompt: string, opts?: StepGenerateOptions): Promise<string>;
+
+// @public
+export class StepGenerateError extends Error {
+    constructor(message: string, opts: {
+        status?: number | undefined;
+        retryable: boolean;
+        cause?: unknown;
+    });
+    readonly retryable: boolean;
+    readonly status: number | undefined;
+}
+
+// @public
+export type StepGenerateOptions = {
+    system?: string;
+    model?: string;
+    apiKeyEnv?: string;
+    gatewayUrl?: string;
+    timeoutMs?: number;
+    temperature?: number;
+    maxTokens?: number;
+};
 
 // @internal
 export function toArgsRecord(input: unknown): Record<string, unknown>;

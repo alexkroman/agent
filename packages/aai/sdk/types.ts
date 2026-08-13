@@ -459,12 +459,15 @@ export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
    */
   text?: true;
   /**
-   * Env var names this agent's tools read from {@link ToolContext.env}
-   * (beyond provider credentials, which are derived from the
-   * `stt`/`llm`/`tts`/`s2s` descriptors automatically). Deploys check that
-   * every listed name is present in the agent's stored env, so a missing key
-   * surfaces at deploy time instead of as a runtime failure on the first
-   * tool call.
+   * Env var names this agent's code reads (beyond provider credentials, which
+   * are derived from the `stt`/`llm`/`tts`/`s2s` descriptors automatically).
+   * Deploys check that every listed name is present in the agent's stored env,
+   * so a missing key surfaces at deploy time instead of as a runtime failure on
+   * the first tool call.
+   *
+   * A tool reads them from {@link ToolContext.env}; a `"use step"` body has no
+   * tool context and reads them with `stepEnv` / `requireStepEnv` from
+   * `@alexkroman1/aai/utils`, which resolve the same record.
    */
   requiredEnv?: readonly string[];
 }

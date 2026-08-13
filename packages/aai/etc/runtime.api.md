@@ -679,6 +679,9 @@ export type ProviderEnv = Record<string, string> & {
     readonly [hostCredentialsMarker]?: true;
 };
 
+// @internal
+export function publishStepEnv(env: Readonly<Record<string, string | undefined>>): void;
+
 // @public
 type ReadyConfig = z.infer<typeof ReadyConfigSchema>;
 

@@ -1,70 +1,331 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The durable half of the transcription desk: a run that PARKS ON A WEBHOOK and
- * then fans out over what the webhook delivered.
+ * The durable half of the transcription desk: split a recording, transcribe
+ * every piece, stitch the pieces back together.
  *
- * Read `research-desk/workflows/research.ts` first. It states the two rules every
- * directive body obeys — replayed from the top, so no live handles and no
+ * Read `research-desk/workflows/research.ts` first. It states the two rules
+ * every directive body obeys — replayed from the top, so no live handles and no
  * undurable decisions; step arguments and return values are serialized, so pass
- * an id and not a payload — and both hold here unchanged. This file adds the two
- * things that only show up once a workflow talks to the outside world and stops
- * being a straight line.
+ * an id and not a payload — and both hold here unchanged. What this template
+ * adds is the shape a real provider limit forces on a workflow, and it is three
+ * steps in a straight line:
  *
- * ## 1. The shape of a real asynchronous API: submit, park, get called back
+ * ```text
+ *   splitRecording      one step   →  the format + a byte range per segment
+ *   transcribeSegment   N steps    →  one sync API request each, bounded
+ *   mergeTranscript     one step   →  the stitched transcript
+ * ```
  *
- * A transcription service does not answer in the request. It takes a job and a
- * callback URL, returns an id, and calls you back minutes later. That is
- * `createWebhook()`: the run suspends at `await hook`, the container it was
- * running in is free to go away, and the delivery is what brings it back — which
- * is the entire argument for a durable workflow over a tool call.
+ * ## Why the SYNC endpoint, and why that forces a fan-out
  *
- * Three things about that are easy to get wrong, and all three are load-bearing
- * below:
+ * AssemblyAI has two pre-recorded APIs. The BATCH one takes a job and a webhook
+ * and calls back minutes later, which is the classic durable-workflow shape and
+ * is what this template used to demonstrate against a stub. The SYNC one
+ * (`https://sync.assemblyai.com/transcribe`) answers in the request — and pays
+ * for it with a hard 120-second, 40 MB cap. So a real recording is not one call,
+ * it is N; the desk owns the splitting, the retrying and the reassembly that the
+ * batch API would have owned for it.
  *
- * - **`createWebhook()` does not register the token; suspending does.** So the
- *   URL is claimed with `await hook.getConflict()` BEFORE it is handed out. A
- *   provider that calls back fast — and the stub here calls back inside the
- *   submit step, which is as fast as it gets — must not arrive at a token
- *   nothing is listening on yet.
- * - **The token is the only authorization on that URL.** It is a public endpoint
- *   (the DevKit says so in as many words), so a delivery is checked against the
- *   job id this run actually submitted rather than trusted for having reached
- *   the right token.
- * - **`hook.url` names the GUEST'S OWN origin**, so it is dialable from inside
- *   this container and nowhere else. A real provider gets a URL composed from
- *   `hook.token` and the agent's public origin —
- *   `https://<your-agent>/.well-known/workflow/v1/webhook/<token>` — which the
- *   platform proxies to whichever sandbox is serving the agent when the delivery
- *   lands, booting one if none is. That indirection is the point: a run that
- *   sleeps for a week outlives every sandbox that ever served it, and a tunnel
- *   URL does not.
+ * That is the more interesting workflow, not the lesser one. A fan-out of N
+ * network calls is exactly the work a journal earns its keep on: a run that dies
+ * on segment 27 of 60 resumes having replayed 1-26 from the journal — not
+ * re-downloaded, not re-transcribed, not re-billed — and issues only what is
+ * missing. Nothing about `Promise.all` in a tool body survives the same crash.
  *
- * ## 2. A fan-out whose width comes from the delivery
+ * ## Three properties this leans on
  *
- * The transcript arrives as one blob and is post-processed segment by segment —
- * one step each, so a run that dies on segment 27 resumes having replayed 1-26
- * from the journal for free. The width is not knowable when the run starts; it
- * comes from the webhook payload, which is journaled, and that is what makes it
- * legal. (Anything the BODY computes for itself must be deterministic — the
- * ordinary rule, one level up.)
- *
- * The width is bounded by `mapInBatches`, and the bound is not a detail: the
- * Workflow DevKit correlates a journal entry to a step call **by the order the
- * call was issued in**, so a work-stealing pool — which issues its next call
- * only when a previous one settles — puts the calls in a different order on a
- * replay than it did on the first execution. That primitive is sequential
- * batches of `Promise.all` for exactly that reason; its module doc carries the
- * argument, and using it is how a template avoids restating it as a loop.
+ * - **A step can read the agent's env now.** `stepEnv`/`requireStepEnv`
+ *   (`@alexkroman1/aai/utils`) is what makes any of this real: a step is
+ *   dispatched separately from the agent bundle and is handed no `ToolContext`,
+ *   so before that seam existed no step anywhere could authenticate an outbound
+ *   call, and every workflow template's I/O was a fixture saying so.
+ * - **The audio is addressed by BYTE RANGE, never carried.** A workflow's input
+ *   is journaled and replayed on every resume, so the recording lives behind a
+ *   URL and each step fetches exactly its own window with an HTTP `Range`
+ *   request. Sixty steps therefore move the recording once between them, not
+ *   sixty times.
+ * - **The fan-out is bounded by `mapInBatches`, and the bound is not a detail.**
+ *   The DevKit correlates a journal entry to a step call by the ORDER the call
+ *   was issued in, so a work-stealing pool — which issues its next call only
+ *   when a previous one settles — puts the calls in a different order on a
+ *   replay than it did on the first execution. That primitive is sequential
+ *   batches of `Promise.all` for exactly that reason; its module doc carries the
+ *   argument.
  */
 
-import { mapInBatches } from "@alexkroman1/aai/utils";
-import { createWebhook, FatalError, getWritable } from "workflow";
+import { errorMessage, mapInBatches, requireStepEnv } from "@alexkroman1/aai/utils";
+import { FatalError, getWritable } from "workflow";
+import {
+  parseWav,
+  planSegments,
+  type Segment,
+  UnsupportedRecordingError,
+  type WavFormat,
+  wavWithHeader,
+} from "./wav.ts";
+
+/** The synchronous transcription endpoint. Global — it routes to the nearest region. */
+const SYNC_ENDPOINT = "https://sync.assemblyai.com/transcribe";
+
+/** Required on every sync request; the endpoint routes on it. */
+const SYNC_MODEL = "universal-3-5-pro";
+
+/** The key a step reads out of the agent env. Declared in `agent.ts`'s `requiredEnv`. */
+const API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+
+/**
+ * Segments in flight at once.
+ *
+ * Bounded because the far side is a rate limit: a two-hour recording issued at
+ * once collects 429s, and a rate-limited segment fails its step. Four is a
+ * starting point, not a measurement — raise it against your own account's
+ * concurrency and watch the retry count.
+ */
+const SEGMENT_CONCURRENCY = 4;
+
+/**
+ * Bytes probed for the WAV header.
+ *
+ * The canonical header is 44 bytes; a recorder that writes a `LIST` or `bext`
+ * chunk in front of the samples pushes the `data` chunk further out, and 64 KB
+ * covers every such file anyone has produced by accident.
+ */
+const HEADER_PROBE_BYTES = 64 * 1024;
+
+/** The endpoint's own per-request deadline, plus room to upload. */
+const SYNC_TIMEOUT_MS = 60_000;
+
+/** Most words `stitchTranscript` will look back over to find a repeated seam. */
+const MAX_SEAM_WORDS = 40;
+
+/** What one segment's request came back with. */
+export type SegmentTranscript = {
+  index: number;
+  text: string;
+};
+
+/**
+ * Transcribe a recording and return one transcript.
+ *
+ * The input is what `POST /workflows/runs` carries — see `agent.ts` for the
+ * schema it is validated against before a run exists.
+ */
+export async function transcribeFlow(input: { recordingUrl: string; languageCode: string }) {
+  "use workflow";
+
+  const plan = await splitRecording(input.recordingUrl);
+
+  // One step per segment, bounded, in an order a replay reproduces exactly.
+  // A failed segment fails the RUN, deliberately: every sibling that finished is
+  // already journaled, so the resume replays those for free and re-issues only
+  // what is missing, where catching here to salvage a partial transcript would
+  // return a recording with a silent hole in it and report success.
+  const parts = await mapInBatches(plan.segments, SEGMENT_CONCURRENCY, (segment) =>
+    transcribeSegment(input.recordingUrl, plan.format, segment, input.languageCode),
+  );
+
+  // Whatever this returns is what a caller reads as `output` on a completed run
+  // — so it is what the page renders, typed through `WorkflowOutputOf`.
+  return await mergeTranscript(input.recordingUrl, plan.durationMs, parts);
+}
+
+/**
+ * Read the recording's header and decide where to cut it.
+ *
+ * A step rather than body code for two reasons that both matter. It does I/O,
+ * which a body may not; and its RESULT is what the fan-out's width is derived
+ * from, so journaling it is what makes that width stable across a resume — the
+ * body re-derives the same segment list from the same journaled format rather
+ * than re-probing a URL whose content may have changed underneath it.
+ */
+export async function splitRecording(recordingUrl: string): Promise<{
+  format: WavFormat;
+  segments: Segment[];
+  durationMs: number;
+}> {
+  "use step";
+
+  const head = await fetchRange(recordingUrl, 0, HEADER_PROBE_BYTES - 1);
+  const format = fatalOnUnsupported(() => parseWav(head.bytes, head.totalBytes));
+  const segments = fatalOnUnsupported(() => planSegments(format));
+  const durationMs = segments.at(-1)?.endMs ?? 0;
+
+  await report(
+    `Split ${clock(durationMs)} of audio into ${segments.length} segment${segments.length === 1 ? "" : "s"}.`,
+  );
+  return { format, segments, durationMs };
+}
+
+/**
+ * Transcribe one segment through the sync API.
+ *
+ * One step each, so a run that dies part-way resumes having replayed the
+ * finished ones from the journal — no re-downloading, no re-billing — and issues
+ * exactly the calls that are missing.
+ */
+export async function transcribeSegment(
+  recordingUrl: string,
+  format: WavFormat,
+  segment: Segment,
+  languageCode: string,
+): Promise<SegmentTranscript> {
+  "use step";
+
+  // One line per segment, which is what makes the fan-out legible to a page: the
+  // status is `running` for the whole thing, so without this a sixty-segment
+  // recording and a one-segment recording look identical while they run.
+  //
+  // ORDER is not guaranteed here and does not need to be. A batch issues its
+  // calls together, so their lines interleave by completion — the page renders a
+  // log, not a sequence, and `segment.index` is what puts the TRANSCRIPT back in
+  // order.
+  await report(`Transcribing ${clock(segment.startMs)}–${clock(segment.endMs)}.`);
+
+  const apiKey = apiKeyOrFatal();
+  const audio = await fetchRange(recordingUrl, segment.start, segment.end - 1);
+
+  const form = new FormData();
+  form.append(
+    "audio",
+    new Blob([wavWithHeader(format, audio.bytes)], { type: "audio/wav" }),
+    `segment-${segment.index}.wav`,
+  );
+  form.append(
+    "config",
+    new Blob([JSON.stringify({ language_code: languageCode })], { type: "application/json" }),
+  );
+
+  const response = await fetch(SYNC_ENDPOINT, {
+    method: "POST",
+    // The raw key — this endpoint takes it unprefixed, and a `Bearer ` in front
+    // of it is a 401 that reads like a wrong key.
+    headers: { Authorization: apiKey, "X-AAI-Model": SYNC_MODEL },
+    body: form,
+    // `fetch` has no deadline of its own, and a hung upload inside a step is a
+    // run that never finishes rather than one that retries.
+    signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
+  });
+  if (!response.ok) throw await syncFailure(response, segment);
+
+  const body = (await response.json()) as { text?: string };
+  return { index: segment.index, text: (body.text ?? "").trim() };
+}
+
+/**
+ * Retries beyond the default 3, because a rate limit is the expected failure and
+ * a segment that 429s is not a segment that is wrong.
+ */
+transcribeSegment.maxRetries = 5;
+
+/**
+ * Stitch the segments into one transcript.
+ *
+ * A step rather than a pure call in the body, and the reason is the narration:
+ * the body replays from the top on every resume, so a `report()` written there
+ * is re-emitted on each one. Journaling the finished transcript also means a
+ * caller re-reading a completed run gets the same bytes rather than a value
+ * recomputed from parts.
+ */
+export async function mergeTranscript(
+  recordingUrl: string,
+  durationMs: number,
+  parts: readonly SegmentTranscript[],
+): Promise<{
+  source: string;
+  segments: number;
+  durationMs: number;
+  words: number;
+  transcript: string;
+}> {
+  "use step";
+
+  await report(`Stitching ${parts.length} segment${parts.length === 1 ? "" : "s"} together.`);
+
+  // `mapInBatches` resolves in ITEM order however the calls settled, so this is
+  // already ordered — sorted anyway, because the merge is where an ordering
+  // mistake would be invisible rather than loud.
+  const ordered = [...parts].sort((a, b) => a.index - b.index);
+  const transcript = stitchTranscript(ordered.map((part) => part.text));
+
+  return {
+    source: recordingUrl,
+    segments: parts.length,
+    durationMs,
+    words: countWords(transcript),
+    transcript,
+  };
+}
+
+// ---- Pure helpers -----------------------------------------------------------
+
+/** A word, stripped of the punctuation the decoder added, for seam comparison. */
+function seamKey(word: string): string {
+  return word.toLowerCase().replace(/[^\p{L}\p{N}']/gu, "");
+}
+
+/**
+ * Join segment transcripts, dropping the words the overlap made duplicates.
+ *
+ * Segments overlap by `SEGMENT_OVERLAP_SECONDS` (see `wav.ts` for why), so the
+ * last few words of one segment are the first few of the next — verbatim when
+ * the decoder heard them the same way, which is the common case because it heard
+ * the same audio. This finds the longest such run and removes one copy.
+ *
+ * Comparison is on `seamKey`, not the raw words: the two passes punctuate
+ * differently at their own edges (one ends a sentence where the other is
+ * mid-clause), so `"today."` and `"today"` are the same word and a raw compare
+ * finds no seam at all. The text KEPT is the raw text — only the match is
+ * normalized.
+ *
+ * A missed seam repeats a few words, which a reader can see and forgive. A
+ * false one would delete speech, so the search is bounded at
+ * `MAX_SEAM_WORDS` and always prefers the LONGEST match: a single repeated
+ * "the" is not evidence of anything, and requiring the longest run is what stops
+ * it counting as one when a longer match is available.
+ */
+export function stitchTranscript(parts: readonly string[]): string {
+  const merged: string[] = [];
+  for (const part of parts) {
+    const next = part.split(/\s+/).filter(Boolean);
+    if (next.length === 0) continue;
+    if (merged.length === 0) {
+      merged.push(...next);
+      continue;
+    }
+    merged.push(...next.slice(seamLength(merged, next)));
+  }
+  return merged.join(" ");
+}
+
+/** How many leading words of `next` repeat the tail of `merged`. */
+function seamLength(merged: readonly string[], next: readonly string[]): number {
+  const limit = Math.min(MAX_SEAM_WORDS, merged.length, next.length);
+  // Longest first, so a short accidental match never wins over a real seam.
+  for (let length = limit; length > 0; length--) {
+    const tail = merged.slice(merged.length - length);
+    if (tail.every((word, at) => seamKey(word) === seamKey(next[at] ?? ""))) return length;
+  }
+  return 0;
+}
+
+/** Words in a string. */
+function countWords(text: string): number {
+  return text.split(/\s+/).filter(Boolean).length;
+}
+
+/** `m:ss` for the progress log — a byte offset means nothing to a reader. */
+export function clock(ms: number): string {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+// ---- I/O helpers ------------------------------------------------------------
 
 /**
  * Write one progress line to the run's own stream.
  *
  * The only way a run can say anything before it finishes: a snapshot carries a
- * status and, once terminal, an output, so without this a twelve-segment
+ * status and, once terminal, an output, so without this a sixty-segment
  * recording reads as `running` for the whole fan-out. `client.tsx` reads it back
  * with `useWorkflowProgress`.
  *
@@ -72,8 +333,8 @@ import { createWebhook, FatalError, getWritable } from "workflow";
  * the same rule as `ctx.db`: the body replays from the top on every resume, so a
  * line written there is re-emitted on each one. And it is BEST-EFFORT — a run
  * must not fail because its narration could not be written, which is also what
- * keeps the steps below callable from this template's own spec, where there is no
- * run and `getWritable()` throws by design.
+ * keeps the steps above callable from this template's own spec, where there is
+ * no run and `getWritable()` throws by design.
  */
 async function report(line: string): Promise<void> {
   try {
@@ -91,243 +352,94 @@ async function report(line: string): Promise<void> {
 }
 
 /**
- * Segments post-processed at once — see the module doc's second half.
+ * Re-throw as terminal, so the DevKit stops retrying.
  *
- * Bounded because the far side of a real call is a rate limit: a whole
- * transcript issued at once collects 429s, and a rate-limited segment fails its
- * step.
+ * A plain function rather than a `throw` inside each `catch`: `FatalError` takes
+ * only a message — no `cause` — so constructing one directly in a catch block
+ * loses the original error where the linter (rightly) expects it to be
+ * preserved. Here the original is the ARGUMENT, and nothing is being swallowed.
  */
-const SEGMENT_CONCURRENCY = 4;
+function fatal(err: unknown): never {
+  throw new FatalError(errorMessage(err));
+}
 
-/** Words per segment. Stands in for a real per-request cap on a text API. */
-const SEGMENT_WORDS = 40;
-
-/** What the page uploads — a DESCRIPTION of a file, never its bytes. */
-export type Upload = {
-  name: string;
-  /** MIME type the browser reported. */
-  type: string;
-  /** Size in bytes. */
-  size: number;
-};
-
-/** What the provider's callback delivers. */
-export type TranscriptionCallback = {
-  jobId: string;
-  transcript: string;
-};
-
-/**
- * Transcribe an uploaded recording and file the result.
- *
- * The input is what `POST workflows/transcribe/runs` carries — see `agent.ts`
- * for the schema it is validated against before a run exists.
- */
-export async function transcribeFlow(input: {
-  upload: Upload;
-  requestedBy: string;
-  redact: boolean;
-}) {
-  "use workflow";
-
-  // `using`, so the token is released as soon as this run leaves the block
-  // rather than being held until the run record ages out.
-  using hook = createWebhook();
-
-  // Claim the token BEFORE the URL is handed to anyone. See the module doc:
-  // `createWebhook()` alone registers nothing, and this is the documented way to
-  // suspend for exactly that. Its return value identifies a run already holding
-  // the token, which cannot happen here — this hook has a generated one — so the
-  // conflict branch a shared token would need is deliberately absent.
-  await hook.getConflict();
-
-  const jobId = await submitTranscriptionJob(input.upload, hook.url);
-
-  // The suspension. Everything above is journaled; this run may resume in a
-  // different container, days later, with the delivery as its only input.
-  const request = await hook;
-  const delivered = (await request.json()) as TranscriptionCallback;
-
-  // The token is the endpoint's only authorization, so the payload is checked
-  // against the job THIS run submitted. `FatalError` skips the retries: a
-  // delivery for another job will not become the right one on a second attempt.
-  if (delivered.jobId !== jobId) {
-    throw new FatalError(`Callback for job "${delivered.jobId}", expected "${jobId}"`);
+/** The API key, or a terminal failure — three more attempts find the same gap. */
+function apiKeyOrFatal(): string {
+  try {
+    return requireStepEnv(API_KEY_ENV);
+  } catch (err: unknown) {
+    return fatal(err);
   }
+}
 
-  const segments = splitTranscript(delivered.transcript);
-
-  // One step per segment, bounded, in an order a replay reproduces exactly.
-  // A failed segment fails the RUN, deliberately: every sibling that finished is
-  // already journaled, so the resume replays those for free and re-issues only
-  // what is missing, where catching here to salvage a partial transcript would
-  // ship a recording with a silent hole in it and report success.
-  const cleaned = await mapInBatches(segments, SEGMENT_CONCURRENCY, (text) =>
-    postProcess(text, input.redact),
-  );
-
-  const transcript = cleaned.join(" ");
-
-  // Whatever this returns is what a caller reads as `output` on a completed run
-  // — so it is what the page renders, typed through `WorkflowOutputOf`.
-  return {
-    filename: input.upload.name,
-    jobId,
-    segments: segments.length,
-    words: countWords(transcript),
-    transcript,
-    filedAt: await file(input.requestedBy, input.upload.name),
-  };
+/** Run a `wav.ts` helper, turning its "cannot cut this" into a terminal failure. */
+function fatalOnUnsupported<T>(read: () => T): T {
+  try {
+    return read();
+  } catch (err: unknown) {
+    if (err instanceof UnsupportedRecordingError) return fatal(err);
+    throw err;
+  }
 }
 
 /**
- * Hand the recording to the transcription provider, with the URL to call back.
+ * Fetch one byte range of the recording.
  *
- * **The stub delivers its own callback**, which a real one obviously does not:
- * this is where a `fetch` to a transcription API's `POST /v2/transcript` with a
- * `webhook_url` would go, returning the moment the provider accepts the job. The
- * stub instead posts the finished transcript to `hook.url` itself, so the
- * template runs end to end with no account, no credential and no stored audio —
- * and so the fast-callback race the module doc describes is exercised on every
- * run rather than being a paragraph nobody tests.
- *
- * Note what it could NOT do today: reach `ctx.env` for an API key. A step is
- * bundled and dispatched separately from the agent bundle and is handed no tool
- * context, and the guest keeps the agent's secrets in memory rather than in
- * `process.env`. That gap is why this is a stub and not a `fetch` to a real
- * provider, and it is the same reason `research-desk`'s `gather` is one.
+ * A server that HONOURS `Range` answers 206 and sends only the window, which is
+ * the whole point: sixty segments then move the recording once between them.
+ * One that ignores it answers 200 with the entire file, which is correct but
+ * expensive — so the range is applied here as well, rather than trusting the
+ * status. Both cases have to work, because "wherever your recording is hosted"
+ * is not a server this template gets to choose.
  */
-export async function submitTranscriptionJob(upload: Upload, callbackUrl: string): Promise<string> {
-  "use step";
-
-  await report(`Submitting ${upload.name} for transcription.`);
-
-  if (upload.size <= 0) {
-    // An empty recording is not a transient fault, and retrying it three times
-    // only delays the same answer.
-    throw new FatalError(`"${upload.name}" is empty — nothing to transcribe`);
-  }
-
-  // Derived from the upload rather than minted, so a RETRY of this step submits
-  // the same job id — which is what the run's own delivery check compares
-  // against. A random id would fail that check on every attempt but the first.
-  const jobId = `job_${upload.size}_${upload.name.replace(/\W+/g, "-").toLowerCase()}`;
-
-  // The simulated provider. `callbackUrl` is `hook.url`, which is dialable from
-  // inside this container and nowhere else — see the module doc for what a real
-  // provider is handed instead.
-  const response = await fetch(callbackUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jobId, transcript: fakeTranscript(upload) }),
+async function fetchRange(
+  url: string,
+  start: number,
+  endInclusive: number,
+): Promise<{ bytes: Uint8Array; totalBytes: number }> {
+  const response = await fetch(url, {
+    headers: { Range: `bytes=${start}-${endInclusive}` },
+    signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
   });
-  if (!response.ok) {
-    // A plain throw (unlike the `FatalError`s above) is what a transient fault
-    // wants: the DevKit retries a step, and a webhook endpoint answering 5xx
-    // while the run is still committing its registration is exactly the kind of
-    // failure that clears on its own.
-    throw new Error(`Callback delivery failed: HTTP ${response.status}`);
+  if (!response.ok) throw fetchFailure(response, url);
+
+  const body = new Uint8Array(await response.arrayBuffer());
+  if (response.status === 206) {
+    return { bytes: body, totalBytes: rangeTotal(response) ?? start + body.length };
   }
+  return { bytes: body.subarray(start, endInclusive + 1), totalBytes: body.length };
+}
 
-  return jobId;
+/** The file's size out of a `Content-Range: bytes 0-65535/12345678` header. */
+function rangeTotal(response: Response): number | undefined {
+  const total = Number(/\/(\d+)$/.exec(response.headers.get("content-range") ?? "")?.[1]);
+  return Number.isFinite(total) && total > 0 ? total : undefined;
 }
 
 /**
- * Retries beyond the default 3, because a rate limit is the expected failure.
- */
-submitTranscriptionJob.maxRetries = 5;
-
-/**
- * Post-process one segment of the transcript.
+ * The failure a bad recording URL deserves.
  *
- * One step per segment, so a run that dies part-way resumes having replayed the
- * finished ones from the journal — no re-reading, no re-billing — and issues
- * exactly the calls that are missing.
+ * The split is the one every retrying caller has to make: a 404 or a 403 will
+ * answer the same way on the fourth attempt, so it is terminal, while a 5xx or a
+ * rate limit is exactly what retries are for.
  */
-export async function postProcess(segment: string, redact: boolean): Promise<string> {
-  "use step";
-
-  // One line per segment, which is what makes the fan-out legible to a page: the
-  // status is `running` for the whole batch, so without this a twelve-segment
-  // recording and a one-segment recording look identical while they run.
-  //
-  // ORDER is not guaranteed here and does not need to be. A batch issues its
-  // calls together, so their lines interleave by completion — the page renders a
-  // log, not a sequence, and `splitTranscript`'s indices are what put the
-  // TRANSCRIPT back in order.
-  await report(`Cleaning up a ${segment.split(/\s+/).length}-word segment.`);
-
-  // Stands in for whatever a real desk does per segment — speaker attribution, a
-  // model pass, a redaction service. The whole Node runtime is available in a
-  // step, unlike in the body above.
-  return redact ? redactPii(segment) : segment;
+function fetchFailure(response: Response, url: string): Error {
+  const message = `GET ${url} failed: HTTP ${response.status}`;
+  return isTransient(response.status) ? new Error(message) : new FatalError(message);
 }
 
-/**
- * File the finished transcript, and report when.
- *
- * Separate from the segment steps on purpose: a crash between the last segment
- * and the filing replays every segment for free and re-issues only the filing.
- * One step doing both would redo the expensive half whenever the cheap half
- * failed.
- */
-export async function file(_requestedBy: string, _filename: string): Promise<string> {
-  "use step";
-
-  await report("Filing the transcript.");
-  // A real desk would write to its database here, keyed on the two names above
-  // — the `_` says this stub writes nothing. It takes the two IDENTIFIERS and
-  // not the transcript itself, which is the module doc's rule about step
-  // arguments: they are serialized onto a queue, so pass an id, not a payload.
-  // Returning the timestamp rather than reading a clock in the BODY is the
-  // journaling rule again: a step's result is stable across replays where a
-  // clock read in the body is not.
-  return new Date().toISOString();
+/** The sync endpoint's failure, with whatever it said about it. */
+async function syncFailure(response: Response, segment: Segment): Promise<Error> {
+  // Two shapes, documented: `{ error_code, message }` for a request problem and
+  // `{ detail }` for auth and rate limits.
+  const body = (await response.json().catch(() => ({}))) as { message?: string; detail?: string };
+  const message = `Segment ${segment.index} (${clock(segment.startMs)}) failed: HTTP ${response.status}${
+    (body.message ?? body.detail) ? ` — ${body.message ?? body.detail}` : ""
+  }`;
+  return isTransient(response.status) ? new Error(message) : new FatalError(message);
 }
 
-// ---- Pure helpers -----------------------------------------------------------
-//
-// Everything below is a pure function of a journaled value, which is what makes
-// it legal in (or under) the body: it computes the same answer on every replay.
-
-/** Split a transcript into fixed-size segments, keeping word boundaries. */
-export function splitTranscript(transcript: string): string[] {
-  const words = transcript.split(/\s+/).filter(Boolean);
-  const segments: string[] = [];
-  for (let from = 0; from < words.length; from += SEGMENT_WORDS) {
-    segments.push(words.slice(from, from + SEGMENT_WORDS).join(" "));
-  }
-  return segments;
-}
-
-/** Words in a string. */
-function countWords(text: string): number {
-  return text.split(/\s+/).filter(Boolean).length;
-}
-
-/** Mask the two identifiers a transcript most often leaks. */
-function redactPii(segment: string): string {
-  return segment
-    .replace(/\b[\w.+-]+@[\w-]+\.[\w.]+\b/g, "[email]")
-    .replace(/\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b/g, "[phone]");
-}
-
-/**
- * A stand-in transcript, derived from the upload so the template needs no stored
- * audio.
- *
- * Deterministic on purpose — a step may legitimately be non-deterministic, but a
- * FIXTURE that changed per call would make the segment count differ between a
- * run and its own retry, which reads as a workflow bug rather than a fixture one.
- */
-function fakeTranscript(upload: Upload): string {
-  // Roughly a minute of speech per 100 KB, capped so a large upload does not
-  // fan out into hundreds of steps in a template.
-  const sentences = Math.min(24, Math.max(2, Math.round(upload.size / 100_000) + 2));
-  return Array.from(
-    { length: sentences },
-    (_unused, index) =>
-      `Segment ${index + 1} of ${upload.name}: this is where the transcribed speech would be, ` +
-      "reach us at desk@example.com or 555-010-9999 if anything looks wrong.",
-  ).join(" ");
+/** Will another attempt plausibly answer differently? */
+function isTransient(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
 }

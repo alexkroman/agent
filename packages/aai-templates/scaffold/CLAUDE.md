@@ -276,8 +276,49 @@ Three rules, all of which fail silently if broken:
   unchanged on replay.
 - **A step's arguments and return value cross a queue**, so they must be
   JSON-shaped and small. Put bytes in storage and pass the key.
-- **A step gets no tool context** — no `ctx.env`, no `ctx.db`. It is bundled
-  and dispatched separately from the agent.
+- **A step gets no tool context.** It is bundled and dispatched separately from
+  the agent, so there is no `ctx` in one — see below for how it reaches the
+  agent's env and a model anyway. `ctx.db` has no step-side equivalent yet.
+
+### A step's env, and calling a model from one
+
+A step has no `ctx`, so the two things tool code takes for granted come from
+`@alexkroman1/aai/utils` instead. Import them from THERE and not from
+`@alexkroman1/aai` — a `workflows/*.ts` module is bundled separately, and the
+root barrel would drag the whole SDK into that bundle.
+
+```ts no-check
+import { requireStepEnv, stepEnv, StepGenerateError, stepGenerate } from "@alexkroman1/aai/utils";
+import { FatalError } from "workflow";
+
+async function summarize(url: string, text: string) {
+  "use step";
+
+  // The agent's env by name — the same values a tool reads from `ctx.env`.
+  // `requireStepEnv` fails naming the key; `stepEnv` returns undefined.
+  const style = stepEnv("DIGEST_STYLE") ?? "plain";
+
+  // One model call, on the agent's own ASSEMBLYAI_API_KEY and default model.
+  return await stepGenerate(`${style} summary of:\n\n${text}`, {
+    system: "Reply with two sentences and nothing else.",
+  }).catch(stopOrRetry);
+}
+
+// The DevKit retries a step that throws, so decide which failures deserve it.
+// A rate limit does; a bad key does not.
+function stopOrRetry(err: unknown): never {
+  if (err instanceof StepGenerateError && !err.retryable) throw new FatalError(err.message);
+  throw err;
+}
+```
+
+Two things to know. **The env is what `.env` and `aai secret put` declare** —
+not your shell, even under `aai dev`, so that a step reads the same values
+before and after a deploy. List what you read in `requiredEnv` and a deploy
+checks it for you. And **`stepGenerate` is not `ctx.generate`**: it is one
+request to the AssemblyAI LLM Gateway, with no tools and no structured output,
+because bundling the AI SDK into a step artifact costs megabytes on every
+deploy. Ask it for JSON and parse the reply if you need a shape.
 
 ### The page
 

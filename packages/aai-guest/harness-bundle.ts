@@ -15,6 +15,7 @@ import { pathToFileURL } from "node:url";
 import { errorMessage } from "@alexkroman1/aai";
 import {
   createWorkflowSurface,
+  publishStepEnv,
   type SessionRuntime,
   type WorkflowSurface,
 } from "@alexkroman1/aai/runtime";
@@ -143,6 +144,14 @@ export async function loadBundle(
   state.agent = agent;
   state.createRuntime = createRuntime as CreateGuestRuntime;
   state.env = Object.freeze({ ...params.env });
+
+  // The same env the runtime resolves credentials from, reachable from a
+  // `"use step"` body — which is handed no tool context and, without this, has
+  // no way to authenticate an outbound call at all. Published BEFORE the
+  // surface is built so a step dispatched by the first replay cannot race it,
+  // and here rather than in agent mode so the studio's `test_agent` load gets
+  // the identical wiring.
+  publishStepEnv(params.env);
 
   // The compiled workflow surface rides the bundle as two string exports (see
   // `aai-cli/workflow-bundler.ts`). Absent for a project with no `workflows/`

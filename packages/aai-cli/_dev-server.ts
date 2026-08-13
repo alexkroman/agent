@@ -22,6 +22,7 @@ import {
   createWorkflowSurface,
   handleWorkflowRequest,
   type Logger,
+  publishStepEnv,
   requiredProviderEnvVars,
   startWorkflowWorldIfDeclared,
   WORKFLOW_API_PREFIX,
@@ -356,6 +357,11 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       port: backendPort,
       dataDir: path.join(cwd, ".workflow-data"),
     });
+    // What a `"use step"` body reads with `stepEnv()`. The AGENT env, not
+    // `providerEnv` below: a step must see exactly what `.env` and
+    // `aai secret put` declare, or a shell-exported key would make a workflow
+    // work here and fail after a deploy with nothing having said so.
+    publishStepEnv(env);
     const workflows = await createWorkflowSurface(worker.workflowCode, worker.stepCode);
     if (workflows && !workflowWorldStarted) {
       workflowWorldStarted = true;

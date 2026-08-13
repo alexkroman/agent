@@ -590,6 +590,11 @@ every resume, so bytes in there are re-read for the life of the run and capped b
 the request-body limit besides; a URL or the app's own storage is where they
 belong, fetched inside a `"use step"` function that runs once per execution.
 
+That is also why **no template exercises it**, and the allowlist records that:
+`transcription-desk` used to open on one, and a form field describing a file
+nothing ever read is a worse example than none — it now takes the recording's
+URL, which is what the paragraph above says to do.
+
 **`<WorkflowFields workflow="transcribe">` renders the schema half.** It takes
 either the workflow's NAME — fetching the listing itself, which is the form a
 page normally wants because the alternative is three lines (`useWorkflows()`, a
@@ -604,8 +609,10 @@ with the label humanized from the property name (`recordingId` → `Recording
 id`). It SKIPS objects and arrays deliberately: there is no honest control for
 either, and rendering an approximation would be worse than leaving the field to
 the caller, who writes it by hand in the same `<Form>` because every field is a
-plain named control. So a form is half declared and half written, and adding a
-scalar to the workflow's input schema adds a control with no client edit.
+plain named control. So a form is as declared as its schema allows — all of it
+when the input is scalars all the way down, as `transcription-desk`'s is — and
+adding a scalar to the workflow's input schema adds a control with no client
+edit.
 
 `useWorkflows()` fetches that list (the client held in a ref, read once — same
 rule as `useWorkflowRun`) for a page rendering its own chrome from it; no
