@@ -1,14 +1,16 @@
 // Copyright 2026 the AAI authors. MIT license.
-// The home page: a project sidebar plus a centered hero with one big prompt
-// box (Lovable-style). Typing into the hero creates a project and forwards
-// the prompt as the first chat turn (app.tsx startWithPrompt). This replaced
-// the three-step wizard canvas and the narrow guided-start chat panel.
+// The home page: a project sidebar plus a centered hero with a kind switcher
+// and one big prompt box (Lovable-style). Typing into the hero creates a
+// project and forwards the prompt as the first chat turn (app.tsx
+// startWithPrompt). This replaced the three-step wizard canvas and the narrow
+// guided-start chat panel.
 
+import clsx from "clsx";
 import { useState } from "react";
-import type { StudioStatus } from "./api.ts";
+import type { ProjectKind, StudioStatus } from "./api.ts";
 import { ChatStatusNote } from "./chat-status-note.tsx";
 import { isEnterSubmit, SendButton } from "./send-button.tsx";
-import { sampleStarters } from "./starters.ts";
+import { STARTERS, sampleStarters } from "./starters.ts";
 
 /** How many starter examples the hero shows — a taste, not the catalog. */
 const STARTER_SAMPLE_SIZE = 5;
@@ -49,39 +51,117 @@ export function HomeSidebar({ projects, onSelectProject }: HomeSidebarProps) {
   );
 }
 
+/**
+ * What each switcher position says and builds.
+ *
+ * The copy is per KIND rather than shared-with-a-noun-swapped because the two
+ * products are described by different sentences: a voice agent is told what to
+ * DO ("what should it do?", one sentence of persona), and a workflow app is
+ * asked for a JOB plus what comes back. The placeholder is the strongest hint
+ * either way, so each names something the mode can really build.
+ */
+type KindCopy = {
+  /** Switcher label — a noun, so the two positions read as two products. */
+  label: string;
+  heading: string;
+  blurb: string;
+  placeholder: string;
+};
+
+const KIND_COPY: Record<ProjectKind, KindCopy> = {
+  agent: {
+    label: "Voice agent",
+    heading: "What should your voice agent do?",
+    blurb: "Describe it in a sentence. I'll create a project and build the first version.",
+    placeholder: "A pizza-ordering agent with a live cart…",
+  },
+  workflow: {
+    label: "Workflow",
+    heading: "What job should your workflow run?",
+    blurb:
+      "Describe the job. I'll build a form that submits it and a page that watches the run — no phone call involved.",
+    placeholder: "Transcribe an uploaded recording and file the transcript…",
+  },
+};
+
+/** Switcher order. Voice agent first: it is the default and the common case. */
+const KIND_ORDER: ProjectKind[] = ["agent", "workflow"];
+
 type HomeHeroProps = {
   /** Undefined while `/studio/status` is loading or unreachable. */
   status: StudioStatus | undefined;
   /** A project is being created for this prompt — everything disables. */
   creating: boolean;
-  /** Create a project and forward this prompt as its first message. */
-  onStart: (prompt: string) => void;
+  /**
+   * Create a project of `kind` and forward this prompt as its first message.
+   * The kind rides along because it is not a UI preference: the server stamps
+   * it on the workspace, where it selects the coding agent's system prompt for
+   * the life of the project.
+   */
+  onStart: (prompt: string, kind: ProjectKind) => void;
 };
 
 export function HomeHero({ status, creating, onStart }: HomeHeroProps) {
   const [input, setInput] = useState("");
-  // Sampled once per mount — a fresh random five on every page load.
-  const [starters] = useState(() => sampleStarters(STARTER_SAMPLE_SIZE));
+  const [kind, setKind] = useState<ProjectKind>("agent");
+  // Sampled once per mount PER KIND — a fresh random five on every page load,
+  // and stable while the user flips the switcher back and forth (a re-sample on
+  // every flip would read as the chips being unrelated to the position).
+  const [starters] = useState(() => ({
+    agent: sampleStarters(STARTERS.agent, STARTER_SAMPLE_SIZE),
+    workflow: sampleStarters(STARTERS.workflow, STARTER_SAMPLE_SIZE),
+  }));
   // Nothing is submittable until `/studio/status` lands: a project created
   // against a server we haven't reached yet has nowhere to send its prompt.
   const ready = status !== undefined;
   const disabled = creating || !ready;
+  const copy = KIND_COPY[kind];
   const submit = () => {
     const text = input.trim();
     if (!text || disabled) return;
-    onStart(text);
+    onStart(text, kind);
   };
   return (
     <main className="flex min-h-0 flex-1 flex-col items-center justify-center gap-9 overflow-y-auto bg-cream px-6 py-10">
       <div className="flex flex-col items-center gap-3">
         <span className="eyebrow self-center">AssemblyAI Build</span>
         <h1 className="m-0 text-center font-serif text-[38px] leading-[1.12] font-normal text-balance">
-          What should your voice agent do?
+          {copy.heading}
         </h1>
-        <p className="m-0 text-center text-[13px] leading-5 text-muted">
-          Describe it in a sentence. I'll create a project and build the first version.
-        </p>
+        <p className="m-0 max-w-xl text-center text-[13px] leading-5 text-muted">{copy.blurb}</p>
       </div>
+      {/* A radio group, not tabs: this picks what will be BUILT rather than
+          revealing a panel, and it is a `fieldset` so the grouping and the
+          accessible name come from the markup. Each option is a real radio —
+          arrow keys move between them — with the segmented look on its label. */}
+      <fieldset className="m-0 flex flex-none overflow-hidden rounded-sm border border-line p-0">
+        <legend className="sr-only">What to build</legend>
+        {KIND_ORDER.map((id, i) => (
+          <label
+            key={id}
+            className={clsx(
+              "seg flex cursor-pointer items-center",
+              i > 0 && "border-l border-line",
+              kind === id ? "bg-fg text-cream" : "bg-panel text-muted hover:text-fg",
+              creating && "cursor-not-allowed opacity-60",
+            )}
+          >
+            <input
+              type="radio"
+              name="project-kind"
+              value={id}
+              className="sr-only"
+              checked={kind === id}
+              // Only `creating` disables the switcher, not `disabled`: with the
+              // status still loading there is nothing to submit, but choosing
+              // what you are about to build costs the server nothing.
+              disabled={creating}
+              onChange={() => setKind(id)}
+            />
+            {KIND_COPY[id].label}
+          </label>
+        ))}
+      </fieldset>
       <div className="flex w-full max-w-2xl flex-col gap-2 rounded-lg border border-line bg-panel p-3 shadow-md focus-within:border-line-strong">
         <textarea
           className="min-h-[72px] w-full resize-none border-none bg-transparent px-1.5 py-1 text-[14px] leading-[21px] text-fg placeholder:text-subtle focus:outline-none"
@@ -96,9 +176,7 @@ export function HomeHero({ status, creating, onStart }: HomeHeroProps) {
             }
           }}
           disabled={disabled}
-          placeholder={
-            creating ? "Creating your project…" : "A pizza-ordering agent with a live cart…"
-          }
+          placeholder={creating ? "Creating your project…" : copy.placeholder}
         />
         <div className="flex items-center justify-end">
           <SendButton className="h-9 w-9" onClick={submit} disabled={disabled} />
@@ -108,13 +186,13 @@ export function HomeHero({ status, creating, onStart }: HomeHeroProps) {
         <div className="flex flex-col items-center gap-3">
           <span className="text-xs text-subtle">Or try one of these</span>
           <div className="flex w-full max-w-3xl flex-wrap justify-center gap-2">
-            {starters.map((starter) => (
+            {starters[kind].map((starter) => (
               <button
                 type="button"
                 key={starter.label}
                 className="starter"
                 disabled={creating}
-                onClick={() => onStart(starter.prompt)}
+                onClick={() => onStart(starter.prompt, kind)}
               >
                 {starter.label}
               </button>

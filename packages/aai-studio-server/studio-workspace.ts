@@ -27,9 +27,18 @@ import {
   MAX_STUDIO_FILES,
   MAX_STUDIO_WORKSPACE_BYTES,
 } from "./studio-limits.ts";
+import type { ProjectKind } from "./studio-project-kind.ts";
 
 export type StudioWorkspace = {
   files: Record<string, string>;
+  /**
+   * What the project builds — the new-project screen's switcher, stamped at
+   * create time and read back when a coding-agent session is installed, which
+   * is what selects the system prompt (see studio-project-kind.ts). Absent on
+   * every document written before the switcher existed, which
+   * `resolveProjectKind` reads as the default (`agent`).
+   */
+  kind?: ProjectKind;
   /**
    * `filesHash` of `files`, stamped on every write so reads (project GET,
    * deploy) never recompute it. Optional because documents written before

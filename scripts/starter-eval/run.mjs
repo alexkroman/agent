@@ -22,6 +22,7 @@ import {
   checkCapabilities,
   checkMode,
   checkUi,
+  checkWorkflowShape,
   EXPECTATIONS,
   parseLoadedConfig,
 } from "./expectations.mjs";
@@ -97,15 +98,23 @@ function failureExcerpt(out) {
 }
 
 /**
- * The studio's own starter prompts. Imported from the client module rather
- * than scraped: the prompts are multi-line concatenations with comments
+ * The studio's own starter prompts, flattened across the hero's two switcher
+ * positions with each starter's KIND attached. Imported from the client module
+ * rather than scraped: the prompts are multi-line concatenations with comments
  * between them, which no regex reads reliably.
+ *
+ * The kind travels with the starter because it is what the eval has to
+ * reproduce: the studio creates a project with the switcher's position, which
+ * selects the coding agent's system prompt — so a workflow starter run as an
+ * `agent` project would be graded against a prompt no user ever sees.
  */
 async function starters() {
   const mod = await import(
     new URL("../packages/aai-studio-client/src/starters.ts", import.meta.url).href
   );
-  return mod.STARTERS;
+  return Object.entries(mod.STARTERS).flatMap(([kind, list]) =>
+    list.map((starter) => ({ ...starter, kind })),
+  );
 }
 
 async function api(key, endpoint, init = {}) {
@@ -282,7 +291,7 @@ async function waitForWorkspace(key, project, timeoutMs = 20_000) {
  * problems that want three different fixes: never verified (prompt
  * adherence), verified-and-broken (capability), and out of steps (budget).
  */
-function verdict(s, expectation, files) {
+function verdict(s, expectation, files, kind = "agent") {
   const last = s.testAgentRuns.at(-1);
   const built = Boolean(last && !last.buildFailed && !last.testsFailed);
   const source = files?.["agent.ts"] ?? "";
@@ -290,8 +299,15 @@ function verdict(s, expectation, files) {
   const caps = expectation
     ? checkCapabilities(expectation, { config, source })
     : { covered: true, missing: [], missingBuiltins: [], toolCount: 0, tooFewTools: false };
-  const mode = checkMode(config, source);
-  const ui = checkUi(expectation, files);
+  // A workflow project is graded on the workflow-app SHAPE instead of on
+  // pipeline mode and a live-state client: it has no session, so "which
+  // providers did it declare" and "does client.tsx read useAgentState" are
+  // questions about a thing that does not exist here. The page is still
+  // required — checkWorkflowShape asks for it, which is why `ui` stands down
+  // rather than being skipped outright.
+  const workflow = kind === "workflow";
+  const mode = workflow ? checkWorkflowShape(files) : checkMode(config, source);
+  const ui = workflow ? { ok: true } : checkUi(expectation, files);
   // "Ends by asking" is a real outcome, not a failure: it costs the user a
   // turn, which is the thing being minimized, so it is counted separately.
   const askedQuestion = /\?\s*$/.test(s.text.trim());
@@ -416,7 +432,13 @@ for (const [i, c] of plan.entries()) {
     `\n[${i + 1}/${plan.length}] r${c.rep + 1} ${c.label}\n  project ${project} … `,
   );
   try {
-    await api(key, "/projects", { method: "POST", body: JSON.stringify({ name: project }) });
+    // `kind` mirrors the hero's switcher: the project is created the way a
+    // user picking THIS starter would create it, so the turn runs under the
+    // same system prompt.
+    await api(key, "/projects", {
+      method: "POST",
+      body: JSON.stringify({ name: project, kind: c.kind }),
+    });
     const session = await api(key, `/projects/${project}/session`, {
       method: "POST",
       body: "{}",
@@ -431,9 +453,11 @@ for (const [i, c] of plan.entries()) {
     // an empty project and a capability check that fails everything.
     const workspace = await waitForWorkspace(key, project);
     const expectation = EXPECTATIONS.find((e) => e.label === c.label);
-    const v = verdict(summary, expectation, workspace?.files);
+    const v = verdict(summary, expectation, workspace?.files, c.kind);
     results.push({
       label: c.label,
+      // Recorded so `regrade.mjs` grades a stored run the way this one did.
+      kind: c.kind,
       rep: c.rep,
       project,
       ...v,

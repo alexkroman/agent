@@ -9,7 +9,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UIMessage } from "ai";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { AccountMenu } from "./account-menu.tsx";
-import { api, type ChatSession, type ProjectData, type StudioStatus } from "./api.ts";
+import {
+  api,
+  type ChatSession,
+  type ProjectData,
+  type ProjectKind,
+  type StudioStatus,
+} from "./api.ts";
 import { ApiError, errorText, isTransientError } from "./api-error.ts";
 import { ChatPanel, type NotifyChat } from "./chat.tsx";
 import { HomeHero, HomeSidebar } from "./home.tsx";
@@ -244,7 +250,12 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
     // The SERVER names the project — a base derived from the prompt plus a
     // random suffix, v0-style, via the same generator slugless CLI deploys
     // use (aai-server/slug-generate.ts). The client never mints names.
-    mutationFn: (prompt: string) => api.createProject(bearer, { prompt }),
+    //
+    // `kind` is the hero's switcher position and is only settable HERE: the
+    // server stamps it on the workspace at create time, where it selects the
+    // coding agent's system prompt for every later session install.
+    mutationFn: ({ prompt, kind }: { prompt: string; kind: ProjectKind }) =>
+      api.createProject(bearer, { prompt, kind }),
     onSuccess: (created) => {
       selectProject(created.name);
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects });
@@ -316,14 +327,15 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
   });
 
   // Hero start: typing the first message creates a project (named from the
-  // prompt server-side) and forwards it as the first chat turn.
-  const startWithPrompt = (prompt: string) => {
+  // prompt server-side, of the kind the hero's switcher selected) and forwards
+  // it as the first chat turn.
+  const startWithPrompt = (prompt: string, kind: ProjectKind) => {
     // The hero disables while pending; this guard covers the same-tick
     // race (Enter twice before the re-render) so one prompt never creates
     // two projects.
     if (createProject.isPending) return;
     setPendingPrompt(prompt);
-    createProject.mutate(prompt);
+    createProject.mutate({ prompt, kind });
   };
 
   // The Preview pane's report that the platform is not serving the slug it

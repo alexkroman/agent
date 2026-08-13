@@ -1,47 +1,28 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The product-shape half of the studio preamble: what KIND of thing to build
- * (a voice agent or a workflow app), where its data lives, and which providers
- * and models to reach for.
+ * The SDK-derived half of the studio preamble: where an agent's data lives,
+ * and which providers and models to reach for.
  *
  * Split out of `studio-preamble.ts` because that file is one 480-line template
- * literal against a 500-line cap, and these three sections are the ones that
- * move when the SDK does — they are also the only part of the preamble that
+ * literal against a 500-line cap, and these sections are the ones that move
+ * when the SDK does — they are also the only part of the preamble that
  * interpolates values read from the SDK itself. Composed back in at exactly
  * the position it was extracted from, so the prompt the agent sees is
  * unchanged.
+ *
+ * The product-shape section that used to open this file ("Voice Agents and
+ * Workflow Apps") is now MODE-DEPENDENT and lives in `studio-preamble-mode.ts`,
+ * composed in immediately before this text — a workflow project's coding agent
+ * must not read "default to a VOICE agent". Everything here is shared by both
+ * modes, the provider rules included: "actually make it a voice agent" is one
+ * message away in either project.
  */
 
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL } from "@alexkroman1/aai/llm";
 import { ASSEMBLYAI_GATEWAY_MODELS } from "./studio-llm.ts";
 
-/** Sections: Voice Agents and Workflow Apps → Data Persistence → AI, Models, and Providers. */
-export const STUDIO_SDK_GUIDANCE = `## Voice Agents and Workflow Apps
-
-- **Default to a VOICE agent** — \`agent()\`, a microphone, a session. That is
-  what someone asking for "an agent" means, and every guideline above about
-  prompts, tools and spoken replies assumes it.
-- **Build a WORKFLOW APP when the front door is a FORM rather than a call** —
-  the user asks to submit a job, watch it run and read the result: an
-  overnight digest, an upload that takes minutes, anything waiting on a
-  third-party callback. Declare it with \`workflowApp({ name, workflows })\`
-  from "@alexkroman1/aai" and mount its client.tsx with \`page()\` instead of
-  \`client()\`. It has no session and no LLM loop, so systemPrompt, tools,
-  maxSteps, state and every provider field are TYPE ERRORS on one — do not
-  reach for \`agent({ page: "static" })\` and add them back.
-- Workflow BODIES go in \`workflows/*.ts\` — the build transforms that
-  directory and nothing else, so a \`"use workflow"\` body written in agent.ts
-  runs inline with no durability and nothing reporting it. The body replays
-  from the top on every resume (no fetch, no clock, no randomness — those go
-  in a \`"use step"\` function), and a step gets no ctx: no ctx.env, no ctx.db.
-- A workflow app NEEDS the database on, same as ctx.db: build it, then tell
-  the user to enable it in Settings → Database. A voice agent can also start
-  a run from a tool (\`ctx.workflows.start\`) and answer the turn — that is the
-  other shape, and it stays an \`agent()\`.
-- The reference below has the full section ("Workflow apps — workflowApp()"):
-  the declaration, the body rules, the page, and the HTTP routes.
-
-## Data Persistence and Storage
+/** Sections: Data Persistence → AI, Models, and Providers. */
+export const STUDIO_SDK_GUIDANCE = `## Data Persistence and Storage
 
 - \`ctx.state\` is session-scoped scratch — it does not survive the call.
   When the user asks for data that persists across calls, build on

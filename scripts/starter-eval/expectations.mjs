@@ -309,6 +309,40 @@ export function checkMode(config, source) {
 }
 
 /**
+ * A WORKFLOW project's shape, which is what `checkMode` cannot ask about.
+ *
+ * The hero's Workflow position creates the project under a system prompt whose
+ * default is a STATIC workflow app, so "pipeline mode with all three stages on
+ * AssemblyAI" is the wrong question here — there is no session and no pipeline.
+ * The right one is whether the four pieces that make a workflow app exist, and
+ * each is a thing the coding agent reaches for the OTHER shape by omitting: a
+ * `workflowApp()` declaration rather than an `agent()`, a body under
+ * `workflows/` (the only directory the build transforms, so a body in agent.ts
+ * is undurable and silent about it), and a page — which is not optional here,
+ * because it is the product's whole front door — mounted with `page()` rather
+ * than `client()`, since a static page opened as a session dials a `/websocket`
+ * the server declines.
+ *
+ * Checked against the FILES rather than the loaded config for the same reason
+ * the capability check reads agent.ts: these are structural facts the agent
+ * cannot edit a test to satisfy.
+ */
+export function checkWorkflowShape(files) {
+  const source = files?.["agent.ts"] ?? "";
+  const client = files?.["client.tsx"];
+  const problems = [];
+  if (!/\bworkflowApp\s*\(/.test(source)) problems.push("no workflowApp() declaration");
+  if (!Object.keys(files ?? {}).some((p) => p.startsWith("workflows/"))) {
+    problems.push("no workflows/ body");
+  }
+  if (client === undefined) problems.push("no client.tsx (the front door)");
+  else if (!/\bpage\s*\(/.test(client)) problems.push("client.tsx does not mount with page()");
+  return problems.length === 0
+    ? { ok: true }
+    : { ok: false, note: `workflow-shape: ${problems.join("; ")}` };
+}
+
+/**
  * Did the built agent cover what the prompt enumerated?
  *
  * Deliberately generous on naming and strict on presence: the failure this

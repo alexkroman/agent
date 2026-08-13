@@ -26,11 +26,12 @@ import type { WorkspaceStore } from "aai-server/workspace-store";
 import { MAX_CHAT_STEPS } from "./studio-limits.ts";
 import { studioLlmModelId } from "./studio-llm.ts";
 import type { PreviewOrigin } from "./studio-preview.ts";
+import { resolveProjectKind } from "./studio-project-kind.ts";
 import { studioSystemPrompt } from "./studio-prompt.ts";
 import type { SessionEntry } from "./studio-session-entry.ts";
 import type { SessionFleet } from "./studio-session-fleet.ts";
 import { chatUrlForGuest } from "./studio-session-wire.ts";
-import { getWorkspace } from "./studio-workspace.ts";
+import { getWorkspace, type StudioWorkspace } from "./studio-workspace.ts";
 
 /** Deadline for installing a session in the guest (workspace transfer). */
 const SESSION_INIT_TIMEOUT_MS = 60_000;
@@ -89,7 +90,14 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
     scope: string,
     project: string,
     apiKey: string,
-    files: Record<string, string>,
+    /**
+     * The project's workspace — its files AND its kind. Passed whole rather
+     * than as a file map: the kind is what selects the system prompt, and a
+     * signature that took only the files could not carry it, which is how the
+     * two would drift into a workflow project's agent running under the voice
+     * prompt.
+     */
+    workspace: StudioWorkspace,
   ) {
     return {
       // The guest pins (scope, project) on its first install and refuses any
@@ -97,9 +105,9 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
       // 409, not one tenant's workspace in another tenant's sandbox.
       scope,
       project,
-      files,
+      files: workspace.files,
       apiKey,
-      system: studioSystemPrompt(),
+      system: studioSystemPrompt(resolveProjectKind(workspace.kind)),
       model: studioLlmModelId(env),
       ...(env.STUDIO_LLM_REGION === "eu" ? { region: "eu" as const } : {}),
       maxSteps: MAX_CHAT_STEPS,
@@ -136,7 +144,7 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
     const chatToken = existingToken ?? randomBytes(32).toString("base64url");
     await warm.conn.sendRequest(
       "studio/session-init",
-      { ...sessionParams(scope, project, apiKey, workspace.files), chatToken },
+      { ...sessionParams(scope, project, apiKey, workspace), chatToken },
       SESSION_INIT_TIMEOUT_MS,
     );
     return chatToken;
@@ -245,7 +253,7 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
       // bogus project never reaches the registry, and before the spawn because
       // the spawn is exactly the duplicate this prevents.
       const adopt = (): Promise<BrokeredSession | null> =>
-        fleet.adopt(scope, project, sessionParams(scope, project, apiKey, workspace.files));
+        fleet.adopt(scope, project, sessionParams(scope, project, apiKey, workspace));
       const adopted = await adopt();
       if (adopted) return adopted;
 

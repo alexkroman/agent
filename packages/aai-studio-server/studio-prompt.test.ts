@@ -140,8 +140,65 @@ describe("studioSystemPrompt", () => {
     expect(prompt).toContain("`pnpm dev` / `pnpm test` / `pnpm build` loop");
   });
 
-  test("is cached across calls", () => {
+  test("is cached across calls, per kind", () => {
     expect(studioSystemPrompt()).toBe(studioSystemPrompt());
+    expect(studioSystemPrompt("workflow")).toBe(studioSystemPrompt("workflow"));
+    // One cache entry per kind, not one entry the second caller overwrites —
+    // a studio replica serves both kinds, interleaved.
+    expect(studioSystemPrompt("agent")).not.toBe(studioSystemPrompt("workflow"));
+  });
+
+  test("defaults to the voice-agent prompt", () => {
+    // Every project written before the switcher existed is a voice agent, and
+    // so is every caller that names no kind (the CLI's first push, evals).
+    expect(studioSystemPrompt()).toBe(studioSystemPrompt("agent"));
+  });
+
+  test("names the transcription-desk template in the workflow prompt", () => {
+    // The mode's default is a STATIC workflow app, and the template is how it
+    // gets one: `use_template` lands the whole working front door (form,
+    // durable body, webhook resume, watching page) where a prose description
+    // lands the agent's best guess at it. The other workflow shape — a voice
+    // agent whose tool starts a run — is what a model reaches for unprompted,
+    // so the prompt has to name the file to copy, not just describe the shape.
+    const prompt = studioSystemPrompt("workflow").replace(/\s+/g, " ");
+    expect(prompt).toContain("Default to a STATIC workflow app");
+    expect(prompt).toContain("Start from the `transcription-desk` template");
+    expect(prompt).toContain("use_template");
+    // Mounted with page(), never client() — a static page opened as a session
+    // dials a /websocket the server declines.
+    expect(prompt).toContain("page({ name, component })");
+    // The escape hatch it must NOT take: workflowApp() is that declaration
+    // with the discriminant already set, and the fields it refuses are refused
+    // on purpose.
+    expect(prompt).toContain('agent({ page: "static" })');
+    // Bodies are transformed only under workflows/, and runs need the database.
+    expect(prompt).toContain("Bodies go in `workflows/*.ts` and nowhere else");
+    expect(prompt).toContain("Settings → Database");
+  });
+
+  test("the two prompts share everything that is not mode-specific", () => {
+    // The workflow prompt is the SAME arc with five fragments swapped, not a
+    // second preamble: the tools, the write-then-typecheck inner loop, the
+    // "you cannot publish" rule, the refusals and the whole reference below
+    // are identical, and two copies of that would drift within a release.
+    const workflow = studioSystemPrompt("workflow");
+    for (const shared of [
+      "AssemblyAI Build coding agent",
+      "test_agent",
+      "You cannot publish",
+      "Act, don't propose",
+      "## Refusals",
+      "Default to a cascaded (pipeline-mode) agent",
+      "# aai framework reference (scaffold CLAUDE.md)",
+      "## `agent()` API",
+    ]) {
+      expect(workflow, shared).toContain(shared);
+    }
+    // And the voice-agent guidance that WOULD contradict it is gone: nothing
+    // here speaks, so there is no prompt or greeting to write voice rules for.
+    expect(workflow).not.toContain("Replies are spoken aloud");
+    expect(workflow).toContain("Nothing here is spoken");
   });
 
   test("falls back to the built-in guide when the scaffold file is absent", () => {

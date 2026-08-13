@@ -60,7 +60,6 @@ import { authMw } from "aai-server/middleware";
 import { TtlCache } from "aai-server/platform-barrel";
 import { RESERVED_SLUGS } from "aai-server/schemas";
 import { verifySlugOwner } from "aai-server/secrets";
-import { generatedSlug } from "aai-server/slug-generate";
 import { userApiKeySecretName } from "aai-server/supabase-auth";
 import { WorkspaceConflictError } from "aai-server/workspace-store";
 import { type Context, Hono } from "hono";
@@ -78,8 +77,8 @@ import type { StudioRateLimiters } from "./studio-rate-limit.ts";
 import { createRouteLimits } from "./studio-route-limits.ts";
 import {
   CreateProjectSchema,
+  generateProjectName,
   ProjectNameSchema,
-  projectBaseFromPrompt,
   StudioFileSchema,
   SyncSourceSchema,
 } from "./studio-schemas.ts";
@@ -129,11 +128,6 @@ export type StudioRouteOptions = {
    */
   previewQueue?: PreviewQueue;
 };
-
-/** Server-generated project name: prompt-derived base + random suffix. */
-function nameFromPrompt(prompt: string | undefined): string {
-  return generatedSlug(prompt ? projectBaseFromPrompt(prompt) : undefined);
-}
 
 function validateProject(name: string | undefined): string {
   const parsed = ProjectNameSchema.safeParse(name);
@@ -227,21 +221,25 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     const scope = requestScope(c);
     const limited = await limits.projectCreate(scope, c.req.raw);
     if (limited) return limited;
-    const { name, prompt } = c.req.valid("json");
+    const { name, prompt, kind } = c.req.valid("json");
     // No explicit name: the server generates one, v0-style — a readable base
     // from the creating prompt plus a random suffix, via the same generator
     // slugless CLI deploys use (see aai-server/slug-generate.ts). The suffix
     // makes a same-scope collision negligible; one retry absorbs it anyway.
-    const attempts = name ? [name] : [nameFromPrompt(prompt), nameFromPrompt(prompt)];
+    const attempts = name ? [name] : [generateProjectName(prompt), generateProjectName(prompt)];
     // Creation is atomic at the store (versioned insert): two concurrent
     // creates — even on different replicas — cannot both succeed, so the
     // loser can never reset the winner's files. No lock needed here.
     for (const candidate of attempts) {
       try {
+        // `kind` is stamped once, here: it selects the coding agent's system
+        // prompt at every later session install (studio-session-ensure.ts), so
+        // it has to outlive the request that chose it.
         const workspace = await createWorkspace(c.env.workspaces, scope, candidate, {
           files: starterFiles(),
+          kind,
         });
-        return c.json({ name: candidate, files: workspace.files }, 201);
+        return c.json({ name: candidate, files: workspace.files, kind: workspace.kind }, 201);
       } catch (err) {
         if (!(err instanceof WorkspaceConflictError)) throw err;
       }

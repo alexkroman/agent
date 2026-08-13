@@ -26,7 +26,10 @@ The browser studio's server side (documented below):
   database switch across both environments, and the post-deploy hook that
   provisions a newly claimed slug), `studio-workspace.ts` (project file
   store), `studio-prompt.ts`
-  (system prompt from the scaffold CLAUDE.md), `studio-static.ts` (serves
+  (system prompt from the scaffold CLAUDE.md, one per project kind),
+  `studio-project-kind.ts` (voice agent vs static workflow app — the
+  new-project switcher's choice), `studio-preamble-mode.ts` (the five preamble
+  fragments that differ between them), `studio-static.ts` (serves
   the built client)
 
 ## Browser studio
@@ -109,6 +112,38 @@ voice agents without the CLI:
   shareable `/studio/chat/<name>` URL: the studio serves the shell for that
   path and the client syncs selection with pushState/popstate. An explicit
   `name` in the create body remains for programmatic callers (evals, tests).
+- **A project has a KIND, chosen once at create time, and it selects the coding
+  agent's SYSTEM PROMPT** (`studio-project-kind.ts`; the hero's Agent/Workflow
+  switcher sends it, `POST /studio/projects` stamps it on the workspace).
+  `agent` is a voice session; `workflow` is a static workflow app —
+  `workflowApp()`, a form, durable runs, no microphone — and its prompt's
+  default is the `transcription-desk` template rather than an `agent()`.
+  - **It lives on the WORKSPACE, not on a request.** The prompt is installed
+    per session (`studio/session-init` → `sessionParams` in
+    studio-session-ensure.ts), which happens again on every project open, page
+    reload, CLI push refresh and cross-replica adopt — so a per-request flag
+    would leave the second tab building the other product. That is also why
+    `sessionParams` takes the whole `StudioWorkspace` rather than its file map:
+    a signature carrying only the files cannot carry the kind.
+  - **Absent reads as `agent`** (`resolveProjectKind`, which narrows an
+    `unknown` because the value comes out of a stored JSON document). Every
+    workspace written before the switcher existed lacks the field and was built
+    as a voice agent, so that is the only default that is not a guess — and
+    it is what a caller naming no kind (the CLI's first push, evals) gets.
+  - **The prompt is ONE preamble with five fragments swapped**
+    (`studio-preamble-mode.ts`, which names them and says why those five): the
+    overview line, the product-shape section, the spoken-replies rule, the
+    client.tsx section, and the alignment examples. Everything else — the
+    tools, the write-then-typecheck inner loop, "you cannot publish", the
+    refusals, and the scaffold reference below it — is shared, because two
+    copies of ~400 lines drift inside a release. The reference is shared
+    deliberately too: it documents `agent()` AND `workflowApp()`, and a project
+    that changes shape mid-conversation must not lose half of it.
+  - **The kind is a default, not a cage.** Both prompts tell the agent to
+    switch shapes when the user asks for the other one outright ("actually I
+    want to call it on the phone"), because re-creating the project would throw
+    away the work. Nothing rewrites the stamp when that happens: it decides
+    which prompt the project runs under, not what the files may contain.
 - **Chat runs IN the project's sandbox, and the browser connects to it
   DIRECTLY** — mirroring the voice path. `POST /studio/projects/:project/
   session` (rate-limited; `studio-session-broker.ts`) boots or reuses a
