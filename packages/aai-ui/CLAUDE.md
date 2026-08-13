@@ -296,6 +296,27 @@ put on a call. It is reported in `GET /client-config` so a browser knows before
 it dials, and `aai dev` and the deployed guest honour it identically: a page
 mounted with `client()` by mistake fails locally, not after a deploy.
 
+**A workflow app therefore needs NO provider credential, and two places had to
+learn that separately.** An agent declaring no `stt`/`llm`/`tts` gets the
+all-AssemblyAI pipeline injected (`defaultProviders`), which for a voice agent
+is the whole point and for a page is a credential nothing will ever dial — so
+`requiredProviderEnvVars` returns `[]` for `page: "static"` (the preflights: it
+had `aai dev` reaching for the logged-in key and dying `not_logged_in`, and the
+deploy preflight demanding a key the agent does not use), and `createRuntime`
+DEFERS resolving those providers instead of doing it at construction (the
+runtime: `resolveLlm` throws on a missing key, so a workflow app could not boot
+at all — under `aai dev` it never started, and deployed it is a 500 on the
+workflow API of an app whose workflows are fine, which is the case
+`workflow-api.ts`'s `engine` doc names). Both templates ship exactly this shape,
+so `aai init -t link-digest && aai dev` is the reproduction.
+
+The check keys off `page` rather than the descriptors because by the time a
+config reaches the deploy preflight the injection has already happened: "declared
+nothing" and "declared the default" are the same object there. Deferring rather
+than skipping keeps the honest error for the one path that can still open a
+session on a static agent — an embedder passing `createServer({ telephony: true
+})` — which resolves at session start and reports the missing key by name.
+
 ### The API is `ctx.workflows` spelled over HTTP, and nothing more
 
 ```text
@@ -339,6 +360,25 @@ and every route requires it as a bearer; the platform forwards the header, and
 unset is the documented default, and the platform's per-IP limits
 (`WORKFLOW_IP_RATE_LIMIT`, and a much tighter one on `POST /runs`) are what bound
 the cost in the meantime.
+
+### Two vocabularies use the word "name", and mixing them is silent
+
+A WDK run record's `workflowName` is the COMPILER's identifier —
+`workflow//./workflows/digest//digestFlow`, the same string as `workflowId`,
+which the DevKit's own docs call machine-readable and hand to
+`parseWorkflowName()` before showing anyone. Ours is the key in
+`agent({ workflows })`, which is what `WorkflowRunBase.workflow` promises.
+`workflow-client.ts` translates in both directions, and both were once missing:
+the keyless read (`GET /workflows/runs` with no `key`, i.e. `ctx.workflows
+.recent`) filtered by the DECLARED name, which matches no stored run, so it
+answered `[]` for every workflow and `aai workflow runs <name>` printed "No runs
+of X yet" for every agent — while every snapshot reported the machine id as its
+`workflow`, which `research-desk`'s status tool reads down the phone. `find` was
+unaffected: it goes through our own key index, which is keyed by declared name.
+
+Neither could be caught by a stub, which is the reusable part: a fake adapter
+answers with whatever name the test wrote, so `workflow-client.test.ts`'s fake
+now stores runs under the compiler id and filters by it.
 
 ### Watching a run
 

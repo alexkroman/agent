@@ -28,7 +28,7 @@ async function buildS2sSessionConfig(agentOverrides: Record<string, unknown>) {
     executeTool: vi.fn(),
     env: { ASSEMBLYAI_API_KEY: "k" },
     s2sConfig: DEFAULT_S2S_CONFIG,
-    pipelineProviders: undefined,
+    pipelineProviders: () => null,
     logger: silentLogger,
   } as never);
   const transport = build({
@@ -141,11 +141,11 @@ describe("createTransportFactory (pipeline)", () => {
       executeTool: vi.fn(),
       env: { ASSEMBLYAI_API_KEY: "k" },
       s2sConfig: DEFAULT_S2S_CONFIG,
-      pipelineProviders: {
+      pipelineProviders: () => ({
         stt: { opener: { name: "s", open: vi.fn() }, apiKey: "k" },
         tts: { opener: { name: "t", open: vi.fn() }, apiKey: "k" },
         llm: {} as never,
-      },
+      }),
       logger: silentLogger,
     } as never);
     factory({
@@ -158,5 +158,56 @@ describe("createTransportFactory (pipeline)", () => {
       callbacks: {} as TransportCallbacks,
     });
     expect(build).toHaveBeenCalledWith(expect.objectContaining({ [field]: value }));
+  });
+
+  test("a pipelineProviders thunk that throws reports ITS error, not 'no transport'", () => {
+    // Why the dep is a thunk at all: `createRuntime` defers this resolution for
+    // a `page: "static"` agent, whose injected default providers must not be
+    // dialled — and a static agent given a voice surface by an embedder
+    // (`createServer({ telephony: true })`) then resolves here. Passing a plain
+    // `null` for that case would answer "no transport for session" and bury the
+    // real cause.
+    const factory = createTransportFactory({
+      agent: makeAgent({ page: "static" }),
+      agentConfig: {} as never,
+      toolSchemas: [],
+      executeTool: vi.fn(),
+      env: {},
+      s2sConfig: DEFAULT_S2S_CONFIG,
+      pipelineProviders: () => {
+        throw new Error(
+          "AssemblyAI LLM: missing API key. Set ASSEMBLYAI_API_KEY in the agent env.",
+        );
+      },
+      logger: silentLogger,
+    } as never);
+    expect(() =>
+      factory({
+        sessionOpts: {
+          id: "s1",
+          agent: "a",
+          client: { send: vi.fn(), sendAudio: vi.fn() } as never,
+        },
+        systemPrompt: "sp",
+        callbacks: {} as TransportCallbacks,
+      }),
+    ).toThrow(/missing API key/);
+  });
+
+  test("is not called at construction — only when a transport is built", () => {
+    // The deferral is the whole point: a workflow app builds a runtime, serves
+    // its HTTP API, and never resolves a provider credential.
+    const pipelineProviders = vi.fn(() => null);
+    createTransportFactory({
+      agent: makeAgent({ page: "static" }),
+      agentConfig: {} as never,
+      toolSchemas: [],
+      executeTool: vi.fn(),
+      env: {},
+      s2sConfig: DEFAULT_S2S_CONFIG,
+      pipelineProviders,
+      logger: silentLogger,
+    } as never);
+    expect(pipelineProviders).not.toHaveBeenCalled();
   });
 });

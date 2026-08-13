@@ -39,6 +39,20 @@ describe("missingCredentials", () => {
     ).toEqual([]);
   });
 
+  test("blocks no deploy of a workflow app over a provider key it never dials", () => {
+    // The config read here is `__aaiConfig`, i.e. post-`defaultProviders`, so a
+    // static agent that declared nothing arrives carrying the whole injected
+    // AssemblyAI triple. Its front door is a form; the deploy must not demand a
+    // credential for a session that cannot be opened.
+    const workflowApp: PreflightConfig = { page: "static", ...PIPELINE_AGENT };
+    expect(missingCredentials(workflowApp, {})).toEqual([]);
+  });
+
+  test("still names a workflow app's own requiredEnv keys", () => {
+    const workflowApp: PreflightConfig = { page: "static", requiredEnv: ["STRIPE_KEY"] };
+    expect(missingCredentials(workflowApp, {})).toEqual(["STRIPE_KEY"]);
+  });
+
   test("an empty-string credential counts as missing", () => {
     // An empty credential authenticates nothing, so it must not read as set.
     expect(missingCredentials(S2S_AGENT, { ASSEMBLYAI_API_KEY: "" })).toContain(

@@ -61,7 +61,10 @@ import { buildWorkflows } from "./workflow-bundler.ts";
  *   can't mask one that would be missing both here and after deploy.
  */
 export function agentEnvWarnings(
-  agentDef: Pick<AgentDef, "stt" | "llm" | "tts" | "s2s" | "requiredEnv">,
+  // `page` because a workflow app needs no provider credential at all — see
+  // `requiredProviderEnvVars`. Omitted here, every static agent was warned
+  // about an AssemblyAI key it never dials.
+  agentDef: Pick<AgentDef, "stt" | "llm" | "tts" | "s2s" | "requiredEnv" | "page">,
   env: Record<string, string>,
   shellEnv: Record<string, string | undefined> = process.env,
 ): string[] {
