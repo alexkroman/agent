@@ -10,6 +10,7 @@
  */
 
 import { safeJsonParse } from "@alexkroman1/aai/utils";
+import { createParser } from "eventsource-parser";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
 
 /**
@@ -104,13 +105,42 @@ function endingFor(event: string): "settled" | "fallback" | undefined {
 type SseFrame = { event: string; data: unknown };
 
 /**
- * Parse an SSE byte stream into frames.
+ * Parse an SSE byte stream into frames, with `eventsource-parser`.
  *
- * Hand-rolled rather than pulled in, because the subset in use is small and
- * fixed (`event:` + one `data:` line, blank-line terminated) and the failure
- * mode of a parser that is too clever here is a page that silently stops
- * updating. It buffers across chunk boundaries, which is the one thing a naive
- * split gets wrong: a frame is not guaranteed to arrive whole.
+ * The parser is `aai-studio-client`'s already (`src/api-events.ts`), and it is
+ * catalogued — plus a transitive dependency of `@ai-sdk/provider-utils`, so it
+ * is in this package's tree either way. Adopting it here retires the hand-rolled
+ * line splitting this held, which was justified on the subset in use being
+ * "small and fixed" — true of our own server, and not of what sits between it
+ * and the page:
+ *
+ * - It split on `"\n\n"` only. The spec permits `\n`, `\r\n` and `\r`, and a
+ *   CRLF stream is `\r\n\r\n` — no two adjacent `\n`, so **not one frame ever
+ *   parsed** and `pump` fell through to `"fallback"` on the clean end. Silently
+ *   dropping to the poll is the exact cost this stream exists to avoid, and an
+ *   intermediary re-terminating lines is not our choice to make.
+ * - `line.startsWith("event: ")` required the space the spec makes optional.
+ * - It kept only the LAST `data:` line rather than joining a multi-line one.
+ *
+ * Those three are what `workflow-events.test.ts` pins, and they are the three
+ * that DISCRIMINATE — checked by running the new specs against the old parser.
+ * Comment frames and a leading BOM were already fine and are not credited here:
+ * a heartbeat has no `event:` line, so the old `parseFrame` dropped it anyway,
+ * and `TextDecoder` strips the BOM before either parser sees a byte.
+ *
+ * Three properties of the parser this leans on. `feed` invokes `onEvent`
+ * SYNCHRONOUSLY for every complete event in the chunk, so a batch is collected
+ * per read and yielded in arrival order — the generator shape, and therefore
+ * `pump`, is unchanged. An event with no `data:` line at all is not dispatched
+ * (also per spec); every frame this route emits carries one, since
+ * `workflow-api-events.ts` writes `event:` and `data:` together. And a chunk
+ * ending in a lone `\r` holds that byte back, because it may yet turn out to be
+ * the first half of a `\r\n` — so a CR-ONLY stream chunked per frame dispatches
+ * one frame behind, and its last frame not at all (it would need
+ * `reset({ consume: true })`, which would also consume a genuinely truncated
+ * frame as if it were whole). Nothing emits CR-only endings, and the outcome if
+ * anything did is the safe one: a stream that ends with no final frame is
+ * already read as a dropped connection and falls back to the poll.
  */
 async function* sseFrames(
   body: ReadableStream<Uint8Array>,
@@ -118,36 +148,33 @@ async function* sseFrames(
 ): AsyncGenerator<SseFrame> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
-  let buffer = "";
+  let batch: SseFrame[] = [];
+  const parser = createParser({
+    onEvent: ({ event, data }) => {
+      // An unnamed event cannot be classified by `endingFor`, and this route
+      // names every frame it sends.
+      if (event === undefined) return;
+      // `safeJsonParse` rather than a local try/catch: an unparseable frame is
+      // not a reason to tear the stream down (every frame carries a WHOLE
+      // snapshot, so the next one restates the same state), and the SDK already
+      // owns that decision.
+      batch.push({ event, data: safeJsonParse(data) });
+    },
+  });
   try {
     while (!signal.aborted) {
       const { done, value } = await reader.read();
       if (done) return;
-      buffer += decoder.decode(value, { stream: true });
-      let split = buffer.indexOf("\n\n");
-      while (split !== -1) {
-        const raw = buffer.slice(0, split);
-        buffer = buffer.slice(split + 2);
-        const frame = parseFrame(raw);
-        if (frame) yield frame;
-        split = buffer.indexOf("\n\n");
-      }
+      parser.feed(decoder.decode(value, { stream: true }));
+      if (batch.length === 0) continue;
+      const frames = batch;
+      batch = [];
+      // An explicit loop, not `yield*`: async delegation awaits the array's
+      // iterator per element, which adds turns of the microtask queue for no
+      // reason and puts the frame count into this module's timing.
+      for (const frame of frames) yield frame;
     }
   } finally {
     reader.cancel().catch(() => undefined);
   }
-}
-
-function parseFrame(raw: string): SseFrame | undefined {
-  let event: string | undefined;
-  let data: string | undefined;
-  for (const line of raw.split("\n")) {
-    if (line.startsWith("event: ")) event = line.slice(7).trim();
-    else if (line.startsWith("data: ")) data = line.slice(6);
-  }
-  if (event === undefined) return;
-  // `safeJsonParse` rather than a local try/catch: an unparseable frame is not a
-  // reason to tear the stream down (every frame carries a WHOLE snapshot, so the
-  // next one restates the same state), and the SDK already owns that decision.
-  return { event, data: data === undefined ? undefined : safeJsonParse(data) };
 }

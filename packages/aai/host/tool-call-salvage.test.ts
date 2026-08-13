@@ -83,15 +83,66 @@ describe("salvageJson", () => {
   });
 });
 
+describe("what jsonrepair adds beyond the two hand-rolled pre-passes", () => {
+  // The pre-passes handled a raw control char and an anchored fence, and nothing
+  // else. These are shapes models do emit that used to reach the paid tier.
+  test("single-quoted strings", async () => {
+    expect(await parsed("{'path':'a.ts','content':'x'}")).toEqual({ path: "a.ts", content: "x" });
+  });
+
+  test("unquoted keys", async () => {
+    expect(await parsed('{path:"a.ts"}')).toEqual({ path: "a.ts" });
+  });
+
+  test("Python's None / True / False", async () => {
+    expect(await parsed('{"done":False,"note":None,"ok":True}')).toEqual({
+      done: false,
+      note: null,
+      ok: true,
+    });
+  });
+
+  test("comments", async () => {
+    expect(await parsed('{"path":"a.ts" /* the file */}')).toEqual({ path: "a.ts" });
+  });
+
+  test("recovers a field parsePartialJson would have SILENTLY DROPPED", async () => {
+    // The hazard the empty-object check exists for: `parsePartialJson` calls this
+    // a `repaired-parse` and hands back `{}`, so taking its answer would run the
+    // tool with no arguments and report success. Pinned end to end because the
+    // ordering, not either library, is what makes it right.
+    await expect(parsePartialJson('{path:"a.ts"}')).resolves.toMatchObject({
+      state: "repaired-parse",
+      value: {},
+    });
+    expect(await parsed('{path:"a.ts"}')).toEqual({ path: "a.ts" });
+  });
+
+  test("a tool that really takes no arguments still salvages to {}", async () => {
+    // The other side of that check — `{}` is a legitimate answer when it is the
+    // whole object, so preferring the repair must not turn it into a null.
+    expect(await parsed("{}")).toEqual({});
+  });
+
+  test("prose AFTER a closing fence is left to the model tier", async () => {
+    // Not covered, deliberately. `jsonrepair` reads the trailing sentence as a
+    // second document and answers with an ARRAY, and picking an element out of
+    // it is the "latched onto a fragment" guess the object guard exists to
+    // refuse. Tier 2 is the right answer for this one.
+    expect(await salvageJson('```json\n{"path":"a.ts"}\n```\nLet me know!')).toBeNull();
+  });
+});
+
 describe("what the SDK already covers", () => {
-  // This module only exists for what parsePartialJson does NOT handle. If
-  // these expectations ever flip, delete the corresponding pre-pass.
+  // `parsePartialJson` runs first and alone on the happy path, so what it does
+  // NOT handle is what justifies the `jsonrepair` pass behind it. If these
+  // expectations ever flip, that pass has less to do.
   test("parsePartialJson repairs structure but not raw control chars or fences", async () => {
     await expect(parsePartialJson('{"a":"b')).resolves.toMatchObject({ state: "repaired-parse" });
     await expect(parsePartialJson('{"a":"b",}')).resolves.toMatchObject({
       state: "repaired-parse",
     });
-    // The two we add:
+    // The two the second pass was originally added for:
     await expect(parsePartialJson('{"a":"one\ntwo"}')).resolves.toMatchObject({
       state: "failed-parse",
     });

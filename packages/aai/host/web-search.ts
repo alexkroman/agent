@@ -20,7 +20,7 @@
  * failure the operator would investigate.
  */
 
-import { decodeHTML } from "entities";
+import { Parser } from "htmlparser2";
 import { z } from "zod";
 import { FETCH_TIMEOUT_MS } from "../sdk/constants.ts";
 import type { ToolDef } from "../sdk/types.ts";
@@ -46,23 +46,28 @@ const DDG_HEADERS = {
 const MAX_SEARCH_RESULTS = 10;
 
 /**
- * Full HTML entity decoding via `entities` (the parser ecosystem's decoder —
- * every named entity, not a hand-picked table). NBSP is normalized to a plain
- * space afterwards: DDG uses `&nbsp;` where result text wants an ordinary
- * space, and U+00A0 survives `stripHtml`'s whitespace collapse (which runs
- * before decoding, while the entity is still literal text).
+ * Collapse one parsed element's text into a single line.
+ *
+ * The parser hands text over already entity-decoded, so `&nbsp;` has become
+ * U+00A0 by the time it arrives — and JS `\s` matches that, so ONE collapse
+ * covers the NBSP normalization the regex version needed a separate pass for.
+ * (It needed one because it collapsed whitespace BEFORE decoding, while the
+ * entity was still literal text.)
+ *
+ * Concatenating the parser's text nodes also gives the old `<b>`-stripping rule
+ * for free: DDG wraps query-match highlights in `<b>` mid-word
+ * (`Re<b>sult</b> 1`), and rejoining text nodes closes the word back up, where
+ * a generic tag-to-space substitution would have produced `Re sult 1`.
  */
-function decodeHtmlEntities(text: string): string {
-  return decodeHTML(text).replace(/\u00a0/g, " ");
+function normalizeText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
 }
 
-function stripHtml(html: string): string {
-  // Match highlights (<b>) can occur inside words — remove without spacing.
-  return html
-    .replace(/<\/?b\b[^>]*>/gi, "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+/** Is `name` one of this element's whitespace-separated classes? */
+function hasClass(attribs: Record<string, string>, name: string): boolean {
+  const className = attribs.class;
+  if (className === undefined) return false;
+  return className.split(/\s+/).includes(name);
 }
 
 /** DDG links route through a redirect whose `uddg` param is the real URL. */
@@ -84,55 +89,125 @@ function decodeDuckDuckGoUrl(rawUrl: string): string {
 const CHALLENGE_MARKERS =
   /g-recaptcha|are you a human|id="challenge-form"|name="challenge"|anomaly-modal|bots use DuckDuckGo/i;
 
-/** No results markup + challenge markers = we're being asked to prove humanity. */
-function isBotChallenge(html: string, resultMarker: RegExp): boolean {
-  if (resultMarker.test(html)) return false;
-  return CHALLENGE_MARKERS.test(html);
-}
-
 type SearchResult = { title: string; url: string; description: string };
 
-type EndpointFormat = {
-  /** Presence of this marker means the page carries real results. */
-  resultMarker: RegExp;
-  /** Matches one result anchor: [1] = attributes, [2] = title markup. */
-  resultRegex: RegExp;
-  /** Matches the snippet element within one result's scope. */
-  snippetRegex: RegExp;
-};
+/**
+ * Which elements carry a result, as a tag name plus the class that marks it.
+ *
+ * A selector pair, not a regex triple, because this is a real streaming parse
+ * now — see {@link parseResults}. Note the two endpoints agree on the ORDER and
+ * disagree on everything else: the snippet element always FOLLOWS its title
+ * link in document order, but on the primary endpoint it is a sibling `<a>` and
+ * on the lite one a `<td>` in the next table row. That ordering is the whole
+ * correlation rule, and it is what the state machine encodes.
+ */
+type ResultSelector = { tag: string; className: string };
+type EndpointFormat = { title: ResultSelector; snippet: ResultSelector };
 
-// The primary endpoint's results: <a class="result__a" href=...>title</a>
-// followed by <a class="result__snippet" ...>snippet</a>.
+/**
+ * The primary endpoint: `<a class="result__a" href>title</a>` followed by
+ * `<a class="result__snippet">snippet</a>`.
+ */
 const HTML_FORMAT: EndpointFormat = {
-  resultMarker: /class="[^"]*\bresult__a\b[^"]*"/i,
-  resultRegex: /<a\b(?=[^>]*\bclass="[^"]*\bresult__a\b[^"]*")([^>]*)>([\s\S]*?)<\/a>/gi,
-  snippetRegex: /<a\b(?=[^>]*\bclass="[^"]*\bresult__snippet\b[^"]*")[^>]*>([\s\S]*?)<\/a>/i,
+  title: { tag: "a", className: "result__a" },
+  snippet: { tag: "a", className: "result__snippet" },
 };
 
-// The lite endpoint's results: table rows with <a class='result-link'>
-// title anchors and <td class='result-snippet'> cells. Quote style varies,
-// so class/href attributes accept either quote.
+/**
+ * The lite endpoint: table rows with `<a class='result-link'>` title anchors
+ * and `<td class='result-snippet'>` cells.
+ */
 const LITE_FORMAT: EndpointFormat = {
-  resultMarker: /class=['"][^'"]*\bresult-link\b[^'"]*['"]/i,
-  resultRegex: /<a\b(?=[^>]*\bclass=['"][^'"]*\bresult-link\b[^'"]*['"])([^>]*)>([\s\S]*?)<\/a>/gi,
-  snippetRegex:
-    /<td\b(?=[^>]*\bclass=['"][^'"]*\bresult-snippet\b[^'"]*['"])[^>]*>([\s\S]*?)<\/td>/i,
+  title: { tag: "a", className: "result-link" },
+  snippet: { tag: "td", className: "result-snippet" },
 };
 
+/**
+ * Extract results with a real streaming HTML parse (htmlparser2), not a tag
+ * regex — the same call `page-design.ts` makes one file over, on the same
+ * reasoning and the same already-present dependency.
+ *
+ * What the six regexes this replaced could not do, all of it silent:
+ *
+ * - **Attribute order and quote style were part of the pattern.** Matching a
+ *   class meant a lookahead over the raw tag text, so `LITE_FORMAT` had already
+ *   been forked to accept either quote character, and a `>` inside any quoted
+ *   attribute value would have ended the tag early. The parser reports
+ *   `attribs` as a decoded record, so neither is expressible.
+ * - **Snippets were scoped by BYTE OFFSET** — the slice between one title match
+ *   and the next — so any nesting change silently re-pointed a description at
+ *   another result's text rather than failing.
+ * - **`stripHtml` folded every tag to a space over the whole scoped slice**, so
+ *   a `<script>` or `<style>` body sitting between two results would land in a
+ *   description verbatim. Rawtext is the parser's problem now.
+ *
+ * Entity decoding comes with it: htmlparser2 decodes text nodes and attribute
+ * values (it depends on `entities` internally, which is why that direct
+ * dependency came off this package), so the separate `decodeHTML` pass is gone
+ * and an `&amp;` in an href arrives as `&`.
+ */
 function parseResults(html: string, format: EndpointFormat): SearchResult[] {
   const results: SearchResult[] = [];
-  const matches = [...html.matchAll(format.resultRegex)];
-  for (const [i, match] of matches.entries()) {
-    const rawUrl = /\bhref=["']([^"']*)["']/i.exec(match[1] ?? "")?.[1] ?? "";
-    // The snippet element sits between this result link and the next one —
-    // and "the next result link" is exactly the next resultRegex match, so
-    // scope by its index instead of re-scanning the document tail.
-    const scoped = html.slice((match.index ?? 0) + match[0].length, matches[i + 1]?.index);
-    const title = decodeHtmlEntities(stripHtml(match[2] ?? ""));
-    const url = decodeDuckDuckGoUrl(decodeHtmlEntities(rawUrl));
-    const description = decodeHtmlEntities(stripHtml(format.snippetRegex.exec(scoped)?.[1] ?? ""));
-    if (title && url) results.push({ title, url, description });
-  }
+  /** The result awaiting the snippet that follows it. */
+  let pending: SearchResult | undefined;
+  /** Which element's text `ontext` is currently filling, if any. */
+  let capturing: "title" | "snippet" | undefined;
+  /** Nesting of same-named tags inside it, so `<b>`/`<td>` can't close it early. */
+  let depth = 0;
+  let text = "";
+  let href = "";
+  const selectorFor = (which: "title" | "snippet"): ResultSelector =>
+    which === "title" ? format.title : format.snippet;
+
+  const parser = new Parser({
+    onopentag(tag, attribs) {
+      if (capturing) {
+        if (tag === selectorFor(capturing).tag) depth += 1;
+        return;
+      }
+      if (tag === format.title.tag && hasClass(attribs, format.title.className)) {
+        // A new title link means the previous result's snippet never arrived.
+        // Keep it — a result with no description is still a usable answer.
+        if (pending) results.push(pending);
+        pending = undefined;
+        capturing = "title";
+        depth = 0;
+        text = "";
+        href = attribs.href ?? "";
+        return;
+      }
+      if (pending && tag === format.snippet.tag && hasClass(attribs, format.snippet.className)) {
+        capturing = "snippet";
+        depth = 0;
+        text = "";
+      }
+    },
+    ontext(chunk) {
+      if (capturing) text += chunk;
+    },
+    onclosetag(tag) {
+      if (capturing === undefined || tag !== selectorFor(capturing).tag) return;
+      if (depth > 0) {
+        depth -= 1;
+        return;
+      }
+      if (capturing === "title") {
+        const title = normalizeText(text);
+        const url = decodeDuckDuckGoUrl(href);
+        pending = title && url ? { title, url, description: "" } : undefined;
+      } else if (pending) {
+        pending.description = normalizeText(text);
+        results.push(pending);
+        pending = undefined;
+      }
+      capturing = undefined;
+      text = "";
+    },
+  });
+  parser.write(html);
+  parser.end();
+  // A trailing result whose snippet element never appeared.
+  if (pending) results.push(pending);
   return results;
 }
 
@@ -157,13 +232,19 @@ async function searchEndpoint(
     return { ok: false, error: `Search request failed: ${resp.status} ${resp.statusText}` };
   }
   const html = await resp.text();
-  if (isBotChallenge(html, format.resultMarker)) {
+  const results = parseResults(html, format);
+  // A challenge is decided from the PARSE rather than from a second marker regex
+  // over the raw bytes: "the page had result markup" and "we could read it" are
+  // then the same question, so a page whose shape moved falls back to the other
+  // endpoint instead of confidently answering zero results. The markers stay a
+  // text scan because two of them are prose, not markup.
+  if (results.length === 0 && CHALLENGE_MARKERS.test(html)) {
     return {
       ok: false,
       error: "Search provider returned a bot-detection challenge — try again later",
     };
   }
-  return { ok: true, results: parseResults(html, format) };
+  return { ok: true, results };
 }
 
 export function createWebSearch(

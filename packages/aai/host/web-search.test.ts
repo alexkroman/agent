@@ -109,7 +109,9 @@ describe("web_search fallback", () => {
 
   test("decodes named entities beyond the old hand-rolled table", async () => {
     // &rsquo;, &eacute;, and &copy; were never in the deleted DDG_NAMED_ENTITIES
-    // table — they only decode because the `entities` package knows all of HTML.
+    // table. They decode because htmlparser2 decodes text nodes and attribute
+    // values itself (on `entities`, which it depends on) — which is why this
+    // package no longer declares that dependency directly.
     const page = `
       <div class="result">
         <a class="result__a" href="https://example.com/e">Caf&eacute; guide</a>
@@ -125,6 +127,69 @@ describe("web_search fallback", () => {
         description: "It’s © 2026 — really",
       },
     ]);
+  });
+
+  test("a `>` inside a quoted attribute does not end the tag", async () => {
+    // The regex parse this replaced captured attributes with `([^>]*)>`, so the
+    // first `>` ended the tag wherever it sat — here mid-`title`, which left the
+    // rest of the attribute bleeding into the extracted link text.
+    const page = `
+      <div class="result">
+        <a class="result__a" href="https://example.com/1" title="Compare 1 > 2">Result 1</a>
+        <a class="result__snippet" href="#">Desc 1</a>
+      </div>`;
+    const mockFetch = fetchByHost(new Response(page), new Response(liteResults));
+    const tool = createWebSearch(fakeFetch(mockFetch));
+    const result = await tool.execute({ query: "q" }, {} as never);
+    expect(result).toEqual([
+      { title: "Result 1", url: "https://example.com/1", description: "Desc 1" },
+    ]);
+  });
+
+  test("a single-quoted class is still a result", async () => {
+    // The primary endpoint's regexes hardcoded double quotes. That DDG varies
+    // quote style is not hypothetical — the lite format had already been forked
+    // to accept either, so the primary was one markup tweak from zero results.
+    const page = `
+      <div class='result'>
+        <a class='result__a' href='https://example.com/1'>Result 1</a>
+        <a class='result__snippet' href='#'>Desc 1</a>
+      </div>`;
+    const mockFetch = fetchByHost(new Response(page), new Response(liteResults));
+    const tool = createWebSearch(fakeFetch(mockFetch));
+    const result = await tool.execute({ query: "q" }, {} as never);
+    expect(result).toEqual([
+      { title: "Result 1", url: "https://example.com/1", description: "Desc 1" },
+    ]);
+  });
+
+  test("result markup inside a <script> is not a result", async () => {
+    // `stripHtml` folded every tag to a space across the whole scoped slice, so
+    // a script body was read as ordinary markup and its text could be lifted
+    // into a description.
+    const page = `
+      <div class="result">
+        <a class="result__a" href="https://example.com/1">Result 1</a>
+        <script>document.write('<a class="result__snippet">injected</a>');</script>
+        <a class="result__snippet" href="#">Real desc</a>
+      </div>`;
+    const mockFetch = fetchByHost(new Response(page), new Response(liteResults));
+    const tool = createWebSearch(fakeFetch(mockFetch));
+    const result = await tool.execute({ query: "q" }, {} as never);
+    expect(result).toEqual([
+      { title: "Result 1", url: "https://example.com/1", description: "Real desc" },
+    ]);
+  });
+
+  test("a result whose snippet never arrives is still returned", async () => {
+    const page = `
+      <div class="result">
+        <a class="result__a" href="https://example.com/1">Result 1</a>
+      </div>`;
+    const mockFetch = fetchByHost(new Response(page), new Response(liteResults));
+    const tool = createWebSearch(fakeFetch(mockFetch));
+    const result = await tool.execute({ query: "q" }, {} as never);
+    expect(result).toEqual([{ title: "Result 1", url: "https://example.com/1", description: "" }]);
   });
 
   test("requests carry browser-like headers", async () => {

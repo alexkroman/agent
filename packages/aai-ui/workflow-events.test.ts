@@ -39,26 +39,37 @@ function apiWith(response: Response | (() => Promise<Response>)): () => RunWatch
   return () => ({ watch });
 }
 
-/** Run one watch to completion, reporting what it did. */
+/**
+ * Run one watch to completion, reporting what it did.
+ *
+ * Awaits the OUTCOME rather than draining a fixed number of microtasks. The
+ * fixed count was 20, which is a budget the pump's frame arity spends: it held
+ * for two-frame streams and silently ran out at three, so a passing spec meant
+ * "few enough frames" as much as "correct". Every caller here expects exactly
+ * one of the two endings, so waiting for one is both deterministic and the
+ * actual claim.
+ */
 async function collect(
   response: Response | (() => Promise<Response>),
 ): Promise<{ runs: unknown[]; settled: number; fallback: number; stop: () => void }> {
   const runs: unknown[] = [];
   let settled = 0;
   let fallback = 0;
+  const ended = Promise.withResolvers<void>();
   const stop = watchRunEvents(
     apiWith(response),
     "wrun_1",
     (run) => runs.push(run),
     () => {
       settled += 1;
+      ended.resolve();
     },
     () => {
       fallback += 1;
+      ended.resolve();
     },
   );
-  // The pump is promise-driven, so draining the microtask queue is enough.
-  for (let i = 0; i < 20; i++) await Promise.resolve();
+  await ended.promise;
   return { runs, settled, fallback, stop };
 }
 
@@ -121,6 +132,44 @@ describe("watchRunEvents", () => {
       streamOf([": ping\n\n", frame("run", { runId: "wrun_1" }), ": ping\n\n", frame("done", {})]),
     );
     expect(result.runs).toHaveLength(1);
+    expect(result.settled).toBe(1);
+  });
+
+  test("parses a CRLF stream — line endings are not ours to choose", async () => {
+    // The hand-rolled parser this replaced split on "\n\n" alone, so `\r\n\r\n`
+    // (no two adjacent \n) yielded NOTHING and every run silently fell back to
+    // polling. An intermediary is free to re-terminate lines; the spec permits
+    // \n, \r\n and \r.
+    const crlf = (event: string, data: unknown): string =>
+      `event: ${event}\r\ndata: ${JSON.stringify(data)}\r\n\r\n`;
+    const running = { runId: "wrun_1", status: "running" };
+    const result = await collect(streamOf([crlf("run", running), crlf("done", {})]));
+    expect(result.runs).toEqual([running]);
+    expect(result.settled).toBe(1);
+    expect(result.fallback).toBe(0);
+  });
+
+  test("accepts a field with no space after the colon", async () => {
+    // The spec makes the single leading space optional; the hand-rolled parser
+    // required it, so a conforming server writing `event:run` was invisible.
+    const running = { runId: "wrun_1", status: "running" };
+    const result = await collect(
+      streamOf([`event:run\ndata:${JSON.stringify(running)}\n\n`, "event:done\ndata:{}\n\n"]),
+    );
+    expect(result.runs).toEqual([running]);
+    expect(result.settled).toBe(1);
+  });
+
+  test("joins a multi-line `data:` payload", async () => {
+    // Only the LAST data line survived the hand-rolled parser, which turns a
+    // pretty-printed snapshot into an unparseable fragment.
+    const running = { runId: "wrun_1", status: "running" };
+    const pretty = JSON.stringify(running, null, 2)
+      .split("\n")
+      .map((line) => `data: ${line}`)
+      .join("\n");
+    const result = await collect(streamOf([`event: run\n${pretty}\n\n`, frame("done", {})]));
+    expect(result.runs).toEqual([running]);
     expect(result.settled).toBe(1);
   });
 
