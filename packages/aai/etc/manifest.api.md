@@ -67,6 +67,10 @@ export const AgentConfigSchema: z.ZodObject<{
         s2s: "s2s";
     }>>;
     requiredEnv: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
+    page: z.ZodOptional<z.ZodEnum<{
+        static: "static";
+        voice: "voice";
+    }>>;
 }, z.core.$strip>;
 
 // @public

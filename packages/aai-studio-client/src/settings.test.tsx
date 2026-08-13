@@ -55,7 +55,10 @@ afterEach(() => {
 describe("SettingsPane", () => {
   test("the sections run in the order a project needs them", async () => {
     // Setting up first, provider keys last: the CLI round-trip, the webhook
-    // URLs, the Database switch, Secrets, and Delete project at the bottom.
+    // URLs, the Database switch, the Workflows read, Secrets, and Delete
+    // project at the bottom. Workflows sits with Database because the two are
+    // one subject — the correlation index a run is found by is a table in the
+    // project's own schema, so a workflow app has storage on.
     // The order is also what two pieces of Phone card copy point at — both
     // send the reader to "Secrets below" for a carrier's signing secret.
     stubFetch({
@@ -67,7 +70,14 @@ describe("SettingsPane", () => {
     // Card titles are eyebrow spans rather than headings, and inside this
     // pane every one of them is a section title.
     const titles = [...document.querySelectorAll(".eyebrow")].map((el) => el.textContent);
-    expect(titles).toEqual(["Work locally", "Phone number", "Database", "Secrets", "Danger zone"]);
+    expect(titles).toEqual([
+      "Work locally",
+      "Phone number",
+      "Database",
+      "Workflows",
+      "Secrets",
+      "Danger zone",
+    ]);
   });
 
   test("the box is usable with nothing published — no publish-first gate", async () => {

@@ -67,13 +67,16 @@
       // just booted. It was ignored while the only use was a fixture project
       // symlinking this package's node_modules so the DevKit resolved THERE.
     },
+    // `templates/**` stays ignored so a template's unused EXPORTS never reach
+    // the report — they are examples, not a surface anything imports. The
+    // `@alexkroman1/aai-ui` entry that used to sit beside it is gone:
+    // `template-page-mount.test.ts` globs every `client.tsx` as text to
+    // correlate its mount with its agent's `page` field, so knip now sees the
+    // import that was always there and the exemption became a lie.
     "packages/aai-templates": {
       "ignore": [
         "templates/**",
         "scaffold/**"
-      ],
-      "ignoreDependencies": [
-        "@alexkroman1/aai-ui"
       ]
     },
     "packages/aai-guest": {

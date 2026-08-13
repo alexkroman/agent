@@ -7,6 +7,8 @@ exports[`aai-ui export surface > @alexkroman1/aai-ui main export 1`] = `
   "Button",
   "ChatView",
   "Controls",
+  "DEFAULT_WORKFLOW_POLL_MS",
+  "MAX_MISSING_READS",
   "Markdown",
   "MessageList",
   "SessionProvider",
@@ -21,8 +23,11 @@ exports[`aai-ui export surface > @alexkroman1/aai-ui main export 1`] = `
   "buildAgentUrl",
   "client",
   "createSessionCore",
+  "createWorkflowApi",
   "fetchClientConfig",
+  "isTerminal",
   "loadClientConfig",
+  "page",
   "useAgentState",
   "useEvent",
   "useSession",
@@ -30,6 +35,7 @@ exports[`aai-ui export surface > @alexkroman1/aai-ui main export 1`] = `
   "useTheme",
   "useToolCallStart",
   "useToolResult",
+  "useWorkflowRun",
 ]
 `;
 

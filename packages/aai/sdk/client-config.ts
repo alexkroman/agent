@@ -37,6 +37,15 @@ export const ClientConfigResponseSchema = z.object({
    * client falls back to the same-origin `websocket` path.
    */
   sessionUrl: z.string().optional(),
+  /**
+   * What this agent's front door is — see `AgentDef.page`. Absent reads as
+   * `"voice"`, which is what every server built before the field answered.
+   *
+   * Here so a client can tell the two apart BEFORE it dials: a static agent has
+   * no `/websocket` to open, and the default shell would otherwise render a
+   * start screen whose only button opens a socket the server declines.
+   */
+  page: z.enum(["voice", "static"]).optional(),
 });
 
 /** Parsed body of `GET /client-config`. */
@@ -53,6 +62,12 @@ export function buildClientConfig(src: {
   name?: string | undefined;
   greeting?: string | undefined;
   sessionUrl?: string | undefined;
+  page?: "voice" | "static" | undefined;
 }): ClientConfigResponse {
-  return omitUndefined({ name: src.name, greeting: src.greeting, sessionUrl: src.sessionUrl });
+  return omitUndefined({
+    name: src.name,
+    greeting: src.greeting,
+    sessionUrl: src.sessionUrl,
+    page: src.page,
+  });
 }

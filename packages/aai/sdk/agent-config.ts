@@ -99,6 +99,12 @@ export const AgentConfigSchema = z.object({
   s2s: ProviderDescriptorSchema.optional(),
   mode: z.enum(["s2s", "pipeline"]).optional(),
   requiredEnv: z.array(z.string()).readonly().optional(),
+  // Serializable rather than host-only: it is a DECLARATION about the agent's
+  // surface, exactly like `name` and `greeting`, and every consumer of a
+  // serialized config wants it — the browser (does this page open a mic?), the
+  // CLI's build, the studio's preview. The `workflows` record beside it is
+  // host-only for the opposite reason: those are functions.
+  page: z.enum(["voice", "static"]).optional(),
 });
 
 /**

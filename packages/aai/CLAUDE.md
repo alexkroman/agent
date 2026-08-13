@@ -617,6 +617,13 @@ descriptor's `apiKeyEnv` now, like every other stage; they resolve through
 `resolveS2sEnvVar`, so the key a session reads is by construction the key
 the preflight asked for.
 
+## Workflow apps and the workflow HTTP API
+
+`AgentDef.page` declares an agent's front door — `"voice"` (the default, and
+what absent means) or `"static"`, a page over the workflow HTTP API that
+`createServer` mounts. **See "Workflow apps" in `packages/aai-ui/CLAUDE.md`**;
+this guide is at its cap and the author-facing half lives there.
+
 ## Voices
 
 **`ASSEMBLYAI_TTS_VOICES` in `sdk/providers/tts/assemblyai.ts` is the list.**

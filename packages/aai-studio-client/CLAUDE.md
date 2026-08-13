@@ -146,6 +146,32 @@ segmented control switches between — `preview.tsx`, `code-view.tsx`,
     every button, and there is one live timer so a second click cannot have
     its flash cleared early by the first click's timeout.
 
+- **The Workflows card reads the AGENT's own brokered API, not a studio route**
+  (`workflows-card.tsx` → `/:slug/workflows`). A workflow run is the one thing
+  in this product that OUTLIVES every surface the studio already shows: the
+  Preview pane frames a page, the transcript shows a conversation, and a run
+  started an hour ago by a caller who has since hung up appears in neither.
+  There is deliberately no studio endpoint in front of it — the platform already
+  brokers that path for exactly this shape of caller and the studio shares the
+  origin, so `connect-src 'self'` permits it; a second route would be a second
+  thing to keep in step with the run shape.
+  - **Reading it can BOOT the agent's sandbox**, because brokering does. Accepted
+    rather than overlooked: someone opening Settings to ask what their workflows
+    are doing is asking a question only the agent can answer, and a card that
+    shows nothing until you press a button answers it less often than it costs.
+    The refresh is manual for the same reason it is on the Database card — a poll
+    would hold a container open for a pane nobody is watching.
+  - **It falls back to the PREVIEW slug and says so**, because that is the usual
+    state: a project has a preview long before a first publish, and the two
+    agents keep separate runs (which is also why the query key is the SLUG, not
+    the project — otherwise a publish would show production's runs against the
+    preview).
+  - Only a LIVE run offers Stop. A terminal one is a dead end here on purpose:
+    resuming it belongs to the Workflow DevKit, not to a button that would have
+    to guess what "again" means. A failure quotes the agent's own sentence — a
+    503 while a sandbox boots reads very differently from the 404 an agent that
+    declares no workflows answers, and that text is the whole difference.
+
 - **The Settings pane is also where the CLI round-trip is discoverable**
   (`cli-commands.tsx`, the "Work locally" section): the install / `aai login`
   / `aai pull <project>` / `aai dev` sequence with the project name filled

@@ -20,7 +20,12 @@
       "paths": "packages/{packageName}",
       "must": {
         "haveType": "directory",
-        "haveFiles": ["package.json", "tsconfig.json", "vitest.config.ts", "CLAUDE.md"]
+        "haveFiles": [
+          "package.json",
+          "tsconfig.json",
+          "vitest.config.ts",
+          "CLAUDE.md"
+        ]
       }
     },
     {
@@ -29,32 +34,53 @@
       "paths": "packages/{packageName}/vitest.config.ts",
       "must": {
         "import": [
-          { "name": "defineConfig", "from": "vitest/config" },
-          { "name": "sharedConfig", "from": "../../vitest.shared.ts" }
+          {
+            "name": "defineConfig",
+            "from": "vitest/config"
+          },
+          {
+            "name": "sharedConfig",
+            "from": "../../vitest.shared.ts"
+          }
         ]
       }
     },
     {
       "name": "publishable-package-layout",
       "description": "The three published packages additionally carry a README (npm's landing page), a tsconfig.build.json (the declaration emit, and the only program that rejects a cross-package relative import) and a tsdown.config.ts.",
-      "paths": ["packages/aai", "packages/aai-ui", "packages/aai-cli"],
+      "paths": [
+        "packages/aai",
+        "packages/aai-ui",
+        "packages/aai-cli"
+      ],
       "must": {
         "haveType": "directory",
-        "haveFiles": ["README.md", "tsconfig.build.json", "tsdown.config.ts"]
+        "haveFiles": [
+          "README.md",
+          "tsconfig.build.json",
+          "tsdown.config.ts"
+        ]
       }
     },
     {
       "name": "barrel-files",
       "description": "A *-barrel.ts file is a pure re-export surface. A local declaration in one is a symbol with no home module, invisible to the follow-the-re-export-chain rule the import conventions rest on.",
-      "paths": ["packages/*/*-barrel.ts", "packages/*/*/*-barrel.ts"],
+      "paths": [
+        "packages/*/*-barrel.ts",
+        "packages/*/*/*-barrel.ts"
+      ],
       "must": {
         "areBarrelFiles": true
       }
     },
     {
       "name": "core-package-boundary",
-      "description": "packages/aai is the base of the dependency graph — every other package depends on it and it depends on none of them.",
-      "paths": ["packages/aai/*.ts", "packages/aai/host/**/*.ts", "packages/aai/sdk/**/*.ts"],
+      "description": "packages/aai is the base of the dependency graph \u2014 every other package depends on it and it depends on none of them.",
+      "paths": [
+        "packages/aai/*.ts",
+        "packages/aai/host/**/*.ts",
+        "packages/aai/sdk/**/*.ts"
+      ],
       "mustNot": {
         "importFrom": [
           "@alexkroman1/aai-ui",
@@ -85,15 +111,19 @@
     },
     {
       "name": "guest-package-boundary",
-      "description": "The guest never imports server code — that hard boundary is the reason the guest is its own package. aai-server depends on aai-guest only to resolve its built artifact, never to import guest source.",
+      "description": "The guest never imports server code \u2014 that hard boundary is the reason the guest is its own package. aai-server depends on aai-guest only to resolve its built artifact, never to import guest source.",
       "paths": "packages/aai-guest/*.ts",
       "mustNot": {
-        "importFrom": ["aai-server", "aai-studio-client", "aai-studio-server"]
+        "importFrom": [
+          "aai-server",
+          "aai-studio-client",
+          "aai-studio-server"
+        ]
       }
     },
     {
       "name": "browser-package-boundary",
-      "description": "aai-ui is a browser client. It may depend on the core SDK and nothing else in the workspace — a platform or CLI import here would pull server code into a browser bundle.",
+      "description": "aai-ui is a browser client. It may depend on the core SDK and nothing else in the workspace \u2014 a platform or CLI import here would pull server code into a browser bundle.",
       "paths": [
         "packages/aai-ui/*.ts",
         "packages/aai-ui/*.tsx",
@@ -128,9 +158,15 @@
           "${providerId.toConstantCase()}_KIND",
           "${providerId.toConstantCase()}_API_KEY_ENV"
         ],
-        "exportInterfaces": ["${providerId.toPascalCase()}Options"],
-        "exportTypes": ["${providerId.toPascalCase()}Provider"],
-        "exportFunctions": ["${providerId.toCamelCase()}"]
+        "exportInterfaces": [
+          "${providerId.toPascalCase()}Options"
+        ],
+        "exportTypes": [
+          "${providerId.toPascalCase()}Provider"
+        ],
+        "exportFunctions": [
+          "${providerId.toCamelCase()}"
+        ]
       }
     },
     {
@@ -147,8 +183,12 @@
           "${providerId.toConstantCase()}_API_KEY_ENV",
           "${providerId.toConstantCase()}_DEFAULT_MODEL"
         ],
-        "exportInterfaces": ["${providerId.toPascalCase()}Options"],
-        "exportTypes": ["${providerId.toPascalCase()}Provider"],
+        "exportInterfaces": [
+          "${providerId.toPascalCase()}Options"
+        ],
+        "exportTypes": [
+          "${providerId.toPascalCase()}Provider"
+        ],
         "exportFunctions": [
           "${providerId.toCamelCase()}",
           "resolve${providerId.toPascalCase()}Settings"
@@ -157,7 +197,7 @@
     },
     {
       "name": "tts-providers",
-      "description": "Every TTS provider module exports the STT shape plus a default voice — the one setting a TTS provider cannot infer.",
+      "description": "Every TTS provider module exports the STT shape plus a default voice \u2014 the one setting a TTS provider cannot infer.",
       "paths": [
         "packages/aai/sdk/providers/tts/{providerId}.ts",
         "!packages/aai/sdk/providers/tts/assemblyai.ts",
@@ -170,8 +210,12 @@
           "${providerId.toConstantCase()}_DEFAULT_MODEL",
           "${providerId.toConstantCase()}_DEFAULT_VOICE"
         ],
-        "exportInterfaces": ["${providerId.toPascalCase()}Options"],
-        "exportTypes": ["${providerId.toPascalCase()}Provider"],
+        "exportInterfaces": [
+          "${providerId.toPascalCase()}Options"
+        ],
+        "exportTypes": [
+          "${providerId.toPascalCase()}Provider"
+        ],
         "exportFunctions": [
           "${providerId.toCamelCase()}",
           "resolve${providerId.toPascalCase()}Settings"
@@ -195,7 +239,9 @@
           "${providerId.toPascalCase()}Options",
           "${providerId.toPascalCase()}Provider"
         ],
-        "exportFunctions": ["${providerId.toCamelCase()}"]
+        "exportFunctions": [
+          "${providerId.toCamelCase()}"
+        ]
       }
     },
     {
@@ -207,24 +253,40 @@
           "name": "template-entry",
           "must": {
             "haveType": "directory",
-            "haveFiles": ["agent.ts"]
+            "haveFiles": [
+              "agent.ts"
+            ]
           }
         },
         {
           "name": "agent-default-export",
-          "for": { "files": "agent.ts" },
+          "for": {
+            "files": "agent.ts"
+          },
           "must": {
-            "export": ["default"],
-            "import": [{ "name": "agent", "from": "@alexkroman1/aai" }]
+            "export": [
+              "default"
+            ],
+            "import": [
+              {
+                "name": "agent",
+                "from": "@alexkroman1/aai"
+              }
+            ]
           }
         },
         {
           "name": "client-entry",
-          "if": { "hasFile": "client.tsx" },
-          "for": { "files": "client.tsx" },
+          "if": {
+            "hasFile": "client.tsx"
+          },
+          "for": {
+            "files": "client.tsx"
+          },
           "must": {
-            "import": [{ "name": "client", "from": "@alexkroman1/aai-ui" }],
-            "importFrom": ["@alexkroman1/aai-ui/styles.css"]
+            "importFrom": [
+              "@alexkroman1/aai-ui/styles.css"
+            ]
           }
         }
       ]
@@ -234,7 +296,9 @@
       "description": "A tools/ file is named for the snake_case tool name the LLM sees (Biome's filename convention is overridden for exactly this reason) and exports one const named for it in camelCase.",
       "paths": "packages/aai-templates/templates/{templateName}/tools/{toolName}.ts",
       "must": {
-        "exportConstants": ["${toolName.toCamelCase()}"]
+        "exportConstants": [
+          "${toolName.toCamelCase()}"
+        ]
       }
     }
   ]

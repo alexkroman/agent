@@ -510,7 +510,7 @@ rather than here:
 | Guide | Covers |
 | --- | --- |
 | `packages/aai/CLAUDE.md` | SDK layout (`sdk/` vs `host/`), subpath exports, session modes, STT/LLM/TTS/S2S providers, voices, `ctx.db`, `ctx.generate`, guest network access + SSRF, the canonical agent-config schema, data flow, the defaults/magic-numbers table, self-hosted `createServer` defaults |
-| `packages/aai-ui/CLAUDE.md` | Browser session, client audio path (capture/playback worklets, pacing, jitter buffer), components, fuzz harnesses |
+| `packages/aai-ui/CLAUDE.md` | Browser session, client audio path (capture/playback worklets, pacing, jitter buffer), components, fuzz harnesses, **workflow apps** (`page()`, `createWorkflowApi`, `useWorkflowRun`, and the workflow HTTP API the SDK serves) |
 | `packages/aai-cli/CLAUDE.md` | Subcommands, the studio round-trip (`push`/`pull`/`publish`/`delete`), bundling + Vite rules, credential destinations |
 | `packages/aai-guest/CLAUDE.md` | The guest harness: one binary / three modes, user-shipped runtime, dev-prod parity, agent guests as servers |
 | `packages/aai-server/CLAUDE.md` | Platform: sandboxes + Modal backends, stateless server, the two-package/one-deployment composition, security architecture, auth, stores/locks |
@@ -1234,6 +1234,7 @@ documented in that package's guide, not here:
 | Suite | Guide |
 | --- | --- |
 | Pipeline-transport interleaving fuzz, fixture replay (`host/fixtures/`) | `packages/aai/CLAUDE.md` |
+| Template mount correlation (`template-page-mount.test.ts`) | `packages/aai-templates/CLAUDE.md` |
 | Browser session / audio fuzz harnesses (`fuzz-*.test.ts`, worklet stress) | `packages/aai-ui/CLAUDE.md` |
 | Studio starter evals (`scripts/starter-eval/`), studio concurrency fuzz | `packages/aai-studio-server/CLAUDE.md` |
 | Sandbox/SSRF boundary tests, and why there is no load or chaos tier | `packages/aai-server/CLAUDE.md` |

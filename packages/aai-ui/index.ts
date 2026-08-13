@@ -49,6 +49,10 @@ export type {
 // Entry
 export { client } from "./define-client.tsx";
 export { useAgentState, useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
+// Workflow apps — the `agent({ page: "static" })` half of this package. `page()`
+// is the mount (no session, no audio, no socket) and the two workflow exports
+// are what its component talks to the agent with, in place of `useSession()`.
+export { type PageConfig, type PageHandle, page } from "./page.tsx";
 // Session core (for advanced use)
 export { createSessionCore } from "./session-core.ts";
 export type {
@@ -71,3 +75,16 @@ export type {
 // Capture constraints, exported so a custom client that opens its own
 // microphone gets the same signal the built-in paths do.
 export { VOICE_CAPTURE_CONSTRAINTS } from "./types.ts";
+export {
+  createWorkflowApi,
+  DEFAULT_WORKFLOW_POLL_MS,
+  isTerminal,
+  MAX_MISSING_READS,
+  type UseWorkflowRunResult,
+  useWorkflowRun,
+  type WorkflowApi,
+  type WorkflowApiOptions,
+  type WorkflowOutputOf,
+  type WorkflowRun,
+  type WorkflowSummary,
+} from "./workflow-client.ts";

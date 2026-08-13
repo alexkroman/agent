@@ -244,6 +244,25 @@ export const WORKFLOW_WAKE_MAX_PER_TICK = (() => {
 })();
 
 /**
+ * How long `/:slug/workflows/*` waits on the guest before giving up.
+ *
+ * Every route on that surface is a small JSON read or a `start` that answers as
+ * soon as the run is created, so nothing on it is legitimately slow — but ONE of
+ * them is legitimately endless: `GET /runs/:id/events` is a server-sent-event
+ * stream the guest holds open for minutes. A timeout applied to the whole
+ * forward would cut it mid-body, which is the exact protocol error
+ * `live-streams.ts` exists to prevent, so the signal below is armed on the
+ * REQUEST only — `fetch` settles it when the response HEADERS arrive, and the
+ * body streams unbounded after that.
+ *
+ * 30s rather than something tighter because the first request through this route
+ * is what BOOTS the sandbox: the broker has already waited for readiness, but a
+ * cold guest's first HTTP answer still lands behind module loading. Override
+ * with `WORKFLOW_PROXY_TIMEOUT_MS`.
+ */
+export const WORKFLOW_PROXY_TIMEOUT_MS = envMs(process.env.WORKFLOW_PROXY_TIMEOUT_MS, 30_000);
+
+/**
  * Locate the built Node guest harness — the `aai-guest` workspace package's
  * single-file artifact (overridable via GUEST_HARNESS_PATH). Resolved
  * lazily at sandbox creation, so a missing build fails the spawn loudly

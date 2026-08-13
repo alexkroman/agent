@@ -9,6 +9,7 @@ import { CliError, fail, getOutputMode, installStdoutGuard, writeLine } from "./
 import { list, publish, pull, push } from "./_studio-commands.ts";
 import { log } from "./_ui.ts";
 import { AGENT_ENTRY, errorMessage, resolveCwd } from "./_utils.ts";
+import { workflow } from "./cli-workflow.ts";
 
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
 /**
@@ -376,6 +377,7 @@ export const mainCommand = defineCommand({
     login,
     secret,
     storage,
+    workflow,
     templates,
   },
 });

@@ -1,0 +1,193 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * Specs for `aai workflow`.
+ *
+ * The two things worth pinning are the ones a reader cannot check by eye: the
+ * URL these build (the platform origin plus the PUBLISHED slug, which is not the
+ * project's name) and the fact that they send NO platform credential — the
+ * workflow API is the agent's own surface, and putting an API key on it would be
+ * both useless and a leak.
+ *
+ * `fetch` is stubbed rather than a server started; `getServerInfo` is mocked so
+ * no project config or API key prompt is needed.
+ */
+
+import { beforeEach, describe, expect, test, vi } from "vitest";
+
+vi.mock("./_agent.ts", () => ({
+  getServerInfo: vi.fn().mockResolvedValue({
+    serverUrl: "https://agents.example/",
+    slug: "digest-x7k2mq",
+    apiKey: "test-api-key",
+  }),
+}));
+
+const mockLog = vi.hoisted(() => ({
+  info: vi.fn(),
+  success: vi.fn(),
+  error: vi.fn(),
+  warn: vi.fn(),
+  step: vi.fn(),
+  message: vi.fn(),
+}));
+vi.mock("./_ui.ts", () => ({ log: mockLog }));
+
+const { executeWorkflowCancel, executeWorkflowList, executeWorkflowRuns, executeWorkflowShow } =
+  await import("./workflow.ts");
+
+let fetchMock: ReturnType<typeof vi.fn>;
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+beforeEach(() => {
+  fetchMock = vi.fn();
+  vi.stubGlobal("fetch", fetchMock);
+});
+
+/** The URL and init of the nth request. */
+function call(n = 0): [string, RequestInit] {
+  return fetchMock.mock.calls[n] as [string, RequestInit];
+}
+
+describe("executeWorkflowList", () => {
+  test("reads the agent's own endpoint under the PUBLISHED slug", async () => {
+    fetchMock.mockImplementation(async () => json({ workflows: [{ name: "digest" }] }));
+    const result = await executeWorkflowList("/proj", {});
+    expect(call()[0]).toBe("https://agents.example/digest-x7k2mq/workflows");
+    expect(result).toEqual({ ok: true, data: { workflows: [{ name: "digest" }] } });
+  });
+
+  test("sends NO authorization by default", async () => {
+    // The caller's API key is not what authorizes here; sending it would put a
+    // platform credential on a route that does not want one.
+    fetchMock.mockImplementation(async () => json({ workflows: [] }));
+    await executeWorkflowList("/proj", {});
+    expect(call()[1].headers).toEqual({});
+  });
+
+  test("--token rides as the agent's own bearer", async () => {
+    fetchMock.mockImplementation(async () => json({ workflows: [] }));
+    await executeWorkflowList("/proj", { token: "s3cret" });
+    expect(call()[1].headers).toMatchObject({ Authorization: "Bearer s3cret" });
+  });
+
+  test("names the agent when it declares none, rather than printing nothing", async () => {
+    fetchMock.mockImplementation(async () => json({ workflows: [] }));
+    await executeWorkflowList("/proj", {});
+    expect(mockLog.info).toHaveBeenCalledWith("digest-x7k2mq declares no workflows");
+  });
+
+  test("a failure keeps the AGENT'S sentence and carries the broker hint", async () => {
+    // A 503 while a sandbox boots reads very differently from a 404 for an
+    // agent that declares no workflows, and both look alike as a status code.
+    fetchMock.mockImplementation(async () => json({ error: "agent unavailable" }, 503));
+    const result = await executeWorkflowList("/proj", {});
+    expect(result).toMatchObject({
+      ok: false,
+      code: "workflow_list_failed",
+      error: "agent unavailable",
+      hint: expect.stringContaining("--token"),
+    });
+  });
+
+  test("a non-JSON failure degrades to the status plus the body", async () => {
+    fetchMock.mockImplementation(async () => new Response("<html>", { status: 502 }));
+    const result = await executeWorkflowList("/proj", {});
+    expect(result).toMatchObject({ ok: false, error: "502: <html>" });
+  });
+});
+
+describe("executeWorkflowRuns", () => {
+  test("asks for the KEYLESS read — a terminal has no correlation key", async () => {
+    fetchMock.mockImplementation(async () => json({ runs: [] }));
+    await executeWorkflowRuns("/proj", "digest", {});
+    const url = new URL(call()[0]);
+    expect(url.pathname).toBe("/digest-x7k2mq/workflows/runs");
+    expect(url.searchParams.get("workflow")).toBe("digest");
+    expect(url.searchParams.get("key")).toBeNull();
+    expect(url.searchParams.get("limit")).toBe("20");
+  });
+
+  test("honours an explicit limit", async () => {
+    fetchMock.mockImplementation(async () => json({ runs: [] }));
+    await executeWorkflowRuns("/proj", "digest", { limit: 3 });
+    expect(new URL(call()[0]).searchParams.get("limit")).toBe("3");
+  });
+
+  test("prints a failed run's MESSAGE, not just its status", async () => {
+    // "failed" alone sends someone to the logs for something already in hand.
+    fetchMock.mockImplementation(async () =>
+      json({
+        runs: [
+          {
+            runId: "wrun_1",
+            workflow: "digest",
+            createdAt: 0,
+            status: "failed",
+            error: "topic not found",
+            key: "caller-1",
+          },
+        ],
+      }),
+    );
+    await executeWorkflowRuns("/proj", "digest", {});
+    expect(mockLog.info).toHaveBeenCalledWith("wrun_1  failed  key=caller-1  topic not found");
+  });
+
+  test("says so when a workflow has no runs yet", async () => {
+    fetchMock.mockImplementation(async () => json({ runs: [] }));
+    await executeWorkflowRuns("/proj", "digest", {});
+    expect(mockLog.info).toHaveBeenCalledWith("No runs of digest yet");
+  });
+});
+
+describe("executeWorkflowShow", () => {
+  test("prints the run and its OUTPUT, which is why it exists beside `runs`", async () => {
+    fetchMock.mockImplementation(async () =>
+      json({
+        runId: "wrun_1",
+        workflow: "digest",
+        createdAt: 0,
+        status: "completed",
+        output: { topic: "ai" },
+      }),
+    );
+    const result = await executeWorkflowShow("/proj", "wrun_1", {});
+    expect(call()[0]).toBe("https://agents.example/digest-x7k2mq/workflows/runs/wrun_1");
+    expect(mockLog.info).toHaveBeenCalledWith("wrun_1  completed");
+    expect(mockLog.info).toHaveBeenCalledWith(JSON.stringify({ topic: "ai" }, null, 2));
+    expect(result.ok).toBe(true);
+  });
+
+  test("percent-encodes the run id into the path", async () => {
+    fetchMock.mockImplementation(async () =>
+      json({ runId: "a/b", workflow: "digest", createdAt: 0, status: "running" }),
+    );
+    await executeWorkflowShow("/proj", "a/b", {});
+    expect(call()[0]).toBe("https://agents.example/digest-x7k2mq/workflows/runs/a%2Fb");
+  });
+});
+
+describe("executeWorkflowCancel", () => {
+  test("sends a DELETE and reports the stop", async () => {
+    fetchMock.mockImplementation(async () => json({ runId: "wrun_1", cancelled: true }));
+    const result = await executeWorkflowCancel("/proj", "wrun_1", {});
+    expect(call()[1].method).toBe("DELETE");
+    expect(mockLog.info).toHaveBeenCalledWith("Cancelled wrun_1");
+    expect(result).toEqual({ ok: true, data: { runId: "wrun_1", cancelled: true } });
+  });
+
+  test("an already-finished run SUCCEEDS and says so", async () => {
+    // The route answers 200 either way, because "it was already over" is an
+    // answer — two operators pressing Stop is ordinary.
+    fetchMock.mockImplementation(async () => json({ runId: "wrun_1", cancelled: false }));
+    const result = await executeWorkflowCancel("/proj", "wrun_1", {});
+    expect(result.ok).toBe(true);
+    expect(mockLog.info).toHaveBeenCalledWith("wrun_1 had already finished");
+  });
+});

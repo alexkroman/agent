@@ -52,6 +52,21 @@ export const GUEST_ROUTES = {
   /** PUBLIC pre-connection client config (the SDK server's own route). */
   clientConfig: "/client-config",
   /**
+   * PUBLIC durable-workflow API (the SDK server's own route) — closed only when
+   * the agent's env sets `AAI_WORKFLOW_API_TOKEN`.
+   *
+   * A programmatic caller (`aai workflow`, a script) reaches it through the
+   * platform, and a PAGE has no other way to: a `page: "static"` agent is served
+   * by this platform at `GET /:slug/`, and `createWorkflowApi` builds every
+   * request URL from `location.origin + location.pathname` with no broker step
+   * of the kind the voice session gets from `/client-config`. So its calls land
+   * on the platform, and without a route here every one of them would fall
+   * through to `app.notFound` and read to the user as a failure of the feature.
+   * `workflow-handler.ts` is that route; this constant names the path for both
+   * sides of it.
+   */
+  workflows: "/workflows",
+  /**
    * Workflow-run replay, called back by the Workflow DevKit's queue.
    *
    * The caller is the guest's OWN worker (graphile-worker, polling the app
@@ -160,6 +175,12 @@ export const GUEST_ROUTE_EXPOSURE = {
   // which only the host and Modal's readiness probe ever call.
   health: { via: "host-only" },
   clientConfig: { via: "proxied", methods: ["GET"] },
+  // DELETE as well as GET and POST, because the guest answers all three:
+  // `api.cancel(runId)` is a DELETE, and a platform declaring only the first
+  // two would 404 every Stop button on a DEPLOYED agent while the same page
+  // worked under `aai dev`. That is the second failure recorded in this table's
+  // own header, written down here rather than discovered again.
+  workflows: { via: "proxied", methods: ["GET", "POST", "DELETE"] },
   // Nothing outside the sandbox calls these two: the DevKit's queue lives in
   // the guest (graphile-worker polling the app database from inside this
   // container) and dials its own server on loopback, so there is no caller to

@@ -45,7 +45,15 @@ const GUEST_CONFIG_TIMEOUT_MS = 1500;
  */
 const GUEST_CONFIG_CACHE_TTL_MS = 10 * 60_000;
 
-type GuestClientConfig = { name?: string; greeting?: string };
+/**
+ * The guest's own answer, minus `sessionUrl` (which is the BROKER's to say).
+ *
+ * `page` rides along for the same reason `name` does — it is the guest's live
+ * agent definition talking, and the platform stores nothing it could read
+ * instead. Without it the default client would render a start screen whose only
+ * button opens a `/websocket` a `page: "static"` agent declines.
+ */
+type GuestClientConfig = { name?: string; greeting?: string; page?: "voice" | "static" };
 
 /**
  * Build the broker's request handler. A factory so the per-origin memo and
@@ -72,9 +80,9 @@ export function createAgentClientConfigHandler(
       if (!res.ok) return {};
       const parsed = ClientConfigResponseSchema.safeParse(await res.json());
       if (!parsed.success) return {};
-      const { name, greeting } = parsed.data;
+      const { name, greeting, page } = parsed.data;
       const config = {
-        ...omitUndefined({ name, greeting }),
+        ...omitUndefined({ name, greeting, page }),
       };
       memo.set(guestOrigin, config);
       return config;

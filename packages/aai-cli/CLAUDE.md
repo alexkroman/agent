@@ -7,7 +7,18 @@ The `aai` CLI (`@alexkroman1/aai-cli`). Repo-wide conventions live in the root
 ## Commands and exports
 
 Binary: `aai` — subcommands: init, dev, test, build, eject, list, pull, push,
-publish, delete, login, secret, storage, templates.
+publish, delete, login, secret, storage, workflow, templates.
+
+**`aai workflow` talks to the AGENT, not to the platform API** (`workflow.ts`,
+`cli-workflow.ts`): `list`, `runs <name>`, `show <runId>`, `cancel <runId>` over
+the brokered `/:slug/workflows` surface. It is deliberately NOT an `apiRequest`
+— that surface takes the agent's own bearer (`AAI_WORKFLOW_API_TOKEN`, passed as
+`--token`) or none at all, so sending the caller's platform API key there would
+be both useless and a leak. Every request BROKERS, so the first one may boot the
+agent's sandbox; that is the same trade the studio's runs card makes and worth
+knowing before scripting a loop around it. `--limit` is parsed in the command
+rather than the executor, so a non-numeric value fails as a CLI error naming the
+flag instead of as a query the agent rejects three hops away.
 
 **`aai eject` is a retrofit, not the self-hosting path.** Self-hosting is the
 DEFAULT now: the scaffold ships `server.mjs` and a `start` script, so every

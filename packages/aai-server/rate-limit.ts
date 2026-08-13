@@ -59,6 +59,36 @@ export const DEPLOY_IP_RATE_LIMIT = {
   windowMs: CLIENT_IP_RATE_LIMIT_WINDOW_MS,
 } as const;
 
+/**
+ * The whole `/:slug/workflows/*` surface, per client IP.
+ *
+ * Sized for a POLLING page rather than for a human: `useWorkflowRun` falls back
+ * to a read every 2 s (`DEFAULT_WORKFLOW_POLL_MS` in aai-ui) when the event
+ * stream is unavailable — 150 reads in this window from one legitimate tab, and
+ * a page may watch more than one run. Generous is therefore the only correct
+ * setting for the surface limit — the thing actually worth bounding is starting
+ * runs, which has its own much tighter limit below.
+ */
+export const WORKFLOW_IP_RATE_LIMIT = {
+  limit: 600,
+  windowMs: CLIENT_IP_RATE_LIMIT_WINDOW_MS,
+} as const;
+
+/**
+ * `POST /:slug/workflows/runs` — starting runs — per client IP, counted IN
+ * ADDITION to {@link WORKFLOW_IP_RATE_LIMIT}.
+ *
+ * Much tighter, because this is the one route on the surface whose cost
+ * OUTLIVES its request: a run keeps executing, keeps the sandbox resident, and
+ * keeps spending the tenant's provider budget long after the POST answered 202.
+ * Everything else here is a read. A caller doing nothing but starting runs hits
+ * this first, which is the point of having both.
+ */
+export const WORKFLOW_START_IP_RATE_LIMIT = {
+  limit: 60,
+  windowMs: CLIENT_IP_RATE_LIMIT_WINDOW_MS,
+} as const;
+
 type Window = { count: number; resetAt: number };
 
 export type RateLimitVerdict = { ok: true } | { ok: false; retryAfterSeconds: number };

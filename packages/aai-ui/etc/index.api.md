@@ -11,11 +11,15 @@ import { Context } from 'react';
 import type { CSSProperties } from 'react';
 import type { DefaultToolResult } from '@alexkroman1/aai';
 import { FunctionComponentElement } from 'react';
+import { isTerminal } from '@alexkroman1/aai';
 import { JSX } from 'react';
 import { MemoExoticComponent } from 'react';
 import { ProviderProps } from 'react';
 import { ReactNode } from 'react';
 import { SessionErrorCode } from '@alexkroman1/aai/protocol';
+import { WorkflowOutputOf } from '@alexkroman1/aai';
+import { WorkflowRunSnapshot } from '@alexkroman1/aai';
+import { WorkflowSummary } from '@alexkroman1/aai';
 
 // @public
 export type AgentCustomEvent = {
@@ -131,8 +135,16 @@ className?: string;
 // @public
 export function createSessionCore(options: SessionCoreOptions): SessionCore;
 
+// @public
+export function createWorkflowApi(opts?: WorkflowApiOptions): WorkflowApi;
+
+// @public
+export const DEFAULT_WORKFLOW_POLL_MS = 2000;
+
 // @internal
 export function fetchClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse>;
+
+export { isTerminal }
 
 // @internal
 export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse | null>;
@@ -147,9 +159,29 @@ variant?: MarkdownVariant;
 export type MarkdownVariant = "default" | "compact";
 
 // @public
+export const MAX_MISSING_READS = 3;
+
+// @public
 export const MessageList: MemoExoticComponent<(input: {
 className?: string;
 }) => JSX.Element>;
+
+// @public
+export function page(config: PageConfig): PageHandle;
+
+// @public
+export type PageConfig = {
+    component: ComponentType;
+    target?: string | HTMLElement;
+    name?: string;
+    theme?: ClientTheme;
+};
+
+// @public
+export type PageHandle = {
+    dispose(): void;
+    [Symbol.dispose](): void;
+};
 
 // @public
 export type Session = SessionSnapshot & Pick<SessionCore, "start" | "cancel" | "resetState" | "reset" | "disconnect" | "toggle" | "end">;
@@ -308,6 +340,19 @@ export function useToolResult<R = DefaultToolResult>(toolName: string, callback:
 export function useToolResult<R = DefaultToolResult>(callback: (name: string, result: R, toolCall: ToolCallInfo) => void): void;
 
 // @public
+export function useWorkflowRun<R = unknown>(runId: string | undefined, opts?: {
+    api?: WorkflowApi;
+    intervalMs?: number;
+}): UseWorkflowRunResult<R>;
+
+// @public (undocumented)
+export type UseWorkflowRunResult<R = unknown> = {
+    run: WorkflowRun<R> | undefined;
+    error: string | undefined;
+    polling: boolean;
+};
+
+// @public
 export const VOICE_CAPTURE_CONSTRAINTS: MediaTrackConstraints;
 
 // @public
@@ -323,6 +368,36 @@ export type WebSocketConstructor = {
     new (url: string | URL, protocols?: string | string[]): WebSocket;
     readonly OPEN: number;
 };
+
+// @public
+export type WorkflowApi = {
+    list(): Promise<WorkflowSummary[]>;
+    start(workflow: string, input?: unknown, options?: {
+        key?: string;
+    }): Promise<string>;
+    get(runId: string): Promise<WorkflowRun | undefined>;
+    find(workflow: string, key: string, options?: {
+        limit?: number;
+    }): Promise<WorkflowRun[]>;
+    recent(workflow: string, options?: {
+        limit?: number;
+    }): Promise<WorkflowRun[]>;
+    cancel(runId: string): Promise<boolean>;
+    watch(runId: string, signal?: AbortSignal): Promise<Response>;
+};
+
+// @public (undocumented)
+export type WorkflowApiOptions = {
+    baseUrl?: string;
+    token?: string;
+};
+
+export { WorkflowOutputOf }
+
+// @public
+export type WorkflowRun<R = unknown> = WorkflowRunSnapshot<R>;
+
+export { WorkflowSummary }
 
 // (No @packageDocumentation comment for this package)
 

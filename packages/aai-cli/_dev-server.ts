@@ -26,6 +26,7 @@ import {
   startWorkflowWorldIfDeclared,
   withHostCredentialFallback,
 } from "@alexkroman1/aai/runtime";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { type FSWatcher, watch } from "chokidar";
 import getPort, { portNumbers } from "get-port";
@@ -357,6 +358,12 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       hostBaseAgent: agentDef,
       // Served pre-connection via GET /client-config.
       greeting: agentDef.greeting,
+      // A workflow app's declaration, honoured by the dev server exactly as the
+      // deployed guest honours it: `/websocket` is declined with a reason and
+      // telephony defaults off. Parity matters more here than usual, because a
+      // page mounted with `client()` by mistake fails identically in both places
+      // instead of only after a deploy.
+      ...omitUndefined({ page: agentDef.page }),
       // The DevKit's queue calls these back to replay a run and to execute a
       // step; unclaimed they fall through to the 404 and every run stalls with
       // nothing saying why. Returns false with no workflows, so an ordinary
