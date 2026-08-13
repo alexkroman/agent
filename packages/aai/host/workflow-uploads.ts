@@ -27,7 +27,7 @@
  * A recording is not a value: a two-hour WAV is a couple of hundred megabytes,
  * and both halves of the naive shape — buffer it to insert it, select it whole
  * to read 64 KB of header — are the memory this process does not have. So the
- * body streams into {@link UPLOAD_CHUNK_BYTES} rows as it arrives, and a range
+ * body streams into `UPLOAD_CHUNK_BYTES` rows as it arrives, and a range
  * read asks Postgres for exactly the bytes inside each covering chunk. A header
  * probe therefore moves 64 KB, not the file.
  *
@@ -53,10 +53,10 @@ import { ensureOnce } from "./_ensure-once.ts";
 
 /** The table one row per upload lives in. Prefixed so it cannot collide with an app's own. */
 export const UPLOADS_TABLE = "aai_workflow_uploads";
-/** The table the bytes live in, {@link UPLOAD_CHUNK_BYTES} at a time. */
+/** The table the bytes live in, one `UPLOAD_CHUNK_BYTES` piece per row. */
 export const UPLOAD_CHUNKS_TABLE = "aai_workflow_upload_chunks";
 
-/** Raised by {@link UploadStore.create} when the body ran past its cap. */
+/** Raised by an upload store's `create` when the body ran past its cap. */
 export class UploadTooLargeError extends Error {
   constructor(limit: number) {
     super(`upload exceeds ${limit} bytes`);

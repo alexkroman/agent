@@ -12,7 +12,7 @@
  * journaled and replayed, so bytes may not travel in it.
  */
 
-/** What {@link uploadFile} accepts. */
+/** What an upload call accepts as the file's bytes. */
 export type UploadBody = Blob | ArrayBuffer | ArrayBufferView | string;
 
 /** Options for an upload. */
@@ -30,7 +30,7 @@ export type UploadOptions = {
   signal?: AbortSignal | undefined;
 };
 
-/** A stored upload, as an upload call resolves it. */
+/** A stored upload, as `WorkflowApi.upload` resolves it. */
 export type UploadRef = {
   /** The handle a run input carries. */
   id: string;
