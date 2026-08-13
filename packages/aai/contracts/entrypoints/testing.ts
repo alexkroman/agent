@@ -12,6 +12,7 @@
  */
 
 export {
+  createStubWorkflows,
   createToolContext,
   createUnusedDb,
   type SentEvent,

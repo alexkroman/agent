@@ -153,7 +153,18 @@ type StartOptions = {
 };
 
 // @public
+type StreamOptions = {
+    namespace?: string;
+    startIndex?: number;
+};
+
+// @public
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
+
+// @public
+type WakeUpOptions = {
+    correlationIds?: string[];
+};
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
@@ -172,6 +183,9 @@ type WorkflowClient = {
     recent<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
     cancel(runId: string): Promise<boolean>;
+    wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
+    stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
+    streamTail(runId: string, options?: StreamOptions): Promise<number>;
     listing(): WorkflowSummary[];
 };
 

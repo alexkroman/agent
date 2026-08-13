@@ -77,7 +77,7 @@ of subpath exports in `aai/package.json`:
 | Import path | Resolves to | What it contains |
 | --- | --- | --- |
 | `@alexkroman1/aai` | `packages/aai/index.ts` | The AUTHORING surface, and only that: `agent()`/`tool()`/`sessionSlot()`/`workflow()`, the types they take and return, `assemblyAIPipeline()`/`assemblyAIS2s()`, and the `DEFAULT_*` constants that document an `agent()` field. Eight modules by `export *`, plus NAMED subsets of `sdk/constants.ts` and `sdk/utils.ts` — see "The root barrel is curated" below |
-| `@alexkroman1/aai/testing` | `sdk/testing.ts` (direct) | `createToolContext(overrides?)` — a full `ToolContext` for testing a tool's `execute` in isolation, with inert defaults, a recording `send` (`ctx.sent`), and a distinct `sessionId` per call — plus `createUnusedDb()`, the rejecting `db` it defaults to. PUBLISHED rather than an internal `_test-utils.ts` because the audience is an agent author's own project, which is also why it carries no vitest dependency (`send` records into an array; pass `vi.fn()` to override). See the `_test-utils.ts` section of the root guide |
+| `@alexkroman1/aai/testing` | `sdk/testing.ts` (direct) | `createToolContext(overrides?)` — a full `ToolContext` for testing a tool's `execute` in isolation, with inert defaults, a recording `send` (`ctx.sent`), and a distinct `sessionId` per call — plus `createUnusedDb()`, the rejecting `db` it defaults to, and `createStubWorkflows(overrides?)`, the same thing for `ctx.workflows` (see its own doc for why a hand-written stub of that client goes stale). PUBLISHED rather than an internal `_test-utils.ts` because the audience is an agent author's own project, which is also why it carries no vitest dependency (`send` records into an array; pass `vi.fn()` to override). See the `_test-utils.ts` section of the root guide |
 | `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | The zod-free half of the SDK, which is what makes it the CLI's import path (`p-timeout`, 2.4 KB with no dependencies and backing the lock's acquire deadline, is the one measured exception). Three groups: the tool-code helpers the root also re-exports (`errorMessage`, `errorDetail`, `safeJsonParse`, `toolFailure`/`isToolFailure`, `pushCapped`, `createKeyedLock`/`withLock`); the framework's own wire helpers, `@internal` and root-invisible (`capToolResult`, `toArgsRecord`, `isTextAssetPath`, `normalizeSpeechText`, `omitUndefined`, and `serializeToolFailure` — the pre-serialized `'{"error":…}'` the host emits for a tool that threw, which `isToolFailure` deliberately does NOT narrow); and the two contracts BOTH ends of a platform interaction must derive identically — the slug shape (`VALID_SLUG_RE`, `RESERVED_SLUGS`, `sdk/slug.ts`) and the `aai login` confirmation code (`linkConfirmationCode`, `sdk/cli-link.ts`; the terminal prints it, the studio's approval gate shows it, and the point is that they match) |
 | `@alexkroman1/aai/slugify` | `host/slugify.ts` (direct) | `slugifyName` — how a human name BECOMES a slug (transliterating, `decamelize: false`), for the CLI, the platform server, and the studio. Separate from the contract in `sdk/slug.ts` on purpose: that one is dependency-free and rides every agent bundle, this one pulls the transliteration tables. Nothing on the SDK hot path may import it |
 | `@alexkroman1/aai/runtime` | `host/runtime-barrel.ts` → 11 modules | Full Node.js runtime: session, S2S, server, tools, WS handler |
@@ -442,8 +442,11 @@ Reference providers shipped today:
     ids alone. (2) The final usage-only chunk carries `"choices": null` where
     the schema requires an array, so the turn dies with "Type validation
     failed" *after* the reply has streamed — the wrapper rewrites that null to
-    `[]` (an absent `choices` stays absent). Every other byte passes through.
-    Remove each repair once the gateway emits conformant frames.
+    `[]` (an absent `choices` stays absent); every other byte passes through.
+    A THIRD defect is a REQUEST one (Gemini 500s on the
+    `$schema`/`propertyNames` zod conversion emits) and is `transformParams`
+    middleware instead — `_gateway-tool-schema.ts` carries why. Remove each once
+    the gateway conforms.
 
     **The default model is `qwen3-next-80b-a3b`.** The id is a one-line
     change, but it moves WHERE reasoning gets turned off, so read the two

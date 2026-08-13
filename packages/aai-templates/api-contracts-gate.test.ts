@@ -347,9 +347,13 @@ describe("API-EXPORTS.json", () => {
     // `Db` is exported from the root and merely referenced by `/testing`.
     expect(surface["@alexkroman1/aai"]).toContain("Db");
     expect(surface["@alexkroman1/aai/testing"]).not.toContain("Db");
+    // Same for `WorkflowClient`, which `createStubWorkflows` takes and returns.
+    expect(surface["@alexkroman1/aai"]).toContain("WorkflowClient");
+    expect(surface["@alexkroman1/aai/testing"]).not.toContain("WorkflowClient");
     expect(surface["@alexkroman1/aai/testing"]).toEqual([
       "SentEvent",
       "TestToolContext",
+      "createStubWorkflows",
       "createToolContext",
       "createUnusedDb",
     ]);

@@ -153,6 +153,60 @@ describe("createWorkflowApi", () => {
     expect(call()[0]).toContain("/workflows/runs/wrun_1/events");
     expect(call()[1]?.headers).toMatchObject({ Accept: "text/event-stream" });
   });
+
+  test("streamOutput asks for the run's own chunks, raw like watch", async () => {
+    fetchMock.mockImplementation(async () => new Response(null, { status: 404 }));
+    const res = await createWorkflowApi({ baseUrl: BASE }).streamOutput("wrun_1");
+    expect(res.status).toBe(404);
+    // No query at all when nothing was asked for — the whole stream from 0.
+    expect(call()[0]).toBe("https://agents.example/my-agent/workflows/runs/wrun_1/stream");
+    expect(call()[1]?.headers).toMatchObject({ Accept: "text/event-stream" });
+  });
+
+  test("streamOutput carries namespace and startIndex, negative included", async () => {
+    fetchMock.mockImplementation(async () => new Response(null, { status: 200 }));
+    await createWorkflowApi({ baseUrl: BASE }).streamOutput("wrun_1", {
+      namespace: "progress",
+      startIndex: -3,
+    });
+    expect(call()[0]).toContain("namespace=progress");
+    expect(call()[0]).toContain("startIndex=-3");
+  });
+
+  test("streamOutput forwards an abort signal", async () => {
+    fetchMock.mockImplementation(async () => new Response(null, { status: 200 }));
+    const controller = new AbortController();
+    await createWorkflowApi({ baseUrl: BASE }).streamOutput("wrun_1", {
+      signal: controller.signal,
+    });
+    expect(call()[1]?.signal).toBe(controller.signal);
+  });
+
+  test("wake is a POST reporting how many sleeps it ended", async () => {
+    fetchMock.mockImplementation(async () => json({ runId: "wrun_1", woken: 2 }));
+    const woken = await createWorkflowApi({ baseUrl: BASE }).wake("wrun_1");
+    expect(woken).toBe(2);
+    expect(call()[1]?.method).toBe("POST");
+    expect(call()[0]).toContain("/workflows/runs/wrun_1/wake");
+  });
+
+  test("wake resolves 0 for a 404 — nothing was sleeping, which is an answer", async () => {
+    fetchMock.mockImplementation(async () => json({ error: "gone" }, 404));
+    await expect(createWorkflowApi({ baseUrl: BASE }).wake("gone")).resolves.toBe(0);
+  });
+
+  test("wake reads 0 from a body that answered without `woken`", async () => {
+    // An older agent, or a proxy that rewrote the body: absent is not 'many'.
+    fetchMock.mockImplementation(async () => json({ runId: "wrun_1" }));
+    await expect(createWorkflowApi({ baseUrl: BASE }).wake("wrun_1")).resolves.toBe(0);
+  });
+
+  test("wake surfaces a real failure rather than reporting 0", async () => {
+    // The one case that must NOT degrade to an answer: 0 means "not sleeping",
+    // and reporting it for a 500 would hide a broken agent behind a normal reply.
+    fetchMock.mockImplementation(async () => json({ error: "boom" }, 500));
+    await expect(createWorkflowApi({ baseUrl: BASE }).wake("wrun_1")).rejects.toThrow("boom");
+  });
 });
 
 describe("startAndWait", () => {

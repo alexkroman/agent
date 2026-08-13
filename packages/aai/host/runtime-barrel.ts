@@ -183,6 +183,10 @@ export {
   resolveKeyStore,
   type WdkAdapter,
   type WdkRunRecord,
+  // `readStream`'s options. Exported because `WdkAdapter` is: a type a public
+  // signature MENTIONS but does not export is a docs-build warning here, and
+  // warnings are errors — see the root guide's `includeForgottenExports` note.
+  type WdkStreamOptions,
   type WorkflowClientOptions,
 } from "./workflow-client.ts";
 export {

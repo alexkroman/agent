@@ -246,6 +246,35 @@ export type FindOptions = {
   limit?: number;
 };
 
+/** Options for {@link WorkflowClient.wakeUp}. */
+export type WakeUpOptions = {
+  /**
+   * Interrupt only the `sleep()` calls carrying these correlation ids. Omitted,
+   * every pending sleep in the run is interrupted, which is what a "do it now"
+   * button means.
+   */
+  correlationIds?: string[];
+};
+
+/** Options for {@link WorkflowClient.stream}. */
+export type StreamOptions = {
+  /**
+   * Which of the run's streams to read. A run may keep several — `getWritable`
+   * takes the same option — so a workflow can separate, say, progress from log
+   * output. Omitted, this is the run's default stream.
+   */
+  namespace?: string;
+  /**
+   * Chunk index to start from, 0-based. Negative counts back from the end
+   * (`-3` reads the last three), which is what a reconnecting reader wants when
+   * it does not know how far it got.
+   *
+   * Defaults to 0 — the whole stream from the beginning, since chunks are
+   * retained with the run rather than being live-only.
+   */
+  startIndex?: number;
+};
+
 /**
  * Start and inspect workflow runs. Reaches tool code as `ctx.workflows`.
  *
@@ -332,6 +361,50 @@ export type WorkflowClient = {
    * so what it did before stopping stays readable.
    */
   cancel(runId: string): Promise<boolean>;
+  /**
+   * Interrupt a run's pending `sleep()` calls, resuming it early. Resolves how
+   * many sleeps were interrupted — `0` when the run was not sleeping, had
+   * already finished, or does not exist.
+   *
+   * This is the counterpart of a `sleep()` long enough to be worth shortening,
+   * which is most of the ones worth writing: a review delay, a retry backoff, a
+   * "follow up tomorrow". Without it the only handle on a sleeping run is
+   * {@link cancel}, so "send it now" and "throw it away" were the same button.
+   *
+   * Pass `correlationIds` to target specific sleeps; omitted, every pending one
+   * in the run is interrupted.
+   */
+  wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
+  /**
+   * Read what a run has WRITTEN while running, as a stream.
+   *
+   * The gap this fills: a snapshot carries a status and, once terminal, an
+   * output — so a run that takes ten minutes is `running` for ten minutes and
+   * then done, with nothing in between. A workflow that wants to report progress
+   * writes to `getWritable()` (imported from `workflow`, like `sleep`), and this
+   * is the read side.
+   *
+   * Chunks are RETAINED with the run, not live-only, so this is equally a replay:
+   * a page that reloads mid-run reads the whole stream from the start by default,
+   * and `startIndex` is for a reader that knows where it got to.
+   *
+   * The stream is lazy — a run that does not exist surfaces when it is read, not
+   * here — so a caller wanting a clean "no such run" answer should {@link get} it
+   * first, which is what the HTTP route does.
+   */
+  stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
+  /**
+   * How far the run's stream currently goes: the index of the last chunk
+   * written, or `-1` for a stream nothing has written to.
+   *
+   * **This is what makes reading a progress stream terminate.** A workflow stream
+   * reports its end only once it has been CLOSED, and a progress channel written
+   * by one step after another is never closed — no step knows it is the last one.
+   * So {@link stream} on a finished run yields every chunk and then waits
+   * forever. A reader bounds itself by this instead, which is also what a
+   * reconnecting reader needs in order to ask for what it has not seen.
+   */
+  streamTail(runId: string, options?: StreamOptions): Promise<number>;
   /**
    * The workflows this agent declares, name + description + input schema.
    *

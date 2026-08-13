@@ -178,7 +178,10 @@ describe("resolveLlm", () => {
     // default. The assertion is on the actual request body — the wrapper
     // middleware only acts at call time, so a static shape check proves
     // nothing.
-    async function requestBodyFor(options: Record<string, unknown>): Promise<string> {
+    async function requestBodyFor(
+      options: Record<string, unknown>,
+      tools?: readonly unknown[],
+    ): Promise<string> {
       const model = resolveLlm(
         { kind: ASSEMBLYAI_LLM_KIND, options },
         { ASSEMBLYAI_API_KEY: "fake-key" },
@@ -204,6 +207,7 @@ describe("resolveLlm", () => {
       try {
         await model.doGenerate({
           prompt: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+          ...(tools ? { tools } : {}),
         });
       } finally {
         vi.unstubAllGlobals();
@@ -236,6 +240,32 @@ describe("resolveLlm", () => {
     it('turns reasoning off when the descriptor sets reasoningEffort: "none"', async () => {
       const body = await requestBodyFor({ model: "gpt-5.5", reasoningEffort: "none" });
       expect(JSON.parse(body)).toMatchObject({ reasoning_effort: "none" });
+    });
+
+    // `gatewayToolSchemaMiddleware` is unit-tested next door; what this covers
+    // is that it is WIRED — and unconditionally, on a descriptor that sets no
+    // reasoningEffort, since the reasoning wrapper used to be the only wrapper
+    // and returning the bare model when it was unset is the shape of the miss.
+    // Asserted on the outgoing body because middleware only acts at call time.
+    it("prunes unsupported tool-schema keywords from the outgoing request", async () => {
+      const body = await requestBodyFor({ model: "gemini-2.5-flash" }, [
+        {
+          type: "function",
+          name: "read_file",
+          inputSchema: {
+            $schema: "http://json-schema.org/draft-07/schema#",
+            type: "object",
+            properties: { args: { type: "object", propertyNames: { type: "string" } } },
+          },
+        },
+      ]);
+      expect(body).not.toContain("$schema");
+      expect(body).not.toContain("propertyNames");
+      // The tool itself still reaches the gateway — a prune that dropped the
+      // declaration would "fix" the 500 by making the agent tool-less.
+      expect(JSON.parse(body)).toMatchObject({
+        tools: [{ function: { name: "read_file", parameters: { type: "object" } } }],
+      });
     });
   });
 });

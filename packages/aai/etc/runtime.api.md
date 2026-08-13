@@ -1021,6 +1021,12 @@ export function startTelephonySession(carrierSocket: SessionWebSocket, runtime: 
 export function startWorkflowWorldIfDeclared(hasWorkflows: boolean, kind: WorldKind): Promise<void>;
 
 // @public
+type StreamOptions = {
+    namespace?: string;
+    startIndex?: number;
+};
+
+// @public
 interface SttError extends Error {
     // (undocumented)
     readonly code: "stt_connect_failed" | "stt_auth_failed" | "stt_stream_error";
@@ -1285,11 +1291,19 @@ export type WakeHintPublisher = {
 };
 
 // @public
+type WakeUpOptions = {
+    correlationIds?: string[];
+};
+
+// @public
 export type WdkAdapter = {
     start(workflowId: string, args: unknown[]): Promise<string>;
     getRun(runId: string): Promise<WdkRunRecord | undefined>;
     listRuns(workflowId: string, limit: number): Promise<WdkRunRecord[]>;
     cancel(runId: string): Promise<boolean>;
+    wakeUp(runId: string, correlationIds: string[] | undefined): Promise<number>;
+    readStream(runId: string, options: WdkStreamOptions): ReadableStream<unknown>;
+    streamTail(runId: string, options: WdkStreamOptions): Promise<number>;
     readOutput(runId: string): Promise<unknown>;
 };
 
@@ -1305,6 +1319,12 @@ export type WdkRunRecord = {
     error?: {
         message: string;
     } | undefined;
+};
+
+// @public
+export type WdkStreamOptions = {
+    namespace?: string | undefined;
+    startIndex?: number | undefined;
 };
 
 // @internal
@@ -1358,6 +1378,9 @@ type WorkflowClient = {
     recent<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
     cancel(runId: string): Promise<boolean>;
+    wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
+    stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
+    streamTail(runId: string, options?: StreamOptions): Promise<number>;
     listing(): WorkflowSummary[];
 };
 

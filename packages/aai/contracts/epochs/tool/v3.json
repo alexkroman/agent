@@ -1,0 +1,25 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "tool",
+  "epoch": 3,
+  "sha256": "902fb6509134f680b00cd882f334e7a624e0788bfd8bd481debe085abaedf033",
+  "exports": [
+    "Db",
+    "DefaultToolResult",
+    "GenerateFn",
+    "GenerateObjectResult",
+    "GenerateOptions",
+    "GenerateResult",
+    "InferSchemaOutput",
+    "InferToolInput",
+    "InferToolOutput",
+    "Message",
+    "ToolContext",
+    "ToolDef",
+    "ToolFailure",
+    "ToolInputSchema",
+    "isToolFailure",
+    "tool",
+    "toolFailure"
+  ]
+}

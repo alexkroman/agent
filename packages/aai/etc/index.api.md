@@ -778,6 +778,12 @@ export type StaticFrontDoorMisuse = '`page: "static"` declares a WORKFLOW APP, w
 export const STORAGE_DISABLED_MESSAGE: string;
 
 // @public
+export type StreamOptions = {
+    namespace?: string;
+    startIndex?: number;
+};
+
+// @public
 type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "stt";
 };
@@ -860,6 +866,11 @@ type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+export type WakeUpOptions = {
+    correlationIds?: string[];
+};
+
+// @public
 export const withLock: <T>(lock: (key: string, opts?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, opts?: KeyedLockOptions) => Promise<T>;
 
 // @public
@@ -891,6 +902,9 @@ export type WorkflowClient = {
     recent<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
     cancel(runId: string): Promise<boolean>;
+    wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
+    stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
+    streamTail(runId: string, options?: StreamOptions): Promise<number>;
     listing(): WorkflowSummary[];
 };
 

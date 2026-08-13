@@ -133,6 +133,29 @@ Two things stayed here, because they are genuinely the studio's: the
 **compaction** (`studio-compaction.ts`, in the turn's `prepareStep`, which the
 SDK composes its reserved final-answer step over rather than replacing).
 
+**Compaction is TWO TIERS, and the cheap one is the SDK's `pruneMessages`.** The
+bulk in a build loop is tool RESULTS — a tsc dump or a build log, one per attempt
+— and the original implementation reached straight for an LLM summarizer, paying
+a call to compress text whose location was already known. `pruneMessages` drops
+exactly those (older than the recent window, removed in PAIRS by `toolCallId`, so
+nothing is orphaned), deterministically and free; the summarizer runs only if the
+estimate is still over budget, which is the long-conversation case it was really
+for. Tier 1 is acceptable as a substitute because `streamText` emits the agent's
+TEXT alongside its tool-call, so pruning keeps the narrative ("attempt 3: fixing
+the import") and drops only the payload.
+
+**Its cut points have to fall on turn boundaries**, which the index-based version
+did not. Tier 2 splices `[...leading, summary, ...recent]` into a conversation
+shaped assistant(tool-call) / tool(result), alternating — so a `recent` window
+beginning on a tool message emitted a result whose call went into the summary, and
+both providers reject an unmatched tool result outright. Same failure `capLlm`
+documents in `aai/host/transports/pipeline-history.ts`, by a different route. One
+check covers both cuts: a cut at index `i` is safe iff `messages[i]` is not a
+`tool` message, because an assistant carrying tool-calls is always followed
+immediately by its results — so that test also rules out the mirror-image
+error, a call nothing answers. Both boundaries move OUTWARD, so an adjustment
+only ever keeps more verbatim.
+
 `STUDIO_TOOL_LABELS` and `MUTATING_TOOLS` are checked against
 `createStudioAgent`'s real tool surface, not a hand-merged copy of it — the
 merge they used to be compared against was a second place the tool set was

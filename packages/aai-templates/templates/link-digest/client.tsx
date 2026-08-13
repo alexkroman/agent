@@ -7,12 +7,28 @@
  * is the same — the same `client.tsx` filename, React, Tailwind, and the same
  * theme tokens the voice components read.
  *
- * What replaces `useSession()` is two things: `createWorkflowApi()` to start a
- * run, and `useWorkflowRun()` to watch it. The API is durable, so the `runId` is
- * the whole state — it survives a reload, a different device, or `curl`.
+ * What replaces `useSession()` is three things: `createWorkflowApi()` to start a
+ * run, `useWorkflowRun()` to watch its STATUS, and `useWorkflowProgress()` to
+ * read what it has WRITTEN. The API is durable, so the `runId` is the whole
+ * state — it survives a reload, a different device, or `curl`.
+ *
+ * ## Status and progress are different questions
+ *
+ * `useWorkflowRun` answers "where has this got to" from the world's own record —
+ * pending, running, completed. `useWorkflowProgress` answers "what is it doing"
+ * from what the run wrote itself (`report()` in `workflows/digest.ts`). A page
+ * with only the first shows "Working…" for the length of the run; a page with
+ * only the second cannot tell a finished run from a quiet one. Both are cheap:
+ * one stream each, ended by the agent when there is nothing left to say.
+ *
+ * Progress also REPLAYS — chunks are retained with the run — so a reload mid-run
+ * catches up rather than starting from whatever arrives next. This page renders
+ * only the newest line, because on a page this small that is the whole of what a
+ * status wants; `transcription-desk` renders the full log, where a fan-out makes
+ * the history worth seeing.
  */
 
-import { createWorkflowApi, page, useWorkflowRun } from "@alexkroman1/aai-ui";
+import { createWorkflowApi, page, useWorkflowProgress, useWorkflowRun } from "@alexkroman1/aai-ui";
 import "@alexkroman1/aai-ui/styles.css";
 // ERASED at build time, so naming the agent's own type costs the browser bundle
 // nothing — and it is what stops this file restating a shape `workflows/
@@ -44,6 +60,9 @@ export function App() {
   // The generic is what makes `run.status === "completed"` narrow to a TYPED
   // `run.output` instead of `unknown`.
   const { run, polling } = useWorkflowRun<Digest>(runId, { api });
+  // What the run has SAID, as against where it has got to. Defaults to `string`,
+  // which is what `report()` writes.
+  const { latest, supported } = useWorkflowProgress(runId, { api });
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -83,7 +102,29 @@ export function App() {
       {/* A run that has not settled says so. `polling` is not derivable from the
           snapshot alone — an id the agent never knew leaves `run` undefined,
           which would otherwise read as "still waiting" forever. */}
-      {polling && <p>Reading the link. You can close this tab — the run continues.</p>}
+      {polling && <p>You can close this tab — the run continues without it.</p>}
+
+      {/* The run's own narration, newest line only — see the module doc.
+
+          `supported` is what keeps this from being blank forever on an agent
+          deployed before progress streams existed: "wrote nothing yet" and
+          "serves no stream" are indistinguishable from `progress` alone. */}
+      {supported && latest !== undefined && <p className="text-sm opacity-70">{latest}</p>}
+
+      {/* The counterpart of the `sleep` in `workflows/digest.ts`. Without it the
+          only handle on a sleeping run is `cancel`, so "file it now" and "throw
+          it away" would be the same button. `wake` answering 0 means the run had
+          already moved past its wait, which is why nothing here treats that as a
+          failure. */}
+      {runId !== undefined && polling && (
+        <button
+          type="button"
+          onClick={() => void api.wake(runId)}
+          className="self-start rounded-md border px-3 py-1 text-sm"
+        >
+          File it now
+        </button>
+      )}
 
       {run?.status === "failed" && <p className="text-red-600">That one failed: {run.error}</p>}
 

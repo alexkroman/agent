@@ -1,17 +1,22 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Repairs non-conformant behavior of the AssemblyAI LLM Gateway, as a `fetch`
- * wrapper. Three defects, each fatal to a turn:
+ * Repairs non-conformant RESPONSES from the AssemblyAI LLM Gateway, as a `fetch`
+ * wrapper. Two defects, each fatal to a turn:
  *
  * 1. `tool_calls` deltas that omit `id` and `type` (Claude; detailed below).
  * 2. A usage-only final chunk carrying `"choices": null` where the AI SDK's
  *    schema requires an array (Claude) — the turn dies with "Type validation
  *    failed" *after* the reply has streamed, so it reads as a random late
  *    failure.
- * 3. Tool schemas carrying `$schema` or `propertyNames` (Gemini), which the
- *    gateway answers with a 500. Unlike the other two this is a REQUEST
- *    defect, handled before dispatch in `_gateway-tool-schema.ts`; it makes
- *    every Gemini model unusable for any agent with tools.
+ *
+ * **Bytes are the only place these can be caught, which is why this is a `fetch`
+ * wrapper and not middleware.** Both defects violate the wire schema the AI SDK
+ * parses SSE frames with, so they kill the parse itself — there is no stream part
+ * for a `wrapStream` to see, and no `params` a `transformParams` could touch. The
+ * gateway's one REQUEST defect (Gemini rejecting `$schema`/`propertyNames`) does
+ * have a typed representation, and lives in `_gateway-tool-schema.ts` as
+ * `transformParams` middleware for exactly that reason; it used to be handled
+ * here, at the cost of re-serializing the entire conversation on every request.
  *
  * **Why this exists.** The AssemblyAI LLM Gateway documents streamed
  * responses for OpenAI models only, but it will happily stream a Claude
@@ -42,7 +47,6 @@
  */
 
 import { safeJsonParse } from "../../sdk/utils.ts";
-import { stripUnsupportedToolSchemaKeywords } from "./_gateway-tool-schema.ts";
 
 /** Structural `fetch`, kept loose so it satisfies the AI SDK's option type. */
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -238,15 +242,10 @@ export function repairOpenAiStream(
 ): FetchLike {
   const newId = options.generateId ?? defaultGenerateId;
   return async (input, init) => {
-    // Request-side repair: the gateway's Gemini path 500s on JSON Schema
-    // keywords the AI SDK emits for every zod-derived tool. See
-    // `_gateway-tool-schema.ts` — without it, no Gemini model can run an
-    // agent that has tools.
-    const repaired =
-      typeof init?.body === "string"
-        ? { ...init, body: stripUnsupportedToolSchemaKeywords(init.body) }
-        : init;
-    const response = await (baseFetch ?? globalThis.fetch)(input, repaired);
+    // Nothing on the request is touched here: the outgoing tool schemas are
+    // pruned as typed `params` by `gatewayToolSchemaMiddleware`, before the
+    // provider serializes anything (see `_gateway-tool-schema.ts`).
+    const response = await (baseFetch ?? globalThis.fetch)(input, init);
     const contentType = response.headers.get("content-type") ?? "";
     if (!(response.body && contentType.includes(SSE_CONTENT_TYPE))) return response;
     // The repair transform rewrites frames (synthetic tool-call ids lengthen

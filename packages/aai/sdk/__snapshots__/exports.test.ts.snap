@@ -256,6 +256,7 @@ exports[`export surface stability > @alexkroman1/aai/stt export 1`] = `
 
 exports[`export surface stability > @alexkroman1/aai/testing export 1`] = `
 [
+  "createStubWorkflows",
   "createToolContext",
   "createUnusedDb",
 ]

@@ -82,7 +82,7 @@ export default agent({
 `;
 
 const WORKFLOW_TS = `
-import { sleep } from "workflow";
+import { getWritable, sleep } from "workflow";
 
 export async function researchFlow(input: { topic: string }) {
   "use workflow";
@@ -90,12 +90,36 @@ export async function researchFlow(input: { topic: string }) {
   // The suspension is the point: it is what a tool cannot do, and it is what
   // makes the resume path (a second flow-route call) part of this test.
   await sleep(${JSON.stringify(SLEEP)});
+  await file(findings.topic);
   return { topic: findings.topic, sources: findings.sources };
 }
 
 async function gather(topic: string) {
   "use step";
+  await report("gathering " + topic);
   return { topic, sources: 3 };
+}
+
+// A step AFTER the sleep, so the progress assertion covers a stream written
+// across a suspension — the run resumes in a fresh flow-route call and has to
+// append to the same stream rather than starting a new one.
+async function file(topic: string) {
+  "use step";
+  await report("filed " + topic);
+}
+
+// The same best-effort helper both page templates ship. Called from steps only:
+// the body replays from the top, so a line written there is re-emitted on every
+// resume.
+async function report(line: string) {
+  try {
+    const writer = getWritable().getWriter();
+    try {
+      await writer.write(line);
+    } finally {
+      writer.releaseLock();
+    }
+  } catch {}
 }
 `;
 
@@ -368,6 +392,60 @@ describe("aai dev serves the workflow HTTP API", () => {
       status: "completed",
       output: { shouted: ["ONE", "TWO", "THREE", "FOUR", "FIVE"] },
     });
+  }, 40_000);
+
+  test("streams the progress a run WROTE, across its suspension", async () => {
+    // The half no unit test can reach: `getWritable()` throws outside a run, so
+    // only a real transform, a real world and the real route can prove a line
+    // written in a step comes back out of `GET /runs/:id/stream`. It also spans
+    // the `sleep` — the second line is written by a step that runs in a FRESH
+    // flow-route call after the resume, and has to append to the same stream.
+    const started = await api("/workflows/runs", {
+      method: "POST",
+      headers: JSON_POST,
+      body: JSON.stringify({ workflow: "research", input: { topic: "otters" }, wait: 30_000 }),
+    });
+    const runId = started.body.runId as string;
+
+    // Read AFTER the run finished, which is the replay property: chunks are
+    // retained with the run, so a page that arrives late sees all of them.
+    const response = await fetch(`${origin}/workflows/runs/${runId}/stream`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("text/event-stream");
+    const body = await response.text();
+
+    expect(body).toContain('event: chunk\ndata: "gathering otters"');
+    expect(body).toContain('event: chunk\ndata: "filed otters"');
+    // Terminated properly, so a reader knows it is finished rather than dropped.
+    expect(body).toContain("event: done");
+  }, 40_000);
+
+  test("wake ends a sleeping run early, and reports how many sleeps it stopped", async () => {
+    // Started WITHOUT a wait, so the run is parked in its `sleep` when the wake
+    // lands. `woken` is the count the route reports — 0 would mean the sleep had
+    // already elapsed, which is why this races it deliberately.
+    const started = await api("/workflows/runs", {
+      method: "POST",
+      headers: JSON_POST,
+      body: JSON.stringify({ workflow: "research", input: { topic: "kelp beds" } }),
+    });
+    expect(started.status).toBe(202);
+    const runId = started.body.runId as string;
+
+    // Poll until the run is actually asleep — `wake` on a run that has not
+    // reached its `sleep` yet has nothing to interrupt, and asserting a count
+    // before then would be a race dressed as a finding.
+    let woken = 0;
+    for (let attempt = 0; attempt < 40 && woken === 0; attempt += 1) {
+      const result = await api(`/workflows/runs/${runId}/wake`, { method: "POST" });
+      expect(result.status).toBe(200);
+      woken = Number(result.body.woken);
+      if (woken === 0) await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    expect(woken).toBeGreaterThan(0);
+    const finished = await api(`/workflows/runs/${runId}?wait=30000`);
+    expect(finished.body).toMatchObject({ status: "completed", output: { topic: "kelp beds" } });
   }, 40_000);
 
   test("rejects a bad input at the call site, with no run created", async () => {

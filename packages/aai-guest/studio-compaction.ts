@@ -24,9 +24,45 @@
  *   being fixed right now.
  * - Only the middle is summarized, and the summary is generated once per
  *   compaction rather than per step.
+ *
+ * ## Two tiers, and the cheap one is aimed at the bulk this file names
+ *
+ * The paragraph above identifies the bulk precisely — tool RESULTS, one per
+ * build attempt — and the original implementation reached straight for a
+ * summarizer anyway, paying an LLM call to compress text whose location was
+ * already known. {@link pruneMessages} drops exactly those: tool-call and
+ * tool-result content older than the recent window, removed in PAIRS by
+ * `toolCallId` so nothing is orphaned, with any pair whose result is still in
+ * the window kept whole. It is deterministic, free, and cannot fail.
+ *
+ * So it runs first, and the summarizer runs only if the estimate is still over
+ * budget afterwards — which is the case the summarizer was really for, a long
+ * conversation rather than a bulky one.
+ *
+ * ## A cut point has to fall on a turn boundary
+ *
+ * Tier 2 splices `[...leading, summary, ...recent]`, and both cuts land in the
+ * middle of a conversation whose shape is assistant(tool-call) / tool(result),
+ * alternating, for the length of a repair loop. A `recent` window that BEGINS
+ * on a tool message therefore emits a tool result whose tool-call went into the
+ * summary — and both providers reject an unmatched tool result outright
+ * ("messages with role 'tool' must be a response to a preceding message with
+ * 'tool_calls'"), so the turn dies at the provider with every step of the
+ * repair loop still to run. This is the same failure `capLlm` documents in
+ * `aai/host/transports/pipeline-history.ts`, arriving by a different route: an
+ * index-based trim drifts out of alignment with turn boundaries on its own,
+ * because turns are not a uniform number of messages.
+ *
+ * One check covers both cuts, and it is worth seeing why: a cut at index `i` is
+ * safe iff `messages[i]` is not a `tool` message. An assistant message carrying
+ * tool-calls is always followed immediately by its results, so "the message
+ * after the cut is not a result" also establishes "the message before the cut
+ * is not an unanswered call" — the mirror-image error, which providers reject
+ * just as hard. {@link turnBoundary} is that check; both boundaries move
+ * OUTWARD from the middle, so an adjustment only ever keeps more verbatim.
  */
 
-import { generateText, type LanguageModel, type ModelMessage } from "ai";
+import { generateText, type LanguageModel, type ModelMessage, pruneMessages } from "ai";
 
 /**
  * Rough token estimate. Deliberately a heuristic: the exact count depends on
@@ -79,11 +115,26 @@ function flatten(m: ModelMessage): string {
 }
 
 /**
- * Replace the middle of the conversation with a summary.
+ * Move a cut index off a tool result, in the given direction.
  *
- * Returns the original array unchanged when compaction is unnecessary or the
- * summary call fails — losing the middle to a failed summarizer would be
- * worse than a long context.
+ * `step` is +1 for the leading boundary (grow `leading`, so the first user
+ * message is never the thing given up) and -1 for the recent boundary (grow
+ * `recent`, so the in-progress error is never the thing given up). Both
+ * directions shrink the summarized middle, which is always safe.
+ */
+function turnBoundary(messages: readonly ModelMessage[], index: number, step: 1 | -1): number {
+  let i = index;
+  while (i > 0 && i < messages.length && messages[i]?.role === "tool") i += step;
+  return i;
+}
+
+/**
+ * Bring a long conversation back under budget: prune stale tool payloads, and
+ * summarize the middle if that was not enough.
+ *
+ * Returns the messages unchanged when compaction is unnecessary or the summary
+ * call fails — losing the middle to a failed summarizer would be worse than a
+ * long context.
  */
 export async function compactMessages(
   model: LanguageModel,
@@ -92,10 +143,23 @@ export async function compactMessages(
 ): Promise<ModelMessage[]> {
   if (!needsCompaction(messages, opts)) return [...messages];
 
-  const leading = messages.slice(0, opts.keepLeading);
-  const recent = messages.slice(-opts.keepRecent);
-  const middle = messages.slice(opts.keepLeading, messages.length - opts.keepRecent);
-  if (middle.length === 0) return [...messages];
+  // Tier 1: drop the tool call/result payloads older than the recent window —
+  // the tsc dumps and build logs this loop accumulates. Deterministic, free,
+  // and pair-safe; most turns need nothing further.
+  const pruned = pruneMessages({
+    messages: [...messages],
+    toolCalls: `before-last-${opts.keepRecent}-messages`,
+  });
+  if (!needsCompaction(pruned, opts)) return pruned;
+
+  // Tier 2: summarize what is left of the middle. Both cuts are moved off a
+  // tool result first — see `turnBoundary`.
+  const lead = turnBoundary(pruned, Math.min(opts.keepLeading, pruned.length), 1);
+  const start = turnBoundary(pruned, Math.max(lead, pruned.length - opts.keepRecent), -1);
+  const leading = pruned.slice(0, lead);
+  const middle = pruned.slice(lead, start);
+  const recent = pruned.slice(start);
+  if (middle.length === 0) return pruned;
 
   try {
     const { text } = await generateText({
@@ -116,7 +180,9 @@ export async function compactMessages(
     };
     return [...leading, summary, ...recent];
   } catch {
-    // A failed summary must not drop the middle.
-    return [...messages];
+    // A failed summary must not drop the middle. Tier 1's result still stands:
+    // it removed nothing the model needs to stay coherent, and returning the
+    // un-pruned list would throw away the only progress this call made.
+    return pruned;
   }
 }

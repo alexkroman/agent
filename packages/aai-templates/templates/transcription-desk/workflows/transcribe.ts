@@ -58,7 +58,37 @@
  */
 
 import { mapInBatches } from "@alexkroman1/aai/utils";
-import { createWebhook, FatalError } from "workflow";
+import { createWebhook, FatalError, getWritable } from "workflow";
+
+/**
+ * Write one progress line to the run's own stream.
+ *
+ * The only way a run can say anything before it finishes: a snapshot carries a
+ * status and, once terminal, an output, so without this a twelve-segment
+ * recording reads as `running` for the whole fan-out. `client.tsx` reads it back
+ * with `useWorkflowProgress`.
+ *
+ * Two properties worth copying. It is called from STEPS and never from the body,
+ * the same rule as `ctx.db`: the body replays from the top on every resume, so a
+ * line written there is re-emitted on each one. And it is BEST-EFFORT — a run
+ * must not fail because its narration could not be written, which is also what
+ * keeps the steps below callable from this template's own spec, where there is no
+ * run and `getWritable()` throws by design.
+ */
+async function report(line: string): Promise<void> {
+  try {
+    const writer = getWritable<string>().getWriter();
+    try {
+      await writer.write(line);
+    } finally {
+      // Released rather than closed: later steps write to the same stream, and a
+      // closed stream cannot be reopened.
+      writer.releaseLock();
+    }
+  } catch {
+    // No run in scope, or the stream is already gone. Neither is worth a failure.
+  }
+}
 
 /**
  * Segments post-processed at once — see the module doc's second half.
@@ -170,6 +200,8 @@ export async function transcribeFlow(input: {
 export async function submitTranscriptionJob(upload: Upload, callbackUrl: string): Promise<string> {
   "use step";
 
+  await report(`Submitting ${upload.name} for transcription.`);
+
   if (upload.size <= 0) {
     // An empty recording is not a transient fault, and retrying it three times
     // only delays the same answer.
@@ -215,6 +247,16 @@ submitTranscriptionJob.maxRetries = 5;
 export async function postProcess(segment: string, redact: boolean): Promise<string> {
   "use step";
 
+  // One line per segment, which is what makes the fan-out legible to a page: the
+  // status is `running` for the whole batch, so without this a twelve-segment
+  // recording and a one-segment recording look identical while they run.
+  //
+  // ORDER is not guaranteed here and does not need to be. A batch issues its
+  // calls together, so their lines interleave by completion — the page renders a
+  // log, not a sequence, and `splitTranscript`'s indices are what put the
+  // TRANSCRIPT back in order.
+  await report(`Cleaning up a ${segment.split(/\s+/).length}-word segment.`);
+
   // Stands in for whatever a real desk does per segment — speaker attribution, a
   // model pass, a redaction service. The whole Node runtime is available in a
   // step, unlike in the body above.
@@ -232,6 +274,7 @@ export async function postProcess(segment: string, redact: boolean): Promise<str
 export async function file(_requestedBy: string, _filename: string): Promise<string> {
   "use step";
 
+  await report("Filing the transcript.");
   // A real desk would write to its database here, keyed on the two names above
   // — the `_` says this stub writes nothing. It takes the two IDENTIFIERS and
   // not the transcript itself, which is the module doc's rule about step

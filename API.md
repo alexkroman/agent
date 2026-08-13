@@ -813,6 +813,12 @@ export type StaticFrontDoorMisuse = '`page: "static"` declares a WORKFLOW APP, w
 export const STORAGE_DISABLED_MESSAGE: string;
 
 // @public
+export type StreamOptions = {
+    namespace?: string;
+    startIndex?: number;
+};
+
+// @public
 type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "stt";
 };
@@ -895,6 +901,11 @@ type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+export type WakeUpOptions = {
+    correlationIds?: string[];
+};
+
+// @public
 export const withLock: <T>(lock: (key: string, opts?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, opts?: KeyedLockOptions) => Promise<T>;
 
 // @public
@@ -926,6 +937,9 @@ export type WorkflowClient = {
     recent<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
     cancel(runId: string): Promise<boolean>;
+    wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
+    stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
+    streamTail(runId: string, options?: StreamOptions): Promise<number>;
     listing(): WorkflowSummary[];
 };
 
@@ -1129,7 +1143,18 @@ type StartOptions = {
 };
 
 // @public
+type StreamOptions = {
+    namespace?: string;
+    startIndex?: number;
+};
+
+// @public
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
+
+// @public
+type WakeUpOptions = {
+    correlationIds?: string[];
+};
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
@@ -1148,6 +1173,9 @@ type WorkflowClient = {
     recent<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
     cancel(runId: string): Promise<boolean>;
+    wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
+    stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
+    streamTail(runId: string, options?: StreamOptions): Promise<number>;
     listing(): WorkflowSummary[];
 };
 
@@ -1885,6 +1913,12 @@ type StartOptions = {
 };
 
 // @public
+type StreamOptions = {
+    namespace?: string;
+    startIndex?: number;
+};
+
+// @public
 export function toAgentConfig(source: AgentConfigSource): AgentConfig;
 
 // @public
@@ -1927,6 +1961,11 @@ export const ToolSchemaSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
+type WakeUpOptions = {
+    correlationIds?: string[];
+};
+
+// @public
 type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
     workflowId?: string;
 };
@@ -1943,6 +1982,9 @@ type WorkflowClient = {
     recent<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
     cancel(runId: string): Promise<boolean>;
+    wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
+    stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
+    streamTail(runId: string, options?: StreamOptions): Promise<number>;
     listing(): WorkflowSummary[];
 };
 
@@ -3288,6 +3330,12 @@ export function startTelephonySession(carrierSocket: SessionWebSocket, runtime: 
 export function startWorkflowWorldIfDeclared(hasWorkflows: boolean, kind: WorldKind): Promise<void>;
 
 // @public
+type StreamOptions = {
+    namespace?: string;
+    startIndex?: number;
+};
+
+// @public
 interface SttError extends Error {
     // (undocumented)
     readonly code: "stt_connect_failed" | "stt_auth_failed" | "stt_stream_error";
@@ -3552,11 +3600,19 @@ export type WakeHintPublisher = {
 };
 
 // @public
+type WakeUpOptions = {
+    correlationIds?: string[];
+};
+
+// @public
 export type WdkAdapter = {
     start(workflowId: string, args: unknown[]): Promise<string>;
     getRun(runId: string): Promise<WdkRunRecord | undefined>;
     listRuns(workflowId: string, limit: number): Promise<WdkRunRecord[]>;
     cancel(runId: string): Promise<boolean>;
+    wakeUp(runId: string, correlationIds: string[] | undefined): Promise<number>;
+    readStream(runId: string, options: WdkStreamOptions): ReadableStream<unknown>;
+    streamTail(runId: string, options: WdkStreamOptions): Promise<number>;
     readOutput(runId: string): Promise<unknown>;
 };
 
@@ -3572,6 +3628,12 @@ export type WdkRunRecord = {
     error?: {
         message: string;
     } | undefined;
+};
+
+// @public
+export type WdkStreamOptions = {
+    namespace?: string | undefined;
+    startIndex?: number | undefined;
 };
 
 // @internal
@@ -3625,6 +3687,9 @@ type WorkflowClient = {
     recent<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
     cancel(runId: string): Promise<boolean>;
+    wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
+    stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
+    streamTail(runId: string, options?: StreamOptions): Promise<number>;
     listing(): WorkflowSummary[];
 };
 
@@ -3952,6 +4017,9 @@ type AnyWorkflowDef<R = unknown> = {
 };
 
 // @public
+export function createStubWorkflows(overrides?: Partial<WorkflowClient>): WorkflowClient;
+
+// @public
 export function createToolContext<S = DefaultSessionState>(overrides?: Partial<ToolContext<S>>): TestToolContext<S>;
 
 // @public
@@ -4067,6 +4135,12 @@ type StartOptions = {
 };
 
 // @public
+type StreamOptions = {
+    namespace?: string;
+    startIndex?: number;
+};
+
+// @public
 export type TestToolContext<S = DefaultSessionState> = ToolContext<S> & {
     readonly sent: SentEvent[];
 };
@@ -4088,6 +4162,11 @@ type ToolContext<S = DefaultSessionState> = {
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 
 // @public
+type WakeUpOptions = {
+    correlationIds?: string[];
+};
+
+// @public
 type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
     workflowId?: string;
 };
@@ -4104,6 +4183,9 @@ type WorkflowClient = {
     recent<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
     cancel(runId: string): Promise<boolean>;
+    wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
+    stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
+    streamTail(runId: string, options?: StreamOptions): Promise<number>;
     listing(): WorkflowSummary[];
 };
 
@@ -4785,6 +4867,9 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore;
 export function createWorkflowApi(opts?: WorkflowApiOptions): WorkflowApi;
 
 // @public
+export const DEFAULT_PROGRESS_POLL_MS = 1000;
+
+// @public
 export const DEFAULT_WORKFLOW_POLL_MS = 2000;
 
 // @internal
@@ -5060,6 +5145,22 @@ export function useToolResult<R = DefaultToolResult>(toolName: string, callback:
 export function useToolResult<R = DefaultToolResult>(callback: (name: string, result: R, toolCall: ToolCallInfo) => void): void;
 
 // @public
+export function useWorkflowProgress<T = string>(runId: string | undefined, opts?: {
+    api?: WorkflowApi;
+    namespace?: string;
+    startIndex?: number;
+    intervalMs?: number;
+}): UseWorkflowProgressResult<T>;
+
+// @public (undocumented)
+export type UseWorkflowProgressResult<T = string> = {
+    progress: T[];
+    latest: T | undefined;
+    streaming: boolean;
+    supported: boolean;
+};
+
+// @public
 export function useWorkflowRun<R = unknown>(runId: string | undefined, opts?: {
     api?: WorkflowApi;
     intervalMs?: number;
@@ -5137,6 +5238,12 @@ export type WorkflowApi = {
     }): Promise<WorkflowRun[]>;
     cancel(runId: string): Promise<boolean>;
     watch(runId: string, signal?: AbortSignal): Promise<Response>;
+    streamOutput(runId: string, options?: {
+        namespace?: string;
+        startIndex?: number;
+        signal?: AbortSignal;
+    }): Promise<Response>;
+    wake(runId: string): Promise<number>;
 };
 
 // @public (undocumented)
