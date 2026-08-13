@@ -1,0 +1,16 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "client",
+  "epoch": 1,
+  "sha256": "0b80b02ecfc510ba53d3e06870cf72ad5a22903b7b1b35487a1028e1ceafddd9",
+  "exports": [
+    "BaseOptions",
+    "ClientConfig",
+    "ClientConfigResponse",
+    "ClientHandle",
+    "ComponentTier",
+    "ConfigTier",
+    "ToolDisplayConfig",
+    "client"
+  ]
+}

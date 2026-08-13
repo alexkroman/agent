@@ -62,7 +62,14 @@
       "entry": [
         "**/*.test.{ts,tsx}",
         "**/*.test-d.ts",
-        "_react-test-utils.ts"
+        "_react-test-utils.ts",
+        // The capability contracts, same as `packages/aai` above: a root exists
+        // so api-contracts.mjs can extract a report for that slice of the
+        // authoring API, and a compatibility fixture exists so `tsc` fails when
+        // a frozen authoring example stops compiling. The fixtures are `.tsx`
+        // here — a component library's authoring example is JSX.
+        "contracts/entrypoints/*.ts",
+        "contracts/compatibility/**/*.{ts,tsx}"
       ]
     },
     "packages/aai-cli": {

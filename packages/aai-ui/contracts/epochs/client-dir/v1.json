@@ -1,0 +1,7 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "client-dir",
+  "epoch": 1,
+  "sha256": "a48636465f540b25c0c8c27ab93756ac0f0b8deae3a70d2f1aa81e5704c7e125",
+  "exports": ["defaultClientDir"]
+}

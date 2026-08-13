@@ -1,0 +1,7 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "theme",
+  "epoch": 1,
+  "sha256": "6c82859e23a19480c475ff906e4556c0f187a5934cfebac08ed6fbaad2e6428b",
+  "exports": ["ClientTheme", "useTheme"]
+}
