@@ -1,5 +1,5 @@
 {
-  "_description": "Per-file escape-hatch budgets. A file may hold FEWER occurrences than recorded here; it may never hold more; a file absent from a pattern may hold none. Counts only ratchet DOWN — `node scripts/check-escape-hatches.mjs --update` lowers them to match the tree and refuses to raise any. Raising one requires editing this file by hand, so the increase lands in a reviewable diff. See the header of scripts/check-escape-hatches.mjs.",
+  "_description": "Per-file escape-hatch budgets. A file may hold FEWER occurrences than recorded here; it may never hold more; a file absent from a pattern may hold none. Counts only ratchet DOWN \u2014 `node scripts/check-escape-hatches.mjs --update` lowers them to match the tree and refuses to raise any. Raising one requires editing this file by hand, so the increase lands in a reviewable diff. See the header of scripts/check-escape-hatches.mjs.",
   "@ts-expect-error": {
     "packages/aai-cli/e2e.test.ts": 1,
     "packages/aai-ui/default-client.tsx": 1,
@@ -19,6 +19,7 @@
     "packages/aai/host/_mock-ws.ts": 1,
     "packages/aai/host/_test-utils.ts": 1,
     "packages/aai/host/integration/pipeline-reference.integration.test.ts": 2,
+    "packages/aai/host/providers/_utils.ts": 1,
     "packages/aai/host/providers/tts/rime.test.ts": 2,
     "packages/aai/host/runtime-types.ts": 1,
     "packages/aai/host/transports/_pipeline-transport-harness.ts": 1,

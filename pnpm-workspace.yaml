@@ -116,28 +116,28 @@ catalog:
   "@testing-library/react": ^16.3.2
   "@types/json-schema": ^7.0.15
   "@types/mime-types": ^3.0.1
-  "@types/node": ^26.1.1
-  "@types/react": ^19.2.17
-  "@types/react-dom": ^19.2.3
+  "@types/node": ^26.2.0
+  "@types/react": ^19.2.18
+  "@types/react-dom": ^19.2.4
   "@types/ws": ^8.18.1
-  "@vitejs/plugin-react": ^6.0.4
-  ai: ^7.0.41
+  "@vitejs/plugin-react": ^6.0.5
+  ai: ^7.0.62
   clsx: ^2.1.1
-  eventsource-parser: ^3.1.0
+  eventsource-parser: ^4.0.0
   fast-check: ^4.9.0
-  hono: ^4.12.31
-  jsdom: ^29.1.1
+  hono: ^4.13.1
+  jsdom: ^30.0.1
   mime-types: ^3.0.2
   p-timeout: ^7.0.1
   react: ^19.2.8
   react-dom: ^19.2.8
-  tailwindcss: ^4.3.2
-  tsdown: ^0.22.13
+  tailwindcss: ^4.3.3
+  tsdown: ^0.22.14
   typescript: ^7.0.2
   use-stick-to-bottom: ^1.1.6
-  vite: ^8.1.5
+  vite: ^8.2.1
   vitest: ^4.1.10
-  ws: ^8.21.1
+  ws: ^8.21.3
   zod: ^4.4.3
 
 catalogs:

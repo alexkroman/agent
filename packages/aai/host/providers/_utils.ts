@@ -67,6 +67,14 @@ export function requireApiKey(
  */
 export async function waitForOpen(ws: WebSocket, timeoutMs?: number): Promise<void> {
   // rejects on "error" (p-event's default rejectionEvents)
+  //
+  // The suppression below is a false positive in biome 2.5.8, not a finding:
+  // the call IS awaited, the rule mis-resolves `p-event`'s CancelablePromise
+  // (a Promise SUBCLASS) as still-a-promise after the await, and its own
+  // suggested fix is the nonsense `await await pEvent(...)`. 2.5.5 reports
+  // nothing here on identical source. Delete the ignore — do not "fix" the
+  // line — once a later biome stops reporting it.
+  // biome-ignore lint/nursery/noFloatingPromises: false positive, biome 2.5.8 (see above)
   await pEvent(ws, "open", timeoutMs === undefined ? {} : { timeout: timeoutMs });
 }
 

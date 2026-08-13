@@ -11,7 +11,7 @@
  * `GenerateOptions.schema` accepts a Zod schema (or any Standard Schema
  * that converts to JSON Schema — see `toToolJsonSchema`) as well as a plain
  * JSON Schema object. Schemas are converted before the call, so the typed
- * `generateObject`-style spelling just works:
+ * structured-output spelling just works:
  *
  * ```ts
  * import { z } from "zod";

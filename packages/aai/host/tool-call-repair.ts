@@ -33,11 +33,12 @@
  */
 
 import {
-  generateObject,
+  generateText,
   InvalidToolInputError,
   jsonSchema,
   type LanguageModel,
   NoSuchToolError,
+  Output,
   parsePartialJson,
   type ToolCallRepairFunction,
   type ToolSet,
@@ -137,7 +138,7 @@ function isUnparsable(input: string): boolean {
  * "not repairable" — the SDK then surfaces the original error.
  *
  * `getAbortSignal` supplies the in-flight turn's abort signal so the tier-2
- * `generateObject` call is cancelled on barge-in / cancel / disconnect.
+ * `generateText` call is cancelled on barge-in / cancel / disconnect.
  * Without it, a repair kicked off mid-turn keeps running (a billed background
  * LLM call) after the turn that needed it has already been aborted.
  */
@@ -162,9 +163,11 @@ export function createToolCallRepair(
     try {
       const schema = await inputSchema({ toolName: toolCall.toolName });
       const abortSignal = getAbortSignal?.();
-      const { object } = await generateObject({
+      // `generateText` + `Output.object`, not `generateObject` — the latter is
+      // deprecated as of ai 7.0.62 in favour of exactly this.
+      const { output } = await generateText({
         model,
-        schema: jsonSchema(schema),
+        output: Output.object({ schema: jsonSchema(schema) }),
         ...(abortSignal ? { abortSignal } : {}),
         prompt:
           `The tool "${toolCall.toolName}" was called with arguments that failed schema ` +
@@ -173,7 +176,7 @@ export function createToolCallRepair(
           "original intent exactly. Reproduce any file content verbatim — never " +
           "summarize or shorten it — and do not invent values that were not present.",
       });
-      return { ...toolCall, input: JSON.stringify(object) };
+      return { ...toolCall, input: JSON.stringify(output) };
     } catch (err) {
       // Repair itself failed — let the original tool error stand.
       log.warn("tool-call repair failed", {

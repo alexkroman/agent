@@ -10,7 +10,7 @@
  * credentials from the agent's env (never `process.env`).
  */
 
-import { generateObject, generateText, jsonSchema, type LanguageModel } from "ai";
+import { generateText, jsonSchema, type LanguageModel, Output } from "ai";
 import type { ProviderEnv } from "../sdk/env-types.ts";
 import type { GenerateOptions, GenerateResult } from "../sdk/generate.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
@@ -115,11 +115,13 @@ export function createGenerateFn(opts: CreateGenerateFnOptions): HostGenerateFn 
       }),
     };
     if (options.schema !== undefined) {
-      const { object } = await generateObject({
+      // `generateText` + `Output.object`, not `generateObject` — the latter is
+      // deprecated as of ai 7.0.62 in favour of exactly this.
+      const { output } = await generateText({
         ...common,
-        schema: jsonSchema(resolveJsonSchema(options.schema)),
+        output: Output.object({ schema: jsonSchema(resolveJsonSchema(options.schema)) }),
       });
-      return { text: JSON.stringify(object), object };
+      return { text: JSON.stringify(output), object: output };
     }
     const { text } = await generateText(common);
     return { text };

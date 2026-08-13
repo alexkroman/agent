@@ -139,6 +139,7 @@ jobs:
           pnpm run check:claude-md
           pnpm run check:guest-toolchain
           pnpm run check:agent-guide
+          pnpm run check:scaffold
           pnpm run check:konsistent
 
   # Unit tests sharded by package — run in parallel

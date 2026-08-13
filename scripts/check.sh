@@ -72,6 +72,13 @@ run_ratchets() {
   # staleness shape as the toolchain lockfile above, hence the same treatment:
   # a committed copy plus a comparison. Pure file read.
   pnpm run check:agent-guide || failed=1
+  # The scaffold's package.json is the third committed copy in this shape, and
+  # the only one that SHIPS: it cannot say `catalog:`, so every catalogued bump
+  # has to be applied to it a second time. Nothing enforced that — the sync
+  # script ran only from `pnpm version`, unchecked, during a release — and the
+  # catalog migration had already broken it into writing the literal
+  # `"catalog:"` into a manifest npm cannot resolve. Pure file comparison.
+  pnpm run check:scaffold || failed=1
   # Structural conventions (konsistent.json): the shapes Biome and tsc cannot
   # see because none of them is wrong WITHIN a file — a provider module that
   # exports four of its five symbols, a *-barrel.ts that grew a local

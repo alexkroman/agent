@@ -12,8 +12,17 @@ import { FAKE_LLM_API_KEY_ENV, registerFakeProviders } from "./_pipeline-test-fa
 import { createGenerateFn } from "./generate.ts";
 
 /**
- * Minimal one-shot model: implements `doGenerate` (what generateText and
- * generateObject drive) structurally, recording each call's options.
+ * Minimal one-shot model: implements `doGenerate` (what `generateText` drives)
+ * structurally, recording each call's options.
+ *
+ * `finishReason` is the `{ unified, raw }` PAIR the current provider spec
+ * reads (`currentModelResponse.finishReason.unified`), not a bare `"stop"`.
+ * The bare string was silently accepted for as long as nothing in the path
+ * looked at it — and structured output does: `generateText` parses `output`
+ * only when the last step finished with `stop`, so a fake reporting the old
+ * shape resolves `undefined` and the typed accessor throws
+ * `NoOutputGeneratedError`, naming an empty model reply rather than a stale
+ * fake. `tool-call-salvage.test.ts` already had it right.
  */
 function fakeOneShotModel(reply: (opts: { prompt: unknown }) => string): LanguageModel & {
   readonly calls: readonly Record<string, unknown>[];
@@ -29,7 +38,7 @@ function fakeOneShotModel(reply: (opts: { prompt: unknown }) => string): Languag
       calls.push(opts);
       return {
         content: [{ type: "text", text: reply(opts as { prompt: unknown }) }],
-        finishReason: "stop" as const,
+        finishReason: { unified: "stop" as const, raw: undefined },
         usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
         warnings: [],
       };

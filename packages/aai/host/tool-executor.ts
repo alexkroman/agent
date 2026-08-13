@@ -81,8 +81,9 @@ function buildToolContext(opts: ExecuteToolCallOptions & { signal: AbortSignal }
     },
     // Asserted rather than inferred, and this is the one place it happens.
     // `GenerateFn` is OVERLOADED: a Standard Schema call promises a required
-    // `object`, which `createGenerateFn` does deliver (it runs `generateObject`
-    // and returns `{ text, object }` unconditionally on that path). TypeScript
+    // `object`, which `createGenerateFn` does deliver (it runs `generateText`
+    // with an `Output.object` spec and returns `{ text, object }`
+    // unconditionally on that path). TypeScript
     // cannot check an overloaded signature against a single implementation, so
     // the forwarder is declared with the widest one and asserted here — the
     // narrowing is backed by host/generate.ts, not by hope.
