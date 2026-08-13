@@ -15,7 +15,13 @@ import { createToolContext } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
 import agentDef, { research } from "./agent.ts";
 
-/** A `ctx.workflows` that records `start` and answers `find` from a fixture. */
+/**
+ * A `ctx.workflows` that records `start` and answers `find` from a fixture.
+ *
+ * Returned WITHOUT a cast, which is the property worth keeping: a cast would
+ * also stop reporting the day `WorkflowClient` grows a method, and this stub is
+ * how the template's tools reach the client at all.
+ */
 function stubWorkflows(runs: WorkflowRunSnapshot[] = []): WorkflowClient {
   return {
     start: vi.fn(async () => "wrun_stub"),
@@ -23,8 +29,8 @@ function stubWorkflows(runs: WorkflowRunSnapshot[] = []): WorkflowClient {
     find: vi.fn(async () => runs),
     recent: vi.fn(async () => runs),
     cancel: vi.fn(async () => true),
-    listing: () => [{ name: "research", description: research.description }],
-  } as WorkflowClient;
+    listing: () => [{ name: "research" }],
+  };
 }
 
 function snapshot(over: Partial<WorkflowRunSnapshot> = {}): WorkflowRunSnapshot {

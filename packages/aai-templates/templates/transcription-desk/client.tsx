@@ -124,7 +124,9 @@ function RunPanel({ run, onClear }: { run: WorkflowRun<Transcript>; onClear?: ()
   return (
     <section className="flex flex-col gap-3 rounded-md border p-5">
       <div className="flex items-baseline justify-between gap-4">
-        <h2 className="text-sm font-medium uppercase tracking-[1.2px]">{statusLine(run.status)}</h2>
+        <h2 className="text-sm font-medium uppercase tracking-[1.2px]">
+          {STATUS_LINE[run.status]}
+        </h2>
         {onClear && (
           <button type="button" onClick={onClear} className="text-xs underline opacity-60">
             Clear
@@ -149,20 +151,19 @@ function RunPanel({ run, onClear }: { run: WorkflowRun<Transcript>; onClear?: ()
   );
 }
 
-/** One line describing where a run has got to. */
-function statusLine(status: WorkflowRun["status"]): string {
-  switch (status) {
-    case "pending":
-      return "Queued";
-    case "running":
-      return "Transcribing…";
-    case "completed":
-      return "Transcript ready";
-    case "failed":
-      return "Failed";
-    default:
-      return "Cancelled";
-  }
-}
+/**
+ * One line describing where a run has got to.
+ *
+ * A `Record` keyed by the status union rather than a switch, so a status added
+ * to the SDK is a compile error here instead of falling through a `default:`
+ * into whichever line was last.
+ */
+const STATUS_LINE: Record<WorkflowRun["status"], string> = {
+  pending: "Queued",
+  running: "Transcribing…",
+  completed: "Transcript ready",
+  failed: "Failed",
+  cancelled: "Cancelled",
+};
 
 page({ name: "Transcription Desk", component: TranscriptionDesk });

@@ -176,10 +176,11 @@ template stubs its I/O.** A `"use step"` function is bundled and dispatched
 separately from the agent bundle and is handed no tool context, and the guest
 reads the agent's secrets into memory rather than into `process.env`
 (`harness-agent-mode.ts` deletes the env file after reading). So there is
-currently no way for a step to authenticate an outbound call, and
-`research-desk`'s comment that `ctx.db` is "available in a step" describes an
-intent rather than the implementation. Until that gap is closed, a template's
-steps are fixtures.
+currently no way for a step to authenticate an outbound call. Until that gap is
+closed, a template's steps are fixtures — which is why all three `file` steps
+write nothing and carry `_`-prefixed parameters, rather than naming a `ctx.db`
+call they cannot make. (`research-desk` used to promise that call in a comment;
+it described an intent rather than the implementation.)
 
 **`link-digest` is the same mechanism at its smallest, and it is the FRONT DOOR
 that separates both of these from `research-desk`.** That one is a voice agent

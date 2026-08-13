@@ -32,7 +32,14 @@
  * runs and the key index both live there.
  */
 
-import { agent, isTerminal, tool, type WorkflowRunSnapshot, workflow } from "@alexkroman1/aai";
+import {
+  agent,
+  isTerminal,
+  tool,
+  type WorkflowOutputOf,
+  type WorkflowRunSnapshot,
+  workflow,
+} from "@alexkroman1/aai";
 import { z } from "zod";
 import { researchFlow } from "./workflows/research.ts";
 
@@ -56,8 +63,14 @@ export const research = workflow({
 /** How many past runs the status tool will look at. Newest first. */
 const RECENT_RUNS = 3;
 
-/** One line a voice agent can read aloud about a run. */
-function describeRun(run: WorkflowRunSnapshot<Awaited<ReturnType<typeof researchFlow>>>): string {
+/**
+ * One line a voice agent can read aloud about a run.
+ *
+ * `WorkflowOutputOf` is what names the output type — the same helper a page uses
+ * to type `run.output`, and the reason this signature does not have to reach
+ * past the declaration into the body's own return type.
+ */
+function describeRun(run: WorkflowRunSnapshot<WorkflowOutputOf<typeof research>>): string {
   // `isTerminal` narrows to the three finished statuses, which is what makes
   // `run.output` and `run.error` reachable without a cast.
   if (!isTerminal(run)) return "Still working on it.";

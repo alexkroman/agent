@@ -121,7 +121,7 @@ export async function transcribeFlow(input: {
   // conflict branch a shared token would need is deliberately absent.
   await hook.getConflict();
 
-  const job = await submitTranscriptionJob(input.upload, hook.url);
+  const jobId = await submitTranscriptionJob(input.upload, hook.url);
 
   // The suspension. Everything above is journaled; this run may resume in a
   // different container, days later, with the delivery as its only input.
@@ -131,8 +131,8 @@ export async function transcribeFlow(input: {
   // The token is the endpoint's only authorization, so the payload is checked
   // against the job THIS run submitted. `FatalError` skips the retries: a
   // delivery for another job will not become the right one on a second attempt.
-  if (delivered.jobId !== job.jobId) {
-    throw new FatalError(`Callback for job "${delivered.jobId}", expected "${job.jobId}"`);
+  if (delivered.jobId !== jobId) {
+    throw new FatalError(`Callback for job "${delivered.jobId}", expected "${jobId}"`);
   }
 
   const segments = splitTranscript(delivered.transcript);
@@ -153,26 +153,18 @@ export async function transcribeFlow(input: {
   // recording with a silent hole in it and report success.
 
   const transcript = cleaned.join(" ");
-  const filed = await file(input.requestedBy, input.upload.name, transcript);
 
   // Whatever this returns is what a caller reads as `output` on a completed run
   // — so it is what the page renders, typed through `WorkflowOutputOf`.
   return {
     filename: input.upload.name,
-    jobId: job.jobId,
+    jobId,
     segments: segments.length,
     words: countWords(transcript),
     transcript,
-    filedAt: filed.filedAt,
+    filedAt: await file(input.requestedBy, input.upload.name),
   };
 }
-
-/** What submitting a job reports back. */
-export type Job = {
-  jobId: string;
-  /** Where the provider was told to call back — echoed so the run records it. */
-  callbackUrl: string;
-};
 
 /**
  * Hand the recording to the transcription provider, with the URL to call back.
@@ -191,7 +183,7 @@ export type Job = {
  * `process.env`. That gap is why this is a stub and not a `fetch` to a real
  * provider, and it is the same reason `research-desk`'s `gather` is one.
  */
-export async function submitTranscriptionJob(upload: Upload, callbackUrl: string): Promise<Job> {
+export async function submitTranscriptionJob(upload: Upload, callbackUrl: string): Promise<string> {
   "use step";
 
   if (upload.size <= 0) {
@@ -200,7 +192,10 @@ export async function submitTranscriptionJob(upload: Upload, callbackUrl: string
     throw new FatalError(`"${upload.name}" is empty — nothing to transcribe`);
   }
 
-  const jobId = `job_${hashString(`${upload.name}:${upload.size}`)}`;
+  // Derived from the upload rather than minted, so a RETRY of this step submits
+  // the same job id — which is what the run's own delivery check compares
+  // against. A random id would fail that check on every attempt but the first.
+  const jobId = `job_${upload.size}_${upload.name.replace(/\W+/g, "-").toLowerCase()}`;
 
   // The simulated provider. `callbackUrl` is `hook.url`, which is dialable from
   // inside this container and nowhere else — see the module doc for what a real
@@ -218,7 +213,7 @@ export async function submitTranscriptionJob(upload: Upload, callbackUrl: string
     throw new Error(`Callback delivery failed: HTTP ${response.status}`);
   }
 
-  return { jobId, callbackUrl };
+  return jobId;
 }
 
 /**
@@ -242,37 +237,25 @@ export async function postProcess(segment: string, redact: boolean): Promise<str
   return redact ? redactPii(segment) : segment;
 }
 
-/** What one filing records — small and serializable, like every step result. */
-export type Filed = {
-  filedAt: string;
-  /** What a real write would have keyed the row on. */
-  key: string;
-  characters: number;
-};
-
 /**
- * File the finished transcript.
+ * File the finished transcript, and report when.
  *
  * Separate from the segment steps on purpose: a crash between the last segment
  * and the filing replays every segment for free and re-issues only the filing.
  * One step doing both would redo the expensive half whenever the cheap half
  * failed.
  */
-export async function file(
-  requestedBy: string,
-  filename: string,
-  transcript: string,
-): Promise<Filed> {
+export async function file(_requestedBy: string, _filename: string): Promise<string> {
   "use step";
 
-  // A real desk would write to its database here. Returning the timestamp rather
-  // than reading a clock in the BODY is the journaling rule again: a step's
-  // result is stable across replays where a clock read in the body is not.
-  return {
-    filedAt: new Date().toISOString(),
-    key: `${filename}:${requestedBy}`,
-    characters: transcript.length,
-  };
+  // A real desk would write to its database here, keyed on the two names above
+  // — the `_` says this stub writes nothing. It takes the two IDENTIFIERS and
+  // not the transcript itself, which is the module doc's rule about step
+  // arguments: they are serialized onto a queue, so pass an id, not a payload.
+  // Returning the timestamp rather than reading a clock in the BODY is the
+  // journaling rule again: a step's result is stable across replays where a
+  // clock read in the body is not.
+  return new Date().toISOString();
 }
 
 // ---- Pure helpers -----------------------------------------------------------
@@ -320,14 +303,4 @@ function fakeTranscript(upload: Upload): string {
       `Segment ${index + 1} of ${upload.name}: this is where the transcribed speech would be, ` +
       "reach us at desk@example.com or 555-010-9999 if anything looks wrong.",
   ).join(" ");
-}
-
-/** A short stable hash of a string, for a job id that survives a retry. */
-function hashString(value: string): string {
-  let hash = 0;
-  for (let index = 0; index < value.length; index++) {
-    // Classic 32-bit string hash; `| 0` keeps it in int range on every runtime.
-    hash = (hash * 31 + value.charCodeAt(index)) | 0;
-  }
-  return Math.abs(hash).toString(36);
 }

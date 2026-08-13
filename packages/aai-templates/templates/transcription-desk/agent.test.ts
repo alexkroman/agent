@@ -146,14 +146,14 @@ describe("submitTranscriptionJob", () => {
     // The stub provider's whole trick: it calls the webhook back itself, so the
     // template runs end to end with no account and no stored audio.
     const calls = stubFetch();
-    const job = await submitTranscriptionJob(
+    const jobId = await submitTranscriptionJob(
       { name: "standup.m4a", type: "audio/mp4", size: 812_000 },
       "http://127.0.0.1:9/.well-known/workflow/v1/webhook/tok",
     );
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.url).toContain("/webhook/tok");
-    expect(calls[0]?.body).toMatchObject({ jobId: job.jobId });
+    expect(calls[0]?.body).toMatchObject({ jobId });
   });
 
   test("mints the same job id for the same upload, so a retry is not a new job", async () => {
@@ -163,7 +163,7 @@ describe("submitTranscriptionJob", () => {
     const second = await submitTranscriptionJob(upload, "http://x/cb");
     // A step may be retried; an id that changed per attempt would make the
     // run's own delivery check fail on the second one.
-    expect(first.jobId).toBe(second.jobId);
+    expect(first).toBe(second);
   });
 
   test("fails FATALLY on an empty upload rather than retrying it three times", async () => {
@@ -195,9 +195,9 @@ describe("postProcess", () => {
 });
 
 describe("file", () => {
-  test("records what a real write would have keyed the row on", async () => {
-    const filed = await file("alex", "standup.m4a", "some words");
-    expect(filed).toMatchObject({ key: "standup.m4a:alex", characters: 10 });
-    expect(Date.parse(filed.filedAt)).not.toBeNaN();
+  test("reports when it filed, which is the one thing the body cannot read itself", async () => {
+    // A clock read in the BODY would differ on every replay; a step's result is
+    // journaled, so this timestamp is stable once it has run.
+    expect(Date.parse(await file("alex", "standup.m4a"))).not.toBeNaN();
   });
 });

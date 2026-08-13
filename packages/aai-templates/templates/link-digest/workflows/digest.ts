@@ -80,11 +80,11 @@ async function summarize(url: string): Promise<Digest> {
  * rule — a step's result is journaled and therefore stable across replays,
  * where `Date.now()` in the body would change on every one.
  */
-async function file(digest: Digest): Promise<string> {
+async function file(_digest: Digest): Promise<string> {
   "use step";
 
-  // A real desk would write to `ctx.db` here, which is available in a step and
-  // not in a body.
-  void digest;
+  // A real desk would write the digest to its database here — the whole Node
+  // runtime is available in a step, unlike in the body above. The stub writes
+  // nothing, which is what the `_` says.
   return new Date().toISOString();
 }
