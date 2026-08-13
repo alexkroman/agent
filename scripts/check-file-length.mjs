@@ -116,6 +116,18 @@ const listAll = () =>
     // Repo tooling is held to the same cap as shipped source. It is not
     // exempt just because it is not published: `scripts/` is where an
     // unreviewed 900-line harness hides, and two of them were exactly that.
+    //
+    // BOTH globs are needed, and the top-level one is the one that mattered.
+    // A git pathspec is fnmatch WITHOUT `FNM_PATHNAME`, so `*` already crosses
+    // `/` and `scripts/**/*.mjs` parses as "scripts/", anything, "/", anything,
+    // ".mjs" — the literal slash makes it require a subdirectory. So it matched
+    // the six files under `scripts/starter-eval/` and NOT ONE of the 29 at the
+    // top level, which is exactly where this gate's own comment says the risk
+    // is. Verify with `git ls-files "scripts/**/*.mjs"`, which lists only the
+    // nested ones. `packages/**/*.ts` is unaffected because every source file
+    // there is at least one directory deep.
+    "scripts/*.mjs",
+    "scripts/*.ts",
     "scripts/**/*.mjs",
     "scripts/**/*.ts",
   ]).filter((p) => !(p.includes("/dist/") || isExempt(p)));

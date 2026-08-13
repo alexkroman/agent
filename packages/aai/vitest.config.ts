@@ -18,7 +18,12 @@ export default defineConfig({
     exclude: ["**/*.integration.test.ts", "node_modules", "dist"],
     setupFiles: ["./sdk/_test-matchers.ts"],
     coverage: {
-      exclude: sharedCoverageExclude,
+      // `contracts/` is neither production source nor test infrastructure: the
+      // capability roots are pure re-export lists and the compatibility
+      // fixtures are compiled by `tsc`, never executed. Left in, coverage
+      // counts twenty-odd files at 0% and drags the package under floors that
+      // have nothing to do with what they measure.
+      exclude: [...sharedCoverageExclude, "contracts/**"],
       // Ratchet: floors only move up. Raise to ~2-3 points below actuals
       // whenever a coverage run shows comfortable headroom.
       thresholds: { lines: 92, functions: 88, branches: 83, statements: 90 },

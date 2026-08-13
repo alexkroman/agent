@@ -10,6 +10,9 @@ export type CallOptions = {
 };
 
 // @public
+type DefaultToolResult = any;
+
+// @public
 export function fetchJson<T = DefaultToolResult>(url: string | ({
     url: string;
     headers?: Record<string, string>;

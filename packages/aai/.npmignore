@@ -17,3 +17,14 @@ coverage/
 # Turbo's per-package cache metadata. Not ours, never useful to a consumer, and
 # present only because a build ran before the pack.
 .turbo/
+
+# The versioned authoring contracts (`pnpm api-contracts`) — capability roots,
+# epoch metadata, and the frozen backward-compatibility examples. Same reason as
+# `etc/` above: a repo artifact for review, not something a consumer installs.
+# The examples import the SDK by relative source path, so shipping them would
+# also put unresolvable specifiers in the tarball.
+contracts/
+
+# Scratch the contract extractor writes its synthetic entry points into. Removed
+# on exit; ignored here so a crashed run cannot leak one into a release.
+.api-contracts-cache/

@@ -54,3 +54,6 @@ supabase/.temp/
 # realtime-rls.integration.test.ts). Not link state and not checked in: a
 # developer who has never run the local stack should see a clean tree.
 supabase/.branches/
+
+# Scratch for the capability-contract extractor (removed on exit)
+.api-contracts-cache/

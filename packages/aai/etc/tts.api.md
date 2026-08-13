@@ -147,6 +147,14 @@ export type CartesiaProvider = TtsProvider & {
 };
 
 // @public
+interface ProviderDescriptor<Kind extends string, Options> {
+    // (undocumented)
+    readonly kind: Kind;
+    // (undocumented)
+    readonly options: Options;
+}
+
+// @public
 export function rime(opts?: RimeOptions): RimeProvider;
 
 // @public

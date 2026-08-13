@@ -1,0 +1,24 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "utils",
+  "epoch": 1,
+  "sha256": "9861541f78e140e55af0076a182050aeac983b8a4fd336008719dec178f29658",
+  "exports": [
+    "KeyedLock",
+    "KeyedLockOptions",
+    "KeyedLockTimeoutError",
+    "MAX_SLUG_LENGTH",
+    "PREVIEW_SLUG_SUFFIX",
+    "RESERVED_SLUGS",
+    "VALID_SLUG_RE",
+    "createKeyedLock",
+    "errorDetail",
+    "errorMessage",
+    "linkConfirmationCode",
+    "normalizeSpeechText",
+    "omitUndefined",
+    "pushCapped",
+    "safeJsonParse",
+    "withLock"
+  ]
+}

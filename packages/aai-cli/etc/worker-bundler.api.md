@@ -18,6 +18,14 @@ export type BuildWorkerOptions = {
     workflows?: WorkflowBundleOutput | undefined;
 };
 
+// @public
+type WorkflowBundleOutput = {
+    workflowCode: string;
+    stepCode: string;
+    manifest: unknown;
+    inputFiles: readonly string[];
+};
+
 // (No @packageDocumentation comment for this package)
 
 ```

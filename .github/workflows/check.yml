@@ -106,6 +106,11 @@ jobs:
           # Committed API reports for the 20 published entry points. Reads the
           # emitted dist/*.d.ts, so it belongs after the build with publint.
           pnpm run check:api-report
+          # Versioned contracts over the authoring surface. Runs straight after
+          # the reports because it reads the authoring surface out of them, and
+          # it is the gate that forces a signature change to be classified —
+          # retained with a frozen compiling example, or dropped with a reason.
+          pnpm run check:api-contracts
           pnpm run check:doc-examples
           # In scripts/check.sh since it was written, but missing here — the
           # same CI-never-invokes-check.sh gap the ratchets below document.
