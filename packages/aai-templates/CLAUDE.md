@@ -83,7 +83,8 @@ once, and the templates are now their reference use:
 | `AutoScroll` | the three custom-chrome clients — `dispatch-center`, `retail`, `infocom-adventure` |
 | `workflow()` + `ctx.workflows` + `isTerminal` | `research-desk` — the handoff: a VOICE template whose tool starts a run, correlates it with `key`, and reads it back (see below) |
 | `page()` + `createWorkflowApi` + `useWorkflowRun` | `link-digest` — the WORKFLOW APP with the primitives raw: a hand-written `<form>`, its own `useState`, one `createWorkflowApi()` |
-| `Form` + the field components + `WorkflowFields` + `useWorkflows`/`useWorkflowSubmit` | `transcription-desk` — the same front door with the form layer, plus `WorkflowOutputOf` |
+| `Form` + the field components + `WorkflowFields` + `useWorkflowSubmit` | `transcription-desk` — the same front door with the form layer, plus `WorkflowOutputOf` |
+| `mapInBatches` | `transcription-desk`'s segment fan-out. Imported from `@alexkroman1/aai/utils`, NOT the root: a `workflows/*.ts` module is bundled separately by the WDK builder, so the root barrel's graph would ride into the step bundle. That import path is also why the coverage gate cannot see it — it scans the root specifier — hence its allowlist entry |
 
 **`research-desk` is the workflow template, and its shape is dictated by the
 Workflow DevKit rather than chosen.** The `"use workflow"` / `"use step"` bodies
@@ -145,6 +146,18 @@ replay. Bounded concurrency therefore has to be sequential batches of
 option. This is the one piece of the pre-DevKit engine's API that did NOT
 survive the port: `ctx.step("chunk-3", …)` let a caller pin identity to a
 position, and nothing replaces it.
+
+**That rule is a primitive now rather than a loop in a template.**
+`mapInBatches` (`@alexkroman1/aai/utils`) IS those sequential batches, and its
+module doc carries the argument above; a template that hand-rolls the loop is
+restating a rule whose failure mode is a `ReplayDivergenceError` in production.
+Note what makes passing a step to a helper legal at all — the WDK transform
+rewrites a step's DECLARATION into a dispatcher rather than rewriting call
+sites, so a `"use step"` function handed to another module as a callback still
+dispatches a real step. That is a claim about the transform, so it is tested
+against a real one: `aai-cli`'s `dev-workflow.integration.test.ts` fans a
+fixture flow out through `mapInBatches` with steps that settle in reverse issue
+order.
 
 It also demonstrates that a fan-out's WIDTH may come from the DELIVERY — the
 segment count falls out of the transcript the webhook carried, which is journaled

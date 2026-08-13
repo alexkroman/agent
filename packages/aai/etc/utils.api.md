@@ -43,6 +43,9 @@ export class KeyedLockTimeoutError extends Error {
 export function linkConfirmationCode(code: string): string;
 
 // @public
+export function mapInBatches<T, R>(items: readonly T[], size: number, run: (item: T, index: number) => Promise<R> | R): Promise<R[]>;
+
+// @public
 export const MAX_SLUG_LENGTH = 64;
 
 // @public

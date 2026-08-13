@@ -39,6 +39,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useWorkflowRun } from "./use-workflow-run.ts";
 import { createWorkflowApi, type WorkflowApi, type WorkflowRun } from "./workflow-client.ts";
 
+/** Options for {@link useWorkflows}. */
+export type UseWorkflowsOptions = {
+  /** The client to read the listing with. Defaults to one for the page's own agent. */
+  api?: WorkflowApi;
+  /**
+   * Skip the lookup entirely, reporting an empty listing that is not loading.
+   *
+   * For a caller that may or may not need the listing and cannot decide with a
+   * conditional hook — `<WorkflowFields>` handed a summary rather than a name is
+   * the one in this package. It reports `loading: false`, because a skipped
+   * lookup is finished rather than pending.
+   */
+  skip?: boolean;
+};
+
 /** What {@link useWorkflows} reports. */
 export type UseWorkflowsResult = {
   /** The agent's declared workflows, each with the JSON Schema of its input. */
@@ -62,11 +77,13 @@ export type UseWorkflowsResult = {
  *
  * @public
  */
-export function useWorkflows(opts: { api?: WorkflowApi } = {}): UseWorkflowsResult {
-  const { api } = opts;
+export function useWorkflows(opts: UseWorkflowsOptions = {}): UseWorkflowsResult {
+  const { api, skip = false } = opts;
   const [state, setState] = useState<UseWorkflowsResult>({
     workflows: [],
-    loading: true,
+    // A skipped lookup is not a pending one: `loading: true` forever would hold
+    // back a form that is waiting on it.
+    loading: !skip,
     error: undefined,
   });
 
@@ -76,6 +93,7 @@ export function useWorkflows(opts: { api?: WorkflowApi } = {}): UseWorkflowsResu
   apiRef.current = api;
 
   useEffect(() => {
+    if (skip) return;
     let cancelled = false;
     const client = apiRef.current ?? createWorkflowApi();
     client
@@ -94,7 +112,7 @@ export function useWorkflows(opts: { api?: WorkflowApi } = {}): UseWorkflowsResu
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [skip]);
 
   return state;
 }

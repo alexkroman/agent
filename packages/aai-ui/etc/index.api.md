@@ -434,9 +434,13 @@ export type UseWorkflowRunResult<R = unknown> = {
 };
 
 // @public
-export function useWorkflows(opts?: {
+export function useWorkflows(opts?: UseWorkflowsOptions): UseWorkflowsResult;
+
+// @public
+export type UseWorkflowsOptions = {
     api?: WorkflowApi;
-}): UseWorkflowsResult;
+    skip?: boolean;
+};
 
 // @public
 export type UseWorkflowsResult = {
@@ -504,7 +508,7 @@ export type WorkflowApiOptions = {
 
 // @public
 export function WorkflowFields(input: {
-    workflow?: WorkflowSummary | undefined;
+    workflow?: WorkflowSummary | string | undefined;
 }): JSX.Element | null;
 
 export { WorkflowOutputOf }

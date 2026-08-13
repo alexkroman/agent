@@ -19,11 +19,13 @@
  * ## The form is half declared and half written
  *
  * `<WorkflowFields>` renders a control per SCALAR property of the workflow's own
- * input schema, read from `GET /workflows` — so `requestedBy` and `redact` exist
- * here because `agent.ts` declares them, and adding a third scalar there would
- * add a third control here with no edit. `upload` is an object, which has no
- * honest default control, so its `<FileField>` is written by hand. Both live in
- * one `<Form>` because every field is a plain named control.
+ * input schema — so `requestedBy` and `redact` exist here because `agent.ts`
+ * declares them, and adding a third scalar there would add a third control here
+ * with no edit. It is handed the workflow's NAME and reads `GET /workflows`
+ * itself; a page that already holds the listing passes the summary instead.
+ * `upload` is an object, which has no honest default control, so its
+ * `<FileField>` is written by hand. Both live in one `<Form>` because every
+ * field is a plain named control.
  *
  * That is also why the submit handler does no mapping: a `<FileField>`
  * contributes `{ name, type, size, … }` under its own name, which is exactly the
@@ -40,7 +42,6 @@ import {
   TextField,
   useWorkflowRun,
   useWorkflowSubmit,
-  useWorkflows,
   WorkflowFields,
   type WorkflowRun,
 } from "@alexkroman1/aai-ui";
@@ -60,8 +61,6 @@ type Transcript = WorkflowOutputOf<typeof transcribe>;
 const WORKFLOW = "transcribe";
 
 function TranscriptionDesk() {
-  // The declared workflows, for the schema `<WorkflowFields>` renders from.
-  const { workflows, error: listError } = useWorkflows();
   const { submit, run, pending, error, reset } = useWorkflowSubmit<Transcript>(WORKFLOW);
 
   return (
@@ -75,7 +74,7 @@ function TranscriptionDesk() {
       </header>
 
       {/* No mapping: the collected values already match the input schema. */}
-      <Form onSubmit={(values) => submit(values)} error={error ?? listError}>
+      <Form onSubmit={(values) => submit(values)} error={error}>
         <FileField
           name="upload"
           label="Recording"
@@ -83,7 +82,8 @@ function TranscriptionDesk() {
           required
           hint="Only the file's name, type and size are sent — see the module comment."
         />
-        <WorkflowFields workflow={workflows.find((summary) => summary.name === WORKFLOW)} />
+        {/* The NAME, so the schema is fetched here rather than by this page. */}
+        <WorkflowFields workflow={WORKFLOW} />
         <SubmitButton pending={pending}>Transcribe</SubmitButton>
       </Form>
 

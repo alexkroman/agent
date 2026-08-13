@@ -48,26 +48,16 @@
  * legal. (Anything the BODY computes for itself must be deterministic — the
  * ordinary rule, one level up.)
  *
- * **The Workflow DevKit correlates a journal entry to a step call by the ORDER
- * the call was issued in**, not by anything the author names. The transform
- * rewrites each `"use step"` call into an invocation stamped with
- * `step_${ctx.generateUlid()}` from a monotonic ULID factory seeded off the run's
- * `startedAt` and the VM's replay-stable `Math.random`, so the Nth call issued
- * gets the Nth id on the first execution and on every replay. The step's NAME is
- * only cross-checked against that id; a mismatch is `ReplayDivergenceError`.
- *
- * Two consequences decide the shape of the loop below. `Promise.all` over a
- * `map` is SAFE — every call is issued synchronously, in array order, whatever
- * order they settle in. A work-stealing pool is NOT: a worker issues its next
- * call only after its previous one settles, so the issue order follows the
- * completion order, which differs between a live run and a replay. Nothing
- * rescues it, because there is no caller-supplied step key any more — that was
- * this repo's previous hand-rolled engine (`ctx.step("segment-3", …)`) and it is
- * the one piece of its API that did not survive the port. Bounded concurrency is
- * therefore sequential batches of `Promise.all`, which costs the tail of each
- * batch and is the only deterministic option.
+ * The width is bounded by `mapInBatches`, and the bound is not a detail: the
+ * Workflow DevKit correlates a journal entry to a step call **by the order the
+ * call was issued in**, so a work-stealing pool — which issues its next call
+ * only when a previous one settles — puts the calls in a different order on a
+ * replay than it did on the first execution. That primitive is sequential
+ * batches of `Promise.all` for exactly that reason; its module doc carries the
+ * argument, and using it is how a template avoids restating it as a loop.
  */
 
+import { mapInBatches } from "@alexkroman1/aai/utils";
 import { createWebhook, FatalError } from "workflow";
 
 /**
@@ -137,20 +127,14 @@ export async function transcribeFlow(input: {
 
   const segments = splitTranscript(delivered.transcript);
 
-  const cleaned: string[] = [];
-  for (let from = 0; from < segments.length; from += SEGMENT_CONCURRENCY) {
-    // `slice` + `Promise.all`, never a shared cursor across the whole list — see
-    // the module doc. Each batch issues its calls in array order and the batches
-    // run in index order, so the issue order is a pure function of `segments`
-    // and survives replay.
-    const batch = segments.slice(from, from + SEGMENT_CONCURRENCY);
-    cleaned.push(...(await Promise.all(batch.map((text) => postProcess(text, input.redact)))));
-  }
-
-  // A failed segment fails the RUN, deliberately. Every sibling that finished is
+  // One step per segment, bounded, in an order a replay reproduces exactly.
+  // A failed segment fails the RUN, deliberately: every sibling that finished is
   // already journaled, so the resume replays those for free and re-issues only
-  // what is missing; catching here to salvage a partial transcript would ship a
-  // recording with a silent hole in it and report success.
+  // what is missing, where catching here to salvage a partial transcript would
+  // ship a recording with a silent hole in it and report success.
+  const cleaned = await mapInBatches(segments, SEGMENT_CONCURRENCY, (text) =>
+    postProcess(text, input.redact),
+  );
 
   const transcript = cleaned.join(" ");
 

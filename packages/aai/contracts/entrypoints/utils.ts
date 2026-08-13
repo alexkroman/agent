@@ -21,6 +21,7 @@ export {
   KeyedLockTimeoutError,
   linkConfirmationCode,
   MAX_SLUG_LENGTH,
+  mapInBatches,
   normalizeSpeechText,
   omitUndefined,
   PREVIEW_SLUG_SUFFIX,
