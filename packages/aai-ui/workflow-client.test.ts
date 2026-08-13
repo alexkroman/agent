@@ -2,28 +2,19 @@
 // @vitest-environment jsdom
 
 /**
- * Specs for the browser workflow client and `useWorkflowRun`.
+ * Specs for the browser workflow client.
  *
  * `fetch` is stubbed rather than a server started: what these assert is the
  * REQUEST this client builds (its method, its path, its query, its bearer) and
  * what it makes of the answer — the two halves a page depends on and the two
  * that can silently disagree with `host/workflow-api.ts`.
  *
- * The hook's specs run on virtual time, because every one of them observes a
- * timer: whether a poll re-arms, whether it stops on a terminal status, and
- * whether a stale id is abandoned rather than polled for the life of the tab.
+ * The hook that drives it in a loop is specced in `use-workflow-run.test.ts`.
  */
 
-import { act, renderHook } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import {
-  createWorkflowApi,
-  DEFAULT_WORKFLOW_POLL_MS,
-  MAX_MISSING_READS,
-  useWorkflowRun,
-  type WorkflowApi,
-  type WorkflowRun,
-} from "./workflow-client.ts";
+import { MAX_WORKFLOW_WAIT_MS } from "@alexkroman1/aai";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+import { createWorkflowApi, type WorkflowRun } from "./workflow-client.ts";
 
 const BASE = "https://agents.example/my-agent/";
 
@@ -164,184 +155,83 @@ describe("createWorkflowApi", () => {
   });
 });
 
-describe("useWorkflowRun", () => {
-  /**
-   * A client whose `watch` always declines, so the hook falls back to the poll.
-   * The stream half is specced in `workflow-events.test.ts`.
-   */
-  function pollingApi(get: WorkflowApi["get"]): WorkflowApi {
-    return {
-      list: vi.fn(async () => []),
-      start: vi.fn(async () => "wrun_1"),
-      get,
-      find: vi.fn(async () => []),
-      recent: vi.fn(async () => []),
-      cancel: vi.fn(async () => false),
-      watch: vi.fn(async () => new Response(null, { status: 404 })),
-    };
-  }
-
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  test("an undefined runId reads as not-polling and costs nothing", () => {
-    const api = pollingApi(vi.fn(async () => undefined));
-    const { result } = renderHook(() => useWorkflowRun(undefined, { api }));
-    expect(result.current).toEqual({ run: undefined, error: undefined, polling: false });
-    expect(api.get).not.toHaveBeenCalled();
-  });
-
-  test("reports the run and STOPS once it is terminal", async () => {
-    const get = vi
-      .fn<WorkflowApi["get"]>()
-      .mockResolvedValueOnce(run())
-      .mockResolvedValue(run({ status: "completed", output: { ok: true } }));
-    const { result } = renderHook(() =>
-      useWorkflowRun<{ ok: boolean }>("wrun_1", { api: pollingApi(get) }),
+describe("startAndWait", () => {
+  test("asks the agent to hold the request open and resolves the finished run", async () => {
+    fetchMock.mockImplementation(async () =>
+      json({ runId: "wrun_9", run: run({ runId: "wrun_9", status: "completed", output: 3 }) }),
     );
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
+    const finished = await createWorkflowApi({ baseUrl: BASE }).startAndWait("digest", {
+      url: "u",
     });
-    expect(result.current.run?.status).toBe("running");
-    expect(result.current.polling).toBe(true);
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(DEFAULT_WORKFLOW_POLL_MS);
-    });
-    expect(result.current.run?.status).toBe("completed");
-    expect(result.current.polling).toBe(false);
-
-    // A finished run costs nothing for as long as the page stays open.
-    const settled = get.mock.calls.length;
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(DEFAULT_WORKFLOW_POLL_MS * 5);
-    });
-    expect(get).toHaveBeenCalledTimes(settled);
+    const body = JSON.parse(String(call()[1]?.body)) as { workflow: string; wait: number };
+    expect(body.workflow).toBe("digest");
+    expect(body.wait).toBeGreaterThan(0);
+    expect(finished).toMatchObject({ status: "completed", output: 3 });
   });
 
-  test("gives up on an id the agent keeps reporting as unknown", async () => {
-    // A 404 is a STABLE answer, so the budget absorbs a first read racing the
-    // run's creation and nothing more — unbounded, a stale id polls (and, on the
-    // platform, BROKERS) for as long as the tab is open.
-    const get = vi.fn<WorkflowApi["get"]>().mockResolvedValue(undefined);
-    const { result } = renderHook(() => useWorkflowRun("stale", { api: pollingApi(get) }));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(DEFAULT_WORKFLOW_POLL_MS * MAX_MISSING_READS);
+  test("clamps a wait past the cap, so it cannot outlast what the agent will hold", async () => {
+    fetchMock.mockImplementation(async () => json({ runId: "wrun_9", run: run() }));
+    await createWorkflowApi({ baseUrl: BASE }).startAndWait("digest", undefined, {
+      wait: 10 * 60_000,
     });
-    expect(get).toHaveBeenCalledTimes(MAX_MISSING_READS);
-    expect(result.current.error).toBe("No workflow run stale");
-    // `run` stays undefined, which reads as "still waiting" — so `polling` has
-    // to come from the stop, not from the snapshot.
-    expect(result.current.polling).toBe(false);
+    const body = JSON.parse(String(call()[1]?.body)) as { wait: number };
+    expect(body.wait).toBe(MAX_WORKFLOW_WAIT_MS);
   });
 
-  test("a failed read is reported and RETRIED, not fatal", async () => {
-    // A dropped request against a booting sandbox is the common case; giving up
-    // would strand a live run.
-    const get = vi
-      .fn<WorkflowApi["get"]>()
-      .mockRejectedValueOnce(new Error("Failed to fetch"))
-      .mockResolvedValue(run({ status: "completed", output: 1 }));
-    const { result } = renderHook(() => useWorkflowRun("wrun_1", { api: pollingApi(get) }));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    expect(result.current.error).toBe("Failed to fetch");
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(DEFAULT_WORKFLOW_POLL_MS);
-    });
-    // Cleared by the next successful read.
-    expect(result.current.error).toBeUndefined();
-    expect(result.current.run?.status).toBe("completed");
+  test("resolves a still-running run rather than failing when the wait ran out", async () => {
+    // The agent answers 202 with the running snapshot; that is an answer, and a
+    // caller checks `isTerminal` rather than assuming.
+    fetchMock.mockImplementation(async () => json({ runId: "wrun_9", run: run() }, 202));
+    const started = await createWorkflowApi({ baseUrl: BASE }).startAndWait("digest");
+    expect(started).toMatchObject({ runId: "wrun_1", status: "running" });
   });
 
-  test("a new id does not show the previous run's state for a frame", async () => {
-    const get = vi
-      .fn<WorkflowApi["get"]>()
-      .mockResolvedValueOnce(run({ status: "completed", output: 1 }));
-    const api = pollingApi(get);
-    const { result, rerender } = renderHook(({ id }) => useWorkflowRun(id, { api }), {
-      initialProps: { id: "wrun_1" as string | undefined },
-    });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    expect(result.current.run?.status).toBe("completed");
-    get.mockImplementation(async () => undefined);
-    rerender({ id: "wrun_2" });
-    expect(result.current.run).toBeUndefined();
+  test("reads the run back when the agent is too old to understand `wait`", async () => {
+    // Such a deploy answers `{ runId }` and nothing else. One extra read turns
+    // that into the same shape rather than an `undefined` every caller branches
+    // on.
+    fetchMock
+      .mockImplementationOnce(async () => json({ runId: "wrun_9" }, 202))
+      .mockImplementationOnce(async () => json(run({ runId: "wrun_9", status: "completed" })));
+
+    const finished = await createWorkflowApi({ baseUrl: BASE }).startAndWait("digest");
+
+    expect(call(1)[0]).toContain("/workflows/runs/wrun_9");
+    expect(finished).toMatchObject({ runId: "wrun_9", status: "completed" });
   });
 
-  test("a fresh client object per render does NOT restart the watch", async () => {
-    // The natural spelling passes a new object every render; as an effect
-    // dependency that is an unbounded request loop against the agent, with
-    // `error` wiped before anything can read it.
-    const get = vi.fn<WorkflowApi["get"]>().mockResolvedValue(run());
-    const { rerender } = renderHook(() => useWorkflowRun("wrun_1", { api: pollingApi(get) }));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    const after = get.mock.calls.length;
-    rerender();
-    rerender();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    expect(get).toHaveBeenCalledTimes(after);
+  test("still reports the run id when the read back finds nothing", async () => {
+    fetchMock
+      .mockImplementationOnce(async () => json({ runId: "wrun_9" }, 202))
+      .mockImplementationOnce(async () => json({ error: "no such run" }, 404));
+
+    const started = await createWorkflowApi({ baseUrl: BASE }).startAndWait("digest");
+
+    // The caller has the id, which is what `useWorkflowRun` needs; saying
+    // `pending` is both true and useful.
+    expect(started).toMatchObject({ runId: "wrun_9", status: "pending" });
   });
 
-  test("unmounting stops the poll", async () => {
-    const get = vi.fn<WorkflowApi["get"]>().mockResolvedValue(run());
-    const { unmount } = renderHook(() => useWorkflowRun("wrun_1", { api: pollingApi(get) }));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    unmount();
-    const after = get.mock.calls.length;
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(DEFAULT_WORKFLOW_POLL_MS * 5);
-    });
-    expect(get).toHaveBeenCalledTimes(after);
-  });
-
-  test("the client is resolved PER READ, so a token arriving later is picked up", async () => {
-    const first = vi.fn<WorkflowApi["get"]>().mockResolvedValue(run());
-    const second = vi.fn<WorkflowApi["get"]>().mockResolvedValue(run({ status: "cancelled" }));
-    const { rerender } = renderHook(
-      ({ get }) => useWorkflowRun("wrun_1", { api: pollingApi(get) }),
-      {
-        initialProps: { get: first },
-      },
+  test("a rejected input rejects with the agent's own sentence", async () => {
+    fetchMock.mockImplementation(async () => json({ error: "url: invalid" }, 400));
+    await expect(createWorkflowApi({ baseUrl: BASE }).startAndWait("digest")).rejects.toThrow(
+      /url: invalid/,
     );
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    rerender({ get: second });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(DEFAULT_WORKFLOW_POLL_MS);
-    });
-    expect(second).toHaveBeenCalled();
+  });
+});
+
+describe("get with a wait", () => {
+  test("puts the budget on the query", async () => {
+    fetchMock.mockImplementation(async () => json(run({ status: "completed" })));
+    await createWorkflowApi({ baseUrl: BASE }).get("wrun_1", { wait: 5000 });
+    expect(call()[0]).toBe("https://agents.example/my-agent/workflows/runs/wrun_1?wait=5000");
   });
 
-  test("with no client it builds one lazily against the page's own origin", async () => {
-    // The `/events` stream declines, so this also covers the fallback to the
-    // poll end to end — through the real client rather than a double.
-    fetchMock.mockImplementation(async (url: string) =>
-      url.endsWith("/events")
-        ? new Response(null, { status: 404 })
-        : json(run({ status: "completed", output: 1 })),
-    );
-    const { result } = renderHook(() => useWorkflowRun("wrun_1"));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    expect(result.current.run?.status).toBe("completed");
-    expect(String(call(0)[0])).toContain("/workflows/runs/wrun_1");
+  test("sends no query at all without one", async () => {
+    fetchMock.mockImplementation(async () => json(run()));
+    await createWorkflowApi({ baseUrl: BASE }).get("wrun_1");
+    expect(call()[0]).toBe("https://agents.example/my-agent/workflows/runs/wrun_1");
   });
 });

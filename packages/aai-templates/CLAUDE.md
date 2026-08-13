@@ -81,8 +81,9 @@ once, and the templates are now their reference use:
 | `createToolContext` (`@alexkroman1/aai/testing`) | the four suites that test tools directly — `dispatch-center`, `pizza-ordering`, `retail`, `solo-rpg` |
 | `useAgentState(fallback)` | `pizza-ordering`, `dispatch-center`, `retail`, `solo-rpg` |
 | `AutoScroll` | the three custom-chrome clients — `dispatch-center`, `retail`, `infocom-adventure` |
-| `workflow()` + `ctx.workflows` + `isTerminal` | `research-desk` (the handoff — start a run, correlate it with `key`, read it back), `transcription-desk` (the fan-out, plus `cancel` and `WorkflowOutputOf`) — the two VOICE templates with a `workflows/` directory (see below) |
-| `page()` + `createWorkflowApi` + `useWorkflowRun` | `link-digest` — the WORKFLOW APP, where the run is the product rather than a handoff |
+| `workflow()` + `ctx.workflows` + `isTerminal` | `research-desk` — the handoff: a VOICE template whose tool starts a run, correlates it with `key`, and reads it back (see below) |
+| `page()` + `createWorkflowApi` + `useWorkflowRun` | `link-digest` — the WORKFLOW APP with the primitives raw: a hand-written `<form>`, its own `useState`, one `createWorkflowApi()` |
+| `Form` + the field components + `WorkflowFields` + `useWorkflows`/`useWorkflowSubmit` | `transcription-desk` — the same front door with the form layer, plus `WorkflowOutputOf` |
 
 **`research-desk` is the workflow template, and its shape is dictated by the
 Workflow DevKit rather than chosen.** The `"use workflow"` / `"use step"` bodies
@@ -103,9 +104,30 @@ throw made this template unimportable by its own spec. The check lives at
 Note the template needs `workflow` as a devDependency of THIS package to
 resolve at test time; a scaffolded project gets it as a real dependency.
 
-**`transcription-desk` is the second workflow template, and it exists for the
-rule a straight-line body cannot show: the DevKit correlates a journal entry to
-a step call by the ORDER the call was ISSUED in.** `createUseStep`
+**`transcription-desk` is the second workflow template. It is a WORKFLOW APP —
+`page: "static"`, no `stt`/`llm`/`tts`, no tools — and it exists for the two
+rules a straight-line body cannot show.**
+
+The first is what a real asynchronous API looks like: a transcription service
+takes a job and a callback URL and calls back minutes later. So the run parks on
+`createWebhook()` and the delivery is what resumes it, which is the entire
+argument for a durable workflow over a tool call — the container it was running
+in is free to go away in between. Three things there are load-bearing and all
+three are one line each in the body: **`createWebhook()` registers nothing;
+suspending does**, so the token is claimed with `await hook.getConflict()` before
+the URL is handed out (the stub provider calls back inside the submit step, which
+is as fast as a callback gets); **the token is the endpoint's only
+authorization**, so the delivery is checked against the job id this run submitted
+and a mismatch is a `FatalError` rather than a retry; and **`hook.url` names the
+guest's own origin**, dialable from inside that container and nowhere else — a
+real provider is handed the agent's public
+`/.well-known/workflow/v1/webhook/<token>`, which the platform proxies to
+whichever sandbox is serving the agent when the delivery lands, booting one if
+none is. That indirection is the point: a run that sleeps for a week outlives
+every sandbox that ever served it.
+
+The second is that the DevKit correlates a journal entry to a step call by the
+ORDER the call was ISSUED in. `createUseStep`
 (`@workflow/core/dist/step.js`) stamps each invocation with
 `step_${ctx.generateUlid()}` from a monotonic ULID factory seeded off the run's
 `startedAt` and the VM's replay-stable `Math.random`, so the Nth step call in a
@@ -113,7 +135,7 @@ run gets the Nth id on the first execution and on every replay. The step's NAME
 is only cross-checked against that id, and a mismatch is `ReplayDivergenceError`
 rather than a silent re-run.
 
-Two things follow, and they are the template's whole content:
+Two things follow, and they are the fan-out's whole shape:
 `Promise.all(batch.map(step))` is safe (every call issued synchronously, in
 array order, whatever order they settle in), and **a work-stealing pool is not**
 — a worker issues its next call only after its previous one settles, so the
@@ -124,19 +146,33 @@ option. This is the one piece of the pre-DevKit engine's API that did NOT
 survive the port: `ctx.step("chunk-3", …)` let a caller pin identity to a
 position, and nothing replaces it.
 
-It also demonstrates that a fan-out's WIDTH may come from a step's result
-(`splitRecording`), because that result is journaled — as against anything the
-body computes for itself, which is the ordinary determinism rule one level up.
+It also demonstrates that a fan-out's WIDTH may come from the DELIVERY — the
+segment count falls out of the transcript the webhook carried, which is journaled
+— as against anything the body computes for itself, which is the ordinary
+determinism rule one level up.
 
-Its spec additionally exercises the BODY directly, which `research-desk`'s does
-not: imported through vitest with no bundler in the path, `transcribeFlow` is an
-ordinary async function and its `"use step"` calls are ordinary calls, so the
-assembly (every chunk in recording order, no dropped partial final batch) is
-testable while durability and replay are not. The spec says so in place, because
-a body test that looked like a durability test would be the worse failure.
+**Its `client.tsx` is the form layer's worked example**, and the split with
+`link-digest` is deliberate: that one shows the primitives raw (a hand-written
+`<form>`, its own `useState`, one `createWorkflowApi()`), and this one shows the
+same page with `useWorkflowSubmit` and `<Form>` over them. It is also where the
+form is half declared and half written — `<WorkflowFields>` renders a control per
+SCALAR property of the workflow's own input schema, so `requestedBy` and `redact`
+exist because `agent.ts` declares them, while `upload` is an object with no
+honest default control and gets a hand-written `<FileField>` in the same
+`<Form>`. No mapping sits between the two: a `<FileField>` contributes
+`{ name, type, size, … }` under its own name, which is the shape `upload`
+declares. See "Forms" in `packages/aai-ui/CLAUDE.md`.
 
-**A step cannot reach `ctx.env` or `ctx.db`, which is why both workflow
-templates stub their I/O.** A `"use step"` function is bundled and dispatched
+Its spec exercises the exported STEPS and the pure helpers directly rather than
+the body, which is where the honest line is: imported through vitest with no
+bundler in the path, a `"use step"` function is an ordinary async function and
+its retries, its `FatalError` guards and its segment assembly are all testable,
+while durability, suspension and replay are not. The spec says so in place,
+because a body test that looked like a durability test would be the worse
+failure.
+
+**A step cannot reach `ctx.env` or `ctx.db`, which is why every workflow
+template stubs its I/O.** A `"use step"` function is bundled and dispatched
 separately from the agent bundle and is handed no tool context, and the guest
 reads the agent's secrets into memory rather than into `process.env`
 (`harness-agent-mode.ts` deletes the env file after reading). So there is
@@ -145,16 +181,16 @@ currently no way for a step to authenticate an outbound call, and
 intent rather than the implementation. Until that gap is closed, a template's
 steps are fixtures.
 
-**`link-digest` is the same mechanism with the other FRONT DOOR**, which is what
-separates it from the two above: both of those are voice agents that HAND OFF to
-a run (a caller is on the line, so a tool starts one and answers the turn),
-while `link-digest` declares `page: "static"` and the workflow IS the product —
-no `stt`/`llm`/`tts`, no tools, and a `client.tsx` that mounts with `page()`
-rather than `client()`.
-Its spec asserts the DECLARATION rather than behaviour, which is all there is to
-assert: the `page` field, the workflow's NAME (the page starts a run by that
-string, so a rename is a runtime 400 rather than a compile error), and the input
-schema, which is both the call-site validation and the JSON Schema
+**`link-digest` is the same mechanism at its smallest, and it is the FRONT DOOR
+that separates both of these from `research-desk`.** That one is a voice agent
+that HANDS OFF to a run (a caller is on the line, so a tool starts one and
+answers the turn); `link-digest` and `transcription-desk` declare
+`page: "static"` and the workflow IS the product — no `stt`/`llm`/`tts`, no
+tools, and a `client.tsx` that mounts with `page()` rather than `client()`.
+`link-digest`'s spec asserts the DECLARATION rather than behaviour, which is all
+there is to assert: the `page` field, the workflow's NAME (the page starts a run
+by that string, so a rename is a runtime 400 rather than a compile error), and
+the input schema, which is both the call-site validation and the JSON Schema
 `GET /workflows` serves.
 
 **`template-page-mount.test.ts` correlates the two mounts with the agents that

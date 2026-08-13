@@ -110,3 +110,39 @@ export function isTerminal<R>(
     run !== undefined && (TERMINAL_WORKFLOW_STATUSES as readonly string[]).includes(run.status)
   );
 }
+
+/**
+ * Longest a request may hold open waiting for a run to settle — the ceiling on
+ * the API's SYNCHRONOUS mode.
+ *
+ * 60s, under every default idle timeout a proxy in the path is likely to carry
+ * (nginx and most CDNs sit there), because a request cut by an intermediary
+ * answers the caller with a network error rather than the "still running" the
+ * API answers a timeout with — and that is the one outcome which loses the run
+ * id.
+ *
+ * The cap is the honest statement of what waiting IS: an optimization over
+ * reading the run back, never the mechanism. A run can take a week; a request
+ * cannot.
+ *
+ * @public
+ */
+export const MAX_WORKFLOW_WAIT_MS = 60_000;
+
+/**
+ * Clamp a requested wait to what the API will actually hold a socket open for.
+ *
+ * Shared by both ends deliberately: the browser client sizes its own `fetch`
+ * deadline from this same function, so a page can never still be waiting on a
+ * request the agent already answered — nor give up before it does.
+ *
+ * Anything above the cap is CLAMPED rather than rejected, because the caller's
+ * intent ("wait as long as you can") is unambiguous; anything absent, negative
+ * or non-finite means "do not wait".
+ *
+ * @public
+ */
+export function clampWorkflowWait(requested: number | undefined): number {
+  if (requested === undefined || !Number.isFinite(requested) || requested <= 0) return 0;
+  return Math.min(requested, MAX_WORKFLOW_WAIT_MS);
+}

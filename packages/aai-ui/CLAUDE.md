@@ -295,6 +295,106 @@ narrow to a TYPED `run.output`: a type-only import of `agent.ts` is erased, so
 naming the agent's own type pulls no server graph into the browser bundle.
 `link-digest` in `packages/aai-templates/templates/` is the worked example.
 
+### One request in, one result out (`wait`)
+
+Both read paths take a wait budget — `POST /workflows/runs` from the body,
+`GET /workflows/runs/:id` from `?wait=` — and answer when the run reaches a
+terminal status or when the budget expires, whichever is first. The loop is
+`aai/host/workflow-api-wait.ts`; on the client it is `api.startAndWait(workflow,
+input, { wait })` and `api.get(runId, { wait })`.
+
+The asynchronous shape stays the DEFAULT, because it is the honest one: a run is
+durable and deliberately unfinished when the request returns, and a page has
+`useWorkflowRun` to watch with. What had no surface at all is everything else
+that talks to an agent — a shell script, a cron job, another service, a form
+whose only job is to show an answer — each of which otherwise writes the same
+poll loop against `GET /runs/:id`. So `wait` is additive and nothing changes
+without it: a bare `POST` still answers `{ runId }` at 202, and with a wait it
+adds `run` beside the same `runId`.
+
+Four properties, each covering something that is silent when it goes wrong:
+
+- **Giving up is an ANSWER.** An expired budget answers the RUNNING snapshot at
+  202 — never an error, never a cancel. The run is real and the caller holds its
+  id, so a 5xx would throw away the one thing they cannot rebuild. That is what
+  makes the cap safe to ENFORCE rather than a trap: `clampWorkflowWait`
+  (`aai/sdk/workflow-run.ts`, `MAX_WORKFLOW_WAIT_MS` = 60 s) is applied at both
+  ends, so a client cannot ask an agent to hold a socket longer than the agent
+  will, and asking degrades to the behaviour that was already there.
+- **The loop watches the RESPONSE, not the request** (`CallerLink`). An
+  `IncomingMessage` is `destroyed` as soon as its body has been read — already
+  true on a `POST` by the time the wait starts — so a loop watching the request
+  reads "the caller gave up" on its first pass and answers 202 immediately. The
+  status is legal and the run really is still going, so nothing about that
+  failure is visible.
+- **An unknown id answers at once**, after one read. A 404 is a stable answer,
+  and spending a 60 s budget on one is how a stale id from a previous deploy
+  holds a request open for a minute.
+- **It polls, and that is the cheap kind.** The loop runs INSIDE the guest, next
+  to the world the run lives in, for the life of one request the caller is
+  already holding open — no HTTP hop and no brokering per read, which is what
+  makes the SSE stream's interval expensive by comparison. Hence
+  `WORKFLOW_WAIT_POLL_MS` (250) being quicker than `RUN_EVENT_POLL_MS`: a
+  synchronous call's whole value is that a fast run answers fast.
+
+`useWorkflowSubmit(workflow, { wait })` opts a form in, and still follows the
+returned id with `useWorkflowRun` afterwards — the budget bounds the request, not
+the run.
+
+### Forms (`components/form.tsx`)
+
+A workflow app's front door is a form, and nothing in this package knew how to
+render one — every component here is about a live session (a transcript, a mic
+button, a tool-call row) — so each such page hand-rolled labels, inputs, a submit
+button and the value collection between them, differently each time.
+`<Form>` plus `Field` / `TextField` / `NumberField` / `TextAreaField` /
+`SelectField` / `CheckboxField` / `FileField` / `SubmitButton` is that, once.
+
+**Values come off the DOM, not out of React state.** `<Form>` reads its own
+`<form>` element on submit and builds one plain object from the named controls,
+which is what makes a field here nothing more than a styled `<input>` — no
+registration, no controlled-component ceremony, and a bare `<input name="x">` a
+caller writes themselves works identically. It also makes the values TYPED,
+which `new FormData(form)` cannot: a number field yields a number, a checkbox a
+boolean, an empty optional field nothing at all. That is load-bearing rather
+than tidy, because these values go straight into a workflow's input where a zod
+schema is waiting — `"3"` against `z.number()` is a rejected run, and the browser
+is the only place that still knows the control was `type="number"`.
+
+**A `<FileField>` describes a file; by default it does not upload one.** It
+contributes `{ name, size, type, lastModified }`, and `read="text"` /
+`read="dataUrl"` adds `content` for the cases where the bytes really are small.
+A workflow's input is serialized into the run record and replayed from it on
+every resume, so bytes in there are re-read for the life of the run and capped by
+the request-body limit besides; a URL or the app's own storage is where they
+belong, fetched inside a `"use step"` function that runs once per execution.
+
+**`<WorkflowFields workflow={summary}>` renders the schema half.** It reads the
+`WorkflowSummary` that `GET /workflows` already serves and emits one control per
+SCALAR property — string, number, integer, boolean, and an enum as a
+`<SelectField>` — honouring `required`, `default`, and `description` as the hint,
+with the label humanized from the property name (`recordingId` → `Recording
+id`). It SKIPS objects and arrays deliberately: there is no honest control for
+either, and rendering an approximation would be worse than leaving the field to
+the caller, who writes it by hand in the same `<Form>` because every field is a
+plain named control. So a form is half declared and half written, and adding a
+scalar to the workflow's input schema adds a control with no client edit.
+
+`useWorkflows()` fetches that list (the client held in a ref, read once — same
+rule as `useWorkflowRun`), and `useWorkflowSubmit(workflow, options?)` is
+`api.start` plus `useWorkflowRun` plus the four pieces of state between them.
+Two things it decides that a call site keeps getting wrong: `pending` covers the
+RUN, not the POST — a button that re-enabled on the response invites a second
+submission of work already in flight — and the previous run id is dropped BEFORE
+the next request rather than when it returns, since a finished result sitting
+under a form that is already submitting again is the one wrong answer this can
+give, and it looks like a correct one.
+
+`transcription-desk` in `packages/aai-templates/templates/` is the worked
+example; `link-digest` is the smaller one and shows the primitives raw
+(`createWorkflowApi`, `useWorkflowRun`, a hand-written `<form>`), which is worth
+keeping as the thing these hooks compress.
+
 ## Surviving a platform restart (`client-config.ts`)
 
 **Every request the session makes needs a deadline of its own, because a
