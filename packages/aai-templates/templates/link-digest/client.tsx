@@ -18,6 +18,10 @@ import "@alexkroman1/aai-ui/styles.css";
 // nothing — and it is what stops this file restating a shape `workflows/
 // digest.ts` already declares.
 import type { WorkflowOutputOf } from "@alexkroman1/aai";
+// The one runtime import from the SDK a browser bundle wants: `/utils` is the
+// zod-free subpath, so it costs a few hundred bytes rather than the root
+// barrel's module graph.
+import { errorMessage } from "@alexkroman1/aai/utils";
 import { useState } from "react";
 import type { digest } from "./agent.ts";
 
@@ -52,7 +56,7 @@ export function App() {
     } catch (err) {
       // The agent's own sentence: an input failing the workflow's schema names
       // the issue, which is better copy than anything this page could write.
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err));
     }
   };
 

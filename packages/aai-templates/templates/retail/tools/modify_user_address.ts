@@ -35,5 +35,5 @@ export const modifyUserAddress = retailTool({
     };
   },
   summary: (_args, result) =>
-    "error" in result ? "profile address change failed" : `re-addressed ${result.user_id}`,
+    isToolFailure(result) ? "profile address change failed" : `re-addressed ${result.user_id}`,
 });

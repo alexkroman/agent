@@ -30,5 +30,5 @@ export const getProductDetails = retailTool({
     };
   },
   summary: (_args, result) =>
-    "error" in result ? "product read failed" : `read product ${result.name}`,
+    isToolFailure(result) ? "product read failed" : `read product ${result.name}`,
 });

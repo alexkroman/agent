@@ -9,6 +9,8 @@
  * halves have to agree on.
  */
 
+import { errorMessage } from "@alexkroman1/aai/utils";
+
 export class ApiError extends Error {
   readonly status: number;
   constructor(status: number, message: string) {
@@ -37,8 +39,15 @@ export function isTransientError(err: unknown): boolean {
   return true;
 }
 
-/** A query/mutation error as displayable text; undefined when there is none. */
+/**
+ * A query/mutation error as displayable text; undefined when there is none.
+ *
+ * The unwrapping itself is the SDK's `errorMessage`, not a second copy of the
+ * `instanceof Error` ternary: react-query and `fetch` both reject with values
+ * that are message-BEARING without being `Error` instances, and the local copy
+ * rendered those as `[object Object]`.
+ */
 export function errorText(err: unknown): string | undefined {
   if (!err) return;
-  return err instanceof Error ? err.message : String(err);
+  return errorMessage(err);
 }

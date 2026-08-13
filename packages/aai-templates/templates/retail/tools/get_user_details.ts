@@ -41,5 +41,5 @@ export const getUserDetails = retailTool({
     };
   },
   summary: (_args, result) =>
-    "error" in result ? "profile read failed" : `read profile ${result.user_id}`,
+    isToolFailure(result) ? "profile read failed" : `read profile ${result.user_id}`,
 });

@@ -38,5 +38,6 @@ export const getOrderDetails = retailTool({
       ...(order.cancel_reason ? { cancel_reason: order.cancel_reason } : {}),
     };
   },
-  summary: (_args, result) => ("error" in result ? "order read failed" : `read ${result.order_id}`),
+  summary: (_args, result) =>
+    isToolFailure(result) ? "order read failed" : `read ${result.order_id}`,
 });

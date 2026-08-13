@@ -34,7 +34,7 @@
  * followed from the same id either way.
  */
 
-import { isTerminal, type WorkflowSummary } from "@alexkroman1/aai";
+import { errorMessage, isTerminal, type WorkflowSummary } from "@alexkroman1/aai";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWorkflowRun } from "./use-workflow-run.ts";
 import { createWorkflowApi, type WorkflowApi, type WorkflowRun } from "./workflow-client.ts";
@@ -106,7 +106,7 @@ export function useWorkflows(opts: UseWorkflowsOptions = {}): UseWorkflowsResult
         setState({
           workflows: [],
           loading: false,
-          error: err instanceof Error ? err.message : String(err),
+          error: errorMessage(err),
         });
       });
     return () => {
@@ -225,7 +225,7 @@ export function useWorkflowSubmit<R = unknown>(
             : (await client.startAndWait(workflow, input, { ...options, wait })).runId,
         );
       } catch (err: unknown) {
-        setStartError(err instanceof Error ? err.message : String(err));
+        setStartError(errorMessage(err));
       } finally {
         setStarting(false);
       }

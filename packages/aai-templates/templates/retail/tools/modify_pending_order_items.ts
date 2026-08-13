@@ -96,7 +96,7 @@ export const modifyPendingOrderItems = retailTool({
     };
   },
   summary: (_args, result) =>
-    "error" in result
+    isToolFailure(result)
       ? "item change failed"
       : `modified ${result.order_id} (${result.price_difference >= 0 ? "+" : ""}${result.price_difference})`,
 });
