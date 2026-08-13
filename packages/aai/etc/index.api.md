@@ -20,6 +20,7 @@ export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
     llm?: LlmProvider;
     maxSteps: number;
     name: string;
+    page?: "voice" | "static";
     requiredEnv?: readonly string[];
     s2s?: S2sProvider;
     silencePrompt?: string;

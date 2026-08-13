@@ -27,6 +27,7 @@ import { DatabaseCard } from "./database-card.tsx";
 import { PhoneCard } from "./phone-card.tsx";
 import { queryKeys } from "./query-keys.ts";
 import { Card } from "./settings-card.tsx";
+import { WorkflowsCard } from "./workflows-card.tsx";
 
 /**
  * Secrets the PLATFORM manages, which this pane neither lists, deletes, nor
@@ -47,6 +48,12 @@ type SettingsPaneProps = {
   project: string;
   /** The project's published slug, if it has one — see PhoneCard. */
   deployedSlug?: string | undefined;
+  /**
+   * The auto-deployed preview's slug. Only WorkflowsCard reads it, and only as
+   * a fallback: a project's workflows are worth looking at before its first
+   * publish, and the preview agent is the only thing running until then.
+   */
+  previewSlug?: string | undefined;
   /** Post a note into the chat so the coding agent knows what changed. */
   onNotifyChat: (text: string) => void;
   /** Delete the project (workspace + chat). The app navigates home after. */
@@ -58,6 +65,7 @@ export function SettingsPane({
   bearer,
   project,
   deployedSlug,
+  previewSlug,
   onNotifyChat,
   onDeleteProject,
   deleting,
@@ -160,6 +168,7 @@ export function SettingsPane({
             provisioned per environment as each one deploys, so it can be
             switched on before the project has ever been published. */}
         <DatabaseCard bearer={bearer} project={project} onNotifyChat={onNotifyChat} />
+        <WorkflowsCard deployedSlug={deployedSlug} previewSlug={previewSlug} />
 
         <Card
           title="Secrets"

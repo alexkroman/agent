@@ -53,6 +53,14 @@ export type AgentDef = {
   tools: Record<string, ToolDef>;
   state?: () => Record<string, unknown>;
   maxSteps?: number;
+  /**
+   * `"static"` when the agent serves a page rather than voice sessions — read
+   * here so the harness can pass it to `createServer`, which then declines the
+   * voice surfaces and reports it in `/client-config`. Optional because this is
+   * a MIRROR of the SDK's `AgentDef` and a bundle built with an older SDK simply
+   * has none; absent reads as `"voice"`, as it does everywhere else.
+   */
+  page?: "voice" | "static";
 };
 
 // ---- Bundle-shipped runtime --------------------------------------------------
@@ -67,6 +75,17 @@ export type AgentDef = {
 export type GuestRuntime = {
   startSession(ws: unknown, opts: unknown): void;
   shutdown(): Promise<void>;
+  /**
+   * The bundle's `ctx.workflows`, forwarded to the SDK's own `createServer` so
+   * this guest serves the workflow HTTP API (`/workflows/*`).
+   *
+   * OPTIONAL because the harness↔bundle contract is versioned additively and
+   * this arrived late: a bundle built with an older SDK returns a two-method
+   * runtime, and the API then answers 404 rather than failing the boot.
+   * Deliberately loose for the same reason the two methods above are — the shape
+   * belongs to the bundle's SDK, and the harness only hands it back.
+   */
+  workflows?: unknown;
 };
 
 /**

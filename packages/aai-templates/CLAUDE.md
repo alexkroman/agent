@@ -81,7 +81,8 @@ once, and the templates are now their reference use:
 | `createToolContext` (`@alexkroman1/aai/testing`) | the four suites that test tools directly — `dispatch-center`, `pizza-ordering`, `retail`, `solo-rpg` |
 | `useAgentState(fallback)` | `pizza-ordering`, `dispatch-center`, `retail`, `solo-rpg` |
 | `AutoScroll` | the three custom-chrome clients — `dispatch-center`, `retail`, `infocom-adventure` |
-| `workflow()` + `ctx.workflows` + `isTerminal` | `research-desk` (the handoff — start a run, correlate it with `key`, read it back), `transcription-desk` (the fan-out, plus `cancel` and `WorkflowOutputOf`) — the two templates with a `workflows/` directory (see below) |
+| `workflow()` + `ctx.workflows` + `isTerminal` | `research-desk` (the handoff — start a run, correlate it with `key`, read it back), `transcription-desk` (the fan-out, plus `cancel` and `WorkflowOutputOf`) — the two VOICE templates with a `workflows/` directory (see below) |
+| `page()` + `createWorkflowApi` + `useWorkflowRun` | `link-digest` — the WORKFLOW APP, where the run is the product rather than a handoff |
 
 **`research-desk` is the workflow template, and its shape is dictated by the
 Workflow DevKit rather than chosen.** The `"use workflow"` / `"use step"` bodies
@@ -143,6 +144,26 @@ currently no way for a step to authenticate an outbound call, and
 `research-desk`'s comment that `ctx.db` is "available in a step" describes an
 intent rather than the implementation. Until that gap is closed, a template's
 steps are fixtures.
+
+**`link-digest` is the same mechanism with the other FRONT DOOR**, which is what
+separates it from the two above: both of those are voice agents that HAND OFF to
+a run (a caller is on the line, so a tool starts one and answers the turn),
+while `link-digest` declares `page: "static"` and the workflow IS the product —
+no `stt`/`llm`/`tts`, no tools, and a `client.tsx` that mounts with `page()`
+rather than `client()`.
+Its spec asserts the DECLARATION rather than behaviour, which is all there is to
+assert: the `page` field, the workflow's NAME (the page starts a run by that
+string, so a rename is a runtime 400 rather than a compile error), and the input
+schema, which is both the call-site validation and the JSON Schema
+`GET /workflows` serves.
+
+**`template-page-mount.test.ts` correlates the two mounts with the agents that
+declare them.** konsistent asserts only what both `client.tsx` shapes share (the
+stylesheet import): its predicates are "must import X" with no "one of", and no
+way to read a value out of a SIBLING file to decide which — and a rule that
+merely accepted either mount would pass the exact mistake worth catching, since
+a static agent mounted with `client()` renders fine and then opens a
+`/websocket` the server declines.
 
 The one thing a template may still hand-roll here is a **fallback that would
 cost the browser bundle**: `retail`'s client builds its empty view from a

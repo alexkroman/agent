@@ -22,6 +22,7 @@ export type AgentRuntime = {
     startSession(ws: SessionWebSocket, opts?: SessionStartOptions): void;
     shutdown(): Promise<void>;
     readonly readyConfig: ReadyConfig;
+    readonly workflows?: WorkflowClient | undefined;
 };
 
 // @public
@@ -179,6 +180,9 @@ export function createTelephonyBridge(carrierSocket: SessionWebSocket, opts: Tel
 export function createWakeHintPublisher(opts?: WakeHintOptions): WakeHintPublisher;
 
 // @internal
+export function createWorkflowApi(opts: WorkflowApiOptions): (req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean;
+
+// @internal
 export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClient;
 
 // @internal
@@ -265,6 +269,9 @@ export type LogLevel = "info" | "warn" | "error" | "debug";
 
 // @public
 export const MAX_WORKFLOW_FIND_LIMIT = 100;
+
+// @public
+export const MAX_WORKFLOW_INPUT_BYTES: number;
 
 // @public
 export type PassthroughServerOptions = {
@@ -464,8 +471,12 @@ export type ServerOptions = {
     greeting?: string;
     upgrade?: (req: http.IncomingMessage, socket: Duplex, head: Buffer) => boolean;
     request?: (req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean;
+    page?: "voice" | "static";
     telephony?: boolean;
 };
+
+// @internal
+export function serveStatic(dir: string, req: http.IncomingMessage, res: http.ServerResponse, logger: Logger): Promise<boolean>;
 
 // @internal
 export type SessionCore = {
@@ -513,7 +524,7 @@ export type SessionCoreOptions = {
 };
 
 // @public
-export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown">;
+export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown" | "workflows">;
 
 // @public
 export type SessionStartOptions = {
@@ -678,6 +689,12 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
 // @public
 export function withHostCredentialFallback(env: Record<string, string>, hostEnv?: Record<string, string | undefined>): HostCredentialEnv;
 
+// @public
+export const WORKFLOW_API_PREFIX = "/workflows";
+
+// @public
+export const WORKFLOW_API_TOKEN_ENV = "AAI_WORKFLOW_API_TOKEN";
+
 // @internal
 export const WORKFLOW_FLOW_PATH = "/.well-known/workflow/v1/flow";
 
@@ -689,6 +706,16 @@ export const WORKFLOW_WAKE_TABLE = "aai_workflow_wake";
 
 // @internal (undocumented)
 export const WORKFLOW_WEBHOOK_PREFIX = "/.well-known/workflow/v1/webhook/";
+
+// @internal
+export type WorkflowApiEngine = WorkflowClient;
+
+// @public (undocumented)
+export type WorkflowApiOptions = {
+    engine: () => WorkflowApiEngine | undefined;
+    token?: string | undefined;
+    logger: Logger;
+};
 
 // @public
 export type WorkflowClientOptions = {

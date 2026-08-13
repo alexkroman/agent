@@ -11,6 +11,7 @@ export function buildClientConfig(src: {
     name?: string | undefined;
     greeting?: string | undefined;
     sessionUrl?: string | undefined;
+    page?: "voice" | "static" | undefined;
 }): ClientConfigResponse;
 
 // @public
@@ -33,6 +34,10 @@ export const ClientConfigResponseSchema: z.ZodObject<{
     name: z.ZodOptional<z.ZodString>;
     greeting: z.ZodOptional<z.ZodString>;
     sessionUrl: z.ZodOptional<z.ZodString>;
+    page: z.ZodOptional<z.ZodEnum<{
+        static: "static";
+        voice: "voice";
+    }>>;
 }, z.core.$strip>;
 
 // @public

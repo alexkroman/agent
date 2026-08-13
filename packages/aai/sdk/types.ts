@@ -313,6 +313,26 @@ export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
    */
   workflows?: Readonly<Record<string, WorkflowDef>>;
   /**
+   * What this agent's front door IS — and so whether it serves voice at all.
+   * Defaults to `"voice"`.
+   *
+   * `"static"` declares a WORKFLOW APP: an ordinary web page over the workflow
+   * HTTP API (`/workflows/*`), with no microphone, no WebSocket and no session.
+   * The page is still a `client.tsx`, still React, still Tailwind — it just
+   * mounts with `page()` instead of `client()` and reaches the agent through
+   * `createWorkflowApi()` / `useWorkflowRun()` instead of `useSession()`.
+   *
+   * Declaring it is not decoration. `createServer` refuses the voice surfaces
+   * for a static agent, so a page that has no session cannot be handed a socket
+   * that would never answer, and telephony defaults off for one — an agent with
+   * no `stt`/`llm`/`tts` has nothing to put on a phone call.
+   *
+   * The two are not exclusive at the FEATURE level: a `"voice"` agent may
+   * declare workflows and start them from a tool, and a `"static"` one may
+   * declare tools it never reaches. This field is only about the surface.
+   */
+  page?: "voice" | "static";
+  /**
    * Factory creating this session's mutable state — the value tools read and
    * write as `ctx.state`. Called once per session; unset leaves `ctx.state`
    * an empty object.

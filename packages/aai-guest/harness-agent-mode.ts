@@ -407,7 +407,13 @@ export async function mainAgent(port: number, host: string, token: string): Prom
     // the two fields required: `state.agent` is a tenant object asserted to
     // `AgentDef` at load (`harness-bundle.ts`), so a bundle can ship neither.
     // The types cannot see that, which is why a checker will call these dead.
-    ...omitUndefined({ name: state.agent?.name, greeting: state.agent?.greeting }),
+    ...omitUndefined({
+      name: state.agent?.name,
+      greeting: state.agent?.greeting,
+      // The workflow-app declaration, honoured identically to `aai dev`: the
+      // voice surfaces are declined with a reason and telephony defaults off.
+      page: state.agent?.page,
+    }),
     request: createAgentRequestHandler({
       manage: {
         token,

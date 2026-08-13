@@ -15,6 +15,9 @@
  *   sandbox session URL (ensures the sandbox is running)
  * - `GET/POST /:slug/phone`     — carrier call-answering webhook: brokers the
  *   sandbox and answers with TwiML/TeXML pointing at its media-stream endpoint
+ * - `GET/POST/DELETE /:slug/workflows/*` — the durable-workflow API, brokered
+ *   to the guest. A workflow app's page has no other way to reach it — it is
+ *   served from `/:slug/` and builds every URL from `location`
  * - `/:slug/.well-known/workflow/v1/webhook/:token` — durable-run webhook
  *   delivery: brokers the sandbox (booting one for a run whose guest has long
  *   since exited) and forwards the request to the guest's own endpoint
@@ -45,7 +48,7 @@ import { DEPLOY_BODY_CONCURRENCY, DEPLOY_BODY_WAIT_MS, resolveHarnessPath } from
 import type { HonoEnv } from "./context.ts";
 import { handleDelete } from "./delete.ts";
 import { handleDeployNew } from "./deploy.ts";
-import { GUEST_ROUTE_EXPOSURE } from "./guest-routes.ts";
+import { GUEST_ROUTE_EXPOSURE, GUEST_ROUTES } from "./guest-routes.ts";
 import { gzipRequestMw, MAX_INFLATED_BODY_BYTES } from "./gzip-request.ts";
 import { authMw, existingOwnerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
@@ -84,6 +87,7 @@ import {
   handleAgentPage,
   handleClientAsset,
 } from "./transport-websocket.ts";
+import { createAgentWorkflowsHandler, createWorkflowRateLimitMw } from "./workflow-handler.ts";
 import { startWorkflowWakeSweep } from "./workflow-wake.ts";
 import {
   createWorkflowWebhookHandler,
@@ -110,6 +114,10 @@ export type OrchestratorOpts = {
    * is per-replica, which is correct for a single process and weak for ten.
    */
   deployRateLimiter?: RateLimiter;
+  /** Per-IP limiter for the whole `/:slug/workflows/*` surface. */
+  workflowRateLimiter?: RateLimiter;
+  /** Per-IP limiter for `POST /:slug/workflows/runs` — starting runs. */
+  workflowStartRateLimiter?: RateLimiter;
   /**
    * How many deploy bodies may be buffered and parsed at once, and how long a
    * caller waits for a slot. Defaults to the `DEPLOY_BODY_*` constants (both
@@ -356,6 +364,29 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
       onError: (c) => c.json({ error: "Request body too large" }, 413),
     }),
     (c) => handleWorkflowWebhook(c, brokerOpts),
+  );
+  // The durable-workflow API, brokered to the guest. Registered even though a
+  // programmatic caller could reach the guest directly, because a WORKFLOW APP's
+  // page cannot: this platform serves it at `GET /:slug/`, so its
+  // `createWorkflowApi()` builds every URL under `/:slug/` and lands here. Same
+  // auth posture as the routes above — none by default; the guest's own
+  // `AAI_WORKFLOW_API_TOKEN` gate is what closes it, and the bearer is
+  // forwarded. See workflow-handler.ts.
+  const handleWorkflows = createAgentWorkflowsHandler(opts.guestFetch);
+  agents.on(
+    // The methods come STRAIGHT off the exposure declaration, for the same
+    // reason the webhook route above does it: the guest answers GET, POST and
+    // DELETE, and a platform serving a subset is the exact bug guest-routes.ts
+    // exists to catch — `api.cancel(runId)` is a DELETE.
+    [...GUEST_ROUTE_EXPOSURE.workflows.methods],
+    // The guest's own constant, so the two sides of the proxy cannot name
+    // different paths.
+    [GUEST_ROUTES.workflows, `${GUEST_ROUTES.workflows}/:path{.+}`],
+    createWorkflowRateLimitMw({
+      surface: opts.workflowRateLimiter,
+      start: opts.workflowStartRateLimiter,
+    }),
+    (c) => handleWorkflows(c, brokerOpts),
   );
   agents.get("/favicon.ico", handleAgentFavicon);
   agents.get("/assets/:path{.+}", handleClientAsset);

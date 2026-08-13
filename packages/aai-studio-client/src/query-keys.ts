@@ -18,4 +18,11 @@ export const queryKeys = {
   toolLabels: (url: string | undefined) => ["tool-labels", url] as const,
   secrets: (project: string) => ["secrets", project] as const,
   database: (project: string) => ["database", project] as const,
+  /**
+   * Recent workflow runs, keyed by the SLUG they were read from — the deployed
+   * agent's, or the preview's before a first publish. Not by project: those two
+   * agents keep separate runs, so a key that could not tell them apart would
+   * show production's runs against the preview after a publish.
+   */
+  workflowRuns: (slug: string | undefined) => ["workflow-runs", slug] as const,
 };

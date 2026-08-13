@@ -12,6 +12,7 @@ import type { AgentEnv, ProviderEnv } from "../sdk/env-types.ts";
 import type { ClientSink, ReadyConfig } from "../sdk/protocol.ts";
 import type { LlmProvider, SttProvider, TtsProvider } from "../sdk/providers.ts";
 import type { AgentDef } from "../sdk/types.ts";
+import type { WorkflowClient } from "../sdk/workflow.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
 import type { SessionCore } from "./session-core.ts";
@@ -54,6 +55,13 @@ export type AgentRuntime = {
   startSession(ws: SessionWebSocket, opts?: SessionStartOptions): void;
   shutdown(): Promise<void>;
   readonly readyConfig: ReadyConfig;
+  /**
+   * `ctx.workflows` for this runtime — the same client tool code is given, and
+   * what {@link createServer} serves `/workflows/*` from. Undefined for an agent
+   * that declares none, which is what makes that API answer 404 rather than
+   * pretending to a surface the agent does not have.
+   */
+  readonly workflows?: WorkflowClient | undefined;
 };
 
 /**

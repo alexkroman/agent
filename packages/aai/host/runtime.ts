@@ -484,5 +484,10 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     startSession,
     shutdown,
     readyConfig,
+    // Exposed rather than kept private because tool code is not the only caller:
+    // `createServer` serves the workflow HTTP API from exactly this client, so a
+    // page and a `curl` reach the same runs a tool does. One client per runtime,
+    // not one per surface — two would index correlation keys separately.
+    workflows,
   };
 }

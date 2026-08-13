@@ -124,7 +124,17 @@ export type ClientHandle = {
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
-function resolveContainer(target: string | HTMLElement = "#app"): HTMLElement {
+/**
+ * The element a mount renders into.
+ *
+ * Exported so `page()` resolves its target the same way `client()` does — the
+ * default selector and the "element not found" sentence are part of what an
+ * author has learned, and a second copy is how the two mounts come to disagree
+ * about which one they were given.
+ *
+ * @internal
+ */
+export function resolveContainer(target: string | HTMLElement = "#app"): HTMLElement {
   if (typeof target !== "string") return target;
   const el = document.querySelector<HTMLElement>(target);
   if (!el) throw new Error(`Element not found: ${target}`);

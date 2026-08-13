@@ -94,11 +94,14 @@ export {
   createServer,
   DEFAULT_LISTEN_HOST,
   decliningRuntime,
-  isPathInside,
   type PassthroughServerOptions,
   type ServerOptions,
   type SessionRuntime,
 } from "./server.ts";
+// The static-asset half of `createServer`, split out at the file-length cap.
+// `isPathInside` stays exported because the SSRF-adjacent containment rule it
+// encodes is worth one definition, not one per caller.
+export { isPathInside, serveStatic } from "./server-static.ts";
 export { createSessionCore, type SessionCore, type SessionCoreOptions } from "./session-core.ts";
 export {
   builtinFetch,
@@ -143,6 +146,19 @@ export type {
   TransportCallbacks,
   TransportSessionConfig,
 } from "./transports/types.ts";
+// The workflow HTTP API. `createServer` mounts it itself, so nothing outside
+// this package has to wire a route — what is exported is the token's env var
+// (the guest's deploy path reads it to decide whether a deployed app's API is
+// closed) and the prefix, so the platform's proxy and this server cannot name
+// different paths.
+export {
+  createWorkflowApi,
+  MAX_WORKFLOW_INPUT_BYTES,
+  WORKFLOW_API_PREFIX,
+  WORKFLOW_API_TOKEN_ENV,
+  type WorkflowApiEngine,
+  type WorkflowApiOptions,
+} from "./workflow-api.ts";
 // The durable-workflow host side. `createWorkflowClient` is what becomes
 // `ctx.workflows`; `wdkAdapter` is the Workflow DevKit binding, separate so the
 // client can be specified without a world. The key

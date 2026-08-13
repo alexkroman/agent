@@ -63,7 +63,8 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
 - `workflow-webhook-handler.ts` — the durable-run webhook proxy (see
   "Durable workflows" below): brokers a sandbox for a run whose guest exited
   long ago and forwards one request to the guest's own webhook endpoint. The
-  only workflow route the platform serves
+  DevKit route the platform serves — the tenant-facing `/:slug/workflows/*`
+  API is `workflow-handler.ts`
 - `workflow-wake.ts` — the durable-run wake sweep (see "Waking a run whose
   sandbox is gone" below): the one thing here that boots a sandbox on a
   SCHEDULE rather than for a caller. Leader-elected per tick, reads a
@@ -1605,9 +1606,9 @@ request URL").
 ### Durable workflows — `/:slug/.well-known/workflow/v1/webhook/:token`
 
 The Workflow DevKit runs entirely inside the guest (see
-`packages/aai/host/workflow-*.ts`); the platform's whole share of it is this
-one proxy, and which of the DevKit's three routes gets one is the decision
-worth keeping:
+`packages/aai/host/workflow-*.ts`); this is the platform's share of the DEVKIT's
+own three routes — the tenant-facing API is separate, below — and which of the
+three gets a proxy is the decision worth keeping:
 
 - **`flow` and `step` get nothing** (`guest-internal` in
   `GUEST_ROUTE_EXPOSURE`). They are queue callbacks the guest's own
@@ -1722,6 +1723,28 @@ it sooner, because the Postgres world re-enqueues active runs on `start()`.
 as busy for both the idle window and a drain (`packages/aai-guest/CLAUDE.md`).
 Without that a wake buys at most one idle window of progress — the woken guest
 has no session, so it would exit mid-step.
+
+### The workflow API is brokered too — `/:slug/workflows/*`
+
+`workflow-handler.ts` (its module doc carries the full argument). The route
+exists because of WHO calls it: a WORKFLOW APP (`agent({ page: "static" })`) is
+served at `GET /:slug/` and its page builds every URL from `location`, so the
+calls land HERE — `createWorkflowApi` has no broker step and must not, since a
+tunnel URL changes on every respawn while the page holding a `runId` does not.
+Without it every request falls through to `app.notFound` and reads as a failure
+of the feature. Shaped like the first routing point: broker and forward,
+streaming the body, with `brokerSessionUrl`'s taxonomy. Three decisions:
+
+- **DELETE as well as GET and POST**, straight off
+  `GUEST_ROUTE_EXPOSURE.workflows` — `api.cancel(runId)` is a DELETE, so a
+  platform answering only the first two 404s every Stop button on a DEPLOYED
+  agent while the same page works under `aai dev`.
+- **The timeout bounds the response HEADERS, not the body**, because
+  `GET /runs/:id/events` legitimately holds a stream open for minutes; that
+  stream also registers with `live-streams.ts`.
+- **Per-IP limits run BEFORE the handler**, so a refused request never brokers:
+  a surface limit sized for a POLLING page plus a tighter one on `POST /runs`
+  counted IN ADDITION — the one route whose cost OUTLIVES its request.
 
 ### No warm pool — every spawn boots from the snapshot image
 

@@ -178,6 +178,123 @@ floor) and reports once via `VoiceIOOptions.onMicSilent`. It disarms on the
 first real sample, so it costs nothing after the window and cannot fire
 mid-session.
 
+## Workflow apps
+
+An agent's front door is a microphone or a form, and `AgentDef.page` is the
+declaration. `"voice"` (the default; absent means this everywhere) is the whole
+product so far. `"static"` declares a **workflow app**: an ordinary web page
+over the workflow HTTP API, with no session, no WebSocket and no audio.
+
+This section covers the surface end to end because the author-facing half is
+here — `page()`, `createWorkflowApi()`, `useWorkflowRun()` — and
+`packages/aai/CLAUDE.md` is at its size cap. The routes themselves are served by
+`aai/host/workflow-api.ts`, whose module doc is the authoritative table.
+
+### `page()` is a second mount, not a flag on `client()`
+
+`client()` unavoidably constructs a `SessionCore`, which owns a WebSocket URL
+provider, an audio graph and a microphone request. A flag would have to make all
+of that conditional, and every session hook would then have to answer "what does
+this mean with no session?" — so the honest split is two mounts. Authoring is
+otherwise identical: still `client.tsx`, still React, still Tailwind, still the
+same theme tokens. `template-page-mount.test.ts` (in aai-templates) correlates
+the two, asserting every template's mount matches what its own `agent.ts`
+declares — konsistent cannot express "one of two imports", and a rule that
+merely accepted either would pass the mistake worth catching.
+
+**The declaration is not decoration on the server side either.** `createServer`
+declines `/websocket` for a static agent — COMPLETED and then closed with a
+protocol error naming the reason, rather than dropped, because a bare socket
+drop leaves a client reconnecting against a server that will never answer — and
+telephony defaults OFF, since an agent with no `stt`/`llm`/`tts` has nothing to
+put on a call. It is reported in `GET /client-config` so a browser knows before
+it dials, and `aai dev` and the deployed guest honour it identically: a page
+mounted with `client()` by mistake fails locally, not after a deploy.
+
+### The API is `ctx.workflows` spelled over HTTP, and nothing more
+
+```text
+GET    /workflows                 → { workflows: WorkflowSummary[] }
+POST   /workflows/runs            → { runId }   body: { workflow, input?, key? }
+GET    /workflows/runs            → { runs }    ?workflow=&key=&limit=
+GET    /workflows/runs/:id        → a WorkflowRunSnapshot
+DELETE /workflows/runs/:id        → { runId, cancelled }
+GET    /workflows/runs/:id/events → SSE: run | done | missing | idle
+```
+
+`ctx.workflows.start()` only covers the case where a VOICE TURN starts a run; a
+page and a programmatic caller (`aai workflow`, a script, a cron job) had no
+surface at all. Mounted on `createServer`, so `aai dev`, a self-hosted server
+and every deployed agent serve it identically — the same reasoning `/phone` is
+mounted there rather than bolted onto the platform. On the platform the page's
+calls land on `/:slug/workflows/*` and are brokered (`aai-server/
+workflow-handler.ts`), because `createWorkflowApi` builds every URL from
+`location` and has no broker step of the kind the voice session gets.
+
+**Every route is one `WorkflowClient` call, and the type says so**: the API's
+engine IS `WorkflowClient`, not a wider "engine" with run-store reads of its
+own. That width is what would let route code drift into the journal, which
+belongs to the Workflow DevKit — so a route needing more than a tool can do is
+the signal to add a client method, never to widen this. Hence what is
+deliberately absent: no `/blobs` (bytes belong behind a URL or in the app's own
+storage, fetched inside a `"use step"` function where they are read once per
+execution rather than on every replay), no `/signals/:token` (a waitpoint is
+`createWebhook()`'s, and the platform already proxies its URL), and no `/retry`
+(resuming a terminal run is the WDK's business, and a route would have to invent
+what "again" means).
+
+**The surface is as public as `/websocket` beside it.** A page carries no
+credential — it is served to anyone with the URL, exactly like the voice client
+— so requiring one by default would mean no static page could ever work. What is
+genuinely worse here is the COST SHAPE: a run outlives the request that started
+it, so a loop of cheap POSTs queues far more work than a loop of voice sessions.
+An operator who wants it closed sets `AAI_WORKFLOW_API_TOKEN` in the agent env
+and every route requires it as a bearer; the platform forwards the header, and
+`aai workflow --token` and the studio's runs card present it. Fail-OPEN when
+unset is the documented default, and the platform's per-IP limits
+(`WORKFLOW_IP_RATE_LIMIT`, and a much tighter one on `POST /runs`) are what bound
+the cost in the meantime.
+
+### Watching a run
+
+`useWorkflowRun(runId)` tries the event stream first and falls back to polling.
+The poll is the honest DEFAULT — a run outlives the page, so re-reading the id
+is the simplest correct implementation — and the stream is an optimisation over
+it, because on the platform every polled read BROKERS: N open tabs at
+`DEFAULT_WORKFLOW_POLL_MS` (2 s) is N/2 brokered requests a second, each able to
+boot a sandbox. So every way the stream can fail — an older agent with no
+`/events` route, a proxy that buffers, a dropped connection — degrades to the
+thing that works, and `watchRunEvents` calls back exactly once when it does.
+
+`EventSource` is not used, for two reasons that both bite: it cannot send an
+`Authorization` header (an agent with a token would be unreachable) and it
+reconnects on its own schedule, which would fight the caller's.
+
+Four properties are load-bearing and each covers a bug that is silent:
+
+- **The client is held in a REF, not named as an effect dependency.** The
+  natural spelling passes a new object every render; as a dependency that is an
+  unbounded request loop against the agent, with `error` wiped before anything
+  can read it — presenting as "the page polls forever" rather than as a mistake
+  at the call site. Hoist the client out of the component anyway.
+- **A 404 is a STABLE answer**, so the poll gives up after `MAX_MISSING_READS`.
+  Unbounded, a stale id (restored from `localStorage`, or belonging to an agent
+  redeployed onto a fresh database) polls — and BROKERS — for as long as the tab
+  is open.
+- **`polling` cannot be derived from the snapshot alone.** Giving up on a
+  missing id leaves `run` undefined, which reads as "still waiting", so the
+  hook tracks the stop explicitly.
+- **Every stream ending is NAMED** — `done` (terminal), `missing` (will never
+  exist), `idle` (the stream hit its own duration cap, because a run can sleep
+  for hours and a connection held that long is one nothing is maintaining). A
+  client can tell "finished" from "dropped" without guessing, and only `idle`
+  hands back to the poll.
+
+`WorkflowOutputOf<typeof myWorkflow>` is what makes `run.status === "completed"`
+narrow to a TYPED `run.output`: a type-only import of `agent.ts` is erased, so
+naming the agent's own type pulls no server graph into the browser bundle.
+`link-digest` in `packages/aai-templates/templates/` is the worked example.
+
 ## Surviving a platform restart (`client-config.ts`)
 
 **Every request the session makes needs a deadline of its own, because a
