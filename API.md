@@ -142,6 +142,9 @@ export function capToolResult(result: string): string;
 // @internal
 export const CAPTURE_STOP_ACK_TIMEOUT_MS = 250;
 
+// @public
+export function clampWorkflowWait(requested: number | undefined): number;
+
 // @internal
 export const CLIENT_AUDIO_LEAD_MS = 1000;
 
@@ -405,6 +408,9 @@ export const MAX_TOOL_RESULT_CHARS = 4000;
 
 // @internal
 export const MAX_TRANSCRIPT_CHARS = 100000;
+
+// @public
+export const MAX_WORKFLOW_WAIT_MS = 60000;
 
 // @internal (undocumented)
 export const MAX_WS_PAYLOAD_BYTES: number;
@@ -3229,13 +3235,17 @@ import { ComponentType } from 'react';
 import { Context } from 'react';
 import type { CSSProperties } from 'react';
 import type { DefaultToolResult } from '@alexkroman1/aai';
+import type { FormHTMLAttributes } from 'react';
 import { FunctionComponentElement } from 'react';
+import type { InputHTMLAttributes } from 'react';
 import { isTerminal } from '@alexkroman1/aai';
 import { JSX } from 'react';
 import { MemoExoticComponent } from 'react';
 import { ProviderProps } from 'react';
 import { ReactNode } from 'react';
+import type { SelectHTMLAttributes } from 'react';
 import { SessionErrorCode } from '@alexkroman1/aai/protocol';
+import type { TextareaHTMLAttributes } from 'react';
 import { WorkflowOutputOf } from '@alexkroman1/aai';
 import { WorkflowRunSnapshot } from '@alexkroman1/aai';
 import { WorkflowSummary } from '@alexkroman1/aai';
@@ -3305,6 +3315,9 @@ export function ChatView(input: {
 }): ReactNode;
 
 // @public
+export function CheckboxField(input: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
+
+// @public
 export function client(config: ClientConfig): ClientHandle;
 
 // @public
@@ -3363,6 +3376,54 @@ export const DEFAULT_WORKFLOW_POLL_MS = 2000;
 // @internal
 export function fetchClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse>;
 
+// @public
+export function Field(input: {
+    label?: string | undefined;
+    hint?: string | undefined;
+    htmlFor?: string | undefined;
+    className?: string | undefined;
+    children: ReactNode;
+}): JSX.Element;
+
+// @public
+export type FieldShell = {
+    name: string;
+    label?: string | undefined;
+    hint?: string | undefined;
+    className?: string | undefined;
+};
+
+// @public
+export function FileField(input: FieldShell & {
+    read?: FileRead;
+} & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
+
+// @public
+export type FileRead = "none" | "text" | "dataUrl";
+
+// @public
+export type FileValue = {
+    name: string;
+    size: number;
+    type: string;
+    lastModified: number;
+    content?: string;
+};
+
+// @public
+export function Form(input: FormProps): JSX.Element;
+
+// @public
+export type FormProps = {
+    onSubmit: (values: FormValues) => void | Promise<void>;
+    error?: string | undefined;
+    children?: ReactNode;
+    className?: string | undefined;
+} & Omit<FormHTMLAttributes<HTMLFormElement>, "onSubmit" | "className">;
+
+// @public
+export type FormValues = Record<string, unknown>;
+
 export { isTerminal }
 
 // @internal
@@ -3386,6 +3447,9 @@ className?: string;
 }) => JSX.Element>;
 
 // @public
+export function NumberField(input: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
+
+// @public
 export function page(config: PageConfig): PageHandle;
 
 // @public
@@ -3401,6 +3465,14 @@ export type PageHandle = {
     dispose(): void;
     [Symbol.dispose](): void;
 };
+
+// @public
+export function SelectField(input: FieldShell & {
+    options?: readonly (string | {
+        value: string;
+        label: string;
+    })[];
+} & Omit<SelectHTMLAttributes<HTMLSelectElement>, "name" | "className">): JSX.Element;
 
 // @public
 export type Session = SessionSnapshot & Pick<SessionCore, "start" | "cancel" | "resetState" | "reset" | "disconnect" | "toggle" | "end">;
@@ -3479,6 +3551,21 @@ export function StartScreen(input: {
     buttonText?: string | undefined;
     className?: string | undefined;
 }): ReactNode;
+
+// @public
+export function SubmitButton(input: {
+    children?: ReactNode;
+    pending?: boolean;
+    pendingLabel?: string;
+    size?: ButtonSize | undefined;
+    className?: string | undefined;
+}): JSX.Element;
+
+// @public
+export function TextAreaField(input: FieldShell & Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "name" | "className">): JSX.Element;
+
+// @public
+export function TextField(input: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className">): JSX.Element;
 
 // @internal
 export function ThemeProvider(input: {
@@ -3572,6 +3659,29 @@ export type UseWorkflowRunResult<R = unknown> = {
 };
 
 // @public
+export function useWorkflows(opts?: {
+    api?: WorkflowApi;
+}): UseWorkflowsResult;
+
+// @public
+export type UseWorkflowsResult = {
+    workflows: WorkflowSummary[];
+    loading: boolean;
+    error: string | undefined;
+};
+
+// @public
+export function useWorkflowSubmit<R = unknown>(workflow: string, opts?: UseWorkflowSubmitOptions): WorkflowSubmission<R>;
+
+// @public
+export type UseWorkflowSubmitOptions = {
+    api?: WorkflowApi;
+    key?: string;
+    wait?: number;
+    intervalMs?: number;
+};
+
+// @public
 export const VOICE_CAPTURE_CONSTRAINTS: MediaTrackConstraints;
 
 // @public
@@ -3594,7 +3704,13 @@ export type WorkflowApi = {
     start(workflow: string, input?: unknown, options?: {
         key?: string;
     }): Promise<string>;
-    get(runId: string): Promise<WorkflowRun | undefined>;
+    startAndWait(workflow: string, input?: unknown, options?: {
+        key?: string;
+        wait?: number;
+    }): Promise<WorkflowRun>;
+    get(runId: string, options?: {
+        wait?: number;
+    }): Promise<WorkflowRun | undefined>;
     find(workflow: string, key: string, options?: {
         limit?: number;
     }): Promise<WorkflowRun[]>;
@@ -3611,10 +3727,24 @@ export type WorkflowApiOptions = {
     token?: string;
 };
 
+// @public
+export function WorkflowFields(input: {
+    workflow?: WorkflowSummary | undefined;
+}): JSX.Element | null;
+
 export { WorkflowOutputOf }
 
 // @public
 export type WorkflowRun<R = unknown> = WorkflowRunSnapshot<R>;
+
+// @public
+export type WorkflowSubmission<R = unknown> = {
+    submit: (input: unknown) => Promise<void>;
+    reset: () => void;
+    run: WorkflowRun<R> | undefined;
+    pending: boolean;
+    error: string | undefined;
+};
 
 export { WorkflowSummary }
 ```

@@ -12,12 +12,22 @@
  *
  * ```
  * GET    /workflows                 → { workflows: WorkflowSummary[] }
- * POST   /workflows/runs            → { runId }   body: { workflow, input?, key? }
+ * POST   /workflows/runs            → { runId, run? }  body: { workflow, input?, key?, wait? }
  * GET    /workflows/runs            → { runs }    ?workflow=&key=&limit=
- * GET    /workflows/runs/:id        → a WorkflowRunSnapshot
+ * GET    /workflows/runs/:id        → a WorkflowRunSnapshot   ?wait=<ms>
  * DELETE /workflows/runs/:id        → { runId, cancelled }
  * GET    /workflows/runs/:id/events → SSE: run | done | missing | idle
  * ```
+ *
+ * ## Three ways to follow a run, and they are not alternatives
+ *
+ * `wait` makes the two read paths SYNCHRONOUS — one request in, one finished run
+ * out — and is what a script, a cron job or a plain form wants, none of which
+ * has anywhere to put an event stream. The SSE route is what a PAGE wants, since
+ * a run can outlive any request. Polling `GET /runs/:id` is the floor both
+ * degrade to. `workflow-api-wait.ts` carries the reasoning for the first,
+ * `workflow-api-events.ts` for the second; the rule tying them together is that
+ * waiting is an optimization over reading the run back, never the mechanism.
  *
  * It is mounted by `createServer`, so `aai dev`, a self-hosted server and every
  * deployed agent serve it identically — the same reasoning `/phone` is mounted
@@ -52,6 +62,7 @@
 
 import type http from "node:http";
 import { errorMessage } from "../sdk/utils.ts";
+import { clampWorkflowWait, isTerminal } from "../sdk/workflow.ts";
 import { WORKFLOWS_UNAVAILABLE_MESSAGE } from "../sdk/workflow-unavailable.ts";
 import type { Logger } from "./runtime-config.ts";
 import { streamRunEvents } from "./workflow-api-events.ts";
@@ -62,6 +73,7 @@ import {
   readBody,
   sendJson,
 } from "./workflow-api-http.ts";
+import { waitForRun } from "./workflow-api-wait.ts";
 
 export { MAX_WORKFLOW_INPUT_BYTES } from "./workflow-api-http.ts";
 
@@ -141,10 +153,11 @@ async function startRun(
     sendJson(res, 400, { error: "Body must be JSON" });
     return;
   }
-  const { workflow, input, key } = (parsed ?? {}) as {
+  const { workflow, input, key, wait } = (parsed ?? {}) as {
     workflow?: unknown;
     input?: unknown;
     key?: unknown;
+    wait?: unknown;
   };
   if (typeof workflow !== "string") {
     sendJson(res, 400, { error: 'Body must name a workflow: { "workflow": "<name>", input? }' });
@@ -167,18 +180,39 @@ async function startRun(
     sendJson(res, 400, { error: errorMessage(err) });
     return;
   }
-  // 202: the run is durable, and deliberately not finished — that is the whole
-  // point of the mechanism (see `WorkflowClient.start`).
-  sendJson(res, 202, { runId });
+  // 202 and the id alone: the run is durable, and deliberately not finished —
+  // that is the whole point of the mechanism (see `WorkflowClient.start`).
+  if (typeof wait !== "number" || clampWorkflowWait(wait) === 0) {
+    sendJson(res, 202, { runId });
+    return;
+  }
+  // The synchronous mode. `run` rides ALONGSIDE `runId` rather than replacing
+  // it, so a caller that reads `runId` behaves the same whether it asked to
+  // wait or not — and a wait that runs out still hands back the one thing it
+  // cannot reconstruct. See `workflow-api-wait.ts` for why an expired budget is
+  // an answer rather than an error.
+  const run = await waitForRun(engine, runId, wait, res);
+  sendJson(res, isTerminal(run) ? 200 : 202, { runId, ...(run && { run }) });
 }
 
-/** `GET /workflows/runs/:id` — read one run's state. */
+/**
+ * `GET /workflows/runs/:id` — read one run's state, optionally waiting it out.
+ *
+ * `?wait=<ms>` holds the request open until the run settles, which is how a
+ * caller with an id resumes the synchronous mode after a `POST` that timed out.
+ * The BODY is the same either way — a snapshot — so waiting is invisible to
+ * anything that parses the answer.
+ */
 async function readRun(
+  req: http.IncomingMessage,
   res: http.ServerResponse,
   engine: WorkflowApiEngine,
   runId: string,
 ): Promise<void> {
-  const run = runId ? await engine.get(runId) : undefined;
+  const wait = Number(new URLSearchParams((req.url ?? "").split("?")[1] ?? "").get("wait"));
+  const run = runId
+    ? await (clampWorkflowWait(wait) > 0 ? waitForRun(engine, runId, wait, res) : engine.get(runId))
+    : undefined;
   if (!run) {
     sendJson(res, 404, { error: `No workflow run with id ${runId}` });
     return;
@@ -303,7 +337,7 @@ function buildRoutes(): Route[] {
     {
       method: "GET",
       matches: (url) => url.startsWith(runsPrefix),
-      run: (_req, res, engine, url) => readRun(res, engine, runId(url)),
+      run: (req, res, engine, url) => readRun(req, res, engine, runId(url)),
     },
     {
       method: "DELETE",

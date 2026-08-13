@@ -78,7 +78,9 @@ import type { WorkflowRunSnapshot } from "./workflow-run.ts";
  * and this module is the one an author imports.
  */
 export {
+  clampWorkflowWait,
   isTerminal,
+  MAX_WORKFLOW_WAIT_MS,
   TERMINAL_WORKFLOW_STATUSES,
   type TerminalWorkflowRun,
   // Re-exported because `WorkflowRunSnapshot` intersects it into every member, so

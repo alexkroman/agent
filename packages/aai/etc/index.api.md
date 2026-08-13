@@ -107,6 +107,9 @@ export function capToolResult(result: string): string;
 // @internal
 export const CAPTURE_STOP_ACK_TIMEOUT_MS = 250;
 
+// @public
+export function clampWorkflowWait(requested: number | undefined): number;
+
 // @internal
 export const CLIENT_AUDIO_LEAD_MS = 1000;
 
@@ -370,6 +373,9 @@ export const MAX_TOOL_RESULT_CHARS = 4000;
 
 // @internal
 export const MAX_TRANSCRIPT_CHARS = 100000;
+
+// @public
+export const MAX_WORKFLOW_WAIT_MS = 60000;
 
 // @internal (undocumented)
 export const MAX_WS_PAYLOAD_BYTES: number;

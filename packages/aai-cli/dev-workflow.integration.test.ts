@@ -51,6 +51,7 @@ const AGENT_TS = `
 import { agent, tool, workflow } from "@alexkroman1/aai";
 import { z } from "zod";
 import { researchFlow } from "./workflows/research.ts";
+import { callbackFlow } from "./workflows/callback.ts";
 
 export const research = workflow({
   description: "Research a topic",
@@ -58,11 +59,17 @@ export const research = workflow({
   run: researchFlow,
 });
 
+export const callback = workflow({
+  description: "Park on a webhook and echo what it delivers",
+  input: z.object({ label: z.string().min(1).describe("Echoed back in upper case") }),
+  run: callbackFlow,
+});
+
 export default agent({
   name: "dev-workflow-fixture",
   greeting: "hi",
   systemPrompt: "fixture",
-  workflows: { research },
+  workflows: { research, callback },
   tools: {},
 });
 `;
@@ -85,35 +92,84 @@ async function gather(topic: string) {
 }
 `;
 
+/**
+ * A run that PARKS on a webhook — the shape `transcription-desk` ships.
+ *
+ * This is the one thing no unit test can reach: `createWebhook()` throws outside
+ * a run, so a template's own spec cannot call a body that opens one. Only a real
+ * world, a real queue and a real HTTP delivery exercise it.
+ *
+ * The step delivers its own callback, exactly as that template's provider stub
+ * does, which makes this a test of the ORDERING as much as of the round trip:
+ * `createWebhook()` registers nothing, so without the `getConflict()` claim
+ * above it the delivery races a token nothing is listening on yet.
+ */
+const CALLBACK_TS = `
+import { createWebhook } from "workflow";
+
+export async function callbackFlow(input: { label: string }) {
+  "use workflow";
+
+  using hook = createWebhook();
+  // Claim the token BEFORE the URL is handed out.
+  await hook.getConflict();
+  await deliver(hook.url, input.label);
+
+  const request = await hook;
+  const payload = await request.json();
+  return { label: input.label, echoed: payload.echoed };
+}
+
+async function deliver(url: string, label: string) {
+  "use step";
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ echoed: label.toUpperCase() }),
+  });
+  if (!response.ok) throw new Error("callback delivery failed: " + response.status);
+}
+`;
+
 async function writeFixture(): Promise<void> {
   await fs.rm(FIXTURE, { recursive: true, force: true });
   await fs.mkdir(path.join(FIXTURE, "workflows"), { recursive: true });
   await fs.writeFile(path.join(FIXTURE, "agent.ts"), AGENT_TS);
   await fs.writeFile(path.join(FIXTURE, "workflows", "research.ts"), WORKFLOW_TS);
+  await fs.writeFile(path.join(FIXTURE, "workflows", "callback.ts"), CALLBACK_TS);
   await fs.writeFile(
     path.join(FIXTURE, "package.json"),
     JSON.stringify({ name: "dev-workflow-fixture", type: "module", private: true }),
   );
 }
 
+/**
+ * ONE dev server for the whole file, at module scope rather than inside a
+ * `describe` — the HTTP suite below needs the same running server, and a
+ * `beforeAll` nested in the first block tears it down before the second starts.
+ */
+let stop: (() => Promise<void>) | undefined;
+let workflowId: string | undefined;
+let origin = "";
+
+beforeAll(async () => {
+  await writeFixture();
+  // A provider key has to be resolvable or `resolveAgentEnv` reaches for the
+  // logged-in one; the value is never dialled, since no session is opened.
+  process.env.ASSEMBLYAI_API_KEY ??= "not-used-by-this-test";
+  const port = await getPort({ port: portNumbers(4700, 4799) });
+  // The fixture has no `client.tsx`, so the backend owns the port directly — no
+  // Vite in front, and the HTTP API below is reached without a proxy.
+  origin = `http://127.0.0.1:${port}`;
+  stop = await startDevServer({ cwd: FIXTURE, port });
+}, 120_000);
+
+afterAll(async () => {
+  await stop?.();
+  await fs.rm(FIXTURE, { recursive: true, force: true });
+});
+
 describe("aai dev serves a durable workflow", () => {
-  let stop: (() => Promise<void>) | undefined;
-  let workflowId: string | undefined;
-
-  beforeAll(async () => {
-    await writeFixture();
-    // A provider key has to be resolvable or `resolveAgentEnv` reaches for the
-    // logged-in one; the value is never dialled, since no session is opened.
-    process.env.ASSEMBLYAI_API_KEY ??= "not-used-by-this-test";
-    const port = await getPort({ port: portNumbers(4700, 4799) });
-    stop = await startDevServer({ cwd: FIXTURE, port });
-  }, 120_000);
-
-  afterAll(async () => {
-    await stop?.();
-    await fs.rm(FIXTURE, { recursive: true, force: true });
-  });
-
   test("the built agent bundle carries the compiler's workflowId", async () => {
     // What `ctx.workflows.start` reads. Undefined here means the client
     // transform did not run, which is a bundle that serves every workflow route
@@ -147,5 +203,108 @@ describe("aai dev serves a durable workflow", () => {
       .toBe("completed");
 
     expect(await getRun(run.runId).returnValue).toEqual({ topic: "otters", sources: 3 });
+  });
+});
+
+/**
+ * The workflow HTTP API, over the same dev server.
+ *
+ * This is the only tier that can exercise it end to end. `host/workflow-api.
+ * test.ts` drives the routes against a STUB `ctx.workflows`; here every link is
+ * real — the CLI's two bundlers, the DevKit transform, the world, the queue, the
+ * routes — and the run genuinely parks on a webhook and is brought back by an
+ * HTTP delivery. A break anywhere in that chain shows up as a run that never
+ * completes, which is invisible to every layer's own suite.
+ */
+describe("aai dev serves the workflow HTTP API", () => {
+  /** `fetch` + parse, always — an unread body holds its socket open. */
+  async function api(
+    path: string,
+    init?: RequestInit,
+  ): Promise<{ status: number; body: Record<string, unknown> }> {
+    const response = await fetch(`${origin}${path}`, init);
+    return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+  }
+
+  const JSON_POST = { "Content-Type": "application/json" };
+
+  test("lists both declared workflows with the schema a page renders a form from", async () => {
+    const { status, body } = await api("/workflows");
+    expect(status).toBe(200);
+    const workflows = body.workflows as { name: string; inputSchema?: unknown }[];
+    expect(workflows.map((w) => w.name).sort((a, b) => a.localeCompare(b))).toEqual([
+      "callback",
+      "research",
+    ]);
+    // The zod schema, converted at listing time because the reader is a browser.
+    // `<WorkflowFields>` renders one control per property of this.
+    expect(workflows.find((w) => w.name === "callback")?.inputSchema).toMatchObject({
+      type: "object",
+      properties: { label: { description: "Echoed back in upper case" } },
+    });
+  });
+
+  test("`wait` returns the finished run — a webhook round trip inside one POST", async () => {
+    // One request in, one result out. The run parks on a webhook in the middle
+    // of that request and is resumed by an HTTP delivery to the agent's own
+    // endpoint; `wait` is what turns the whole round trip into a single call.
+    const { status, body } = await api("/workflows/runs", {
+      method: "POST",
+      headers: JSON_POST,
+      body: JSON.stringify({ workflow: "callback", input: { label: "otters" }, wait: 30_000 }),
+    });
+
+    expect(status).toBe(200);
+    expect(body.run).toMatchObject({
+      status: "completed",
+      output: { label: "otters", echoed: "OTTERS" },
+    });
+  }, 40_000);
+
+  test("the run id it hands back reads the same run afterwards", async () => {
+    const started = await api("/workflows/runs", {
+      method: "POST",
+      headers: JSON_POST,
+      body: JSON.stringify({ workflow: "callback", input: { label: "seals" }, wait: 30_000 }),
+    });
+    const runId = started.body.runId as string;
+
+    const { status, body } = await api(`/workflows/runs/${runId}`);
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ runId, status: "completed" });
+  }, 40_000);
+
+  test("an asynchronous start is waited out by the READ instead", async () => {
+    // The other half of the same mechanism, and the one a caller reaches for
+    // after a POST whose budget expired: start without waiting (202), then hold
+    // ONE request open until the run settles.
+    const started = await api("/workflows/runs", {
+      method: "POST",
+      headers: JSON_POST,
+      body: JSON.stringify({ workflow: "research", input: { topic: "kelp" } }),
+    });
+    expect(started.status).toBe(202);
+    const runId = started.body.runId as string;
+
+    const finished = await api(`/workflows/runs/${runId}?wait=30000`);
+    expect(finished.status).toBe(200);
+    expect(finished.body).toMatchObject({ status: "completed", output: { topic: "kelp" } });
+  }, 40_000);
+
+  test("rejects a bad input at the call site, with no run created", async () => {
+    const { status, body } = await api("/workflows/runs", {
+      method: "POST",
+      headers: JSON_POST,
+      body: JSON.stringify({ workflow: "callback", input: { label: "" } }),
+    });
+    expect(status).toBe(400);
+    expect(String(body.error)).toContain("label");
+  });
+
+  test("404s a run id nothing knows, rather than waiting the budget out", async () => {
+    const started = Date.now();
+    const { status } = await api("/workflows/runs/wrun_does_not_exist?wait=30000");
+    expect(status).toBe(404);
+    expect(Date.now() - started).toBeLessThan(5000);
   });
 });

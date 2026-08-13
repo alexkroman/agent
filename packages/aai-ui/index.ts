@@ -13,6 +13,24 @@ export { AutoScroll } from "./components/auto-scroll.tsx";
 export { Button, type ButtonSize, type ButtonVariant } from "./components/button.tsx";
 export { ChatView } from "./components/chat-view.tsx";
 export { Controls } from "./components/controls.tsx";
+// Forms — what a workflow app's front door is made of. See `components/form.tsx`
+// for why the values come off the DOM rather than out of React state.
+export {
+  CheckboxField,
+  Field,
+  type FieldShell,
+  FileField,
+  type FileRead,
+  type FileValue,
+  Form,
+  type FormProps,
+  type FormValues,
+  NumberField,
+  SelectField,
+  SubmitButton,
+  TextAreaField,
+  TextField,
+} from "./components/form.tsx";
 export { Markdown, type MarkdownVariant } from "./components/markdown.tsx";
 export { MessageList } from "./components/message-list.tsx";
 export { SidebarLayout } from "./components/sidebar-layout.tsx";
@@ -30,6 +48,8 @@ export type { ToolDisplayConfig } from "./components/tool-config-context.ts";
 // `ClientConfig.tools`; not something component-tier users pass themselves.
 export { ToolConfigContext } from "./components/tool-config-context.ts";
 export { ApiUrlChip, SessionUrlChips, UiUrlChip } from "./components/url-chips.tsx";
+// A form generated from a workflow's own declared input schema.
+export { WorkflowFields } from "./components/workflow-fields.tsx";
 export type { Session } from "./context.ts";
 // Context & hooks
 export {
@@ -76,12 +96,21 @@ export type {
 // microphone gets the same signal the built-in paths do.
 export { VOICE_CAPTURE_CONSTRAINTS } from "./types.ts";
 export {
-  createWorkflowApi,
+  type UseWorkflowSubmitOptions,
+  type UseWorkflowsResult,
+  useWorkflowSubmit,
+  useWorkflows,
+  type WorkflowSubmission,
+} from "./use-workflow-form.ts";
+export {
   DEFAULT_WORKFLOW_POLL_MS,
-  isTerminal,
   MAX_MISSING_READS,
   type UseWorkflowRunResult,
   useWorkflowRun,
+} from "./use-workflow-run.ts";
+export {
+  createWorkflowApi,
+  isTerminal,
   type WorkflowApi,
   type WorkflowApiOptions,
   type WorkflowOutputOf,
