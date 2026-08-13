@@ -10,12 +10,13 @@ import type { AssemblyAILlmProvider } from "./llm/assemblyai.ts";
 import type { AssemblyAIProvider } from "./stt/assemblyai.ts";
 import type { AssemblyAITtsProvider } from "./tts/assemblyai.ts";
 
-/** The four provider-descriptor fields a config can declare. */
+/** The four provider-descriptor fields a config can declare, plus the text opt-in. */
 type ProviderFields = {
   stt?: unknown;
   llm?: unknown;
   tts?: unknown;
   s2s?: unknown;
+  text?: unknown;
 };
 
 /**
@@ -23,8 +24,10 @@ type ProviderFields = {
  * missing stage of the `stt`/`llm`/`tts` triple is filled from the
  * all-AssemblyAI pipeline. Returns only the missing stages (spread it over
  * the config), or `null` when there is nothing to fill — every stage is
- * declared, or `s2s` is set (an explicit `s2s` descriptor is exactly how an
- * agent opts into S2S mode, and it takes no pipeline stages).
+ * declared, `s2s` is set (an explicit `s2s` descriptor is exactly how an
+ * agent opts into S2S mode, and it takes no pipeline stages), or `text` is
+ * set (a text agent has no audio stages to fill — its `llm` is defaulted by
+ * `createTextAgent` instead, since that is the only stage it has).
  *
  * A declared stage is never overridden, so
  * `agent({ llm: anthropic(...) })` means "the default pipeline with that
@@ -42,7 +45,7 @@ export function defaultProviders(config: ProviderFields): {
   llm?: AssemblyAILlmProvider;
   tts?: AssemblyAITtsProvider;
 } | null {
-  if (config.s2s != null) return null;
+  if (config.s2s != null || config.text === true) return null;
   if (config.stt != null && config.llm != null && config.tts != null) return null;
   const pipeline = assemblyAIPipeline();
   const fill: {

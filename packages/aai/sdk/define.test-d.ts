@@ -193,3 +193,45 @@ test("ToolContext.signal and a schema generate's object are non-optional", () =>
   const noSchema = ctx.generate({ prompt: "p" });
   expectTypeOf(noSchema).resolves.toEqualTypeOf<{ text: string; object?: unknown }>();
 });
+
+/**
+ * Text mode is a third arm of the {@link AgentParams} union, and the fields
+ * belonging to the other two are typed as MESSAGES rather than left absent.
+ *
+ * The difference matters at the point an author moves a voice agent to text:
+ * an excess-property error names the field and stops, while the message names
+ * the rule ("a text agent has no audio to synthesize") and the remedy.
+ */
+test("text mode accepts only the fields a text agent has", () => {
+  expectTypeOf<{ name: string; text: true }>().toExtend<AgentParams>();
+  expectTypeOf<{ name: string; text: true; systemPrompt: string }>().toExtend<AgentParams>();
+  // The one provider stage it has, in both spellings.
+  expectTypeOf<{ name: string; text: true; llm: LlmProvider }>().toExtend<AgentParams>();
+  expectTypeOf<{ name: string; text: true; llm: string }>().toExtend<AgentParams>();
+  // Shared, mode-agnostic fields stay declarable.
+  expectTypeOf<{ name: string; text: true; maxSteps: number }>().toExtend<AgentParams>();
+  expectTypeOf<{
+    name: string;
+    text: true;
+    builtinTools: readonly ["web_search"];
+  }>().toExtend<AgentParams>();
+
+  // Everything downstream of speech is refused.
+  expectTypeOf<{ name: string; text: true; stt: SttProvider }>().not.toExtend<AgentParams>();
+  expectTypeOf<{ name: string; text: true; tts: TtsProvider }>().not.toExtend<AgentParams>();
+  expectTypeOf<{ name: string; text: true; s2s: S2sProvider }>().not.toExtend<AgentParams>();
+  expectTypeOf<{ name: string; text: true; voice: "jane" }>().not.toExtend<AgentParams>();
+  expectTypeOf<{ name: string; text: true; sttPrompt: string }>().not.toExtend<AgentParams>();
+  // Derived from PipelineVoiceTuning, so a knob added there is refused here
+  // without anyone remembering to list it.
+  expectTypeOf<{ name: string; text: true; deadAirCoverMs: number }>().not.toExtend<AgentParams>();
+  expectTypeOf<{
+    name: string;
+    text: true;
+    silenceTimeoutMs: number;
+  }>().not.toExtend<AgentParams>();
+
+  // And the two voice modes refuse `text` from their side.
+  expectTypeOf<{ name: string; s2s: S2sProvider; text: true }>().not.toExtend<AgentParams>();
+  expectTypeOf<{ name: string; stt: SttProvider; text: true }>().not.toExtend<AgentParams>();
+});

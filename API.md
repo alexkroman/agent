@@ -65,6 +65,7 @@ export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
     sttPrompt?: string;
     syncState?: (state: S) => unknown;
     systemPrompt: string;
+    text?: true;
     toolChoice?: ToolChoice;
     tools: Readonly<Record<string, ToolDef<ToolInputSchema, NoInfer<S>>>>;
     tts?: TtsProvider;
@@ -72,7 +73,7 @@ export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
 }
 
 // @public
-export type AgentParams<S = DefaultSessionState> = PipelineAgentParams<S> | S2sAgentParams<S>;
+export type AgentParams<S = DefaultSessionState> = PipelineAgentParams<S> | S2sAgentParams<S> | TextAgentParams<S>;
 
 // @public
 export type AnyWorkflowDef<R = unknown> = {
@@ -445,6 +446,7 @@ export type PipelineAgentParams<S = DefaultSessionState> = SharedAgentParams<S> 
     stt?: SttProvider;
     llm?: LlmProvider | string;
     s2s?: undefined;
+    text?: undefined;
 } & ({
     tts: TtsProvider;
     voice?: "`voice` picks the default pipeline's TTS voice — an explicit `tts` descriptor owns its own voice (e.g. `assemblyAITts({ voice })`); set it there or remove `tts`";
@@ -457,7 +459,7 @@ export type PipelineAgentParams<S = DefaultSessionState> = SharedAgentParams<S> 
 export type PipelineOnlyField = keyof PipelineVoiceTuning | "silenceTimeoutMs" | "silencePrompt";
 
 // @public
-export type PipelineOnlyMisuse<K extends PipelineOnlyField> = `\`${K}\` is pipeline-mode only — it has no effect on an s2s agent; remove it or remove \`s2s\``;
+export type PipelineOnlyMisuse<K extends PipelineOnlyField, M extends "s2s" | "text" = "s2s"> = `\`${K}\` is pipeline-mode only — it has no effect on a ${M} agent; remove it or remove \`${M}\``;
 
 // @public
 export interface PipelineVoiceTuning {
@@ -501,7 +503,7 @@ export const PREEMPTIVE_CONFIDENCE_THRESHOLD = 0.9;
 export const PREVIEW_SLUG_SUFFIX = "-preview";
 
 // @public
-export type ProviderField = "stt" | "llm" | "tts" | "s2s";
+export type ProviderField = "stt" | "llm" | "tts" | "s2s" | "text";
 
 // @public
 export function pushCapped<T>(list: T[], item: T, max: number): T[];
@@ -519,6 +521,7 @@ export type S2sAgentParams<S = DefaultSessionState> = SharedAgentParams<S> & {
     llm?: "`llm` cannot be combined with `s2s` — S2S runs the LLM loop service-side";
     tts?: "`tts` cannot be combined with `s2s` — S2S runs TTS service-side";
     voice?: "`voice` is pipeline-mode only — an S2S agent's voice rides on the `s2s` descriptor";
+    text?: "`text` cannot be combined with `s2s` — an agent is text-only or speech-to-speech, not both";
 } & {
     [K in PipelineOnlyField]?: PipelineOnlyMisuse<K>;
 };
@@ -632,6 +635,19 @@ export const TERMINAL_WORKFLOW_STATUSES: readonly ["completed", "failed", "cance
 export type TerminalWorkflowRun<R = unknown> = Extract<WorkflowRunSnapshot<R>, {
     status: "completed" | "failed" | "cancelled";
 }>;
+
+// @public
+export type TextAgentParams<S = DefaultSessionState> = Omit<SharedAgentParams<S>, "sttPrompt"> & {
+    text: true;
+    llm?: LlmProvider | string;
+    stt?: "`stt` cannot be combined with `text` — a text agent has no audio to transcribe";
+    tts?: "`tts` cannot be combined with `text` — a text agent has no audio to synthesize";
+    s2s?: "`s2s` cannot be combined with `text` — an agent is text-only or speech-to-speech, not both";
+    voice?: "`voice` is pipeline-mode only — a text agent never speaks";
+    sttPrompt?: "`sttPrompt` biases a transcriber — a text agent has none; remove it or remove `text`";
+} & {
+    [K in PipelineOnlyField]?: PipelineOnlyMisuse<K, "text">;
+};
 
 // @internal
 export function toArgsRecord(input: unknown): Record<string, unknown>;
@@ -1360,9 +1376,11 @@ export const AgentConfigSchema: z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
     }, z.core.$strip>>;
+    text: z.ZodOptional<z.ZodLiteral<true>>;
     mode: z.ZodOptional<z.ZodEnum<{
         pipeline: "pipeline";
         s2s: "s2s";
+        text: "text";
     }>>;
     requiredEnv: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     page: z.ZodOptional<z.ZodEnum<{
@@ -1383,7 +1401,10 @@ export function agentToolsToSchemas(tools: Readonly<Record<string, ToolDef>>): T
 export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning): void;
 
 // @internal
-export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s2s?: unknown): SessionMode;
+export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s2s?: unknown, text?: undefined): Exclude<SessionMode, "text">;
+
+// @public (undocumented)
+export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s2s?: unknown, text?: unknown): SessionMode;
 
 // @internal
 export function assertSilencePolicy(mode: SessionMode, silenceTimeoutMs: number | undefined, silencePrompt: string | undefined): void;
@@ -1406,7 +1427,7 @@ export const ProviderDescriptorSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
-export type SessionMode = "s2s" | "pipeline";
+export type SessionMode = "s2s" | "pipeline" | "text";
 
 // @public
 export function toAgentConfig(source: AgentConfigSource): AgentConfig;
@@ -1715,8 +1736,14 @@ import { Duplex } from 'node:stream';
 import http from 'node:http';
 import type { IncomingMessage } from 'node:http';
 import type { JSONSchema7 } from 'json-schema';
-import type { LanguageModel } from 'ai';
+import { LanguageModel } from 'ai';
+import { ModelMessage } from 'ai';
+import { PrepareStepFunction } from 'ai';
 import type { ServerResponse } from 'node:http';
+import { StepResult } from 'ai';
+import { streamText } from 'ai';
+import { ToolCallRepairFunction } from 'ai';
+import { ToolSet } from 'ai';
 import { z } from 'zod';
 
 // @public
@@ -1882,6 +1909,12 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore;
 
 // @public
 export function createTelephonyBridge(carrierSocket: SessionWebSocket, opts: TelephonyBridgeOptions): SessionWebSocket;
+
+// @public
+export function createTextAgent(opts: TextAgentOptions): TextAgent;
+
+// @public
+export function createToolCallRepair(model: LanguageModel, log: Logger, getAbortSignal?: () => AbortSignal | undefined): ToolCallRepairFunction<ToolSet>;
 
 // @internal
 export function createWakeHintPublisher(opts?: WakeHintOptions): WakeHintPublisher;
@@ -2164,6 +2197,9 @@ export const safeFetch: typeof globalThis.fetch;
 // @internal
 export function safeSend(ws: SessionWebSocket, data: string | Uint8Array, log: Logger): void;
 
+// @public
+export function salvageJson(input: string): Promise<string | null>;
+
 // @internal
 export const SANDBOX_ONLY_BUILTINS: ReadonlySet<string>;
 
@@ -2306,6 +2342,46 @@ export type TelephonyBridgeOptions = {
 
 // @public
 export const telnyxCodec: CarrierCodec;
+
+// @public
+export interface TextAgent {
+    readonly model: LanguageModel;
+    readonly sessionId: string;
+    stream(turn: TextTurnOptions): TextTurnResult;
+    readonly tools: ToolSet;
+}
+
+// @public
+export interface TextAgentOptions {
+    agent: AgentDef;
+    db?: Db | undefined;
+    env?: AgentEnv;
+    fetch?: typeof globalThis.fetch;
+    logger?: Logger;
+    model?: LanguageModel;
+    providerEnv?: ProviderEnv;
+    runCode?: RunCodeExecutor;
+    sessionId?: string;
+    toolTimeoutMs?: number;
+    workflows?: WorkflowClient | undefined;
+}
+
+// @public
+export interface TextTurnOptions {
+    maxSteps?: number;
+    messages: ModelMessage[];
+    onStepFinish?: (step: StepResult<ToolSet>) => void | Promise<void>;
+    prepareStep?: PrepareStepFunction<ToolSet>;
+    signal?: AbortSignal;
+    stopWhen?: readonly ((opts: {
+        steps: readonly StepResult<ToolSet>[];
+    }) => boolean | PromiseLike<boolean>)[];
+    system?: string;
+    toolChoice?: ToolChoice;
+}
+
+// @public
+export type TextTurnResult = ReturnType<typeof streamText<ToolSet>>;
 
 // @public
 export type ToolDefRecord = Record<string, ToolDef>;

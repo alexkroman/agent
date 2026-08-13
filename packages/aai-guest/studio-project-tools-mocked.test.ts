@@ -7,11 +7,10 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import type { ToolDef } from "@alexkroman1/aai";
 import { safeFetch } from "@alexkroman1/aai/runtime";
-import type { ToolSet } from "ai";
-import { MockLanguageModelV3 } from "ai/test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { npmResult } from "./_test-utils.ts";
+import { npmResult, runTool } from "./_test-utils.ts";
 import { MAX_STUDIO_FILE_BYTES } from "./limits.ts";
 import { createDesignInspirationTool, createProjectTools } from "./studio-project-tools.ts";
 import { runNpm } from "./studio-spawn.ts";
@@ -30,7 +29,7 @@ const runNpmMock = vi.mocked(runNpm);
 const safeFetchMock = vi.mocked(safeFetch);
 
 let dir: string;
-let tools: ToolSet;
+let tools: Record<string, ToolDef>;
 
 beforeEach(async () => {
   dir = await mkdtemp(path.join(tmpdir(), "studio-project-tools-mocked-"));
@@ -44,7 +43,7 @@ afterEach(async () => {
 function execute(name: string, args: unknown): Promise<unknown> {
   const t = tools[name];
   if (!t?.execute) throw new Error(`no such tool: ${name}`);
-  return Promise.resolve(t.execute(args as never, {} as never));
+  return runTool({ [name]: t }, name, args as Record<string, unknown>);
 }
 
 describe("add_dependency / remove_dependency (spawn mocked)", () => {
@@ -303,33 +302,28 @@ describe("download_to_workspace (fetch mocked)", () => {
   });
 });
 
-describe("generate_design_inspiration (model mocked)", () => {
-  test("returns the model's brief, folding context into the prompt", async () => {
-    const prompts: unknown[] = [];
-    const model = new MockLanguageModelV3({
-      doGenerate: async (options) => {
-        prompts.push(options.prompt);
-        return {
-          content: [{ type: "text", text: "Direction: warm and boutique." }],
-          finishReason: { unified: "stop" as const, raw: undefined },
-          usage: {
-            inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
-            outputTokens: { total: 1, text: 1, reasoning: undefined },
-          },
-          warnings: [],
-        };
+describe("generate_design_inspiration", () => {
+  test("returns the brief ctx.generate produced, folding context into the prompt", async () => {
+    // The tool reaches the model through `ctx.generate` now — the SDK's
+    // one-shot generation capability, resolved from the agent's own `llm` —
+    // rather than through a `LanguageModel` threaded in beside it.
+    const calls: { system: string | undefined; prompt: string }[] = [];
+    const result = await runTool(
+      createDesignInspirationTool(),
+      "generate_design_inspiration",
+      { goal: "pizza ordering agent", context: "cozy, red accents" },
+      {
+        generate: (options) => {
+          calls.push({ system: options.system, prompt: options.prompt });
+          return Promise.resolve({ text: "Direction: warm and boutique." });
+        },
       },
-    });
-    const designTools = createDesignInspirationTool(model);
-    const t = designTools.generate_design_inspiration;
-
-    const result = await t?.execute?.(
-      { goal: "pizza ordering agent", context: "cozy, red accents" } as never,
-      {} as never,
     );
 
     expect(result).toBe("Direction: warm and boutique.");
-    expect(JSON.stringify(prompts)).toContain("Goal: pizza ordering agent");
-    expect(JSON.stringify(prompts)).toContain("Context: cozy, red accents");
+    expect(calls[0]?.prompt).toContain("Goal: pizza ordering agent");
+    expect(calls[0]?.prompt).toContain("Context: cozy, red accents");
+    // The brief's own house style rides on the system prompt, not the goal.
+    expect(calls[0]?.system).toContain("design");
   });
 });

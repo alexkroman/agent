@@ -29,13 +29,13 @@ import { type ExecuteTool, executeToolCall } from "./tool-executor.ts";
 
 /**
  * Merge the agent's builtins with the tools a mode dispatches itself — the
- * single owner of the collision policy for both tool paths (sandbox/relay
- * and self-hosted). A provided tool with the same name as a builtin wins,
+ * single owner of the collision policy for every tool path — sandbox/relay,
+ * self-hosted, and {@link createTextAgent}. A provided tool with the same name as a builtin wins,
  * and the colliding builtin is dropped from both dispatch and schemas so the
  * host never shadows a tool the caller expects to execute and the LLM never
  * sees a duplicate name. Provided schemas/guidance come first, builtins after.
  */
-function mergeBuiltinSurface(
+export function mergeBuiltinSurface(
   agent: AgentDef,
   builtinOpts: Parameters<typeof resolveAllBuiltins>[1],
   provided: { schemas: ToolSchema[]; guidance?: string[] },

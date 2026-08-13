@@ -22,8 +22,7 @@
 
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { errorMessage } from "@alexkroman1/aai";
-import { type ToolSet, tool } from "ai";
+import { errorMessage, type ToolDef, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_FILES } from "./limits.ts";
 import { toolchainModules } from "./studio-build.ts";
@@ -245,7 +244,7 @@ export type TemplateToolDeps = {
 };
 
 /** Build the template tools over the session workspace. */
-export function createTemplateTools(deps: TemplateToolDeps): ToolSet {
+export function createTemplateTools(deps: TemplateToolDeps): Record<string, ToolDef> {
   const { dir } = deps;
   // `?? null` would collapse a deliberate null (no toolchain) into the
   // default, so the seam distinguishes "absent" from "explicitly none".

@@ -422,6 +422,43 @@ export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
    */
   s2s?: S2sProvider;
   /**
+   * Opt into TEXT mode — an agent with no audio path at all, driven over a
+   * message list by `createTextAgent` (`@alexkroman1/aai/runtime`) instead of
+   * by a transport over a session socket.
+   *
+   * A text agent is the same `agent()` definition every voice agent is —
+   * `systemPrompt`, `tools`, `maxSteps`, `toolChoice`, `builtinTools`,
+   * `state`, `requiredEnv` all mean exactly what they mean elsewhere, and
+   * tools run through the same executor, so one tool works in both. What it
+   * drops is everything downstream of speech: `stt`, `tts` and `s2s` are
+   * rejected (there is no audio to transcribe or synthesize), as are the
+   * voice-UX tuning knobs and the silence nudge. `llm` is the one stage it
+   * has, and it defaults to the AssemblyAI LLM Gateway like every other.
+   *
+   * Explicit, never derived — the same rule `s2s` follows. A mode reachable
+   * by omission is one a config lands in when it loses a field, and the
+   * symptom there would be a deployed voice agent that answers nothing.
+   *
+   * ```ts
+   * import { agent, tool } from "@alexkroman1/aai";
+   * import { z } from "zod";
+   *
+   * export default agent({
+   *   name: "Docs Assistant",
+   *   text: true,
+   *   system: "Answer questions about the docs.",
+   *   tools: {
+   *     lookup: tool({
+   *       description: "Look up a doc page",
+   *       inputSchema: z.object({ slug: z.string() }),
+   *       execute: ({ slug }) => `contents of ${slug}`,
+   *     }),
+   *   },
+   * });
+   * ```
+   */
+  text?: true;
+  /**
    * Env var names this agent's tools read from {@link ToolContext.env}
    * (beyond provider credentials, which are derived from the
    * `stt`/`llm`/`tts`/`s2s` descriptors automatically). Deploys check that

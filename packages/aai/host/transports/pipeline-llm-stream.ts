@@ -27,9 +27,9 @@ import { omitUndefined } from "../../sdk/omit-undefined.ts";
 import type { ToolChoice } from "../../sdk/types.ts";
 import { errorMessage } from "../../sdk/utils.ts";
 import type { Logger } from "../runtime-config.ts";
+import { createToolCallRepair } from "../tool-call-repair.ts";
 import { drainEntries, partsAsEntries } from "./pipeline-llm-drain.ts";
 import { createTurnTrace } from "./pipeline-llm-trace.ts";
-import { createToolCallRepair } from "./pipeline-repair.ts";
 import { smoothTextStream } from "./pipeline-smooth.ts";
 import { createTtsTextCoalescer } from "./pipeline-stream.ts";
 import {
@@ -269,7 +269,7 @@ export function startLlmStream(req: LlmRequest): StartedLlmStream {
  * wins over an agent-level `toolChoice: "required"`, which would otherwise
  * demand a tool call on the one step where tools are unavailable.
  */
-function forceFinalAnswer(
+export function forceFinalAnswer(
   maxSteps: number,
   log: Logger,
   sid: string,

@@ -171,6 +171,19 @@ seedless `emptyRetailState()` instead of `retailSlot.projection(storeView)
 (undefined)`, because the slot's factory pulls a 107 KB `seed.json` and
 importing it would ship the whole catalog to the browser. It says so in place.
 
+**There is deliberately no TEXT-mode template, and the allowlist records
+it.** A template is a starter the platform DEPLOYS — `templates.test.ts` loads
+each `agent.ts` and validates the config a voice session is built from, and the
+studio's `use_template` copies one into a workspace that gets deployed next.
+`agent({ text: true })` has no session to deploy (`createRuntime` refuses it by
+name), so a text template would be a starter nothing downstream can run.
+`TextAgentParams` therefore sits in `template-api-allowlist.json` beside
+`PipelineAgentParams` and `S2sAgentParams`, which are unexercised for a
+narrower reason — they are the union arms `agent()` derives from, and an author
+never names one. `createTextAgent`'s worked example is the studio's own coding
+agent (`packages/aai-guest/CLAUDE.md`), which is a better one than a template
+could be: it is a real agent doing real work, on the same SDK it builds with.
+
 ## What `tsconfig.json` includes is what gets type-checked
 
 A test file is imported by nothing, so tsc only sees it if `include` names

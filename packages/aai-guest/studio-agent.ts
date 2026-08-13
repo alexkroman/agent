@@ -1,0 +1,116 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * The studio coding agent, as an `agent()` definition.
+ *
+ * The studio builds voice agents with this SDK, and until this module existed
+ * it was the one agent in the repo that did not use it: `studio-chat.ts`
+ * assembled a `streamText` call by hand — resolving the model, adapting the
+ * SDK's web builtins into AI SDK tools, wrapping every tool in its own
+ * deadline, carrying its own tool-call repair, and re-deriving the
+ * forced-final-answer rule. All of that is what `agent()` plus
+ * `createTextAgent` already are, so it is now spelled the way a user's agent
+ * is spelled, and the drift that a second copy invites cannot happen.
+ *
+ * Two properties of the definition are worth stating, because they are the
+ * ones a reader would otherwise have to infer:
+ *
+ * - **`text: true`.** The coding agent has no audio path at all; declaring
+ *   the mode is what makes `createTextAgent` accept it, and what makes
+ *   `createRuntime` refuse it.
+ * - **The web builtins are NAMED, not adapted.** `builtinTools` is the
+ *   supported way to reach `visit_webpage` / `get_page_design` /
+ *   `web_search`, and it lands them in the same executor as everything else,
+ *   with a real `ctx` — the hand-written adapter this replaces had to
+ *   fabricate a context whose `db` and `generate` both rejected.
+ */
+
+import { type AgentDef, agent, type BuiltinTool } from "@alexkroman1/aai";
+import { assemblyAILlm } from "@alexkroman1/aai/llm";
+import { buildWorkspaceDir } from "./studio-build.ts";
+import { createDesignInspirationTool, createProjectTools } from "./studio-project-tools.ts";
+import type { StudioSession } from "./studio-session.ts";
+import { createTemplateTools } from "./studio-template-tools.ts";
+import { createStudioTools } from "./studio-tools.ts";
+import type { TypecheckFn } from "./studio-write-diagnostics.ts";
+
+/**
+ * Per-call deadline for every coding-agent tool — passed to
+ * `createTextAgent` rather than wrapped around each tool, so one number
+ * covers the workspace tools, the project tools, the template tools and the
+ * web builtins alike.
+ *
+ * Well above the SDK's 30s default, which is a VOICE budget: past it a caller
+ * is listening to silence, so a slow tool is already a failed turn. Nobody is
+ * on a phone here, and these are the long tools — an npm install, a type
+ * check, a shell command.
+ */
+export const STUDIO_TOOL_TIMEOUT_MS = 120_000;
+
+/**
+ * The keyless network builtins the coding agent may use. They run in the
+ * guest with open egress like all tenant code; `safeFetch` still screens the
+ * model-controlled URLs.
+ */
+const STUDIO_BUILTIN_TOOLS: readonly BuiltinTool[] = [
+  "visit_webpage",
+  "get_page_design",
+  "web_search",
+];
+
+/** What the agent's tools need from the harness, beyond the session itself. */
+export type StudioAgentDeps = {
+  /** The harness's own bundle loader (`loadBundle`). */
+  loadBundle: (code: string) => Promise<{ config?: unknown }>;
+  /** The harness's one-shot trial executor (`executeTool`). */
+  executeTool: (name: string, args: Record<string, unknown>) => Promise<string>;
+  /** The workspace type check backing post-write diagnostics. */
+  typecheck: TypecheckFn;
+};
+
+/**
+ * Build the coding agent for one session's workspace.
+ *
+ * Built per turn, like the tool set it replaces: the tools close over the
+ * session directory and over one type-check runner, and rebuilding is what
+ * keeps a re-installed session (a page refresh, a replica taking over) from
+ * serving tools bound to the previous tree.
+ */
+export function createStudioAgent(session: StudioSession, deps: StudioAgentDeps): AgentDef {
+  const { dir } = session;
+  return agent({
+    name: "AAI Studio",
+    text: true,
+    system: session.system,
+    // The model is host configuration delivered by `studio/session-init`; the
+    // KEY is the caller's own and rides in as `providerEnv`, never here.
+    llm: assemblyAILlm({
+      model: session.model,
+      ...(session.region === "eu" ? { region: "eu" as const } : {}),
+    }),
+    maxSteps: session.maxSteps,
+    builtinTools: STUDIO_BUILTIN_TOOLS,
+    // Studio tools last: a web builtin may never shadow `write_file`. (The
+    // SDK's own merge already gives a declared tool priority over a builtin
+    // of the same name; this ordering is about the three studio families.)
+    tools: {
+      ...createDesignInspirationTool(),
+      ...createProjectTools({ dir }),
+      ...createTemplateTools({
+        dir,
+        // Same post-copy diagnostics backend the write tools use.
+        typecheck: deps.typecheck,
+      }),
+      ...createStudioTools({
+        dir,
+        // Post-write diagnostics: the same tsc pass builds run, so a type
+        // error reaches the agent inside the write result that caused it.
+        typecheck: deps.typecheck,
+        // Build the live session workspace in place, in THIS sandbox,
+        // through the same CLI bundler pass `aai deploy` runs.
+        build: () => buildWorkspaceDir(dir, { worker: true, client: false }),
+        loadBundle: deps.loadBundle,
+        executeTool: deps.executeTool,
+      }),
+    },
+  });
+}

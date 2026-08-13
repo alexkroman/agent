@@ -5,8 +5,9 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { ToolSet } from "ai";
+import type { ToolDef } from "@alexkroman1/aai";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { runTool } from "./_test-utils.ts";
 import { MAX_STUDIO_FILES } from "./limits.ts";
 import { bundledTemplatesRoot, createTemplateTools } from "./studio-template-tools.ts";
 import type { TypecheckResult } from "./studio-write-diagnostics.ts";
@@ -25,7 +26,7 @@ const CLIENT_TSX = "export const x = 1;\n";
 function makeTools(opts?: {
   typecheck?: () => Promise<TypecheckResult>;
   templatesRoot?: string | null;
-}): ToolSet {
+}): Record<string, ToolDef> {
   return createTemplateTools({
     dir,
     typecheck: opts?.typecheck ?? (async () => ({ ok: true, skipped: false })),
@@ -33,10 +34,8 @@ function makeTools(opts?: {
   });
 }
 
-function execute(tools: ToolSet, name: string, args: unknown): Promise<string> {
-  const t = tools[name];
-  if (!t?.execute) throw new Error(`no such tool: ${name}`);
-  return Promise.resolve(t.execute(args as never, {} as never)) as Promise<string>;
+function execute(tools: Record<string, ToolDef>, name: string, args: unknown): Promise<string> {
+  return runTool(tools, name, args as Record<string, unknown>);
 }
 
 beforeEach(async () => {

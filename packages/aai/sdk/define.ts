@@ -98,15 +98,19 @@ export type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "to
  *
  * Pipeline stages are individually optional: declare any subset of
  * `stt`/`llm`/`tts` and the unset stages run on the default all-AssemblyAI
- * pipeline. The shape is still a pipeline-mode/S2S-mode union, so `s2s`
- * combined with a pipeline field fails the build with a message naming the
+ * pipeline. The shape is a union over the three session modes — pipeline,
+ * S2S ({@link S2sAgentParams}) and text ({@link TextAgentParams}) — so a
+ * field belonging to another mode fails the build with a message naming the
  * rule ({@link PipelineOnlyMisuse}) rather than failing at the first
  * `aai dev`/`aai deploy`. Configs that never went through `agent()` are
  * still caught when `toAgentConfig` runs in the bundle entry.
  *
  * @public
  */
-export type AgentParams<S = DefaultSessionState> = PipelineAgentParams<S> | S2sAgentParams<S>;
+export type AgentParams<S = DefaultSessionState> =
+  | PipelineAgentParams<S>
+  | S2sAgentParams<S>
+  | TextAgentParams<S>;
 
 /**
  * Fields shared by both session modes: everything on {@link AgentDef} minus
@@ -122,8 +126,12 @@ export type SharedAgentParams<S = DefaultSessionState> = Omit<
     system?: string;
   };
 
-/** The provider-descriptor fields, mode-owned rather than shared. */
-export type ProviderField = "stt" | "llm" | "tts" | "s2s";
+/**
+ * The mode-owned fields: the four provider descriptors and the `text`
+ * opt-in. Subtracted from {@link SharedAgentParams} so each mode arm
+ * re-declares exactly the ones it accepts and types the rest as a message.
+ */
+export type ProviderField = "stt" | "llm" | "tts" | "s2s" | "text";
 
 /**
  * The {@link AgentDef} fields that only do anything in pipeline mode. On an
@@ -147,14 +155,20 @@ export type ProviderField = "stt" | "llm" | "tts" | "s2s";
 export type PipelineOnlyField = keyof PipelineVoiceTuning | "silenceTimeoutMs" | "silencePrompt";
 
 /**
- * The "type" a pipeline-only field has on an S2S agent — a message, so the
- * compile error for `agent({ s2s: ..., deadAirCoverMs: 5000 })` reads
+ * The "type" a pipeline-only field has outside pipeline mode — a message, so
+ * the compile error for `agent({ s2s: ..., deadAirCoverMs: 5000 })` reads
  * *"Type 'number' is not assignable to type '`deadAirCoverMs` is pipeline-mode
  * only …'"* instead of the bare `undefined` mismatch that explains nothing
  * (the lesson `client()`'s ComponentTier already recorded).
+ *
+ * `M` names the mode the author is actually in, so the remedy the message
+ * gives ("remove `s2s`" / "remove `text`") is the one that applies to the
+ * agent in front of them rather than a menu.
  */
-export type PipelineOnlyMisuse<K extends PipelineOnlyField> =
-  `\`${K}\` is pipeline-mode only — it has no effect on an s2s agent; remove it or remove \`s2s\``;
+export type PipelineOnlyMisuse<
+  K extends PipelineOnlyField,
+  M extends "s2s" | "text" = "s2s",
+> = `\`${K}\` is pipeline-mode only — it has no effect on a ${M} agent; remove it or remove \`${M}\``;
 
 /**
  * Pipeline-mode params: any subset of the provider triple (unset stages run
@@ -173,6 +187,7 @@ export type PipelineAgentParams<S = DefaultSessionState> = SharedAgentParams<S> 
      */
     llm?: LlmProvider | string;
     s2s?: undefined;
+    text?: undefined;
   } & (
     | {
         /** See {@link AgentDef.tts}. The voice rides on the descriptor. */
@@ -203,8 +218,41 @@ export type S2sAgentParams<S = DefaultSessionState> = SharedAgentParams<S> & {
   llm?: "`llm` cannot be combined with `s2s` — S2S runs the LLM loop service-side";
   tts?: "`tts` cannot be combined with `s2s` — S2S runs TTS service-side";
   voice?: "`voice` is pipeline-mode only — an S2S agent's voice rides on the `s2s` descriptor";
+  text?: "`text` cannot be combined with `s2s` — an agent is text-only or speech-to-speech, not both";
 } & {
   [K in PipelineOnlyField]?: PipelineOnlyMisuse<K>;
+};
+
+/**
+ * Text-mode params: `text: true`, optionally an `llm`, and nothing else from
+ * the audio half of the agent shape.
+ *
+ * Every speech field is typed as a message rather than left absent, on the
+ * same reasoning as {@link S2sAgentParams}: a bare excess-property error
+ * names the field and not the rule, and the rule here ("a text agent has no
+ * audio path") is exactly what an author moving a voice agent to text needs
+ * told. `sttPrompt` is included even though it is otherwise mode-agnostic —
+ * it biases a transcriber, and there is none.
+ *
+ * The pipeline-only voice knobs are derived from {@link PipelineOnlyField},
+ * so a knob added to {@link PipelineVoiceTuning} is rejected here for free.
+ */
+export type TextAgentParams<S = DefaultSessionState> = Omit<SharedAgentParams<S>, "sttPrompt"> & {
+  /** See {@link AgentDef.text} — the explicit opt-in to text mode. */
+  text: true;
+  /**
+   * See {@link AgentDef.llm}; a string is gateway model-id shorthand. Unset →
+   * the default AssemblyAI LLM Gateway model. The one provider stage a text
+   * agent has.
+   */
+  llm?: LlmProvider | string;
+  stt?: "`stt` cannot be combined with `text` — a text agent has no audio to transcribe";
+  tts?: "`tts` cannot be combined with `text` — a text agent has no audio to synthesize";
+  s2s?: "`s2s` cannot be combined with `text` — an agent is text-only or speech-to-speech, not both";
+  voice?: "`voice` is pipeline-mode only — a text agent never speaks";
+  sttPrompt?: "`sttPrompt` biases a transcriber — a text agent has none; remove it or remove `text`";
+} & {
+  [K in PipelineOnlyField]?: PipelineOnlyMisuse<K, "text">;
 };
 
 /**

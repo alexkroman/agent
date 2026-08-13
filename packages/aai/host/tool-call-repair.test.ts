@@ -17,7 +17,7 @@ vi.mock("ai", async (importActual) => {
   };
 });
 
-import { createToolCallRepair } from "./pipeline-repair.ts";
+import { createToolCallRepair } from "./tool-call-repair.ts";
 
 const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 const model = {} as never;

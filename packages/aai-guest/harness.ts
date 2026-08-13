@@ -92,8 +92,9 @@ import type {
 
 import { HARNESS_ORPHAN_POLL_MS, HARNESS_ORPHAN_TIMEOUT_MS } from "./limits.ts";
 import { withBuildDir } from "./studio-build.ts";
-import { handleStudioRequest, initStudioSession } from "./studio-chat.ts";
+import { handleStudioRequest } from "./studio-chat.ts";
 import { deployWorkspaceDir } from "./studio-publish.ts";
+import { initStudioSession } from "./studio-session.ts";
 import { handleSessionInitRequest, SessionInitParamsSchema } from "./studio-session-init.ts";
 import { materializeWorkspace } from "./studio-workspace-fs.ts";
 import { executeTool } from "./trial.ts";

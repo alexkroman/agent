@@ -11,7 +11,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import { createCoalescingRunner } from "@alexkroman1/aai/internal";
 import type { UIMessage } from "ai";
 import { hostRequest } from "./harness-rpc.ts";
-import type { StudioSession } from "./studio-chat.ts";
+import type { StudioSession } from "./studio-session.ts";
 import { snapshotWorkspace } from "./studio-workspace-fs.ts";
 
 /** Deadline for the end-of-turn workspace sync / chat persist RPCs. */

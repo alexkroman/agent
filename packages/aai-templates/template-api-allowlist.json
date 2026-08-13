@@ -134,6 +134,7 @@
     "TTS_COALESCE_MAX_CHARS",
     "TTS_RECONNECT_TIMEOUT_MS",
     "TerminalWorkflowRun",
+    "TextAgentParams",
     "ToolChoice",
     "ToolChoiceSchema",
     "ToolInputSchema",

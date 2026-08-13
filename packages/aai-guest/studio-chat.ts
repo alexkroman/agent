@@ -7,10 +7,12 @@
  * the URL (`POST /studio/projects/:project/session`) and serves the
  * guest→host RPCs (workspace sync, chat persistence, builds).
  *
- * The agentic loop (Vercel AI SDK `streamText`, same stack pipeline mode
- * uses) runs HERE, in the tenant's own container, on the CALLER'S OWN
- * AssemblyAI key — delivered by `studio/session-init` over the
- * authenticated control channel, never platform-owned. The chat surface's
+ * The agentic loop runs HERE, in the tenant's own container, on the CALLER'S
+ * OWN AssemblyAI key — delivered by `studio/session-init` over the
+ * authenticated control channel, never platform-owned. The agent itself is an
+ * ordinary `agent()` definition (`studio-agent.ts`) run by the SDK's
+ * `createTextAgent`; what this module owns is the HTTP surface, the turn gate,
+ * and one turn's delivery and settle. The chat surface's
  * bearer is a separate per-session token the broker mints alongside the
  * session and hands to both this guest and the browser: the tunnel URL is
  * public, and without auth anyone holding it could burn the caller's key
@@ -25,37 +27,18 @@
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
-import path from "node:path";
 import { errorMessage } from "@alexkroman1/aai";
-import { formatSchemaIssues } from "@alexkroman1/aai/internal";
-import { ASSEMBLYAI_LLM_API_KEY_ENV, assemblyAILlm } from "@alexkroman1/aai/llm";
-import { resolveAllBuiltins, resolveLlm } from "@alexkroman1/aai/runtime";
-import {
-  convertToModelMessages,
-  jsonSchema,
-  type LanguageModel,
-  stepCountIs,
-  streamText,
-  type ToolSet,
-  tool,
-  type UIMessage,
-} from "ai";
+import { ASSEMBLYAI_LLM_API_KEY_ENV } from "@alexkroman1/aai/llm";
+import { createTextAgent } from "@alexkroman1/aai/runtime";
+import { convertToModelMessages, type LanguageModel, type UIMessage } from "ai";
 import { verifyBearer } from "./harness-auth.ts";
 import { hostRequest } from "./harness-rpc.ts";
-import {
-  buildWorkspaceDir,
-  toolchainModules,
-  typecheckWorkspaceDir,
-  workspaceDependencyOptions,
-  workspacesRoot,
-} from "./studio-build.ts";
+import { createStudioAgent, STUDIO_TOOL_TIMEOUT_MS } from "./studio-agent.ts";
+import { typecheckWorkspaceDir } from "./studio-build.ts";
 import { compactMessages, needsCompaction } from "./studio-compaction.ts";
 import { CORS_HEADERS, readBody, sendJson } from "./studio-http.ts";
-import { ensureProjectShape } from "./studio-project-shape.ts";
-import { createDesignInspirationTool, createProjectTools } from "./studio-project-tools.ts";
-import { createTemplateTools } from "./studio-template-tools.ts";
-import { createToolCallRepair } from "./studio-tool-repair.ts";
-import { createStudioTools, STUDIO_TOOL_LABELS, withToolDeadlines } from "./studio-tools.ts";
+import type { StudioSession } from "./studio-session.ts";
+import { STUDIO_TOOL_LABELS } from "./studio-tools.ts";
 import { createTurnBudget } from "./studio-turn-budget.ts";
 import { createWorkspaceCheckpointer, MUTATING_TOOLS, settleTurn } from "./studio-turn-settle.ts";
 import {
@@ -64,8 +47,6 @@ import {
   TURN_IN_FLIGHT_CODE,
   TURN_IN_FLIGHT_STATUS,
 } from "./studio-turn-stream.ts";
-import { ensureWorkspaceDependencies, SESSION_INSTALL_BUDGET_MS } from "./studio-workspace-deps.ts";
-import { materializeWorkspace } from "./studio-workspace-fs.ts";
 import type { TypecheckFn } from "./studio-write-diagnostics.ts";
 
 /** Matches the host store's whole-conversation byte cap (4 MB). */
@@ -84,27 +65,10 @@ const SYNC_RPC_TIMEOUT_MS = 30_000;
  */
 let turnGate = createTurnGate();
 
-/** Test-only: drop the in-flight turn, like {@link resetSessionIdentity}. */
+/** Test-only: drop the in-flight turn, like `resetSessionIdentity`. */
 export function resetTurnGate(): void {
   turnGate = createTurnGate();
 }
-
-export type StudioSessionParams = {
-  /** Workspace scope (`user:<uid>` or a key digest) — half of this guest's identity. */
-  scope: string;
-  project: string;
-  files: Record<string, string>;
-  /** The caller's AssemblyAI key — the LLM credential (never the bearer). */
-  apiKey: string;
-  /** Broker-minted per-session bearer for the public chat surface. */
-  chatToken: string;
-  system: string;
-  model: string;
-  region?: "eu" | undefined;
-  maxSteps: number;
-};
-
-export type StudioSession = StudioSessionParams & { dir: string };
 
 export type StudioChatDeps = {
   /** The harness's own bundle loader (`loadBundle`). */
@@ -122,162 +86,6 @@ export type StudioChatDeps = {
    */
   typecheck?: TypecheckFn;
 };
-
-/**
- * Initialize (or replace) the harness's studio session: materialize the
- * workspace to a scratch dir and remember the turn configuration. Called by
- * the `studio/session-init` control-channel request — repeat calls reset
- * the workspace to the store's current files (the broker re-inits on every
- * page session so the sandbox never serves a stale tree).
- */
-/**
- * The concrete on-disk paths the coding agent can read, appended to the
- * host-composed system prompt.
- *
- * The host cannot write these: the harness sits at a different depth in the
- * two layouts (`/opt/aai/harness.mjs` in the Modal image,
- * `packages/aai-guest/dist/harness.mjs` under the subprocess backend), so
- * any relative path baked into the preamble is right in one and wrong in the
- * other. Only the guest can resolve it, and it does so by searching for the
- * toolchain rather than assuming an offset.
- *
- * They are absolute because that is the one form that survives a `bash` call
- * with an unexpected cwd, and `bash` is the only tool that can reach them at
- * all — `read_file` is jailed to the workspace, and `glob`/`grep` skip
- * node_modules by design.
- */
-export function toolchainPromptSection(modulesDir: string | null = toolchainModules()): string {
-  if (modulesDir === null) return "";
-  const at = (rel: string): string => path.join(modulesDir, rel);
-  return `
-
-## Installed packages on this machine
-
-Read these with \`bash\` — they live outside your workspace, so read_file,
-glob, and grep cannot see them. They are ground truth, ahead of memory:
-
-- Worked example agents: enumerate them with list_templates and copy the
-  closest match into the workspace with use_template — the files arrive
-  verbatim, so never retype template code by hand. Five have a real
-  client.tsx — dispatch-center, infocom-adventure, night-owl,
-  pizza-ordering, solo-rpg. The sources sit at
-  \`${at("@alexkroman1/aai-cli/dist/templates")}\` if you only want to
-  read one in place with \`bash\`.
-- SDK types (agent(), tool(), ctx): \`${at("@alexkroman1/aai/dist")}\`
-- client.tsx imports: \`${at("@alexkroman1/aai-ui/dist/index.d.ts")}\`, and
-  per-component props in \`${at("@alexkroman1/aai-ui/dist/components")}\``;
-}
-
-/**
- * The (scope, project) this harness was FIRST installed for. A studio sandbox
- * serves exactly one project for its whole life, so this is process identity.
- */
-let installedFor: { scope: string; project: string } | null = null;
-
-/**
- * A guest pins its own identity rather than trusting the caller's key.
- *
- * Every host caller is supposed to route (scope, project) correctly — the
- * broker keys its map and its registry row on it — but "supposed to" is the
- * part that fails. Now that ANY replica can install a session over HTTP (see
- * studio-session-init.ts), a mis-keyed registry row or a stale cross-replica
- * lookup would materialize one tenant's workspace into another tenant's
- * sandbox, where the coding agent would edit it and sync it back. Refusing
- * here makes that a 409 instead of a data-crossing bug, on the same
- * reasoning agent mode hash-verifies its bundle instead of trusting the
- * spawner to have written the right one.
- *
- * Re-installs for the SAME project are the normal path (every broker call
- * refreshes the tree), so only a CHANGE of identity is refused.
- */
-export class SessionIdentityError extends Error {
-  constructor(want: { scope: string; project: string }, got: { scope: string; project: string }) {
-    super(
-      `This sandbox serves ${want.scope}/${want.project}; refusing session-init for ` +
-        `${got.scope}/${got.project}`,
-    );
-    this.name = "SessionIdentityError";
-  }
-}
-
-/** Test seam: forget the pinned identity (one harness per test process). */
-export function resetSessionIdentity(): void {
-  installedFor = null;
-}
-
-export async function initStudioSession(params: StudioSessionParams): Promise<StudioSession> {
-  const identity = { scope: params.scope, project: params.project };
-  if (
-    installedFor &&
-    (installedFor.scope !== identity.scope || installedFor.project !== identity.project)
-  ) {
-    throw new SessionIdentityError(installedFor, identity);
-  }
-  // Under the workspaces root, NOT os.tmpdir(): builds run in-guest through
-  // the aai CLI bundlers, and only this root has the toolchain's
-  // node_modules above it for the workspace's bare imports to resolve.
-  const dir = path.join(workspacesRoot(), "session");
-  await materializeWorkspace(dir, params.files);
-  // Complete the workspace into a real project (package.json, tsconfig,
-  // …) — same shape `aai init` scaffolds; the files sync back to the
-  // store at end of turn like everything else in the workspace.
-  await ensureProjectShape(dir);
-  // `materializeWorkspace` opened with `rm -rf`, so a re-install (a refresh, a
-  // replica taking over) has just deleted the node_modules `add_dependency`
-  // built — and a workspace pushed from a laptop never had one. Reinstate
-  // whatever package.json declares before the first build reads an import.
-  // Non-fatal: a session is still usable when one dependency will not install,
-  // and the build that needs it says so where the coding agent can act on it.
-  const depWarning = await ensureWorkspaceDependencies(dir, {
-    ...workspaceDependencyOptions(),
-    // The host abandons session-init well before npm's own cap, and this runs
-    // on every page open — a slow registry must degrade the install, not the
-    // session. See SESSION_INSTALL_BUDGET_MS.
-    budgetMs: SESSION_INSTALL_BUDGET_MS,
-  });
-  if (depWarning !== null) console.error(`studio workspace dependencies: ${depWarning}`);
-  // Pinned only once the install actually succeeded: a rejected first install
-  // must not brand the sandbox with an identity it never served.
-  installedFor = identity;
-  return { ...params, system: params.system + toolchainPromptSection(), dir };
-}
-
-/**
- * The SDK's keyless web builtins (`visit_webpage`, `get_page_design`,
- * `web_search`), mapped to AI SDK tools. Same mapping the host used to do —
- * now the fetches originate in the guest, whose open egress is the norm for
- * tenant code (`safeFetch` still screens the model-controlled URLs).
- */
-export function createGuestWebTools(): ToolSet {
-  const { defs, schemas } = resolveAllBuiltins(["visit_webpage", "get_page_design", "web_search"]);
-  const ctx = {
-    env: {},
-    state: {},
-    db: { query: () => Promise.reject(new Error("Storage is not available in studio web tools")) },
-    generate: () => Promise.reject(new Error("generate is not available in studio web tools")),
-    messages: [],
-    sessionId: "studio-web",
-    send: () => undefined,
-  };
-  const out: ToolSet = {};
-  for (const schema of schemas) {
-    const def = defs[schema.name];
-    if (!def) continue;
-    out[schema.name] = tool({
-      description: schema.description,
-      inputSchema: jsonSchema(schema.parameters),
-      execute: async (args: unknown) => {
-        if (!def.inputSchema) return await def.execute((args ?? {}) as never, ctx as never);
-        const parsed = await def.inputSchema["~standard"].validate(args ?? {});
-        if (parsed.issues) {
-          return { error: `Invalid arguments: ${formatSchemaIssues(parsed.issues)}` };
-        }
-        return await def.execute(parsed.value as never, ctx as never);
-      },
-    });
-  }
-  return out;
-}
 
 /** Run one coding-agent turn, streaming the UI message stream to `res`. */
 async function runTurn(
@@ -309,16 +117,6 @@ async function runTurn(
     if (!res.writableEnded) abort.abort();
   });
 
-  const model =
-    deps.model ??
-    resolveLlm(
-      assemblyAILlm({
-        model: session.model,
-        ...(session.region === "eu" ? { region: "eu" as const } : {}),
-      }),
-      { [ASSEMBLYAI_LLM_API_KEY_ENV]: session.apiKey },
-    );
-
   // Wall clock, not just steps: the step cap says nothing about how long a
   // user waits, and turns were reaching fifteen minutes.
   const budget = createTurnBudget();
@@ -338,47 +136,44 @@ async function runTurn(
   // and building it twice would double the coalescing runner it hangs off.
   const typecheck: TypecheckFn = deps.typecheck ?? (() => typecheckWorkspaceDir(session.dir));
 
-  const result = streamText({
-    model,
-    system: session.system,
-    messages: await convertToModelMessages(messages, { ignoreIncompleteToolCalls: true }),
-    // Studio tools last: a web builtin may never shadow write_file. The
-    // deadline wrap goes around the MERGED set so every tool family — web,
-    // design, project, studio — shares the per-call timeout.
-    tools: withToolDeadlines({
-      ...createGuestWebTools(),
-      ...createDesignInspirationTool(model),
-      ...createProjectTools({ dir: session.dir }),
-      ...createTemplateTools({
-        dir: session.dir,
-        // Same post-copy diagnostics backend the write tools use.
-        typecheck,
-      }),
-      ...createStudioTools({
-        dir: session.dir,
-        // Post-write diagnostics: the same tsc pass builds run, so a type
-        // error reaches the agent inside the write result that caused it.
-        typecheck,
-        // Build the live session workspace in place, in THIS sandbox,
-        // through the same CLI bundler pass `aai deploy` runs.
-        build: () => buildWorkspaceDir(session.dir, { worker: true, client: false }),
-        loadBundle: deps.loadBundle,
-        executeTool: deps.executeTool,
-      }),
+  // The coding agent, as an ordinary `agent()` definition — see
+  // studio-agent.ts. The SDK owns request assembly from here: model
+  // resolution, the builtins, the tool executor and its `ctx`, the per-call
+  // deadline, the reserved final answering step, and tool-call repair (which
+  // matters here because the studio model regularly emits a whole source file
+  // inside a JSON string and breaks the parse).
+  const chat = createTextAgent({
+    agent: createStudioAgent(session, {
+      loadBundle: deps.loadBundle,
+      executeTool: deps.executeTool,
+      typecheck,
     }),
-    abortSignal: abort.signal,
+    // `ctx.env` stays EMPTY while the caller's key resolves the model: the
+    // coding agent's tools have no business reading a credential, and the
+    // providerEnv split is exactly the seam that says so.
+    env: {},
+    providerEnv: { [ASSEMBLYAI_LLM_API_KEY_ENV]: session.apiKey },
+    ...(deps.model ? { model: deps.model } : {}),
+    sessionId: `${session.scope}/${session.project}`,
+    toolTimeoutMs: STUDIO_TOOL_TIMEOUT_MS,
+  });
+
+  const result = chat.stream({
+    messages: await convertToModelMessages(messages, { ignoreIncompleteToolCalls: true }),
+    signal: abort.signal,
     // Checkpoint after any step that touched the filesystem — see
     // createWorkspaceCheckpointer for why this is not left to onFinish.
     onStepFinish: ({ toolCalls }) => {
       if (toolCalls?.some((call) => MUTATING_TOOLS.has(call.toolName))) checkpointWorkspace();
     },
-    stopWhen: [stepCountIs(session.maxSteps), () => budget.expired()],
+    // Alongside the agent's own step cap, never instead of it.
+    stopWhen: [() => budget.expired()],
     // A long repair loop accumulates bulky tool results (tsc dumps, build
     // logs) — one per attempt. Without this the raised step cap would just
     // trade a step-cap failure for a context-overflow one.
     prepareStep: async ({ messages: stepMessages }) => {
       const base = needsCompaction(stepMessages)
-        ? await compactMessages(model, stepMessages)
+        ? await compactMessages(chat.model, stepMessages)
         : stepMessages;
       // Past the hard deadline the turn gets exactly one more step, with
       // tools off, so it ends on something the user can read rather than on
@@ -394,11 +189,6 @@ async function runTurn(
       const next = wrapUp ? [...base, { role: "user" as const, content: wrapUp }] : base;
       return next === stepMessages ? {} : { messages: next };
     },
-    // The default studio model regularly emits tool arguments that are not
-    // valid JSON — a whole source file inside a JSON string is the usual
-    // trigger. Without this the call is lost and the model apologizes for a
-    // "JSON parsing error" and retries, burning steps on the same mistake.
-    repairToolCall: createToolCallRepair(model),
   });
 
   // The stream carries its own failures now — see studio-turn-stream.ts for

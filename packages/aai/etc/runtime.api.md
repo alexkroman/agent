@@ -8,8 +8,14 @@ import { Duplex } from 'node:stream';
 import http from 'node:http';
 import type { IncomingMessage } from 'node:http';
 import type { JSONSchema7 } from 'json-schema';
-import type { LanguageModel } from 'ai';
+import { LanguageModel } from 'ai';
+import { ModelMessage } from 'ai';
+import { PrepareStepFunction } from 'ai';
 import type { ServerResponse } from 'node:http';
+import { StepResult } from 'ai';
+import { streamText } from 'ai';
+import { ToolCallRepairFunction } from 'ai';
+import { ToolSet } from 'ai';
 import { z } from 'zod';
 
 // @public
@@ -175,6 +181,12 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore;
 
 // @public
 export function createTelephonyBridge(carrierSocket: SessionWebSocket, opts: TelephonyBridgeOptions): SessionWebSocket;
+
+// @public
+export function createTextAgent(opts: TextAgentOptions): TextAgent;
+
+// @public
+export function createToolCallRepair(model: LanguageModel, log: Logger, getAbortSignal?: () => AbortSignal | undefined): ToolCallRepairFunction<ToolSet>;
 
 // @internal
 export function createWakeHintPublisher(opts?: WakeHintOptions): WakeHintPublisher;
@@ -457,6 +469,9 @@ export const safeFetch: typeof globalThis.fetch;
 // @internal
 export function safeSend(ws: SessionWebSocket, data: string | Uint8Array, log: Logger): void;
 
+// @public
+export function salvageJson(input: string): Promise<string | null>;
+
 // @internal
 export const SANDBOX_ONLY_BUILTINS: ReadonlySet<string>;
 
@@ -599,6 +614,46 @@ export type TelephonyBridgeOptions = {
 
 // @public
 export const telnyxCodec: CarrierCodec;
+
+// @public
+export interface TextAgent {
+    readonly model: LanguageModel;
+    readonly sessionId: string;
+    stream(turn: TextTurnOptions): TextTurnResult;
+    readonly tools: ToolSet;
+}
+
+// @public
+export interface TextAgentOptions {
+    agent: AgentDef;
+    db?: Db | undefined;
+    env?: AgentEnv;
+    fetch?: typeof globalThis.fetch;
+    logger?: Logger;
+    model?: LanguageModel;
+    providerEnv?: ProviderEnv;
+    runCode?: RunCodeExecutor;
+    sessionId?: string;
+    toolTimeoutMs?: number;
+    workflows?: WorkflowClient | undefined;
+}
+
+// @public
+export interface TextTurnOptions {
+    maxSteps?: number;
+    messages: ModelMessage[];
+    onStepFinish?: (step: StepResult<ToolSet>) => void | Promise<void>;
+    prepareStep?: PrepareStepFunction<ToolSet>;
+    signal?: AbortSignal;
+    stopWhen?: readonly ((opts: {
+        steps: readonly StepResult<ToolSet>[];
+    }) => boolean | PromiseLike<boolean>)[];
+    system?: string;
+    toolChoice?: ToolChoice;
+}
+
+// @public
+export type TextTurnResult = ReturnType<typeof streamText<ToolSet>>;
 
 // @public
 export type ToolDefRecord = Record<string, ToolDef>;
