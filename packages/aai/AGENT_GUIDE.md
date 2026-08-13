@@ -98,6 +98,7 @@ my-agent/
   shared.ts           # Types shared between agent.ts and client.tsx
   system-prompt.md    # Long system prompts (optional, imported)
   tools/              # Tool files when too large for inline (optional)
+  workflows/          # Durable workflow bodies (optional — see "Workflow apps")
   package.json
   tsconfig.json
   .env                # Local dev secrets (gitignored)
@@ -205,6 +206,143 @@ export default agent({ name: "My Agent", systemPrompt });
 `assert { type: "json" }` — import assertions were replaced by import
 attributes and TypeScript rejects them (`TS2880`). If you want to be
 explicit the modern spelling is `with { type: "json" }`, but plain is fine.
+
+## Workflow apps — `workflowApp()`
+
+Not every agent's front door is a microphone. When the product is a FORM —
+submit a job, watch it run, read the result — declare it with `workflowApp()`
+instead of `agent()`:
+
+```ts no-check
+import { workflow, workflowApp } from "@alexkroman1/aai";
+import { z } from "zod";
+import { digestFlow } from "./workflows/digest.ts";
+
+export const digest = workflow({
+  description: "Summarize a link and file the digest",
+  input: z.object({ url: z.url().describe("The link to digest") }),
+  run: digestFlow,
+});
+
+export default workflowApp({
+  name: "Link Digest",
+  workflows: { digest },
+});
+```
+
+That is the whole declaration, and the fields it does NOT take are the point:
+a workflow app has no session and no LLM loop, so `systemPrompt`, `tools`,
+`maxSteps`, `state`, `syncState`, `stt`/`llm`/`tts`/`s2s` and every voice knob
+are **compile errors** here, not fields that quietly do nothing. `greeting` and
+`requiredEnv` stay. `workflowApp()` is `agent({ …, page: "static" })` with the
+discriminant already set — same definition object out, so `aai build`,
+`aai dev` and `aai publish` treat it like any other agent.
+
+Reach for it when the user asks for something that outlives a request: an
+overnight job, an upload that takes minutes, anything waiting on a third-party
+callback. Reach for `agent()` when someone is on the line — a voice agent can
+also START a workflow from a tool (`ctx.workflows.start(def, input)`) and
+answer the turn, which is the other shape.
+
+**Requires storage** (`aai storage enable`, or `DATABASE_URL` under
+`aai dev`): runs live in the database.
+
+### Workflow bodies live in `workflows/`
+
+The build transforms that directory and nothing else. A `"use workflow"` body
+written in `agent.ts` is never transformed — it runs inline once, with no
+durability and nothing saying so.
+
+```ts
+import { sleep } from "workflow";
+
+export async function digestFlow(input: { url: string }) {
+  "use workflow";
+
+  const digest = await summarize(input.url);
+  // Suspended, not blocked: the container is free to exit here and the run
+  // resumes when it comes due. `"6 hours"` works the same as `"10 seconds"`.
+  await sleep("10 seconds");
+  return { ...digest, filedAt: await file(digest) };
+}
+
+async function summarize(url: string) {
+  "use step";
+  // The whole Node runtime is available in a step: fetch, a model call, a
+  // database. Not in the body.
+  return { url, headline: `What ${new URL(url).hostname} says`, points: [] };
+}
+
+async function file(digest: { url: string }) {
+  "use step";
+  return new Date().toISOString();
+}
+```
+
+Three rules, all of which fail silently if broken:
+
+- **The body replays from the top on every resume**, so it holds no live handle
+  and makes no undurable decision — no `Date.now()`, no `Math.random()`, no
+  `fetch`. Those belong in a step, whose result is journaled and returned
+  unchanged on replay.
+- **A step's arguments and return value cross a queue**, so they must be
+  JSON-shaped and small. Put bytes in storage and pass the key.
+- **A step gets no tool context** — no `ctx.env`, no `ctx.db`. It is bundled
+  and dispatched separately from the agent.
+
+### The page
+
+A workflow app's `client.tsx` mounts with `page()` rather than `client()` —
+there is no session to build, so no socket, no audio graph and no microphone
+request. Everything else is the same file, React and Tailwind included.
+
+```tsx no-check
+import { createWorkflowApi, page, useWorkflowRun } from "@alexkroman1/aai-ui";
+import "@alexkroman1/aai-ui/styles.css";
+import type { WorkflowOutputOf } from "@alexkroman1/aai";
+import { useState } from "react";
+import type { digest } from "./agent.ts";
+
+// Hoisted: a client built in render is a new object every render.
+const api = createWorkflowApi();
+
+export function App() {
+  const [runId, setRunId] = useState<string>();
+  // The generic is what makes `run.output` typed rather than `unknown`.
+  const { run, polling } = useWorkflowRun<WorkflowOutputOf<typeof digest>>(runId, { api });
+
+  return (
+    <main>
+      <button
+        type="button"
+        onClick={async () => setRunId(await api.start("digest", { url: "https://example.com" }))}
+      >
+        Digest
+      </button>
+      {polling && <p>Working. You can close this tab — the run continues.</p>}
+      {run?.status === "completed" && <h2>{run.output.headline}</h2>}
+    </main>
+  );
+}
+
+page({ name: "Link Digest", component: App });
+```
+
+`api.start()` resolves as soon as the RUN EXISTS, not when it finishes — that
+is the whole mechanism. The `runId` is the entire client state, so it survives
+a reload, a different device, or `curl`. Note the workflow is named by the key
+it has in `workflows` above (`"digest"`); nothing else records that string, so
+a rename there is a 400 here rather than a compile error.
+
+The same routes are scriptable, which is the other half of having an API:
+
+```text
+GET    /workflows                 → the declared workflows, with input schemas
+POST   /workflows/runs            → { runId }   body: { workflow, input?, key?, wait? }
+GET    /workflows/runs/:id        → a run snapshot
+DELETE /workflows/runs/:id        → cancel
+GET    /workflows/runs/:id/events → SSE
+```
 
 ## Pipeline mode
 
