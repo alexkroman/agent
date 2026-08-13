@@ -1,0 +1,17 @@
+{
+  "comment": "Exports tagged @internal that are nonetheless reachable from a public subpath. Ratchet: this list may shrink and may never grow. See scripts/api-contracts.mjs.",
+  "total": 9,
+  "surface": {
+    ".": [
+      "ApiUrlChip",
+      "SessionProvider",
+      "SessionUrlChips",
+      "ThemeProvider",
+      "ToolConfigContext",
+      "UiUrlChip",
+      "buildAgentUrl",
+      "fetchClientConfig",
+      "loadClientConfig"
+    ]
+  }
+}

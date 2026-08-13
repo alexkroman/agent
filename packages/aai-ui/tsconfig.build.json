@@ -13,6 +13,11 @@
   "exclude": [
     "node_modules",
     "dist",
+    // The capability contracts are typechecked by `tsc --noEmit` (the `typecheck`
+    // task), never emitted: they are a repo artifact, and `rootDir: "."` would
+    // otherwise put 18 stray `.d.ts` files under `dist/contracts/`. For aai-ui
+    // that is not merely dead output — its `files: ["dist"]` would SHIP them.
+    "contracts",
     "**/*.test.ts",
     "**/*.test.tsx",
     "**/_test-utils.ts",

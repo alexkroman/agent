@@ -14,8 +14,9 @@
     // `konsistent.json` the same way; `api-surface-file.test.ts` reads
     // `../../API.md` and every `../*/etc/*.api.md`; `api-contracts-gate.test.ts`
     // reads `../../API-EXPORTS.json` and the whole of
-    // `../aai/contracts/` (the capability roots, the epoch metadata, and the
-    // frozen compatibility examples). Touching any of them left
+    // every `../*/contracts/` tree (the capability roots, the epoch metadata,
+    // and the frozen compatibility examples — `aai` and `aai-ui` both carry
+    // one). Touching any of them left
     // `aai-templates#test` at an identical hash.
     //
     // Markdown is re-included (the root task drops it) because a CLAUDE.md IS
@@ -31,7 +32,7 @@
         "$TURBO_ROOT$/API.md",
         "$TURBO_ROOT$/API-EXPORTS.json",
         "$TURBO_ROOT$/packages/*/etc/*.api.md",
-        "$TURBO_ROOT$/packages/aai/contracts/**",
+        "$TURBO_ROOT$/packages/*/contracts/**",
         "$TURBO_ROOT$/package.json",
         "$TURBO_ROOT$/konsistent.json",
         "$TURBO_ROOT$/scripts/**",
@@ -50,7 +51,7 @@
         "$TURBO_ROOT$/API.md",
         "$TURBO_ROOT$/API-EXPORTS.json",
         "$TURBO_ROOT$/packages/*/etc/*.api.md",
-        "$TURBO_ROOT$/packages/aai/contracts/**",
+        "$TURBO_ROOT$/packages/*/contracts/**",
         "$TURBO_ROOT$/package.json",
         "$TURBO_ROOT$/konsistent.json",
         "$TURBO_ROOT$/scripts/**",

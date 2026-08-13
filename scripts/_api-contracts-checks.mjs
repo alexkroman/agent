@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 /**
- * The checks `api-contracts.mjs` runs, as pure functions over the contract tree.
+ * The checks `api-contracts.mjs` runs, as pure functions over one package's
+ * contract tree.
  *
  * Separated from the CLI so that file is the ORCHESTRATION and the mutating
  * modes — what a reader opens it for — rather than 300 lines of validation with
@@ -17,17 +18,18 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { authoringSurface } from "./_api-contracts.mjs";
 import {
-  AUTHORING_SUBPATHS,
-  authoringSurface,
+  authoringSubpaths,
+  capabilityId,
   epochPath,
   FIXTURE_PLACEHOLDER,
   fixturePath,
+  internalDestination,
   readEpoch,
   readInternalSurface,
   rel,
-  TABLE_PATH,
-} from "./_api-contracts.mjs";
+} from "./_api-contracts-tree.mjs";
 import { compareNames } from "./_api-surface.mjs";
 
 /** Findings for one run. Reset by `runChecks`, appended to by every check. */
@@ -44,12 +46,12 @@ const fail = (message) => issues.push(message);
  * one that is fine; an epoch that is both is a contradiction the fixture
  * requirement would then silently enforce the strict half of.
  */
-function checkCapabilitySet(table, present) {
+function checkCapabilitySet(pkg, table, present) {
   const declared = Object.keys(table).sort(compareNames);
   const found = present.slice().sort(compareNames);
   if (JSON.stringify(declared) === JSON.stringify(found)) return true;
   fail(
-    `${rel(TABLE_PATH)} and contracts/entrypoints/ disagree.\n` +
+    `${rel(pkg.tablePath)} and ${rel(pkg.entrypointRoot)}/ disagree.\n` +
       `  declared: ${declared.join(", ") || "(none)"}\n` +
       `  present:  ${found.join(", ") || "(none)"}\n` +
       "  Every capability entry point needs a contract entry, or it is unversioned.",
@@ -110,12 +112,12 @@ function checkClassification(where, current, supported, dropped) {
   return ok;
 }
 
-function checkTable(table, present) {
-  if (!checkCapabilitySet(table, present)) return false;
+function checkTable(pkg, table, present) {
+  if (!checkCapabilitySet(pkg, table, present)) return false;
   let ok = true;
   for (const [capability, contract] of Object.entries(table)) {
     const { current, supported = [], dropped = {} } = contract;
-    const where = `contracts.json: capability "${capability}"`;
+    const where = `${rel(pkg.tablePath)}: capability "${capability}"`;
     if (!Number.isInteger(current) || current < 1) {
       fail(`${where} must have a positive integer \`current\` epoch.`);
       ok = false;
@@ -136,9 +138,9 @@ function checkTable(table, present) {
  * changes ago is the only thing that makes "when did this move" answerable
  * without a git archaeology session.
  */
-function checkInventory(table) {
+function checkInventory(pkg, table) {
   for (const [capability, { current }] of Object.entries(table)) {
-    const dir = dirname(epochPath(capability, 1));
+    const dir = dirname(epochPath(pkg, capability, 1));
     const expected = Array.from({ length: current }, (_, index) => `v${index + 1}.json`).sort();
     const actual = existsSync(dir)
       ? readdirSync(dir)
@@ -157,22 +159,23 @@ function checkInventory(table) {
 }
 
 /** A supported epoch is a promise, and a fixture is the evidence for it. */
-function checkFixtures(table) {
+function checkFixtures(pkg, table) {
   for (const [capability, { supported = [] }] of Object.entries(table)) {
     for (const version of supported) {
-      const path = fixturePath(capability, version);
+      const path = fixturePath(pkg, capability, version);
       if (!existsSync(path)) {
         fail(
-          `${rel(path)} is missing. Advertising ${capability} epoch ${version} as supported ` +
-            "requires a frozen authoring example that still compiles against current source — " +
-            "otherwise the support is a claim with nothing behind it.",
+          `${rel(path)} is missing. Advertising ${capabilityId(pkg, capability)} epoch ${version} ` +
+            "as supported requires a frozen authoring example that still compiles against " +
+            "current source — otherwise the support is a claim with nothing behind it.",
         );
         continue;
       }
       if (readFileSync(path, "utf8").includes(FIXTURE_PLACEHOLDER)) {
         fail(
           `${rel(path)} is still the scaffold. Replace it with a representative ` +
-            `${capability} epoch ${version} authoring example before advertising support.`,
+            `${capabilityId(pkg, capability)} epoch ${version} authoring example before ` +
+            "advertising support.",
         );
       }
     }
@@ -192,15 +195,16 @@ export function classify(previous, next) {
 }
 
 /** The generated report for each capability still matches its current epoch. */
-function checkEpochs(table, reports) {
+function checkEpochs(pkg, table, reports) {
   for (const [capability, { current }] of Object.entries(table)) {
     const generated = reports.get(capability);
     if (generated === undefined) continue;
-    const path = epochPath(capability, current);
+    const path = epochPath(pkg, capability, current);
     if (!existsSync(path)) continue; // checkInventory already reported it.
-    const committed = readEpoch(capability, current);
+    const committed = readEpoch(pkg, capability, current);
     if (committed.sha256 === generated.sha256) continue;
 
+    const id = capabilityId(pkg, capability);
     const { added, removed, bump } = classify(committed.exports ?? [], generated.exports);
     const detail = [
       removed.length > 0 ? `  removed: ${removed.join(", ")}` : "",
@@ -213,35 +217,43 @@ function checkEpochs(table, reports) {
       .join("\n");
 
     fail(
-      `The "${capability}" capability no longer matches epoch ${current}.\n${detail}\n` +
+      `The "${id}" capability no longer matches epoch ${current}.\n${detail}\n` +
         `  Likely changeset bump: ${bump}.\n` +
         "  Classify it, which is the whole point of this gate:\n" +
-        `    node scripts/api-contracts.mjs --bump ${capability} --retain\n` +
+        `    node scripts/api-contracts.mjs --bump ${id} --retain\n` +
         `      keeps epoch ${current} working, and obliges a frozen example that proves it.\n` +
-        `    node scripts/api-contracts.mjs --bump ${capability} --drop "<reason>"\n` +
+        `    node scripts/api-contracts.mjs --bump ${id} --drop "<reason>"\n` +
         `      records that epoch ${current} no longer compiles, and why.`,
     );
   }
 }
 
 /**
- * Every public authoring name belongs to exactly one capability.
+ * Every public authoring name of one package belongs to exactly one of its
+ * capabilities.
  *
  * This is what makes the capability set a description of the surface rather
  * than a selection from it: a new `@public` export on any authoring subpath
  * fails until somebody decides which contract it joins, which is the same
  * decision as "who is promised this".
+ *
+ * Ownership is per PACKAGE, deliberately. `isTerminal`, `WorkflowSummary` and
+ * `WorkflowOutputOf` are on both packages' surfaces (`aai-ui` re-exports them
+ * from the SDK), and both packages have a `workflow` capability — the same
+ * concept reached from the two sides of the wire, versioned separately, because
+ * a change can break an author on one side and not the other.
  */
-function checkAssignment(entries) {
-  const { publicNames, internalNames } = authoringSurface();
+function checkAssignment(pkg, entries) {
+  const { publicNames, internalNames } = authoringSurface(pkg);
   const owner = new Map();
   for (const entry of entries) {
     for (const name of entry.names) {
       const existing = owner.get(name);
       if (existing !== undefined) {
         fail(
-          `"${name}" is claimed by both the ${existing} and ${entry.capability} capabilities. ` +
-            "A name belongs to exactly one contract, or a change to it bumps two epochs.",
+          `"${name}" is claimed by both the ${capabilityId(pkg, existing)} and ` +
+            `${capabilityId(pkg, entry.capability)} capabilities. A name belongs to exactly one ` +
+            "contract, or a change to it bumps two epochs.",
         );
         continue;
       }
@@ -252,30 +264,32 @@ function checkAssignment(entries) {
   const unassigned = [...publicNames.keys()].filter((name) => !owner.has(name)).sort(compareNames);
   if (unassigned.length > 0) {
     fail(
-      `${unassigned.length} public authoring export(s) belong to no capability:\n  ` +
+      `${unassigned.length} public authoring export(s) of ${pkg.name} belong to no capability:\n  ` +
         `${unassigned.join(", ")}\n` +
-        "  Add each to the contracts/entrypoints/ file that owns it. If it is not part of " +
+        `  Add each to the ${rel(pkg.entrypointRoot)}/ file that owns it. If it is not part of ` +
         "the authoring surface at all, tag it `@internal` in source instead.",
     );
   }
 
+  const subpaths = Object.keys(authoringSubpaths(pkg)).join(", ");
   const unknown = [...owner.keys()]
     .filter((name) => !(publicNames.has(name) || internalNames.has(name)))
     .sort(compareNames);
   if (unknown.length > 0) {
     fail(
-      `${unknown.length} name(s) are claimed by a capability but exported by no authoring ` +
-        `subpath (${Object.keys(AUTHORING_SUBPATHS).join(", ")}):\n  ${unknown.join(", ")}`,
+      `${unknown.length} name(s) are claimed by a ${pkg.name} capability but exported by no ` +
+        `authoring subpath (${subpaths}):\n  ${unknown.join(", ")}`,
     );
   }
 
+  const destination = internalDestination(pkg);
   const leaked = [...owner.keys()].filter((name) => internalNames.has(name)).sort(compareNames);
   if (leaked.length > 0) {
     fail(
-      `${leaked.length} name(s) are claimed by a capability but tagged \`@internal\`:\n  ` +
-        `${leaked.join(", ")}\n` +
+      `${leaked.length} name(s) are claimed by a ${pkg.name} capability but tagged ` +
+        `\`@internal\`:\n  ${leaked.join(", ")}\n` +
         "  Either it is authoring API — drop the tag — or it is not, and no contract may " +
-        "promise it.",
+        `promise it${destination === null ? "" : ` (move it to \`${destination}\`)`}.`,
     );
   }
 }
@@ -288,20 +302,21 @@ function checkAssignment(entries) {
  * and a note is not a limit — so the set is committed, additions fail, and
  * removals are recorded with `--update-internal`. It may only shrink.
  */
-function checkInternalSurface() {
-  const { internalNames } = authoringSurface();
-  const baseline = readInternalSurface();
+function checkInternalSurface(pkg) {
+  const { internalNames } = authoringSurface(pkg);
+  const baseline = readInternalSurface(pkg);
   const current = internalSurfaceSnapshot(internalNames);
+  const destination = internalDestination(pkg);
   for (const [subpath, names] of Object.entries(current.surface)) {
     const allowed = new Set(baseline.surface?.[subpath] ?? []);
     const added = names.filter((name) => !allowed.has(name));
     if (added.length > 0) {
       fail(
-        `${added.length} new \`@internal\` export(s) on the public subpath "${subpath}":\n  ` +
-          `${added.join(", ")}\n` +
+        `${added.length} new \`@internal\` export(s) on ${pkg.name}'s public subpath ` +
+          `"${subpath}":\n  ${added.join(", ")}\n` +
           "  An @internal-tagged symbol is still importable and still in an author's " +
-          "autocomplete. Move it to `@alexkroman1/aai/internal`, or promote it to a " +
-          "capability. This baseline only shrinks.",
+          `autocomplete. ${destination === null ? "Move it behind a private module" : `Move it to \`${destination}\``}` +
+          ", or promote it to a capability. This baseline only shrinks.",
       );
     }
   }
@@ -314,8 +329,8 @@ function checkInternalSurface() {
     // gets for free, but refusing the build over debt somebody already paid
     // down would be perverse. Same contract as `check-escape-hatches`.
     warnings.push(
-      `${stale.length} baselined \`@internal\` export(s) are gone. Give the headroom back with ` +
-        "`node scripts/api-contracts.mjs --update-internal`:\n  " +
+      `${stale.length} baselined \`@internal\` export(s) of ${pkg.name} are gone. Give the ` +
+        "headroom back with `node scripts/api-contracts.mjs --update-internal`:\n  " +
         `${stale.join("\n  ")}`,
     );
   }
@@ -340,21 +355,21 @@ export function internalSurfaceSnapshot(internalNames) {
 }
 
 /**
- * Every check, in the one order that makes sense.
+ * Every check for one package, in the one order that makes sense.
  *
  * The epoch comparison is gated on the table being well-formed: a malformed
  * `current` would otherwise be reported once as a bad table and again as a
  * dozen missing-epoch failures, burying the finding that explains the rest.
  */
-export function runChecks({ table, present, entries, reports }) {
+export function runChecks({ pkg, table, present, entries, reports }) {
   issues = [];
   warnings = [];
-  if (checkTable(table, present)) {
-    checkInventory(table);
-    checkFixtures(table);
-    checkEpochs(table, reports());
+  if (checkTable(pkg, table, present)) {
+    checkInventory(pkg, table);
+    checkFixtures(pkg, table);
+    checkEpochs(pkg, table, reports());
   }
-  checkAssignment(entries);
-  checkInternalSurface();
+  checkAssignment(pkg, entries);
+  checkInternalSurface(pkg);
   return { issues, warnings };
 }

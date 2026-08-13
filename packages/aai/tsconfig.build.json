@@ -13,6 +13,13 @@
   "exclude": [
     "node_modules",
     "dist",
+    // The capability contracts are typechecked by `tsc --noEmit` (the `typecheck`
+    // task) and never emitted: they are a repo artifact, and `rootDir: "."`
+    // otherwise wrote a `.d.ts` per capability root and per frozen example into
+    // `dist/contracts/`. Dead output here — `.npmignore`'s bare `contracts/`
+    // rule matches at any depth, so none of it ever shipped — but in `aai-ui`,
+    // whose `files: ["dist"]` has no such rule behind it, it did.
+    "contracts",
     "**/*.test.ts",
     "**/*.test-d.ts",
     "**/_test-*.ts",

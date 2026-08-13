@@ -1,0 +1,264 @@
+#!/usr/bin/env node
+
+/**
+ * WHERE a contract lives: which packages carry one, the paths inside it, and the
+ * policy that decides which published subpaths it has to cover.
+ *
+ * The layer above this (`_api-contracts.mjs`) turns a capability's entry point
+ * into an API Extractor report; the layer above that
+ * (`_api-contracts-checks.mjs`) checks the results. Three files rather than one
+ * because the paths-and-policy half is what a reader opens to answer "how does a
+ * package opt in", and it should not be read past 250 lines of extractor
+ * plumbing to get there.
+ *
+ * Everything here is parameterized by a PACKAGE. It was hardcoded to
+ * `packages/aai` while that was the only package with contracts, which read as
+ * "the SDK is the authoring surface" — and `@alexkroman1/aai-ui` is authored
+ * code too: a `client.tsx` names `client()`, `useAgentState`, `<Form>` and
+ * `useWorkflowRun` exactly the way an `agent.ts` names `agent()` and `tool()`,
+ * and a signature change there breaks a user's page rather than their agent.
+ */
+
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
+
+export const ROOT = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
+const PACKAGES_ROOT = join(ROOT, "packages");
+
+/** Marker a scaffolded fixture carries until somebody writes the real example. */
+export const FIXTURE_PLACEHOLDER = "REPLACE_WITH_A_REAL_AUTHORING_EXAMPLE";
+
+/**
+ * Published subpaths that are NOT authoring surface, and why.
+ *
+ * A DENY-list, keyed by package directory name, for the reason the config
+ * schema is one (see "One canonical config schema, deny-list boundaries" in
+ * `packages/aai/CLAUDE.md`): an allow-list of authoring subpaths is a second
+ * list of the public surface, and the omission that goes stale is invisible —
+ * a new subpath export simply never joins a contract, which is exactly the
+ * shape of every dropped-field bug this repo has paid for. Denied, a new
+ * subpath defaults INTO the authoring surface and its exports fail the
+ * assignment check until somebody decides which capability they join, which is
+ * the same decision as "is this something we promise an author".
+ *
+ * A package with no entry here therefore contracts every `.d.ts` subpath it
+ * publishes — which is what `aai-ui` wants (both of its two are authoring) and
+ * what makes opting a package in cost one directory rather than one directory
+ * plus a list.
+ */
+const NON_AUTHORING_SUBPATHS = {
+  aai: {
+    "./protocol": "the wire format both ends of a session derive, not something an agent declares",
+    "./runtime":
+      "the host runtime an operator embeds — createRuntime, createServer, the env brands",
+    "./manifest": "the config schema the CLI, the server and the runtime pass between them",
+    "./slugify": "how a human name becomes a slug, for the CLI, the platform and the studio",
+    "./workspace-files": "the studio's workspace layout, read by the platform and the CLI",
+    "./internal": "cross-package infrastructure, explicitly not semver-covered",
+  },
+};
+
+export const rel = (path) => relative(ROOT, path);
+export const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
+
+/**
+ * Write JSON that Biome already agrees with.
+ *
+ * `packages/**` is in Biome's file scope, and `JSON.stringify(x, null, 2)` always
+ * expands an array while Biome collapses a short one onto its own line —
+ * `"supported": [1]`. So every generated file failed `pnpm lint` the moment it was
+ * written, and the only fixes available are to hand-edit a file the next run
+ * overwrites or to reimplement Biome's formatter and watch it drift. Formatting
+ * through Biome itself makes the two agree by construction, which is the same
+ * trick eve uses on its own contract metadata (it pipes through `oxfmt`).
+ *
+ * A formatter failure is not fatal: the raw JSON is still correct and the lint
+ * gate will say so in its own words, which is a better error than this one.
+ */
+const writeJson = (path, value) => {
+  mkdirSync(dirname(path), { recursive: true });
+  const raw = `${JSON.stringify(value, null, 2)}\n`;
+  let formatted = raw;
+  try {
+    formatted = execFileSync(
+      join(ROOT, "node_modules/.bin/biome"),
+      ["format", `--stdin-file-path=${path}`],
+      { cwd: ROOT, encoding: "utf8", input: raw, stdio: ["pipe", "pipe", "pipe"] },
+    );
+  } catch {
+    // Fall through with the unformatted JSON.
+  }
+  writeFileSync(path, formatted);
+};
+
+/**
+ * A fixture may use JSX exactly when the package's own tsconfig compiles it.
+ *
+ * DERIVED rather than declared, because the two cannot then disagree: a frozen
+ * authoring example is only evidence if it is written the way that epoch was
+ * authored, and for a React component library that means JSX — an example
+ * spelled in `createElement` calls would compile while demonstrating an API
+ * nobody uses. The tsconfig is read as text rather than parsed: these files
+ * carry comments in this repo, and the question is only whether the key is
+ * present.
+ */
+function fixtureExtension(packageDir) {
+  const tsconfig = join(packageDir, "tsconfig.json");
+  if (!existsSync(tsconfig)) return ".ts";
+  return /^\s*"jsx"\s*:/m.test(readFileSync(tsconfig, "utf8")) ? ".tsx" : ".ts";
+}
+
+/**
+ * One contract-carrying package, as paths and policy.
+ *
+ * `key` is the directory name and the CLI's qualifier: capability names are
+ * only unique WITHIN a package (`workflow` is a capability of both `aai` and
+ * `aai-ui`, and they are different contracts), so anything a human reads or
+ * types is `aai-ui:workflow`. The epoch files stay unqualified — their path
+ * already names the package, and qualifying them would have rewritten twenty
+ * committed records to say what their own directory says.
+ */
+function contractPackage(key) {
+  const dir = join(PACKAGES_ROOT, key);
+  const contractRoot = join(dir, "contracts");
+  return {
+    key,
+    dir,
+    contractRoot,
+    name: readJson(join(dir, "package.json")).name,
+    entrypointRoot: join(contractRoot, "entrypoints"),
+    /** Epoch metadata. NOT `reports/` — `.gitignore` has a bare `reports/` rule. */
+    epochRoot: join(contractRoot, "epochs"),
+    fixtureRoot: join(contractRoot, "compatibility"),
+    tablePath: join(contractRoot, "contracts.json"),
+    internalSurfacePath: join(contractRoot, "internal-surface.json"),
+    cacheRoot: join(dir, ".api-contracts-cache"),
+    fixtureExtension: fixtureExtension(dir),
+  };
+}
+
+/**
+ * The packages that carry contracts, discovered from the tree.
+ *
+ * Opting a package in is creating `contracts/entrypoints/` inside it; there is
+ * no list to join, for the reason `api-report.mjs` derives its entry points
+ * from `package.json#exports` and this file derives its capabilities from the
+ * entry-point directory. A hand-kept list of what is versioned is the thing
+ * that silently stops covering something.
+ */
+export function contractPackages() {
+  return readdirSync(PACKAGES_ROOT)
+    .filter((key) => existsSync(join(PACKAGES_ROOT, key, "contracts/entrypoints")))
+    .sort()
+    .map((key) => contractPackage(key));
+}
+
+export const readTable = (pkg) => readJson(pkg.tablePath);
+export const writeTable = (pkg, table) => writeJson(pkg.tablePath, table);
+export const readInternalSurface = (pkg) => readJson(pkg.internalSurfacePath);
+export const writeInternalSurface = (pkg, surface) => writeJson(pkg.internalSurfacePath, surface);
+
+export const epochPath = (pkg, capability, version) =>
+  join(pkg.epochRoot, capability, `v${version}.json`);
+export const readEpoch = (pkg, capability, version) =>
+  readJson(epochPath(pkg, capability, version));
+export const writeEpoch = (pkg, capability, version, value) =>
+  writeJson(epochPath(pkg, capability, version), value);
+
+/**
+ * Where a capability's frozen example for one epoch lives.
+ *
+ * An existing file wins over the package's preferred extension, so a fixture
+ * that was written as `.ts` and later needed JSX (or the reverse) is still the
+ * one this reads — the alternative is a gate that reports a missing example
+ * while looking straight at it.
+ */
+export function fixturePath(pkg, capability, version) {
+  const base = join(pkg.fixtureRoot, capability, `v${version}`);
+  for (const extension of [".ts", ".tsx"]) {
+    if (existsSync(`${base}${extension}`)) return `${base}${extension}`;
+  }
+  return `${base}${pkg.fixtureExtension}`;
+}
+
+/** What a human reads and types: capability names repeat across packages. */
+export const capabilityId = (pkg, capability) => `${pkg.key}:${capability}`;
+
+/**
+ * The capabilities that EXIST in one package, read off its entry-point
+ * directory.
+ *
+ * Derived rather than listed, for the reason `api-report.mjs` derives its entry
+ * points from `package.json#exports`: a hand-kept list of the surface is the
+ * thing that goes stale. The gate separately asserts this set matches the
+ * contract table, so adding a file without a table entry fails loudly instead
+ * of being silently unversioned.
+ */
+export function capabilities(pkg) {
+  return readdirSync(pkg.entrypointRoot)
+    .filter((name) => name.endsWith(".ts"))
+    .map((name) => name.slice(0, -3))
+    .sort();
+}
+
+/**
+ * The subpaths of one package whose exports must belong to a capability, as
+ * `{ subpath: reportSlug }`.
+ *
+ * Everything the package publishes with types, minus the deny-list above. A
+ * denied subpath the package no longer exports is a FAILURE rather than a
+ * no-op: a stale exemption is how a subpath quietly leaves the contracted set.
+ *
+ * Keys are the subpath as a consumer appends it — `/utils`, not `./utils` —
+ * because they are what the `internal-surface.json` baselines and every message
+ * here are keyed by.
+ */
+export function authoringSubpaths(pkg) {
+  const manifest = readJson(join(pkg.dir, "package.json"));
+  const exports = manifest.exports ?? {};
+  const denied = NON_AUTHORING_SUBPATHS[pkg.key] ?? {};
+
+  const stale = Object.keys(denied).filter((subpath) => !Object.hasOwn(exports, subpath));
+  if (stale.length > 0) {
+    throw new Error(
+      `${pkg.name} no longer exports ${stale.join(", ")}, but NON_AUTHORING_SUBPATHS in ` +
+        `${rel(join(ROOT, "scripts/_api-contracts-tree.mjs"))} still exempts it. Remove the ` +
+        "entry — a stale exemption silently keeps a live subpath out of the contracted surface.",
+    );
+  }
+
+  return Object.fromEntries(
+    typedSubpaths(exports)
+      .filter((subpath) => !Object.hasOwn(denied, subpath))
+      // "." -> "index"; "./stt" -> "stt" — the slug `api-report.mjs` writes.
+      .map((subpath) =>
+        subpath === "."
+          ? [".", "index"]
+          : [subpath.replace(/^\./, ""), subpath.replace(/^\.\//, "").replaceAll("/", "-")],
+      ),
+  );
+}
+
+/** The subpaths of an `exports` map that resolve to declarations. */
+function typedSubpaths(exports) {
+  return Object.entries(exports)
+    .filter(([subpath]) => !subpath.includes("*"))
+    .filter(([, target]) => {
+      const types = typeof target === "string" ? target : target?.types;
+      return typeof types === "string" && types.endsWith(".d.ts");
+    })
+    .map(([subpath]) => subpath);
+}
+
+/**
+ * Where an `@internal` name on a public subpath should go instead.
+ *
+ * `aai` has a private `./internal` subpath to name; `aai-ui` does not, and
+ * telling its author to move a symbol to a subpath that does not exist is worse
+ * than saying nothing.
+ */
+export function internalDestination(pkg) {
+  const manifest = readJson(join(pkg.dir, "package.json"));
+  return Object.hasOwn(manifest.exports ?? {}, "./internal") ? `${pkg.name}/internal` : null;
+}

@@ -1091,35 +1091,63 @@ and the section above admits how it gets made: a judgement from memory, where a
 
 `pnpm check:api-contracts` (`scripts/api-contracts.mjs`, run straight after
 `check:api-report` in `scripts/check.sh` and in the CI check job) closes that.
-Twelve **capabilities** — named slices of the authoring API, each declared by a
-file under `packages/aai/contracts/entrypoints/` that may contain nothing but
+Twenty-one **capabilities** — named slices of the authoring API, each declared by
+a file under `<package>/contracts/entrypoints/` that may contain nothing but
 `export { … } from "<a published subpath>"` — get a report of their own, and what
 is committed is that report's hash plus its export list, at
 `contracts/epochs/<capability>/v<N>.json`. When a capability's shape moves the
 hash stops matching and the change cannot land without being CLASSIFIED:
 
 ```sh
-node scripts/api-contracts.mjs --bump tool --retain          # epoch N still works
-node scripts/api-contracts.mjs --bump tool --drop "<reason>"  # and here is why not
+node scripts/api-contracts.mjs --bump aai:tool --retain          # epoch N works
+node scripts/api-contracts.mjs --bump aai:tool --drop "<reason>"  # and why not
 ```
+
+**Two packages carry contracts, `aai` and `aai-ui`, and a capability is
+therefore QUALIFIED.** `@alexkroman1/aai-ui` is authored code in exactly the same
+sense as the SDK — a `client.tsx` names `client()`, `useAgentState`, `<Form>` and
+`useWorkflowRun` the way an `agent.ts` names `agent()` and `tool()`, and a
+signature change there breaks a user's page — so its nine capabilities are
+versioned the same way (see "The authoring surface is versioned in epochs" in
+`packages/aai-ui/CLAUDE.md`). Capability names are unique only WITHIN a package:
+`workflow` is a capability of both and they are different contracts, so anything
+a human types is `aai-ui:workflow` (a bare name still resolves when it is
+unambiguous, and ambiguity is REFUSED rather than resolved by precedence — a
+classification recorded against the wrong surface is the one failure this gate
+exists to prevent). Epoch files stay unqualified; their path already names the
+package. **Opting a third package in is creating `contracts/entrypoints/` inside
+it** — the package set is discovered from the tree, for the reason the entry
+points and the capabilities are, and its authoring subpaths are then everything
+it publishes with types MINUS a deny-list of the non-authoring ones
+(`NON_AUTHORING_SUBPATHS` in `scripts/_api-contracts.mjs`, which exempts `aai`'s
+`/protocol`, `/runtime`, `/manifest`, `/slugify`, `/workspace-files` and
+`/internal` with a reason each). Deny rather than allow for the reason the config
+schema does it (see "One canonical config schema, deny-list boundaries"): a new
+subpath then defaults INTO the contracted surface and fails until its exports
+join a capability, where an allow-list would silently leave it uncovered.
 
 Four properties are load-bearing:
 
 - **A retained epoch obliges a frozen, compiling example.**
   `contracts/compatibility/<capability>/v<N>.ts` is an authoring example written
-  the way that epoch was authored, and it sits under `packages/aai/tsconfig.json`
-  — so **`pnpm typecheck` is the backward-compatibility gate**. That is a test of
+  the way that epoch was authored, and it sits under the package's own
+  `tsconfig.json` — so **`pnpm typecheck` is the backward-compatibility gate**.
+  That is a test of
   compatibility rather than a claim about it, which is what the `.test-d.ts`
-  files cannot be: they pin the CURRENT shape and move with the API. All twelve
-  exist from the first commit, so the value does not wait for a bump. Editing one
+  files cannot be: they pin the CURRENT shape and move with the API. All
+  twenty-one exist from the first commit, so the value does not wait for a bump.
+  The extension is `.tsx` wherever the owning package's tsconfig sets `jsx`
+  (DERIVED, not declared) — a component library's authoring example is JSX, and
+  one spelled in `createElement` calls would compile while demonstrating an API
+  nobody writes. Editing one
   to make a compile error go away defeats the whole mechanism — the error IS the
   finding. A **dropped** epoch's example is DELETED by `--bump --drop`, because
   "dropped" means it no longer compiles and a leftover file would turn a recorded
   decision into a red typecheck.
 - **The hash covers the rollup BODY, not the report file.** API Extractor's
   preamble is identical in every report and is the tool's, not ours; hashing it
-  would make an api-extractor upgrade that reworded one line bump all twelve
-  epochs at once, each demanding a classification for a change to nothing.
+  would make an api-extractor upgrade that reworded one line bump every epoch at
+  once, each demanding a classification for a change to nothing.
 - **Old epoch metadata is immutable and retained** (`v1..current`, enforced), so
   "when did this break and what did we say about it" is answerable from the tree.
 - **The export-list delta suggests the bump.** A removed name prints `major`, an
@@ -1137,11 +1165,13 @@ authoring contract every time a playback constant moved. So the capabilities nam
 the surface instead — `agent`, `tool`, `state`, `workflow`, `defaults`, `utils`,
 `testing`, `builtins`, and one per provider stage — and the gate asserts the
 naming is **exhaustive**: every `@public` export of the eight authoring
-subpaths (`.`, `/utils`, `/testing`, `/tools`, `/stt`, `/llm`, `/tts`, `/s2s`)
-belongs to exactly one capability, so a new public export fails until somebody
-decides which contract it joins — which is the same decision as "who is promised
-this". A name published on both `.` and a narrower subpath belongs to the
-narrower one.
+subpaths this leaves `aai` with (`.`, `/utils`, `/testing`, `/tools`, `/stt`,
+`/llm`, `/tts`, `/s2s`) belongs to exactly one capability, so a new public export
+fails until somebody decides which contract it joins — which is the same decision
+as "who is promised this". Ownership is per PACKAGE, deliberately: three names
+(`isTerminal`, `WorkflowSummary`, `WorkflowOutputOf`) are on both packages'
+surfaces, the same concept from the two sides of the wire. A name published on
+both `.` and a narrower subpath belongs to the narrower one.
 
 **Counting them is what got them fixed, which is the argument for the whole
 gate.** The internal-tagged names are the explicit exemption, committed to
@@ -1168,17 +1198,32 @@ a stale report would be believed.
 and it has the same shape as `api-surface-file.test.ts` for the same reason: the
 gate compares two things the script derives, so an extraction that stopped
 finding anything would hash nothing, agree with a committed nothing, and print
-"12 capability contract(s) up to date ✓". The suite reads the contract tree
-independently and asserts every name a capability root selects appears in that
-capability's current epoch — which an empty extraction cannot satisfy.
+"21 capability contract(s) up to date ✓". The suite reads the contract tree
+independently — every package's, by the same discovery rule, so a second package
+is not unguarded by the guard — and asserts every name a capability root selects
+appears in that capability's current epoch, which an empty extraction cannot
+satisfy. Its own parser reads the export CLAUSE rather than one name per line,
+because Biome collapses a short clause onto a single line: per-line, it found
+zero names in the two smallest `aai-ui` roots and would have reported the
+healthiest possible contract as empty.
 
-`contracts/` is kept out of the `aai` tarball by `.npmignore` (same reason as
+`contracts/` is kept out of the tarballs twice over, and the second one is not
+optional: `.npmignore` excludes the source directory in `aai` (same reason as
 `etc/`, plus the examples import by relative source path and would ship
-unresolvable specifiers), out of coverage by `packages/aai/vitest.config.ts`
-(re-export lists and never-executed fixtures otherwise count at 0% and drag the
-package under floors that have nothing to do with what they measure), and its
-files are declared as knip `entry` points, since nothing imports either
-directory and nothing is meant to.
+unresolvable specifiers), **and each package's `tsconfig.build.json` excludes it
+from the declaration emit** — `rootDir: "."` otherwise writes a `.d.ts` per
+capability root and per frozen example into `dist/contracts/`, which
+`aai-ui`'s `files: ["dist"]` would have shipped (18 files; `aai`'s bare
+`contracts/` ignore rule matches at any depth, so there it was merely dead
+output). `tsc --noEmit` still checks them, which is the gate that matters. They
+are also out of coverage by
+each package's `vitest.config.ts` (re-export lists and never-executed fixtures
+otherwise count at 0% and drag the package under floors that have nothing to do
+with what they measure), and its files are declared as knip `entry` points, since
+nothing imports either directory and nothing is meant to. A new contract package
+owes those three, plus `packages/*/contracts/**` staying in the `aai-templates`
+turbo `inputs` — that is what stops the gate-under-the-gate being served from
+cache exactly when a contract tree changes.
 
 ### The authoring guide ships inside the SDK
 

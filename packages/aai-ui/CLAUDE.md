@@ -17,6 +17,55 @@ conventions and testing rules live in the root `CLAUDE.md`.
   the client. `aai-cli`'s dev server and every self-hosted example used to
   carry their own copy of the three-line resolve.
 
+## The authoring surface is versioned in epochs
+
+**This package's exports are authored code, and they are contracted the same way
+the SDK's are.** The mechanism, the classification workflow (`--retain` /
+`--drop`), and why an epoch obliges a frozen compiling example all live in the
+root guide's "The authoring surface is versioned in epochs"; what is local to
+here is the naming. `contracts/entrypoints/` declares **nine capabilities**, and
+between them they must name every `@public` export of `.` and `/client-dir` — a
+new one fails `pnpm check:api-contracts` until it joins one:
+
+| Capability | What it promises |
+| --- | --- |
+| `client` | the voice mount — `client()`, its two config tiers, the handle |
+| `page` | the workflow-app mount — `page()`, with no session under it |
+| `session` | the live call: `SessionCore`, the snapshot, `useSession`, the errors, `VOICE_CAPTURE_CONSTRAINTS` |
+| `hooks` | what a client reads off the AGENT: `useAgentState`, the two tool hooks, `useEvent` |
+| `components` | the design system a custom chrome is assembled from |
+| `forms` | `<Form>`, the field components, `<WorkflowFields>` |
+| `workflow` | `createWorkflowApi`, `useWorkflowRun`, `useWorkflowSubmit`, `useWorkflows` |
+| `theme` | `ClientTheme` + `useTheme` — its own contract because a token is a name in somebody's CSS |
+| `client-dir` | `defaultClientDir()`, the one export a SERVER calls |
+
+Three things to know before touching them.
+
+**A capability id is qualified — `aai-ui:forms`, not `forms`.** `workflow` names
+a capability of both packages (the SDK declares a workflow, this reaches one over
+HTTP) and they version independently, so the CLI refuses a bare ambiguous name
+rather than guessing.
+
+**The compatibility fixtures are `.tsx`, and they are the reason to write them
+carefully.** A frozen example for a component library is JSX or it is not
+evidence — and `pnpm typecheck` is what runs them, so a break in this package's
+types surfaces as a compile error inside
+`contracts/compatibility/<capability>/v<N>.tsx` naming the epoch it broke. Two
+findings came straight out of writing the first set: `WorkflowApiOptions.token`
+cannot take an explicit `undefined` under `exactOptionalPropertyTypes`, and
+`api.get` is deliberately untyped (`useWorkflowRun<R>` is where a page names the
+shape).
+
+**The `@internal` ratchet here stands at nine**, all on the root barrel and all
+recorded in `contracts/internal-surface.json`: `SessionProvider`,
+`ThemeProvider`, `ToolConfigContext`, the three URL chips (`ApiUrlChip`,
+`UiUrlChip`, `SessionUrlChips`), and the client-config trio (`buildAgentUrl`,
+`fetchClientConfig`, `loadClientConfig`). Every one is importable and in an
+author's autocomplete while no contract covers it — `client()` and the default
+client install them, which is why they are tagged rather than moved. The list may
+shrink and may never grow; unlike `aai` there is no `/internal` subpath to move
+one to, so paying it down means a private module.
+
 ## Key files
 
 - `index.ts` — main exports, React UI component

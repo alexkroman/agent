@@ -1,0 +1,47 @@
+{
+  "client": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "client-dir": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "components": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "forms": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "hooks": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "page": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "session": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "theme": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "workflow": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  }
+}
