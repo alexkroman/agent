@@ -149,6 +149,32 @@ export type WorkflowApi = {
    * path rather than an error.
    */
   watch(runId: string, signal?: AbortSignal): Promise<Response>;
+  /**
+   * Open a server-sent-event stream of what the run has WRITTEN — its progress,
+   * as opposed to {@link watch}'s status transitions.
+   *
+   * Resolves the raw `Response` for the same reason `watch` does: an agent
+   * deployed before this route existed answers 404, which a caller has to be able
+   * to see rather than have raised at it. Frames are `chunk` then `done`.
+   *
+   * Chunks are retained with the run, so this is a replay as much as a live tail:
+   * a page that reloads gets the whole stream by default, and `startIndex`
+   * (negative counts back from the end) is for a reader resuming from a known
+   * position.
+   */
+  streamOutput(
+    runId: string,
+    options?: { namespace?: string; startIndex?: number; signal?: AbortSignal },
+  ): Promise<Response>;
+  /**
+   * End a run's `sleep()` early, resolving how many pending sleeps were
+   * interrupted.
+   *
+   * `0` is an answer, not a failure — the run finished, was never sleeping, or is
+   * gone. Same shape as {@link cancel} answering false, and for the same reason:
+   * two tabs pressing "send it now" is ordinary.
+   */
+  wake(runId: string): Promise<number>;
 };
 
 /**
@@ -285,6 +311,33 @@ export function createWorkflowApi(opts: WorkflowApiOptions = {}): WorkflowApi {
         headers: { ...auth, Accept: "text/event-stream" },
         ...(signal ? { signal } : {}),
       });
+    },
+
+    streamOutput(
+      runId: string,
+      options?: { namespace?: string; startIndex?: number; signal?: AbortSignal },
+    ): Promise<Response> {
+      const params = new URLSearchParams();
+      if (options?.namespace !== undefined) params.set("namespace", options.namespace);
+      if (options?.startIndex !== undefined) params.set("startIndex", String(options.startIndex));
+      const query = params.size > 0 ? `?${params.toString()}` : "";
+      return fetch(`${base}/runs/${encodeURIComponent(runId)}/stream${query}`, {
+        headers: { ...auth, Accept: "text/event-stream" },
+        ...(options?.signal ? { signal: options.signal } : {}),
+      });
+    },
+
+    async wake(runId: string): Promise<number> {
+      const res = await fetch(`${base}/runs/${encodeURIComponent(runId)}/wake`, {
+        method: "POST",
+        headers: auth,
+      });
+      // A run the agent does not know is "nothing was sleeping", which is the
+      // same answer as a live run that was not asleep — see `wake`'s doc.
+      if (res.status === 404) return 0;
+      if (!res.ok) throw await failure(res);
+      const body = (await res.json()) as { woken?: number };
+      return body.woken ?? 0;
     },
 
     async cancel(runId: string): Promise<boolean> {

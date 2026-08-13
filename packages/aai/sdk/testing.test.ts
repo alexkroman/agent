@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
-import { createToolContext, createUnusedDb } from "./testing.ts";
+import { createStubWorkflows, createToolContext, createUnusedDb } from "./testing.ts";
 
 describe("createToolContext", () => {
   test("supplies every ToolContext field", () => {
@@ -109,5 +109,46 @@ describe("createUnusedDb", () => {
 
   test("two instances are independent objects", () => {
     expect(createUnusedDb()).not.toBe(createUnusedDb());
+  });
+});
+
+describe("createStubWorkflows", () => {
+  test("an unstubbed method rejects naming itself rather than being undefined", async () => {
+    const workflows = createStubWorkflows();
+    await expect(workflows.start("digest", {})).rejects.toThrow(/not stubbed/);
+    await expect(workflows.wakeUp("wrun_1")).rejects.toThrow(/not stubbed/);
+    await expect(workflows.stream("wrun_1")).rejects.toThrow(/not stubbed/);
+  });
+
+  test("overrides win", async () => {
+    const workflows = createStubWorkflows({ start: async () => "wrun_7" });
+    await expect(workflows.start("digest", {})).resolves.toBe("wrun_7");
+  });
+
+  test("listing answers an empty list rather than throwing", () => {
+    // Synchronous, so it cannot reject — and "this app declares none" is a
+    // truthful answer for a stub.
+    expect(createStubWorkflows().listing()).toEqual([]);
+  });
+
+  test("every method of the client is present", () => {
+    // The whole point: a method added to `WorkflowClient` must arrive here
+    // rather than being left `undefined` for whatever reaches it. Asserted as a
+    // count-free presence check over the object's own keys, so this cannot pass
+    // by the stub quietly shrinking.
+    const workflows = createStubWorkflows();
+    for (const [name, value] of Object.entries(workflows)) {
+      expect(typeof value, name).toBe("function");
+    }
+    expect(Object.keys(workflows).sort()).toEqual([
+      "cancel",
+      "find",
+      "get",
+      "listing",
+      "recent",
+      "start",
+      "stream",
+      "wakeUp",
+    ]);
   });
 });

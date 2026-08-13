@@ -50,9 +50,21 @@ function makeAdapter(over: Partial<WdkAdapter> = {}): WdkAdapter {
     getRun: vi.fn(async () => record()),
     listRuns: vi.fn(async () => []),
     cancel: vi.fn(async () => true),
+    wakeUp: vi.fn(async () => 1),
+    readStream: vi.fn(() => chunkStream([{ step: 1 }])),
     readOutput: vi.fn(async () => ({ ok: true })),
     ...over,
   };
+}
+
+/** A run's written stream, as WDK's `getReadable()` hands one back. */
+function chunkStream(chunks: readonly unknown[]): ReadableStream<unknown> {
+  return new ReadableStream<unknown>({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(chunk);
+      controller.close();
+    },
+  });
 }
 
 function makeClient(
@@ -263,6 +275,64 @@ describe("cancelling", () => {
   test("reports whether this call is what ended the run", async () => {
     const { client } = makeClient({ wdk: { cancel: async () => false } });
     expect(await client.cancel("wrun_1")).toBe(false);
+  });
+});
+
+describe("waking a sleeping run", () => {
+  test("reports how many pending sleeps were interrupted", async () => {
+    const { client } = makeClient({ wdk: { wakeUp: async () => 3 } });
+    expect(await client.wakeUp("wrun_1")).toBe(3);
+  });
+
+  test("names no correlation ids when the caller passed none", async () => {
+    const wakeUp = vi.fn(async () => 1);
+    const { client } = makeClient({ wdk: { wakeUp } });
+    await client.wakeUp("wrun_1");
+    expect(wakeUp).toHaveBeenCalledWith("wrun_1", undefined);
+  });
+
+  test("forwards the correlation ids it was given", async () => {
+    const wakeUp = vi.fn(async () => 1);
+    const { client } = makeClient({ wdk: { wakeUp } });
+    await client.wakeUp("wrun_1", { correlationIds: ["review"] });
+    expect(wakeUp).toHaveBeenCalledWith("wrun_1", ["review"]);
+  });
+
+  test("an EMPTY id list means 'none named', not 'target nothing'", async () => {
+    // WDK reads a present-but-empty list as a filter matching no sleep, so a
+    // caller building the array from a filter that happened to yield nothing
+    // would wake nothing while reading as "wake everything".
+    const wakeUp = vi.fn(async () => 1);
+    const { client } = makeClient({ wdk: { wakeUp } });
+    await client.wakeUp("wrun_1", { correlationIds: [] });
+    expect(wakeUp).toHaveBeenCalledWith("wrun_1", undefined);
+  });
+});
+
+describe("reading a run's written stream", () => {
+  test("resolves the chunks the run wrote", async () => {
+    const { client } = makeClient({ wdk: { readStream: () => chunkStream(["a", "b"]) } });
+    const stream = await client.stream("wrun_1");
+    const seen: unknown[] = [];
+    for await (const chunk of stream) seen.push(chunk);
+    expect(seen).toEqual(["a", "b"]);
+  });
+
+  test("forwards namespace and startIndex", async () => {
+    const readStream = vi.fn(() => chunkStream([]));
+    const { client } = makeClient({ wdk: { readStream } });
+    await client.stream("wrun_1", { namespace: "logs", startIndex: -2 });
+    expect(readStream).toHaveBeenCalledWith("wrun_1", { namespace: "logs", startIndex: -2 });
+  });
+
+  test("passes undefined for options the caller omitted", async () => {
+    const readStream = vi.fn(() => chunkStream([]));
+    const { client } = makeClient({ wdk: { readStream } });
+    await client.stream("wrun_1");
+    expect(readStream).toHaveBeenCalledWith("wrun_1", {
+      namespace: undefined,
+      startIndex: undefined,
+    });
   });
 });
 

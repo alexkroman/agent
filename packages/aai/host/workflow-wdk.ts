@@ -9,15 +9,17 @@
  * path would make every spec of it need a Postgres or a `.workflow-data/`
  * directory.
  *
- * Three of the five methods are one line. The two that are not are `getRun` (WDK
- * signals "no such run" by throwing, we signal it with `undefined`) and
- * `readOutput` (the run must already be terminal, or the read blocks).
+ * Most methods are one line. The ones that are not are `getRun` (WDK signals "no
+ * such run" by throwing, we signal it with `undefined`), `readOutput` (the run
+ * must already be terminal, or the read blocks), and `wakeUp` (same
+ * throw-vs-answer translation as `cancel`).
  */
 
 import { getRun, start } from "workflow/api";
 import { WorkflowRunNotFoundError } from "workflow/errors";
 import { getWorld } from "workflow/runtime";
-import type { WdkAdapter, WdkRunRecord } from "./workflow-client.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
+import type { WdkAdapter, WdkRunRecord, WdkStreamOptions } from "./workflow-client.ts";
 
 /**
  * One WDK run record as ours.
@@ -102,6 +104,29 @@ export function wdkAdapter(): WdkAdapter {
         if (WorkflowRunNotFoundError.is(err)) return false;
         throw err;
       }
+    },
+
+    async wakeUp(runId: string, correlationIds: string[] | undefined): Promise<number> {
+      try {
+        // Same shape as `cancel`: a run that is gone is an ANSWER (nothing was
+        // sleeping), not an error a caller should have to catch. `wakeUp` on a
+        // live run that happens not to be sleeping already reports 0, so the two
+        // cases are indistinguishable to a caller — which is correct, because
+        // the question is "is it still waiting", and the answer is no either way.
+        const { stoppedCount } = await getRun(runId).wakeUp(omitUndefined({ correlationIds }));
+        return stoppedCount;
+      } catch (err: unknown) {
+        if (WorkflowRunNotFoundError.is(err)) return 0;
+        throw err;
+      }
+    },
+
+    readStream(runId: string, options: WdkStreamOptions): ReadableStream<unknown> {
+      // `getReadable` is lazy — it defers the run lookup and the encryption-key
+      // resolution until the first chunk is pulled — so this constructs nothing
+      // and a stream nobody reads costs nothing. That laziness is also why a
+      // missing run surfaces at READ time rather than here.
+      return getRun(runId).getReadable(omitUndefined(options));
     },
 
     readOutput(runId: string): Promise<unknown> {

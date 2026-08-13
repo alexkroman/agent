@@ -238,6 +238,12 @@ type StartOptions = {
 };
 
 // @public
+type StreamOptions = {
+    namespace?: string;
+    startIndex?: number;
+};
+
+// @public
 export function toAgentConfig(source: AgentConfigSource): AgentConfig;
 
 // @public
@@ -280,6 +286,11 @@ export const ToolSchemaSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
+type WakeUpOptions = {
+    correlationIds?: string[];
+};
+
+// @public
 type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
     workflowId?: string;
 };
@@ -296,6 +307,8 @@ type WorkflowClient = {
     recent<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
     cancel(runId: string): Promise<boolean>;
+    wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
+    stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
     listing(): WorkflowSummary[];
 };
 

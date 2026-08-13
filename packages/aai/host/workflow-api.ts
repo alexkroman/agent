@@ -17,7 +17,18 @@
  * GET    /workflows/runs/:id        → a WorkflowRunSnapshot   ?wait=<ms>
  * DELETE /workflows/runs/:id        → { runId, cancelled }
  * GET    /workflows/runs/:id/events → SSE: run | done | missing | idle
+ * GET    /workflows/runs/:id/stream → SSE: chunk | done | missing
+ *                                     ?namespace=&startIndex=
+ * POST   /workflows/runs/:id/wake   → { runId, woken }
  * ```
+ *
+ * ## `events` and `stream` are different questions about the same run
+ *
+ * `events` reports the run's STATE — the status transitions the world records,
+ * which exist for every run whether or not it was written to. `stream` reports
+ * what the run itself WROTE, through `getWritable()`, which is the only way a
+ * long run can say anything before it finishes. A dashboard usually wants both:
+ * one to know the run is alive, one to know what it is doing.
  *
  * ## Three ways to follow a run, and they are not alternatives
  *
@@ -74,6 +85,7 @@ import {
   readBody,
   sendJson,
 } from "./workflow-api-http.ts";
+import { streamRunOutput } from "./workflow-api-stream.ts";
 import { waitForRun } from "./workflow-api-wait.ts";
 
 export { MAX_WORKFLOW_INPUT_BYTES } from "./workflow-api-http.ts";
@@ -238,6 +250,29 @@ async function cancelRun(
 }
 
 /**
+ * `POST /workflows/runs/:id/wake` — end a run's `sleep()` early.
+ *
+ * `woken` is how many pending sleeps were interrupted, so `0` is an honest
+ * answer rather than an error: the run finished, was never sleeping, or is gone.
+ * Same reasoning as `cancelled: false` on the DELETE above — two tabs pressing
+ * "send it now" is ordinary, and the second one is not a failure.
+ *
+ * A POST rather than a DELETE-shaped verb because it does not remove anything;
+ * it is a state change on a run that keeps running.
+ */
+async function wakeRun(
+  res: http.ServerResponse,
+  engine: WorkflowApiEngine,
+  runId: string,
+): Promise<void> {
+  if (!runId) {
+    sendJson(res, 404, { error: "No workflow run named" });
+    return;
+  }
+  sendJson(res, 200, { runId, woken: await engine.wakeUp(runId) });
+}
+
+/**
  * `GET /workflows/runs?workflow=<name>&key=<key>&limit=<n>` — runs of one
  * workflow, newest first.
  *
@@ -296,9 +331,9 @@ type Route = {
 /**
  * The routes, as a table rather than an if/else chain.
  *
- * Six routes × (method, path shape) is well past the lint ceiling for cognitive
- * complexity as a chain, and a table also makes the two PREFIX matches visibly
- * different from the three exact ones.
+ * Eight routes × (method, path shape) is well past the lint ceiling for
+ * cognitive complexity as a chain, and a table also makes the PREFIX matches
+ * visibly different from the exact ones.
  *
  * **Order is load-bearing** wherever a longer path starts with a shorter one:
  * `/runs/<id>/events` begins with the `/runs/` prefix, so a bare `/runs/:id`
@@ -335,10 +370,27 @@ function buildRoutes(): Route[] {
         streamRunEvents(res, engine, runId(url, "/events"));
       },
     },
+    // Same rule as `/events` above: a longer path that starts with the `/runs/`
+    // prefix has to be listed before the bare `/runs/:id` rule, or its whole
+    // suffix is read as part of the run id and the answer is a 404 for a run
+    // that exists.
+    {
+      method: "GET",
+      matches: (url) => url.startsWith(runsPrefix) && url.endsWith("/stream"),
+      run: (req, res, engine, url) => streamRunOutput(req, res, engine, runId(url, "/stream")),
+    },
     {
       method: "GET",
       matches: (url) => url.startsWith(runsPrefix),
       run: (req, res, engine, url) => readRun(req, res, engine, runId(url)),
+    },
+    // The POST collection route is an exact match on `/runs`, so this cannot be
+    // confused with it — but it still has to precede nothing, since it is the
+    // only POST under the `/runs/` prefix.
+    {
+      method: "POST",
+      matches: (url) => url.startsWith(runsPrefix) && url.endsWith("/wake"),
+      run: (_req, res, engine, url) => wakeRun(res, engine, runId(url, "/wake")),
     },
     {
       method: "DELETE",

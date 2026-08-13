@@ -49,6 +49,8 @@ function fakeApi(over: Partial<WorkflowApi> = {}): WorkflowApi {
     recent: vi.fn(async () => []),
     cancel: vi.fn(async () => true),
     watch: vi.fn(async () => new Response(null, { status: 404 })),
+    streamOutput: vi.fn(async () => new Response(null, { status: 404 })),
+    wake: vi.fn(async () => 0),
     ...over,
   };
 }

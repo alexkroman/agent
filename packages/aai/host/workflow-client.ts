@@ -13,6 +13,8 @@
  * | `find(def, key)` | key index → `world.runs.get` per id |
  * | `recent(def)` | `world.runs.list({ workflowName })` |
  * | `cancel(runId)` | `getRun(runId).cancel()` |
+ * | `wakeUp(runId)` | `getRun(runId).wakeUp()` |
+ * | `stream(runId)` | `getRun(runId).getReadable()` |
  * | `listing()` | the declared `workflows` record |
  *
  * Two translations are worth reading before changing them: the name mapping,
@@ -28,6 +30,8 @@ import type {
   AnyWorkflowDef,
   FindOptions,
   StartOptions,
+  StreamOptions,
+  WakeUpOptions,
   WorkflowClient,
   WorkflowDef,
   WorkflowSummary,
@@ -82,7 +86,7 @@ export type WorkflowClientOptions = {
  * abstraction for its own sake: `workflow/api`'s `start` resolves a World from
  * the environment at call time, so a unit test of "does `start` validate its
  * input before creating a run" would otherwise need a real Postgres or a
- * `.workflow-data/` directory to answer. Three functions is the whole surface.
+ * `.workflow-data/` directory to answer.
  */
 export type WdkAdapter = {
   /** `start({ workflowId }, [input])` — resolves the new run's id. */
@@ -94,12 +98,31 @@ export type WdkAdapter = {
   /** `getRun(runId).cancel()` — resolves false when the run was already terminal. */
   cancel(runId: string): Promise<boolean>;
   /**
+   * `getRun(runId).wakeUp()` — resolves how many pending sleeps were
+   * interrupted, and `0` for a run that is gone.
+   */
+  wakeUp(runId: string, correlationIds: string[] | undefined): Promise<number>;
+  /**
+   * `getRun(runId).getReadable(options)` — the run's own written stream.
+   *
+   * Synchronous in WDK and here, because the underlying read is LAZY: it defers
+   * the run lookup and the encryption-key resolution until a chunk is actually
+   * pulled, which is what keeps an unread stream from costing anything.
+   */
+  readStream(runId: string, options: WdkStreamOptions): ReadableStream<unknown>;
+  /**
    * The completed run's return value, hydrated.
    *
    * Separate from `getRun` because reading it costs a deserialization (and,
    * with encryption on, a key resolution) that a `pending` run has no use for.
    */
   readOutput(runId: string): Promise<unknown>;
+};
+
+/** What {@link WdkAdapter.readStream} passes through to WDK. */
+export type WdkStreamOptions = {
+  namespace?: string | undefined;
+  startIndex?: number | undefined;
 };
 
 /**
@@ -280,6 +303,28 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
 
     cancel(runId: string): Promise<boolean> {
       return wdk.cancel(runId);
+    },
+
+    wakeUp(runId: string, options?: WakeUpOptions): Promise<number> {
+      // An empty `correlationIds` is passed through as "none named", not as an
+      // empty target set: WDK reads a present-but-empty list as a filter that
+      // matches nothing, so a caller building the array from a filter that
+      // happened to yield nothing would silently wake nothing at all while
+      // reading as "wake everything".
+      const ids = options?.correlationIds;
+      return wdk.wakeUp(runId, ids && ids.length > 0 ? ids : undefined);
+    },
+
+    stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>> {
+      // Async to match every other method here even though WDK's own read is
+      // synchronous — the laziness is what makes that free, and a uniform
+      // surface is what lets `rejectingWorkflows` cover this with one rejector.
+      return Promise.resolve(
+        wdk.readStream(runId, {
+          namespace: options?.namespace,
+          startIndex: options?.startIndex,
+        }),
+      );
     },
 
     listing(): WorkflowSummary[] {

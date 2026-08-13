@@ -29,7 +29,7 @@
  * see `sleep`'s placement below for what that looks like in practice.
  */
 
-import { sleep } from "workflow";
+import { getWritable, sleep } from "workflow";
 
 /** How long the desk sits on a finished draft before filing it. */
 const REVIEW_DELAY = "30 seconds";
@@ -77,13 +77,35 @@ export async function researchFlow(input: { topic: string; requestedBy: string }
 async function gather(topic: string): Promise<Findings> {
   "use step";
 
-  // Stands in for the model call, so the template runs with no API key. The
-  // shape is what matters: a step returns SMALL, serializable data.
-  return {
-    topic,
-    summary: `Three angles worth pursuing on ${topic}, with the trade-offs between them.`,
-    sources: 3,
-  };
+  // `getWritable()` is the run's PROGRESS channel, and it is the only way a long
+  // run can say anything before it finishes: a snapshot carries a status and,
+  // once terminal, an output — so without this the desk is "running" for the
+  // whole pass and then done. Chunks are retained with the run, so a reader that
+  // arrives late still sees all of them. Read back with
+  // `ctx.workflows.stream(runId)` (see `research_progress` in `agent.ts`) or, on
+  // a page, `api.streamOutput(runId)`.
+  //
+  // It is available in a STEP and not in the body, the same rule as `ctx.db`:
+  // the body is replayed from the top on every resume, so writing there would
+  // re-emit every line each time.
+  const progress = getWritable<string>();
+  const writer = progress.getWriter();
+  try {
+    await writer.write(`Looking into ${topic}.`);
+    // Stands in for the model call, so the template runs with no API key. The
+    // shape is what matters: a step returns SMALL, serializable data.
+    const findings: Findings = {
+      topic,
+      summary: `Three angles worth pursuing on ${topic}, with the trade-offs between them.`,
+      sources: 3,
+    };
+    await writer.write(`Found ${findings.sources} sources.`);
+    return findings;
+  } finally {
+    // Releasing the lock rather than closing the stream: the run may write again
+    // from a later step, and a closed stream cannot be reopened.
+    writer.releaseLock();
+  }
 }
 
 /**

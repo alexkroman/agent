@@ -18,19 +18,28 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import WebSocket from "ws";
 import type { WorkflowClient } from "../sdk/workflow.ts";
+import { rejectingWorkflows } from "../sdk/workflow-unavailable.ts";
 import { silentLogger } from "./_test-utils.ts";
 import { createServer, type SessionRuntime } from "./server.ts";
 
-/** A `ctx.workflows` that declares one workflow and nothing else. */
+/**
+ * A `ctx.workflows` that declares one workflow and nothing else.
+ *
+ * Built over `rejectingWorkflows` rather than as a cast literal, which is what
+ * that factory exists for: a method added to the client is covered here
+ * automatically, where `as WorkflowClient` would keep compiling and leave the
+ * new method `undefined` for anything that reached it.
+ */
 function fakeWorkflows(): WorkflowClient {
   return {
+    ...rejectingWorkflows("not stubbed in this test"),
     start: vi.fn(async () => "wrun_1"),
     get: vi.fn(async () => undefined),
     find: vi.fn(async () => []),
     recent: vi.fn(async () => []),
     cancel: vi.fn(async () => false),
     listing: vi.fn(() => [{ name: "digest" }]),
-  } as WorkflowClient;
+  };
 }
 
 /**

@@ -1,0 +1,13 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "testing",
+  "epoch": 2,
+  "sha256": "113303466432f7e574cdbbbc78dca59b171a83b4ddf16afab356af8605a6294d",
+  "exports": [
+    "SentEvent",
+    "TestToolContext",
+    "createStubWorkflows",
+    "createToolContext",
+    "createUnusedDb"
+  ]
+}

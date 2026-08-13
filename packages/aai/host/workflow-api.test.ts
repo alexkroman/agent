@@ -19,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { WorkflowClient } from "../sdk/workflow.ts";
 import type { WorkflowRunSnapshot } from "../sdk/workflow-run.ts";
-import { WORKFLOWS_UNAVAILABLE_MESSAGE } from "../sdk/workflow-unavailable.ts";
+import { rejectingWorkflows, WORKFLOWS_UNAVAILABLE_MESSAGE } from "../sdk/workflow-unavailable.ts";
 import { createWorkflowApi, MAX_WORKFLOW_INPUT_BYTES } from "./workflow-api.ts";
 
 const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
@@ -34,17 +34,38 @@ function run(over: Partial<WorkflowRunSnapshot> = {}): WorkflowRunSnapshot {
   } as WorkflowRunSnapshot;
 }
 
-/** A `ctx.workflows` whose every method is a spy, so a route's call is visible. */
+/**
+ * A `ctx.workflows` whose every method is a spy, so a route's call is visible.
+ *
+ * The `rejectingWorkflows` base is load-bearing rather than tidy: this used to be
+ * a literal cast with `as WorkflowClient`, and a cast keeps compiling when the
+ * client GAINS a method — leaving it `undefined` here, so the route exercising it
+ * fails on a `TypeError` that names nothing, or (worse) no test reaches it at all
+ * and the route ships uncovered.
+ */
 function fakeClient(over: Partial<WorkflowClient> = {}): WorkflowClient {
   return {
+    ...rejectingWorkflows("not stubbed in this test"),
     start: vi.fn(async () => "wrun_1"),
     get: vi.fn(async () => run()),
     find: vi.fn(async () => [run({ key: "caller-1" })]),
     recent: vi.fn(async () => [run()]),
     cancel: vi.fn(async () => true),
+    wakeUp: vi.fn(async () => 1),
+    stream: vi.fn(async () => chunkStream([{ step: 1 }, "halfway"])),
     listing: vi.fn(() => [{ name: "digest", description: "Research a topic" }]),
     ...over,
-  } as WorkflowClient;
+  };
+}
+
+/** A run's written stream, as `ctx.workflows.stream` resolves one. */
+function chunkStream(chunks: readonly unknown[]): ReadableStream<unknown> {
+  return new ReadableStream<unknown>({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(chunk);
+      controller.close();
+    },
+  });
 }
 
 type Harness = {
@@ -332,6 +353,96 @@ describe("GET and DELETE /runs/:id", () => {
     const res = await fetch(`${harness.url}/workflows/runs/wrun_1`, { method: "DELETE" });
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toEqual({ runId: "wrun_1", cancelled: false });
+  });
+});
+
+describe("POST /runs/:id/wake", () => {
+  test("reports how many sleeps it interrupted", async () => {
+    const wakeUp = vi.fn(async () => 2);
+    harness = await serve({ engine: () => fakeClient({ wakeUp }) });
+    const res = await fetch(`${harness.url}/workflows/runs/wrun_1/wake`, { method: "POST" });
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ runId: "wrun_1", woken: 2 });
+    expect(wakeUp).toHaveBeenCalledWith("wrun_1");
+  });
+
+  test("a run that was not sleeping is 200 with 0, not an error", async () => {
+    // Same rule as `cancelled: false` above: "it was already past that" is an
+    // answer, and two tabs pressing the button is ordinary.
+    harness = await serve({ engine: () => fakeClient({ wakeUp: vi.fn(async () => 0) }) });
+    const res = await fetch(`${harness.url}/workflows/runs/wrun_1/wake`, { method: "POST" });
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ runId: "wrun_1", woken: 0 });
+  });
+
+  test("is matched before the POST collection route, not as a run named 'wake'", async () => {
+    // `/runs` is an exact match and `/runs/:id/wake` a prefix one, so a start
+    // must not be able to claim this path — the failure would be a wake request
+    // silently STARTING a run.
+    const start = vi.fn(async () => "wrun_9");
+    harness = await serve({ engine: () => fakeClient({ start }) });
+    await fetch(`${harness.url}/workflows/runs/wrun_1/wake`, { method: "POST" });
+    expect(start).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /runs/:id/stream", () => {
+  test("streams the run's written chunks, then done", async () => {
+    const stream = vi.fn(async () => chunkStream([{ step: 1 }, { step: 2 }]));
+    harness = await serve({ engine: () => fakeClient({ stream }) });
+    const res = await fetch(`${harness.url}/workflows/runs/wrun_1/stream`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/event-stream");
+    const body = await res.text();
+    expect(body).toBe(
+      'event: chunk\ndata: {"step":1}\n\n' +
+        'event: chunk\ndata: {"step":2}\n\n' +
+        'event: done\ndata: {"runId":"wrun_1"}\n\n',
+    );
+  });
+
+  test("an unknown run is a 404 rather than an empty 200 stream", async () => {
+    // The client stream is lazy, so without the read-first this would open a
+    // 200 event stream and fail on the first pull — which a page cannot tell
+    // apart from a dropped connection.
+    const stream = vi.fn();
+    harness = await serve({ engine: () => fakeClient({ get: async () => undefined, stream }) });
+    const res = await fetch(`${harness.url}/workflows/runs/gone/stream`);
+    expect(res.status).toBe(404);
+    expect(stream).not.toHaveBeenCalled();
+  });
+
+  test("forwards namespace and startIndex, negative index included", async () => {
+    const stream = vi.fn(async () => chunkStream([]));
+    harness = await serve({ engine: () => fakeClient({ stream }) });
+    await fetch(`${harness.url}/workflows/runs/wrun_1/stream?namespace=logs&startIndex=-3`);
+    expect(stream).toHaveBeenCalledWith("wrun_1", { namespace: "logs", startIndex: -3 });
+  });
+
+  test("passes no options when the query carried none", async () => {
+    const stream = vi.fn(async () => chunkStream([]));
+    harness = await serve({ engine: () => fakeClient({ stream }) });
+    await fetch(`${harness.url}/workflows/runs/wrun_1/stream`);
+    expect(stream).toHaveBeenCalledWith("wrun_1", {});
+  });
+
+  test("a non-integer startIndex is a 400", async () => {
+    harness = await serve({ engine: () => fakeClient() });
+    const res = await fetch(`${harness.url}/workflows/runs/wrun_1/stream?startIndex=half`);
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({ error: "`startIndex` must be an integer" });
+  });
+
+  test("is matched before the bare `/runs/:id` GET", async () => {
+    // Same ordering hazard as `/events`: listed after the prefix rule, the whole
+    // `wrun_1/stream` would be read as a run id and answer 404 for a live run.
+    const get = vi.fn(async () => run());
+    harness = await serve({ engine: () => fakeClient({ get }) });
+    const res = await fetch(`${harness.url}/workflows/runs/wrun_1/stream`);
+    expect(res.headers.get("content-type")).toBe("text/event-stream");
+    // `get` still runs — the route reads the run first to answer 404 honestly —
+    // but with the id parsed clean of the suffix.
+    expect(get).toHaveBeenCalledWith("wrun_1");
   });
 });
 

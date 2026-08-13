@@ -305,7 +305,30 @@ GET    /workflows/runs            → { runs }    ?workflow=&key=&limit=
 GET    /workflows/runs/:id        → a WorkflowRunSnapshot
 DELETE /workflows/runs/:id        → { runId, cancelled }
 GET    /workflows/runs/:id/events → SSE: run | done | missing | idle
+GET    /workflows/runs/:id/stream → SSE: chunk | done | missing
+                                    ?namespace=&startIndex=
+POST   /workflows/runs/:id/wake   → { runId, woken }
 ```
+
+**`events` and `stream` answer different questions, and a dashboard wants
+both.** `events` reports the run's STATE — the status transitions the world
+records, which every run has. `stream` reports what the run itself WROTE through
+`getWritable()` (imported from `workflow`, like `sleep`), which is the only way
+a long run can say anything before it finishes: a snapshot carries a status and,
+once terminal, an output, and nothing in between. Chunks are RETAINED with the
+run rather than live-only, so `stream` is equally a replay — a page that reloads
+mid-run reads the whole thing by default, and `startIndex` (negative counts back
+from the end) is for a reader resuming from a known position. `api.streamOutput()`
+is the client half, resolving the raw `Response` for the same reason `watch` does:
+an agent deployed before the route existed answers 404, which is a normal path.
+
+**`wake` is what makes a long `sleep()` usable.** `POST /runs/:id/wake` ends a
+run's pending sleeps and reports how many (`api.wake()`, `ctx.workflows.wakeUp()`);
+`woken: 0` is an answer, not a failure — the run finished or was never asleep,
+the same shape as `cancelled: false`. Without it the only handle on a sleeping run
+was `cancel`, so "send it now" and "throw it away" were one button. Both routes
+ride the platform's already-declared GET and POST on the `/workflows` prefix, so
+neither needed a deployment change; `research-desk` is the worked example for each.
 
 `ctx.workflows.start()` only covers the case where a VOICE TURN starts a run; a
 page and a programmatic caller (`aai workflow`, a script, a cron job) had no

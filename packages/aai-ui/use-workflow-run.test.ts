@@ -70,6 +70,8 @@ describe("useWorkflowRun", () => {
       recent: vi.fn(async () => []),
       cancel: vi.fn(async () => false),
       watch: vi.fn(async () => new Response(null, { status: 404 })),
+      streamOutput: vi.fn(async () => new Response(null, { status: 404 })),
+      wake: vi.fn(async () => 0),
     };
   }
 

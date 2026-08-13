@@ -24,6 +24,7 @@ import {
   createGateway,
   defaultSettingsMiddleware,
   type LanguageModel,
+  type LanguageModelMiddleware,
   wrapLanguageModel,
 } from "ai";
 import { ANTHROPIC_API_KEY_ENV, ANTHROPIC_KIND } from "../../sdk/providers/llm/anthropic.ts";
@@ -47,6 +48,7 @@ import {
 } from "../../sdk/providers/llm/openrouter.ts";
 import { XAI_API_KEY_ENV, XAI_KIND } from "../../sdk/providers/llm/xai.ts";
 import type { LlmProvider } from "../../sdk/providers.ts";
+import { gatewayToolSchemaMiddleware } from "./_gateway-tool-schema.ts";
 import { repairOpenAiStream } from "./_openai-stream-repair.ts";
 import { options } from "./_utils.ts";
 
@@ -139,16 +141,21 @@ export const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
         name: "assemblyai",
         fetch: repairOpenAiStream(),
       }).chat(modelId);
-      // reasoning_effort is sent only when the descriptor asks for one —
-      // unset, the model runs on its own server-side reasoning default.
+      // The tool-schema prune is UNCONDITIONAL — it is what makes the gateway's
+      // Gemini path usable at all, and it is a no-op (by identity) for every
+      // model that accepts standard JSON Schema. reasoning_effort is layered on
+      // top only when the descriptor asks for one; unset, the model runs on its
+      // own server-side reasoning default.
+      const middleware: LanguageModelMiddleware[] = [gatewayToolSchemaMiddleware()];
       const reasoningEffort = opts.reasoningEffort;
-      if (reasoningEffort === undefined) return chat;
-      return wrapLanguageModel({
-        model: chat,
-        middleware: defaultSettingsMiddleware({
-          settings: { providerOptions: { openai: { reasoningEffort } } },
-        }),
-      });
+      if (reasoningEffort !== undefined) {
+        middleware.push(
+          defaultSettingsMiddleware({
+            settings: { providerOptions: { openai: { reasoningEffort } } },
+          }),
+        );
+      }
+      return wrapLanguageModel({ model: chat, middleware });
     },
   },
 };

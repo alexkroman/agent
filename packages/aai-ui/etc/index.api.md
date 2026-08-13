@@ -498,6 +498,12 @@ export type WorkflowApi = {
     }): Promise<WorkflowRun[]>;
     cancel(runId: string): Promise<boolean>;
     watch(runId: string, signal?: AbortSignal): Promise<Response>;
+    streamOutput(runId: string, options?: {
+        namespace?: string;
+        startIndex?: number;
+        signal?: AbortSignal;
+    }): Promise<Response>;
+    wake(runId: string): Promise<number>;
 };
 
 // @public (undocumented)

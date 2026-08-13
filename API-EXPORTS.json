@@ -63,6 +63,7 @@
     "StartOptions",
     "StaticAgentParams",
     "StaticFrontDoorMisuse",
+    "StreamOptions",
     "TERMINAL_WORKFLOW_STATUSES",
     "TOOL_EXECUTION_TIMEOUT_MS",
     "TOOL_RESULT_TRUNCATION_MARKER",
@@ -73,6 +74,7 @@
     "ToolDef",
     "ToolFailure",
     "ToolInputSchema",
+    "WakeUpOptions",
     "WorkflowAppMisuse",
     "WorkflowAppOnlyField",
     "WorkflowBody",
@@ -300,6 +302,7 @@
     "WakeHintPublisher",
     "WdkAdapter",
     "WdkRunRecord",
+    "WdkStreamOptions",
     "WorkflowApiEngine",
     "WorkflowApiOptions",
     "WorkflowClientOptions",
@@ -411,6 +414,7 @@
   "@alexkroman1/aai/testing": [
     "SentEvent",
     "TestToolContext",
+    "createStubWorkflows",
     "createToolContext",
     "createUnusedDb"
   ],

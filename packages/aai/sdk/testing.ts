@@ -17,6 +17,7 @@
 
 import type { Db } from "./db.ts";
 import type { DefaultSessionState, ToolContext } from "./types.ts";
+import type { WorkflowClient } from "./workflow.ts";
 import { rejectingWorkflows } from "./workflow-unavailable.ts";
 
 /** One `ctx.send(event, data)` call, as recorded by {@link createToolContext}. */
@@ -51,6 +52,41 @@ export function createUnusedDb(): Db {
       Promise.reject(
         new Error("ctx.db was not stubbed for this test — pass `db` to createToolContext"),
       ),
+  };
+}
+
+/**
+ * A `ctx.workflows` for testing a tool that starts or reads durable runs: every
+ * method rejects by default, and `overrides` replaces the ones the test drives.
+ *
+ * **The alternative is a cast, and the cast is what goes wrong.** A complete
+ * `WorkflowClient` is eight methods, of which a tool's test usually drives one or
+ * two, so the hand-rolled version is a literal with `as WorkflowClient` — which
+ * keeps compiling when the client GAINS a method and leaves that method
+ * `undefined`. Two shipped templates had exactly that, and adding `wakeUp` and
+ * `stream` to the client is what surfaced it: the casts still compiled.
+ *
+ * Rejecting rather than no-op defaults for the same reason {@link createUnusedDb}
+ * rejects — a tool that reaches for a method the test did not stub should say so,
+ * not silently receive `undefined`. `listing` is the exception and returns `[]`,
+ * because it is synchronous and an empty list is a truthful answer.
+ *
+ * ```ts
+ * import { createStubWorkflows, createToolContext } from "@alexkroman1/aai/testing";
+ *
+ * const workflows = createStubWorkflows({ start: async () => "wrun_1" });
+ * const ctx = createToolContext({ workflows });
+ * ```
+ *
+ * @public
+ */
+export function createStubWorkflows(overrides: Partial<WorkflowClient> = {}): WorkflowClient {
+  return {
+    ...rejectingWorkflows(
+      "This ctx.workflows method was not stubbed for this test — pass it in the " +
+        "overrides handed to createStubWorkflows",
+    ),
+    ...overrides,
   };
 }
 
