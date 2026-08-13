@@ -52,7 +52,7 @@
     "chokidar": "^5.0.0",
     "citty": "^0.2.2",
     "env-paths": "^4.0.0",
-    "execa": "^10.0.0",
+    "execa": "^10.0.1",
     "get-port": "^7.2.0",
     "ofetch": "^1.5.1",
     "p-debounce": "^5.1.0",
