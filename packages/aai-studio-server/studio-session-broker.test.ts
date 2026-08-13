@@ -45,6 +45,36 @@ describe("studio session broker", () => {
     await broker.dispose();
   });
 
+  // The switcher's whole payoff: the workspace's `kind` is what selects the
+  // system prompt, and the selection happens at INSTALL time — so it survives
+  // every reload, re-broker and cross-replica adopt, which a per-request flag
+  // would not. Asserted from the guest's own init params, because that object
+  // is the only thing the coding agent ever sees.
+  test("installs the system prompt the project's kind selects", async () => {
+    const agentGuest = fakeGuest();
+    const workflowGuest = fakeGuest("wss://tunnel2.example:443");
+    const { broker, workspaces } = await makeBroker([agentGuest, workflowGuest]);
+    await createWorkspace(workspaces, SCOPE, "flow-proj", {
+      files: { "agent.ts": "// v1" },
+      kind: "workflow",
+    });
+
+    await broker.ensureSession(SCOPE, PROJECT, "caller-key");
+    await broker.ensureSession(SCOPE, "flow-proj", "caller-key");
+
+    const systemFor = (guest: FakeGuest): string | undefined => {
+      const init = guest.requests.find((r) => r.method === "studio/session-init");
+      return (init?.params as { system: string } | undefined)?.system;
+    };
+    // Each prompt states its own mode's default and not the other's — the
+    // failure this guards is a workflow project's agent writing a voice agent.
+    expect(systemFor(agentGuest)).toContain("Default to a VOICE agent");
+    expect(systemFor(agentGuest)).not.toContain("Default to a STATIC workflow app");
+    expect(systemFor(workflowGuest)).toContain("Default to a STATIC workflow app");
+    expect(systemFor(workflowGuest)).not.toContain("Default to a VOICE agent");
+    await broker.dispose();
+  });
+
   // Stronger than "spawns then disposes": a missing project must not consume
   // a sandbox at all. Spawning first and discovering the 404 inside
   // session-init burned a Modal create+teardown per bogus project id, and

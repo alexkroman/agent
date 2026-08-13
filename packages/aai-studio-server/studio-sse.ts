@@ -8,6 +8,7 @@
 import { createCoalescingRunner } from "@alexkroman1/aai/internal";
 import { registerLiveStream } from "aai-server/live-streams";
 import type { SSEStreamingApi } from "hono/streaming";
+import { resolveProjectKind } from "./studio-project-kind.ts";
 import {
   currentFilesHash,
   hasPreviewChanges,
@@ -37,6 +38,10 @@ export function projectPayload(workspace: StudioWorkspace): Record<string, unkno
   return {
     files: workspace.files,
     sourceHash: currentFilesHash(workspace),
+    // Resolved rather than spread through: a project written before the
+    // new-project switcher existed carries no `kind`, and the client should
+    // read the same default the prompt composition does, not `undefined`.
+    kind: resolveProjectKind(workspace.kind),
     ...(workspace.deployedSlug && { deployedSlug: workspace.deployedSlug }),
     unpublished: hasUnpublishedChanges(workspace),
     ...(workspace.previewSlug && { previewSlug: workspace.previewSlug }),

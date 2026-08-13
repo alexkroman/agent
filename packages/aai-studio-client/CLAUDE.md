@@ -18,6 +18,33 @@ segmented control switches between — `preview.tsx`, `code-view.tsx`,
 
 ## Panes and behaviour
 
+- **The home hero switches between the two things the platform builds**
+  (`home.tsx` — Voice agent / Workflow, `starters.ts`, `api.createProject`).
+  The position is not a display preference: it is sent as `kind` on
+  `POST /studio/projects`, stamped on the workspace, and read back at every
+  session install to pick the coding agent's system prompt (see "A project has
+  a KIND" in `packages/aai-studio-server/CLAUDE.md`). So it is settable ONLY
+  here — `app.tsx`'s create mutation is the one call that carries it, and
+  nothing in the project view can change it afterwards.
+  - **Each position owns its copy AND its starter catalog.** The heading,
+    blurb and placeholder come from `KIND_COPY`, and the chips from
+    `STARTERS[kind]` — two separate lists rather than one tagged list, because
+    a workflow-mode pick must never land a voice template in a project whose
+    prompt forbids writing one. The workflow catalog leads with
+    `transcription-desk` and `link-digest`, the two `workflowApp()` templates;
+    `research-desk` stays under Voice agent, since it is an `agent()` that
+    hands off to a run.
+  - **Both catalogs are sampled once per MOUNT, not per flip.** Re-sampling
+    when the switcher moves reads as the chips being unrelated to the position
+    just chosen, so `useState` holds one sample per kind for the page load.
+  - **`creating` disables the switcher; a still-loading `/studio/status` does
+    not.** The kind is baked into the create that is already in flight, so it
+    must not move under it — but with nothing yet submittable, choosing what
+    you are about to build costs the server nothing.
+  - It is a `fieldset` of real radios with an `sr-only` legend, not a row of
+    buttons with `aria-pressed`: arrow-key navigation and the group's
+    accessible name then come from the markup, and the segmented look is
+    entirely on the labels.
 - **Settings is a PANE, not a dropdown** (`settings.tsx`): the top bar's
   segmented control switches Preview / Code / Settings, all three peers
   rendering full-width beside the chat panel (`StudioTab` in `top-bar.ts`

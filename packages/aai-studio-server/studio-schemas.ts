@@ -4,8 +4,10 @@
 import { slugifyName } from "@alexkroman1/aai/slugify";
 import { MAX_SLUG_LENGTH } from "@alexkroman1/aai/utils";
 import { RESERVED_SLUGS, SafePathSchema, VALID_SLUG_RE } from "aai-server/schemas";
+import { generatedSlug } from "aai-server/slug-generate";
 import { z } from "zod";
 import { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_MESSAGE_BYTES } from "./studio-limits.ts";
+import { DEFAULT_PROJECT_KIND, PROJECT_KINDS } from "./studio-project-kind.ts";
 
 // Re-exported from studio-limits.ts (the dependency-free limits home).
 export {
@@ -67,6 +69,19 @@ export function projectBaseFromPrompt(prompt: string): string {
   return base;
 }
 
+/**
+ * A whole server-generated project name: the readable prompt-derived base
+ * above plus the random suffix that makes it unique (`contact-form-x7k2mq`).
+ *
+ * Beside the base it is built from rather than in the route, which is where it
+ * used to live: this module owns every rule about what a project may be called
+ * — the identifier grammar, the slugification of a typed name, the filler
+ * words — and a name minted somewhere else is how a fourth spelling appears.
+ */
+export function generateProjectName(prompt: string | undefined): string {
+  return generatedSlug(prompt ? projectBaseFromPrompt(prompt) : undefined);
+}
+
 /** Leading filler in "build me a …" prompts — never the memorable part. */
 const PROMPT_FILLER_WORDS: ReadonlySet<string> = new Set([
   "a",
@@ -104,6 +119,19 @@ const PROMPT_FILLER_WORDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * What the project builds, as the create body carries it — the new-project
+ * screen's Agent/Workflow switcher.
+ *
+ * Defaulted rather than optional, so the route always holds a kind and the
+ * workspace is always stamped with one: an explicit `"agent"` on a new
+ * document says "this project chose voice", where absence would be
+ * indistinguishable from a document written before the switcher existed.
+ * Callers that predate it (the CLI's first push, evals, tests) get the same
+ * default they would have got from `resolveProjectKind`.
+ */
+export const ProjectKindSchema = z.enum(PROJECT_KINDS).default(DEFAULT_PROJECT_KIND);
+
+/**
  * Create a project. `name` is the legacy explicit path (slugified,
  * validated); when absent the server GENERATES the name — from `prompt`
  * when one is given (the guided chat-first flow), else from random words.
@@ -126,6 +154,8 @@ export const CreateProjectSchema = z.object({
     .optional(),
   /** First chat message — seeds the generated name when `name` is absent. */
   prompt: z.string().max(MAX_NAME_PROMPT).optional(),
+  /** Voice agent or workflow app — decides the coding agent's system prompt. */
+  kind: ProjectKindSchema,
 });
 
 export const StudioFileSchema = z.object({

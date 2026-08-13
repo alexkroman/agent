@@ -15,12 +15,35 @@
  */
 
 import { readFileSync } from "node:fs";
-import { checkCapabilities, checkMode, checkUi, EXPECTATIONS } from "./expectations.mjs";
+import {
+  checkCapabilities,
+  checkMode,
+  checkUi,
+  checkWorkflowShape,
+  EXPECTATIONS,
+} from "./expectations.mjs";
 
 /** Reasons this script recomputes; anything else is carried through as-is. */
-const RECOMPUTED = /^missing:|^no client\.tsx|shows no live state|^mode=|^pipeline missing/;
+const RECOMPUTED =
+  /^missing:|^no client\.tsx|shows no live state|^mode=|^pipeline missing|^workflow-shape:/;
+
+/**
+ * A WORKFLOW run, re-graded on the workflow-app shape.
+ *
+ * Split out because none of the checks below apply to one: there is no
+ * expectation, no tool set, no pipeline and no live-state client. `kind` is
+ * absent on every run recorded before the hero had a switcher, and those were
+ * all voice agents — which is the same default the server reads.
+ */
+function regradeWorkflow(run) {
+  const shape = checkWorkflowShape(run.files);
+  const reasons = (run.reasons ?? []).filter((r) => !RECOMPUTED.test(r));
+  if (!shape.ok && shape.note) reasons.push(shape.note);
+  return { ...run, reasons, shippable: reasons.length === 0 };
+}
 
 function regrade(run) {
+  if (run.kind === "workflow") return run.files ? regradeWorkflow(run) : run;
   const expectation = EXPECTATIONS.find((e) => e.label === run.label);
   const source = run.files?.["agent.ts"];
   if (!expectation || source === undefined) return run;

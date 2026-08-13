@@ -187,6 +187,34 @@ describe("project CRUD", () => {
     expect((await createProject(fetch)).status).toBe(409);
   });
 
+  test("create stamps the project's kind, defaulting to a voice agent", async () => {
+    // The kind selects the coding agent's system prompt at every later session
+    // install, so it is stored on the workspace rather than held per request.
+    const created = await authFetch(fetch, "/studio/projects", {
+      body: { name: "flow", kind: "workflow" },
+    });
+    expect(created.status).toBe(201);
+    expect((await created.json()) as { kind?: string }).toMatchObject({ kind: "workflow" });
+    const read = await authFetch(fetch, "/studio/projects/flow", { method: "GET" });
+    expect((await read.json()) as { kind?: string }).toMatchObject({ kind: "workflow" });
+
+    // Omitted (the CLI's first push, evals, anything predating the switcher):
+    // a voice agent, which is what those projects have always been.
+    await createProject(fetch, "voice");
+    const plain = await authFetch(fetch, "/studio/projects/voice", { method: "GET" });
+    expect((await plain.json()) as { kind?: string }).toMatchObject({ kind: "agent" });
+  });
+
+  test("create rejects a kind that is not one of the two", async () => {
+    // A kind the server does not know would otherwise be stamped and then
+    // silently resolved back to `agent` on every read — a request that looks
+    // accepted and does the opposite of what it asked for.
+    const res = await authFetch(fetch, "/studio/projects", {
+      body: { name: "odd", kind: "phone" },
+    });
+    expect(res.status).toBe(400);
+  });
+
   test("create slugifies a human-typed name", async () => {
     // A project name doubles as the deploy slug, but people type "My Agent".
     const res = await authFetch(fetch, "/studio/projects", { body: { name: "My Agent" } });

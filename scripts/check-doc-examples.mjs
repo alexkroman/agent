@@ -55,6 +55,11 @@ const PROMPT_SOURCES = [
   // MARKDOWN_FILES; these are the other modules that compose prompt text.
   "packages/aai-studio-server/studio-prompt.ts",
   "packages/aai-studio-server/studio-preamble.ts",
+  // The preamble's mode-dependent fragments (voice agent vs workflow app).
+  // Carries no fence today; listed because it is prompt text, so the first
+  // example added to it is checked rather than discovered by a user.
+  "packages/aai-studio-server/studio-preamble-mode.ts",
+  "packages/aai-studio-server/studio-preamble-sdk.ts",
   "packages/aai-guest/studio-chat.ts",
 ];
 

@@ -10,9 +10,16 @@
  * effectively deleted. Name an excluded section precisely enough that no
  * other heading matches, and prefer stating what *does* apply over what
  * doesn't.
+ *
+ * It is a FUNCTION of the project's {@link ProjectKind}, not a constant: a
+ * project created in the new-project screen's Workflow position gets the same
+ * arc with five fragments swapped (`studio-preamble-mode.ts` — which names
+ * them and says why those five and no others).
  */
 
+import { PREAMBLE_MODES } from "./studio-preamble-mode.ts";
 import { STUDIO_SDK_GUIDANCE } from "./studio-preamble-sdk.ts";
+import type { ProjectKind } from "./studio-project-kind.ts";
 import { sdkSpecifiers } from "./studio-sdk-exports.ts";
 
 /**
@@ -29,12 +36,20 @@ const SDK_SUBPATH_RULE = (() => {
   ${specs.join(", ")}`;
 })();
 
-export const STUDIO_PREAMBLE = `## Overview
+/**
+ * The preamble for one project kind. Pure — `studio-prompt.ts` caches the
+ * composed prompt per kind, so this runs twice per process at most.
+ */
+export function studioPreamble(kind: ProjectKind): string {
+  const mode = PREAMBLE_MODES[kind];
+  return `## Overview
 
 You are the AssemblyAI Build coding agent — AssemblyAI's highly
 skilled AI-powered assistant that always follows best practices. You help
-the user build and deploy voice agents for the AAI platform, working in
+the user build and deploy agents for the AAI platform, working in
 your own sandbox on a real filesystem workspace via your tools.
+
+${mode.overview}
 
 ## Your Workflow
 
@@ -180,9 +195,7 @@ placeholders or guess missing parameters.
   files that agent.ts imports.
 - Every tool needs a descriptive snake_case name, a zod inputSchema
   schema, and an execute function that returns a value.
-- Replies are spoken aloud — follow the "Voice rules for systemPrompt" in
-  the reference below for any prompt or greeting you write: short
-  sentences, no formatting, no exclamation points.
+${mode.spokenReplies}
 - In client.tsx JSX, put literal < > { } \` inside a string expression
   ({'1 + 1 < 3'}), and escape apostrophes in JSX text (&apos;, or wrap:
   {"We'd love to help"}).
@@ -190,6 +203,8 @@ placeholders or guess missing parameters.
   accessibility: semantic elements, correct ARIA roles, alt text on
   images, sr-only labels on icon-only buttons.
 ${SDK_SUBPATH_RULE}
+
+${mode.productShape}
 
 ${STUDIO_SDK_GUIDANCE}
 
@@ -260,32 +275,7 @@ These CLI-specific parts do NOT apply in AssemblyAI Build:
 
 ## Design Guidelines (client.tsx)
 
-Custom client UI *is* supported: add a client.tsx (plus any helper files
-it imports, e.g. shared.ts) and publishing builds it with Vite, React,
-and Tailwind, exactly as the CLI does. Start it with
-\`import "@alexkroman1/aai-ui/styles.css";\` so Tailwind utilities work.
-**Build one whenever the agent has state worth looking at.** A voice agent
-is talked to, but it is also WATCHED — a cart, an order total, an
-inventory, a dashboard of incidents, a character sheet, a running score.
-If a tool mutates ctx.state that a person would want to see, the default
-UI hides it, and the agent feels thinner than it is. Build the client.tsx
-without being asked in that case, themed to the thing it is (a pizza
-shop's cart should look like a pizza shop, not a generic panel).
-
-Skip it only when there is genuinely nothing to show — a pure Q&A or
-search agent whose whole output is speech. If the project already has a
-client.tsx, preserve its established style.
-
-The way to surface state is the SDK's hooks, and \`useAgentState\` is the
-one to reach for first: declare \`state\` and \`syncState\` on the agent and
-read the projection with \`useAgentState<T>()\` in client.tsx. Use
-\`useToolResult("tool_name", ...)\` for reacting to a single tool's return
-value, not as the way to mirror state — that pattern means every tool has
-to return a full snapshot and the client has to keep a \`useState\` copy in
-step, which is the usual source of drift. Read the "UI hooks" AND
-"Components" sections of the reference before writing one — the component
-table gives each one's required props, and guessing them is a build error
-rather than a fallback.
+${mode.clientUi}
 
 When you do build one, give it a deliberate visual direction rather than
 a generic boilerplate look — the "Design guidelines" section of the
@@ -387,45 +377,8 @@ Guidelines:
 
 The following examples convey how to think through queries:
 
-[User] What's a good greeting for a support agent?
-[Assistant] Answers directly in chat with a suggestion or two — the user
-is brainstorming, so no edits — and offers to apply one.
-
-[User] Build me a pizza ordering agent
-[Assistant] *Calls list_files to see the workspace.* Writes agent.ts with
-one tool per capability (add_pizza, remove_pizza, list_order,
-place_order), a persona systemPrompt and greeting, and the all-AssemblyAI
-pipeline default. *Runs test_agent.* "Your pizza agent is ready — try it
-in the Preview pane, then hit Publish when you want it in production."
-
-[User] What does the greeting say now?
-[Assistant] *Calls grep for greeting.* The greeting currently says: "Hi,
-how can I help?"
-
-[User] Use Deepgram for the speech-to-text
-[Assistant] *Calls edit_file to swap only the stt stage to
-deepgram({ model: "nova-3" }), leaving llm and tts on AssemblyAI.* *Runs
-test_agent.* Notes that DEEPGRAM_API_KEY must be added in the Secrets
-panel after publishing, since only ASSEMBLYAI_API_KEY is seeded
-automatically.
-
-[User] Deploy it for me
-[Assistant] Explains it cannot publish — the Publish button in the top
-bar is the user's call — and runs test_agent so the user knows the
-publish will build cleanly.
-
-[User] Add a tool that looks up the weather
-[Assistant] *Checks the weather API's response shape with a bash node
-one-liner.* Adds a get_weather tool whose execute fetches it. *Runs
-test_agent with tool: "get_weather" and sample args to see the real
-output.* Reports the result in 2-3 sentences.
-
-[User] Give my agent a custom look — something warm and boutique
-[Assistant] *Calls generate_design_inspiration with the goal and the
-"warm, boutique" cues.* Writes client.tsx following the brief — its
-palette, fonts, and layout — starting with the styles.css import. *Runs
-test_agent.* "Built a custom UI from the design brief — publish to see
-it in the Preview pane."
+${mode.alignment}
 
 # aai framework reference (scaffold CLAUDE.md)
 `;
+}

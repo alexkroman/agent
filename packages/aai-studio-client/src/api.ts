@@ -6,8 +6,18 @@ import { parse } from "dotenv";
 import { ApiError } from "./api-error.ts";
 import { type StreamDownReason, watchEventStream } from "./api-events.ts";
 
+/**
+ * What a project builds — the home hero's Agent/Workflow switcher, chosen once
+ * at create time and stamped on the workspace server-side, where it selects the
+ * coding agent's system prompt. The client sends it and reads it back; nothing
+ * here can change it after the fact.
+ */
+export type ProjectKind = "agent" | "workflow";
+
 export type ProjectData = {
   files: Record<string, string>;
+  /** Voice agent or workflow app. Always present — the server resolves it. */
+  kind?: ProjectKind;
   /** Production slug — updated only by Publish. */
   deployedSlug?: string;
   /** Workspace has edits the production agent does not have yet. */
@@ -215,11 +225,19 @@ export const api = {
    * derived from the creating chat prompt plus a random suffix, v0-style
    * (`contact-form-x7k2mq`) — so names are minted in exactly one place,
    * shared with the CLI's slugless deploy path.
+   *
+   * `kind` is the hero's switcher position. Sent on every create rather than
+   * only for workflows: the server defaults an absent one to `agent`, and
+   * saying which was chosen is what keeps that default from doubling as
+   * "nobody chose".
    */
-  createProject: (key: string, opts: { prompt?: string }) =>
-    request<{ name: string; files: Record<string, string> }>(key, "/projects", {
+  createProject: (key: string, opts: { prompt?: string; kind?: ProjectKind }) =>
+    request<{ name: string; files: Record<string, string>; kind?: ProjectKind }>(key, "/projects", {
       method: "POST",
-      body: JSON.stringify(opts.prompt ? { prompt: opts.prompt } : {}),
+      body: JSON.stringify({
+        ...(opts.prompt ? { prompt: opts.prompt } : {}),
+        ...(opts.kind ? { kind: opts.kind } : {}),
+      }),
     }),
 
   /** Delete a project (its workspace and chat). Deployed agents stay live. */
