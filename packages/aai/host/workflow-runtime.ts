@@ -29,6 +29,7 @@ import type { AgentDef } from "../sdk/types.ts";
 import type { WorkflowClient } from "../sdk/workflow.ts";
 import type { Logger } from "./runtime-config.ts";
 import { createWorkflowClient, resolveKeyStore } from "./workflow-client.ts";
+import { createRunNotifier, type RunNotifier } from "./workflow-notify.ts";
 import { wdkAdapter } from "./workflow-wdk.ts";
 
 /**
@@ -66,4 +67,27 @@ export function buildWorkflowClient(
     wdk: wdkAdapter(),
     logger,
   });
+}
+
+/**
+ * Build the run notifier for one runtime, or `undefined` when there is no client
+ * to watch runs with.
+ *
+ * Beside `buildWorkflowClient` because it is the same decision one step on —
+ * "does this runtime have workflows" — and because `runtime.ts` should read as
+ * one line per capability rather than as the wiring for each.
+ *
+ * The announcer is a CALLBACK rather than the session map itself: this module
+ * has no business knowing how a session is found, and the map is the one thing
+ * only `createRuntime`'s scope has.
+ *
+ * @internal
+ */
+export function buildRunNotifier(
+  workflows: WorkflowClient | undefined,
+  announce: (sessionId: string, instruction: string) => boolean,
+  logger: Logger,
+): RunNotifier | undefined {
+  if (!workflows) return undefined;
+  return createRunNotifier({ client: workflows, announcer: { announce }, logger });
 }

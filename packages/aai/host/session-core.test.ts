@@ -139,6 +139,36 @@ describe("createSessionCore — lifecycle", () => {
   });
 });
 
+describe("createSessionCore — announce", () => {
+  test("hands the instruction to the transport's injected turn", () => {
+    const { core, transport } = makeCore();
+    const injectTurn = vi.fn();
+    (transport as { injectTurn?: (text: string) => void }).injectTurn = injectTurn;
+
+    expect(core.announce("The research you started has finished.")).toBe(true);
+    expect(injectTurn).toHaveBeenCalledWith("The research you started has finished.");
+  });
+
+  test("reports FALSE for a transport with no such verb", () => {
+    // S2S: the service dispatches replies from its own session config and
+    // there is nothing to inject. The caller is a run completing in the
+    // background, so this has to be an answer rather than a throw.
+    const { core, transport } = makeCore();
+    expect(transport.injectTurn).toBeUndefined();
+    expect(core.announce("finished")).toBe(false);
+  });
+
+  test("reports false once the session has stopped", async () => {
+    const { core, transport } = makeCore();
+    const injectTurn = vi.fn();
+    (transport as { injectTurn?: (text: string) => void }).injectTurn = injectTurn;
+    await core.stop();
+
+    expect(core.announce("finished")).toBe(false);
+    expect(injectTurn).not.toHaveBeenCalled();
+  });
+});
+
 describe("createSessionCore — client inbound", () => {
   test("onAudio forwards to transport", async () => {
     const { core, transport } = makeCore();

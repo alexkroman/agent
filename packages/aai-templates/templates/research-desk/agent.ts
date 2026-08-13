@@ -13,6 +13,19 @@
  * the line. So `request_research` starts a run and returns in the same turn, the
  * run outlives the call, and a LATER call reads the result back.
  *
+ * ## And it SAYS SO when the work lands
+ *
+ * `start(…, { notify })` is what closes the loop that used to be open: the agent
+ * promised an update, the run finished, and nothing made it speak — the caller
+ * had to think to ask again. With it, a finished run takes an unprompted,
+ * interruptible turn on this session, built from the run's own output.
+ *
+ * Two limits worth knowing, both by construction. It reaches the session that
+ * STARTED the run, only while that session is alive — an announcement into a
+ * call that has ended is nobody's — and it needs a transport that can take an
+ * unprompted turn, which pipeline mode can and S2S cannot. That is why `key`
+ * stays: the next call still finds the run.
+ *
  * ## The correlation key is what makes the second call possible
  *
  * `start()` hands back a `runId`, and the obvious place for a tool to keep it is
@@ -104,7 +117,8 @@ export default agent({
   systemPrompt: [
     "You take research requests over the phone and read back results.",
     "When someone asks you to research something, call request_research and tell them",
-    "you have started it — do NOT wait for it or promise a time.",
+    "you have started it — do NOT wait for it or promise a time. You WILL be told",
+    "when it lands, so it is safe to say you will let them know.",
     "When someone asks about earlier work, call research_status.",
     "If they ask what is happening right now, call research_progress.",
     "If they say they need it immediately, call file_it_now.",
@@ -124,7 +138,22 @@ export default agent({
         const runId = await ctx.workflows.start(
           research,
           { topic, requestedBy: ctx.sessionId },
-          { key: ctx.sessionId },
+          {
+            key: ctx.sessionId,
+            // What makes "I'll let you know" true. The run finishes minutes
+            // later, with no turn to land in — so the SDK gives the agent one:
+            // when it settles, this session takes an unprompted turn built from
+            // the run's own output, and the caller hears the answer without
+            // having to think to ask again.
+            //
+            // The instruction is a sentence for the MODEL, not a line to read:
+            // it is the only thing that knows what this caller has already been
+            // told. Omit it (`notify: true`) for the SDK's default.
+            //
+            // `key` is still the durable handle: an announcement only reaches
+            // THIS call, and a run outlives it.
+            notify: "Tell them the research came back, then read the summary in one sentence.",
+          },
         );
         return { started: true, runId, topic };
       },

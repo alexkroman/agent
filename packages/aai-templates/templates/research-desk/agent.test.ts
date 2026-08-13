@@ -90,6 +90,14 @@ describe("the agent declares its workflow", () => {
   });
 });
 
+/** The options `request_research` starts its run with. */
+function workflowsStartOptions(): unknown {
+  const workflows = stubWorkflows();
+  const ctx = createToolContext({ workflows });
+  void agentDef.tools.request_research?.execute({ topic: "otters" }, ctx);
+  return vi.mocked(workflows.start).mock.calls[0]?.[2];
+}
+
 describe("request_research", () => {
   test("starts a run keyed by the session, so a later turn can find it", async () => {
     const workflows = stubWorkflows();
@@ -99,9 +107,21 @@ describe("request_research", () => {
     expect(workflows.start).toHaveBeenCalledWith(
       research,
       { topic: "otters", requestedBy: ctx.sessionId },
-      { key: ctx.sessionId },
+      // `key` is the DURABLE handle — a later call finds the run by it — and
+      // `notify` is the live one: this session is told when the run lands, which
+      // is what makes the agent's "I'll let you know" true.
+      { key: ctx.sessionId, notify: expect.stringContaining("read the summary") },
     );
     expect(result).toMatchObject({ started: true, runId: "wrun_stub", topic: "otters" });
+  });
+
+  test("asks to be TOLD when the run lands, rather than waiting to be asked", () => {
+    // The gap this closes: the agent promised an update, the run finished, and
+    // nothing made it speak — so the caller had to think to ask again. A voice
+    // agent that starts durable work and never announces it is the shape to
+    // avoid, and one option is the whole fix.
+    const notify = (workflowsStartOptions() as { notify?: unknown }).notify;
+    expect(typeof notify).toBe("string");
   });
 
   test("passes the definition rather than its name", async () => {

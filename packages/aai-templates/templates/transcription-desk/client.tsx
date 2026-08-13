@@ -19,10 +19,11 @@
  *
  * There is no field markup here at all. `<WorkflowFields>` renders a control per
  * SCALAR property of the workflow's own input schema, which it reads from
- * `GET /workflows` — so the file picker and the language picker exist because
- * `agent.ts` declares `recording` and `languageCode`, `.describe()` is what
- * labels them, the enum is what makes the second a `<SelectField>`, and adding a
- * third scalar there adds a third control here with no edit.
+ * `GET /workflows` — so the file picker exists because `agent.ts` declares
+ * `recording`, `.describe()` is what labels it, and adding a second scalar there
+ * adds a second control here with no edit. (A language picker used to sit beside
+ * it, and went with the schema field: the model detects the language, so the
+ * control asked a person to answer a question the service answers better.)
  *
  * The FILE half is the same mechanism one step further: `recording` is a string
  * in the schema (it carries an upload id) and appears in the workflow's
@@ -42,16 +43,16 @@ import "@alexkroman1/aai-ui/styles.css";
 import type { WorkflowOutputOf } from "@alexkroman1/aai";
 import {
   Form,
+  isTerminal,
   page,
   SubmitButton,
-  TextField,
   useWorkflowProgress,
-  useWorkflowRun,
+  useWorkflowRuns,
   useWorkflowSubmit,
   WorkflowFields,
   type WorkflowRun,
 } from "@alexkroman1/aai-ui";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { transcribe } from "./agent.ts";
 
 /**
@@ -66,8 +67,26 @@ type Transcript = WorkflowOutputOf<typeof transcribe>;
 /** The workflow this page drives. Matches the key in `workflowApp({ workflows })`. */
 const WORKFLOW = "transcribe";
 
+/** Most past runs the history list shows. */
+const HISTORY_LIMIT = 10;
+
 function TranscriptionDesk() {
   const { submit, run, pending, error, reset } = useWorkflowSubmit<Transcript>(WORKFLOW);
+  const history = useWorkflowRuns<Transcript>(WORKFLOW, { limit: HISTORY_LIMIT });
+  // Which past run the reader is looking at, if any. Its own state rather than
+  // a route, because a workflow app is one page and a run id is not a place.
+  const [openId, setOpenId] = useState<string | undefined>(undefined);
+
+  // The list is read once and re-read on demand (see `useWorkflowRuns`), and
+  // this is the "on demand": the moment the run this page started settles, the
+  // history it is missing from is stale. `run.status` rather than `run` — the
+  // watch re-reads on an interval, and depending on the object would refetch
+  // the whole list every poll.
+  const settled = run && isTerminal(run) ? run.runId : undefined;
+  const refresh = history.refresh;
+  useEffect(() => {
+    if (settled) refresh();
+  }, [settled, refresh]);
 
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-8 p-8">
@@ -88,34 +107,73 @@ function TranscriptionDesk() {
 
       {run && <RunPanel run={run} onClear={reset} />}
 
-      <RunLookup />
+      <History
+        runs={history.runs}
+        error={history.error}
+        openId={openId}
+        onOpen={(runId) => setOpenId((current) => (current === runId ? undefined : runId))}
+      />
     </main>
   );
 }
 
 /**
- * Look a run up by the id the API returned.
+ * Every recent run, newest first, with its transcript one click away.
  *
- * The reason this is possible at all: a run id is the whole handle. There is no
- * session behind it, no cookie, and no correlation key — the API hands one back
- * and `GET /workflows/runs/:id` answers for it from any tab, any machine, days
- * later. That is what a durable workflow with an HTTP API buys, and it is worth
- * one text field to show.
+ * This is what a durable workflow with an HTTP API is FOR, and the page used to
+ * squander it: a run id is the whole handle — no session, no cookie — so
+ * `GET /workflows/runs` can answer "what has this desk transcribed" for any tab,
+ * any machine, days later. What stood here instead was a text box asking the
+ * reader to paste an id they would have had to write down, which is the same
+ * information behind a worse door.
  */
-function RunLookup() {
-  const [runId, setRunId] = useState<string | undefined>(undefined);
-  const { run, error } = useWorkflowRun<Transcript>(runId);
-
+function History({
+  runs,
+  error,
+  openId,
+  onOpen,
+}: {
+  runs: WorkflowRun<Transcript>[];
+  error: string | undefined;
+  openId: string | undefined;
+  onOpen: (runId: string) => void;
+}) {
   return (
-    <section className="flex flex-col gap-4 border-t pt-6">
-      <h2 className="text-sm font-medium uppercase tracking-[1.2px]">Check a previous run</h2>
-      <Form onSubmit={(values) => setRunId(String(values.runId))} error={error}>
-        <TextField name="runId" label="Run id" required placeholder="wrun_…" />
-        <SubmitButton>Look up</SubmitButton>
-      </Form>
-      {run && <RunPanel run={run} />}
+    <section className="flex flex-col gap-3 border-t pt-6">
+      <h2 className="text-sm font-medium uppercase tracking-[1.2px]">Previous runs</h2>
+      {error !== undefined && <p className="text-sm text-red-600">{error}</p>}
+      {runs.length === 0 && error === undefined && (
+        <p className="text-sm opacity-60">Nothing transcribed yet.</p>
+      )}
+      <ul className="flex flex-col">
+        {runs.map((entry) => (
+          <li key={entry.runId} className="border-b last:border-b-0">
+            <button
+              type="button"
+              onClick={() => onOpen(entry.runId)}
+              className="flex w-full items-baseline justify-between gap-4 py-2 text-left text-sm"
+            >
+              <span className="truncate">{title(entry)}</span>
+              <span className="shrink-0 text-xs opacity-60">{STATUS_LINE[entry.status]}</span>
+            </button>
+            {openId === entry.runId && <RunPanel run={entry} />}
+          </li>
+        ))}
+      </ul>
     </section>
   );
+}
+
+/**
+ * One line naming a past run.
+ *
+ * The FILE where there is one — `mergeTranscript` puts the recording's own name
+ * in the output for exactly this — falling back to the id, which is all a run
+ * that failed before it read the upload ever had.
+ */
+function title(run: WorkflowRun<Transcript>): string {
+  if (run.status === "completed") return run.output.source;
+  return run.runId;
 }
 
 /**

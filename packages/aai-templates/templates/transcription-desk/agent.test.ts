@@ -130,12 +130,11 @@ describe("the input schema", () => {
   test("accepts what the page's form collects, with no mapping in between", async () => {
     const result = await transcribe.input?.["~standard"].validate({
       recording: "upl_9f3c1d",
-      languageCode: "en",
     });
     expect(result?.issues).toBeUndefined();
   });
 
-  test("defaults the language, so the picker's absence is not an error", async () => {
+  test("takes the recording alone — there is nothing else to ask for", async () => {
     const result = await transcribe.input?.["~standard"].validate({
       recording: "upl_9f3c1d",
     });
@@ -143,13 +142,13 @@ describe("the input schema", () => {
     // this is what makes `value` reachable without a cast.
     expect(result?.issues).toBeUndefined();
     if (result?.issues) expect.fail("expected the submission to validate");
-    expect(result?.value).toMatchObject({ languageCode: "en" });
+    expect(result?.value).toMatchObject({ recording: "upl_9f3c1d" });
   });
 
   test("rejects a submission with no recording at the call site rather than in a step", async () => {
     // A 400 on the POST, with the run never created, instead of a failed run
     // discovered a minute later.
-    const result = await transcribe.input?.["~standard"].validate({ languageCode: "en" });
+    const result = await transcribe.input?.["~standard"].validate({});
     expect(result?.issues).toBeDefined();
   });
 
@@ -160,15 +159,7 @@ describe("the input schema", () => {
     expect(transcribe.uploads).toEqual(["recording"]);
   });
 
-  test("rejects a language the endpoint does not know", async () => {
-    const result = await transcribe.input?.["~standard"].validate({
-      recording: "upl_9f3c1d",
-      languageCode: "kl",
-    });
-    expect(result?.issues).toBeDefined();
-  });
-
-  test("describes both fields, which is what labels them on the page", async () => {
+  test("describes the recording, which is what labels it on the page", async () => {
     // `<WorkflowFields>` renders a control per scalar property and uses each
     // `.describe()` as its hint, so a missing description is a bare field.
     // Narrowed rather than cast: `input` is a Standard Schema, and only a
@@ -176,7 +167,6 @@ describe("the input schema", () => {
     const schema = transcribe.input;
     if (!(schema instanceof z.ZodObject)) expect.fail("expected a zod object schema");
     expect(schema.shape.recording?.description).toBeTruthy();
-    expect(schema.shape.languageCode?.description).toBeTruthy();
   });
 });
 
@@ -432,7 +422,7 @@ describe("transcribeSegment", () => {
 
   test("sends the segment as a WAV, with the key and the model header", async () => {
     const calls = stubProvider();
-    const result = await transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT, "en");
+    const result = await transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT);
 
     expect(result).toEqual({ index: 0, text: "hello there" });
     const sync = calls.find((call) => call.url.startsWith(SYNC_ORIGIN));
@@ -444,17 +434,10 @@ describe("transcribeSegment", () => {
     expect(sync?.init.body).toBeInstanceOf(FormData);
   });
 
-  test("carries the language the run asked for", async () => {
-    const calls = stubProvider();
-    await transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT, "de");
-    const body = calls.find((call) => call.url.startsWith(SYNC_ORIGIN))?.init.body as FormData;
-    expect(await (body.get("config") as Blob).text()).toContain('"de"');
-  });
-
   test("fails FATALLY with no API key rather than retrying five times", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "");
     stubProvider();
-    await expect(transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT, "en")).rejects.toThrow(
+    await expect(transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT)).rejects.toThrow(
       /ASSEMBLYAI_API_KEY/,
     );
   });
@@ -464,7 +447,7 @@ describe("transcribeSegment", () => {
     // the 429s and re-collecting them `SEGMENT_CONCURRENCY` at a time on a
     // backoff the server did not choose.
     stubProvider({ status: 429, body: { detail: "slow down" }, headers: { "Retry-After": "30" } });
-    const failure = await transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT, "en").catch(
+    const failure = await transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT).catch(
       (err: unknown) => err,
     );
     expect(failure).toBeInstanceOf(RetryableError);
@@ -476,14 +459,14 @@ describe("transcribeSegment", () => {
 
   test("retries a rate limit that named no delay", async () => {
     stubProvider({ status: 429, body: { detail: "slow down" } });
-    await expect(transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT, "en")).rejects.toBeInstanceOf(
+    await expect(transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT)).rejects.toBeInstanceOf(
       RetryableError,
     );
   });
 
   test("fails FATALLY on a rejected request, naming what the endpoint said", async () => {
     stubProvider({ status: 400, body: { error_code: "audio_too_short", message: "too short" } });
-    await expect(transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT, "en")).rejects.toThrow(
+    await expect(transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT)).rejects.toThrow(
       /HTTP 400 — too short/,
     );
   });

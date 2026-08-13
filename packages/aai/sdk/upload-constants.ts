@@ -8,21 +8,33 @@
  */
 
 /**
- * Largest file `POST /workflows/uploads` accepts.
+ * Largest file `POST /workflows/uploads` accepts, unless the agent says
+ * otherwise (`AAI_MAX_UPLOAD_BYTES` in its env).
  *
- * Sized for the case uploads exist for — a recording somebody wants
- * transcribed, where a two-hour 16 kHz mono WAV is about 230 MB — and not one
- * byte more generous than that, because the bytes land in the app's own
- * database (or its dev directory) and stay there. It bounds nothing about
- * MEMORY: the body is chunked as it arrives, so an oversized upload is refused
- * mid-stream rather than buffered and then measured.
+ * **2 GiB, and the first number here was wrong.** 256 MB was sized off a
+ * two-hour 16 kHz MONO WAV (~230 MB), which describes a recording somebody
+ * made deliberately for transcription and nothing else people actually have: a
+ * stereo 44.1 kHz WAV of the same call is ~1.2 GB, and an hour of 24-bit audio
+ * out of a recorder is over 600 MB. A cap that refuses the ordinary file is a
+ * cap that makes the feature look broken, and `upload exceeds 268435456 bytes`
+ * gives a person no way to know it was a POLICY rather than a limit.
+ *
+ * It bounds nothing about MEMORY — the body is chunked as it arrives, so an
+ * oversized upload is refused mid-stream rather than buffered and then measured
+ * — and nothing about the wire, which streams. What it bounds is what the app's
+ * own database (or its dev directory) is asked to hold, which is why it stays a
+ * number rather than becoming unlimited, and why an operator who knows their
+ * storage can raise or lower it.
  *
  * Distinct from `MAX_WORKFLOW_INPUT_BYTES` (64 KB) and enormously larger, which
  * is the whole point of the split: a run's INPUT is replayed on every resume and
  * must stay tiny, while an upload is read once per step execution by whichever
  * step asks for it.
  */
-export const MAX_WORKFLOW_UPLOAD_BYTES = 256 * 1024 * 1024;
+export const MAX_WORKFLOW_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
+
+/** Env key an agent raises or lowers {@link MAX_WORKFLOW_UPLOAD_BYTES} with. */
+export const MAX_UPLOAD_BYTES_ENV = "AAI_MAX_UPLOAD_BYTES";
 
 /**
  * How much of an upload one stored row (or one write) holds.

@@ -196,7 +196,14 @@ describe("executeBuild", () => {
 });
 
 describe("evalWorkerBundle", () => {
-  test("evaluates a worker bundle without touching the filesystem", async () => {
+  // An explicit budget, like the two bundling specs above: this writes a temp
+  // module and imports it, which is fast alone and not when the rest of this
+  // file's Vite builds are running beside it. At the default 5s it was the one
+  // test in the repo that failed under load and passed on a rerun — a flake
+  // that reads as a broken change to whatever happens to be in flight.
+  test("evaluates a worker bundle without touching the filesystem", {
+    timeout: 30_000,
+  }, async () => {
     const agent = await evalWorkerBundle(
       `export default { name: "evaled", systemPrompt: "p", greeting: "g", tools: {} };`,
     );

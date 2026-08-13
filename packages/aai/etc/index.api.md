@@ -762,6 +762,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 export type StartOptions = {
     key?: string;
+    notify?: boolean | string;
 };
 
 // @public

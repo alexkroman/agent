@@ -390,6 +390,7 @@ export { DEFAULT_MAX_STEPS, DEFAULT_TOOL_CHOICE } from "./tool-loop-constants.ts
 // Workflow-upload budgets, split off for the same file-length reason and
 // re-exported for the same import-path one.
 export {
+  MAX_UPLOAD_BYTES_ENV,
   MAX_WORKFLOW_UPLOAD_BYTES,
   UPLOAD_CHUNK_BYTES,
   UPLOAD_ID_PREFIX,

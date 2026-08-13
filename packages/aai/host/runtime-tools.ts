@@ -20,12 +20,13 @@ import type { OwnedMap } from "../sdk/owned-map.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import type { LlmProvider } from "../sdk/providers.ts";
 import type { AgentDef, ToolDef } from "../sdk/types.ts";
-import type { WorkflowClient } from "../sdk/workflow.ts";
+import type { StartOptions, WorkflowClient } from "../sdk/workflow.ts";
 import { createStateSync } from "./_state-sync.ts";
 import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "./builtin-tools.ts";
 import { createGenerateFn, type HostGenerateFn } from "./generate.ts";
 import type { RuntimeOptions } from "./runtime-types.ts";
 import { type ExecuteTool, executeToolCall } from "./tool-executor.ts";
+import type { RunNotifier } from "./workflow-notify.ts";
 
 /**
  * Merge the agent's builtins with the tools a mode dispatches itself — the
@@ -96,11 +97,55 @@ type ToolSetupDeps = {
    * "does this agent have workflows", not "is the option set".
    */
   workflows: WorkflowClient | undefined;
+  /**
+   * Watches runs a tool asked to be told about — `start(…, { notify })`.
+   *
+   * Absent for an agent with no workflows, and absent is what makes `notify` a
+   * silent no-op rather than a failure: the option describes what should happen
+   * WHEN a run lands, and an agent that cannot start one never lands any.
+   */
+  notifier?: RunNotifier | undefined;
   logger: NonNullable<RuntimeOptions["logger"]>;
   sinkMap: OwnedMap<string, ClientSink>;
   /** Per-session tool state (self-hosted mode only); cleaned up on session end. */
   stateMap: Map<string, Record<string, unknown>>;
 };
+
+/**
+ * `ctx.workflows` for ONE session: the runtime's client, with `notify` wired.
+ *
+ * The client itself is per-RUNTIME and rightly so — a run outlives the session
+ * that started it, so nothing about reading one is session-scoped. What IS
+ * session-scoped is who gets told: `notify` means "tell the caller on THIS
+ * call", so the session id has to be captured where it is known, which is here
+ * and nowhere deeper.
+ *
+ * Returns the client UNCHANGED when there is no notifier or no session id, so
+ * the wrapper costs nothing for the agents that never use it.
+ */
+function withNotify(
+  workflows: WorkflowClient | undefined,
+  notifier: RunNotifier | undefined,
+  sessionId: string | undefined,
+): WorkflowClient | undefined {
+  if (!(workflows && notifier && sessionId)) return workflows;
+  // The overload is preserved by delegating with the arguments as given —
+  // `start` takes a definition or a name, and the watcher needs neither: the
+  // run it polls reports its own declared name.
+  const start = (async (workflow: never, input: never, options?: StartOptions): Promise<string> => {
+    const runId = await workflows.start(workflow, input, options);
+    if (options?.notify !== undefined && options.notify !== false) {
+      notifier.watch({
+        sessionId,
+        runId,
+        // `true` takes the default instruction; a string replaces it.
+        ...(typeof options.notify === "string" ? { instruction: options.notify } : {}),
+      });
+    }
+    return runId;
+  }) as WorkflowClient["start"];
+  return { ...workflows, start };
+}
 
 /**
  * Build the ctx.generate implementation for this runtime: the agent's
@@ -115,7 +160,7 @@ function setupGenerate(deps: ToolSetupDeps): HostGenerateFn {
 
 /** Sandbox mode — custom tools are RPC-backed; builtins run host-side. */
 function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): ToolSetup {
-  const { agent, opts, env, resolvedDb, workflows, logger } = deps;
+  const { agent, opts, env, resolvedDb, workflows, notifier, logger } = deps;
   const builtinFetchOpt = opts.fetch ? { fetch: opts.fetch } : undefined;
   const generate = setupGenerate(deps);
   const resolved = mergeBuiltinSurface(agent, builtinFetchOpt, {
@@ -139,7 +184,7 @@ function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): To
         env: frozenEnv,
         sessionId: sessionId ?? "",
         db: resolvedDb,
-        workflows,
+        workflows: withNotify(workflows, notifier, sessionId),
         messages,
         generate,
         logger,
@@ -161,7 +206,7 @@ function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): To
  * and schemas rather than emitting a duplicate schema name to the LLM.
  */
 function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
-  const { agent, opts, env, resolvedDb, workflows, logger, sinkMap, stateMap } = deps;
+  const { agent, opts, env, resolvedDb, workflows, notifier, logger, sinkMap, stateMap } = deps;
   const builtinOpts = {
     ...(opts.fetch ? { fetch: opts.fetch } : {}),
     // The guest harness runs this path INSIDE the sandbox and provides the
@@ -280,7 +325,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
         // db traffic is a TCP socket, not fetch, so the egress guard never
         // sees it — no exemption wrapper needed.
         db: resolvedDb,
-        workflows,
+        workflows: withNotify(workflows, notifier, sid),
         messages,
         generate,
         logger,

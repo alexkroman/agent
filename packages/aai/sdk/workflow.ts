@@ -70,7 +70,22 @@
  */
 
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
+import type {
+  FindOptions,
+  StartOptions,
+  StreamOptions,
+  WakeUpOptions,
+} from "./workflow-options.ts";
 import type { WorkflowRunSnapshot } from "./workflow-run.ts";
+
+// The per-call option bags, re-exported so this stays the one module an author
+// imports the workflow surface from.
+export type {
+  FindOptions,
+  StartOptions,
+  StreamOptions,
+  WakeUpOptions,
+} from "./workflow-options.ts";
 
 /**
  * A run's observable state — the status union, the terminal set, the snapshot a
@@ -238,66 +253,6 @@ export type WorkflowSummary = {
    * has to upload first.
    */
   uploads?: readonly string[];
-};
-
-/** Per-run options for {@link WorkflowClient.start}. */
-export type StartOptions = {
-  /**
-   * A caller's own handle on this run, for looking it up again later with
-   * {@link WorkflowClient.find}.
-   *
-   * **This is the one piece of durable-workflow machinery the Workflow DevKit
-   * has no equivalent for, and it is kept because a VOICE agent is broken
-   * without it.** `start` resolves with a `runId`; the natural place a tool puts
-   * it is `ctx.state`, and per-session state is swept `SESSION_RESUME_GRACE_MS`
-   * after the caller hangs up. So the run outlives the session and the only
-   * handle to it does not. Passing `key: ctx.sessionId` (or a phone number, an
-   * account id, an upload id) means the next turn — or the next CALL — can find
-   * the run again without the agent maintaining its own index in `ctx.db`.
-   *
-   * Not unique: starting twice with one key is legal and `find` returns the
-   * newest first. Deduplicating is a decision only the caller can make.
-   */
-  key?: string;
-};
-
-/** Options for {@link WorkflowClient.find}. */
-export type FindOptions = {
-  /**
-   * Most runs to return, newest first. Defaults to
-   * `DEFAULT_WORKFLOW_FIND_LIMIT` and is clamped to
-   * `MAX_WORKFLOW_FIND_LIMIT`.
-   */
-  limit?: number;
-};
-
-/** Options for {@link WorkflowClient.wakeUp}. */
-export type WakeUpOptions = {
-  /**
-   * Interrupt only the `sleep()` calls carrying these correlation ids. Omitted,
-   * every pending sleep in the run is interrupted, which is what a "do it now"
-   * button means.
-   */
-  correlationIds?: string[];
-};
-
-/** Options for {@link WorkflowClient.stream}. */
-export type StreamOptions = {
-  /**
-   * Which of the run's streams to read. A run may keep several — `getWritable`
-   * takes the same option — so a workflow can separate, say, progress from log
-   * output. Omitted, this is the run's default stream.
-   */
-  namespace?: string;
-  /**
-   * Chunk index to start from, 0-based. Negative counts back from the end
-   * (`-3` reads the last three), which is what a reconnecting reader wants when
-   * it does not know how far it got.
-   *
-   * Defaults to 0 — the whole stream from the beginning, since chunks are
-   * retained with the run rather than being live-only.
-   */
-  startIndex?: number;
 };
 
 /**

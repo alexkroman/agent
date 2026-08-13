@@ -480,6 +480,14 @@ read slices INSIDE the database, so a 64 KB header probe moves 64 KB. The
 metadata row is written LAST, so an interrupted upload reads as "no such
 upload" rather than as a file that is silently short.
 
+**The cap is 2 GiB, and `AAI_MAX_UPLOAD_BYTES` moves it.** The first number was
+256 MB, sized off a two-hour 16 kHz MONO recording — which describes a file
+made deliberately for transcription and not the one people have: the same call
+in stereo at 44.1 kHz is ~1.2 GB. A cap that refuses the ordinary file makes the
+feature look broken, and `upload exceeds 268435456 bytes` gives nobody a way to
+tell a policy from a limit. It bounds storage, not memory or the wire — both
+stream.
+
 **A form takes a file with no upload code in it.** Three pieces, and each is
 the SDK's:
 
@@ -497,10 +505,31 @@ the SDK's:
   `<FileField upload>` contributes the `File` UNREAD for the same reason
   (describing a 200 MB recording would mean holding it in memory).
 
+A file input is also the one control whose BUTTON the browser draws, and left to
+the user agent it inherits the field's colours — which can come out as invisible
+text on the surface it sits on. `<FileField>` therefore styles
+`::file-selector-button` explicitly in the theme's colours, passed to the
+pseudo-element as CSS custom properties (a Tailwind class cannot read a
+JavaScript theme object, and a React `style` prop cannot reach a pseudo-element).
+
 On the platform the pair is proxied like the rest of `/:slug/workflows/*` —
 which took two header-allowlist entries, `Range` in and `Content-Range` /
 `Accept-Ranges` back, without which a caller asking for 64 KB of a 200 MB
 recording is answered with the whole thing, correctly and uselessly.
+
+### The run a page just started, and the ones before it
+
+`useWorkflowRun` watches ONE run by id, which is right for the run a form just
+started and useless for everything before it — a reload drops the id.
+`useWorkflowRuns(workflow, { limit, key })` is the other half, over
+`GET /workflows/runs`: history a page can render.
+
+It reads once and hands back `refresh` rather than polling. The run a page cares
+about right now is already being watched; a second loop over the whole history
+would broker N requests a minute to re-learn what the first one knows. A page
+calls `refresh` when its own run settles, which is exactly when the list is
+stale. `transcription-desk` is the worked example, and it replaced a text box
+asking the reader to paste a run id they would have had to write down.
 
 ### `report()` writes to the page AND the server log
 

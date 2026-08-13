@@ -119,7 +119,7 @@ export type SegmentTranscript = {
  * The input is what `POST /workflows/runs` carries — see `agent.ts` for the
  * schema it is validated against before a run exists.
  */
-export async function transcribeFlow(input: { recording: string; languageCode: string }) {
+export async function transcribeFlow(input: { recording: string }) {
   "use workflow";
 
   const plan = await splitRecording(input.recording);
@@ -130,7 +130,7 @@ export async function transcribeFlow(input: { recording: string; languageCode: s
   // what is missing, where catching here to salvage a partial transcript would
   // return a recording with a silent hole in it and report success.
   const parts = await mapInBatches(plan.segments, SEGMENT_CONCURRENCY, (segment) =>
-    transcribeSegment(input.recording, plan.format, segment, input.languageCode),
+    transcribeSegment(input.recording, plan.format, segment),
   );
 
   // Whatever this returns is what a caller reads as `output` on a completed run
@@ -176,7 +176,6 @@ export async function transcribeSegment(
   uploadId: string,
   format: WavFormat,
   segment: Segment,
-  languageCode: string,
 ): Promise<SegmentTranscript> {
   "use step";
 
@@ -196,15 +195,16 @@ export async function transcribeSegment(
   // get wrong.
   const audio = await readUpload(uploadId, { start: segment.start, end: segment.end });
 
+  // The audio and nothing else. A `config` part carrying `language_code` used
+  // to ride along, and it is gone with the picker that fed it: the model detects
+  // the language, so the field was a question asked of a person that the service
+  // answers better — and getting it wrong is a whole transcript in the wrong
+  // language. Add one back only for a desk that really knows.
   const form = new FormData();
   form.append(
     "audio",
     new Blob([wavWithHeader(format, audio.bytes)], { type: "audio/wav" }),
     `segment-${segment.index}.wav`,
-  );
-  form.append(
-    "config",
-    new Blob([JSON.stringify({ language_code: languageCode })], { type: "application/json" }),
   );
 
   const response = await fetch(SYNC_ENDPOINT, {

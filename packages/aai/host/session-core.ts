@@ -9,9 +9,9 @@ import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { ClientEvent, ClientSink, SessionErrorCode } from "../sdk/protocol.ts";
 import type { Message } from "../sdk/types.ts";
 import { capToolResult, errorMessage } from "../sdk/utils.ts";
-import { createCoalescingTimer } from "./_timer.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
+import { createIdleWatchdog } from "./session-idle.ts";
 import type { Transport } from "./transports/types.ts";
 
 const REPLY_DONE_SLOW_THRESHOLD_MS = 50;
@@ -81,6 +81,21 @@ export type SessionCore = {
    */
   onPlaybackProgress(bufferedMs: number): void;
   onHistory(messages: readonly Message[]): void;
+  /**
+   * Make the agent SPEAK about something the caller did not just say.
+   *
+   * The instruction reaches the model as a synthetic user message and the reply
+   * is an ordinary, interruptible turn. What it exists for is the shape a voice
+   * agent otherwise cannot do: a durable run started minutes ago finishes, the
+   * caller is still on the line, and the agent has the answer with no way to
+   * offer it — so the caller has to think to ask.
+   *
+   * Reports FALSE rather than throwing when the transport has no such verb
+   * (S2S has none) or the session is stopped, because the caller is a run
+   * completing in the background: there is nobody to raise to, and the answer
+   * "this session cannot be spoken to" is what a notifier needs to stop trying.
+   */
+  announce(instruction: string): boolean;
   /** Inbound relayed tool result (host mode): settles the pending relay call. */
   onToolResult(toolCallId: string, result: string, error?: string): void;
   // Inbound from transport (reply lifecycle, transcripts, audio, tool calls)
@@ -113,7 +128,6 @@ export type SessionCore = {
 export function createSessionCore(opts: SessionCoreOptions): SessionCore {
   const log = opts.logger ?? consoleLogger;
   const rawIdleMs = opts.agentConfig.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
-  const idleMs = rawIdleMs === 0 || !Number.isFinite(rawIdleMs) ? 0 : rawIdleMs;
 
   function emptyReply(): ReplyState {
     return {
@@ -136,44 +150,20 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     opts.client.event(event);
   }
 
-  // Re-armed at audio-frame rate, so the coalescing timer matters: it records
-  // the deadline and keeps one long-lived timer instead of re-arming a
-  // 5-minute timeout on every chunk. (Its clear() also zeroes the deadline,
-  // so a callback that already fired when stop() ran cannot re-arm and pin
-  // the session for another idleMs.)
-  const idleTimer = createCoalescingTimer(() => {
-    log.info("session idle timeout", { sid: opts.id });
-    emit({ type: "idle_timeout" });
-    // The event is a notification, not a teardown: clients treat it as
-    // informational and wait for the close (aai-ui routes it to its default
-    // branch and transitions on the close handler). Retiring the socket here
-    // is what actually reclaims the session, its provider sockets, and — on
-    // the platform — the Modal input a WebSocket occupies. Closing runs the
-    // normal teardown path via the socket's close listener.
-    opts.client.close?.("idle timeout");
+  // The idle deadline and everything it means — see `session-idle.ts`, which is
+  // where the "measure SPEECH, not bytes" argument lives.
+  const idle = createIdleWatchdog({
+    sid: opts.id,
+    idleMs: rawIdleMs,
+    logger: log,
+    notify: () => emit({ type: "idle_timeout" }),
+    close: () => opts.client.close?.("idle timeout"),
   });
 
-  /**
-   * Re-arm the idle timer. Call ONLY for conversation the TRANSPORT observed
-   * — speech the STT/S2S service detected, or the agent replying.
-   *
-   * Never for inbound client frames or client-sent events. This used to
-   * re-arm on every audio frame, which measured "the client is still
-   * sending bytes" and not "someone is still talking" — and the browser mic
-   * streams continuously by design, because barge-in needs it open. So a tab
-   * left open on a silent room re-armed the timer ~50x a second forever: the
-   * session never idled out, and on the platform its guest never reached
-   * zero sessions, so the sandbox's own idle self-exit never fired either.
-   * Measured with `idleTimeoutMs: 15000`, a stream of silent PCM held a
-   * session past 45s.
-   *
-   * Keeping the signal transport-side is also what makes it unfakeable: a
-   * client cannot assert activity, it can only send audio that really
-   * contains speech, which IS activity.
-   */
+  /** Re-arm the idle deadline. Transport-observed conversation only. */
   function resetIdle(): void {
-    if (stopped || idleMs <= 0) return;
-    idleTimer.arm(idleMs);
+    if (stopped) return;
+    idle.reset();
   }
 
   function pushMessages(...msgs: Message[]): void {
@@ -224,7 +214,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     async stop() {
       if (stopped) return;
       stopped = true;
-      idleTimer.clear();
+      idle.clear();
       // Cancel in-flight tools so the drain below settles promptly instead
       // of holding the session (and provider sockets) open for up to the
       // full tool timeout after a disconnect.
@@ -285,6 +275,15 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       opts.transport.reset?.();
       emit({ type: "reset" });
     },
+    announce(instruction) {
+      // A stopped session's transport may still hold sockets mid-teardown, so
+      // the check is the session's own flag rather than the transport's.
+      if (stopped || !opts.transport.injectTurn) return false;
+      log.info("Session announcement", { sid: opts.id });
+      opts.transport.injectTurn(instruction);
+      return true;
+    },
+
     onHistory(messages) {
       pushMessages(...messages);
       // Forward to the transport so pipeline mode's LLM sees the restored

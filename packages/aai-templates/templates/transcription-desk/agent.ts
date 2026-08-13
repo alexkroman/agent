@@ -50,43 +50,13 @@
  * curl -X POST https://<your-agent>/workflows/runs \
  *   -H 'content-type: application/json' \
  *   -d "{\"workflow\":\"transcribe\",\"wait\":30000,\"input\":{
- *        \"recording\":\"$ID\",\"languageCode\":\"en\"}}"
+ *        \"recording\":\"$ID\"}}"
  * ```
  */
 
 import { workflow, workflowApp } from "@alexkroman1/aai";
 import { z } from "zod";
 import { transcribeFlow } from "./workflows/transcribe.ts";
-
-/**
- * The languages the sync endpoint transcribes.
- *
- * An enum rather than a free string because `<WorkflowFields>` renders one as a
- * `<SelectField>` — so the page's language picker exists because this line does
- * — and because a code the endpoint does not know is a failed run rather than a
- * rejected submission.
- */
-const LANGUAGES = [
-  "en",
-  "es",
-  "de",
-  "fr",
-  "it",
-  "pt",
-  "tr",
-  "nl",
-  "sv",
-  "no",
-  "da",
-  "fi",
-  "hi",
-  "vi",
-  "ar",
-  "he",
-  "ja",
-  "ur",
-  "zh",
-] as const;
 
 /**
  * The declaration: schema, description, and the directive body.
@@ -97,11 +67,14 @@ const LANGUAGES = [
  */
 export const transcribe = workflow({
   description: "Transcribe a recording by splitting it into chunks the sync API accepts",
+  // ONE field, and the form is exactly as long as the schema — which is the
+  // reason `client.tsx` has no field markup in it. A language picker used to sit
+  // beside this and is gone: the model detects the language, so the control was
+  // asking a person to answer a question the service answers better.
   input: z.object({
     // A plain string, because an upload id is what the run really receives. What
     // makes it a file picker rather than a text box is the `uploads` line below.
     recording: z.string().describe("A linear-PCM WAV recording (16-bit or 8-bit, any rate)"),
-    languageCode: z.enum(LANGUAGES).default("en").describe("Language spoken in the recording"),
   }),
   // The one line that makes the form take a file: `<WorkflowFields>` renders a
   // picker for this property, `useWorkflowSubmit` stores the chosen file, and

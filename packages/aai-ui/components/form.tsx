@@ -196,6 +196,40 @@ function useControlProps(): { className: string; style: React.CSSProperties } {
 }
 
 /**
+ * The control styling for a file input.
+ *
+ * A file input is the one control whose BUTTON the browser draws, and every
+ * engine draws it differently: left to the user agent it inherits the field's
+ * own colours and can come out as invisible text on the surface it sits on —
+ * which is what "the Choose file button doesn't display" is. So the button is
+ * styled explicitly through `::file-selector-button` (Tailwind's `file:`
+ * variant) in the theme's own colours, and the field's vertical padding is
+ * reduced to the button's, since the button is what sets the row's height.
+ *
+ * The colours reach the variant as CSS CUSTOM PROPERTIES, because a Tailwind
+ * class cannot read a JavaScript theme object and a pseudo-element cannot be
+ * reached by a React `style` prop.
+ */
+function useFileControlProps(): { className: string; style: React.CSSProperties } {
+  const theme = useTheme();
+  const control = useControlProps();
+  return {
+    className: clsx(
+      control.className,
+      "cursor-pointer py-1.5 pl-1.5",
+      "file:mr-3 file:cursor-pointer file:rounded-aai file:border-0 file:px-3 file:py-1.5",
+      "file:text-sm file:font-medium file:font-aai",
+      "file:[background:var(--aai-file-button-bg)] file:[color:var(--aai-file-button-fg)]",
+    ),
+    style: {
+      ...control.style,
+      "--aai-file-button-bg": theme.primary,
+      "--aai-file-button-fg": theme.surface,
+    } as React.CSSProperties,
+  };
+}
+
+/**
  * A single-line text input.
  *
  * @public
@@ -360,7 +394,7 @@ export function FileField({
   upload?: boolean;
 } & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">) {
   const id = useId();
-  const control = useControlProps();
+  const control = useFileControlProps();
   return (
     <Field label={label} hint={hint} htmlFor={id} className={className}>
       <input
