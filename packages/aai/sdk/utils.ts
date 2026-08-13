@@ -36,6 +36,7 @@ export {
   KeyedLockTimeoutError,
   withLock,
 } from "./keyed-lock.ts";
+export { mapInBatches } from "./map-in-batches.ts";
 export { omitUndefined } from "./omit-undefined.ts";
 export { MAX_SLUG_LENGTH, PREVIEW_SLUG_SUFFIX, RESERVED_SLUGS, VALID_SLUG_RE } from "./slug.ts";
 

@@ -97,6 +97,7 @@ export type {
 export { VOICE_CAPTURE_CONSTRAINTS } from "./types.ts";
 export {
   type UseWorkflowSubmitOptions,
+  type UseWorkflowsOptions,
   type UseWorkflowsResult,
   useWorkflowSubmit,
   useWorkflows,

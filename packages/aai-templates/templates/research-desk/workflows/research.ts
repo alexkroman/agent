@@ -62,11 +62,9 @@ export async function researchFlow(input: { topic: string; requestedBy: string }
   // returns its journaled result instead of calling the model again.
   await sleep(REVIEW_DELAY);
 
-  const filedAt = await file(input.requestedBy, findings);
-
   // Whatever this returns is what `ctx.workflows.get(runId)` reports as `output`
   // on a completed run, so it is what the agent reads back to the caller.
-  return { topic: findings.topic, summary: findings.summary, sources: findings.sources, filedAt };
+  return { ...findings, filedAt: await file(input.requestedBy, findings) };
 }
 
 /**
@@ -95,12 +93,14 @@ async function gather(topic: string): Promise<Findings> {
  * the research for free and re-issues only the filing — one step doing both would
  * redo the expensive half every time the cheap half failed.
  */
-async function file(requestedBy: string, findings: Findings): Promise<string> {
+async function file(_requestedBy: string, _findings: Findings): Promise<string> {
   "use step";
 
-  // A real desk would write to `ctx.db` here — which is available in a step and
-  // not in a body. Returning the timestamp rather than reading a clock in the
-  // body is the same rule: a step's result is journaled, so it is stable across
-  // replays, where `Date.now()` in the body would change on every one.
+  // A real desk would write the findings to its database here — the whole Node
+  // runtime is available in a step, unlike in the body above, and the `_` says
+  // this stub writes nothing. Returning the timestamp rather than reading a
+  // clock in the body is the same rule: a step's result is journaled, so it is
+  // stable across replays, where `Date.now()` in the body would change on every
+  // one.
   return new Date().toISOString();
 }

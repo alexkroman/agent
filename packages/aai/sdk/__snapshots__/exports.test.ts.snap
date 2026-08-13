@@ -302,6 +302,7 @@ exports[`export surface stability > @alexkroman1/aai/utils export 1`] = `
   "isTextAssetPath",
   "isToolFailure",
   "linkConfirmationCode",
+  "mapInBatches",
   "normalizeSpeechText",
   "omitUndefined",
   "pushCapped",

@@ -52,6 +52,7 @@ import { agent, tool, workflow } from "@alexkroman1/aai";
 import { z } from "zod";
 import { researchFlow } from "./workflows/research.ts";
 import { callbackFlow } from "./workflows/callback.ts";
+import { fanOutFlow } from "./workflows/fan-out.ts";
 
 export const research = workflow({
   description: "Research a topic",
@@ -65,11 +66,17 @@ export const callback = workflow({
   run: callbackFlow,
 });
 
+export const fanOut = workflow({
+  description: "Fan out over a list in bounded batches",
+  input: z.object({ words: z.array(z.string()) }),
+  run: fanOutFlow,
+});
+
 export default agent({
   name: "dev-workflow-fixture",
   greeting: "hi",
   systemPrompt: "fixture",
-  workflows: { research, callback },
+  workflows: { research, callback, fanOut },
   tools: {},
 });
 `;
@@ -131,12 +138,46 @@ async function deliver(url: string, label: string) {
 }
 `;
 
+/**
+ * A fan-out through `mapInBatches` — the SDK primitive `transcription-desk` maps
+ * its segments with.
+ *
+ * This is the only tier that can say whether that primitive is legal at all.
+ * `mapInBatches` passes a `"use step"` function to a helper in ANOTHER MODULE as
+ * a callback, and whether that still dispatches a real step depends on what the
+ * WDK transform rewrites: a declaration-side rewrite (what `createUseStep`'s
+ * shape implies) keeps working through a callback, while a call-site rewrite
+ * would leave the step running inline — undurable, unjournaled, and completely
+ * silent about it. Reading the transform's output is inference; running one is
+ * not.
+ *
+ * The steps settle in REVERSE issue order, which is the trap the primitive
+ * exists for: a pool that issued work as previous calls settled would produce
+ * this run's step ids in a different order on a replay.
+ */
+const FAN_OUT_TS = `
+import { mapInBatches } from "@alexkroman1/aai/utils";
+
+export async function fanOutFlow(input: { words: string[] }) {
+  "use workflow";
+  return { shouted: await mapInBatches(input.words, 2, (word, index) => shout(word, index)) };
+}
+
+async function shout(word: string, index: number) {
+  "use step";
+  // Later items finish FIRST, so completion order is the reverse of issue order.
+  await new Promise((resolve) => setTimeout(resolve, (8 - index) * 20));
+  return word.toUpperCase();
+}
+`;
+
 async function writeFixture(): Promise<void> {
   await fs.rm(FIXTURE, { recursive: true, force: true });
   await fs.mkdir(path.join(FIXTURE, "workflows"), { recursive: true });
   await fs.writeFile(path.join(FIXTURE, "agent.ts"), AGENT_TS);
   await fs.writeFile(path.join(FIXTURE, "workflows", "research.ts"), WORKFLOW_TS);
   await fs.writeFile(path.join(FIXTURE, "workflows", "callback.ts"), CALLBACK_TS);
+  await fs.writeFile(path.join(FIXTURE, "workflows", "fan-out.ts"), FAN_OUT_TS);
   await fs.writeFile(
     path.join(FIXTURE, "package.json"),
     JSON.stringify({ name: "dev-workflow-fixture", type: "module", private: true }),
@@ -228,12 +269,13 @@ describe("aai dev serves the workflow HTTP API", () => {
 
   const JSON_POST = { "Content-Type": "application/json" };
 
-  test("lists both declared workflows with the schema a page renders a form from", async () => {
+  test("lists every declared workflow with the schema a page renders a form from", async () => {
     const { status, body } = await api("/workflows");
     expect(status).toBe(200);
     const workflows = body.workflows as { name: string; inputSchema?: unknown }[];
     expect(workflows.map((w) => w.name).sort((a, b) => a.localeCompare(b))).toEqual([
       "callback",
+      "fanOut",
       "research",
     ]);
     // The zod schema, converted at listing time because the reader is a browser.
@@ -289,6 +331,28 @@ describe("aai dev serves the workflow HTTP API", () => {
     const finished = await api(`/workflows/runs/${runId}?wait=30000`);
     expect(finished.status).toBe(200);
     expect(finished.body).toMatchObject({ status: "completed", output: { topic: "kelp" } });
+  }, 40_000);
+
+  test("a bounded fan-out through `mapInBatches` runs its steps for real", async () => {
+    // Results in ITEM order although the steps settle in reverse, and — the
+    // part no unit test can reach — every one of them dispatched as a genuine
+    // step through the transform while being called from an SDK helper rather
+    // than from the body's own source. See `FAN_OUT_TS`.
+    const { status, body } = await api("/workflows/runs", {
+      method: "POST",
+      headers: JSON_POST,
+      body: JSON.stringify({
+        workflow: "fanOut",
+        input: { words: ["one", "two", "three", "four", "five"] },
+        wait: 30_000,
+      }),
+    });
+
+    expect(status).toBe(200);
+    expect(body.run).toMatchObject({
+      status: "completed",
+      output: { shouted: ["ONE", "TWO", "THREE", "FOUR", "FIVE"] },
+    });
   }, 40_000);
 
   test("rejects a bad input at the call site, with no run created", async () => {

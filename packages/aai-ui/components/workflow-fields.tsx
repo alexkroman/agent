@@ -23,6 +23,7 @@
  */
 
 import type { WorkflowSummary } from "@alexkroman1/aai";
+import { useWorkflows } from "../use-workflow-form.ts";
 import { CheckboxField, NumberField, SelectField, TextField } from "./form.tsx";
 
 /** The slice of JSON Schema this reads. Everything else is ignored. */
@@ -41,21 +42,28 @@ type JsonObjectSchema = {
 /**
  * Render one field per scalar property of a workflow's input schema.
  *
+ * Pass the workflow's NAME and the schema is fetched here; pass a
+ * {@link WorkflowSummary} you already hold and nothing is fetched. The name form
+ * is the one a page usually wants — it is the same string the submit hook takes,
+ * and the alternative is three lines (`useWorkflows()`, a `.find()` by name, and
+ * folding that lookup's error into the form's) whose only product is this
+ * component's argument.
+ *
  * Renders nothing when the workflow declared no schema — a workflow with no
- * declared input takes anything, and a form for "anything" is not a form.
+ * declared input takes anything, and a form for "anything" is not a form — and
+ * nothing while a named lookup is still in flight, so the hand-written fields
+ * beside it are not reordered when the schema lands.
  *
  * @example
  * ```tsx
- * import { Form, SubmitButton, WorkflowFields, useWorkflows, useWorkflowSubmit }
+ * import { Form, SubmitButton, WorkflowFields, useWorkflowSubmit }
  *   from "@alexkroman1/aai-ui";
  *
  * function StartRun() {
- *   const { workflows } = useWorkflows();
  *   const { submit, pending, error } = useWorkflowSubmit("transcribe");
- *   const transcribe = workflows.find((w) => w.name === "transcribe");
  *   return (
  *     <Form onSubmit={(values) => submit(values)} error={error}>
- *       <WorkflowFields workflow={transcribe} />
+ *       <WorkflowFields workflow="transcribe" />
  *       <SubmitButton pending={pending}>Transcribe</SubmitButton>
  *     </Form>
  *   );
@@ -64,8 +72,14 @@ type JsonObjectSchema = {
  *
  * @public
  */
-export function WorkflowFields({ workflow }: { workflow?: WorkflowSummary | undefined }) {
-  const schema = asObjectSchema(workflow?.inputSchema);
+export function WorkflowFields({ workflow }: { workflow?: WorkflowSummary | string | undefined }) {
+  // Unconditional, because a hook cannot be: the listing is only REQUESTED when
+  // a name was passed, which is what keeps a page that already holds its
+  // summaries from fetching them twice.
+  const { workflows } = useWorkflows(typeof workflow === "string" ? {} : { skip: true });
+  const summary =
+    typeof workflow === "string" ? workflows.find((entry) => entry.name === workflow) : workflow;
+  const schema = asObjectSchema(summary?.inputSchema);
   if (!schema?.properties) return null;
   const required = new Set(schema.required ?? []);
 

@@ -369,8 +369,14 @@ every resume, so bytes in there are re-read for the life of the run and capped b
 the request-body limit besides; a URL or the app's own storage is where they
 belong, fetched inside a `"use step"` function that runs once per execution.
 
-**`<WorkflowFields workflow={summary}>` renders the schema half.** It reads the
-`WorkflowSummary` that `GET /workflows` already serves and emits one control per
+**`<WorkflowFields workflow="transcribe">` renders the schema half.** It takes
+either the workflow's NAME — fetching the listing itself, which is the form a
+page normally wants because the alternative is three lines (`useWorkflows()`, a
+`.find()` by name, and folding that lookup's error into the form's) whose only
+product is this component's argument — or a `WorkflowSummary` the caller already
+holds, which fetches nothing (`useWorkflows({ skip: true })`, since the hook
+cannot be conditional). It reads the summary that `GET /workflows` serves and
+emits one control per
 SCALAR property — string, number, integer, boolean, and an enum as a
 `<SelectField>` — honouring `required`, `default`, and `description` as the hint,
 with the label humanized from the property name (`recordingId` → `Recording
@@ -381,7 +387,9 @@ plain named control. So a form is half declared and half written, and adding a
 scalar to the workflow's input schema adds a control with no client edit.
 
 `useWorkflows()` fetches that list (the client held in a ref, read once — same
-rule as `useWorkflowRun`), and `useWorkflowSubmit(workflow, options?)` is
+rule as `useWorkflowRun`) for a page rendering its own chrome from it; no
+template exercises it any more, and the allowlist records that.
+`useWorkflowSubmit(workflow, options?)` is
 `api.start` plus `useWorkflowRun` plus the four pieces of state between them.
 Two things it decides that a call site keeps getting wrong: `pending` covers the
 RUN, not the POST — a button that re-enabled on the response invites a second

@@ -15,7 +15,7 @@
 
 import type { WorkflowSummary } from "@alexkroman1/aai";
 import { render, screen } from "@testing-library/react";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { ThemeProvider } from "../context.ts";
 import { WorkflowFields } from "./workflow-fields.tsx";
 
@@ -125,5 +125,77 @@ describe("WorkflowFields", () => {
       </ThemeProvider>,
     );
     expect(fieldNames()).toEqual([]);
+  });
+});
+
+/**
+ * Handed a NAME, the component fetches the listing itself.
+ *
+ * This is the form a page normally uses, and its whole justification is the
+ * three lines it replaces — a `useWorkflows()`, a `.find()` by name, and folding
+ * that lookup's error into the form's.
+ */
+describe("WorkflowFields resolving by name", () => {
+  /** A `fetch` answering `GET /workflows`, counting how often it was called. */
+  function stubListing(workflows: WorkflowSummary[]) {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        calls.push(String(url));
+        return new Response(JSON.stringify({ workflows }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+    return calls;
+  }
+
+  test("reads the listing and renders the named workflow's schema", async () => {
+    stubListing([
+      { name: "other", inputSchema: { type: "object", properties: { nope: { type: "string" } } } },
+      {
+        name: "transcribe",
+        inputSchema: { type: "object", properties: { requestedBy: { type: "string" } } },
+      },
+    ]);
+    render(
+      <ThemeProvider>
+        <form>
+          <WorkflowFields workflow="transcribe" />
+        </form>
+      </ThemeProvider>,
+    );
+    // The fields it renders are the NAMED workflow's, not the first entry's.
+    await vi.waitFor(() => expect(fieldNames()).toEqual(["requestedBy"]));
+  });
+
+  test("requests nothing when it is handed a summary it already has", () => {
+    // The reason the hook takes a `skip`: a page holding its own listing must
+    // not make this component fetch a second copy of it.
+    const calls = stubListing([]);
+    render(
+      <ThemeProvider>
+        <form>
+          <WorkflowFields workflow={{ name: "transcribe" }} />
+        </form>
+      </ThemeProvider>,
+    );
+    expect(calls).toEqual([]);
+  });
+
+  test("renders nothing for a name the agent does not declare", async () => {
+    // A typo'd name is a form with no fields rather than a crash — and the
+    // submit it sits beside answers with the agent's own 400 naming the
+    // workflows that do exist.
+    stubListing([{ name: "transcribe", inputSchema: { type: "object", properties: {} } }]);
+    render(
+      <ThemeProvider>
+        <form>
+          <WorkflowFields workflow="transcirbe" />
+        </form>
+      </ThemeProvider>,
+    );
+    await vi.waitFor(() => expect(fieldNames()).toEqual([]));
   });
 });

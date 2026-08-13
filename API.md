@@ -4426,6 +4426,9 @@ export class KeyedLockTimeoutError extends Error {
 export function linkConfirmationCode(code: string): string;
 
 // @public
+export function mapInBatches<T, R>(items: readonly T[], size: number, run: (item: T, index: number) => Promise<R> | R): Promise<R[]>;
+
+// @public
 export const MAX_SLUG_LENGTH = 64;
 
 // @public
@@ -5040,9 +5043,13 @@ export type UseWorkflowRunResult<R = unknown> = {
 };
 
 // @public
-export function useWorkflows(opts?: {
+export function useWorkflows(opts?: UseWorkflowsOptions): UseWorkflowsResult;
+
+// @public
+export type UseWorkflowsOptions = {
     api?: WorkflowApi;
-}): UseWorkflowsResult;
+    skip?: boolean;
+};
 
 // @public
 export type UseWorkflowsResult = {
@@ -5110,7 +5117,7 @@ export type WorkflowApiOptions = {
 
 // @public
 export function WorkflowFields(input: {
-    workflow?: WorkflowSummary | undefined;
+    workflow?: WorkflowSummary | string | undefined;
 }): JSX.Element | null;
 
 export { WorkflowOutputOf }
