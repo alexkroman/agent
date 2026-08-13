@@ -24,8 +24,15 @@
  * fetched text crosses a queue between them, which is what the cap on it is for.
  */
 
-import { StepGenerateError, safeJsonParse, stepGenerate } from "@alexkroman1/aai/utils";
-import { FatalError, getWritable, sleep } from "workflow";
+import {
+  isTransientStatus,
+  report,
+  retryAfter,
+  StepGenerateError,
+  safeJsonParse,
+  stepGenerate,
+} from "@alexkroman1/aai/utils";
+import { FatalError, RetryableError, sleep } from "workflow";
 
 /** How long the digest sits before it is filed, so the wait is visible in dev. */
 const SETTLE = "10 seconds";
@@ -266,48 +273,15 @@ function stopOrRetry(err: unknown): never {
 /**
  * The retryable/terminal split, for the page we were pointed at.
  *
- * The same judgement `StepGenerateError.retryable` makes for the gateway: a 404
- * or a 403 answers the same way on the fourth attempt, while a rate limit or a
- * 5xx is exactly what retries are for.
+ * The same judgement `StepGenerateError.retryable` makes for the gateway, with
+ * the DELAY the far side asked for when it named one: a 404 or a 403 answers
+ * the same way on the fourth attempt, while a rate limit is exactly what
+ * retries are for — and `RetryableError` is what carries its `Retry-After` into
+ * the DevKit's schedule instead of leaving it on the default backoff.
  */
 function fetchFailure(response: Response, url: string): Error {
   const message = `GET ${url} failed: HTTP ${response.status}`;
-  return isTransient(response.status) ? new Error(message) : new FatalError(message);
-}
-
-/** Will another attempt plausibly answer differently? */
-function isTransient(status: number): boolean {
-  return status === 408 || status === 429 || status >= 500;
-}
-
-/**
- * Write one progress line to the run's own stream.
- *
- * This is the only way a run can say anything before it finishes: a snapshot
- * carries a status and, once terminal, an output, so without this the page shows
- * "Working…" for the whole pass. `client.tsx` reads it back with
- * `useWorkflowProgress`.
- *
- * Two properties worth copying. It is called from STEPS and never from the body,
- * the same rule as `ctx.db`: the body replays from the top on every resume, so a
- * line written there is re-emitted on each one. And it is BEST-EFFORT — a run
- * must not fail because its narration could not be written, which is also what
- * lets a spec call a step directly, where there is no run and `getWritable()`
- * throws by design.
- *
- * See `research-desk`'s copy for why these twelve lines are not an SDK helper.
- */
-async function report(line: string): Promise<void> {
-  try {
-    const writer = getWritable<string>().getWriter();
-    try {
-      await writer.write(line);
-    } finally {
-      // Released rather than closed: a later step writes to the same stream, and
-      // a closed stream cannot be reopened.
-      writer.releaseLock();
-    }
-  } catch {
-    // No run in scope, or the stream is already gone. Neither is worth a failure.
-  }
+  if (!isTransientStatus(response.status)) return new FatalError(message);
+  const at = retryAfter(response);
+  return at ? new RetryableError(message, { retryAfter: at }) : new RetryableError(message);
 }

@@ -19,8 +19,12 @@ import { describe, expect, test, vi } from "vitest";
 import { ThemeProvider } from "../context.ts";
 import { WorkflowFields } from "./workflow-fields.tsx";
 
-function renderFields(inputSchema: unknown) {
-  const workflow: WorkflowSummary = { name: "transcribe", inputSchema };
+function renderFields(inputSchema: unknown, uploads?: readonly string[]) {
+  const workflow: WorkflowSummary = {
+    name: "transcribe",
+    inputSchema,
+    ...(uploads && { uploads }),
+  };
   render(
     <ThemeProvider>
       <form>
@@ -51,6 +55,30 @@ describe("WorkflowFields", () => {
       "requestedBy",
       "segments",
     ]);
+  });
+
+  test("renders a DECLARED UPLOAD as a file picker, not the text box its type says", () => {
+    // An upload property is a string in the schema — it carries the id — so
+    // without the workflow's own `uploads` list the page would ask a person to
+    // type an id no person has.
+    renderFields(
+      {
+        type: "object",
+        properties: {
+          recording: { type: "string", description: "A linear-PCM WAV recording" },
+          languageCode: { type: "string" },
+        },
+        required: ["recording"],
+      },
+      ["recording"],
+    );
+    const recording = document.querySelector('[name="recording"]') as HTMLInputElement;
+    expect(recording.type).toBe("file");
+    expect(recording.required).toBe(true);
+    // The upload read mode is what makes `<Form>` contribute the File itself.
+    expect(recording.dataset.aaiRead).toBe("upload");
+    // Its neighbour is untouched.
+    expect((document.querySelector('[name="languageCode"]') as HTMLInputElement).type).toBe("text");
   });
 
   test("labels a field from its key and hints it from `.describe()`", () => {

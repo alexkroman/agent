@@ -16,6 +16,7 @@
  */
 
 import type { Db } from "./db.ts";
+import { publishUploadReader } from "./step-uploads.ts";
 import type { DefaultSessionState, ToolContext } from "./types.ts";
 import type { WorkflowClient } from "./workflow.ts";
 import { rejectingWorkflows } from "./workflow-unavailable.ts";
@@ -179,4 +180,60 @@ export function createToolContext<S = DefaultSessionState>(
     sent,
     ...overrides,
   };
+}
+
+/**
+ * One file a {@link stubUploads} store answers for.
+ *
+ * A bare `Uint8Array` is the common case and means "these bytes, no name".
+ *
+ * @public
+ */
+export type StubUpload = Uint8Array | { bytes: Uint8Array; name?: string; type?: string };
+
+/**
+ * Publish an in-memory upload store, so a `"use step"` function that calls
+ * `readUpload` can be tested without a server.
+ *
+ * A step reads uploads through a process-wide slot rather than dialling
+ * anything (see `sdk/step-uploads.ts`), which is what makes this possible at
+ * all: a spec supplies its own bytes and the step under test is unchanged.
+ *
+ * Returns the UNPUBLISH function, and calling it in an `afterEach` is not
+ * optional — a store left published makes the next file's steps read this
+ * one's bytes, which is the kind of cross-file leak that presents as a passing
+ * test somewhere else.
+ *
+ * @example
+ * ```ts
+ * import { stubUploads } from "@alexkroman1/aai/testing";
+ *
+ * const restore = stubUploads({ upl_1: new Uint8Array([1, 2, 3]) });
+ * // … call the step …
+ * restore();
+ * ```
+ *
+ * @param files - Keyed by upload id — the same string a run input would carry.
+ * @public
+ */
+export function stubUploads(files: Readonly<Record<string, StubUpload>>): () => void {
+  const stored = new Map(
+    Object.entries(files).map(([id, file]) => [
+      id,
+      file instanceof Uint8Array ? { bytes: file } : file,
+    ]),
+  );
+  publishUploadReader({
+    info: (id) => {
+      const file = stored.get(id);
+      return Promise.resolve(
+        file
+          ? { id, name: file.name ?? "", type: file.type ?? "", size: file.bytes.length }
+          : undefined,
+      );
+    },
+    read: (id, start, end) =>
+      Promise.resolve(stored.get(id)?.bytes.subarray(start, end) ?? new Uint8Array(0)),
+  });
+  return () => publishUploadReader(undefined);
 }

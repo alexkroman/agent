@@ -11,6 +11,7 @@ export const AGENT_CSP: string;
 type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
+    uploads?: readonly string[];
     run: WorkflowBody<never, R>;
 };
 
@@ -193,6 +194,7 @@ type WorkflowClient = {
 type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description?: string;
     input?: P;
+    uploads?: readonly string[];
     run: WorkflowBody<InferSchemaOutput<P>, R>;
 };
 
@@ -231,6 +233,7 @@ type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;
+    uploads?: readonly string[];
 };
 
 // @internal (undocumented)

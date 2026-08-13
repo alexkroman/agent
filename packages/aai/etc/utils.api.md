@@ -22,6 +22,9 @@ export function isTextAssetPath(assetPath: string): boolean;
 // @public
 export function isToolFailure(value: unknown): value is ToolFailure;
 
+// @public
+export function isTransientStatus(status: number): boolean;
+
 // @public (undocumented)
 export type KeyedLock = ((key: string, opts?: KeyedLockOptions) => Promise<() => void>) & {
     readonly size: number;
@@ -63,6 +66,18 @@ export const PREVIEW_SLUG_SUFFIX = "-preview";
 export function pushCapped<T>(list: T[], item: T, max: number): T[];
 
 // @public
+export function readUpload(id: string, opts?: ReadUploadOptions): Promise<UploadSlice>;
+
+// @public
+export type ReadUploadOptions = {
+    start?: number | undefined;
+    end?: number | undefined;
+};
+
+// @public
+export function report(line: string): Promise<void>;
+
+// @public
 export function requireStepEnv(name: string): string;
 
 // @public
@@ -70,6 +85,11 @@ export const RESERVED_SLUGS: ReadonlySet<string>;
 
 // @public
 export function responseErrorMessage(res: Response, label?: string): Promise<string>;
+
+// @public
+export function retryAfter(from: {
+    headers: Headers;
+} | Headers): Date | undefined;
 
 // @public
 export function safeJsonParse(text: string): unknown;
@@ -85,9 +105,11 @@ export class StepGenerateError extends Error {
     constructor(message: string, opts: {
         status?: number | undefined;
         retryable: boolean;
+        retryAfter?: Date | undefined;
         cause?: unknown;
     });
     readonly retryable: boolean;
+    readonly retryAfter: Date | undefined;
     readonly status: number | undefined;
 }
 
@@ -112,6 +134,25 @@ export type ToolFailure = {
 
 // @public
 export function toolFailure(message: string): ToolFailure;
+
+// @public
+export type UploadInfo = {
+    id: string;
+    name: string;
+    type: string;
+    size: number;
+};
+
+// @public
+export function uploadInfo(id: string): Promise<UploadInfo>;
+
+// @public
+export type UploadSlice = {
+    info: UploadInfo;
+    bytes: Uint8Array;
+    start: number;
+    end: number;
+};
 
 // @public
 export const VALID_SLUG_RE: RegExp;

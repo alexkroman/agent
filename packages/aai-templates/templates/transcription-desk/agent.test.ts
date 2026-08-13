@@ -17,7 +17,9 @@
  * the decoder happily transcribes into confident nonsense.
  */
 
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { stubUploads } from "@alexkroman1/aai/testing";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { RetryableError } from "workflow";
 import { z } from "zod";
 import agentDef, { transcribe } from "./agent.ts";
 import {
@@ -41,6 +43,27 @@ import {
 
 /** Where the sync endpoint lives — the one URL these stubs answer differently. */
 const SYNC_ORIGIN = "https://sync.assemblyai.com";
+
+/** The id every spec below uploads under. */
+const UPLOAD_ID = "upl_test";
+
+/**
+ * Publish one in-memory upload, the way `createServer` publishes a real store.
+ *
+ * This is the seam that makes a step testable at all: `readUpload` reads a
+ * process-wide slot rather than dialling anything, so a spec supplies its own
+ * bytes with no server, no database and no HTTP.
+ */
+function publishRecording(bytes: Uint8Array, name = "standup.wav") {
+  restore = stubUploads({ [UPLOAD_ID]: { bytes, name, type: "audio/wav" } });
+}
+
+/** Unpublished between specs — a slot left behind reaches the next file. */
+let restore: (() => void) | undefined;
+afterEach(() => {
+  restore?.();
+  restore = undefined;
+});
 
 /** 16 kHz mono 16-bit — one second of audio is 32,000 bytes. */
 const MONO_16K = { sampleRate: 16_000, channels: 1, bitsPerSample: 16 } as const;
@@ -106,7 +129,7 @@ describe("the agent declares its workflow and nothing else", () => {
 describe("the input schema", () => {
   test("accepts what the page's form collects, with no mapping in between", async () => {
     const result = await transcribe.input?.["~standard"].validate({
-      recordingUrl: "https://example.com/standup.wav",
+      recording: "upl_9f3c1d",
       languageCode: "en",
     });
     expect(result?.issues).toBeUndefined();
@@ -114,7 +137,7 @@ describe("the input schema", () => {
 
   test("defaults the language, so the picker's absence is not an error", async () => {
     const result = await transcribe.input?.["~standard"].validate({
-      recordingUrl: "https://example.com/standup.wav",
+      recording: "upl_9f3c1d",
     });
     // Re-tested rather than trusted: a Standard Schema result is a union, so
     // this is what makes `value` reachable without a cast.
@@ -123,16 +146,23 @@ describe("the input schema", () => {
     expect(result?.value).toMatchObject({ languageCode: "en" });
   });
 
-  test("rejects something that is not a URL at the call site rather than in a step", async () => {
+  test("rejects a submission with no recording at the call site rather than in a step", async () => {
     // A 400 on the POST, with the run never created, instead of a failed run
     // discovered a minute later.
-    const result = await transcribe.input?.["~standard"].validate({ recordingUrl: "standup.wav" });
+    const result = await transcribe.input?.["~standard"].validate({ languageCode: "en" });
     expect(result?.issues).toBeDefined();
+  });
+
+  test("declares the recording as an upload, which is what makes the form take a file", () => {
+    // Without this the page renders a text box asking for an id no person has —
+    // the property is a plain string in the schema, deliberately, because an
+    // upload id is what the run receives.
+    expect(transcribe.uploads).toEqual(["recording"]);
   });
 
   test("rejects a language the endpoint does not know", async () => {
     const result = await transcribe.input?.["~standard"].validate({
-      recordingUrl: "https://example.com/a.wav",
+      recording: "upl_9f3c1d",
       languageCode: "kl",
     });
     expect(result?.issues).toBeDefined();
@@ -145,7 +175,7 @@ describe("the input schema", () => {
     // `ZodObject` has the `shape` this reads.
     const schema = transcribe.input;
     if (!(schema instanceof z.ZodObject)) expect.fail("expected a zod object schema");
-    expect(schema.shape.recordingUrl?.description).toBeTruthy();
+    expect(schema.shape.recording?.description).toBeTruthy();
     expect(schema.shape.languageCode?.description).toBeTruthy();
   });
 });
@@ -338,69 +368,37 @@ describe("clock", () => {
 });
 
 describe("splitRecording", () => {
-  /** A `fetch` serving `file` and honouring `Range` the way a CDN does. */
-  function serve(file: Uint8Array, opts: { honourRange?: boolean } = {}) {
-    const honourRange = opts.honourRange ?? true;
-    const calls: string[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (_url: string, init: RequestInit) => {
-        const header = String((init.headers as Record<string, string>).Range ?? "");
-        calls.push(header);
-        if (!honourRange) return new Response(file.slice(), { status: 200 });
-        const [start, end] = header.replace("bytes=", "").split("-").map(Number);
-        return new Response(file.slice(start, (end ?? 0) + 1), {
-          status: 206,
-          headers: { "Content-Range": `bytes ${start}-${end}/${file.length}` },
-        });
-      }),
-    );
-    return calls;
-  }
-
-  test("asks for only the header, not the whole recording", async () => {
-    // The reason a sixty-segment run moves the recording once rather than
-    // sixty times: every read is a byte range.
-    const calls = serve(concat(wavFile(MONO_16K, 320_000), new Uint8Array(320_000)));
-    await splitRecording("https://example.com/a.wav");
-    expect(calls[0]).toMatch(/^bytes=0-\d+$/);
-  });
-
   test("plans the segments and reports the duration", async () => {
     const seconds = 200;
     const bytes = seconds * MONO_16K.sampleRate * blockAlign(MONO_16K);
-    serve(concat(wavFile(MONO_16K, bytes), new Uint8Array(bytes)));
+    publishRecording(concat(wavFile(MONO_16K, bytes), new Uint8Array(bytes)));
 
-    const plan = await splitRecording("https://example.com/a.wav");
+    const plan = await splitRecording(UPLOAD_ID);
     expect(plan.format.sampleRate).toBe(MONO_16K.sampleRate);
     expect(plan.segments.length).toBeGreaterThan(1);
     expect(plan.durationMs).toBe(seconds * 1000);
   });
 
-  test("still works against a server that ignores Range", async () => {
-    // "Wherever your recording is hosted" is not a server this template gets to
-    // choose, so a 200 carrying the whole file has to be sliced here.
-    const bytes = 320_000;
-    serve(concat(wavFile(MONO_16K, bytes), new Uint8Array(bytes)), { honourRange: false });
-    const plan = await splitRecording("https://example.com/a.wav");
+  test("reads a recording shorter than the header probe", async () => {
+    // The window is CLAMPED to the file rather than refused, which is what lets
+    // a step ask for 64 KB of a 12 KB recording without knowing its size first.
+    const bytes = 8000;
+    publishRecording(concat(wavFile(MONO_16K, bytes), new Uint8Array(bytes)));
+    const plan = await splitRecording(UPLOAD_ID);
     expect(plan.format.dataStart).toBe(44);
   });
 
-  test("fails FATALLY on a URL that will never answer differently", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(null, { status: 404 })),
-    );
-    // A 404 does not become a 200 on the fourth attempt.
-    await expect(splitRecording("https://example.com/gone.wav")).rejects.toThrow(/HTTP 404/);
+  test("fails FATALLY on an id that names no upload", async () => {
+    publishRecording(new Uint8Array(0));
+    // A missing upload does not appear on the fourth attempt.
+    await expect(splitRecording("upl_gone")).rejects.toThrow(/No upload with id/);
   });
 
-  test("throws plainly on a server error, which is what a retry wants", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(null, { status: 503 })),
-    );
-    await expect(splitRecording("https://example.com/a.wav")).rejects.toThrow(/HTTP 503/);
+  test("fails FATALLY on a recording it cannot cut", async () => {
+    // Compressed audio has no frame boundary an offset can find; the run says
+    // so by name instead of transcribing nonsense.
+    publishRecording(new Uint8Array([0x49, 0x44, 0x33, 0x04, 0, 0, 0, 0, 0, 0]));
+    await expect(splitRecording(UPLOAD_ID)).rejects.toThrow();
   });
 });
 
@@ -415,22 +413,17 @@ describe("transcribeSegment", () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
   });
 
-  /** Records the audio fetch and the sync request; answers both. */
-  function stubProvider(sync: { status?: number; body?: unknown } = {}) {
+  /** Publishes the recording and answers the sync endpoint. */
+  function stubProvider(sync: { status?: number; body?: unknown; headers?: HeadersInit } = {}) {
+    publishRecording(new Uint8Array(FORMAT.dataEnd));
     const calls: { url: string; init: RequestInit }[] = [];
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, init: RequestInit = {}) => {
         calls.push({ url, init });
-        if (url.startsWith(SYNC_ORIGIN)) {
-          return new Response(JSON.stringify(sync.body ?? { text: "hello there" }), {
-            status: sync.status ?? 200,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-        return new Response(new Uint8Array(SEGMENT.end - SEGMENT.start), {
-          status: 206,
-          headers: { "Content-Range": `bytes 44-32043/${FORMAT.dataEnd}` },
+        return new Response(JSON.stringify(sync.body ?? { text: "hello there" }), {
+          status: sync.status ?? 200,
+          headers: { "Content-Type": "application/json", ...sync.headers },
         });
       }),
     );
@@ -439,7 +432,7 @@ describe("transcribeSegment", () => {
 
   test("sends the segment as a WAV, with the key and the model header", async () => {
     const calls = stubProvider();
-    const result = await transcribeSegment("https://example.com/a.wav", FORMAT, SEGMENT, "en");
+    const result = await transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT, "en");
 
     expect(result).toEqual({ index: 0, text: "hello there" });
     const sync = calls.find((call) => call.url.startsWith(SYNC_ORIGIN));
@@ -453,7 +446,7 @@ describe("transcribeSegment", () => {
 
   test("carries the language the run asked for", async () => {
     const calls = stubProvider();
-    await transcribeSegment("https://example.com/a.wav", FORMAT, SEGMENT, "de");
+    await transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT, "de");
     const body = calls.find((call) => call.url.startsWith(SYNC_ORIGIN))?.init.body as FormData;
     expect(await (body.get("config") as Blob).text()).toContain('"de"');
   });
@@ -461,23 +454,38 @@ describe("transcribeSegment", () => {
   test("fails FATALLY with no API key rather than retrying five times", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "");
     stubProvider();
-    await expect(
-      transcribeSegment("https://example.com/a.wav", FORMAT, SEGMENT, "en"),
-    ).rejects.toThrow(/ASSEMBLYAI_API_KEY/);
+    await expect(transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT, "en")).rejects.toThrow(
+      /ASSEMBLYAI_API_KEY/,
+    );
   });
 
-  test("throws plainly on a rate limit, which is the expected failure", async () => {
+  test("retries a rate limit, honouring the delay the endpoint asked for", async () => {
+    // `RetryableError` carrying `retryAfter` is the difference between draining
+    // the 429s and re-collecting them `SEGMENT_CONCURRENCY` at a time on a
+    // backoff the server did not choose.
+    stubProvider({ status: 429, body: { detail: "slow down" }, headers: { "Retry-After": "30" } });
+    const failure = await transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT, "en").catch(
+      (err: unknown) => err,
+    );
+    expect(failure).toBeInstanceOf(RetryableError);
+    expect(String(failure)).toMatch(/HTTP 429 — slow down/);
+    const at = (failure as RetryableError).retryAfter.getTime() - Date.now();
+    expect(at).toBeGreaterThan(25_000);
+    expect(at).toBeLessThanOrEqual(30_000);
+  });
+
+  test("retries a rate limit that named no delay", async () => {
     stubProvider({ status: 429, body: { detail: "slow down" } });
-    await expect(
-      transcribeSegment("https://example.com/a.wav", FORMAT, SEGMENT, "en"),
-    ).rejects.toThrow(/HTTP 429 — slow down/);
+    await expect(transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT, "en")).rejects.toBeInstanceOf(
+      RetryableError,
+    );
   });
 
   test("fails FATALLY on a rejected request, naming what the endpoint said", async () => {
     stubProvider({ status: 400, body: { error_code: "audio_too_short", message: "too short" } });
-    await expect(
-      transcribeSegment("https://example.com/a.wav", FORMAT, SEGMENT, "en"),
-    ).rejects.toThrow(/HTTP 400 — too short/);
+    await expect(transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT, "en")).rejects.toThrow(
+      /HTTP 400 — too short/,
+    );
   });
 
   test("retries beyond the default, because a rate limit is expected", () => {
@@ -487,7 +495,8 @@ describe("transcribeSegment", () => {
 
 describe("mergeTranscript", () => {
   test("stitches the segments in index order, whatever order they arrive in", async () => {
-    const merged = await mergeTranscript("https://example.com/a.wav", 12_000, [
+    publishRecording(new Uint8Array(1));
+    const merged = await mergeTranscript(UPLOAD_ID, 12_000, [
       { index: 1, text: "on Friday if the tests pass" },
       { index: 0, text: "we ship on Friday" },
     ]);
@@ -496,11 +505,10 @@ describe("mergeTranscript", () => {
     expect(merged).toMatchObject({ segments: 2, durationMs: 12_000 });
   });
 
-  test("carries the source through, so a run says what it transcribed", async () => {
-    const merged = await mergeTranscript("https://example.com/a.wav", 1000, [
-      { index: 0, text: "hi" },
-    ]);
-    expect(merged.source).toBe("https://example.com/a.wav");
+  test("names the FILE it transcribed, not the id the run carried", async () => {
+    publishRecording(new Uint8Array(1), "standup.wav");
+    const merged = await mergeTranscript(UPLOAD_ID, 1000, [{ index: 0, text: "hi" }]);
+    expect(merged.source).toBe("standup.wav");
   });
 });
 

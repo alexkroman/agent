@@ -145,14 +145,16 @@ actually exercise it.
 
 Three things in it are load-bearing:
 
-- **The audio is addressed by BYTE RANGE, never carried.** A workflow's input is
-  journaled and replayed on every resume, so the recording lives behind a URL and
-  each step fetches its own window with an HTTP `Range` request. Sixty steps
-  therefore move the recording once between them, not sixty times. This is also
-  why the template takes a URL rather than an upload: `<FileField>` never sent
-  bytes (a file's bytes in a run input are re-read for the life of the run, and
-  the API's own body cap is 64 KB), so the old upload form described a file that
-  nothing ever read.
+- **The recording is UPLOADED, and the run carries its id.** A workflow's input
+  is journaled and replayed on every resume, so bytes may not travel in one —
+  which is why this template asked for a URL for a while, and why its
+  `<FileField>` before that described a file nothing ever read. The SDK owns
+  both halves now: `uploads: ["recording"]` on the declaration is what makes
+  `<WorkflowFields>` render a picker and `useWorkflowSubmit` store the file, and
+  each step reads its own window with `readUpload`. Sixty steps therefore move
+  the recording once between them, not sixty times. See "Uploads" in
+  `packages/aai-ui/CLAUDE.md` for the mechanism; the template contains no upload
+  code at all, which is the point.
 - **It is linear-PCM WAV only, and it says so by name.** The cutting is
   arithmetic over byte offsets — a sample is a fixed size, so an offset IS a
   timestamp and any frame boundary is a clean cut. An MP3 or M4A frame boundary
@@ -269,11 +271,21 @@ to satisfy it.
 carries `_`-prefixed parameters rather than naming a call it cannot make. That is
 the one remaining half of a tool context a step does not get.
 
-**`report()` is the one helper still copied three times**, and deliberately: it
-imports `getWritable` from `workflow`, and the subpath a step imports from
-(`@alexkroman1/aai/utils`) is on the CLI's zero-dependency startup path — so
-extracting it would mean minting a public subpath for one twelve-line function.
-Revisit if a fourth workflow template appears.
+**`report()` was the one helper copied three times, and it is the SDK's now** —
+`@alexkroman1/aai/utils`, used by all three templates. The objection recorded
+here (it imports `getWritable` from `workflow`, which that subpath may not) was
+answered by the same `Symbol.for` slot `stepEnv` uses: `createServer` publishes
+a reporter and the helper stays dependency-free. What forced the question was
+not the duplication but the second reader — a step's narration now also reaches
+the SERVER LOG, with the attempt number appended past the first, so a retrying
+fan-out is legible without a page open. `packages/aai-ui/CLAUDE.md` carries the
+argument.
+
+The same sweep took two more copies with it: `isTransientStatus` (the
+408/429/5xx split each template had spelled out) and `retryAfter`, which is what
+lets a rate-limited step throw `RetryableError` with the delay the provider
+asked for instead of the DevKit's default backoff. `transcription-desk` and
+`link-digest` are the worked examples.
 
 **`link-digest` is the same mechanism at its smallest, and it is the FRONT DOOR
 that separates both of these from `research-desk`.** That one is a voice agent

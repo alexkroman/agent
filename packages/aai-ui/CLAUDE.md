@@ -433,17 +433,104 @@ and `aai/host/workflow-api.ts` re-exports it: the server, the `aai dev` proxy
 table and now the client all resolve one string, and a browser cannot import the
 `host/` half.
 
-**Every route is one `WorkflowClient` call, and the type says so**: the API's
-engine IS `WorkflowClient`, not a wider "engine" with run-store reads of its
-own. That width is what would let route code drift into the journal, which
+**Every RUN route is one `WorkflowClient` call, and the type says so**: the
+API's engine IS `WorkflowClient`, not a wider "engine" with run-store reads of
+its own. That width is what would let route code drift into the journal, which
 belongs to the Workflow DevKit — so a route needing more than a tool can do is
 the signal to add a client method, never to widen this. Hence what is
-deliberately absent: no `/blobs` (bytes belong behind a URL or in the app's own
-storage, fetched inside a `"use step"` function where they are read once per
-execution rather than on every replay), no `/signals/:token` (a waitpoint is
-`createWebhook()`'s, and the platform already proxies its URL), and no `/retry`
-(resuming a terminal run is the WDK's business, and a route would have to invent
-what "again" means).
+deliberately absent: no `/signals/:token` (a waitpoint is `createWebhook()`'s,
+and the platform already proxies its URL), and no `/retry` (resuming a terminal
+run is the WDK's business, and a route would have to invent what "again" means).
+
+### Uploads — the one pair that is not about runs
+
+```text
+POST /workflows/uploads?name=x  → { id, name, type, size, url }   body: the file
+GET  /workflows/uploads/:id     → the bytes, `Range` honoured
+```
+
+This section used to say a `/blobs` route was deliberately absent, and that
+"bytes belong behind a URL or in the app's own storage". The second half was
+right and the first half left a hole every workflow app falls into on its first
+form: a run's input is journaled and replayed, so bytes may not travel in one —
+and an app with no storage of its own could only ask for a URL, which is fine
+for a recording that is already hosted and useless for a person with a file on
+their laptop. `transcription-desk` shipped exactly that, and its own
+`<FileField>` described a file nothing ever read.
+
+So the app gets a place to put them. The pair touches the STORE and never the
+engine, which is what keeps the rule above meaning what it says.
+
+**Bytes go in once and are read by window.** The body is the file itself — the
+name rides in `?name=`, the type in `Content-Type`, so there is no multipart
+envelope to parse and one chunk is in memory at a time. A step then reads what
+it needs with `readUpload(id, { start, end })` (`@alexkroman1/aai/utils`), which
+is IN-PROCESS: the DevKit dispatches a step to the same server that stored the
+upload, so the store is handed over through a `Symbol.for` slot exactly as the
+agent env is (`publishUploadReader`, published by `createServer`). Sixty steps
+therefore move a recording once between them, and a resumed run re-reads only
+its own window.
+
+Storage follows the split the workflow world already makes: **Postgres** when
+the app has a database — the deployed case, and the only durable one, since an
+upload in a container's filesystem is gone by the time a resumed run reaches
+segment 27 — and **files** under `.workflow-data/uploads` otherwise, beside the
+Local World's own state. Bytes are chunked (`UPLOAD_CHUNK_BYTES`) and a range
+read slices INSIDE the database, so a 64 KB header probe moves 64 KB. The
+metadata row is written LAST, so an interrupted upload reads as "no such
+upload" rather than as a file that is silently short.
+
+**A form takes a file with no upload code in it.** Three pieces, and each is
+the SDK's:
+
+- `workflow({ uploads: ["recording"] })` declares which input properties carry
+  an upload id. Declared on the workflow rather than in the schema, because the
+  schema may be any Standard Schema and a marker inside one would only work for
+  the library that carried it — the property stays an ordinary `z.string()`,
+  which is what the run really receives.
+- `<WorkflowFields>` renders a `<FileField upload>` for those properties. It
+  cannot be derived from the schema: an upload property IS a string there, and
+  "type a recording id" is exactly the wrong control.
+- `useWorkflowSubmit` stores every `File` in the submitted values through
+  `api.upload()` and substitutes its id before starting the run. That is the one
+  place holding both the chosen file and the client that can store it; a
+  `<FileField upload>` contributes the `File` UNREAD for the same reason
+  (describing a 200 MB recording would mean holding it in memory).
+
+On the platform the pair is proxied like the rest of `/:slug/workflows/*` —
+which took two header-allowlist entries, `Range` in and `Content-Range` /
+`Accept-Ranges` back, without which a caller asking for 64 KB of a 200 MB
+recording is answered with the whole thing, correctly and uselessly.
+
+### `report()` writes to the page AND the server log
+
+`report(line)` (`@alexkroman1/aai/utils`) is what a step says about itself. It
+replaced the twelve-line `getWritable()` helper each of the three workflow
+templates had copied — this guide's own note said extracting it was not worth
+minting a subpath for, which was true of the helper and false of the FEATURE:
+a workflow app answered requests and then did minutes of work with nothing in
+the server log naming any of it, so "is it stuck, or is segment 41 of 60 slow?"
+was unanswerable without a browser open.
+
+One call reaches both readers. The stream half is unchanged (`getWritable()`,
+read back by `useWorkflowProgress`); the log half is a `logger.info` line on the
+same server. `host/workflow-report.ts` is the published half and
+`createServer` publishes it, so the two mechanisms have one wiring point — the
+same slot trick uploads use, and for the same reason (`/utils` is on the CLI's
+zero-dependency startup path and may not import the DevKit).
+
+**The ATTEMPT is part of the line, not just the log.** `getStepMetadata()` names
+the step and its attempt, and past the first the reporter appends
+`(attempt N)` — without it a fan-out that is retrying prints the same sentence
+as one that is succeeding, sixty times, and a reader cannot tell a slow run from
+a wedged one.
+
+Two more things a step should reach for rather than hand-roll, both on
+`/utils`: `isTransientStatus(status)` (the 408/429/5xx split every template had
+its own copy of) and `retryAfter(response)`, which is what carries a rate
+limit's own `Retry-After` into `RetryableError` — the difference between
+draining a provider's 429s and re-collecting them four at a time on a backoff
+the server did not choose.
 
 **The surface is as public as `/websocket` beside it.** A page carries no
 credential — it is served to anyone with the URL, exactly like the voice client

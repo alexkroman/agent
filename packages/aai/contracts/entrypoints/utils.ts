@@ -3,10 +3,10 @@
  * Capability contract: `utils`.
  *
  * The zero-dependency helpers a tool body — or a `"use step"` body, which is
- * what `mapInBatches`, `stepEnv`/`requireStepEnv` and `stepGenerate` are for —
- * may reach for, plus the two contracts both ends of a platform interaction
- * have to derive identically (the slug shape and the `aai login` confirmation
- * code).
+ * what `mapInBatches`, `stepEnv`/`requireStepEnv`, `stepGenerate`, `report` and
+ * the two retry helpers are for — may reach for, plus the two contracts both
+ * ends of a platform interaction have to derive identically (the slug shape and
+ * the `aai login` confirmation code).
  *
  * Re-exported from `@alexkroman1/aai/utils`. This file is not shipped and nothing
  * imports it — it exists so `pnpm check:api-contracts` can extract a report
@@ -18,6 +18,7 @@ export {
   createKeyedLock,
   errorDetail,
   errorMessage,
+  isTransientStatus,
   type KeyedLock,
   type KeyedLockOptions,
   KeyedLockTimeoutError,
@@ -29,8 +30,10 @@ export {
   PREVIEW_SLUG_SUFFIX,
   pushCapped,
   RESERVED_SLUGS,
+  report,
   requireStepEnv,
   responseErrorMessage,
+  retryAfter,
   StepGenerateError,
   type StepGenerateOptions,
   safeJsonParse,

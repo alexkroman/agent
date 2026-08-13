@@ -20,7 +20,17 @@
  * GET    /workflows/runs/:id/stream → SSE: chunk | done | missing
  *                                     ?namespace=&startIndex=
  * POST   /workflows/runs/:id/wake   → { runId, woken }
+ * POST   /workflows/uploads         → { id, name, type, size, url }   body: the file
+ * GET    /workflows/uploads/:id     → the bytes, `Range` honoured
  * ```
+ *
+ * ## The uploads pair is the one part that is not about runs
+ *
+ * A run's input is journaled and replayed, so bytes may not travel in it — which
+ * left a form with nowhere to put a file and no honest option but to ask for a
+ * URL. `workflow-api-uploads.ts` is the answer and its own module for exactly
+ * that reason: it touches the store and never the engine, so the rule below
+ * ("every route is one `ctx.workflows` call") keeps meaning what it says.
  *
  * ## `events` and `stream` are different questions about the same run
  *
@@ -73,7 +83,6 @@
 
 import type http from "node:http";
 import { errorMessage } from "../sdk/utils.ts";
-import { clampWorkflowWait, isTerminal } from "../sdk/workflow.ts";
 import { WORKFLOW_API_PREFIX } from "../sdk/workflow-api-client.ts";
 import { WORKFLOWS_UNAVAILABLE_MESSAGE } from "../sdk/workflow-unavailable.ts";
 import type { Logger } from "./runtime-config.ts";
@@ -82,12 +91,20 @@ import {
   answerHandlerFailure,
   BodyTooLargeError,
   bearerMatches,
-  MAX_WORKFLOW_INPUT_BYTES,
-  readBody,
   sendJson,
 } from "./workflow-api-http.ts";
+import {
+  cancelRun,
+  findRuns,
+  type RouteContext,
+  readRun,
+  startRun,
+  type WorkflowApiEngine,
+  wakeRun,
+} from "./workflow-api-runs.ts";
 import { streamRunOutput } from "./workflow-api-stream.ts";
-import { waitForRun } from "./workflow-api-wait.ts";
+import { createUpload, readUploadRoute, UPLOADS_PATH } from "./workflow-api-uploads.ts";
+import type { UploadStore } from "./workflow-uploads.ts";
 
 /**
  * Path prefix every route here lives under.
@@ -108,18 +125,9 @@ export { MAX_WORKFLOW_INPUT_BYTES } from "./workflow-api-http.ts";
  */
 export const WORKFLOW_API_TOKEN_ENV = "AAI_WORKFLOW_API_TOKEN";
 
-/**
- * What this API is served from: `ctx.workflows`, unchanged.
- *
- * An alias rather than a structural restatement, and the aliasing is the point.
- * The predecessor design had the API take a wider "engine" that added run-store
- * reads of its own, and the width was what let route code drift into the
- * journal. Naming the client makes the constraint checkable by the compiler: a
- * route can only do what a tool can do.
- *
- * @internal
- */
-export type WorkflowApiEngine = import("../sdk/workflow.ts").WorkflowClient;
+// Re-exported: the alias is part of this API's own vocabulary (`engine` below
+// is typed with it), and it is declared beside the handlers that consume it.
+export type { RouteContext, WorkflowApiEngine } from "./workflow-api-runs.ts";
 
 export type WorkflowApiOptions = {
   /**
@@ -158,172 +166,16 @@ export type WorkflowApiOptions = {
    * `aai workflow --token` and the studio's runs card present.
    */
   token?: string | undefined;
+  /**
+   * Where uploaded files are kept, for the two `/uploads` routes.
+   *
+   * A VALUE rather than the getter `engine` is, because a store is cheap to
+   * build and connects lazily — there is no runtime behind it to defer. Absent,
+   * the pair 404s naming the reason; `createServer` always passes one.
+   */
+  uploads?: UploadStore | undefined;
   logger: Logger;
 };
-
-/** `POST /workflows/runs` — start a run and answer 202 with its id. */
-async function startRun(
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
-  engine: WorkflowApiEngine,
-): Promise<void> {
-  const body = await readBody(req, MAX_WORKFLOW_INPUT_BYTES);
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(body.toString("utf8"));
-  } catch {
-    sendJson(res, 400, { error: "Body must be JSON" });
-    return;
-  }
-  const { workflow, input, key, wait } = (parsed ?? {}) as {
-    workflow?: unknown;
-    input?: unknown;
-    key?: unknown;
-    wait?: unknown;
-  };
-  if (typeof workflow !== "string") {
-    sendJson(res, 400, { error: 'Body must name a workflow: { "workflow": "<name>", input? }' });
-    return;
-  }
-  // Refused rather than coerced: a non-string key would be indexed as whatever
-  // `String()` made of it and then never match the `find` a caller writes.
-  if (key !== undefined && typeof key !== "string") {
-    sendJson(res, 400, { error: '"key" must be a string when present' });
-    return;
-  }
-  // `start` rejects an unknown name and an input failing the workflow's own
-  // schema, and both are the CALLER's mistake — so they are 400s carrying the
-  // client's message (which names the declared workflows, or the schema issues)
-  // rather than 500s. Everything else is ours; the router's catch has it.
-  let runId: string;
-  try {
-    runId = await engine.start(workflow, input, key === undefined ? undefined : { key });
-  } catch (err) {
-    sendJson(res, 400, { error: errorMessage(err) });
-    return;
-  }
-  // 202 and the id alone: the run is durable, and deliberately not finished —
-  // that is the whole point of the mechanism (see `WorkflowClient.start`).
-  if (typeof wait !== "number" || clampWorkflowWait(wait) === 0) {
-    sendJson(res, 202, { runId });
-    return;
-  }
-  // The synchronous mode. `run` rides ALONGSIDE `runId` rather than replacing
-  // it, so a caller that reads `runId` behaves the same whether it asked to
-  // wait or not — and a wait that runs out still hands back the one thing it
-  // cannot reconstruct. See `workflow-api-wait.ts` for why an expired budget is
-  // an answer rather than an error.
-  const run = await waitForRun(engine, runId, wait, res);
-  sendJson(res, isTerminal(run) ? 200 : 202, { runId, ...(run && { run }) });
-}
-
-/**
- * `GET /workflows/runs/:id` — read one run's state, optionally waiting it out.
- *
- * `?wait=<ms>` holds the request open until the run settles, which is how a
- * caller with an id resumes the synchronous mode after a `POST` that timed out.
- * The BODY is the same either way — a snapshot — so waiting is invisible to
- * anything that parses the answer.
- */
-async function readRun(
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
-  engine: WorkflowApiEngine,
-  runId: string,
-): Promise<void> {
-  const wait = Number(new URLSearchParams((req.url ?? "").split("?")[1] ?? "").get("wait"));
-  const run = runId
-    ? await (clampWorkflowWait(wait) > 0 ? waitForRun(engine, runId, wait, res) : engine.get(runId))
-    : undefined;
-  if (!run) {
-    sendJson(res, 404, { error: `No workflow run with id ${runId}` });
-    return;
-  }
-  sendJson(res, 200, run);
-}
-
-/** `DELETE /workflows/runs/:id` — stop a live run. */
-async function cancelRun(
-  res: http.ServerResponse,
-  engine: WorkflowApiEngine,
-  runId: string,
-): Promise<void> {
-  if (!runId) {
-    sendJson(res, 404, { error: "No workflow run named" });
-    return;
-  }
-  // 200 with `cancelled: false` rather than a 4xx for a run that had already
-  // finished: two tabs pressing Stop is ordinary, and "it was already over" is
-  // an ANSWER. The client surfaces the distinction; nothing needs an error to.
-  sendJson(res, 200, { runId, cancelled: await engine.cancel(runId) });
-}
-
-/**
- * `POST /workflows/runs/:id/wake` — end a run's `sleep()` early.
- *
- * `woken` is how many pending sleeps were interrupted, so `0` is an honest
- * answer rather than an error: the run finished, was never sleeping, or is gone.
- * Same reasoning as `cancelled: false` on the DELETE above — two tabs pressing
- * "send it now" is ordinary, and the second one is not a failure.
- *
- * A POST rather than a DELETE-shaped verb because it does not remove anything;
- * it is a state change on a run that keeps running.
- */
-async function wakeRun(
-  res: http.ServerResponse,
-  engine: WorkflowApiEngine,
-  runId: string,
-): Promise<void> {
-  if (!runId) {
-    sendJson(res, 404, { error: "No workflow run named" });
-    return;
-  }
-  sendJson(res, 200, { runId, woken: await engine.wakeUp(runId) });
-}
-
-/**
- * `GET /workflows/runs?workflow=<name>&key=<key>&limit=<n>` — runs of one
- * workflow, newest first.
- *
- * The query is read off `req.url` rather than the `url` argument, which the
- * server has already stripped of its query string — every other route here is an
- * exact or prefix path match, so this is the only one that needs it.
- */
-async function findRuns(
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
-  engine: WorkflowApiEngine,
-): Promise<void> {
-  const params = new URLSearchParams((req.url ?? "").split("?")[1] ?? "");
-  const workflow = params.get("workflow");
-  const key = params.get("key");
-  if (!workflow) {
-    sendJson(res, 400, { error: "A `workflow` query parameter is required" });
-    return;
-  }
-  const limitParam = params.get("limit");
-  const limit = limitParam === null ? undefined : Number(limitParam);
-  if (limit !== undefined && !Number.isFinite(limit)) {
-    sendJson(res, 400, { error: "`limit` must be a number" });
-    return;
-  }
-  const options = limit === undefined ? undefined : { limit };
-  try {
-    // `key` present narrows to that correlation key; absent lists the workflow's
-    // recent runs whatever key they carry — the operator's read (a console has
-    // no key to ask about, and an unkeyed run has none to be found by). Two
-    // client methods rather than one nullable argument, so a caller meaning
-    // "this session" cannot silently widen to every session.
-    const runs = key
-      ? await engine.find(workflow, key, options)
-      : await engine.recent(workflow, options);
-    sendJson(res, 200, { runs });
-  } catch (err) {
-    // An unknown workflow name is the caller's mistake, exactly as it is on
-    // `POST /runs`, and carries the client's message naming the declared ones.
-    sendJson(res, 400, { error: errorMessage(err) });
-  }
-}
 
 /** One route: the method and path shape it answers, and what it does. */
 type Route = {
@@ -332,10 +184,21 @@ type Route = {
   run: (
     req: http.IncomingMessage,
     res: http.ServerResponse,
-    engine: WorkflowApiEngine,
+    ctx: RouteContext,
     url: string,
   ) => Promise<void> | void;
 };
+
+/** The store, or the 404 a server without one owes. */
+function requireUploads(res: http.ServerResponse, ctx: RouteContext): UploadStore | undefined {
+  if (ctx.uploads) return ctx.uploads;
+  sendJson(res, 404, {
+    error:
+      "This server stores no uploads. They are served by `createServer`, which every deployed " +
+      "agent and `aai dev` go through.",
+  });
+  return undefined;
+}
 
 /**
  * The routes, as a table rather than an if/else chain.
@@ -357,12 +220,37 @@ function buildRoutes(): Route[] {
     {
       method: "GET",
       matches: (url) => url === WORKFLOW_API_PREFIX,
-      run: (_req, res, engine) => sendJson(res, 200, { workflows: engine.listing() }),
+      run: (_req, res, ctx) => sendJson(res, 200, { workflows: ctx.engine.listing() }),
     },
     {
       method: "POST",
       matches: (url) => url === `${WORKFLOW_API_PREFIX}/runs`,
-      run: (req, res, engine) => startRun(req, res, engine),
+      run: (req, res, ctx) => startRun(req, res, ctx),
+    },
+    // Before the `/runs` rules only for readability — `/uploads` shares no
+    // prefix with them, so nothing here depends on the order.
+    {
+      method: "POST",
+      matches: (url) => url === UPLOADS_PATH,
+      run: async (req, res, ctx) => {
+        const store = requireUploads(res, ctx);
+        if (store) await createUpload(req, res, store, ctx.logger);
+      },
+    },
+    {
+      method: "GET",
+      matches: (url) => url.startsWith(`${UPLOADS_PATH}/`),
+      run: async (req, res, ctx, url) => {
+        const store = requireUploads(res, ctx);
+        if (store) {
+          await readUploadRoute(
+            req,
+            res,
+            store,
+            decodeURIComponent(url.slice(UPLOADS_PATH.length + 1)),
+          );
+        }
+      },
     },
     // Before the `/runs/:id` prefix matches below, and distinct from them: the
     // collection path carries no id, so it cannot be confused with a run whose
@@ -370,13 +258,13 @@ function buildRoutes(): Route[] {
     {
       method: "GET",
       matches: (url) => url === `${WORKFLOW_API_PREFIX}/runs`,
-      run: (req, res, engine) => findRuns(req, res, engine),
+      run: (req, res, ctx) => findRuns(req, res, ctx.engine),
     },
     {
       method: "GET",
       matches: (url) => url.startsWith(runsPrefix) && url.endsWith("/events"),
-      run: (_req, res, engine, url) => {
-        streamRunEvents(res, engine, runId(url, "/events"));
+      run: (_req, res, ctx, url) => {
+        streamRunEvents(res, ctx.engine, runId(url, "/events"));
       },
     },
     // Same rule as `/events` above: a longer path that starts with the `/runs/`
@@ -386,12 +274,12 @@ function buildRoutes(): Route[] {
     {
       method: "GET",
       matches: (url) => url.startsWith(runsPrefix) && url.endsWith("/stream"),
-      run: (req, res, engine, url) => streamRunOutput(req, res, engine, runId(url, "/stream")),
+      run: (req, res, ctx, url) => streamRunOutput(req, res, ctx.engine, runId(url, "/stream")),
     },
     {
       method: "GET",
       matches: (url) => url.startsWith(runsPrefix),
-      run: (req, res, engine, url) => readRun(req, res, engine, runId(url)),
+      run: (req, res, ctx, url) => readRun(req, res, ctx.engine, runId(url)),
     },
     // The POST collection route is an exact match on `/runs`, so this cannot be
     // confused with it — but it still has to precede nothing, since it is the
@@ -399,12 +287,12 @@ function buildRoutes(): Route[] {
     {
       method: "POST",
       matches: (url) => url.startsWith(runsPrefix) && url.endsWith("/wake"),
-      run: (_req, res, engine, url) => wakeRun(res, engine, runId(url, "/wake")),
+      run: (_req, res, ctx, url) => wakeRun(res, ctx, runId(url, "/wake")),
     },
     {
       method: "DELETE",
       matches: (url) => url.startsWith(runsPrefix),
-      run: (_req, res, engine, url) => cancelRun(res, engine, runId(url)),
+      run: (_req, res, ctx, url) => cancelRun(res, ctx, runId(url)),
     },
   ];
 }
@@ -423,7 +311,7 @@ function buildRoutes(): Route[] {
 export function createWorkflowApi(
   opts: WorkflowApiOptions,
 ): (req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean {
-  const { engine: resolveEngine, token, logger } = opts;
+  const { engine: resolveEngine, token, logger, uploads } = opts;
   const routes = buildRoutes();
 
   async function route(
@@ -461,7 +349,7 @@ export function createWorkflowApi(
       sendJson(res, 404, { error: "Not found" });
       return;
     }
-    await matched.run(req, res, engine, url);
+    await matched.run(req, res, { engine, uploads, logger }, url);
   }
 
   return (req, res, url, method) => {

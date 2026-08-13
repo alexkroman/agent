@@ -19,29 +19,38 @@
  *   A step reads it with `requireStepEnv`; see `@alexkroman1/aai/utils`.
  * - **Storage** (`aai storage enable`, or `DATABASE_URL` under `aai dev`) — runs
  *   live there.
- * - **A linear-PCM WAV behind a URL.** The cutting is arithmetic over byte
- *   offsets, which is only possible on uncompressed audio; `workflows/wav.ts`
- *   says so in more detail, and an unsupported file fails the run by name with
- *   the `ffmpeg` line that fixes it.
+ * - **A linear-PCM WAV.** The cutting is arithmetic over byte offsets, which is
+ *   only possible on uncompressed audio; `workflows/wav.ts` says so in more
+ *   detail, and an unsupported file fails the run by name with the `ffmpeg`
+ *   line that fixes it.
  *
- * ## The URL is the input, and that is not a shortcut
+ * ## The recording is UPLOADED, and the run carries its id
  *
- * A workflow's input is journaled and replayed on every resume, so a recording's
- * BYTES cannot live in it — they would be re-read for the life of the run, and
- * the API's own body cap is 64 KB besides. The recording therefore stays behind
- * a URL and each step fetches exactly the window it needs with an HTTP `Range`
- * request, which is also what keeps sixty steps from downloading the same file
- * sixty times.
+ * A workflow's input is journaled and replayed on every resume, so a
+ * recording's BYTES cannot live in it — they would be re-read for the life of
+ * the run, and the run API's own body cap is 64 KB besides. So the file goes to
+ * `POST /workflows/uploads` (the browser does this for you: `uploads` below is
+ * what makes `<WorkflowFields>` render a file picker, and `useWorkflowSubmit`
+ * stores the file before starting the run), the input carries the returned id,
+ * and each step reads exactly the window it needs with `readUpload` — which is
+ * what keeps sixty steps from moving the same recording sixty times.
+ *
+ * None of that is this template's code. Uploads are the SDK's, for the reason
+ * every workflow app hits this wall on its first form.
  *
  * ## It is scriptable, which is the other half of having an API
  *
- * The page is one caller. `wait` makes the same route synchronous for the rest:
+ * The page is one caller. Two requests do the same thing from a shell — upload,
+ * then start a run naming the id `wait` holds open until it finishes:
  *
  * ```sh
+ * ID=$(curl -s -X POST "https://<your-agent>/workflows/uploads?name=standup.wav" \
+ *   -H 'content-type: audio/wav' --data-binary @standup.wav | jq -r .id)
+ *
  * curl -X POST https://<your-agent>/workflows/runs \
  *   -H 'content-type: application/json' \
- *   -d '{"workflow":"transcribe","wait":30000,"input":{
- *        "recordingUrl":"https://example.com/standup.wav","languageCode":"en"}}'
+ *   -d "{\"workflow\":\"transcribe\",\"wait\":30000,\"input\":{
+ *        \"recording\":\"$ID\",\"languageCode\":\"en\"}}"
  * ```
  */
 
@@ -89,11 +98,15 @@ const LANGUAGES = [
 export const transcribe = workflow({
   description: "Transcribe a recording by splitting it into chunks the sync API accepts",
   input: z.object({
-    recordingUrl: z
-      .url()
-      .describe("URL of a linear-PCM WAV recording — the desk fetches it by byte range"),
+    // A plain string, because an upload id is what the run really receives. What
+    // makes it a file picker rather than a text box is the `uploads` line below.
+    recording: z.string().describe("A linear-PCM WAV recording (16-bit or 8-bit, any rate)"),
     languageCode: z.enum(LANGUAGES).default("en").describe("Language spoken in the recording"),
   }),
+  // The one line that makes the form take a file: `<WorkflowFields>` renders a
+  // picker for this property, `useWorkflowSubmit` stores the chosen file, and
+  // the steps read it back with `readUpload`.
+  uploads: ["recording"],
   run: transcribeFlow,
 });
 

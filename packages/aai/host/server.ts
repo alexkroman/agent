@@ -28,6 +28,7 @@ import { serveStatic } from "./server-static.ts";
 import { handleTelephonyUpgrade } from "./telephony/telephony-server.ts";
 import { createWorkflowApi, WORKFLOW_API_TOKEN_ENV } from "./workflow-api.ts";
 import { answerHandlerFailure, sendJson } from "./workflow-api-http.ts";
+import { installWorkflowSupport } from "./workflow-install.ts";
 import { asSessionWebSocket, safeSend } from "./ws-handler.ts";
 
 /**
@@ -94,6 +95,17 @@ export type ServerOptions = {
   hostBaseAgent?: AgentDef;
   /** Agent greeting, included in the `GET /client-config` response. */
   greeting?: string;
+  /**
+   * Project directory the dev-mode upload folder hangs off (`.workflow-data/
+   * uploads`). Defaults to `process.cwd()`.
+   *
+   * Only read when the agent has no database — with one, uploads live there.
+   * `aai dev` passes the project directory for the reason
+   * `configureWorkflowWorld` does: the process cwd is wherever the developer
+   * was standing, so a second `aai dev` from elsewhere would see none of the
+   * first one's uploads.
+   */
+  workflowDataDir?: string;
   /**
    * First look at every WebSocket upgrade. Return true to claim it (the
    * server then leaves the socket alone); return false to fall through to
@@ -238,6 +250,13 @@ export function createServer(options: ServerOptions): AgentServer {
    */
   const workflowApi = createWorkflowApi({
     engine: () => runtime.workflows,
+    // Publishes the upload reader and the progress reporter a `"use step"`
+    // function reads — see `installWorkflowSupport` for why this is the server's
+    // job and not the runtime's.
+    uploads: installWorkflowSupport({
+      ...omitUndefined({ databaseUrl: env?.DATABASE_URL, dataDir: options.workflowDataDir }),
+      logger,
+    }),
     ...omitUndefined({ token: env?.[WORKFLOW_API_TOKEN_ENV] }),
     logger,
   });

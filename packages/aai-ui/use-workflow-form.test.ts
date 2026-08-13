@@ -41,6 +41,13 @@ function run(over: Partial<WorkflowRun> = {}): WorkflowRun {
  */
 function fakeApi(over: Partial<WorkflowApi> = {}): WorkflowApi {
   return {
+    upload: vi.fn(async () => ({
+      id: "upl_1",
+      name: "",
+      type: "",
+      size: 0,
+      url: "/uploads/upl_1",
+    })),
     list: vi.fn(async () => [{ name: "digest" }]),
     start: vi.fn(async () => "wrun_1"),
     startAndWait: vi.fn(async () => run({ status: "completed" })),
@@ -126,6 +133,60 @@ describe("useWorkflowSubmit", () => {
 
     settled.resolve(run({ status: "completed" }));
     await waitFor(() => expect(result.current.pending).toBe(false));
+  });
+
+  test("STORES a chosen file first and starts the run with its id", async () => {
+    // A run input is journaled and replayed on every resume, so bytes may never
+    // travel in one. This is the only place that holds both the file and the
+    // client that can store it, which is why the substitution lives here rather
+    // than in every page with a file field.
+    const api = fakeApi();
+    const file = new File(["abc"], "standup.wav", { type: "audio/wav" });
+    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+
+    await act(() => result.current.submit({ recording: file, languageCode: "en" }));
+
+    expect(api.upload).toHaveBeenCalledWith(file);
+    expect(api.start).toHaveBeenCalledWith(
+      "digest",
+      { recording: "upl_1", languageCode: "en" },
+      {},
+    );
+  });
+
+  test("stores every file of a multiple field, in order", async () => {
+    const api = fakeApi();
+    const files = [new File(["a"], "one.wav"), new File(["b"], "two.wav")];
+    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+
+    await act(() => result.current.submit({ recordings: files }));
+
+    expect(api.upload).toHaveBeenCalledTimes(2);
+    expect(api.start).toHaveBeenCalledWith("digest", { recordings: ["upl_1", "upl_1"] }, {});
+  });
+
+  test("leaves an input with no files exactly as it was", async () => {
+    const api = fakeApi();
+    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+
+    await act(() => result.current.submit({ url: "u", count: 3, deep: true }));
+
+    expect(api.upload).not.toHaveBeenCalled();
+    expect(api.start).toHaveBeenCalledWith("digest", { url: "u", count: 3, deep: true }, {});
+  });
+
+  test("reports a failed upload as the submit's error, without starting a run", async () => {
+    const api = fakeApi({
+      upload: vi.fn(async () => {
+        throw new Error("upload exceeds 268435456 bytes");
+      }),
+    });
+    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+
+    await act(() => result.current.submit({ recording: new File(["a"], "big.wav") }));
+
+    expect(api.start).not.toHaveBeenCalled();
+    await waitFor(() => expect(result.current.error).toMatch(/268435456/));
   });
 
   test("passes a correlation key through when one is given", async () => {

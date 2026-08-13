@@ -24,7 +24,7 @@
 
 import type { WorkflowSummary } from "@alexkroman1/aai";
 import { useWorkflows } from "../use-workflow-form.ts";
-import { CheckboxField, NumberField, SelectField, TextField } from "./form.tsx";
+import { CheckboxField, FileField, NumberField, SelectField, TextField } from "./form.tsx";
 
 /** The slice of JSON Schema this reads. Everything else is ignored. */
 type JsonSchemaProperty = {
@@ -82,11 +82,22 @@ export function WorkflowFields({ workflow }: { workflow?: WorkflowSummary | stri
   const schema = asObjectSchema(summary?.inputSchema);
   if (!schema?.properties) return null;
   const required = new Set(schema.required ?? []);
+  // The workflow's own `uploads` declaration. It cannot be read off the schema:
+  // an upload property IS a string there — the id — and the difference between
+  // "type a recording id" and "choose a recording" is exactly what the author
+  // declared and what the reader needs.
+  const uploads = new Set(summary?.uploads ?? []);
 
   return (
     <>
       {Object.entries(schema.properties).map(([name, property]) => (
-        <SchemaField key={name} name={name} property={property} required={required.has(name)} />
+        <SchemaField
+          key={name}
+          name={name}
+          property={property}
+          required={required.has(name)}
+          upload={uploads.has(name)}
+        />
       ))}
     </>
   );
@@ -97,16 +108,26 @@ function SchemaField({
   name,
   property,
   required,
+  upload = false,
 }: {
   name: string;
   property: JsonSchemaProperty;
   required: boolean;
+  /** Declared in the workflow's `uploads` — a file picker, not a text box. */
+  upload?: boolean;
 }) {
   const label = humanize(name);
   // `hint` is only passed when there is one: an `undefined` here would be an
   // excess-property error under `exactOptionalPropertyTypes`.
   const hint = property.description === undefined ? {} : { hint: property.description };
   const defaults = property.default === undefined ? {} : { defaultValue: String(property.default) };
+
+  // Before the enum and the type switch, because an upload property is a plain
+  // string in the schema and would otherwise render as a text box asking a
+  // person to type an id no person has.
+  if (upload) {
+    return <FileField name={name} label={label} required={required} upload {...hint} />;
+  }
 
   if (Array.isArray(property.enum) && property.enum.length > 0) {
     return (

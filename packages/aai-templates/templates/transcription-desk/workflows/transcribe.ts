@@ -40,10 +40,10 @@
  *   so before that seam existed no step anywhere could authenticate an outbound
  *   call, and every workflow template's I/O was a fixture saying so.
  * - **The audio is addressed by BYTE RANGE, never carried.** A workflow's input
- *   is journaled and replayed on every resume, so the recording lives behind a
- *   URL and each step fetches exactly its own window with an HTTP `Range`
- *   request. Sixty steps therefore move the recording once between them, not
- *   sixty times.
+ *   is journaled and replayed on every resume, so the recording lives in the
+ *   app's own upload store and the run carries only its id; each step reads
+ *   exactly its own window with `readUpload`. Sixty steps therefore move the
+ *   recording once between them, not sixty times.
  * - **The fan-out is bounded by `mapInBatches`, and the bound is not a detail.**
  *   The DevKit correlates a journal entry to a step call by the ORDER the call
  *   was issued in, so a work-stealing pool — which issues its next call only
@@ -53,8 +53,17 @@
  *   argument.
  */
 
-import { errorMessage, mapInBatches, requireStepEnv } from "@alexkroman1/aai/utils";
-import { FatalError, getWritable } from "workflow";
+import {
+  errorMessage,
+  isTransientStatus,
+  mapInBatches,
+  readUpload,
+  report,
+  requireStepEnv,
+  retryAfter,
+  uploadInfo,
+} from "@alexkroman1/aai/utils";
+import { FatalError, RetryableError } from "workflow";
 import {
   parseWav,
   planSegments,
@@ -110,10 +119,10 @@ export type SegmentTranscript = {
  * The input is what `POST /workflows/runs` carries — see `agent.ts` for the
  * schema it is validated against before a run exists.
  */
-export async function transcribeFlow(input: { recordingUrl: string; languageCode: string }) {
+export async function transcribeFlow(input: { recording: string; languageCode: string }) {
   "use workflow";
 
-  const plan = await splitRecording(input.recordingUrl);
+  const plan = await splitRecording(input.recording);
 
   // One step per segment, bounded, in an order a replay reproduces exactly.
   // A failed segment fails the RUN, deliberately: every sibling that finished is
@@ -121,12 +130,12 @@ export async function transcribeFlow(input: { recordingUrl: string; languageCode
   // what is missing, where catching here to salvage a partial transcript would
   // return a recording with a silent hole in it and report success.
   const parts = await mapInBatches(plan.segments, SEGMENT_CONCURRENCY, (segment) =>
-    transcribeSegment(input.recordingUrl, plan.format, segment, input.languageCode),
+    transcribeSegment(input.recording, plan.format, segment, input.languageCode),
   );
 
   // Whatever this returns is what a caller reads as `output` on a completed run
   // — so it is what the page renders, typed through `WorkflowOutputOf`.
-  return await mergeTranscript(input.recordingUrl, plan.durationMs, parts);
+  return await mergeTranscript(input.recording, plan.durationMs, parts);
 }
 
 /**
@@ -138,15 +147,15 @@ export async function transcribeFlow(input: { recordingUrl: string; languageCode
  * body re-derives the same segment list from the same journaled format rather
  * than re-probing a URL whose content may have changed underneath it.
  */
-export async function splitRecording(recordingUrl: string): Promise<{
+export async function splitRecording(uploadId: string): Promise<{
   format: WavFormat;
   segments: Segment[];
   durationMs: number;
 }> {
   "use step";
 
-  const head = await fetchRange(recordingUrl, 0, HEADER_PROBE_BYTES - 1);
-  const format = fatalOnUnsupported(() => parseWav(head.bytes, head.totalBytes));
+  const head = await readUpload(uploadId, { end: HEADER_PROBE_BYTES });
+  const format = fatalOnUnsupported(() => parseWav(head.bytes, head.info.size));
   const segments = fatalOnUnsupported(() => planSegments(format));
   const durationMs = segments.at(-1)?.endMs ?? 0;
 
@@ -164,7 +173,7 @@ export async function splitRecording(recordingUrl: string): Promise<{
  * exactly the calls that are missing.
  */
 export async function transcribeSegment(
-  recordingUrl: string,
+  uploadId: string,
   format: WavFormat,
   segment: Segment,
   languageCode: string,
@@ -182,7 +191,10 @@ export async function transcribeSegment(
   await report(`Transcribing ${clock(segment.startMs)}–${clock(segment.endMs)}.`);
 
   const apiKey = apiKeyOrFatal();
-  const audio = await fetchRange(recordingUrl, segment.start, segment.end - 1);
+  // `[start, end)`, the same half-open pair `planSegments` produced — the store
+  // owns the conversion to HTTP's inclusive range, so there is no `- 1` here to
+  // get wrong.
+  const audio = await readUpload(uploadId, { start: segment.start, end: segment.end });
 
   const form = new FormData();
   form.append(
@@ -227,7 +239,7 @@ transcribeSegment.maxRetries = 5;
  * recomputed from parts.
  */
 export async function mergeTranscript(
-  recordingUrl: string,
+  uploadId: string,
   durationMs: number,
   parts: readonly SegmentTranscript[],
 ): Promise<{
@@ -247,8 +259,11 @@ export async function mergeTranscript(
   const ordered = [...parts].sort((a, b) => a.index - b.index);
   const transcript = stitchTranscript(ordered.map((part) => part.text));
 
+  // The FILENAME, not the id: the page prints this, and `upl_9f3…` tells a
+  // reader nothing about which recording they are looking at.
+  const source = (await uploadInfo(uploadId)).name || uploadId;
   return {
-    source: recordingUrl,
+    source,
     segments: parts.length,
     durationMs,
     words: countWords(transcript),
@@ -322,36 +337,6 @@ export function clock(ms: number): string {
 // ---- I/O helpers ------------------------------------------------------------
 
 /**
- * Write one progress line to the run's own stream.
- *
- * The only way a run can say anything before it finishes: a snapshot carries a
- * status and, once terminal, an output, so without this a sixty-segment
- * recording reads as `running` for the whole fan-out. `client.tsx` reads it back
- * with `useWorkflowProgress`.
- *
- * Two properties worth copying. It is called from STEPS and never from the body,
- * the same rule as `ctx.db`: the body replays from the top on every resume, so a
- * line written there is re-emitted on each one. And it is BEST-EFFORT — a run
- * must not fail because its narration could not be written, which is also what
- * keeps the steps above callable from this template's own spec, where there is
- * no run and `getWritable()` throws by design.
- */
-async function report(line: string): Promise<void> {
-  try {
-    const writer = getWritable<string>().getWriter();
-    try {
-      await writer.write(line);
-    } finally {
-      // Released rather than closed: later steps write to the same stream, and a
-      // closed stream cannot be reopened.
-      writer.releaseLock();
-    }
-  } catch {
-    // No run in scope, or the stream is already gone. Neither is worth a failure.
-  }
-}
-
-/**
  * Re-throw as terminal, so the DevKit stops retrying.
  *
  * A plain function rather than a `throw` inside each `catch`: `FatalError` takes
@@ -382,52 +367,6 @@ function fatalOnUnsupported<T>(read: () => T): T {
   }
 }
 
-/**
- * Fetch one byte range of the recording.
- *
- * A server that HONOURS `Range` answers 206 and sends only the window, which is
- * the whole point: sixty segments then move the recording once between them.
- * One that ignores it answers 200 with the entire file, which is correct but
- * expensive — so the range is applied here as well, rather than trusting the
- * status. Both cases have to work, because "wherever your recording is hosted"
- * is not a server this template gets to choose.
- */
-async function fetchRange(
-  url: string,
-  start: number,
-  endInclusive: number,
-): Promise<{ bytes: Uint8Array; totalBytes: number }> {
-  const response = await fetch(url, {
-    headers: { Range: `bytes=${start}-${endInclusive}` },
-    signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
-  });
-  if (!response.ok) throw fetchFailure(response, url);
-
-  const body = new Uint8Array(await response.arrayBuffer());
-  if (response.status === 206) {
-    return { bytes: body, totalBytes: rangeTotal(response) ?? start + body.length };
-  }
-  return { bytes: body.subarray(start, endInclusive + 1), totalBytes: body.length };
-}
-
-/** The file's size out of a `Content-Range: bytes 0-65535/12345678` header. */
-function rangeTotal(response: Response): number | undefined {
-  const total = Number(/\/(\d+)$/.exec(response.headers.get("content-range") ?? "")?.[1]);
-  return Number.isFinite(total) && total > 0 ? total : undefined;
-}
-
-/**
- * The failure a bad recording URL deserves.
- *
- * The split is the one every retrying caller has to make: a 404 or a 403 will
- * answer the same way on the fourth attempt, so it is terminal, while a 5xx or a
- * rate limit is exactly what retries are for.
- */
-function fetchFailure(response: Response, url: string): Error {
-  const message = `GET ${url} failed: HTTP ${response.status}`;
-  return isTransient(response.status) ? new Error(message) : new FatalError(message);
-}
-
 /** The sync endpoint's failure, with whatever it said about it. */
 async function syncFailure(response: Response, segment: Segment): Promise<Error> {
   // Two shapes, documented: `{ error_code, message }` for a request problem and
@@ -436,10 +375,22 @@ async function syncFailure(response: Response, segment: Segment): Promise<Error>
   const message = `Segment ${segment.index} (${clock(segment.startMs)}) failed: HTTP ${response.status}${
     (body.message ?? body.detail) ? ` — ${body.message ?? body.detail}` : ""
   }`;
-  return isTransient(response.status) ? new Error(message) : new FatalError(message);
+  return stepFailure(response, message);
 }
 
-/** Will another attempt plausibly answer differently? */
-function isTransient(status: number): boolean {
-  return status === 408 || status === 429 || status >= 500;
+/**
+ * The right error for one HTTP failure.
+ *
+ * Three outcomes rather than two, and the third is the one worth having: a
+ * `FatalError` stops the DevKit retrying something that will answer the same
+ * way, a bare `RetryableError` takes its default backoff, and a
+ * `RetryableError` carrying `retryAfter` waits exactly as long as the far side
+ * asked. The last matters here because `SEGMENT_CONCURRENCY` segments hit the
+ * rate limit together — on our own backoff they re-collect their 429s four at
+ * a time, and on the server's they drain.
+ */
+function stepFailure(response: Response, message: string): Error {
+  if (!isTransientStatus(response.status)) return new FatalError(message);
+  const at = retryAfter(response);
+  return at ? new RetryableError(message, { retryAfter: at }) : new RetryableError(message);
 }
