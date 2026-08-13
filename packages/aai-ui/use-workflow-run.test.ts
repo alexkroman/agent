@@ -60,6 +60,13 @@ describe("useWorkflowRun", () => {
    */
   function pollingApi(get: WorkflowApi["get"]): WorkflowApi {
     return {
+      upload: vi.fn(async () => ({
+        id: "upl_1",
+        name: "",
+        type: "",
+        size: 0,
+        url: "/uploads/upl_1",
+      })),
       list: vi.fn(async () => []),
       start: vi.fn(async () => "wrun_1"),
       startAndWait: vi.fn(async () => {

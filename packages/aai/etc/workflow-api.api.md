@@ -8,11 +8,31 @@
 export function createWorkflowApiClient(opts: WorkflowApiClientOptions): WorkflowApi;
 
 // @public
+export type UploadBody = Blob | ArrayBuffer | ArrayBufferView | string;
+
+// @public
+export type UploadOptions = {
+    name?: string | undefined;
+    type?: string | undefined;
+    signal?: AbortSignal | undefined;
+};
+
+// @public
+export type UploadRef = {
+    id: string;
+    name: string;
+    type: string;
+    size: number;
+    url: string;
+};
+
+// @public
 export const WORKFLOW_API_PREFIX = "/workflows";
 
 // @public
 export type WorkflowApi = {
     list(): Promise<WorkflowSummary[]>;
+    upload(file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
     start(workflow: string, input?: unknown, options?: {
         key?: string;
     }): Promise<string>;
@@ -78,6 +98,7 @@ type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;
+    uploads?: readonly string[];
 };
 
 // (No @packageDocumentation comment for this package)

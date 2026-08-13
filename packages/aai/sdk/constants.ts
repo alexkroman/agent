@@ -387,6 +387,13 @@ export {
 // file-length reasons; re-exported so `@alexkroman1/aai` stays the one import
 // path for constants.
 export { DEFAULT_MAX_STEPS, DEFAULT_TOOL_CHOICE } from "./tool-loop-constants.ts";
+// Workflow-upload budgets, split off for the same file-length reason and
+// re-exported for the same import-path one.
+export {
+  MAX_WORKFLOW_UPLOAD_BYTES,
+  UPLOAD_CHUNK_BYTES,
+  UPLOAD_ID_PREFIX,
+} from "./upload-constants.ts";
 
 /**
  * Highest server-declarable audio sample rate (Hz). Bounds the `config`

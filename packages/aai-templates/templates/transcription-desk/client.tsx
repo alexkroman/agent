@@ -19,10 +19,18 @@
  *
  * There is no field markup here at all. `<WorkflowFields>` renders a control per
  * SCALAR property of the workflow's own input schema, which it reads from
- * `GET /workflows` — so the URL box and the language picker exist because
- * `agent.ts` declares `recordingUrl` and `languageCode`, `.describe()` is what
+ * `GET /workflows` — so the file picker and the language picker exist because
+ * `agent.ts` declares `recording` and `languageCode`, `.describe()` is what
  * labels them, the enum is what makes the second a `<SelectField>`, and adding a
  * third scalar there adds a third control here with no edit.
+ *
+ * The FILE half is the same mechanism one step further: `recording` is a string
+ * in the schema (it carries an upload id) and appears in the workflow's
+ * `uploads` list, which is what turns it into a file picker — and
+ * `useWorkflowSubmit` stores the chosen file through `POST /workflows/uploads`
+ * before it starts the run. A run input is journaled and replayed, so bytes can
+ * never travel in one; this page contains no upload code because the SDK owns
+ * that.
  *
  * That works because this workflow's input is scalars all the way down. A page
  * whose schema has an object or array property writes those fields itself, in
@@ -66,9 +74,8 @@ function TranscriptionDesk() {
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-medium">Transcription Desk</h1>
         <p className="text-sm opacity-70">
-          Point it at a WAV recording. It is split into chunks, transcribed chunk by chunk, and
-          stitched back together by a durable workflow — so you can close this tab and come back to
-          it.
+          Upload a WAV recording. It is split into chunks, transcribed chunk by chunk, and stitched
+          back together by a durable workflow — so you can close this tab and come back to it.
         </p>
       </header>
 

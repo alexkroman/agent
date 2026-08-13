@@ -87,6 +87,7 @@ export function agentToolsToSchemas(tools: Readonly<Record<string, ToolDef>>): T
 type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
+    uploads?: readonly string[];
     run: WorkflowBody<never, R>;
 };
 
@@ -317,6 +318,7 @@ type WorkflowClient = {
 type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description?: string;
     input?: P;
+    uploads?: readonly string[];
     run: WorkflowBody<InferSchemaOutput<P>, R>;
 };
 
@@ -352,6 +354,7 @@ type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;
+    uploads?: readonly string[];
 };
 
 // (No @packageDocumentation comment for this package)

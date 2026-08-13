@@ -20,6 +20,9 @@
 
 export {
   createWorkflowApiClient,
+  type UploadBody,
+  type UploadOptions,
+  type UploadRef,
   WORKFLOW_API_PREFIX,
   type WorkflowApi,
   type WorkflowApiClientOptions,

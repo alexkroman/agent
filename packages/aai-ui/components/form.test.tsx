@@ -160,6 +160,19 @@ describe("file fields", () => {
     expect(await submitted(onSubmit)).toMatchObject({ ids: { content: "a,b,c" } });
   });
 
+  test("contribute the FILE ITSELF when the field uploads", async () => {
+    // The bytes still never reach the run input — `useWorkflowSubmit` stores
+    // the file and substitutes its id — but they must reach the SUBMIT, unread:
+    // describing a 200 MB recording here would mean holding it in memory.
+    const { onSubmit, submit } = renderForm(
+      <FileField name="recording" label="Recording" upload />,
+    );
+    const file = new File(["abc"], "standup.wav", { type: "audio/wav" });
+    fireEvent.change(screen.getByLabelText("Recording"), { target: { files: [file] } });
+    submit();
+    expect((await submitted(onSubmit)).recording).toBe(file);
+  });
+
   test("contribute an array when the field takes several", async () => {
     const { onSubmit, submit } = renderForm(
       <FileField name="uploads" label="Recordings" multiple />,

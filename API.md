@@ -75,6 +75,7 @@ export type AgentParams<S = DefaultSessionState> = PipelineAgentParams<S> | S2sA
 export type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
+    uploads?: readonly string[];
     run: WorkflowBody<never, R>;
 };
 
@@ -948,6 +949,7 @@ export type WorkflowClient = {
 export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description?: string;
     input?: P;
+    uploads?: readonly string[];
     run: WorkflowBody<InferSchemaOutput<P>, R>;
 };
 
@@ -989,6 +991,7 @@ export type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;
+    uploads?: readonly string[];
 };
 ```
 
@@ -1002,6 +1005,7 @@ export const AGENT_CSP: string;
 type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
+    uploads?: readonly string[];
     run: WorkflowBody<never, R>;
 };
 
@@ -1184,6 +1188,7 @@ type WorkflowClient = {
 type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description?: string;
     input?: P;
+    uploads?: readonly string[];
     run: WorkflowBody<InferSchemaOutput<P>, R>;
 };
 
@@ -1222,6 +1227,7 @@ type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;
+    uploads?: readonly string[];
 };
 
 // @internal (undocumented)
@@ -1763,6 +1769,7 @@ export function agentToolsToSchemas(tools: Readonly<Record<string, ToolDef>>): T
 type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
+    uploads?: readonly string[];
     run: WorkflowBody<never, R>;
 };
 
@@ -1993,6 +2000,7 @@ type WorkflowClient = {
 type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description?: string;
     input?: P;
+    uploads?: readonly string[];
     run: WorkflowBody<InferSchemaOutput<P>, R>;
 };
 
@@ -2028,6 +2036,7 @@ type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;
+    uploads?: readonly string[];
 };
 ```
 
@@ -2454,6 +2463,7 @@ export interface AgentServerOptions extends PassthroughServerOptions {
 type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
+    uploads?: readonly string[];
     run: WorkflowBody<never, R>;
 };
 
@@ -2670,6 +2680,9 @@ export function createServer(options: ServerOptions): AgentServer;
 // @internal
 export function createSessionCore(opts: SessionCoreOptions): SessionCore;
 
+// @internal
+export function createStepReporter(logger: Logger): StepReporter;
+
 // @public
 export function createTelephonyBridge(carrierSocket: SessionWebSocket, opts: TelephonyBridgeOptions): SessionWebSocket;
 
@@ -2678,6 +2691,12 @@ export function createTextAgent(opts: TextAgentOptions): TextAgent;
 
 // @public
 export function createToolCallRepair(model: LanguageModel, log: Logger, getAbortSignal?: () => AbortSignal | undefined): ToolCallRepairFunction<ToolSet>;
+
+// @internal
+export function createUploadStore(opts: {
+    db?: Db | undefined;
+    dir: string;
+}): UploadStore;
 
 // @internal
 export function createWakeHintPublisher(opts?: WakeHintOptions): WakeHintPublisher;
@@ -2857,6 +2876,13 @@ export type HostSessionDefaults = Omit<Partial<AgentDef>, "systemPrompt" | "gree
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
 // @internal
+export function installWorkflowSupport(opts: {
+    databaseUrl?: string | undefined;
+    dataDir?: string | undefined;
+    logger: Logger;
+}): UploadStore;
+
+// @internal
 export function isDebugEnv(value: string | undefined): boolean;
 
 // @internal
@@ -2991,6 +3017,12 @@ export type ProviderEnv = Record<string, string> & {
 
 // @internal
 export function publishStepEnv(env: Readonly<Record<string, string | undefined>>): void;
+
+// @internal
+export function publishStepReporter(reporter: StepReporter | undefined): void;
+
+// @internal
+export function publishUploadReader(reader: UploadReader | undefined): void;
 
 // @public
 type ReadyConfig = z.infer<typeof ReadyConfigSchema>;
@@ -3166,6 +3198,7 @@ export type ServerOptions = {
     env?: Record<string, string>;
     hostBaseAgent?: AgentDef;
     greeting?: string;
+    workflowDataDir?: string;
     upgrade?: (req: http.IncomingMessage, socket: Duplex, head: Buffer) => boolean;
     request?: (req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean;
     page?: "voice" | "static";
@@ -3332,6 +3365,9 @@ export function startTelephonySession(carrierSocket: SessionWebSocket, runtime: 
 
 // @internal
 export function startWorkflowWorldIfDeclared(hasWorkflows: boolean, kind: WorldKind): Promise<void>;
+
+// @internal
+export type StepReporter = (line: string) => void | Promise<void>;
 
 // @public
 type StreamOptions = {
@@ -3589,6 +3625,50 @@ export const twilioCodec: CarrierCodec;
 // @public
 type Unsubscribe = () => void;
 
+// @public
+export const UPLOAD_CHUNKS_TABLE = "aai_workflow_upload_chunks";
+
+// @public
+export const UPLOAD_DIR_NAME: string;
+
+// @public
+type UploadInfo = {
+    id: string;
+    name: string;
+    type: string;
+    size: number;
+};
+
+// @public
+export type UploadMeta = {
+    name?: string | undefined;
+    type?: string | undefined;
+};
+
+// @internal
+export type UploadReader = {
+    info(id: string): Promise<UploadInfo | undefined>;
+    read(id: string, start: number, end: number): Promise<Uint8Array>;
+};
+
+// @public
+export const UPLOADS_TABLE = "aai_workflow_uploads";
+
+// @internal
+export const UPLOADS_UNAVAILABLE_MESSAGE: string;
+
+// @public
+export type UploadStore = UploadReader & {
+    create(meta: UploadMeta, body: AsyncIterable<Uint8Array>, opts?: {
+        limit?: number;
+    }): Promise<UploadInfo>;
+};
+
+// @public
+export class UploadTooLargeError extends Error {
+    constructor(limit: number);
+}
+
 // @internal
 export type WakeHintOptions = {
     databaseUrl?: string | undefined;
@@ -3671,6 +3751,7 @@ export type WorkflowApiEngine = WorkflowClient;
 export type WorkflowApiOptions = {
     engine: () => WorkflowApiEngine | undefined;
     token?: string | undefined;
+    uploads?: UploadStore | undefined;
     logger: Logger;
 };
 
@@ -3709,6 +3790,7 @@ export type WorkflowClientOptions = {
 type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description?: string;
     input?: P;
+    uploads?: readonly string[];
     run: WorkflowBody<InferSchemaOutput<P>, R>;
 };
 
@@ -3750,6 +3832,7 @@ type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;
+    uploads?: readonly string[];
 };
 
 // @internal
@@ -4017,6 +4100,7 @@ export type Unsubscribe = () => void;
 type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
+    uploads?: readonly string[];
     run: WorkflowBody<never, R>;
 };
 
@@ -4145,6 +4229,16 @@ type StreamOptions = {
 };
 
 // @public
+export type StubUpload = Uint8Array | {
+    bytes: Uint8Array;
+    name?: string;
+    type?: string;
+};
+
+// @public
+export function stubUploads(files: Readonly<Record<string, StubUpload>>): () => void;
+
+// @public
 export type TestToolContext<S = DefaultSessionState> = ToolContext<S> & {
     readonly sent: SentEvent[];
 };
@@ -4197,6 +4291,7 @@ type WorkflowClient = {
 type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description?: string;
     input?: P;
+    uploads?: readonly string[];
     run: WorkflowBody<InferSchemaOutput<P>, R>;
 };
 
@@ -4232,6 +4327,7 @@ type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;
+    uploads?: readonly string[];
 };
 ```
 
@@ -4518,6 +4614,9 @@ export function isTextAssetPath(assetPath: string): boolean;
 // @public
 export function isToolFailure(value: unknown): value is ToolFailure;
 
+// @public
+export function isTransientStatus(status: number): boolean;
+
 // @public (undocumented)
 export type KeyedLock = ((key: string, opts?: KeyedLockOptions) => Promise<() => void>) & {
     readonly size: number;
@@ -4559,6 +4658,18 @@ export const PREVIEW_SLUG_SUFFIX = "-preview";
 export function pushCapped<T>(list: T[], item: T, max: number): T[];
 
 // @public
+export function readUpload(id: string, opts?: ReadUploadOptions): Promise<UploadSlice>;
+
+// @public
+export type ReadUploadOptions = {
+    start?: number | undefined;
+    end?: number | undefined;
+};
+
+// @public
+export function report(line: string): Promise<void>;
+
+// @public
 export function requireStepEnv(name: string): string;
 
 // @public
@@ -4566,6 +4677,11 @@ export const RESERVED_SLUGS: ReadonlySet<string>;
 
 // @public
 export function responseErrorMessage(res: Response, label?: string): Promise<string>;
+
+// @public
+export function retryAfter(from: {
+    headers: Headers;
+} | Headers): Date | undefined;
 
 // @public
 export function safeJsonParse(text: string): unknown;
@@ -4581,9 +4697,11 @@ export class StepGenerateError extends Error {
     constructor(message: string, opts: {
         status?: number | undefined;
         retryable: boolean;
+        retryAfter?: Date | undefined;
         cause?: unknown;
     });
     readonly retryable: boolean;
+    readonly retryAfter: Date | undefined;
     readonly status: number | undefined;
 }
 
@@ -4610,6 +4728,25 @@ export type ToolFailure = {
 export function toolFailure(message: string): ToolFailure;
 
 // @public
+export type UploadInfo = {
+    id: string;
+    name: string;
+    type: string;
+    size: number;
+};
+
+// @public
+export function uploadInfo(id: string): Promise<UploadInfo>;
+
+// @public
+export type UploadSlice = {
+    info: UploadInfo;
+    bytes: Uint8Array;
+    start: number;
+    end: number;
+};
+
+// @public
 export const VALID_SLUG_RE: RegExp;
 
 // @public
@@ -4623,11 +4760,31 @@ export const withLock: <T>(lock: (key: string, opts?: KeyedLockOptions) => Promi
 export function createWorkflowApiClient(opts: WorkflowApiClientOptions): WorkflowApi;
 
 // @public
+export type UploadBody = Blob | ArrayBuffer | ArrayBufferView | string;
+
+// @public
+export type UploadOptions = {
+    name?: string | undefined;
+    type?: string | undefined;
+    signal?: AbortSignal | undefined;
+};
+
+// @public
+export type UploadRef = {
+    id: string;
+    name: string;
+    type: string;
+    size: number;
+    url: string;
+};
+
+// @public
 export const WORKFLOW_API_PREFIX = "/workflows";
 
 // @public
 export type WorkflowApi = {
     list(): Promise<WorkflowSummary[]>;
+    upload(file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
     start(workflow: string, input?: unknown, options?: {
         key?: string;
     }): Promise<string>;
@@ -4693,6 +4850,7 @@ type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;
+    uploads?: readonly string[];
 };
 ```
 
@@ -5011,10 +5169,11 @@ export type FieldShell = {
 // @public
 export function FileField(input: FieldShell & {
     read?: FileRead;
+    upload?: boolean;
 } & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
 // @public
-export type FileRead = "none" | "text" | "dataUrl";
+export type FileRead = "none" | "text" | "dataUrl" | "upload";
 
 // @public
 export type FileValue = {

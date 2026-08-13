@@ -352,10 +352,12 @@ describe("API-EXPORTS.json", () => {
     expect(surface["@alexkroman1/aai/testing"]).not.toContain("WorkflowClient");
     expect(surface["@alexkroman1/aai/testing"]).toEqual([
       "SentEvent",
+      "StubUpload",
       "TestToolContext",
       "createStubWorkflows",
       "createToolContext",
       "createUnusedDb",
+      "stubUploads",
     ]);
   });
 });

@@ -64,6 +64,12 @@ import {
   MAX_WORKFLOW_WAIT_MS,
   type WorkflowRunSnapshot,
 } from "./workflow-run.ts";
+import {
+  type UploadBody,
+  type UploadOptions,
+  type UploadRef,
+  uploadFile,
+} from "./workflow-upload-client.ts";
 
 /**
  * Path prefix every route lives under, relative to the agent's own base URL.
@@ -143,6 +149,23 @@ export type WorkflowApiClientOptions = {
 export type WorkflowApi = {
   /** Declared workflows: name, description, and the input schema to render. */
   list(): Promise<WorkflowSummary[]>;
+  /**
+   * Store a file and resolve the handle a run input carries.
+   *
+   * The other half of `WorkflowDef.uploads`: a workflow's input is journaled and
+   * replayed on every resume, so bytes may not travel in it — they go here once,
+   * and the run carries {@link UploadRef.id}, which a step reads windows of with
+   * `readUpload`.
+   *
+   * A `File` from an `<input type="file">` needs no second argument: its own
+   * `name` and `type` are what get stored. Anything else — a `Blob`, a
+   * `Uint8Array` — should name the file it is, since a step's failure messages
+   * and the download link are all the name it will ever have.
+   *
+   * The whole body is sent in one request, so a file past
+   * `MAX_WORKFLOW_UPLOAD_BYTES` is refused with a 413 rather than truncated.
+   */
+  upload(file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
   /**
    * Start a run and resolve its id WITHOUT waiting for it — the point of the
    * mechanism. Rejects when the name is not declared or the input fails the
@@ -256,6 +279,10 @@ async function failure(res: Response): Promise<Error> {
   return new Error(await responseErrorMessage(res, ERROR_LABEL));
 }
 
+// Re-exported so `@alexkroman1/aai/workflow-api` stays the one import path for
+// everything this surface takes and returns.
+export type { UploadBody, UploadOptions, UploadRef } from "./workflow-upload-client.ts";
+
 /**
  * Create a workflow API client.
  *
@@ -324,6 +351,10 @@ export function createWorkflowApiClient(opts: WorkflowApiClientOptions): Workflo
   }
 
   const api: WorkflowApi = {
+    upload(file: UploadBody, options?: UploadOptions): Promise<UploadRef> {
+      return uploadFile(base, auth, failure, file, options);
+    },
+
     async list(): Promise<WorkflowSummary[]> {
       const res = await fetch(base, { headers: auth, ...deadline() });
       if (!res.ok) throw await failure(res);

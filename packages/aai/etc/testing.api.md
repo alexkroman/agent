@@ -8,6 +8,7 @@
 type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
+    uploads?: readonly string[];
     run: WorkflowBody<never, R>;
 };
 
@@ -136,6 +137,16 @@ type StreamOptions = {
 };
 
 // @public
+export type StubUpload = Uint8Array | {
+    bytes: Uint8Array;
+    name?: string;
+    type?: string;
+};
+
+// @public
+export function stubUploads(files: Readonly<Record<string, StubUpload>>): () => void;
+
+// @public
 export type TestToolContext<S = DefaultSessionState> = ToolContext<S> & {
     readonly sent: SentEvent[];
 };
@@ -188,6 +199,7 @@ type WorkflowClient = {
 type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description?: string;
     input?: P;
+    uploads?: readonly string[];
     run: WorkflowBody<InferSchemaOutput<P>, R>;
 };
 
@@ -223,6 +235,7 @@ type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;
+    uploads?: readonly string[];
 };
 
 // (No @packageDocumentation comment for this package)

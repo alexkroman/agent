@@ -1,0 +1,15 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "testing",
+  "epoch": 5,
+  "sha256": "310cdf5967ce729e222328d73c376b616848e44c316a7d71090248299dd5d813",
+  "exports": [
+    "SentEvent",
+    "StubUpload",
+    "TestToolContext",
+    "createStubWorkflows",
+    "createToolContext",
+    "createUnusedDb",
+    "stubUploads"
+  ]
+}

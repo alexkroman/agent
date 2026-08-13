@@ -59,8 +59,8 @@
  * reproduce. Its module doc carries the whole argument.
  */
 
-import { mapInBatches, StepGenerateError, stepGenerate } from "@alexkroman1/aai/utils";
-import { FatalError, getWritable, sleep } from "workflow";
+import { mapInBatches, report, StepGenerateError, stepGenerate } from "@alexkroman1/aai/utils";
+import { FatalError, sleep } from "workflow";
 
 /** How long the desk sits on a finished draft before filing it. */
 const REVIEW_DELAY = "30 seconds";
@@ -253,46 +253,4 @@ async function ask(prompt: string, opts: { system: string }): Promise<string> {
 function stopOrRetry(err: unknown): never {
   if (err instanceof StepGenerateError && !err.retryable) throw new FatalError(err.message);
   throw err;
-}
-
-/**
- * Write one progress line to the run's own stream.
- *
- * The only way a long run can say anything before it finishes: a snapshot
- * carries a status and, once terminal, an output — so without this the desk is
- * "running" for the whole pass and then done. Chunks are retained with the run,
- * so a reader that arrives late still sees all of them. Read back with
- * `ctx.workflows.stream(runId)` (see `research_progress` in `agent.ts`).
- *
- * The channel is deliberately never CLOSED — a later step writes to it too, and
- * no step knows it is the last one — so a reader has to bound itself by
- * `streamTail` rather than wait for an end that never comes.
- *
- * Two properties worth copying. It is called from STEPS and never from the body,
- * the same rule as `ctx.db`: the body replays from the top on every resume, so a
- * line written there is re-emitted on each one. And it is BEST-EFFORT — a run
- * must not fail because its narration could not be written, which is also what
- * keeps the steps above callable from this template's own spec, where there is
- * no run and `getWritable()` throws by design.
- *
- * This is the THIRD copy of these twelve lines across the workflow templates,
- * which is normally the signal to extract it into the SDK. It has not been,
- * for one concrete reason: it imports `getWritable` from `workflow`, and the
- * subpath a step imports from (`@alexkroman1/aai/utils`) is on the CLI's
- * zero-dependency startup path — so the helper would need a public subpath of
- * its own, which is not worth minting for one function.
- */
-async function report(line: string): Promise<void> {
-  try {
-    const writer = getWritable<string>().getWriter();
-    try {
-      await writer.write(line);
-    } finally {
-      // Released rather than closed: later steps write to the same stream, and a
-      // closed stream cannot be reopened.
-      writer.releaseLock();
-    }
-  } catch {
-    // No run in scope, or the stream is already gone. Neither is worth a failure.
-  }
 }

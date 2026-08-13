@@ -117,6 +117,39 @@ export function useWorkflows(opts: UseWorkflowsOptions = {}): UseWorkflowsResult
   return state;
 }
 
+/**
+ * Replace every `File` in a submitted form with the id of a stored upload.
+ *
+ * Sequential rather than `Promise.all`: these are large bodies, and a form with
+ * two 200 MB recordings should send them one after another rather than compete
+ * for the same connection.
+ *
+ * Anything that is not a `File` (or an array of them) passes through untouched,
+ * so this is invisible to every form that has none — including one whose values
+ * are not an object at all, which `submit` accepts.
+ */
+async function uploadFiles(api: WorkflowApi, input: unknown): Promise<unknown> {
+  if (input === null || typeof input !== "object" || Array.isArray(input)) return input;
+  const entries = Object.entries(input as Record<string, unknown>);
+  const out: Record<string, unknown> = {};
+  for (const [name, value] of entries) {
+    if (value instanceof File) {
+      out[name] = (await api.upload(value)).id;
+    } else if (
+      Array.isArray(value) &&
+      value.length > 0 &&
+      value.every((one) => one instanceof File)
+    ) {
+      const ids: string[] = [];
+      for (const file of value) ids.push((await api.upload(file)).id);
+      out[name] = ids;
+    } else {
+      out[name] = value;
+    }
+  }
+  return out;
+}
+
 /** What {@link useWorkflowSubmit} returns. */
 export type WorkflowSubmission<R = unknown> = {
   /**
@@ -217,12 +250,18 @@ export function useWorkflowSubmit<R = unknown>(
       setRunId(undefined);
       try {
         const options = { ...(key !== undefined && { key }) };
+        // Files first: a run input carries an upload ID, never bytes, and this
+        // is the one place that knows both the chosen file and the client that
+        // can store it. A form using `<FileField upload>` (which is what
+        // `<WorkflowFields>` renders for a declared upload property) therefore
+        // needs no upload code of its own.
+        const started = await uploadFiles(client, input);
         // Both paths end in a run id — the difference is only whether the agent
         // held the request open — so the watch below is identical either way.
         setRunId(
           wait === undefined
-            ? await client.start(workflow, input, options)
-            : (await client.startAndWait(workflow, input, { ...options, wait })).runId,
+            ? await client.start(workflow, started, options)
+            : (await client.startAndWait(workflow, started, { ...options, wait })).runId,
         );
       } catch (err: unknown) {
         setStartError(errorMessage(err));

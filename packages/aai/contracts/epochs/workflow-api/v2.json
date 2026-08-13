@@ -1,0 +1,15 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "workflow-api",
+  "epoch": 2,
+  "sha256": "b4bd2aac1aeb90e897d4d692476f18e2750e3cac1655c926614b404edcfbec7d",
+  "exports": [
+    "UploadBody",
+    "UploadOptions",
+    "UploadRef",
+    "WORKFLOW_API_PREFIX",
+    "WorkflowApi",
+    "WorkflowApiClientOptions",
+    "createWorkflowApiClient"
+  ]
+}

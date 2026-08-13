@@ -42,9 +42,15 @@ export type FileValue = {
 /**
  * How much of a chosen file a {@link FileField} reads.
  *
+ * `"upload"` is the odd one and the one a workflow input wants: the field
+ * contributes the `File` ITSELF rather than a description of it, and
+ * `useWorkflowSubmit` then stores it through `POST /workflows/uploads` and puts
+ * the id in the run input. Bytes cannot travel in a run input — see
+ * {@link FileField} — so this is how a form takes a file at all.
+ *
  * @public
  */
-export type FileRead = "none" | "text" | "dataUrl";
+export type FileRead = "none" | "text" | "dataUrl" | "upload";
 
 /**
  * The props every field in `form.tsx` shares.

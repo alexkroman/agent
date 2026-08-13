@@ -175,10 +175,11 @@ export type FieldShell = {
 // @public
 export function FileField(input: FieldShell & {
     read?: FileRead;
+    upload?: boolean;
 } & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
 // @public
-export type FileRead = "none" | "text" | "dataUrl";
+export type FileRead = "none" | "text" | "dataUrl" | "upload";
 
 // @public
 export type FileValue = {

@@ -408,6 +408,9 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
         // is also what `workflow_status` reads, and a form that cannot be
         // rendered must not take the status tool down with it.
         ...(def.input !== undefined && { inputSchema: safeJsonSchema(def.input, name, logger) }),
+        // Forwarded rather than derived: which properties are uploads is the
+        // author's declaration, and the page is the reader that acts on it.
+        ...(def.uploads !== undefined && { uploads: def.uploads }),
       }));
     },
   } satisfies WorkflowClient as WorkflowClient;

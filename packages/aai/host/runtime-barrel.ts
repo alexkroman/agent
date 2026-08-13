@@ -28,6 +28,14 @@ export type { AgentEnv, HostCredentialEnv, ProviderEnv } from "../sdk/env-types.
 // bundles it. Only a host calls this: the guest at bundle load, `aai dev` on
 // every rebuild.
 export { publishStepEnv } from "../sdk/step-env.ts";
+// The two step slots' publishers. `installWorkflowSupport` below is what calls
+// both for an ordinary server; these are for a process that assembles its own.
+export { publishStepReporter, type StepReporter } from "../sdk/step-report.ts";
+export {
+  publishUploadReader,
+  UPLOADS_UNAVAILABLE_MESSAGE,
+  type UploadReader,
+} from "../sdk/step-uploads.ts";
 export {
   type AgentServerOptions,
   createAgentServer,
@@ -194,6 +202,14 @@ export {
   type WdkStreamOptions,
   type WorkflowClientOptions,
 } from "./workflow-client.ts";
+// Serving workflows, and choosing the world they live in. Shared rather than
+// guest-only because `aai dev` needs the identical wiring — and the CLI may not
+// import the guest (the dependency edge runs aai-guest -> aai-cli, never back).
+// Uploads and step narration: the store both `/uploads` routes are served from,
+// and the two publishers that hand a `"use step"` function its reader and its
+// reporter. Exported for the embedders that build a server by hand — and for a
+// spec, which publishes a fake rather than standing a store up.
+export { installWorkflowSupport, UPLOAD_DIR_NAME } from "./workflow-install.ts";
 export {
   createMemoryKeyStore,
   createPostgresKeyStore,
@@ -201,9 +217,7 @@ export {
   MAX_WORKFLOW_FIND_LIMIT,
   type WorkflowKeyStore,
 } from "./workflow-keys.ts";
-// Serving workflows, and choosing the world they live in. Shared rather than
-// guest-only because `aai dev` needs the identical wiring — and the CLI may not
-// import the guest (the dependency edge runs aai-guest -> aai-cli, never back).
+export { createStepReporter } from "./workflow-report.ts";
 export {
   createWorkflowSurface,
   handleWorkflowRequest,
@@ -212,6 +226,14 @@ export {
   WORKFLOW_WEBHOOK_PREFIX,
   type WorkflowSurface,
 } from "./workflow-serve.ts";
+export {
+  createUploadStore,
+  UPLOAD_CHUNKS_TABLE,
+  UPLOADS_TABLE,
+  type UploadMeta,
+  type UploadStore,
+  UploadTooLargeError,
+} from "./workflow-uploads.ts";
 // The wake hint. Exported for BOTH ends: the guest builds the publisher, and
 // the platform's wake sweep reads the table this names (see workflow-wake-hint.ts
 // — one spelling, so a rename cannot be two edits that disagree).

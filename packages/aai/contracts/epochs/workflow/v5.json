@@ -1,0 +1,27 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "workflow",
+  "epoch": 5,
+  "sha256": "f397e0b44af7fd878698d8eee4310e08dc8b98bcc591c1a4e3d5ea8adae87059",
+  "exports": [
+    "AnyWorkflowDef",
+    "FindOptions",
+    "MAX_WORKFLOW_WAIT_MS",
+    "StartOptions",
+    "StreamOptions",
+    "TERMINAL_WORKFLOW_STATUSES",
+    "TerminalWorkflowRun",
+    "WakeUpOptions",
+    "WorkflowBody",
+    "WorkflowClient",
+    "WorkflowDef",
+    "WorkflowOutputOf",
+    "WorkflowRunBase",
+    "WorkflowRunSnapshot",
+    "WorkflowRunStatus",
+    "WorkflowSummary",
+    "clampWorkflowWait",
+    "isTerminal",
+    "workflow"
+  ]
+}

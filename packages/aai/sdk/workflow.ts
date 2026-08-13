@@ -133,6 +133,22 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
   /** Schema for the run input, validated at `start()` so a bad payload fails at the call site. */
   input?: P;
   /**
+   * Input properties that carry an UPLOAD ID rather than a value of their own.
+   *
+   * A run's input is journaled and replayed on every resume, so a file's bytes
+   * may not travel in it — the bytes go to `POST /workflows/uploads` and the
+   * input carries the id it answered with, which a step reads windows of through
+   * `readUpload`. Naming the property here is what makes that automatic at both
+   * ends: `<WorkflowFields>` renders a file picker for it instead of a text box,
+   * and `useWorkflowSubmit` uploads the chosen file and substitutes its id.
+   *
+   * Declared on the workflow rather than in the schema because the schema may be
+   * any Standard Schema, and a marker inside one would only work for the library
+   * that happened to carry it. The property itself stays an ordinary
+   * `z.string()` — an upload id is what the run really receives.
+   */
+  uploads?: readonly string[];
+  /**
    * The workflow body: a function carrying `"use workflow"`.
    *
    * Takes ONE argument, the validated input. WDK bodies are variadic
@@ -156,6 +172,7 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
 export type AnyWorkflowDef<R = unknown> = {
   description?: string;
   input?: ToolInputSchema;
+  uploads?: readonly string[];
   run: WorkflowBody<never, R>;
 };
 
@@ -213,6 +230,14 @@ export type WorkflowSummary = {
    * shipped as the Standard Schema itself, because the reader is a browser.
    */
   inputSchema?: unknown;
+  /**
+   * Input properties that carry an upload id — see `WorkflowDef.uploads`.
+   *
+   * Served alongside the schema because a form is rendered from BOTH: the schema
+   * says the property is a string, and this says the string is a file the page
+   * has to upload first.
+   */
+  uploads?: readonly string[];
 };
 
 /** Per-run options for {@link WorkflowClient.start}. */

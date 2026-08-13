@@ -47,17 +47,21 @@ import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
  * An allowlist rather than a copy of the incoming set. `Authorization` is the
  * only one that carries authority — the guest's own gate is
  * `AAI_WORKFLOW_API_TOKEN` — `Content-Type` is what makes the JSON body parse,
- * and `Accept` is what distinguishes an event-stream request. Everything else is
+ * and `Accept` is what distinguishes an event-stream request. `Range` is what
+ * makes `GET /workflows/uploads/:id` mean anything through this hop: dropped, a
+ * caller asking for 64 KB of a 200 MB recording is answered with the whole
+ * thing, correctly and uselessly. Everything else is
  * either this hop's business (`Host`, `X-Forwarded-*`, `Connection`) or the
  * browser's (`Cookie`, `Origin`), and forwarding those would make the guest's
  * view of the caller a description of the platform instead.
  */
-const FORWARDED_REQUEST_HEADERS = ["authorization", "content-type", "accept"] as const;
+const FORWARDED_REQUEST_HEADERS = ["authorization", "content-type", "accept", "range"] as const;
 
 /**
  * Response headers forwarded back.
  *
- * Every route answers JSON or an event stream, so this is `Content-Type` plus
+ * Every route answers JSON, an event stream or an uploaded file's bytes, so this
+ * is `Content-Type` plus
  * the length when the guest declared one, plus the two headers that keep a
  * stream unbuffered end to end. `Content-Encoding` and `Transfer-Encoding` are
  * deliberately absent: `fetch` has already decoded the body we are re-emitting,
@@ -68,6 +72,12 @@ const FORWARDED_RESPONSE_HEADERS = [
   "content-length",
   "cache-control",
   "x-accel-buffering",
+  // The `Range` half's answer. Without `Content-Range` a 206 is a partial body
+  // a client cannot place, and without `Accept-Ranges` a client that probes
+  // first never asks for a range at all.
+  "content-range",
+  "accept-ranges",
+  "content-disposition",
 ] as const;
 
 /** The 503 the forward answers with — the broker's own sentence, not a second one. */

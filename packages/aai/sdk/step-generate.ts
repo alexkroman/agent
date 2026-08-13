@@ -40,6 +40,7 @@ import {
   ASSEMBLYAI_LLM_GATEWAY_URL,
 } from "./providers/llm/assemblyai.ts";
 import { requireStepEnv } from "./step-env.ts";
+import { isTransientStatus, retryAfter } from "./step-retry.ts";
 
 /** A model call's deadline. `fetch` has none, and a hung step never ends. */
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -107,15 +108,29 @@ export class StepGenerateError extends Error {
   readonly status: number | undefined;
   /** Will another attempt plausibly answer differently? */
   readonly retryable: boolean;
+  /**
+   * When the gateway asked to be called back, from its own `Retry-After`.
+   *
+   * Present on a rate limit that named a delay, and what a caller should hand
+   * to `RetryableError` — the DevKit's default backoff is a guess, and this is
+   * the number the far side chose.
+   */
+  readonly retryAfter: Date | undefined;
 
   constructor(
     message: string,
-    opts: { status?: number | undefined; retryable: boolean; cause?: unknown },
+    opts: {
+      status?: number | undefined;
+      retryable: boolean;
+      retryAfter?: Date | undefined;
+      cause?: unknown;
+    },
   ) {
     super(message, opts.cause === undefined ? undefined : { cause: opts.cause });
     this.name = "StepGenerateError";
     this.status = opts.status;
     this.retryable = opts.retryable;
+    this.retryAfter = opts.retryAfter;
   }
 }
 
@@ -220,6 +235,9 @@ async function gatewayFailure(response: Response): Promise<StepGenerateError> {
   const status = response.status;
   return new StepGenerateError(`LLM gateway failed: HTTP ${status}${body ? ` — ${body}` : ""}`, {
     status,
-    retryable: status === 408 || status === 429 || status >= 500,
+    retryable: isTransientStatus(status),
+    // `omitUndefined` because the field is optional under
+    // `exactOptionalPropertyTypes` and most failures name no delay.
+    ...omitUndefined({ retryAfter: retryAfter(response) }),
   });
 }

@@ -39,6 +39,7 @@ export type AgentParams<S = DefaultSessionState> = PipelineAgentParams<S> | S2sA
 export type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
+    uploads?: readonly string[];
     run: WorkflowBody<never, R>;
 };
 
@@ -912,6 +913,7 @@ export type WorkflowClient = {
 export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description?: string;
     input?: P;
+    uploads?: readonly string[];
     run: WorkflowBody<InferSchemaOutput<P>, R>;
 };
 
@@ -953,6 +955,7 @@ export type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;
+    uploads?: readonly string[];
 };
 
 // (No @packageDocumentation comment for this package)

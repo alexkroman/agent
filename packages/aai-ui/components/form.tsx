@@ -26,10 +26,11 @@
  * `"3"` against `z.number()` is a rejected run, and the browser is the only
  * place that still knows the field was `type="number"`.
  *
- * ## A file field describes a file; it does not upload one
+ * ## A file field either describes a file or uploads it
  *
  * See {@link FileField}. A workflow input is journaled and replayed on every
- * resume, so file BYTES do not belong in it.
+ * resume, so file BYTES do not belong in it — `upload` is the field that sends
+ * them somewhere a step can read them and contributes the handle instead.
  */
 
 import clsx from "clsx";
@@ -330,14 +331,18 @@ export function CheckboxField({
  * A file picker. Contributes a {@link FileValue} (or an array, with `multiple`)
  * to {@link FormValues} — or nothing when no file was chosen.
  *
- * **It describes the file; by default it does not read it.** A workflow's input
- * is serialized into the run record and replayed from it on every resume, so a
- * file's BYTES in there are re-read for the life of the run and capped by the
- * request-body limit besides. The shape that scales is the one every
- * transcription and document API already uses: upload the bytes to storage,
- * pass the object key, and let a step fetch it. `read` exists for the cases
- * where the file really is small and really is the input — a CSV of ids, a
- * config — and the size is the author's to check.
+ * **`upload` is what a workflow input wants.** A run's input is serialized into
+ * the run record and replayed from it on every resume, so a file's BYTES cannot
+ * travel in it. With `upload` the field contributes the `File` itself,
+ * `useWorkflowSubmit` stores it through `POST /workflows/uploads` before
+ * starting the run, and the input carries the upload id — which a step reads
+ * windows of with `readUpload`. Declaring the property in the workflow's
+ * `uploads` list makes `<WorkflowFields>` render exactly this, so a declared
+ * form needs no file markup at all.
+ *
+ * **Without it the field describes the file and does not read it.** `read`
+ * exists for the cases where the bytes really are small and really are the
+ * input — a CSV of ids, a config — and the size is the author's to check.
  *
  * @public
  */
@@ -347,9 +352,12 @@ export function FileField({
   hint,
   className,
   read = "none",
+  upload = false,
   ...rest
 }: FieldShell & {
   read?: FileRead;
+  /** Shorthand for `read="upload"` — see above. */
+  upload?: boolean;
 } & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">) {
   const id = useId();
   const control = useControlProps();
@@ -362,7 +370,7 @@ export function FileField({
         // Read back by `collectValues` — the one channel a plain DOM read has
         // for a per-field option, and why this stays a `data-` attribute rather
         // than component state.
-        data-aai-read={read}
+        data-aai-read={upload ? "upload" : read}
         {...control}
         {...rest}
       />

@@ -45,6 +45,15 @@ export {
   type StepGenerateOptions,
   stepGenerate,
 } from "./step-generate.ts";
+export { report } from "./step-report.ts";
+export { isTransientStatus, retryAfter } from "./step-retry.ts";
+export {
+  type ReadUploadOptions,
+  readUpload,
+  type UploadInfo,
+  type UploadSlice,
+  uploadInfo,
+} from "./step-uploads.ts";
 
 /** Extract an error message from an unknown thrown value. */
 export function errorMessage(err: unknown): string {

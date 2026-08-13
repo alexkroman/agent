@@ -58,9 +58,8 @@ async function readInput(input: HTMLInputElement, values: FormValues): Promise<v
     case "file": {
       const files = Array.from(input.files ?? []);
       if (files.length === 0) return;
-      const read = readMode(input.dataset.aaiRead);
-      const described = await Promise.all(files.map((file) => describeFile(file, read)));
-      values[input.name] = input.multiple ? described : described[0];
+      const chosen = await readFiles(files, readMode(input.dataset.aaiRead));
+      values[input.name] = input.multiple ? chosen : chosen[0];
       return;
     }
     default:
@@ -68,9 +67,22 @@ async function readInput(input: HTMLInputElement, values: FormValues): Promise<v
   }
 }
 
+/**
+ * The chosen files, as the field's `read` mode says to contribute them.
+ *
+ * An UPLOAD field contributes each `File` UNREAD. Reading it here would mean
+ * holding a 200 MB recording in memory to describe it, and the thing that needs
+ * the bytes is the upload request `useWorkflowSubmit` makes — which streams the
+ * same `File` object straight to the agent.
+ */
+function readFiles(files: readonly File[], read: FileRead): Promise<(File | FileValue)[]> {
+  if (read === "upload") return Promise.resolve([...files]);
+  return Promise.all(files.map((file) => describeFile(file, read)));
+}
+
 /** The `data-aai-read` attribute as a {@link FileRead}, defaulting to `"none"`. */
 function readMode(raw: string | undefined): FileRead {
-  return raw === "text" || raw === "dataUrl" ? raw : "none";
+  return raw === "text" || raw === "dataUrl" || raw === "upload" ? raw : "none";
 }
 
 /** One chosen file as a {@link FileValue}. */

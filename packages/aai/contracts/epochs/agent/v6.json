@@ -1,0 +1,32 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "agent",
+  "epoch": 6,
+  "sha256": "cbc8e19ddb3c02434732441ced6cf67b30f4e32355a9ee3f0c1c3f82f64a88c5",
+  "exports": [
+    "AgentDef",
+    "AgentParams",
+    "AssemblyAIPipelineOptions",
+    "BuiltinTool",
+    "DefaultSessionState",
+    "DefaultedAgentField",
+    "FrontDoorField",
+    "InferAgentState",
+    "PipelineAgentParams",
+    "PipelineOnlyField",
+    "PipelineOnlyMisuse",
+    "PipelineVoiceTuning",
+    "ProviderField",
+    "S2sAgentParams",
+    "SharedAgentParams",
+    "StaticAgentParams",
+    "StaticFrontDoorMisuse",
+    "TextAgentParams",
+    "ToolChoice",
+    "WorkflowAppMisuse",
+    "WorkflowAppOnlyField",
+    "agent",
+    "assemblyAIPipeline",
+    "workflowApp"
+  ]
+}
