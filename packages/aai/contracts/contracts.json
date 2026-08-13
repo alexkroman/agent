@@ -1,0 +1,62 @@
+{
+  "agent": {
+    "current": 2,
+    "supported": [1, 2],
+    "dropped": {}
+  },
+  "builtins": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "defaults": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "llm": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "s2s": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "state": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "stt": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "testing": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "tool": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "tts": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "utils": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "workflow": {
+    "current": 2,
+    "supported": [1, 2],
+    "dropped": {}
+  }
+}

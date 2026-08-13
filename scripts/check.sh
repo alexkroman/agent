@@ -122,6 +122,12 @@ if [ "$MODE" = "--local" ]; then
   # exports.test.ts pins names, publint/attw check packaging, and neither sees
   # a widened parameter or a newly optional field.
   pnpm run check:api-report || exit 1
+  # Immediately after, and in that order on purpose: the capability contracts
+  # read the authoring surface out of the committed reports, so a stale report
+  # would be answered here as though it were current. This is the gate that
+  # turns "the signature moved" into "and it is a major, and here is the frozen
+  # example proving epoch N still compiles".
+  pnpm run check:api-contracts || exit 1
   # After build on purpose: the scaffold tsconfig has no `@dev/source`
   # condition, so templates resolve the PUBLISHED types here, exactly as a
   # scaffolded project does. Doc examples compile under the same config, so
@@ -193,6 +199,12 @@ else
   # exports.test.ts pins names, publint/attw check packaging, and neither sees
   # a widened parameter or a newly optional field.
   pnpm run check:api-report || exit 1
+  # Immediately after, and in that order on purpose: the capability contracts
+  # read the authoring surface out of the committed reports, so a stale report
+  # would be answered here as though it were current. This is the gate that
+  # turns "the signature moved" into "and it is a major, and here is the frozen
+  # example proving epoch N still compiles".
+  pnpm run check:api-contracts || exit 1
   pnpm run check:template-types || exit 1
   pnpm run check:doc-examples || exit 1
 fi

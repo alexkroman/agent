@@ -47,6 +47,226 @@ export type AnyWorkflowDef<R = unknown> = {
     run: WorkflowBody<never, R>;
 };
 
+// @public (undocumented)
+const ASSEMBLYAI_GATEWAY_MODELS: {
+    readonly "claude-haiku-4-5-20251001": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: true;
+        readonly live: true;
+        readonly context: 200000;
+    };
+    readonly "claude-opus-4-5-20251101": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 200000;
+    };
+    readonly "claude-opus-4-6": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 200000;
+    };
+    readonly "claude-opus-4-7": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 1000000;
+    };
+    readonly "claude-opus-4-8": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 1000000;
+    };
+    readonly "claude-sonnet-4-5-20250929": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: true;
+        readonly live: true;
+        readonly context: 200000;
+    };
+    readonly "claude-sonnet-4-6": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: true;
+        readonly live: true;
+        readonly context: 200000;
+    };
+    readonly "claude-sonnet-5": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 200000;
+    };
+    readonly "gemini-2.5-flash": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: true;
+        readonly live: true;
+        readonly context: 1048576;
+    };
+    readonly "gemini-2.5-flash-lite": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: true;
+        readonly live: true;
+        readonly context: 1048576;
+    };
+    readonly "gemini-2.5-pro": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: true;
+        readonly live: true;
+        readonly context: 200000;
+    };
+    readonly "gemini-3.1-flash-lite": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 1048575;
+    };
+    readonly "gemini-3.5-flash": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 1048575;
+    };
+    readonly "gemini-3.5-flash-lite": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 1048575;
+    };
+    readonly "gemini-3.6-flash": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: false;
+        readonly context: 1048575;
+    };
+    readonly "gpt-4.1": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 1047576;
+    };
+    readonly "gpt-5": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 400000;
+    };
+    readonly "gpt-5-mini": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 400000;
+    };
+    readonly "gpt-5-nano": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 400000;
+    };
+    readonly "gpt-5.1": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 400000;
+    };
+    readonly "gpt-5.2": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 400000;
+    };
+    readonly "gpt-5.5": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 272000;
+    };
+    readonly "gpt-5.6-luna": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 270000;
+    };
+    readonly "gpt-5.6-terra": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 270000;
+    };
+    readonly "gpt-oss-120b": {
+        readonly tools: true;
+        readonly stream: false;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 131072;
+    };
+    readonly "gpt-oss-20b": {
+        readonly tools: true;
+        readonly stream: false;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 131072;
+    };
+    readonly "kimi-k2.5": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: false;
+        readonly context: 200000;
+    };
+    readonly "qwen3-32B": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 200000;
+    };
+    readonly "qwen3-next-80b-a3b": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 200000;
+    };
+    readonly "qwen3.5-4b-32k-experimental": {
+        readonly tools: false;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 32768;
+    };
+};
+
+// @public
+const ASSEMBLYAI_KIND: "assemblyai";
+
+// @public
+const ASSEMBLYAI_LLM_KIND: "assemblyai";
+
 // @public
 export const ASSEMBLYAI_S2S_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
 
@@ -55,6 +275,122 @@ export const ASSEMBLYAI_S2S_KIND: "assemblyai";
 
 // @internal
 export const ASSEMBLYAI_S2S_SAMPLE_RATE = 24000;
+
+// @public
+const ASSEMBLYAI_TTS_KIND: "assemblyai";
+
+// @public
+const ASSEMBLYAI_TTS_LANGUAGES: {
+    readonly en: "english";
+    readonly fr: "french";
+    readonly de: "german";
+    readonly it: "italian";
+    readonly pt: "portuguese";
+    readonly es: "spanish";
+};
+
+// @public
+const ASSEMBLYAI_TTS_VOICES: {
+    readonly alba: {
+        readonly language: "en";
+        readonly accent: "US";
+    };
+    readonly anna: {
+        readonly language: "en";
+        readonly accent: "US";
+    };
+    readonly charles: {
+        readonly language: "en";
+        readonly accent: "US";
+    };
+    readonly eve: {
+        readonly language: "en";
+        readonly accent: "US";
+    };
+    readonly george: {
+        readonly language: "en";
+        readonly accent: "US";
+    };
+    readonly jane: {
+        readonly language: "en";
+        readonly accent: "US";
+    };
+    readonly jean: {
+        readonly language: "en";
+        readonly accent: "US";
+    };
+    readonly mary: {
+        readonly language: "en";
+        readonly accent: "US";
+    };
+    readonly michael: {
+        readonly language: "en";
+        readonly accent: "US";
+    };
+    readonly paul: {
+        readonly language: "en";
+        readonly accent: "UK";
+    };
+    readonly vera: {
+        readonly language: "en";
+        readonly accent: "UK";
+    };
+    readonly giovanni: {
+        readonly language: "it";
+        readonly accent: "IT";
+    };
+    readonly lola: {
+        readonly language: "es";
+        readonly accent: "ES";
+    };
+    readonly juergen: {
+        readonly language: "de";
+        readonly accent: "DE";
+    };
+    readonly rafael: {
+        readonly language: "pt";
+        readonly accent: "PT";
+    };
+    readonly estelle: {
+        readonly language: "fr";
+        readonly accent: "FR";
+    };
+};
+
+// @public
+type AssemblyAIGatewayModel = keyof typeof ASSEMBLYAI_GATEWAY_MODELS;
+
+// @public
+interface AssemblyAILlmOptions {
+    apiKeyEnv?: string;
+    gatewayUrl?: string;
+    model?: AssemblyAIGatewayModel | (string & Record<never, never>);
+    reasoningEffort?: AssemblyAIReasoningEffort;
+    region?: "us" | "eu";
+}
+
+// @public
+type AssemblyAILlmProvider = LlmProvider & {
+    readonly kind: typeof ASSEMBLYAI_LLM_KIND;
+    readonly options: AssemblyAILlmOptions & {
+        model: string;
+    };
+};
+
+// @public
+interface AssemblyAIOptions {
+    apiKeyEnv?: string;
+    connectTimeoutMs?: number;
+    languages?: string[];
+    maxConnectRetries?: number;
+    maxTurnSilenceMs?: number;
+    minTurnSilenceMs?: number;
+    model?: "universal-3-5-pro" | string;
+    region?: "us" | "eu";
+    streamingUrl?: string;
+    voiceFocus?: "near-field" | "far-field" | "off" | string;
+    voiceFocusThreshold?: number;
+}
 
 // @public
 export function assemblyAIPipeline(opts?: AssemblyAIPipelineOptions): {
@@ -68,6 +404,15 @@ export interface AssemblyAIPipelineOptions {
     region?: "us" | "eu";
     voice?: AssemblyAITtsVoice;
 }
+
+// @public
+type AssemblyAIProvider = SttProvider & {
+    readonly kind: typeof ASSEMBLYAI_KIND;
+    readonly options: AssemblyAIOptions;
+};
+
+// @public
+type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
 
 // @public
 export function assemblyAIS2s(opts?: AssemblyAIS2sOptions): AssemblyAIS2sProvider;
@@ -84,6 +429,28 @@ export type AssemblyAIS2sProvider = S2sProvider & {
     readonly kind: typeof ASSEMBLYAI_S2S_KIND;
     readonly options: AssemblyAIS2sOptions;
 };
+
+// @public
+type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
+
+// @public (undocumented)
+interface AssemblyAITtsOptions {
+    apiKeyEnv?: string;
+    host?: string;
+    language?: AssemblyAITtsLanguage;
+    voice?: AssemblyAITtsVoice;
+}
+
+// @public
+type AssemblyAITtsProvider = TtsProvider & {
+    readonly kind: typeof ASSEMBLYAI_TTS_KIND;
+    readonly options: AssemblyAITtsOptions & {
+        voice: string;
+    };
+};
+
+// @public
+type AssemblyAITtsVoice = keyof typeof ASSEMBLYAI_TTS_VOICES | (string & Record<never, never>);
 
 // @public
 export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
@@ -308,6 +675,11 @@ export class KeyedLockTimeoutError extends Error {
 // @public
 export function linkConfirmationCode(code: string): string;
 
+// @public
+type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "llm";
+};
+
 // @internal
 export const LOG_PREVIEW_CHARS = 200;
 
@@ -474,6 +846,14 @@ export const PREEMPTIVE_CONFIDENCE_THRESHOLD = 0.9;
 export const PREVIEW_SLUG_SUFFIX = "-preview";
 
 // @public
+interface ProviderDescriptor<Kind extends string, Options> {
+    // (undocumented)
+    readonly kind: Kind;
+    // (undocumented)
+    readonly options: Options;
+}
+
+// @public
 export type ProviderField = "stt" | "llm" | "tts" | "s2s" | "text";
 
 // @public
@@ -495,6 +875,11 @@ export type S2sAgentParams<S = DefaultSessionState> = SharedAgentParams<S> & {
     text?: "`text` cannot be combined with `s2s` — an agent is text-only or speech-to-speech, not both";
 } & {
     [K in PipelineOnlyField]?: PipelineOnlyMisuse<K>;
+};
+
+// @public
+type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "s2s";
 };
 
 // @public
@@ -596,6 +981,11 @@ export const STT_FRAME_MAX_MS = 1000;
 // @internal
 export const STT_FRAME_TARGET_MS = 100;
 
+// @public
+type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "stt";
+};
+
 // @internal
 export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;
 
@@ -691,6 +1081,11 @@ export const TTS_COALESCE_MAX_CHARS = 32;
 
 // @internal
 export const TTS_RECONNECT_TIMEOUT_MS = 8000;
+
+// @public
+type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "tts";
+};
 
 // @public
 export const VALID_SLUG_RE: RegExp;

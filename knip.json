@@ -47,7 +47,15 @@
         "host/_test-utils.ts",
         "host/integration/**/*.integration.test.ts",
         "**/*.test.ts",
-        "**/*.test-d.ts"
+        "**/*.test-d.ts",
+        // The capability contracts. Nothing imports either directory and
+        // nothing is meant to: a capability root exists so api-contracts.mjs
+        // can extract a report for that slice of the authoring API, and a
+        // compatibility fixture exists so `tsc` fails when a frozen authoring
+        // example stops compiling. Both are "unused" in knip's sense and load
+        // -bearing in the only sense that matters here.
+        "contracts/entrypoints/*.ts",
+        "contracts/compatibility/**/*.ts"
       ]
     },
     "packages/aai-ui": {

@@ -86,6 +86,27 @@ describe("check-file-length", () => {
     expect(script).toMatch(/const ceiling = path in allowlist \? allowlist\[path\] : cap/);
   });
 
+  test("the scripts pathspec reaches the TOP level, not just subdirectories", () => {
+    // A git pathspec is fnmatch without FNM_PATHNAME, so `*` already crosses
+    // `/` and `scripts/**/*.mjs` parses as "scripts/" + anything + "/" +
+    // anything + ".mjs" — the literal slash makes a subdirectory mandatory. The
+    // gate shipped with only that glob, so it measured the six files under
+    // scripts/starter-eval/ and none of the ~25 at the top level, which is
+    // where its own comment says an unreviewed 900-line harness hides. It
+    // printed "all files within caps ✓" throughout.
+    // Matched with the quotes, so the prose in the gate's own comment (which
+    // names the broken glob in backticks) cannot satisfy these.
+    for (const pattern of ['"scripts/*.mjs"', '"scripts/*.ts"']) {
+      expect(script, `check-file-length.mjs must measure ${pattern}`).toContain(pattern);
+    }
+    // The nested globs stay: neither shape subsumes the other.
+    expect(script).toContain('"scripts/**/*.mjs"');
+    expect(script).toContain('"scripts/**/*.ts"');
+    // `packages/**/*.ts` needs no top-level twin — every source file there is
+    // at least one directory deep, so the same trap cannot fire.
+    expect(script).toContain('"packages/**/*.ts"');
+  });
+
   test("staged mode cannot block a commit", () => {
     // It runs on every commit. A gate there teaches `--no-verify`, which would
     // also skip the pre-push hook that runs the whole check suite.

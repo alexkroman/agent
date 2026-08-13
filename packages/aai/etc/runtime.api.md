@@ -19,6 +19,99 @@ import { ToolSet } from 'ai';
 import { z } from 'zod';
 
 // @public
+type AgentConfig = z.infer<typeof AgentConfigSchema>;
+
+// @internal
+const AgentConfigSchema: z.ZodObject<{
+    name: z.ZodString;
+    systemPrompt: z.ZodDefault<z.ZodString>;
+    greeting: z.ZodDefault<z.ZodString>;
+    sttPrompt: z.ZodOptional<z.ZodString>;
+    maxSteps: z.ZodOptional<z.ZodNumber>;
+    toolChoice: z.ZodOptional<z.ZodUnion<readonly [z.ZodEnum<{
+        auto: "auto";
+        none: "none";
+        required: "required";
+    }>, z.ZodObject<{
+        type: z.ZodLiteral<"tool">;
+        toolName: z.ZodString;
+    }, z.core.$strip>]>>;
+    builtinTools: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodEnum<{
+        calculate: "calculate";
+        fetch_json: "fetch_json";
+        get_page_design: "get_page_design";
+        recall: "recall";
+        remember: "remember";
+        run_code: "run_code";
+        think: "think";
+        visit_webpage: "visit_webpage";
+        web_search: "web_search";
+    }>>>>;
+    idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
+    silenceTimeoutMs: z.ZodOptional<z.ZodNumber>;
+    silencePrompt: z.ZodOptional<z.ZodString>;
+    minBargeInWords: z.ZodOptional<z.ZodNumber>;
+    interruptionMinDurationMs: z.ZodOptional<z.ZodNumber>;
+    deadAirCoverMs: z.ZodOptional<z.ZodNumber>;
+    errorPhrase: z.ZodOptional<z.ZodString>;
+    startFailurePhrase: z.ZodOptional<z.ZodString>;
+    resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
+    preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
+    stt: z.ZodOptional<z.ZodObject<{
+        kind: z.ZodString;
+        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+    }, z.core.$strip>>;
+    llm: z.ZodOptional<z.ZodObject<{
+        kind: z.ZodString;
+        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+    }, z.core.$strip>>;
+    tts: z.ZodOptional<z.ZodObject<{
+        kind: z.ZodString;
+        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+    }, z.core.$strip>>;
+    s2s: z.ZodOptional<z.ZodObject<{
+        kind: z.ZodString;
+        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+    }, z.core.$strip>>;
+    text: z.ZodOptional<z.ZodLiteral<true>>;
+    mode: z.ZodOptional<z.ZodEnum<{
+        pipeline: "pipeline";
+        s2s: "s2s";
+        text: "text";
+    }>>;
+    requiredEnv: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
+    page: z.ZodOptional<z.ZodEnum<{
+        static: "static";
+        voice: "voice";
+    }>>;
+}, z.core.$strip>;
+
+// @public
+interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
+    builtinTools?: readonly BuiltinTool[];
+    greeting: string;
+    idleTimeoutMs?: number;
+    llm?: LlmProvider;
+    maxSteps: number;
+    name: string;
+    page?: "voice" | "static";
+    requiredEnv?: readonly string[];
+    s2s?: S2sProvider;
+    silencePrompt?: string;
+    silenceTimeoutMs?: number;
+    state?: () => S;
+    stt?: SttProvider;
+    sttPrompt?: string;
+    syncState?: (state: S) => unknown;
+    systemPrompt: string;
+    text?: true;
+    toolChoice?: ToolChoice;
+    tools: Readonly<Record<string, ToolDef<ToolInputSchema, NoInfer<S>>>>;
+    tts?: TtsProvider;
+    workflows?: Readonly<Record<string, WorkflowDef>>;
+}
+
+// @public
 export type AgentEnv = Record<string, string> & {
     readonly [hostCredentialsMarker]?: never;
 };
@@ -47,11 +140,21 @@ export interface AgentServerOptions extends PassthroughServerOptions {
     providerEnv?: ProviderEnv | undefined;
 }
 
+// @public
+type AnyWorkflowDef<R = unknown> = {
+    description?: string;
+    input?: ToolInputSchema;
+    run: WorkflowBody<never, R>;
+};
+
 // @internal
 export function buildHostAgent(host: HostConfig, baseAgent?: AgentDef): AgentDef;
 
 // @internal
 export function builtinFetch(env?: NodeJS.ProcessEnv): typeof globalThis.fetch;
+
+// @public
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
 
 // @public
 export type BuiltinToolOptions = {
@@ -106,6 +209,73 @@ export type CarrierInbound =
 export type CarrierName = keyof typeof CARRIER_CODECS;
 
 // @public
+type ClientEvent = z.infer<typeof ClientEventSchema>;
+
+// @public
+const ClientEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+    type: z.ZodLiteral<"speech_started">;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"speech_stopped">;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user_transcript">;
+    text: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user_transcript_partial">;
+    text: z.ZodString;
+    eotConfidence: z.ZodOptional<z.ZodNumber>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"agent_transcript">;
+    text: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"tool_call">;
+    toolCallId: z.ZodString;
+    toolName: z.ZodString;
+    args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"tool_call_done">;
+    toolCallId: z.ZodString;
+    result: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"reply_done">;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"cancelled">;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"reset">;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"idle_timeout">;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"error">;
+    code: z.ZodEnum<{
+        audio: "audio";
+        connection: "connection";
+        internal: "internal";
+        llm: "llm";
+        protocol: "protocol";
+        stt: "stt";
+        tool: "tool";
+        tts: "tts";
+    }>;
+    message: z.ZodString;
+    fatal: z.ZodOptional<z.ZodBoolean>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"custom_event">;
+    event: z.ZodString;
+    data: z.ZodUnknown;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"agent_state">;
+    state: z.ZodUnknown;
+}, z.core.$strip>], "type">;
+
+// @public
+interface ClientSink {
+    close?(reason?: string): void;
+    event(e: ClientEvent): void;
+    readonly open: boolean;
+    playAudioChunk(chunk: Uint8Array): void;
+    playAudioDone(): void;
+}
+
+// @public
 export type CloseableDb = Db & {
     reserve(): Promise<ReservedDb>;
     close(): Promise<void>;
@@ -140,11 +310,19 @@ export type CreateGenerateFnOptions = {
     env: ProviderEnv;
 };
 
+// @public (undocumented)
+type CreateHeaderWebSocket = (url: string, opts: {
+    headers: Record<string, string>;
+}) => HeaderWebSocket;
+
 // @public
 export function createHostServer(options?: HostServerOptions): AgentServer;
 
 // @public
 export function createMemoryKeyStore(): WorkflowKeyStore;
+
+// @public (undocumented)
+type CreateOpenaiRealtimeWebSocket = CreateHeaderWebSocket;
 
 // @internal
 export function createPipelineTransport(opts: PipelineTransportOptions): Transport;
@@ -173,6 +351,9 @@ export function createRuntime(opts: RuntimeOptions): Runtime;
 // @internal
 export function createS2sTransport(opts: S2sTransportOptions): Transport;
 
+// @public (undocumented)
+type CreateS2sWebSocket = CreateHeaderWebSocket;
+
 // @public
 export function createServer(options: ServerOptions): AgentServer;
 
@@ -200,6 +381,11 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
 // @internal
 export function createWorkflowSurface(workflowCode: string | undefined, stepCode: string | undefined): Promise<WorkflowSurface | undefined>;
 
+// @public
+type Db = {
+    query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
+};
+
 // @internal
 export const debugLoggingEnabled: boolean;
 
@@ -216,10 +402,34 @@ export const DEFAULT_S2S_CONFIG: S2SConfig;
 export const DEFAULT_WORKFLOW_FIND_LIMIT = 20;
 
 // @public
+type DefaultSessionState = any;
+
+// @internal
+type DnsLookup = (hostname: string) => Promise<{
+    address: string;
+}>;
+
+// @public
 export type ExecuteTool = (name: string, args: Readonly<Record<string, unknown>>, sessionId?: string, messages?: readonly Message[], opts?: ExecuteToolOptions) => Promise<string>;
 
 // @internal
 export function executeToolCall(name: string, args: Readonly<Record<string, unknown>>, options: ExecuteToolCallOptions): Promise<string>;
+
+// @public (undocumented)
+type ExecuteToolCallOptions = {
+    tool: ToolDef;
+    env: Readonly<Record<string, string>>;
+    state?: Record<string, unknown>;
+    sessionId?: string | undefined;
+    db?: Db | undefined;
+    messages?: readonly Message[] | undefined;
+    generate?: HostGenerateFn | undefined;
+    logger?: Logger | undefined;
+    send?: ((event: string, data: unknown) => void) | undefined;
+    signal?: AbortSignal | undefined;
+    workflows?: WorkflowClient | undefined;
+    timeoutMs?: number | undefined;
+};
 
 // @public
 export interface ExecuteToolOptions {
@@ -230,15 +440,93 @@ export interface ExecuteToolOptions {
 }
 
 // @internal
+type FetchHandler = (req: Request) => Promise<Response>;
+
+// @public
+type FindOptions = {
+    limit?: number;
+};
+
+// @public
+type GenerateFn = {
+    <S extends StandardSchemaV1>(options: GenerateOptions & {
+        schema: S;
+    }): Promise<GenerateObjectResult<InferSchemaOutput<S>>>;
+    (options: GenerateOptions): Promise<GenerateResult>;
+};
+
+// @public
+type GenerateObjectResult<T> = {
+    text: string;
+    object: T;
+};
+
+// @public
+type GenerateOptions = {
+    prompt: string;
+    system?: string;
+    llm?: LlmProvider | string;
+    schema?: StandardSchemaV1 | Record<string, unknown>;
+    temperature?: number;
+    maxOutputTokens?: number;
+};
+
+// @public
+type GenerateResult = {
+    text: string;
+    object?: unknown;
+};
+
+// @internal
 export const GRAPHILE_JOB_EXPIRY = "4 hours";
 
 // @internal
 export function handleWorkflowRequest(surface: WorkflowSurface | null | undefined, req: IncomingMessage, res: ServerResponse, url: string, method: string): boolean;
 
 // @public
+type HeaderWebSocket = {
+    readonly readyState: number;
+    readonly bufferedAmount?: number | undefined;
+    send(data: string): void;
+    close(code?: number): void;
+    addEventListener(type: "open", listener: () => void): void;
+    addEventListener(type: "message", listener: (event: {
+        data: unknown;
+    }) => void): void;
+    addEventListener(type: "close", listener: (event: {
+        code?: number;
+        reason?: string;
+    }) => void): void;
+    addEventListener(type: "error", listener: (event: {
+        message?: string;
+    }) => void): void;
+};
+
+// @public
+type HostConfig = z.infer<typeof HostConfigSchema>;
+
+// @public
+const HostConfigSchema: z.ZodObject<{
+    systemPrompt: z.ZodString;
+    greeting: z.ZodOptional<z.ZodString>;
+    tools: z.ZodArray<z.ZodObject<{
+        type: z.ZodLiteral<"function">;
+        name: z.ZodString;
+        description: z.ZodString;
+        parameters: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+    }, z.core.$strip>>;
+    sttPrompt: z.ZodOptional<z.ZodString>;
+    credentials: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
+    audioLeadMs: z.ZodOptional<z.ZodUnion<readonly [z.ZodNumber, z.ZodNull]>>;
+}, z.core.$strip>;
+
+// @public
 export type HostCredentialEnv = Record<string, string> & {
     readonly [hostCredentialsMarker]: true;
 };
+
+// @public
+const hostCredentialsMarker: unique symbol;
 
 // @internal
 export type HostGenerateFn = (options: GenerateOptions, callOpts?: {
@@ -255,6 +543,9 @@ export interface HostServerOptions extends PassthroughServerOptions {
 // @public
 export type HostSessionDefaults = Omit<Partial<AgentDef>, "systemPrompt" | "greeting" | "tools" | "sttPrompt">;
 
+// @public
+type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+
 // @internal
 export function isDebugEnv(value: string | undefined): boolean;
 
@@ -266,6 +557,11 @@ export function isPathInside(dir: string, target: string): boolean;
 
 // @internal (undocumented)
 export function isPrivateIp(ip: string): boolean;
+
+// @public
+type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "llm";
+};
 
 // @public
 export type LogContext = Record<string, unknown>;
@@ -284,6 +580,31 @@ export const MAX_WORKFLOW_FIND_LIMIT = 100;
 
 // @public
 export const MAX_WORKFLOW_INPUT_BYTES: number;
+
+// @public
+type Message = {
+    role: "user" | "assistant" | "tool";
+    content: string;
+};
+
+// @internal (undocumented)
+interface OwnedMap<K, V> {
+    claim(key: K, value: V): () => boolean;
+    // (undocumented)
+    clear(): void;
+    delete(key: K): boolean;
+    // (undocumented)
+    get(key: K): V | undefined;
+    // (undocumented)
+    has(key: K): boolean;
+    // (undocumented)
+    keys(): IterableIterator<K>;
+    owns(key: K, value: V): boolean;
+    // (undocumented)
+    readonly size: number;
+    // (undocumented)
+    values(): IterableIterator<V>;
+}
 
 // @public
 export type PassthroughServerOptions = {
@@ -331,13 +652,44 @@ export interface PipelineTransportOptions {
     ttsSampleRate?: number | undefined;
 }
 
+// @public
+interface PipelineVoiceTuning {
+    deadAirCoverMs?: number;
+    errorPhrase?: string;
+    interruptionMinDurationMs?: number;
+    minBargeInWords?: number;
+    preemptiveGeneration?: boolean;
+    resumeFalseInterruption?: boolean;
+    startFailurePhrase?: string;
+}
+
 // @internal
 export const PROVIDER_CREDENTIAL_ENVS: readonly string[];
+
+// @public
+interface ProviderDescriptor<Kind extends string, Options> {
+    // (undocumented)
+    readonly kind: Kind;
+    // (undocumented)
+    readonly options: Options;
+}
 
 // @public
 export type ProviderEnv = Record<string, string> & {
     readonly [hostCredentialsMarker]?: true;
 };
+
+// @public
+type ReadyConfig = z.infer<typeof ReadyConfigSchema>;
+
+// @public
+const ReadyConfigSchema: z.ZodObject<{
+    audioFormat: z.ZodEnum<{
+        pcm16: "pcm16";
+    }>;
+    sampleRate: z.ZodNumber;
+    ttsSampleRate: z.ZodNumber;
+}, z.core.$strip>;
 
 // @internal
 export type RelayExecuteTool = {
@@ -451,6 +803,22 @@ export type S2SConfig = {
     outputSampleRate: number;
 };
 
+// @public
+type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "s2s";
+};
+
+// @public (undocumented)
+type S2sSessionConfig = {
+    systemPrompt: string;
+    tools: ToolSchema[];
+    greeting?: string;
+    sttPrompt?: string;
+    voice?: string;
+    languages?: readonly string[];
+    keyterms?: readonly string[];
+};
+
 // @internal
 export type S2sTransportOptions = {
     apiKey: string;
@@ -539,6 +907,21 @@ export type SessionCoreOptions = {
 };
 
 // @public
+type SessionErrorCode = z.infer<typeof SessionErrorCodeSchema>;
+
+// @public
+const SessionErrorCodeSchema: z.ZodEnum<{
+    audio: "audio";
+    connection: "connection";
+    internal: "internal";
+    llm: "llm";
+    protocol: "protocol";
+    stt: "stt";
+    tool: "tool";
+    tts: "tts";
+}>;
+
+// @public
 export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown" | "workflows">;
 
 // @public
@@ -576,6 +959,37 @@ export type SessionWebSocket = {
 // @internal
 export function ssrfSafeFetch(url: string, init: RequestInit, fetchFn: typeof globalThis.fetch): Promise<Response>;
 
+// @public
+interface StandardSchemaIssue {
+    // (undocumented)
+    readonly message: string;
+    // (undocumented)
+    readonly path?: readonly (PropertyKey | {
+        readonly key: PropertyKey;
+    })[] | undefined;
+}
+
+// @public
+type StandardSchemaResult<Output> = {
+    readonly value: Output;
+    readonly issues?: undefined;
+} | {
+    readonly issues: readonly StandardSchemaIssue[];
+};
+
+// @public
+interface StandardSchemaV1<Input = unknown, Output = Input> {
+    readonly "~standard": {
+        readonly version: 1;
+        readonly vendor: string;
+        readonly validate: (value: unknown) => StandardSchemaResult<Output> | Promise<StandardSchemaResult<Output>>;
+        readonly types?: {
+            readonly input: Input;
+            readonly output: Output;
+        } | undefined;
+    };
+}
+
 // @internal
 export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOptions): void;
 
@@ -592,6 +1006,11 @@ export type StartHostSessionOptions = {
 };
 
 // @public
+type StartOptions = {
+    key?: string;
+};
+
+// @public
 export function startTelephonySession(carrierSocket: SessionWebSocket, runtime: SessionRuntime, opts: {
     carrier: CarrierCodec;
     logger?: Logger;
@@ -599,6 +1018,58 @@ export function startTelephonySession(carrierSocket: SessionWebSocket, runtime: 
 
 // @internal
 export function startWorkflowWorldIfDeclared(hasWorkflows: boolean, kind: WorldKind): Promise<void>;
+
+// @public
+interface SttError extends Error {
+    // (undocumented)
+    readonly code: "stt_connect_failed" | "stt_auth_failed" | "stt_stream_error";
+}
+
+// @public (undocumented)
+type SttEvents = {
+    partial: (text: string, meta?: SttTurnMeta) => void;
+    final: (text: string, meta?: SttTurnMeta) => void;
+    error: (err: SttError) => void;
+};
+
+// @internal
+interface SttOpener {
+    // (undocumented)
+    readonly name: string;
+    // (undocumented)
+    open(opts: SttOpenOptions): Promise<SttSession>;
+}
+
+// @public
+interface SttOpenOptions {
+    agentContext?: string | undefined;
+    apiKey: string;
+    sampleRate: number;
+    // (undocumented)
+    signal: AbortSignal;
+    // (undocumented)
+    sttPrompt?: string | undefined;
+}
+
+// @public
+type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "stt";
+};
+
+// @public
+interface SttSession {
+    // (undocumented)
+    close(): Promise<void>;
+    // (undocumented)
+    on<E extends keyof SttEvents>(event: E, fn: SttEvents[E]): Unsubscribe;
+    sendAudio(pcm: Int16Array): void;
+    updateAgentContext?(text: string): void;
+}
+
+// @public
+type SttTurnMeta = {
+    endOfTurnConfidence?: number;
+};
 
 // @public
 export const TELEPHONY_PATH = "/phone";
@@ -655,8 +1126,50 @@ export interface TextTurnOptions {
 // @public
 export type TextTurnResult = ReturnType<typeof streamText<ToolSet>>;
 
+// @public (undocumented)
+type ToolCallEvent = Extract<ClientEvent, {
+    type: "tool_call";
+}>;
+
+// @public
+type ToolChoice = "auto" | "required" | "none" | {
+    type: "tool";
+    toolName: string;
+};
+
+// @public
+type ToolContext<S = DefaultSessionState> = {
+    env: Readonly<Record<string, string>>;
+    state: S;
+    db: Db;
+    generate: GenerateFn;
+    messages: readonly Message[];
+    sessionId: string;
+    send(event: string, data: unknown): void;
+    signal: AbortSignal;
+    workflows: WorkflowClient;
+};
+
+// @public
+type ToolDef<P extends ToolInputSchema = ToolInputSchema, S = DefaultSessionState> = {
+    description: string;
+    inputSchema?: P;
+    execute(args: InferSchemaOutput<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
+};
+
 // @public
 export type ToolDefRecord = Record<string, ToolDef>;
+
+// @public
+type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
+
+// @public
+type ToolSchema = {
+    type: "function";
+    name: string;
+    description: string;
+    parameters: JSONSchema7;
+};
 
 // @internal
 export interface Transport {
@@ -699,7 +1212,62 @@ export type TransportSessionConfig = {
 };
 
 // @public
+interface TtsError extends Error {
+    // (undocumented)
+    readonly code: "tts_connect_failed" | "tts_auth_failed" | "tts_stream_error";
+}
+
+// @public
+type TtsEvents = {
+    audio: (pcm: Int16Array) => void;
+    words: (words: readonly TtsWordTiming[]) => void;
+    done: () => void;
+    error: (err: TtsError) => void;
+};
+
+// @internal
+interface TtsOpener {
+    // (undocumented)
+    readonly name: string;
+    // (undocumented)
+    open(opts: TtsOpenOptions): Promise<TtsSession>;
+}
+
+// @public
+interface TtsOpenOptions {
+    apiKey: string;
+    sampleRate: number;
+    signal: AbortSignal;
+}
+
+// @public
+type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "tts";
+};
+
+// @public
+interface TtsSession {
+    cancel(): void;
+    // (undocumented)
+    close(): Promise<void>;
+    flush(): void;
+    // (undocumented)
+    on<E extends keyof TtsEvents>(event: E, fn: TtsEvents[E]): Unsubscribe;
+    sendText(text: string): void;
+}
+
+// @public
+interface TtsWordTiming {
+    readonly endMs: number;
+    readonly startMs: number;
+    readonly text: string;
+}
+
+// @public
 export const twilioCodec: CarrierCodec;
+
+// @public
+type Unsubscribe = () => void;
 
 // @internal
 export type WakeHintOptions = {
@@ -773,6 +1341,26 @@ export type WorkflowApiOptions = {
 };
 
 // @public
+type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
+    workflowId?: string;
+};
+
+// @public
+type WorkflowClient = {
+    start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
+    input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
+    start(workflow: string, input?: unknown, options?: StartOptions): Promise<string>;
+    get<R>(runId: string, of: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
+    get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
+    find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
+    find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    recent<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
+    recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    cancel(runId: string): Promise<boolean>;
+    listing(): WorkflowSummary[];
+};
+
+// @public
 export type WorkflowClientOptions = {
     workflows: Readonly<Record<string, WorkflowDef>>;
     keys: WorkflowKeyStore;
@@ -781,9 +1369,50 @@ export type WorkflowClientOptions = {
 };
 
 // @public
+type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
+    description?: string;
+    input?: P;
+    run: WorkflowBody<InferSchemaOutput<P>, R>;
+};
+
+// @public
 export type WorkflowKeyStore = {
     record(workflow: string, key: string, runId: string): Promise<void>;
     lookup(workflow: string, key: string, limit: number): Promise<string[]>;
+};
+
+// @public
+type WorkflowRunBase = {
+    runId: string;
+    workflow: string;
+    createdAt: number;
+    key?: string;
+};
+
+// @public
+type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
+    status: "pending" | "running";
+})
+/** `output` is what the workflow function returned. */
+| (WorkflowRunBase & {
+    status: "completed";
+    output: R;
+})
+/** `error` is the failure message. */
+| (WorkflowRunBase & {
+    status: "failed";
+    error: string;
+})
+/** Cancelled by {@link WorkflowClient.cancel}; it produced no output. */
+| (WorkflowRunBase & {
+    status: "cancelled";
+});
+
+// @public
+type WorkflowSummary = {
+    name: string;
+    description?: string;
+    inputSchema?: unknown;
 };
 
 // @internal
@@ -795,6 +1424,23 @@ export type WorkflowSurface = {
 
 // @internal
 export type WorldKind = "postgres" | "local";
+
+// @public
+type WsSessionOptions = {
+    sessions: OwnedMap<string, SessionCore>;
+    createSession: (sessionId: string, client: ClientSink) => SessionCore;
+    readyConfig: ReadyConfig;
+    logContext?: Record<string, string>;
+    onOpen?: () => void;
+    onClose?: () => void;
+    onSessionEnd?: (sessionId: string, sink?: ClientSink) => void;
+    onSinkCreated?: (sessionId: string, sink: ClientSink) => void;
+    logger?: Logger;
+    audioLeadMs?: number;
+    sessionStartTimeoutMs?: number;
+    keepaliveIntervalMs?: number;
+    resumeFrom?: string;
+};
 
 // (No @packageDocumentation comment for this package)
 

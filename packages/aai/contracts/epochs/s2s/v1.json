@@ -1,0 +1,20 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "s2s",
+  "epoch": 1,
+  "sha256": "455ca6f0c9950b6c3634948ffffde1d8e9de7547c221f69b8bbf9d5191b81128",
+  "exports": [
+    "ASSEMBLYAI_S2S_API_KEY_ENV",
+    "ASSEMBLYAI_S2S_KIND",
+    "AssemblyAIS2sOptions",
+    "AssemblyAIS2sProvider",
+    "OPENAI_REALTIME_API_KEY_ENV",
+    "OPENAI_REALTIME_KIND",
+    "OpenaiRealtimeOptions",
+    "OpenaiRealtimeProvider",
+    "OpenaiRealtimeVoice",
+    "S2sProvider",
+    "assemblyAIS2s",
+    "openaiRealtime"
+  ]
+}

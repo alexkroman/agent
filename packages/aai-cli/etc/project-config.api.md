@@ -16,6 +16,14 @@ export type GlobalConfig = {
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
 
 // @public
+const ProjectConfigSchema: z.ZodObject<{
+    slug: z.ZodOptional<z.ZodString>;
+    serverUrl: z.ZodString;
+    studioProject: z.ZodOptional<z.ZodString>;
+    studioSourceHash: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>;
+
+// @public
 export function updateProjectConfig(agentDir: string, patch: Partial<ProjectConfig> & Pick<ProjectConfig, "serverUrl">): Promise<ProjectConfig>;
 
 // @public (undocumented)

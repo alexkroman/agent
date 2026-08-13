@@ -84,6 +84,14 @@ export type ElevenLabsProvider = SttProvider & {
 };
 
 // @public
+interface ProviderDescriptor<Kind extends string, Options> {
+    // (undocumented)
+    readonly kind: Kind;
+    // (undocumented)
+    readonly options: Options;
+}
+
+// @public
 export function soniox(opts?: SonioxOptions): SonioxProvider;
 
 // @public

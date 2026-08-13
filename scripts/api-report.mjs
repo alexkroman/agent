@@ -87,6 +87,12 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { createRequire } from "node:module";
 import { join, relative } from "node:path";
 
+import {
+  collectExportedNames,
+  reportSource,
+  stripPackageDocumentationMarker,
+} from "./_api-surface.mjs";
+
 const require = createRequire(import.meta.url);
 const { Extractor, ExtractorConfig } = require("@microsoft/api-extractor");
 
@@ -95,6 +101,9 @@ const CHECK = process.argv.includes("--check");
 
 /** The combined file: every entry point's report, in reading order. */
 const COMBINED_FILE = "API.md";
+
+/** The export-name lists: what each entry point exposes, without signatures. */
+const EXPORTS_FILE = "API-EXPORTS.json";
 
 /** Publishable packages — the ones without `"private": true`. */
 function publishablePackages() {
@@ -161,6 +170,19 @@ function runExtractor(packageDir, entry, { write }) {
         reportFolder,
         reportFileName,
         reportTempFolder: join(packageDir, "node_modules/.cache/api-extractor"),
+        // A type referenced by a public signature but not itself exported is
+        // still part of the surface a consumer has to satisfy — they just have
+        // no name to import it by. Left out of the report, changing one is
+        // invisible in review even though it can break a build. TypeDoc's
+        // `treatWarningsAsErrors` catches a subset (it covers `aai` and
+        // `aai-ui` only, and never the three aai-cli build-hook subpaths), and
+        // it fails the run rather than showing what moved.
+        //
+        // Included, each such type appears in the report as a bare `declare`
+        // with no `export` keyword — which is also what keeps the committed
+        // export lists honest, since those are collected from the `export`
+        // modifier rather than from every declaration in the file.
+        includeForgottenExports: true,
       },
       docModel: { enabled: false },
       dtsRollup: { enabled: false },
@@ -184,9 +206,8 @@ function runExtractor(packageDir, entry, { write }) {
       },
       messages: {
         // Warnings are informational here and must not fail the gate. The two
-        // that fire in volume are `ae-forgotten-export` (a type referenced by a
-        // public signature but not itself exported — real, but it is TypeDoc's
-        // `treatWarningsAsErrors` that already gates it) and
+        // that fire in volume are `ae-forgotten-export` (now RECORDED rather
+        // than merely warned about — see `includeForgottenExports` above) and
         // `ae-missing-release-tag` (this repo does not use @public/@beta tags).
         // Failing on those would make this a second, noisier copy of the docs
         // gate instead of a signature diff.
@@ -237,25 +258,44 @@ function runExtractor(packageDir, entry, { write }) {
  * twenty empty sections and the gate would pass.
  */
 function rollupBody(reportPath) {
-  const lines = readFileSync(reportPath, "utf8").replaceAll("\r\n", "\n").split("\n");
-  const open = lines.indexOf("```ts");
-  const close = lines.lastIndexOf("```");
-  if (open === -1 || close <= open) {
-    throw new Error(
-      `api-report: no \`\`\`ts fence in ${relative(ROOT, reportPath)} — has API Extractor's ` +
-        "report format changed? The combined file cannot be built without it.",
+  const label = relative(ROOT, reportPath);
+  const body = stripPackageDocumentationMarker(
+    reportSource(readFileSync(reportPath, "utf8"), label),
+  );
+  if (body === "") throw new Error(`api-report: ${label} rolled up to nothing.`);
+  return body;
+}
+
+/**
+ * `API-EXPORTS.json`: every entry point's export NAMES, sorted.
+ *
+ * A second artifact over the same reports, and the split between them is the
+ * point. A report answers "what is the shape of this API" and churns whenever a
+ * parameter is widened, a doc comment moves, or an overload is added — which is
+ * what a reviewer wants, and which also means a name quietly appearing or
+ * disappearing is one line inside a hundred-line diff. This file answers only
+ * "what is IN the surface", so adding an export is a one-line addition and
+ * removing one is a one-line deletion, in both cases against a stable file.
+ *
+ * `sdk/exports.test.ts` pins some of the same names, and stays: a test fails at
+ * the moment the surface moves and names the symbol, which is a different job
+ * from being a reviewable fact in the diff. This covers every entry point,
+ * where that test covers the ones somebody remembered to add.
+ *
+ * Forgotten exports are deliberately absent — `collectExportedNames` reads the
+ * `export` modifier, so a type that appears in the report only because a public
+ * signature mentions it is in the REPORT (where a change to it is reviewable)
+ * and not in this list (which is about what a consumer can import by name).
+ */
+function exportsFile(sections) {
+  const surface = {};
+  for (const section of sections) {
+    surface[section.specifier] = collectExportedNames(
+      readFileSync(section.absolutePath, "utf8"),
+      section.reportPath,
     );
   }
-  const body = lines
-    .slice(open + 1, close)
-    .join("\n")
-    // API Extractor's own trailing marker, identical in all twenty reports.
-    .replace(/\n*\/\/ \(No @packageDocumentation comment for this package\)\n*$/, "")
-    .trim();
-  if (body === "") {
-    throw new Error(`api-report: ${relative(ROOT, reportPath)} rolled up to nothing.`);
-  }
-  return body;
+  return `${JSON.stringify(surface, null, 2)}\n`;
 }
 
 /** The specifier a consumer actually writes: `@alexkroman1/aai/stt`, not `./stt`. */
@@ -356,28 +396,51 @@ if (stale.length > 0) {
   process.exit(1);
 }
 
-const combinedPath = join(ROOT, COMBINED_FILE);
-const combined = combinedFile(
-  sections.map((section) => ({ ...section, body: rollupBody(section.absolutePath) })),
-);
+const derived = [
+  {
+    file: COMBINED_FILE,
+    content: combinedFile(
+      sections.map((section) => ({ ...section, body: rollupBody(section.absolutePath) })),
+    ),
+    explain:
+      `It is the ${reportCount} per-entry-point reports concatenated — the whole published\n` +
+      "surface in one file, for readers that want it in a single pass.",
+  },
+  {
+    file: EXPORTS_FILE,
+    content: exportsFile(sections),
+    explain:
+      "It is every entry point's export NAMES, sorted — the surface without the\n" +
+      "signatures, so a symbol appearing or disappearing is a one-line diff even\n" +
+      "when the reports around it churn.",
+  },
+];
 
 if (!CHECK) {
-  writeFileSync(combinedPath, combined);
+  for (const { file, content } of derived) writeFileSync(join(ROOT, file), content);
   console.log(
-    `api-report: wrote ${reportCount} report(s) under packages/*/etc/ and ${COMBINED_FILE}.`,
+    `api-report: wrote ${reportCount} report(s) under packages/*/etc/, ` +
+      `${COMBINED_FILE} and ${EXPORTS_FILE}.`,
   );
   process.exit(0);
 }
 
-const committed = existsSync(combinedPath) ? readFileSync(combinedPath, "utf8") : null;
-if (committed !== combined) {
-  console.error(
-    `\napi-report: ${COMBINED_FILE} is ${committed === null ? "missing" : "out of date"}.\n\n` +
-      `It is the ${reportCount} per-entry-point reports concatenated — the whole published\n` +
-      "surface in one file, for readers that want it in a single pass. Run\n" +
-      "`pnpm api-report` and commit it.\n",
-  );
+const outdated = derived.filter(({ file, content }) => {
+  const path = join(ROOT, file);
+  return (existsSync(path) ? readFileSync(path, "utf8") : null) !== content;
+});
+
+if (outdated.length > 0) {
+  for (const { file, explain } of outdated) {
+    const path = join(ROOT, file);
+    console.error(
+      `\napi-report: ${file} is ${existsSync(path) ? "out of date" : "missing"}.\n\n${explain}\n` +
+        "Run `pnpm api-report` and commit it.\n",
+    );
+  }
   process.exit(1);
 }
 
-console.log(`api-report: ${reportCount} API report(s) and ${COMBINED_FILE} up to date. ✓`);
+console.log(
+  `api-report: ${reportCount} API report(s), ${COMBINED_FILE} and ${EXPORTS_FILE} up to date. ✓`,
+);
