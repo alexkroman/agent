@@ -147,6 +147,38 @@ closed by `aai dev | head` — was reported as a failed listen and tore down a
 server that had already bound. Logging must not be able to take the dev server
 down.
 
+**`viteDevConfig`'s proxy table is the whole agent API as the BROWSER can see
+it under `aai dev`** — with a `client.tsx`, Vite owns the port the user is told
+to open and answers everything not in that table itself, with a bare 404
+carrying none of the agent server's headers. So the failure reads as a missing
+route, not a missing proxy entry, and it is invisible to every test that talks
+to the backend port directly. **A route added to `createServer` that a page
+fetches must be added there too.**
+
+`/workflows` is the case that proves the rule and the one it was learned from.
+A WORKFLOW APP (`agent({ page: "static" })`) has no session and no socket:
+`page()` renders a form and every single thing it does — listing workflows to
+build that form, starting a run, polling it, streaming its events — is a
+same-origin fetch under that prefix. Unproxied, both workflow-app templates
+were dead on arrival under `aai dev` (`404 POST /workflows/runs` the instant
+the form is submitted) while the backend served the whole API correctly one
+port over. A string key prefix-matches, so the one entry covers `/runs`,
+`/runs/:id` and the `/runs/:id/events` SSE stream. The DevKit's own
+`/.well-known/workflow/v1/{flow,step}` callbacks deliberately stay out: those
+are dialled by the guest's own worker on loopback, never by a browser, which
+is the same `guest-internal` distinction `aai-server/guest-routes.ts` draws.
+
+**Both Vite entry points dedupe React** (`DEDUPED_PEERS`, `_vite-env.ts`) and
+the two symptoms look nothing alike, which is why the dev half was missing for
+so long. `buildClient`'s is a publish that dies with *"Rolldown failed to
+resolve import react/jsx-runtime"*; `viteDevConfig`'s is a project whose SDK is
+LINKED rather than installed — `aai init` run inside this monorepo, i.e. how a
+template gets tested by hand — loading two physically distinct copies of the
+same React version, so every hook throws *"Invalid hook call"*, `ThemeProvider`
+unmounts, and the agent renders a BLANK PAGE naming no package. An
+npm-installed project is correct either way, which is exactly what kept it
+hidden.
+
 **A `*-preview` project name is refused** (`projectNameFromDir` returns
 null). Publishing deploys under the project's own name, so such a project
 would claim a slug the orphan-preview sweep reaps hourly — taking the agent,

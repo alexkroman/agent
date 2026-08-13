@@ -24,6 +24,7 @@ import {
   type Logger,
   requiredProviderEnvVars,
   startWorkflowWorldIfDeclared,
+  WORKFLOW_API_PREFIX,
   withHostCredentialFallback,
 } from "@alexkroman1/aai/runtime";
 import { omitUndefined } from "@alexkroman1/aai/utils";
@@ -40,6 +41,7 @@ import { createRestartSupervisor } from "./_dev-restart.ts";
 import { resolveServerEnv } from "./_server-common.ts";
 import { log, notify, outputSilenced } from "./_ui.ts";
 import { errorCode, errorMessage } from "./_utils.ts";
+import { DEDUPED_PEERS } from "./_vite-env.ts";
 import { buildWorker } from "./worker-bundler.ts";
 import { buildWorkflows } from "./workflow-bundler.ts";
 
@@ -257,6 +259,22 @@ export type DevServerOptions = {
  * is unit-testable: `/websocket` MUST proxy with `ws: true` or `aai dev`
  * with a `client.tsx` serves a page whose WebSocket never connects.
  *
+ * **This table is the whole agent API as the browser can see it**, which is
+ * the thing to hold in mind before adding a route to `createServer`. Vite owns
+ * the port the user is told to open and answers everything not listed here
+ * itself — with a bare 404 carrying none of the agent server's headers, so the
+ * failure looks like a missing route rather than a missing proxy entry.
+ *
+ * `/workflows` is why that matters beyond voice. A WORKFLOW APP
+ * (`agent({ page: "static" })`) has no session and no socket: `page()` mounts a
+ * form and every single thing it does — listing workflows, starting a run,
+ * polling it, streaming its events — is a same-origin `fetch` under that
+ * prefix. Unproxied, the two workflow-app templates were dead on arrival under
+ * `aai dev` (`404 POST /workflows/runs` the instant the form is submitted)
+ * while the backend served the API correctly one port over. A string key
+ * prefix-matches, so this one entry covers `/runs`, `/runs/:id` and the
+ * `/runs/:id/events` SSE stream.
+ *
  * `strictPort` because the reported URL is `http://localhost:<port>` —
  * without it, Vite silently binds port+N when the port is busy and the
  * printed/JSON-returned URL points at whatever else was listening.
@@ -270,6 +288,10 @@ export function viteDevConfig(
   return {
     root: cwd,
     plugins: [fallbackHtmlPlugin(cwd)],
+    // The same peer contract `buildClient` states, for the same reason and a
+    // different symptom — see DEDUPED_PEERS. Without it a project whose SDK is
+    // linked rather than installed loads two Reacts and renders a blank page.
+    resolve: { dedupe: DEDUPED_PEERS },
     server: {
       port: vitePort,
       strictPort: true,
@@ -277,6 +299,9 @@ export function viteDevConfig(
         "/health": target,
         "/client-config": target,
         "/websocket": { target, ws: true },
+        // The workflow HTTP API. See the doc comment above: this is the entire
+        // front door of a `page: "static"` app, not an extra.
+        [WORKFLOW_API_PREFIX]: target,
       },
     },
   };
