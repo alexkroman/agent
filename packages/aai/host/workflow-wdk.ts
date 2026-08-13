@@ -81,9 +81,12 @@ export function wdkAdapter(): WdkAdapter {
       }
     },
 
-    async listRuns(workflowName: string, limit: number): Promise<WdkRunRecord[]> {
+    async listRuns(workflowId: string, limit: number): Promise<WdkRunRecord[]> {
       const page = await getWorld().runs.list({
-        workflowName,
+        // WDK's `workflowName` IS the compiler's identifier — its own docs call
+        // the field machine-readable and parse it before display. Filtering it
+        // by the key an agent declares a workflow under matches nothing.
+        workflowName: workflowId,
         pagination: { limit },
         resolveData: "none",
       });

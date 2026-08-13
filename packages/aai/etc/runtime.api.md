@@ -719,6 +719,7 @@ export function requiredProviderEnvVars(agent: {
     s2s?: {
         kind: string;
     } | object | undefined;
+    page?: "voice" | "static" | undefined;
 }): string[];
 
 // @public
@@ -1287,7 +1288,7 @@ export type WakeHintPublisher = {
 export type WdkAdapter = {
     start(workflowId: string, args: unknown[]): Promise<string>;
     getRun(runId: string): Promise<WdkRunRecord | undefined>;
-    listRuns(workflowName: string, limit: number): Promise<WdkRunRecord[]>;
+    listRuns(workflowId: string, limit: number): Promise<WdkRunRecord[]>;
     cancel(runId: string): Promise<boolean>;
     readOutput(runId: string): Promise<unknown>;
 };

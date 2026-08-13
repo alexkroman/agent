@@ -97,8 +97,15 @@ export interface TransportFactoryDeps {
   executeTool: ExecuteTool;
   env: Record<string, string>;
   s2sConfig: S2SConfig;
-  /** Non-null exactly when the session mode is pipeline. */
-  pipelineProviders: ResolvedPipelineProviders | null;
+  /**
+   * Resolves non-null exactly when the session mode is pipeline.
+   *
+   * A thunk because a `page: "static"` agent must not resolve providers it
+   * will never dial (see `createRuntime`) — and a session that somehow starts
+   * on one still gets the real credential error rather than this file's
+   * "no transport for session".
+   */
+  pipelineProviders: () => ResolvedPipelineProviders | null;
   createWebSocket: RuntimeOptions["createWebSocket"];
   createOpenaiRealtimeWebSocket: RuntimeOptions["createOpenaiRealtimeWebSocket"];
   logger: Logger;
@@ -228,8 +235,9 @@ export function createTransportFactory(
   }
 
   return function buildTransport(args: BuildTransportArgs): Transport {
-    if (pipelineProviders) {
-      return buildPipelineTransport(args, pipelineProviders);
+    const resolved = pipelineProviders();
+    if (resolved) {
+      return buildPipelineTransport(args, resolved);
     }
     if (agent.s2s !== undefined) {
       const kind = descriptorKind(agent.s2s);

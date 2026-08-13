@@ -22,12 +22,11 @@ import type { AgentDef } from "../sdk/types.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import { createPostgresDb } from "./postgres-db.ts";
 import { describeResolvedProviders } from "./providers/_provider-settings.ts";
-import { resolveLlm, resolveStt, resolveTts } from "./providers/resolve.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "./runtime-config.ts";
+import { createPipelineProviderResolver } from "./runtime-pipeline-providers.ts";
 import { setupTools } from "./runtime-tools.ts";
 import {
   createTransportFactory,
-  type ResolvedPipelineProviders,
   type TransportSessionOpts,
   usesAssemblyS2s,
 } from "./runtime-transport.ts";
@@ -89,30 +88,6 @@ function resolveEffectiveProviders(
     };
   }
   return { stt, llm, tts, s2s, mode: assertProviderTriple(stt, llm, tts, s2s) };
-}
-
-/**
- * Resolve the three pipeline provider instances once per runtime (reused
- * across sessions). Returns null unless the mode is pipeline and all three
- * providers are present.
- */
-function resolvePipelineProviders(
-  p: {
-    mode: SessionMode;
-    stt: SttProvider | undefined;
-    llm: LlmProvider | undefined;
-    tts: TtsProvider | undefined;
-  },
-  env: Record<string, string>,
-): ResolvedPipelineProviders | null {
-  if (p.mode !== "pipeline" || !(p.stt && p.llm && p.tts)) return null;
-  // The STT/TTS env vars travel with their openers, so nothing downstream has
-  // to keep the raw descriptors around just to re-derive a credential.
-  return {
-    stt: resolveStt(p.stt),
-    llm: resolveLlm(p.llm, env),
-    tts: resolveTts(p.tts),
-  };
 }
 
 /**
@@ -248,13 +223,14 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     stateMap,
   });
 
-  // Resolve pipeline providers once per runtime (not per session). Each
-  // session reuses the same opener / LanguageModel — the opener's `open()`
-  // mints the per-session stream inside. Credentials come from providerEnv
-  // (like every other provider-facing path here): resolveLlm throws on a
-  // missing key, so resolving from `env` bypassed withHostCredentialFallback
-  // and killed `aai dev` for pipeline agents on shell-exported keys.
-  const pipelineProviders = resolvePipelineProviders(effectiveProviders, providerEnv);
+  // Resolved once per runtime, and resolved EAGERLY only for a voice agent —
+  // see `runtime-pipeline-providers.ts`, which owns that policy and why a
+  // workflow app must not pay it.
+  const pipelineProviders = createPipelineProviderResolver({
+    agent,
+    effectiveProviders,
+    providerEnv,
+  });
 
   // Transport construction (pipeline vs OpenAI Realtime vs AssemblyAI S2S)
   // lives in runtime-transport.ts; the factory closes over the resolved
@@ -307,7 +283,11 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     // call happens to change something, which it may never do.
     pushStateSnapshot?.(sessionOpts.id, sessionOpts.client);
 
-    const isPipeline = Boolean(pipelineProviders);
+    // Call it — `pipelineProviders` is a thunk (see above), so `Boolean(...)` on
+    // the function itself is always true and would route every S2S session down
+    // the pipeline branch. By here a session is being created, so resolving is
+    // exactly what a static agent's deferral was waiting for.
+    const isPipeline = pipelineProviders() !== null;
     // Relay (host) mode: the relay `executeTool` emits the client-facing
     // `tool_call` itself (mirrors session-core's `!opts.onToolResult` guard).
     const isRelay = Boolean(opts.onToolResult);

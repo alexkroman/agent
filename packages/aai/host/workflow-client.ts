@@ -11,13 +11,33 @@
  * | `start(def, input, { key })` | `start({ workflowId }, [input])` + our key index |
  * | `get(runId)` | `world.runs.get(runId)` |
  * | `find(def, key)` | key index → `world.runs.get` per id |
- * | `recent(def)` | `world.runs.list({ workflowName })` |
+ * | `recent(def)` | `world.runs.list({ workflowName: workflowId })` |
  * | `cancel(runId)` | `getRun(runId).cancel()` |
  * | `listing()` | the declared `workflows` record |
  *
  * Two translations are worth reading before changing them: the name mapping,
  * which is what makes a rename a one-place change, and the snapshot mapping,
  * which is where WDK's run record becomes a discriminated union.
+ *
+ * ## The two vocabularies use the word "name" for different strings
+ *
+ * A run record's `workflowName` is the COMPILER's identifier —
+ * `workflow//./workflows/digest//digestFlow`, the same string as `workflowId`,
+ * which the DevKit's own docs call machine-readable and hand to
+ * `parseWorkflowName()` before showing anyone. Ours is the key in
+ * `agent({ workflows })`, which is what `WorkflowRunBase.workflow` promises and
+ * what `find` indexes keys under.
+ *
+ * Both directions of that translation were missing, and each was silent in its
+ * own way: `recent` filtered `world.runs.list` by the DECLARED name, which
+ * matches no stored run, so it answered `[]` for every workflow — taking
+ * `GET /workflows/runs` and `aai workflow runs <name>` ("No runs of X yet") with
+ * it — while every snapshot reported the machine id as its `workflow`, which
+ * `research-desk`'s status tool reads to a caller down the phone. Neither could
+ * be caught by this module's own specs, because a stubbed adapter answers with
+ * whatever name the test wrote; {@link WdkAdapter}'s `listRuns` therefore names
+ * its parameter `workflowId`, and the fake in `workflow-client.test.ts` stores
+ * runs under it.
  */
 
 import type { Db } from "../sdk/db.ts";
@@ -89,8 +109,14 @@ export type WdkAdapter = {
   start(workflowId: string, args: unknown[]): Promise<string>;
   /** `world.runs.get(runId)` — the raw record, or undefined when there is none. */
   getRun(runId: string): Promise<WdkRunRecord | undefined>;
-  /** `world.runs.list({ workflowName })` — newest first, at most `limit`. */
-  listRuns(workflowName: string, limit: number): Promise<WdkRunRecord[]>;
+  /**
+   * `world.runs.list({ workflowName })` — newest first, at most `limit`.
+   *
+   * Takes the compiler's `workflowId`, NOT the declared name: that field holds
+   * the machine-readable identifier, so filtering it by the key an agent
+   * declares a workflow under matches nothing and reports no runs at all.
+   */
+  listRuns(workflowId: string, limit: number): Promise<WdkRunRecord[]>;
   /** `getRun(runId).cancel()` — resolves false when the run was already terminal. */
   cancel(runId: string): Promise<boolean>;
   /**
@@ -111,6 +137,11 @@ export type WdkAdapter = {
  */
 export type WdkRunRecord = {
   runId: string;
+  /**
+   * The COMPILER's identifier for the workflow (the `workflowId`), which is
+   * what WDK stores under this name. `toSnapshot` translates it to the declared
+   * key before anyone reads it.
+   */
   workflowName: string;
   status: "pending" | "running" | "completed" | "failed" | "cancelled";
   createdAt: Date | number;
@@ -181,6 +212,28 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
   }
 
   /**
+   * `workflowId` → the key it is declared under: `resolve`'s mapping, run the
+   * other way for the run records WDK hands back.
+   *
+   * Built once from the same record, so a name reported on a snapshot is by
+   * construction one `resolve` accepts. FIRST key wins, matching `resolve`'s own
+   * `Object.entries` order — the same def declared under two keys is legitimate
+   * (see `resolve`), and a run of it carries no trace of which one a caller
+   * meant, so one of them has to be picked and it may as well be the one listed
+   * first.
+   *
+   * A def the compiler never transformed contributes nothing rather than
+   * throwing: `start` is where that build failure is reported, and a client that
+   * could not even be CONSTRUCTED for it would take the other workflows' reads
+   * down with it.
+   */
+  const declaredNameById = new Map<string, string>();
+  for (const [name, def] of Object.entries(workflows)) {
+    const id = def.run.workflowId;
+    if (id !== undefined && !declaredNameById.has(id)) declaredNameById.set(id, name);
+  }
+
+  /**
    * WDK's run record as our discriminated snapshot.
    *
    * The `output` read is deliberately conditional on `status === "completed"`,
@@ -195,7 +248,12 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
   ): Promise<WorkflowRunSnapshot> {
     const base = {
       runId: record.runId,
-      workflow: record.workflowName,
+      // The declared key, which is what `WorkflowRunBase.workflow` promises.
+      // A run of a workflow this agent no longer declares (renamed, removed, or
+      // read by id from another deployment) keeps the raw identifier: it is the
+      // only true thing left to say, and it is still the string
+      // `parseWorkflowName` takes.
+      workflow: declaredNameById.get(record.workflowName) ?? record.workflowName,
       createdAt: new Date(record.createdAt).getTime(),
       ...(key !== undefined && { key }),
     };
@@ -273,8 +331,11 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
       workflow: AnyWorkflowDef | string,
       options?: FindOptions,
     ): Promise<WorkflowRunSnapshot[]> {
-      const { name } = resolve(workflow);
-      const records = await wdk.listRuns(name, resolveFindLimit(options?.limit));
+      // The workflowId, not the name — see the module doc's second half. `find`
+      // reads OUR key index and so takes the declared name; this one reads
+      // WDK's own store and so takes WDK's own identifier.
+      const { def } = resolve(workflow);
+      const records = await wdk.listRuns(workflowIdOf(def), resolveFindLimit(options?.limit));
       return await mapInBatches(records, RUN_READ_CONCURRENCY, (r) => toSnapshot(r, undefined));
     },
 

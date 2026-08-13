@@ -54,6 +54,22 @@ describe("agentEnvWarnings", () => {
     const env = { ASSEMBLYAI_API_KEY: "sk-env", STRIPE_KEY: "sk-env" };
     expect(agentEnvWarnings(agent, env, {})).toEqual([]);
   });
+
+  test("a workflow app with no credential anywhere warns about nothing", () => {
+    // The `page` field has to be in the Pick, or a static agent is warned about
+    // a key it never dials — and `resolveAgentEnv` reads the same list to decide
+    // whether to reach for the logged-in key, so on that path the same omission
+    // is a `not_logged_in` that stops `aai dev` from starting at all.
+    expect(agentEnvWarnings({ page: "static" }, {}, {})).toEqual([]);
+  });
+
+  test("a workflow app is still told about its own requiredEnv keys", () => {
+    // Suppressing the PROVIDER credential must not suppress the agent's own —
+    // a workflow app reads `ctx.env` like any other.
+    const warnings = agentEnvWarnings({ page: "static", requiredEnv: ["STRIPE_KEY"] }, {}, {});
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("STRIPE_KEY");
+  });
 });
 
 describe("viteDevConfig", () => {

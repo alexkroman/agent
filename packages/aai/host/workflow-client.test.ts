@@ -23,10 +23,20 @@ function body<I, R>(id: string, result?: R): WorkflowBody<I, R> {
   return fn;
 }
 
+/**
+ * The compiler's identifier for `digest` — what WDK stores as `workflowName`.
+ *
+ * Spelled out as a constant because the fake below has to answer with it: a
+ * record carrying the DECLARED name instead is the shape that let `recent` and
+ * the snapshot's `workflow` field both report the wrong string with every spec
+ * in this file green.
+ */
+const DIGEST_ID = "workflow//./workflows/digest//digestFlow";
+
 const digest = workflow({
   description: "Research a topic",
   input: z.object({ topic: z.string() }),
-  run: body<{ topic: string }, { ok: true }>("workflow//./workflows/digest//digestFlow"),
+  run: body<{ topic: string }, { ok: true }>(DIGEST_ID),
 });
 
 /** A workflow with no schema, to pin that validation is skipped rather than failed. */
@@ -37,7 +47,8 @@ const silentLogger = { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.f
 function record(over: Partial<WdkRunRecord> = {}): WdkRunRecord {
   return {
     runId: "wrun_1",
-    workflowName: "digest",
+    // WDK's own vocabulary: the compiler id, not the declared key.
+    workflowName: DIGEST_ID,
     status: "pending",
     createdAt: new Date("2026-08-12T00:00:00Z"),
     ...over,
@@ -248,14 +259,67 @@ describe("finding runs by correlation key", () => {
 });
 
 describe("recent runs", () => {
-  test("lists by workflow name, whatever key the runs carry", async () => {
+  test("lists by the COMPILER's id, which is what WDK stores runs under", async () => {
     const listRuns = vi.fn(async () => [record({ runId: "wrun_a" })]);
     const { client } = makeClient({ wdk: { listRuns } });
     const runs = await client.recent(digest, { limit: 5 });
-    expect(listRuns).toHaveBeenCalledWith("digest", 5);
+    // The declared name matches no stored run, so passing it here reports zero
+    // runs for every workflow — with nothing logged, since an empty list is
+    // exactly what a workflow nobody has run yet looks like.
+    expect(listRuns).toHaveBeenCalledWith(DIGEST_ID, 5);
     // No key: a keyless listing is not a lookup that matched every key, so it
     // must not present runs as if they were correlated to anything.
     expect(runs[0]?.key).toBeUndefined();
+  });
+
+  test("reports a run that a filtering store really would return", async () => {
+    // The fake filters the way the world does, so a client passing the declared
+    // name resolves empty here rather than being handed a run regardless.
+    const stored = [record({ runId: "wrun_a" }), record({ runId: "wrun_b" })];
+    const { client } = makeClient({
+      wdk: { listRuns: async (id) => stored.filter((r) => r.workflowName === id) },
+    });
+    expect((await client.recent(digest)).map((r) => r.runId)).toEqual(["wrun_a", "wrun_b"]);
+  });
+
+  test("rejects a workflow whose body the compiler never transformed", async () => {
+    // Same failure `start` reports, for the same reason: with no id there is
+    // nothing to filter by, and answering "no runs" would read as an empty
+    // history rather than as an untransformed build.
+    const untransformed = { run: (() => Promise.resolve()) as WorkflowBody } as WorkflowDef;
+    const { client } = makeClient({ workflows: { untransformed } });
+    await expect(client.recent("untransformed")).rejects.toThrow(/use workflow/);
+  });
+});
+
+describe("the name a snapshot reports", () => {
+  test("is the key the workflow is declared under, not the compiler's id", async () => {
+    // `WorkflowRunBase.workflow` says "key the workflow is declared under", and
+    // agents read it aloud: `research-desk`'s status tool puts it in a sentence
+    // spoken down the phone.
+    const { client } = makeClient();
+    expect((await client.get("wrun_1"))?.workflow).toBe("digest");
+  });
+
+  test("is translated on every read, not just the one", async () => {
+    const keys = createMemoryKeyStore();
+    await keys.record("digest", "caller-1", "wrun_1");
+    const { client } = makeClient({
+      keys,
+      wdk: { listRuns: async () => [record()] },
+    });
+    expect((await client.find(digest, "caller-1"))[0]?.workflow).toBe("digest");
+    expect((await client.recent(digest))[0]?.workflow).toBe("digest");
+  });
+
+  test("falls back to the raw identifier for a workflow this agent no longer declares", async () => {
+    // A renamed or removed workflow still has runs, and a run id can be read
+    // from anywhere. The machine id is the only true thing left to say about it.
+    const foreign = "workflow//./workflows/gone//goneFlow";
+    const { client } = makeClient({
+      wdk: { getRun: async () => record({ workflowName: foreign }) },
+    });
+    expect((await client.get("wrun_1"))?.workflow).toBe(foreign);
   });
 });
 

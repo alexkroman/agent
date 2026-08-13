@@ -331,6 +331,21 @@ describe("aai dev serves the workflow HTTP API", () => {
     const finished = await api(`/workflows/runs/${runId}?wait=30000`);
     expect(finished.status).toBe(200);
     expect(finished.body).toMatchObject({ status: "completed", output: { topic: "kelp" } });
+
+    // The KEYLESS read (`ctx.workflows.recent`), against a real run store — the
+    // only tier that can check it. It filtered by the DECLARED name where WDK
+    // stores the compiler's identifier, so it answered `[]` for every workflow
+    // and `aai workflow runs <name>` printed "No runs of X yet" for every
+    // agent; a stubbed adapter answers with whatever name the test wrote, so no
+    // unit spec could see it.
+    const listed = await api("/workflows/runs?workflow=research&limit=10");
+    expect(listed.status).toBe(200);
+    const runs = listed.body.runs as { runId: string; workflow: string }[];
+    expect(runs.map((r) => r.runId)).toContain(runId);
+    // And the name each snapshot reports is the key the agent declares it
+    // under, not `workflow//./workflows/research//researchFlow` — which
+    // `research-desk`'s status tool reads to a caller down the phone.
+    expect(runs.every((r) => r.workflow === "research")).toBe(true);
   }, 40_000);
 
   test("a bounded fan-out through `mapInBatches` runs its steps for real", async () => {
