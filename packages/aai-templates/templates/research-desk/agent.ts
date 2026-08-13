@@ -3,6 +3,11 @@
  * A voice agent that hands work off to a durable workflow — the worked example
  * for `agent({ workflows })`.
  *
+ * This is the HANDOFF shape: a caller is on the line, so a tool starts a run and
+ * answers the turn. When the workflow IS the product — a form rather than a
+ * call — the agent is declared with `workflowApp()` instead and has no session
+ * at all; `link-digest` is that one, at its smallest.
+ *
  * The whole point is the thing a voice agent cannot otherwise do: **answer the
  * caller now, finish the work later.** Research takes minutes; the caller is on
  * the line. So `request_research` starts a run and returns in the same turn, the

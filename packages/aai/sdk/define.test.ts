@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "./agent-config.ts";
 import { DEFAULT_MAX_STEPS } from "./constants.ts";
-import { agent, tool } from "./define.ts";
+import { agent, tool, workflowApp } from "./define.ts";
 import { assemblyAIPipeline } from "./providers/assemblyai-pipeline.ts";
 import { anthropic } from "./providers/llm/anthropic.ts";
 import { assemblyAILlm } from "./providers/llm/assemblyai.ts";
@@ -12,6 +12,7 @@ import { assemblyAIStt } from "./providers/stt/assemblyai.ts";
 import { assemblyAITts } from "./providers/tts/assemblyai.ts";
 import { cartesia } from "./providers/tts/cartesia.ts";
 import { DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
+import { workflow } from "./workflow.ts";
 
 describe("tool()", () => {
   test("returns the definition unchanged", () => {
@@ -222,5 +223,48 @@ describe("agent()", () => {
     expect(() => agent({ name: "t", voice: "michael", s2s: assemblyAIS2s() } as never)).toThrow(
       /`voice` is pipeline-mode only/,
     );
+  });
+});
+
+describe("workflowApp()", () => {
+  const digest = workflow({
+    description: "Digest a link",
+    input: z.object({ url: z.string() }),
+    run: async ({ url }: { url: string }) => ({ url }),
+  });
+
+  test("declares the front door, so the field is the call rather than a thing to remember", () => {
+    const def = workflowApp({ name: "Link Digest", workflows: { digest } });
+    expect(def.page).toBe("static");
+    expect(def.workflows).toEqual({ digest });
+  });
+
+  test("is `agent()` underneath — same definition, so nothing downstream sees a second shape", () => {
+    const viaHelper = workflowApp({ name: "Link Digest", workflows: { digest } });
+    const viaAgent = agent({ name: "Link Digest", workflows: { digest }, page: "static" });
+    expect(viaHelper).toEqual(viaAgent);
+  });
+
+  test("the agent defaults still fill, because AgentDef requires them", () => {
+    // Nothing READS them on a static agent — no session opens and no model
+    // runs — but `AgentDef` types all three as required, so the alternative to
+    // filling them is a definition that lies about its own shape.
+    const def = workflowApp({ name: "Link Digest", workflows: { digest } });
+    expect(def.systemPrompt).toBe(DEFAULT_SYSTEM_PROMPT);
+    expect(def.greeting).toBe(DEFAULT_GREETING);
+    expect(def.maxSteps).toBe(DEFAULT_MAX_STEPS);
+    expect(def.tools).toEqual({});
+  });
+
+  test("a greeting passes through, because `GET /client-config` serves it", () => {
+    // The one client-config field a workflow app can still put to work: `page()`
+    // does not fetch it the way `client()` does, so a page that wants it calls
+    // `fetchClientConfig()`.
+    const def = workflowApp({
+      name: "Link Digest",
+      greeting: "Paste a link.",
+      workflows: { digest },
+    });
+    expect(def.greeting).toBe("Paste a link.");
   });
 });

@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expectTypeOf, test } from "vitest";
 import { z } from "zod";
-import { type AgentParams, agent, tool } from "./define.ts";
+import { type AgentParams, agent, tool, type workflowApp } from "./define.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import type { AgentDef, DefaultSessionState, ToolContext, ToolDef } from "./types.ts";
 
@@ -234,4 +234,112 @@ test("text mode accepts only the fields a text agent has", () => {
   // And the two voice modes refuse `text` from their side.
   expectTypeOf<{ name: string; s2s: S2sProvider; text: true }>().not.toExtend<AgentParams>();
   expectTypeOf<{ name: string; stt: SttProvider; text: true }>().not.toExtend<AgentParams>();
+});
+
+/**
+ * The workflow-app arm — the fourth, and the only one keyed on the FRONT DOOR
+ * rather than on a session mode.
+ *
+ * It exists because every field it refuses used to be accepted and inert: a
+ * `page: "static"` agent has no session and no LLM loop, so a `systemPrompt`
+ * on one addresses a model that never runs. The `link-digest` template shipped
+ * exactly that, under a comment claiming `GET /client-config` served it.
+ */
+test("a workflow app accepts only the fields a workflow app has", () => {
+  type Workflows = NonNullable<AgentDef["workflows"]>;
+
+  // The whole legal surface: what a page renders, what it starts, what a
+  // `"use step"` body reads.
+  expectTypeOf<{ name: string; page: "static"; workflows: Workflows }>().toExtend<AgentParams>();
+  expectTypeOf<{
+    name: string;
+    page: "static";
+    workflows: Workflows;
+    greeting: string;
+    requiredEnv: readonly string[];
+  }>().toExtend<AgentParams>();
+
+  // `workflows` is the product, so an app declaring none is refused — the page
+  // would serve a form whose every submit is a 400.
+  expectTypeOf<{ name: string; page: "static" }>().not.toExtend<AgentParams>();
+
+  // Nothing runs a model.
+  expectTypeOf<{
+    name: string;
+    page: "static";
+    workflows: Workflows;
+    systemPrompt: string;
+  }>().not.toExtend<AgentParams>();
+  expectTypeOf<{
+    name: string;
+    page: "static";
+    workflows: Workflows;
+    tools: Record<string, never>;
+  }>().not.toExtend<AgentParams>();
+  expectTypeOf<{
+    name: string;
+    page: "static";
+    workflows: Workflows;
+    llm: LlmProvider;
+  }>().not.toExtend<AgentParams>();
+  expectTypeOf<{
+    name: string;
+    page: "static";
+    workflows: Workflows;
+    maxSteps: number;
+  }>().not.toExtend<AgentParams>();
+
+  // Nothing opens a session, so per-session state and its projection are out.
+  expectTypeOf<{
+    name: string;
+    page: "static";
+    workflows: Workflows;
+    state: () => { n: number };
+  }>().not.toExtend<AgentParams>();
+  expectTypeOf<{
+    name: string;
+    page: "static";
+    workflows: Workflows;
+    syncState: (s: unknown) => unknown;
+  }>().not.toExtend<AgentParams>();
+
+  // Derived from the two existing lists, so a new provider stage or voice knob
+  // is refused here without anyone remembering to list it.
+  expectTypeOf<{
+    name: string;
+    page: "static";
+    workflows: Workflows;
+    s2s: S2sProvider;
+  }>().not.toExtend<AgentParams>();
+  expectTypeOf<{
+    name: string;
+    page: "static";
+    workflows: Workflows;
+    deadAirCoverMs: number;
+  }>().not.toExtend<AgentParams>();
+
+  // And the voice arms refuse the front door from their side: without this the
+  // arm never bites, because a pipeline agent would match `page: "static"` too
+  // and go on accepting every field above.
+  expectTypeOf<{ name: string; voice: "jane"; page: "static" }>().not.toExtend<AgentParams>();
+  expectTypeOf<{
+    name: string;
+    s2s: S2sProvider;
+    page: "static";
+  }>().not.toExtend<AgentParams>();
+  expectTypeOf<{ name: string; text: true; page: "static" }>().not.toExtend<AgentParams>();
+  // A voice agent may still say so explicitly, and may still declare workflows
+  // — `page` is about the front door, not about what the agent may own.
+  expectTypeOf<{ name: string; page: "voice"; workflows: Workflows }>().toExtend<AgentParams>();
+});
+
+/**
+ * `workflowApp()` is `agent()` with the discriminant set — same definition
+ * type out, so nothing downstream (config, deploy, the guest harness) learns a
+ * second shape.
+ */
+test("workflowApp() returns an AgentDef and takes no page field", () => {
+  expectTypeOf<ReturnType<typeof workflowApp>>().toEqualTypeOf<AgentDef>();
+  expectTypeOf<Parameters<typeof workflowApp>[0]>().not.toHaveProperty("page");
+  expectTypeOf<Parameters<typeof workflowApp>[0]>().toHaveProperty("workflows");
 });

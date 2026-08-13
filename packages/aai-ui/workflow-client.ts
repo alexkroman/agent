@@ -3,7 +3,7 @@
  * Browser client for the workflow HTTP API (`aai/host/workflow-api.ts`).
  *
  * This is the whole client half of a WORKFLOW APP: an agent whose front door is
- * a form rather than a microphone (`agent({ page: "static" })`) starts runs
+ * a form rather than a microphone (`workflowApp()`) starts runs
  * here and watches them for the answer. It deliberately does NOT go through
  * `SessionCore` — there is no socket, no audio graph, and no session to resume.
  *

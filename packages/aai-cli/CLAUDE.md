@@ -156,7 +156,8 @@ to the backend port directly. **A route added to `createServer` that a page
 fetches must be added there too.**
 
 `/workflows` is the case that proves the rule and the one it was learned from.
-A WORKFLOW APP (`agent({ page: "static" })`) has no session and no socket:
+A WORKFLOW APP (`workflowApp()`, i.e. `page: "static"`) has no session and no
+socket:
 `page()` renders a form and every single thing it does — listing workflows to
 build that form, starting a run, polling it, streaming its events — is a
 same-origin fetch under that prefix. Unproxied, both workflow-app templates

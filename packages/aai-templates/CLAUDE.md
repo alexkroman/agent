@@ -106,7 +106,7 @@ Note the template needs `workflow` as a devDependency of THIS package to
 resolve at test time; a scaffolded project gets it as a real dependency.
 
 **`transcription-desk` is the second workflow template. It is a WORKFLOW APP —
-`page: "static"`, no `stt`/`llm`/`tts`, no tools — and it exists for the two
+`workflowApp()`, no `stt`/`llm`/`tts`, no tools — and it exists for the two
 rules a straight-line body cannot show.**
 
 The first is what a real asynchronous API looks like: a transcription service
@@ -198,22 +198,30 @@ it described an intent rather than the implementation.)
 **`link-digest` is the same mechanism at its smallest, and it is the FRONT DOOR
 that separates both of these from `research-desk`.** That one is a voice agent
 that HANDS OFF to a run (a caller is on the line, so a tool starts one and
-answers the turn); `link-digest` and `transcription-desk` declare
-`page: "static"` and the workflow IS the product — no `stt`/`llm`/`tts`, no
+answers the turn); `link-digest` and `transcription-desk` are declared with
+`workflowApp()` and the workflow IS the product — no `stt`/`llm`/`tts`, no
 tools, and a `client.tsx` that mounts with `page()` rather than `client()`.
+Those fields are not merely omitted there: `StaticAgentParams` refuses them, so
+a `systemPrompt` addressed to a model that never runs — which `link-digest`
+shipped — no longer type-checks.
+
 `link-digest`'s spec asserts the DECLARATION rather than behaviour, which is all
 there is to assert: the `page` field, the workflow's NAME (the page starts a run
 by that string, so a rename is a runtime 400 rather than a compile error), and
 the input schema, which is both the call-site validation and the JSON Schema
 `GET /workflows` serves.
 
-**`template-page-mount.test.ts` correlates the two mounts with the agents that
-declare them.** konsistent asserts only what both `client.tsx` shapes share (the
-stylesheet import): its predicates are "must import X" with no "one of", and no
-way to read a value out of a SIBLING file to decide which — and a rule that
-merely accepted either mount would pass the exact mistake worth catching, since
-a static agent mounted with `client()` renders fine and then opens a
-`/websocket` the server declines.
+**`template-page-mount.test.ts` correlates BOTH ends of the front door with the
+agent that declares it** — the helper (`agent()` vs `workflowApp()`) and the
+mount (`client()` vs `page()`). konsistent asserts only what every template
+shares (a default export from `agent.ts`, the stylesheet import in
+`client.tsx`): its predicates are "must import X" with no "one of", and no way
+to read a value out of a SIBLING file to decide which — and a rule that merely
+accepted either would pass the exact mistake worth catching, since a static
+agent mounted with `client()` renders fine and then opens a `/websocket` the
+server declines. `agent-default-export` used to require an `agent` import for
+that reason and no longer can, the workflow-app templates calling `workflowApp`
+instead.
 
 The one thing a template may still hand-roll here is a **fallback that would
 cost the browser bundle**: `retail`'s client builds its empty view from a

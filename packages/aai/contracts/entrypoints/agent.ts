@@ -2,8 +2,14 @@
 /**
  * Capability contract: `agent`.
  *
- * Declaring an agent: the `agent()` helper, the parameter unions that make a
- * mode mistake a compile error, and the shape a declaration resolves to.
+ * Declaring an agent: the `agent()` and `workflowApp()` helpers, the parameter
+ * unions that make a mode mistake a compile error, and the shape a declaration
+ * resolves to.
+ *
+ * `workflowApp()` belongs here rather than in `workflow`: it declares an AGENT
+ * (returning `AgentDef`, like `agent()`), and what it selects is a front door.
+ * The `workflow` capability is the runs themselves — `workflow()`, and what a
+ * caller of `ctx.workflows` reads.
  *
  * Re-exported from `@alexkroman1/aai`. This file is not shipped and nothing
  * imports it — it exists so `pnpm check:api-contracts` can extract a report
@@ -20,6 +26,7 @@ export {
   type BuiltinTool,
   type DefaultedAgentField,
   type DefaultSessionState,
+  type FrontDoorField,
   type InferAgentState,
   type PipelineAgentParams,
   type PipelineOnlyField,
@@ -28,6 +35,11 @@ export {
   type ProviderField,
   type S2sAgentParams,
   type SharedAgentParams,
+  type StaticAgentParams,
+  type StaticFrontDoorMisuse,
   type TextAgentParams,
   type ToolChoice,
+  type WorkflowAppMisuse,
+  type WorkflowAppOnlyField,
+  workflowApp,
 } from "../../index.ts";

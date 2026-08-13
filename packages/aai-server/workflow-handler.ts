@@ -4,7 +4,7 @@
  * sandbox.
  *
  * The route exists because of WHO calls it. A workflow app
- * (`agent({ page: "static" })`) is served by this platform at `GET /:slug/`,
+ * (`workflowApp()`) is served by this platform at `GET /:slug/`,
  * and its page builds every request URL from `location.origin +
  * location.pathname` (`pageBaseUrl` in aai-ui) — so the calls land HERE, on the
  * platform, not on the guest. Unlike a voice session, which learns the sandbox

@@ -33,7 +33,7 @@ export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
 }
 
 // @public
-export type AgentParams<S = DefaultSessionState> = PipelineAgentParams<S> | S2sAgentParams<S> | TextAgentParams<S>;
+export type AgentParams<S = DefaultSessionState> = PipelineAgentParams<S> | S2sAgentParams<S> | TextAgentParams<S> | StaticAgentParams;
 
 // @public
 export type AnyWorkflowDef<R = unknown> = {
@@ -524,6 +524,9 @@ export type FindOptions = {
 };
 
 // @public
+export type FrontDoorField = "page";
+
+// @public
 export type GenerateFn = {
     <S extends StandardSchemaV1>(options: GenerateOptions & {
         schema: S;
@@ -620,6 +623,7 @@ export type PipelineAgentParams<S = DefaultSessionState> = SharedAgentParams<S> 
     llm?: LlmProvider | string;
     s2s?: undefined;
     text?: undefined;
+    page?: "voice" | StaticFrontDoorMisuse;
 } & ({
     tts: TtsProvider;
     voice?: "`voice` picks the default pipeline's TTS voice — an explicit `tts` descriptor owns its own voice (e.g. `assemblyAITts({ voice })`); set it there or remove `tts`";
@@ -667,6 +671,7 @@ export type S2sAgentParams<S = DefaultSessionState> = SharedAgentParams<S> & {
     tts?: "`tts` cannot be combined with `s2s` — S2S runs TTS service-side";
     voice?: "`voice` is pipeline-mode only — an S2S agent's voice rides on the `s2s` descriptor";
     text?: "`text` cannot be combined with `s2s` — an agent is text-only or speech-to-speech, not both";
+    page?: "voice" | StaticFrontDoorMisuse;
 } & {
     [K in PipelineOnlyField]?: PipelineOnlyMisuse<K>;
 };
@@ -703,7 +708,7 @@ export interface SessionSlotOptions<T> {
 }
 
 // @public
-export type SharedAgentParams<S = DefaultSessionState> = Omit<AgentDef<S>, DefaultedAgentField | PipelineOnlyField | ProviderField> & Partial<Pick<AgentDef<S>, DefaultedAgentField>> & {
+export type SharedAgentParams<S = DefaultSessionState> = Omit<AgentDef<S>, DefaultedAgentField | PipelineOnlyField | ProviderField | FrontDoorField> & Partial<Pick<AgentDef<S>, DefaultedAgentField>> & {
     system?: string;
 };
 
@@ -759,6 +764,17 @@ export type StartOptions = {
 };
 
 // @public
+export type StaticAgentParams = Omit<SharedAgentParams, WorkflowAppOnlyField | FrontDoorField | "workflows"> & {
+    page: "static";
+    workflows: NonNullable<AgentDef["workflows"]>;
+} & {
+    [K in WorkflowAppOnlyField]?: WorkflowAppMisuse<K>;
+};
+
+// @public
+export type StaticFrontDoorMisuse = '`page: "static"` declares a WORKFLOW APP, which runs no model and opens no socket — remove this agent\'s voice/LLM fields, or declare it with `workflowApp()` and keep them off by construction';
+
+// @public
 export const STORAGE_DISABLED_MESSAGE: string;
 
 // @public
@@ -783,6 +799,7 @@ export type TextAgentParams<S = DefaultSessionState> = Omit<SharedAgentParams<S>
     s2s?: "`s2s` cannot be combined with `text` — an agent is text-only or speech-to-speech, not both";
     voice?: "`voice` is pipeline-mode only — a text agent never speaks";
     sttPrompt?: "`sttPrompt` biases a transcriber — a text agent has none; remove it or remove `text`";
+    page?: "voice" | StaticFrontDoorMisuse;
 } & {
     [K in PipelineOnlyField]?: PipelineOnlyMisuse<K, "text">;
 };
@@ -847,6 +864,15 @@ export const withLock: <T>(lock: (key: string, opts?: KeyedLockOptions) => Promi
 
 // @public
 export function workflow<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: WorkflowDef<P, R>): WorkflowDef<P, R>;
+
+// @public
+export function workflowApp(def: Omit<StaticAgentParams, "page">): AgentDef;
+
+// @public
+export type WorkflowAppMisuse<K extends string> = `\`${K}\` has no effect on a workflow app — \`page: "static"\` runs no model and opens no session; remove it, or remove \`page: "static"\` to make this a voice agent`;
+
+// @public
+export type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | "system" | "systemPrompt" | "sttPrompt" | "maxSteps" | "toolChoice" | "tools" | "builtinTools" | "state" | "syncState" | "idleTimeoutMs" | "voice";
 
 // @public
 export type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {

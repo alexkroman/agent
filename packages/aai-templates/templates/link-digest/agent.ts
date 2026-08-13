@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * A WORKFLOW APP — the worked example for `agent({ page: "static" })`.
+ * A WORKFLOW APP — the worked example for `workflowApp()`.
  *
  * Its front door is a form, not a microphone. There is no session, no
  * WebSocket, and no voice pipeline: the page (`client.tsx`) starts a run over
@@ -10,14 +10,17 @@
  *
  * `research-desk` is a voice agent that HANDS OFF to a workflow — a caller is on
  * the line, so a tool starts a run and answers the turn. Here the workflow is
- * the entire product. That difference is one field:
+ * the entire product, and the declaration says so:
  *
- * - `page: "static"` declares it, and the declaration is not decoration.
- *   `createServer` declines `/websocket` with a reason (so a page mounted with
- *   `client()` by mistake fails the same way in `aai dev` and in production
- *   rather than only after a deploy) and telephony defaults off.
- * - No `stt`/`llm`/`tts`, and no `tools`: nothing here talks, so there is no
- *   pipeline to configure and no model to give tools to.
+ * - `workflowApp()` is `agent({ …, page: "static" })` with the discriminant
+ *   already set. The declaration is not decoration: `createServer` declines
+ *   `/websocket` with a reason (so a page mounted with `client()` by mistake
+ *   fails the same way in `aai dev` and in production rather than only after a
+ *   deploy) and telephony defaults off.
+ * - There is no `stt`/`llm`/`tts`, no `tools` and no `systemPrompt` — and they
+ *   are not merely omitted, they are UNDECLARABLE here. Nothing talks and no
+ *   model runs, so every one of them was inert; this file used to carry a
+ *   `systemPrompt` addressed to a model that never ran.
  *
  * ## What the page needs from this file, and how it gets it
  *
@@ -31,7 +34,7 @@
  * runs and the correlation-key index both live there.
  */
 
-import { agent, workflow } from "@alexkroman1/aai";
+import { workflow, workflowApp } from "@alexkroman1/aai";
 import { z } from "zod";
 import { digestFlow } from "./workflows/digest.ts";
 
@@ -52,18 +55,8 @@ export const digest = workflow({
   run: digestFlow,
 });
 
-export default agent({
+export default workflowApp({
   name: "Link Digest",
-  // A static agent still carries these — they are what `GET /client-config`
-  // serves, so the page's title and empty state come from the same place a
-  // voice agent's shell does.
-  greeting: "Paste a link and I will file a digest of it.",
-  systemPrompt: "Summarize links into three honest points.",
-
   // The whole product. A workflow app is an agent whose work happens here.
   workflows: { digest },
-
-  // The front door is a form. See the module doc for what this really switches
-  // off, which is more than it advertises.
-  page: "static",
 });

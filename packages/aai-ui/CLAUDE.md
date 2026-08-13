@@ -239,6 +239,42 @@ here — `page()`, `createWorkflowApi()`, `useWorkflowRun()` — and
 `packages/aai/CLAUDE.md` is at its size cap. The routes themselves are served by
 `aai/host/workflow-api.ts`, whose module doc is the authoritative table.
 
+### `workflowApp()` is the server-side half of the same split
+
+An author declares one with `workflowApp({ name, workflows })`
+(`@alexkroman1/aai`), not with `agent({ …, page: "static" })`. It returns the
+same `AgentDef` — one definition type, one config, one deploy path, and `page`
+stays a statement about the front door — so this is an authoring seam, never a
+second runtime shape.
+
+**The parameter type is what earns it.** `AgentParams` grew a fourth arm,
+`StaticAgentParams`, keyed on the front door rather than on a session mode; it
+accepts `name`, `greeting`, `workflows` (REQUIRED — an app whose whole API is
+`/workflows/*` and which declares none serves a form that 400s on every submit)
+and `requiredEnv`, and types every other field as a `WorkflowAppMisuse` message.
+That list is derived from `ProviderField` and `PipelineOnlyField`, so a new
+provider stage or voice knob is refused here without anyone remembering to add
+it.
+
+**Both halves are load-bearing.** The three voice arms had to start refusing
+`page: "static"` from their side (`StaticFrontDoorMisuse`), because an arm every
+other arm also matches never bites: with `page` left on `SharedAgentParams`,
+`agent({ voice: "michael", page: "static" })` resolved against
+`PipelineAgentParams` and configured a TTS voice for an app that never speaks.
+
+**The cost of not having this was already shipped.** `link-digest` carried
+`systemPrompt: "Summarize links into three honest points."` — instructions to a
+model that never runs, since a static agent has no session and no LLM loop, and
+a `"use step"` body calls whatever model client it imports itself. The comment
+above it claimed `GET /client-config` served it; that endpoint serves `name`,
+`greeting` and `page`, and has never carried a system prompt. Both workflow-app
+templates are now three lines and every one of them does something.
+
+`greeting` survives as declarable because it is the one client-config field a
+workflow app can still use — but note `page()` does not fetch the endpoint the
+way `client()` does, so a page that wants `name`/`greeting` from the agent calls
+`fetchClientConfig()` itself rather than receiving them.
+
 ### `page()` is a second mount, not a flag on `client()`
 
 `client()` unavoidably constructs a `SessionCore`, which owns a WebSocket URL
