@@ -48,6 +48,17 @@ type ExecuteToolCallOptions = {
    * `TypeError` on `undefined.start`.
    */
   workflows?: WorkflowClient | undefined;
+  /**
+   * Per-call deadline. Defaults to {@link TOOL_EXECUTION_TIMEOUT_MS} (30s),
+   * which is sized for a VOICE turn — past it the caller is listening to
+   * silence, so a slow tool is already a failed turn.
+   *
+   * A text agent is the case that needs another number: nobody is holding a
+   * phone, and its tools are the long ones (a package install, a type check,
+   * a shell command). The studio coding agent ran its whole tool set behind a
+   * 120s wrapper of its own before this existed.
+   */
+  timeoutMs?: number | undefined;
 };
 
 // Takes the per-call signal as a REQUIRED narrowing of the options bag:
@@ -141,9 +152,10 @@ export async function executeToolCall(
     }
     // The signal makes the await settle promptly on barge-in/reset/stop; the
     // underlying execute keeps running unless it observes ctx.signal itself.
+    const timeoutMs = options.timeoutMs ?? TOOL_EXECUTION_TIMEOUT_MS;
     const result = await pTimeout(Promise.resolve(tool.execute(parsed.value, ctx)), {
-      milliseconds: TOOL_EXECUTION_TIMEOUT_MS,
-      message: `Tool "${name}" timed out after ${TOOL_EXECUTION_TIMEOUT_MS}ms`,
+      milliseconds: timeoutMs,
+      message: `Tool "${name}" timed out after ${timeoutMs}ms`,
       signal: callController.signal,
     });
     await yieldTick();

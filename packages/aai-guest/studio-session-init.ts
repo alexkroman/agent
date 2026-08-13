@@ -33,8 +33,8 @@ import { formatSchemaIssues } from "@alexkroman1/aai/internal";
 import { z } from "zod";
 import { verifyBearer } from "./harness-auth.ts";
 import type { HarnessState } from "./harness-bundle.ts";
-import { initStudioSession, SessionIdentityError } from "./studio-chat.ts";
 import { CORS_HEADERS, readBody, sendJson } from "./studio-http.ts";
+import { initStudioSession, SessionIdentityError } from "./studio-session.ts";
 
 /** The route this module claims. Mirrors `GUEST_ROUTES.studioSessionInit`. */
 export const SESSION_INIT_PATH = "/studio/session-init";

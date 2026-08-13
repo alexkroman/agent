@@ -131,6 +131,20 @@ export {
   startTelephonySession,
   TELEPHONY_PATH,
 } from "./telephony/telephony-server.ts";
+// The TEXT session mode — an agent definition driven over a message list.
+// Public: it is how a text-based agent is run, the counterpart of
+// `createRuntime` for the other two modes.
+export {
+  createTextAgent,
+  type TextAgent,
+  type TextAgentOptions,
+  type TextTurnOptions,
+  type TextTurnResult,
+} from "./text-agent.ts";
+// The repair both `streamText` loops share. Exported for a caller assembling
+// its own request against the same model (and because `salvageJson` is the
+// half that costs no tokens).
+export { createToolCallRepair, salvageJson } from "./tool-call-repair.ts";
 export { type ExecuteTool, type ExecuteToolOptions, executeToolCall } from "./tool-executor.ts";
 export {
   createPipelineTransport,

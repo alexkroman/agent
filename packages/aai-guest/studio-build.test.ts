@@ -17,7 +17,7 @@ import {
   withBuildDir,
   workspacesRoot,
 } from "./studio-build.ts";
-import { toolchainPromptSection } from "./studio-chat.ts";
+import { toolchainPromptSection } from "./studio-session.ts";
 import { ensureWorkspaceDependencies } from "./studio-workspace-deps.ts";
 
 // Mocked for both directions: it keeps a build here from ever spawning a real

@@ -43,7 +43,7 @@ import { gatewayModelIds } from "@alexkroman1/aai/llm";
  * `gpt-5.5` leads on measurement, not price list. Over the eleven starter
  * prompts, same window, same everything else: it shipped 10/11 first-try
  * clean with zero repair rounds — it never produces the malformed tool-call
- * JSON that `studio-tool-repair.ts` exists to salvage. `gpt-5-mini` (the
+ * JSON that the SDK’s tool-call repair exists to salvage. `gpt-5-mini` (the
  * previous default, kept second) shipped 11/11 with 9/11 compiling first
  * time at roughly a twentieth of the price; the price is accepted here for
  * the cleaner agentic behavior. (`qwen3-next-80b-a3b`, the default before

@@ -10,13 +10,8 @@ import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { handleHostResponse, setHostSend } from "./harness-rpc.ts";
 import type { JsonRpcMessage } from "./harness-types.ts";
-import {
-  handleStudioRequest,
-  initStudioSession,
-  resetTurnGate,
-  type StudioChatDeps,
-  type StudioSession,
-} from "./studio-chat.ts";
+import { handleStudioRequest, resetTurnGate, type StudioChatDeps } from "./studio-chat.ts";
+import { initStudioSession, type StudioSession } from "./studio-session.ts";
 
 const API_KEY = "caller-key-123";
 

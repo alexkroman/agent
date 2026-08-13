@@ -270,3 +270,55 @@ describe("manifest-barrel type contracts", () => {
     expect(schemas).toEqual([]);
   });
 });
+
+describe("toAgentConfig — text mode", () => {
+  test("`text: true` classifies as text and injects no pipeline stages", () => {
+    const parsed = toAgentConfig({ name: "chat", text: true } as never);
+    expect(parsed.mode).toBe("text");
+    // The pipeline-by-default fill is what a text agent must NOT get: an
+    // injected stt/tts is an audio path nobody asked for, and it would
+    // reclassify the agent as pipeline on the very next parse.
+    expect(parsed.stt).toBeUndefined();
+    expect(parsed.tts).toBeUndefined();
+    expect(parsed.s2s).toBeUndefined();
+    expect(parsed.text).toBe(true);
+  });
+
+  test("keeps an explicit llm, which is the one stage it has", () => {
+    const parsed = toAgentConfig({
+      name: "chat",
+      text: true,
+      llm: "anthropic/claude-sonnet-4-5",
+    } as never);
+    expect(parsed.mode).toBe("text");
+    expect(parsed.llm?.kind).toBe("gateway");
+    expect(parsed.stt).toBeUndefined();
+  });
+
+  test.each([
+    ["stt", { stt: assemblyAIStt() }, /no audio path/],
+    ["tts", { tts: { kind: "assemblyai", options: {} } }, /no audio path/],
+    ["s2s", { s2s: { kind: "assemblyai", options: {} } }, /no speech stage/],
+  ])("rejects text combined with %s", (_label, extra, message) => {
+    expect(() => toAgentConfig({ name: "chat", text: true, ...extra } as never)).toThrow(message);
+  });
+
+  test("rejects the pipeline-only tuning knobs, as s2s does", () => {
+    expect(() =>
+      toAgentConfig({ name: "chat", text: true, deadAirCoverMs: 5000 } as never),
+    ).toThrow(/deadAirCoverMs requires pipeline mode/);
+  });
+
+  test("rejects the `voice` shorthand rather than fabricating a tts stage", () => {
+    expect(() => toAgentConfig({ name: "chat", text: true, voice: "jane" } as never)).toThrow(
+      /never speaks/,
+    );
+  });
+
+  test("assertProviderTriple only answers `text` when asked about text", () => {
+    // The overload says so at the type level; this pins the runtime half, so
+    // the voice call sites' `Exclude<SessionMode, "text">` cannot become a lie.
+    expect(assertProviderTriple(undefined, undefined, undefined, undefined)).toBe("s2s");
+    expect(assertProviderTriple(undefined, {}, undefined, undefined, true)).toBe("text");
+  });
+});

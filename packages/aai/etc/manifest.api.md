@@ -62,9 +62,11 @@ export const AgentConfigSchema: z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
     }, z.core.$strip>>;
+    text: z.ZodOptional<z.ZodLiteral<true>>;
     mode: z.ZodOptional<z.ZodEnum<{
         pipeline: "pipeline";
         s2s: "s2s";
+        text: "text";
     }>>;
     requiredEnv: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     page: z.ZodOptional<z.ZodEnum<{
@@ -85,7 +87,10 @@ export function agentToolsToSchemas(tools: Readonly<Record<string, ToolDef>>): T
 export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning): void;
 
 // @internal
-export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s2s?: unknown): SessionMode;
+export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s2s?: unknown, text?: undefined): Exclude<SessionMode, "text">;
+
+// @public (undocumented)
+export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s2s?: unknown, text?: unknown): SessionMode;
 
 // @internal
 export function assertSilencePolicy(mode: SessionMode, silenceTimeoutMs: number | undefined, silencePrompt: string | undefined): void;
@@ -108,7 +113,7 @@ export const ProviderDescriptorSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
-export type SessionMode = "s2s" | "pipeline";
+export type SessionMode = "s2s" | "pipeline" | "text";
 
 // @public
 export function toAgentConfig(source: AgentConfigSource): AgentConfig;

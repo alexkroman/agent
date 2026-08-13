@@ -1,9 +1,11 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { InvalidToolInputError, parsePartialJson } from "ai";
+import { InvalidToolInputError, type ModelMessage, NoSuchToolError, parsePartialJson } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
-import { describe, expect, test } from "vitest";
-import { createToolCallRepair, salvageJson } from "./studio-tool-repair.ts";
+import { describe, expect, test, vi } from "vitest";
+import { createToolCallRepair, salvageJson } from "./tool-call-repair.ts";
+
+const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 
 /** Salvage a payload and parse it back to an object for shape assertions. */
 async function parsed(input: string): Promise<Record<string, unknown>> {
@@ -99,9 +101,20 @@ describe("what the SDK already covers", () => {
   });
 });
 
-describe("createToolCallRepair", () => {
+describe("createToolCallRepair over a real model", () => {
   const model = {} as Parameters<typeof createToolCallRepair>[0];
   const inputSchema = async () => ({ type: "object" as const });
+  /**
+   * The rest of the SDK's repair bag, spelled out rather than cast away: the
+   * hook is handed the whole request, and only these four fields are ones
+   * this module has no opinion about.
+   */
+  const rest = {
+    instructions: undefined,
+    system: undefined,
+    messages: [] as ModelMessage[],
+    tools: {},
+  };
 
   const invalidInput = (input: string) =>
     new InvalidToolInputError({
@@ -132,24 +145,26 @@ describe("createToolCallRepair", () => {
 
   test("leaves an unknown tool name alone", async () => {
     // Guessing which tool was meant risks turning a delete into a write.
-    const repair = createToolCallRepair(model);
+    const repair = createToolCallRepair(model, log);
     const result = await repair({
-      toolCall: { toolName: "nope", input: "{}" },
-      error: new Error("No such tool"),
+      toolCall: { type: "tool-call", toolCallId: "t0", toolName: "nope", input: "{}" },
+      error: new NoSuchToolError({ toolName: "nope", availableTools: ["write_file"] }),
       inputSchema,
+      ...rest,
     });
     expect(result).toBeNull();
   });
 
   test("tier 1 salvages malformed input without spending any tokens", async () => {
     const { model: fixer, calls } = fixerModel('{"never":"used"}');
-    const repair = createToolCallRepair(fixer);
+    const repair = createToolCallRepair(fixer, log);
     const broken = '{"path":"a.ts","content":"line one\nline two"}';
 
     const result = await repair({
-      toolCall: { toolName: "write_file", input: broken },
+      toolCall: { type: "tool-call", toolCallId: "t1", toolName: "write_file", input: broken },
       error: invalidInput(broken),
       inputSchema,
+      ...rest,
     });
 
     expect(result).not.toBeNull();
@@ -162,13 +177,14 @@ describe("createToolCallRepair", () => {
 
   test("tier 2 asks the model to rewrite input that cannot be salvaged", async () => {
     const { model: fixer, calls } = fixerModel('{"path":"a.ts","content":"x"}');
-    const repair = createToolCallRepair(fixer);
+    const repair = createToolCallRepair(fixer, log);
     const hopeless = "write a.ts with content x please";
 
     const result = await repair({
-      toolCall: { toolName: "write_file", input: hopeless },
+      toolCall: { type: "tool-call", toolCallId: "t2", toolName: "write_file", input: hopeless },
       error: invalidInput(hopeless),
       inputSchema,
+      ...rest,
     });
 
     expect(calls()).toBe(1);
@@ -184,13 +200,14 @@ describe("createToolCallRepair", () => {
         throw new Error("model unavailable");
       },
     });
-    const repair = createToolCallRepair(failing);
+    const repair = createToolCallRepair(failing, log);
     const hopeless = "not json";
 
     const result = await repair({
-      toolCall: { toolName: "write_file", input: hopeless },
+      toolCall: { type: "tool-call", toolCallId: "t2", toolName: "write_file", input: hopeless },
       error: invalidInput(hopeless),
       inputSchema,
+      ...rest,
     });
 
     expect(result).toBeNull();

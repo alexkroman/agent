@@ -21,9 +21,8 @@
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { errorMessage } from "@alexkroman1/aai";
+import { errorMessage, type ToolDef, tool } from "@alexkroman1/aai";
 import { safeFetch } from "@alexkroman1/aai/runtime";
-import { generateText, type LanguageModel, type ToolSet, tool } from "ai";
 import { z } from "zod";
 import { MAX_STUDIO_FILE_BYTES } from "./limits.ts";
 import { WORKSPACE_DEPENDENCIES } from "./studio-project-shape.ts";
@@ -278,7 +277,7 @@ export type ProjectToolDeps = {
 };
 
 /** Build the dependency + asset tools over the session workspace. */
-export function createProjectTools(deps: ProjectToolDeps): ToolSet {
+export function createProjectTools(deps: ProjectToolDeps): Record<string, ToolDef> {
   const { dir } = deps;
   return {
     npm_info: tool({
@@ -355,8 +354,16 @@ sections:
 Be specific enough to implement directly; never suggest emojis as icons or
 decorative filler shapes.`;
 
-/** The v0-style design-brief generator, on the session's own model. */
-export function createDesignInspirationTool(model: LanguageModel): ToolSet {
+/**
+ * The v0-style design-brief generator.
+ *
+ * It takes no model: `ctx.generate` is the SDK's one-shot generation
+ * capability, and it already resolves the agent's own LLM on the agent's own
+ * credentials and cancels with the call. Threading a `LanguageModel` in here
+ * was a second, parallel way to reach the same model — and the one that could
+ * drift from it.
+ */
+export function createDesignInspirationTool(): Record<string, ToolDef> {
   return {
     generate_design_inspiration: tool({
       description: STUDIO_TOOL_DESCRIPTIONS.generate_design_inspiration,
@@ -367,13 +374,11 @@ export function createDesignInspirationTool(model: LanguageModel): ToolSet {
           .optional()
           .describe("Optional design cues, brand adjectives, constraints"),
       }),
-      execute: async ({ goal, context }, opts) => {
+      execute: async ({ goal, context }, ctx) => {
         try {
-          const { text } = await generateText({
-            model,
+          const { text } = await ctx.generate({
             system: DESIGN_BRIEF_SYSTEM,
             prompt: `Goal: ${goal}${context ? `\nContext: ${context}` : ""}`,
-            ...(opts?.abortSignal ? { abortSignal: opts.abortSignal } : {}),
           });
           return text;
         } catch (err) {

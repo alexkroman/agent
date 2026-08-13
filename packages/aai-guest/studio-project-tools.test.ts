@@ -3,13 +3,14 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { ToolSet } from "ai";
+import type { ToolDef } from "@alexkroman1/aai";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { runTool } from "./_test-utils.ts";
 import { createDesignInspirationTool, createProjectTools } from "./studio-project-tools.ts";
 
 let dir: string;
 
-function makeTools(): ToolSet {
+function makeTools(): Record<string, ToolDef> {
   return createProjectTools({ dir });
 }
 
@@ -21,10 +22,10 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-function execute(tools: ToolSet, name: string, args: unknown): Promise<unknown> {
+function execute(tools: Record<string, ToolDef>, name: string, args: unknown): Promise<unknown> {
   const t = tools[name];
   if (!t?.execute) throw new Error(`no such tool: ${name}`);
-  return Promise.resolve(t.execute(args as never, {} as never));
+  return runTool({ [name]: t }, name, args as Record<string, unknown>);
 }
 
 describe("add_dependency / remove_dependency", () => {
@@ -95,10 +96,23 @@ describe("download_to_workspace", () => {
 });
 
 describe("generate_design_inspiration", () => {
-  test("surfaces model failures as an error tool result", async () => {
-    const tools = createDesignInspirationTool("not-a-real-model" as never);
-    const result = await execute(tools, "generate_design_inspiration", {
-      goal: "warm boutique voice agent UI",
+  test("surfaces generation failures as an error tool result", async () => {
+    // A brief the model could not produce must come back as something the
+    // coding agent can read and move past, never as a thrown turn.
+    const result = await runTool(
+      createDesignInspirationTool(),
+      "generate_design_inspiration",
+      { goal: "warm boutique voice agent UI" },
+      { generate: () => Promise.reject(new Error("gateway is down")) },
+    );
+    expect(result).toMatch(/^Error: gateway is down/);
+  });
+
+  test("without a generate capability at all", async () => {
+    // `executeToolCall` substitutes a rejecting `ctx.generate` when the
+    // context has none, and the tool's own catch turns that into text too.
+    const result = await runTool(createDesignInspirationTool(), "generate_design_inspiration", {
+      goal: "anything",
     });
     expect(result).toMatch(/^Error: /);
   });

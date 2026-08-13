@@ -34,6 +34,7 @@ import {
 import type { Runtime, RuntimeOptions, SessionStartOptions } from "./runtime-types.ts";
 import { createSessionCore, type SessionCore } from "./session-core.ts";
 import { createStateSweeps } from "./session-state-sweeps.ts";
+import { textAgentHasNoSession } from "./text-agent.ts";
 import type { TransportCallbacks } from "./transports/types.ts";
 import { buildWorkflowClient } from "./workflow-runtime.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
@@ -61,7 +62,8 @@ function resolveEffectiveProviders(
   llm: LlmProvider | undefined;
   tts: TtsProvider | undefined;
   s2s: AgentDef["s2s"];
-  mode: SessionMode;
+  /** Never `"text"` — a text agent is refused below, before any of this. */
+  mode: Exclude<SessionMode, "text">;
 } {
   const stt = opts.stt ?? agent.stt;
   const llm = opts.llm ?? agent.llm;
@@ -75,6 +77,7 @@ function resolveEffectiveProviders(
   // `s2s` descriptor (`assemblyAIS2s()`), so a config that loses its
   // providers can no longer silently run S2S — this mirrors, not replaces,
   // the "never let S2S be a fallback" rule in runtime-transport.ts.
+  if (agent.text === true) throw textAgentHasNoSession(agent.name);
   const defaults = defaultProviders({ stt, llm, tts, s2s });
   if (defaults) {
     return {

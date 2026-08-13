@@ -47,6 +47,11 @@ export function normalizeAgentConveniences(input: unknown): unknown {
         "`voice` is pipeline-mode only — an S2S agent's voice rides on the `s2s` descriptor.",
       );
     }
+    // Desugaring would fabricate a `tts` stage, which `assertProviderTriple`
+    // then rejects with a message about audio the author never asked for.
+    if (rest.text === true) {
+      throw new Error("`voice` is pipeline-mode only — a text agent never speaks.");
+    }
     rest.tts = assemblyAITts({ voice });
   }
   return rest;

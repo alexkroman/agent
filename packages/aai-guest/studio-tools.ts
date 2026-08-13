@@ -24,9 +24,7 @@
 
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { errorMessage } from "@alexkroman1/aai";
-import { jsonSchema, type Tool, type ToolSet, tool } from "ai";
-import pTimeout from "p-timeout";
+import { errorMessage, type ToolDef, tool } from "@alexkroman1/aai";
 import picomatch from "picomatch";
 import { z } from "zod";
 import { MAX_STUDIO_FILE_BYTES } from "./limits.ts";
@@ -45,12 +43,6 @@ import {
 import { resolveInside, walkWorkspace } from "./studio-workspace-fs.ts";
 import { createPostWriteDiagnostics, type TypecheckFn } from "./studio-write-diagnostics.ts";
 
-/**
- * Per-call deadline for every coding-agent tool (applied over the MERGED
- * tool set by `withToolDeadlines` — studio, project, web, and design tools
- * alike); bash carries its own tighter default.
- */
-const STUDIO_TOOL_TIMEOUT_MS = 120_000;
 /** Output cap per stream; beyond it the tail is kept (errors print last). */
 const BASH_OUTPUT_CAP = 16_000;
 /** Per-line length cap for read_file's windowed view. */
@@ -204,43 +196,13 @@ function describeConfig(config: unknown): { summary: string; toolNames: string[]
   return { summary, toolNames };
 }
 
-/** Wrap `execute` in the shared per-call deadline. */
-function deadline(t: ToolSet[string]): ToolSet[string] {
-  const execute = t.execute;
-  if (!execute) return t;
-  const wrapped: Tool["execute"] = (args, opts) =>
-    pTimeout(Promise.resolve(execute(args as never, opts)), {
-      milliseconds: STUDIO_TOOL_TIMEOUT_MS,
-      message: `Tool call timed out after ${STUDIO_TOOL_TIMEOUT_MS}ms`,
-      // An aborted turn (closed tab) settles the wrapper promptly; the
-      // underlying tool work is NOT cancelled — it runs on in the background.
-      ...(opts?.abortSignal ? { signal: opts.abortSignal } : {}),
-    }).catch((err: unknown) => `Error: ${errorMessage(err)}`);
-  return { ...t, execute: wrapped } as ToolSet[string];
-}
-
-/**
- * Apply the shared per-call deadline to EVERY tool in a set. The chat loop
- * wraps the merged tool set (studio + project + web + design tools) with
- * this, so the "every coding-agent tool runs under a 120s deadline"
- * invariant holds at one place instead of once per tool family — a hung
- * fetch or gateway call resolves to an error tool result rather than
- * hanging the turn.
- */
-export function withToolDeadlines(tools: ToolSet): ToolSet {
-  const out: ToolSet = {};
-  for (const [name, t] of Object.entries(tools)) out[name] = deadline(t);
-  return out;
-}
-
 /** Build the coding agent's workspace tool set over the session dir. */
-export function createStudioTools(deps: StudioToolDeps): ToolSet {
+export function createStudioTools(deps: StudioToolDeps): Record<string, ToolDef> {
   const { dir } = deps;
   const postWriteDiagnostics = createPostWriteDiagnostics(deps.typecheck);
-  const raw: ToolSet = {
+  return {
     list_files: tool({
       description: STUDIO_TOOL_DESCRIPTIONS.list_files,
-      inputSchema: jsonSchema<Record<string, never>>({ type: "object", properties: {} }),
       execute: async () => {
         const paths = await walkWorkspace(dir);
         return paths.length > 0 ? paths.join("\n") : "(empty workspace)";
@@ -456,6 +418,4 @@ export function createStudioTools(deps: StudioToolDeps): ToolSet {
       },
     }),
   };
-
-  return raw;
 }

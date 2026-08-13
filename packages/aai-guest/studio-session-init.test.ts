@@ -14,7 +14,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { HarnessState } from "./harness-bundle.ts";
-import { resetSessionIdentity } from "./studio-chat.ts";
+import { resetSessionIdentity } from "./studio-session.ts";
 import { handleSessionInitRequest } from "./studio-session-init.ts";
 
 const HOST_TOKEN = "host-token";

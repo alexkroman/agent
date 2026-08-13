@@ -97,7 +97,12 @@ export const AgentConfigSchema = z.object({
   llm: ProviderDescriptorSchema.optional(),
   tts: ProviderDescriptorSchema.optional(),
   s2s: ProviderDescriptorSchema.optional(),
-  mode: z.enum(["s2s", "pipeline"]).optional(),
+  // `z.literal(true)`, not `z.boolean()`: `text: false` would be a second
+  // spelling of "not a text agent", and the field is a mode SELECTOR — the
+  // one thing a mode selector must not have is two ways to say the same
+  // thing, one of which a stale config can carry.
+  text: z.literal(true).optional(),
+  mode: z.enum(["s2s", "pipeline", "text"]).optional(),
   requiredEnv: z.array(z.string()).readonly().optional(),
   // Serializable rather than host-only: it is a DECLARATION about the agent's
   // surface, exactly like `name` and `greeting`, and every consumer of a
@@ -157,7 +162,7 @@ export function toAgentConfig(source: AgentConfigSource): AgentConfig {
   const src = { ...normalized, ...(defaultProviders(normalized) ?? {}) };
   // After the fill, `assertProviderTriple` classifies the mode (and still
   // rejects s2s combined with pipeline stages) so the server can trust it.
-  const mode = assertProviderTriple(src.stt, src.llm, src.tts, src.s2s);
+  const mode = assertProviderTriple(src.stt, src.llm, src.tts, src.s2s, src.text);
   assertSilencePolicy(mode, src.silenceTimeoutMs, src.silencePrompt);
   assertPipelineTuning(mode, src);
   // Runs inside the generated bundle entry too, so the studio's test_agent

@@ -118,12 +118,16 @@ voice agents without the CLI:
   prompt, model config), and returns the sandbox's public chat URL. The
   browser then streams turns straight to the guest's `POST /studio/chat`
   (SSE, the AI SDK UI message stream `useChat` consumes) — chat turns never
-  pass through the platform host. The agentic loop (`streamText`, up to
-  `MAX_CHAT_STEPS` = 80 steps, and a wall-clock turn budget —
-  `aai-guest/studio-turn-budget.ts`) runs in the guest (`aai-guest/
-  studio-chat.ts`) with Claude-Code-style tools over a real filesystem
-  workspace (`aai-guest/studio-tools.ts`): list/read (windowed, numbered —
-  opencode's read semantics)/write/edit/delete, `glob`, `grep`, `bash`
+  pass through the platform host. **The coding agent is an ordinary
+  `agent()`** — `text: true`, run by the SDK's own `createTextAgent`
+  (`aai-guest/studio-agent.ts`; see "The coding agent is an ordinary
+  `agent()`" in `packages/aai-guest/CLAUDE.md` for what that replaced) — up to
+  `MAX_CHAT_STEPS` = 80 steps, plus a wall-clock turn budget
+  (`aai-guest/studio-turn-budget.ts`) passed as an extra stop condition. It
+  runs in the guest (`aai-guest/studio-chat.ts`) with Claude-Code-style tools
+  over a real filesystem workspace (`aai-guest/studio-tools.ts`): list/read
+  (windowed, numbered — opencode's read semantics)/write/edit/delete, `glob`,
+  `grep`, `bash`
   (real shell in the container, guest token scrubbed from its env),
   `todo_write`, `test_agent`, the template tools
   (`aai-guest/studio-template-tools.ts`: `list_templates` enumerates the
@@ -327,11 +331,13 @@ voice agents without the CLI:
   its own view until the project is reopened.
 
 - **Web access**: the SDK's keyless `visit_webpage`, `get_page_design`,
-  and `web_search` builtins (DuckDuckGo-backed — no key anywhere), mapped
-  into the guest tool set (`createGuestWebTools` in `aai-guest/
-  studio-chat.ts`). They run in the guest with open egress like all tenant
-  code; `safeFetch` still screens the model-controlled URLs, and the tool
-  context carries an empty env.
+  and `web_search` builtins (DuckDuckGo-backed — no key anywhere), NAMED on
+  the agent definition's `builtinTools` rather than adapted into the tool set
+  by hand. They run in the guest with open egress like all tenant code;
+  `safeFetch` still screens the model-controlled URLs, and the tool context
+  carries an empty env (`createTextAgent`'s `env` is `{}` while the caller's
+  key rides in as `providerEnv`, so the coding agent's tools never read a
+  credential).
 - **The Preview pane shows an auto-deployed PREVIEW agent; Publish is
   production.** Every settled edit — the guest's TURN-COMPLETE
   `studio/sync-workspace` (flagged `done: true`, the analog of opencode's
@@ -541,10 +547,11 @@ voice agents without the CLI:
   it live" is a surprise nobody asked for.
 - **LLM selection** (`studio-llm.ts`): every studio turn runs on the
   AssemblyAI LLM Gateway **with the caller's own API key** — delivered to
-  the guest via `studio/session-init` and resolved there (`resolveLlm` +
-  the SDK's `assemblyAILlm` factory); the platform holds no studio LLM
-  credential. The *model* (never the key) stays host config: default
-  `gpt-5.5`, `STUDIO_LLM_MODEL` overrides,
+  the guest via `studio/session-init`, where it becomes the agent
+  definition's `llm` descriptor and the `providerEnv` `createTextAgent`
+  resolves it against; the platform holds no studio LLM credential. The
+  *model* (never the key) stays host config: default `gpt-5.5`,
+  `STUDIO_LLM_MODEL` overrides,
   `STUDIO_LLM_REGION=eu` region-filters. The guest chat surface's bearer
   is the broker-minted per-session `chatToken` — the key stays an LLM
   credential only and never crosses the public surface.

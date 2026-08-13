@@ -90,10 +90,16 @@ of subpath exports in `aai/package.json`:
 
 ## Session modes
 
-Each agent runs in one of two session modes, selected by `toAgentConfig()`
+Each agent runs in one of three session modes, selected by `toAgentConfig()`
 (run in the generated bundle entry) based on which top-level fields are
 present in the `agent()` config:
 
+- **Text mode** (explicit opt-in — `text: true`) has no audio path at all: an
+  LLM, a system prompt and the agent's tools, run over a message list by
+  `createTextAgent` rather than by a transport over a socket. Explicit for the
+  same reason `s2s` is, and the two modes refuse each other by name. **See
+  `host/text-agent.ts`'s module doc**; this guide is at its cap and the rest
+  of the rule lives there.
 - **Pipeline mode** (the DEFAULT — all three of `stt`, `llm`, and `tts`
   set, or none of the four provider fields set, in which case the
   all-AssemblyAI pipeline (`assemblyAIPipeline()`) is injected by
@@ -126,9 +132,8 @@ present in the `agent()` config:
   `createS2sTransport()` in `packages/aai/host/transports/s2s-transport.ts`.
   The host opens a single WebSocket to AssemblyAI's speech-to-speech
   service; STT, the LLM loop, and TTS all run service-side and audio/events
-  relay through that one socket. This is the original architecture, and was
-  the implicit default before the pipeline-by-default flip. There is no way
-  to reach S2S by omission — only the `s2s` descriptor selects it.
+  relay through that one socket. There is no way to reach S2S by omission —
+  only the `s2s` descriptor selects it.
 
   **The Voice Agent API accepts ONE sample rate — 24 kHz, both directions — so
   the CLIENT must send true 24 kHz audio, not 16 kHz relabelled as 24.** The
@@ -438,15 +443,12 @@ Reference providers shipped today:
     `[]` (an absent `choices` stays absent). Every other byte passes through.
     Remove each repair once the gateway emits conformant frames.
 
-    **The default model is `qwen3-next-80b-a3b`.** It has been `gpt-5.5`,
-    `gpt-5.6-luna`, `gpt-5.6-terra` and qwen before, in that rotation; the id
-    is a one-line change, but it moves WHERE reasoning gets turned off, so read
-    the two blocks below together before changing it again. **And check the guide
-    against the constant before trusting either** — this block described luna
-    as the default for a stretch when `ASSEMBLYAI_LLM_DEFAULT_MODEL` said
-    `gpt-5.5`, because the id was reverted in code and not here.
-    `sdk/providers/llm/assemblyai.ts` is the answer; a prose default is a
-    claim about it.
+    **The default model is `qwen3-next-80b-a3b`.** The id is a one-line
+    change, but it moves WHERE reasoning gets turned off, so read the two
+    blocks below together before changing it again. **And check the constant
+    before trusting this line** — it has named the wrong model before, when an
+    id was reverted in code and not here. `sdk/providers/llm/assemblyai.ts` is
+    the answer; a prose default is only a claim about it.
 
     **On the `gpt-5.6` family `reasoning_effort: "none"` is REQUIRED for tool
     use — not a tuning knob.** The default is no longer one of them, so this is
@@ -632,10 +634,8 @@ isn't in it.
 
 That instruction is the whole point of the constant. This section used to
 carry its own table — `ivy`, `sam`, `mia`, `jack`, `sophie`, `oliver` and a
-dozen more — of which every entry was either deprecated or had never
-existed, and it claimed a `voice:` field on `agent()` that the SDK does not
-have. The provider's doc comment carried a *different* wrong list
-(`azelma`, `cosette`, `fantine`, `javert`, …, none published). Two
+dozen more — of which every entry was either deprecated or had never existed,
+and the provider's doc comment carried a *different* wrong list: two
 hand-maintained lists, both fiction, both pointed at by anyone looking for a
 voice.
 

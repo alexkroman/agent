@@ -57,9 +57,9 @@ import {
 import type { ToolChoice } from "../../sdk/types.ts";
 import type { Logger } from "../runtime-config.ts";
 import { toDeclaredTools } from "../to-vercel-tools.ts";
+import { createToolCallRepair } from "../tool-call-repair.ts";
 import type { PipelineHistory } from "./pipeline-history.ts";
 import type { AdoptedLlmStream } from "./pipeline-llm-stream.ts";
-import { createToolCallRepair } from "./pipeline-repair.ts";
 import { type SpeculativeStream, startSpeculativeStream } from "./pipeline-speculative-stream.ts";
 import { normalizeUtterance } from "./pipeline-text.ts";
 
