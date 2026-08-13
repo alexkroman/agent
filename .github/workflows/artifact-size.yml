@@ -65,7 +65,7 @@ jobs:
         if: >-
           github.event_name == 'pull_request' && github.event.action == 'synchronize' &&
           contains(github.event.pull_request.labels.*.name, 'acknowledge-size-warning')
-        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             try {
@@ -99,7 +99,7 @@ jobs:
           # Full history: the base commit has to be checked out as a worktree.
           fetch-depth: 0
           persist-credentials: false
-      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26
@@ -179,7 +179,7 @@ jobs:
       # thread — the marker is how the existing one is found.
       - name: Update the pull request comment
         if: github.event_name == 'pull_request'
-        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const fs = require("node:fs");
