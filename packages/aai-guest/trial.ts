@@ -6,7 +6,7 @@
  * `RuntimeOptions.runCode`.
  */
 
-import { errorMessage } from "@alexkroman1/aai";
+import { errorMessage, isToolFailure } from "@alexkroman1/aai";
 import pTimeout from "p-timeout";
 import type { AgentDef, ToolContext } from "./harness-types.ts";
 import { RUN_CODE_TIMEOUT_MS, STORAGE_DISABLED_MESSAGE, TOOL_TIMEOUT_MS } from "./limits.ts";
@@ -81,10 +81,11 @@ export async function executeTool(
   if (req.name === "run_code") {
     const code = typeof req.args?.code === "string" ? req.args.code : "";
     const result = await runCode(code);
-    // No null check: `runCode` returns `string | { error: string }`, so the
-    // typeof narrows it fully. A widened return would fail the `in` below at
-    // compile time rather than throwing here.
-    if (typeof result === "object" && "error" in result) {
+    // `isToolFailure` rather than a hand-written `typeof === "object" && "error"
+    // in result`: the object-and-non-null check is exactly what the guard
+    // bundles, and it narrows the `string` half of `runCode`'s return the same
+    // way. A widened return still fails here at compile time.
+    if (isToolFailure(result)) {
       return { error: result.error, state };
     }
     return { result, state };

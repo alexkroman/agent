@@ -99,5 +99,5 @@ export const modifyPendingOrderPayment = retailTool({
     };
   },
   summary: (_args, result) =>
-    "error" in result ? "payment change failed" : `re-paid ${result.order_id}`,
+    isToolFailure(result) ? "payment change failed" : `re-paid ${result.order_id}`,
 });

@@ -159,6 +159,63 @@ export function isToolFailure(value: unknown): value is ToolFailure {
 }
 
 /**
+ * Longest slice of an unrecognized error body {@link responseErrorMessage}
+ * quotes. Enough to identify a proxy's HTML page or a gateway's JSON without
+ * putting a whole document into a log line or a toast.
+ */
+const ERROR_BODY_PREVIEW_CHARS = 200;
+
+/**
+ * Read a failed `Response`'s error sentence — the one every route this SDK
+ * serves answers with.
+ *
+ * Each `4xx`/`5xx` an agent produces carries `{ "error": "<sentence>" }`, and
+ * that sentence is the whole diagnostic: an unknown workflow names the ones
+ * that are declared, a rejected input names the schema issues, a 404 from an
+ * agent that declares no workflows names both of its causes. Anything ELSE in
+ * the path — a proxy, a CDN, a platform broker answering while a sandbox boots
+ * — replies with a body that shape does not fit, so the status is reported
+ * instead, with a short preview of whatever did come back.
+ *
+ * `label` names the surface that answered and appears ONLY in that fallback:
+ * when the agent gave its own sentence, prefixing it would put our words in
+ * front of the ones worth reading.
+ *
+ * It never throws and never rejects — a body that cannot be read at all
+ * degrades to the bare status, because this runs on a path that is already
+ * reporting a failure and a second one there has nowhere to go.
+ *
+ * It deliberately does NOT reuse {@link isToolFailure}, whose object shape is
+ * identical today: that guard answers for a TOOL's result union, and the two
+ * contracts are free to move apart.
+ *
+ * @example
+ * ```ts
+ * import { responseErrorMessage } from "@alexkroman1/aai/utils";
+ *
+ * async function startRun(url: string): Promise<string> {
+ *   const res = await fetch(url, { method: "POST" });
+ *   if (!res.ok) throw new Error(await responseErrorMessage(res, "Workflow API"));
+ *   return ((await res.json()) as { runId: string }).runId;
+ * }
+ * ```
+ *
+ * @public
+ */
+export async function responseErrorMessage(res: Response, label?: string): Promise<string> {
+  const text = await res.text().catch(() => "");
+  const body = safeJsonParse(text);
+  if (typeof body === "object" && body !== null && "error" in body) {
+    const { error } = body as { error?: unknown };
+    // An empty sentence is not a diagnostic — fall through to the status,
+    // which at least says what happened.
+    if (typeof error === "string" && error !== "") return error;
+  }
+  const status = label === undefined ? `${res.status}` : `${label} ${res.status}`;
+  return text ? `${status}: ${text.slice(0, ERROR_BODY_PREVIEW_CHARS)}` : status;
+}
+
+/**
  * Append to a list, dropping the oldest entries so it never exceeds `max`.
  * Mutates `list` in place and returns it.
  *

@@ -79,5 +79,5 @@ export const cancelPendingOrder = retailTool({
     };
   },
   summary: (_args, result) =>
-    "error" in result ? "cancel failed" : `cancelled ${result.order_id}`,
+    isToolFailure(result) ? "cancel failed" : `cancelled ${result.order_id}`,
 });

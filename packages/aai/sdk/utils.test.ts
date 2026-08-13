@@ -8,6 +8,7 @@ import {
   isToolFailure,
   normalizeSpeechText,
   pushCapped,
+  responseErrorMessage,
   toArgsRecord,
   toolFailure,
 } from "./utils.ts";
@@ -247,5 +248,73 @@ describe("pushCapped", () => {
     const log: number[] = [];
     for (let i = 0; i < 100; i += 1) pushCapped(log, i, 4);
     expect(log).toEqual([96, 97, 98, 99]);
+  });
+});
+
+describe("responseErrorMessage", () => {
+  test("returns the agent's own sentence, unwrapped and unprefixed", async () => {
+    const res = new Response(JSON.stringify({ error: "No workflow named digest" }), {
+      status: 404,
+    });
+    expect(await responseErrorMessage(res, "Workflow API")).toBe("No workflow named digest");
+  });
+
+  test("a body that is not the { error } shape degrades to the status and a preview", async () => {
+    // What a proxy or a CDN in front of the agent answers with.
+    const res = new Response("<html>502 Bad Gateway</html>", { status: 502 });
+    expect(await responseErrorMessage(res)).toBe("502: <html>502 Bad Gateway</html>");
+  });
+
+  test("VALID JSON that is not { error } is quoted too, not dropped", async () => {
+    // The bug in the copy this replaced: the parse succeeded, so the fallback
+    // that quotes the body never ran and a gateway's own envelope was lost.
+    const res = new Response(JSON.stringify({ message: "upstream refused" }), { status: 503 });
+    expect(await responseErrorMessage(res)).toBe('503: {"message":"upstream refused"}');
+  });
+
+  test("an empty body is the bare status", async () => {
+    expect(await responseErrorMessage(new Response("", { status: 401 }))).toBe("401");
+  });
+
+  test("`label` names the surface, but ONLY when we fall back to the status", async () => {
+    const bare = new Response("", { status: 500 });
+    expect(await responseErrorMessage(bare, "Workflow API")).toBe("Workflow API 500");
+    const spoken = new Response(JSON.stringify({ error: "sandbox still booting" }), {
+      status: 503,
+    });
+    // No prefix here — our words must not sit in front of the agent's.
+    expect(await responseErrorMessage(spoken, "Workflow API")).toBe("sandbox still booting");
+  });
+
+  test("an EMPTY error string is not a diagnostic, so the status wins", async () => {
+    const res = new Response(JSON.stringify({ error: "" }), { status: 500 });
+    expect(await responseErrorMessage(res)).toBe('500: {"error":""}');
+  });
+
+  test("a non-string `error` falls through rather than rendering an object", async () => {
+    const res = new Response(JSON.stringify({ error: { code: 7 } }), { status: 400 });
+    expect(await responseErrorMessage(res)).toBe('400: {"error":{"code":7}}');
+  });
+
+  test("the preview is capped, so a whole HTML document cannot reach a log line", async () => {
+    const res = new Response("x".repeat(5000), { status: 500 });
+    const message = await responseErrorMessage(res);
+    expect(message).toBe(`500: ${"x".repeat(200)}`);
+  });
+
+  test("a body that cannot be read at all degrades instead of throwing", async () => {
+    // This runs on a path that is already reporting a failure; a second one
+    // there has nowhere to go. A REAL `Response` over an errored stream rather
+    // than a cast object — a connection dropping mid-body is what produces this,
+    // and a stub would only prove the branch, not that `text()` really rejects.
+    const res = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.error(new Error("connection reset mid-body"));
+        },
+      }),
+      { status: 500 },
+    );
+    await expect(responseErrorMessage(res)).resolves.toBe("500");
   });
 });

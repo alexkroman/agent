@@ -92,7 +92,13 @@ describe("WorkflowsCard", () => {
       [`GET ${LIST}`]: () => jsonResponse({ error: "agent unavailable, retry shortly" }, 503),
     });
     renderCard({ deployedSlug: "demo" });
-    await waitFor(() => expect(screen.getByText(/agent unavailable, retry shortly/)).toBeTruthy());
+    const line = await waitFor(() => screen.getByText(/agent unavailable, retry shortly/));
+    // UNWRAPPED, which a substring match alone does not prove: the card used to
+    // render the raw body (`503: {"error":"agent unavailable, retry shortly"}`),
+    // which CONTAINS that sentence — so this test passed over the bug it exists
+    // to catch until `responseErrorMessage` replaced the hand-written reader.
+    expect(line.textContent).not.toContain('{"error"');
+    expect(line.textContent).toContain("Could not read the workflows: agent unavailable");
   });
 
   test("shows a failed run's MESSAGE, not just its status", async () => {

@@ -24,6 +24,7 @@ import {
   type WorkflowRunSnapshot,
   type WorkflowSummary,
 } from "@alexkroman1/aai";
+import { responseErrorMessage } from "@alexkroman1/aai/utils";
 import { pageBaseUrl } from "./_utils.ts";
 import { buildAgentUrl } from "./client-config.ts";
 
@@ -159,14 +160,7 @@ export type WorkflowApi = {
  * a gateway in front of the agent would produce.
  */
 async function failure(res: Response): Promise<Error> {
-  const text = await res.text().catch(() => "");
-  try {
-    const parsed = JSON.parse(text) as { error?: unknown };
-    if (typeof parsed.error === "string") return new Error(parsed.error);
-  } catch {
-    /* not JSON — fall through to the status */
-  }
-  return new Error(`Workflow API ${res.status}${text ? `: ${text.slice(0, 200)}` : ""}`);
+  return new Error(await responseErrorMessage(res, "Workflow API"));
 }
 
 /**

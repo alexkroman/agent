@@ -27,6 +27,7 @@ export {
   PREVIEW_SLUG_SUFFIX,
   pushCapped,
   RESERVED_SLUGS,
+  responseErrorMessage,
   safeJsonParse,
   VALID_SLUG_RE,
   withLock,

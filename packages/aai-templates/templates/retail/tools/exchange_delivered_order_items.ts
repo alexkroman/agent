@@ -80,5 +80,5 @@ export const exchangeDeliveredOrderItems = retailTool({
     };
   },
   summary: (_args, result) =>
-    "error" in result ? "exchange failed" : `exchange requested on ${result.order_id}`,
+    isToolFailure(result) ? "exchange failed" : `exchange requested on ${result.order_id}`,
 });

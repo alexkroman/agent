@@ -22,6 +22,7 @@
  */
 
 import type { WorkflowRunSnapshot, WorkflowSummary } from "@alexkroman1/aai";
+import { responseErrorMessage } from "@alexkroman1/aai/utils";
 import { getServerInfo } from "./_agent.ts";
 import { type CommandResult, fail, ok } from "./_output.ts";
 import { log } from "./_ui.ts";
@@ -72,17 +73,11 @@ async function request<T>(
   init: RequestInit = {},
 ): Promise<{ ok: true; body: T } | { ok: false; message: string }> {
   const res = await fetch(url, { ...init, headers: { ...headers, ...init.headers } });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    let message = `${res.status}`;
-    try {
-      const parsed = JSON.parse(text) as { error?: unknown };
-      if (typeof parsed.error === "string") message = parsed.error;
-    } catch {
-      if (text) message = `${res.status}: ${text.slice(0, 200)}`;
-    }
-    return { ok: false, message };
-  }
+  // The SDK's reader, not a local copy: this one also quotes the body when it
+  // is valid JSON that is not `{ error }` — a gateway's own envelope — which the
+  // copy here dropped, reporting a bare status for a response that explained
+  // itself.
+  if (!res.ok) return { ok: false, message: await responseErrorMessage(res) };
   return { ok: true, body: (await res.json()) as T };
 }
 

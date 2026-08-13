@@ -1,3 +1,4 @@
+import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { retailSlot, retailTool } from "../store.ts";
 
@@ -20,5 +21,5 @@ export const listAllProductTypes = retailTool({
     return { count: entries.length, products: Object.fromEntries(entries) };
   },
   summary: (_args, result) =>
-    "error" in result ? "catalog read failed" : `listed ${result.count} product types`,
+    isToolFailure(result) ? "catalog read failed" : `listed ${result.count} product types`,
 });

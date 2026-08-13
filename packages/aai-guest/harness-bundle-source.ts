@@ -21,6 +21,7 @@
 
 import { hash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { errorMessage } from "@alexkroman1/aai/utils";
 import { BUNDLE_FETCH_TIMEOUT_MS } from "./limits.ts";
 
 /** Where the spawner said the bundle is. */
@@ -70,7 +71,7 @@ async function fetchBundle(url: string): Promise<string> {
   const res = await fetch(url, {
     signal: AbortSignal.timeout(BUNDLE_FETCH_TIMEOUT_MS),
   }).catch((err: unknown) => {
-    throw new Error(`bundle fetch failed: ${err instanceof Error ? err.message : String(err)}`);
+    throw new Error(`bundle fetch failed: ${errorMessage(err)}`);
   });
   if (!res.ok) {
     // A 400 here is very likely an EXPIRED signature rather than a bad

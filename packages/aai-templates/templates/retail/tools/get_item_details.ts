@@ -26,5 +26,5 @@ export const getItemDetails = retailTool({
     };
   },
   summary: (_args, result) =>
-    "error" in result ? "item read failed" : `read item ${result.item_id}`,
+    isToolFailure(result) ? "item read failed" : `read item ${result.item_id}`,
 });

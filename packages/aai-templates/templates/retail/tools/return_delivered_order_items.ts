@@ -97,5 +97,5 @@ export const returnDeliveredOrderItems = retailTool({
     };
   },
   summary: (_args, result) =>
-    "error" in result ? "return failed" : `return requested on ${result.order_id}`,
+    isToolFailure(result) ? "return failed" : `return requested on ${result.order_id}`,
 });

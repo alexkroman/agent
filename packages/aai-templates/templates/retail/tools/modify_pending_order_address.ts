@@ -43,5 +43,5 @@ export const modifyPendingOrderAddress = retailTool({
     };
   },
   summary: (_args, result) =>
-    "error" in result ? "address change failed" : `re-addressed ${result.order_id}`,
+    isToolFailure(result) ? "address change failed" : `re-addressed ${result.order_id}`,
 });

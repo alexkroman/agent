@@ -5,7 +5,7 @@ import type http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WORKFLOW_FLOW_PATH } from "@alexkroman1/aai/runtime";
-import { omitUndefined } from "@alexkroman1/aai/utils";
+import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
 import {
   createAgentRequestHandler,
@@ -117,7 +117,7 @@ describe("readAgentBoot", () => {
       AAI_BUNDLE_SHA256: sha256("x"),
     }).then(
       () => "resolved without throwing",
-      (err: unknown) => (err instanceof Error ? err.message : String(err)),
+      (err: unknown) => errorMessage(err),
     );
     // The first assertion is what keeps the second from passing vacuously.
     expect(message).toMatch(/HTTP 400/);

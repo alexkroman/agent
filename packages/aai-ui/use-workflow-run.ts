@@ -12,7 +12,7 @@
  * `use-workflow-form.ts` above it as the form-shaped caller.
  */
 
-import { isTerminal } from "@alexkroman1/aai";
+import { errorMessage, isTerminal } from "@alexkroman1/aai";
 import { useEffect, useRef, useState } from "react";
 import { createWorkflowApi, type WorkflowApi, type WorkflowRun } from "./workflow-client.ts";
 import { watchRunEvents } from "./workflow-events.ts";
@@ -99,7 +99,7 @@ function pollUntilTerminal<R>(
     } catch (err) {
       // Reported and RETRIED: a dropped request against a booting sandbox is the
       // common case here, and giving up would strand a live run.
-      if (!cancelled) onError(err instanceof Error ? err.message : String(err));
+      if (!cancelled) onError(errorMessage(err));
       return false;
     }
   };

@@ -25,6 +25,13 @@
 // exactly when they matter, and a poll would hold a container open for a pane
 // nobody is watching.
 
+import {
+  isTerminal,
+  type WorkflowRunSnapshot,
+  type WorkflowRunStatus,
+  type WorkflowSummary,
+} from "@alexkroman1/aai";
+import { responseErrorMessage } from "@alexkroman1/aai/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "./query-keys.ts";
 import { Card } from "./settings-card.tsx";
@@ -41,23 +48,21 @@ const RUNS_PER_WORKFLOW = 5;
 const WORKFLOW_READ_TIMEOUT_MS = 20_000;
 
 /**
- * One run, as `GET /workflows/runs` reports it (`WorkflowRunSnapshot`).
+ * One run, as `GET /workflows/runs` reports it — the SDK's own type, not a
+ * restatement.
  *
- * Restated rather than imported, because this package must not depend on the
- * SDK — and the restatement is honest about what the wire carries: `error` is
- * present only on a `failed` run, which is why the row below reads it behind a
- * status check rather than rendering whatever happens to be there.
+ * There is no boundary in the way: this package already depends on
+ * `@alexkroman1/aai` and imports from it (`cli-link.ts`). The copy that used to
+ * sit here flattened a DISCRIMINATED union into optional fields, so `error` was
+ * `string | undefined` on every status and the row below had to re-assert by
+ * hand what narrowing on `status` already proves — and a field added to the
+ * snapshot would have stopped reaching this card silently, which is the same
+ * argument `aai workflow` makes for using the type directly.
  */
-type Run = {
-  runId: string;
-  workflow: string;
-  status: "pending" | "running" | "completed" | "failed" | "cancelled";
-  createdAt: number;
-  key?: string;
-  error?: string;
-};
+type Run = WorkflowRunSnapshot;
 
-type Declared = { name: string; description?: string };
+/** A declared workflow, as `GET /workflows` lists it. */
+type Declared = WorkflowSummary;
 
 /** A workflow and the runs read for it. */
 type WorkflowRuns = { workflow: Declared; runs: Run[] };
@@ -71,13 +76,12 @@ type WorkflowsCardProps = {
 
 async function readJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { signal: AbortSignal.timeout(WORKFLOW_READ_TIMEOUT_MS) });
-  if (!res.ok) {
-    // The agent's own error body is the diagnostic — a 503 while a sandbox boots
-    // reads very differently from a 404 for a slug that no longer exists, and
-    // the 404 for an agent that declares no workflows names both of ITS causes.
-    const text = await res.text().catch(() => "");
-    throw new Error(`${res.status}${text ? `: ${text.slice(0, 200)}` : ""}`);
-  }
+  // The agent's own error body is the diagnostic — a 503 while a sandbox boots
+  // reads very differently from a 404 for a slug that no longer exists, and the
+  // 404 for an agent that declares no workflows names both of ITS causes.
+  // `responseErrorMessage` is what actually unwraps it: this used to quote the
+  // raw body, so that sentence reached the card still wrapped in its JSON.
+  if (!res.ok) throw new Error(await responseErrorMessage(res));
   return (await res.json()) as T;
 }
 
@@ -121,14 +125,11 @@ async function cancelRun(origin: string, slug: string, runId: string): Promise<v
     method: "DELETE",
     signal: AbortSignal.timeout(WORKFLOW_READ_TIMEOUT_MS),
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`${res.status}${text ? `: ${text.slice(0, 200)}` : ""}`);
-  }
+  if (!res.ok) throw new Error(await responseErrorMessage(res));
 }
 
 /** Colour by outcome — a failed run has to be findable without reading every row. */
-const STATUS_CLASS: Record<Run["status"], string> = {
+const STATUS_CLASS: Record<WorkflowRunStatus, string> = {
   pending: "text-muted",
   running: "text-fg",
   completed: "text-fg",
@@ -136,9 +137,16 @@ const STATUS_CLASS: Record<Run["status"], string> = {
   cancelled: "text-subtle",
 };
 
-/** Can this run still change on its own? Only a live run is stoppable. */
+/**
+ * Can this run still change on its own? Only a live run is stoppable.
+ *
+ * The negation of the SDK's `isTerminal` rather than a second list of the live
+ * statuses: the two would have to be kept complementary by hand, and a status
+ * added to the union is exactly the case where a hand-written list quietly
+ * decides the wrong way.
+ */
 function isLive(run: Run): boolean {
-  return run.status === "pending" || run.status === "running";
+  return !isTerminal(run);
 }
 
 /**
@@ -265,8 +273,10 @@ export function WorkflowsCard({ deployedSlug, previewSlug }: WorkflowsCardProps)
                       )}
                       {/* The failure message, not just the status: "failed"
                           alone sends someone to the logs for something already
-                          in hand. */}
-                      {run.status === "failed" && run.error !== undefined && (
+                          in hand. No presence check — narrowing to `"failed"`
+                          makes `error` non-optional, which is what the
+                          discriminated union is for. */}
+                      {run.status === "failed" && (
                         <span className="min-w-0 basis-full text-[11px] break-words text-err">
                           {run.error}
                         </span>

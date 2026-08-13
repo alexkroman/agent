@@ -1,3 +1,4 @@
+import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { authenticateAs } from "../authenticate.ts";
 import { retailSlot, retailTool } from "../store.ts";
@@ -34,5 +35,5 @@ export const findUserIdByNameZip = retailTool({
     return authenticateAs(state, match);
   },
   summary: (_args, result) =>
-    "error" in result ? "lookup failed" : `identified ${result.user_id}`,
+    isToolFailure(result) ? "lookup failed" : `identified ${result.user_id}`,
 });

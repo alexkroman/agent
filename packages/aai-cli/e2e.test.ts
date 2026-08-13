@@ -16,6 +16,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { errorDetail } from "@alexkroman1/aai/utils";
 import { ofetch } from "ofetch";
 import type { Browser } from "playwright";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
@@ -120,7 +121,7 @@ describe("pack + build: template workflows", () => {
       if (!isRegistryProxyFailure(err)) throw err;
       // Also log the full failure — the skip note is truncated and the
       // install output is captured, so this is the only diagnosis trail.
-      const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
+      const detail = errorDetail(err);
       const output = (err as { stderr?: string; stdout?: string }) ?? {};
       console.warn(
         `[e2e] install skipped for template ${template}:\n${detail}\n` +
