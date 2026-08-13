@@ -952,8 +952,9 @@ label that does not exist is an API error.
 ### Published type signatures are a committed report
 
 `pnpm api-report` writes `packages/*/etc/<subpath>.api.md` — the rolled-up
-public `.d.ts` for each of the 20 published entry points — and
-`pnpm check:api-report` fails when one is stale.
+public `.d.ts` for each of the 20 published entry points — plus **`API.md` at
+the repo root, the same 20 reports concatenated**, and `pnpm check:api-report`
+fails when any of them is stale.
 
 The gap it closes: **nothing else looked at a type SIGNATURE.**
 `sdk/exports.test.ts` pins runtime export NAMES and says nothing about shape;
@@ -975,6 +976,28 @@ a `typedoc.json` list a new subpath must remember to join). A new subpath export
 therefore gets a report on its first run, and `--check` fails until it is
 committed, which is correct: a new subpath IS a public API change.
 
+**`API.md` is for READERS; the twenty reports are for reviewers.** Twenty files
+is the right shape for a diff — a signature change lands in the one report that
+owns it — and the wrong shape for answering "what does this SDK expose?", which
+is twenty reads plus knowing which twenty. API Extractor cannot produce the
+combined file itself: `mainEntryPointFilePath` is a single string and multi-entry
+support is a long-standing unimplemented upstream request. Pointing it at a
+synthetic barrel (`export * as stt from "./dist/…"`) does work and yields one
+DEDUPLICATED rollup, but only per package — the repo would still have three — and
+every symbol trades its `export` keyword for a `declare namespace` block.
+Deduplication also buys almost nothing here: 573 top-level declarations across
+the twenty reports are 539 distinct names, so 34 lines, 6%. So `API.md` is a
+plain concatenation, generated in the same pass and gated by the same `--check`,
+which makes it derived rather than a second source of truth.
+
+`packages/aai-templates/api-surface-file.test.ts` is the guard under that gate.
+`--check` compares the committed file against a freshly assembled one, so it
+catches staleness — and would print its checkmark for an empty file agreeing
+with an empty file, which is what an assembly loop that stopped finding entry
+points, or a fence parser that stopped matching, would produce. The test parses
+the reports and `API.md` independently of the script and asserts the second
+contains the first.
+
 Two mechanical notes. API Extractor brings **its own TypeScript** (the JS
 compiler API, which TS 7 does not expose) resolved from its own dependency tree,
 so no second pin is needed the way `docs/` needs one for TypeDoc. And
@@ -984,7 +1007,9 @@ markdownlint then failed on them.
 
 `packages/aai/.npmignore` keeps `etc/` out of the tarball — the reports are for
 reviewing signature changes, not for consumers. (`aai-ui` and `aai-cli` declare
-`files`, so they need no equivalent line.)
+`files`, so they need no equivalent line.) Both they and `API.md` are ignored by
+markdownlint, on the standing rule for generated markdown: a prose finding in
+one can only be fixed by editing a file the next run overwrites.
 
 ### The authoring guide ships inside the SDK
 
