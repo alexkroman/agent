@@ -57,13 +57,13 @@ import {
   type ToolSet,
 } from "ai";
 import { agentToolsToSchemas } from "../sdk/_internal-types.ts";
+import { serializeToolFailure } from "../sdk/_tool-failure-wire.ts";
 import { DEFAULT_MAX_STEPS } from "../sdk/constants.ts";
 import type { Db } from "../sdk/db.ts";
 import type { AgentEnv, ProviderEnv } from "../sdk/env-types.ts";
 import { assemblyAILlm } from "../sdk/providers/llm/assemblyai.ts";
 import type { LlmProvider } from "../sdk/providers.ts";
 import type { AgentDef, Message, ToolChoice } from "../sdk/types.ts";
-import { toolError } from "../sdk/utils.ts";
 import type { WorkflowClient } from "../sdk/workflow.ts";
 import type { RunCodeExecutor } from "./builtin-run-code.ts";
 import { createGenerateFn } from "./generate.ts";
@@ -275,7 +275,7 @@ export function createTextAgent(opts: TextAgentOptions): TextAgent {
 
   const executeTool: ExecuteTool = async (name, args, sid, messages, callOpts) => {
     const tool = allTools[name];
-    if (!tool) return toolError(`Unknown tool: ${name}`);
+    if (!tool) return serializeToolFailure(`Unknown tool: ${name}`);
     return executeToolCall(name, args, {
       tool,
       env,

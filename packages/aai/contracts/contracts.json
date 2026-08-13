@@ -10,9 +10,11 @@
     "dropped": {}
   },
   "defaults": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Three constants left the root barrel for @alexkroman1/aai/internal: MAX_PLAYBACK_BUFFERED_MS and PLAYBACK_PROGRESS_INTERVAL_MS are client-audio budgets and DEFAULT_SESSION_START_TIMEOUT_MS is a runtime deadline, none of which an agent() field sets. This capability is the published answer to 'what happens if I leave this field off', and those three answer no field."
+    }
   },
   "llm": {
     "current": 1,
@@ -25,8 +27,8 @@
     "dropped": {}
   },
   "state": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "stt": {
@@ -40,9 +42,11 @@
     "dropped": {}
   },
   "tool": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "The root barrel exported the Standard Schema spec types (StandardSchemaV1 and its result/issue types) and toolError. The spec types are what tool() ACCEPTS rather than anything an agent declares, and stay reachable in sdk/schema.ts for the signatures that reference them. toolError returned the pre-serialized wire string, so isToolFailure(toolError(m)) was false — a trap under a name that read as the constructor for the shape the guard tests, and used by none of the fourteen templates; it is serializeToolFailure on a private module now, and toolFailure() is the constructor that pairs with the guard."
+    }
   },
   "tts": {
     "current": 1,

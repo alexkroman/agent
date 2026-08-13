@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
+import { serializeToolFailure } from "./_tool-failure-wire.ts";
 import {
   errorDetail,
   errorMessage,
@@ -8,7 +9,7 @@ import {
   normalizeSpeechText,
   pushCapped,
   toArgsRecord,
-  toolError,
+  toolFailure,
 } from "./utils.ts";
 
 describe("toArgsRecord", () => {
@@ -180,11 +181,21 @@ describe("isToolFailure", () => {
     expect(isToolFailure([{ error: "nested" }])).toBe(false);
   });
 
-  test("does NOT narrow toolError's string, and that is documented", () => {
-    // The two spellings coexist on this module: `toolError` is the host's
+  test("narrows what toolFailure builds", () => {
+    // The pair that is meant to compose. This is the assertion the NAMES now
+    // promise, and it is why `toolError` was renamed: the old name read as this
+    // function's constructor and behaved like the one below.
+    expect(isToolFailure(toolFailure("boom"))).toBe(true);
+    expect(toolFailure("boom")).toEqual({ error: "boom" });
+  });
+
+  test("does NOT narrow serializeToolFailure's string, and that is documented", () => {
+    // The two spellings coexist on this module: `serializeToolFailure` is the host's
     // pre-serialized wire form, `ToolFailure` is what a tool author returns.
-    // Mistaking one for the other is the trap the doc comment calls out.
-    expect(isToolFailure(toolError("boom"))).toBe(false);
+    // Mistaking one for the other is the trap the doc comment calls out — and
+    // what the rename makes hard to fall into, since neither name now claims to
+    // build the other's shape.
+    expect(isToolFailure(serializeToolFailure("boom"))).toBe(false);
   });
 
   test("narrows the type, not just the value", () => {

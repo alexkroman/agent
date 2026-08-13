@@ -21,8 +21,8 @@
  */
 
 import type { AgentConfig, ToolSchema } from "../../sdk/_internal-types.ts";
+import { serializeToolFailure } from "../../sdk/_tool-failure-wire.ts";
 import type { ClientEvent, ClientSink } from "../../sdk/protocol.ts";
-import { toolError } from "../../sdk/utils.ts";
 import type { Logger } from "../runtime-config.ts";
 import { createSessionCore, type SessionCore } from "../session-core.ts";
 import { createS2sTransport } from "../transports/s2s-transport.ts";
@@ -242,7 +242,7 @@ export async function createHarness(cov: Record<string, number>): Promise<Harnes
     // this harness:
     //
     //  - It NEVER REJECTS. A throwing tool, a timeout, an abort — all come back
-    //    as `toolError(...)` strings, so "the tool blew up" is a resolved value.
+    //    as `serializeToolFailure(...)` strings, so "the tool blew up" is a resolved value.
     //  - An ALREADY-ABORTED signal is handled explicitly, because an abort
     //    listener on one never fires. `SessionCore.onCancel` aborts the reply
     //    WITHOUT replacing it, so a `tool.call` arriving after a client cancel
@@ -264,16 +264,17 @@ export async function createHarness(cov: Record<string, number>): Promise<Harnes
         const signal = opts?.signal;
         if (signal?.aborted === true) {
           hit("toolCancelledBeforeRun");
-          finish(toolError(`Tool "lookup" was cancelled before it ran`));
+          finish(serializeToolFailure(`Tool "lookup" was cancelled before it ran`));
           return;
         }
         signal?.addEventListener("abort", () => {
           hit("toolAbortedBySession");
-          finish(toolError("aborted"));
+          finish(serializeToolFailure("aborted"));
         });
         h.pendingTools.push({
           callId,
-          settle: (ok) => finish(ok ? `result for ${callId}` : toolError("tool blew up")),
+          settle: (ok) =>
+            finish(ok ? `result for ${callId}` : serializeToolFailure("tool blew up")),
         });
       });
     },

@@ -743,10 +743,27 @@ primitives — reach for them before re-inventing the pattern at a call site:
   cast — `ctx.state as StateSlot` beside a hand-rolled `slot.x ??=
   createDefault()`, five times, comment included — and `retail` took it even
   though its `agent()` declares a `state` factory, because the factory's type
-  cannot reach `tools/*.ts`. Note the factory is still worth declaring (it makes
-  the session's state exist before the first tool call, which is what
-  `pushStateSnapshot` needs on resume) and composes:
-  `state: () => ({ [slot.key]: slot.create() })`.
+  cannot reach `tools/*.ts`.
+
+  **`slot.tool()` / `slot.updateTool()` are what a tool module should reach
+  for**, and between them they retire the last two lines a slot-backed tool
+  costs: `execute` is handed the live value second, so the body needs neither
+  the `ctx: ToolContext<SlotStateOf<typeof slot>>` annotation nor the opening
+  `const cart = slot.get(ctx)`. `updateTool` is the same thing run inside
+  `slot.update` — the one to use whenever the body AWAITS, and it inherits that
+  method's non-reentrancy. Both return an ordinary `ToolDef`, so they drop into
+  `agent({ tools })` unchanged; `retail`'s `retailTool` wrapper is built on
+  `updateTool` and is what a per-agent wrapper looks like on top of one.
+
+  **`slot.state` is the `AgentDef.state` factory**, so declaring it is
+  `state: cartSlot.state`. Declaring it is still worth it — that is what makes
+  the session's state exist before the first tool call, which
+  `pushStateSnapshot` needs on resume — and the property exists because the
+  hand-written `state: () => ({ [slot.key]: slot.create() })` it replaces is
+  the half that gets forgotten: FOUR of the five slot-backed templates omitted
+  it, against a guide paragraph telling them to write it. A factory rather than
+  the slot itself, so `S` is still inferred from the position it has always
+  been inferred from and tools stay checked against the state shape.
 
   **`slot.update(ctx, mutate)` is the serialized half, and it is what an ASYNC
   mutator must use.** It holds a per-slot, per-session key for the mutation and
@@ -798,13 +815,22 @@ primitives — reach for them before re-inventing the pattern at a call site:
   the shape; `retail` had its own `ErrorResult` + `isError` (used at ~40 sites)
   and `dispatch-center` narrowed with inline `"error" in inc` at six.
 
-  **It is NOT `toolError()`, which is the trap the two names have to survive.**
-  That function returns the pre-serialized wire STRING `'{"error":"…"}'` — what
-  the host itself emits for a tool that threw — so `isToolFailure(toolError(m))`
-  is `false`. `toolError` is used ~15 times inside `host/` and was used by ZERO
-  of the fourteen templates despite its doc telling authors to return it, which
-  is what a helper with the wrong shape for its stated audience looks like; the
-  doc now names the split, and `utils.test.ts` pins the `false`.
+  **`toolFailure(message)` is the constructor, and it is named to pair with the
+  guard.** The object literal means the same thing and stays perfectly good
+  TypeScript; the function exists so that "how do I report a failure?" lands
+  next to `isToolFailure` instead of landing on the thing below.
+
+  **That thing was `toolError()`, and it is now `serializeToolFailure()` and
+  off the root barrel.** It returns the pre-serialized wire STRING
+  `'{"error":"…"}'` — what the host itself emits for a tool that threw — so
+  `isToolFailure(serializeToolFailure(m))` is `false`. Under the old name that
+  was a trap rather than a distinction: it read as the constructor for the
+  shape `isToolFailure` tests, and it was used by ZERO of the fourteen
+  templates despite its own doc telling authors to return it, which is what a
+  helper with the wrong shape for its stated audience looks like. All ~15
+  callers are inside `host/`, so it is `@internal` on `/utils` now.
+  `utils.test.ts` pins both halves — the `true` for `toolFailure`, the `false`
+  for the wire string.
 - **`pushCapped(list, item, max)`** (`aai/sdk/utils.ts`, root and `/utils`) —
   append to a list holding a cap, mutating in place (the list is usually a
   property of the state object, so returning a new array is a reassignment the
@@ -1101,8 +1127,8 @@ Four properties are load-bearing:
   SIGNATURE change, read the report diff. That is the cheap 80% of the question,
   and it beats the status quo of nothing.
 
-**Capabilities, not entry points, and the reason is the `@internal` problem.**
-`@alexkroman1/aai` exports 174 symbols from its root, **71 of them tagged
+**Capabilities, not entry points, and the reason WAS the `@internal` problem.**
+`@alexkroman1/aai` used to export 174 symbols from its root, **71 of them tagged
 `@internal`** — `PLAYBACK_CONCEAL_FLOOR`, `MIC_SILENCE_PROBE_MS`, `WS_OPEN` — on
 the same barrel as `agent()` and `tool()`, and therefore in an agent author's
 autocomplete, which is the exact thing `packages/aai/CLAUDE.md` gives as the
@@ -1110,15 +1136,26 @@ reason `/internal` exists. Versioning the subpath as one unit would bump the
 authoring contract every time a playback constant moved. So the capabilities name
 the surface instead — `agent`, `tool`, `state`, `workflow`, `defaults`, `utils`,
 `testing`, `builtins`, and one per provider stage — and the gate asserts the
-naming is **exhaustive**: all 235 `@public` exports of the eight authoring
+naming is **exhaustive**: every `@public` export of the eight authoring
 subpaths (`.`, `/utils`, `/testing`, `/tools`, `/stt`, `/llm`, `/tts`, `/s2s`)
-belong to exactly one capability, so a new public export fails until somebody
+belongs to exactly one capability, so a new public export fails until somebody
 decides which contract it joins — which is the same decision as "who is promised
 this". A name published on both `.` and a narrower subpath belongs to the
-narrower one. The 71 internal-tagged names are the explicit exemption, committed
-to `contracts/internal-surface.json` as a **ratchet that may shrink and may never
-grow** (`--update-internal` lowers it, and unclaimed headroom WARNS). The tag
-documented that problem; this counts it.
+narrower one.
+
+**Counting them is what got them fixed, which is the argument for the whole
+gate.** The internal-tagged names are the explicit exemption, committed to
+`contracts/internal-surface.json` as a **ratchet that may shrink and may never
+grow** (`--update-internal` lowers it, and unclaimed headroom WARNS). It opened
+at 74 and stands at **3** — `capToolResult`, `isTextAssetPath` and `toArgsRecord`
+on `/utils`. The 71 root ones went to `@alexkroman1/aai/internal` in the change
+that cut the root barrel to the authoring API (see "The root barrel is CURATED"
+in `packages/aai/CLAUDE.md`); the ratchet is what made a number out of a
+long-standing complaint, and then what recorded paying it off. Note the gate
+refuses a NEW `@internal` name on a public subpath outright, which is why
+`serializeToolFailure` lives in an `_`-internal module rather than beside
+`toolFailure` in `sdk/utils.ts` — `sdk/utils.ts` IS the `/utils` subpath, and a
+tag documents a problem where a private module prevents it.
 
 Two mechanical notes. The epoch directory is `epochs/`, not `reports/`, because
 `.gitignore` carries a bare `reports/` rule that would have swallowed it whole.

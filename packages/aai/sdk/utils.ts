@@ -3,7 +3,7 @@
  * Shared utility functions (the `@alexkroman1/aai/utils` subpath).
  *
  * For user tool code: `errorMessage`, `errorDetail`, `safeJsonParse`,
- * `toolError`, `isToolFailure`, `pushCapped`, and `createKeyedLock`. The
+ * `toolFailure`, `isToolFailure`, `pushCapped`, and `createKeyedLock`. The
  * remaining exports are framework
  * plumbing shared with the sibling packages. The module stays free of zod and
  * other heavy runtime dependencies so the CLI can import it on every
@@ -70,22 +70,6 @@ export function safeJsonParse(text: string): unknown {
 }
 
 /**
- * Format an error for a tool result: returns the JSON string
- * `'{"error":"<message>"}'`.
- *
- * @remarks
- * This is the PRE-SERIALIZED wire form, which is what the host itself emits
- * for a tool that threw or could not be dispatched. Tool authors want
- * {@link ToolFailure} instead — return the object `{ error: message }` and the
- * runtime serializes it, so the value stays inspectable by the tool's own
- * callers and its tests. `isToolFailure` does NOT narrow this function's
- * string result.
- */
-export function toolError(message: string): string {
-  return JSON.stringify({ error: message });
-}
-
-/**
  * A tool result that reports a recoverable failure to the LLM.
  *
  * Return one from `execute` (instead of throwing) when the failure is
@@ -101,6 +85,41 @@ export function toolError(message: string): string {
  * @public
  */
 export type ToolFailure = { error: string };
+
+/**
+ * Build a {@link ToolFailure} — the failure a tool `execute` RETURNS when the
+ * model should see it and recover.
+ *
+ * The pair to {@link isToolFailure}, and named to say so. The object literal
+ * `{ error: message }` means exactly the same thing and stays perfectly good
+ * TypeScript; this exists so that a tool reaching for "how do I report a
+ * failure?" finds the constructor next to the guard instead of finding
+ * `serializeToolFailure` — the `@internal` wire form, whose result the guard
+ * does not narrow.
+ *
+ * @example
+ * ```ts
+ * import { tool, toolFailure } from "@alexkroman1/aai";
+ * import { z } from "zod";
+ *
+ * const orders = new Map<string, { id: string; total: number }>();
+ *
+ * export const orderTotal = tool({
+ *   description: "Look up an order's total",
+ *   inputSchema: z.object({ id: z.string() }),
+ *   execute: ({ id }) => {
+ *     const order = orders.get(id);
+ *     if (!order) return toolFailure(`Order ${id} not found.`);
+ *     return { total: order.total };
+ *   },
+ * });
+ * ```
+ *
+ * @public
+ */
+export function toolFailure(message: string): ToolFailure {
+  return { error: message };
+}
 
 /**
  * Whether a value is a {@link ToolFailure}.

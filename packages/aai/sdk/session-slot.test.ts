@@ -1,5 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
+import { z } from "zod";
 import { sessionSlot } from "./session-slot.ts";
 import { createToolContext } from "./testing.ts";
 
@@ -258,6 +259,138 @@ describe("sessionSlot", () => {
         const ctx = createToolContext<{ cart?: Cart }>();
         await expect(cartSlot.update(ctx, (cart) => cart.items.length)).resolves.toBe(0);
       });
+    });
+  });
+
+  describe("state", () => {
+    test("is the AgentDef.state factory for this slot", () => {
+      expect(cartSlot.state()).toEqual({ cart: { items: [], nextId: 1 } });
+    });
+
+    test("mints a fresh value per call — it runs once per SESSION", () => {
+      // Returning one shared object would give every concurrent caller the same
+      // cart, which is the bug `create` being a factory exists to prevent.
+      const first = cartSlot.state();
+      const second = cartSlot.state();
+      expect(first.cart).not.toBe(second.cart);
+    });
+
+    test("the state it builds is the one `get` then finds", () => {
+      // The property that makes it a drop-in for the hand-written
+      // `() => ({ [slot.key]: slot.create() })`: a session started from it is
+      // already installed, so `get` returns what is there rather than
+      // installing a second value over it.
+      const ctx = createToolContext<{ cart?: Cart }>({ state: cartSlot.state() });
+      const installed = ctx.state.cart;
+      cartSlot.get(ctx).items.push("apple");
+      expect(cartSlot.get(ctx)).toBe(installed);
+      expect(ctx.state.cart?.items).toEqual(["apple"]);
+    });
+  });
+
+  describe("tool", () => {
+    const addItem = cartSlot.tool({
+      description: "Add an item",
+      inputSchema: z.object({ item: z.string() }),
+      execute: ({ item }, cart) => {
+        cart.items.push(item);
+        return { count: cart.items.length };
+      },
+    });
+
+    test("hands the body the live value, and the write sticks", async () => {
+      const ctx = createToolContext<{ cart?: Cart }>();
+      expect(await addItem.execute({ item: "apple" }, ctx)).toEqual({ count: 1 });
+      expect(ctx.state.cart?.items).toEqual(["apple"]);
+    });
+
+    test("carries description and inputSchema through unchanged", () => {
+      expect(addItem.description).toBe("Add an item");
+      expect(addItem.inputSchema).toBeDefined();
+    });
+
+    test("a schemaless tool has no inputSchema key at all", () => {
+      // Not merely undefined: `exactOptionalPropertyTypes` is on, and the
+      // manifest walks these objects, so a present-but-undefined key is a
+      // different value from an absent one.
+      const view = cartSlot.tool({ description: "View", execute: (_args, cart) => cart.items });
+      expect("inputSchema" in view).toBe(false);
+    });
+
+    test("still receives ctx third, for the tools that need it", async () => {
+      const ping = cartSlot.tool({
+        description: "Ping",
+        execute: (_args, _cart, ctx) => {
+          ctx.send("ping", { ok: true });
+          return "sent";
+        },
+      });
+      const ctx = createToolContext<{ cart?: Cart }>();
+      expect(await ping.execute({}, ctx)).toBe("sent");
+      expect(ctx.sent).toEqual([{ event: "ping", data: { ok: true } }]);
+    });
+  });
+
+  describe("updateTool", () => {
+    test("serializes concurrent bodies that await", async () => {
+      // The invariant the whole method exists for. Each body reads the length,
+      // awaits, then writes back length + 1 — the classic lost update. Under
+      // `tool` (i.e. `get`) both read 0 and the cart ends with one entry; under
+      // `updateTool` the second body cannot start until the first released.
+      const slot = sessionSlot("cart", emptyCart);
+      const append = slot.updateTool({
+        description: "Append",
+        inputSchema: z.object({ item: z.string() }),
+        execute: async ({ item }, cart) => {
+          const seen = cart.items.length;
+          await Promise.resolve();
+          cart.items[seen] = item;
+          return cart.items.length;
+        },
+      });
+      const ctx = createToolContext<{ cart?: Cart }>();
+      const results = await Promise.all([
+        append.execute({ item: "a" }, ctx),
+        append.execute({ item: "b" }, ctx),
+      ]);
+      expect(results).toEqual([1, 2]);
+      expect(slot.get(ctx).items).toEqual(["a", "b"]);
+    });
+
+    test("runs the slot's after hook", async () => {
+      const capped = sessionSlot("cart", emptyCart, {
+        after: (cart) => {
+          cart.items.splice(0, Math.max(cart.items.length - 2, 0));
+        },
+      });
+      const add = capped.updateTool({
+        description: "Add three",
+        execute: (_args, cart) => {
+          cart.items.push("x", "y", "z");
+        },
+      });
+      const ctx = createToolContext<{ cart?: Cart }>();
+      await add.execute({}, ctx);
+      expect(capped.get(ctx).items).toEqual(["y", "z"]);
+    });
+
+    test("propagates a throwing body, and the lock still releases", async () => {
+      const slot = sessionSlot("cart", emptyCart);
+      const boom = slot.updateTool({
+        description: "Boom",
+        execute: () => {
+          throw new Error("nope");
+        },
+      });
+      const ok = slot.updateTool({
+        description: "Ok",
+        execute: (_args, cart) => cart.items.length,
+      });
+      const ctx = createToolContext<{ cart?: Cart }>();
+      await expect(boom.execute({}, ctx)).rejects.toThrow("nope");
+      // A release that only ran on the happy path would wedge every later
+      // mutation of this slot for the life of the session.
+      await expect(ok.execute({}, ctx)).resolves.toBe(0);
     });
   });
 

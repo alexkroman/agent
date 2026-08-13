@@ -14,10 +14,11 @@
 
 import pTimeout from "p-timeout";
 import type { ExecuteTool } from "../sdk/_internal-types.ts";
+import { serializeToolFailure } from "../sdk/_tool-failure-wire.ts";
 import { DEFAULT_RELAY_TOOL_TIMEOUT_MS } from "../sdk/constants.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { ClientEvent } from "../sdk/protocol.ts";
-import { safeJsonParse, toolError } from "../sdk/utils.ts";
+import { safeJsonParse } from "../sdk/utils.ts";
 
 /**
  * The inbound `tool_result` payload routed to {@link RelayExecuteTool.onToolResult}.
@@ -78,19 +79,25 @@ export function createRelayExecuteTool(opts: {
     if (!toolCallId) {
       // Defensive: every path should thread a toolCallId (see session-core /
       // to-vercel-tools). Without one the result can't be correlated.
-      return Promise.resolve(toolError(`Relay tool "${name}" invoked without a toolCallId`));
+      return Promise.resolve(
+        serializeToolFailure(`Relay tool "${name}" invoked without a toolCallId`),
+      );
     }
     if (pending.has(toolCallId)) {
       // A second in-flight call with the same id would clobber the first
       // entry, and the first call's timer would then delete the new entry —
       // dropping its genuine tool_result. Refuse instead of clobbering.
       return Promise.resolve(
-        toolError(`Relay tool "${name}" duplicates in-flight toolCallId "${toolCallId}"`),
+        serializeToolFailure(
+          `Relay tool "${name}" duplicates in-flight toolCallId "${toolCallId}"`,
+        ),
       );
     }
     const signal = callOpts?.signal;
     if (signal?.aborted) {
-      return Promise.resolve(toolError(`Relay tool "${name}" (${toolCallId}) was cancelled`));
+      return Promise.resolve(
+        serializeToolFailure(`Relay tool "${name}" (${toolCallId}) was cancelled`),
+      );
     }
     const { promise, resolve, reject } = Promise.withResolvers<string>();
     pending.set(toolCallId, { resolve, reject });

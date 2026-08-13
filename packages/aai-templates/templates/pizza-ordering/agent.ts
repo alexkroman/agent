@@ -1,4 +1,4 @@
-import { agent, tool } from "@alexkroman1/aai";
+import { agent, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import {
   CRUSTS,
@@ -21,6 +21,10 @@ const crusts = z.enum(CRUSTS);
 
 export default agent({
   name: "Pizza Palace",
+  // `orderSlot.state` IS the `() => ({ [slot.key]: slot.create() })` factory,
+  // so the session's cart exists before the first tool call — which is what a
+  // resumed connection needs to have something to project.
+  state: orderSlot.state,
   // The cart, pushed to the client after every tool call. Replaces a
   // `ctx.send("order", ...)` in each of the five order tools, and the
   // event-diffing the client had to do to rebuild the cart from them.
@@ -32,7 +36,7 @@ export default agent({
     "Welcome to Pizza Palace. I can help you build your perfect pizza. What would you like to order?",
 
   tools: {
-    add_pizza: tool({
+    add_pizza: orderSlot.tool({
       description: "Add a pizza to the order. Use when the customer has decided on a pizza.",
       inputSchema: z.object({
         size: sizes,
@@ -42,9 +46,7 @@ export default agent({
           .describe("List of topping names, e.g. ['pepperoni', 'mushrooms']"),
         quantity: z.number().int().min(1).default(1),
       }),
-      async execute(args, ctx) {
-        const order = orderSlot.get(ctx);
-
+      execute(args, order) {
         const pizza: Pizza = {
           id: order.nextId,
           size: args.size,
@@ -63,13 +65,12 @@ export default agent({
       },
     }),
 
-    place_order: tool({
+    place_order: orderSlot.tool({
       description:
         "Place the final order. Use when the customer confirms they are done and ready to order.",
-      async execute(_args, ctx) {
-        const order = orderSlot.get(ctx);
+      execute(_args, order, ctx) {
         const pizzas = order.pizzas;
-        if (pizzas.length === 0) return { error: "Cannot place an empty order." };
+        if (pizzas.length === 0) return toolFailure("Cannot place an empty order.");
 
         const customerName = order.customerName ?? "Guest";
         const total = formatPrice(calculateTotal(pizzas));
@@ -90,15 +91,14 @@ export default agent({
       },
     }),
 
-    remove_pizza: tool({
+    remove_pizza: orderSlot.tool({
       description: "Remove a pizza from the order by its ID.",
       inputSchema: z.object({
         pizza_id: z.number().describe("The pizza ID to remove"),
       }),
-      async execute(args, ctx) {
-        const order = orderSlot.get(ctx);
+      execute(args, order) {
         const idx = order.pizzas.findIndex((p) => p.id === args.pizza_id);
-        if (idx === -1) return { error: "Pizza not found in the order." };
+        if (idx === -1) return toolFailure("Pizza not found in the order.");
 
         const [removed] = order.pizzas.splice(idx, 1);
 
@@ -110,18 +110,18 @@ export default agent({
       },
     }),
 
-    set_customer_name: tool({
+    set_customer_name: orderSlot.tool({
       description: "Set the customer name for the order.",
       inputSchema: z.object({
         name: z.string(),
       }),
-      async execute(args, ctx) {
-        orderSlot.get(ctx).customerName = args.name;
+      execute(args, order) {
+        order.customerName = args.name;
         return { name: args.name };
       },
     }),
 
-    update_pizza: tool({
+    update_pizza: orderSlot.tool({
       description: "Update an existing pizza in the order. Only provided fields are changed.",
       inputSchema: z.object({
         pizza_id: z.number(),
@@ -130,10 +130,9 @@ export default agent({
         toppings: z.array(z.string()).optional(),
         quantity: z.number().int().min(1).optional(),
       }),
-      async execute(args, ctx) {
-        const order = orderSlot.get(ctx);
+      execute(args, order) {
         const idx = order.pizzas.findIndex((p) => p.id === args.pizza_id);
-        if (idx === -1) return { error: "Pizza not found in the order." };
+        if (idx === -1) return toolFailure("Pizza not found in the order.");
 
         const pizza: Pizza = { ...order.pizzas[idx]! };
         if (args.size !== undefined) pizza.size = args.size;
@@ -150,10 +149,10 @@ export default agent({
       },
     }),
 
-    view_order: tool({
+    view_order: orderSlot.tool({
       description: "View the current order summary with all pizzas and total price.",
-      async execute(_args, ctx) {
-        const pizzas = orderSlot.get(ctx).pizzas;
+      execute(_args, order) {
+        const pizzas = order.pizzas;
         if (pizzas.length === 0) return { message: "The order is empty." };
 
         return {

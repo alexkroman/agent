@@ -1,5 +1,11 @@
 import type { ToolContext, ToolFailure } from "@alexkroman1/aai";
-import { isToolFailure, pushCapped, type SlotStateOf, sessionSlot, tool } from "@alexkroman1/aai";
+import {
+  isToolFailure,
+  pushCapped,
+  type SlotStateOf,
+  sessionSlot,
+  toolFailure,
+} from "@alexkroman1/aai";
 import type { z } from "zod";
 import seedJson from "./seed.json";
 import type {
@@ -44,7 +50,7 @@ export function createDefaultState(): RetailState {
 /**
  * The session's store, as one typed slot inside `ctx.state`.
  *
- * Every mutating tool goes through `retailSlot.update` (via `retailTool`),
+ * Every mutating tool goes through `retailSlot.updateTool` (via `retailTool`),
  * which serializes per session: the LLM loop can run a step's tool calls
  * concurrently, and two interleaving async mutators would each observe the
  * other's half-applied changes.
@@ -185,27 +191,28 @@ export function retailTool<S extends z.ZodType<Record<string, unknown>>, R>(
   spec: RetailToolSpec<S, R>,
 ) {
   const requiresAuth = spec.requiresAuth ?? true;
-  return tool({
+  // `updateTool` rather than `tool` + a hand-written `retailSlot.update`: it
+  // runs the body inside the slot's per-session lock and hands it the state, so
+  // this wrapper is left with only what is specific to THIS agent. Its
+  // non-reentrancy stays unreachable here for the same reason it always did —
+  // a tool body cannot nest another mutation of this slot, because tool bodies
+  // are `spec.execute` and always run INSIDE this one.
+  return retailSlot.updateTool({
     description: spec.description,
     inputSchema: spec.inputSchema,
-    // `retailSlot.update` is the only caller of the serialized region in this
-    // template, which is what keeps `update`'s non-reentrancy unreachable: a
-    // tool body cannot nest another `update` on this slot, because tool bodies
-    // are `spec.execute` and always run INSIDE this one.
-    execute: (args, ctx) =>
-      retailSlot.update(ctx, async (state) => {
-        const typedArgs = args as z.output<S>;
-        if (requiresAuth && !state.authenticatedUserId) {
-          record(state, spec.name, "blocked: not authenticated");
-          return { error: NOT_AUTHENTICATED };
-        }
-        const result = await spec.execute(typedArgs, ctx);
-        record(
-          state,
-          spec.name,
-          isToolFailure(result) ? `error: ${result.error}` : spec.summary(typedArgs, result),
-        );
-        return result;
-      }),
+    execute: async (args, state, ctx) => {
+      const typedArgs = args as z.output<S>;
+      if (requiresAuth && !state.authenticatedUserId) {
+        record(state, spec.name, "blocked: not authenticated");
+        return toolFailure(NOT_AUTHENTICATED);
+      }
+      const result = await spec.execute(typedArgs, ctx);
+      record(
+        state,
+        spec.name,
+        isToolFailure(result) ? `error: ${result.error}` : spec.summary(typedArgs, result),
+      );
+      return result;
+    },
   });
 }

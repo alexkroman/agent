@@ -2,7 +2,7 @@
 // Zod schemas -- validate untrusted input at HTTP/WebSocket boundaries.
 
 import { posix } from "node:path";
-import { RESERVED_SLUGS, VALID_SLUG_RE } from "@alexkroman1/aai";
+import { RESERVED_SLUGS, VALID_SLUG_RE } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { MAX_WORKER_SIZE } from "./constants.ts";
 
@@ -22,7 +22,7 @@ export const SafePathSchema = z
 
 // The slug contract (shape + reserved names) lives in the shared SDK so the
 // CLI validates against the exact rules this server enforces.
-export { RESERVED_SLUGS, VALID_SLUG_RE } from "@alexkroman1/aai";
+export { RESERVED_SLUGS, VALID_SLUG_RE } from "@alexkroman1/aai/utils";
 
 /**
  * `VALID_SLUG_RE`'s source with its `^…$` anchors stripped, for embedding

@@ -1,9 +1,16 @@
-// Copyright 2025 the AAI authors. MIT license.
+// Copyright 2026 the AAI authors. MIT license.
 /**
- * Frozen authoring example: `tool` epoch 1.
+ * Frozen authoring example: `tool` epoch 2.
  *
  * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
  * relative.
+ *
+ * Epoch 1 is DROPPED and its example is gone. What changed for a tool author is
+ * one line of it: the failure a body returns is built with `toolFailure` (or
+ * the bare object) rather than with `toolError`, whose pre-serialized string
+ * `isToolFailure` never narrowed. Everything else here is epoch 1 unchanged —
+ * the Standard Schema spec types also left the root barrel, and no example
+ * named them, which is the evidence that they were not authoring API.
  */
 
 import { z } from "zod";
@@ -16,7 +23,7 @@ import {
   type ToolContext,
   type ToolFailure,
   tool,
-  toolError,
+  toolFailure,
 } from "../../../index.ts";
 
 const lookupSchema = z.object({
@@ -28,11 +35,11 @@ type Order = { id: string; total: number };
 
 /** A helper that PROPAGATES a failure — the case `isToolFailure` exists for. */
 function findOrder(id: string): Order | ToolFailure {
-  if (id === "") return { error: "An order id is required." };
+  if (id === "") return toolFailure("An order id is required.");
   return { id, total: 0 };
 }
 
-/** Every capability a tool body had at epoch 1. */
+/** Every capability a tool body has at epoch 2. */
 export const lookupOrder = tool({
   description: "Look up an order by id.",
   inputSchema: lookupSchema,
@@ -43,7 +50,7 @@ export const lookupOrder = tool({
     // `ctx.env`, `ctx.sessionId`, `ctx.signal`, `ctx.send`.
     const region: string | undefined = ctx.env.AAI_REGION;
     ctx.send("order_opened", { id: order.id, session: ctx.sessionId, region });
-    if (ctx.signal.aborted) return { error: "Cancelled." };
+    if (ctx.signal.aborted) return toolFailure("Cancelled.");
 
     // `ctx.db` — the opt-in app database.
     const rows = await ctx.db.query<{ total: number }>("select total from orders where id = $1", [
@@ -79,11 +86,15 @@ export const ping = tool({
   },
 });
 
-/** A tool whose body reports a hard failure to the model as a wire string. */
+/**
+ * A body reporting a failure the MODEL should see and recover from. The object
+ * literal means the same thing; the constructor is what puts the answer next to
+ * the guard rather than next to the wire form.
+ */
 export const strict = tool({
   description: "Reject everything.",
-  execute(): string {
-    return toolError("Not available.");
+  execute(): ToolFailure {
+    return toolFailure("Not available.");
   },
 });
 

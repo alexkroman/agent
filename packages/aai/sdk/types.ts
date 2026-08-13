@@ -469,8 +469,8 @@ export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
   requiredEnv?: readonly string[];
 }
 
-// ─── Zod schemas ────────────────────────────────────────────────────────────
-
-// Defined in type-schemas.ts and re-exported here, so importers see one module
-// for a type and its schema. See that file for why they are split.
-export { BuiltinToolSchema, ToolChoiceSchema } from "./type-schemas.ts";
+// The zod schemas for `BuiltinTool` and `ToolChoice` used to be re-exported
+// here, so that an importer saw one module for a type and its schema. They are
+// not: this module IS the root barrel (`export *`), and both are `@internal`
+// wire plumbing with two intra-package readers between them — `agent-config.ts`
+// and a schema-alignment spec. Import them from `./type-schemas.ts` directly.

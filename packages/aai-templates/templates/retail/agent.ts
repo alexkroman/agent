@@ -1,6 +1,6 @@
 import { agent } from "@alexkroman1/aai";
 import { storeView } from "./shared.ts";
-import { retailSlot, type StateSlot } from "./store.ts";
+import { retailSlot } from "./store.ts";
 import systemPrompt from "./system-prompt.md?raw";
 import { cancelPendingOrder } from "./tools/cancel_pending_order.ts";
 import { exchangeDeliveredOrderItems } from "./tools/exchange_delivered_order_items.ts";
@@ -30,7 +30,7 @@ export default agent({
   // the slot install itself on first access) means the session's store exists
   // before the first tool call, so a resumed connection has something to
   // project; the slot owns the shape either way.
-  state: (): StateSlot => ({ [retailSlot.key]: retailSlot.create() }),
+  state: retailSlot.state,
 
   // One projection pushed after every tool call. It is a projection, not a
   // flag, because the state holds all six seeded customers and only the

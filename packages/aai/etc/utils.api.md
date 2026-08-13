@@ -69,12 +69,12 @@ export function safeJsonParse(text: string): unknown;
 export function toArgsRecord(input: unknown): Record<string, unknown>;
 
 // @public
-export function toolError(message: string): string;
-
-// @public
 export type ToolFailure = {
     error: string;
 };
+
+// @public
+export function toolFailure(message: string): ToolFailure;
 
 // @public
 export const VALID_SLUG_RE: RegExp;

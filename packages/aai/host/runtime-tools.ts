@@ -8,6 +8,7 @@
  */
 
 import { agentToolsToSchemas, type ToolSchema } from "../sdk/_internal-types.ts";
+import { serializeToolFailure } from "../sdk/_tool-failure-wire.ts";
 import {
   DEFAULT_BUILTIN_TOOLS,
   MAX_CLIENT_EVENT_NAME_LENGTH,
@@ -19,7 +20,6 @@ import type { OwnedMap } from "../sdk/owned-map.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import type { LlmProvider } from "../sdk/providers.ts";
 import type { AgentDef, ToolDef } from "../sdk/types.ts";
-import { toolError } from "../sdk/utils.ts";
 import type { WorkflowClient } from "../sdk/workflow.ts";
 import { createStateSync } from "./_state-sync.ts";
 import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "./builtin-tools.ts";
@@ -256,7 +256,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
 
   const executeTool: ExecuteTool = async (name, args, sessionId, messages, callOpts) => {
     const tool = allTools[name];
-    if (!tool) return toolError(`Unknown tool: ${name}`);
+    if (!tool) return serializeToolFailure(`Unknown tool: ${name}`);
     const sid = sessionId ?? "";
     /**
      * Resolved per send, never captured at dispatch. A tool call routinely
