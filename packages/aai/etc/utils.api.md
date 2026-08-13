@@ -66,6 +66,9 @@ export function pushCapped<T>(list: T[], item: T, max: number): T[];
 export const RESERVED_SLUGS: ReadonlySet<string>;
 
 // @public
+export function responseErrorMessage(res: Response, label?: string): Promise<string>;
+
+// @public
 export function safeJsonParse(text: string): unknown;
 
 // @internal

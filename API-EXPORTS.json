@@ -466,6 +466,7 @@
     "normalizeSpeechText",
     "omitUndefined",
     "pushCapped",
+    "responseErrorMessage",
     "safeJsonParse",
     "toArgsRecord",
     "toolFailure",

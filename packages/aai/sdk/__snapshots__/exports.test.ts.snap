@@ -306,6 +306,7 @@ exports[`export surface stability > @alexkroman1/aai/utils export 1`] = `
   "normalizeSpeechText",
   "omitUndefined",
   "pushCapped",
+  "responseErrorMessage",
   "safeJsonParse",
   "toArgsRecord",
   "toolFailure",

@@ -31,6 +31,7 @@ import {
   type WorkflowRunStatus,
   type WorkflowSummary,
 } from "@alexkroman1/aai";
+import { responseErrorMessage } from "@alexkroman1/aai/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "./query-keys.ts";
 import { Card } from "./settings-card.tsx";
@@ -75,13 +76,12 @@ type WorkflowsCardProps = {
 
 async function readJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { signal: AbortSignal.timeout(WORKFLOW_READ_TIMEOUT_MS) });
-  if (!res.ok) {
-    // The agent's own error body is the diagnostic — a 503 while a sandbox boots
-    // reads very differently from a 404 for a slug that no longer exists, and
-    // the 404 for an agent that declares no workflows names both of ITS causes.
-    const text = await res.text().catch(() => "");
-    throw new Error(`${res.status}${text ? `: ${text.slice(0, 200)}` : ""}`);
-  }
+  // The agent's own error body is the diagnostic — a 503 while a sandbox boots
+  // reads very differently from a 404 for a slug that no longer exists, and the
+  // 404 for an agent that declares no workflows names both of ITS causes.
+  // `responseErrorMessage` is what actually unwraps it: this used to quote the
+  // raw body, so that sentence reached the card still wrapped in its JSON.
+  if (!res.ok) throw new Error(await responseErrorMessage(res));
   return (await res.json()) as T;
 }
 
@@ -125,10 +125,7 @@ async function cancelRun(origin: string, slug: string, runId: string): Promise<v
     method: "DELETE",
     signal: AbortSignal.timeout(WORKFLOW_READ_TIMEOUT_MS),
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`${res.status}${text ? `: ${text.slice(0, 200)}` : ""}`);
-  }
+  if (!res.ok) throw new Error(await responseErrorMessage(res));
 }
 
 /** Colour by outcome — a failed run has to be findable without reading every row. */
