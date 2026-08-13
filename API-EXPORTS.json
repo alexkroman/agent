@@ -29,6 +29,7 @@
     "DefaultToolResult",
     "DefaultedAgentField",
     "FindOptions",
+    "FrontDoorField",
     "GenerateFn",
     "GenerateObjectResult",
     "GenerateOptions",
@@ -60,6 +61,8 @@
     "SlotStateOf",
     "SlotToolDef",
     "StartOptions",
+    "StaticAgentParams",
+    "StaticFrontDoorMisuse",
     "TERMINAL_WORKFLOW_STATUSES",
     "TOOL_EXECUTION_TIMEOUT_MS",
     "TOOL_RESULT_TRUNCATION_MARKER",
@@ -70,6 +73,8 @@
     "ToolDef",
     "ToolFailure",
     "ToolInputSchema",
+    "WorkflowAppMisuse",
+    "WorkflowAppOnlyField",
     "WorkflowBody",
     "WorkflowClient",
     "WorkflowDef",
@@ -93,7 +98,8 @@
     "tool",
     "toolFailure",
     "withLock",
-    "workflow"
+    "workflow",
+    "workflowApp"
   ],
   "@alexkroman1/aai/internal": [
     "AGENT_CSP",

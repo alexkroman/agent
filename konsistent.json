@@ -266,12 +266,6 @@
           "must": {
             "export": [
               "default"
-            ],
-            "import": [
-              {
-                "name": "agent",
-                "from": "@alexkroman1/aai"
-              }
             ]
           }
         },

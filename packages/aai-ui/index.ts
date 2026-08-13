@@ -69,7 +69,7 @@ export type {
 // Entry
 export { client } from "./define-client.tsx";
 export { useAgentState, useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
-// Workflow apps — the `agent({ page: "static" })` half of this package. `page()`
+// Workflow apps — the `workflowApp()` half of this package. `page()`
 // is the mount (no session, no audio, no socket) and the two workflow exports
 // are what its component talks to the agent with, in place of `useSession()`.
 export { type PageConfig, type PageHandle, page } from "./page.tsx";

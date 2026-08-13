@@ -266,7 +266,7 @@ export type DevServerOptions = {
  * failure looks like a missing route rather than a missing proxy entry.
  *
  * `/workflows` is why that matters beyond voice. A WORKFLOW APP
- * (`agent({ page: "static" })`) has no session and no socket: `page()` mounts a
+ * (`workflowApp()`) has no session and no socket: `page()` mounts a
  * form and every single thing it does — listing workflows, starting a run,
  * polling it, streaming its events — is a same-origin `fetch` under that
  * prefix. Unproxied, the two workflow-app templates were dead on arrival under

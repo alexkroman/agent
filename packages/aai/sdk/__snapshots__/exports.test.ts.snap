@@ -45,6 +45,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "toolFailure",
   "withLock",
   "workflow",
+  "workflowApp",
 ]
 `;
 

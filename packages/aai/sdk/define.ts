@@ -105,12 +105,19 @@ export type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "to
  * `aai dev`/`aai deploy`. Configs that never went through `agent()` are
  * still caught when `toAgentConfig` runs in the bundle entry.
  *
+ * The fourth arm ({@link StaticAgentParams}) is the WORKFLOW APP, and it is
+ * keyed on the front door rather than on a session mode: `page: "static"` has
+ * no session at all, so every field the other three arms exist to arbitrate
+ * between is inert there. {@link workflowApp} is the same arm with the
+ * discriminant already set.
+ *
  * @public
  */
 export type AgentParams<S = DefaultSessionState> =
   | PipelineAgentParams<S>
   | S2sAgentParams<S>
-  | TextAgentParams<S>;
+  | TextAgentParams<S>
+  | StaticAgentParams;
 
 /**
  * Fields shared by both session modes: everything on {@link AgentDef} minus
@@ -119,12 +126,23 @@ export type AgentParams<S = DefaultSessionState> =
  */
 export type SharedAgentParams<S = DefaultSessionState> = Omit<
   AgentDef<S>,
-  DefaultedAgentField | PipelineOnlyField | ProviderField
+  DefaultedAgentField | PipelineOnlyField | ProviderField | FrontDoorField
 > &
   Partial<Pick<AgentDef<S>, DefaultedAgentField>> & {
     /** Alias of `systemPrompt` (the Vercel AI SDK's field name). */
     system?: string;
   };
+
+/**
+ * The field naming what an agent's front door IS, subtracted from
+ * {@link SharedAgentParams} so each arm re-declares the value it accepts.
+ *
+ * Without the subtraction the three voice arms accept `page: "static"` too, and
+ * a union arm that every other arm also matches never bites: `agent({ voice:
+ * "michael", page: "static" })` would resolve against {@link
+ * PipelineAgentParams} and configure a TTS voice for an app that never speaks.
+ */
+export type FrontDoorField = "page";
 
 /**
  * The mode-owned fields: the four provider descriptors and the `text`
@@ -188,6 +206,8 @@ export type PipelineAgentParams<S = DefaultSessionState> = SharedAgentParams<S> 
     llm?: LlmProvider | string;
     s2s?: undefined;
     text?: undefined;
+    /** See {@link AgentDef.page}. A pipeline agent's front door is a mic. */
+    page?: "voice" | StaticFrontDoorMisuse;
   } & (
     | {
         /** See {@link AgentDef.tts}. The voice rides on the descriptor. */
@@ -219,6 +239,8 @@ export type S2sAgentParams<S = DefaultSessionState> = SharedAgentParams<S> & {
   tts?: "`tts` cannot be combined with `s2s` — S2S runs TTS service-side";
   voice?: "`voice` is pipeline-mode only — an S2S agent's voice rides on the `s2s` descriptor";
   text?: "`text` cannot be combined with `s2s` — an agent is text-only or speech-to-speech, not both";
+  /** See {@link AgentDef.page}. An S2S agent's front door is a mic. */
+  page?: "voice" | StaticFrontDoorMisuse;
 } & {
   [K in PipelineOnlyField]?: PipelineOnlyMisuse<K>;
 };
@@ -251,8 +273,90 @@ export type TextAgentParams<S = DefaultSessionState> = Omit<SharedAgentParams<S>
   s2s?: "`s2s` cannot be combined with `text` — an agent is text-only or speech-to-speech, not both";
   voice?: "`voice` is pipeline-mode only — a text agent never speaks";
   sttPrompt?: "`sttPrompt` biases a transcriber — a text agent has none; remove it or remove `text`";
+  /**
+   * See {@link AgentDef.page}. A text agent has no browser front door of its
+   * own — it is driven by `createTextAgent`, not by a page.
+   */
+  page?: "voice" | StaticFrontDoorMisuse;
 } & {
   [K in PipelineOnlyField]?: PipelineOnlyMisuse<K, "text">;
+};
+
+/**
+ * The "type" `page` has on the three VOICE arms, so `page: "static"` beside a
+ * voice field fails with the rule rather than with
+ * `Type '"static"' is not assignable to type '"voice"'` — which names the
+ * field and not what to do about it. Same idiom as {@link PipelineOnlyMisuse}.
+ */
+export type StaticFrontDoorMisuse =
+  '`page: "static"` declares a WORKFLOW APP, which runs no model and opens no socket — remove this agent\'s voice/LLM fields, or declare it with `workflowApp()` and keep them off by construction';
+
+/**
+ * The {@link AgentDef} fields a WORKFLOW APP cannot use, typed as messages on
+ * {@link StaticAgentParams}.
+ *
+ * A `page: "static"` agent has no session and no LLM loop: nothing reads a
+ * system prompt, nothing executes a tool, nothing opens the socket `syncState`
+ * pushes over. Every one of these was silently ACCEPTED and inert before this
+ * arm existed, and the `link-digest` template shipped a `systemPrompt`
+ * addressed to a model that never runs — with a comment claiming
+ * `GET /client-config` served it, which serves `name`/`greeting`/`page` and
+ * has never carried a system prompt.
+ *
+ * Derived from the two existing lists where they already say this, so a new
+ * pipeline knob or provider stage is rejected here for free.
+ */
+export type WorkflowAppOnlyField =
+  | ProviderField
+  | PipelineOnlyField
+  | "system"
+  | "systemPrompt"
+  | "sttPrompt"
+  | "maxSteps"
+  | "toolChoice"
+  | "tools"
+  | "builtinTools"
+  | "state"
+  | "syncState"
+  | "idleTimeoutMs"
+  | "voice";
+
+/** The message a {@link WorkflowAppOnlyField} carries. */
+export type WorkflowAppMisuse<K extends string> =
+  `\`${K}\` has no effect on a workflow app — \`page: "static"\` runs no model and opens no session; remove it, or remove \`page: "static"\` to make this a voice agent`;
+
+/**
+ * Workflow-app params: `page: "static"`, the workflows that ARE the product,
+ * and nothing from the session half of the agent shape.
+ *
+ * Not a session mode like the other three arms — a front door. What it drops is
+ * everything downstream of having a session at all, which is why it takes no
+ * `S`: `state` is per-session state and there are no sessions.
+ *
+ * What it keeps is the surface a page and a deploy actually read: `name` and
+ * `greeting` (both served by `GET /client-config`, so a page can render its
+ * shell from the agent — `page()` does not fetch it the way `client()` does, so
+ * a page that wants them calls `fetchClientConfig()` itself), `workflows`, and
+ * `requiredEnv` (a `"use step"` body reads keys like any other Node code, and a
+ * deploy still checks they are present).
+ *
+ * `workflows` is REQUIRED here, unlike on {@link AgentDef}: a workflow app whose
+ * whole API is `/workflows/*` and which declares none serves a form with nothing
+ * behind it, and the page's `api.start(name, …)` would 400 on every submit.
+ */
+export type StaticAgentParams = Omit<
+  SharedAgentParams,
+  WorkflowAppOnlyField | FrontDoorField | "workflows"
+> & {
+  /** See {@link AgentDef.page} — the explicit opt-in to a workflow app. */
+  page: "static";
+  /**
+   * See {@link AgentDef.workflows}. The whole product: a workflow app is an
+   * agent whose work happens here.
+   */
+  workflows: NonNullable<AgentDef["workflows"]>;
+} & {
+  [K in WorkflowAppOnlyField]?: WorkflowAppMisuse<K>;
 };
 
 /**
@@ -331,6 +435,46 @@ export function agent<S = DefaultSessionState>(def: AgentParams<S>): AgentDef<S>
     tools: {},
     ...params,
   };
+}
+
+/**
+ * Define a WORKFLOW APP — an agent whose front door is a form rather than a
+ * microphone, and whose work happens in `workflows`.
+ *
+ * `agent({ …, page: "static" })` with the discriminant already set, so the
+ * mode is the CALL rather than a field to remember, and the fields a workflow
+ * app has no use for are absent from the parameter type instead of being
+ * rejected by it. Returns the same {@link AgentDef} `agent()` does — there is
+ * one definition type, one config, one deploy path, and `page` is only ever
+ * about the front door.
+ *
+ * It mirrors the split `@alexkroman1/aai-ui` already makes in the browser:
+ * `page()` mounts a workflow app's UI and `client()` mounts a voice one,
+ * because a flag would leave every session-shaped question ("what does this
+ * mean with no session?") answered by a conditional. Same reasoning, same
+ * seam, other end of the wire.
+ *
+ * @example
+ * ```ts
+ * import { workflow, workflowApp } from "@alexkroman1/aai";
+ * import { z } from "zod";
+ *
+ * export const digest = workflow({
+ *   description: "Summarize a link",
+ *   input: z.object({ url: z.url() }),
+ *   run: async ({ url }) => ({ url }),
+ * });
+ *
+ * export default workflowApp({
+ *   name: "Link Digest",
+ *   workflows: { digest },
+ * });
+ * ```
+ *
+ * @public
+ */
+export function workflowApp(def: Omit<StaticAgentParams, "page">): AgentDef {
+  return agent({ ...def, page: "static" });
 }
 
 /**

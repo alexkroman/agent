@@ -2,10 +2,10 @@
 /**
  * A WORKFLOW APP whose front door is an UPLOAD FORM.
  *
- * `link-digest` is the template to read first: it owns the shape — `page:
- * "static"`, no session, no tools, a form that starts a run and a page that
- * watches it — and none of that is restated here. What this one adds is the two
- * things a real job-submission app needs and a one-field form does not:
+ * `link-digest` is the template to read first: it owns the shape —
+ * `workflowApp()`, no session, no tools, a form that starts a run and a page
+ * that watches it — and none of that is restated here. What this one adds is
+ * the two things a real job-submission app needs and a one-field form does not:
  *
  * 1. **A file.** The page's `<FileField>` contributes a `{ name, type, size }`
  *    object, which is exactly what `upload` declares below, so the collected
@@ -42,7 +42,7 @@
  * runs live there.
  */
 
-import { agent, workflow } from "@alexkroman1/aai";
+import { workflow, workflowApp } from "@alexkroman1/aai";
 import { z } from "zod";
 import { transcribeFlow } from "./workflows/transcribe.ts";
 
@@ -70,16 +70,7 @@ export const transcribe = workflow({
   run: transcribeFlow,
 });
 
-export default agent({
+export default workflowApp({
   name: "Transcription Desk",
-  // Served by `GET /client-config`, so the page's title and empty state come
-  // from the same place a voice agent's shell does.
-  greeting: "Upload a recording and I will file its transcript.",
-  systemPrompt: "Transcribe recordings and file the results.",
-
   workflows: { transcribe },
-
-  // The front door is a form. See `link-digest`'s module doc for what this
-  // really switches off, which is more than it advertises.
-  page: "static",
 });

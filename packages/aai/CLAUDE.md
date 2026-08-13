@@ -627,6 +627,12 @@ what absent means) or `"static"`, a page over the workflow HTTP API that
 `createServer` mounts. **See "Workflow apps" in `packages/aai-ui/CLAUDE.md`**;
 this guide is at its cap and the author-facing half lives there.
 
+**Declare one with `workflowApp()`** — `sdk/define.ts`, the fourth arm of
+`AgentParams` with its discriminant already set. It returns the same `AgentDef`
+`agent()` does, so nothing downstream learns a second shape; what it adds is
+that the fields a workflow app cannot use are refused rather than accepted and
+inert. That guide section owns the argument.
+
 ## Voices
 
 **`ASSEMBLYAI_TTS_VOICES` in `sdk/providers/tts/assemblyai.ts` is the list.**

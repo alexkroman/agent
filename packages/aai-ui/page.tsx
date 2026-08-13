@@ -6,7 +6,7 @@
  * `page()` — mount a WORKFLOW APP's UI: React, theme, no session.
  *
  * The twin of `client()` for an agent whose front door is a form rather than a
- * microphone (`agent({ page: "static" })`). It is a separate entry rather than
+ * microphone (`workflowApp()`). It is a separate entry rather than
  * an option on `client()` because of what `client()` unavoidably does: it
  * constructs a `SessionCore`, which owns a WebSocket URL provider, an audio
  * graph, and a microphone request. A flag would have to make all of that

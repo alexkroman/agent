@@ -1,7 +1,7 @@
 {
   "agent": {
-    "current": 2,
-    "supported": [1, 2],
+    "current": 3,
+    "supported": [1, 2, 3],
     "dropped": {}
   },
   "builtins": {

@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * What `createServer` does for a WORKFLOW APP — `agent({ page: "static" })` —
+ * What `createServer` does for a WORKFLOW APP — `workflowApp()` —
  * and how it mounts the workflow HTTP API for every agent.
  *
  * Its own file rather than more cases in `server.test.ts`: those are about the
