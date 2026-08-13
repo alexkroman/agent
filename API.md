@@ -28,6 +28,7 @@ symbol exported from two subpaths appears under both.
 - `@alexkroman1/aai/tools` — `packages/aai/etc/tools.api.md`
 - `@alexkroman1/aai/tts` — `packages/aai/etc/tts.api.md`
 - `@alexkroman1/aai/utils` — `packages/aai/etc/utils.api.md`
+- `@alexkroman1/aai/workflow-api` — `packages/aai/etc/workflow-api.api.md`
 - `@alexkroman1/aai/workspace-files` — `packages/aai/etc/workspace-files.api.md`
 - `@alexkroman1/aai-cli/client-bundler` — `packages/aai-cli/etc/client-bundler.api.md`
 - `@alexkroman1/aai-cli/project-config` — `packages/aai-cli/etc/project-config.api.md`
@@ -4581,6 +4582,86 @@ export const VALID_SLUG_RE: RegExp;
 export const withLock: <T>(lock: (key: string, opts?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, opts?: KeyedLockOptions) => Promise<T>;
 ```
 
+## `@alexkroman1/aai/workflow-api`
+
+```ts
+// @public
+export function createWorkflowApiClient(opts: WorkflowApiClientOptions): WorkflowApi;
+
+// @public
+export const WORKFLOW_API_PREFIX = "/workflows";
+
+// @public
+export type WorkflowApi = {
+    list(): Promise<WorkflowSummary[]>;
+    start(workflow: string, input?: unknown, options?: {
+        key?: string;
+    }): Promise<string>;
+    startAndWait(workflow: string, input?: unknown, options?: {
+        key?: string;
+        wait?: number;
+    }): Promise<WorkflowRunSnapshot>;
+    get(runId: string, options?: {
+        wait?: number;
+    }): Promise<WorkflowRunSnapshot | undefined>;
+    find(workflow: string, key: string, options?: {
+        limit?: number;
+    }): Promise<WorkflowRunSnapshot[]>;
+    recent(workflow: string, options?: {
+        limit?: number;
+    }): Promise<WorkflowRunSnapshot[]>;
+    cancel(runId: string): Promise<boolean>;
+    watch(runId: string, signal?: AbortSignal): Promise<Response>;
+    streamOutput(runId: string, options?: {
+        namespace?: string;
+        startIndex?: number;
+        signal?: AbortSignal;
+    }): Promise<Response>;
+    wake(runId: string): Promise<number>;
+};
+
+// @public
+export type WorkflowApiClientOptions = {
+    baseUrl: string;
+    token?: string;
+    timeoutMs?: number;
+};
+
+// @public
+type WorkflowRunBase = {
+    runId: string;
+    workflow: string;
+    createdAt: number;
+    key?: string;
+};
+
+// @public
+type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
+    status: "pending" | "running";
+})
+/** `output` is what the workflow function returned. */
+| (WorkflowRunBase & {
+    status: "completed";
+    output: R;
+})
+/** `error` is the failure message. */
+| (WorkflowRunBase & {
+    status: "failed";
+    error: string;
+})
+/** Cancelled by {@link WorkflowClient.cancel}; it produced no output. */
+| (WorkflowRunBase & {
+    status: "cancelled";
+});
+
+// @public
+type WorkflowSummary = {
+    name: string;
+    description?: string;
+    inputSchema?: unknown;
+};
+```
+
 ## `@alexkroman1/aai/workspace-files`
 
 ```ts
@@ -4742,8 +4823,9 @@ import { ReactNode } from 'react';
 import type { SelectHTMLAttributes } from 'react';
 import { SessionErrorCode } from '@alexkroman1/aai/protocol';
 import type { TextareaHTMLAttributes } from 'react';
+import { WorkflowApi } from '@alexkroman1/aai/workflow-api';
 import { WorkflowOutputOf } from '@alexkroman1/aai';
-import { WorkflowRunSnapshot } from '@alexkroman1/aai';
+import type { WorkflowRunSnapshot } from '@alexkroman1/aai';
 import { WorkflowSummary } from '@alexkroman1/aai';
 
 // @public
@@ -5217,34 +5299,7 @@ export type WebSocketConstructor = {
     readonly OPEN: number;
 };
 
-// @public
-export type WorkflowApi = {
-    list(): Promise<WorkflowSummary[]>;
-    start(workflow: string, input?: unknown, options?: {
-        key?: string;
-    }): Promise<string>;
-    startAndWait(workflow: string, input?: unknown, options?: {
-        key?: string;
-        wait?: number;
-    }): Promise<WorkflowRun>;
-    get(runId: string, options?: {
-        wait?: number;
-    }): Promise<WorkflowRun | undefined>;
-    find(workflow: string, key: string, options?: {
-        limit?: number;
-    }): Promise<WorkflowRun[]>;
-    recent(workflow: string, options?: {
-        limit?: number;
-    }): Promise<WorkflowRun[]>;
-    cancel(runId: string): Promise<boolean>;
-    watch(runId: string, signal?: AbortSignal): Promise<Response>;
-    streamOutput(runId: string, options?: {
-        namespace?: string;
-        startIndex?: number;
-        signal?: AbortSignal;
-    }): Promise<Response>;
-    wake(runId: string): Promise<number>;
-};
+export { WorkflowApi }
 
 // @public (undocumented)
 export type WorkflowApiOptions = {

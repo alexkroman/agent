@@ -118,10 +118,17 @@ describe("studioSystemPrompt", () => {
     expect(prompt).toContain("Never invent an SDK subpath");
     // Interpolated from the package's own exports map, so it can't drift.
     expect(prompt).toContain("@alexkroman1/aai/llm");
+    expect(prompt).toContain("@alexkroman1/aai/workflow-api");
     // The removed combinator subpaths are not mentioned at all — not even
     // as a contradiction — so the prompt can't teach their names.
-    expect(prompt).not.toContain("@alexkroman1/aai/patterns");
-    expect(prompt).not.toContain("@alexkroman1/aai/workflow");
+    //
+    // Matched EXACTLY rather than as a substring, and the reason is live:
+    // `@alexkroman1/aai/workflow-api` is a real subpath whose name starts with
+    // the removed `/workflow`, so a `toContain` check turns a legitimate export
+    // into a failure that reads as the removed one coming back.
+    for (const removed of ["patterns", "workflow"]) {
+      expect(prompt).not.toMatch(new RegExp(`@alexkroman1/aai/${removed}(?![\\w-])`));
+    }
   });
 
   test("excludes the CLI Workflow section by its precise contents", () => {

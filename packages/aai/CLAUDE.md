@@ -45,7 +45,7 @@ model) is the security boundary.
 
 ## Package exports
 
-Fourteen subpaths, mapped file-by-file in the table below. What decides which
+Fifteen subpaths, mapped file-by-file in the table below. What decides which
 one a symbol lives on:
 
 ### The root barrel is CURATED, and `export *` is what broke it
@@ -81,6 +81,7 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | The zod-free half of the SDK, which is what makes it the CLI's import path (`p-timeout`, 2.4 KB with no dependencies and backing the lock's acquire deadline, is the one measured exception). Three groups: the tool-code helpers the root also re-exports (`errorMessage`, `errorDetail`, `safeJsonParse`, `toolFailure`/`isToolFailure`, `pushCapped`, `createKeyedLock`/`withLock`); the framework's own wire helpers, `@internal` and root-invisible (`capToolResult`, `toArgsRecord`, `isTextAssetPath`, `normalizeSpeechText`, `omitUndefined`, and `serializeToolFailure` — the pre-serialized `'{"error":…}'` the host emits for a tool that threw, which `isToolFailure` deliberately does NOT narrow); and the two contracts BOTH ends of a platform interaction must derive identically — the slug shape (`VALID_SLUG_RE`, `RESERVED_SLUGS`, `sdk/slug.ts`) and the `aai login` confirmation code (`linkConfirmationCode`, `sdk/cli-link.ts`; the terminal prints it, the studio's approval gate shows it, and the point is that they match) |
 | `@alexkroman1/aai/slugify` | `host/slugify.ts` (direct) | `slugifyName` — how a human name BECOMES a slug (transliterating, `decamelize: false`), for the CLI, the platform server, and the studio. Separate from the contract in `sdk/slug.ts` on purpose: that one is dependency-free and rides every agent bundle, this one pulls the transliteration tables. Nothing on the SDK hot path may import it |
 | `@alexkroman1/aai/runtime` | `host/runtime-barrel.ts` → 11 modules | Full Node.js runtime: session, S2S, server, tools, WS handler |
+| `@alexkroman1/aai/workflow-api` | `sdk/workflow-api-client.ts` (direct) | `createWorkflowApiClient` plus `WORKFLOW_API_PREFIX` — the CLIENT of the workflow HTTP API `host/workflow-api.ts` serves, shared by the browser client, the CLI and the studio; its module doc carries why |
 | `@alexkroman1/aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `ClientEvent`, `ServerMessage` |
 | `@alexkroman1/aai/manifest` | `sdk/manifest-barrel.ts` → 3 modules | `toAgentConfig()`, `agentToolsToSchemas()`, `AgentConfig`/`ToolSchema` + their Zod schemas, config-rule asserts. (The subpath name is historical — the old `parseManifest()`/`Manifest` layer was deleted; renaming the published subpath wasn't worth the break.) |
 | `@alexkroman1/aai/stt` | `sdk/providers/stt-barrel.ts` | STT provider factories + types (`assemblyAIStt`, `deepgram`, `elevenlabs`, `soniox`) |
@@ -631,10 +632,8 @@ what absent means) or `"static"`, a page over the workflow HTTP API that
 this guide is at its cap and the author-facing half lives there.
 
 **Declare one with `workflowApp()`** — `sdk/define.ts`, the fourth arm of
-`AgentParams` with its discriminant already set. It returns the same `AgentDef`
-`agent()` does, so nothing downstream learns a second shape; what it adds is
-that the fields a workflow app cannot use are refused rather than accepted and
-inert. That guide section owns the argument.
+`AgentParams`. Same `AgentDef`, refusing the fields a workflow app cannot use;
+that guide's `workflowApp()` section owns the argument.
 
 ## Voices
 

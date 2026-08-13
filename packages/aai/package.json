@@ -18,6 +18,11 @@
       "types": "./dist/sdk/testing.d.ts",
       "import": "./dist/sdk/testing.js"
     },
+    "./workflow-api": {
+      "@dev/source": "./sdk/workflow-api-client.ts",
+      "types": "./dist/sdk/workflow-api-client.d.ts",
+      "import": "./dist/sdk/workflow-api-client.js"
+    },
     "./protocol": {
       "@dev/source": "./sdk/protocol.ts",
       "types": "./dist/sdk/protocol.d.ts",

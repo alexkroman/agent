@@ -20,6 +20,15 @@ knowing before scripting a loop around it. `--limit` is parsed in the command
 rather than the executor, so a non-numeric value fails as a CLI error naming the
 flag instead of as a query the agent rejects three hops away.
 
+The requests are the SDK's (`createWorkflowApiClient`,
+`@alexkroman1/aai/workflow-api`); what stays here is turning "this directory"
+into an origin plus a PUBLISHED slug, and printing. One consequence to know
+because it is the one place the two ends disagree: `api.get` resolves
+`undefined` for a 404 — right for a page racing a run it just started, and
+nothing for `show` to print — and that status ALSO covers "this agent serves no
+workflow API", so the failure sentence claims neither cause and the shared
+`HINT_BROKER` names all three.
+
 **`aai eject` is a retrofit, not the self-hosting path.** Self-hosting is the
 DEFAULT now: the scaffold ships `server.mjs` and a `start` script, so every
 project `aai init`/`aai pull` produces already runs with `npm start` — no CLI

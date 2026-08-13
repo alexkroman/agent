@@ -31,7 +31,7 @@ import {
   type WorkflowRunStatus,
   type WorkflowSummary,
 } from "@alexkroman1/aai";
-import { responseErrorMessage } from "@alexkroman1/aai/utils";
+import { createWorkflowApiClient, type WorkflowApi } from "@alexkroman1/aai/workflow-api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "./query-keys.ts";
 import { Card } from "./settings-card.tsx";
@@ -39,12 +39,7 @@ import { Card } from "./settings-card.tsx";
 /** Recent runs shown per workflow. Enough to see a pattern, short enough to scan. */
 const RUNS_PER_WORKFLOW = 5;
 
-/**
- * Deadline on each request, for the reason every other studio fetch carries
- * one: a browser fetch has none, and a hung request never settles, so no error
- * path or retry ever runs. Generous because the first read may be waiting out a
- * container boot, which is what brokering does.
- */
+/** Deadline on each request — see {@link clientFor} for why it is this generous. */
 const WORKFLOW_READ_TIMEOUT_MS = 20_000;
 
 /**
@@ -74,15 +69,26 @@ type WorkflowsCardProps = {
   previewSlug?: string | undefined;
 };
 
-async function readJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { signal: AbortSignal.timeout(WORKFLOW_READ_TIMEOUT_MS) });
-  // The agent's own error body is the diagnostic — a 503 while a sandbox boots
-  // reads very differently from a 404 for a slug that no longer exists, and the
-  // 404 for an agent that declares no workflows names both of ITS causes.
-  // `responseErrorMessage` is what actually unwraps it: this used to quote the
-  // raw body, so that sentence reached the card still wrapped in its JSON.
-  if (!res.ok) throw new Error(await responseErrorMessage(res));
-  return (await res.json()) as T;
+/**
+ * A client for one agent's workflow API.
+ *
+ * The SDK's (`@alexkroman1/aai/workflow-api`), not a third hand-written copy of
+ * the same three fetches — this card, the browser client and `aai workflow` had
+ * each written their own subset, and the parts they disagreed on (whether a
+ * `{ runs }` body that arrived without the field reads as empty, whether the
+ * agent's `{ error }` sentence is unwrapped or quoted still wrapped in its JSON —
+ * this one did the latter for a while) were the parts nobody could check by eye.
+ *
+ * `timeoutMs` is what this caller needs on top: the deadline every studio fetch
+ * carries, because a browser fetch has none and a hung request never settles, so
+ * no error path or retry ever runs. It is generous because the first read may be
+ * waiting out a container boot, which is what brokering does.
+ */
+function clientFor(origin: string, slug: string): WorkflowApi {
+  return createWorkflowApiClient({
+    baseUrl: `${origin}/${slug}`,
+    timeoutMs: WORKFLOW_READ_TIMEOUT_MS,
+  });
 }
 
 /**
@@ -95,19 +101,14 @@ async function readJson<T>(url: string): Promise<T> {
  * list for every workflow app in the product.
  */
 async function loadWorkflows(origin: string, slug: string): Promise<WorkflowRuns[]> {
-  const base = `${origin}/${slug}/workflows`;
-  const { workflows } = await readJson<{ workflows?: Declared[] }>(base);
-  const declared = workflows ?? [];
+  const api = clientFor(origin, slug);
+  const declared: Declared[] = await api.list();
   // Concurrent: an agent declares a handful of workflows, and the expensive part
   // (the sandbox boot) has already been paid by the listing above.
   return await Promise.all(
     declared.map(async (workflow) => {
-      const query = new URLSearchParams({
-        workflow: workflow.name,
-        limit: String(RUNS_PER_WORKFLOW),
-      });
-      const { runs } = await readJson<{ runs?: Run[] }>(`${base}/runs?${query.toString()}`);
-      return { workflow, runs: runs ?? [] };
+      const runs: Run[] = await api.recent(workflow.name, { limit: RUNS_PER_WORKFLOW });
+      return { workflow, runs };
     }),
   );
 }
@@ -117,15 +118,11 @@ async function loadWorkflows(origin: string, slug: string): Promise<WorkflowRuns
  *
  * The route answers 200 with `cancelled: false` rather than failing when the
  * run had already finished, so two operators clicking is ordinary. The boolean
- * is not surfaced: what the operator wants to see is the run's new state, which
- * the refetch below provides.
+ * the client resolves is not surfaced: what the operator wants to see is the
+ * run's new state, which the refetch below provides.
  */
 async function cancelRun(origin: string, slug: string, runId: string): Promise<void> {
-  const res = await fetch(`${origin}/${slug}/workflows/runs/${encodeURIComponent(runId)}`, {
-    method: "DELETE",
-    signal: AbortSignal.timeout(WORKFLOW_READ_TIMEOUT_MS),
-  });
-  if (!res.ok) throw new Error(await responseErrorMessage(res));
+  await clientFor(origin, slug).cancel(runId);
 }
 
 /** Colour by outcome — a failed run has to be findable without reading every row. */
