@@ -109,12 +109,10 @@ export function configureWorkflowWorld(opts: {
 /**
  * Prepare the configured world to run: migrate it, then subscribe to its queue.
  *
- * Call ONLY when the agent actually declares workflows — both halves are
- * expensive and neither means anything otherwise.
- *
- * @internal
+ * Both halves are expensive and neither means anything for an agent that
+ * declares no workflows, which is why the only caller is behind that gate.
  */
-export async function startWorkflowWorld(kind: WorldKind): Promise<void> {
+async function migrateAndSubscribe(kind: WorldKind): Promise<void> {
   if (kind === "postgres") {
     // Idempotent by design (its own docs call it safe as a post-deploy step),
     // which is what lets it run on every boot instead of needing a provisioning
@@ -140,6 +138,17 @@ export async function startWorkflowWorld(kind: WorldKind): Promise<void> {
  * `workflow-serve.ts`, and reaching back the other way would close a cycle
  * for one field.
  *
+ * **A failure is reported, not thrown.** A world that will not start is real and
+ * the log says so — but it must not take the guest down, because the SESSION
+ * surface is unaffected: a voice agent whose workflows are broken should still
+ * answer the phone. The symptom is then a `ctx.workflows.start()` that rejects,
+ * which is the caller's to see.
+ *
+ * This is the ONE entry point. It was three — a raw start, a catching wrapper,
+ * and this gate — of which only this one had a caller outside the module, so
+ * the other two were exported surface that nothing consumed and two more names
+ * to pick between for one decision.
+ *
  * @internal
  */
 export async function startWorkflowWorldIfDeclared(
@@ -148,26 +157,9 @@ export async function startWorkflowWorldIfDeclared(
 ): Promise<void> {
   if (!hasWorkflows) return;
   console.error(`harness starting ${kind} workflow world`);
-  await startWorkflowWorldSafely(kind);
-}
-
-/**
- * {@link startWorkflowWorld}, reporting a failure instead of throwing it.
- *
- * A world that will not start is a real failure and the log says so — but it
- * must not take the guest down, because the SESSION surface is unaffected: a
- * voice agent whose workflows are broken should still answer the phone. The
- * symptom is then a `ctx.workflows.start()` that rejects, which is the caller's
- * to see.
- *
- * @internal
- */
-export async function startWorkflowWorldSafely(kind: WorldKind): Promise<boolean> {
   try {
-    await startWorkflowWorld(kind);
-    return true;
+    await migrateAndSubscribe(kind);
   } catch (err: unknown) {
     console.error(`Workflow world (${kind}) failed to start:`, errorMessage(err));
-    return false;
   }
 }

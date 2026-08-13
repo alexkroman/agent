@@ -9,6 +9,7 @@
  * routing point: sessions dial the guest directly afterwards.
  */
 
+import { HTTPException } from "hono/http-exception";
 import pTimeout from "p-timeout";
 import { debug } from "./_debug-log.ts";
 import { BROKER_READY_TIMEOUT_MS } from "./constants.ts";
@@ -60,6 +61,50 @@ export async function brokerSessionUrl(
   const sandbox = await resolveSandbox(slug, opts);
   if (!sandbox) return { ok: false, status: 404 };
   return await awaitBrokeredUrl(slug, sandbox, opts);
+}
+
+/**
+ * The sentence a caller gets when the slug's sandbox is not serving yet.
+ *
+ * One string because it is one condition, and it was spelled out at three call
+ * sites across two packages' worth of routes.
+ */
+export const AGENT_UNAVAILABLE_MESSAGE = "agent unavailable, retry shortly";
+
+/** The sentence for a slug no agent answers to. */
+export function notFoundMessage(slug: string): string {
+  return `Not found: ${slug}`;
+}
+
+/**
+ * {@link brokerSessionUrl}, with the failure taxonomy already mapped to an
+ * answer: no agent is a 404, anything else is a retryable 503.
+ *
+ * The taxonomy is this module's — its own doc above says so — but the MAPPING
+ * was re-derived by every route that brokers (`/client-config`, the workflow
+ * proxy, the webhook proxy), each restating both sentences by hand. Three
+ * copies of a two-branch decision is how a rewording reaches two of them, and
+ * how the three drift into saying different things about one state.
+ *
+ * A route that must answer with something other than a thrown `HTTPException`
+ * — the webhook proxy adds `Retry-After` — still calls {@link brokerSessionUrl}
+ * directly and reuses the two message exports above, so the SENTENCE stays
+ * shared even where the shape cannot be. What the two proxies answer after a
+ * successful broker is separately theirs: a guest that goes unreachable mid
+ * forward is a 503 on the workflow API and a 502 on the webhook, which is a
+ * real difference of audience rather than a copy that drifted.
+ */
+export async function brokerSessionUrlOrThrow(
+  slug: string,
+  opts: ResolveSandboxOpts,
+): Promise<Extract<BrokeredSession, { ok: true }>> {
+  const brokered = await brokerSessionUrl(slug, opts);
+  if (brokered.ok) return brokered;
+  if (brokered.status === 404) throw new HTTPException(404, { message: notFoundMessage(slug) });
+  // The sandbox VM failed to start or is still booting; the failure hook
+  // detaches it so the next request rebuilds. Tell this caller to retry rather
+  // than handing it a URL that will never answer.
+  throw new HTTPException(503, { message: AGENT_UNAVAILABLE_MESSAGE, cause: brokered.cause });
 }
 
 /**

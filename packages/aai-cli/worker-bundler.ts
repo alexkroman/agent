@@ -114,7 +114,6 @@ ${
 // receives exactly one ESM string and never sees this project's filesystem.
 export const __aaiWorkflowCode = ${JSON.stringify(workflows.workflowCode)};
 export const __aaiStepCode = ${JSON.stringify(workflows.stepCode)};
-export const __aaiWorkflowManifest = ${JSON.stringify(JSON.stringify(workflows.manifest))};
 `
     : ""
 }`;

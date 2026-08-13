@@ -24,7 +24,7 @@ import {
   type WorkflowRunSnapshot,
   type WorkflowSummary,
 } from "@alexkroman1/aai";
-import { responseErrorMessage } from "@alexkroman1/aai/utils";
+import { omitUndefined, responseErrorMessage } from "@alexkroman1/aai/utils";
 import { pageBaseUrl } from "./_utils.ts";
 import { buildAgentUrl } from "./client-config.ts";
 
@@ -182,6 +182,31 @@ export function createWorkflowApi(opts: WorkflowApiOptions = {}): WorkflowApi {
   const auth: Record<string, string> = opts.token ? { Authorization: `Bearer ${opts.token}` } : {};
 
   /**
+   * `POST /runs` — shared by `start` and `startAndWait`, which differ only in
+   * whether the body carries a `wait` budget.
+   *
+   * One writer so the two cannot drift on the parts that are not the
+   * difference: the JSON headers, the optional-field encoding, and the error
+   * sentence. `omitUndefined` is what drops an absent `input` or `key` — the
+   * spread-ternary it replaces meant the same thing while being invisible to
+   * the invariant guard that bans the pattern.
+   */
+  async function postRun<T>(
+    workflow: string,
+    input: unknown,
+    key: string | undefined,
+    wait?: number,
+  ): Promise<T> {
+    const res = await fetch(`${base}/runs`, {
+      method: "POST",
+      headers: { ...auth, "Content-Type": "application/json" },
+      body: JSON.stringify({ workflow, ...omitUndefined({ wait, input, key }) }),
+    });
+    if (!res.ok) throw await failure(res);
+    return (await res.json()) as T;
+  }
+
+  /**
    * `GET /runs` — shared by `find` and `recent`, which differ only in whether
    * the query carries a `key`.
    *
@@ -210,18 +235,7 @@ export function createWorkflowApi(opts: WorkflowApiOptions = {}): WorkflowApi {
     },
 
     async start(workflow: string, input?: unknown, options?: { key?: string }): Promise<string> {
-      const res = await fetch(`${base}/runs`, {
-        method: "POST",
-        headers: { ...auth, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          workflow,
-          ...(input === undefined ? {} : { input }),
-          ...(options?.key === undefined ? {} : { key: options.key }),
-        }),
-      });
-      if (!res.ok) throw await failure(res);
-      const body = (await res.json()) as { runId: string };
-      return body.runId;
+      return (await postRun<{ runId: string }>(workflow, input, options?.key)).runId;
     },
 
     async startAndWait(
@@ -230,18 +244,12 @@ export function createWorkflowApi(opts: WorkflowApiOptions = {}): WorkflowApi {
       options?: { key?: string; wait?: number },
     ): Promise<WorkflowRun> {
       const wait = clampWorkflowWait(options?.wait ?? MAX_WORKFLOW_WAIT_MS);
-      const res = await fetch(`${base}/runs`, {
-        method: "POST",
-        headers: { ...auth, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          workflow,
-          wait,
-          ...(input === undefined ? {} : { input }),
-          ...(options?.key === undefined ? {} : { key: options.key }),
-        }),
-      });
-      if (!res.ok) throw await failure(res);
-      const body = (await res.json()) as { runId: string; run?: WorkflowRun };
+      const body = await postRun<{ runId: string; run?: WorkflowRun }>(
+        workflow,
+        input,
+        options?.key,
+        wait,
+      );
       // An agent too old to understand `wait` answers `{ runId }` and nothing
       // else. Reading the run back once is what turns that into the same shape
       // rather than a `undefined` the caller has to branch on — it is one extra

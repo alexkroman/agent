@@ -21,6 +21,7 @@
  */
 
 import type { Db } from "../sdk/db.ts";
+import { mapInBatches } from "../sdk/map-in-batches.ts";
 import { formatSchemaIssues, toToolJsonSchema } from "../sdk/schema.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import type {
@@ -40,6 +41,22 @@ import {
   resolveFindLimit,
   type WorkflowKeyStore,
 } from "./workflow-keys.ts";
+
+/**
+ * How many runs a listing reads at once.
+ *
+ * `find` and `recent` are bounded by `resolveFindLimit`, whose ceiling is
+ * `MAX_WORKFLOW_FIND_LIMIT` (100) — so an unbounded `Promise.all` over the
+ * result let ONE request put 100 concurrent reads on the app's Postgres, a pool
+ * this shares with `ctx.db` and the world's own queue. The route is fail-open
+ * unless the operator set `AAI_WORKFLOW_API_TOKEN`, so the caller does not have
+ * to be trusted for that to matter.
+ *
+ * Eight rather than a tuned number: the reads are short and the point is a
+ * CEILING, not a throughput target — the tail of a 100-run listing is dominated
+ * by the slowest batch either way.
+ */
+const RUN_READ_CONCURRENCY = 8;
 
 /** What a client needs to serve `ctx.workflows`. */
 export type WorkflowClientOptions = {
@@ -240,13 +257,15 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
     ): Promise<WorkflowRunSnapshot[]> {
       const { name } = resolve(workflow);
       const runIds = await keys.lookup(name, key, resolveFindLimit(options?.limit));
-      const records = await Promise.all(runIds.map((id) => wdk.getRun(id)));
+      const records = await mapInBatches(runIds, RUN_READ_CONCURRENCY, (id) => wdk.getRun(id));
       // A recorded id whose run is gone is dropped rather than reported: runs
       // expire, and a `find` that threw because one of five results had aged out
       // would be useless exactly when history matters. The key stays indexed —
       // sweeping it would need a second writer for no read it affects.
-      return await Promise.all(
-        records.filter((r): r is WdkRunRecord => r !== undefined).map((r) => toSnapshot(r, key)),
+      return await mapInBatches(
+        records.filter((r): r is WdkRunRecord => r !== undefined),
+        RUN_READ_CONCURRENCY,
+        (r) => toSnapshot(r, key),
       );
     },
 
@@ -256,7 +275,7 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
     ): Promise<WorkflowRunSnapshot[]> {
       const { name } = resolve(workflow);
       const records = await wdk.listRuns(name, resolveFindLimit(options?.limit));
-      return await Promise.all(records.map((r) => toSnapshot(r, undefined)));
+      return await mapInBatches(records, RUN_READ_CONCURRENCY, (r) => toSnapshot(r, undefined));
     },
 
     cancel(runId: string): Promise<boolean> {

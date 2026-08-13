@@ -20,6 +20,34 @@ import { getWorld } from "workflow/runtime";
 import type { WdkAdapter, WdkRunRecord } from "./workflow-client.ts";
 
 /**
+ * One WDK run record as ours.
+ *
+ * Shared by the single-run read and the listing rather than written once per
+ * call site: the two differ only in how they got the record, and a field added
+ * to {@link WdkRunRecord} that reached only one of them would show up as a
+ * listing that quietly omits it.
+ *
+ * The `error` spread is guarded on `status`, not on the value, so
+ * `omitUndefined` is not the tool here — a `failed` record with no error still
+ * has to lose the property rather than carry `undefined`.
+ */
+function toRunRecord(record: {
+  runId: string;
+  workflowName: string;
+  status: WdkRunRecord["status"];
+  createdAt: WdkRunRecord["createdAt"];
+  error?: WdkRunRecord["error"];
+}): WdkRunRecord {
+  return {
+    runId: record.runId,
+    workflowName: record.workflowName,
+    status: record.status,
+    createdAt: record.createdAt,
+    ...(record.status === "failed" && record.error ? { error: record.error } : {}),
+  };
+}
+
+/**
  * The adapter over the installed WDK.
  *
  * A function rather than a constant so nothing resolves a World at import time —
@@ -42,14 +70,7 @@ export function wdkAdapter(): WdkAdapter {
 
     async getRun(runId: string): Promise<WdkRunRecord | undefined> {
       try {
-        const record = await getWorld().runs.get(runId, { resolveData: "none" });
-        return {
-          runId: record.runId,
-          workflowName: record.workflowName,
-          status: record.status,
-          createdAt: record.createdAt,
-          ...(record.status === "failed" && record.error ? { error: record.error } : {}),
-        };
+        return toRunRecord(await getWorld().runs.get(runId, { resolveData: "none" }));
       } catch (err: unknown) {
         // The only expected failure. Anything else — a lost database, a
         // serialization fault — must propagate: answering `undefined` for it
@@ -66,13 +87,7 @@ export function wdkAdapter(): WdkAdapter {
         pagination: { limit },
         resolveData: "none",
       });
-      return page.data.map((record) => ({
-        runId: record.runId,
-        workflowName: record.workflowName,
-        status: record.status,
-        createdAt: record.createdAt,
-        ...(record.status === "failed" && record.error ? { error: record.error } : {}),
-      }));
+      return page.data.map(toRunRecord);
     },
 
     async cancel(runId: string): Promise<boolean> {

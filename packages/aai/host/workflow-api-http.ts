@@ -24,6 +24,35 @@ export function sendJson(res: http.ServerResponse, status: number, body: unknown
 }
 
 /**
+ * Answer a request whose handler rejected: log the cause, then 500 if the
+ * response can still carry one, else drop the socket.
+ *
+ * One spelling for both HTTP surfaces in this package — the agent server's
+ * request tail and the workflow router's — which had drifted into two
+ * byte-identical copies. A rejection that reached here is not the caller's
+ * fault to describe, so the body is deliberately opaque; the cause goes to the
+ * log, where the operator can see it.
+ *
+ * The final `catch` is not defensive padding: `writeHead` throws if the headers
+ * raced out between the check and the write, and an exception escaping THIS
+ * function would be the unhandled rejection it exists to prevent.
+ */
+export function answerHandlerFailure(
+  res: http.ServerResponse,
+  logger: { error: (message: string, meta?: Record<string, unknown>) => void },
+  message: string,
+  error: string,
+): void {
+  logger.error(message, { error });
+  try {
+    if (res.headersSent) res.destroy();
+    else sendJson(res, 500, { error: "Internal server error" });
+  } catch {
+    res.destroy();
+  }
+}
+
+/**
  * Constant-time bearer check.
  *
  * Length is compared first because `timingSafeEqual` THROWS on a length mismatch

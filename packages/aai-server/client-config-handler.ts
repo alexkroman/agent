@@ -25,11 +25,10 @@
 
 import { buildClientConfig, ClientConfigResponseSchema } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { HTTPException } from "hono/http-exception";
 import { TtlCache } from "./_ttl-cache.ts";
 import type { AppContext } from "./context.ts";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";
-import { brokerSessionUrl } from "./sandbox-broker.ts";
+import { brokerSessionUrlOrThrow } from "./sandbox-broker.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
 
 /**
@@ -93,20 +92,7 @@ export function createAgentClientConfigHandler(
 
   return async (c, broker) => {
     const slug = c.var.slug;
-    const brokered = await brokerSessionUrl(slug, broker);
-
-    if (!brokered.ok) {
-      if (brokered.status === 404) {
-        throw new HTTPException(404, { message: `Not found: ${slug}` });
-      }
-      // The sandbox VM failed to start; the failure hook detaches it so the
-      // next request rebuilds. Tell this client to retry rather than handing
-      // it a session URL that will never answer.
-      throw new HTTPException(503, {
-        message: "agent unavailable, retry shortly",
-        cause: brokered.cause,
-      });
-    }
+    const brokered = await brokerSessionUrlOrThrow(slug, broker);
 
     const guestConfig = await fetchGuestClientConfig(brokered.guestOrigin);
     return c.json(

@@ -27,6 +27,7 @@ import type { AgentRuntime } from "./runtime-types.ts";
 import { serveStatic } from "./server-static.ts";
 import { handleTelephonyUpgrade } from "./telephony/telephony-server.ts";
 import { createWorkflowApi, WORKFLOW_API_TOKEN_ENV } from "./workflow-api.ts";
+import { answerHandlerFailure, sendJson } from "./workflow-api-http.ts";
 import { asSessionWebSocket, safeSend } from "./ws-handler.ts";
 
 /**
@@ -184,13 +185,6 @@ export function decliningRuntime(message: string, logger: Logger = consoleLogger
   };
 }
 
-const JSON_HEADERS = { "Content-Type": "application/json" } as const;
-
-function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, JSON_HEADERS);
-  res.end(JSON.stringify(body));
-}
-
 /**
  * How often shutdown re-drops idle keep-alive connections — see `close()`.
  * Short enough to be invisible next to a process exit, long enough that the
@@ -309,16 +303,7 @@ export function createServer(options: ServerOptions): AgentServer {
     handleRequest(req, res, url, method).catch((err: unknown) => {
       // A rejection here would otherwise be an unhandled rejection that can
       // take down the process; answer 500 when possible, else drop the socket.
-      logger.error("Request handler failed", { error: errorMessage(err) });
-      try {
-        if (res.headersSent) {
-          res.destroy();
-        } else {
-          sendJson(res, 500, { error: "Internal server error" });
-        }
-      } catch {
-        res.destroy();
-      }
+      answerHandlerFailure(res, logger, "Request handler failed", errorMessage(err));
     });
   });
 

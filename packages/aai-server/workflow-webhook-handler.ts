@@ -48,7 +48,7 @@ import { HTTPException } from "hono/http-exception";
 import { debug } from "./_debug-log.ts";
 import type { AppContext } from "./context.ts";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";
-import { brokerSessionUrl } from "./sandbox-broker.ts";
+import { AGENT_UNAVAILABLE_MESSAGE, brokerSessionUrl, notFoundMessage } from "./sandbox-broker.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
 
 /**
@@ -150,13 +150,17 @@ export function createWorkflowWebhookHandler(
 
     const brokered = await brokerSessionUrl(slug, broker);
     if (!brokered.ok) {
-      if (brokered.status === 404) throw new HTTPException(404, { message: `Not found: ${slug}` });
+      if (brokered.status === 404) throw new HTTPException(404, { message: notFoundMessage(slug) });
       // Still booting. A 503 is the honest answer and the recoverable one:
       // the boot continues server-side and the sender's retry joins the same
       // readiness promise (see BROKER_READY_TIMEOUT_MS), which is the same
       // deal a browser gets for free by re-brokering.
       debug("Workflow webhook arrived while the sandbox was booting", { slug });
-      return c.json({ error: "agent unavailable, retry shortly" }, 503, {
+      // Not `brokerSessionUrlOrThrow`: this route answers with `Retry-After`
+      // rather than a thrown `HTTPException`, because a webhook sender has its
+      // own retry loop to steer. The SENTENCE is still the broker's, so the two
+      // shapes cannot disagree about what the state is.
+      return c.json({ error: AGENT_UNAVAILABLE_MESSAGE }, 503, {
         "Retry-After": String(RETRY_AFTER_SECONDS),
       });
     }
