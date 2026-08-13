@@ -33,6 +33,10 @@ function stubWorkflows(runs: WorkflowRunSnapshot[] = []): WorkflowClient {
     recent: vi.fn(async () => runs),
     cancel: vi.fn(async () => true),
     wakeUp: vi.fn(async () => 0),
+    // A tail of 0 means "one line written", which is the case the tools read.
+    // The `-1` case is overridden per test, because it is the one that decides
+    // whether the stream is opened at all.
+    streamTail: vi.fn(async () => 0),
     stream: vi.fn(async () => lineStream([])),
     // Name only: `WorkflowDef.description` is optional, so passing it through
     // would mean handing `description: undefined` to a field that does not
@@ -163,14 +167,18 @@ describe("research_progress", () => {
     expect(workflows.stream).toHaveBeenCalledWith("wrun_1", { startIndex: -1 });
   });
 
-  test("a run that has written nothing yet says so rather than going silent", async () => {
+  test("a run that has written nothing yet says so WITHOUT opening the stream", async () => {
+    // Not a shortcut: an empty progress channel is never closed, so reading one
+    // would wait for a line that arrives whenever the next step writes — i.e.
+    // the tool hangs instead of answering. The tail is how that is known.
     const workflows = stubWorkflows([snapshot({ status: "running" })]);
-    vi.mocked(workflows.stream).mockResolvedValue(lineStream([]));
+    vi.mocked(workflows.streamTail).mockResolvedValue(-1);
     const result = await agentDef.tools.research_progress?.execute(
       {},
       createToolContext({ workflows }),
     );
     expect(result).toMatchObject({ note: "Started, nothing to report yet." });
+    expect(workflows.stream).not.toHaveBeenCalled();
   });
 
   test("says nothing was started when the key has no runs", async () => {

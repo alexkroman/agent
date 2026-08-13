@@ -111,6 +111,17 @@ export type WdkAdapter = {
    */
   readStream(runId: string, options: WdkStreamOptions): ReadableStream<unknown>;
   /**
+   * `getReadable().getTailIndex()` — the index of the last chunk written so far,
+   * or `-1` for a stream nothing has written to.
+   *
+   * This is what makes a progress read TERMINATE, and it is not optional. A WDK
+   * stream reports `done` only once it has been CLOSED, and a progress channel
+   * written by one step after another is never closed — there is no point at
+   * which a step knows it is the last. So a reader that waits for the end waits
+   * forever, even on a completed run. The tail is the bound instead.
+   */
+  streamTail(runId: string, options: WdkStreamOptions): Promise<number>;
+  /**
    * The completed run's return value, hydrated.
    *
    * Separate from `getRun` because reading it costs a deserialization (and,
@@ -315,16 +326,15 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
       return wdk.wakeUp(runId, ids && ids.length > 0 ? ids : undefined);
     },
 
+    streamTail(runId: string, options?: StreamOptions): Promise<number> {
+      return wdk.streamTail(runId, streamOptions(options));
+    },
+
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>> {
       // Async to match every other method here even though WDK's own read is
       // synchronous — the laziness is what makes that free, and a uniform
       // surface is what lets `rejectingWorkflows` cover this with one rejector.
-      return Promise.resolve(
-        wdk.readStream(runId, {
-          namespace: options?.namespace,
-          startIndex: options?.startIndex,
-        }),
-      );
+      return Promise.resolve(wdk.readStream(runId, streamOptions(options)));
     },
 
     listing(): WorkflowSummary[] {
@@ -340,6 +350,11 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
       }));
     },
   } satisfies WorkflowClient as WorkflowClient;
+}
+
+/** One spelling of the stream options both read methods pass through. */
+function streamOptions(options: StreamOptions | undefined): WdkStreamOptions {
+  return { namespace: options?.namespace, startIndex: options?.startIndex };
 }
 
 /** Convert a declared input schema for the wire, warning rather than throwing. */

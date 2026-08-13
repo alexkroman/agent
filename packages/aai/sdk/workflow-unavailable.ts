@@ -74,6 +74,7 @@ export function rejectingWorkflows(message: string): WorkflowClient {
     cancel: reject,
     wakeUp: reject,
     stream: reject,
+    streamTail: reject,
     listing: () => [],
   };
 }

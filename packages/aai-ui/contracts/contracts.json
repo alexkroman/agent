@@ -40,8 +40,8 @@
     "dropped": {}
   },
   "workflow": {
-    "current": 2,
-    "supported": [1, 2],
+    "current": 4,
+    "supported": [1, 2, 3, 4],
     "dropped": {}
   }
 }

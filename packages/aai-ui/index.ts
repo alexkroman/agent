@@ -103,6 +103,13 @@ export {
   useWorkflows,
   type WorkflowSubmission,
 } from "./use-workflow-form.ts";
+// `RunProgressReader` stays unexported, like `RunWatcher` next door: both are
+// one-method narrowings of the client for their own module's use, not API.
+export {
+  DEFAULT_PROGRESS_POLL_MS,
+  type UseWorkflowProgressResult,
+  useWorkflowProgress,
+} from "./use-workflow-progress.ts";
 export {
   DEFAULT_WORKFLOW_POLL_MS,
   MAX_MISSING_READS,

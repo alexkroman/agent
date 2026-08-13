@@ -148,6 +148,7 @@ describe("createStubWorkflows", () => {
       "recent",
       "start",
       "stream",
+      "streamTail",
       "wakeUp",
     ]);
   });

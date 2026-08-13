@@ -52,6 +52,7 @@ function makeAdapter(over: Partial<WdkAdapter> = {}): WdkAdapter {
     cancel: vi.fn(async () => true),
     wakeUp: vi.fn(async () => 1),
     readStream: vi.fn(() => chunkStream([{ step: 1 }])),
+    streamTail: vi.fn(async () => 0),
     readOutput: vi.fn(async () => ({ ok: true })),
     ...over,
   };

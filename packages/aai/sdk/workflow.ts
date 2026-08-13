@@ -394,6 +394,18 @@ export type WorkflowClient = {
    */
   stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
   /**
+   * How far the run's stream currently goes: the index of the last chunk
+   * written, or `-1` for a stream nothing has written to.
+   *
+   * **This is what makes reading a progress stream terminate.** A workflow stream
+   * reports its end only once it has been CLOSED, and a progress channel written
+   * by one step after another is never closed — no step knows it is the last one.
+   * So {@link stream} on a finished run yields every chunk and then waits
+   * forever. A reader bounds itself by this instead, which is also what a
+   * reconnecting reader needs in order to ask for what it has not seen.
+   */
+  streamTail(runId: string, options?: StreamOptions): Promise<number>;
+  /**
    * The workflows this agent declares, name + description + input schema.
    *
    * Synchronous, and on the CLIENT rather than only on the engine, because tool

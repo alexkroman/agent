@@ -20,13 +20,14 @@
  */
 
 import type http from "node:http";
-import type { StreamOptions } from "../sdk/workflow.ts";
+import { isTerminal, type StreamOptions } from "../sdk/workflow.ts";
 import type { RunReader } from "./workflow-api-events.ts";
 import { sendJson } from "./workflow-api-http.ts";
 
-/** What this route needs of the client: read the run, then read its stream. */
+/** What this route needs of the client: the run, its stream, and the stream's end. */
 export type StreamReader = RunReader & {
   stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
+  streamTail(runId: string, options?: StreamOptions): Promise<number>;
 };
 
 /**
@@ -37,10 +38,26 @@ export type StreamReader = RunReader & {
  * otherwise open a 200 event stream and fail on the first pull — which a page
  * reads as a broken connection rather than as a wrong id.
  *
- * Frames are `chunk` (one per written value, JSON-encoded) then `done`. There is
- * deliberately no `idle` frame and no heartbeat, unlike the events stream: this
- * one ends when the writer closes, so there is nothing to keep alive across a
- * long sleep — a reader following a run across one reconnects with `startIndex`.
+ * Frames are `chunk` (one per written value, JSON-encoded) then `done`, whose
+ * payload carries `complete` — whether the RUN was already terminal when the read
+ * started. A reader handed `complete: false` re-opens from where it left off; one
+ * handed `complete: true` is finished.
+ *
+ * ## It is BOUNDED BY THE TAIL, and that is what makes it terminate
+ *
+ * A workflow stream reports its end only once it has been CLOSED, and a progress
+ * channel never is: successive steps append to it and no step knows it is the
+ * last. So piping the readable until it ends hangs forever — including on a
+ * COMPLETED run, which is the case a page hits most. Measured before this was
+ * bounded, against a real transformed workflow: `GET /runs/:id/stream` on a
+ * finished two-line run held the response open until the suite's 120-second
+ * timeout, and no unit test could see it because a fake stream is a closed one.
+ *
+ * So the read is bounded by `streamTail()` — the index of the last chunk written
+ * at the moment the request arrived — and ends there. That makes progress a
+ * durable log a reader RE-READS rather than a socket it holds, which is also why
+ * this route needs neither the events stream's heartbeat nor its `idle` cap:
+ * nothing here stays open across a sleep.
  */
 export async function streamRunOutput(
   req: http.IncomingMessage,
@@ -63,24 +80,51 @@ export async function streamRunOutput(
     sendJson(res, 400, { error: "`startIndex` must be an integer" });
     return;
   }
-  const stream = await engine.stream(runId, {
+  const options = {
     ...(namespace !== null && { namespace }),
     ...(startIndex !== undefined && { startIndex }),
+  };
+  // The tail is read BEFORE the stream, so a chunk written between the two is
+  // simply not in this read's budget — it belongs to the reader's next one. The
+  // other order would let the budget name an index the read has to wait for.
+  const tail = await engine.streamTail(runId, options);
+  const stream = await engine.stream(runId, options);
+  await pipeChunksAsSse(res, stream, {
+    runId,
+    // `tail` is an absolute index and `startIndex` may be negative (counting back
+    // from the end), so the BUDGET is what this read may emit, not a position.
+    budget: budgetFor(tail, startIndex),
+    complete: isTerminal(run),
   });
-  await pipeChunksAsSse(res, stream, runId);
 }
 
 /**
- * Write a run's chunks out as SSE, ending cleanly whichever side stops first.
+ * How many chunks a read starting at `startIndex` may emit to reach `tail`.
  *
- * Cancelling the reader when the CLIENT goes away is the half that is easy to
+ * `tail` is `-1` for a stream nothing has written, which yields 0 — the response
+ * is then a bare `done`, which is the honest answer for a run that has not said
+ * anything yet.
+ */
+function budgetFor(tail: number, startIndex: number | undefined): number {
+  const available = tail + 1;
+  if (startIndex === undefined || startIndex === 0) return available;
+  // Negative counts back from the end, so it asks for at most that many.
+  if (startIndex < 0) return Math.min(available, -startIndex);
+  return Math.max(0, available - startIndex);
+}
+
+/**
+ * Write a run's chunks out as SSE, ending at `budget` or when the caller leaves.
+ *
+ * The budget is what terminates this — see `streamRunOutput`. Cancelling the
+ * reader when the CLIENT goes away is the other half, and the one that is easy to
  * miss: without it a page navigating away mid-run leaves this pulling chunks out
  * of the world for a response nobody will receive, once per abandoned view.
  */
 async function pipeChunksAsSse(
   res: http.ServerResponse,
   stream: ReadableStream<unknown>,
-  runId: string,
+  end: { runId: string; budget: number; complete: boolean },
 ): Promise<void> {
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
@@ -100,14 +144,25 @@ async function pipeChunksAsSse(
   };
   res.on("close", onClose);
   try {
-    for (;;) {
+    // `emitted < budget` is the loop's bound, and it is checked BEFORE the read:
+    // a read past the budget is the one that blocks forever, so it must never be
+    // issued. `done` is still honoured — a stream that a workflow really did
+    // close ends on its own — but nothing depends on it arriving.
+    for (let emitted = 0; emitted < end.budget; emitted += 1) {
       const { done, value } = await reader.read();
       if (done || gone) break;
       res.write(`event: chunk\ndata: ${JSON.stringify(value ?? null)}\n\n`);
     }
-    if (!gone) res.write(`event: done\ndata: ${JSON.stringify({ runId })}\n\n`);
+    if (!gone) {
+      const payload = { runId: end.runId, complete: end.complete };
+      res.write(`event: done\ndata: ${JSON.stringify(payload)}\n\n`);
+    }
   } finally {
     res.off("close", onClose);
+    // Cancelled whether or not the budget was spent: a live run's stream is still
+    // open behind this reader, and leaving it uncancelled holds the world's read
+    // for a response that has already ended.
+    void reader.cancel().catch(() => undefined);
     // Ending a response whose socket is already gone is a no-op that logs; the
     // `close` handler has done the only teardown that matters.
     if (!gone) res.end();

@@ -121,6 +121,12 @@ export function wdkAdapter(): WdkAdapter {
       }
     },
 
+    streamTail(runId: string, options: WdkStreamOptions): Promise<number> {
+      // `getTailIndex` is a method WDK hangs on the readable, so the stream has
+      // to be constructed to ask — which costs nothing, being lazy.
+      return getRun(runId).getReadable(omitUndefined(options)).getTailIndex();
+    },
+
     readStream(runId: string, options: WdkStreamOptions): ReadableStream<unknown> {
       // `getReadable` is lazy — it defers the run lookup and the encryption-key
       // resolution until the first chunk is pulled — so this constructs nothing

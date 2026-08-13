@@ -1302,6 +1302,7 @@ export type WdkAdapter = {
     cancel(runId: string): Promise<boolean>;
     wakeUp(runId: string, correlationIds: string[] | undefined): Promise<number>;
     readStream(runId: string, options: WdkStreamOptions): ReadableStream<unknown>;
+    streamTail(runId: string, options: WdkStreamOptions): Promise<number>;
     readOutput(runId: string): Promise<unknown>;
 };
 
@@ -1378,6 +1379,7 @@ type WorkflowClient = {
     cancel(runId: string): Promise<boolean>;
     wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
+    streamTail(runId: string, options?: StreamOptions): Promise<number>;
     listing(): WorkflowSummary[];
 };
 

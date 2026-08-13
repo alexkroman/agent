@@ -53,6 +53,7 @@ function fakeClient(over: Partial<WorkflowClient> = {}): WorkflowClient {
     cancel: vi.fn(async () => true),
     wakeUp: vi.fn(async () => 1),
     stream: vi.fn(async () => chunkStream([{ step: 1 }, "halfway"])),
+    streamTail: vi.fn(async () => 1),
     listing: vi.fn(() => [{ name: "digest", description: "Research a topic" }]),
     ...over,
   };
@@ -397,8 +398,51 @@ describe("GET /runs/:id/stream", () => {
     expect(body).toBe(
       'event: chunk\ndata: {"step":1}\n\n' +
         'event: chunk\ndata: {"step":2}\n\n' +
-        'event: done\ndata: {"runId":"wrun_1"}\n\n',
+        'event: done\ndata: {"runId":"wrun_1","complete":false}\n\n',
     );
+  });
+
+  test("ends at the TAIL rather than waiting for a close that never comes", async () => {
+    // The bug this route exists in its current shape to avoid: a workflow stream
+    // reports `done` only when CLOSED, and a progress channel written by
+    // successive steps is never closed — so a reader that waits for the end waits
+    // forever, on a finished run too. The tail is the bound instead. The fake
+    // stream here never ends, which is exactly what the real one does.
+    const endless = new ReadableStream<unknown>({
+      pull(controller) {
+        controller.enqueue("line");
+      },
+    });
+    harness = await serve({
+      engine: () => fakeClient({ stream: async () => endless, streamTail: async () => 2 }),
+    });
+    const res = await fetch(`${harness.url}/workflows/runs/wrun_1/stream`);
+    const body = await res.text();
+    // Exactly tail + 1 chunks, then the terminator.
+    expect(body.match(/event: chunk/g)).toHaveLength(3);
+    expect(body).toContain("event: done");
+  });
+
+  test("a stream nothing has written answers a bare done", async () => {
+    harness = await serve({
+      engine: () => fakeClient({ stream: async () => chunkStream([]), streamTail: async () => -1 }),
+    });
+    const body = await (await fetch(`${harness.url}/workflows/runs/wrun_1/stream`)).text();
+    expect(body).not.toContain("event: chunk");
+    expect(body).toContain("event: done");
+  });
+
+  test("`complete` reports the RUN's state, which is what stops a reader", async () => {
+    harness = await serve({
+      engine: () =>
+        fakeClient({
+          get: async () => run({ status: "completed", output: 1 }),
+          stream: async () => chunkStream(["only"]),
+          streamTail: async () => 0,
+        }),
+    });
+    const body = await (await fetch(`${harness.url}/workflows/runs/wrun_1/stream`)).text();
+    expect(body).toContain('"complete":true');
   });
 
   test("an unknown run is a 404 rather than an empty 200 stream", async () => {

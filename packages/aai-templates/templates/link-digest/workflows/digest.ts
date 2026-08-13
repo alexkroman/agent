@@ -14,10 +14,40 @@
  * run rather than a request that holds a socket open.
  */
 
-import { sleep } from "workflow";
+import { getWritable, sleep } from "workflow";
 
 /** How long the digest sits before it is filed, so the wait is visible in dev. */
 const SETTLE = "10 seconds";
+
+/**
+ * Write one progress line to the run's own stream.
+ *
+ * This is the only way a run can say anything before it finishes: a snapshot
+ * carries a status and, once terminal, an output, so without this the page shows
+ * "Working…" for the whole pass. `client.tsx` reads it back with
+ * `useWorkflowProgress`.
+ *
+ * Two properties worth copying. It is called from STEPS and never from the body,
+ * the same rule as `ctx.db`: the body replays from the top on every resume, so a
+ * line written there is re-emitted on each one. And it is BEST-EFFORT — a run
+ * must not fail because its narration could not be written, which is also what
+ * lets a spec call a step directly, where there is no run and `getWritable()`
+ * throws by design.
+ */
+async function report(line: string): Promise<void> {
+  try {
+    const writer = getWritable<string>().getWriter();
+    try {
+      await writer.write(line);
+    } finally {
+      // Released rather than closed: a later step writes to the same stream, and
+      // a closed stream cannot be reopened.
+      writer.releaseLock();
+    }
+  } catch {
+    // No run in scope, or the stream is already gone. Neither is worth a failure.
+  }
+}
 
 /** What one digest pass produces. Small and JSON-shaped, like every step result. */
 export type Digest = {
@@ -57,9 +87,12 @@ export async function digestFlow(input: { url: string }) {
 async function summarize(url: string): Promise<Digest> {
   "use step";
 
+  const { hostname } = new URL(url);
+  await report(`Reading ${hostname}…`);
+
   // Stands in for the fetch and the model call, so the template runs with no
   // API key and no network. The SHAPE is the lesson: small, serializable data.
-  const { hostname } = new URL(url);
+  await report("Pulling out the claims worth keeping.");
   return {
     url,
     headline: `What ${hostname} is actually saying`,
@@ -83,6 +116,7 @@ async function summarize(url: string): Promise<Digest> {
 async function file(_digest: Digest): Promise<string> {
   "use step";
 
+  await report("Filing the digest.");
   // A real desk would write the digest to its database here — the whole Node
   // runtime is available in a step, unlike in the body above. The stub writes
   // nothing, which is what the `_` says.

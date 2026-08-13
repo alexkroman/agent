@@ -85,6 +85,10 @@ async function gather(topic: string): Promise<Findings> {
   // `ctx.workflows.stream(runId)` (see `research_progress` in `agent.ts`) or, on
   // a page, `api.streamOutput(runId)`.
   //
+  // The channel is deliberately never CLOSED — a later step writes to it too, and
+  // no step knows it is the last one — so a reader has to bound itself by
+  // `streamTail` rather than wait for an end that never comes.
+  //
   // It is available in a STEP and not in the body, the same rule as `ctx.db`:
   // the body is replayed from the top on every resume, so writing there would
   // re-emit every line each time.

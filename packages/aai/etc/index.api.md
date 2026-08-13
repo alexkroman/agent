@@ -904,6 +904,7 @@ export type WorkflowClient = {
     cancel(runId: string): Promise<boolean>;
     wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
+    streamTail(runId: string, options?: StreamOptions): Promise<number>;
     listing(): WorkflowSummary[];
 };
 

@@ -330,6 +330,60 @@ was `cancel`, so "send it now" and "throw it away" were one button. Both routes
 ride the platform's already-declared GET and POST on the `/workflows` prefix, so
 neither needed a deployment change; `research-desk` is the worked example for each.
 
+### Rendering progress (`useWorkflowProgress`)
+
+`useWorkflowProgress(runId)` is the hook over `streamOutput`, and the sibling of
+`useWorkflowRun`: that one reports a run's STATE, this one reports what the run
+WROTE. A page with only the first shows "Working…" for the length of the run; a
+page with only the second cannot tell a finished run from a quiet one. Both are
+one stream, ended by the agent when there is nothing left to say.
+
+Four properties, three of them the same ones `useWorkflowRun` documents (the
+client in a REF, not an effect dependency; the lazily-built default client; state
+cleared synchronously on an id change) and one that is its own — and that one is
+the whole reason this route is shaped the way it is:
+
+- **A progress read is BOUNDED, so the hook re-opens rather than holds.** A
+  workflow stream signals its end only once it has been CLOSED, and a progress
+  channel written by one step after another is never closed: no step knows it is
+  the last. So a reader that waits for the end waits forever, *including on a
+  finished run* — which is the case a page hits most. That is not hypothetical:
+  `GET /runs/:id/stream` held a response open until a 120-second test timeout on
+  a completed two-line run, and no unit test could see it, because a fake stream
+  is a closed one. Only `dev-workflow.integration.test.ts`, against a real
+  transform and a real world, reaches it.
+
+  The route therefore bounds each read by `streamTail()` — the last written index
+  at the moment the request arrived — and its `done` frame carries `complete`,
+  the RUN's own terminal state. The hook re-opens from where it left off until a
+  read comes back `complete`. So progress is a durable LOG a reader re-reads, not
+  a socket it holds, and each re-read asks only for what it has not seen.
+- **`supported` is load-bearing for the render.** "This deploy predates progress
+  streams" and "the run has written nothing yet" are indistinguishable from
+  `progress` alone, and a page needs to hide the section in the first case and
+  keep waiting in the second. A dropped read or a thrown fetch is neither — both
+  are RETRIED, since a live run's log is still arriving.
+- **Chunks REPLAY**, because the run retains them: a page that mounts late — a
+  reload, a second tab, a link opened tomorrow — reads from index 0 and arrives
+  at the same list as one that watched throughout. That is why the default
+  `startIndex` is 0 and not "from now": a tail-only default would make the same
+  page show different things depending on when it opened.
+
+The write half is the author's, and it is `getWritable()` from `workflow`
+(imported directly, like `sleep`) called from a STEP and never from the body —
+the body replays from the top, so a line written there is re-emitted on every
+resume. Both page templates carry the same six-line `report()` helper, which is
+best-effort deliberately: a run must not fail because its narration could not be
+written, and that is also what keeps a step callable from a spec, where there is
+no run and `getWritable()` throws by design.
+
+`link-digest` renders the newest line only (a compact status); `transcription-desk`
+renders the whole log, because its fan-out is where the history is worth seeing.
+Both render TEXT rather than a list of elements — progress lines are append-only
+and segments legitimately produce identical text, so there is no stable per-line
+key, and joining sidesteps that instead of suppressing the lint rule that asks
+about it.
+
 `ctx.workflows.start()` only covers the case where a VOICE TURN starts a run; a
 page and a programmatic caller (`aai workflow`, a script, a cron job) had no
 surface at all. Mounted on `createServer`, so `aai dev`, a self-hosted server

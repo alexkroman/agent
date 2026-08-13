@@ -939,6 +939,7 @@ export type WorkflowClient = {
     cancel(runId: string): Promise<boolean>;
     wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
+    streamTail(runId: string, options?: StreamOptions): Promise<number>;
     listing(): WorkflowSummary[];
 };
 
@@ -1174,6 +1175,7 @@ type WorkflowClient = {
     cancel(runId: string): Promise<boolean>;
     wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
+    streamTail(runId: string, options?: StreamOptions): Promise<number>;
     listing(): WorkflowSummary[];
 };
 
@@ -1982,6 +1984,7 @@ type WorkflowClient = {
     cancel(runId: string): Promise<boolean>;
     wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
+    streamTail(runId: string, options?: StreamOptions): Promise<number>;
     listing(): WorkflowSummary[];
 };
 
@@ -3608,6 +3611,7 @@ export type WdkAdapter = {
     cancel(runId: string): Promise<boolean>;
     wakeUp(runId: string, correlationIds: string[] | undefined): Promise<number>;
     readStream(runId: string, options: WdkStreamOptions): ReadableStream<unknown>;
+    streamTail(runId: string, options: WdkStreamOptions): Promise<number>;
     readOutput(runId: string): Promise<unknown>;
 };
 
@@ -3684,6 +3688,7 @@ type WorkflowClient = {
     cancel(runId: string): Promise<boolean>;
     wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
+    streamTail(runId: string, options?: StreamOptions): Promise<number>;
     listing(): WorkflowSummary[];
 };
 
@@ -4179,6 +4184,7 @@ type WorkflowClient = {
     cancel(runId: string): Promise<boolean>;
     wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
+    streamTail(runId: string, options?: StreamOptions): Promise<number>;
     listing(): WorkflowSummary[];
 };
 
@@ -4860,6 +4866,9 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore;
 export function createWorkflowApi(opts?: WorkflowApiOptions): WorkflowApi;
 
 // @public
+export const DEFAULT_PROGRESS_POLL_MS = 1000;
+
+// @public
 export const DEFAULT_WORKFLOW_POLL_MS = 2000;
 
 // @internal
@@ -5133,6 +5142,22 @@ export function useToolResult<R = DefaultToolResult>(toolName: string, callback:
 
 // @public (undocumented)
 export function useToolResult<R = DefaultToolResult>(callback: (name: string, result: R, toolCall: ToolCallInfo) => void): void;
+
+// @public
+export function useWorkflowProgress<T = string>(runId: string | undefined, opts?: {
+    api?: WorkflowApi;
+    namespace?: string;
+    startIndex?: number;
+    intervalMs?: number;
+}): UseWorkflowProgressResult<T>;
+
+// @public (undocumented)
+export type UseWorkflowProgressResult<T = string> = {
+    progress: T[];
+    latest: T | undefined;
+    streaming: boolean;
+    supported: boolean;
+};
 
 // @public
 export function useWorkflowRun<R = unknown>(runId: string | undefined, opts?: {

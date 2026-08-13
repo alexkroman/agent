@@ -20,13 +20,16 @@
 
 export {
   createWorkflowApi,
+  DEFAULT_PROGRESS_POLL_MS,
   DEFAULT_WORKFLOW_POLL_MS,
   isTerminal,
   MAX_MISSING_READS,
+  type UseWorkflowProgressResult,
   type UseWorkflowRunResult,
   type UseWorkflowSubmitOptions,
   type UseWorkflowsOptions,
   type UseWorkflowsResult,
+  useWorkflowProgress,
   useWorkflowRun,
   useWorkflowSubmit,
   useWorkflows,

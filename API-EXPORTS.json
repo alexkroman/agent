@@ -536,6 +536,7 @@
     "ComponentTier",
     "ConfigTier",
     "Controls",
+    "DEFAULT_PROGRESS_POLL_MS",
     "DEFAULT_WORKFLOW_POLL_MS",
     "Field",
     "FieldShell",
@@ -574,6 +575,7 @@
     "ToolConfigContext",
     "ToolDisplayConfig",
     "UiUrlChip",
+    "UseWorkflowProgressResult",
     "UseWorkflowRunResult",
     "UseWorkflowSubmitOptions",
     "UseWorkflowsOptions",
@@ -603,6 +605,7 @@
     "useTheme",
     "useToolCallStart",
     "useToolResult",
+    "useWorkflowProgress",
     "useWorkflowRun",
     "useWorkflowSubmit",
     "useWorkflows"
