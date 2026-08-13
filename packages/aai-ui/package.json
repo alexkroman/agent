@@ -33,6 +33,7 @@
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
     "clsx": "catalog:",
+    "eventsource-parser": "catalog:",
     "partysocket": "^1.3.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",

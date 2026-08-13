@@ -13,8 +13,9 @@
  * Two tiers, cheapest first:
  *
  * 1. **Salvage the text**, when the arguments are not valid JSON at all. Most
- *    of those failures are small and mechanical and cost nothing to fix —
- *    see {@link salvageJson}.
+ *    of those failures are small and mechanical and cost nothing to fix — the
+ *    AI SDK's `parsePartialJson` for structure, then `jsonrepair` for the rest.
+ *    See {@link salvageJson}.
  * 2. **Re-ask the model for just the arguments**, constrained to the tool's
  *    own JSON Schema. This is the only tier that can fix arguments that
  *    PARSED and still failed validation, and the only one that costs tokens.
@@ -41,67 +42,84 @@ import {
   type ToolCallRepairFunction,
   type ToolSet,
 } from "ai";
+import { jsonrepair } from "jsonrepair";
 import { errorMessage } from "../sdk/utils.ts";
 import type { Logger } from "./runtime-config.ts";
 
-/** Fenced code blocks the model sometimes wraps arguments in. */
-const FENCE = /^\s*```(?:json)?\s*([\s\S]*?)\s*```\s*$/;
-
-/** Raw control characters that are illegal inside a JSON string literal. */
-const CONTROL_ESCAPES: Record<string, string> = { "\n": "\\n", "\r": "\\r", "\t": "\\t" };
+/** What {@link parseToolInput} returns for an object with no fields. */
+const EMPTY_ARGS = "{}";
 
 /**
  * Best-effort repair of *nearly* valid JSON, without an LLM round trip.
  *
- * The AI SDK's own `parsePartialJson` (the streaming partial-object parser)
- * does the structural work — truncated strings, unclosed brackets, trailing
- * commas — so none of that is reimplemented here. It does NOT handle the two
- * shapes models actually produce, which is all this adds:
+ * Two passes, cheapest first. The AI SDK's own `parsePartialJson` (the streaming
+ * partial-object parser) is tried as-is, since the arguments may already be
+ * parseable or need only the structural repair it does — truncated strings,
+ * unclosed brackets, trailing commas. Anything it rejects goes through
+ * `jsonrepair`, which replaces the two hand-rolled pre-passes this module used
+ * to carry:
  *
- * - a raw newline/tab inside a string literal, where `\n` belonged. This is
- *   the common whole-file-argument break, and `parsePartialJson` reports it
- *   as a failed parse.
- * - a markdown fence wrapped around the arguments.
+ * - **A raw newline/tab inside a string literal, where `\n` belonged.** The
+ *   common whole-file-argument break, and most of what tier 2 was being paid to
+ *   fix. It was a hand-written character scanner tracking `inString`/`escaped`.
+ * - **A markdown fence around the arguments.** It was an anchored regex, so it
+ *   only ever matched a fence wrapping the WHOLE payload.
  *
- * Returns null when the result still does not parse, or parses to something
- * that is not an object, so a caller never hands a fragment to a tool.
+ * `jsonrepair` covers both (verified against 3.15.0, tagged and bare fences
+ * alike) plus a good deal this never handled and models do emit: single-quoted
+ * strings, unquoted keys, Python's `None`/`True`/`False`, comments, and
+ * concatenated string literals. It is ISC, dependency-free, and the repair is
+ * only reached once a parse has already failed, so the ordinary path pays
+ * nothing for it.
+ *
+ * Returns null when the result still does not parse, or parses to something that
+ * is not an object, so a caller never hands a fragment to a tool.
  */
 export async function salvageJson(input: string): Promise<string | null> {
-  let text = input.trim();
-  const fenced = FENCE.exec(text);
-  if (fenced?.[1]) text = fenced[1].trim();
+  const text = input.trim();
+  const asIs = await parseToolInput(text);
+  // A non-empty object is a real answer, and the repair pass is skipped.
+  if (asIs !== null && asIs !== EMPTY_ARGS) return asIs;
+  // An EMPTY one is not, and preferring the repair over it is load-bearing:
+  // `parsePartialJson` answers `{path:"a.ts"}` (an unquoted key) with
+  // `repaired-parse` and a value of `{}`, discarding the field rather than
+  // reporting a failure. Taken as the answer that hands the tool EMPTY
+  // arguments, and nothing anywhere says so — the model is told the call
+  // succeeded, so it does not retry. `jsonrepair` recovers the field.
+  const repaired = await repairToolInput(text);
+  // `{}` survives as the fallback for the case where it really is the whole
+  // argument object — a tool that takes none.
+  return repaired ?? asIs;
+}
 
-  for (const candidate of [text, escapeControlCharsInStrings(text)]) {
-    const { value, state } = await parsePartialJson(candidate);
-    if (state !== "successful-parse" && state !== "repaired-parse") continue;
-    // Tool inputs are always objects; a scalar or array means the salvage
-    // latched onto a fragment rather than the arguments.
-    if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
-    return JSON.stringify(value);
+/** Parse `text` after a `jsonrepair` pass, or null if either step gives up. */
+async function repairToolInput(text: string): Promise<string | null> {
+  let repaired: string;
+  try {
+    repaired = jsonrepair(text);
+  } catch {
+    // `JSONRepairError` — not repairable at all, so the caller falls through to
+    // the model tier. Caught rather than propagated because a repair hook that
+    // throws loses the original tool error, which is the one worth reporting.
+    return null;
   }
-  return null;
+  return parseToolInput(repaired);
 }
 
 /**
- * Escape raw control characters that appear *inside* string literals. A
- * literal newline in a JSON string is the single most common way a model's
- * file content breaks the parse.
+ * Parse one candidate to a tool-input object, or null.
+ *
+ * Both passes land here so the object guard is stated once: tool inputs are
+ * always objects, and a scalar or array means the salvage latched onto a
+ * fragment rather than the arguments. `jsonrepair` makes that guard load-bearing
+ * rather than defensive — it happily turns `this is not json` into the valid
+ * JSON string `"this is not json"`, which parses and is still not arguments.
  */
-function escapeControlCharsInStrings(text: string): string {
-  let out = "";
-  let inString = false;
-  let escaped = false;
-  for (const ch of text) {
-    out += escaped || !inString ? ch : (CONTROL_ESCAPES[ch] ?? ch);
-    if (escaped) {
-      escaped = false;
-    } else if (ch === "\\") {
-      escaped = true;
-    } else if (ch === '"') {
-      inString = !inString;
-    }
-  }
-  return out;
+async function parseToolInput(candidate: string): Promise<string | null> {
+  const { value, state } = await parsePartialJson(candidate);
+  if (state !== "successful-parse" && state !== "repaired-parse") return null;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  return JSON.stringify(value);
 }
 
 /** Did these arguments fail to PARSE, as opposed to failing validation? */
