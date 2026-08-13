@@ -1091,7 +1091,7 @@ and the section above admits how it gets made: a judgement from memory, where a
 
 `pnpm check:api-contracts` (`scripts/api-contracts.mjs`, run straight after
 `check:api-report` in `scripts/check.sh` and in the CI check job) closes that.
-Twenty-one **capabilities** — named slices of the authoring API, each declared by
+Twenty-two **capabilities** — named slices of the authoring API, each declared by
 a file under `<package>/contracts/entrypoints/` that may contain nothing but
 `export { … } from "<a published subpath>"` — get a report of their own, and what
 is committed is that report's hash plus its export list, at
@@ -1162,11 +1162,12 @@ the same barrel as `agent()` and `tool()`, and therefore in an agent author's
 autocomplete, which is the exact thing `packages/aai/CLAUDE.md` gives as the
 reason `/internal` exists. Versioning the subpath as one unit would bump the
 authoring contract every time a playback constant moved. So the capabilities name
-the surface instead — `agent`, `tool`, `state`, `workflow`, `defaults`, `utils`,
-`testing`, `builtins`, and one per provider stage — and the gate asserts the
-naming is **exhaustive**: every `@public` export of the eight authoring
-subpaths this leaves `aai` with (`.`, `/utils`, `/testing`, `/tools`, `/stt`,
-`/llm`, `/tts`, `/s2s`) belongs to exactly one capability, so a new public export
+the surface instead — `agent`, `tool`, `state`, `workflow`, `workflow-api`,
+`defaults`, `utils`, `testing`, `builtins`, and one per provider stage — and the
+gate asserts the naming is **exhaustive**: every `@public` export of the nine
+authoring subpaths this leaves `aai` with (`.`, `/utils`, `/testing`,
+`/workflow-api`, `/tools`, `/stt`, `/llm`, `/tts`, `/s2s`) belongs to exactly one
+capability, so a new public export
 fails until somebody decides which contract it joins — which is the same decision
 as "who is promised this". Ownership is per PACKAGE, deliberately: three names
 (`isTerminal`, `WorkflowSummary`, `WorkflowOutputOf`) are on both packages'
@@ -1198,7 +1199,7 @@ a stale report would be believed.
 and it has the same shape as `api-surface-file.test.ts` for the same reason: the
 gate compares two things the script derives, so an extraction that stopped
 finding anything would hash nothing, agree with a committed nothing, and print
-"21 capability contract(s) up to date ✓". The suite reads the contract tree
+"22 capability contract(s) up to date ✓". The suite reads the contract tree
 independently — every package's, by the same discovery rule, so a second package
 is not unguarded by the guard — and asserts every name a capability root selects
 appears in that capability's current epoch, which an empty extraction cannot

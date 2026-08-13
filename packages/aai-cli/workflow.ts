@@ -19,10 +19,17 @@
  * Every request BROKERS, so the first one may boot the agent's sandbox. That is
  * the same trade the studio card makes and worth knowing before scripting a loop
  * around it.
+ *
+ * **The requests are the SDK's** (`createWorkflowApiClient`,
+ * `@alexkroman1/aai/workflow-api`). What is left here is the two things that are
+ * genuinely the CLI's: turning "this directory" into an origin plus a published
+ * slug, and PRINTING — which is most of why the verbs exist separately from the
+ * client's methods.
  */
 
 import type { WorkflowRunSnapshot, WorkflowSummary } from "@alexkroman1/aai";
-import { responseErrorMessage } from "@alexkroman1/aai/utils";
+import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
+import { createWorkflowApiClient, type WorkflowApi } from "@alexkroman1/aai/workflow-api";
 import { getServerInfo } from "./_agent.ts";
 import { type CommandResult, fail, ok } from "./_output.ts";
 import { log } from "./_ui.ts";
@@ -40,56 +47,60 @@ type Run = WorkflowRunSnapshot;
 /** Runs listed when the caller names no limit — a terminal is not a dashboard. */
 const DEFAULT_RUN_LIMIT = 20;
 
+/** What every verb here needs: a client aimed at the agent, and its slug to name. */
+type Target = { api: WorkflowApi; slug: string };
+
+type WorkflowOptions = { server?: string | undefined; token?: string | undefined };
+
 /**
- * The agent's workflow endpoint, plus the bearer when one was given.
+ * A client for the agent's workflow API, plus the bearer when one was given.
  *
  * `getServerInfo` is what turns "this directory" into an origin and a published
  * slug, and it already refuses a project that has never been deployed with the
- * sentence naming `aai publish`.
+ * sentence naming `aai publish`. The client is handed the AGENT's base URL and
+ * appends the route prefix itself, so the `/workflows` literal is not spelled
+ * here — it is the same constant the server matches on.
  */
-async function endpoint(
-  cwd: string,
-  server: string | undefined,
-  token: string | undefined,
-): Promise<{ base: string; headers: Record<string, string>; slug: string }> {
-  const { serverUrl, slug } = await getServerInfo(cwd, server);
+async function target(cwd: string, opts: WorkflowOptions): Promise<Target> {
+  const { serverUrl, slug } = await getServerInfo(cwd, opts.server);
   return {
-    base: `${serverUrl.replace(/\/$/, "")}/${slug}/workflows`,
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    api: createWorkflowApiClient({
+      baseUrl: `${serverUrl.replace(/\/$/, "")}/${slug}`,
+      ...omitUndefined({ token: opts.token }),
+    }),
     slug,
   };
 }
 
 /**
- * One request, with the agent's own error sentence preserved.
+ * Run one call, turning a rejection into a `CommandResult`.
  *
- * That text is the whole diagnostic — an unknown workflow names the declared
- * ones, a 503 says the sandbox is still booting — so it is surfaced rather than
- * replaced with a status code.
+ * The client throws with the AGENT'S own sentence — an unknown workflow names
+ * the declared ones, a 503 says the sandbox is still booting — and that text is
+ * the whole diagnostic, so it is surfaced rather than replaced with a status
+ * code. `errorMessage` rather than `instanceof Error`, because a rejection that
+ * is message-bearing without being an `Error` would otherwise print as
+ * `[object Object]`.
  */
-async function request<T>(
-  url: string,
-  headers: Record<string, string>,
-  init: RequestInit = {},
-): Promise<{ ok: true; body: T } | { ok: false; message: string }> {
-  const res = await fetch(url, { ...init, headers: { ...headers, ...init.headers } });
-  // The SDK's reader, not a local copy: this one also quotes the body when it
-  // is valid JSON that is not `{ error }` — a gateway's own envelope — which the
-  // copy here dropped, reporting a bare status for a response that explained
-  // itself.
-  if (!res.ok) return { ok: false, message: await responseErrorMessage(res) };
-  return { ok: true, body: (await res.json()) as T };
+async function attempt<T>(
+  call: () => Promise<T>,
+): Promise<{ ok: true; value: T } | { ok: false; error: string }> {
+  try {
+    return { ok: true, value: await call() };
+  } catch (err) {
+    return { ok: false, error: errorMessage(err) };
+  }
 }
 
 /** `aai workflow list` — what this agent declares. */
 export async function executeWorkflowList(
   cwd: string,
-  opts: { server?: string | undefined; token?: string | undefined },
+  opts: WorkflowOptions,
 ): Promise<CommandResult<{ workflows: WorkflowSummary[] }>> {
-  const { base, headers, slug } = await endpoint(cwd, opts.server, opts.token);
-  const res = await request<{ workflows?: WorkflowSummary[] }>(base, headers);
-  if (!res.ok) return fail("workflow_list_failed", res.message, HINT_BROKER);
-  const workflows = res.body.workflows ?? [];
+  const { api, slug } = await target(cwd, opts);
+  const res = await attempt(() => api.list());
+  if (!res.ok) return fail("workflow_list_failed", res.error, HINT_BROKER);
+  const workflows = res.value;
   if (workflows.length === 0) {
     log.info(`${slug} declares no workflows`);
   } else {
@@ -101,22 +112,18 @@ export async function executeWorkflowList(
 /**
  * `aai workflow runs <name>` — recent runs, newest first.
  *
- * No `key` on the query, so this is the KEYLESS read (`ctx.workflows.recent`): a
- * terminal has no correlation key to ask about, and most runs carry none.
+ * `recent` rather than `find`, so the query carries no `key`: a terminal has no
+ * correlation key to ask about, and most runs carry none.
  */
 export async function executeWorkflowRuns(
   cwd: string,
   workflow: string,
-  opts: { server?: string | undefined; token?: string | undefined; limit?: number | undefined },
+  opts: WorkflowOptions & { limit?: number | undefined },
 ): Promise<CommandResult<{ runs: Run[] }>> {
-  const { base, headers } = await endpoint(cwd, opts.server, opts.token);
-  const query = new URLSearchParams({
-    workflow,
-    limit: String(opts.limit ?? DEFAULT_RUN_LIMIT),
-  });
-  const res = await request<{ runs?: Run[] }>(`${base}/runs?${query.toString()}`, headers);
-  if (!res.ok) return fail("workflow_runs_failed", res.message, HINT_BROKER);
-  const runs = res.body.runs ?? [];
+  const { api } = await target(cwd, opts);
+  const res = await attempt(() => api.recent(workflow, { limit: opts.limit ?? DEFAULT_RUN_LIMIT }));
+  if (!res.ok) return fail("workflow_runs_failed", res.error, HINT_BROKER);
+  const runs = res.value;
   if (runs.length === 0) log.info(`No runs of ${workflow} yet`);
   for (const run of runs) log.info(formatRun(run));
   return ok({ runs });
@@ -134,32 +141,38 @@ function formatRun(run: Run): string {
 export async function executeWorkflowShow(
   cwd: string,
   runId: string,
-  opts: { server?: string | undefined; token?: string | undefined },
+  opts: WorkflowOptions,
 ): Promise<CommandResult<{ run: Run }>> {
-  const { base, headers } = await endpoint(cwd, opts.server, opts.token);
-  const res = await request<Run>(`${base}/runs/${encodeURIComponent(runId)}`, headers);
-  if (!res.ok) return fail("workflow_show_failed", res.message, HINT_BROKER);
-  log.info(formatRun(res.body));
+  const { api } = await target(cwd, opts);
+  const res = await attempt(() => api.get(runId));
+  if (!res.ok) return fail("workflow_show_failed", res.error, HINT_BROKER);
+  // `get` resolves undefined for a 404, which the API answers for BOTH an
+  // unknown id and an agent that serves no workflow API at all — so the sentence
+  // cannot claim to know which, and `HINT_BROKER` already names every cause.
+  // (The status is the client's documented contract, not something to work
+  // around: a caller reading an id it just started legitimately races the run's
+  // creation, which is why it is an answer rather than a rejection.)
+  if (res.value === undefined) {
+    return fail("workflow_show_failed", `No run ${runId}`, HINT_BROKER);
+  }
+  const run = res.value;
+  log.info(formatRun(run));
   // The output is the reason `show` exists next to `runs`, and it is the one
   // field a line cannot hold — printed as JSON so a shell can pipe it.
-  if (res.body.status === "completed") log.info(JSON.stringify(res.body.output, null, 2));
-  return ok({ run: res.body });
+  if (run.status === "completed") log.info(JSON.stringify(run.output, null, 2));
+  return ok({ run });
 }
 
 /** `aai workflow cancel <runId>` — stop a live run. */
 export async function executeWorkflowCancel(
   cwd: string,
   runId: string,
-  opts: { server?: string | undefined; token?: string | undefined },
+  opts: WorkflowOptions,
 ): Promise<CommandResult<{ runId: string; cancelled: boolean }>> {
-  const { base, headers } = await endpoint(cwd, opts.server, opts.token);
-  const res = await request<{ cancelled?: boolean }>(
-    `${base}/runs/${encodeURIComponent(runId)}`,
-    headers,
-    { method: "DELETE" },
-  );
-  if (!res.ok) return fail("workflow_cancel_failed", res.message, HINT_BROKER);
-  const cancelled = res.body.cancelled === true;
+  const { api } = await target(cwd, opts);
+  const res = await attempt(() => api.cancel(runId));
+  if (!res.ok) return fail("workflow_cancel_failed", res.error, HINT_BROKER);
+  const cancelled = res.value;
   // Not a failure when false: the run was already terminal, which is an ANSWER —
   // the same reason the route replies 200 either way.
   log.info(cancelled ? `Cancelled ${runId}` : `${runId} had already finished`);

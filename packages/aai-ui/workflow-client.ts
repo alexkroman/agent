@@ -7,26 +7,29 @@
  * here and watches them for the answer. It deliberately does NOT go through
  * `SessionCore` — there is no socket, no audio graph, and no session to resume.
  *
+ * **The requests themselves are the SDK's now**
+ * (`createWorkflowApiClient`, `@alexkroman1/aai/workflow-api`), and what is left
+ * here is the one thing that is genuinely a BROWSER's: the default base URL.
+ * Every route, every query, the 404-is-an-answer rule and the `wait` clamp were
+ * written three times over — here, in the studio's Workflows card, and in
+ * `aai workflow` — and the parts the copies disagreed on were exactly the ones a
+ * reader cannot check by eye. The SDK module's doc carries that argument; this
+ * file must not grow a second implementation of any of it.
+ *
  * The one thing worth knowing before using it: **a run outlives the page.**
  * Starting one resolves as soon as the run is created, so `runId` is the only
  * handle that matters and it stays valid across a reload, a different device, or
  * `curl` — which is what makes `useWorkflowRun` a watch rather than a
  * subscription to something the page owns.
  *
- * Everything here is one REQUEST: one call, one answer, no React. The loop that
- * keeps asking lives in `use-workflow-run.ts`, and the streaming fast path under
- * it in `workflow-events.ts`.
+ * The loop that keeps asking lives in `use-workflow-run.ts`, and the streaming
+ * fast path under it in `workflow-events.ts`.
  */
 
-import {
-  clampWorkflowWait,
-  MAX_WORKFLOW_WAIT_MS,
-  type WorkflowRunSnapshot,
-  type WorkflowSummary,
-} from "@alexkroman1/aai";
-import { omitUndefined, responseErrorMessage } from "@alexkroman1/aai/utils";
+import type { WorkflowRunSnapshot } from "@alexkroman1/aai";
+import { omitUndefined } from "@alexkroman1/aai/utils";
+import { createWorkflowApiClient, type WorkflowApi } from "@alexkroman1/aai/workflow-api";
 import { pageBaseUrl } from "./_utils.ts";
-import { buildAgentUrl } from "./client-config.ts";
 
 /**
  * A run's observable state.
@@ -54,7 +57,6 @@ export type WorkflowRun<R = unknown> = WorkflowRunSnapshot<R>;
  * re-exported so a page needs ONE import to type its runs and render its form.
  */
 export type { WorkflowOutputOf, WorkflowSummary } from "@alexkroman1/aai";
-
 /**
  * A run status nothing will change again.
  *
@@ -64,11 +66,21 @@ export type { WorkflowOutputOf, WorkflowSummary } from "@alexkroman1/aai";
  * status predicate beside the status union cannot have.
  */
 export { isTerminal } from "@alexkroman1/aai";
+/**
+ * The call set {@link createWorkflowApi} returns.
+ *
+ * Re-exported from the SDK rather than declared here: it IS the SDK's client,
+ * and a structural restatement would be a second thing to keep in step with the
+ * routes for no gain.
+ */
+export type { WorkflowApi } from "@alexkroman1/aai/workflow-api";
 
 export type WorkflowApiOptions = {
   /**
    * Base URL of the agent. Defaults to the page's own origin + path, which is
-   * right for a page the agent itself serves — the only case that exists today.
+   * right for a page the agent itself serves — the only case that exists today,
+   * and the reason this wrapper exists at all: the SDK client requires a base
+   * URL, because `location` does not exist in that half of the SDK.
    */
   baseUrl?: string;
   /**
@@ -80,117 +92,8 @@ export type WorkflowApiOptions = {
   token?: string;
 };
 
-/** The calls the API offers. */
-export type WorkflowApi = {
-  /** Declared workflows: name, description, and the input schema to render. */
-  list(): Promise<WorkflowSummary[]>;
-  /**
-   * Start a run and resolve its id WITHOUT waiting for it — the point of the
-   * mechanism. Rejects when the name is not declared or the input fails the
-   * workflow's schema, both of which are 400s carrying the reason.
-   *
-   * `key` is a correlation handle the page chooses, so the run can be found
-   * again later without the id — a signed-in user, an upload, a device. Pass one
-   * when the page might be reloaded before the run finishes and you would rather
-   * look it up than remember the id.
-   */
-  start(workflow: string, input?: unknown, options?: { key?: string }): Promise<string>;
-  /**
-   * Start a run and resolve the FINISHED one — the synchronous call.
-   *
-   * What a form wants, and what {@link WorkflowApi.start} deliberately is not:
-   * one request in, one result out, with no watch to wire up. The agent holds
-   * the request open until the run settles or its own budget expires, so a run
-   * that is still going when the wait runs out resolves NON-terminal — check
-   * `isTerminal`, or hand the id to {@link useWorkflowRun} and carry on.
-   *
-   * `wait` is clamped to `MAX_WORKFLOW_WAIT_MS` at both ends, by the same
-   * function, so this can never be waiting on a request the agent already
-   * answered.
-   */
-  startAndWait(
-    workflow: string,
-    input?: unknown,
-    options?: { key?: string; wait?: number },
-  ): Promise<WorkflowRun>;
-  /**
-   * Read a run's state. Resolves undefined for an unknown id.
-   *
-   * Deliberately NOT generic on the output, even though a page wants it typed: a
-   * generic METHOD has to be implemented generically, which would make every
-   * test double and every hand-written stub of this client generic too. The type
-   * parameter lives on {@link useWorkflowRun} instead, which is where a page
-   * states what it expects anyway.
-   */
-  get(runId: string, options?: { wait?: number }): Promise<WorkflowRun | undefined>;
-  /** Runs of `workflow` started with `key`, newest first. */
-  find(workflow: string, key: string, options?: { limit?: number }): Promise<WorkflowRun[]>;
-  /**
-   * Runs of `workflow`, newest first, whatever key they carry.
-   *
-   * The operator's read where {@link WorkflowApi.find} is the app's — a console
-   * has no correlation key to ask about, and most runs carry none (a page holds
-   * its own `runId`). Two methods rather than one nullable key, so a caller
-   * meaning "this user's runs" cannot silently widen to every user's.
-   */
-  recent(workflow: string, options?: { limit?: number }): Promise<WorkflowRun[]>;
-  /**
-   * Stop a run, resolving whether this call is what ended it. A run that had
-   * already finished answers false rather than failing — two tabs pressing Stop
-   * is ordinary.
-   */
-  cancel(runId: string): Promise<boolean>;
-  /**
-   * Open a server-sent-event stream of one run's state.
-   *
-   * Resolves the raw `Response` rather than parsed frames, because what a caller
-   * needs to decide first is whether the agent SERVES this at all — an older
-   * deploy answers 404 and the caller falls back to polling, which is a normal
-   * path rather than an error.
-   */
-  watch(runId: string, signal?: AbortSignal): Promise<Response>;
-  /**
-   * Open a server-sent-event stream of what the run has WRITTEN — its progress,
-   * as opposed to {@link watch}'s status transitions.
-   *
-   * Resolves the raw `Response` for the same reason `watch` does: an agent
-   * deployed before this route existed answers 404, which a caller has to be able
-   * to see rather than have raised at it. Frames are `chunk` then `done`.
-   *
-   * Chunks are retained with the run, so this is a replay as much as a live tail:
-   * a page that reloads gets the whole stream by default, and `startIndex`
-   * (negative counts back from the end) is for a reader resuming from a known
-   * position.
-   */
-  streamOutput(
-    runId: string,
-    options?: { namespace?: string; startIndex?: number; signal?: AbortSignal },
-  ): Promise<Response>;
-  /**
-   * End a run's `sleep()` early, resolving how many pending sleeps were
-   * interrupted.
-   *
-   * `0` is an answer, not a failure — the run finished, was never sleeping, or is
-   * gone. Same shape as {@link cancel} answering false, and for the same reason:
-   * two tabs pressing "send it now" is ordinary.
-   */
-  wake(runId: string): Promise<number>;
-};
-
 /**
- * Read the server's error sentence out of a failed response.
- *
- * Every route answers `{ error }`, and that text is the whole diagnostic — an
- * unknown workflow names the declared ones, a bad input names the schema issues.
- * A body that is not that shape degrades to the status, which is what a proxy or
- * a gateway in front of the agent would produce.
- */
-async function failure(res: Response): Promise<Error> {
-  return new Error(await responseErrorMessage(res, "Workflow API"));
-}
-
-/**
- * Create a workflow API client.
+ * Create a workflow API client aimed at the agent serving this page.
  *
  * Hoist it out of the component that uses it. `useWorkflowRun` holds the client
  * in a ref precisely so a fresh object per render does not restart its watch,
@@ -200,167 +103,8 @@ async function failure(res: Response): Promise<Error> {
  * @public
  */
 export function createWorkflowApi(opts: WorkflowApiOptions = {}): WorkflowApi {
-  // `buildAgentUrl` is this package's own resolver for "a path under the agent's
-  // base URL" — the same one the session's endpoints go through. A second
-  // trailing-slash rule over the same `pageBaseUrl()` value is how the two
-  // drift.
-  const base = buildAgentUrl(opts.baseUrl ?? pageBaseUrl(), "workflows").toString();
-  const auth: Record<string, string> = opts.token ? { Authorization: `Bearer ${opts.token}` } : {};
-
-  /**
-   * `POST /runs` — shared by `start` and `startAndWait`, which differ only in
-   * whether the body carries a `wait` budget.
-   *
-   * One writer so the two cannot drift on the parts that are not the
-   * difference: the JSON headers, the optional-field encoding, and the error
-   * sentence. `omitUndefined` is what drops an absent `input` or `key` — the
-   * spread-ternary it replaces meant the same thing while being invisible to
-   * the invariant guard that bans the pattern.
-   */
-  async function postRun<T>(
-    workflow: string,
-    input: unknown,
-    key: string | undefined,
-    wait?: number,
-  ): Promise<T> {
-    const res = await fetch(`${base}/runs`, {
-      method: "POST",
-      headers: { ...auth, "Content-Type": "application/json" },
-      body: JSON.stringify({ workflow, ...omitUndefined({ wait, input, key }) }),
-    });
-    if (!res.ok) throw await failure(res);
-    return (await res.json()) as T;
-  }
-
-  /**
-   * `GET /runs` — shared by `find` and `recent`, which differ only in whether
-   * the query carries a `key`.
-   *
-   * One reader so the two cannot drift on the parts that are not the difference:
-   * the limit's encoding, the `{ runs }` envelope, and the empty-array fallback
-   * for a body that answered without one.
-   */
-  async function listRuns(
-    query: Record<string, string>,
-    limit: number | undefined,
-  ): Promise<WorkflowRun[]> {
-    const params = new URLSearchParams(query);
-    if (limit !== undefined) params.set("limit", String(limit));
-    const res = await fetch(`${base}/runs?${params.toString()}`, { headers: auth });
-    if (!res.ok) throw await failure(res);
-    const body = (await res.json()) as { runs?: WorkflowRun[] };
-    return body.runs ?? [];
-  }
-
-  return {
-    async list(): Promise<WorkflowSummary[]> {
-      const res = await fetch(base, { headers: auth });
-      if (!res.ok) throw await failure(res);
-      const body = (await res.json()) as { workflows?: WorkflowSummary[] };
-      return body.workflows ?? [];
-    },
-
-    async start(workflow: string, input?: unknown, options?: { key?: string }): Promise<string> {
-      return (await postRun<{ runId: string }>(workflow, input, options?.key)).runId;
-    },
-
-    async startAndWait(
-      workflow: string,
-      input?: unknown,
-      options?: { key?: string; wait?: number },
-    ): Promise<WorkflowRun> {
-      const wait = clampWorkflowWait(options?.wait ?? MAX_WORKFLOW_WAIT_MS);
-      const body = await postRun<{ runId: string; run?: WorkflowRun }>(
-        workflow,
-        input,
-        options?.key,
-        wait,
-      );
-      // An agent too old to understand `wait` answers `{ runId }` and nothing
-      // else. Reading the run back once is what turns that into the same shape
-      // rather than a `undefined` the caller has to branch on — it is one extra
-      // request against a deploy that predates this, not a fallback path anyone
-      // stays on.
-      return body.run ?? (await this.get(body.runId, { wait })) ?? pendingRun(body.runId, workflow);
-    },
-
-    async get(runId: string, options?: { wait?: number }): Promise<WorkflowRun | undefined> {
-      const wait = clampWorkflowWait(options?.wait);
-      const query = wait > 0 ? `?wait=${wait}` : "";
-      const res = await fetch(`${base}/runs/${encodeURIComponent(runId)}${query}`, {
-        headers: auth,
-      });
-      // 404 is "no such run", which is an ANSWER rather than a failure: a page
-      // reading an id it just started can legitimately race the run's creation.
-      if (res.status === 404) return;
-      if (!res.ok) throw await failure(res);
-      return (await res.json()) as WorkflowRun;
-    },
-
-    find(workflow: string, key: string, options?: { limit?: number }): Promise<WorkflowRun[]> {
-      return listRuns({ workflow, key }, options?.limit);
-    },
-
-    recent(workflow: string, options?: { limit?: number }): Promise<WorkflowRun[]> {
-      // No `key` in the query is what selects the keyless read server-side.
-      return listRuns({ workflow }, options?.limit);
-    },
-
-    watch(runId: string, signal?: AbortSignal): Promise<Response> {
-      return fetch(`${base}/runs/${encodeURIComponent(runId)}/events`, {
-        headers: { ...auth, Accept: "text/event-stream" },
-        ...(signal ? { signal } : {}),
-      });
-    },
-
-    streamOutput(
-      runId: string,
-      options?: { namespace?: string; startIndex?: number; signal?: AbortSignal },
-    ): Promise<Response> {
-      const params = new URLSearchParams();
-      if (options?.namespace !== undefined) params.set("namespace", options.namespace);
-      if (options?.startIndex !== undefined) params.set("startIndex", String(options.startIndex));
-      const query = params.size > 0 ? `?${params.toString()}` : "";
-      return fetch(`${base}/runs/${encodeURIComponent(runId)}/stream${query}`, {
-        headers: { ...auth, Accept: "text/event-stream" },
-        ...(options?.signal ? { signal: options.signal } : {}),
-      });
-    },
-
-    async wake(runId: string): Promise<number> {
-      const res = await fetch(`${base}/runs/${encodeURIComponent(runId)}/wake`, {
-        method: "POST",
-        headers: auth,
-      });
-      // A run the agent does not know is "nothing was sleeping", which is the
-      // same answer as a live run that was not asleep — see `wake`'s doc.
-      if (res.status === 404) return 0;
-      if (!res.ok) throw await failure(res);
-      const body = (await res.json()) as { woken?: number };
-      return body.woken ?? 0;
-    },
-
-    async cancel(runId: string): Promise<boolean> {
-      const res = await fetch(`${base}/runs/${encodeURIComponent(runId)}`, {
-        method: "DELETE",
-        headers: auth,
-      });
-      if (!res.ok) throw await failure(res);
-      const body = (await res.json()) as { cancelled?: boolean };
-      return body.cancelled === true;
-    },
-  };
-}
-
-/**
- * The snapshot a `startAndWait` falls back to when the run exists and cannot be
- * read back.
- *
- * Reachable only against an agent that answered `{ runId }` and then reported no
- * such run — a replica that has not yet seen its own write. Saying `pending` is
- * both true and useful: the caller has the id, and `useWorkflowRun` takes it
- * from there.
- */
-function pendingRun(runId: string, workflow: string): WorkflowRun {
-  return { runId, workflow, createdAt: Date.now(), status: "pending" };
+  return createWorkflowApiClient({
+    baseUrl: opts.baseUrl ?? pageBaseUrl(),
+    ...omitUndefined({ token: opts.token }),
+  });
 }

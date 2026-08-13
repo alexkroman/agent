@@ -35,7 +35,7 @@ new one fails `pnpm check:api-contracts` until it joins one:
 | `hooks` | what a client reads off the AGENT: `useAgentState`, the two tool hooks, `useEvent` |
 | `components` | the design system a custom chrome is assembled from |
 | `forms` | `<Form>`, the field components, `<WorkflowFields>` |
-| `workflow` | `createWorkflowApi`, `useWorkflowRun`, `useWorkflowSubmit`, `useWorkflows` |
+| `workflow` | `createWorkflowApi`, `useWorkflowRun`, `useWorkflowProgress`, `useWorkflowSubmit`, `useWorkflows`. At **epoch 5** since the requests moved to the SDK: `WorkflowApi` is re-exported from `@alexkroman1/aai/workflow-api` rather than declared here, which adds no name and makes a client from either factory the same type |
 | `theme` | `ClientTheme` + `useTheme` — its own contract because a token is a name in somebody's CSS |
 | `client-dir` | `defaultClientDir()`, the one export a SERVER calls |
 
@@ -413,6 +413,25 @@ mounted there rather than bolted onto the platform. On the platform the page's
 calls land on `/:slug/workflows/*` and are brokered (`aai-server/
 workflow-handler.ts`), because `createWorkflowApi` builds every URL from
 `location` and has no broker step of the kind the voice session gets.
+
+**The CLIENT half lives in the SDK** (`createWorkflowApiClient`,
+`@alexkroman1/aai/workflow-api`), and `createWorkflowApi` here is a wrapper that
+supplies one thing: the base URL, defaulted to the page's own origin + path. That
+is the only part of it a browser owns — everything else (each route, the query
+encoding, the bearer, the `wait` clamp, and the rule that a 404 from
+`GET /runs/:id` is an ANSWER rather than a failure, and the 404 `wake` reads as
+"nothing was sleeping") had been written three times over, here plus
+`aai workflow` plus the studio's Workflows card, each a different SUBSET,
+disagreeing on exactly the things a reader cannot check by eye. So: no route logic
+in this package. A page that needs a knob the wrapper does not pass through should
+get it from the SDK client's options, not a second `fetch` here — and a NEW route
+is added to the SDK client, where `useWorkflowProgress` and the studio's card
+reach it too, never here.
+
+`WORKFLOW_API_PREFIX` moved with it, which is why the SDK declares the literal
+and `aai/host/workflow-api.ts` re-exports it: the server, the `aai dev` proxy
+table and now the client all resolve one string, and a browser cannot import the
+`host/` half.
 
 **Every route is one `WorkflowClient` call, and the type says so**: the API's
 engine IS `WorkflowClient`, not a wider "engine" with run-store reads of its

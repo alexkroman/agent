@@ -482,6 +482,12 @@
     "toolFailure",
     "withLock"
   ],
+  "@alexkroman1/aai/workflow-api": [
+    "WORKFLOW_API_PREFIX",
+    "WorkflowApi",
+    "WorkflowApiClientOptions",
+    "createWorkflowApiClient"
+  ],
   "@alexkroman1/aai/workspace-files": [
     "IGNORED_WORKSPACE_DIRS",
     "LOCAL_ONLY_FILES",

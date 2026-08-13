@@ -95,10 +95,13 @@ describe("executeWorkflowList", () => {
     });
   });
 
-  test("a non-JSON failure degrades to the status plus the body", async () => {
+  test("a non-JSON failure degrades to the status plus the body, NAMED", async () => {
+    // The label is the SDK client's and appears only on this fallback path — what
+    // answered `<html>` was something in front of the agent, and a bare `502` does
+    // not say which surface was being asked.
     fetchMock.mockImplementation(async () => new Response("<html>", { status: 502 }));
     const result = await executeWorkflowList("/proj", {});
-    expect(result).toMatchObject({ ok: false, error: "502: <html>" });
+    expect(result).toMatchObject({ ok: false, error: "Workflow API 502: <html>" });
   });
 });
 
@@ -162,6 +165,21 @@ describe("executeWorkflowShow", () => {
     expect(mockLog.info).toHaveBeenCalledWith("wrun_1  completed");
     expect(mockLog.info).toHaveBeenCalledWith(JSON.stringify({ topic: "ai" }, null, 2));
     expect(result.ok).toBe(true);
+  });
+
+  test("an unknown id is a FAILURE here, though the client reads it as an answer", async () => {
+    // `api.get` resolves undefined for a 404, which is right for a page racing a
+    // run it just started and wrong for a terminal: there is nothing to print.
+    // The status also covers "this agent serves no workflow API", so the sentence
+    // claims neither and the hint names every cause.
+    fetchMock.mockImplementation(async () => json({ error: "No workflow run with id gone" }, 404));
+    const result = await executeWorkflowShow("/proj", "gone", {});
+    expect(result).toMatchObject({
+      ok: false,
+      code: "workflow_show_failed",
+      error: "No run gone",
+      hint: expect.stringContaining("declare no workflows"),
+    });
   });
 
   test("percent-encodes the run id into the path", async () => {

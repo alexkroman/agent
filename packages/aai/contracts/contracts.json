@@ -62,5 +62,10 @@
     "current": 4,
     "supported": [1, 2, 3, 4],
     "dropped": {}
+  },
+  "workflow-api": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   }
 }

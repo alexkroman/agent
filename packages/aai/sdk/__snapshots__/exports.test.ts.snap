@@ -316,6 +316,13 @@ exports[`export surface stability > @alexkroman1/aai/utils export 1`] = `
 ]
 `;
 
+exports[`export surface stability > @alexkroman1/aai/workflow-api export 1`] = `
+[
+  "WORKFLOW_API_PREFIX",
+  "createWorkflowApiClient",
+]
+`;
+
 exports[`export surface stability > @alexkroman1/aai/workspace-files export 1`] = `
 [
   "IGNORED_WORKSPACE_DIRS",

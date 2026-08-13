@@ -74,6 +74,7 @@
 import type http from "node:http";
 import { errorMessage } from "../sdk/utils.ts";
 import { clampWorkflowWait, isTerminal } from "../sdk/workflow.ts";
+import { WORKFLOW_API_PREFIX } from "../sdk/workflow-api-client.ts";
 import { WORKFLOWS_UNAVAILABLE_MESSAGE } from "../sdk/workflow-unavailable.ts";
 import type { Logger } from "./runtime-config.ts";
 import { streamRunEvents } from "./workflow-api-events.ts";
@@ -88,10 +89,18 @@ import {
 import { streamRunOutput } from "./workflow-api-stream.ts";
 import { waitForRun } from "./workflow-api-wait.ts";
 
+/**
+ * Path prefix every route here lives under.
+ *
+ * Re-exported rather than declared: it is defined beside the CLIENT
+ * (`sdk/workflow-api-client.ts`) because a browser cannot import this half, and
+ * one literal for both ends is what keeps a client asking for a path this server
+ * does not serve from being a 404 that reads as a missing feature. Existing
+ * consumers — `@alexkroman1/aai/runtime`, and the `aai dev` proxy table through
+ * it — are unaffected.
+ */
+export { WORKFLOW_API_PREFIX } from "../sdk/workflow-api-client.ts";
 export { MAX_WORKFLOW_INPUT_BYTES } from "./workflow-api-http.ts";
-
-/** Path prefix every route here lives under. */
-export const WORKFLOW_API_PREFIX = "/workflows";
 
 /**
  * Env var holding the bearer this API requires. Unset leaves it open — see the

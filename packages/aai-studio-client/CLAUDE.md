@@ -155,6 +155,13 @@ segmented control switches between — `preview.tsx`, `code-view.tsx`,
   brokers that path for exactly this shape of caller and the studio shares the
   origin, so `connect-src 'self'` permits it; a second route would be a second
   thing to keep in step with the run shape.
+  - **It reads it through the SDK's client** (`createWorkflowApiClient`,
+    `@alexkroman1/aai/workflow-api`), not its own fetches. This card was one of
+    three hand-written copies and the one that got the error handling wrong:
+    it quoted the raw body, so the agent's own `{ error }` sentence — the whole
+    difference between "the sandbox is booting" and "this slug is gone" — reached
+    the card still wrapped in its JSON. What it passes that the others don't is
+    `timeoutMs`, the deadline every studio fetch carries.
   - **Reading it can BOOT the agent's sandbox**, because brokering does. Accepted
     rather than overlooked: someone opening Settings to ask what their workflows
     are doing is asking a question only the agent can answer, and a card that

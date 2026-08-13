@@ -21,8 +21,9 @@ import { ReactNode } from 'react';
 import type { SelectHTMLAttributes } from 'react';
 import { SessionErrorCode } from '@alexkroman1/aai/protocol';
 import type { TextareaHTMLAttributes } from 'react';
+import { WorkflowApi } from '@alexkroman1/aai/workflow-api';
 import { WorkflowOutputOf } from '@alexkroman1/aai';
-import { WorkflowRunSnapshot } from '@alexkroman1/aai';
+import type { WorkflowRunSnapshot } from '@alexkroman1/aai';
 import { WorkflowSummary } from '@alexkroman1/aai';
 
 // @public
@@ -496,34 +497,7 @@ export type WebSocketConstructor = {
     readonly OPEN: number;
 };
 
-// @public
-export type WorkflowApi = {
-    list(): Promise<WorkflowSummary[]>;
-    start(workflow: string, input?: unknown, options?: {
-        key?: string;
-    }): Promise<string>;
-    startAndWait(workflow: string, input?: unknown, options?: {
-        key?: string;
-        wait?: number;
-    }): Promise<WorkflowRun>;
-    get(runId: string, options?: {
-        wait?: number;
-    }): Promise<WorkflowRun | undefined>;
-    find(workflow: string, key: string, options?: {
-        limit?: number;
-    }): Promise<WorkflowRun[]>;
-    recent(workflow: string, options?: {
-        limit?: number;
-    }): Promise<WorkflowRun[]>;
-    cancel(runId: string): Promise<boolean>;
-    watch(runId: string, signal?: AbortSignal): Promise<Response>;
-    streamOutput(runId: string, options?: {
-        namespace?: string;
-        startIndex?: number;
-        signal?: AbortSignal;
-    }): Promise<Response>;
-    wake(runId: string): Promise<number>;
-};
+export { WorkflowApi }
 
 // @public (undocumented)
 export type WorkflowApiOptions = {
