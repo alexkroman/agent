@@ -76,6 +76,9 @@ once, and the templates are now their reference use:
 | `sessionSlot()` + `SlotStateOf` | every stateful template — `pizza-ordering` (smallest), `retail` (slot in `store.ts`, view in `shared.ts`, so the seed stays out of the browser bundle) |
 | `slot.projection(view)` as `syncState` | `pizza-ordering`, `dispatch-center`, `retail`; `solo-rpg` uses bare `slot.read` (its projection is the identity) |
 | `slot.update` (serialized mutation) | `dispatch-center` (every mutating tool, plus an `after` hook that prunes and recalculates the alert level), `retail` (inside `retailTool`, the one caller — which is what keeps `update`'s non-reentrancy unreachable) |
+| `slot.updateTool` | `plan-desk` — every mutating tool, and the one place the serialization is load-bearing rather than prudent: a body that awaits a model call and then shifts the plan's head step would, run twice concurrently, do step one twice |
+| `slot.tool` (the synchronous half) | `pizza-ordering` (all six), `travel-concierge` (the whole dialog stack and every staged action) |
+| `ctx.generate` with a `schema` | `support-line` (five graders and a rewriter over one binary-score schema), `plan-desk` (planner, executor and replanner). `travel-concierge` deliberately uses none — its specialists are prompts, not models |
 | `ToolFailure` / `isToolFailure` | `retail` (~40 sites, failures propagating through `store.ts` helpers), `dispatch-center` (six) |
 | `pushCapped` | `dispatch-center` (incident timeline), `retail` (activity feed), `solo-rpg` (session log), `infocom-adventure` (command history) |
 | `createToolContext` (`@alexkroman1/aai/testing`) | the four suites that test tools directly — `dispatch-center`, `pizza-ordering`, `retail`, `solo-rpg` |
@@ -83,9 +86,10 @@ once, and the templates are now their reference use:
 | `AutoScroll` | the three custom-chrome clients — `dispatch-center`, `retail`, `infocom-adventure` |
 | `workflow()` + `ctx.workflows` + `isTerminal` | `research-desk` — the handoff: a VOICE template whose tool starts a run, correlates it with `key`, and reads it back (see below) |
 | `page()` + `createWorkflowApi` + `useWorkflowRun` | `link-digest` — the WORKFLOW APP with the primitives raw: a hand-written `<form>`, its own `useState`, one `createWorkflowApi()` |
-| `Form` + `WorkflowFields` + `useWorkflowSubmit` | `transcription-desk` — the same front door with the form layer, plus `WorkflowOutputOf`. Its form is ALL declared, so `FileField` is exercised by no template and sits in the allowlist; the mixed case (declared scalars beside a hand-written control) is documented under "Forms" in `packages/aai-ui/CLAUDE.md` |
-| `mapInBatches`, `stepEnv` / `requireStepEnv`, `stepGenerate` | the STEP surface, and all three workflow templates use it: `transcription-desk` fans its segments out and reads `ASSEMBLYAI_API_KEY` for the sync STT endpoint; `research-desk` and `link-digest` call the model with `stepGenerate`. Imported from `@alexkroman1/aai/utils`, NOT the root: a `workflows/*.ts` module is bundled separately by the WDK builder, so the root barrel's graph would ride into the step bundle. That import path is also why the coverage gate cannot see them — it scans the root specifier — hence their allowlist entries |
-| `webSearch` / `visitWebpage` (`@alexkroman1/aai/tools`) | `research-desk`, from inside a `"use step"` function — the demonstration that a step is not a lesser environment than a tool body |
+| `Form` + `WorkflowFields` + `useWorkflowSubmit` | `transcription-desk` — the same front door with the form layer, plus `WorkflowOutputOf`. Its form is ALL declared, so `FileField` is exercised by no template and sits in the allowlist |
+| `TextAreaField` beside `<WorkflowFields>` | `redline` — the MIXED form: three scalars declared by the schema, one array field written by hand in the same `<Form>` and mapped on submit. The case "Forms" in `packages/aai-ui/CLAUDE.md` describes, which no template used to exercise |
+| `mapInBatches`, `stepEnv` / `requireStepEnv`, `stepGenerate` | the STEP surface, and all three workflow templates use it: `transcription-desk` fans its segments out and reads `ASSEMBLYAI_API_KEY` for the sync STT endpoint; `research-desk`, `link-digest` and `redline` call the model with `stepGenerate` (`redline` also uses `StepGenerateError.retryAfter`, the one line the other two's `stopOrRetry` leaves on the table). Imported from `@alexkroman1/aai/utils`, NOT the root: a `workflows/*.ts` module is bundled separately by the WDK builder, so the root barrel's graph would ride into the step bundle. That import path is also why the coverage gate cannot see them — it scans the root specifier — hence their allowlist entries |
+| `webSearch` / `visitWebpage` (`@alexkroman1/aai/tools`) | `research-desk`, from inside a `"use step"` function — the demonstration that a step is not a lesser environment than a tool body; `plan-desk`, from an ordinary tool body, which is the case the module was published for |
 
 **`research-desk` is the workflow template, and its shape is dictated by the
 Workflow DevKit rather than chosen.** The `"use workflow"` / `"use step"` bodies
@@ -267,6 +271,123 @@ because a body test that looked like a durability test would be the worse
 failure. The WAV half carries its own weight there: a cut that lands mid-frame,
 or an off-by-one in the RIFF chunk walk, produces audio the decoder happily
 transcribes into confident nonsense rather than anything that fails.
+
+## Five templates are ports of LangChain/LangGraph agents
+
+The reference agents people already know are the best starters this repo can
+ship: an author arriving with a LangGraph mental model gets a working voice
+version of the thing they have already read, and the DIFFERENCES are where the
+voice-specific lessons live. Each port carries its attribution and a
+their-name → our-name table in the module that holds the prompts, so nothing has
+to be re-derived from memory.
+
+| Source | Template | Front door | What the port had to change |
+| --- | --- | --- | --- |
+| `open_deep_research` | `research-desk` | voice, handing off to a run | a durable workflow, because five to twelve model calls cannot answer on the line (see above) |
+| customer-support tutorial (Swiss Airlines) | `travel-concierge` | voice | the specialist's prompt becomes a tool RESULT; `interrupt_before` becomes a spoken confirmation |
+| self-RAG + CRAG | `support-line` | voice | lexical retrieval instead of a vectorstore, and the graders are the thing that makes that fine |
+| plan-and-execute | `plan-desk` | voice | the execute→replan loop is driven by the CALLER, one step per tool call |
+| reflection (the essay assistant) | `redline` | **page over a durable run** (`workflowApp()`) | the loop's exit becomes a step's journaled VERDICT, so a replay takes the same branch |
+
+**Which front door a port gets is decided by one question: can it answer
+inside a turn?** A caller will hold the line for a tool call and a sentence
+back; they
+will not hold it for seven long-form model calls in sequence, and what a
+reflection loop produces is a piece of prose to READ rather than two sentences
+to hear. So `redline` is a workflow app, exactly like `transcription-desk`, and
+the three above it are voice agents. Getting that wrong in either direction is
+the expensive mistake: a voice agent that goes silent for ninety seconds, or a
+page for work that a caller could simply have been told.
+
+**`travel-concierge` — the two mechanisms, and the honest limit.** Their graph
+gives each specialist node its own bound tool set and swaps the assistant's
+prompt as `dialog_state` is pushed and popped. A voice session has ONE model
+with ONE tool list and a system prompt fixed at connect, so the port splits the
+difference: the stack is real state (`routing.ts`, projected to the sidebar), and
+the specialist's brief arrives as the delegation tool's return value, which is
+the last thing the model reads before it speaks. The narrowing is therefore
+asked for rather than enforced, and `agent.ts` says so in place — do not "fix"
+that by pretending otherwise.
+
+The half that IS enforced is the confirmation gate, and it is the bit worth
+copying into any agent that can spend someone's money. Every sensitive tool
+STAGES a `PendingAction` and mutates nothing; `confirm_action` is the only code
+path that applies one. That is `interrupt_before` with a better interface —
+a caller cannot type "y", but asking out loud and hearing "yes" is the same
+gate — and it is the reason `stageAction` is one helper rather than a pattern
+each tool repeats: the next sensitive tool is otherwise the one that forgets.
+Its spec asserts, per tool, that calling it changes nothing.
+
+**`support-line` — the graders are the product.** Retrieval is idf-weighted term
+overlap over `knowledge.json`, not embeddings, because the SDK has no vector
+store; the argument in `shared.ts` is that this makes CRAG's corrective loop MORE
+valuable rather than less, since a weaker retriever is exactly what its query
+rewriter was designed for. The knowledge base is BAITED to prove it — "cancelling
+your contract" and "cancelling an engineer visit" are two documents, two fees and
+one word apart, and a spec pins that the neighbour ranks FIRST for a caller's
+phrasing. Three decisions in the loop are not defaults:
+
+- **An ungrounded answer is never spoken.** One regeneration, then the answer is
+  withheld and the run ends `exhausted`. A grounded-but-not-useful answer, by
+  contrast, IS returned, with its verdict, because it is still true.
+- **`exhausted` is a reachable state with somewhere to go** — `log_ticket`. An
+  agent that cannot say "I don't have that documented" will eventually say
+  something worse, so the exit has to exist before the grading is worth anything.
+- **There is no web-search fallback**, which CRAG has. A support line answering
+  from the open web about a private product is the exact failure its grader
+  exists to prevent; `plan-desk` is where real search lives.
+
+**`plan-desk` — the loop belongs to the caller.** Their notebook runs
+plan→execute→replan to completion and prints the answer. A phone line cannot go
+quiet for ninety seconds, so one `work_next_step` call is exactly one
+execute-then-replan turn: the desk reports, and the pause that creates is what
+makes `revise_plan` reachable at all — a replanner driven by the person rather
+than by a step result, which their version has no way to express. Two more
+things are decisions:
+
+- **`Act = Union[Response, Plan]` became one discriminated object.** A union is
+  `anyOf` in JSON Schema and provider support for it varies; a model that emits
+  `{"steps": …}` when it meant to respond leaves a plan looping forever.
+  `normalizeAct` then treats every malformed act as an ANSWER, because a desk
+  that never stops is the failure that matters on a call.
+- **The search is real and therefore injected.** `executeStep` takes a
+  `SearchFn`; the tool passes `liveSearch` (`webSearch`, DuckDuckGo-backed, no
+  key) and the spec passes its own. A template spec that depended on the live web
+  would be a flake with a stranger's rate limit attached.
+
+**`redline` — a loop whose exit is data, and the mixed form.** Two things in it
+are worth reading for, and neither exists elsewhere in `templates/`:
+
+- **The `while` is legal because the verdict is journaled.** `transcription-desk`
+  derives its fan-out's WIDTH from a step's result; this derives a LOOP EXIT from
+  one. `critiqueDraft` returns `ship` or `revise`, the body breaks on it, and a
+  replay reads that verdict back out of the journal and takes the same branch —
+  where a clock, a random draw or a re-read of anything outside the run would let
+  a replay diverge into a `ReplayDivergenceError`. Their `should_continue` stops
+  on a message COUNT, which spends the same money on a draft that was already
+  good; letting the critic stop the loop is the one real addition, and it is
+  possible only because the decision is a step result.
+- **Its page is the MIXED form**, which the guide has described for a while with
+  no template behind it. `<WorkflowFields>` renders the three scalars (the
+  `z.enum` becoming a `<SelectField>` is the schema doing the work), and
+  `mustCover` is an ARRAY, which it deliberately renders nothing for — so
+  `client.tsx` writes that one field itself in the same `<Form>` and maps the
+  textarea into `string[]` in one exported function. `transcription-desk` stays
+  the all-declared example.
+
+One smaller thing it settles: neither writer step carries an empty-reply guard,
+because `stepGenerate` already refuses an empty completion as a RETRYABLE
+failure. The first draft of the template had both, and both were dead code
+re-deriving an SDK decision — worth checking for before adding a guard to a step.
+
+Both LLM-driven VOICE ports are tested by SCRIPTING `ctx.generate` on the
+system prompt each node carries — the fake switches on `options.system` and
+records the
+transcript, so what a spec asserts is WHICH NODES RAN, which is the part of a
+graph port that can actually regress. One mechanical note for the next one:
+`GenerateFn`'s schema overload declares `object` as required, so every branch of
+such a fake must return one (`object: null` on the text-only nodes) or the whole
+function is unassignable.
 
 ## A step can authenticate now, so no template's I/O is a fixture
 

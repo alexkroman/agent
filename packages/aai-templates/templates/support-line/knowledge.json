@@ -1,0 +1,65 @@
+{
+  "product": "Meridian Fibre",
+  "docs": [
+    {
+      "id": "D1",
+      "title": "Router lights and what they mean",
+      "topic": "connection",
+      "text": "The Meridian hub has three lights. A solid white power light means the hub is on. A solid blue broadband light means the line is synced. A flashing blue light means the hub is still syncing, which can take up to fifteen minutes after a power cut. A red broadband light means the line is down: check the fibre cable is pushed fully into the grey socket, then leave the hub powered on for fifteen minutes before doing anything else."
+    },
+    {
+      "id": "D2",
+      "title": "Rebooting the hub",
+      "topic": "connection",
+      "text": "Power the hub off at the wall, wait thirty seconds, and power it back on. Do not use the pinhole reset button unless an agent asks you to: that clears your wifi name and password as well, and every device in the house then has to be reconnected. A normal reboot keeps all your settings."
+    },
+    {
+      "id": "D3",
+      "title": "Slow speeds over wifi",
+      "topic": "speed",
+      "text": "Wifi speed drops with distance and with walls. Keep the hub off the floor, out of a cupboard, and away from the microwave and the TV. A wired device plugged into a yellow ethernet port is the only way to measure your real line speed; a speed test over wifi measures the wifi, not the fibre. If a wired test is more than twenty percent below your plan speed for three days running, that is a line fault and we will send an engineer."
+    },
+    {
+      "id": "D4",
+      "title": "Your bill and when it is taken",
+      "topic": "billing",
+      "text": "Bills are issued on the first of the month and the direct debit is taken eight working days later. Your first bill also carries a part month charge for the days between your activation date and the first of the month, so it is usually larger than the ones that follow. You can change the payment date once every twelve months from the account page."
+    },
+    {
+      "id": "D5",
+      "title": "Cancelling your contract",
+      "topic": "account",
+      "text": "You can cancel at any time by giving thirty days notice. If you are still inside your minimum term, an early exit fee applies: it is the remaining months of the term multiplied by your monthly price, capped at six months. Notice starts on the day we receive it, not the day you post the equipment back. The hub must be returned within fourteen days of the service ending or a fifty pound non return fee is charged."
+    },
+    {
+      "id": "D6",
+      "title": "Cancelling or rebooking an engineer visit",
+      "topic": "appointments",
+      "text": "An engineer visit can be moved or cancelled free of charge until midnight the day before. After that, and for a missed appointment where nobody over eighteen was at the property, a sixty pound abortive visit charge applies. Rebooking is done from the appointments page or by asking us on the phone; the next available slot is usually within three working days."
+    },
+    {
+      "id": "D7",
+      "title": "Moving home",
+      "topic": "account",
+      "text": "Tell us at least four weeks before you move. If Meridian Fibre is available at the new address we move the service and your contract continues unchanged, with a one off activation charge of thirty five pounds. If we cannot serve the new address, the contract ends with no early exit fee, which is the one case where the fee is waived."
+    },
+    {
+      "id": "D8",
+      "title": "Checking for an outage in your area",
+      "topic": "connection",
+      "text": "Area outages are listed on the status page and the phone line plays a recorded message naming the affected postcodes. During a confirmed outage there is nothing to fix at your end: rebooting the hub will not help and an engineer cannot be booked until the area work is closed. Compensation of eight pounds per full day starts after the second full day of a confirmed total loss of service."
+    },
+    {
+      "id": "D9",
+      "title": "Static IP addresses",
+      "topic": "advanced",
+      "text": "A static IP address is available on business plans only, at five pounds a month. It cannot be added to a residential plan; upgrading to business is the only route, and that starts a new twelve month term. Port forwarding, by contrast, works on every plan and needs no static IP."
+    },
+    {
+      "id": "D10",
+      "title": "Data caps and traffic management",
+      "topic": "speed",
+      "text": "There is no data cap on any Meridian Fibre plan and no traffic management at peak times. If your speed drops every evening at the same time, that is congestion in your own home, usually a device backing up or streaming in the background, and not something we apply."
+    }
+  ]
+}
