@@ -10,6 +10,21 @@
  * pass rather than asserting on the entry's source text, because the property
  * that matters is that the built worker's default export CARRIES the tools —
  * source text can look right and resolve to nothing.
+ *
+ * **That makes this file a real-build outlier in the UNIT tier, and it needs a
+ * timeout that says so.** Every case here spawns a Vite/rolldown pass — ~50ms on
+ * a developer's machine, coverage instrumentation included, but the whole aai-cli
+ * suite is CPU-bound and parallel, so on a two-core CI runner an individual build
+ * can be starved well past the tier's 5s default. It failed exactly that way
+ * (one case of eleven, the other ten passing in the same run), which makes it a
+ * flake rather than a cost: the fix is a budget matching what these actually are,
+ * not a faster test.
+ *
+ * It stays in the unit tier rather than moving to integration because
+ * `worker-bundler.ts`'s coverage is measured here, and aai-cli's floors sit
+ * 1.3-2.2 points above actuals — moving it means restoring that coverage first,
+ * never lowering a floor. Same standing judgement as
+ * `agent-server-integration.test.ts` in aai-server.
  */
 
 import fs from "node:fs/promises";
@@ -27,6 +42,12 @@ async function linkNodeModules(dir: string): Promise<void> {
     "dir",
   );
 }
+
+/**
+ * Per-case budget for a real bundler pass. The integration tier's number, because
+ * that is what each of these is; see the module doc for why they live here anyway.
+ */
+const BUILD_TIMEOUT_MS = 30_000;
 
 const AGENT = `import { agent } from "@alexkroman1/aai";\nexport default agent({ name: "T" });\n`;
 
@@ -47,7 +68,7 @@ async function loadWorker(
   return mod.default;
 }
 
-describe("tool discovery", () => {
+describe("tool discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
   test("a file in tools/ becomes a tool named for the file", async () => {
     await withTempDir(async (dir) => {
       await linkNodeModules(dir);
@@ -130,7 +151,7 @@ describe("tool discovery", () => {
   });
 });
 
-describe("system-prompt.md discovery", () => {
+describe("system-prompt.md discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
   const PROMPT = "You are a terse assistant.\n\n- One sentence.\n";
 
   test("the file becomes the agent's systemPrompt, with nothing in agent.ts", async () => {
