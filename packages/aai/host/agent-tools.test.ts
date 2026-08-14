@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, expectTypeOf, test, vi } from "vitest";
+import { isToolFailure, type ToolFailure } from "../sdk/utils.ts";
 import { fetchJson, visitWebpage, webSearch } from "./agent-tools.ts";
 
 /**
@@ -69,8 +70,40 @@ describe("callable builtins", () => {
     const fetch = vi.fn(async () => new Response(JSON.stringify({ price: 1 }), { status: 200 }));
     const quote = await fetchJson("https://api.example.com/q", { fetch });
     expect(quote.price).toBe(1);
-    // And a type argument still gives real checking when you want it.
+    // And a type argument still gives real checking when you want it — including
+    // the failure arm, which is the whole point: naming a shape is what makes the
+    // compiler ask about `{ error }`.
     const typed = await fetchJson<{ price: number }>("https://api.example.com/q", { fetch });
+    if (isToolFailure(typed)) expect.fail(`unexpected failure: ${typed.error}`);
     expect(typed.price).toBe(1);
+  });
+
+  test("an HTTP failure ANSWERS with a ToolFailure rather than throwing", async () => {
+    // The contract these three are model-facing for: a tool that hands the result
+    // straight back to the model should say something useful, not fail the turn.
+    const fetch = vi.fn(async () => new Response("nope", { status: 503 }));
+    const answer = await fetchJson<{ price: number }>("https://api.example.com/q", { fetch });
+    expect(isToolFailure(answer)).toBe(true);
+  });
+
+  test("a caller that named a shape has to NARROW — the union is in the type", async () => {
+    // The defect this pins: typed `Promise<T>`, three of three callers in this
+    // repo wrote `(result.results ?? [])` and turned a live `403` into "the web
+    // has nothing". A type-level assertion, because the runtime already passes.
+    expectTypeOf<Awaited<ReturnType<typeof webSearch<{ results: string[] }>>>>().toEqualTypeOf<
+      { results: string[] } | ToolFailure
+    >();
+    expectTypeOf<Awaited<ReturnType<typeof visitWebpage<string>>>>().toEqualTypeOf<
+      string | ToolFailure
+    >();
+    // Unnamed stays loose, so the permissive-return-type decision is preserved:
+    // `DefaultToolResult` is `any`, and `any | ToolFailure` is `any` — so reading
+    // a field off an untyped call still compiles with no narrowing and no cast,
+    // which is what the module's permissive-return note promises. Asserted
+    // through a real call, because that is where the default is applied.
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ price: 1 }), { status: 200 }));
+    const loose = await fetchJson("https://api.example.com/q", { fetch });
+    expectTypeOf(loose).toBeAny();
+    expect(loose.price).toBe(1);
   });
 });

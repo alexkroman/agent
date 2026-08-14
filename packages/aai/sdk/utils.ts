@@ -45,6 +45,14 @@ export { safeJsonParse } from "./safe-json-parse.ts";
 export { MAX_SLUG_LENGTH, PREVIEW_SLUG_SUFFIX, RESERVED_SLUGS, VALID_SLUG_RE } from "./slug.ts";
 export { requireStepEnv, stepEnv } from "./step-env.ts";
 export {
+  type MultipartBody,
+  type MultipartPart,
+  multipartBody,
+  type StepFetchInit,
+  StepTransportError,
+  stepFetch,
+} from "./step-fetch.ts";
+export {
   StepGenerateError,
   type StepGenerateOptions,
   stepGenerate,

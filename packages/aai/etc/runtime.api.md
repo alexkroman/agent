@@ -362,6 +362,9 @@ export function createServer(options: ServerOptions): AgentServer;
 export function createSessionCore(opts: SessionCoreOptions): SessionCore;
 
 // @internal
+export function createStepFetch(): StepFetch;
+
+// @internal
 export function createStepReporter(logger: Logger): StepReporter;
 
 // @public
@@ -699,6 +702,9 @@ export type ProviderEnv = Record<string, string> & {
 
 // @internal
 export function publishStepEnv(env: Readonly<Record<string, string | undefined>>): void;
+
+// @internal
+export function publishStepFetch(fetchFn: StepFetch | undefined): void;
 
 // @internal
 export function publishStepReporter(reporter: StepReporter | undefined): void;
@@ -1049,6 +1055,17 @@ export function startTelephonySession(carrierSocket: SessionWebSocket, runtime: 
 
 // @internal
 export function startWorkflowWorldIfDeclared(hasWorkflows: boolean, kind: WorldKind): Promise<void>;
+
+// @internal
+export type StepFetch = (url: string, init?: StepFetchInit) => Promise<Response>;
+
+// @public
+type StepFetchInit = {
+    method?: string | undefined;
+    headers?: Record<string, string> | undefined;
+    body?: Uint8Array | string | undefined;
+    signal?: AbortSignal | undefined;
+};
 
 // @internal
 export type StepReporter = (line: string) => void | Promise<void>;

@@ -16,7 +16,24 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import bogon from "bogon";
 import pTimeout from "p-timeout";
-import { Agent, fetch as undiciFetch } from "undici";
+import { Agent } from "undici";
+import {
+  asDispatcher,
+  type FetchDispatcher,
+  type PinnedRequestInit,
+  pinnedFetch,
+} from "./_undici.ts";
+
+/**
+ * Re-exported for `ssrf-dispatcher.test.ts`, which guards the fetch/dispatcher
+ * pairing, and for `/runtime`, whose barrel has always published it from here.
+ * It and the two dispatcher types moved to `_undici.ts` when `step-fetch.ts`
+ * became the second caller — see that module for why the bridge exists and why
+ * the fetch may not be `globalThis.fetch`.
+ *
+ * @internal
+ */
+export { pinnedFetch } from "./_undici.ts";
 
 const BLOCKED_TLDS = [".internal", ".local", ".localhost"];
 /**
@@ -32,20 +49,6 @@ const BLOCKED_HOSTS = new Set(["metadata.google.internal", "instance-data.ec2.in
 
 /** Thrown when a URL is rejected by SSRF policy (vs. an incidental failure). */
 class SsrfBlockedError extends Error {}
-
-/**
- * The `fetch` every pinned request must go through — deliberately NOT
- * `globalThis.fetch`, and NOT SSRF-checked itself.
- *
- * `pinnedDispatcher` builds an `Agent` from this package's own `undici`
- * dependency; Node's global `fetch` is backed by a different bundled undici
- * copy whose dispatch-handler interface may not match, so the two must come
- * from the same package. Exported for `ssrf-dispatcher.test.ts`, which guards
- * the pairing.
- *
- * @internal
- */
-export const pinnedFetch = undiciFetch as unknown as typeof globalThis.fetch;
 
 /** @internal */
 export function isPrivateIp(ip: string): boolean {
@@ -127,31 +130,6 @@ export async function resolveAndAssertPublic(
 const MAX_REDIRECTS = 5;
 
 /**
- * The dispatcher type `fetch` accepts — INFERRED, so that a `RequestInit`
- * without the property is not an error.
- *
- * It used to be `NonNullable<RequestInit["dispatcher"]>`, an indexed access,
- * which resolves only when `@types/node` is the copy of `RequestInit` that
- * wins. A program that also has `lib.dom` gets the DOM's, which has no such
- * property, and this module then failed to compile in EVERY such consumer —
- * not hypothetically: `@alexkroman1/aai/tools` re-exports the builtins for an
- * author's own tool and step code, so the consumer is an ordinary agent
- * project, whose `client.tsx` needs the DOM lib. It surfaced the moment a
- * template imported that subpath from a step.
- *
- * A conditional with `infer` reads the property where it exists and degrades to
- * `unknown` where it does not, which is the honest answer in a program that has
- * no undici types to name. The intersection form (`RequestInit & { dispatcher?:
- * unknown }`) does NOT work: where the ambient property exists the intersection
- * is with `Dispatcher`, and under `exactOptionalPropertyTypes` the two halves
- * are then incompatible rather than redundant.
- */
-type FetchDispatcher = RequestInit extends { dispatcher?: infer D } ? NonNullable<D> : never;
-
-/** `RequestInit` with that property present whether or not the ambient one has it. */
-type PinnedRequestInit = RequestInit & { dispatcher?: FetchDispatcher };
-
-/**
  * Pin the connection to an already-validated IP without rewriting the URL.
  *
  * Rewriting the URL's hostname to the resolved IP (the previous approach)
@@ -206,11 +184,8 @@ function pinnedDispatcher(resolvedIp: string): FetchDispatcher {
     keepAliveTimeout: 1000,
     keepAliveMaxTimeout: 1000,
   });
-  // `@types/node` declares the property through its own bundled `undici-types`
-  // — a different copy of the declarations from the `undici` package this Agent
-  // comes from, structurally identical and nominally incompatible — so the
-  // assignment needs a bridge whichever way `FetchDispatcher` resolved.
-  return agent as unknown as FetchDispatcher;
+  // The bridge, and why one is needed, live in `_undici.ts`.
+  return asDispatcher(agent);
 }
 
 /** Headers that must never be replayed to a different origin across a redirect. */

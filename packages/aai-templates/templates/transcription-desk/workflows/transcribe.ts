@@ -56,9 +56,11 @@
 import { throwFatalStepError, toStepError } from "@alexkroman1/aai/step-errors";
 import {
   mapInBatches,
+  multipartBody,
   readUpload,
   report,
   requireStepEnv,
+  stepFetch,
   uploadInfo,
 } from "@alexkroman1/aai/utils";
 import {
@@ -82,12 +84,34 @@ const API_KEY_ENV = "ASSEMBLYAI_API_KEY";
 /**
  * Segments in flight at once.
  *
- * Bounded because the far side is a rate limit: a two-hour recording issued at
- * once collects 429s, and a rate-limited segment fails its step. Four is a
- * starting point, not a measurement — raise it against your own account's
- * concurrency and watch the retry count.
+ * Bounded because the far side has a capacity limit, and it is MEASURED now —
+ * 65 segments (1h37m of 48 kHz stereo, 17.66 MB each) through this workflow,
+ * one concurrency per run, from one laptop and one account:
+ *
+ * | in flight | wall | vs realtime | `503`s |
+ * | --- | --- | --- | --- |
+ * | 8 | 43.3s | 134x | 0 |
+ * | 32 | 27.5s | 211x | 0 |
+ * | 48 | 26.1-28.5s | 204-223x | 0-4 |
+ * | 64 | 31.9s | 182x | 20 |
+ *
+ * Two readings, and the second is why this is 8 and not 32. Throughput
+ * PLATEAUS around 32: past it the uplink is the bottleneck, every request just
+ * gets a thinner share of it (p50 4.2s at 8, 10.0s at 32, 12.5s at 64), and at
+ * 64 the far side starts answering `503 Capacity Exceeded` — so the extra
+ * concurrency buys retries rather than speed. And the number the plateau sits
+ * at belongs to the machine, not to this code: a deployed guest reserves one
+ * CPU and has neither this uplink nor its ~47 MB/s, so a default measured here
+ * would be an overcommit there.
+ *
+ * So 8 is a floor with headroom, and the ceiling is known: raise it toward 32
+ * against your own account and watch `503`s in the log. Overshooting is no
+ * longer expensive — a `503` carries `retry-after` and `toStepError` below
+ * honours it, so the run completes having paid one extra request per limited
+ * segment (measured: 20 `503`s at 64, each retried exactly once, run
+ * completed). That is only true over HTTP/1.1, which is what `stepFetch` pins.
  */
-const SEGMENT_CONCURRENCY = 4;
+const SEGMENT_CONCURRENCY = 8;
 
 /**
  * Bytes probed for the WAV header.
@@ -197,21 +221,32 @@ export async function transcribeSegment(
   // the language, so the field was a question asked of a person that the service
   // answers better — and getting it wrong is a whole transcript in the wrong
   // language. Add one back only for a desk that really knows.
-  const form = new FormData();
-  form.append(
-    "audio",
-    new Blob([wavWithHeader(format, audio.bytes)], { type: "audio/wav" }),
-    `segment-${segment.index}.wav`,
-  );
+  const part = multipartBody({
+    name: "audio",
+    filename: `segment-${segment.index}.wav`,
+    type: "audio/wav",
+    bytes: wavWithHeader(format, audio.bytes),
+  });
 
-  const response = await fetch(SYNC_ENDPOINT, {
+  // `stepFetch`, not `fetch`, and here it is load-bearing rather than tidy:
+  // `fetch` speaks HTTP/2 wherever the far side offers it, which puts a whole
+  // batch of segments on ONE connection — and a capacity limit then arrives as a
+  // stream reset carrying no HTTP status for `toStepError` below to read. The
+  // fan-out is exactly the shape that breaks on. `sdk/step-fetch.ts` holds the
+  // measurements; a `StepTransportError` out of here is already retryable and
+  // already names its cause.
+  const response = await stepFetch(SYNC_ENDPOINT, {
     method: "POST",
-    // The raw key — this endpoint takes it unprefixed, and a `Bearer ` in front
-    // of it is a 401 that reads like a wrong key.
-    headers: { Authorization: apiKey, "X-AAI-Model": SYNC_MODEL },
-    body: form,
-    // `fetch` has no deadline of its own, and a hung upload inside a step is a
-    // run that never finishes rather than one that retries.
+    headers: {
+      // The raw key — this endpoint takes it unprefixed, and a `Bearer ` in
+      // front of it is a 401 that reads like a wrong key.
+      Authorization: apiKey,
+      "X-AAI-Model": SYNC_MODEL,
+      ...part.headers,
+    },
+    body: part.body,
+    // Nothing here has a deadline of its own, and a hung upload inside a step is
+    // a run that never finishes rather than one that retries.
     signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
   });
   if (!response.ok) throw await syncFailure(response, segment);

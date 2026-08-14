@@ -61,7 +61,10 @@ export type WorldKind = "postgres" | "local";
  *
  * Respects an operator-supplied `WORKFLOW_TARGET_WORLD` — a self-hosted
  * deployment pointing at a world of its own is a legitimate thing to do, and
- * silently overriding it would be the platform reaching past the operator.
+ * silently overriding it would be the platform reaching past the operator. What
+ * that value MEANS for migration is {@link classifySuppliedWorld}'s job, and it
+ * is not an equality check: any spelling of the Postgres world has to be
+ * recognized as one, or it is loaded and never migrated.
  *
  * @internal
  */
@@ -85,9 +88,8 @@ export function configureWorkflowWorld(opts: {
   env?: NodeJS.ProcessEnv;
 }): WorldKind {
   const env = opts.env ?? process.env;
-  if (env[TARGET_WORLD_ENV]) {
-    return env[TARGET_WORLD_ENV] === POSTGRES_WORLD ? "postgres" : "local";
-  }
+  const supplied = env[TARGET_WORLD_ENV];
+  if (supplied) return classifySuppliedWorld(supplied);
 
   if (opts.databaseUrl) {
     env[TARGET_WORLD_ENV] = POSTGRES_WORLD;
@@ -118,8 +120,7 @@ async function migrateAndSubscribe(kind: WorldKind): Promise<void> {
     // which is what lets it run on every boot instead of needing a provisioning
     // pass that nothing in this architecture has: an agent's first workflow may
     // be its first ever deploy.
-    const { setupDatabase } = await import("@workflow/world-postgres/cli");
-    await setupDatabase();
+    await migratePostgresWorld();
   }
 
   const { getWorld } = await import("workflow/runtime");
@@ -128,6 +129,99 @@ async function migrateAndSubscribe(kind: WorldKind): Promise<void> {
   // `pending` forever with no error anywhere. The local world has no `start`,
   // hence the optional call.
   await getWorld().start?.();
+}
+
+/**
+ * What an operator-supplied `WORKFLOW_TARGET_WORLD` is, for MIGRATION purposes.
+ *
+ * The DevKit loads whatever specifier it is given; this only has to answer "does
+ * that thing need `setupDatabase` run against it first". It used to be
+ * `supplied === POSTGRES_WORLD`, i.e. an exact match on the bare package name —
+ * so every other spelling of the SAME world was classified `local` and therefore
+ * never migrated, while the DevKit went on loading it. That is a Postgres world
+ * pointed at an unmigrated database, and the log says `local`, which is the
+ * hardest possible starting point for whoever debugs it. It is not theoretical:
+ * a resolved absolute path (the ordinary way to pin a world in a pnpm workspace,
+ * where the package is not visible from the project) produced exactly that —
+ * `harness starting local workflow world` followed by
+ * `Failed query: select … from "workflow"."workflow_runs"`.
+ *
+ * A substring match on the package name covers every spelling of it: the bare
+ * name, a `file:`/absolute path ending in it, a version-pinned specifier, a
+ * pnpm virtual-store path. A genuinely CUSTOM world still reads as `local`,
+ * which is the right answer — nothing here knows how to migrate one — and it is
+ * the caller's business, not a silent misreading of ours.
+ */
+function classifySuppliedWorld(supplied: string): WorldKind {
+  return supplied.includes(POSTGRES_WORLD) ? "postgres" : "local";
+}
+
+/**
+ * Thrown by the `process.exit` stand-in below, and caught by its only caller.
+ *
+ * A class rather than a sentinel value so an unrelated throw from inside
+ * `setupDatabase` is still reported as itself.
+ */
+class MigrationExitedError extends Error {
+  /** Declared rather than a parameter property — `erasableSyntaxOnly` bans those. */
+  readonly code: number;
+
+  constructor(code: number) {
+    super(`the world migration called process.exit(${code})`);
+    this.name = "MigrationExitedError";
+    this.code = code;
+  }
+}
+
+/**
+ * Run the Postgres world's migration WITHOUT letting it end the process.
+ *
+ * **`setupDatabase` is `@workflow/world-postgres/cli`'s own entry point, and it
+ * behaves like one: `process.exit(0)` on success, `process.exit(1)` on failure.**
+ * So awaiting it from a server is not "migrate, then carry on" — it is "migrate,
+ * then die", with a SUCCESS code, before anything listens. That is not a
+ * hypothetical: `aai dev` against a project with a `DATABASE_URL` printed
+ * `✅ Database schema created successfully!` and exited 0, and a deployed guest
+ * does the same thing at `harness-agent-mode.ts`'s world start, which runs
+ * BEFORE `server.listen` — so the platform's readiness poll never gets an
+ * answer and the spawn fails. Every agent that declares workflows AND has
+ * storage was on that path, which is the configuration
+ * `transcription-desk` documents as the right one.
+ *
+ * `startWorkflowWorldIfDeclared`'s try/catch cannot help, either: an exit is not
+ * an exception, so the "a failure must not take the guest down" rule it exists
+ * to enforce was unenforceable.
+ *
+ * The stand-in THROWS rather than returning, so `setupDatabase`'s own await
+ * chain unwinds at the call instead of running on past it. By then the function
+ * has already migrated and closed its pool — the exit is the last statement in
+ * both branches — so nothing is left half-done. A version that stops exiting
+ * needs no change here: returning normally is read as success.
+ *
+ * Not a general-purpose wrapper, deliberately. It is installed for the duration
+ * of ONE call at boot, where nothing else in the process is trying to exit.
+ */
+async function migratePostgresWorld(): Promise<void> {
+  const { setupDatabase } = await import("@workflow/world-postgres/cli");
+  const realExit = process.exit;
+  let exitCode: number | undefined;
+  process.exit = ((code?: number | string | null): never => {
+    exitCode = typeof code === "number" ? code : 0;
+    throw new MigrationExitedError(exitCode);
+  }) as typeof process.exit;
+  try {
+    await setupDatabase();
+  } catch (err: unknown) {
+    if (!(err instanceof MigrationExitedError)) throw err;
+  } finally {
+    process.exit = realExit;
+  }
+  // `undefined` means it returned instead of exiting, which is what a fixed
+  // upstream would do. A non-zero code is a real migration failure, and it has
+  // to become an exception so the caller can report it.
+  if (exitCode !== undefined && exitCode !== 0) {
+    throw new Error(`the Postgres world migration failed (exit ${exitCode})`);
+  }
 }
 
 /**

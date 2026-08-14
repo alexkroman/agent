@@ -40,6 +40,7 @@ import {
   ASSEMBLYAI_LLM_GATEWAY_URL,
 } from "./providers/llm/assemblyai.ts";
 import { requireStepEnv } from "./step-env.ts";
+import { stepFetch } from "./step-fetch.ts";
 import { isTransientStatus, retryAfter } from "./step-retry.ts";
 
 /** A model call's deadline. `fetch` has none, and a hung step never ends. */
@@ -167,7 +168,13 @@ export async function stepGenerate(
   opts: StepGenerateOptions = {},
 ): Promise<string> {
   const base = opts.gatewayUrl ?? ASSEMBLYAI_LLM_GATEWAY_URL;
-  const response = await fetch(`${base}/chat/completions`, {
+  // `stepFetch`, not `fetch`: this is a step's outbound call like any other, and
+  // a fan-out that calls the model once per item is exactly the shape HTTP/2
+  // multiplexing punishes. It also turns a connection failure into a
+  // `StepTransportError` naming its cause, where `fetch` raises
+  // `TypeError: fetch failed` — indistinguishable from a bad gateway URL. See
+  // `sdk/step-fetch.ts`.
+  const response = await stepFetch(`${base}/chat/completions`, {
     method: "POST",
     headers: {
       // The gateway is OpenAI-compatible, so the key is a BEARER here — unlike

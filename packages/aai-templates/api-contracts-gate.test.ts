@@ -355,12 +355,15 @@ describe("API-EXPORTS.json", () => {
       "StubGateway",
       "StubGatewayCall",
       "StubGatewayOptions",
+      "StubStepFetch",
+      "StubStepRequest",
       "StubUpload",
       "TestToolContext",
       "createStubWorkflows",
       "createToolContext",
       "createUnusedDb",
       "stubGateway",
+      "stubStepFetch",
       "stubUploads",
     ]);
   });

@@ -42,10 +42,35 @@
  * know from the model-facing builtin (`{ query, max_results }`), and guessing
  * wrong cost a build round.
  *
+ * ## All three can ANSWER with a failure, and the type says so
+ *
+ * A builtin's failure IS its result — `{ error }` rather than a throw — because
+ * these are model-facing and a tool that hands the result straight back to the
+ * model should say something useful rather than fail the turn. That contract is
+ * right and is not changing. What was wrong is that it was invisible: they were
+ * typed `Promise<T>`, so a caller that named a shape got that shape and nothing
+ * told it a failure was possible.
+ *
+ * **Every caller in this repo got it wrong, three for three**, and all three the
+ * same way — `(results.results ?? [])` and `page.content ?? ""`, which turn a
+ * real failure into an empty answer. Measured 2026-08-13: DuckDuckGo answered
+ * `403` to both endpoints from this machine, so `research-desk` and `plan-desk`
+ * were both reporting "No results." for every search, with the 403 nowhere.
+ * `research-desk` even had a `catch` for it, carefully commented — and a `catch`
+ * cannot see a returned value, so it never ran.
+ *
+ * So the return type is `T | ToolFailure` and `isToolFailure`
+ * (`@alexkroman1/aai/utils`) is how a
+ * caller narrows it. Note this only bites a caller that NAMED a type: `T`
+ * defaults to `DefaultToolResult`, which is `any`, and `any | ToolFailure` is
+ * `any` — so the loose call sites the permissive-return-type note above exists
+ * for are unaffected, and the ones precise enough to have a shape get checked.
+ *
  * @module tools
  */
 
 import type { DefaultToolResult } from "../sdk/types.ts";
+import type { ToolFailure } from "../sdk/utils.ts";
 import { resolveBuiltin } from "./builtin-tools.ts";
 
 /** The builtins carry a Zod schema, but a direct caller has typed arguments. */
@@ -73,15 +98,14 @@ async function callBuiltin(
 /**
  * GET a URL and return its parsed JSON.
  *
- * Returns `{ error, url }` rather than throwing on an HTTP failure or an
- * oversized body, matching what the model-facing builtin returns — a tool
- * that hands the result straight back to the model then says something useful
- * instead of failing the turn.
+ * Answers `{ error, url }` rather than throwing on an HTTP failure or an
+ * oversized body, matching what the model-facing builtin returns. Narrow it with
+ * `isToolFailure` — see the module doc for why the union is in the type.
  */
 export async function fetchJson<T = DefaultToolResult>(
   url: string | ({ url: string; headers?: Record<string, string> } & CallOptions),
   options?: { headers?: Record<string, string> } & CallOptions,
-): Promise<T> {
+): Promise<T | ToolFailure> {
   const spec = typeof url === "string" ? { url, ...options } : url;
   return (await callBuiltin(
     "fetch_json",
@@ -90,20 +114,32 @@ export async function fetchJson<T = DefaultToolResult>(
   )) as T;
 }
 
-/** Fetch a page and return its content as clean text. */
+/**
+ * Fetch a page and return its content as clean text.
+ *
+ * Answers `{ error }` for a page it could not read — narrow with
+ * `isToolFailure`, and see the module doc for why.
+ */
 export async function visitWebpage<T = DefaultToolResult>(
   url: string | ({ url: string } & CallOptions),
   options?: CallOptions,
-): Promise<T> {
+): Promise<T | ToolFailure> {
   const spec = typeof url === "string" ? { url, ...options } : url;
   return (await callBuiltin("visit_webpage", { url: spec.url }, spec)) as T;
 }
 
-/** Search the web (DuckDuckGo-backed, no API key) and return ranked results. */
+/**
+ * Search the web (DuckDuckGo-backed, no API key) and return ranked results.
+ *
+ * Answers `{ error }` when both DuckDuckGo endpoints refuse — a `403` or a bot
+ * challenge, which is a routine outcome rather than an edge case. Narrow with
+ * `isToolFailure`: an unnarrowed `?? []` reads as "the web has nothing", which is
+ * a different claim and the one this repo shipped twice.
+ */
 export async function webSearch<T = DefaultToolResult>(
   query: string | ({ query: string; max_results?: number; maxResults?: number } & CallOptions),
   options?: { maxResults?: number } & CallOptions,
-): Promise<T> {
+): Promise<T | ToolFailure> {
   const spec = typeof query === "string" ? { query, ...options } : query;
   // `max_results` is the builtin's spelling and `maxResults` the JS one;
   // both arrive here because both are things an author reasonably writes.

@@ -116,3 +116,40 @@ describe("startWorkflowWorldIfDeclared", () => {
     spy.mockRestore();
   });
 });
+
+describe("an operator-supplied world", () => {
+  /**
+   * The DevKit loads whatever specifier it is handed, so every spelling of the
+   * Postgres world has to be RECOGNIZED as one — otherwise it is loaded and
+   * never migrated, and the log calls it `local`. An exact-equality check
+   * (what this used to be) passes only the first row.
+   */
+  test.each([
+    ["the bare package name", "@workflow/world-postgres"],
+    ["a resolved absolute path", "/app/node_modules/@workflow/world-postgres/dist/index.js"],
+    [
+      "a pnpm virtual-store path",
+      "/r/node_modules/.pnpm/@workflow+world-postgres@4.3.3_x/node_modules/@workflow/world-postgres/dist/index.js",
+    ],
+    ["a file: URL", "file:///app/node_modules/@workflow/world-postgres/dist/index.js"],
+    ["a subpath", "@workflow/world-postgres/dist/index.js"],
+  ])("is postgres when it is %s", (_label, target) => {
+    const env = { WORKFLOW_TARGET_WORLD: target };
+    expect(configureWorkflowWorld({ databaseUrl: undefined, port: 1, env })).toBe("postgres");
+  });
+
+  test.each([
+    ["the local world", "local"],
+    ["a third-party world", "@someone/world-redis"],
+  ])("is local when it is %s — nothing here knows how to migrate one", (_label, target) => {
+    const env = { WORKFLOW_TARGET_WORLD: target };
+    expect(configureWorkflowWorld({ databaseUrl: undefined, port: 1, env })).toBe("local");
+  });
+
+  test("is left exactly as the operator set it", () => {
+    const target = "/app/node_modules/@workflow/world-postgres/dist/index.js";
+    const env = { WORKFLOW_TARGET_WORLD: target };
+    configureWorkflowWorld({ databaseUrl: "postgres://x/y", port: 1, env });
+    expect(env.WORKFLOW_TARGET_WORLD).toBe(target);
+  });
+});

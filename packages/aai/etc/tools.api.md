@@ -18,12 +18,17 @@ export function fetchJson<T = DefaultToolResult>(url: string | ({
     headers?: Record<string, string>;
 } & CallOptions), options?: {
     headers?: Record<string, string>;
-} & CallOptions): Promise<T>;
+} & CallOptions): Promise<T | ToolFailure>;
+
+// @public
+type ToolFailure = {
+    error: string;
+};
 
 // @public
 export function visitWebpage<T = DefaultToolResult>(url: string | ({
     url: string;
-} & CallOptions), options?: CallOptions): Promise<T>;
+} & CallOptions), options?: CallOptions): Promise<T | ToolFailure>;
 
 // @public
 export function webSearch<T = DefaultToolResult>(query: string | ({
@@ -32,7 +37,7 @@ export function webSearch<T = DefaultToolResult>(query: string | ({
     maxResults?: number;
 } & CallOptions), options?: {
     maxResults?: number;
-} & CallOptions): Promise<T>;
+} & CallOptions): Promise<T | ToolFailure>;
 
 // (No @packageDocumentation comment for this package)
 

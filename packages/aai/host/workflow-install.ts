@@ -22,11 +22,13 @@
 import { join } from "node:path";
 import type { Db } from "../sdk/db.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
+import { publishStepFetch } from "../sdk/step-fetch.ts";
 import { publishStepReporter } from "../sdk/step-report.ts";
 import { publishUploadReader } from "../sdk/step-uploads.ts";
 import { MAX_UPLOAD_BYTES_ENV } from "../sdk/upload-constants.ts";
 import { createPostgresDb } from "./postgres-db.ts";
 import type { Logger } from "./runtime-config.ts";
+import { createStepFetch } from "./step-fetch.ts";
 import { createStepReporter } from "./workflow-report.ts";
 import { createUploadStore, type UploadStore } from "./workflow-uploads.ts";
 
@@ -82,6 +84,11 @@ export function installWorkflowSupport(opts: {
   });
   publishUploadReader(store);
   publishStepReporter(createStepReporter(opts.logger));
+  // The third step slot, and the one whose absence is silent: an unpublished
+  // `stepFetch` degrades to `globalThis.fetch`, which WORKS and speaks HTTP/2 —
+  // so a fan-out that lost this line would collect stream resets rather than an
+  // error naming the gap. See `sdk/step-fetch.ts`.
+  publishStepFetch(createStepFetch());
   return store;
 }
 

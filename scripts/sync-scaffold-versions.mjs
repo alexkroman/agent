@@ -55,6 +55,14 @@ const sharedDepSources = {
   "@vitejs/plugin-react": "packages/aai-ui/package.json",
   vite: "packages/aai-cli/package.json",
   zod: "packages/aai/package.json",
+  // The DevKit and the durable world. `@workflow/world-postgres` is what
+  // `getWorld()` imports for a project with a `DATABASE_URL`, and it is NOT a
+  // dependency of `workflow` — it reaches a project only through
+  // `@alexkroman1/aai`, which npm hoists and pnpm does not. So a scaffolded
+  // project has to declare it or its first run fails with
+  // `Cannot find module '@workflow/world-postgres'`.
+  workflow: "packages/aai/package.json",
+  "@workflow/world-postgres": "packages/aai/package.json",
   typescript: "package.json",
   vitest: "package.json",
   "@types/node": "package.json",

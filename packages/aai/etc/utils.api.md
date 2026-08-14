@@ -55,6 +55,25 @@ export function mapInBatches<T, R>(items: readonly T[], size: number, run: (item
 export const MAX_SLUG_LENGTH = 64;
 
 // @public
+export type MultipartBody = {
+    body: Uint8Array;
+    headers: {
+        "Content-Type": string;
+    };
+};
+
+// @public
+export function multipartBody(...parts: readonly MultipartPart[]): MultipartBody;
+
+// @public
+export type MultipartPart = {
+    name: string;
+    bytes: Uint8Array;
+    filename?: string | undefined;
+    type?: string | undefined;
+};
+
+// @public
 export function normalizeSpeechText(text: string): string;
 
 // @public
@@ -132,6 +151,17 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 export function stepEnv(name: string): string | undefined;
 
 // @public
+export function stepFetch(url: string, init?: StepFetchInit): Promise<Response>;
+
+// @public
+export type StepFetchInit = {
+    method?: string | undefined;
+    headers?: Record<string, string> | undefined;
+    body?: Uint8Array | string | undefined;
+    signal?: AbortSignal | undefined;
+};
+
+// @public
 export function stepGenerate(prompt: string, opts?: StepGenerateOptions): Promise<string>;
 
 // @public
@@ -165,6 +195,14 @@ export type StepGenerateOptions = {
     temperature?: number;
     maxTokens?: number;
 };
+
+// @public
+export class StepTransportError extends Error {
+    constructor(url: string, options: {
+        cause: unknown;
+    });
+    readonly codes: readonly string[];
+}
 
 // @public
 export function stripJsonFence(reply: string): string;

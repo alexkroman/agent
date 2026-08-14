@@ -14,6 +14,7 @@
   "dependencies": {
     "@alexkroman1/aai": "^5.14.0",
     "@alexkroman1/aai-ui": "^5.14.0",
+    "@workflow/world-postgres": "4.3.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.0.0",

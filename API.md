@@ -2688,6 +2688,9 @@ export function createServer(options: ServerOptions): AgentServer;
 export function createSessionCore(opts: SessionCoreOptions): SessionCore;
 
 // @internal
+export function createStepFetch(): StepFetch;
+
+// @internal
 export function createStepReporter(logger: Logger): StepReporter;
 
 // @public
@@ -3025,6 +3028,9 @@ export type ProviderEnv = Record<string, string> & {
 
 // @internal
 export function publishStepEnv(env: Readonly<Record<string, string | undefined>>): void;
+
+// @internal
+export function publishStepFetch(fetchFn: StepFetch | undefined): void;
 
 // @internal
 export function publishStepReporter(reporter: StepReporter | undefined): void;
@@ -3375,6 +3381,17 @@ export function startTelephonySession(carrierSocket: SessionWebSocket, runtime: 
 
 // @internal
 export function startWorkflowWorldIfDeclared(hasWorkflows: boolean, kind: WorldKind): Promise<void>;
+
+// @internal
+export type StepFetch = (url: string, init?: StepFetchInit) => Promise<Response>;
+
+// @public
+type StepFetchInit = {
+    method?: string | undefined;
+    headers?: Record<string, string> | undefined;
+    body?: Uint8Array | string | undefined;
+    signal?: AbortSignal | undefined;
+};
 
 // @internal
 export type StepReporter = (line: string) => void | Promise<void>;
@@ -4280,6 +4297,31 @@ export interface StubGatewayOptions {
 }
 
 // @public
+export type StubStepFetch = {
+    calls: StubStepRequest[];
+    restore: () => void;
+};
+
+// @public
+export function stubStepFetch(answer?: (request: StubStepRequest) => Response | {
+    status?: number;
+    body?: unknown;
+    headers?: Record<string, string>;
+} | Promise<Response | {
+    status?: number;
+    body?: unknown;
+    headers?: Record<string, string>;
+}>): StubStepFetch;
+
+// @public
+export type StubStepRequest = {
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+    body: Uint8Array | string | undefined;
+};
+
+// @public
 export type StubUpload = Uint8Array | {
     bytes: Uint8Array;
     name?: string;
@@ -4400,12 +4442,17 @@ export function fetchJson<T = DefaultToolResult>(url: string | ({
     headers?: Record<string, string>;
 } & CallOptions), options?: {
     headers?: Record<string, string>;
-} & CallOptions): Promise<T>;
+} & CallOptions): Promise<T | ToolFailure>;
+
+// @public
+type ToolFailure = {
+    error: string;
+};
 
 // @public
 export function visitWebpage<T = DefaultToolResult>(url: string | ({
     url: string;
-} & CallOptions), options?: CallOptions): Promise<T>;
+} & CallOptions), options?: CallOptions): Promise<T | ToolFailure>;
 
 // @public
 export function webSearch<T = DefaultToolResult>(query: string | ({
@@ -4414,7 +4461,7 @@ export function webSearch<T = DefaultToolResult>(query: string | ({
     maxResults?: number;
 } & CallOptions), options?: {
     maxResults?: number;
-} & CallOptions): Promise<T>;
+} & CallOptions): Promise<T | ToolFailure>;
 ```
 
 ## `@alexkroman1/aai/tts`
@@ -4699,6 +4746,25 @@ export function mapInBatches<T, R>(items: readonly T[], size: number, run: (item
 export const MAX_SLUG_LENGTH = 64;
 
 // @public
+export type MultipartBody = {
+    body: Uint8Array;
+    headers: {
+        "Content-Type": string;
+    };
+};
+
+// @public
+export function multipartBody(...parts: readonly MultipartPart[]): MultipartBody;
+
+// @public
+export type MultipartPart = {
+    name: string;
+    bytes: Uint8Array;
+    filename?: string | undefined;
+    type?: string | undefined;
+};
+
+// @public
 export function normalizeSpeechText(text: string): string;
 
 // @public
@@ -4776,6 +4842,17 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 export function stepEnv(name: string): string | undefined;
 
 // @public
+export function stepFetch(url: string, init?: StepFetchInit): Promise<Response>;
+
+// @public
+export type StepFetchInit = {
+    method?: string | undefined;
+    headers?: Record<string, string> | undefined;
+    body?: Uint8Array | string | undefined;
+    signal?: AbortSignal | undefined;
+};
+
+// @public
 export function stepGenerate(prompt: string, opts?: StepGenerateOptions): Promise<string>;
 
 // @public
@@ -4809,6 +4886,14 @@ export type StepGenerateOptions = {
     temperature?: number;
     maxTokens?: number;
 };
+
+// @public
+export class StepTransportError extends Error {
+    constructor(url: string, options: {
+        cause: unknown;
+    });
+    readonly codes: readonly string[];
+}
 
 // @public
 export function stripJsonFence(reply: string): string;
