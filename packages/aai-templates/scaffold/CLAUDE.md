@@ -399,6 +399,33 @@ Three rules come with it:
 `stepGenerate` already goes through this, so a step that only calls a model gets
 it for free.
 
+### A builtin's failure is its RESULT, so narrow it
+
+`webSearch`, `visitWebpage` and `fetchJson` (`@alexkroman1/aai/tools`) answer
+`T | ToolFailure` — they do not throw on an HTTP failure, a bot challenge or an
+oversized body, because a tool usually wants to hand the model something useful
+rather than fail the turn:
+
+```ts no-check
+import { webSearch } from "@alexkroman1/aai/tools";
+import { isToolFailure } from "@alexkroman1/aai/utils";
+
+const found = await webSearch<{ results?: { url?: string }[] }>({ query, max_results: 4 });
+// NOT `(found.results ?? [])` — a REFUSED search would then read as an empty web.
+if (isToolFailure(found)) return `That search failed: ${found.error}`;
+return (found.results ?? []).map((one) => one.url);
+```
+
+**`?? []` is the mistake, and it is a quiet one.** Both shipped templates that
+search wrote it, and one of them had a `catch` for this exact failure — which
+never ran, because a `catch` cannot see a returned value. DuckDuckGo refuses
+often enough that the empty answer is routine, and to the model "no results" and
+"the search was blocked" are different facts: told the first, it concludes the
+pages do not exist and tries again with different words until its budget is gone.
+
+An UNTYPED call (`await fetchJson(url)`) stays loose and needs no narrowing —
+naming a shape is what asks the compiler to make you handle the failure.
+
 ### The page
 
 A workflow app's `client.tsx` mounts with `page()` rather than `client()` —

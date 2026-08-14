@@ -53,6 +53,7 @@ import { throwStepError } from "@alexkroman1/aai/step-errors";
 import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 import {
   errorMessage,
+  isToolFailure,
   mapInBatches,
   report,
   stepGenerate,
@@ -427,6 +428,11 @@ async function search(query: string): Promise<{ summary: string; sources: Source
       query,
       max_results: SEARCH_RESULTS,
     });
+    // The `catch` below was written for exactly this and could not reach it:
+    // `webSearch` ANSWERS with `{ error }` rather than throwing, so a refused
+    // search arrived here as an empty result list and was reported to the
+    // researcher as "No results." — the thing this function's doc says not to do.
+    if (isToolFailure(results)) throw new Error(results.error);
     const sources = (results.results ?? [])
       .filter((one): one is { title: string; url: string } =>
         Boolean(typeof one.url === "string" && one.url),
@@ -447,6 +453,10 @@ async function search(query: string): Promise<{ summary: string; sources: Source
 async function readPage(url: string): Promise<string> {
   try {
     const page = await visitWebpage<{ content?: string; text?: string }>(url);
+    // Same rule as the search above: an unreadable page ANSWERS with `{ error }`,
+    // and `?? ""` would put an empty note in front of the compression stage —
+    // which reads as "this page said nothing" rather than "we never read it".
+    if (isToolFailure(page)) throw new Error(page.error);
     return String(page.content ?? page.text ?? "").slice(0, MAX_PAGE_CHARS);
   } catch (err: unknown) {
     return `Could not read this page: ${errorMessage(err)}`;

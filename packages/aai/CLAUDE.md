@@ -89,7 +89,7 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/llm` | `sdk/providers/llm-barrel.ts` | LLM provider factories + types (`anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `openrouter`, `gateway`) |
 | `@alexkroman1/aai/tts` | `sdk/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`, `assemblyAITts`) |
 | `@alexkroman1/aai/s2s` | `sdk/providers/s2s-barrel.ts` | S2S provider factories + types (`openaiRealtime`; `assemblyAIS2s` is on the root export) |
-| `@alexkroman1/aai/tools` | `host/agent-tools.ts` (direct, not a barrel) | Keyless network builtins callable from user tool code: `fetchJson`, `visitWebpage`, `webSearch` |
+| `@alexkroman1/aai/tools` | `host/agent-tools.ts` (direct, not a barrel) | Keyless network builtins callable from user tool code: `fetchJson`, `visitWebpage`, `webSearch`. All three ANSWER `T \| ToolFailure` — a builtin's failure is its result, not a throw — so a caller that names a shape narrows with `isToolFailure`. Typed as a bare `T`, all three callers in this repo turned a live DuckDuckGo 403 into "the web has nothing" |
 | `@alexkroman1/aai/internal` | `internal.ts` | Cross-package infrastructure (`createEpoch`, `createOwnedMap`, `createCoalescingRunner`, `parseWsUpgradeParams`, `formatSchemaIssues`) plus the framework BUDGETS the browser client needs (the client-audio constants, `AGENT_CSP`, `WS_OPEN`). Not public API, not semver-covered, excluded from the docs. The env brands live on `./runtime` instead — they appear in its public signatures (`RuntimeOptions`, `withHostCredentialFallback`) |
 
 ## Session modes

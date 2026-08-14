@@ -162,6 +162,20 @@ throw made this template unimportable by its own spec. The check lives at
 Note the template needs `workflow` as a devDependency of THIS package to
 resolve at test time; a scaffolded project gets it as a real dependency.
 
+**A search that was REFUSED is not a web with nothing in it, and both templates
+that search got that wrong.** `webSearch`/`visitWebpage`/`fetchJson`
+(`@alexkroman1/aai/tools`) ANSWER with `{ error }` rather than throwing — the
+model-facing contract, so a tool hands something useful back instead of failing
+the turn — and they used to be typed `Promise<T>`, which made that invisible.
+`research-desk` wrote `(results.results ?? [])` under a `catch` written for
+exactly this failure, and a `catch` cannot see a returned value; `plan-desk`
+wrote the same line with no failure path at all. Measured 2026-08-13: DuckDuckGo
+answered `403` to both its endpoints, so every search in both templates reported
+"No results." with the refusal nowhere. The type is `T | ToolFailure` now and
+both narrow with `isToolFailure` — and `aai:builtins` epoch 1 was DROPPED over
+it, which is the gate recording that a caller who named a shape has to handle the
+failure it was already receiving.
+
 **A step's HTTP goes through `stepFetch`, never `fetch`, and that came out of a
 load test rather than review.** `transcription-desk` used `fetch` with a
 `FormData`, which is the obvious spelling and fails under exactly the concurrency

@@ -15,6 +15,7 @@
 
 import { pushCapped, type SlotStateOf, sessionSlot } from "@alexkroman1/aai";
 import { webSearch } from "@alexkroman1/aai/tools";
+import { isToolFailure } from "@alexkroman1/aai/utils";
 
 /** One completed step — their `past_steps`, as a pair rather than a tuple. */
 export interface PastStep {
@@ -79,6 +80,11 @@ export const liveSearch: SearchFn = async (query) => {
     query,
     max_results: SEARCH_RESULTS,
   });
+  // A REFUSED search is not an empty web, and `webSearch` answers with
+  // `{ error }` rather than throwing — so an unnarrowed `?? []` below would tell
+  // the executor there is nothing out there. Measured: DuckDuckGo answers `403`
+  // often enough that this is the ordinary case, not an edge one.
+  if (isToolFailure(results)) throw new Error(`Search failed: ${results.error}`);
   return (results.results ?? [])
     .filter(
       (one): one is { title?: string; url: string } =>
