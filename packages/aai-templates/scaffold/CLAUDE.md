@@ -28,7 +28,16 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    `aai init --template <name>` scaffolds a fresh project from one. Closest
    matches: `simple`, `pipeline-simple`, `web-researcher`, `solo-rpg`,
    `pizza-ordering`, `retail` (the most complex — 15 tools over a
-   relational store, with a `syncState`-driven UI). When reading SDK
+   relational store, with a `syncState`-driven UI). Four are ports of agents you
+   may already know from LangChain/LangGraph, and each says in its own source
+   what had to change: `travel-concierge` (their customer-support bot —
+   specialist desks, and every booking staged for a spoken confirmation before
+   it applies), `support-line` (self-RAG/CRAG — retrieve, grade what came back,
+   rewrite the question, and refuse to speak an answer it cannot ground),
+   `plan-desk` (plan-and-execute — one step per tool call, so the caller can
+   redirect between them), and `redline` (the reflection agent — write,
+   critique, revise, which is too slow for a phone and so is a PAGE over a
+   durable run rather than a voice agent). When reading SDK
    types under
    `node_modules/@alexkroman1/aai*/dist/`, note the built entry points
    re-export with source specifiers (`"./sdk/constants.ts"`,

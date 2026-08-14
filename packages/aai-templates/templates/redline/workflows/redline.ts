@@ -1,0 +1,269 @@
+/**
+ * The durable half of the redline desk: write, critique, revise — in a loop
+ * whose length the CRITIC decides.
+ *
+ * The rules a `"use workflow"` body lives under are spelled out in
+ * `research-desk/workflows/research.ts` and `link-digest/workflows/digest.ts`:
+ * the body is replayed from the top on every resume, so it holds no live handle
+ * and makes no undurable decision, and a step's arguments and result cross a
+ * queue. Read those first. What THIS one adds is the shape neither of them has:
+ * **a loop whose exit is decided at run time**.
+ *
+ * ## A journaled result is what makes a data-dependent loop legal
+ *
+ * `transcription-desk` derives its fan-out's WIDTH from a step's journaled
+ * result, and its module doc gives the rule. This is the same rule spent on a
+ * different thing: `critique` returns a verdict, the body breaks on it, and a
+ * replay reads that verdict back out of the journal and takes the same branch.
+ * Deciding it any other way — a clock, a random draw, a re-read of something
+ * outside the run — would let a replay diverge, and the DevKit correlates
+ * journal entries to step calls by issue order, so a divergent branch is a
+ * `ReplayDivergenceError` rather than a slightly different essay.
+ *
+ * ## Why durability earns its keep here, specifically
+ *
+ * A three-round redline is up to seven model calls in sequence, each of them
+ * long-form. That is minutes, not seconds — nobody is going to sit on a phone
+ * for it, which is why this is a workflow app rather than a voice agent — and
+ * it is exactly the work you do not want to redo: a rate limit in round three
+ * replays rounds one and two from the journal for free and re-issues only the
+ * call that failed. Each stage is its own step for that reason, not because
+ * three functions read more tidily than one.
+ */
+
+import { report, StepGenerateError, safeJsonParse, stepGenerate } from "@alexkroman1/aai/utils";
+import { FatalError, RetryableError } from "workflow";
+import { CRITIC_SYSTEM, REVISER_SYSTEM, WRITER_SYSTEM } from "./prompts.ts";
+
+/** Shortest brief worth writing from. Below this the piece would be invention. */
+export const MIN_BRIEF_CHARS = 20;
+
+/** Notes one critique may return — their prompt asks for three at most. */
+export const MAX_NOTES = 3;
+
+/** What the form collects, once the page has mapped its fields. */
+export interface RedlineInput {
+  brief: string;
+  audience: string;
+  /** Critique-and-revise rounds this run may spend. Their `should_continue` cap. */
+  rounds: number;
+  /** Points the piece must cover. An ARRAY, which is why the page writes that
+   *  field by hand — `<WorkflowFields>` renders scalars only. */
+  mustCover: string[];
+}
+
+export interface Critique {
+  verdict: "ship" | "revise";
+  /** 1–10, for the page. Nothing branches on it — the verdict is the decision. */
+  score: number;
+  notes: string[];
+}
+
+/** One round, as the page renders it and the journal records it. */
+export interface Round {
+  round: number;
+  critique: Critique;
+  /** Absent on the round that shipped: nothing was revised after it. */
+  revisedWords?: number;
+}
+
+/**
+ * Write, then critique and revise until the critic ships it or the rounds run
+ * out.
+ *
+ * Whatever this returns is what a completed run reports as `output`, so it is
+ * the page's render model — and `WorkflowOutputOf<typeof redline>` in
+ * `client.tsx` is that type, derived rather than restated.
+ */
+export async function redlineFlow(input: RedlineInput) {
+  "use workflow";
+
+  let draft = await writeDraft(input);
+  const rounds: Round[] = [];
+  let shipped = false;
+
+  for (let round = 1; round <= input.rounds; round++) {
+    const critique = await critiqueDraft(draft, input, round);
+
+    if (critique.verdict === "ship") {
+      // The break is decided by a STEP'S JOURNALED RESULT, which is what makes
+      // it replay-stable — see the module doc.
+      rounds.push({ round, critique });
+      shipped = true;
+      break;
+    }
+
+    draft = await reviseDraft(draft, critique, input, round);
+    rounds.push({ round, critique, revisedWords: countWords(draft) });
+  }
+
+  return {
+    draft,
+    words: countWords(draft),
+    roundsRun: rounds.length,
+    /** True when the CRITIC stopped the loop, false when the budget did. */
+    shipped,
+    rounds,
+  };
+}
+
+/** Their `generation_node`, first pass. */
+export async function writeDraft(input: RedlineInput): Promise<string> {
+  "use step";
+
+  if (input.brief.trim().length < MIN_BRIEF_CHARS) {
+    // Fatal rather than retryable: the same brief is the same brief on every
+    // attempt, and four more model calls will not make it longer.
+    //
+    // Not redundant with the schema's `.min(20)`, which counts CHARACTERS: a
+    // brief of twenty spaces passes validation at `start()` and arrives here
+    // as nothing to write from.
+    throw new FatalError(
+      `The brief is too short to write from — give at least ${MIN_BRIEF_CHARS} characters of it.`,
+    );
+  }
+
+  await report(`Writing the first draft for ${input.audience}.`);
+  // No empty-reply guard here or in `reviseDraft`, and that is not an omission:
+  // `stepGenerate` already refuses an empty completion, as a RETRYABLE
+  // `StepGenerateError` — which is the right answer, and one a hand-written
+  // check would have to re-derive.
+  const draft = await ask(briefBlock(input), { system: WRITER_SYSTEM });
+  return draft.trim();
+}
+
+/**
+ * Their `reflection_node`: grade the draft against its brief.
+ *
+ * Its own step rather than part of the revision, because the two fail
+ * differently and because this one's RESULT is what the body branches on — a
+ * revision folded into the same step would put the decision and the expensive
+ * rewrite behind one journal entry.
+ */
+export async function critiqueDraft(
+  draft: string,
+  input: RedlineInput,
+  round: number,
+): Promise<Critique> {
+  "use step";
+
+  await report(`Round ${round}: reading it back critically.`);
+  const reply = await ask(`${briefBlock(input)}\n\nThe submission:\n${draft}`, {
+    system: CRITIC_SYSTEM,
+  });
+
+  const parsed = safeJsonParse(stripFence(reply));
+  if (!isCritique(parsed)) {
+    // A PLAIN throw, unlike the fatal one above: a model that answered with
+    // prose instead of JSON may well answer correctly on the next attempt.
+    throw new Error("The critic did not return the JSON shape this step asked for.");
+  }
+  const critique: Critique = {
+    verdict: parsed.verdict,
+    score: clampScore(parsed.score),
+    notes: parsed.notes.slice(0, MAX_NOTES),
+  };
+  await report(
+    critique.verdict === "ship"
+      ? `Round ${round}: the critic would ship it (${critique.score}/10).`
+      : `Round ${round}: ${critique.notes.length} note(s) to address (${critique.score}/10).`,
+  );
+  return critique;
+}
+
+/** Their generation node re-entered with the critique. */
+export async function reviseDraft(
+  draft: string,
+  critique: Critique,
+  input: RedlineInput,
+  round: number,
+): Promise<string> {
+  "use step";
+
+  await report(`Round ${round}: revising.`);
+  const revised = await ask(
+    [
+      briefBlock(input),
+      `Your current draft:\n${draft}`,
+      `The critique:\n${critique.notes.map((note, index) => `${index + 1}. ${note}`).join("\n")}`,
+    ].join("\n\n"),
+    { system: REVISER_SYSTEM },
+  );
+  return revised.trim();
+}
+
+// ---- Pure helpers -----------------------------------------------------------
+
+/** The brief as every stage restates it, so the three cannot drift apart. */
+export function briefBlock(input: RedlineInput): string {
+  const must =
+    input.mustCover.length > 0
+      ? `Must cover:\n${input.mustCover.map((point) => `- ${point}`).join("\n")}`
+      : "Must cover: nothing specific was named.";
+  return [`Brief: ${input.brief}`, `Audience: ${input.audience}`, must].join("\n\n");
+}
+
+export function countWords(text: string): number {
+  const trimmed = text.trim();
+  return trimmed.length === 0 ? 0 : trimmed.split(/\s+/).length;
+}
+
+/** Scores arrive from a model, so they arrive out of range often enough. */
+export function clampScore(score: number): number {
+  if (!Number.isFinite(score)) return 0;
+  return Math.min(10, Math.max(1, Math.round(score)));
+}
+
+/** Unwrap a ```json fence, which models add however firmly they are told not to. */
+export function stripFence(reply: string): string {
+  const fenced = /^\s*```(?:json)?\s*\n([\s\S]*?)\n?\s*```\s*$/.exec(reply);
+  return (fenced?.[1] ?? reply).trim();
+}
+
+/** Is this the shape `critiqueDraft` promised its caller? */
+export function isCritique(
+  value: unknown,
+): value is { verdict: "ship" | "revise"; score: number; notes: string[] } {
+  if (value === null || typeof value !== "object") return false;
+  const shape: { verdict?: unknown; score?: unknown; notes?: unknown } = value;
+  return (
+    (shape.verdict === "ship" || shape.verdict === "revise") &&
+    typeof shape.score === "number" &&
+    Array.isArray(shape.notes) &&
+    shape.notes.every((note) => typeof note === "string")
+  );
+}
+
+// ---- The model call ---------------------------------------------------------
+
+/**
+ * `stepGenerate`, with this desk's retry POLICY on top.
+ *
+ * The SDK classifies the failure (`StepGenerateError.retryable`) and stops
+ * there: whether a terminal failure should burn the step's remaining attempts is
+ * the caller's call, and `FatalError` belongs to `workflow`, which the SDK
+ * cannot import onto the CLI's startup path. `link-digest` and `research-desk`
+ * carry the same three lines for the same reason.
+ */
+async function ask(prompt: string, opts: { system: string }): Promise<string> {
+  return await stepGenerate(prompt, opts).catch(stopOrRetry);
+}
+
+/** A plain function rather than a `throw` inside a `catch`: `FatalError` takes
+ *  only a message, so constructing one in a catch block trips `useErrorCause`
+ *  with no way to satisfy it. */
+function stopOrRetry(err: unknown): never {
+  if (err instanceof StepGenerateError) {
+    if (!err.retryable) throw new FatalError(err.message);
+    // One line more than `link-digest`'s copy, and the SDK asks for it: when the
+    // gateway named a delay, that number beats the DevKit's default backoff,
+    // which is a guess.
+    if (err.retryAfter) throw new RetryableError(err.message, { retryAfter: err.retryAfter });
+  }
+  throw err;
+}
+
+/** A rate limit — and a model that ignored the format — are both expected. */
+critiqueDraft.maxRetries = 5;
+writeDraft.maxRetries = 3;
+reviseDraft.maxRetries = 3;

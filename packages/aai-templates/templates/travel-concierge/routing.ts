@@ -1,0 +1,137 @@
+/**
+ * The dialog-stack tools: delegate, escalate, confirm, cancel.
+ *
+ * These four shapes are the customer-support tutorial's control plane, and they
+ * are here rather than under `tools/` because they are GENERATED. The notebook
+ * declares `ToFlightBookingAssistant`, `ToHotelBookingAssistant`,
+ * `ToBookCarRental` and `ToBookExcursion` as four pydantic classes that differ
+ * only in the docstring; four near-identical files would restate a shape whose
+ * whole content is one entry in {@link SPECIALISTS}. A domain tool — one that
+ * searches or books something — gets its own file under `tools/`, because each
+ * of those really is different work.
+ */
+
+import type { ToolDef } from "@alexkroman1/aai";
+import { z } from "zod";
+import {
+  activeAssistant,
+  applyPending,
+  describeAction,
+  note,
+  SPECIALIST_IDS,
+  SPECIALISTS,
+  type SpecialistId,
+  tripSlot,
+} from "./shared.ts";
+
+/**
+ * `to_<specialist>_assistant` — push a desk onto the dialog stack.
+ *
+ * The result IS the specialist's brief. A voice session's system prompt is
+ * fixed at connect, so there is no swapping it the way their graph swaps the
+ * runnable; handing the brief back as the tool result puts it in the last thing
+ * the model reads before it speaks, which is the same effect by a route that
+ * works on a live call. `request` exists for the same reason theirs does: the
+ * specialist needs what the caller actually asked for, not just that they were
+ * transferred.
+ */
+function delegationTool(id: SpecialistId): ToolDef {
+  const specialist = SPECIALISTS[id];
+  return tripSlot.tool({
+    description:
+      `Hand the call to the ${specialist.title}. Use this as soon as the caller ` +
+      "raises something that desk owns — do not answer it yourself. Do not " +
+      "mention the transfer; the caller should hear one continuous conversation.",
+    inputSchema: z.object({
+      request: z
+        .string()
+        .max(500)
+        .describe("What the caller asked for, in their own words where possible"),
+    }),
+    execute(args, trip) {
+      // Re-entering a desk the call is already on would grow the stack without
+      // bound over a long call; the brief is still worth re-reading.
+      if (activeAssistant(trip) !== id) trip.dialogState.push(id);
+      note(trip, `→ ${specialist.title}: ${args.request}`);
+      return {
+        desk: specialist.title,
+        instructions: specialist.instructions,
+        request: args.request,
+      };
+    },
+  });
+}
+
+/** The four delegation tools, keyed by the name the model calls. */
+export const delegationTools: Record<string, ToolDef> = Object.fromEntries(
+  SPECIALIST_IDS.map((id) => [`to_${id}_assistant`, delegationTool(id)]),
+);
+
+/**
+ * `complete_or_escalate` — pop back to the concierge.
+ *
+ * Kept under its original name because the name is load-bearing: it covers BOTH
+ * "this desk is finished" and "this desk cannot help", and a model offered only
+ * a `done` tool will keep trying to answer things the desk has no tools for.
+ * The `reason` is what the concierge is handed on the way back up.
+ */
+export const completeOrEscalate = tripSlot.tool({
+  description:
+    "Hand the call back to the main concierge. Use this when the current desk's " +
+    "work is finished, when the caller changes the subject to something this " +
+    "desk does not handle, or when they change their mind.",
+  inputSchema: z.object({
+    reason: z
+      .string()
+      .max(300)
+      .describe("Why the call is going back — what is done, or what the caller now wants"),
+  }),
+  execute(args, trip) {
+    const left = activeAssistant(trip);
+    // `primary` stays at the bottom — the slot's `after` hook restores it if a
+    // pop ever empties the stack.
+    if (trip.dialogState.length > 1) trip.dialogState.pop();
+    note(trip, `← back to concierge: ${args.reason}`);
+    return {
+      returnedFrom: left === "primary" ? "concierge" : SPECIALISTS[left].title,
+      nowHandling: "concierge",
+      reason: args.reason,
+      instructions:
+        "You are the main concierge again. Pick up what the caller asked for; " +
+        "delegate again if it belongs to another desk.",
+    };
+  },
+});
+
+/**
+ * `confirm_action` — the caller said yes.
+ *
+ * This is the only tool in the template that changes a booking. Their graph
+ * halts before a sensitive tool and resumes on approval; the halt here is that
+ * every sensitive tool stages instead of acting, so the approval has somewhere
+ * to arrive.
+ */
+export const confirmAction = tripSlot.tool({
+  description:
+    "Apply the change the caller has just confirmed out loud. Only call this " +
+    "after you have read the change back and heard a clear yes.",
+  execute(_args, trip) {
+    return applyPending(trip);
+  },
+});
+
+/** `cancel_action` — the caller said no. Drops the staged action, changes nothing. */
+export const cancelAction = tripSlot.tool({
+  description:
+    "Discard the change the caller just declined. Call this when they say no, " +
+    "or when they want to change the details before confirming.",
+  execute(_args, trip) {
+    const action = trip.pending;
+    if (!action) return { message: "Nothing was waiting for confirmation." };
+    trip.pending = null;
+    const described = describeAction(action);
+    const summary = typeof described === "string" ? described : action.kind;
+    note(trip, `Declined: ${summary}`);
+    return { discarded: summary, message: "Nothing was changed." };
+  },
+});
