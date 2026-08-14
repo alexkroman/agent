@@ -103,6 +103,40 @@ const WDK_EXTERNAL = [
 /** Scratch directory for the builder's file output, under the CLI's own dot-dir. */
 const SCRATCH_REL = path.join(".aai", "workflow-build");
 
+/**
+ * What makes a CJS dependency survive into the ESM step bundle.
+ *
+ * esbuild cannot statically rewrite `require("node:assert")` inside a bundled
+ * CommonJS module, so it emits a `__require` shim — and that shim's fallback
+ * THROWS: `Dynamic require of "node:assert" is not supported`. A step bundles
+ * everything it imports and npm is full of CJS, so any step reaching a package
+ * with a CJS dependency anywhere in its graph failed AT MODULE LOAD, before a
+ * single line of the step ran.
+ *
+ * That is not a hypothetical, and the way it presents is the argument for
+ * fixing it here. `research-desk` imports `webSearch` from
+ * `@alexkroman1/aai/tools`, which reaches `host/ssrf.ts`, which imports
+ * **undici** — 118 dynamic requires, all of them `node:` builtins. `aai dev`
+ * then never listened at all: the message named a Node builtin the author
+ * never mentions, nothing named the package or the import that pulled it, and
+ * because the step bundle is loaded before the server binds there was no
+ * server to ask. It also does not reproduce in-tree, where `@dev/source`
+ * resolves the SDK to TypeScript — only against the published `dist` — so
+ * every gate short of the e2e suite was green.
+ *
+ * The shim itself is the fix's whole mechanism: esbuild writes
+ * `typeof require !== "undefined" ? require : <thrower>`, so a real `require`
+ * in scope is USED. This defines one from `import.meta.url` and is prepended,
+ * which puts it ahead of the `var __require = …` initializer that reads it.
+ * The flow bundle deliberately gets none — it is compiled in a `node:vm`
+ * Script, where `import.meta` does not exist.
+ */
+const STEP_REQUIRE_SHIM = [
+  'import { createRequire as __aaiCreateRequire } from "node:module";',
+  "const require = __aaiCreateRequire(import.meta.url);",
+  "",
+].join("\n");
+
 /** What a guest needs to serve workflows for one agent. */
 export type WorkflowBundleOutput = {
   /**
@@ -196,7 +230,7 @@ class AaiWorkflowBuilder extends BaseBuilder {
       fs.readFile(flowFile, "utf-8"),
       fs.readFile(stepFile, "utf-8"),
     ]);
-    this.output = { workflowCode, stepCode, manifest, inputFiles };
+    this.output = { workflowCode, stepCode: STEP_REQUIRE_SHIM + stepCode, manifest, inputFiles };
   }
 }
 
