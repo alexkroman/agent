@@ -2,7 +2,7 @@
 /**
  * Frozen authoring example: `stt` epoch 1.
  *
- * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
+ * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative.
  */
 

@@ -2,7 +2,7 @@
 /**
  * Frozen authoring example: `utils` epoch 5.
  *
- * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
+ * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative. Epoch 5 adds what a step SAYS and what it does with a failure —
  * `report`, and the `isTransientStatus`/`retryAfter` pair — to epoch 4's and
  * takes nothing away, so this file only demonstrates what is new.

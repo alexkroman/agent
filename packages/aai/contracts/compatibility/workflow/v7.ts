@@ -11,7 +11,7 @@
  * Epochs 1 through 6 are unchanged and retained, so this file demonstrates only
  * what is new.
  *
- * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
+ * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative.
  */
 

@@ -1,7 +1,7 @@
 /**
  * The redline desk's page: a form, the loop turning, and the piece it produced.
  *
- * `link-digest` shows the workflow primitives raw and `transcription-desk` shows
+ * `link-digest` shows the workflow primitives raw and `transcription-workflow` shows
  * the form layer over them; this page is the MIXED case, which is what most real
  * schemas need and what neither of those has.
  *

@@ -1,13 +1,11 @@
 import { agent } from "@alexkroman1/aai";
 import { gameSlot } from "./shared.ts";
-import systemPrompt from "./system-prompt.md?raw";
 
 export default agent({
   name: "Solo RPG",
   // The campaign exists before the first tool call, so a resumed connection
   // has something to project rather than an empty state object.
   state: gameSlot.state,
-  systemPrompt,
   greeting:
     "Welcome. Tell me your name, or describe the kind of story you want, and we will begin. You can say something like, dark fantasy warrior named Kael, or just give me a name and I will build a world around you.",
   sttPrompt:

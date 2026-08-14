@@ -7,7 +7,7 @@
  * got, a rejected model call it is catching, and a failure it has DECIDED is
  * terminal on grounds no status code carries.
  *
- * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
+ * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative.
  */
 

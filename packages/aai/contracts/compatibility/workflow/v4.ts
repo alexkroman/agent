@@ -14,7 +14,7 @@
  * narrower claim worth stating: those calls still TYPE-CHECK, and the reason
  * this epoch exists is that one of them can hang.
  *
- * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
+ * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative.
  */
 

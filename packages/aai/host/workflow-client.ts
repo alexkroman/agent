@@ -35,7 +35,7 @@
  * matches no stored run, so it answered `[]` for every workflow — taking
  * `GET /workflows/runs` and `aai workflow runs <name>` ("No runs of X yet") with
  * it — while every snapshot reported the machine id as its `workflow`, which
- * `research-desk`'s status tool reads to a caller down the phone. Neither could
+ * `research-workflow`'s status tool reads to a caller down the phone. Neither could
  * be caught by this module's own specs, because a stubbed adapter answers with
  * whatever name the test wrote; {@link WdkAdapter}'s `listRuns` therefore names
  * its parameter `workflowId`, and the fake in `workflow-client.test.ts` stores

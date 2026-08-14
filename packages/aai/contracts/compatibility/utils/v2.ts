@@ -2,7 +2,7 @@
 /**
  * Frozen authoring example: `utils` epoch 2.
  *
- * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
+ * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative. Epoch 2 adds `mapInBatches` to epoch 1's surface and takes nothing
  * away, which is why `../utils/v1.ts` is retained rather than dropped — this
  * file only has to demonstrate what is new.

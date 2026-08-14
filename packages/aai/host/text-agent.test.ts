@@ -9,7 +9,8 @@
  * out of the tools it ran.
  */
 
-import { agent, tool } from "@alexkroman1/aai";
+import { type AgentDef, agent, tool } from "@alexkroman1/aai";
+import { type ToolRegistry, withTools } from "@alexkroman1/aai/manifest";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { createFakeLanguageModel } from "./_fake-llm.ts";
@@ -30,15 +31,24 @@ const silentLogger = {
   error: vi.fn(),
 };
 
-function textAgent(def: Parameters<typeof agent>[0]) {
-  return agent(def);
+/**
+ * A text agent WITH its tools — the def a build produces, in one call.
+ *
+ * `agent()` takes no `tools`: a tool is a FILE, and the enumeration happens
+ * where the bundle is assembled. A spec has no bundler in its path, so it
+ * resolves the registry itself — `withDiscoveredTools` over an
+ * `import.meta.glob` in a real project, and a literal here, since these tools
+ * exist to be driven rather than to live anywhere.
+ */
+function textAgent(def: Parameters<typeof agent>[0], tools: ToolRegistry = {}): AgentDef {
+  return withTools(agent(def), tools);
 }
 
 describe("createTextAgent", () => {
   test("streams a reply, sending the agent's system prompt", async () => {
     const model = createFakeLanguageModel({ script: [{ type: "text", text: "hello there" }] });
     const chat = createTextAgent({
-      agent: textAgent({ name: "Helper", text: true, system: "Be brief.", tools: {} }),
+      agent: textAgent({ name: "Helper", text: true, system: "Be brief." }),
       model,
       logger: silentLogger,
     });
@@ -54,7 +64,7 @@ describe("createTextAgent", () => {
   test("refuses an agent that did not opt into text mode", () => {
     expect(() =>
       createTextAgent({
-        agent: agent({ name: "Voice", tools: {} }),
+        agent: agent({ name: "Voice" }),
         model: createFakeLanguageModel({ script: [] }),
       }),
     ).toThrow(/not a text agent/);
@@ -62,7 +72,7 @@ describe("createTextAgent", () => {
 
   test("createRuntime refuses a text agent, naming what to use instead", () => {
     expect(() =>
-      createRuntime({ agent: textAgent({ name: "Chat", text: true, tools: {} }), env: {} }),
+      createRuntime({ agent: textAgent({ name: "Chat", text: true }), env: {} }),
     ).toThrow(/createTextAgent/);
   });
 
@@ -86,12 +96,14 @@ describe("createTextAgent", () => {
       ],
     });
     const chat = createTextAgent({
-      agent: textAgent({
-        name: "Notes",
-        text: true,
-        tools: { remember },
-        state: () => ({ words: [] as string[] }),
-      }),
+      agent: textAgent(
+        {
+          name: "Notes",
+          text: true,
+          state: () => ({ words: [] as string[] }),
+        },
+        { remember },
+      ),
       env: { TOKEN: "t0" },
       model,
       sessionId: "sid-1",
@@ -111,14 +123,16 @@ describe("createTextAgent", () => {
   test("declares builtinTools to the model alongside the agent's own", async () => {
     const model = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
     const chat = createTextAgent({
-      agent: textAgent({
-        name: "Researcher",
-        text: true,
-        builtinTools: ["calculate"],
-        tools: {
+      agent: textAgent(
+        {
+          name: "Researcher",
+          text: true,
+          builtinTools: ["calculate"],
+        },
+        {
           ping: tool({ description: "Ping", execute: () => "pong" }),
         },
-      }),
+      ),
       model,
       logger: silentLogger,
     });
@@ -145,17 +159,19 @@ describe("createTextAgent", () => {
       ],
     });
     const chat = createTextAgent({
-      agent: textAgent({
-        name: "Math",
-        text: true,
-        tools: {
+      agent: textAgent(
+        {
+          name: "Math",
+          text: true,
+        },
+        {
           add: tool({
             description: "Add one",
             inputSchema: z.object({ n: z.number() }),
             execute: ({ n }) => n + 1,
           }),
         },
-      }),
+      ),
       model,
       logger: silentLogger,
     });
@@ -179,10 +195,12 @@ describe("createTextAgent", () => {
       ],
     });
     const chat = createTextAgent({
-      agent: textAgent({
-        name: "Math",
-        text: true,
-        tools: {
+      agent: textAgent(
+        {
+          name: "Math",
+          text: true,
+        },
+        {
           add: tool({
             description: "Add one",
             inputSchema: z.object({ n: z.number() }),
@@ -192,7 +210,7 @@ describe("createTextAgent", () => {
             },
           }),
         },
-      }),
+      ),
       model,
       logger: silentLogger,
     });
@@ -209,12 +227,14 @@ describe("createTextAgent", () => {
       ],
     });
     const chat = createTextAgent({
-      agent: textAgent({
-        name: "Capped",
-        text: true,
-        maxSteps: 1,
-        tools: { noop: tool({ description: "Nothing", execute: () => "ok" }) },
-      }),
+      agent: textAgent(
+        {
+          name: "Capped",
+          text: true,
+          maxSteps: 1,
+        },
+        { noop: tool({ description: "Nothing", execute: () => "ok" }) },
+      ),
       model,
       logger: silentLogger,
     });
@@ -234,12 +254,14 @@ describe("createTextAgent", () => {
       ],
     });
     const chat = createTextAgent({
-      agent: textAgent({
-        name: "Capped",
-        text: true,
-        maxSteps: 1,
-        tools: { noop: tool({ description: "Nothing", execute: () => "ok" }) },
-      }),
+      agent: textAgent(
+        {
+          name: "Capped",
+          text: true,
+          maxSteps: 1,
+        },
+        { noop: tool({ description: "Nothing", execute: () => "ok" }) },
+      ),
       model,
       logger: silentLogger,
     });
@@ -271,12 +293,14 @@ describe("createTextAgent", () => {
       ],
     });
     const chat = createTextAgent({
-      agent: textAgent({
-        name: "Budgeted",
-        text: true,
-        maxSteps: 10,
-        tools: { noop: tool({ description: "Nothing", execute: () => "ok" }) },
-      }),
+      agent: textAgent(
+        {
+          name: "Budgeted",
+          text: true,
+          maxSteps: 10,
+        },
+        { noop: tool({ description: "Nothing", execute: () => "ok" }) },
+      ),
       model,
       logger: silentLogger,
     });
@@ -299,10 +323,12 @@ describe("createTextAgent", () => {
       ],
     });
     const chat = createTextAgent({
-      agent: textAgent({
-        name: "Peeker",
-        text: true,
-        tools: {
+      agent: textAgent(
+        {
+          name: "Peeker",
+          text: true,
+        },
+        {
           peek: tool({
             description: "Read history",
             execute: (_args, ctx) => {
@@ -311,7 +337,7 @@ describe("createTextAgent", () => {
             },
           }),
         },
-      }),
+      ),
       model,
       logger: silentLogger,
     });
@@ -341,7 +367,7 @@ describe("createTextAgent", () => {
       delayMs: 20,
     });
     const chat = createTextAgent({
-      agent: textAgent({ name: "Stoppable", text: true, tools: {} }),
+      agent: textAgent({ name: "Stoppable", text: true }),
       model,
       logger: silentLogger,
     });

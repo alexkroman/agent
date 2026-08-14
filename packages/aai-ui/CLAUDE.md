@@ -368,7 +368,8 @@ run's pending sleeps and reports how many (`api.wake()`, `ctx.workflows.wakeUp()
 the same shape as `cancelled: false`. Without it the only handle on a sleeping run
 was `cancel`, so "send it now" and "throw it away" were one button. Both routes
 ride the platform's already-declared GET and POST on the `/workflows` prefix, so
-neither needed a deployment change; `research-desk` is the worked example for each.
+neither needed a deployment change; `research-workflow` is the worked example
+for each.
 
 ### Rendering progress (`useWorkflowProgress`)
 
@@ -429,7 +430,7 @@ default it did not ask for, and `placeholder` covers the pre-first-line frame.
 
 `link-digest` deliberately keeps the raw hook: it renders the newest line only
 (a compact status), which is what `latest` is for, and it is this package's
-example of the primitives underneath. `transcription-desk` and `redline` render
+example of the primitives underneath. `transcription-workflow` and `redline` render
 the whole log through the component, because their fan-out and their rounds are
 where the history is worth seeing.
 
@@ -483,7 +484,7 @@ right and the first half left a hole every workflow app falls into on its first
 form: a run's input is journaled and replayed, so bytes may not travel in one —
 and an app with no storage of its own could only ask for a URL, which is fine
 for a recording that is already hosted and useless for a person with a file on
-their laptop. `transcription-desk` shipped exactly that, and its own
+their laptop. `transcription-workflow` shipped exactly that, and its own
 `<FileField>` described a file nothing ever read.
 
 So the app gets a place to put them. The pair touches the STORE and never the
@@ -556,7 +557,7 @@ It reads once and hands back `refresh` rather than polling. The run a page cares
 about right now is already being watched; a second loop over the whole history
 would broker N requests a minute to re-learn what the first one knows. A page
 calls `refresh` when its own run settles, which is exactly when the list is
-stale. `transcription-desk` is the worked example, and it replaced a text box
+stale. `transcription-workflow` is the worked example, and it replaced a text box
 asking the reader to paste a run id they would have had to write down.
 
 ### `report()` writes to the page AND the server log
@@ -613,7 +614,8 @@ the keyless read (`GET /workflows/runs` with no `key`, i.e. `ctx.workflows
 .recent`) filtered by the DECLARED name, which matches no stored run, so it
 answered `[]` for every workflow and `aai workflow runs <name>` printed "No runs
 of X yet" for every agent — while every snapshot reported the machine id as its
-`workflow`, which `research-desk`'s status tool reads down the phone. `find` was
+`workflow`, which `research-workflow`'s status tool reads down the phone. `find`
+was
 unaffected: it goes through our own key index, which is keyed by declared name.
 
 Neither could be caught by a stub, which is the reusable part: a fake adapter
@@ -735,7 +737,7 @@ the request-body limit besides; a URL or the app's own storage is where they
 belong, fetched inside a `"use step"` function that runs once per execution.
 
 That is also why **no template exercises it**, and the allowlist records that:
-`transcription-desk` used to open on one, and a form field describing a file
+`transcription-workflow` used to open on one, and a form field describing a file
 nothing ever read is a worse example than none — it now takes the recording's
 URL, which is what the paragraph above says to do.
 
@@ -754,7 +756,7 @@ id`). It SKIPS objects and arrays deliberately: there is no honest control for
 either, and rendering an approximation would be worse than leaving the field to
 the caller, who writes it by hand in the same `<Form>` because every field is a
 plain named control. So a form is as declared as its schema allows — all of it
-when the input is scalars all the way down, as `transcription-desk`'s is — and
+when the input is scalars all the way down, as `transcription-workflow`'s is — and
 adding a scalar to the workflow's input schema adds a control with no client
 edit.
 
@@ -770,7 +772,7 @@ the next request rather than when it returns, since a finished result sitting
 under a form that is already submitting again is the one wrong answer this can
 give, and it looks like a correct one.
 
-`transcription-desk` in `packages/aai-templates/templates/` is the worked
+`transcription-workflow` in `packages/aai-templates/templates/` is the worked
 example; `link-digest` is the smaller one and shows the primitives raw
 (`createWorkflowApi`, `useWorkflowRun`, a hand-written `<form>`), which is worth
 keeping as the thing these hooks compress.

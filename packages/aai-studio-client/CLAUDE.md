@@ -31,8 +31,8 @@ segmented control switches between — `preview.tsx`, `code-view.tsx`,
     `STARTERS[kind]` — two separate lists rather than one tagged list, because
     a workflow-mode pick must never land a voice template in a project whose
     prompt forbids writing one. The workflow catalog leads with
-    `transcription-desk` and `link-digest`, the two `workflowApp()` templates;
-    `research-desk` stays under Voice agent, since it is an `agent()` that
+    `transcription-workflow` and `link-digest`, the two `workflowApp()` templates;
+    `research-workflow` stays under Voice agent, since it is an `agent()` that
     hands off to a run.
   - **Both catalogs are sampled once per MOUNT, not per flip.** Re-sampling
     when the switcher moves reads as the chips being unrelated to the position

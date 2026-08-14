@@ -1,6 +1,5 @@
 import { agent } from "@alexkroman1/aai";
 import { PRODUCT, supportSlot, supportView } from "./shared.ts";
-import systemPrompt from "./system-prompt.md?raw";
 
 /**
  * A support line that grades its own retrieval before it speaks — the
@@ -25,6 +24,5 @@ export default agent({
   // The projection is also the privacy boundary: a logged ticket carries the
   // caller's callback number, and only its reference crosses to the browser.
   syncState: supportSlot.projection(supportView),
-  systemPrompt,
   greeting: `${PRODUCT} support, you're through to the automated line. What's happened?`,
 });

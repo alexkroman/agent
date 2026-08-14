@@ -23,23 +23,30 @@ speech-to-text, the LLM gateway, and text-to-speech alike.
 An agent is a directory with an `agent.ts`:
 
 ```ts
-import { agent, tool } from "@alexkroman1/aai";
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Weather Assistant",
+  systemPrompt: "You help callers plan around the weather. Keep replies short.",
+  voice: "michael",
+});
+```
+
+…and a `tools/` directory, where **a file IS a tool**. Its name is the name the
+model calls, it default-exports the tool, and nothing lists it anywhere:
+
+```ts
+// tools/get_weather.ts
+import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
-const getWeather = tool({
+export default tool({
   description: "Get current weather for a city",
   inputSchema: z.object({ city: z.string().describe("City name") }),
   execute: async ({ city }) => {
     const res = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1`);
     return await res.json();
   },
-});
-
-export default agent({
-  name: "Weather Assistant",
-  systemPrompt: "You help callers plan around the weather. Keep replies short.",
-  tools: { get_weather: getWeather },
-  voice: "michael",
 });
 ```
 

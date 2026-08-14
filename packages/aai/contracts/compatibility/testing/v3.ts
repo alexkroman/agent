@@ -10,7 +10,7 @@
  * and overridable like the rest, which is the promise a hand-written stub cannot
  * keep.
  *
- * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
+ * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative.
  */
 

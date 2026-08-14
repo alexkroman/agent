@@ -1,14 +1,22 @@
 {
   "agent": {
-    "current": 8,
-    "supported": [1, 2, 3, 4, 5, 6, 7, 8],
-    "dropped": {}
+    "current": 9,
+    "supported": [3, 9],
+    "dropped": {
+      "8": "`agent({ tools })` is gone: a tool is declared by its FILE. `tools/incident_create.ts` that default-exports `tool({ \u2026 })` IS the tool `incident_create`, enumerated where the bundle is assembled and named by nothing \u2014 so the map every epoch up to 8 was authored with no longer type-checks, and `tools` on the parameter shape is now the InlineToolsMisuse message naming the file to create. The map restated a rule the filesystem already carried, and the cost was not its 62 lines: forgetting one was SILENT, so the file compiled, every gate passed, and the tool never reached the model. A resolved registry goes on with `withTools`, which is what the build and `withDiscoveredTools` both call.",
+      "1": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
+      "2": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
+      "4": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
+      "5": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
+      "6": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
+      "7": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument."
+    }
   },
   "builtins": {
     "current": 2,
     "supported": [2],
     "dropped": {
-      "1": "Epoch 1's shape — `const rates: Rates = await fetchJson<Rates>(url)` — no longer compiles, deliberately. The three network builtins ANSWER with `{ error }` rather than throwing (a model-facing contract that is not changing), and typing them `Promise<T>` made that invisible: all three callers in this repo wrote `?? []` / `?? \"\"` and turned a live DuckDuckGo 403 into \"the web has nothing\". The return type is `T | ToolFailure` now, so a caller that names a shape must narrow with `isToolFailure`. An UNTYPED call is unaffected — `DefaultToolResult` is `any` — so only the call sites precise enough to have a shape are asked to handle the failure they were already receiving."
+      "1": "Epoch 1's shape \u2014 `const rates: Rates = await fetchJson<Rates>(url)` \u2014 no longer compiles, deliberately. The three network builtins ANSWER with `{ error }` rather than throwing (a model-facing contract that is not changing), and typing them `Promise<T>` made that invisible: all three callers in this repo wrote `?? []` / `?? \"\"` and turned a live DuckDuckGo 403 into \"the web has nothing\". The return type is `T | ToolFailure` now, so a caller that names a shape must narrow with `isToolFailure`. An UNTYPED call is unaffected \u2014 `DefaultToolResult` is `any` \u2014 so only the call sites precise enough to have a shape are asked to handle the failure they were already receiving."
     }
   },
   "defaults": {
@@ -35,8 +43,11 @@
   },
   "state": {
     "current": 7,
-    "supported": [1, 2, 3, 4, 5, 6, 7],
-    "dropped": {}
+    "supported": [3, 4, 5, 6, 7],
+    "dropped": {
+      "1": "Not a change to this capability's own surface \u2014 `sessionSlot` and every method on it are untouched, and epochs 3 through 7 still compile. This example attached its slot-backed tools with `agent({ tools })`, which the `agent` capability dropped at epoch 8: a tool is declared by its FILE now. Recorded as dropped rather than repaired in place, because a frozen example edited to make a compile error go away is the one thing this mechanism cannot allow \u2014 and because \"a slot written this way still compiles\" is true of the slot half and false of the file as a whole.",
+      "2": "Not a change to this capability's own surface \u2014 `sessionSlot` and every method on it are untouched, and epochs 3 through 7 still compile. This example attached its slot-backed tools with `agent({ tools })`, which the `agent` capability dropped at epoch 8: a tool is declared by its FILE now. Recorded as dropped rather than repaired in place, because a frozen example edited to make a compile error go away is the one thing this mechanism cannot allow \u2014 and because \"a slot written this way still compiles\" is true of the slot half and false of the file as a whole."
+    }
   },
   "step-errors": {
     "current": 1,
@@ -57,7 +68,7 @@
     "current": 7,
     "supported": [2, 3, 4, 5, 6, 7],
     "dropped": {
-      "1": "The root barrel exported the Standard Schema spec types (StandardSchemaV1 and its result/issue types) and toolError. The spec types are what tool() ACCEPTS rather than anything an agent declares, and stay reachable in sdk/schema.ts for the signatures that reference them. toolError returned the pre-serialized wire string, so isToolFailure(toolError(m)) was false — a trap under a name that read as the constructor for the shape the guard tests, and used by none of the fourteen templates; it is serializeToolFailure on a private module now, and toolFailure() is the constructor that pairs with the guard."
+      "1": "The root barrel exported the Standard Schema spec types (StandardSchemaV1 and its result/issue types) and toolError. The spec types are what tool() ACCEPTS rather than anything an agent declares, and stay reachable in sdk/schema.ts for the signatures that reference them. toolError returned the pre-serialized wire string, so isToolFailure(toolError(m)) was false \u2014 a trap under a name that read as the constructor for the shape the guard tests, and used by none of the fourteen templates; it is serializeToolFailure on a private module now, and toolFailure() is the constructor that pairs with the guard."
     }
   },
   "tts": {

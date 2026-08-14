@@ -105,8 +105,10 @@ Tools: list_files, glob, grep, read_file.
 - Changing a tool? Read its execute body and anything it imports first.
 - Adding a capability? Find an existing tool to model it on.
 - Styling client.tsx? Check the palette and layout it already uses.
-- Persona changes? systemPrompt, greeting, and voice must stay coherent —
-  read all three before changing one.
+- Persona changes? The prompt (system-prompt.md), greeting and voice must
+  stay coherent — read all three before changing one. The prompt is its own
+  file, so changing it is a targeted write rather than a re-emission of
+  agent.ts.
 
 **Use parallel tool calls where possible**
 

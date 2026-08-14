@@ -12,7 +12,7 @@
  * fixture pins that each one is still reachable and still the type a caller
  * arithmetic'd against.
  *
- * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
+ * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative.
  *
  * Epoch 1 is DROPPED. Three of its constants moved to

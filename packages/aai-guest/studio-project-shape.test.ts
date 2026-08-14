@@ -20,7 +20,7 @@ const scaffold = (file: string) =>
  * asymmetry in the set below.
  *
  * `workflow` is in the scaffold because a laptop project needs it: `aai init -t
- * research-desk` writes a `workflows/` directory that imports it, and without
+ * research-workflow` writes a `workflows/` directory that imports it, and without
  * the declaration the build dies on `Could not resolve "workflow"`. It is not
  * baked into the guest image because the guest cannot serve workflows yet —
  * `GUEST_ROUTE_EXPOSURE` still declares the three routes `host-only` — and the

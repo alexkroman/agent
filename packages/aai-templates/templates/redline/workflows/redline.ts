@@ -3,7 +3,7 @@
  * whose length the CRITIC decides.
  *
  * The rules a `"use workflow"` body lives under are spelled out in
- * `research-desk/workflows/research.ts` and `link-digest/workflows/digest.ts`:
+ * `research-workflow/workflows/research.ts` and `link-digest/workflows/digest.ts`:
  * the body is replayed from the top on every resume, so it holds no live handle
  * and makes no undurable decision, and a step's arguments and result cross a
  * queue. Read those first. What THIS one adds is the shape neither of them has:
@@ -11,7 +11,7 @@
  *
  * ## A journaled result is what makes a data-dependent loop legal
  *
- * `transcription-desk` derives its fan-out's WIDTH from a step's journaled
+ * `transcription-workflow` derives its fan-out's WIDTH from a step's journaled
  * result, and its module doc gives the rule. This is the same rule spent on a
  * different thing: `critique` returns a verdict, the body breaks on it, and a
  * replay reads that verdict back out of the journal and takes the same branch.
@@ -244,7 +244,7 @@ export function clampScore(score: number): number {
  * terminal, and a rate limit becomes a `RetryableError` carrying the delay the
  * gateway itself named, which beats `RetryableError`'s own one-second default.
  *
- * This desk used to carry that mapping itself, as did `research-desk` and
+ * This desk used to carry that mapping itself, as did `research-workflow` and
  * `link-digest`; it is one import now, and the delay is no longer the one line
  * only this template remembered.
  */

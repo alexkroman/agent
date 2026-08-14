@@ -640,7 +640,7 @@ that guide's `workflowApp()` section owns the argument.
 ## A run can tell the caller it finished
 
 `start(def, input, { key, notify })` makes the session that started a run take an
-UNPROMPTED, interruptible turn when it lands — the promise `research-desk` used
+UNPROMPTED, interruptible turn when it lands — the promise `research-workflow` used
 to make ("I'll let you know") and had no way to keep. `Transport.injectTurn` is
 the primitive (pipeline only; S2S has no such verb, so there it is a logged
 no-op). **See `host/workflow-notify.ts`'s module doc** for the rest.
@@ -726,6 +726,24 @@ A slot is the one typed seam, and `state`/`tool`/`updateTool` mean an agent
 never spells the state shape twice. **See the root guide's
 concurrency-primitives entry** for the whole API and its load-bearing
 properties.
+
+**A slot is now the ONLY thing carrying `S` into a tool, because a tool is a
+FILE.** `agent()` takes no `tools` argument at all — `tools/incident_create.ts`
+that default-exports `tool({ … })` IS the tool `incident_create`, and the table
+is filled by `withTools` over a registry the build enumerates. What that removed
+along with the map is the map's one type-level service: it checked each tool's
+assignability against the agent's `S`, and a registry checks shape at build time
+and not `S`. So `slot.tool()` / `slot.updateTool()` is what a stateful tool
+module should reach for, and `AgentDef.tools`'s remark carries the rest.
+
+Two properties worth knowing before touching this. `S` inference is unaffected
+and always was — `AgentDef.tools` is `NoInfer<S>`, so a map never drove it;
+`state` is still the only source. And **`agent()` THROWS on a `tools` key**
+rather than only rejecting it in the type: neither bundler type-checks user code,
+so the type alone would make "a tool is only ever a file" true of this repo and
+of no user's project (`assertNoInlineTools` in `sdk/define.ts`). `withTools` stays
+the seam a non-file registry attaches through, which the studio's own coding
+agent needs — its tools close over one session's workspace directory.
 
 ## Resolving what a caller SAID (`sdk/spoken.ts`)
 

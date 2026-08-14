@@ -6,9 +6,9 @@
  * WebSocket, and no voice pipeline: the page (`client.tsx`) starts a run over
  * the workflow HTTP API and watches it, and the run outlives the tab.
  *
- * ## What makes this a different KIND of agent from `research-desk`
+ * ## What makes this a different KIND of agent from `research-workflow`
  *
- * `research-desk` is a voice agent that HANDS OFF to a workflow — a caller is on
+ * `research-workflow` is a voice agent that HANDS OFF to a workflow — a caller is on
  * the line, so a tool starts a run and answers the turn. Here the workflow is
  * the entire product, and the declaration says so:
  *
@@ -40,7 +40,7 @@
  * declares no providers, so nothing else in its config names a credential.
  *
  * A step is handed no `ToolContext`, so it reads that key with `requireStepEnv`
- * rather than `ctx.env`; see `workflows/digest.ts` and `research-desk`'s module
+ * rather than `ctx.env`; see `workflows/digest.ts` and `research-workflow`'s module
  * doc for the one thing that changes under `aai dev` (the key has to be in
  * `.env`, not just your shell).
  *

@@ -9,7 +9,7 @@
  * `./v1.ts` through `./v4.ts`, retained for that reason — so this file
  * demonstrates only what is new.
  *
- * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
+ * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative.
  */
 

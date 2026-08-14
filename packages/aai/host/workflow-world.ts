@@ -225,7 +225,7 @@ class MigrationExitedError extends Error {
  * BEFORE `server.listen` — so the platform's readiness poll never gets an
  * answer and the spawn fails. Every agent that declares workflows AND has
  * storage was on that path, which is the configuration
- * `transcription-desk` documents as the right one.
+ * `transcription-workflow` documents as the right one.
  *
  * `startWorkflowWorldIfDeclared`'s try/catch cannot help, either: an exit is not
  * an exception, so the "a failure must not take the guest down" rule it exists

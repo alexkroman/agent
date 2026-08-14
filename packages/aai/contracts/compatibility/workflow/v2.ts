@@ -8,7 +8,7 @@
  * compiles (see `./v1.ts`, retained for that reason); this file covers only
  * what epoch 2 added.
  *
- * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
+ * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative.
  */
 

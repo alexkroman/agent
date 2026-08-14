@@ -24,7 +24,7 @@
  * That makes this sweep the ONLY recovery, not an accelerator of one.
  *
  * Measured: ONE hard kill (of the process, or of its Postgres) strands every
- * in-flight step of a `transcription-desk` run, with the run sitting `running`
+ * in-flight step of a `transcription-workflow` run, with the run sitting `running`
  * and the page showing "Working…" indefinitely. A repeated-kill soak wedged 4 of
  * 4 runs. Journal replay is correct throughout — completed steps are never
  * re-executed and nothing is re-billed — so the defect is redelivery, not replay,

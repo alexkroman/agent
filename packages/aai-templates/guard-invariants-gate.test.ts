@@ -301,9 +301,7 @@ describe("guard-invariants gate", () => {
       // Five shipped templates had exactly this. It resolved in-tree, so every
       // gate passed, and `aai test` / `aai build` / `npm start` were broken for
       // every user who scaffolded one of them.
-      expect(importEscapesTemplate?.(`${PIZZA}/agent.test.ts`, "../../_tool-discovery.ts")).toBe(
-        true,
-      );
+      expect(importEscapesTemplate?.(`${PIZZA}/agent.test.ts`, "../../_discovery.ts")).toBe(true);
     });
 
     test("spares a sibling in the same template", () => {

@@ -12,7 +12,7 @@ no error anywhere. `aai build` therefore leaves its worker on disk, `aai eject` 
 `prestart` alongside `start`, and the `registerHooks` shim is gone (the bundle inlines
 the `?raw` and attribute-less JSON imports it existed to teach Node).
 
-Fixes five templates — `pizza-ordering`, `plan-desk`, `retail`, `support-line`,
+Fixes five templates — `pizza-ordering`, `plan-and-execute`, `retail`, `support-line`,
 `travel-concierge` — whose specs imported a monorepo-internal path that does not exist
 in a scaffolded project, breaking `aai test` and `aai build` for anyone who scaffolded
 them. `@alexkroman1/aai/testing` gains **`withDiscoveredTools(def, modules)`**, which is

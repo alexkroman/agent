@@ -85,7 +85,6 @@ export default agent({
   systemPrompt: "fixture",
   workflows: { research, callback, fanOut, secret },
   requiredEnv: ["FIXTURE_STEP_TOKEN"],
-  tools: {},
 });
 `;
 
@@ -137,7 +136,7 @@ async function report(line: string) {
  * This is the one thing no unit test can reach: `createWebhook()` throws outside
  * a run, so a spec cannot call a body that opens one. Only a real world, a real
  * queue and a real HTTP delivery exercise it — and no template demonstrates the
- * shape any more (`transcription-desk` used to, against a stub provider), so
+ * shape any more (`transcription-workflow` used to, against a stub provider), so
  * this fixture is the only place it is exercised at all.
  *
  * The step delivers its own callback, which makes this a test of the ORDERING as
@@ -173,7 +172,7 @@ async function deliver(url: string, label: string) {
 `;
 
 /**
- * A fan-out through `mapInBatches` — the SDK primitive `transcription-desk` maps
+ * A fan-out through `mapInBatches` — the SDK primitive `transcription-workflow` maps
  * its segments with.
  *
  * This is the only tier that can say whether that primitive is legal at all.
@@ -414,7 +413,7 @@ describe("aai dev serves the workflow HTTP API", () => {
     expect(runs.map((r) => r.runId)).toContain(runId);
     // And the name each snapshot reports is the key the agent declares it
     // under, not `workflow//./workflows/research//researchFlow` — which
-    // `research-desk`'s status tool reads to a caller down the phone.
+    // `research-workflow`'s status tool reads to a caller down the phone.
     expect(runs.every((r) => r.workflow === "research")).toBe(true);
   }, 40_000);
 

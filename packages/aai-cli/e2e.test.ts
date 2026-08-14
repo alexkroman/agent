@@ -52,14 +52,14 @@ function hasPlaywrightBrowser(): boolean {
 // the config) lives in packages/aai-templates/templates.test.ts
 // (pnpm test:templates).
 //
-// `research-desk` is here for one reason no in-tree test can cover: its
+// `research-workflow` is here for one reason no in-tree test can cover: its
 // `workflows/research.ts` imports `workflow`, and a scaffolded project resolves
 // its dependencies from a real INSTALL of the published manifest rather than
 // from this repo's node_modules. Missing from the scaffold's `dependencies`,
 // the package resolves in every repo test and in nothing a user runs — the
 // build dies on `Could not resolve "workflow"` in the one place no CI job
 // looks.
-const templates = ["simple", "web-researcher", "research-desk"];
+const templates = ["simple", "web-researcher", "research-workflow"];
 
 let aaiBin: string;
 let tmpDir: string;
@@ -248,7 +248,7 @@ describe("aai dev: a scaffolded workflow template", () => {
    */
   test("boots and mounts the DevKit's queue callbacks", async ({ skip }) => {
     const projectDir = path.join(tmpDir, "_dev-workflow");
-    aai(aaiBin, ["init", projectDir, "-t", "research-desk", "--skip-deploy"], tmpDir);
+    aai(aaiBin, ["init", projectDir, "-t", "research-workflow", "--skip-deploy"], tmpDir);
     try {
       installDeps(registry, projectDir);
     } catch (err) {

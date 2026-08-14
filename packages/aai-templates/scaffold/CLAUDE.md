@@ -34,8 +34,8 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    specialist desks, and every booking staged for a spoken confirmation before
    it applies), `support-line` (self-RAG/CRAG — retrieve, grade what came back,
    rewrite the question, and refuse to speak an answer it cannot ground),
-   `plan-desk` (plan-and-execute — one step per tool call, so the caller can
-   redirect between them), and `redline` (the reflection agent — write,
+   `plan-and-execute` (plan then work the plan — one step per tool call, so the
+   caller can redirect between them), and `redline` (the reflection agent — write,
    critique, revise, which is too slow for a phone and so is a PAGE over a
    durable run rather than a voice agent). When reading SDK
    types under
@@ -101,8 +101,8 @@ my-agent/
   agent.test.ts       # Unit tests (optional)
   client.tsx          # Custom UI (optional, React)
   shared.ts           # Types shared between agent.ts and client.tsx
-  system-prompt.md    # Long system prompts (optional, imported)
-  tools/              # Tool files when too large for inline (optional)
+  system-prompt.md    # The system prompt — discovered, not imported
+  tools/              # One file per tool — this is how a tool is declared
   workflows/          # Durable workflow bodies (optional — see "Workflow apps")
   package.json
   tsconfig.json
@@ -116,8 +116,9 @@ import { agent } from "@alexkroman1/aai";
 
 export default agent({
   name: string;                              // required — display name
-  systemPrompt?: string;                     // default: general voice assistant
-                                             // (`system` is an accepted alias)
+  systemPrompt?: string;                     // usually ABSENT — write system-prompt.md
+                                             // instead; declare it only to COMPOSE
+                                             // one (`system` is an accepted alias)
   greeting?: string;                         // default: "Hey there..."
   voice?: string;                            // TTS voice for the default pipeline, e.g. "michael"
                                              // (shorthand for tts: assemblyAITts({ voice });
@@ -128,7 +129,8 @@ export default agent({
   s2s?: S2sProvider;                         // explicit opt-in to speech-to-speech mode
   sttPrompt?: string;                        // STT guidance for jargon/acronyms
   builtinTools?: BuiltinTool[];              // see built-in tools table
-  tools?: Record<string, ToolDef>;
+                                             // (there is no `tools` field — a tool is a FILE;
+                                             //  see "A file in tools/ IS a tool")
   maxSteps?: number;                         // default: 10 — max tool calls per turn
   toolChoice?: ToolChoice;                   // "auto" (default) | "required" | "none"
                                              // | { type: "tool", toolName }
@@ -197,14 +199,65 @@ you want the three stages visible in the config or EU data residency across
 STT and the LLM gateway. Speech-to-speech (S2S) mode is an explicit opt-in
 via the `s2s` field — see below.
 
-System prompt from file:
+### `system-prompt.md` IS the system prompt
+
+**Write the prompt in `system-prompt.md` beside `agent.ts`, and declare
+nothing.** The build discovers the file, so there is no import line and no
+field — the same rule `tools/` follows, applied to the one part of an agent
+that is a DOCUMENT rather than a value:
 
 ```ts
+// agent.ts — nothing about the prompt appears here
+import { agent } from "@alexkroman1/aai";
+
+export default agent({ name: "My Agent" });
+```
+
+```markdown
+<!-- system-prompt.md -->
+You are a concise, friendly assistant.
+
+- Keep replies to one or two sentences.
+- Never read a URL aloud.
+```
+
+Why the file rather than a string: a prompt is markdown — paragraphs, headings,
+bulleted lists — and inline it becomes that document spelled as `\n\n` and `\n-`
+escapes inside one string literal, with no wrapping, no preview, and a diff that
+is one line no matter which bullet changed. Editing the prompt is the main loop
+of building an agent, so it should land in the most reviewable place available,
+not the least.
+
+Three rules, each a build error naming the file:
+
+- **A file nothing reads is an error.** If `system-prompt.md` exists and
+  `agent.ts` declares a DIFFERENT `systemPrompt`, the build fails rather than
+  ignoring the file — "I edited the prompt and nothing changed" is the failure
+  this mechanism exists to prevent.
+- **An empty file is an error**, not a silent fall-through to the framework
+  default. Delete the file if that is what you want.
+- **A `system-prompt/` directory is rejected.** One file, no concatenation
+  order to guess.
+
+**Composing a prompt is still legal, and it is the one case you write the import
+for.** When part of the prompt is computed — a menu, a catalogue, today's date —
+import the file and build the field; the build sees its own text inside your
+prompt and leaves what you built alone:
+
+```ts no-check
+// `no-check`: the prompt file and the menu module are the project's, not this
+// guide's — which is the point of the example.
 /// <reference types="vite/client" />
 import { agent } from "@alexkroman1/aai";
 import systemPrompt from "./system-prompt.md?raw";
-export default agent({ name: "My Agent", systemPrompt });
+import { menuText } from "./menu.ts";
+
+export default agent({ name: "Pizza", systemPrompt: `${systemPrompt}\n${menuText()}` });
 ```
+
+`greeting` stays a field, deliberately: it is one sentence with no structure to
+lose, and it crosses the wire to the browser beside `name` and `page`. **A
+document goes in a file, a value stays in the call.**
 
 **JSON imports need no attribute.** `resolveJsonModule` is on, so
 `import data from "./knowledge.json"` is all it takes. Do NOT write
@@ -823,31 +876,42 @@ Declaring a state type is still worth it once the shape is settled, because
 it turns a misspelled field into a compile error instead of `undefined` at
 runtime:
 
-```ts
-import { agent, tool } from "@alexkroman1/aai";
-import type { ToolContext } from "@alexkroman1/aai"; // types need `import type`
-import { z } from "zod";
+```ts no-check
+// shared.ts — the slot is the one place the shape is written down.
+import { sessionSlot } from "@alexkroman1/aai";
 
-type Incident = { id: string; status: "open" | "closed" };
-type State = { incidents: Incident[] };
+export type Incident = { id: string; status: "open" | "closed" };
 
-const listOpen = tool({
+export const incidentSlot = sessionSlot("incidents", () => ({ items: [] as Incident[] }));
+```
+
+```ts no-check
+// tools/list_open.ts — `slot.tool` hands the body the live value, typed.
+import { incidentSlot } from "../shared.ts";
+
+export default incidentSlot.tool({
   description: "List open incidents",
-  execute: (_args, ctx: ToolContext<State>) => {
-    // `i` infers as Incident, and `i.staus` would now be an error.
-    return ctx.state.incidents.filter((i) => i.status === "open");
-  },
-});
-
-export default agent({
-  name: "Dispatch",
-  state: (): State => ({ incidents: [] }),
-  tools: { listOpen },
+  // `i` infers as Incident, and `i.staus` would now be an error.
+  execute: (_args, incidents) => incidents.items.filter((i) => i.status === "open"),
 });
 ```
 
-A tool annotated with a state shape the agent's factory doesn't produce is a
-compile error, which is the point.
+```ts no-check
+// agent.ts — `slot.state` is what makes the state exist before the first call.
+import { agent } from "@alexkroman1/aai";
+import { incidentSlot } from "./shared.ts";
+
+export default agent({ name: "Dispatch", state: incidentSlot.state });
+```
+
+**Reach for a slot whenever your tools live in more than one file, which is
+always** — a tool is its own file, and `tool()` learns the state shape only from
+an annotated context, so without a slot every module either restates
+`ctx: ToolContext<State>` or casts. `slot.tool()` removes both: it is typed
+against the slot, so a tool reading a field the factory does not produce is a
+compile error, which is the point. Use `slot.updateTool()` instead whenever the
+body `await`s — it serializes the mutation, and the LLM runs a step's tool calls
+concurrently.
 
 **`verbatimModuleSyntax` applies to every type you import** — `ToolContext`,
 `ToolDef`, `Message`, provider types. A plain
@@ -862,30 +926,29 @@ that's also how S2S agents use it. Pass a Zod schema as `schema` for typed
 structured output (`generateObject`-style): the result's `object` carries
 the parsed, typed value. A plain JSON Schema object also works.
 
-### Inline tool example
+### A tool that calls an API
 
 ```ts
-import { agent, tool } from "@alexkroman1/aai";
+// tools/get_weather.ts  →  the model calls this "get_weather"
+import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
-export default agent({
-  name: "Weather Agent",
-  tools: {
-    get_weather: tool({
-      description: "Get current weather for a city",
-      inputSchema: z.object({
-        city: z.string().describe("City name"),
-      }),
-      async execute({ city }, ctx) {
-        const resp = await fetch(
-          `https://api.example.com/weather?q=${city}&key=${ctx.env.WEATHER_KEY}`,
-        );
-        return resp.json();
-      },
-    }),
+export default tool({
+  description: "Get current weather for a city",
+  inputSchema: z.object({
+    city: z.string().describe("City name"),
+  }),
+  async execute({ city }, ctx) {
+    const resp = await fetch(
+      `https://api.example.com/weather?q=${city}&key=${ctx.env.WEATHER_KEY}`,
+    );
+    return resp.json();
   },
 });
 ```
+
+Nothing else. `agent.ts` does not import it, does not list it, and takes no
+`tools` field at all — see "A file in `tools/` IS a tool" below.
 
 **Calling the network builtins from your own tool code.** `web_search`,
 `visit_webpage` and `fetch_json` are declared to the MODEL — the LLM calls
@@ -979,7 +1042,9 @@ Three rules come with it, each a build error naming the file:
   named at build time rather than becoming a tool that fails per turn.
 - **`tools/` is flat.** A nested file is rejected, because a provider will not
   accept a tool name with a `/` in it and inventing a flattening rule would
-  freeze a guess. Put shared helpers outside `tools/`.
+  freeze a guess. This applies to a nested HELPER too, not just a nested tool —
+  the build cannot tell them apart, so put shared helpers beside `agent.ts`
+  rather than under `tools/`. The error names the file and both ways out.
 
 A tool that closes over module-local state, or one built by your own wrapper,
 still gets its own file — the file names the instance and the factory lives
@@ -1229,7 +1294,6 @@ also what you want for anything that can be a string, an array, or null.
 export default agent({
   state: () => ({ cart: [] as Item[], staffPin: "" }),
   syncState: (s) => ({ cart: s.cart }),   // staffPin never leaves the server
-  tools: { ... },
 });
 
 // client.tsx

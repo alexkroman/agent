@@ -10,7 +10,7 @@
  *
  * So this file is epoch 6's example, re-frozen: what it proves is exactly
  * what a re-frozen epoch should prove — that the authoring shape still compiles
- * against current source. See `../agent/v1.ts` for what "frozen" obliges and why
+ * against current source. See `../agent/v3.ts` for what "frozen" obliges and why
  * the imports are relative.
  */
 

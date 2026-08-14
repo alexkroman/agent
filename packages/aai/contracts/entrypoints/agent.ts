@@ -28,6 +28,8 @@ export {
   type DefaultSessionState,
   type FrontDoorField,
   type InferAgentState,
+  type InlineToolsField,
+  type InlineToolsMisuse,
   type PipelineAgentParams,
   type PipelineOnlyField,
   type PipelineOnlyMisuse,

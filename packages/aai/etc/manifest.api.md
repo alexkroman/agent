@@ -361,8 +361,11 @@ type WakeUpOptions = {
     correlationIds?: string[];
 };
 
+// @internal
+export function withSystemPrompt<S>(def: AgentDef<S>, prompt: string): AgentDef<S>;
+
 // @public
-export function withTools<S>(def: AgentDef<S>, registry: ToolRegistry<S>): AgentDef<S>;
+export function withTools<S>(def: AgentDef<S>, registry: ToolRegistry<NoInfer<S>>): AgentDef<S>;
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {

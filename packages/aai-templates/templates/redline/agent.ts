@@ -14,8 +14,8 @@
  * holds a phone for that, and nothing useful can be said down the line while it
  * happens — the interesting output is a piece of prose to READ, not two
  * sentences to hear. The same test sorts the other ports in this repo:
- * `travel-concierge`, `support-line` and `plan-desk` all answer a caller inside a
- * turn, so they are voice agents; this one and `transcription-desk` produce a
+ * `travel-concierge`, `support-line` and `plan-and-execute` all answer a caller inside a
+ * turn, so they are voice agents; this one and `transcription-workflow` produce a
  * document, so they are pages over durable runs.
  *
  * ## What it needs
@@ -51,7 +51,7 @@ export const MAX_ROUNDS = 3;
  * — there is no honest control for an array — so the page writes that one field
  * by hand in the same `<Form>` and maps it on submit. That mixed shape is the
  * common case for any schema past the simplest, and this is its worked example;
- * `transcription-desk` is the all-declared one.
+ * `transcription-workflow` is the all-declared one.
  */
 export const redline = workflow({
   description: "Write a piece from a brief, then critique and revise it until it is worth shipping",

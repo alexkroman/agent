@@ -77,7 +77,7 @@ export const AGENT_STARTERS: Starter[] = [
  * Workflow apps — `workflowApp()`, a form, durable runs, no session.
  *
  * The two template-backed entries come first because they are the shape the
- * mode's system prompt tells the agent to start from; `transcription-desk` is
+ * mode's system prompt tells the agent to start from; `transcription-workflow` is
  * the fuller of the two (an upload, a webhook resume, a fan-out) and
  * `link-digest` the same thing at its smallest. The prose entries below them
  * are jobs of the same shape with no template to copy — a form in, a durable
@@ -86,7 +86,7 @@ export const AGENT_STARTERS: Starter[] = [
 export const WORKFLOW_STARTERS: Starter[] = [
   {
     label: "A transcription desk with an upload form",
-    prompt: "Use the transcription-desk template.",
+    prompt: "Use the transcription-workflow template.",
   },
   {
     label: "A link digest that summarizes a URL",

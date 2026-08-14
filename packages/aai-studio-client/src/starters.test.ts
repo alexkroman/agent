@@ -52,24 +52,24 @@ describe("the two catalogs", () => {
   });
 
   test("the workflow catalog leads with the two workflow-app templates", () => {
-    // `transcription-desk` is the shape the workflow system prompt tells the
+    // `transcription-workflow` is the shape the workflow system prompt tells the
     // agent to start from, and `link-digest` is the same shape at its
     // smallest. Both are `workflowApp()`; a voice template here would
     // contradict the prompt the project runs under.
     expect(WORKFLOW_STARTERS.slice(0, 2).map((s) => s.prompt)).toEqual([
-      "Use the transcription-desk template.",
+      "Use the transcription-workflow template.",
       "Use the link-digest template.",
     ]);
   });
 
   test("no workflow starter names a voice template, and vice versa", () => {
-    // `research-desk` is the trap: it is a workflow template AND an `agent()`
+    // `research-workflow` is the trap: it is a workflow template AND an `agent()`
     // (a caller is on the line, so a tool starts the run), so filing it under
     // Workflow would create it under a prompt that forbids what it is.
     const named = (list: readonly { prompt: string }[]) =>
       list.flatMap((s) => [...s.prompt.matchAll(/use the (\S+) template/gi)].map((m) => m[1]));
-    expect(named(WORKFLOW_STARTERS)).toEqual(["transcription-desk", "link-digest"]);
-    expect(named(AGENT_STARTERS)).not.toContain("transcription-desk");
+    expect(named(WORKFLOW_STARTERS)).toEqual(["transcription-workflow", "link-digest"]);
+    expect(named(AGENT_STARTERS)).not.toContain("transcription-workflow");
     expect(named(AGENT_STARTERS)).not.toContain("link-digest");
   });
 });

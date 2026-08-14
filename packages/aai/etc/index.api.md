@@ -570,6 +570,12 @@ export type InferToolInput<T extends ToolDef<ToolInputSchema, DefaultSessionStat
 export type InferToolOutput<T extends ToolDef<ToolInputSchema, DefaultSessionState>> = Awaited<ReturnType<T["execute"]>>;
 
 // @public
+export type InlineToolsField = "tools";
+
+// @public
+export type InlineToolsMisuse = "a tool is declared by its FILE, not here — create `tools/<the name the model calls>.ts` with `export default tool({ … })`, and it is registered by existing";
+
+// @public
 export function isTerminal<R>(run: WorkflowRunSnapshot<R> | undefined): run is TerminalWorkflowRun<R>;
 
 // @public
@@ -719,8 +725,9 @@ export interface SessionSlotOptions<T> {
 }
 
 // @public
-export type SharedAgentParams<S = DefaultSessionState> = Omit<AgentDef<S>, DefaultedAgentField | PipelineOnlyField | ProviderField | FrontDoorField> & Partial<Pick<AgentDef<S>, DefaultedAgentField>> & {
+export type SharedAgentParams<S = DefaultSessionState> = Omit<AgentDef<S>, DefaultedAgentField | PipelineOnlyField | ProviderField | FrontDoorField> & Partial<Pick<AgentDef<S>, Exclude<DefaultedAgentField, InlineToolsField>>> & {
     system?: string;
+    tools?: InlineToolsMisuse;
 };
 
 // @public

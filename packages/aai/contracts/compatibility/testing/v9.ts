@@ -12,7 +12,7 @@
  * event, and the builder is what turned it into no work at all for callers that
  * do not drive `signal`.
  *
- * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
+ * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative.
  */
 

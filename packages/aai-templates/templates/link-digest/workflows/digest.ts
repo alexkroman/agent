@@ -3,7 +3,7 @@
  * The durable half of the link digest: a `"use workflow"` body and its steps,
  * and the steps really read the page and really call a model.
  *
- * The rules are the same ones `research-desk/workflows/research.ts` spells out
+ * The rules are the same ones `research-workflow/workflows/research.ts` spells out
  * — the body is replayed from the top on every resume, so it holds no live
  * handle and makes no undurable decision, and a step's arguments and return
  * value cross a queue and so must be JSON-shaped and small. Read that file for

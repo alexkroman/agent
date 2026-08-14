@@ -33,20 +33,25 @@ import { DEFAULT_PROJECT_KIND, type ProjectKind } from "./studio-project-kind.ts
 const FALLBACK_GUIDE = `## agent() essentials
 
 \`\`\`ts
-import { agent, tool } from "@alexkroman1/aai";
-import { z } from "zod";
-
-const lookup = tool({
-  description: "Look up an order by id",
-  inputSchema: z.object({ orderId: z.string() }),
-  execute: async ({ orderId }, ctx) => \`Order \${orderId} is on its way\`,
-});
+// agent.ts — there is no \`tools\` field. A tool is a FILE.
+import { agent } from "@alexkroman1/aai";
 
 export default agent({
   name: "Support Agent",
   systemPrompt: "You are a concise, friendly voice support agent.",
   greeting: "Hi, how can I help?",
-  tools: { lookup_order: lookup },
+});
+\`\`\`
+
+\`\`\`ts
+// tools/lookup_order.ts — the file name IS the name the model calls.
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Look up an order by id",
+  inputSchema: z.object({ orderId: z.string() }),
+  execute: async ({ orderId }) => \`Order \${orderId} is on its way\`,
 });
 \`\`\`
 

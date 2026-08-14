@@ -11,7 +11,7 @@
  * hand-rolled predecessor was `askJson<T>()`, a value the compiler believed and
  * nothing checked.
  *
- * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
+ * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative.
  */
 

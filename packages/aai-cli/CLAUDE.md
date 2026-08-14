@@ -202,7 +202,7 @@ writes `typeof require !== "undefined" ? require : <thrower>`, so a real
 gets none — it is compiled in a `node:vm` Script, where `import.meta` does not
 exist.
 
-Two things about how it presented are the reusable part. `research-desk`
+Two things about how it presented are the reusable part. `research-workflow`
 imports `webSearch` from `@alexkroman1/aai/tools`, which reaches `host/ssrf.ts`
 → **undici** (118 dynamic requires, all `node:` builtins) — so the message named
 a Node builtin the author never mentions, nothing named the package or the

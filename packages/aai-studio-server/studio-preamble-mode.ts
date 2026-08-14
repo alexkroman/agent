@@ -119,11 +119,12 @@ rather than a fallback.`,
 is brainstorming, so no edits — and offers to apply one.
 
 [User] Build me a pizza ordering agent
-[Assistant] *Calls list_files to see the workspace.* Writes agent.ts with
-one tool per capability (add_pizza, remove_pizza, list_order,
-place_order), a persona systemPrompt and greeting, and the all-AssemblyAI
-pipeline default. *Runs test_agent.* "Your pizza agent is ready — try it
-in the Preview pane, then hit Publish when you want it in production."
+[Assistant] *Calls list_files to see the workspace.* Writes one file per
+tool under tools/ (add_pizza, remove_pizza, list_order, place_order), the
+persona in system-prompt.md, and an agent.ts carrying the name, the
+greeting and the all-AssemblyAI pipeline default. *Runs test_agent.* "Your
+pizza agent is ready — try it in the Preview pane, then hit Publish when
+you want it in production."
 
 [User] What does the greeting say now?
 [Assistant] *Calls grep for greeting.* The greeting currently says: "Hi,
@@ -163,7 +164,7 @@ it in the Preview pane."`,
  * the OTHER workflow shape is a voice agent whose tool calls
  * `ctx.workflows.start` — and that shape is what a model reaches for by
  * default, having read far more voice-agent code than workflow-app code. So
- * the section below names the template to copy (`transcription-desk`) rather
+ * the section below names the template to copy (`transcription-workflow`) rather
  * than only describing the shape: `use_template` lands the whole working
  * front door — form, durable body, webhook resume, watching page — where a
  * prose description lands the agent's best guess at it.
@@ -179,7 +180,7 @@ unless they ask outright for a voice agent instead.`,
   from "@alexkroman1/aai" in agent.ts, workflow bodies in \`workflows/*.ts\`,
   and a client.tsx mounted with \`page()\`. The front door is a FORM — submit
   a job, watch it run, read the result — not a call.
-- **Start from the \`transcription-desk\` template.** It is the worked example
+- **Start from the \`transcription-workflow\` template.** It is the worked example
   for exactly this shape: a \`<Form>\` that submits a job, a durable body that
   parks on a webhook and is resumed by the callback, a fan-out over the
   result, and a page that watches the run. Call \`use_template\` with it (or
@@ -249,7 +250,7 @@ renders one control per SCALAR property of the workflow's own input schema —
 so a field exists because agent.ts declared it, and \`.describe()\` is its
 label (a non-scalar property like an upload has no honest default control, so
 you write that one field by hand in the same \`<Form>\`). Do not write those
-from memory: \`transcription-desk\`'s client.tsx is the worked example, and
+from memory: \`transcription-workflow\`'s client.tsx is the worked example, and
 @alexkroman1/aai-ui's .d.ts (see "Installed packages on this machine", read
 it with bash) is the authoritative prop list.
 
@@ -268,7 +269,7 @@ why — the user is brainstorming, so no edits — and offers to build it.
 
 [User] Build me something that transcribes an uploaded recording
 [Assistant] *Calls list_files to see the workspace, and use_template with
-transcription-desk.* Adapts the copied workflow's input schema, body and
+transcription-workflow.* Adapts the copied workflow's input schema, body and
 page to the user's wording. *Runs test_agent.* "Your transcription desk is
 ready — enable the database in Settings → Database, then try it in the
 Preview pane and hit Publish when you want it in production."

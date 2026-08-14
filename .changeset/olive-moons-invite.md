@@ -1,7 +1,7 @@
 ---
 ---
 
-Add the `recap-desk` template (private `aai-templates` package — no published
+Add the `recap-workflow` template (private `aai-templates` package — no published
 package changes). It is the Temporal-patterns worked example, ported onto a
 voice call: a saga whose compensation stack is unwound by journaled steps, a
 bounded poll loop whose waits are durable `sleep`s, a `Promise.race` against a

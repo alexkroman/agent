@@ -26,6 +26,15 @@ export const DEFAULT_GAME_STATE: GameState = {
  */
 export const MAX_HISTORY = 50;
 
+/**
+ * How many of those commands a tool reports back to the model.
+ *
+ * Named because two tools answer with it (`game_state_get` and
+ * `game_state_history`), and they live in separate files now — an inline `-5`
+ * in each is a number that can disagree with itself.
+ */
+export const REPORTED_HISTORY = 5;
+
 // The game lives in `ctx.state`, the agent's per-session mutable state — each
 // session is its own playthrough, so concurrent players never see each
 // other's game and a fresh session starts a fresh adventure. The clone is

@@ -12,7 +12,7 @@
  * replacing the global, so the module carries no test-runner dependency and the
  * spec keeps control of the stub's lifetime.
  *
- * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
+ * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative.
  */
 

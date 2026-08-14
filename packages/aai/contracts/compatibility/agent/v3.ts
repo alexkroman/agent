@@ -3,12 +3,19 @@
  * Frozen authoring example: `agent` epoch 3.
  *
  * Epoch 3 added `workflowApp()` and `StaticAgentParams` — a fourth arm of
- * `AgentParams`, keyed on the FRONT DOOR rather than on a session mode.
- * Everything epochs 1 and 2 could express still compiles (see `./v1.ts` and
- * `./v2.ts`, retained for exactly that reason); this file covers only what
- * epoch 3 added, so the three together are the whole contract.
+ * `AgentParams`, keyed on the FRONT DOOR rather than on a session mode. This
+ * file covers only what epoch 3 added.
  *
- * See `./v1.ts` for what "frozen" obliges and why the imports are relative.
+ * It is the OLDEST epoch still supported, and it survives for a reason worth
+ * knowing: epoch 8 dropped `agent({ tools })`, which took every other example
+ * up to it, and a workflow app never declared a tool in the first place — that
+ * arm refuses `tools` outright, as `WorkflowAppOnlyField` still does.
+ *
+ * **"Frozen" means this file must keep compiling against current source for as
+ * long as epoch 3 is advertised as supported.** A compile error here is the
+ * finding, not something to edit away. Imports are RELATIVE
+ * (`../../../index.ts`) because the package cannot resolve itself by name, and
+ * `contracts/` is excluded from the declaration emit and from the tarball.
  *
  * What it does NOT cover, deliberately: the fields this arm REFUSES. A frozen
  * example is a file that must keep compiling, so a rejection belongs where a

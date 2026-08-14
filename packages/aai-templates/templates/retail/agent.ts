@@ -1,7 +1,6 @@
 import { agent } from "@alexkroman1/aai";
 import { storeView } from "./shared.ts";
 import { retailSlot } from "./store.ts";
-import systemPrompt from "./system-prompt.md?raw";
 
 export default agent({
   name: "Retail Support",
@@ -26,7 +25,6 @@ export default agent({
   // inside one utterance ("W seven six seven … eight oh seven two"). The default
   // pipeline's `max_turn_silence` already tolerates that; reach for
   // `assemblyAIStt({ maxTurnSilenceMs })` only if your callers pause longer.
-  systemPrompt,
   greeting:
     "Thanks for calling. Before I can look anything up I'll need to find your account — " +
     "what's the email address on it?",

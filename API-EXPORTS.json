@@ -38,6 +38,8 @@
     "InferSchemaOutput",
     "InferToolInput",
     "InferToolOutput",
+    "InlineToolsField",
+    "InlineToolsMisuse",
     "KeyedLock",
     "KeyedLockOptions",
     "KeyedLockTimeoutError",
@@ -212,6 +214,7 @@
     "assertSilencePolicy",
     "toAgentConfig",
     "toolRegistry",
+    "withSystemPrompt",
     "withTools"
   ],
   "@alexkroman1/aai/protocol": [

@@ -11,7 +11,7 @@ import { assemblyAIS2s } from "./providers/s2s/assemblyai.ts";
 import { assemblyAIStt } from "./providers/stt/assemblyai.ts";
 import { assemblyAITts } from "./providers/tts/assemblyai.ts";
 import { cartesia } from "./providers/tts/cartesia.ts";
-import { DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
+import { type AgentDef, DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
 import { workflow } from "./workflow.ts";
 
 describe("tool()", () => {
@@ -34,6 +34,21 @@ describe("tool()", () => {
     expect(def.inputSchema).toBeUndefined();
   });
 });
+
+/**
+ * `agent()` reached with a value TypeScript never checked — which is the only
+ * way its runtime guards can fire, and therefore the only honest way to drive
+ * one. Neither bundler type-checks user code, so this is a real caller shape
+ * rather than a test-only fiction.
+ *
+ * One narrowing in one place, on the repo's typed-seam rule. The alternative is
+ * a compiler-suppression comment at each assertion, and that pattern's
+ * escape-hatch baseline stands at zero repo-wide — which is worth keeping. (The
+ * baseline is a substring scan with no notion of comment versus code, so naming
+ * the pattern here would itself score as one. Same trap the ratchet documents
+ * for markdown, arriving by a third route.)
+ */
+const agentUnchecked = agent as (def: object) => AgentDef;
 
 describe("agent()", () => {
   test("`system` is an alias of systemPrompt", () => {
@@ -131,24 +146,38 @@ describe("agent()", () => {
   });
 
   test("preserves explicit values", () => {
-    const greetTool = tool({
-      description: "Greet",
-      inputSchema: z.object({ name: z.string() }),
-      execute: ({ name }) => `Hi ${name}`,
-    });
     const def = agent({
       name: "Custom",
       systemPrompt: "Be nice.",
       greeting: "Hello!",
       maxSteps: 10,
-      tools: { greet: greetTool },
       builtinTools: ["web_search"],
     });
     expect(def.systemPrompt).toBe("Be nice.");
     expect(def.greeting).toBe("Hello!");
     expect(def.maxSteps).toBe(10);
-    expect(def.tools.greet).toBe(greetTool);
     expect(def.builtinTools).toEqual(["web_search"]);
+  });
+
+  test("refuses a tools map, naming the file to create instead", () => {
+    const greetTool = tool({
+      description: "Greet",
+      inputSchema: z.object({ name: z.string() }),
+      execute: ({ name }) => `Hi ${name}`,
+    });
+    // The TYPE rejects this too (`InlineToolsMisuse`, pinned in
+    // `define.test-d.ts`), and the type alone would leave the rule
+    // conventional: neither bundler type-checks user code, so a map that
+    // reached here would work and "a tool is only ever a file" would be true of
+    // the templates and of nothing else. Hence the throw — and a throw rather
+    // than a silent drop, because the failure this whole mechanism replaces was
+    // a tool that never reached the model, in silence.
+    //
+    // Called through `agentUnchecked` for the same reason the guard exists: what
+    // gets here is a value TypeScript did not check.
+    expect(() => agentUnchecked({ name: "Custom", tools: { greet: greetTool } })).toThrow(
+      /a tool IS a file/,
+    );
   });
 
   function pipelineAgent() {

@@ -22,10 +22,20 @@
  *   `web_search`, and it lands them in the same executor as everything else,
  *   with a real `ctx` — the hand-written adapter this replaces had to
  *   fabricate a context whose `db` and `generate` both rejected.
+ * - **The tools go on with `withTools`, because they are not files.** A user's
+ *   agent declares no tools at all: `tools/` IS the list, enumerated where the
+ *   bundle is assembled, and `agent({ tools })` is a compile error naming the
+ *   file to create. These four families cannot be files — every one of them
+ *   closes over ONE session's workspace directory and its type-check runner, and
+ *   they are built per turn precisely so a re-installed session cannot serve
+ *   tools bound to the previous tree. `withTools` is the seam a resolved
+ *   registry goes on through, and that is what this is: a registry resolved from
+ *   the session rather than from a directory.
  */
 
 import { type AgentDef, agent, type BuiltinTool } from "@alexkroman1/aai";
 import { assemblyAILlm } from "@alexkroman1/aai/llm";
+import { withTools } from "@alexkroman1/aai/manifest";
 import { buildWorkspaceDir } from "./studio-build.ts";
 import { createDesignInspirationTool, createProjectTools } from "./studio-project-tools.ts";
 import type { StudioSession } from "./studio-session.ts";
@@ -77,7 +87,7 @@ export type StudioAgentDeps = {
  */
 export function createStudioAgent(session: StudioSession, deps: StudioAgentDeps): AgentDef {
   const { dir } = session;
-  return agent({
+  const authored = agent({
     name: "AAI Studio",
     text: true,
     system: session.system,
@@ -89,28 +99,28 @@ export function createStudioAgent(session: StudioSession, deps: StudioAgentDeps)
     }),
     maxSteps: session.maxSteps,
     builtinTools: STUDIO_BUILTIN_TOOLS,
-    // Studio tools last: a web builtin may never shadow `write_file`. (The
-    // SDK's own merge already gives a declared tool priority over a builtin
-    // of the same name; this ordering is about the three studio families.)
-    tools: {
-      ...createDesignInspirationTool(),
-      ...createProjectTools({ dir }),
-      ...createTemplateTools({
-        dir,
-        // Same post-copy diagnostics backend the write tools use.
-        typecheck: deps.typecheck,
-      }),
-      ...createStudioTools({
-        dir,
-        // Post-write diagnostics: the same tsc pass builds run, so a type
-        // error reaches the agent inside the write result that caused it.
-        typecheck: deps.typecheck,
-        // Build the live session workspace in place, in THIS sandbox,
-        // through the same CLI bundler pass `aai deploy` runs.
-        build: () => buildWorkspaceDir(dir, { worker: true, client: false }),
-        loadBundle: deps.loadBundle,
-        executeTool: deps.executeTool,
-      }),
-    },
+  });
+  // Studio tools last: a web builtin may never shadow `write_file`. (The
+  // SDK's own merge already gives a declared tool priority over a builtin
+  // of the same name; this ordering is about the three studio families.)
+  return withTools(authored, {
+    ...createDesignInspirationTool(),
+    ...createProjectTools({ dir }),
+    ...createTemplateTools({
+      dir,
+      // Same post-copy diagnostics backend the write tools use.
+      typecheck: deps.typecheck,
+    }),
+    ...createStudioTools({
+      dir,
+      // Post-write diagnostics: the same tsc pass builds run, so a type
+      // error reaches the agent inside the write result that caused it.
+      typecheck: deps.typecheck,
+      // Build the live session workspace in place, in THIS sandbox,
+      // through the same CLI bundler pass `aai deploy` runs.
+      build: () => buildWorkspaceDir(dir, { worker: true, client: false }),
+      loadBundle: deps.loadBundle,
+      executeTool: deps.executeTool,
+    }),
   });
 }

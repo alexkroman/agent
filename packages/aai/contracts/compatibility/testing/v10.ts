@@ -9,7 +9,7 @@
  * epoch 9 could express still compiles (see `./v9.ts`, retained for that
  * reason); this file covers only what is new.
  *
- * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
+ * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative. `installStubGateway` is deliberately NOT imported here: it pulls
  * `vitest`, and a compatibility fixture is compiled by `tsc`, not run — its own
  * epoch is proved by `../../../sdk/testing-vitest.ts` continuing to type-check.
