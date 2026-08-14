@@ -154,7 +154,7 @@ describe("studioSystemPrompt", () => {
     expect(studioSystemPrompt()).toBe(studioSystemPrompt("agent"));
   });
 
-  test("names the transcription-desk template in the workflow prompt", () => {
+  test("names the transcription-workflow template in the workflow prompt", () => {
     // The mode's default is a STATIC workflow app, and the template is how it
     // gets one: `use_template` lands the whole working front door (form,
     // durable body, webhook resume, watching page) where a prose description
@@ -163,7 +163,7 @@ describe("studioSystemPrompt", () => {
     // so the prompt has to name the file to copy, not just describe the shape.
     const prompt = studioSystemPrompt("workflow").replace(/\s+/g, " ");
     expect(prompt).toContain("Default to a STATIC workflow app");
-    expect(prompt).toContain("Start from the `transcription-desk` template");
+    expect(prompt).toContain("Start from the `transcription-workflow` template");
     expect(prompt).toContain("use_template");
     // Mounted with page(), never client() — a static page opened as a session
     // dials a /websocket the server declines.

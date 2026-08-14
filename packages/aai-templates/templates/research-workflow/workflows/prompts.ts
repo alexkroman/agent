@@ -32,7 +32,7 @@
  * summarizing it away", and citing as you go rather than at the end.
  *
  * A prompt is DATA, so this module carries no directive and the builder leaves
- * it alone — the same reason `transcription-desk`'s `wav.ts` can sit beside its
+ * it alone — the same reason `transcription-workflow`'s `wav.ts` can sit beside its
  * bodies.
  */
 

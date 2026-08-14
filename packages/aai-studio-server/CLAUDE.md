@@ -117,7 +117,7 @@ voice agents without the CLI:
   switcher sends it, `POST /studio/projects` stamps it on the workspace).
   `agent` is a voice session; `workflow` is a static workflow app —
   `workflowApp()`, a form, durable runs, no microphone — and its prompt's
-  default is the `transcription-desk` template rather than an `agent()`.
+  default is the `transcription-workflow` template rather than an `agent()`.
   - **It lives on the WORKSPACE, not on a request.** The prompt is installed
     per session (`studio/session-init` → `sessionParams` in
     studio-session-ensure.ts), which happens again on every project open, page

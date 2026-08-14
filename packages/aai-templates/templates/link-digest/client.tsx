@@ -24,7 +24,7 @@
  * Progress also REPLAYS — chunks are retained with the run — so a reload mid-run
  * catches up rather than starting from whatever arrives next. This page renders
  * only the newest line, because on a page this small that is the whole of what a
- * status wants; `transcription-desk` renders the full log, where a fan-out makes
+ * status wants; `transcription-workflow` renders the full log, where a fan-out makes
  * the history worth seeing.
  */
 

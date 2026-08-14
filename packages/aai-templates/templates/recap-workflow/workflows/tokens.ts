@@ -12,7 +12,7 @@
  * Hence one exported function per token, imported by both sides. It carries no
  * directive, which is what lets it live under `workflows/` beside the bodies:
  * the WDK builder scans this directory and transforms only what carries one
- * (`transcription-desk/workflows/wav.ts` is the same shape).
+ * (`transcription-workflow/workflows/wav.ts` is the same shape).
  *
  * **A token addresses a run, so it is derived from the SESSION** rather than
  * from anything a caller could name out loud. `ctx.sessionId` keys this call;

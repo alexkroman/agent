@@ -3,7 +3,7 @@
  * The durable half of the transcription desk: split a recording, transcribe
  * every piece, stitch the pieces back together.
  *
- * Read `research-desk/workflows/research.ts` first. It states the two rules
+ * Read `research-workflow/workflows/research.ts` first. It states the two rules
  * every directive body obeys — replayed from the top, so no live handles and no
  * undurable decisions; step arguments and return values are serialized, so pass
  * an id and not a payload — and both hold here unchanged. What this template

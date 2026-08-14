@@ -114,7 +114,7 @@ const SCRATCH_REL = path.join(".aai", "workflow-build");
  * single line of the step ran.
  *
  * That is not a hypothetical, and the way it presents is the argument for
- * fixing it here. `research-desk` imports `webSearch` from
+ * fixing it here. `research-workflow` imports `webSearch` from
  * `@alexkroman1/aai/tools`, which reaches `host/ssrf.ts`, which imports
  * **undici** — 118 dynamic requires, all of them `node:` builtins. `aai dev`
  * then never listened at all: the message named a Node builtin the author

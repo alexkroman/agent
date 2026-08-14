@@ -7,7 +7,7 @@
  * before it. A workflow app that only offers that leaves its own history
  * unreachable: a page reload drops the id, and the only way back to yesterday's
  * transcript is to have written the id down — which is what
- * `transcription-desk` asked people to do, with a text box for pasting one.
+ * `transcription-workflow` asked people to do, with a text box for pasting one.
  *
  * `GET /workflows/runs?workflow=…` has always been able to answer this. This is
  * the hook over it, so a page renders history instead of asking for an id.

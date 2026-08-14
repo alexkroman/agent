@@ -309,7 +309,7 @@ describe("recent runs", () => {
 describe("the name a snapshot reports", () => {
   test("is the key the workflow is declared under, not the compiler's id", async () => {
     // `WorkflowRunBase.workflow` says "key the workflow is declared under", and
-    // agents read it aloud: `research-desk`'s status tool puts it in a sentence
+    // agents read it aloud: `research-workflow`'s status tool puts it in a sentence
     // spoken down the phone.
     const { client } = makeClient();
     expect((await client.get("wrun_1"))?.workflow).toBe("digest");

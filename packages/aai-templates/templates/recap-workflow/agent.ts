@@ -4,7 +4,7 @@
  * ported to a phone call.
  *
  * The desk transcribes a recording and writes it up. That takes minutes, and
- * the caller is on the line for seconds, so the shape is `research-desk`'s: a
+ * the caller is on the line for seconds, so the shape is `research-workflow`'s: a
  * tool starts a run and answers the turn, the run outlives the call, and the
  * finished run takes an unprompted turn to read the result back.
  *

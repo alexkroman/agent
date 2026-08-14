@@ -376,7 +376,7 @@ export function requiredProviderEnvVars(agent: {
   // required `ASSEMBLYAI_API_KEY`, which `aai dev` answers by reaching for the
   // logged-in key and hard-failing `not_logged_in`. That is a login wall on the
   // first run of a template whose whole pitch is that it needs no credential
-  // (`link-digest`, `transcription-desk`).
+  // (`link-digest`, `transcription-workflow`).
   //
   // Checked BEFORE the descriptors rather than only suppressing the default,
   // because by the time a config reaches the deploy preflight `defaultProviders`

@@ -45,8 +45,8 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    specialist desks, and every booking staged for a spoken confirmation before
    it applies), `support-line` (self-RAG/CRAG — retrieve, grade what came back,
    rewrite the question, and refuse to speak an answer it cannot ground),
-   `plan-desk` (plan-and-execute — one step per tool call, so the caller can
-   redirect between them), and `redline` (the reflection agent — write,
+   `plan-and-execute` (plan then work the plan — one step per tool call, so the
+   caller can redirect between them), and `redline` (the reflection agent — write,
    critique, revise, which is too slow for a phone and so is a PAGE over a
    durable run rather than a voice agent). When reading SDK
    types under

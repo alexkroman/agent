@@ -2,7 +2,7 @@
 /**
  * The durable half of the research desk: a real deep-research pass.
  *
- * Read `transcription-desk/workflows/transcribe.ts` for the rules every
+ * Read `transcription-workflow/workflows/transcribe.ts` for the rules every
  * directive body obeys — replayed from the top, so no live handles and no
  * undurable decisions; step arguments and results are serialized, so pass an id
  * and not a payload. What this template adds is the OTHER kind of long work:

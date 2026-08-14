@@ -86,7 +86,7 @@ wrong.** What shipped:
   excess-property check does not fire.
 - **The six templates this document's predecessor missed are converted** —
   `health-assistant`, `embedded-assets`, `infocom-adventure`, `night-owl`,
-  `recap-desk`, `research-desk`. Thirteen templates, no `tools` map anywhere.
+  `recap-workflow`, `research-workflow`. Thirteen templates, no `tools` map anywhere.
 - **The studio's own text agent goes on with `withTools`**, which is the honest
   answer rather than an exception: its four tool families close over ONE session's
   workspace directory and are rebuilt per turn, so they cannot be files. A
@@ -197,7 +197,7 @@ schemas must come from the resolved registry), and the `/testing` helpers.
 
 `runTool(agentDef, name, args, ctx)` and `toolOf(agentDef, name)` read
 `agentDef.tools` synchronously, and four template specs use them
-(`pizza-ordering`, `plan-desk`, `support-line`, `travel-concierge`); three more
+(`pizza-ordering`, `plan-and-execute`, `support-line`, `travel-concierge`); three more
 import tool modules directly (`retail`, `solo-rpg`, `dispatch-center`). Either
 those helpers take a resolved registry, or they become async. eve's answer is a
 harness that installs a registry, and it is probably ours too — but this is the

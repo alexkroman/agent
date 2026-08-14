@@ -3,7 +3,7 @@
  * The durable half of the recap desk — and the file the Temporal patterns were
  * ported into.
  *
- * Read `research-desk/workflows/research.ts` first for the two rules every
+ * Read `research-workflow/workflows/research.ts` first for the two rules every
  * directive body obeys (replayed from the top, so no live handles and no
  * undurable decisions; step arguments and results cross a queue, so pass an id
  * and not a payload). Both hold here unchanged. What THIS template adds is the
@@ -58,7 +58,7 @@
  * `stepGenerate`. The BATCH API is what makes the polling port honest: it
  * answers with a job id in milliseconds and finishes minutes later, so the wait
  * is the provider's, not a `setTimeout` this template chose. (Its sibling
- * `transcription-desk` takes the other endpoint — the sync one, which answers in
+ * `transcription-workflow` takes the other endpoint — the sync one, which answers in
  * the request and pays for it with a hard cap, so its shape is a fan-out rather
  * than a poll.)
  *

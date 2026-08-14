@@ -8,4 +8,4 @@ Add a synchronous wait mode to the workflow HTTP API, and form components for wo
 
 aai-ui gains `Form` and its field components (`TextField`, `NumberField`, `TextAreaField`, `SelectField`, `CheckboxField`, `FileField`, `SubmitButton`, `Field`), `WorkflowFields` — one control per scalar property of a workflow's declared input schema — and the `useWorkflows` / `useWorkflowSubmit` hooks.
 
-The `transcription-desk` template is now a workflow app: an upload form over a run that parks on `createWebhook()` and fans out over what the callback delivered.
+The `transcription-workflow` template is now a workflow app: an upload form over a run that parks on `createWebhook()` and fans out over what the callback delivered.
