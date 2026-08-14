@@ -138,6 +138,30 @@ type StreamOptions = {
 };
 
 // @public
+export interface StubGateway {
+    calls: StubGatewayCall[];
+    fetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+}
+
+// @public
+export function stubGateway(replies: string | readonly string[], opts?: StubGatewayOptions): StubGateway;
+
+// @public
+export interface StubGatewayCall {
+    body: Record<string, unknown>;
+    headers: Record<string, string>;
+    prompt: string;
+    system: string | undefined;
+    url: string;
+}
+
+// @public
+export interface StubGatewayOptions {
+    headers?: Record<string, string>;
+    status?: number;
+}
+
+// @public
 export type StubUpload = Uint8Array | {
     bytes: Uint8Array;
     name?: string;

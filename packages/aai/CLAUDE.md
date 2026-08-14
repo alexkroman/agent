@@ -78,7 +78,8 @@ of subpath exports in `aai/package.json`:
 | --- | --- | --- |
 | `@alexkroman1/aai` | `packages/aai/index.ts` | The AUTHORING surface, and only that: `agent()`/`tool()`/`sessionSlot()`/`workflow()`, the types they take and return, `assemblyAIPipeline()`/`assemblyAIS2s()`, and the `DEFAULT_*` constants that document an `agent()` field. Eight modules by `export *`, plus NAMED subsets of `sdk/constants.ts` and `sdk/utils.ts` — see "The root barrel is curated" below |
 | `@alexkroman1/aai/testing` | `sdk/testing.ts` (direct) | `createToolContext(overrides?)` — a full `ToolContext` for testing a tool's `execute` in isolation, with inert defaults, a recording `send` (`ctx.sent`), and a distinct `sessionId` per call — plus `createUnusedDb()`, the rejecting `db` it defaults to, and `createStubWorkflows(overrides?)`, the same thing for `ctx.workflows` (see its own doc for why a hand-written stub of that client goes stale). PUBLISHED rather than an internal `_test-utils.ts` because the audience is an agent author's own project, which is also why it carries no vitest dependency (`send` records into an array; pass `vi.fn()` to override). See the `_test-utils.ts` section of the root guide |
-| `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | The zod-free half of the SDK, which is what makes it the CLI's import path (`p-timeout`, 2.4 KB with no dependencies and backing the lock's acquire deadline, is the one measured exception). Four groups: the tool-code helpers the root also re-exports (`errorMessage`, `errorDetail`, `safeJsonParse`, `toolFailure`/`isToolFailure`, `pushCapped`, `createKeyedLock`/`withLock`); the STEP surface, which a `workflows/*.ts` module imports from HERE rather than the root because it is bundled separately and the root barrel's graph would ride into the step bundle — `mapInBatches`, `stepEnv`/`requireStepEnv` (the agent env a step is handed no context to reach) and `stepGenerate` (`ctx.generate`'s counterpart, one `fetch` to the LLM gateway on the agent's own key, since the AI SDK would be megabytes in a ~7 KB artifact); `sdk/step-env.ts` and `sdk/step-generate.ts` carry the rest; the framework's own wire helpers, `@internal` and root-invisible (`capToolResult`, `toArgsRecord`, `isTextAssetPath`, `normalizeSpeechText`, `omitUndefined`, and `serializeToolFailure` — the pre-serialized `'{"error":…}'` the host emits for a tool that threw, which `isToolFailure` deliberately does NOT narrow); and the two contracts BOTH ends of a platform interaction must derive identically — the slug shape (`VALID_SLUG_RE`, `RESERVED_SLUGS`, `sdk/slug.ts`) and the `aai login` confirmation code (`linkConfirmationCode`, `sdk/cli-link.ts`; the terminal prints it, the studio's approval gate shows it, and the point is that they match) |
+| `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | The zod-free half of the SDK, which is what makes it the CLI's import path (`p-timeout`, 2.4 KB with no dependencies and backing the lock's acquire deadline, is the one measured exception). Four groups: the tool-code helpers the root also re-exports (`errorMessage`, `errorDetail`, `safeJsonParse`, `toolFailure`/`isToolFailure`, `pushCapped`, `createKeyedLock`/`withLock`); the STEP surface, which a `workflows/*.ts` module imports from HERE rather than the root because it is bundled separately and the root barrel's graph would ride into the step bundle — `mapInBatches`, `stepEnv`/`requireStepEnv` (the agent env a step is handed no context to reach), `stepGenerate` (`ctx.generate`'s counterpart, one `fetch` to the LLM gateway on the agent's own key, since the AI SDK would be megabytes in a ~7 KB artifact) and `stepGenerateJson`/`stripJsonFence` (the same call for a reply that must be a SHAPE, validated against a Standard Schema, still zod-free via `sdk/standard-schema.ts`); those modules carry the rest; the framework's own wire helpers, `@internal` and root-invisible (`capToolResult`, `toArgsRecord`, `isTextAssetPath`, `normalizeSpeechText`, `omitUndefined`, and `serializeToolFailure` — the pre-serialized `'{"error":…}'` the host emits for a tool that threw, which `isToolFailure` deliberately does NOT narrow); and the two contracts BOTH ends of a platform interaction must derive identically — the slug shape (`VALID_SLUG_RE`, `RESERVED_SLUGS`, `sdk/slug.ts`) and the `aai login` confirmation code (`linkConfirmationCode`, `sdk/cli-link.ts`; the terminal prints it, the studio's approval gate shows it, and the point is that they match) |
+| `@alexkroman1/aai/step-errors` | `sdk/step-errors.ts` (direct) | `toStepError`/`throwStepError`/`throwFatalStepError` — the failure a `"use step"` body throws, classified into the DevKit's `FatalError`/`RetryableError`. Its own subpath because it is the one authoring module importing `workflow`, which `/utils` may not; the module doc carries the rest |
 | `@alexkroman1/aai/slugify` | `host/slugify.ts` (direct) | `slugifyName` — how a human name BECOMES a slug (transliterating, `decamelize: false`), for the CLI, the platform server, and the studio. Separate from the contract in `sdk/slug.ts` on purpose: that one is dependency-free and rides every agent bundle, this one pulls the transliteration tables. Nothing on the SDK hot path may import it |
 | `@alexkroman1/aai/runtime` | `host/runtime-barrel.ts` → 11 modules | Full Node.js runtime: session, S2S, server, tools, WS handler |
 | `@alexkroman1/aai/workflow-api` | `sdk/workflow-api-client.ts` (direct) | `createWorkflowApiClient` plus `WORKFLOW_API_PREFIX` — the CLIENT of the workflow HTTP API `host/workflow-api.ts` serves, shared by the browser client, the CLI and the studio; its module doc carries why |
@@ -899,12 +900,9 @@ roundings err toward UNDER-keeping, deliberately: over-keeping is the measured
 failure, while under-keeping costs a word or two of redundancy that the resume
 prompt's "without repeating what they already heard" absorbs.
 
-**The lag is `HEARD_AUDIO_LAG_MS` (750) and it is DERIVED, not measured** —
-`PLAYBACK_JITTER_MS` (400, real) plus an assumed sub-second network hop. It is
-the counterpart of `PIPELINE_PLAYBACK_GRACE_MS` with the opposite sign, and a
-separate constant on purpose: the grace errs late because a spurious cancel is
-harmless, while this one is subtracted from a position where erring either way
-costs. See both constants' docs.
+**The lag is `HEARD_AUDIO_LAG_MS` (750), and it is DERIVED rather than
+measured** — its row in the defaults table below carries the decomposition and
+why it is a second constant; do not restate it here.
 
 **The client's committed transcript and the history entry now diverge on
 purpose.** The caption still shows everything that reached TTS, because it was
@@ -1199,68 +1197,18 @@ ignored rather than surfaced as a custom event.
 
 ## Pipeline-transport interleaving fuzz
 
-**`aai` has a randomized interleaving fuzz over the pipeline transport**
-(`host/integration/pipeline-fuzz.integration.test.ts`, run by
-`pnpm --filter @alexkroman1/aai test:integration`; needs no API keys). The
-scripted specs in `host/transports/` each assert ONE interleaving; this drives
-random event orderings and checks GLOBAL invariants — turn serialization, no
-callback after `stop()`, no write to a closed provider session, reply-text
-integrity, no audio after a reply's own `replyDone` — plus the strongest
-oracle, validating every LLM request payload the way Anthropic and OpenAI do
-(an unmatched `tool` result is a hard 400). That oracle is what surfaced the
-`capLlm` bug above. Two rules when extending it: **an oracle must be a
-property a real provider or client enforces**, and **the generator must not
-itself break a provider contract** — an early draft emitted TTS audio at
-arbitrary moments, and the truncation oracle fired on the generator rather
-than the transport. It also asserts COVERAGE FLOORS (barge-in, tool
-execution, history trimming, reply completion): an all-green fuzz proves
-nothing if the random walk never entered the state, so a suddenly greener
-result is usually a broken generator, not a fixed bug. Discovery and
-regression are separate jobs — findings get a deterministic spec of their own
-(the `capLlm` one lives in `pipeline-history.test.ts`), because whether a
-random walk reaches a given alignment is luck. That is measured, not assumed:
-reverting the `capLlm` fix leaves this suite GREEN (both before and after it
-moved to fast-check) while `pipeline-history.test.ts` fails immediately. The
-step count carries an unusual `minLength`, because a run spends its first
-steps getting the session past `start()` and shorter scripts finish before a
-reply ever completes.
+`host/integration/pipeline-fuzz.integration.test.ts` drives the pipeline
+transport through random event orderings (fast-check, no API keys; run by
+`pnpm --filter @alexkroman1/aai test:integration`) and checks GLOBAL invariants
+rather than specific outcomes — turn serialization, no callback after `stop()`,
+no write to a closed provider session, reply-text integrity, and the strongest
+oracle, validating every LLM request payload the way Anthropic and OpenAI do.
+That last one is what surfaced the `capLlm` bug in the `maxHistory` row below.
 
-- Its generated world (`_pipeline-fuzz-input.ts`) is split from the spec, and
-  the MODEL — the request-payload validator, the `Monitor`, and
-  `createCallbacks`, which is every client-visible callback wired to its oracle
-  — from `_pipeline-fuzz-model.ts`, so the spec file is the properties, the
-  driver and the coverage floors. Note biome's `noSecrets` rule is off for
-  `**/_*-fuzz-*.ts` alongside test files (`biome.json`): a camelCase action
-  name like `armBargeInFromTool` reads as high-entropy to it, and mangling a
-  domain identifier to satisfy a false positive is the wrong trade.
-- **Its fatality oracle needed a generator change to mean anything.** "Nothing
-  conversational may reach a client that was told the session is over" passed
-  on arrival — the fake LLM could not fail a turn, so the state was
-  unreachable and the oracle decorative. The script pattern now carries a
-  `fail` turn (an `error` stream part) and the instrumented `doStream`
-  sometimes refuses outright, which are separate reporters; it then failed at
-  once, on `onReplyDone`/`onSpeechStarted` after a fatal `llm` error. Hence
-  the floors on `error:llm`, `llmRefused`, and `nonFatal:llm`: the first two
-  keep the state reachable, the third turns a regression to `fatal` into a
-  failure rather than a silent gap.
-- **`preemptiveGeneration` is part of the generated world**, so both arms run in
-  one property. It ADDS guardrail 1 as a global oracle (nothing may reach TTS
-  between a cleanly completed reply and the next `onReplyStarted` — exactly the
-  idle window a speculation runs in) and floors on speculations started /
-  discarded-by-reason. It also COSTS two things, and both are stated in the code
-  rather than quietly absorbed: the exact-text reply-integrity oracle is skipped
-  in the ON arm (a speculation's text cannot be attributed to a reply at the
-  moment it is served, and guessing is how a harness invents findings), which is
-  why `replyIntegrityChecked`'s floor is the one floor in the file that has ever
-  moved DOWN; and the turn-serialization bound widens, since a speculation is
-  deliberately outside the turn chain. Two rules this suite does NOT guard,
-  despite looking like it might: the per-utterance BUDGET (deleting the check
-  leaves it green — only one speculation is ever held, and the 1 ms
-  `speechIdleTimeoutMs` restores the budget before a third could fire) and
-  ADOPTION (reached 0-6 times per run, too rare to floor, on the `resumeMooted`
-  precedent). `transports/pipeline-speculation.test.ts` and
-  `transports/pipeline-preemption.test.ts` own those. `PIPELINE_FUZZ_COVERAGE=1`
-  prints the counter table, as `S2S_FUZZ_COVERAGE=1` does for the S2S property.
+**Its module doc is the guide to it** — the rules for adding an oracle, why
+discovery and regression are separate jobs, what the generator produces, the
+`preemptiveGeneration` arm's two honest limits, and why the coverage floors are
+hand-rolled. Read it there; do not restate it here.
 
 ## S2S property test
 

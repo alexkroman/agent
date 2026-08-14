@@ -31,14 +31,19 @@
     "supported": [1, 2, 3, 4, 5, 6],
     "dropped": {}
   },
+  "step-errors": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "stt": {
     "current": 1,
     "supported": [1],
     "dropped": {}
   },
   "testing": {
-    "current": 6,
-    "supported": [1, 2, 3, 4, 5, 6],
+    "current": 7,
+    "supported": [1, 2, 3, 4, 5, 6, 7],
     "dropped": {}
   },
   "tool": {
@@ -59,8 +64,8 @@
     "dropped": {}
   },
   "utils": {
-    "current": 5,
-    "supported": [1, 2, 3, 4, 5],
+    "current": 6,
+    "supported": [1, 2, 3, 4, 5, 6],
     "dropped": {}
   },
   "workflow": {

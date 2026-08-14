@@ -17,7 +17,11 @@ export {
   createToolContext,
   createUnusedDb,
   type SentEvent,
+  type StubGateway,
+  type StubGatewayCall,
+  type StubGatewayOptions,
   type StubUpload,
+  stubGateway,
   stubUploads,
   type TestToolContext,
 } from "../../sdk/testing.ts";

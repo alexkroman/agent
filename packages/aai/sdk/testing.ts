@@ -21,6 +21,13 @@ import type { DefaultSessionState, ToolContext } from "./types.ts";
 import type { WorkflowClient } from "./workflow.ts";
 import { rejectingWorkflows } from "./workflow-unavailable.ts";
 
+export {
+  type StubGateway,
+  type StubGatewayCall,
+  type StubGatewayOptions,
+  stubGateway,
+} from "./testing-gateway.ts";
+
 /** One `ctx.send(event, data)` call, as recorded by {@link createToolContext}. */
 export interface SentEvent {
   event: string;

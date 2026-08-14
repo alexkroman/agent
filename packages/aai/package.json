@@ -18,6 +18,11 @@
       "types": "./dist/sdk/testing.d.ts",
       "import": "./dist/sdk/testing.js"
     },
+    "./step-errors": {
+      "@dev/source": "./sdk/step-errors.ts",
+      "types": "./dist/sdk/step-errors.d.ts",
+      "import": "./dist/sdk/step-errors.js"
+    },
     "./workflow-api": {
       "@dev/source": "./sdk/workflow-api-client.ts",
       "types": "./dist/sdk/workflow-api-client.d.ts",

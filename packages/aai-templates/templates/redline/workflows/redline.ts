@@ -31,8 +31,10 @@
  * three functions read more tidily than one.
  */
 
-import { report, StepGenerateError, safeJsonParse, stepGenerate } from "@alexkroman1/aai/utils";
-import { FatalError, RetryableError } from "workflow";
+import { throwStepError } from "@alexkroman1/aai/step-errors";
+import { report, stepGenerate, stepGenerateJson } from "@alexkroman1/aai/utils";
+import { FatalError } from "workflow";
+import { z } from "zod";
 import { CRITIC_SYSTEM, REVISER_SYSTEM, WRITER_SYSTEM } from "./prompts.ts";
 
 /** Shortest brief worth writing from. Below this the piece would be invention. */
@@ -58,6 +60,21 @@ export interface Critique {
   score: number;
   notes: string[];
 }
+
+/**
+ * What the critic is asked to reply with, as something that CHECKS.
+ *
+ * `stepGenerateJson` validates against this, so a reply that missed is a plain
+ * throw and therefore a retry — where the hand-written `isCritique` guard this
+ * replaces had to restate every field's type by hand. The VERDICT is strict
+ * because the body branches on it; the score is deliberately not, and is
+ * clamped at the call site instead (see `critiqueDraft`).
+ */
+const CritiqueReply = z.object({
+  verdict: z.enum(["ship", "revise"]),
+  score: z.number(),
+  notes: z.array(z.string()),
+});
 
 /** One round, as the page renders it and the journal records it. */
 export interface Round {
@@ -148,18 +165,19 @@ export async function critiqueDraft(
   "use step";
 
   await report(`Round ${round}: reading it back critically.`);
-  const reply = await ask(`${briefBlock(input)}\n\nThe submission:\n${draft}`, {
+  // `stepGenerateJson` owns the fence, the parse, the non-object case and the
+  // shape — and throws PLAINLY when any of them misses, unlike the fatal one
+  // above: a model that answered with prose may well obey on the next attempt.
+  const parsed = await stepGenerateJson(`${briefBlock(input)}\n\nThe submission:\n${draft}`, {
+    schema: CritiqueReply,
     system: CRITIC_SYSTEM,
-  });
+  }).catch(throwStepError);
 
-  const parsed = safeJsonParse(stripFence(reply));
-  if (!isCritique(parsed)) {
-    // A PLAIN throw, unlike the fatal one above: a model that answered with
-    // prose instead of JSON may well answer correctly on the next attempt.
-    throw new Error("The critic did not return the JSON shape this step asked for.");
-  }
   const critique: Critique = {
     verdict: parsed.verdict,
+    // The SCORE is still clamped here rather than in the schema: a model that
+    // answered 11 has still answered, and the number is worth keeping at the
+    // edge of the range rather than costing a whole retry.
     score: clampScore(parsed.score),
     notes: parsed.notes.slice(0, MAX_NOTES),
   };
@@ -214,53 +232,24 @@ export function clampScore(score: number): number {
   return Math.min(10, Math.max(1, Math.round(score)));
 }
 
-/** Unwrap a ```json fence, which models add however firmly they are told not to. */
-export function stripFence(reply: string): string {
-  const fenced = /^\s*```(?:json)?\s*\n([\s\S]*?)\n?\s*```\s*$/.exec(reply);
-  return (fenced?.[1] ?? reply).trim();
-}
-
-/** Is this the shape `critiqueDraft` promised its caller? */
-export function isCritique(
-  value: unknown,
-): value is { verdict: "ship" | "revise"; score: number; notes: string[] } {
-  if (value === null || typeof value !== "object") return false;
-  const shape: { verdict?: unknown; score?: unknown; notes?: unknown } = value;
-  return (
-    (shape.verdict === "ship" || shape.verdict === "revise") &&
-    typeof shape.score === "number" &&
-    Array.isArray(shape.notes) &&
-    shape.notes.every((note) => typeof note === "string")
-  );
-}
-
 // ---- The model call ---------------------------------------------------------
 
 /**
  * `stepGenerate`, with this desk's retry POLICY on top.
  *
- * The SDK classifies the failure (`StepGenerateError.retryable`) and stops
- * there: whether a terminal failure should burn the step's remaining attempts is
- * the caller's call, and `FatalError` belongs to `workflow`, which the SDK
- * cannot import onto the CLI's startup path. `link-digest` and `research-desk`
- * carry the same three lines for the same reason.
+ * The SDK classifies the gateway's failure (`StepGenerateError.retryable`) and
+ * stops there: whether a terminal failure should burn the step's remaining
+ * attempts is the caller's call. `throwStepError`
+ * (`@alexkroman1/aai/step-errors`) is that call made one way — terminal stays
+ * terminal, and a rate limit becomes a `RetryableError` carrying the delay the
+ * gateway itself named, which beats `RetryableError`'s own one-second default.
+ *
+ * This desk used to carry that mapping itself, as did `research-desk` and
+ * `link-digest`; it is one import now, and the delay is no longer the one line
+ * only this template remembered.
  */
 async function ask(prompt: string, opts: { system: string }): Promise<string> {
-  return await stepGenerate(prompt, opts).catch(stopOrRetry);
-}
-
-/** A plain function rather than a `throw` inside a `catch`: `FatalError` takes
- *  only a message, so constructing one in a catch block trips `useErrorCause`
- *  with no way to satisfy it. */
-function stopOrRetry(err: unknown): never {
-  if (err instanceof StepGenerateError) {
-    if (!err.retryable) throw new FatalError(err.message);
-    // One line more than `link-digest`'s copy, and the SDK asks for it: when the
-    // gateway named a delay, that number beats the DevKit's default backoff,
-    // which is a guess.
-    if (err.retryAfter) throw new RetryableError(err.message, { retryAfter: err.retryAfter });
-  }
-  throw err;
+  return await stepGenerate(prompt, opts).catch(throwStepError);
 }
 
 /** A rate limit — and a model that ignored the format — are both expected. */

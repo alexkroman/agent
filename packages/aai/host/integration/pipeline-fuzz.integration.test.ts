@@ -26,7 +26,9 @@
  *   splits a tool pair depends on the window's alignment with turn boundaries,
  *   so a random walk reaches it only sometimes. Discovery and regression are
  *   different jobs; do not delete that spec on the grounds that this one covers
- *   the same ground.
+ *   the same ground. That is measured rather than assumed: reverting the
+ *   `capLlm` fix leaves THIS suite green — both before and after it moved to
+ *   fast-check — while `pipeline-history.test.ts` fails immediately.
  * - **The generator must not itself break a provider contract.** An earlier
  *   draft emitted TTS audio at arbitrary moments and the truncation oracle duly
  *   fired — on the generator, not the transport. A fake that does something no
@@ -67,6 +69,17 @@
  * What the arm ADDS is guardrail 1 as a global property — nothing may reach TTS
  * between a cleanly completed reply and the next `onReplyStarted`, which is
  * exactly the idle window a speculation runs in.
+ *
+ * ## Two mechanical notes
+ *
+ * The step count carries an unusual `minLength`: a run spends its first steps
+ * getting the session past `start()`, so a shorter script finishes before a
+ * reply ever completes and the interesting oracles never fire.
+ *
+ * And Biome's `noSecrets` rule is off for the `_*-fuzz-*.ts` files alongside
+ * test files (`biome.json`), because a camelCase action name like
+ * `armBargeInFromTool` reads as high-entropy to it — and mangling a domain
+ * identifier to satisfy a false positive is the wrong trade.
  */
 
 import fc from "fast-check";

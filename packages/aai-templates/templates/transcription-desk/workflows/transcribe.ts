@@ -53,17 +53,14 @@
  *   argument.
  */
 
+import { throwFatalStepError, toStepError } from "@alexkroman1/aai/step-errors";
 import {
-  errorMessage,
-  isTransientStatus,
   mapInBatches,
   readUpload,
   report,
   requireStepEnv,
-  retryAfter,
   uploadInfo,
 } from "@alexkroman1/aai/utils";
-import { FatalError, RetryableError } from "workflow";
 import {
   parseWav,
   planSegments,
@@ -336,24 +333,16 @@ export function clock(ms: number): string {
 
 // ---- I/O helpers ------------------------------------------------------------
 
-/**
- * Re-throw as terminal, so the DevKit stops retrying.
- *
- * A plain function rather than a `throw` inside each `catch`: `FatalError` takes
- * only a message — no `cause` — so constructing one directly in a catch block
- * loses the original error where the linter (rightly) expects it to be
- * preserved. Here the original is the ARGUMENT, and nothing is being swallowed.
- */
-function fatal(err: unknown): never {
-  throw new FatalError(errorMessage(err));
-}
-
 /** The API key, or a terminal failure — three more attempts find the same gap. */
 function apiKeyOrFatal(): string {
   try {
     return requireStepEnv(API_KEY_ENV);
   } catch (err: unknown) {
-    return fatal(err);
+    // `throwFatalStepError` rather than `throw new FatalError(…)`: that class
+    // takes only a message — no `cause` — so constructing one inside a `catch`
+    // loses the original where the linter (rightly) expects it preserved. Here
+    // the original is the ARGUMENT, and nothing is swallowed.
+    return throwFatalStepError(err);
   }
 }
 
@@ -362,35 +351,31 @@ function fatalOnUnsupported<T>(read: () => T): T {
   try {
     return read();
   } catch (err: unknown) {
-    if (err instanceof UnsupportedRecordingError) return fatal(err);
+    if (err instanceof UnsupportedRecordingError) return throwFatalStepError(err);
     throw err;
   }
 }
 
-/** The sync endpoint's failure, with whatever it said about it. */
+/**
+ * The sync endpoint's failure, with whatever it said about it.
+ *
+ * `toStepError` makes the three-way call: a `FatalError` stops the DevKit
+ * retrying something that will answer the same way, a bare `RetryableError`
+ * retries in ONE SECOND (that class's own default), and a `RetryableError`
+ * carrying `retryAfter` waits exactly as long as the far side asked. The last
+ * matters here because `SEGMENT_CONCURRENCY` segments hit the rate limit
+ * together — a second later all four ask again, where on the server's number
+ * they drain.
+ */
 async function syncFailure(response: Response, segment: Segment): Promise<Error> {
   // Two shapes, documented: `{ error_code, message }` for a request problem and
   // `{ detail }` for auth and rate limits.
   const body = (await response.json().catch(() => ({}))) as { message?: string; detail?: string };
-  const message = `Segment ${segment.index} (${clock(segment.startMs)}) failed: HTTP ${response.status}${
-    (body.message ?? body.detail) ? ` — ${body.message ?? body.detail}` : ""
-  }`;
-  return stepFailure(response, message);
-}
-
-/**
- * The right error for one HTTP failure.
- *
- * Three outcomes rather than two, and the third is the one worth having: a
- * `FatalError` stops the DevKit retrying something that will answer the same
- * way, a bare `RetryableError` takes its default backoff, and a
- * `RetryableError` carrying `retryAfter` waits exactly as long as the far side
- * asked. The last matters here because `SEGMENT_CONCURRENCY` segments hit the
- * rate limit together — on our own backoff they re-collect their 429s four at
- * a time, and on the server's they drain.
- */
-function stepFailure(response: Response, message: string): Error {
-  if (!isTransientStatus(response.status)) return new FatalError(message);
-  const at = retryAfter(response);
-  return at ? new RetryableError(message, { retryAfter: at }) : new RetryableError(message);
+  const detail = body.message ?? body.detail;
+  return toStepError(
+    response,
+    `Segment ${segment.index} (${clock(segment.startMs)}) failed: HTTP ${response.status}${
+      detail ? ` — ${detail}` : ""
+    }`,
+  );
 }

@@ -35,10 +35,13 @@ export {
   responseErrorMessage,
   retryAfter,
   StepGenerateError,
+  type StepGenerateJsonOptions,
   type StepGenerateOptions,
   safeJsonParse,
   stepEnv,
   stepGenerate,
+  stepGenerateJson,
+  stripJsonFence,
   VALID_SLUG_RE,
   withLock,
 } from "../../sdk/utils.ts";

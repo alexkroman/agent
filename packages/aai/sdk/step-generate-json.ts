@@ -1,0 +1,133 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * One model call that has to come back as a SHAPE, from inside a `"use step"`
+ * function.
+ *
+ * {@link stepGenerate} is `ctx.generate`'s counterpart for a step, and it stops
+ * one step short of where `ctx.generate` gets to: that one takes a
+ * `GenerateOptions.schema` and returns a typed object, while this one returned a
+ * string and left every caller to re-derive the same four things — unwrap the
+ * fence a model puts around JSON however firmly it is told not to, parse it,
+ * decide the reply was not an object, and check the shape.
+ *
+ * Both workflow templates had written that, and they had already DIVERGED on
+ * the first of the four (one trimmed the unwrapped text, the other did not) —
+ * the same signal that justified extracting `stepGenerate` itself.
+ *
+ * ## Why a schema rather than a type parameter
+ *
+ * The hand-rolled version's last step is the one that rots: `askJson<Action>()`
+ * returns a value the compiler believes and nothing checked, so a model that
+ * answered with a plausible neighbouring shape flows into the step's own logic
+ * as if it had obeyed. Taking a schema makes the check the thing that produces
+ * the type — and makes a reply that ignored the format a PLAIN throw, which is
+ * exactly what the DevKit's retry is for: a model may well obey on the next
+ * attempt, where a 401 will not.
+ *
+ * ## And it stays zod-free
+ *
+ * This module is re-exported from `@alexkroman1/aai/utils`, which the CLI loads
+ * on every invocation, so it may not pull zod's module graph. It does not need
+ * to: VALIDATION is the Standard Schema contract itself (a `~standard.validate`
+ * call), and only JSON Schema CONVERSION needs a vendor-specific path. So the
+ * types come from `sdk/standard-schema.ts` — see that module's doc — and any
+ * Standard Schema works here, zod being merely the documented default.
+ */
+
+import { safeJsonParse } from "./safe-json-parse.ts";
+import {
+  formatSchemaIssues,
+  type InferSchemaOutput,
+  type StandardSchemaV1,
+} from "./standard-schema.ts";
+import { type StepGenerateOptions, stepGenerate } from "./step-generate.ts";
+
+/** How much of an unusable reply is worth quoting back in the failure. */
+const MAX_REPLY_PREVIEW_CHARS = 200;
+
+/** Options for {@link stepGenerateJson}: {@link StepGenerateOptions} plus the shape. */
+export type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOptions & {
+  /**
+   * The shape the reply must satisfy — any
+   * [Standard Schema](https://standardschema.dev), zod being the documented
+   * default. Its OUTPUT type is what this call returns, so a schema that
+   * coerces (dropping the elements a model got wrong, say) is a supported and
+   * often better answer than one that rejects the whole reply.
+   */
+  schema: S;
+};
+
+/**
+ * Ask the model for JSON and return it validated.
+ *
+ * The reply is unfenced, parsed, and checked against `schema`; the validated
+ * value is what comes back, typed as the schema's output.
+ *
+ * @param prompt - The user message. The SHAPE belongs in `system` — this says
+ *   nothing about JSON on the caller's behalf, because the wording that gets a
+ *   model to comply is part of the prompt a template is demonstrating.
+ * @returns The validated reply.
+ * @throws {Error} A plain error — retryable by the DevKit's default, which is
+ *   the point — when the reply is not JSON, is not an object, or does not
+ *   satisfy `schema`. All three are things a model may get right next time.
+ * @throws {import("./step-generate.ts").StepGenerateError} On any gateway
+ *   failure, exactly as {@link stepGenerate} does. Classify it with
+ *   `toStepError` from `@alexkroman1/aai/step-errors`.
+ *
+ * @example
+ * ```ts
+ * import { stepGenerateJson } from "@alexkroman1/aai/utils";
+ * import { z } from "zod";
+ *
+ * const Digest = z.object({ headline: z.string(), points: z.array(z.string()) });
+ *
+ * export async function summarize(article: string): Promise<{ headline: string }> {
+ *   "use step";
+ *   return await stepGenerateJson(article, {
+ *     schema: Digest,
+ *     system: 'Reply with JSON only: {"headline": string, "points": string[]}.',
+ *   });
+ * }
+ * ```
+ *
+ * @public
+ */
+export async function stepGenerateJson<S extends StandardSchemaV1>(
+  prompt: string,
+  opts: StepGenerateJsonOptions<S>,
+): Promise<InferSchemaOutput<S>> {
+  const { schema, ...generate } = opts;
+  const reply = await stepGenerate(prompt, generate);
+  const parsed = safeJsonParse(stripJsonFence(reply));
+  if (parsed === null || typeof parsed !== "object") {
+    throw new Error(`Expected JSON from the model, got: ${preview(reply)}`);
+  }
+  const result = await schema["~standard"].validate(parsed);
+  if (result.issues) {
+    throw new Error(
+      `The model's JSON did not match the shape: ${formatSchemaIssues(result.issues)}`,
+    );
+  }
+  return result.value as InferSchemaOutput<S>;
+}
+
+/**
+ * Unwrap a ```` ```json ```` fence, which models add however firmly they are
+ * told not to.
+ *
+ * Refusing one would cost a whole retry for a reply that was otherwise correct.
+ * Text that carries no fence is returned trimmed and otherwise untouched.
+ *
+ * @public
+ */
+export function stripJsonFence(reply: string): string {
+  const fenced = /^\s*```(?:json)?\s*\n([\s\S]*?)\n?\s*```\s*$/.exec(reply);
+  return (fenced?.[1] ?? reply).trim();
+}
+
+/** As much of an unusable reply as belongs in an error message. */
+function preview(reply: string): string {
+  return reply.length > MAX_REPLY_PREVIEW_CHARS
+    ? `${reply.slice(0, MAX_REPLY_PREVIEW_CHARS)}…`
+    : reply;
+}

@@ -19,9 +19,15 @@
  */
 
 import type { WorkflowClient, WorkflowRunSnapshot } from "@alexkroman1/aai";
-import { createStubWorkflows, createToolContext } from "@alexkroman1/aai/testing";
+import {
+  stubGateway as createStubGateway,
+  createStubWorkflows,
+  createToolContext,
+  type StubGatewayCall,
+} from "@alexkroman1/aai/testing";
 import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { FatalError, RetryableError } from "workflow";
 import agentDef, { research } from "./agent.ts";
 import {
   countSources,
@@ -29,7 +35,6 @@ import {
   findGaps,
   investigate,
   planAngles,
-  stripFence,
   writeBrief,
   writeReport,
 } from "./workflows/research.ts";
@@ -273,13 +278,6 @@ describe("file_it_now", () => {
 });
 
 describe("the pure helpers", () => {
-  test("stripFence unwraps the fence a model puts JSON in", () => {
-    // Models fence JSON often enough that refusing one would cost a whole retry
-    // for a reply that was otherwise correct.
-    expect(stripFence('```json\n{"a":1}\n```')).toBe('{"a":1}');
-    expect(stripFence('{"a":1}')).toBe('{"a":1}');
-  });
-
   test("dedupe keeps the first occurrence of each URL", () => {
     const sources = [
       { title: "One", url: "https://a.example" },
@@ -310,35 +308,24 @@ describe("the steps that research", () => {
   });
 
   /**
-   * A gateway answering a QUEUE of completions, recording what it was asked.
+   * The SDK's fake gateway, installed.
    *
-   * A queue rather than one fixed reply because the researcher's loop is a
-   * CONVERSATION — search, then read, then stop — and a stub that says the same
-   * thing every turn can only ever drive it into its budget.
+   * The fake itself is `@alexkroman1/aai/testing`'s — it answers a QUEUE of
+   * completions, repeating the last, which is what a spec needs for a loop that
+   * is a CONVERSATION (search, then read, then stop) rather than one call. What
+   * stays here is the INSTALLATION, because the lifetime of a global stub is
+   * vitest's business and the SDK helper deliberately carries no test-runner
+   * dependency.
    */
   function stubGateway(replies: readonly string[], status = 200) {
-    const calls: { url: string; body: Record<string, unknown> }[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (url: string, init: RequestInit) => {
-        calls.push({ url, body: JSON.parse(String(init.body)) as Record<string, unknown> });
-        // The LAST reply repeats, so a spec names only the turns it cares about.
-        const content = replies[Math.min(calls.length - 1, replies.length - 1)] ?? "";
-        return new Response(
-          status === 200
-            ? JSON.stringify({ choices: [{ message: { content } }] })
-            : JSON.stringify({ error: "nope" }),
-          { status, headers: { "Content-Type": "application/json" } },
-        );
-      }),
-    );
-    return calls;
+    const gateway = createStubGateway(replies, { status });
+    vi.stubGlobal("fetch", gateway.fetch);
+    return gateway.calls;
   }
 
   /** The prompt the Nth model call carried. */
-  function promptOf(calls: { body: Record<string, unknown> }[], at: number): string {
-    const messages = calls[at]?.body.messages as { role: string; content: string }[] | undefined;
-    return messages?.at(-1)?.content ?? "";
+  function promptOf(calls: readonly StubGatewayCall[], at: number): string {
+    return calls[at]?.prompt ?? "";
   }
 
   const brief = { brief: "How otters use tools", criteria: ["Which species", "How it is learned"] };
@@ -432,20 +419,45 @@ describe("the steps that research", () => {
     expect(investigate.maxRetries).toBeGreaterThan(3);
   });
 
-  test("a rate limit throws plainly, so the step is retried", async () => {
+  test("a rate limit is RETRYABLE, so the DevKit tries again", async () => {
+    // The message alone cannot say this — a 429 and a 401 read alike — so what
+    // is asserted is the class the DevKit actually branches on.
     stubGateway([""], 429);
-    await expect(investigate(brief, "Tool use")).rejects.toThrow(/HTTP 429/);
+    const err = await investigate(brief, "Tool use").catch((thrown: unknown) => thrown);
+    expect(RetryableError.is(err)).toBe(true);
+    expect((err as Error).message).toMatch(/HTTP 429/);
   });
 
-  test("a rejected request fails FATALLY rather than being retried five times", async () => {
+  test("a rejected request is FATAL rather than retried five times", async () => {
     stubGateway([""], 401);
-    await expect(investigate(brief, "Tool use")).rejects.toThrow(/HTTP 401/);
+    const err = await investigate(brief, "Tool use").catch((thrown: unknown) => thrown);
+    expect(FatalError.is(err)).toBe(true);
+    expect((err as Error).message).toMatch(/HTTP 401/);
   });
 
-  test("a missing key fails FATALLY, naming the key", async () => {
+  test("a missing key is FATAL, naming the key", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "");
     stubGateway(["anything"]);
-    await expect(investigate(brief, "Tool use")).rejects.toThrow(/ASSEMBLYAI_API_KEY/);
+    const err = await investigate(brief, "Tool use").catch((thrown: unknown) => thrown);
+    expect(FatalError.is(err)).toBe(true);
+    expect((err as Error).message).toMatch(/ASSEMBLYAI_API_KEY/);
+  });
+
+  test("a malformed `sources` falls back to what the researcher was shown", async () => {
+    // `.catch(undefined)` on that field rather than a bare `.optional()`: the
+    // findings are already compressed by this point, and throwing them away to
+    // research the angle again is the expensive way to handle one bad field.
+    const calls = stubGateway([
+      JSON.stringify({ action: "search", query: "otters" }),
+      JSON.stringify({ action: "stop" }),
+      JSON.stringify({ findings: "Otters use stones.", sources: "not a list" }),
+    ]);
+    const note = await investigate(brief, "Tool use");
+
+    expect(note.findings).toBe("Otters use stones.");
+    expect(note.sources).toEqual([{ title: "Otters", url: "https://otters.example/tools" }]);
+    // Three calls, not four: the reply was USED, not retried.
+    expect(calls).toHaveLength(3);
   });
 
   test("a reply that is not JSON throws plainly, because a retry may well obey", async () => {
