@@ -329,6 +329,76 @@ request to the AssemblyAI LLM Gateway, with no tools and no structured output,
 because bundling the AI SDK into a step artifact costs megabytes on every
 deploy. Ask it for JSON and parse the reply if you need a shape.
 
+### A step's HTTP: use `stepFetch`, not `fetch`
+
+Any outbound request from a step goes through `stepFetch` (also
+`@alexkroman1/aai/utils`). It is not a style preference — `fetch` is the wrong
+call to make from a step, for a reason nothing at the call site shows:
+
+```ts no-check
+import { multipartBody, stepFetch, StepTransportError } from "@alexkroman1/aai/utils";
+
+async function transcribeChunk(key: string, bytes: Uint8Array, index: number) {
+  "use step";
+
+  // Multipart as BYTES. Never a `FormData` — see below.
+  const part = multipartBody({
+    name: "audio",
+    filename: `chunk-${index}.wav`,
+    type: "audio/wav",
+    bytes,
+  });
+
+  const response = await stepFetch("https://sync.assemblyai.com/transcribe", {
+    method: "POST",
+    headers: { Authorization: key, ...part.headers },
+    body: part.body,
+    // Nothing here has a deadline of its own, and a hung request inside a step
+    // is a run that never finishes rather than one that retries.
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!response.ok) throw stepFailure(response);
+  return await response.json();
+}
+```
+
+**`fetch` speaks HTTP/2, and a fan-out is the worst case for that.** Node's
+global `fetch` offers `h2` in ALPN and the far side decides; a server that takes
+it gets every concurrent request from your process multiplexed onto ONE TCP
+connection, sharing one flow-control window. That is fine for small JSON calls
+and pathological for `mapInBatches` over large bodies. Measured on 8 concurrent
+17.66 MB uploads: `fetch` landed 14 of 16 at p50 8094ms, HTTP/1.1 landed 16 of
+16 at p50 3037ms.
+
+**And the two it lost are the reason this matters more than the latency.** On
+HTTP/2 a capacity limit arrives as a *stream reset* — `NGHTTP2_ENHANCE_YOUR_CALM`
+— and a stream error carries no HTTP status, so `isTransientStatus` and
+`retryAfter` cannot see it. Every sibling in the batch then retries in lockstep
+into the same reset, exhausts `maxRetries`, and fails the run with
+`TypeError: fetch failed`, whose real cause is two `cause` hops down where
+nothing prints it. Over HTTP/1.1 the identical limit arrives as `503` with
+`retry-after`, which your retry policy already reads.
+
+Three rules come with it:
+
+- **Bodies are BYTES or a string.** Never hand a `FormData`, `Blob`, `File`,
+  `Headers` or `Request` to a step's fetch: those are branded objects, checked
+  against the classes of whichever undici the fetch came from, and a foreign one
+  is silently stringified — `Content-Type: text/plain` with the 17-byte body
+  `[object FormData]`, answered `415`. `multipartBody()` is how a file becomes
+  bytes.
+- **A connection failure is a `StepTransportError`**, distinct from a response
+  with a bad status because only the first is unclassifiable. It names its whole
+  `cause` chain, and `err.codes` is what to branch on (`ECONNRESET`,
+  `ETIMEDOUT`, …).
+- **Test it with `stubStepFetch`** (`@alexkroman1/aai/testing`), not
+  `vi.stubGlobal("fetch", …)`. The global stub passes — an unpublished slot falls
+  back to it — while asserting a path production does not take, and it cannot see
+  the request body as bytes.
+
+`stepGenerate` already goes through this, so a step that only calls a model gets
+it for free.
+
 ### The page
 
 A workflow app's `client.tsx` mounts with `page()` rather than `client()` —

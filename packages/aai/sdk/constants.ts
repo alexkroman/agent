@@ -383,6 +383,11 @@ export {
   TTS_COALESCE_MAX_CHARS,
   TTS_RECONNECT_TIMEOUT_MS,
 } from "./pipeline-tuning-constants.ts";
+export {
+  STEP_FETCH_CONNECTIONS,
+  STEP_FETCH_KEEP_ALIVE_MS,
+  STEP_FETCH_PIPELINING,
+} from "./step-fetch-constants.ts";
 // LLM tool-loop defaults (step budget + tool choice) — own module for
 // file-length reasons; re-exported so `@alexkroman1/aai` stays the one import
 // path for constants.

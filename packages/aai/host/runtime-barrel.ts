@@ -28,8 +28,10 @@ export type { AgentEnv, HostCredentialEnv, ProviderEnv } from "../sdk/env-types.
 // bundles it. Only a host calls this: the guest at bundle load, `aai dev` on
 // every rebuild.
 export { publishStepEnv } from "../sdk/step-env.ts";
-// The two step slots' publishers. `installWorkflowSupport` below is what calls
-// both for an ordinary server; these are for a process that assembles its own.
+// The three step slots' publishers. `installWorkflowSupport` below is what
+// calls all of them for an ordinary server; these are for a process that
+// assembles its own.
+export { publishStepFetch, type StepFetch } from "../sdk/step-fetch.ts";
 export { publishStepReporter, type StepReporter } from "../sdk/step-report.ts";
 export {
   publishUploadReader,
@@ -125,6 +127,14 @@ export {
   safeFetch,
   ssrfSafeFetch,
 } from "./ssrf.ts";
+// Serving workflows, and choosing the world they live in. Shared rather than
+// guest-only because `aai dev` needs the identical wiring — and the CLI may not
+// import the guest (the dependency edge runs aai-guest -> aai-cli, never back).
+// Uploads and step narration: the store both `/uploads` routes are served from,
+// and the two publishers that hand a `"use step"` function its reader and its
+// reporter. Exported for the embedders that build a server by hand — and for a
+// spec, which publishes a fake rather than standing a store up.
+export { createStepFetch } from "./step-fetch.ts";
 export {
   CARRIER_CODECS,
   type CarrierCodec,
@@ -202,13 +212,6 @@ export {
   type WdkStreamOptions,
   type WorkflowClientOptions,
 } from "./workflow-client.ts";
-// Serving workflows, and choosing the world they live in. Shared rather than
-// guest-only because `aai dev` needs the identical wiring — and the CLI may not
-// import the guest (the dependency edge runs aai-guest -> aai-cli, never back).
-// Uploads and step narration: the store both `/uploads` routes are served from,
-// and the two publishers that hand a `"use step"` function its reader and its
-// reporter. Exported for the embedders that build a server by hand — and for a
-// spec, which publishes a fake rather than standing a store up.
 export { installWorkflowSupport, UPLOAD_DIR_NAME } from "./workflow-install.ts";
 export {
   createMemoryKeyStore,

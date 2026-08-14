@@ -17,7 +17,7 @@
  * the decoder happily transcribes into confident nonsense.
  */
 
-import { stubUploads } from "@alexkroman1/aai/testing";
+import { stubStepFetch, stubUploads } from "@alexkroman1/aai/testing";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { RetryableError } from "workflow";
 import { z } from "zod";
@@ -403,22 +403,34 @@ describe("transcribeSegment", () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
   });
 
-  /** Publishes the recording and answers the sync endpoint. */
-  function stubProvider(sync: { status?: number; body?: unknown; headers?: HeadersInit } = {}) {
+  /**
+   * Publishes the recording and answers the sync endpoint.
+   *
+   * `stubStepFetch`, not `vi.stubGlobal("fetch", …)`: the step calls `stepFetch`,
+   * which reaches a published slot rather than the global — see
+   * `sdk/step-fetch.ts` for why it has to (HTTP/1.1, so a batch of segments gets
+   * a socket each instead of N streams on one connection). Stubbing the global
+   * still passes, because an unpublished slot falls back to it, and would be
+   * asserting against a path production does not take.
+   */
+  function stubProvider(
+    sync: { status?: number; body?: unknown; headers?: Record<string, string> } = {},
+  ) {
     publishRecording(new Uint8Array(FORMAT.dataEnd));
-    const calls: { url: string; init: RequestInit }[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (url: string, init: RequestInit = {}) => {
-        calls.push({ url, init });
-        return new Response(JSON.stringify(sync.body ?? { text: "hello there" }), {
-          status: sync.status ?? 200,
-          headers: { "Content-Type": "application/json", ...sync.headers },
-        });
-      }),
-    );
-    return calls;
+    const stub = stubStepFetch(() => ({
+      status: sync.status ?? 200,
+      body: sync.body ?? { text: "hello there" },
+      ...(sync.headers && { headers: sync.headers }),
+    }));
+    stubs.push(stub.restore);
+    return stub.calls;
   }
+
+  /** Unpublished per test — a live one answers the next file's steps. */
+  const stubs: (() => void)[] = [];
+  afterEach(() => {
+    for (const restore of stubs.splice(0)) restore();
+  });
 
   test("sends the segment as a WAV, with the key and the model header", async () => {
     const calls = stubProvider();
@@ -426,12 +438,20 @@ describe("transcribeSegment", () => {
 
     expect(result).toEqual({ index: 0, text: "hello there" });
     const sync = calls.find((call) => call.url.startsWith(SYNC_ORIGIN));
-    const headers = sync?.init.headers as Record<string, string>;
     // The raw key: this endpoint takes it unprefixed, and `Bearer ` in front of
     // it is a 401 that reads like a wrong key.
-    expect(headers.Authorization).toBe("sk-test");
-    expect(headers["X-AAI-Model"]).toBe("universal-3-5-pro");
-    expect(sync?.init.body).toBeInstanceOf(FormData);
+    expect(sync?.headers.Authorization).toBe("sk-test");
+    expect(sync?.headers["X-AAI-Model"]).toBe("universal-3-5-pro");
+    // BYTES, and multipart — `stepFetch` takes no `FormData`, which is the
+    // point: a branded object handed to a fetch from another undici realm goes
+    // out as the string `[object FormData]`. `multipartBody` builds the envelope.
+    expect(sync?.headers["Content-Type"]).toMatch(/^multipart\/form-data; boundary=/);
+    const body = sync?.body;
+    expect(body).toBeInstanceOf(Uint8Array);
+    const decoded = new TextDecoder().decode(body as Uint8Array);
+    expect(decoded).toContain('name="audio"; filename="segment-0.wav"');
+    // The WAV really rides in the part, header and all.
+    expect(decoded).toContain("RIFF");
   });
 
   test("fails FATALLY with no API key rather than retrying five times", async () => {

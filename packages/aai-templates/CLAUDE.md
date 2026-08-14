@@ -91,7 +91,7 @@ once, and the templates are now their reference use:
 | `toStepError` / `throwStepError` / `throwFatalStepError` (`@alexkroman1/aai/step-errors`) | every workflow template — `transcription-desk` and `link-digest` for the HTTP classification each had hand-written identically, `research-desk`/`link-digest`/`redline` for the `.catch(throwStepError)` on a model call, `transcription-desk` for the two `catch`-block fatals, `recap-desk` for both halves of a provider call it also polls |
 | `stepGenerateJson` + `stripJsonFence` | `research-desk` (five stages, each with its own zod shape — including the LENIENT ones that replace its hand-rolled `strings()`/`isSource()` coercion), `link-digest` (one), `redline` (the critic's findings) and `recap-desk` (the recap, whose `spoken` field is required rather than defaulted because the announced turn has nothing to read without it). `stripJsonFence` is exercised only through `stepGenerateJson`, which is the intended path |
 | `stubGateway` (`@alexkroman1/aai/testing`) | the `research-desk`, `link-digest`, `redline` and `recap-desk` specs — the QUEUE form in the first and last, because their model calls sit in a loop or a chain, and the single-reply form in `link-digest` |
-| `mapInBatches`, `stepEnv` / `requireStepEnv`, `stepGenerate` | the STEP surface, and every workflow template uses it: `transcription-desk` fans its segments out and reads `ASSEMBLYAI_API_KEY` for the sync STT endpoint; `research-desk`, `link-digest`, `redline` and `recap-desk` call the model with `stepGenerate` (or `stepGenerateJson`, for a reply that has to be a shape), and `recap-desk` reads the same key for the batch transcription endpoint it polls. Imported from `@alexkroman1/aai/utils`, NOT the root: a `workflows/*.ts` module is bundled separately by the WDK builder, so the root barrel's graph would ride into the step bundle. That import path is also why the coverage gate cannot see them — it scans the root specifier — hence their allowlist entries |
+| `mapInBatches`, `stepEnv` / `requireStepEnv`, `stepGenerate`, `stepFetch` / `multipartBody` | the STEP surface, and every workflow template uses it: `transcription-desk` fans its segments out and reads `ASSEMBLYAI_API_KEY` for the sync STT endpoint; `research-desk`, `link-digest`, `redline` and `recap-desk` call the model with `stepGenerate` (or `stepGenerateJson`, for a reply that has to be a shape), and `recap-desk` reads the same key for the batch transcription endpoint it polls. Imported from `@alexkroman1/aai/utils`, NOT the root: a `workflows/*.ts` module is bundled separately by the WDK builder, so the root barrel's graph would ride into the step bundle. That import path is also why the coverage gate cannot see them — it scans the root specifier — hence their allowlist entries |
 | `webSearch` / `visitWebpage` (`@alexkroman1/aai/tools`) | `research-desk`, from inside a `"use step"` function — the demonstration that a step is not a lesser environment than a tool body; `plan-desk`, from an ordinary tool body, which is the case the module was published for |
 
 **`research-desk` is the workflow template, and its shape is dictated by the
@@ -161,6 +161,23 @@ throw made this template unimportable by its own spec. The check lives at
 
 Note the template needs `workflow` as a devDependency of THIS package to
 resolve at test time; a scaffolded project gets it as a real dependency.
+
+**A step's HTTP goes through `stepFetch`, never `fetch`, and that came out of a
+load test rather than review.** `transcription-desk` used `fetch` with a
+`FormData`, which is the obvious spelling and fails under exactly the concurrency
+the template exists to demonstrate: Node's `fetch` offers `h2` in ALPN and the
+sync endpoint takes it, so a `mapInBatches` batch of 17.66 MB uploads multiplexes
+onto ONE connection. Measured at 8 in flight, `fetch` landed 14 of 16 at p50
+8094ms against HTTP/1.1's 16 of 16 at p50 3037ms — and the two it lost are the
+point, because a capacity limit on h2 arrives as `NGHTTP2_ENHANCE_YOUR_CALM`, a
+stream reset with no HTTP status for `isTransientStatus`/`retryAfter` to read. So
+every sibling retried in lockstep into the same reset and the run died on
+`TypeError: fetch failed` with the cause two hops down. Over HTTP/1.1 the same
+limit is a `503` with `retry-after`, which the template already handled. The
+concurrency curve that came out of it is in `SEGMENT_CONCURRENCY`'s own doc;
+`sdk/step-fetch.ts` owns the rest, and a spec answers it with `stubStepFetch`
+(`@alexkroman1/aai/testing`) rather than stubbing the global — the global stub
+passes while testing a path production does not take.
 
 **`transcription-desk` is the second workflow template. It is a WORKFLOW APP —
 `workflowApp()`, no `stt`/`llm`/`tts`, no tools — and it is the one that really

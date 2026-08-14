@@ -28,12 +28,19 @@ const scaffold = (file: string) =>
  * plugin, date-fns, the aws smithy tree), which is not a cost to pay on every
  * sandbox for a path nothing reaches.
  *
- * DELETE this set when the guest path lands: adding `workflow` to
+ * DELETE this set when the guest path lands: adding both to
  * `WORKSPACE_DEPENDENCIES` and to `toolchain/package.json` is what puts a copy
  * where `rewriteWorkflowImports` can resolve it, and this test is what will say
  * so.
+ *
+ * `@workflow/world-postgres` joins it for the same reason and travels with
+ * `workflow`: it is what `getWorld()` imports for a project with a
+ * `DATABASE_URL`, and it reaches a project only through `@alexkroman1/aai` —
+ * which npm hoists and pnpm does not, so a scaffolded pnpm project has to
+ * declare it or its first run dies on
+ * `Cannot find module '@workflow/world-postgres'`.
  */
-const NOT_YET_PLATFORM_OWNED = new Set(["workflow"]);
+const NOT_YET_PLATFORM_OWNED = new Set(["workflow", "@workflow/world-postgres"]);
 
 let dir: string;
 

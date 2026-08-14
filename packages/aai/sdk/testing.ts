@@ -16,6 +16,7 @@
  */
 
 import type { Db } from "./db.ts";
+import { publishStepFetch, type StepFetchInit } from "./step-fetch.ts";
 import { publishUploadReader } from "./step-uploads.ts";
 import type { DefaultSessionState, ToolContext } from "./types.ts";
 import type { WorkflowClient } from "./workflow.ts";
@@ -243,4 +244,88 @@ export function stubUploads(files: Readonly<Record<string, StubUpload>>): () => 
       Promise.resolve(stored.get(id)?.bytes.subarray(start, end) ?? new Uint8Array(0)),
   });
   return () => publishUploadReader(undefined);
+}
+
+/** One request a {@link stubStepFetch} recorder captured. */
+export type StubStepRequest = {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  /** The body as sent — BYTES, because that is all `stepFetch` accepts. */
+  body: Uint8Array | string | undefined;
+};
+
+/** What {@link stubStepFetch} returns. */
+export type StubStepFetch = {
+  /** Every request the step made, in order. */
+  calls: StubStepRequest[];
+  /** Unpublish. Call it in an `afterEach` — see {@link stubStepFetch}. */
+  restore: () => void;
+};
+
+/**
+ * Publish a fake `stepFetch`, so a `"use step"` function's HTTP can be asserted
+ * without a server and without stubbing a global.
+ *
+ * A step's outbound call goes through a process-wide slot rather than
+ * `globalThis.fetch` (see `sdk/step-fetch.ts` for why — HTTP/1.1 pinning, and
+ * a fan-out that breaks on HTTP/2 stream resets), so this is the honest way to
+ * intercept it. `vi.stubGlobal("fetch", …)` still works, because an unpublished
+ * slot falls back to the global; it just tests a path production does not take,
+ * and it cannot see the request BODY as bytes.
+ *
+ * `answer` may return a `Response`, or a `{ status, body, headers }` shorthand,
+ * or throw — a throw is what a connection failure looks like, and `stepFetch`
+ * wraps it in a `StepTransportError` exactly as it would in production.
+ *
+ * Returns `restore`, and calling it in an `afterEach` is not optional — a fetch
+ * left published makes the next file's steps answer to this one's handler.
+ *
+ * @example
+ * ```ts no-check
+ * // `no-check`: the assertion is the point, and a doc example may not import a
+ * // test runner — the same reason `createToolContext`'s example opts out.
+ * import { stubStepFetch } from "@alexkroman1/aai/testing";
+ *
+ * const sync = stubStepFetch(() => ({ body: { text: "hello there" } }));
+ * // … call the step …
+ * expect(sync.calls[0]?.headers.Authorization).toBe("sk-test");
+ * sync.restore();
+ * ```
+ *
+ * @param answer - Called per request with the recorded request. Defaults to an
+ *   empty `200`.
+ * @public
+ */
+export function stubStepFetch(
+  answer: (
+    request: StubStepRequest,
+  ) =>
+    | Response
+    | { status?: number; body?: unknown; headers?: Record<string, string> }
+    | Promise<
+        Response | { status?: number; body?: unknown; headers?: Record<string, string> }
+      > = () => ({}),
+): StubStepFetch {
+  const calls: StubStepRequest[] = [];
+  publishStepFetch(async (url: string, init: StepFetchInit = {}): Promise<Response> => {
+    const request: StubStepRequest = {
+      url,
+      method: init.method ?? "GET",
+      headers: { ...init.headers },
+      body: init.body,
+    };
+    calls.push(request);
+    const answered = await answer(request);
+    if (answered instanceof Response) return answered;
+    // A JSON body is what nearly every endpoint a step calls answers with, so
+    // the shorthand encodes one rather than making each spec stringify.
+    const body =
+      typeof answered.body === "string" ? answered.body : JSON.stringify(answered.body ?? {});
+    return new Response(body, {
+      status: answered.status ?? 200,
+      headers: { "Content-Type": "application/json", ...answered.headers },
+    });
+  });
+  return { calls, restore: () => publishStepFetch(undefined) };
 }

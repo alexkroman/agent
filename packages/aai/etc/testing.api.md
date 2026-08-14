@@ -162,6 +162,31 @@ export interface StubGatewayOptions {
 }
 
 // @public
+export type StubStepFetch = {
+    calls: StubStepRequest[];
+    restore: () => void;
+};
+
+// @public
+export function stubStepFetch(answer?: (request: StubStepRequest) => Response | {
+    status?: number;
+    body?: unknown;
+    headers?: Record<string, string>;
+} | Promise<Response | {
+    status?: number;
+    body?: unknown;
+    headers?: Record<string, string>;
+}>): StubStepFetch;
+
+// @public
+export type StubStepRequest = {
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+    body: Uint8Array | string | undefined;
+};
+
+// @public
 export type StubUpload = Uint8Array | {
     bytes: Uint8Array;
     name?: string;
