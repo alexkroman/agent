@@ -20,9 +20,35 @@
 
 import type { WorkflowClient, WorkflowRunSnapshot } from "@alexkroman1/aai";
 import { createStubWorkflows, createToolContext } from "@alexkroman1/aai/testing";
+import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import agentDef, { research } from "./agent.ts";
-import { investigate, planAngles, synthesize } from "./workflows/research.ts";
+import {
+  countSources,
+  dedupe,
+  findGaps,
+  investigate,
+  planAngles,
+  stripFence,
+  writeBrief,
+  writeReport,
+} from "./workflows/research.ts";
+
+/**
+ * The web, faked at the SDK's own seam.
+ *
+ * `webSearch` and `visitWebpage` screen a URL and then really fetch it, through
+ * an undici dispatcher a `globalThis.fetch` stub cannot reach — so mocking the
+ * module is the only honest way to keep this suite offline. What is asserted is
+ * that the researcher CALLS them with what the model asked for; the builtins'
+ * own behaviour is `aai`'s to test, and it does.
+ */
+vi.mock("@alexkroman1/aai/tools", () => ({
+  webSearch: vi.fn(async () => ({
+    results: [{ title: "Otters", url: "https://otters.example/tools" }],
+  })),
+  visitWebpage: vi.fn(async () => ({ content: "The page body." })),
+}));
 
 /**
  * A `ctx.workflows` that records `start` and answers `find` from a fixture.
@@ -246,20 +272,58 @@ describe("file_it_now", () => {
   });
 });
 
-describe("the steps that call the model", () => {
+describe("the pure helpers", () => {
+  test("stripFence unwraps the fence a model puts JSON in", () => {
+    // Models fence JSON often enough that refusing one would cost a whole retry
+    // for a reply that was otherwise correct.
+    expect(stripFence('```json\n{"a":1}\n```')).toBe('{"a":1}');
+    expect(stripFence('{"a":1}')).toBe('{"a":1}');
+  });
+
+  test("dedupe keeps the first occurrence of each URL", () => {
+    const sources = [
+      { title: "One", url: "https://a.example" },
+      { title: "One again", url: "https://a.example" },
+      { title: "Two", url: "https://b.example" },
+    ];
+    expect(dedupe(sources)).toEqual([sources[0], sources[2]]);
+  });
+
+  test("countSources counts DISTINCT sources across every angle", () => {
+    // What the voice agent quotes. Two researchers finding the same page is one
+    // source, and reporting two would overstate the research.
+    const shared = { title: "Shared", url: "https://a.example" };
+    expect(
+      countSources([
+        { angle: "one", findings: "…", sources: [shared, { title: "B", url: "https://b" }] },
+        { angle: "two", findings: "…", sources: [shared] },
+      ]),
+    ).toBe(2);
+  });
+});
+
+describe("the steps that research", () => {
   beforeEach(() => {
     // `stepEnv` falls back to the process env when no host has published one,
     // which is exactly the case a spec is. `unstubEnvs` clears it per test.
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
   });
 
-  /** A gateway that answers with `content`, recording what it was asked. */
-  function stubGateway(content: string, status = 200) {
+  /**
+   * A gateway answering a QUEUE of completions, recording what it was asked.
+   *
+   * A queue rather than one fixed reply because the researcher's loop is a
+   * CONVERSATION — search, then read, then stop — and a stub that says the same
+   * thing every turn can only ever drive it into its budget.
+   */
+  function stubGateway(replies: readonly string[], status = 200) {
     const calls: { url: string; body: Record<string, unknown> }[] = [];
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, init: RequestInit) => {
         calls.push({ url, body: JSON.parse(String(init.body)) as Record<string, unknown> });
+        // The LAST reply repeats, so a spec names only the turns it cares about.
+        const content = replies[Math.min(calls.length - 1, replies.length - 1)] ?? "";
         return new Response(
           status === 200
             ? JSON.stringify({ choices: [{ message: { content } }] })
@@ -271,46 +335,97 @@ describe("the steps that call the model", () => {
     return calls;
   }
 
-  test("planAngles asks the gateway and returns one angle per line", async () => {
-    const calls = stubGateway("How otters use tools\nOtter population trends\nRiver habitat loss");
-    const angles = await planAngles("otters");
+  /** The prompt the Nth model call carried. */
+  function promptOf(calls: { body: Record<string, unknown> }[], at: number): string {
+    const messages = calls[at]?.body.messages as { role: string; content: string }[] | undefined;
+    return messages?.at(-1)?.content ?? "";
+  }
 
-    expect(angles).toEqual([
-      "How otters use tools",
-      "Otter population trends",
-      "River habitat loss",
+  const brief = { brief: "How otters use tools", criteria: ["Which species", "How it is learned"] };
+
+  test("writeBrief turns a spoken request into a brief and its criteria", async () => {
+    const calls = stubGateway([
+      JSON.stringify({ brief: "How otters use tools", criteria: ["Which species"] }),
     ]);
-    expect(calls[0]?.url).toContain("/chat/completions");
-    // The key is a BEARER here — the gateway is OpenAI-compatible, unlike
-    // AssemblyAI's streaming sockets, which take the key raw.
+    expect(await writeBrief("otters")).toEqual({
+      brief: "How otters use tools",
+      criteria: ["Which species"],
+    });
+    expect(promptOf(calls, 0)).toContain("otters");
+  });
+
+  test("writeBrief falls back to the topic rather than filing an empty brief", async () => {
+    // The caller said something; a model that returns no brief must not erase it.
+    stubGateway([JSON.stringify({ criteria: [] })]);
+    expect(await writeBrief("otters")).toEqual({ brief: "otters", criteria: [] });
+  });
+
+  test("planAngles asks the model for the fan-out's width", async () => {
+    const calls = stubGateway([JSON.stringify({ angles: ["Tool use", "Which species"] })]);
+    expect(await planAngles(brief)).toEqual(["Tool use", "Which species"]);
+    // The angles are measured against the brief, so the criteria travel with it.
+    expect(promptOf(calls, 0)).toContain("Which species");
+  });
+
+  test("planAngles researches the brief itself when no angles come back", async () => {
+    // Nothing to fan out over is a plan failure, not an empty result — and the
+    // brief is the one angle that is always available.
+    stubGateway([JSON.stringify({ angles: [] })]);
+    expect(await planAngles(brief)).toEqual([brief.brief]);
+  });
+
+  test("investigate stops when the model says so, without inventing findings", async () => {
+    const calls = stubGateway([JSON.stringify({ action: "stop", why: "nothing to add" })]);
+    expect(await investigate(brief, "Tool use")).toEqual({
+      angle: "Tool use",
+      findings: "Nothing was found on this angle.",
+      sources: [],
+    });
+    // One call: it stopped, so there was nothing to compress.
     expect(calls).toHaveLength(1);
   });
 
-  test("planAngles normalizes a list that came back numbered anyway", async () => {
-    // A retry would most likely produce the same shape, so this is repaired
-    // rather than rejected.
-    stubGateway("1. First angle\n2) Second angle\n- Third angle");
-    expect(await planAngles("otters")).toEqual(["First angle", "Second angle", "Third angle"]);
+  test("investigate searches, reads, and compresses what it saw", async () => {
+    const calls = stubGateway([
+      JSON.stringify({ action: "search", query: "otter tool use" }),
+      JSON.stringify({ action: "read", url: "https://otters.example/tools" }),
+      JSON.stringify({ action: "stop", why: "enough" }),
+      JSON.stringify({
+        findings: "Sea otters crack shellfish with stones [1].",
+        sources: [{ title: "Otters", url: "https://otters.example/tools" }],
+      }),
+    ]);
+
+    const note = await investigate(brief, "Tool use");
+
+    expect(webSearch).toHaveBeenCalledWith({ query: "otter tool use", max_results: 5 });
+    expect(visitWebpage).toHaveBeenCalledWith("https://otters.example/tools");
+    expect(note.findings).toContain("crack shellfish");
+    expect(note.sources).toEqual([{ title: "Otters", url: "https://otters.example/tools" }]);
+    // Everything the researcher saw reaches the compression stage, which is what
+    // keeps the journaled result small without summarizing the findings away.
+    expect(promptOf(calls, 3)).toContain("The page body.");
   });
 
-  test("planAngles fails FATALLY when the model returns nothing usable", async () => {
-    // Not empty — an empty completion is `ask`'s failure, one layer down. This
-    // is a reply that LOOKS like a list and parses to nothing.
-    stubGateway("-\n*");
-    await expect(planAngles("otters")).rejects.toThrow(/no angles/);
+  test("investigate stops at its BUDGET, whatever the model asks for", async () => {
+    // The budget is the mechanism, not the prompt: a run whose cost is decided
+    // by a model is a run nobody can price.
+    const calls = stubGateway([JSON.stringify({ action: "search", query: "again" })]);
+    await investigate(brief, "Tool use");
+    // Six actions, then one compression call.
+    expect(calls).toHaveLength(7);
   });
 
-  test("investigate carries the topic and the angle into the prompt", async () => {
-    const calls = stubGateway("Otters crack shellfish with stones.");
-    const note = await investigate("otters", "How otters use tools");
-
-    expect(note).toEqual({
-      angle: "How otters use tools",
-      note: "Otters crack shellfish with stones.",
-    });
-    const messages = calls[0]?.body.messages as { role: string; content: string }[];
-    expect(messages.at(-1)?.content).toContain("How otters use tools");
-    expect(messages.at(-1)?.content).toContain("otters");
+  test("a failed search costs an action rather than the whole angle", async () => {
+    vi.mocked(webSearch).mockRejectedValueOnce(new Error("search is down"));
+    const calls = stubGateway([
+      JSON.stringify({ action: "search", query: "otters" }),
+      JSON.stringify({ action: "stop", why: "give up" }),
+      JSON.stringify({ findings: "Nothing usable.", sources: [] }),
+    ]);
+    const note = await investigate(brief, "Tool use");
+    expect(note.findings).toBe("Nothing usable.");
+    expect(promptOf(calls, 2)).toContain("search is down");
   });
 
   test("investigate retries beyond the default, because a rate limit is expected", () => {
@@ -318,36 +433,63 @@ describe("the steps that call the model", () => {
   });
 
   test("a rate limit throws plainly, so the step is retried", async () => {
-    stubGateway("", 429);
-    await expect(investigate("otters", "tools")).rejects.toThrow(/HTTP 429/);
+    stubGateway([""], 429);
+    await expect(investigate(brief, "Tool use")).rejects.toThrow(/HTTP 429/);
   });
 
   test("a rejected request fails FATALLY rather than being retried five times", async () => {
-    stubGateway("", 401);
-    await expect(investigate("otters", "tools")).rejects.toThrow(/HTTP 401/);
+    stubGateway([""], 401);
+    await expect(investigate(brief, "Tool use")).rejects.toThrow(/HTTP 401/);
   });
 
   test("a missing key fails FATALLY, naming the key", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "");
-    stubGateway("anything");
-    await expect(investigate("otters", "tools")).rejects.toThrow(/ASSEMBLYAI_API_KEY/);
+    stubGateway(["anything"]);
+    await expect(investigate(brief, "Tool use")).rejects.toThrow(/ASSEMBLYAI_API_KEY/);
   });
 
-  test("synthesize reduces every note, so nothing researched is dropped", async () => {
-    const calls = stubGateway("Otters are clever and declining.");
-    const summary = await synthesize("otters", [
-      { angle: "tools", note: "They use stones." },
-      { angle: "population", note: "Numbers are falling." },
+  test("a reply that is not JSON throws plainly, because a retry may well obey", async () => {
+    stubGateway(["I would rather write you an essay."]);
+    await expect(writeBrief("otters")).rejects.toThrow(/Expected JSON/);
+  });
+
+  test("findGaps asks nothing when the first wave found nothing", async () => {
+    const calls = stubGateway([JSON.stringify({ angles: ["anything"] })]);
+    expect(await findGaps(brief, [])).toEqual([]);
+    expect(calls).toHaveLength(0);
+  });
+
+  test("findGaps names what is still unanswered against the criteria", async () => {
+    const calls = stubGateway([JSON.stringify({ angles: ["How it is learned"] })]);
+    const gaps = await findGaps(brief, [
+      { angle: "Tool use", findings: "They use stones.", sources: [] },
+    ]);
+    expect(gaps).toEqual(["How it is learned"]);
+    expect(promptOf(calls, 0)).toContain("They use stones.");
+  });
+
+  test("writeReport writes the report AND the sentence a phone can carry", async () => {
+    // Two model calls in ONE step, because they are one decision: a resume must
+    // never pair a new summary with an old report.
+    const calls = stubGateway(["# Otters\n\nThey use stones [1].", "Otters use stones as tools."]);
+    const written = await writeReport("otters", brief, [
+      { angle: "Tool use", findings: "They use stones.", sources: [] },
     ]);
 
-    expect(summary).toBe("Otters are clever and declining.");
-    const messages = calls[0]?.body.messages as { role: string; content: string }[];
-    expect(messages.at(-1)?.content).toContain("They use stones.");
-    expect(messages.at(-1)?.content).toContain("Numbers are falling.");
+    expect(written.report).toContain("# Otters");
+    expect(written.summary).toBe("Otters use stones as tools.");
+    expect(calls).toHaveLength(2);
+    // Nothing researched is dropped on the way in.
+    expect(promptOf(calls, 0)).toContain("They use stones.");
+    // …and the summary is a reduction OF the report, not a second pass at the
+    // findings — which is what keeps it consistent with what a page renders.
+    expect(promptOf(calls, 1)).toContain("# Otters");
   });
 
   test("an empty completion throws rather than filing a blank report", async () => {
-    stubGateway("");
-    await expect(synthesize("otters", [])).rejects.toThrow(/empty completion/);
+    stubGateway([""]);
+    await expect(
+      writeReport("otters", brief, [{ angle: "a", findings: "b", sources: [] }]),
+    ).rejects.toThrow(/empty completion/);
   });
 });
