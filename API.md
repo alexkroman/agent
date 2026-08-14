@@ -942,6 +942,7 @@ export type WorkflowClient = {
     recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
     cancel(runId: string): Promise<boolean>;
     wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
+    signal(token: string, payload?: unknown): Promise<boolean>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
     streamTail(runId: string, options?: StreamOptions): Promise<number>;
     listing(): WorkflowSummary[];
@@ -1182,6 +1183,7 @@ type WorkflowClient = {
     recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
     cancel(runId: string): Promise<boolean>;
     wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
+    signal(token: string, payload?: unknown): Promise<boolean>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
     streamTail(runId: string, options?: StreamOptions): Promise<number>;
     listing(): WorkflowSummary[];
@@ -1995,6 +1997,7 @@ type WorkflowClient = {
     recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
     cancel(runId: string): Promise<boolean>;
     wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
+    signal(token: string, payload?: unknown): Promise<boolean>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
     streamTail(runId: string, options?: StreamOptions): Promise<number>;
     listing(): WorkflowSummary[];
@@ -3703,6 +3706,7 @@ export type WdkAdapter = {
     listRuns(workflowId: string, limit: number): Promise<WdkRunRecord[]>;
     cancel(runId: string): Promise<boolean>;
     wakeUp(runId: string, correlationIds: string[] | undefined): Promise<number>;
+    signal(token: string, payload: unknown): Promise<boolean>;
     readStream(runId: string, options: WdkStreamOptions): ReadableStream<unknown>;
     streamTail(runId: string, options: WdkStreamOptions): Promise<number>;
     readOutput(runId: string): Promise<unknown>;
@@ -3781,6 +3785,7 @@ type WorkflowClient = {
     recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
     cancel(runId: string): Promise<boolean>;
     wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
+    signal(token: string, payload?: unknown): Promise<boolean>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
     streamTail(runId: string, options?: StreamOptions): Promise<number>;
     listing(): WorkflowSummary[];
@@ -4328,6 +4333,7 @@ type WorkflowClient = {
     recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
     cancel(runId: string): Promise<boolean>;
     wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
+    signal(token: string, payload?: unknown): Promise<boolean>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
     streamTail(runId: string, options?: StreamOptions): Promise<number>;
     listing(): WorkflowSummary[];

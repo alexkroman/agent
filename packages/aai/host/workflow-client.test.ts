@@ -62,6 +62,7 @@ function makeAdapter(over: Partial<WdkAdapter> = {}): WdkAdapter {
     listRuns: vi.fn(async () => []),
     cancel: vi.fn(async () => true),
     wakeUp: vi.fn(async () => 1),
+    signal: vi.fn(async () => true),
     readStream: vi.fn(() => chunkStream([{ step: 1 }])),
     streamTail: vi.fn(async () => 0),
     readOutput: vi.fn(async () => ({ ok: true })),
@@ -340,6 +341,32 @@ describe("cancelling", () => {
   test("reports whether this call is what ended the run", async () => {
     const { client } = makeClient({ wdk: { cancel: async () => false } });
     expect(await client.cancel("wrun_1")).toBe(false);
+  });
+});
+
+describe("signalling a parked run", () => {
+  test("reports whether a hook was listening on the token", async () => {
+    // `false` is the ORDINARY answer, not a failure: the run moved past its
+    // hook, finished, or was never started. A voice tool says so out loud.
+    const { client } = makeClient({ wdk: { signal: async () => false } });
+    expect(await client.signal("retention:s_1")).toBe(false);
+  });
+
+  test("forwards the payload the caller sent", async () => {
+    const signal = vi.fn(async () => true);
+    const { client } = makeClient({ wdk: { signal } });
+    await client.signal("retention:s_1", { keep: true });
+    expect(signal).toHaveBeenCalledWith("retention:s_1", { keep: true });
+  });
+
+  test("substitutes an EMPTY OBJECT for an omitted payload, not undefined", async () => {
+    // A hook resolves WITH its payload, so a body reading a field off one would
+    // throw on a signal sent for its arrival alone — and `undefined` does not
+    // survive the serialization a payload crosses either.
+    const signal = vi.fn(async () => true);
+    const { client } = makeClient({ wdk: { signal } });
+    await client.signal("stop:s_1");
+    expect(signal).toHaveBeenCalledWith("stop:s_1", {});
   });
 });
 

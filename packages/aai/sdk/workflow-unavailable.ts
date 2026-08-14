@@ -73,6 +73,7 @@ export function rejectingWorkflows(message: string): WorkflowClient {
     recent: reject,
     cancel: reject,
     wakeUp: reject,
+    signal: reject,
     stream: reject,
     streamTail: reject,
     listing: () => [],

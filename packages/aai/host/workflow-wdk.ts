@@ -15,8 +15,8 @@
  * throw-vs-answer translation as `cancel`).
  */
 
-import { getRun, start } from "workflow/api";
-import { WorkflowRunNotFoundError } from "workflow/errors";
+import { getRun, resumeHook, start } from "workflow/api";
+import { HookNotFoundError, WorkflowRunNotFoundError } from "workflow/errors";
 import { getWorld } from "workflow/runtime";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { WdkAdapter, WdkRunRecord, WdkStreamOptions } from "./workflow-client.ts";
@@ -105,6 +105,21 @@ export function wdkAdapter(): WdkAdapter {
         // over", which is the same answer whether the run completed a second ago
         // or was never there.
         if (WorkflowRunNotFoundError.is(err)) return false;
+        throw err;
+      }
+    },
+
+    async signal(token: string, payload: unknown): Promise<boolean> {
+      try {
+        await resumeHook(token, payload);
+        return true;
+      } catch (err: unknown) {
+        // Third instance of the same translation as `cancel` and `wakeUp`: a
+        // token nothing is listening on is an ANSWER. It is the ORDINARY answer
+        // here, in fact — the run moved past its hook, finished, or was never
+        // started — so a caller that had to catch this would catch it on the
+        // happy path.
+        if (HookNotFoundError.is(err)) return false;
         throw err;
       }
     },

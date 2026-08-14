@@ -129,6 +129,15 @@ export type WdkAdapter = {
    */
   wakeUp(runId: string, correlationIds: string[] | undefined): Promise<number>;
   /**
+   * `resumeHook(token, payload)` — resolves false when no hook holds `token`.
+   *
+   * Addressed by TOKEN rather than by run id, which is WDK's own shape and the
+   * right one: the caller signalling knows what it is answering, not which run
+   * happens to be asking. Same throw-vs-answer translation as `cancel` — a
+   * token nothing is listening on is an answer.
+   */
+  signal(token: string, payload: unknown): Promise<boolean>;
+  /**
    * `getRun(runId).getReadable(options)` — the run's own written stream.
    *
    * Synchronous in WDK and here, because the underlying read is LAZY: it defers
@@ -385,6 +394,15 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
       // reading as "wake everything".
       const ids = options?.correlationIds;
       return wdk.wakeUp(runId, ids && ids.length > 0 ? ids : undefined);
+    },
+
+    signal(token: string, payload?: unknown): Promise<boolean> {
+      // `payload` defaults to `{}` rather than passing `undefined` through: a
+      // hook resolves WITH its payload, so a body awaiting one and reading a
+      // field off it would throw on a signal sent for its arrival alone. An
+      // empty object is the "I am only telling you it happened" value, and it
+      // survives the serialization a hook payload crosses.
+      return wdk.signal(token, payload ?? {});
     },
 
     streamTail(runId: string, options?: StreamOptions): Promise<number> {
