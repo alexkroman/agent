@@ -345,6 +345,32 @@ What CI runs is `_fault-mode.integration.test.ts` — the supervisor's own spec,
 driven against a fake server (including one that prints nothing at all), because
 a mode whose whole job is to inject faults has to be shown to inject them.
 
+### The other fault mode lives in `aai`, and faults a SOCKET
+
+`packages/aai/host/_fault-socket.ts` is the sibling of this one: a TCP proxy that
+SEVERS live connections, for testing that a session continues across a
+disconnect. It sits in `aai` rather than here because what it faults —
+`createServer`, the WebSocket upgrade, session resume — lives there.
+
+Three things separate the two, and picking the wrong one measures nothing:
+
+- **This mode kills a PROCESS; that one cuts a CONNECTION.** They are not
+  degrees of the same fault. A workflow survives a process restart because its
+  state is in Postgres; a voice session does not, because `ctx.state` and the
+  session/sink maps are plain `Map`s in `runtime.ts`. So a socket drop is the
+  only disconnect a session is advertised to survive, and no test will make it
+  survive a restart — that would be a feature (persisting session state), not a
+  test.
+- **It severs rather than closing.** `destroy()`, never a close frame: a clean
+  close is the "user hung up" case aai-ui deliberately does NOT reconnect from,
+  so a test built on `ws.close()` proves the opposite of what it looks like.
+  `session-resume.integration.test.ts` asserts the client observes **1006** for
+  exactly that reason.
+- **It is a proxy for the same reason this one is a supervisor.** The sockets are
+  server-side, so the obvious shape is an env-gated `ws.close()` inside
+  `createServer` — a fault injector in production code, able to fire in
+  production. A proxy in front is test-only by construction.
+
 ## Bundling rules
 
 - **Vite must not be allowed to mutate `process.env`.** Vite's `build()`
