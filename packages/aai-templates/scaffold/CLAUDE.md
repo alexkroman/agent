@@ -1042,7 +1042,9 @@ Three rules come with it, each a build error naming the file:
   named at build time rather than becoming a tool that fails per turn.
 - **`tools/` is flat.** A nested file is rejected, because a provider will not
   accept a tool name with a `/` in it and inventing a flattening rule would
-  freeze a guess. Put shared helpers outside `tools/`.
+  freeze a guess. This applies to a nested HELPER too, not just a nested tool —
+  the build cannot tell them apart, so put shared helpers beside `agent.ts`
+  rather than under `tools/`. The error names the file and both ways out.
 
 A tool that closes over module-local state, or one built by your own wrapper,
 still gets its own file — the file names the instance and the factory lives
