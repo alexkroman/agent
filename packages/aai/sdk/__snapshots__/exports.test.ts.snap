@@ -246,6 +246,14 @@ exports[`export surface stability > @alexkroman1/aai/s2s export 1`] = `
 ]
 `;
 
+exports[`export surface stability > @alexkroman1/aai/step-errors export 1`] = `
+[
+  "throwFatalStepError",
+  "throwStepError",
+  "toStepError",
+]
+`;
+
 exports[`export surface stability > @alexkroman1/aai/stt export 1`] = `
 [
   "ASSEMBLYAI_API_KEY_ENV",
@@ -270,6 +278,7 @@ exports[`export surface stability > @alexkroman1/aai/testing export 1`] = `
   "createStubWorkflows",
   "createToolContext",
   "createUnusedDb",
+  "stubGateway",
   "stubUploads",
 ]
 `;
@@ -330,6 +339,8 @@ exports[`export surface stability > @alexkroman1/aai/utils export 1`] = `
   "safeJsonParse",
   "stepEnv",
   "stepGenerate",
+  "stepGenerateJson",
+  "stripJsonFence",
   "toArgsRecord",
   "toolFailure",
   "uploadInfo",

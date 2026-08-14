@@ -1,0 +1,7 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "step-errors",
+  "epoch": 1,
+  "sha256": "3e5505caa928eb2667ca8a833f475238bc1d48dfc242c119c9190568fb11219a",
+  "exports": ["throwFatalStepError", "throwStepError", "toStepError"]
+}

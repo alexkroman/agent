@@ -18,15 +18,10 @@
  * `FatalError` guards are all testable.
  */
 
+import { stubGateway as createStubGateway } from "@alexkroman1/aai/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import agentDef, { digest } from "./agent.ts";
-import {
-  extractText,
-  extractTitle,
-  fetchArticle,
-  stripFence,
-  summarize,
-} from "./workflows/digest.ts";
+import { extractText, extractTitle, fetchArticle, summarize } from "./workflows/digest.ts";
 
 describe("the agent declares itself a workflow app", () => {
   test("its front door is a page, not a microphone", () => {
@@ -114,16 +109,6 @@ describe("extractTitle", () => {
   });
 });
 
-describe("stripFence", () => {
-  test("unwraps a fence a model added anyway", () => {
-    expect(stripFence('```json\n{"a":1}\n```')).toBe('{"a":1}');
-  });
-
-  test("leaves unfenced JSON alone", () => {
-    expect(stripFence('{"a":1}')).toBe('{"a":1}');
-  });
-});
-
 describe("fetchArticle", () => {
   /** A page server answering `html` with `status`. */
   function stubPage(html: string, status = 200) {
@@ -171,20 +156,17 @@ describe("summarize", () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
   });
 
-  /** A gateway answering with `content`. */
+  /**
+   * The SDK's fake gateway, installed.
+   *
+   * The fake is `@alexkroman1/aai/testing`'s; what stays here is the
+   * INSTALLATION, because the lifetime of a global stub is vitest's business
+   * and that helper deliberately carries no test-runner dependency.
+   */
   function stubGateway(content: string, status = 200) {
-    const calls: { url: string; init: RequestInit }[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (url: string, init: RequestInit) => {
-        calls.push({ url, init });
-        return new Response(
-          status === 200 ? JSON.stringify({ choices: [{ message: { content } }] }) : "nope",
-          { status, headers: { "Content-Type": "application/json" } },
-        );
-      }),
-    );
-    return calls;
+    const gateway = createStubGateway(content, { status });
+    vi.stubGlobal("fetch", gateway.fetch);
+    return gateway.calls;
   }
 
   test("returns the headline and points the model produced", async () => {
@@ -198,8 +180,7 @@ describe("summarize", () => {
     });
     // The key is a BEARER here — the gateway is OpenAI-compatible, unlike
     // AssemblyAI's streaming sockets, which take it raw.
-    const headers = calls[0]?.init.headers as Record<string, string> | undefined;
-    expect(headers?.Authorization).toBe("Bearer sk-test");
+    expect(calls[0]?.headers.authorization).toBe("Bearer sk-test");
   });
 
   test("unwraps a fenced reply rather than failing on it", async () => {
@@ -209,14 +190,21 @@ describe("summarize", () => {
 
   test("throws PLAINLY when the model answered with prose, so the step retries", async () => {
     // The distinction that is the whole retry policy: a model that ignored the
-    // format may well obey on the next attempt, where a 401 will not.
+    // format may well obey on the next attempt, where a 401 will not. Plain
+    // means NOT a `FatalError`, which is what the DevKit stops retrying on.
     stubGateway("Here is a summary of the article about otters.");
-    await expect(summarize(ARTICLE)).rejects.toThrow(/JSON shape/);
+    const err = await summarize(ARTICLE).catch((thrown: unknown) => thrown);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).name).not.toBe("FatalError");
+    expect(err).toMatchObject({ message: expect.stringContaining("Expected JSON from the model") });
   });
 
   test("rejects JSON of the wrong shape as firmly as no JSON at all", async () => {
+    // The reply parses and is an object, so only the SCHEMA catches it — which
+    // is what taking a schema bought over the guard this used to hand-roll: the
+    // failure NAMES the field that was missing.
     stubGateway('{"headline":"H"}');
-    await expect(summarize(ARTICLE)).rejects.toThrow(/JSON shape/);
+    await expect(summarize(ARTICLE)).rejects.toThrow(/did not match the shape: points/);
   });
 
   test("fails FATALLY with no API key rather than retrying five times", async () => {

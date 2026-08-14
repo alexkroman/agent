@@ -88,7 +88,10 @@ once, and the templates are now their reference use:
 | `page()` + `createWorkflowApi` + `useWorkflowRun` | `link-digest` — the WORKFLOW APP with the primitives raw: a hand-written `<form>`, its own `useState`, one `createWorkflowApi()` |
 | `Form` + `WorkflowFields` + `useWorkflowSubmit` | `transcription-desk` — the same front door with the form layer, plus `WorkflowOutputOf`. Its form is ALL declared, so `FileField` is exercised by no template and sits in the allowlist |
 | `TextAreaField` beside `<WorkflowFields>` | `redline` — the MIXED form: three scalars declared by the schema, one array field written by hand in the same `<Form>` and mapped on submit. The case "Forms" in `packages/aai-ui/CLAUDE.md` describes, which no template used to exercise |
-| `mapInBatches`, `stepEnv` / `requireStepEnv`, `stepGenerate` | the STEP surface, and all three workflow templates use it: `transcription-desk` fans its segments out and reads `ASSEMBLYAI_API_KEY` for the sync STT endpoint; `research-desk`, `link-digest` and `redline` call the model with `stepGenerate` (`redline` also uses `StepGenerateError.retryAfter`, the one line the other two's `stopOrRetry` leaves on the table). Imported from `@alexkroman1/aai/utils`, NOT the root: a `workflows/*.ts` module is bundled separately by the WDK builder, so the root barrel's graph would ride into the step bundle. That import path is also why the coverage gate cannot see them — it scans the root specifier — hence their allowlist entries |
+| `toStepError` / `throwStepError` / `throwFatalStepError` (`@alexkroman1/aai/step-errors`) | all four workflow templates — `transcription-desk` and `link-digest` for the HTTP classification each had hand-written identically, `research-desk`/`link-digest`/`redline` for the `.catch(throwStepError)` on a model call, `transcription-desk` for the two `catch`-block fatals |
+| `stepGenerateJson` + `stripJsonFence` | `research-desk` (five stages, each with its own zod shape — including the LENIENT ones that replace its hand-rolled `strings()`/`isSource()` coercion), `link-digest` (one) and `redline` (the critic's findings). `stripJsonFence` is exercised only through `stepGenerateJson`, which is the intended path |
+| `stubGateway` (`@alexkroman1/aai/testing`) | the `research-desk`, `link-digest` and `redline` specs — the QUEUE form in the first and last, because their model calls sit in a loop or a chain, and the single-reply form in `link-digest` |
+| `mapInBatches`, `stepEnv` / `requireStepEnv`, `stepGenerate` | the STEP surface, and all four workflow templates use it: `transcription-desk` fans its segments out and reads `ASSEMBLYAI_API_KEY` for the sync STT endpoint; `research-desk`, `link-digest` and `redline` call the model with `stepGenerate` (or `stepGenerateJson`, for a reply that has to be a shape). Imported from `@alexkroman1/aai/utils`, NOT the root: a `workflows/*.ts` module is bundled separately by the WDK builder, so the root barrel's graph would ride into the step bundle. That import path is also why the coverage gate cannot see them — it scans the root specifier — hence their allowlist entries |
 | `webSearch` / `visitWebpage` (`@alexkroman1/aai/tools`) | `research-desk`, from inside a `"use step"` function — the demonstration that a step is not a lesser environment than a tool body; `plan-desk`, from an ordinary tool body, which is the case the module was published for |
 
 **`research-desk` is the workflow template, and its shape is dictated by the
@@ -416,15 +419,51 @@ nothing in one could reach a credential. Two SDK exports close it, both on
   artifact bundles everything but the DevKit, so `ai` plus a provider would be
   megabytes on every deploy for one chat completion.
 
-**`StepGenerateError.retryable` is where the SDK stops and the template
-decides.** The DevKit retries a step that throws, so a caller has to choose
-between letting it (a rate limit, a 5xx) and refusing (a bad key, a rejected
-request) — and `FatalError` belongs to `workflow`, which the SDK cannot import
-onto the CLI's startup path. Both LLM templates therefore carry the same
-three-line `stopOrRetry`, and it is a plain function rather than a `throw` inside
-a `catch` for a mechanical reason worth knowing: `FatalError` takes only a
-message, so constructing one in a catch block trips `useErrorCause` with no way
-to satisfy it.
+- **`stepGenerateJson`** (`packages/aai/sdk/step-generate-json.ts`) — the same
+  call for a stage whose reply is a SHAPE, which is what both LLM templates
+  actually wanted. It unwraps the ```` ```json ```` fence, parses, rejects a
+  non-object and validates against a Standard Schema, and each of those four was
+  re-derived per template — with the fence stripper already DIVERGED (one
+  trimmed, one did not). Taking a schema is the point rather than a convenience:
+  the predecessor was `askJson<Action>()`, a value the compiler believed and
+  nothing checked, so a model answering with a plausible neighbouring shape
+  flowed into the step's logic as if it had obeyed. It stays on the zod-free
+  `/utils` because VALIDATION is a `~standard.validate` call and only JSON Schema
+  CONVERSION needs zod — hence `sdk/standard-schema.ts`, the dependency-free half
+  of `sdk/schema.ts`.
+
+**The retry decision is `@alexkroman1/aai/step-errors`, and it is the one
+subpath that reaches the DevKit.** `StepGenerateError.retryable` and
+`isTransientStatus`/`retryAfter` are the SDK deciding; `FatalError` and
+`RetryableError` are what the DevKit READS, and they belong to `workflow`, which
+`/utils` may not import (the CLI's zero-dependency startup path). So the mapping
+between them was left as a snippet in two module docs — and both templates that
+needed it copied the snippet out of the doc, verbatim and character-identical.
+`toStepError` / `throwStepError` / `throwFatalStepError` are that snippet, on a
+subpath of their own so `workflow` is only in the graph of a caller that asked
+for it (and a step artifact externalizes it anyway).
+
+Three things the templates now demonstrate rather than restate:
+
+- **`toStepError(response, message)`** — the three-way call `transcription-desk`
+  and `link-digest` had hand-written identically. Note the third outcome is not
+  "the DevKit's backoff": a bare `RetryableError` retries in ONE SECOND, which is
+  that class's own default, so a fan-out that all 429s together all asks again a
+  second later. Passing the far side's `Retry-After` is what drains it.
+- **`toStepError` reads `StepGenerateError.retryAfter`, which THREE of the four
+  templates did not.** `research-desk`, `link-digest` and `transcription-desk`
+  re-threw the error unchanged, so a rate-limited model call fell back to the
+  default with the gateway's own number sitting unread on it. `redline` is the
+  exception and worked the extra line out independently — which is the argument
+  for extracting rather than a reason not to: the fourth author to meet a
+  problem should not have to be the first to get it right.
+- **`throwFatalStepError` is for the `catch` block specifically**, and the
+  reason is mechanical: `FatalError` takes only a message — no `cause` — so
+  constructing one inside a `catch` trips `useErrorCause` with no way to satisfy
+  it. Taking the cause as an ARGUMENT is what fixes that. A `throw new
+  FatalError(…)` that is NOT in a catch block stays exactly as it was —
+  `link-digest`'s no-readable-text case is the worked example, and says so in
+  place.
 
 **`ctx.db` is still out of reach**, so every `file` step still writes nothing and
 carries `_`-prefixed parameters rather than naming a call it cannot make. That is
@@ -444,7 +483,18 @@ The same sweep took two more copies with it: `isTransientStatus` (the
 408/429/5xx split each template had spelled out) and `retryAfter`, which is what
 lets a rate-limited step throw `RetryableError` with the delay the provider
 asked for instead of the DevKit's default backoff. `transcription-desk` and
-`link-digest` are the worked examples.
+`link-digest` are the worked examples. Both are now reached THROUGH
+`toStepError` above — the extraction that stopped one function short.
+
+**And the fake LLM gateway is the SDK's too** — `stubGateway`
+(`@alexkroman1/aai/testing`), which `research-desk` and `link-digest` had each
+written: record the call, answer `{choices:[{message:{content}}]}`, switch on a
+status. It returns a `fetch` rather than installing one, so the module keeps its
+no-test-runner-dependency rule and the spec keeps control of the stub's lifetime;
+what stays in each template is the three-line `vi.stubGlobal` wrapper, which is
+the right half to leave behind. It records the `prompt` and `system` separately,
+which is what the hand-rolled `promptOf(calls, n)` reach into
+`body.messages[n].content` was for.
 
 **`link-digest` is the same mechanism at its smallest, and it is the FRONT DOOR
 that separates both of these from `research-desk`.** That one is a voice agent

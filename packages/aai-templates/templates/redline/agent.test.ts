@@ -17,6 +17,7 @@
  * of that lives.
  */
 
+import { stubGateway as createStubGateway } from "@alexkroman1/aai/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { FatalError } from "workflow";
 import agentDef, { MAX_ROUNDS, redline } from "./agent.ts";
@@ -25,11 +26,9 @@ import {
   clampScore,
   countWords,
   critiqueDraft,
-  isCritique,
   MAX_NOTES,
   type RedlineInput,
   reviseDraft,
-  stripFence,
   writeDraft,
 } from "./workflows/redline.ts";
 
@@ -40,20 +39,17 @@ const INPUT: RedlineInput = {
   mustCover: ["what to do about it", "how to raise the cap"],
 };
 
-/** A gateway answering with `content`, and the calls it received. */
+/**
+ * The SDK's fake gateway, installed.
+ *
+ * The fake is `@alexkroman1/aai/testing`'s; what stays here is the
+ * INSTALLATION, because the lifetime of a global stub is vitest's business and
+ * that helper deliberately carries no test-runner dependency.
+ */
 function stubGateway(content: string, status = 200) {
-  const calls: { url: string; init: RequestInit }[] = [];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (url: string, init: RequestInit) => {
-      calls.push({ url, init });
-      return new Response(
-        status === 200 ? JSON.stringify({ choices: [{ message: { content } }] }) : "nope",
-        { status, headers: { "Content-Type": "application/json" } },
-      );
-    }),
-  );
-  return calls;
+  const gateway = createStubGateway(content, { status });
+  vi.stubGlobal("fetch", gateway.fetch);
+  return gateway.calls;
 }
 
 // ─── 1. The declaration ──────────────────────────────────────────────────────
@@ -139,18 +135,6 @@ describe("pure helpers", () => {
     expect(clampScore(7.4)).toBe(7);
     expect(clampScore(Number.NaN)).toBe(0);
   });
-
-  test("stripFence unwraps a fence a model added anyway", () => {
-    expect(stripFence('```json\n{"a":1}\n```')).toBe('{"a":1}');
-    expect(stripFence('{"a":1}')).toBe('{"a":1}');
-  });
-
-  test("isCritique accepts only the verdicts the body branches on", () => {
-    expect(isCritique({ verdict: "ship", score: 9, notes: [] })).toBe(true);
-    expect(isCritique({ verdict: "maybe", score: 9, notes: [] })).toBe(false);
-    expect(isCritique({ verdict: "revise", score: "9", notes: [] })).toBe(false);
-    expect(isCritique(null)).toBe(false);
-  });
 });
 
 // ─── 3. The steps ────────────────────────────────────────────────────────────
@@ -167,8 +151,7 @@ describe("the steps", () => {
       const calls = stubGateway("\n  A draft about 402s.  \n");
       expect(await writeDraft(INPUT)).toBe("A draft about 402s.");
       // The brief reaches the writer — otherwise it writes something else well.
-      const body = String(calls[0]?.init.body);
-      expect(body).toContain("how to raise the cap");
+      expect(calls[0]?.prompt).toContain("how to raise the cap");
     });
 
     test("fails FATALLY on a brief that is only whitespace", async () => {
@@ -214,15 +197,23 @@ describe("the steps", () => {
 
     test("throws PLAINLY when the critic answered with prose, so the step retries", async () => {
       // The distinction that is the whole retry policy: a model that ignored the
-      // format may well obey on the next attempt, where a 401 will not.
+      // format may well obey on the next attempt, where a 401 will not. Plain
+      // means NOT a `FatalError`, which is what the DevKit stops retrying on.
       stubGateway("I think the draft is pretty good, honestly.");
-      await expect(critiqueDraft("A draft.", INPUT, 1)).rejects.toThrow(/JSON shape/);
+      const err = await critiqueDraft("A draft.", INPUT, 1).catch((thrown: unknown) => thrown);
+
+      expect(FatalError.is(err)).toBe(false);
+      expect((err as Error).message).toMatch(/Expected JSON from the model/);
     });
 
     test("rejects a verdict outside the two the loop understands", async () => {
-      // Anything else would be read as "not ship" and quietly cost a round.
+      // Anything else would be read as "not ship" and quietly cost a round. The
+      // schema NAMES the field, which the hand-written guard this replaced could
+      // not: it answered a bare false.
       stubGateway('{"verdict":"looks fine","score":8,"notes":[]}');
-      await expect(critiqueDraft("A draft.", INPUT, 1)).rejects.toThrow(/JSON shape/);
+      await expect(critiqueDraft("A draft.", INPUT, 1)).rejects.toThrow(
+        /did not match the shape: verdict/,
+      );
     });
   });
 
@@ -233,7 +224,7 @@ describe("the steps", () => {
       const calls = stubGateway("A better draft about 402s.");
       const revised = await reviseDraft("A draft.", CRITIQUE, INPUT, 1);
       expect(revised).toBe("A better draft about 402s.");
-      expect(String(calls[0]?.init.body)).toContain("Say what to do about it.");
+      expect(calls[0]?.prompt).toContain("Say what to do about it.");
     });
 
     test("trims what the model returned, since it goes on to be the output", async () => {

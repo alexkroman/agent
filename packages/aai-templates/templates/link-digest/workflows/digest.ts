@@ -24,15 +24,10 @@
  * fetched text crosses a queue between them, which is what the cap on it is for.
  */
 
-import {
-  isTransientStatus,
-  report,
-  retryAfter,
-  StepGenerateError,
-  safeJsonParse,
-  stepGenerate,
-} from "@alexkroman1/aai/utils";
-import { FatalError, RetryableError, sleep } from "workflow";
+import { throwStepError, toStepError } from "@alexkroman1/aai/step-errors";
+import { report, stepGenerateJson } from "@alexkroman1/aai/utils";
+import { FatalError, sleep } from "workflow";
+import { z } from "zod";
 
 /** How long the digest sits before it is filed, so the wait is visible in dev. */
 const SETTLE = "10 seconds";
@@ -59,6 +54,20 @@ export type Digest = {
   headline: string;
   points: string[];
 };
+
+/**
+ * The shape the model is asked for, as something that CHECKS rather than
+ * something the compiler is told to believe.
+ *
+ * `stepGenerateJson` validates against this and throws plainly when the reply
+ * misses — which is what a retry is for, since a model that answered with prose
+ * may well obey on the next attempt. Before the SDK took the schema, this was a
+ * hand-written `isDigestShape` guard beside a hand-written fence stripper.
+ */
+const DigestReply = z.object({
+  headline: z.string().trim().min(1),
+  points: z.array(z.string()).min(1),
+});
 
 /** What the page actually said, on its way from one step to the next. */
 export type Article = {
@@ -112,13 +121,21 @@ export async function fetchArticle(url: string): Promise<Article> {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     redirect: "follow",
   });
-  if (!response.ok) throw fetchFailure(response, url);
+  // The retryable/terminal split, for the page we were pointed at: a 404 or a
+  // 403 answers the same way on the fourth attempt, while a rate limit is
+  // exactly what retries are for — and `toStepError` is what carries its
+  // `Retry-After` into the DevKit's schedule instead of the default backoff.
+  if (!response.ok) throw toStepError(response, `GET ${url} failed: HTTP ${response.status}`);
 
   const html = await response.text();
   const text = extractText(html);
   if (text.length < 200) {
     // Not transient: the same URL returns the same near-empty page on a retry.
     // A JS-rendered site is the usual cause and no number of attempts fixes it.
+    // A direct `FatalError`, not `throwFatalStepError`: nothing is being
+    // classified here and there is no cause to preserve — this step has simply
+    // decided, and the helper is for the `catch` block where the linter would
+    // (rightly) want the original error kept.
     throw new FatalError(`${hostname} returned no readable text — is the page rendered in JS?`);
   }
   return { url, title: extractTitle(html) ?? hostname, text };
@@ -136,20 +153,21 @@ export async function summarize(article: Article): Promise<Digest> {
 
   await report("Pulling out the claims worth keeping.");
 
-  const reply = await ask(`Title: ${article.title}\nURL: ${article.url}\n\n${article.text}`, {
-    system:
-      `You digest articles. Reply with JSON only: {"headline": string, "points": string[]}. ` +
-      `Give exactly ${POINTS} points. No markdown fence, no preamble.`,
-  });
+  // `stepGenerateJson` unwraps the fence a model puts around JSON, parses it,
+  // and validates it against `DigestReply` — and throws PLAINLY when any of
+  // those misses, which is the whole retry policy in one distinction: a model
+  // that answered with prose may answer correctly on the next attempt, where a
+  // 401 will not. `throwStepError` is what makes the 401 half terminal.
+  const parsed = await stepGenerateJson(
+    `Title: ${article.title}\nURL: ${article.url}\n\n${article.text}`,
+    {
+      schema: DigestReply,
+      system:
+        `You digest articles. Reply with JSON only: {"headline": string, "points": string[]}. ` +
+        `Give exactly ${POINTS} points. No markdown fence, no preamble.`,
+    },
+  ).catch(throwStepError);
 
-  const parsed = safeJsonParse(stripFence(reply));
-  if (!isDigestShape(parsed)) {
-    // A PLAIN throw, unlike the fatal ones above, and the distinction is the
-    // whole retry policy: a model that answered with prose instead of JSON may
-    // well answer correctly on the next attempt, where a 401 or an empty page
-    // will not.
-    throw new Error("The model did not return the JSON shape this step asked for.");
-  }
   return {
     url: article.url,
     headline: parsed.headline,
@@ -221,67 +239,4 @@ function decodeEntities(text: string): string {
       // `&amp;` LAST, or `&amp;lt;` decodes twice into a `<` the page never had.
       .replace(/&amp;/g, "&")
   );
-}
-
-/** Unwrap a ```json fence, which models add however firmly they are told not to. */
-export function stripFence(reply: string): string {
-  const fenced = /^\s*```(?:json)?\s*\n([\s\S]*?)\n?\s*```\s*$/.exec(reply);
-  return (fenced?.[1] ?? reply).trim();
-}
-
-/** Is this the shape `summarize` promised its caller? */
-function isDigestShape(value: unknown): value is { headline: string; points: string[] } {
-  if (value === null || typeof value !== "object") return false;
-  const shape = value as { headline?: unknown; points?: unknown };
-  return (
-    typeof shape.headline === "string" &&
-    shape.headline.trim() !== "" &&
-    Array.isArray(shape.points) &&
-    shape.points.length > 0 &&
-    shape.points.every((point) => typeof point === "string")
-  );
-}
-
-// ---- The model call ---------------------------------------------------------
-
-/**
- * `stepGenerate`, with this desk's retry POLICY on top.
- *
- * The SDK classifies the failure (`StepGenerateError.retryable`) and stops
- * there, deliberately: whether a terminal failure should burn the step's
- * remaining attempts is the caller's call, and `FatalError` belongs to
- * `workflow`, which the SDK cannot import onto the CLI's startup path.
- * `research-desk` carries the same three lines for the same reason.
- */
-async function ask(prompt: string, opts: { system: string }): Promise<string> {
-  return await stepGenerate(prompt, opts).catch(stopOrRetry);
-}
-
-/**
- * Turn a terminal gateway failure into one the DevKit will not retry.
- *
- * A plain function rather than a `throw` inside a `catch`: `FatalError` takes
- * only a message — no `cause` — so constructing one in a catch block loses the
- * original error where the linter (rightly) expects it preserved. Here the
- * original is the ARGUMENT, and a retryable one is re-thrown untouched.
- */
-function stopOrRetry(err: unknown): never {
-  if (err instanceof StepGenerateError && !err.retryable) throw new FatalError(err.message);
-  throw err;
-}
-
-/**
- * The retryable/terminal split, for the page we were pointed at.
- *
- * The same judgement `StepGenerateError.retryable` makes for the gateway, with
- * the DELAY the far side asked for when it named one: a 404 or a 403 answers
- * the same way on the fourth attempt, while a rate limit is exactly what
- * retries are for — and `RetryableError` is what carries its `Retry-After` into
- * the DevKit's schedule instead of leaving it on the default backoff.
- */
-function fetchFailure(response: Response, url: string): Error {
-  const message = `GET ${url} failed: HTTP ${response.status}`;
-  if (!isTransientStatus(response.status)) return new FatalError(message);
-  const at = retryAfter(response);
-  return at ? new RetryableError(message, { retryAfter: at }) : new RetryableError(message);
 }

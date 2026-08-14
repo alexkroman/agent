@@ -395,6 +395,11 @@
   "@alexkroman1/aai/slugify": [
     "slugifyName"
   ],
+  "@alexkroman1/aai/step-errors": [
+    "throwFatalStepError",
+    "throwStepError",
+    "toStepError"
+  ],
   "@alexkroman1/aai/stt": [
     "ASSEMBLYAI_API_KEY_ENV",
     "ASSEMBLYAI_KIND",
@@ -428,11 +433,15 @@
   ],
   "@alexkroman1/aai/testing": [
     "SentEvent",
+    "StubGateway",
+    "StubGatewayCall",
+    "StubGatewayOptions",
     "StubUpload",
     "TestToolContext",
     "createStubWorkflows",
     "createToolContext",
     "createUnusedDb",
+    "stubGateway",
     "stubUploads"
   ],
   "@alexkroman1/aai/tools": [
@@ -482,6 +491,7 @@
     "RESERVED_SLUGS",
     "ReadUploadOptions",
     "StepGenerateError",
+    "StepGenerateJsonOptions",
     "StepGenerateOptions",
     "ToolFailure",
     "UploadInfo",
@@ -507,6 +517,8 @@
     "safeJsonParse",
     "stepEnv",
     "stepGenerate",
+    "stepGenerateJson",
+    "stripJsonFence",
     "toArgsRecord",
     "toolFailure",
     "uploadInfo",

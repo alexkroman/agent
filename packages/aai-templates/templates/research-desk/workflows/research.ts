@@ -49,15 +49,17 @@
  * researcher CONCLUDED, which is exactly what the step returns.
  */
 
+import { throwStepError } from "@alexkroman1/aai/step-errors";
 import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 import {
+  errorMessage,
   mapInBatches,
   report,
-  StepGenerateError,
-  safeJsonParse,
   stepGenerate,
+  stepGenerateJson,
 } from "@alexkroman1/aai/utils";
-import { FatalError, sleep } from "workflow";
+import { sleep } from "workflow";
+import { z } from "zod";
 import {
   BRIEF_SUMMARY_SYSTEM,
   BRIEF_SYSTEM,
@@ -102,6 +104,73 @@ const SEARCH_RESULTS = 5;
 
 /** One source a researcher actually used. */
 export type Source = { title: string; url: string };
+
+// ---- What each stage's model call has to come back as ------------------------
+//
+// `stepGenerateJson` validates against these, so a reply that missed is a plain
+// throw and therefore a retry — where the hand-rolled `askJson<T>()` this
+// replaces returned a value the compiler believed and nothing checked. They are
+// deliberately LENIENT wherever the old hand-written coercion was: a model that
+// put one number in an array of strings should cost that element, not the whole
+// pass.
+
+/**
+ * A model's array of strings, with everything else dropped.
+ *
+ * `.catch([])` covers the field being absent or not an array at all, which is
+ * the same "take what is usable" rule applied one level up.
+ */
+const StringList = z
+  .array(z.unknown())
+  .transform((values) =>
+    values.filter((value): value is string => typeof value === "string" && value.trim().length > 0),
+  )
+  .catch([]);
+
+/** One cited source, as the compression stage is asked to report it. */
+const CitedSource = z.object({ title: z.string(), url: z.string() });
+
+/** The cited sources, with any malformed entry dropped rather than fatal. */
+const CitedSources = z.array(z.unknown()).transform((items) =>
+  items.flatMap((item) => {
+    const parsed = CitedSource.safeParse(item);
+    return parsed.success ? [parsed.data] : [];
+  }),
+);
+
+/** What `writeBrief` asks for. */
+const BriefReply = z.object({ brief: z.string().trim().optional(), criteria: StringList });
+
+/** What `planAngles` and `findGaps` ask for. */
+const AnglesReply = z.object({ angles: StringList });
+
+/**
+ * What one turn of the researcher's loop asks for.
+ *
+ * `.catch("stop")` is the old `parsed.action === "search" || …` guard: an action
+ * the model did not name is a stop, not a fatal reply, because the budget is
+ * better spent than burned on turns that cannot do anything.
+ */
+const ActionReply = z.object({
+  action: z.enum(["search", "read", "stop"]).catch("stop"),
+  query: z.string().optional(),
+  url: z.string().optional(),
+  why: z.string().optional(),
+});
+
+/**
+ * What `compress` asks for.
+ *
+ * `sources` is `.catch(undefined)` rather than merely optional, and the
+ * distinction is the one this whole stage turns on: a model that returned
+ * something unusable there should fall back to the sources the researcher was
+ * ACTUALLY shown, not throw the compressed findings away and research the angle
+ * again.
+ */
+const CompressReply = z.object({
+  findings: z.string().optional(),
+  sources: CitedSources.optional().catch(undefined),
+});
 
 /** What one researcher concluded about one angle. */
 export type Note = {
@@ -191,12 +260,12 @@ export async function writeBrief(topic: string): Promise<Brief> {
   "use step";
 
   await report(`Working out what "${topic}" is really asking.`);
-  const parsed = await askJson<Partial<Brief>>(
+  const parsed = await askJson(
     `Research request, as the caller said it: ${topic}`,
     BRIEF_SYSTEM,
+    BriefReply,
   );
-  const brief = typeof parsed.brief === "string" && parsed.brief.trim() ? parsed.brief : topic;
-  return { brief, criteria: strings(parsed.criteria).slice(0, MAX_ANGLES) };
+  return { brief: parsed.brief || topic, criteria: parsed.criteria.slice(0, MAX_ANGLES) };
 }
 
 /**
@@ -209,8 +278,8 @@ export async function writeBrief(topic: string): Promise<Brief> {
 export async function planAngles(brief: Brief): Promise<string[]> {
   "use step";
 
-  const parsed = await askJson<{ angles?: unknown }>(briefText(brief), PLAN_SYSTEM);
-  const angles = strings(parsed.angles).slice(0, MAX_ANGLES);
+  const parsed = await askJson(briefText(brief), PLAN_SYSTEM, AnglesReply);
+  const angles = parsed.angles.slice(0, MAX_ANGLES);
   if (angles.length === 0) {
     // Nothing to fan out over is a plan failure, not an empty result: the brief
     // itself is the one angle that is always available.
@@ -271,11 +340,12 @@ export async function findGaps(brief: Brief, notes: readonly Note[]): Promise<st
   "use step";
 
   if (notes.length === 0) return [];
-  const parsed = await askJson<{ angles?: unknown }>(
+  const parsed = await askJson(
     `${briefText(brief)}\n\nWhat came back:\n${notes.map(noteText).join("\n\n")}`,
     GAPS_SYSTEM,
+    AnglesReply,
   );
-  const gaps = strings(parsed.angles).slice(0, MAX_ANGLES - 1);
+  const gaps = parsed.angles.slice(0, MAX_ANGLES - 1);
   await report(
     gaps.length === 0
       ? "The brief is covered; writing it up."
@@ -324,7 +394,7 @@ export async function file(_requestedBy: string, _topic: string): Promise<string
 // ---- The researcher's own calls ---------------------------------------------
 
 /** What the model wants to do next. */
-type Action = { action: "search" | "read" | "stop"; query?: string; url?: string; why?: string };
+type Action = z.infer<typeof ActionReply>;
 
 /** Ask the model for one action, given everything the researcher has seen. */
 async function nextAction(
@@ -333,15 +403,13 @@ async function nextAction(
   seen: readonly string[],
   left: number,
 ): Promise<Action> {
-  const parsed = await askJson<Action>(
+  return await askJson(
     `${briefText(brief)}\n\nYour angle: ${angle}\n` +
       `Actions left: ${left}\n\n` +
       (seen.length === 0 ? "You have not looked at anything yet." : seen.join("\n\n")),
     RESEARCH_SYSTEM,
+    ActionReply,
   );
-  return parsed.action === "search" || parsed.action === "read" || parsed.action === "stop"
-    ? parsed
-    : { action: "stop", why: "no action" };
 }
 
 /**
@@ -369,7 +437,7 @@ async function search(query: string): Promise<{ summary: string; sources: Source
       sources,
     };
   } catch (err: unknown) {
-    const summary = `That search failed: ${message(err)}`;
+    const summary = `That search failed: ${errorMessage(err)}`;
     await report(summary);
     return { summary, sources: [] };
   }
@@ -381,7 +449,7 @@ async function readPage(url: string): Promise<string> {
     const page = await visitWebpage<{ content?: string; text?: string }>(url);
     return String(page.content ?? page.text ?? "").slice(0, MAX_PAGE_CHARS);
   } catch (err: unknown) {
-    return `Could not read this page: ${message(err)}`;
+    return `Could not read this page: ${errorMessage(err)}`;
   }
 }
 
@@ -396,15 +464,18 @@ async function compress(angle: string, seen: readonly string[], sources: Source[
   if (seen.length === 0) {
     return { angle, findings: "Nothing was found on this angle.", sources: [] };
   }
-  const parsed = await askJson<{ findings?: unknown; sources?: unknown }>(
+  const parsed = await askJson(
     `Angle: ${angle}\n\n${seen.join("\n\n")}`,
     COMPRESS_SYSTEM,
+    CompressReply,
   );
-  const findings = typeof parsed.findings === "string" ? parsed.findings : seen.join("\n\n");
-  const cited = Array.isArray(parsed.sources)
-    ? parsed.sources.filter(isSource)
-    : dedupe(sources).slice(0, SEARCH_RESULTS);
-  return { angle, findings, sources: cited };
+  return {
+    angle,
+    findings: parsed.findings ?? seen.join("\n\n"),
+    // A model that cited nothing at all falls back to what the researcher was
+    // actually shown, which is the honest answer and not an empty one.
+    sources: parsed.sources ?? dedupe(sources).slice(0, SEARCH_RESULTS),
+  };
 }
 
 // ---- Model plumbing ---------------------------------------------------------
@@ -412,40 +483,26 @@ async function compress(angle: string, seen: readonly string[], sources: Source[
 /**
  * `stepGenerate`, with this desk's retry POLICY on top.
  *
- * The SDK classifies the failure (`StepGenerateError.retryable`) and stops
- * there, deliberately: whether a terminal failure should burn the step's
- * remaining attempts is the caller's call, and `FatalError` belongs to
- * `workflow`, which the SDK cannot import onto the CLI's startup path.
+ * The SDK classifies the gateway's failure (`StepGenerateError.retryable`) and
+ * stops there, deliberately: whether a terminal failure should burn the step's
+ * remaining attempts is the caller's call. `throwStepError` is that call made
+ * one way — terminal stays terminal, and a rate limit becomes a `RetryableError`
+ * carrying the delay the gateway itself named.
  */
 async function ask(prompt: string, system: string): Promise<string> {
-  return await stepGenerate(prompt, { system }).catch(stopOrRetry);
+  return await stepGenerate(prompt, { system }).catch(throwStepError);
 }
 
 /**
- * The same call, for a stage whose reply is JSON.
+ * The same call, for a stage whose reply is JSON of a known shape.
  *
- * A reply that ignored the format throws PLAINLY rather than fatally — a model
- * may well obey on the next attempt, which is exactly what a retry is for.
+ * `stepGenerateJson` owns the four things every such stage used to re-derive —
+ * unwrap the fence, parse, reject a non-object, check the shape — and throws
+ * PLAINLY when any of them misses, which is what makes a malformed reply a
+ * retry rather than a failure.
  */
-async function askJson<T>(prompt: string, system: string): Promise<T> {
-  const raw = await ask(prompt, system);
-  const parsed = safeJsonParse(stripFence(raw));
-  if (parsed === null || typeof parsed !== "object") {
-    throw new Error(`Expected JSON from the model, got: ${raw.slice(0, 200)}`);
-  }
-  return parsed as T;
-}
-
-/**
- * Turn a terminal gateway failure into one the DevKit will not retry.
- *
- * A plain function rather than a `throw` inside a `catch`: `FatalError` takes
- * only a message — no `cause` — so constructing one in a catch block loses the
- * original error where the linter (rightly) expects it preserved.
- */
-function stopOrRetry(err: unknown): never {
-  if (err instanceof StepGenerateError && !err.retryable) throw new FatalError(err.message);
-  throw err;
+async function askJson<S extends z.ZodType>(prompt: string, system: string, schema: S) {
+  return await stepGenerateJson(prompt, { system, schema }).catch(throwStepError);
 }
 
 // ---- Pure helpers -----------------------------------------------------------
@@ -469,19 +526,6 @@ function describeResult(source: Source): string {
   return `- ${source.title} — ${source.url}`;
 }
 
-/** A model's array of strings, with everything else dropped. */
-export function strings(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((one): one is string => typeof one === "string" && one.trim().length > 0);
-}
-
-/** Is this the source shape the compression stage promised? */
-function isSource(value: unknown): value is Source {
-  if (value === null || typeof value !== "object") return false;
-  const source = value as Partial<Source>;
-  return typeof source.title === "string" && typeof source.url === "string";
-}
-
 /** Distinct sources by URL, first occurrence winning. */
 export function dedupe(sources: readonly Source[]): Source[] {
   const byUrl = new Map<string, Source>();
@@ -494,17 +538,6 @@ export function countSources(notes: readonly Note[]): number {
   return dedupe(notes.flatMap((note) => note.sources)).length;
 }
 
-/**
- * A fenced JSON reply, unfenced.
- *
- * Models wrap JSON in ```json fences often enough that refusing one costs a
- * whole retry for a reply that was otherwise correct.
- */
-export function stripFence(raw: string): string {
-  const fenced = /^\s*```(?:json)?\s*\n([\s\S]*?)\n?\s*```\s*$/.exec(raw);
-  return fenced?.[1] ?? raw;
-}
-
 /** A URL's host, for a progress line a listener can follow. */
 function hostname(url: string): string {
   try {
@@ -512,9 +545,4 @@ function hostname(url: string): string {
   } catch {
     return url;
   }
-}
-
-/** An error's message, without the SDK's `errorMessage` import for one use. */
-function message(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

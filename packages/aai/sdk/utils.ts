@@ -27,6 +27,9 @@
  */
 
 import { MAX_TOOL_RESULT_CHARS, TOOL_RESULT_TRUNCATION_MARKER } from "./constants.ts";
+// Imported as well as re-exported: `responseErrorMessage` below calls it, and a
+// re-export does not bring the name into this module's scope.
+import { safeJsonParse } from "./safe-json-parse.ts";
 
 export { linkConfirmationCode } from "./cli-link.ts";
 export {
@@ -38,6 +41,7 @@ export {
 } from "./keyed-lock.ts";
 export { mapInBatches } from "./map-in-batches.ts";
 export { omitUndefined } from "./omit-undefined.ts";
+export { safeJsonParse } from "./safe-json-parse.ts";
 export { MAX_SLUG_LENGTH, PREVIEW_SLUG_SUFFIX, RESERVED_SLUGS, VALID_SLUG_RE } from "./slug.ts";
 export { requireStepEnv, stepEnv } from "./step-env.ts";
 export {
@@ -45,6 +49,11 @@ export {
   type StepGenerateOptions,
   stepGenerate,
 } from "./step-generate.ts";
+export {
+  type StepGenerateJsonOptions,
+  stepGenerateJson,
+  stripJsonFence,
+} from "./step-generate-json.ts";
 export { report } from "./step-report.ts";
 export { isTransientStatus, retryAfter } from "./step-retry.ts";
 export {
@@ -71,18 +80,6 @@ export function errorDetail(err: unknown): string {
     return err.stack ?? err.message;
   }
   return String(err);
-}
-
-/**
- * Parse JSON, returning `undefined` on malformed input. JSON cannot encode
- * `undefined`, so the sentinel is unambiguous.
- */
-export function safeJsonParse(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    // Malformed JSON — fall through to the implicit undefined return.
-  }
 }
 
 /**

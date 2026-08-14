@@ -23,6 +23,7 @@ symbol exported from two subpaths appears under both.
 - `@alexkroman1/aai/runtime` — `packages/aai/etc/runtime.api.md`
 - `@alexkroman1/aai/s2s` — `packages/aai/etc/s2s.api.md`
 - `@alexkroman1/aai/slugify` — `packages/aai/etc/slugify.api.md`
+- `@alexkroman1/aai/step-errors` — `packages/aai/etc/step-errors.api.md`
 - `@alexkroman1/aai/stt` — `packages/aai/etc/stt.api.md`
 - `@alexkroman1/aai/testing` — `packages/aai/etc/testing.api.md`
 - `@alexkroman1/aai/tools` — `packages/aai/etc/tools.api.md`
@@ -3941,6 +3942,19 @@ export type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 export function slugifyName(input: string, maxLen: number): string;
 ```
 
+## `@alexkroman1/aai/step-errors`
+
+```ts
+// @public
+export function throwFatalStepError(cause: unknown, message?: string): never;
+
+// @public
+export function throwStepError(cause: unknown, message?: string): never;
+
+// @public
+export function toStepError(cause: unknown, message?: string): Error;
+```
+
 ## `@alexkroman1/aai/stt`
 
 ```ts
@@ -4235,6 +4249,30 @@ type StreamOptions = {
     namespace?: string;
     startIndex?: number;
 };
+
+// @public
+export interface StubGateway {
+    calls: StubGatewayCall[];
+    fetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+}
+
+// @public
+export function stubGateway(replies: string | readonly string[], opts?: StubGatewayOptions): StubGateway;
+
+// @public
+export interface StubGatewayCall {
+    body: Record<string, unknown>;
+    headers: Record<string, string>;
+    prompt: string;
+    system: string | undefined;
+    url: string;
+}
+
+// @public
+export interface StubGatewayOptions {
+    headers?: Record<string, string>;
+    status?: number;
+}
 
 // @public
 export type StubUpload = Uint8Array | {
@@ -4616,6 +4654,9 @@ export function errorDetail(err: unknown): string;
 // @public
 export function errorMessage(err: unknown): string;
 
+// @public
+type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+
 // @internal
 export function isTextAssetPath(assetPath: string): boolean;
 
@@ -4695,6 +4736,37 @@ export function retryAfter(from: {
 export function safeJsonParse(text: string): unknown;
 
 // @public
+interface StandardSchemaIssue {
+    // (undocumented)
+    readonly message: string;
+    // (undocumented)
+    readonly path?: readonly (PropertyKey | {
+        readonly key: PropertyKey;
+    })[] | undefined;
+}
+
+// @public
+type StandardSchemaResult<Output> = {
+    readonly value: Output;
+    readonly issues?: undefined;
+} | {
+    readonly issues: readonly StandardSchemaIssue[];
+};
+
+// @public
+interface StandardSchemaV1<Input = unknown, Output = Input> {
+    readonly "~standard": {
+        readonly version: 1;
+        readonly vendor: string;
+        readonly validate: (value: unknown) => StandardSchemaResult<Output> | Promise<StandardSchemaResult<Output>>;
+        readonly types?: {
+            readonly input: Input;
+            readonly output: Output;
+        } | undefined;
+    };
+}
+
+// @public
 export function stepEnv(name: string): string | undefined;
 
 // @public
@@ -4714,6 +4786,14 @@ export class StepGenerateError extends Error {
 }
 
 // @public
+export function stepGenerateJson<S extends StandardSchemaV1>(prompt: string, opts: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
+
+// @public
+export type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOptions & {
+    schema: S;
+};
+
+// @public
 export type StepGenerateOptions = {
     system?: string;
     model?: string;
@@ -4723,6 +4803,9 @@ export type StepGenerateOptions = {
     temperature?: number;
     maxTokens?: number;
 };
+
+// @public
+export function stripJsonFence(reply: string): string;
 
 // @internal
 export function toArgsRecord(input: unknown): Record<string, unknown>;
