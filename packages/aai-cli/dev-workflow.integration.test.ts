@@ -85,7 +85,6 @@ export default agent({
   systemPrompt: "fixture",
   workflows: { research, callback, fanOut, secret },
   requiredEnv: ["FIXTURE_STEP_TOKEN"],
-  tools: {},
 });
 `;
 
