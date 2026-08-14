@@ -32,6 +32,7 @@
  */
 
 import { errorMessage } from "../sdk/utils.ts";
+import { claimPoolPresenceAndSweep } from "./workflow-lock-sweep.ts";
 
 /** What the DevKit reads to pick a world. */
 const TARGET_WORLD_ENV = "WORKFLOW_TARGET_WORLD";
@@ -121,6 +122,11 @@ async function migrateAndSubscribe(kind: WorldKind): Promise<void> {
     // pass that nothing in this architecture has: an agent's first workflow may
     // be its first ever deploy.
     await migratePostgresWorld();
+    // AFTER the migration (the tables have to exist) and BEFORE `start()` below
+    // (the safety argument rests on this pool holding no locks yet). A predecessor
+    // that was hard-killed left its in-flight steps locked by workers that are
+    // gone, and graphile-worker would not reclaim them for four hours.
+    await sweepOrphanedQueueLocks();
   }
 
   const { getWorld } = await import("workflow/runtime");
@@ -129,6 +135,39 @@ async function migrateAndSubscribe(kind: WorldKind): Promise<void> {
   // `pending` forever with no error anywhere. The local world has no `start`,
   // hence the optional call.
   await getWorld().start?.();
+}
+
+/**
+ * Clear queue locks left by a pool that is gone, if we are the only pool alive.
+ *
+ * The returned handle is deliberately NOT kept. What has to survive is the
+ * advisory lock, so that a pool starting up beside us reads us as live and sweeps
+ * nothing — and that is held by a connection the re-assert interval references, not
+ * by anything a caller could hold. There is no shutdown release either, on purpose:
+ * the connection ending is what releases presence, which is the same event whether
+ * this process exits cleanly or is killed, so a release path would be dead code for
+ * the case the whole mechanism exists for.
+ *
+ * Reported and swallowed: a sweep that cannot run leaves graphile-worker's
+ * four-hour reclaim as the fallback, which is where we already were — while a throw
+ * here would stop the world starting at all, taking a working agent's workflows
+ * down for the sake of a recovery nicety. See `workflow-lock-sweep.ts` for why this
+ * is safe, and for the Postgres-outage case it does not cover.
+ */
+async function sweepOrphanedQueueLocks(): Promise<void> {
+  const url = process.env[POSTGRES_URL_ENV];
+  if (url === undefined || url === "") {
+    console.error(
+      `workflow lock sweep: skipped — no ${POSTGRES_URL_ENV} to connect with (an ` +
+        "operator-supplied world may read its own connection string)",
+    );
+    return;
+  }
+  try {
+    await claimPoolPresenceAndSweep(url);
+  } catch (err: unknown) {
+    console.error("workflow lock sweep: failed:", errorMessage(err));
+  }
 }
 
 /**
