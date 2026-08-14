@@ -8,7 +8,7 @@ import { FLIGHTS, formatPrice } from "../shared.ts";
  * rather than an empty list, so the desk can say what it DOES fly instead of
  * "nothing found" — which is what sends a caller to a human.
  */
-export const searchFlights = tool({
+export default tool({
   description:
     "Search the flight schedule. Match on any part of the route, e.g. " +
     "'Boston' or 'Zurich to Boston'. Omit the route to hear everything.",

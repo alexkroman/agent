@@ -65,22 +65,29 @@ are CLI-only.
 
 ## Running it yourself (`npm start`)
 
-`server.mjs` serves this agent from a plain Node process — no CLI, no
-bundler, no platform account. It is the deployment counterpart of `aai dev`:
+`server.mjs` serves this agent from a plain Node process — no platform
+account, nothing managed. It is the deployment counterpart of `aai dev`:
 
 ```sh
 npm start                          # http://127.0.0.1:3000
 PORT=8080 HOST=0.0.0.0 npm start   # bind every interface, e.g. in a container
 ```
 
+`npm start` **builds first** (that is the `prestart` script) and then serves
+the result: `server.mjs` boots `.aai/worker.mjs`, the same artifact
+`aai publish` uploads. The build is what makes `tools/` work — a tool is
+registered by existing, and the enumeration happens where the bundle is
+assembled, so a server that loaded `agent.ts` directly would run an agent with
+none of its tools. The same build produces your `client.tsx`, so a custom UI is
+served with no extra step.
+
 Secrets work the same as everywhere else: `ctx.env` holds the keys declared
 in `.env` (or `.env.example`), and a real environment variable of that name
 wins — so `docker run -e MY_API_KEY=…` needs no `.env` in the image.
 
-Two things to know. It binds **loopback by default**, because this server has
+One thing to know: it binds **loopback by default**, because this server has
 no request authentication of its own; set `HOST=0.0.0.0` only behind your own
-proxy or auth. And with a custom `client.tsx`, run `npm run build` first —
-otherwise it serves the default UI and says so at startup.
+proxy or auth.
 
 Deleting `server.mjs` costs nothing: `aai dev`, `aai publish` and the managed
 platform never read it. `run_code` is the one feature that does not follow —
@@ -935,16 +942,18 @@ the tool also returns an error, because `Promise<DrugInfo>` does not accept
 `{ error: "not found" }`. Every such annotation eventually costs a build
 round to widen into a union. Let it infer.
 
-### Separate file pattern
+### A file in `tools/` IS a tool — there is no registration step
 
-For complex tools — `tools/` is a convention, any import path works:
+**`tools/` is not a convention, it is the mechanism.** A file there is named for
+the tool the model calls, default-exports it, and is picked up by the build. It
+is not imported by `agent.ts` and not listed anywhere:
 
 ```ts
-// tools/roll_dice.ts
+// tools/roll_dice.ts  →  the model calls this "roll_dice"
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
-export const rollDice = tool({
+export default tool({
   description: "Roll dice",
   inputSchema: z.object({ sides: z.number() }),
   execute({ sides }) {
@@ -954,15 +963,39 @@ export const rollDice = tool({
 ```
 
 ```ts no-check
-// agent.ts
+// agent.ts — nothing about tools appears here
 import { agent } from "@alexkroman1/aai";
-import { rollDice } from "./tools/roll_dice.ts";
 
-export default agent({
-  name: "Dice Agent",
-  tools: { roll_dice: rollDice },
-});
+export default agent({ name: "Dice Agent" });
 ```
+
+Three rules come with it, each a build error naming the file:
+
+- **The file name is the tool name**, so it must be lowercase, start with a
+  letter, and join words with `_` — `tools/incident_create.ts`, never
+  `incident-create.ts`. Renaming the file renames the tool.
+- **The export is the DEFAULT export**, and it must be a `tool()` (or a
+  `slot.tool()` / `slot.updateTool()`). A file exporting something else is
+  named at build time rather than becoming a tool that fails per turn.
+- **`tools/` is flat.** A nested file is rejected, because a provider will not
+  accept a tool name with a `/` in it and inventing a flattening rule would
+  freeze a guess. Put shared helpers outside `tools/`.
+
+A tool that closes over module-local state, or one built by your own wrapper,
+still gets its own file — the file names the instance and the factory lives
+beside it:
+
+```ts no-check
+// tools/to_hotel_assistant.ts
+import { delegationTool } from "../routing.ts";
+
+export default delegationTool("hotel");
+```
+
+Why discovery rather than a map: the map was 62 lines across the shipped
+templates whose entire content was `snake_case_name: camelCaseImport`, and
+forgetting one line was **silent** — the file compiled, every check passed, and
+the tool simply never reached the model.
 
 ## Built-in tools
 

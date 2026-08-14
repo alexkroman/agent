@@ -11,7 +11,7 @@ import {
   resourceBrief,
 } from "../shared.ts";
 
-export const incidentCreate = tool({
+export default tool({
   description: "Create a new incident from an incoming emergency call.",
   inputSchema: z.object({
     location: z.string().max(300).describe("Address or location description"),

@@ -10,7 +10,7 @@ import {
   setFocus,
 } from "../store.ts";
 
-export const returnDeliveredOrderItems = retailTool({
+export default retailTool({
   name: "return_delivered_order_items",
   description:
     "Request a return of items from a delivered order. Only a 'delivered' order can be returned, " +

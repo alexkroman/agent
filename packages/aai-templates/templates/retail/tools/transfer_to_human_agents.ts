@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { retailTool } from "../store.ts";
 
-export const transferToHumanAgents = retailTool({
+export default retailTool({
   name: "transfer_to_human_agents",
   description:
     "Hand the caller to a human agent. Use this ONLY when the caller explicitly asks for a human, " +

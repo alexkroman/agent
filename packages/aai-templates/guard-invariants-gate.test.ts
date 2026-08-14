@@ -97,6 +97,19 @@ const findUndeclaredGuestRoutes = Object.values(
 )[0];
 
 /**
+ * Rule 13's decision function, imported as a real value — same treatment and
+ * same reason as rule 12's above: it is a path computation, and a version that
+ * resolved everything to "inside its template" would report the healthiest
+ * possible tree while checking nothing.
+ */
+const importEscapesTemplate = Object.values(
+  import.meta.glob<(file: string, specifier: string) => boolean>(
+    "../../scripts/guard-invariants-scanners.mjs",
+    { import: "importEscapesTemplate", eager: true },
+  ),
+)[0];
+
+/**
  * One positive and one negative sample per rule, keyed by the rule's `key`.
  *
  * The positives are written to look like the real anti-pattern rather than
@@ -274,6 +287,50 @@ describe("guard-invariants gate", () => {
       // quiet. The scanner throws on a zero-route parse; this pins the
       // decision function's half of that contract.
       expect(findUndeclaredGuestRoutes?.(at("/ws"), new Set())).toHaveLength(1);
+    });
+  });
+
+  describe("rule 13 — a template import escaping its template", () => {
+    const PIZZA = "packages/aai-templates/templates/pizza-ordering";
+
+    test("the pure half is importable", () => {
+      expect(importEscapesTemplate, "importEscapesTemplate not exported").toBeTypeOf("function");
+    });
+
+    test("flags the real bug: a spec reaching up to the package's own helper", () => {
+      // Five shipped templates had exactly this. It resolved in-tree, so every
+      // gate passed, and `aai test` / `aai build` / `npm start` were broken for
+      // every user who scaffolded one of them.
+      expect(importEscapesTemplate?.(`${PIZZA}/agent.test.ts`, "../../_tool-discovery.ts")).toBe(
+        true,
+      );
+    });
+
+    test("spares a sibling in the same template", () => {
+      expect(importEscapesTemplate?.(`${PIZZA}/agent.ts`, "./shared.ts")).toBe(false);
+    });
+
+    test("spares a tool reaching one level up, which is inside the template", () => {
+      // The case a `../../`-substring rule gets right and a `../`-substring rule
+      // gets wrong — depth is not the question, the boundary is.
+      expect(importEscapesTemplate?.(`${PIZZA}/tools/add_pizza.ts`, "../shared.ts")).toBe(false);
+    });
+
+    test("flags a tool reaching TWO levels up, which is another template's business", () => {
+      // Same number of dots as a legal import from `agent.ts`, one directory
+      // deeper — which is why this is resolved rather than matched.
+      expect(importEscapesTemplate?.(`${PIZZA}/tools/add_pizza.ts`, "../../retail/store.ts")).toBe(
+        true,
+      );
+    });
+
+    test("flags a climb that lands exactly ON the template root", () => {
+      // `templates/pizza-ordering` itself is not `templates/pizza-ordering/…`,
+      // so the prefix check has to reject it — an off-by-one here would silently
+      // admit every escape that stops one segment short.
+      expect(importEscapesTemplate?.(`${PIZZA}/tools/add_pizza.ts`, "../../pizza-ordering")).toBe(
+        true,
+      );
     });
   });
 

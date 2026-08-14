@@ -61,7 +61,8 @@ export function aaiEnv(): NodeJS.ProcessEnv {
     // default pipeline is all-AssemblyAI), not authentication — the CLI
     // authenticates from AAI_CONFIG_DIR's config.json above and nowhere else.
     ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY || "test",
-    npm_config_ignore_scripts: "true", // avoid postinstall hooks in linked pkgs
+    // NOTE: `ignore-scripts` deliberately does NOT belong here — see
+    // `installDeps`, which sets it for the install and nothing else.
   };
 }
 
@@ -148,9 +149,25 @@ export async function waitForExit(child: ChildProcess, timeoutMs = 5000): Promis
   }
 }
 
-/** Install dependencies using the mock registry. */
+/**
+ * Install dependencies using the mock registry.
+ *
+ * **`ignore-scripts` is set HERE and nowhere else, and that placement is
+ * load-bearing.** It exists to stop a linked package's `postinstall` running
+ * during THIS install — but `npm_config_ignore_scripts` is read by every npm
+ * invocation, so while it sat in `aaiEnv()` it silently suppressed every
+ * lifecycle script in every spawned command. That took out `npm start`'s
+ * `prestart`, i.e. the build the self-hosted entrypoint cannot boot without: the
+ * child printed `> start` with no `> prestart` above it and died on the missing
+ * artifact, naming a project file rather than the env var that skipped the step.
+ *
+ * The trap generalizes past this repo — an install-time protection that is
+ * really a global one — and the second half is worse than the failure: had the
+ * artifact happened to exist from an earlier build, the test would have PASSED
+ * while never running the script it exists to exercise.
+ */
 export function installDeps(registry: MockRegistry, projectDir: string): void {
-  const env = { ...aaiEnv(), ...registry.env };
+  const env = { ...aaiEnv(), ...registry.env, npm_config_ignore_scripts: "true" };
 
   // Rewrite workspace dep versions to match the unique testVersion
   // published to the mock registry (avoids pnpm store cache collisions).

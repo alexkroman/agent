@@ -2,7 +2,7 @@ import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { retailSlot, retailTool } from "../store.ts";
 
-export const listAllProductTypes = retailTool({
+export default retailTool({
   name: "list_all_product_types",
   description:
     "List every product type the store carries, as a name-to-product-id map. Each product type " +

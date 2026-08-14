@@ -2,7 +2,7 @@ import { z } from "zod";
 import { stageAction, tripSlot } from "../shared.ts";
 
 /** SENSITIVE — their `book_hotel`, staged rather than applied. */
-export const bookHotel = tripSlot.tool({
+export default tripSlot.tool({
   description:
     "Hold a hotel room. This does NOT book anything yet — it stages the " +
     "booking so you can read the total back and hear a yes.",

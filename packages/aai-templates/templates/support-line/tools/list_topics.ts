@@ -8,7 +8,7 @@ import { DOCS, PRODUCT, TOPICS } from "../shared.ts";
  * "I've got a problem" instead of a question, and how it says what it CAN help
  * with when `answer_question` comes back empty.
  */
-export const listTopics = tool({
+export default tool({
   description:
     "List what the knowledge base covers. Use this when the caller does not " +
     "know what to ask, or to say what you can help with after a failed lookup.",

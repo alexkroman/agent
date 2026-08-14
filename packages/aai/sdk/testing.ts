@@ -22,6 +22,7 @@ import type { DefaultSessionState, ToolContext } from "./types.ts";
 import type { WorkflowClient } from "./workflow.ts";
 import { rejectingWorkflows } from "./workflow-unavailable.ts";
 
+export { withDiscoveredTools } from "./testing-discovery.ts";
 export {
   type StubGateway,
   type StubGatewayCall,

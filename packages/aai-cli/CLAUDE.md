@@ -30,16 +30,27 @@ workflow API", so the failure sentence claims neither cause and the shared
 `HINT_BROKER` names all three.
 
 **`aai eject` is a retrofit, not the self-hosting path.** Self-hosting is the
-DEFAULT now: the scaffold ships `server.mjs` and a `start` script, so every
-project `aai init`/`aai pull` produces already runs with `npm start` — no CLI
-at run time, no bundler, no platform account (see
-`packages/aai-templates/CLAUDE.md`). `eject` exists only for projects that
-predate that and are missing the two files. It COPIES `server.mjs` out of the
-resolved scaffold rather than writing its own contents: two definitions of the
-entrypoint would drift, and the one nobody runs locally is the one that would
-rot. An existing `scripts.start` is left alone even under `--force` — that flag
-is about replacing the entrypoint file, and silently rewriting the command a
-project boots with is a larger act.
+DEFAULT now: the scaffold ships `server.mjs` plus a `prestart`/`start` pair, so
+every project `aai init`/`aai pull` produces already runs with `npm start` — no
+platform account, nothing managed (see `packages/aai-templates/CLAUDE.md`).
+`eject` exists only for projects that predate that and are missing the two
+files. It COPIES `server.mjs` out of the resolved scaffold rather than writing
+its own contents: two definitions of the entrypoint would drift, and the one
+nobody runs locally is the one that would rot. An existing `scripts.start` is
+left alone even under `--force` — that flag is about replacing the entrypoint
+file, and silently rewriting the command a project boots with is a larger act.
+
+**`aai build` LEAVES its worker on disk** (`.aai/worker.mjs`, beside the built
+client), and that is what `npm start` boots — so the CLI is a build-time
+dependency of self-hosting rather than absent from it, which the paragraph above
+used to claim outright. The reason is tool discovery: `worker-bundler.ts`
+enumerates `tools/` and emits the imports, so a loader that reads `agent.ts`
+directly serves an agent with none of its tools and nothing reports it. `eject`
+therefore writes `prestart` as well as `start`, and writes it only alongside a
+`start` it wrote — bolting a build onto someone else's start command changes
+what that command does. The two constants (`PRESTART_SCRIPT`, `START_SCRIPT`)
+are a second definition of the scaffold's scripts and `eject.test.ts` pins them
+against it.
 
 **`bin.mjs` is the bin in BOTH layouts** — the source checkout (where it loads
 `cli.ts`) and the published tarball (where only `dist/` ships, so it loads

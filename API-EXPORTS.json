@@ -202,13 +202,17 @@
     "PipelineTuning",
     "ProviderDescriptorSchema",
     "SessionMode",
+    "ToolModules",
+    "ToolRegistry",
     "ToolSchema",
     "ToolSchemaSchema",
     "agentToolsToSchemas",
     "assertPipelineTuning",
     "assertProviderTriple",
     "assertSilencePolicy",
-    "toAgentConfig"
+    "toAgentConfig",
+    "toolRegistry",
+    "withTools"
   ],
   "@alexkroman1/aai/protocol": [
     "CLIENT_CONFIG_PATH",
@@ -463,7 +467,8 @@
     "stubGenerate",
     "stubStepFetch",
     "stubUploads",
-    "toolOf"
+    "toolOf",
+    "withDiscoveredTools"
   ],
   "@alexkroman1/aai/testing/vitest": [
     "installStubGateway"

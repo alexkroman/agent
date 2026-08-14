@@ -2,21 +2,6 @@ import { agent } from "@alexkroman1/aai";
 import { storeView } from "./shared.ts";
 import { retailSlot } from "./store.ts";
 import systemPrompt from "./system-prompt.md?raw";
-import { cancelPendingOrder } from "./tools/cancel_pending_order.ts";
-import { exchangeDeliveredOrderItems } from "./tools/exchange_delivered_order_items.ts";
-import { findUserIdByEmail } from "./tools/find_user_id_by_email.ts";
-import { findUserIdByNameZip } from "./tools/find_user_id_by_name_zip.ts";
-import { getItemDetails } from "./tools/get_item_details.ts";
-import { getOrderDetails } from "./tools/get_order_details.ts";
-import { getProductDetails } from "./tools/get_product_details.ts";
-import { getUserDetails } from "./tools/get_user_details.ts";
-import { listAllProductTypes } from "./tools/list_all_product_types.ts";
-import { modifyPendingOrderAddress } from "./tools/modify_pending_order_address.ts";
-import { modifyPendingOrderItems } from "./tools/modify_pending_order_items.ts";
-import { modifyPendingOrderPayment } from "./tools/modify_pending_order_payment.ts";
-import { modifyUserAddress } from "./tools/modify_user_address.ts";
-import { returnDeliveredOrderItems } from "./tools/return_delivered_order_items.ts";
-import { transferToHumanAgents } from "./tools/transfer_to_human_agents.ts";
 
 export default agent({
   name: "Retail Support",
@@ -45,22 +30,4 @@ export default agent({
   greeting:
     "Thanks for calling. Before I can look anything up I'll need to find your account — " +
     "what's the email address on it?",
-
-  tools: {
-    cancel_pending_order: cancelPendingOrder,
-    exchange_delivered_order_items: exchangeDeliveredOrderItems,
-    find_user_id_by_email: findUserIdByEmail,
-    find_user_id_by_name_zip: findUserIdByNameZip,
-    get_item_details: getItemDetails,
-    get_order_details: getOrderDetails,
-    get_product_details: getProductDetails,
-    get_user_details: getUserDetails,
-    list_all_product_types: listAllProductTypes,
-    modify_pending_order_address: modifyPendingOrderAddress,
-    modify_pending_order_items: modifyPendingOrderItems,
-    modify_pending_order_payment: modifyPendingOrderPayment,
-    modify_user_address: modifyUserAddress,
-    return_delivered_order_items: returnDeliveredOrderItems,
-    transfer_to_human_agents: transferToHumanAgents,
-  },
 });

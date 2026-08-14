@@ -1,14 +1,21 @@
 /**
  * The dialog-stack tools: delegate, escalate, confirm, cancel.
  *
- * These four shapes are the customer-support tutorial's control plane, and they
- * are here rather than under `tools/` because they are GENERATED. The notebook
+ * These four shapes are the customer-support tutorial's control plane, and the
+ * DEFINITIONS live together here because they share this module's helpers —
+ * `activeAssistant`, `applyPending`, `note`. Each is NAMED by a file under
+ * `tools/`, which is what registers it: a tool's name is its file name, so
+ * `tools/to_flight_assistant.ts` is one line handing {@link delegationTool} an
+ * id, and `tools/confirm_action.ts` re-exports {@link confirmAction}.
+ *
+ * The delegation four are still generated rather than written out. The notebook
  * declares `ToFlightBookingAssistant`, `ToHotelBookingAssistant`,
- * `ToBookCarRental` and `ToBookExcursion` as four pydantic classes that differ
- * only in the docstring; four near-identical files would restate a shape whose
- * whole content is one entry in {@link SPECIALISTS}. A domain tool — one that
- * searches or books something — gets its own file under `tools/`, because each
- * of those really is different work.
+ * `ToBookCarRental` and `ToBookExcursion` as four pydantic classes differing
+ * only in the docstring, and the whole content of one is an entry in
+ * {@link SPECIALISTS} — so the factory stays and the files name its instances,
+ * which is a different thing from four near-identical tool bodies. A domain tool
+ * — one that searches or books something — is written in its own file, because
+ * each of those really is different work.
  */
 
 import type { ToolDef } from "@alexkroman1/aai";
@@ -18,7 +25,6 @@ import {
   applyPending,
   describeAction,
   note,
-  SPECIALIST_IDS,
   SPECIALISTS,
   type SpecialistId,
   tripSlot,
@@ -35,7 +41,7 @@ import {
  * specialist needs what the caller actually asked for, not just that they were
  * transferred.
  */
-function delegationTool(id: SpecialistId): ToolDef {
+export function delegationTool(id: SpecialistId): ToolDef {
   const specialist = SPECIALISTS[id];
   return tripSlot.tool({
     description:
@@ -61,11 +67,6 @@ function delegationTool(id: SpecialistId): ToolDef {
     },
   });
 }
-
-/** The four delegation tools, keyed by the name the model calls. */
-export const delegationTools: Record<string, ToolDef> = Object.fromEntries(
-  SPECIALIST_IDS.map((id) => [`to_${id}_assistant`, delegationTool(id)]),
-);
 
 /**
  * `complete_or_escalate` — pop back to the concierge.

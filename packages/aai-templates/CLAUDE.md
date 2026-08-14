@@ -96,6 +96,7 @@ once, and the templates are now their reference use:
 | `stubGateway` (`@alexkroman1/aai/testing`) | reached through `installStubGateway` below; the bare form is exercised by no template and sits in the allowlist |
 | `installStubGateway` (`@alexkroman1/aai/testing/vitest`) | the `research-desk`, `link-digest`, `redline` and `recap-desk` specs — the QUEUE form in the first and last, because their model calls sit in a loop or a chain, and the single-reply form in `link-digest`. The four had written the same five-line `vi.stubGlobal` wrapper, comment included |
 | `toolOf` / `runTool` (`@alexkroman1/aai/testing`) | `pizza-ordering`, `plan-desk`, `support-line`, `travel-concierge` — the four that drive tools through the agent's own table. Each keeps a ONE-LINE `run` bound to its own `agentDef`; what moved is the lookup and its message, not the binding |
+| `withDiscoveredTools` (`@alexkroman1/aai/testing`) | the same four plus `retail` — the five whose tools are FILES, so `def.tools` is empty until something resolves `tools/`. See "A `tools/` file IS the tool" below for why the glob is written per template |
 | `stubGenerate` (`@alexkroman1/aai/testing`) | `support-line` (five nodes over one binary-score schema) and `plan-desk` (planner, executor, replanner) — the two whose tools reason with a model. Both had hand-rolled a `GenerateFn` switching on `options.system`, and both carried the same comment about the schema overload's required `object` |
 | `createRunSnapshot` + `createProgressStream` (`@alexkroman1/aai/testing`) | `research-desk` and `recap-desk` — the fixtures behind their `stubWorkflows`. The snapshot builder is the one that mattered: both hand-rolled versions ended in `as WorkflowRunSnapshot` |
 | `mapInBatches`, `stepEnv` / `requireStepEnv`, `stepGenerate`, `stepFetch` / `multipartBody` | the STEP surface, and every workflow template uses it: `transcription-desk` fans its segments out with `stepFetch` + `multipartBody` and reads `ASSEMBLYAI_API_KEY` for the sync STT endpoint, `recap-desk` makes all three of its batch-API calls through `stepFetch` (it POLLS, so one run is many requests); `research-desk`, `link-digest`, `redline` and `recap-desk` call the model with `stepGenerate` (or `stepGenerateJson`, for a reply that has to be a shape), and `recap-desk` reads the same key for the batch transcription endpoint it polls. Imported from `@alexkroman1/aai/utils`, NOT the root: a `workflows/*.ts` module is bundled separately by the WDK builder, so the root barrel's graph would ride into the step bundle. That import path is also why the coverage gate cannot see them — it scans the root specifier — hence their allowlist entries |
@@ -700,6 +701,66 @@ server declines. `agent-default-export` used to require an `agent` import for
 that reason and no longer can, the workflow-app templates calling `workflowApp`
 instead.
 
+**A `tools/` file IS the tool: it default-exports it, nothing imports it, and no
+template's `agent.ts` carries a `tools:` map any more.** Discovery happens where
+the bundle is assembled (`aai-cli/worker-bundler.ts` enumerates `tools/*.ts` and
+emits static imports), because the guest sandbox is handed one ESM string and has
+no directory to scan — the same lowering eve does. `toolRegistry` /`withTools`
+(`@alexkroman1/aai/manifest`) own the rules, so the name grammar, the
+default-export requirement, the flat-only rule and a duplicate name are one
+implementation and each is a build error naming the file.
+
+It replaced 62 map entries whose whole content was
+`snake_case_name: camelCaseImport`, and the reason was the silent failure rather
+than the line count: add `tools/incident_close.ts`, forget the map line, and the
+file compiled, lint passed, every gate was green, and the tool never reached the
+model.
+
+**A spec has no bundler in its path, so it does the same lowering with
+`import.meta.glob`** and hands it to the same `toolRegistry`. The SDK ships that
+call as **`withDiscoveredTools`** (`@alexkroman1/aai/testing`), and each affected
+template's spec writes its own glob:
+
+```ts no-check
+const agentDef = withDiscoveredTools(authored, import.meta.glob("./tools/*.ts", { eager: true }));
+```
+
+**The glob is written in the template and not reached for from a shared helper,
+and that is the whole lesson of the bug it replaced.** Five specs imported
+`../../_tool-discovery.ts` — this package's own helper — which resolves in-tree
+and **does not exist in a scaffolded project**, so `aai test`, `aai build` (it
+type-checks) and `npm start` were all broken for anyone who scaffolded
+`pizza-ordering`, `plan-desk`, `retail`, `support-line` or `travel-concierge`,
+while `check:template-types`, `templates.test.ts` and each template's own spec
+stayed green — every gate in the repo runs IN the repo. `guard-invariants.mjs`
+**rule 13** closes it: a template file may not import a path that escapes its own
+template directory, resolved rather than pattern-matched (`../shared.ts` from
+`tools/a.ts` is fine, `../../shared.ts` from the same file is not, and both spell
+the same number of dots as a legal import one level up). Anything shared has to
+be IN the template or on a published subpath.
+
+`_tool-discovery.ts` survives for `templates.test.ts` alone, which needs every
+template at once and so needs a repo-wide literal pattern — `import.meta.glob`
+is expanded at transform time and cannot take a variable. That file never ships,
+so it is the one place the helper shape is still right.
+
+It is deliberately not a `readdir` + `import()` either way — that would load the
+tools through NODE's resolver instead of the test runner's, giving them a second
+copy of the SDK, so a slot's module state would differ between the tool under
+test and the agent holding it.
+
+**Those are the only two ways in, and there are exactly two.** The other loader
+with no bundler was `scaffold/server.mjs`, which now boots the BUILT worker — so
+every path to a tool goes through a bundler or through a glob, and there is no
+runtime directory scan in the repo (see "Self-hosting is the scaffold's default"
+below).
+
+Note what this DROPS: a `tools:` map checked each tool's assignability into
+`Record<string, ToolDef<ToolInputSchema, S>>`, so a tool whose state type
+disagreed with the agent's was a compile error at the map. `toolRegistry` checks
+shape at build time and not `S` — the slot is what carries that guarantee now,
+which is most of why `sessionSlot()` exists.
+
 The one thing a template may still hand-roll here is a **fallback that would
 cost the browser bundle**: `retail`'s client builds its empty view from a
 seedless `emptyRetailState()` instead of `retailSlot.projection(storeView)
@@ -731,33 +792,52 @@ under a comment that describes exactly that failure mode. `include` now globs
 `tsc --noEmit --listFiles`, which prints the program's real file list, or by
 injecting a type error into a file you expect to be covered.
 
-## Self-hosting is the scaffold's default
+## Self-hosting is the scaffold's default, and it runs the BUILT worker
 
-`scaffold/server.mjs` plus `"start": "node server.mjs"` ship in every project,
-so **any** project runs on its own with `npm start`: no CLI at run time, no
-bundler, no platform account. It is deliberately a FILE rather than a CLI
-command — a command is something you have to know exists, and the whole gap it
-closes was that `createAgentServer` already made self-hosting one call and
-nothing put that call in front of anyone. `aai eject` (see
-`packages/aai-cli/CLAUDE.md`) copies this same file into projects that predate
-it; that command must never grow its own copy of the contents.
+`scaffold/server.mjs` plus the `prestart`/`start` pair ship in every project, so
+**any** project runs on its own with `npm start`: no platform account, nothing
+managed. It is deliberately a FILE rather than a CLI command — a command is
+something you have to know exists, and the whole gap it closes was that
+`createAgentServer` already made self-hosting one call and nothing put that call
+in front of anyone. `aai eject` (see `packages/aai-cli/CLAUDE.md`) copies this
+same file into projects that predate it; that command must never grow its own
+copy of the contents.
 
-Three things in it are load-bearing, and all three were found by running it:
+**`server.mjs` imports `.aai/worker.mjs`, and `prestart` (`aai build
+--skip-tests`) is what produces it.** It used to import `./agent.ts` directly,
+under a "no CLI at run time, no bundler" banner, and that banner is what had to
+go: a tool is registered by EXISTING, and the only place a directory can be
+turned into modules is where the bundle is assembled — a deployed agent is handed
+one ESM string and has no filesystem to scan. So an un-bundled loader serves an
+agent with **none of its tools and no error anywhere**: `/health` and
+`/client-config` answer perfectly and the agent cannot do the thing. That is the
+same silent absence discovery was introduced to kill, one level worse (every tool
+at once instead of one), which is why self-hosting was moved onto a build rather
+than given a second scanner. See `research/tools-off-the-agent-def.md`.
 
-- **The agent is imported DYNAMICALLY.** Static `import` statements are hoisted
-  and evaluated before any statement in the file, so an
-  `import agent from "./agent.ts"` at the top would load the agent — and every
-  `?raw` import inside it — before `registerHooks` had run.
-- **It registers module hooks for `?raw` and attribute-less `.json`.** Those
-  are bundler conventions Node does not implement: `?raw` is a Vite thing (Node
-  looks for a file literally named `system-prompt.md?raw`) and a bare JSON
-  import needs `with { type: "json" }` (TypeScript's `resolveJsonModule` does
-  not). Nine templates import `./system-prompt.md?raw` and `retail/store.ts`
-  imports `./seed.json` bare, so without the hooks `npm start` worked for four
-  templates out of fourteen. An import that DOES carry the attribute is passed
-  to Node, whose own handling is correct. **`.ts` needs no hook** — Node strips
-  the types itself, which is why there is no build step and no second copy of
-  the agent in JavaScript.
+Four things follow, and they are what to preserve:
+
+- **There is no runtime `tools/` scan anywhere, and that is a decision.** The
+  plan offered a `readdir` + dynamic `import()` mode for the two loaders with no
+  bundler; neither took it. A spec uses `import.meta.glob` (see
+  `_tool-discovery.ts` above — Node's resolver would hand the tools a second copy
+  of the SDK), and self-hosting now has the bundler in its path after all. The
+  SDK's lazy `loadToolModules` existed for that mode and is deleted: a second way
+  to build a registry is how the rules come to have two behaviours.
+- **The `registerHooks` shim is GONE, because the bundle resolves what it was
+  teaching.** It taught Node `?raw` (a Vite convention — Node looks for a file
+  literally named `system-prompt.md?raw`) and attribute-less `.json`
+  (TypeScript's `resolveJsonModule` allows it, Node wants
+  `with { type: "json" }`). Nine templates import `./system-prompt.md?raw` and
+  `retail/store.ts` imports `./seed.json` bare, so before the shim `npm start`
+  worked for four templates out of fourteen — and Vite inlines both, so there is
+  nothing left to teach. The DYNAMIC import survives it: the path is computed at
+  run time, and it is a `pathToFileURL` rather than a relative specifier so the
+  entrypoint is correct on Windows.
+- **A missing artifact exits with the command that fixes it**, rather than
+  booting an agent with no tools or failing on a bare `ERR_MODULE_NOT_FOUND`.
+  That is the path `node server.mjs` takes when run directly, i.e. bypassing
+  `prestart`.
 - **`ctx.env` and provider credentials come from different places, on purpose.**
   `env` is declared keys only (`.env`, plus `.env.example` as a declaration so a
   container with no `.env` still works, with real environment variables winning
@@ -769,9 +849,16 @@ Three things in it are load-bearing, and all three were found by running it:
   would authenticate with `""` instead of reporting the credential absent, and
   `.env.example` is full of empty values by design.
 
+The cost is that self-hosting needs the CLI as a devDependency, which the
+scaffold already declares — so `npm ci --omit=dev` in a container is not a
+supported shape, and `prestart` skips only the TESTS: `npm test` is where a suite
+belongs, and a failing test must not be what stops a container from starting.
+
 `packages/aai-cli/e2e.test.ts` boots `npm start` against a real installed
-project (`math-buddy`, chosen for its `?raw` import) and probes
-`/health`, `/client-config` and `/`. That tier is the only one that can prove
-it: the entrypoint resolves `@alexkroman1/aai-ui`'s prebuilt client through a
-real INSTALL and imports `agent.ts` through Node's own type stripping, neither
-of which an in-tree test exercises.
+project — **`pizza-ordering`, chosen for its `tools/` directory**, which is what
+this leg is now about (it keeps the old `math-buddy` coverage anyway, importing
+`./system-prompt.md?raw`). It probes `/health`, `/client-config` and `/`, and then
+reads the six tool names out of the artifact the server booted, because nothing
+over HTTP exposes a tool list. That tier is the only one that can prove any of
+it: the project's own `aai build` runs from a real INSTALL, and
+`defaultClientDir()` resolves out of the installed `@alexkroman1/aai-ui`.

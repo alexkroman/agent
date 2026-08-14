@@ -8,7 +8,7 @@ import { supportSlot } from "../shared.ts";
  * answer wrong. `exhausted` is a reachable state in the graph precisely so
  * there is somewhere to go from it, and this is that somewhere.
  */
-export const logTicket = supportSlot.tool({
+export default supportSlot.tool({
   description:
     "Log a callback ticket for a question the knowledge base could not answer. " +
     "Ask for a callback number first, and read the reference back.",

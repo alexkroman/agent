@@ -12,7 +12,7 @@ import {
   SEVERITIES,
 } from "../shared.ts";
 
-export const incidentTriage = tool({
+export default tool({
   description:
     "Triage an incident — confirm or override severity, type, hazards, and casualty count.",
   inputSchema: z.object({

@@ -4,7 +4,7 @@ import { EXCURSIONS, formatPrice } from "../shared.ts";
 
 /** Their `search_trip_recommendations` — city plus a loose keyword, matched
  *  against the name and the kind so "boat" and "sail" both land. */
-export const searchExcursions = tool({
+export default tool({
   description: "Find things to do in a city. The keyword is optional and matched loosely.",
   inputSchema: z.object({
     city: z.string().max(80).describe("City to search, e.g. 'Boston'"),

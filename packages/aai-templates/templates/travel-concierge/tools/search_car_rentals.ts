@@ -3,7 +3,7 @@ import { z } from "zod";
 import { CAR_RENTALS, formatPrice } from "../shared.ts";
 
 /** Their `search_car_rentals`, by city and tier. */
-export const searchCarRentals = tool({
+export default tool({
   description: "Search rental cars by city, and optionally by tier (compact, midsize, suv).",
   inputSchema: z.object({
     city: z.string().max(80).describe("City to search, e.g. 'Boston'"),

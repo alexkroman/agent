@@ -20,7 +20,7 @@ vi.mock("./_agent.ts", () => ({
   getMonorepoRoot: vi.fn().mockReturnValue(null),
 }));
 
-const { executeEject, SERVER_ENTRY, START_SCRIPT } = await import("./eject.ts");
+const { executeEject, PRESTART_SCRIPT, SERVER_ENTRY, START_SCRIPT } = await import("./eject.ts");
 
 /** The real templates package — so these tests copy the scaffold users get. */
 const REAL_TEMPLATES_ROOT = path.resolve(import.meta.dirname, "../aai-templates");
@@ -60,8 +60,27 @@ describe("executeEject", () => {
         "utf-8",
       );
       expect(written).toBe(scaffolded);
-      expect((await readManifest(cwd)).scripts?.start).toBe(START_SCRIPT);
-      if (result.ok) expect(result.data.addedStartScript).toBe(true);
+      // Both scripts: the entrypoint boots the BUILT worker, so a `start` with
+      // no `prestart` in front of it exits naming the missing artifact.
+      expect((await readManifest(cwd)).scripts).toMatchObject({
+        prestart: PRESTART_SCRIPT,
+        start: START_SCRIPT,
+      });
+      if (result.ok) expect(result.data.addedScripts).toBe(true);
+    });
+  });
+
+  test("the scripts it writes are the scaffold's own", async () => {
+    // The one thing eject cannot copy: a project's package.json is its own, so
+    // these two constants are a SECOND definition of the scaffold's scripts.
+    // Drift means a freshly scaffolded project and an ejected one boot
+    // differently — and the `prestart` half is what makes either boot at all.
+    const scaffold = JSON.parse(
+      await fs.readFile(path.join(REAL_TEMPLATES_ROOT, "scaffold", "package.json"), "utf-8"),
+    ) as { scripts?: Record<string, string> };
+    expect(scaffold.scripts).toMatchObject({
+      prestart: PRESTART_SCRIPT,
+      start: START_SCRIPT,
     });
   });
 
@@ -93,19 +112,40 @@ describe("executeEject", () => {
 
       const result = await executeEject({ cwd });
 
-      expect((await readManifest(cwd)).scripts?.start).toBe("node other.mjs");
-      expect(result.ok && result.data.addedStartScript).toBe(false);
+      const scripts = (await readManifest(cwd)).scripts;
+      expect(scripts?.start).toBe("node other.mjs");
+      // And NO prestart: bolting a build onto someone else's start command
+      // changes what that command does, which is the act this rule refuses.
+      expect(scripts?.prestart).toBeUndefined();
+      expect(result.ok && result.data.addedScripts).toBe(false);
       expect(mockLog.warn).toHaveBeenCalledWith(expect.stringContaining("node other.mjs"));
     });
   });
 
-  test("leaves an already-correct start script alone", async () => {
+  test("backfills prestart for a project ejected before the build was required", async () => {
+    // `start` is already right and `prestart` is missing — the shape an older
+    // `aai eject` left behind. The entrypoint this run just wrote boots the
+    // built worker, so without the backfill `npm start` exits immediately.
     await withTempDir(async (dir) => {
       const cwd = await makeProject(dir, { scripts: { start: START_SCRIPT } });
 
       const result = await executeEject({ cwd });
 
-      expect(result.ok && result.data.addedStartScript).toBe(false);
+      expect((await readManifest(cwd)).scripts?.prestart).toBe(PRESTART_SCRIPT);
+      expect(result.ok && result.data.addedScripts).toBe(true);
+      expect(mockLog.warn).not.toHaveBeenCalled();
+    });
+  });
+
+  test("leaves an already-correct script pair alone", async () => {
+    await withTempDir(async (dir) => {
+      const cwd = await makeProject(dir, {
+        scripts: { prestart: PRESTART_SCRIPT, start: START_SCRIPT },
+      });
+
+      const result = await executeEject({ cwd });
+
+      expect(result.ok && result.data.addedScripts).toBe(false);
       expect(mockLog.warn).not.toHaveBeenCalled();
     });
   });
@@ -118,7 +158,7 @@ describe("executeEject", () => {
 
       const result = await executeEject({ cwd });
 
-      expect(result.ok && result.data.addedStartScript).toBe(false);
+      expect(result.ok && result.data.addedScripts).toBe(false);
       expect(await fs.readFile(path.join(cwd, SERVER_ENTRY), "utf-8")).toContain(
         "createAgentServer",
       );
@@ -137,14 +177,17 @@ describe("executeEject", () => {
     });
   });
 
-  test("points a project with a custom UI at the build it needs", async () => {
+  test("tells the user the start it just wired up builds first", async () => {
+    // This used to be a client.tsx-specific hint ("run `aai build` first so
+    // your UI is served"). It is unconditional now because the build is: the
+    // entrypoint cannot boot without one, and the same build produces the
+    // client.
     await withTempDir(async (dir) => {
       const cwd = await makeProject(dir);
-      await fs.writeFile(path.join(cwd, "client.tsx"), "// ui\n");
 
       await executeEject({ cwd });
 
-      expect(mockLog.info).toHaveBeenCalledWith(expect.stringContaining("aai build"));
+      expect(mockLog.info).toHaveBeenCalledWith(expect.stringContaining(PRESTART_SCRIPT));
     });
   });
 });

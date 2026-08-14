@@ -1,7 +1,7 @@
 import { tool } from "@alexkroman1/aai";
 import { dispatchSlot, incidentAgeMinutes, resourceBrief, resourceUtilization } from "../shared.ts";
 
-export const opsDashboard = tool({
+export default tool({
   description:
     "Get the full operational dashboard: alert level, resource utilization, active incidents, and available resources.",
   async execute(_args, ctx) {

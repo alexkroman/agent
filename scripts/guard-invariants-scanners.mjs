@@ -18,7 +18,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 /** Run git, returning stdout. */
 function git(args) {
@@ -66,7 +66,15 @@ export function scanResearchFrontmatter() {
     .filter((f) => f.endsWith(".md") && f !== "research/README.md");
   const found = [];
   for (const file of files) {
-    const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+    // The list comes from the INDEX and the read is of the WORKING TREE, so a
+    // doc deleted-but-not-yet-committed is listed and absent — which crashed the
+    // whole gate with an ENOENT stack trace, taking the other eleven rules with
+    // it. A deleted file has no frontmatter to check, so skipping is the answer
+    // rather than a silent pass: `git ls-files` will stop listing it the moment
+    // the deletion is staged.
+    const path = new URL(`../${file}`, import.meta.url);
+    if (!existsSync(path)) continue;
+    const source = readFileSync(path, "utf8");
     // Deliberately not a YAML parser: the three fields are scalars, and a
     // dependency here would be one more thing that can be absent when a gate
     // runs. A malformed block fails the shape check below, which is the answer
@@ -217,4 +225,67 @@ function declaredGuestRoutes() {
 
 export function scanUndeclaredGuestRoutes() {
   return findUndeclaredGuestRoutes(guestRouteLiterals(), declaredGuestRoutes());
+}
+
+/**
+ * Rule 13: a template file may not import a path that ESCAPES its template.
+ *
+ * A template ships. `aai init` copies `templates/<name>/` into a user's project
+ * and nothing above it comes along, so a relative import that climbs out of that
+ * directory resolves in this repo and in nothing a user runs — and every gate we
+ * have runs in this repo. Five shipped templates imported
+ * `../../_tool-discovery.ts`, which broke `aai test`, `aai build` (it
+ * type-checks) and `npm start` for all five, while `check:template-types`,
+ * `templates.test.ts` and every template's own spec stayed green.
+ *
+ * It RESOLVES rather than pattern-matching `../../`, because depth is not the
+ * question: `../shared.ts` from `tools/a.ts` is fine and `../../shared.ts` from
+ * the same file is not, and both spell the same number of dots as a legal import
+ * one directory up.
+ */
+
+/**
+ * The pure half, split out for the same reason rule 12's is: the decision is a
+ * path computation with several ways to go quietly wrong (an off-by-one in the
+ * template-root slice, a `..` that pops past the root, a pathspec that stops
+ * matching), and a scan that resolved everything to "inside" would report the
+ * healthiest possible tree.
+ *
+ * @param {string} file - repo-relative path of the importing file
+ * @param {string} specifier - the relative specifier it imports
+ * @returns {boolean} true when the specifier leaves the file's own template
+ */
+export function importEscapesTemplate(file, specifier) {
+  const parts = file.split("/");
+  // packages/aai-templates/templates/<name>/… — the fourth segment is the
+  // template, and its directory is the boundary a shipped file may not cross.
+  const templateRoot = parts.slice(0, 4).join("/");
+  // POSIX-style throughout: these paths come from git, so they are already
+  // `/`-separated on every OS.
+  const segments = [...parts.slice(0, -1), ...specifier.split("/")];
+  const resolved = [];
+  for (const segment of segments) {
+    if (segment === "." || segment === "") continue;
+    if (segment === "..") resolved.pop();
+    else resolved.push(segment);
+  }
+  return !resolved.join("/").startsWith(`${templateRoot}/`);
+}
+
+export function scanTemplateEscapingImports() {
+  const files = git(["ls-files", "--", "packages/aai-templates/templates"])
+    .split("\n")
+    .filter((f) => /\.(?:m?[jt]s|tsx)$/.test(f));
+  const found = [];
+  for (const file of files) {
+    const lines = readFileSync(new URL(`../${file}`, import.meta.url), "utf8").split("\n");
+    lines.forEach((text, index) => {
+      const match = /(?:from|import)\s*\(?\s*["'](\.\.?\/[^"']+)["']/.exec(text);
+      if (match === null) return;
+      if (importEscapesTemplate(file, match[1])) {
+        found.push({ file, line: index + 1, text: text.trim() });
+      }
+    });
+  }
+  return found;
 }

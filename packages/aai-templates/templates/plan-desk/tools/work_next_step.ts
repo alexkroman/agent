@@ -18,7 +18,7 @@ import { liveSearch, noteRevision, planSlot } from "../shared.ts";
  * both record it. Serialized, the second call sees the first step already done
  * and takes the next.
  */
-export const workNextStep = planSlot.updateTool({
+export default planSlot.updateTool({
   description:
     "Do the next step of the plan and report what it found. Call this once per " +
     "step — never in a loop. Say a short 'let me look into that' first, since " +

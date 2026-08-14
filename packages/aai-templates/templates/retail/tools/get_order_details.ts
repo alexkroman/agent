@@ -3,7 +3,7 @@ import { z } from "zod";
 import { resolveOrder } from "../resolve.ts";
 import { retailSlot, retailTool, setFocus } from "../store.ts";
 
-export const getOrderDetails = retailTool({
+export default retailTool({
   name: "get_order_details",
   description:
     "Get the status and full details of one of the authenticated customer's orders. Accepts the " +

@@ -13,7 +13,7 @@ import { noteRevision, planSlot } from "../shared.ts";
  * change their mind, and the node that already exists to rewrite a plan from
  * new information is the right one to hand that to.
  */
-export const revisePlan = planSlot.updateTool({
+export default planSlot.updateTool({
   description:
     "Rewrite the remaining plan because the caller changed what they want. " +
     "Pass their instruction as they said it. Completed steps are never redone.",

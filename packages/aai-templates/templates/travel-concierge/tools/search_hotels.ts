@@ -4,7 +4,7 @@ import { formatPrice, HOTELS } from "../shared.ts";
 
 /** Their `search_hotels`, with `price_tier` collapsed to a nightly ceiling —
  *  a caller says "under two hundred", not "midscale". */
-export const searchHotels = tool({
+export default tool({
   description: "Search hotels by city, and optionally by the most they want to pay per night.",
   inputSchema: z.object({
     city: z.string().max(80).describe("City to search, e.g. 'Boston'"),

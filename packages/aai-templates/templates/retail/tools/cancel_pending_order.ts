@@ -7,7 +7,7 @@ import { authenticatedUser, retailSlot, retailTool, setFocus } from "../store.ts
 /** tau2 accepts exactly these two. Anything else is refused. */
 const CANCEL_REASONS = ["no longer needed", "ordered by mistake"] as const;
 
-export const cancelPendingOrder = retailTool({
+export default retailTool({
   name: "cancel_pending_order",
   description:
     "Cancel a pending order. Only an order whose status is exactly 'pending' can be cancelled — " +

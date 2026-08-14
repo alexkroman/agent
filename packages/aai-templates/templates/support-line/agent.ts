@@ -1,9 +1,6 @@
 import { agent } from "@alexkroman1/aai";
 import { PRODUCT, supportSlot, supportView } from "./shared.ts";
 import systemPrompt from "./system-prompt.md?raw";
-import { answerQuestion } from "./tools/answer_question.ts";
-import { listTopics } from "./tools/list_topics.ts";
-import { logTicket } from "./tools/log_ticket.ts";
 
 /**
  * A support line that grades its own retrieval before it speaks — the
@@ -30,10 +27,4 @@ export default agent({
   syncState: supportSlot.projection(supportView),
   systemPrompt,
   greeting: `${PRODUCT} support, you're through to the automated line. What's happened?`,
-
-  tools: {
-    answer_question: answerQuestion,
-    list_topics: listTopics,
-    log_ticket: logTicket,
-  },
 });

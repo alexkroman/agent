@@ -202,7 +202,7 @@ const THEMES = [
   "Wound",
 ];
 
-export const oracle = tool({
+export default tool({
   description:
     "Consult the oracle for narrative inspiration. Generates random prompts from thematic tables.",
   inputSchema: z.object({

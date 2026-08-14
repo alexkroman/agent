@@ -19,7 +19,7 @@ import {
   updateCrisisFlags,
 } from "../shared.ts";
 
-export const updateState = tool({
+export default tool({
   description:
     "Lightweight state sync for during gameplay. Handles location changes, NPC additions, clock additions, time changes, and session log entries. Resource changes (health/spirit/supply/momentum) are auto-applied by action_roll — only use those fields here for manual adjustments like resting or trading. Pass only what changed.",
   inputSchema: z.object({

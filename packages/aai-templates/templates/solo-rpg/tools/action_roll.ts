@@ -12,7 +12,7 @@ import {
   updateChaosFactor,
 } from "../shared.ts";
 
-export const actionRoll = tool({
+export default tool({
   description:
     "Core mechanic. Roll 2d6 + stat (capped at 10) vs 2d10 challenge dice. Also applies consequences (health/spirit/supply/momentum changes, clock advancement) based on move type, position, and result. Call for ANY risky action. Pure conversation needs no roll.",
   inputSchema: z.object({

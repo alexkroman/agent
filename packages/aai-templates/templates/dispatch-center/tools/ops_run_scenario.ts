@@ -117,7 +117,7 @@ const scenarios = {
 type ScenarioName = keyof typeof scenarios;
 const SCENARIO_NAMES = Object.keys(scenarios) as [ScenarioName, ...ScenarioName[]];
 
-export const opsRunScenario = tool({
+export default tool({
   description: "Run a training scenario that creates simulated incidents for dispatch practice.",
   inputSchema: z.object({
     scenario: z.enum(SCENARIO_NAMES).describe("Scenario type to simulate"),

@@ -2,7 +2,7 @@ import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import { dispatchSlot, logEvent, RESOURCE_STATUSES } from "../shared.ts";
 
-export const resourcesUpdateStatus = tool({
+export default tool({
   description: "Update a resource unit's status when it radios in.",
   inputSchema: z.object({
     callsign: z.string().max(50).describe("The resource callsign"),
