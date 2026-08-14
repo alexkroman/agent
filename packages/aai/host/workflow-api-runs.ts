@@ -13,8 +13,8 @@
  */
 
 import type http from "node:http";
-import { errorMessage } from "../sdk/utils.ts";
 import { clampWorkflowWait, isTerminal } from "../sdk/workflow.ts";
+import { WorkflowRequestError } from "./_workflow-request-error.ts";
 import type { Logger } from "./runtime-config.ts";
 import { MAX_WORKFLOW_INPUT_BYTES, readBody, sendJson } from "./workflow-api-http.ts";
 import { waitForRun } from "./workflow-api-wait.ts";
@@ -84,12 +84,23 @@ export async function startRun(
   // `start` rejects an unknown name and an input failing the workflow's own
   // schema, and both are the CALLER's mistake — so they are 400s carrying the
   // client's message (which names the declared workflows, or the schema issues)
-  // rather than 500s. Everything else is ours; the router's catch has it.
+  // rather than 500s. Everything else is ours, and is RETHROWN to the router,
+  // whose `answerHandlerFailure` logs the cause and answers an opaque 500.
+  //
+  // The type test is what makes that split real. This used to catch everything
+  // and answer 400 with `errorMessage(err)` under a comment claiming the router
+  // had the rest — but the `try` covers the world call, so it never did: a
+  // six-second Postgres outage answered a form submission
+  // `400 {"error":"connect ECONNREFUSED 127.0.0.1:54399"}`, which tells a client
+  // its request was bad (so nothing retries) and hands the database's host and
+  // port to anyone with the page's URL, this surface being unauthenticated
+  // unless the operator sets `AAI_WORKFLOW_API_TOKEN`.
   let runId: string;
   try {
     runId = await engine.start(workflow, input, key === undefined ? undefined : { key });
   } catch (err) {
-    sendJson(res, 400, { error: errorMessage(err) });
+    if (!(err instanceof WorkflowRequestError)) throw err;
+    sendJson(res, 400, { error: err.message });
     return;
   }
   // The run's opening line in the server log. A workflow app otherwise answers
@@ -221,6 +232,11 @@ export async function findRuns(
   } catch (err) {
     // An unknown workflow name is the caller's mistake, exactly as it is on
     // `POST /runs`, and carries the client's message naming the declared ones.
-    sendJson(res, 400, { error: errorMessage(err) });
+    // Anything else is rethrown for the same reason it is there: this catch used
+    // to answer 400 with the raw message, so a read against a dead database
+    // returned the whole `select … from "workflow"."workflow_runs"` statement to
+    // an unauthenticated caller.
+    if (!(err instanceof WorkflowRequestError)) throw err;
+    sendJson(res, 400, { error: err.message });
   }
 }

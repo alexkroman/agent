@@ -20,6 +20,7 @@ import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { WorkflowClient } from "../sdk/workflow.ts";
 import type { WorkflowRunSnapshot } from "../sdk/workflow-run.ts";
 import { rejectingWorkflows, WORKFLOWS_UNAVAILABLE_MESSAGE } from "../sdk/workflow-unavailable.ts";
+import { WorkflowRequestError } from "./_workflow-request-error.ts";
 import { createWorkflowApi, MAX_WORKFLOW_INPUT_BYTES } from "./workflow-api.ts";
 
 const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
@@ -265,8 +266,10 @@ describe("POST /runs", () => {
     await expect(res.json()).resolves.toEqual({ error: '"key" must be a string when present' });
   });
 
-  test("a rejected start is a 400 carrying the client's own sentence", async () => {
-    const start = vi.fn(() => Promise.reject(new Error('Workflow "nope" is not declared')));
+  test("a start rejected as the CALLER's mistake is a 400 carrying the client's own sentence", async () => {
+    const start = vi.fn(() =>
+      Promise.reject(new WorkflowRequestError('Workflow "nope" is not declared')),
+    );
     harness = await serve({ engine: () => fakeClient({ start }) });
     const res = await fetch(`${harness.url}/workflows/runs`, {
       method: "POST",
@@ -274,6 +277,36 @@ describe("POST /runs", () => {
     });
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toEqual({ error: 'Workflow "nope" is not declared' });
+  });
+
+  // The pair below is the whole point of `WorkflowRequestError`, and the reason
+  // it is a TYPE test rather than a message one. Measured against a real dead
+  // database: this route answered `400 {"error":"connect ECONNREFUSED
+  // 127.0.0.1:54399"}`, so a client was told its request was bad (nothing
+  // retries that) and an unauthenticated caller was handed the DSN.
+  test("a start rejected by the INFRASTRUCTURE is an opaque 500, not a 400", async () => {
+    const start = vi.fn(() => Promise.reject(new Error("connect ECONNREFUSED 127.0.0.1:54399")));
+    harness = await serve({ engine: () => fakeClient({ start }) });
+    const res = await fetch(`${harness.url}/workflows/runs`, {
+      method: "POST",
+      body: JSON.stringify({ workflow: "digest" }),
+    });
+    expect(res.status).toBe(500);
+    await expect(res.json()).resolves.toEqual({ error: "Internal server error" });
+  });
+
+  test("the infrastructure cause reaches the LOG and never the response body", async () => {
+    const start = vi.fn(() => Promise.reject(new Error("connect ECONNREFUSED 127.0.0.1:54399")));
+    harness = await serve({ engine: () => fakeClient({ start }) });
+    const body = await fetch(`${harness.url}/workflows/runs`, {
+      method: "POST",
+      body: JSON.stringify({ workflow: "digest" }),
+    }).then((r) => r.text());
+    expect(body).not.toContain("54399");
+    expect(body).not.toContain("ECONNREFUSED");
+    expect(logger.error).toHaveBeenCalledWith("Workflow API request failed", {
+      error: "connect ECONNREFUSED 127.0.0.1:54399",
+    });
   });
 
   test("a body over the cap is a 413, not a 500", async () => {
@@ -325,11 +358,28 @@ describe("GET /runs", () => {
   });
 
   test("an unknown workflow name is a 400 carrying the client's sentence", async () => {
-    const recent = vi.fn(() => Promise.reject(new Error("Declared workflows: digest")));
+    const recent = vi.fn(() =>
+      Promise.reject(new WorkflowRequestError("Declared workflows: digest")),
+    );
     harness = await serve({ engine: () => fakeClient({ recent }) });
     const res = await fetch(`${harness.url}/workflows/runs?workflow=nope`);
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toEqual({ error: "Declared workflows: digest" });
+  });
+
+  // The read path leaked more than the start path did: the raw message here is
+  // the driver's, so a 400 carried the entire `select … from
+  // "workflow"."workflow_runs" where … limit $2` statement.
+  test("a failed READ is an opaque 500 and never echoes the query", async () => {
+    const recent = vi.fn(() =>
+      Promise.reject(
+        new Error('Failed query: select "id", "output" from "workflow"."workflow_runs" limit $2'),
+      ),
+    );
+    harness = await serve({ engine: () => fakeClient({ recent }) });
+    const res = await fetch(`${harness.url}/workflows/runs?workflow=digest`);
+    expect(res.status).toBe(500);
+    await expect(res.json()).resolves.toEqual({ error: "Internal server error" });
   });
 });
 

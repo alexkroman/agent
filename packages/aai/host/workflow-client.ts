@@ -58,6 +58,7 @@ import type {
 } from "../sdk/workflow.ts";
 import type { WorkflowRunSnapshot } from "../sdk/workflow-run.ts";
 import { MISSING_WORKFLOW_ID_MESSAGE } from "../sdk/workflow-unavailable.ts";
+import { WorkflowRequestError } from "./_workflow-request-error.ts";
 import type { Logger } from "./runtime-config.ts";
 import {
   createMemoryKeyStore,
@@ -215,7 +216,8 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
   function resolve(workflow: AnyWorkflowDef | string): { name: string; def: WorkflowDef } {
     if (typeof workflow === "string") {
       const def = workflows[workflow];
-      if (!def) throw new Error(unknownWorkflowMessage(workflow, Object.keys(workflows)));
+      if (!def)
+        throw new WorkflowRequestError(unknownWorkflowMessage(workflow, Object.keys(workflows)));
       return { name: workflow, def };
     }
     for (const [name, def] of Object.entries(workflows)) {
@@ -225,7 +227,7 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
     // name, so a run of it could never be found again. The message names the
     // declared set because the usual cause is a workflow written and not wired
     // into `agent({ workflows })`.
-    throw new Error(
+    throw new WorkflowRequestError(
       unknownWorkflowMessage(workflow.description ?? "(unnamed)", Object.keys(workflows)),
     );
   }
@@ -242,7 +244,9 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
     if (!def.input) return input;
     const result = await def.input["~standard"].validate(input);
     if (result.issues) {
-      throw new Error(`Invalid input for workflow "${name}": ${formatSchemaIssues(result.issues)}`);
+      throw new WorkflowRequestError(
+        `Invalid input for workflow "${name}": ${formatSchemaIssues(result.issues)}`,
+      );
     }
     return result.value;
   }
