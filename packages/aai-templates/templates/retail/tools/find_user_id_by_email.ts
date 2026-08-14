@@ -3,7 +3,7 @@ import { z } from "zod";
 import { authenticateAs } from "../authenticate.ts";
 import { retailSlot, retailTool } from "../store.ts";
 
-export const findUserIdByEmail = retailTool({
+export default retailTool({
   name: "find_user_id_by_email",
   description:
     "Find a customer's user id by their email address. This is how you authenticate the caller — " +

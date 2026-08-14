@@ -5,7 +5,7 @@ import { FLIGHTS, formatPrice, tripSlot } from "../shared.ts";
  * pastes into the prompt. A voice session's prompt is fixed at connect and the
  * ticket changes mid-call, so it is a tool the concierge can re-read instead.
  */
-export const lookupBooking = tripSlot.tool({
+export default tripSlot.tool({
   description:
     "Look up the caller's current booking: who they are, their ticket, and " +
     "anything already reserved on this call. Call this before quoting or " +

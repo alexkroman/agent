@@ -4,7 +4,7 @@ import { resolveOrder } from "../resolve.ts";
 import { authenticatedUser, retailSlot, retailTool, setFocus } from "../store.ts";
 import { assertCanCoverDiff, planItemSwap } from "../swap.ts";
 
-export const exchangeDeliveredOrderItems = retailTool({
+export default retailTool({
   name: "exchange_delivered_order_items",
   description:
     "Request an exchange of items in a delivered order for different options of the SAME products. " +

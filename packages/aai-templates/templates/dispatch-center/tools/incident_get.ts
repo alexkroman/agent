@@ -7,7 +7,7 @@ import {
   incidentAgeMinutes,
 } from "../shared.ts";
 
-export const incidentGet = tool({
+export default tool({
   description: "Get full details on a specific incident including timeline and assigned resources.",
   inputSchema: z.object({
     incidentId: z.string().max(20).describe("The incident ID"),

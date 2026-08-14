@@ -700,6 +700,36 @@ server declines. `agent-default-export` used to require an `agent` import for
 that reason and no longer can, the workflow-app templates calling `workflowApp`
 instead.
 
+**A `tools/` file IS the tool: it default-exports it, nothing imports it, and no
+template's `agent.ts` carries a `tools:` map any more.** Discovery happens where
+the bundle is assembled (`aai-cli/worker-bundler.ts` enumerates `tools/*.ts` and
+emits static imports), because the guest sandbox is handed one ESM string and has
+no directory to scan — the same lowering eve does. `toolRegistry` /`withTools`
+(`@alexkroman1/aai/manifest`) own the rules, so the name grammar, the
+default-export requirement, the flat-only rule and a duplicate name are one
+implementation and each is a build error naming the file.
+
+It replaced 62 map entries whose whole content was
+`snake_case_name: camelCaseImport`, and the reason was the silent failure rather
+than the line count: add `tools/incident_close.ts`, forget the map line, and the
+file compiled, lint passed, every gate was green, and the tool never reached the
+model.
+
+**A spec has no bundler in its path, so `_tool-discovery.ts` does the same
+lowering with `import.meta.glob`** and hands it to the same `toolRegistry`:
+`withTemplateTools(name, authoredAgent)` is the def a deployed agent runs. It is
+deliberately not a `readdir` + `import()` — that would load the tools through
+NODE's resolver instead of vitest's, giving them a second copy of the SDK, so a
+slot's module state would differ between the tool under test and the agent
+holding it. `templates.test.ts` resolves every template that way, which is also
+what validates all 52 files' names and shapes.
+
+Note what this DROPS: a `tools:` map checked each tool's assignability into
+`Record<string, ToolDef<ToolInputSchema, S>>`, so a tool whose state type
+disagreed with the agent's was a compile error at the map. `toolRegistry` checks
+shape at build time and not `S` — the slot is what carries that guarantee now,
+which is most of why `sessionSlot()` exists.
+
 The one thing a template may still hand-roll here is a **fallback that would
 cost the browser bundle**: `retail`'s client builds its empty view from a
 seedless `emptyRetailState()` instead of `retailSlot.projection(storeView)

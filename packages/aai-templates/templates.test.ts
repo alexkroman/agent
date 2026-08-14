@@ -18,10 +18,12 @@
  * own agent.test.ts.
  */
 
+import type { AgentDef } from "@alexkroman1/aai";
 import { DEFAULT_MAX_STEPS, TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai";
 import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
 import { ASSEMBLYAI_TTS_DEPRECATED_VOICES, ASSEMBLYAI_TTS_VOICES } from "@alexkroman1/aai/tts";
 import { describe, expect, test } from "vitest";
+import { withTemplateTools } from "./_tool-discovery.ts";
 // `?raw` rather than node:fs — this package's tsconfig has no node types, and
 // the raw-import shape is the one the CLI bundler supports anyway.
 import scaffoldGuide from "./scaffold/CLAUDE.md?raw";
@@ -66,7 +68,13 @@ describe("template build smoke", () => {
 
       // Same conversion the CLI bundler runs at deploy time.
       expect(() => toAgentConfig(agentDef)).not.toThrow();
-      expect(() => agentToolsToSchemas(agentDef.tools ?? {})).not.toThrow();
+      // And the same tool resolution: a tool is registered by existing under
+      // `tools/`, so schemas are checked against the resolved set rather than
+      // the (now empty) map the definition itself carries. This is also what
+      // asserts every tool file's name, shape and uniqueness — `toolRegistry`
+      // throws naming the file, so a template's tools are validated here.
+      const resolved = withTemplateTools(name, agentDef as AgentDef);
+      expect(() => agentToolsToSchemas(resolved.tools)).not.toThrow();
     },
   );
 });

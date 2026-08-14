@@ -2,7 +2,7 @@ import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import { dispatchSlot, RESOURCE_TYPES } from "../shared.ts";
 
-export const resourcesGetAvailable = tool({
+export default tool({
   description: "List available resources, optionally filtered by type.",
   inputSchema: z.object({
     type: z

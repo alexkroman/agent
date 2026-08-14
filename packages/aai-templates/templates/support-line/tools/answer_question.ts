@@ -15,7 +15,7 @@ import { recordQuestion, supportSlot } from "../shared.ts";
  * grounded-but-not-useful answer is still worth speaking, and the caller is the
  * one who should hear that it may not be the whole story.
  */
-export const answerQuestion = tool({
+export default tool({
   description:
     "Answer a caller's question from the support knowledge base. This is the " +
     "only way to answer anything about the product — never answer from your " +

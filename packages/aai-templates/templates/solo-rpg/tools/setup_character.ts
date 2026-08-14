@@ -18,7 +18,7 @@ import {
   TONES,
 } from "../shared.ts";
 
-export const setupCharacter = tool({
+export default tool({
   description:
     "Set up the entire game in one call. Starts a completely fresh game (any previous unsaved game is replaced), generates stats, initializes state, and marks the game as ready. After this returns, just narrate the opening scene. No need to call update_state — everything is already done.",
   inputSchema: z.object({

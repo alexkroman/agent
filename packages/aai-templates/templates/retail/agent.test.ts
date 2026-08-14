@@ -5,21 +5,21 @@ import { describe, expect, test } from "vitest";
 import type { AuthResult } from "./authenticate.ts";
 import type { Address } from "./shared.ts";
 import { retailSlot, type StateSlot } from "./store.ts";
-import { cancelPendingOrder } from "./tools/cancel_pending_order.ts";
-import { exchangeDeliveredOrderItems } from "./tools/exchange_delivered_order_items.ts";
-import { findUserIdByEmail } from "./tools/find_user_id_by_email.ts";
-import { findUserIdByNameZip } from "./tools/find_user_id_by_name_zip.ts";
-import { getItemDetails } from "./tools/get_item_details.ts";
-import { getOrderDetails } from "./tools/get_order_details.ts";
-import { getProductDetails } from "./tools/get_product_details.ts";
-import { getUserDetails } from "./tools/get_user_details.ts";
-import { listAllProductTypes } from "./tools/list_all_product_types.ts";
-import { modifyPendingOrderAddress } from "./tools/modify_pending_order_address.ts";
-import { modifyPendingOrderItems } from "./tools/modify_pending_order_items.ts";
-import { modifyPendingOrderPayment } from "./tools/modify_pending_order_payment.ts";
-import { modifyUserAddress } from "./tools/modify_user_address.ts";
-import { returnDeliveredOrderItems } from "./tools/return_delivered_order_items.ts";
-import { transferToHumanAgents } from "./tools/transfer_to_human_agents.ts";
+import cancelPendingOrder from "./tools/cancel_pending_order.ts";
+import exchangeDeliveredOrderItems from "./tools/exchange_delivered_order_items.ts";
+import findUserIdByEmail from "./tools/find_user_id_by_email.ts";
+import findUserIdByNameZip from "./tools/find_user_id_by_name_zip.ts";
+import getItemDetails from "./tools/get_item_details.ts";
+import getOrderDetails from "./tools/get_order_details.ts";
+import getProductDetails from "./tools/get_product_details.ts";
+import getUserDetails from "./tools/get_user_details.ts";
+import listAllProductTypes from "./tools/list_all_product_types.ts";
+import modifyPendingOrderAddress from "./tools/modify_pending_order_address.ts";
+import modifyPendingOrderItems from "./tools/modify_pending_order_items.ts";
+import modifyPendingOrderPayment from "./tools/modify_pending_order_payment.ts";
+import modifyUserAddress from "./tools/modify_user_address.ts";
+import returnDeliveredOrderItems from "./tools/return_delivered_order_items.ts";
+import transferToHumanAgents from "./tools/transfer_to_human_agents.ts";
 
 /** Each call is its own session, so two contexts are two independent stores —
  *  which is what the isolation tests below rest on. */

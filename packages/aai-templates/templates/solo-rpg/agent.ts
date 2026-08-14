@@ -1,14 +1,6 @@
 import { agent } from "@alexkroman1/aai";
 import { gameSlot } from "./shared.ts";
 import systemPrompt from "./system-prompt.md?raw";
-import { actionRoll } from "./tools/action_roll.ts";
-import { burnMomentum } from "./tools/burn_momentum.ts";
-import { checkState } from "./tools/check_state.ts";
-import { loadGame } from "./tools/load_game.ts";
-import { oracle } from "./tools/oracle.ts";
-import { saveGame } from "./tools/save_game.ts";
-import { setupCharacter } from "./tools/setup_character.ts";
-import { updateState } from "./tools/update_state.ts";
 
 export default agent({
   name: "Solo RPG",
@@ -26,14 +18,4 @@ export default agent({
   // state-mutating tool — six of them, and adding a seventh meant
   // remembering to push or watching the UI quietly fall out of sync.
   syncState: gameSlot.read,
-  tools: {
-    action_roll: actionRoll,
-    burn_momentum: burnMomentum,
-    check_state: checkState,
-    load_game: loadGame,
-    oracle,
-    save_game: saveGame,
-    setup_character: setupCharacter,
-    update_state: updateState,
-  },
 });

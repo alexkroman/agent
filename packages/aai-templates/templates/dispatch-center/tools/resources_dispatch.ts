@@ -9,7 +9,7 @@ import {
   recommendResources,
 } from "../shared.ts";
 
-export const resourcesDispatch = tool({
+export default tool({
   description:
     "Dispatch units to an incident. Can auto-dispatch recommended resources or manually specify callsigns.",
   inputSchema: z.object({

@@ -11,7 +11,7 @@ import {
 } from "../store.ts";
 import { applySwap, assertCanCoverDiff, planItemSwap } from "../swap.ts";
 
-export const modifyPendingOrderItems = retailTool({
+export default retailTool({
   name: "modify_pending_order_items",
   description:
     "Change items in a pending order to different options of the SAME products. This can be done " +

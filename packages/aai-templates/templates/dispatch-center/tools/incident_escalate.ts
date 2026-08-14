@@ -9,7 +9,7 @@ import {
   recommendResources,
 } from "../shared.ts";
 
-export const incidentEscalate = tool({
+export default tool({
   description: "Escalate an incident when it exceeds current capacity or severity increases.",
   inputSchema: z.object({
     incidentId: z.string().max(20).describe("The incident ID"),

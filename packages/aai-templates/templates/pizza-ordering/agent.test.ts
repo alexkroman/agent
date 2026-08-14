@@ -1,7 +1,12 @@
 import type { ToolContext } from "@alexkroman1/aai";
 import { createToolContext, runTool, toolOf } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
-import agentDef from "./agent.ts";
+import { withTemplateTools } from "../../_tool-discovery.ts";
+import authoredAgent from "./agent.ts";
+
+/** The def a deployed agent runs: authored, plus what `tools/` declares. */
+const agentDef = withTemplateTools("pizza-ordering", authoredAgent);
+
 import {
   calculateTotal,
   orderSlot,

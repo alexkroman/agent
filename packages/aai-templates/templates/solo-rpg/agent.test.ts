@@ -12,13 +12,13 @@ import {
   rollAction,
   type StateSlot,
 } from "./shared.ts";
-import { actionRoll } from "./tools/action_roll.ts";
-import { burnMomentum } from "./tools/burn_momentum.ts";
-import { checkState } from "./tools/check_state.ts";
-import { loadGame } from "./tools/load_game.ts";
-import { saveGame } from "./tools/save_game.ts";
-import { setupCharacter } from "./tools/setup_character.ts";
-import { updateState } from "./tools/update_state.ts";
+import actionRoll from "./tools/action_roll.ts";
+import burnMomentum from "./tools/burn_momentum.ts";
+import checkState from "./tools/check_state.ts";
+import loadGame from "./tools/load_game.ts";
+import saveGame from "./tools/save_game.ts";
+import setupCharacter from "./tools/setup_character.ts";
+import updateState from "./tools/update_state.ts";
 
 // ── Test doubles ─────────────────────────────────────────────────────────────
 

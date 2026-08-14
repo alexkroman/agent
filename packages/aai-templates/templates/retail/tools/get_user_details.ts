@@ -2,7 +2,7 @@ import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { authenticatedUser, retailSlot, retailTool } from "../store.ts";
 
-export const getUserDetails = retailTool({
+export default retailTool({
   name: "get_user_details",
   description:
     "Get the authenticated customer's profile: name, email, default address, payment methods " +

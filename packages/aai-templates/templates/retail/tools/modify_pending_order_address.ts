@@ -4,7 +4,7 @@ import { AddressFields, formatAddress, toAddress } from "../address.ts";
 import { resolveOrder } from "../resolve.ts";
 import { retailSlot, retailTool, setFocus } from "../store.ts";
 
-export const modifyPendingOrderAddress = retailTool({
+export default retailTool({
   name: "modify_pending_order_address",
   description:
     "Change the shipping address of a pending order. Read the new address back to the caller and " +

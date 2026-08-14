@@ -27,3 +27,14 @@ export {
   type PipelineTuning,
   type SessionMode,
 } from "./config-rules.ts";
+// The generated worker entry resolves the agent's `tools/` directory through
+// these, so they sit beside `toAgentConfig` for the same reason it does: this
+// subpath is what a generated entry may import (dependency-free, bundled in).
+export {
+  loadToolModules,
+  type ToolModuleLoaders,
+  type ToolModules,
+  type ToolRegistry,
+  toolRegistry,
+  withTools,
+} from "./tool-registry.ts";

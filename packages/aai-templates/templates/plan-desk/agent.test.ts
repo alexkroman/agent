@@ -1,7 +1,12 @@
 import type { GenerateFn, ToolContext } from "@alexkroman1/aai";
 import { createToolContext, runTool, stubGenerate } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
-import agentDef from "./agent.ts";
+import { withTemplateTools } from "../../_tool-discovery.ts";
+import authoredAgent from "./agent.ts";
+
+/** The def a deployed agent runs: authored, plus what `tools/` declares. */
+const agentDef = withTemplateTools("plan-desk", authoredAgent);
+
 import { executeStep, MAX_STEP_SEARCHES, normalizeAct, planNode } from "./graph.ts";
 import { EXECUTOR_SYSTEM, PLANNER_SYSTEM, REPLANNER_SYSTEM, REVISE_SYSTEM } from "./prompts.ts";
 import type { SearchFn, StateSlot } from "./shared.ts";

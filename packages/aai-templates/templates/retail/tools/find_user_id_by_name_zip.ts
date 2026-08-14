@@ -3,7 +3,7 @@ import { z } from "zod";
 import { authenticateAs } from "../authenticate.ts";
 import { retailSlot, retailTool } from "../store.ts";
 
-export const findUserIdByNameZip = retailTool({
+export default retailTool({
   name: "find_user_id_by_name_zip",
   description:
     "Find a customer's user id by first name, last name and zip code. Use this only when the " +

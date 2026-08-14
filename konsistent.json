@@ -284,16 +284,6 @@
           }
         }
       ]
-    },
-    {
-      "name": "template-tools",
-      "description": "A tools/ file is named for the snake_case tool name the LLM sees (Biome's filename convention is overridden for exactly this reason) and exports one const named for it in camelCase.",
-      "paths": "packages/aai-templates/templates/{templateName}/tools/{toolName}.ts",
-      "must": {
-        "exportConstants": [
-          "${toolName.toCamelCase()}"
-        ]
-      }
     }
   ]
 }

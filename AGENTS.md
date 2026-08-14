@@ -343,7 +343,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
   — enforces **structural** conventions: the shapes that are wrong only in
   relation to their siblings, which is why no per-file tool can see them.
   Biome lints statements and tsc type-checks a program; neither can say "every
-  module in this directory must look like the others." The fourteen
+  module in this directory must look like the others." The thirteen
   conventions cover the four things this repo restates by hand — the
   per-package file set (`package.json`, `tsconfig.json`, `vitest.config.ts`,
   `CLAUDE.md`, plus README/`tsconfig.build.json`/`tsdown.config.ts` on the
@@ -353,10 +353,14 @@ one commit of history. A file in the tree has no merge base and no such modes.
   imports neither server nor guest, the guest imports no server code, aai-ui
   imports only the core SDK); and the repeated-by-construction shapes — every
   STT/TTS/LLM/S2S provider module's `*_KIND` / `*_API_KEY_ENV` / `*Options` /
-  `*Provider` / factory / `resolve*Settings` set, every template's
-  `agent.ts` + `client.tsx`, and each `tools/<snake_case>.ts` exporting the
-  matching camelCase const. `pnpm check:konsistent-config` (`konsistent
+  `*Provider` / factory / `resolve*Settings` set, and every template's
+  `agent.ts` + `client.tsx`. `pnpm check:konsistent-config` (`konsistent
   validate`) checks the config against its schema without touching the tree.
+
+  It used to be fourteen: `template-tools` checked an export NAME that no longer
+  exists. A tool is now DISCOVERED — a file in `tools/` is the tool, named by its
+  own filename, registered by no one — so there is nothing per-file left to
+  assert. See "A `tools/` file IS the tool" in `packages/aai-templates/CLAUDE.md`.
 
   Two things to know before editing `konsistent.json`. **A convention that
   matches nothing passes** — a typo'd `paths` glob checks zero files and prints

@@ -202,13 +202,19 @@
     "PipelineTuning",
     "ProviderDescriptorSchema",
     "SessionMode",
+    "ToolModuleLoaders",
+    "ToolModules",
+    "ToolRegistry",
     "ToolSchema",
     "ToolSchemaSchema",
     "agentToolsToSchemas",
     "assertPipelineTuning",
     "assertProviderTriple",
     "assertSilencePolicy",
-    "toAgentConfig"
+    "loadToolModules",
+    "toAgentConfig",
+    "toolRegistry",
+    "withTools"
   ],
   "@alexkroman1/aai/protocol": [
     "CLIENT_CONFIG_PATH",

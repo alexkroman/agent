@@ -11,7 +11,7 @@ import {
   setFocus,
 } from "../store.ts";
 
-export const modifyPendingOrderPayment = retailTool({
+export default retailTool({
   name: "modify_pending_order_payment",
   description:
     "Change which payment method a pending order is charged to. The new method must be different " +

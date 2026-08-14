@@ -80,6 +80,31 @@ export type AgentConfigSource = Omit<AgentConfig, "mode"> & {
     [K in HostOnlyAgentField]?: unknown;
 };
 
+// @public
+interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
+    builtinTools?: readonly BuiltinTool[];
+    greeting: string;
+    idleTimeoutMs?: number;
+    llm?: LlmProvider;
+    maxSteps: number;
+    name: string;
+    page?: "voice" | "static";
+    requiredEnv?: readonly string[];
+    s2s?: S2sProvider;
+    silencePrompt?: string;
+    silenceTimeoutMs?: number;
+    state?: () => S;
+    stt?: SttProvider;
+    sttPrompt?: string;
+    syncState?: (state: S) => unknown;
+    systemPrompt: string;
+    text?: true;
+    toolChoice?: ToolChoice;
+    tools: Readonly<Record<string, ToolDef<ToolInputSchema, NoInfer<S>>>>;
+    tts?: TtsProvider;
+    workflows?: Readonly<Record<string, WorkflowDef>>;
+}
+
 // @public (undocumented)
 export function agentToolsToSchemas(tools: Readonly<Record<string, ToolDef>>): ToolSchema[];
 
@@ -102,6 +127,9 @@ export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s
 
 // @internal
 export function assertSilencePolicy(mode: SessionMode, silenceTimeoutMs: number | undefined, silencePrompt: string | undefined): void;
+
+// @public
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
 
 // @public
 type Db = {
@@ -161,6 +189,9 @@ type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+export function loadToolModules<S = DefaultSessionState>(loaders: ToolModuleLoaders): Promise<ToolRegistry<S>>;
+
+// @public
 type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
@@ -186,6 +217,17 @@ export type PipelineTuning = {
 type PipelineTuningField = keyof typeof PIPELINE_ONLY_TUNING;
 
 // @public
+interface PipelineVoiceTuning {
+    deadAirCoverMs?: number;
+    errorPhrase?: string;
+    interruptionMinDurationMs?: number;
+    minBargeInWords?: number;
+    preemptiveGeneration?: boolean;
+    resumeFalseInterruption?: boolean;
+    startFailurePhrase?: string;
+}
+
+// @public
 interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
@@ -198,6 +240,11 @@ export const ProviderDescriptorSchema: z.ZodObject<{
     kind: z.ZodString;
     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
 }, z.core.$strip>;
+
+// @public
+type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "s2s";
+};
 
 // @public
 export type SessionMode = "s2s" | "pipeline" | "text";
@@ -246,7 +293,18 @@ type StreamOptions = {
 };
 
 // @public
+type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "stt";
+};
+
+// @public
 export function toAgentConfig(source: AgentConfigSource): AgentConfig;
+
+// @public
+type ToolChoice = "auto" | "required" | "none" | {
+    type: "tool";
+    toolName: string;
+};
 
 // @public
 type ToolContext<S = DefaultSessionState> = {
@@ -272,6 +330,18 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, S = DefaultSessionStat
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 
 // @public
+export type ToolModuleLoaders = Readonly<Record<string, () => Promise<unknown>>>;
+
+// @public
+export type ToolModules = Readonly<Record<string, unknown>>;
+
+// @public
+export type ToolRegistry<S = DefaultSessionState> = Readonly<Record<string, ToolDef<ToolInputSchema, S>>>;
+
+// @public
+export function toolRegistry<S = DefaultSessionState>(modules: ToolModules): ToolRegistry<S>;
+
+// @public
 export type ToolSchema = {
     type: "function";
     name: string;
@@ -288,9 +358,17 @@ export const ToolSchemaSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
+type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "tts";
+};
+
+// @public
 type WakeUpOptions = {
     correlationIds?: string[];
 };
+
+// @public
+export function withTools<S>(def: AgentDef<S>, registry: ToolRegistry<S>): AgentDef<S>;
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {

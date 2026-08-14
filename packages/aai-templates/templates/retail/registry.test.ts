@@ -1,6 +1,7 @@
 import { isToolFailure, type ToolContext } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
-import retailAgent from "./agent.ts";
+import { withTemplateTools } from "../../_tool-discovery.ts";
+import authoredAgent from "./agent.ts";
 import { retailSlot } from "./store.ts";
 
 /** Tools that legitimately run before the caller is identified. Everything
@@ -15,7 +16,9 @@ const PUBLIC_TOOLS = new Set([
   "transfer_to_human_agents",
 ]);
 
-const registry = Object.entries(retailAgent.tools ?? {});
+/** The def a deployed agent runs: authored, plus what `tools/` declares. */
+const retailAgent = withTemplateTools("retail", authoredAgent);
+const registry = Object.entries(retailAgent.tools);
 
 let sessionCounter = 0;
 function makeCtx(): ToolContext {

@@ -2,7 +2,7 @@ import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { findItem, retailSlot, retailTool } from "../store.ts";
 
-export const getItemDetails = retailTool({
+export default retailTool({
   name: "get_item_details",
   description:
     "Get one specific item's options, price and availability. Takes an ITEM id, which is not the " +

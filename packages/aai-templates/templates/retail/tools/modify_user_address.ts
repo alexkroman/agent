@@ -3,7 +3,7 @@ import { z } from "zod";
 import { AddressFields, formatAddress, toAddress } from "../address.ts";
 import { authenticatedUser, retailSlot, retailTool } from "../store.ts";
 
-export const modifyUserAddress = retailTool({
+export default retailTool({
   name: "modify_user_address",
   description:
     "Change the customer's default address, used for future orders. Read the new address back and " +

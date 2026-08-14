@@ -38,6 +38,7 @@
  *   would happily resolve any package in the server's `node_modules`.
  */
 
+import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { build, type PluginOption, type Rollup } from "vite";
@@ -91,19 +92,81 @@ export type BuildWorkerOptions = {
  */
 const WRAPPER_ENTRY_REL = path.join(".aai", "worker-entry.ts");
 
-function wrapperEntrySource(runtime: boolean, workflows: WorkflowBundleOutput | undefined): string {
+/** Extensions a tool module may be authored in (mirrors the SDK's registry). */
+const TOOL_MODULE_EXT_RE = /\.(?:m?ts|tsx)$/;
+
+/** A co-located spec is not a tool. */
+const TOOL_SPEC_RE = /\.(?:test|spec)\.[^.]+$/;
+
+/**
+ * The project's `tools/` directory, as file names relative to it.
+ *
+ * **This is the whole of "discovery", and it happens HERE because the guest has
+ * no filesystem.** A sandbox is handed one ESM string, so the only place a
+ * directory can be turned into modules is where the bundle is assembled — the
+ * same lowering eve does (`readdir` → static import list, which the bundler then
+ * follows). The names are validated by `toolRegistry` at bundle-evaluation time
+ * rather than here, so one implementation owns the rules.
+ *
+ * Sorted, so the emitted entry is byte-stable for a given directory: an entry
+ * that reordered per readdir would change the bundle hash for no reason.
+ */
+async function discoverToolFiles(cwd: string): Promise<string[]> {
+  // `Dirent[]` explicitly: inferring from `fs.readdir` picks its Buffer
+  // overload, which the declaration emit rejects even though `tsc --noEmit`
+  // on the looser config does not.
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(path.join(cwd, "tools"), { withFileTypes: true });
+  } catch (err) {
+    // No tools/ directory is normal — a workflow app has none, and a voice
+    // agent may declare everything inline. Anything else is worth surfacing.
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw err;
+  }
+  return entries
+    .filter((e) => e.isFile() && TOOL_MODULE_EXT_RE.test(e.name) && !TOOL_SPEC_RE.test(e.name))
+    .map((e) => e.name)
+    .sort();
+}
+
+function wrapperEntrySource(
+  runtime: boolean,
+  workflows: WorkflowBundleOutput | undefined,
+  toolFiles: readonly string[],
+): string {
+  // `import * as` rather than a default import per file: the namespace is what
+  // `toolRegistry` validates, so a file exporting the wrong thing (or nothing)
+  // is a named build error instead of an `undefined` in the map.
+  const toolImports = toolFiles
+    .map((file, i) => `import * as __aaiTool${i} from "../tools/${file}";`)
+    .join("\n");
+  const toolEntries = toolFiles
+    .map((file, i) => `  ${JSON.stringify(`tools/${file}`)}: __aaiTool${i},`)
+    .join("\n");
+
   return `import def from "../agent.ts";
-import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
+import { agentToolsToSchemas, toAgentConfig, toolRegistry, withTools } from "@alexkroman1/aai/manifest";
 ${runtime ? `import { createRuntime } from "@alexkroman1/aai/runtime";` : ""}
-export default def;
+${toolImports}
+// A tool's name is its file name. The map is built here rather than written in
+// agent.ts, so a file that exists is a tool the model can call — there is no
+// registration step to forget.
+const __aaiAgent = withTools(
+  def,
+  toolRegistry({
+${toolEntries}
+  }),
+);
+export default __aaiAgent;
 export const __aaiConfig = {
-  ...toAgentConfig(def),
-  toolSchemas: agentToolsToSchemas(def.tools ?? {}),
+  ...toAgentConfig(__aaiAgent),
+  toolSchemas: agentToolsToSchemas(__aaiAgent.tools ?? {}),
 };
 ${
   runtime
     ? `export const __aaiCreateRuntime = (opts: Record<string, unknown>) =>
-  createRuntime({ ...opts, agent: def });
+  createRuntime({ ...opts, agent: __aaiAgent });
 `
     : ""
 }${
@@ -134,7 +197,7 @@ export async function buildWorker(cwd: string, opts: BuildWorkerOptions = {}): P
   await fs.mkdir(path.dirname(wrapperPath), { recursive: true });
   await fs.writeFile(
     wrapperPath,
-    wrapperEntrySource(opts.runtime !== false, opts.workflows),
+    wrapperEntrySource(opts.runtime !== false, opts.workflows, await discoverToolFiles(cwd)),
     "utf-8",
   );
 

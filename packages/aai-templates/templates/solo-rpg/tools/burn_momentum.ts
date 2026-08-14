@@ -8,7 +8,7 @@ import {
   revertConsequences,
 } from "../shared.ts";
 
-export const burnMomentum = tool({
+export default tool({
   description:
     "Burn momentum to upgrade the most recent action roll. Only valid when current momentum beats the roll's challenge dice (both dice for a full upgrade, one for Miss to Weak Hit). Reverts the original result's consequences, applies the upgraded result, and resets momentum to +2.",
   async execute(_args, ctx) {

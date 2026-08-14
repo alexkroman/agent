@@ -2,7 +2,7 @@ import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import { getApplicableProtocols, INCIDENT_TYPES, SEVERITIES } from "../shared.ts";
 
-export const opsProtocols = tool({
+export default tool({
   description: "Look up step-by-step response protocols for a given incident type and severity.",
   inputSchema: z.object({
     incidentType: z.enum(INCIDENT_TYPES).describe("Type of incident"),

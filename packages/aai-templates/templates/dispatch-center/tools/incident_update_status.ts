@@ -2,7 +2,7 @@ import { isToolFailure, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import { assertNotResolved, dispatchSlot, findIncident, logEvent } from "../shared.ts";
 
-export const incidentUpdateStatus = tool({
+export default tool({
   description: "Update an incident's status (en_route, on_scene, resolved, escalated).",
   inputSchema: z.object({
     incidentId: z.string().max(20).describe("The incident ID"),

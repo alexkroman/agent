@@ -11,7 +11,7 @@ import { noteRevision, planSlot } from "../shared.ts";
  * started at once would each write over the other's. Serializing per session is
  * the whole reason the method exists.
  */
-export const startPlan = planSlot.updateTool({
+export default planSlot.updateTool({
   description:
     "Draft a plan for what the caller wants to get done. Use this once you " +
     "understand the objective. Read the steps back to them afterwards.",

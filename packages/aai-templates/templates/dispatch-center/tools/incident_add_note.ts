@@ -2,7 +2,7 @@ import { isToolFailure, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import { dispatchSlot, findIncident, logEvent } from "../shared.ts";
 
-export const incidentAddNote = tool({
+export default tool({
   description: "Add a situational update note to an incident's timeline.",
   inputSchema: z.object({
     incidentId: z.string().max(20).describe("The incident ID"),
