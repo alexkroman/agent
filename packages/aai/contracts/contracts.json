@@ -28,6 +28,11 @@
     "supported": [1],
     "dropped": {}
   },
+  "spoken": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "state": {
     "current": 7,
     "supported": [1, 2, 3, 4, 5, 6, 7],
@@ -44,8 +49,8 @@
     "dropped": {}
   },
   "testing": {
-    "current": 9,
-    "supported": [1, 2, 3, 4, 5, 6, 7, 8, 9],
+    "current": 10,
+    "supported": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
     "dropped": {}
   },
   "tool": {

@@ -27,10 +27,12 @@
 
 import type { WorkflowClient, WorkflowRunSnapshot } from "@alexkroman1/aai";
 import {
-  stubGateway as createStubGateway,
+  createProgressStream,
+  createRunSnapshot,
   createStubWorkflows,
   createToolContext,
 } from "@alexkroman1/aai/testing";
+import { installStubGateway as stubGateway } from "@alexkroman1/aai/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { createHook, type Hook, sleep } from "workflow";
 import agentDef, { recap } from "./agent.ts";
@@ -71,29 +73,9 @@ function stubWorkflows(runs: WorkflowRunSnapshot[] = []): WorkflowClient {
     wakeUp: vi.fn(async () => 0),
     // A tail of 0 means "one line written", which is the case the tools read.
     streamTail: vi.fn(async () => 0),
-    stream: vi.fn(async () => lineStream([])),
+    stream: vi.fn(async () => createProgressStream([])),
     listing: () => [{ name: "recap" }],
   });
-}
-
-/** What a run's progress channel looks like from the read side. */
-function lineStream(lines: readonly string[]): ReadableStream<unknown> {
-  return new ReadableStream<unknown>({
-    start(controller) {
-      for (const line of lines) controller.enqueue(line);
-      controller.close();
-    },
-  });
-}
-
-function snapshot(over: Partial<WorkflowRunSnapshot> = {}): WorkflowRunSnapshot {
-  return {
-    runId: "wrun_1",
-    workflow: "recap",
-    createdAt: Date.UTC(2026, 7, 12),
-    status: "running",
-    ...over,
-  } as WorkflowRunSnapshot;
 }
 
 /** A finished recap, as the workflow's output reaches the tools. */
@@ -180,7 +162,7 @@ describe("request_recap", () => {
     // Temporal's workflow-id reuse policy, spelled with what this SDK has. The
     // failure it prevents is not tidiness: a caller who asks twice would
     // otherwise pay for the same recording being transcribed twice.
-    const workflows = stubWorkflows([snapshot({ status: "running" })]);
+    const workflows = stubWorkflows([createRunSnapshot({ workflow: "recap", status: "running" })]);
     const result = await agentDef.tools.request_recap?.execute(
       {},
       createToolContext({ workflows }),
@@ -190,7 +172,9 @@ describe("request_recap", () => {
   });
 
   test("starts a fresh run once the previous one is terminal", async () => {
-    const workflows = stubWorkflows([snapshot({ status: "completed", output: finishedOutput() })]);
+    const workflows = stubWorkflows([
+      createRunSnapshot({ workflow: "recap", status: "completed", output: finishedOutput() }),
+    ]);
     const result = await agentDef.tools.request_recap?.execute(
       {},
       createToolContext({ workflows }),
@@ -210,7 +194,9 @@ describe("recap_status", () => {
   test("reads back the ONE-SENTENCE version of a finished recap", async () => {
     // The output carries a `spoken` field for exactly this: the headline and
     // three points are for an eye, and this tool answers an ear.
-    const workflows = stubWorkflows([snapshot({ status: "completed", output: finishedOutput() })]);
+    const workflows = stubWorkflows([
+      createRunSnapshot({ workflow: "recap", status: "completed", output: finishedOutput() }),
+    ]);
     const result = (await agentDef.tools.recap_status?.execute(
       {},
       createToolContext({ workflows }),
@@ -222,7 +208,11 @@ describe("recap_status", () => {
     // The caller who never got round to answering should hear that the
     // transcript is gone, not just the recap.
     const runs = [
-      snapshot({ status: "completed", output: finishedOutput({ kept: false, answered: false }) }),
+      createRunSnapshot({
+        workflow: "recap",
+        status: "completed",
+        output: finishedOutput({ kept: false, answered: false }),
+      }),
     ];
     const result = (await agentDef.tools.recap_status?.execute(
       {},
@@ -232,7 +222,9 @@ describe("recap_status", () => {
   });
 
   test("reports a live run as still working rather than as empty", async () => {
-    const ctx = createToolContext({ workflows: stubWorkflows([snapshot({ status: "running" })]) });
+    const ctx = createToolContext({
+      workflows: stubWorkflows([createRunSnapshot({ workflow: "recap", status: "running" })]),
+    });
     const result = (await agentDef.tools.recap_status?.execute({}, ctx)) as { runs: string[] };
     expect(result.runs[0]).toContain("Still working");
   });
@@ -241,7 +233,9 @@ describe("recap_status", () => {
     // The saga's whole point, said out loud: the run compensated before it
     // failed, so there is nothing left on the account and nothing for the caller
     // to chase.
-    const runs = [snapshot({ status: "failed", error: "provider unavailable" })];
+    const runs = [
+      createRunSnapshot({ workflow: "recap", status: "failed", error: "provider unavailable" }),
+    ];
     const result = (await agentDef.tools.recap_status?.execute(
       {},
       createToolContext({ workflows: stubWorkflows(runs) }),
@@ -261,8 +255,8 @@ describe("recap_status", () => {
 
 describe("recap_progress", () => {
   test("reads the run's own progress line rather than its status", async () => {
-    const workflows = stubWorkflows([snapshot({ status: "running" })]);
-    vi.mocked(workflows.stream).mockResolvedValue(lineStream(["Transcript processing."]));
+    const workflows = stubWorkflows([createRunSnapshot({ workflow: "recap", status: "running" })]);
+    vi.mocked(workflows.stream).mockResolvedValue(createProgressStream(["Transcript processing."]));
     const result = await agentDef.tools.recap_progress?.execute(
       {},
       createToolContext({ workflows }),
@@ -272,8 +266,8 @@ describe("recap_progress", () => {
 
   test("asks for the LAST line, not the whole log", async () => {
     // Every poll narrates, so a twenty-minute run's whole log is eighty lines.
-    const workflows = stubWorkflows([snapshot({ status: "running" })]);
-    vi.mocked(workflows.stream).mockResolvedValue(lineStream(["a"]));
+    const workflows = stubWorkflows([createRunSnapshot({ workflow: "recap", status: "running" })]);
+    vi.mocked(workflows.stream).mockResolvedValue(createProgressStream(["a"]));
     await agentDef.tools.recap_progress?.execute({}, createToolContext({ workflows }));
     expect(workflows.stream).toHaveBeenCalledWith("wrun_1", { startIndex: -1 });
   });
@@ -282,7 +276,7 @@ describe("recap_progress", () => {
     // Not a shortcut: an empty progress channel is never closed, so reading one
     // waits for a line that arrives whenever the next step writes — i.e. the
     // tool hangs instead of answering.
-    const workflows = stubWorkflows([snapshot({ status: "running" })]);
+    const workflows = stubWorkflows([createRunSnapshot({ workflow: "recap", status: "running" })]);
     vi.mocked(workflows.streamTail).mockResolvedValue(-1);
     const result = await agentDef.tools.recap_progress?.execute(
       {},
@@ -329,7 +323,7 @@ describe("keep_transcript — the signal", () => {
 
 describe("cancel_recap", () => {
   test("cancels the live run", async () => {
-    const workflows = stubWorkflows([snapshot({ status: "running" })]);
+    const workflows = stubWorkflows([createRunSnapshot({ workflow: "recap", status: "running" })]);
     const result = await agentDef.tools.cancel_recap?.execute({}, createToolContext({ workflows }));
     expect(workflows.cancel).toHaveBeenCalledWith("wrun_1");
     expect(result).toMatchObject({ cancelled: true });
@@ -340,7 +334,7 @@ describe("cancel_recap", () => {
     // cancellation into the workflow, so the saga's catch runs; `cancel` here
     // stops replaying the run, so the compensations never fire. A template that
     // implied otherwise would be teaching the wrong thing.
-    const workflows = stubWorkflows([snapshot({ status: "running" })]);
+    const workflows = stubWorkflows([createRunSnapshot({ workflow: "recap", status: "running" })]);
     const result = (await agentDef.tools.cancel_recap?.execute(
       {},
       createToolContext({ workflows }),
@@ -349,7 +343,9 @@ describe("cancel_recap", () => {
   });
 
   test("a run that had already finished is reported honestly, not as a failure", async () => {
-    const workflows = stubWorkflows([snapshot({ status: "completed", output: finishedOutput() })]);
+    const workflows = stubWorkflows([
+      createRunSnapshot({ workflow: "recap", status: "completed", output: finishedOutput() }),
+    ]);
     vi.mocked(workflows.cancel).mockResolvedValue(false);
     const result = await agentDef.tools.cancel_recap?.execute({}, createToolContext({ workflows }));
     expect(result).toMatchObject({ cancelled: false, note: "That one had already finished." });
@@ -501,11 +497,6 @@ describe("summarize", () => {
    * the same OpenAI-shaped envelope, and this one records the prompt, the system
    * instruction and the headers besides.
    */
-  function stubGateway(content: string) {
-    const gateway = createStubGateway(content);
-    vi.stubGlobal("fetch", gateway.fetch);
-    return gateway.calls;
-  }
 
   test("returns the recap the model produced, with the recording's length in minutes", async () => {
     stubGateway('{"headline":"Smoke","points":["a","b","c"],"spoken":"Smoke drifted east."}');

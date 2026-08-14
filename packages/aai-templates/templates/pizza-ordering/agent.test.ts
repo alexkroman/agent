@@ -1,5 +1,5 @@
-import type { ToolContext, ToolDef } from "@alexkroman1/aai";
-import { createToolContext } from "@alexkroman1/aai/testing";
+import type { ToolContext } from "@alexkroman1/aai";
+import { createToolContext, runTool, toolOf } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import agentDef from "./agent.ts";
 import {
@@ -22,15 +22,11 @@ function makeCtx(sessionId?: string) {
   return { ctx, sent: ctx.sent };
 }
 
-function getTool(name: string): ToolDef {
-  const def = agentDef.tools[name];
-  if (!def) throw new Error(`tool ${name} not defined on agent`);
-  return def;
-}
-
-async function run(name: string, args: Record<string, unknown>, ctx: ToolContext) {
-  return await getTool(name).execute(args, ctx);
-}
+/** A tool by the name the model calls it by, bound to this agent. The lookup
+ *  and its "no such tool" message are `runTool`'s (`@alexkroman1/aai/testing`);
+ *  what is local is only which agent they run against. */
+const run = (name: string, args: Record<string, unknown>, ctx: ToolContext<StateSlot>) =>
+  runTool(agentDef, name, args, ctx);
 
 const margherita: Omit<Pizza, "id"> = {
   size: "medium",
@@ -71,7 +67,7 @@ describe("pricing (shared.ts)", () => {
   });
 
   test("add_pizza schema defaults quantity to 1 and rejects non-positive quantities", async () => {
-    const schema = getTool("add_pizza").inputSchema;
+    const schema = toolOf(agentDef, "add_pizza").inputSchema;
     if (!schema) throw new Error("add_pizza has no input schema");
     // Validate through the Standard Schema contract — the vendor-neutral
     // interface every inputSchema carries.

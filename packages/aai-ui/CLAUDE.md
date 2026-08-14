@@ -31,11 +31,11 @@ new one fails `pnpm check:api-contracts` until it joins one:
 | --- | --- |
 | `client` | the voice mount — `client()`, its two config tiers, the handle |
 | `page` | the workflow-app mount — `page()`, with no session under it |
-| `session` | the live call: `SessionCore`, the snapshot, `useSession`, the errors, `VOICE_CAPTURE_CONSTRAINTS` |
+| `session` | the live call: `SessionCore`, the snapshot, `useSession`, `useUserTranscript`, the errors, `VOICE_CAPTURE_CONSTRAINTS` |
 | `hooks` | what a client reads off the AGENT: `useAgentState`, the two tool hooks, `useEvent` |
 | `components` | the design system a custom chrome is assembled from |
 | `forms` | `<Form>`, the field components, `<WorkflowFields>` |
-| `workflow` | `createWorkflowApi`, `useWorkflowRun`, `useWorkflowProgress`, `useWorkflowSubmit`, `useWorkflows`. At **epoch 5** since the requests moved to the SDK: `WorkflowApi` is re-exported from `@alexkroman1/aai/workflow-api` rather than declared here, which adds no name and makes a client from either factory the same type |
+| `workflow` | `createWorkflowApi`, `useWorkflowRun`, `useWorkflowProgress`, `<WorkflowProgress>`, `useWorkflowSubmit`, `useWorkflows`. At **epoch 5** since the requests moved to the SDK: `WorkflowApi` is re-exported from `@alexkroman1/aai/workflow-api` rather than declared here, which adds no name and makes a client from either factory the same type |
 | `theme` | `ClientTheme` + `useTheme` — its own contract because a token is a name in somebody's CSS |
 | `client-dir` | `defaultClientDir()`, the one export a SERVER calls |
 
@@ -106,6 +106,25 @@ without changing the dependency array); and it needs a synthetic dependency
 The one constraint callers get wrong: the outer container **must have a bounded
 height** (`flex-1 min-h-0`, `h-full`, a fixed height). An unbounded one grows
 with its content and never scrolls, so nothing pins.
+
+## `null` and `""` are different turns (`useUserTranscript`)
+
+`SessionSnapshot.userTranscript` is `string | null`, and both falsy values mean
+something: `null` is silence, `""` is **speech detected with no words back yet**
+— where a live session sits for a few hundred milliseconds at the start of every
+turn. Read as one falsy check they collapse, and the live-transcript row then
+appears a beat late, on the first word rather than on the first sound, which is
+the moment it exists for.
+
+`useUserTranscript()` returns that as two named things — `speaking` (render on
+this) and `text` (`TRANSCRIBING_PLACEHOLDER` while there are no words) — plus
+the raw `partial` for a chrome supplying its own placeholder. The three
+custom-chrome templates had each written the ternary by hand, re-deriving a
+protocol distinction from the type; nothing told them.
+
+It subscribes narrowly, so a component using it re-renders at STT-partial rate.
+That is what it is for and what a whole-page `useSession()` should not do —
+`ChatView`'s own comment makes the same point about the shell.
 
 ## `useAgentState` has a fallback overload
 
@@ -398,12 +417,21 @@ best-effort deliberately: a run must not fail because its narration could not be
 written, and that is also what keeps a step callable from a spec, where there is
 no run and `getWritable()` throws by design.
 
-`link-digest` renders the newest line only (a compact status); `transcription-desk`
-renders the whole log, because its fan-out is where the history is worth seeing.
-Both render TEXT rather than a list of elements — progress lines are append-only
-and segments legitimately produce identical text, so there is no stable per-line
-key, and joining sidesteps that instead of suppressing the lint rule that asks
-about it.
+**`<WorkflowProgress runId>` is the rendered half**, and it holds the three
+rules a page kept re-deriving: render nothing until the agent HAS a stream and
+the run has written to it (`supported` is what separates those two), render the
+lines as TEXT rather than as elements — they are append-only and legitimately
+repeat, so there is no stable per-line key, and joining sidesteps that instead
+of suppressing the lint rule that asks about it — and let them replay. Two
+templates had it byte-identical, both comments included. `className` REPLACES
+the default rather than extending it, so a custom chrome is not fighting a
+default it did not ask for, and `placeholder` covers the pre-first-line frame.
+
+`link-digest` deliberately keeps the raw hook: it renders the newest line only
+(a compact status), which is what `latest` is for, and it is this package's
+example of the primitives underneath. `transcription-desk` and `redline` render
+the whole log through the component, because their fan-out and their rounds are
+where the history is worth seeing.
 
 `ctx.workflows.start()` only covers the case where a VOICE TURN starts a run; a
 page and a programmatic caller (`aai workflow`, a script, a cron job) had no

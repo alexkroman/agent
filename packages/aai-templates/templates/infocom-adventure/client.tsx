@@ -1,6 +1,6 @@
 import "@alexkroman1/aai-ui/styles.css";
 import type { ChatMessage } from "@alexkroman1/aai-ui";
-import { AutoScroll, client, useSession } from "@alexkroman1/aai-ui";
+import { AutoScroll, client, useSession, useUserTranscript } from "@alexkroman1/aai-ui";
 
 const CSS = `
 @keyframes ic-flicker {
@@ -54,6 +54,10 @@ const CYAN = "#00ccff";
 
 function InfocomAdventure() {
   const session = useSession();
+  // `speaking` and `text` in place of a `userTranscript !== null` check: `null`
+  // is silence and `""` is speech detected with no words back yet, and reading
+  // them as one falsy value hides the indicator at the start of every turn.
+  const { speaking, text: userTranscript } = useUserTranscript();
 
   const stateLabel =
     session.state === "listening"
@@ -192,12 +196,12 @@ function InfocomAdventure() {
                 {msg.content}
               </div>
             ))}
-            {session.userTranscript !== null && (
+            {speaking && (
               <div
                 className="ic-transcript italic"
                 style={{ color: "#007a1e", textShadow: "0 0 5px rgba(0,255,65,0.15)" }}
               >
-                {session.userTranscript === "" ? "..." : session.userTranscript}
+                {userTranscript}
               </div>
             )}
           </AutoScroll>

@@ -28,6 +28,19 @@ export {
   type StubGatewayOptions,
   stubGateway,
 } from "./testing-gateway.ts";
+export {
+  type StubGenerate,
+  type StubGenerateCall,
+  type StubGenerateReply,
+  type StubGenerateRoute,
+  stubGenerate,
+} from "./testing-generate.ts";
+export { runTool, type ToolBearingAgent, toolOf } from "./testing-tools.ts";
+export {
+  createProgressStream,
+  createRunSnapshot,
+  type RunSnapshotOverrides,
+} from "./testing-workflows.ts";
 
 /** One `ctx.send(event, data)` call, as recorded by {@link createToolContext}. */
 export interface SentEvent {

@@ -34,9 +34,9 @@ import {
   page,
   SubmitButton,
   TextAreaField,
-  useWorkflowProgress,
   useWorkflowSubmit,
   WorkflowFields,
+  WorkflowProgress,
   type WorkflowRun,
 } from "@alexkroman1/aai-ui";
 import type { redline } from "./agent.ts";
@@ -102,35 +102,6 @@ function RedlineDesk() {
   );
 }
 
-/**
- * The run's own narration, oldest first.
- *
- * The complement of the status line: a run is `running` for its whole life, so
- * a one-round redline and a three-round one look identical while they happen.
- * These lines come from the run itself (`report()` in `workflows/redline.ts`),
- * which is the only channel a workflow has before it produces an output — and
- * they REPLAY, so a reload mid-run catches up rather than starting from
- * whatever arrives next.
- */
-function ProgressLog({ runId }: { runId: string }) {
-  const { progress, streaming, supported } = useWorkflowProgress(runId);
-
-  // `supported` is what keeps this from being an empty box forever on an agent
-  // deployed before progress streams existed: "wrote nothing yet" and "serves
-  // no stream" are indistinguishable from the list alone.
-  if (!supported || progress.length === 0) return null;
-
-  // Rendered as TEXT rather than a list of elements: the lines are append-only
-  // and two rounds legitimately produce identical text, so there is no stable
-  // per-line key to give React.
-  return (
-    <pre className="whitespace-pre-wrap border-l pl-4 text-xs opacity-70">
-      {progress.join("\n")}
-      {streaming && "\n…"}
-    </pre>
-  );
-}
-
 /** The critique trail: what each round objected to, and what the score was. */
 function Rounds({ rounds }: { rounds: Redline["rounds"] }) {
   if (rounds.length === 0) return null;
@@ -166,7 +137,13 @@ function RunPanel({ run, onClear }: { run: WorkflowRun<Redline>; onClear: () => 
         </button>
       </div>
 
-      <ProgressLog runId={run.runId} />
+      {/* The run's own narration — the complement of the status line, which is
+          `running` for a run's whole life, so a one-round redline and a
+          three-round one look identical while they happen. These lines come from
+          the run itself (`report()` in `workflows/redline.ts`), and they REPLAY,
+          so a reload mid-run catches up rather than starting from whatever
+          arrives next. */}
+      <WorkflowProgress runId={run.runId} />
 
       {/* Discriminated on `status`, so `output` and `error` are reachable
           without a cast. */}

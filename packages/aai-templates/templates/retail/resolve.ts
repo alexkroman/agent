@@ -1,4 +1,15 @@
-import { isToolFailure, type ToolFailure } from "@alexkroman1/aai";
+/**
+ * Spoken references to this store's things.
+ *
+ * The generic half — reading digits out of an utterance, reading a position out
+ * of one, and the never-guess contract that turns a list of candidates into one
+ * of them or into a failure that lists them — is `resolveOne`, `spokenDigits`
+ * and `spokenOrdinal` (`@alexkroman1/aai`). What stays here is the STORE's
+ * vocabulary: what an order id looks like when a caller reads it aloud, which
+ * words name a status, and what a variant's options are matched against.
+ */
+
+import { isToolFailure, resolveOne, spokenDigits, type ToolFailure } from "@alexkroman1/aai";
 import type { Order, OrderStatus, Product, RetailState } from "./shared.ts";
 import { authenticatedUser } from "./store.ts";
 
@@ -10,26 +21,12 @@ export function normalizeOrderId(spoken: string): string {
 
 /** Item ids are 10 digits; callers read them in groups. */
 export function normalizeItemId(spoken: string): string {
-  return spoken.replace(/\D/g, "");
+  return spokenDigits(spoken);
 }
 
 /** A digit run long enough to be an id rather than an ordinal. */
 const LOOKS_LIKE_ORDER_ID = /\d[\d\s-]{5,}/;
 const LOOKS_LIKE_ITEM_ID = /(?:\d[\s-]*){8,}/;
-
-const ORDINALS: Record<string, number> = {
-  first: 0,
-  "1st": 0,
-  second: 1,
-  "2nd": 1,
-  third: 2,
-  "3rd": 2,
-  fourth: 3,
-  "4th": 3,
-  fifth: 4,
-  "5th": 4,
-  last: -1,
-};
 
 /** Spoken status words → the statuses they select. `pending` deliberately
  *  excludes `pending (item modified)`, which no tool will accept anyway. */
@@ -72,6 +69,9 @@ export function resolveOrder(state: RetailState, spoken: string): Order | ToolFa
   const statusEntry = STATUS_WORDS.find(([word]) => text.includes(word));
   const candidates = statusEntry ? owned.filter((o) => statusEntry[1].includes(o.status)) : owned;
 
+  // The empty case is the store's to answer, not `resolveOne`'s: "no cancelled
+  // order" is only useful said alongside the statuses this customer DOES have,
+  // which is what lets the model ask its next question without another tool call.
   if (candidates.length === 0) {
     const have = [...new Set(owned.map((o) => o.status))].join(", ");
     return {
@@ -79,28 +79,9 @@ export function resolveOrder(state: RetailState, spoken: string): Order | ToolFa
     };
   }
 
-  const ordinalWord = Object.keys(ORDINALS).find((word) => new RegExp(`\\b${word}\\b`).test(text));
-  if (ordinalWord) {
-    const index = ORDINALS[ordinalWord] ?? 0;
-    const picked = index === -1 ? candidates.at(-1) : candidates[index];
-    if (!picked) {
-      return {
-        error: `There is no ${ordinalWord} such order — the customer has ${candidates.length}: ${candidates
-          .map(describeOrder)
-          .join("; ")}.`,
-      };
-    }
-    return picked;
-  }
-
-  const only = candidates[0];
-  if (candidates.length === 1 && only) return only;
-
-  return {
-    error: `That is ambiguous — ${candidates.length} orders match. Ask which one: ${candidates
-      .map(describeOrder)
-      .join("; ")}.`,
-  };
+  // A position, then exactly-one, then an ambiguity that lists them — and never
+  // a guess, because the consequence here is cancelling the wrong order.
+  return resolveOne(candidates, spoken, { label: "order", describe: describeOrder });
 }
 
 /**
@@ -127,33 +108,16 @@ export function resolveVariantId(
     return itemId;
   }
 
-  const text = spoken.toLowerCase();
   const pool = Object.values(product.variants).filter((v) => !opts.availableOnly || v.available);
 
-  let best = 0;
-  const scored = pool.map((variant) => {
-    const score = Object.values(variant.options).filter((value) =>
-      text.includes(value.toLowerCase()),
-    ).length;
-    best = Math.max(best, score);
-    return { variant, score };
+  // A variant is named by its OPTIONS ("the blue medium"), so the score is how
+  // many of them the caller said. Everything after that — no match, one match, a
+  // tie — is `resolveOne`'s, and a tie is answered rather than broken.
+  const picked = resolveOne(pool, spoken, {
+    label: `${product.name} option`,
+    describe: (v) => `${v.item_id} (${Object.values(v.options).join(", ")})`,
+    score: (variant, text) =>
+      Object.values(variant.options).filter((value) => text.includes(value.toLowerCase())).length,
   });
-
-  if (best === 0) {
-    return {
-      error: `No ${product.name} option matches "${spoken}". Options available: ${pool
-        .map((v) => `${v.item_id} (${Object.values(v.options).join(", ")})`)
-        .join("; ")}.`,
-    };
-  }
-
-  const winners = scored.filter((s) => s.score === best);
-  const winner = winners[0]?.variant;
-  if (winners.length === 1 && winner) return winner.item_id;
-
-  return {
-    error: `"${spoken}" matches ${winners.length} ${product.name} options. Ask which: ${winners
-      .map((s) => `${s.variant.item_id} (${Object.values(s.variant.options).join(", ")})`)
-      .join("; ")}.`,
-  };
+  return isToolFailure(picked) ? picked : picked.item_id;
 }

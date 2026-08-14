@@ -17,7 +17,7 @@
  * of that lives.
  */
 
-import { stubGateway as createStubGateway } from "@alexkroman1/aai/testing";
+import { installStubGateway as stubGateway } from "@alexkroman1/aai/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { FatalError } from "workflow";
 import agentDef, { MAX_ROUNDS, redline } from "./agent.ts";
@@ -38,19 +38,6 @@ const INPUT: RedlineInput = {
   rounds: 2,
   mustCover: ["what to do about it", "how to raise the cap"],
 };
-
-/**
- * The SDK's fake gateway, installed.
- *
- * The fake is `@alexkroman1/aai/testing`'s; what stays here is the
- * INSTALLATION, because the lifetime of a global stub is vitest's business and
- * that helper deliberately carries no test-runner dependency.
- */
-function stubGateway(content: string, status = 200) {
-  const gateway = createStubGateway(content, { status });
-  vi.stubGlobal("fetch", gateway.fetch);
-  return gateway.calls;
-}
 
 // ─── 1. The declaration ──────────────────────────────────────────────────────
 

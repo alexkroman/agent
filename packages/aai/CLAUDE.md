@@ -77,7 +77,8 @@ of subpath exports in `aai/package.json`:
 | Import path | Resolves to | What it contains |
 | --- | --- | --- |
 | `@alexkroman1/aai` | `packages/aai/index.ts` | The AUTHORING surface, and only that: `agent()`/`tool()`/`sessionSlot()`/`workflow()`, the types they take and return, `assemblyAIPipeline()`/`assemblyAIS2s()`, and the `DEFAULT_*` constants that document an `agent()` field. Eight modules by `export *`, plus NAMED subsets of `sdk/constants.ts` and `sdk/utils.ts` — see "The root barrel is curated" below |
-| `@alexkroman1/aai/testing` | `sdk/testing.ts` (direct) | `createToolContext(overrides?)` — a full `ToolContext` for testing a tool's `execute` in isolation, with inert defaults, a recording `send` (`ctx.sent`), and a distinct `sessionId` per call — plus `createUnusedDb()`, the rejecting `db` it defaults to, and `createStubWorkflows(overrides?)`, the same thing for `ctx.workflows` (see its own doc for why a hand-written stub of that client goes stale). PUBLISHED rather than an internal `_test-utils.ts` because the audience is an agent author's own project, which is also why it carries no vitest dependency (`send` records into an array; pass `vi.fn()` to override). See the `_test-utils.ts` section of the root guide |
+| `@alexkroman1/aai/testing` | `sdk/testing.ts` (direct) | `createToolContext(overrides?)` — a full `ToolContext` for testing a tool's `execute` in isolation, with inert defaults, a recording `send` (`ctx.sent`), and a distinct `sessionId` per call — plus `createUnusedDb()`, the rejecting `db` it defaults to, and `createStubWorkflows(overrides?)`, the same thing for `ctx.workflows` (see its own doc for why a hand-written stub of that client goes stale). Then the fakes a tool's COLLABORATORS are driven by: `stubGenerate(script)` for `ctx.generate` (routed by system prompt — the tool-side twin of `stubGateway`, which fakes the same thing for a step), `stubGateway(replies)` and `stubUploads(files)`, `createRunSnapshot`/`createProgressStream` for the workflow fixtures, and `toolOf`/`runTool` for reaching a tool by the name the model calls it by. PUBLISHED rather than an internal `_test-utils.ts` because the audience is an agent author's own project, which is also why it carries no vitest dependency (`send` records into an array; pass `vi.fn()` to override). See the `_test-utils.ts` section of the root guide |
+| `@alexkroman1/aai/testing/vitest` | `sdk/testing-vitest.ts` (direct) | `installStubGateway(replies, opts?)` — the fake above, installed as the global `fetch`, returning its call log. The one place a test-runner dependency is allowed, so the rule the subpath above states stays true: `vitest` is an OPTIONAL peer, and importing THIS is what pulls it. A helper belongs here only when its remaining content is the installation — the fake itself stays framework-agnostic next door |
 | `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | The zod-free half of the SDK, which is what makes it the CLI's import path (`p-timeout`, 2.4 KB with no dependencies and backing the lock's acquire deadline, is the one measured exception). Four groups: the tool-code helpers the root also re-exports (`errorMessage`, `errorDetail`, `safeJsonParse`, `toolFailure`/`isToolFailure`, `pushCapped`, `createKeyedLock`/`withLock`); the STEP surface, which a `workflows/*.ts` module imports from HERE rather than the root because it is bundled separately and the root barrel's graph would ride into the step bundle — `mapInBatches`, `stepEnv`/`requireStepEnv` (the agent env a step is handed no context to reach), `stepGenerate` (`ctx.generate`'s counterpart, one `fetch` to the LLM gateway on the agent's own key, since the AI SDK would be megabytes in a ~7 KB artifact) `stepGenerateJson`/`stripJsonFence` (the same call for a reply that must be a SHAPE, validated against a Standard Schema, still zod-free via `sdk/standard-schema.ts`) and **`stepFetch`** + `multipartBody` (a step's HTTP, HTTP/1.1-pinned: `fetch` speaks h2, and a fan-out on one connection turns a rate limit into an unreadable stream reset); those modules carry the rest; the framework's own wire helpers, `@internal` and root-invisible (`capToolResult`, `toArgsRecord`, `isTextAssetPath`, `normalizeSpeechText`, `omitUndefined`, and `serializeToolFailure` — the pre-serialized `'{"error":…}'` the host emits for a tool that threw, which `isToolFailure` deliberately does NOT narrow); and the two contracts BOTH ends of a platform interaction must derive identically — the slug shape (`VALID_SLUG_RE`, `RESERVED_SLUGS`, `sdk/slug.ts`) and the `aai login` confirmation code (`linkConfirmationCode`, `sdk/cli-link.ts`; the terminal prints it, the studio's approval gate shows it, and the point is that they match) |
 | `@alexkroman1/aai/step-errors` | `sdk/step-errors.ts` (direct) | `toStepError`/`throwStepError`/`throwFatalStepError` — the failure a `"use step"` body throws, classified into the DevKit's `FatalError`/`RetryableError`. Its own subpath because it is the one authoring module importing `workflow`, which `/utils` may not; the module doc carries the rest |
 | `@alexkroman1/aai/slugify` | `host/slugify.ts` (direct) | `slugifyName` — how a human name BECOMES a slug (transliterating, `decamelize: false`), for the CLI, the platform server, and the studio. Separate from the contract in `sdk/slug.ts` on purpose: that one is dependency-free and rides every agent bundle, this one pulls the transliteration tables. Nothing on the SDK hot path may import it |
@@ -725,6 +726,40 @@ A slot is the one typed seam, and `state`/`tool`/`updateTool` mean an agent
 never spells the state shape twice. **See the root guide's
 concurrency-primitives entry** for the whole API and its load-bearing
 properties.
+
+## Resolving what a caller SAID (`sdk/spoken.ts`)
+
+A voice agent's tool arguments do not arrive as ids: "cancel my second order",
+"the blue medium one", "eight six four two, one nine…". `resolveOne(candidates,
+spoken, { describe, label?, score? })` on the root barrel picks one, and the
+interesting part is what it does when the utterance picks NONE or MORE THAN ONE
+— a {@link ToolFailure} that LISTS the candidates, which is the one shape that
+lets the model recover on its own turn instead of acting and apologizing.
+`spokenDigits` and `spokenOrdinal` are the two readings it consults, exported
+because an agent narrowing by its own vocabulary needs them before the pick.
+
+Three things the API is load-bearing about:
+
+- **The ORDER is the contract**, and it is why this is a function rather than a
+  pattern: no candidates → say so; a POSITION ("the second one", "the last one")
+  → take it, since a caller who counts is unambiguous even when nothing else is;
+  the scorer, whose tie FAILS rather than resolving; exactly one left → it;
+  anything else → ambiguous. The caller narrows first, by whatever its domain
+  understands.
+- **`spokenOrdinal` matches on word boundaries and cannot do better.** "firstly"
+  and "the 21st" are correctly not positions; "the first aid kit" IS one, because
+  it really does contain the word "first". That is the reason positions are
+  consulted after the caller's own narrowing rather than before, and
+  `spoken.test.ts` pins the limitation as a test rather than leaving it to be
+  rediscovered.
+- **It is on the ROOT and not `/utils`**, which every other tool-body helper
+  reaches through. `spoken.ts` imports `toolFailure` from `sdk/utils.ts` — the
+  `/utils` subpath module itself — so re-exporting it there would be a cycle.
+  The root is where an agent author works anyway.
+
+`retail`'s `resolve.ts` is the worked example, and the split there is the one to
+copy: the SDK owns never-guess, the template owns what an order id looks like
+when a caller reads it aloud and which words name a status.
 
 ## Storage (`ctx.db`)
 

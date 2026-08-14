@@ -1,6 +1,12 @@
 import "@alexkroman1/aai-ui/styles.css";
 import type { ChatMessage } from "@alexkroman1/aai-ui";
-import { AutoScroll, client, useAgentState, useSession } from "@alexkroman1/aai-ui";
+import {
+  AutoScroll,
+  client,
+  useAgentState,
+  useSession,
+  useUserTranscript,
+} from "@alexkroman1/aai-ui";
 import type { DashboardView, DispatchState, IncidentSummary, Severity, Status } from "./shared.ts";
 import { dashboardView, dispatchSlot } from "./shared.ts";
 
@@ -132,6 +138,10 @@ function IncidentCard({ inc }: { inc: IncidentSummary }) {
 
 function App() {
   const session = useSession();
+  // `speaking` and `text` in place of a `userTranscript !== null` check: `null`
+  // is silence and `""` is speech detected with no words back yet, and reading
+  // them as one falsy value hides the indicator at the start of every turn.
+  const { speaking, text: userTranscript } = useUserTranscript();
   // The agent's own board, projected by `syncState`. This replaced a
   // useState mirror that merged incident deltas out of tool events — the
   // projection is already the complete list, so there is nothing to merge.
@@ -249,7 +259,7 @@ function App() {
               ))}
             </AutoScroll>
 
-            {session.userTranscript !== null && (
+            {speaking && (
               <div
                 className="flex items-center px-4 py-2 text-xs italic min-h-8"
                 style={{ background: "#111827", borderTop: "1px solid #1e293b", color: "#64748b" }}
@@ -258,7 +268,7 @@ function App() {
                   className="w-2.5 h-2.5 rounded-full inline-block mr-2"
                   style={{ background: "#22c55e", animation: "dc-pulse 1.5s ease-in-out infinite" }}
                 />
-                {session.userTranscript === "" ? "..." : session.userTranscript}
+                {userTranscript}
               </div>
             )}
             {session.error && (

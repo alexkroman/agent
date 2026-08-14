@@ -46,10 +46,10 @@ import {
   isTerminal,
   page,
   SubmitButton,
-  useWorkflowProgress,
   useWorkflowRuns,
   useWorkflowSubmit,
   WorkflowFields,
+  WorkflowProgress,
   type WorkflowRun,
 } from "@alexkroman1/aai-ui";
 import { useEffect, useState } from "react";
@@ -176,38 +176,6 @@ function title(run: WorkflowRun<Transcript>): string {
   return run.runId;
 }
 
-/**
- * The run's own narration, oldest first.
- *
- * The complement of `STATUS_LINE` below, and the reason both exist: the status is
- * `running` for the whole fan-out, so a sixty-segment recording and a
- * one-segment recording look identical while they run. These lines come from the
- * run itself (`report()` in `workflows/transcribe.ts`), which is the only channel
- * a workflow has before it produces an output.
- *
- * They also REPLAY — chunks are retained with the run — so looking a finished run
- * up in the panel below shows how it got there, not an empty box.
- */
-function ProgressLog({ runId }: { runId: string }) {
-  const { progress, streaming, supported } = useWorkflowProgress(runId);
-
-  // `supported` is what keeps this from being an empty box forever on an agent
-  // deployed before progress streams existed: "wrote nothing yet" and "serves no
-  // stream" are indistinguishable from the list alone.
-  if (!supported || progress.length === 0) return null;
-
-  // Rendered as TEXT rather than a list of elements, and that is not only a
-  // styling choice: these lines are append-only and segments legitimately produce
-  // identical text, so there is no stable per-line key to give React. Joining
-  // sidesteps the question instead of suppressing the lint rule that asks it.
-  return (
-    <pre className="whitespace-pre-wrap border-l pl-4 text-xs opacity-70">
-      {progress.join("\n")}
-      {streaming && "\n…"}
-    </pre>
-  );
-}
-
 /** The run's status, its narration, and its transcript once there is one. */
 function RunPanel({ run, onClear }: { run: WorkflowRun<Transcript>; onClear?: () => void }) {
   return (
@@ -223,7 +191,13 @@ function RunPanel({ run, onClear }: { run: WorkflowRun<Transcript>; onClear?: ()
         )}
       </div>
 
-      <ProgressLog runId={run.runId} />
+      {/* The run's own narration, oldest first — the complement of `STATUS_LINE`
+          below, and the reason both exist: the status is `running` for the whole
+          fan-out, so a sixty-segment recording and a one-segment recording look
+          identical while they run. These lines come from the run itself
+          (`report()` in `workflows/transcribe.ts`), and they REPLAY, so looking a
+          finished run up in the panel below shows how it got there. */}
+      <WorkflowProgress runId={run.runId} />
 
       {/* Discriminated on `status`, so `output` and `error` are reachable
           without a cast — the reason a snapshot is a union rather than a flat

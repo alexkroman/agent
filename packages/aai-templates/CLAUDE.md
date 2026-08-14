@@ -84,13 +84,20 @@ once, and the templates are now their reference use:
 | `createToolContext` (`@alexkroman1/aai/testing`) | the four suites that test tools directly — `dispatch-center`, `pizza-ordering`, `retail`, `solo-rpg` |
 | `useAgentState(fallback)` | `pizza-ordering`, `dispatch-center`, `retail`, `solo-rpg` |
 | `AutoScroll` | the three custom-chrome clients — `dispatch-center`, `retail`, `infocom-adventure` |
+| `useUserTranscript` | the same three. Each had written `userTranscript !== null && (… === "" ? "…" : …)` by hand, re-deriving a PROTOCOL distinction (`null` is silence, `""` is speech detected with no words yet) from the type |
+| `WorkflowProgress` | `transcription-desk` and `redline` — the two that render a run's whole narration; they had the component byte-identical, both comments included. `link-digest` keeps the raw `useWorkflowProgress`, since its page renders the newest line only |
+| `resolveOne` + `spokenDigits` (`@alexkroman1/aai`) | `retail` — `resolve.ts`, both halves: an order picked out of the caller's own orders, and a variant picked by the options they named. What stayed there is the store's vocabulary (what an order id looks like, which words name a status); what moved is the never-guess contract |
 | `workflow()` + `ctx.workflows` + `isTerminal` | `research-desk` — the handoff: a VOICE template whose tool starts a run, correlates it with `key`, and reads it back (see below); `recap-desk` is the same shape with `cancel` and a live-run check on top |
 | `page()` + `createWorkflowApi` + `useWorkflowRun` | `link-digest` — the WORKFLOW APP with the primitives raw: a hand-written `<form>`, its own `useState`, one `createWorkflowApi()` |
 | `Form` + `WorkflowFields` + `useWorkflowSubmit` | `transcription-desk` — the same front door with the form layer, plus `WorkflowOutputOf`. Its form is ALL declared, so `FileField` is exercised by no template and sits in the allowlist |
 | `TextAreaField` beside `<WorkflowFields>` | `redline` — the MIXED form: three scalars declared by the schema, one array field written by hand in the same `<Form>` and mapped on submit. The case "Forms" in `packages/aai-ui/CLAUDE.md` describes, which no template used to exercise |
 | `toStepError` / `throwStepError` / `throwFatalStepError` (`@alexkroman1/aai/step-errors`) | every workflow template — `transcription-desk` and `link-digest` for the HTTP classification each had hand-written identically, `research-desk`/`link-digest`/`redline` for the `.catch(throwStepError)` on a model call, `transcription-desk` for the two `catch`-block fatals, `recap-desk` for both halves of a provider call it also polls |
 | `stepGenerateJson` + `stripJsonFence` | `research-desk` (five stages, each with its own zod shape — including the LENIENT ones that replace its hand-rolled `strings()`/`isSource()` coercion), `link-digest` (one), `redline` (the critic's findings) and `recap-desk` (the recap, whose `spoken` field is required rather than defaulted because the announced turn has nothing to read without it). `stripJsonFence` is exercised only through `stepGenerateJson`, which is the intended path |
-| `stubGateway` (`@alexkroman1/aai/testing`) | the `research-desk`, `link-digest`, `redline` and `recap-desk` specs — the QUEUE form in the first and last, because their model calls sit in a loop or a chain, and the single-reply form in `link-digest` |
+| `stubGateway` (`@alexkroman1/aai/testing`) | reached through `installStubGateway` below; the bare form is exercised by no template and sits in the allowlist |
+| `installStubGateway` (`@alexkroman1/aai/testing/vitest`) | the `research-desk`, `link-digest`, `redline` and `recap-desk` specs — the QUEUE form in the first and last, because their model calls sit in a loop or a chain, and the single-reply form in `link-digest`. The four had written the same five-line `vi.stubGlobal` wrapper, comment included |
+| `toolOf` / `runTool` (`@alexkroman1/aai/testing`) | `pizza-ordering`, `plan-desk`, `support-line`, `travel-concierge` — the four that drive tools through the agent's own table. Each keeps a ONE-LINE `run` bound to its own `agentDef`; what moved is the lookup and its message, not the binding |
+| `stubGenerate` (`@alexkroman1/aai/testing`) | `support-line` (five nodes over one binary-score schema) and `plan-desk` (planner, executor, replanner) — the two whose tools reason with a model. Both had hand-rolled a `GenerateFn` switching on `options.system`, and both carried the same comment about the schema overload's required `object` |
+| `createRunSnapshot` + `createProgressStream` (`@alexkroman1/aai/testing`) | `research-desk` and `recap-desk` — the fixtures behind their `stubWorkflows`. The snapshot builder is the one that mattered: both hand-rolled versions ended in `as WorkflowRunSnapshot` |
 | `mapInBatches`, `stepEnv` / `requireStepEnv`, `stepGenerate`, `stepFetch` / `multipartBody` | the STEP surface, and every workflow template uses it: `transcription-desk` fans its segments out with `stepFetch` + `multipartBody` and reads `ASSEMBLYAI_API_KEY` for the sync STT endpoint, `recap-desk` makes all three of its batch-API calls through `stepFetch` (it POLLS, so one run is many requests); `research-desk`, `link-digest`, `redline` and `recap-desk` call the model with `stepGenerate` (or `stepGenerateJson`, for a reply that has to be a shape), and `recap-desk` reads the same key for the batch transcription endpoint it polls. Imported from `@alexkroman1/aai/utils`, NOT the root: a `workflows/*.ts` module is bundled separately by the WDK builder, so the root barrel's graph would ride into the step bundle. That import path is also why the coverage gate cannot see them — it scans the root specifier — hence their allowlist entries |
 | `webSearch` / `visitWebpage` (`@alexkroman1/aai/tools`) | `research-desk`, from inside a `"use step"` function — the demonstration that a step is not a lesser environment than a tool body; `plan-desk`, from an ordinary tool body, which is the case the module was published for |
 
@@ -306,6 +313,34 @@ failure. The WAV half carries its own weight there: a cut that lands mid-frame,
 or an off-by-one in the RIFF chunk walk, produces audio the decoder happily
 transcribes into confident nonsense rather than anything that fails.
 
+## The authoring guide ships inside the SDK
+
+`scaffold/CLAUDE.md` is already the one source of truth for how to write an aai
+agent: `studio-prompt.ts` embeds it in the studio system prompt, and `aai init`
+copies it into every scaffolded project. What it is not is **version-matched to
+the SDK a project ends up resolving.** The copy in a project is frozen at the
+moment `aai init` ran — correct on day one, since the CLI and the SDK release
+together — and then the project runs `pnpm update @alexkroman1/aai`, the SDK
+moves, and the guide does not. An agent reads guidance for a version that is no
+longer installed, with nothing saying so.
+
+So `scripts/sync-agent-guide.mjs` materializes it as
+`packages/aai/AGENT_GUIDE.md`, which ships in the `aai` tarball and therefore
+cannot describe a different release than the `@alexkroman1/aai` beside it. The
+copy carries a generated-file banner as part of its compared content, so an edit
+that stripped the banner leaves a file that looks authored.
+
+`packages/aai/skills/aai/SKILL.md` ships beside it and deliberately carries **no
+API guidance at all** — it says where the guide is and stops. A skill lives in a
+user's home directory and has no version, so guidance embedded there is the same
+drift one level worse.
+
+It is a **repo-level script** rather than a build step in `aai`, because `aai`
+must import no sibling package (the dependency flow above, enforced by
+`konsistent.json`) and a build step reading from `aai-templates` would invert
+that. A root script reads both trees, so neither package declares anything about
+the other, and `check:agent-guide` is what keeps the copy honest.
+
 ## Five templates are ports of LangChain/LangGraph agents
 
 The reference agents people already know are the best starters this repo can
@@ -415,13 +450,20 @@ failure. The first draft of the template had both, and both were dead code
 re-deriving an SDK decision — worth checking for before adding a guard to a step.
 
 Both LLM-driven VOICE ports are tested by SCRIPTING `ctx.generate` on the
-system prompt each node carries — the fake switches on `options.system` and
-records the
-transcript, so what a spec asserts is WHICH NODES RAN, which is the part of a
-graph port that can actually regress. One mechanical note for the next one:
-`GenerateFn`'s schema overload declares `object` as required, so every branch of
-such a fake must return one (`object: null` on the text-only nodes) or the whole
-function is unassignable.
+system prompt each node carries, so what a spec asserts is WHICH NODES RAN,
+which is the part of a graph port that can actually regress. **`stubGenerate`
+(`@alexkroman1/aai/testing`) is that fake now** — its script is keyed by system
+prompt, which is the same shape both templates had reached for by hand, and it
+owns the `{ text, object }` envelope. That envelope is why it is worth having:
+`GenerateFn`'s schema overload declares `object` as required, so a hand-written
+fake with one `{ text }`-only branch is unassignable AS A WHOLE, and both
+templates carried a comment explaining that to the next reader.
+
+What each template keeps is its own TRANSCRIPT: `support-line`'s routes push
+node names (`grade_documents:D1`) into a local array, because the assertions are
+about the graph rather than about the calls, while `plan-desk` reads
+`stubGenerate`'s own `calls` — the prompt of the turn after a failed search is
+exactly what its "a failed search goes back to the model" test is about.
 
 ## `recap-desk` is where the Temporal patterns were ported
 
@@ -600,12 +642,19 @@ asked for instead of the DevKit's default backoff. `transcription-desk` and
 **And the fake LLM gateway is the SDK's too** — `stubGateway`
 (`@alexkroman1/aai/testing`), which `research-desk` and `link-digest` had each
 written: record the call, answer `{choices:[{message:{content}}]}`, switch on a
-status. It returns a `fetch` rather than installing one, so the module keeps its
-no-test-runner-dependency rule and the spec keeps control of the stub's lifetime;
-what stays in each template is the three-line `vi.stubGlobal` wrapper, which is
-the right half to leave behind. It records the `prompt` and `system` separately,
-which is what the hand-rolled `promptOf(calls, n)` reach into
-`body.messages[n].content` was for.
+status. It records the `prompt` and `system` separately, which is what the
+hand-rolled `promptOf(calls, n)` reach into `body.messages[n].content` was for.
+
+**The INSTALLATION came out too, and it is what the leftover half taught.** This
+guide used to say the three-line `vi.stubGlobal` wrapper was "the right half to
+leave behind", on the rule that `sdk/testing.ts` carries no test-runner
+dependency. That rule is right and the conclusion was not: four templates then
+wrote the same wrapper, each with the same paragraph explaining why the SDK had
+not. `installStubGateway` lives on **`@alexkroman1/aai/testing/vitest`**, a
+subpath of its own with `vitest` as an OPTIONAL peer — so importing it is what
+pulls the runner, importing `/testing` is not, and a project using another one
+still builds every fake by hand as before. Reach for that split when a helper's
+only remaining obstacle is the runner, rather than leaving the copy to spread.
 
 **`link-digest` is the same mechanism at its smallest, and it is the FRONT DOOR
 that separates both of these from `research-desk`.** That one is a voice agent

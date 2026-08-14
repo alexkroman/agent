@@ -390,6 +390,9 @@ export type ToolDisplayConfig = Record<string, {
     label?: string;
 }>;
 
+// @public
+export const TRANSCRIBING_PLACEHOLDER = "\u2026";
+
 // @internal
 export function UiUrlChip(input: {
     className?: string | undefined;
@@ -424,6 +427,16 @@ export function useToolResult<R = DefaultToolResult>(toolName: string, callback:
 
 // @public (undocumented)
 export function useToolResult<R = DefaultToolResult>(callback: (name: string, result: R, toolCall: ToolCallInfo) => void): void;
+
+// @public
+export function useUserTranscript(): UseUserTranscriptResult;
+
+// @public
+export interface UseUserTranscriptResult {
+    partial: string | null;
+    speaking: boolean;
+    text: string;
+}
 
 // @public
 export function useWorkflowProgress<T = string>(runId: string | undefined, opts?: {
@@ -531,6 +544,14 @@ export function WorkflowFields(input: {
 }): JSX.Element | null;
 
 export { WorkflowOutputOf }
+
+// @public
+export function WorkflowProgress(input: {
+    runId?: string | undefined;
+    api?: WorkflowApi | undefined;
+    className?: string | undefined;
+    placeholder?: ReactNode | undefined;
+}): ReactNode;
 
 // @public
 export type WorkflowRun<R = unknown> = WorkflowRunSnapshot<R>;

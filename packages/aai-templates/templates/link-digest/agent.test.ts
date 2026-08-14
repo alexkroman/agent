@@ -18,7 +18,7 @@
  * `FatalError` guards are all testable.
  */
 
-import { stubGateway as createStubGateway } from "@alexkroman1/aai/testing";
+import { installStubGateway as stubGateway } from "@alexkroman1/aai/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import agentDef, { digest } from "./agent.ts";
 import { extractText, extractTitle, fetchArticle, summarize } from "./workflows/digest.ts";
@@ -155,19 +155,6 @@ describe("summarize", () => {
     // which is exactly the case a spec is. `unstubEnvs` clears it per test.
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
   });
-
-  /**
-   * The SDK's fake gateway, installed.
-   *
-   * The fake is `@alexkroman1/aai/testing`'s; what stays here is the
-   * INSTALLATION, because the lifetime of a global stub is vitest's business
-   * and that helper deliberately carries no test-runner dependency.
-   */
-  function stubGateway(content: string, status = 200) {
-    const gateway = createStubGateway(content, { status });
-    vi.stubGlobal("fetch", gateway.fetch);
-    return gateway.calls;
-  }
 
   test("returns the headline and points the model produced", async () => {
     const calls = stubGateway('{"headline":"Otters are clever","points":["a","b","c"]}');

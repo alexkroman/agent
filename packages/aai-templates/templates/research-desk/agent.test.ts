@@ -20,11 +20,13 @@
 
 import type { WorkflowClient, WorkflowRunSnapshot } from "@alexkroman1/aai";
 import {
-  stubGateway as createStubGateway,
+  createProgressStream,
+  createRunSnapshot,
   createStubWorkflows,
   createToolContext,
   type StubGatewayCall,
 } from "@alexkroman1/aai/testing";
+import { installStubGateway as stubGateway } from "@alexkroman1/aai/testing/vitest";
 import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { FatalError, RetryableError } from "workflow";
@@ -76,32 +78,12 @@ function stubWorkflows(runs: WorkflowRunSnapshot[] = []): WorkflowClient {
     // The `-1` case is overridden per test, because it is the one that decides
     // whether the stream is opened at all.
     streamTail: vi.fn(async () => 0),
-    stream: vi.fn(async () => lineStream([])),
+    stream: vi.fn(async () => createProgressStream([])),
     // Name only: `WorkflowDef.description` is optional, so passing it through
     // would mean handing `description: undefined` to a field that does not
     // accept it. Nothing here reads the description anyway.
     listing: () => [{ name: "research" }],
   });
-}
-
-/** What a run's progress channel looks like from the read side. */
-function lineStream(lines: readonly string[]): ReadableStream<unknown> {
-  return new ReadableStream<unknown>({
-    start(controller) {
-      for (const line of lines) controller.enqueue(line);
-      controller.close();
-    },
-  });
-}
-
-function snapshot(over: Partial<WorkflowRunSnapshot> = {}): WorkflowRunSnapshot {
-  return {
-    runId: "wrun_1",
-    workflow: "research",
-    createdAt: Date.UTC(2026, 7, 12),
-    status: "running",
-    ...over,
-  } as WorkflowRunSnapshot;
 }
 
 describe("the agent declares its workflow", () => {
@@ -176,7 +158,8 @@ describe("research_status", () => {
 
   test("reads a completed run's summary and source count back", async () => {
     const runs = [
-      snapshot({
+      createRunSnapshot({
+        workflow: "research",
         status: "completed",
         output: { topic: "otters", summary: "Otters use tools.", sources: 3, filedAt: "now" },
       }),
@@ -188,13 +171,17 @@ describe("research_status", () => {
   });
 
   test("reports a live run as still working rather than as empty", async () => {
-    const ctx = createToolContext({ workflows: stubWorkflows([snapshot({ status: "running" })]) });
+    const ctx = createToolContext({
+      workflows: stubWorkflows([createRunSnapshot({ workflow: "research", status: "running" })]),
+    });
     const result = (await agentDef.tools.research_status?.execute({}, ctx)) as { runs: string[] };
     expect(result.runs[0]).toContain("Still working on it.");
   });
 
   test("surfaces a failed run's message instead of swallowing it", async () => {
-    const runs = [snapshot({ status: "failed", error: "model unavailable" })];
+    const runs = [
+      createRunSnapshot({ workflow: "research", status: "failed", error: "model unavailable" }),
+    ];
     const ctx = createToolContext({ workflows: stubWorkflows(runs) });
     const result = (await agentDef.tools.research_status?.execute({}, ctx)) as { runs: string[] };
     expect(result.runs[0]).toContain("model unavailable");
@@ -211,8 +198,10 @@ describe("research_status", () => {
 
 describe("research_progress", () => {
   test("reads the run's own progress line rather than its status", async () => {
-    const workflows = stubWorkflows([snapshot({ status: "running" })]);
-    vi.mocked(workflows.stream).mockResolvedValue(lineStream(["Found 3 sources."]));
+    const workflows = stubWorkflows([
+      createRunSnapshot({ workflow: "research", status: "running" }),
+    ]);
+    vi.mocked(workflows.stream).mockResolvedValue(createProgressStream(["Found 3 sources."]));
     const ctx = createToolContext({ workflows });
     const result = await agentDef.tools.research_progress?.execute({}, ctx);
     expect(result).toMatchObject({ progress: "Found 3 sources." });
@@ -220,8 +209,10 @@ describe("research_progress", () => {
 
   test("asks for the LAST line, not the whole log", async () => {
     // A voice reply cannot recite every line the run has written.
-    const workflows = stubWorkflows([snapshot({ status: "running" })]);
-    vi.mocked(workflows.stream).mockResolvedValue(lineStream(["a"]));
+    const workflows = stubWorkflows([
+      createRunSnapshot({ workflow: "research", status: "running" }),
+    ]);
+    vi.mocked(workflows.stream).mockResolvedValue(createProgressStream(["a"]));
     await agentDef.tools.research_progress?.execute({}, createToolContext({ workflows }));
     expect(workflows.stream).toHaveBeenCalledWith("wrun_1", { startIndex: -1 });
   });
@@ -230,7 +221,9 @@ describe("research_progress", () => {
     // Not a shortcut: an empty progress channel is never closed, so reading one
     // would wait for a line that arrives whenever the next step writes — i.e.
     // the tool hangs instead of answering. The tail is how that is known.
-    const workflows = stubWorkflows([snapshot({ status: "running" })]);
+    const workflows = stubWorkflows([
+      createRunSnapshot({ workflow: "research", status: "running" }),
+    ]);
     vi.mocked(workflows.streamTail).mockResolvedValue(-1);
     const result = await agentDef.tools.research_progress?.execute(
       {},
@@ -253,7 +246,9 @@ describe("research_progress", () => {
 
 describe("file_it_now", () => {
   test("wakes the sleeping run so the review wait ends early", async () => {
-    const workflows = stubWorkflows([snapshot({ status: "running" })]);
+    const workflows = stubWorkflows([
+      createRunSnapshot({ workflow: "research", status: "running" }),
+    ]);
     vi.mocked(workflows.wakeUp).mockResolvedValue(1);
     const result = await agentDef.tools.file_it_now?.execute({}, createToolContext({ workflows }));
     expect(workflows.wakeUp).toHaveBeenCalledWith("wrun_1");
@@ -263,7 +258,9 @@ describe("file_it_now", () => {
   test("a run that was not waiting is reported honestly, not as a failure", async () => {
     // `wakeUp` answering 0 means the run had already moved past its sleep — the
     // same shape as `cancel` answering false.
-    const workflows = stubWorkflows([snapshot({ status: "running" })]);
+    const workflows = stubWorkflows([
+      createRunSnapshot({ workflow: "research", status: "running" }),
+    ]);
     vi.mocked(workflows.wakeUp).mockResolvedValue(0);
     const result = await agentDef.tools.file_it_now?.execute({}, createToolContext({ workflows }));
     expect(result).toMatchObject({ filed: false });
@@ -317,11 +314,6 @@ describe("the steps that research", () => {
    * vitest's business and the SDK helper deliberately carries no test-runner
    * dependency.
    */
-  function stubGateway(replies: readonly string[], status = 200) {
-    const gateway = createStubGateway(replies, { status });
-    vi.stubGlobal("fetch", gateway.fetch);
-    return gateway.calls;
-  }
 
   /** The prompt the Nth model call carried. */
   function promptOf(calls: readonly StubGatewayCall[], at: number): string {
@@ -422,14 +414,14 @@ describe("the steps that research", () => {
   test("a rate limit is RETRYABLE, so the DevKit tries again", async () => {
     // The message alone cannot say this — a 429 and a 401 read alike — so what
     // is asserted is the class the DevKit actually branches on.
-    stubGateway([""], 429);
+    stubGateway([""], { status: 429 });
     const err = await investigate(brief, "Tool use").catch((thrown: unknown) => thrown);
     expect(RetryableError.is(err)).toBe(true);
     expect((err as Error).message).toMatch(/HTTP 429/);
   });
 
   test("a rejected request is FATAL rather than retried five times", async () => {
-    stubGateway([""], 401);
+    stubGateway([""], { status: 401 });
     const err = await investigate(brief, "Tool use").catch((thrown: unknown) => thrown);
     expect(FatalError.is(err)).toBe(true);
     expect((err as Error).message).toMatch(/HTTP 401/);

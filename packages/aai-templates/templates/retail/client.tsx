@@ -1,6 +1,12 @@
 import "@alexkroman1/aai-ui/styles.css";
 import type { ChatMessage } from "@alexkroman1/aai-ui";
-import { AutoScroll, client, useAgentState, useSession } from "@alexkroman1/aai-ui";
+import {
+  AutoScroll,
+  client,
+  useAgentState,
+  useSession,
+  useUserTranscript,
+} from "@alexkroman1/aai-ui";
 import type { ReactNode } from "react";
 import type {
   OrderStatus,
@@ -195,6 +201,10 @@ function SwapOptions({ option }: { option: SwapOptionView }) {
 
 function App() {
   const session = useSession();
+  // `speaking` and `text` in place of a `userTranscript !== null` check: `null`
+  // is silence and `""` is speech detected with no words back yet, and reading
+  // them as one falsy value hides the indicator at the start of every turn.
+  const { speaking, text: userTranscript } = useUserTranscript();
   // The agent's own store, projected by `syncState` after every tool call.
   const view = useAgentState<StoreView>(EMPTY_VIEW);
 
@@ -279,7 +289,7 @@ function App() {
               ))}
             </AutoScroll>
 
-            {session.userTranscript !== null && (
+            {speaking && (
               <div
                 className="flex items-center px-4 py-2 text-xs italic min-h-8"
                 style={{ background: "#fafafa", borderTop: "1px solid #e4e4e7", color: "#71717a" }}
@@ -288,7 +298,7 @@ function App() {
                   className="w-2 h-2 rounded-full inline-block mr-2"
                   style={{ background: "#16a34a", animation: "rt-pulse 1.5s ease-in-out infinite" }}
                 />
-                {session.userTranscript === "" ? "…" : session.userTranscript}
+                {userTranscript}
               </div>
             )}
             {session.error && (

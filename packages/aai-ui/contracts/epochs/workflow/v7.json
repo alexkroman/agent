@@ -1,0 +1,32 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "workflow",
+  "epoch": 7,
+  "sha256": "4ba8974fa9ae8a4083aef4e840435218f910e92001b6d75e72bc9330389cb0fa",
+  "exports": [
+    "DEFAULT_PROGRESS_POLL_MS",
+    "DEFAULT_WORKFLOW_POLL_MS",
+    "MAX_MISSING_READS",
+    "UseWorkflowProgressResult",
+    "UseWorkflowRunResult",
+    "UseWorkflowRunsOptions",
+    "UseWorkflowRunsResult",
+    "UseWorkflowSubmitOptions",
+    "UseWorkflowsOptions",
+    "UseWorkflowsResult",
+    "WorkflowApi",
+    "WorkflowApiOptions",
+    "WorkflowOutputOf",
+    "WorkflowProgress",
+    "WorkflowRun",
+    "WorkflowSubmission",
+    "WorkflowSummary",
+    "createWorkflowApi",
+    "isTerminal",
+    "useWorkflowProgress",
+    "useWorkflowRun",
+    "useWorkflowRuns",
+    "useWorkflowSubmit",
+    "useWorkflows"
+  ]
+}

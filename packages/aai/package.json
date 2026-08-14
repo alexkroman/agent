@@ -18,6 +18,11 @@
       "types": "./dist/sdk/testing.d.ts",
       "import": "./dist/sdk/testing.js"
     },
+    "./testing/vitest": {
+      "@dev/source": "./sdk/testing-vitest.ts",
+      "types": "./dist/sdk/testing-vitest.d.ts",
+      "import": "./dist/sdk/testing-vitest.js"
+    },
     "./step-errors": {
       "@dev/source": "./sdk/step-errors.ts",
       "types": "./dist/sdk/step-errors.d.ts",
@@ -125,6 +130,14 @@
     "workflow": "4.8.2",
     "ws": "catalog:",
     "zod": "catalog:"
+  },
+  "peerDependencies": {
+    "vitest": ">=3"
+  },
+  "peerDependenciesMeta": {
+    "vitest": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/escape-html": "^1.0.4",
