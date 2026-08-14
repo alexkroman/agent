@@ -8,6 +8,41 @@
  * constant's doc, and `resolveEndpointing` in
  * `host/providers/stt/assemblyai.ts`, which is the single place that sends
  * them.
+ *
+ * ## Four findings that are NOT re-derivable, moved out of the guide
+ *
+ * `packages/aai/CLAUDE.md` carried these in its defaults table until that guide
+ * hit its 120,000-character cap. They are archive rather than rule — each is a
+ * run already decided by — so the guide keeps the rule and points here.
+ *
+ * **Do not tune the minimum from a pause histogram.** The intra-utterance pause
+ * distribution over the same runs is p99 **593 ms**, with 1 gap in 1037 above
+ * 1200 ms, which argues for 800 and is the wrong instrument: percentiles describe
+ * what an ACOUSTIC endpointer needs, while on U3.5 Pro this is where the SEMANTIC
+ * completeness check runs. The failures are "the check fired mid-spelling and the
+ * fragment read complete", which no pause distribution predicts.
+ *
+ * **1600 is the knee, confirmed by a direct sweep** — 600/800/1200/1400/1600/1800/
+ * 2000 ms over 4 replayed sessions with Voice Focus at 0.9. Below 1600 the
+ * transcript over-segments (1.02-1.08x turns per gold utterance) and an auth field
+ * is lost: at 1200 the check fires mid-surname, `Last name K-O-V-A-C-S` becomes
+ * two fragments and `kovacs` never lands. At and above 1600 it is 0.99x with 12/12
+ * auth fields surviving. 1800 scores marginally better on every axis except p50
+ * latency and is inside the noise for n=4 — 1600 is structural, 1800 would be a
+ * sample maximum.
+ *
+ * **Latency does not move with the nominal value.** 600 -> 2000 is a nominal
+ * 1400 ms but moves p50 endpoint latency only ~910 ms, and p90 is flat at
+ * ~4.0-4.6s at every setting because the tail is content-driven.
+ *
+ * **`interruption_delay` and `mode` are measured NO-OPS here**, which matters
+ * because the docs actively suggest reaching for the first: `interruption_delay=0`,
+ * `mode=min_latency` and `mode=max_accuracy` all leave first-partial latency at
+ * p50 0.47-0.52s, identical to unset, with no error frame and the parameter
+ * accepted. ~470 ms to first partial is a MODEL floor, not a knob — so the only
+ * remaining lever on barge-in latency is our own `interruptionMinDurationMs`.
+ * (`vad_threshold` is measured and deliberately left alone; see the Voice Focus
+ * row in the guide's defaults table for why it loses in both directions.)
  */
 
 /**

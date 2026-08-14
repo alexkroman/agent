@@ -181,7 +181,8 @@
       // entry.
       "env": [
         "AAI_TEST_PG_URL",
-        "AAI_REQUIRE_PG"
+        "AAI_REQUIRE_PG",
+        "AAI_FAULT_PROFILE"
       ],
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -195,6 +196,13 @@
     // before the task starts — so that command silently ran pnpm. Declaring it
     // here both passes it through and makes each package manager its own cache
     // entry.
+    //
+    // AAI_FAULT_PROFILE is here for both halves of that same reason
+    // (`AAI_FAULT_PROFILE=restart-on-boot pnpm test:e2e` would otherwise run
+    // with no faults and say nothing), and the cache half matters more than
+    // usual: a fault run and a clean run of the same tree MUST NOT share a cache
+    // entry, or the first green clean run would serve a FULL TURBO for every
+    // later fault run and the mode would test nothing.
     "check:e2e": {
       "dependsOn": [
         "build"
@@ -204,7 +212,8 @@
         "!**/*.md"
       ],
       "env": [
-        "AAI_TEST_PM"
+        "AAI_TEST_PM",
+        "AAI_FAULT_PROFILE"
       ]
     },
     "//#check:syncpack": {

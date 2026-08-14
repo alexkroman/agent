@@ -280,28 +280,42 @@ describe("guest studio chat surface", () => {
     const session = await makeSession({ "agent.ts": "// original" });
     const model = scriptedModel([
       toolStep("write_file", { path: "agent.ts", content: "// checkpointed" }),
-      textStep("Done."),
+      // A distinctive final line, so the settle can be recognised by CONTENT
+      // below rather than by counting.
+      textStep("Checkpoint turn finished."),
     ]);
     const { url, close } = await serve(session, deps(model));
     try {
       await post(url, chatBody("update the agent"));
+      // Anchor on THIS turn's settle, then assert synchronously. The mid-turn
+      // checkpoint causally PRECEDES the settle, so once the settle has landed
+      // both syncs must have — which is what makes this deterministic. Waiting
+      // on the syncs directly instead made the assertion a race against
+      // `vi.waitFor`'s window, and under a full parallel gate it lost: it read
+      // `expected 1 to be greater than or equal to 2` while passing 5/5 alone.
       await vi.waitFor(() => {
-        // Scoped by CONTENT, not by position. `fakeHost` installs a
-        // MODULE-LEVEL sender and `close()` shuts the HTTP server without
-        // awaiting the turn, so a previous test's still-running turn can push
-        // into this test's `calls` — afterEach's `setHostSend(null)` only
-        // covers the gap BETWEEN tests, not an overlap INTO one. That overlap
-        // is routine under full-suite load, and `syncs[0]` was then a foreign
-        // sync: the flake read `expected '// updated by agent' to be
-        // '// checkpointed'`, quoting a string this test never writes.
-        const mine = host.calls
-          .filter((c) => c.method === "studio/sync-workspace")
-          .map((c) => (c.params as { files?: Record<string, string> }).files?.["agent.ts"])
-          .filter((content) => content === "// original" || content === "// checkpointed");
-        // One from the mutating step's checkpoint, one from the settle.
-        expect(mine.length).toBeGreaterThanOrEqual(2);
-        expect(mine).toContain("// checkpointed");
+        const settled = host.calls.some(
+          (call) =>
+            call.method === "studio/persist-chat" &&
+            JSON.stringify(call.params).includes("Checkpoint turn finished."),
+        );
+        expect(settled).toBe(true);
       });
+      // Scoped by CONTENT, not by position. `fakeHost` installs a MODULE-LEVEL
+      // sender and `close()` shuts the HTTP server without awaiting the turn, so
+      // a previous test's still-running turn can push into this test's `calls` —
+      // afterEach's `setHostSend(null)` only covers the gap BETWEEN tests, not an
+      // overlap INTO one. That overlap is routine under full-suite load, and
+      // `syncs[0]` was then a foreign sync: the flake read
+      // `expected '// updated by agent' to be '// checkpointed'`, quoting a
+      // string this test never writes.
+      const mine = host.calls
+        .filter((c) => c.method === "studio/sync-workspace")
+        .map((c) => (c.params as { files?: Record<string, string> }).files?.["agent.ts"])
+        .filter((content) => content === "// original" || content === "// checkpointed");
+      // One from the mutating step's checkpoint, one from the settle.
+      expect(mine.length).toBeGreaterThanOrEqual(2);
+      expect(mine).toContain("// checkpointed");
     } finally {
       await close();
     }

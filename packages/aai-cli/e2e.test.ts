@@ -31,6 +31,7 @@ import {
   waitForExit,
   waitForHealth,
 } from "./_e2e-test-utils.ts";
+import { startSupervisedDevServer } from "./_fault-mode.ts";
 import type { MockRegistry } from "./_mock-registry.ts";
 
 const { chromium } = await import("playwright");
@@ -227,30 +228,41 @@ describe("aai dev: a scaffolded workflow template", () => {
     // A fixed port, because `aai dev --port` is how a user picks one and the
     // JSON line is what a script reads back; the range is chosen high enough to
     // sit clear of the other servers this suite runs.
-    const port = 4820;
-    const child = spawn(process.execPath, [aaiBin, "dev", "--port", String(port), "--json"], {
+    // Through the supervisor rather than a bare spawn, so this test inherits
+    // FAULT MODE: with `AAI_FAULT_PROFILE` set it runs against a server that is
+    // hard-killed and restarted underneath it, and with the variable unset it is
+    // the same plain spawn it always was. See `_fault-mode.ts`.
+    const server = await startSupervisedDevServer({
+      aaiBin,
       cwd: projectDir,
+      // A fixed port, because `aai dev --port` is how a user picks one and the
+      // JSON line is what a script reads back; the range is chosen high enough
+      // to sit clear of the other servers this suite runs. It also has to
+      // survive a restart, which is why the supervisor takes one rather than
+      // asking the OS.
+      port: 4820,
       env: { ...aaiEnv(), ASSEMBLYAI_API_KEY: "e2e-not-dialled" },
-      stdio: "pipe",
+      args: ["--json"],
     });
     try {
       // Booting at all is most of the assertion: `loadWorker` compiles
       // `workflows/` BEFORE the server listens, so a project whose workflow
-      // build fails never answers /health.
-      await waitForHealth(`http://127.0.0.1:${port}/health`, child);
+      // build fails never answers /health. Under a profile, every declared kill
+      // has to have happened and the survivor be healthy before the assertion —
+      // otherwise the request below races a restart window.
+      await server.awaitSettled();
 
       // Mounted-or-not is the distinction that matters. Unmounted, this falls
       // through to the server's 404 and every run stalls forever with nothing
       // logged — which is exactly how it behaved before the routes were wired.
-      const res = await fetch(`http://127.0.0.1:${port}/.well-known/workflow/v1/flow`, {
+      const res = await fetch(`${server.url}/.well-known/workflow/v1/flow`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "{}",
       });
       expect(res.status).not.toBe(404);
     } finally {
-      child.kill();
-      await waitForExit(child);
+      await server.stop();
     }
   });
 });
@@ -368,8 +380,20 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
        const { WebSocketServer } = require("ws");
        const mimes = { ".html": "text/html", ".js": "application/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml" };
        const root = ${JSON.stringify(clientDir)};
+       const live = new Set();
        const s = http.createServer((req, res) => {
          const url = new URL(req.url, "http://localhost");
+         // Sever every live session socket ABRUPTLY — destroy, never close(1000).
+         // A clean close is the "user hung up" case aai-ui deliberately does not
+         // reconnect from, so a reconnect test built on one proves nothing.
+         if (url.pathname === "/__sever") {
+           let cut = 0;
+           for (const sock of live) { sock.destroy(); cut++; }
+           live.clear();
+           res.writeHead(200, { "Content-Type": "application/json" });
+           res.end(JSON.stringify({ severed: cut }));
+           return;
+         }
          const f = path.join(root, url.pathname === "/" ? "index.html" : url.pathname);
          if (!f.startsWith(root)) { res.writeHead(403); res.end(); return; }
          try {
@@ -380,8 +404,13 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
          } catch { res.writeHead(404); res.end("not found"); }
        });
        const wss = new WebSocketServer({ server: s });
-       wss.on("connection", (ws) => {
-         ws.send(JSON.stringify({ type: "config", audioFormat: "pcm16", sampleRate: 16000, ttsSampleRate: 24000, sessionId: "test" }));
+       wss.on("connection", (ws, req) => {
+         live.add(ws._socket);
+         ws.on("close", () => live.delete(ws._socket));
+         // Echo the id the client asked to resume, so a redial that carries one
+         // is answered as the SAME session rather than a fresh one.
+         const asked = new URL(req.url, "http://localhost").searchParams.get("sessionId");
+         ws.send(JSON.stringify({ type: "config", audioFormat: "pcm16", sampleRate: 16000, ttsSampleRate: 24000, sessionId: asked || "resumed-e2e-7" }));
        });
        s.listen(0, () => console.log("PORT:" + s.address().port));`,
       ],
@@ -452,6 +481,51 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     );
 
     await page.close();
+  });
+
+  test("the client RECONNECTS after an abrupt drop and resumes the same session", async () => {
+    // The client half of the disconnect contract, which nothing else covers.
+    // `aai/host/session-resume*.integration.test.ts` proves the SERVER resumes a
+    // session when asked; aai-ui's fuzz harnesses drive its reconnect against a
+    // fake socket. Neither shows the real browser client redialling after a real
+    // drop and carrying the id forward — partysocket's backoff, the
+    // `serverIsBroker` latch and the handshake guard all sit in that path.
+    //
+    // Severed by DESTROYING the socket server-side, so the client sees 1006. A
+    // clean close is the "user hung up" case aai-ui deliberately does not
+    // reconnect from, so a test built on `close()` would prove the opposite of
+    // what it looks like. (The `_fault-socket.ts` proxy does this properly for
+    // in-package tests; it is `_`-internal to `aai`, which this package may not
+    // import — hence the fake server severing its own socket.)
+    const page = await browser.newPage();
+    const urls: string[] = [];
+    page.on("websocket", (ws) => urls.push(ws.url()));
+    try {
+      await page.goto(`http://localhost:${port}`);
+      await page.getByRole("button", { name: "Start" }).click();
+      await vi.waitFor(() => expect(urls.length).toBe(1), { timeout: 15_000, interval: 50 });
+      expect(urls[0]).toContain("/websocket");
+      // No id on the FIRST dial — so the one below can only have come from the
+      // config frame, which is the mechanism under test. A distinctive value for
+      // the same reason: a generic id could in principle be matched by some
+      // client-side default rather than by the id this server issued.
+      expect(urls[0]).not.toContain("sessionId=");
+
+      const severed = await ofetch<{ severed: number }>(`http://localhost:${port}/__sever`);
+      expect(severed.severed).toBeGreaterThanOrEqual(1);
+
+      // The claim: it comes back on its own, and the redial names the session it
+      // was in. A client that reconnected WITHOUT the id would start a fresh
+      // conversation — the caller greeted again mid-call — so the id is the
+      // assertion, not the reconnect count.
+      await vi.waitFor(() => expect(urls.length).toBeGreaterThanOrEqual(2), {
+        timeout: 30_000,
+        interval: 100,
+      });
+      expect(urls[1]).toContain("sessionId=resumed-e2e-7");
+    } finally {
+      await page.close();
+    }
   });
 
   // ── Fixture-driven event injection tests ───────────────────────────────
