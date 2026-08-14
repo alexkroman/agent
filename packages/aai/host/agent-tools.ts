@@ -59,7 +59,8 @@
  * `research-desk` even had a `catch` for it, carefully commented — and a `catch`
  * cannot see a returned value, so it never ran.
  *
- * So the return type is `T | ToolFailure` and {@link isToolFailure} is how a
+ * So the return type is `T | ToolFailure` and `isToolFailure`
+ * (`@alexkroman1/aai/utils`) is how a
  * caller narrows it. Note this only bites a caller that NAMED a type: `T`
  * defaults to `DefaultToolResult`, which is `any`, and `any | ToolFailure` is
  * `any` — so the loose call sites the permissive-return-type note above exists

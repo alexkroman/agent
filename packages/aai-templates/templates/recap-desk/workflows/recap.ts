@@ -73,6 +73,7 @@ import {
   omitUndefined,
   report,
   requireStepEnv,
+  stepFetch,
   stepGenerateJson,
 } from "@alexkroman1/aai/utils";
 import { createHook, FatalError, sleep } from "workflow";
@@ -418,7 +419,9 @@ export async function discardTranscript(id: string): Promise<void> {
   "use step";
 
   await report(`Discarding transcript ${id}.`);
-  const response = await fetch(`${TRANSCRIPT_ENDPOINT}/${id}`, {
+  // Not through `request` above, because a 404 is a SUCCESS here — see below.
+  // `stepFetch` for the same reason it does; only the status handling differs.
+  const response = await stepFetch(`${TRANSCRIPT_ENDPOINT}/${id}`, {
     method: "DELETE",
     headers: { authorization: requireStepEnv(API_KEY_ENV) },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -500,8 +503,18 @@ export async function note(line: string): Promise<void> {
  * Note the header is a bare key: AssemblyAI's `authorization` takes the key
  * itself, with no `Bearer` prefix.
  */
-async function request(url: string, init: RequestInit = {}): Promise<Response> {
-  const response = await fetch(url, {
+async function request(
+  url: string,
+  init: { method?: string; body?: string } = {},
+): Promise<Response> {
+  // `stepFetch`, not `fetch`: it pins HTTP/1.1, so several concurrent runs (and
+  // this workflow POLLS, so one run is many requests) get a socket each rather
+  // than N streams on one connection — and a connection failure arrives as a
+  // `StepTransportError` naming its cause instead of a bare
+  // `TypeError: fetch failed`, which for a template whose whole subject is
+  // durability is the difference between a diagnosable resume and a mystery.
+  // `sdk/step-fetch.ts` carries the measurements.
+  const response = await stepFetch(url, {
     ...init,
     headers: { authorization: requireStepEnv(API_KEY_ENV), "content-type": "application/json" },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
