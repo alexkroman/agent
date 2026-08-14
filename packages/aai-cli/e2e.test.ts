@@ -31,6 +31,7 @@ import {
   waitForExit,
   waitForHealth,
 } from "./_e2e-test-utils.ts";
+import { startSupervisedDevServer } from "./_fault-mode.ts";
 import type { MockRegistry } from "./_mock-registry.ts";
 
 const { chromium } = await import("playwright");
@@ -227,30 +228,41 @@ describe("aai dev: a scaffolded workflow template", () => {
     // A fixed port, because `aai dev --port` is how a user picks one and the
     // JSON line is what a script reads back; the range is chosen high enough to
     // sit clear of the other servers this suite runs.
-    const port = 4820;
-    const child = spawn(process.execPath, [aaiBin, "dev", "--port", String(port), "--json"], {
+    // Through the supervisor rather than a bare spawn, so this test inherits
+    // FAULT MODE: with `AAI_FAULT_PROFILE` set it runs against a server that is
+    // hard-killed and restarted underneath it, and with the variable unset it is
+    // the same plain spawn it always was. See `_fault-mode.ts`.
+    const server = await startSupervisedDevServer({
+      aaiBin,
       cwd: projectDir,
+      // A fixed port, because `aai dev --port` is how a user picks one and the
+      // JSON line is what a script reads back; the range is chosen high enough
+      // to sit clear of the other servers this suite runs. It also has to
+      // survive a restart, which is why the supervisor takes one rather than
+      // asking the OS.
+      port: 4820,
       env: { ...aaiEnv(), ASSEMBLYAI_API_KEY: "e2e-not-dialled" },
-      stdio: "pipe",
+      args: ["--json"],
     });
     try {
       // Booting at all is most of the assertion: `loadWorker` compiles
       // `workflows/` BEFORE the server listens, so a project whose workflow
-      // build fails never answers /health.
-      await waitForHealth(`http://127.0.0.1:${port}/health`, child);
+      // build fails never answers /health. Under a profile, every declared kill
+      // has to have happened and the survivor be healthy before the assertion —
+      // otherwise the request below races a restart window.
+      await server.awaitSettled();
 
       // Mounted-or-not is the distinction that matters. Unmounted, this falls
       // through to the server's 404 and every run stalls forever with nothing
       // logged — which is exactly how it behaved before the routes were wired.
-      const res = await fetch(`http://127.0.0.1:${port}/.well-known/workflow/v1/flow`, {
+      const res = await fetch(`${server.url}/.well-known/workflow/v1/flow`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "{}",
       });
       expect(res.status).not.toBe(404);
     } finally {
-      child.kill();
-      await waitForExit(child);
+      await server.stop();
     }
   });
 });

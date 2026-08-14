@@ -270,6 +270,81 @@ the user requests outright is unaffected.
 - `_templates.ts` — template handling
 - `_ui.ts` — CLI output helpers (`log`, `fmtUrl`, `parsePort`)
 
+## Fault mode: a suite run against a server that keeps dying
+
+`AAI_FAULT_PROFILE=<name>` makes every test that boots its server through
+`startSupervisedDevServer` (`_fault-mode.ts`) run against an `aai dev` child that
+is **SIGKILLed and restarted** at declared points. Unset, the helper is the plain
+spawn it replaced, so the normal suite is unchanged.
+
+```sh
+AAI_FAULT_PROFILE=restart-on-boot pnpm test:e2e     # the whole suite, under faults
+node --run test:integration                          # unaffected without the var
+```
+
+Five things about it are load-bearing.
+
+**The kill is a SIGKILL, and nothing else would do.** A graceful stop lets
+graphile-worker's runner release the queue locks it holds — which is precisely
+the difference that decides whether an in-flight step is ever redelivered. So a
+fault mode built on SIGTERM would exercise the recovery path that already works
+and never the one that does not. (Measured: one hard kill of the process, or of
+its Postgres, strands every locked step until graphile-worker's own
+`interval '4 hours'` reclaim, with the run sitting `running` forever.)
+
+**There is no seed and no PRNG, deliberately.** "Consistent" is the requirement,
+and the cheapest way to be consistent is to have nothing to reproduce: a profile
+is an ordered list of points keyed on logical events, so the Nth kill lands after
+the same observed event on every machine at every speed. Wall-clock kills are
+what `tmp/transcribe-load/chaos.mjs` does and why its runs cannot be compared.
+Randomized exploration is a different job for a different tool — this repo drives
+every randomized suite with fast-check so nobody hand-rolls a seventh PRNG, and
+a seed here would be that seventh.
+
+**A profile that matches nothing FAILS LOUDLY.** `awaitSettled()` throws naming
+the points that never fired plus the last lines the server wrote, and `stop()`
+warns when a profile injected zero. Without that, a renamed log line turns the
+whole mode into a no-op and the suite passes "under faults" having injected none
+— the failure this repo keeps paying for, a gate reporting success while checking
+nothing.
+
+**`afterHealthy` exists because a log trigger cannot reach the boot.** `aai dev`
+announces itself with `log.success`, which JSON mode SILENCES — and JSON mode is
+what the e2e suite runs and what a pipe auto-selects. The first boot profile was
+keyed on a startup line, matched nothing, and was caught by the paragraph above
+on its first real run. Workflow lines are unaffected: the agent server's logger
+writes straight to stderr rather than through `log`, so `"Workflow run started"`
+survives JSON mode and is a fine trigger.
+
+**Assert from `awaitSettled()`, not from the boot.** It resolves once every
+declared kill has happened AND the survivor answers `/health`, which is the only
+moment "the faults are done and the server is back" is true; a request issued
+before it races a restart window. `assertPlanConsumed()` is the stricter version,
+for a test whose SUBJECT is the profile — a test merely running under one should
+not fail because a step-level trigger never fired in a test that runs no
+workflow. That is also why `restart-on-boot` is the profile to run a whole suite
+under: every supervised server boots, so its triggers reach every test.
+
+`AAI_FAULT_PROFILE` is declared in the `check:e2e` and `check:integration` `env`
+in `turbo.json`, for both halves of the documented strict-env-mode rule: an
+undeclared variable is stripped before the task starts (so the command above
+would run with no faults and say nothing), and a fault run must not share a cache
+entry with a clean one — or the first green clean run serves a FULL TURBO for
+every later fault run and the mode tests nothing.
+
+It is **not wired into CI** yet, and the reason is a real finding rather than
+caution. An in-flight step is never redelivered after its process (or its
+Postgres) is hard-killed: the queue job keeps `locked_by` a worker that is gone,
+graphile-worker's `get_job` selects on `is_available = true`, and the run sits
+`running` until the `interval '4 hours'` reclaim. So a profile that kills DURING
+a run is red today for a reason this mode surfaced rather than caused, and a
+required check would be red with it. `restart-on-boot` is the one that is green,
+because it kills between runs.
+
+What CI runs is `_fault-mode.integration.test.ts` — the supervisor's own spec,
+driven against a fake server (including one that prints nothing at all), because
+a mode whose whole job is to inject faults has to be shown to inject them.
+
 ## Bundling rules
 
 - **Vite must not be allowed to mutate `process.env`.** Vite's `build()`
