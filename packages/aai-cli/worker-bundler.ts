@@ -112,22 +112,35 @@ const TOOL_SPEC_RE = /\.(?:test|spec)\.[^.]+$/;
  * that reordered per readdir would change the bundle hash for no reason.
  */
 async function discoverToolFiles(cwd: string): Promise<string[]> {
+  const root = path.join(cwd, "tools");
   // `Dirent[]` explicitly: inferring from `fs.readdir` picks its Buffer
   // overload, which the declaration emit rejects even though `tsc --noEmit`
   // on the looser config does not.
   let entries: Dirent[];
   try {
-    entries = await fs.readdir(path.join(cwd, "tools"), { withFileTypes: true });
+    // RECURSIVE, so a nested file is DISCOVERED and then rejected by
+    // `toolRegistry` naming it. A one-level read silently skipped a
+    // subdirectory, which made "`tools/` is flat" a documented rule that
+    // nothing enforced: `tools/billing/refund.ts` produced an agent with no
+    // tools and no error anywhere — the exact silent absence discovery exists
+    // to kill, and verified to happen before this line said `recursive`.
+    // Discovering it here rather than throwing here keeps ONE implementation of
+    // the rule, in the registry, where the other three already live.
+    entries = await fs.readdir(root, { withFileTypes: true, recursive: true });
   } catch (err) {
     // No tools/ directory is normal — a workflow app has none, and a voice
     // agent may declare everything inline. Anything else is worth surfacing.
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw err;
   }
-  return entries
-    .filter((e) => e.isFile() && TOOL_MODULE_EXT_RE.test(e.name) && !TOOL_SPEC_RE.test(e.name))
-    .map((e) => e.name)
-    .sort();
+  return (
+    entries
+      .filter((e) => e.isFile() && TOOL_MODULE_EXT_RE.test(e.name) && !TOOL_SPEC_RE.test(e.name))
+      // POSIX separators: these become import specifiers and a registry key, and
+      // a backslash on Windows would be neither.
+      .map((e) => path.relative(root, path.join(e.parentPath, e.name)).split(path.sep).join("/"))
+      .sort()
+  );
 }
 
 /** The prose slot: one file, beside `agent.ts`, named by convention. */
@@ -144,6 +157,20 @@ const SYSTEM_PROMPT_FILE = "system-prompt.md";
  * answers whether there is one.
  */
 async function hasSystemPromptFile(cwd: string): Promise<boolean> {
+  // A `system-prompt/` DIRECTORY is rejected rather than ignored. eve supports
+  // one and no project here needs one, so picking a concatenation order now
+  // would freeze a guess — but SILENCE is the wrong way to decline it: an author
+  // who writes `system-prompt/intro.md` gets the framework default with nothing
+  // saying why, which is the same silent absence this whole mechanism exists to
+  // kill. Verified: before this check the directory case fell through to
+  // DEFAULT_SYSTEM_PROMPT.
+  const nested = path.join(cwd, "system-prompt");
+  const nestedStat = await fs.stat(nested).catch(() => undefined);
+  if (nestedStat?.isDirectory() === true) {
+    throw new Error(
+      `${nested} is a directory. A system prompt is ONE file — rename it to ${SYSTEM_PROMPT_FILE}, or import the pieces yourself and compose them into \`systemPrompt\`. There is deliberately no concatenation order for a directory.`,
+    );
+  }
   try {
     return (await fs.stat(path.join(cwd, SYSTEM_PROMPT_FILE))).isFile();
   } catch (err) {

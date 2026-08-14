@@ -92,6 +92,26 @@ describe("tool discovery", () => {
     });
   });
 
+  test("a NESTED file fails the build, naming it, rather than being skipped", async () => {
+    await withTempDir(async (dir) => {
+      await linkNodeModules(dir);
+      await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
+      await fs.mkdir(path.join(dir, "tools", "billing"), { recursive: true });
+      await fs.writeFile(
+        path.join(dir, "tools", "billing", "refund.ts"),
+        toolSource("Refund"),
+        "utf-8",
+      );
+
+      // "`tools/` is flat" was a documented rule that nothing enforced: a
+      // one-level readdir skipped the subdirectory, so this project built an
+      // agent with NO tools and no error — the silent absence discovery exists
+      // to kill. Discovery is recursive now, and `toolRegistry` owns the
+      // rejection, so the rule has one implementation rather than two.
+      await expect(loadWorker(dir)).rejects.toThrow(/billing\/refund\.ts/);
+    });
+  });
+
   test("a file that does not default-export a tool fails the build, naming it", async () => {
     await withTempDir(async (dir) => {
       await linkNodeModules(dir);
@@ -169,6 +189,20 @@ describe("system-prompt.md discovery", () => {
       // "I edited system-prompt.md and nothing changed" is the silent-absence
       // failure discovery exists to kill, pointing the other way.
       await expect(loadWorker(dir)).rejects.toThrow(/nothing reads it/);
+    });
+  });
+
+  test("a system-prompt/ DIRECTORY is rejected, not ignored", async () => {
+    await withTempDir(async (dir) => {
+      await linkNodeModules(dir);
+      await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
+      await fs.mkdir(path.join(dir, "system-prompt"));
+      await fs.writeFile(path.join(dir, "system-prompt", "intro.md"), PROMPT, "utf-8");
+
+      // Declining a directory is the decision; declining it SILENTLY is not.
+      // Before this was checked, the author got DEFAULT_SYSTEM_PROMPT with
+      // nothing saying why their prompt had no effect.
+      await expect(loadWorker(dir)).rejects.toThrow(/is a directory/);
     });
   });
 
