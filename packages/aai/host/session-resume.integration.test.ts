@@ -236,7 +236,7 @@ describe("a session across a severed connection", () => {
     expect(harness.proxy.live()).toBe(0);
   });
 
-  test("severAfter cuts on its own, deterministically, with no test involvement", async () => {
+  test("severAfter.bytesFromClient cuts on its own, with no test involvement", async () => {
     // The suite-wide shape: a connection that severs itself once the client has
     // sent a given number of bytes. Deterministic, so the Nth connection is cut at
     // the same point on every machine — the same rule the restart mode follows.
@@ -253,6 +253,52 @@ describe("a session across a severed connection", () => {
         ws.once("error", () => resolve());
       });
       expect(proxy.severed()).toBe(1);
+    } finally {
+      await proxy.close();
+    }
+  });
+
+  test("severAfter.ms cuts an ESTABLISHED session, which a byte budget cannot", async () => {
+    // This is what the `ms` trigger is FOR, and why it is not redundant with the
+    // budget above: a byte budget small enough to fire reliably cuts during the
+    // handshake (the test above never completes an upgrade), and one large enough
+    // to clear it depends on the audio rate, so "cut a session that is already
+    // running" is only expressible in time. `severAll()` covers the case where a
+    // test picks the moment; this covers a profile running unattended.
+    //
+    // It also had NO test until this one, which is the worst gap available in a
+    // fault injector: a trigger that silently never fires makes a suite report
+    // that it ran under faults having injected none.
+    harness = await serve();
+    const proxy = await createSeveringProxy({
+      target: harness.proxy.port,
+      severAfter: { ms: 200 },
+    });
+    try {
+      // Establishing first is the point — the config frame proves the session is
+      // up, so what gets cut is a live session rather than a handshake.
+      const { ws, config } = await connect(proxy);
+      expect(config.sessionId).toBeTruthy();
+      const code = await closeCode(ws);
+      expect(code).toBe(1006);
+      expect(proxy.severed()).toBe(1);
+    } finally {
+      await proxy.close();
+    }
+  });
+
+  test("a proxy with NO severAfter leaves an established session alone", async () => {
+    // The control for the test above. Without it, a connection dropped for any
+    // other reason — the upstream closing, a relay bug — would read as the timer
+    // working, and the `ms` trigger could be removed with both tests still green.
+    harness = await serve();
+    const proxy = await createSeveringProxy({ target: harness.proxy.port });
+    try {
+      const { ws } = await connect(proxy);
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(proxy.severed()).toBe(0);
+      expect(proxy.live()).toBe(1);
+      ws.close();
     } finally {
       await proxy.close();
     }

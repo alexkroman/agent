@@ -1318,7 +1318,7 @@ fixtures in `host/fixtures/` contain recorded AssemblyAI API messages
 that are replayed through the real orchestration layer. Key helpers:
 
 - `makeMockHandle()` — creates mock S2S WebSocket using nanoevents
-- `replayFixtureMessages()` — dispatches fixture JSON as typed events
+- `fireFixtureMessage()` — one fixture message as typed callbacks
 - `createFixtureSession()` — wires a real Runtime to mocked S2S
 
 ## One canonical config schema, deny-list boundaries
