@@ -3,8 +3,8 @@
  * Capability contract: `workflow`.
  *
  * The browser half of durable workflows: the HTTP client over the workflow API,
- * the hooks that start a run and watch it, and the types that narrow a
- * completed run's output.
+ * the hooks that start a run and watch it, the one component that renders what a
+ * run has said, and the types that narrow a completed run's output.
  *
  * Distinct from `aai:workflow`, which is the same concept from the other side
  * of the wire — `workflow()` declares one, this reaches it. The two share three
@@ -39,6 +39,7 @@ export {
   type WorkflowApi,
   type WorkflowApiOptions,
   type WorkflowOutputOf,
+  WorkflowProgress,
   type WorkflowRun,
   type WorkflowSubmission,
   type WorkflowSummary,

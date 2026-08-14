@@ -665,6 +665,16 @@ export type ProviderField = "stt" | "llm" | "tts" | "s2s" | "text";
 export function pushCapped<T>(list: T[], item: T, max: number): T[];
 
 // @public
+export function resolveOne<T>(candidates: readonly T[], spoken: string, opts: ResolveOneOptions<T>): T | ToolFailure;
+
+// @public
+export interface ResolveOneOptions<T> {
+    describe: (candidate: T) => string;
+    label?: string;
+    score?: (candidate: T, text: string) => number;
+}
+
+// @public
 export type S2sAgentParams<S = DefaultSessionState> = SharedAgentParams<S> & {
     s2s: S2sProvider;
     stt?: "`stt` cannot be combined with `s2s` — S2S runs STT service-side";
@@ -727,6 +737,12 @@ export interface SlotToolDef<P extends ToolInputSchema, K extends string, T> {
     execute(args: InferSchemaOutput<P>, value: T, ctx: ToolContext<SlotState<K, T>>): Promise<unknown> | unknown;
     inputSchema?: P;
 }
+
+// @public
+export function spokenDigits(spoken: string): string;
+
+// @public
+export function spokenOrdinal(spoken: string): number | undefined;
 
 // @public
 interface StandardSchemaIssue {

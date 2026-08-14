@@ -1,5 +1,5 @@
-import type { ToolContext, ToolDef } from "@alexkroman1/aai";
-import { createToolContext } from "@alexkroman1/aai/testing";
+import type { ToolContext } from "@alexkroman1/aai";
+import { createToolContext, runTool } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import agentDef from "./agent.ts";
 import type { StateSlot } from "./shared.ts";
@@ -13,15 +13,11 @@ function makeCtx(sessionId?: string) {
   return createToolContext<StateSlot>(sessionId ? { sessionId } : {});
 }
 
-function getTool(name: string): ToolDef {
-  const def = agentDef.tools[name];
-  if (!def) throw new Error(`tool ${name} not defined on agent`);
-  return def;
-}
-
-async function run(name: string, args: Record<string, unknown>, ctx: ToolContext) {
-  return await getTool(name).execute(args, ctx);
-}
+/** A tool by the name the model calls it by, bound to this agent. The lookup
+ *  and its "no such tool" message are `runTool`'s (`@alexkroman1/aai/testing`);
+ *  what is local is only which agent they run against. */
+const run = (name: string, args: Record<string, unknown>, ctx: ToolContext<StateSlot>) =>
+  runTool(agentDef, name, args, ctx);
 
 /** The state a tool just mutated, read back the way `syncState` reads it. */
 function stateOf(ctx: ToolContext<StateSlot>) {

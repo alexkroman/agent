@@ -608,6 +608,18 @@ Each package has distinct test helpers tailored to its domain:
   reached for `{ … } as unknown as ToolContext` — the cast that also stops
   reporting when a field is ADDED, which is the failure a shared builder exists
   to prevent. Its own spec asserts the field LIST, since that is the contract.
+
+  **A tool's COLLABORATORS need fakes too**, and the same subpath carries them:
+  `stubGenerate`, `stubGateway`/`stubUploads`, `createRunSnapshot`/
+  `createProgressStream`, `toolOf`/`runTool`. Each came out of the same signal —
+  the same helper in a third template — and each replaces a fixture that was
+  either casting or hand-building an envelope; the subpath table in
+  `packages/aai/CLAUDE.md` says which.
+- **`aai/sdk/testing-vitest.ts`** — `@alexkroman1/aai/testing/vitest`, the one
+  module in the SDK that may import a test runner (`vitest` as an OPTIONAL
+  peer), so `/testing` stays framework-agnostic and importing THIS is what pulls
+  the runner. Reach for the same split when a helper's only remaining content is
+  the installation of a framework-agnostic fake.
 - **`aai/host/_test-utils.ts`** — `flush()` (microtask yield), `makeTool()`,
   `makeAgent()`, `makeConfig()`, fixture replay helpers for S2S mocking
 - **`aai-cli/_test-utils.ts`** — `withTempDir()` (temp dir + cleanup),
@@ -857,6 +869,15 @@ primitives — reach for them before re-inventing the pattern at a call site:
   hand-rolled `push` + `slice(-MAX)`; the fourth,
   `infocom-adventure`, had NOT — its command history sliced only for display and
   grew without bound, which is the bug a shared primitive turns into a decision.
+- **`resolveOne(candidates, spoken, opts)`** (`aai/sdk/spoken.ts`, ROOT only —
+  it imports `toolFailure` from `sdk/utils.ts`, so re-exporting it there would be
+  a cycle) — pick the one thing a caller named, or fail LISTING the candidates.
+  The contract is behavioural rather than structural, which is why it is worth
+  sharing: ambiguity is an ANSWER, never a guess, because the consequence of
+  guessing is cancelling the wrong order. `spokenDigits` and `spokenOrdinal` are
+  the readings it consults. See "Resolving what a caller SAID" in
+  `packages/aai/CLAUDE.md` for the order it applies them in and the one thing a
+  word-boundary match cannot rule out.
 - **`omitUndefined()`** (`aai/sdk/omit-undefined.ts`, exported from
   `@alexkroman1/aai/utils`) — the one way to build the optional half of an
   object under `exactOptionalPropertyTypes`. That flag makes
@@ -1247,31 +1268,15 @@ cache exactly when a contract tree changes.
 
 ### The authoring guide ships inside the SDK
 
-`scaffold/CLAUDE.md` is already the one source of truth for how to write an aai
-agent: `studio-prompt.ts` embeds it in the studio system prompt, and `aai init`
-copies it into every scaffolded project. What it is not is **version-matched to
-the SDK a project ends up resolving.** The copy in a project is frozen at the
-moment `aai init` ran — correct on day one, since the CLI and the SDK release
-together — and then the project runs `pnpm update @alexkroman1/aai`, the SDK
-moves, and the guide does not. An agent reads guidance for a version that is no
-longer installed, with nothing saying so.
-
-So `scripts/sync-agent-guide.mjs` materializes it as
-`packages/aai/AGENT_GUIDE.md`, which ships in the `aai` tarball and therefore
-cannot describe a different release than the `@alexkroman1/aai` beside it. The
-copy carries a generated-file banner as part of its compared content, so an edit
-that stripped the banner leaves a file that looks authored.
-
-`packages/aai/skills/aai/SKILL.md` ships beside it and deliberately carries **no
-API guidance at all** — it says where the guide is and stops. A skill lives in a
-user's home directory and has no version, so guidance embedded there is the same
-drift one level worse.
-
-It is a **repo-level script** rather than a build step in `aai`, because `aai`
-must import no sibling package (the dependency flow above, enforced by
-`konsistent.json`) and a build step reading from `aai-templates` would invert
-that. A root script reads both trees, so neither package declares anything about
-the other, and `check:agent-guide` is what keeps the copy honest.
+`scaffold/CLAUDE.md` is the one source of truth for how to write an aai agent,
+and `scripts/sync-agent-guide.mjs` materializes it as
+`packages/aai/AGENT_GUIDE.md` so it ships in the `aai` tarball and cannot
+describe a different release than the SDK beside it. It is a REPO-LEVEL script
+rather than a build step in `aai`, because `aai` may import no sibling package
+and a build step reading from `aai-templates` would invert that;
+`check:agent-guide` keeps the copy honest. See "The authoring guide ships inside
+the SDK" in `packages/aai-templates/CLAUDE.md` for the drift it prevents and why
+the shipped SKILL carries no API guidance of its own.
 
 ### Fixed release coupling
 

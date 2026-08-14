@@ -3,8 +3,9 @@
  * Capability contract: `session`.
  *
  * The live call as a client sees it: the framework-agnostic core, the snapshot
- * a component renders from, the context hooks that read it, and the errors and
- * capture constraints that come with holding a microphone open.
+ * a component renders from, the context hooks that read it, the caller's
+ * in-progress turn, and the errors and capture constraints that come with
+ * holding a microphone open.
  *
  * Re-exported from `@alexkroman1/aai-ui`. This file is not shipped and nothing
  * imports it — it exists so `pnpm check:api-contracts` can extract a report
@@ -23,8 +24,11 @@ export {
   type SessionError,
   type SessionErrorCode,
   type SessionSnapshot,
+  TRANSCRIBING_PLACEHOLDER,
+  type UseUserTranscriptResult,
   useSession,
   useSessionSelector,
+  useUserTranscript,
   VOICE_CAPTURE_CONSTRAINTS,
   type VoiceSessionOptions,
   type WebSocketConstructor,

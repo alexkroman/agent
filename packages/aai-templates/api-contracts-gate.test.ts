@@ -350,21 +350,42 @@ describe("API-EXPORTS.json", () => {
     // Same for `WorkflowClient`, which `createStubWorkflows` takes and returns.
     expect(surface["@alexkroman1/aai"]).toContain("WorkflowClient");
     expect(surface["@alexkroman1/aai/testing"]).not.toContain("WorkflowClient");
+    // …and for `GenerateFn`, `ToolDef` and `WorkflowRunSnapshot`, which the
+    // fakes added in epoch 9 take and return.
+    for (const forgotten of ["GenerateFn", "ToolDef", "WorkflowRunSnapshot"]) {
+      expect(surface["@alexkroman1/aai"]).toContain(forgotten);
+      expect(surface["@alexkroman1/aai/testing"]).not.toContain(forgotten);
+    }
     expect(surface["@alexkroman1/aai/testing"]).toEqual([
+      "RunSnapshotOverrides",
       "SentEvent",
       "StubGateway",
       "StubGatewayCall",
       "StubGatewayOptions",
+      "StubGenerate",
+      "StubGenerateCall",
+      "StubGenerateReply",
+      "StubGenerateRoute",
       "StubStepFetch",
       "StubStepRequest",
       "StubUpload",
       "TestToolContext",
+      "ToolBearingAgent",
+      "createProgressStream",
+      "createRunSnapshot",
       "createStubWorkflows",
       "createToolContext",
       "createUnusedDb",
+      "runTool",
       "stubGateway",
+      "stubGenerate",
       "stubStepFetch",
       "stubUploads",
+      "toolOf",
     ]);
+    // The vitest half is one name: the installation of the fake above it. That
+    // is the whole reason it is a subpath rather than part of `/testing` — see
+    // `sdk/testing-vitest.ts`.
+    expect(surface["@alexkroman1/aai/testing/vitest"]).toEqual(["installStubGateway"]);
   });
 });

@@ -26,6 +26,7 @@ symbol exported from two subpaths appears under both.
 - `@alexkroman1/aai/step-errors` — `packages/aai/etc/step-errors.api.md`
 - `@alexkroman1/aai/stt` — `packages/aai/etc/stt.api.md`
 - `@alexkroman1/aai/testing` — `packages/aai/etc/testing.api.md`
+- `@alexkroman1/aai/testing/vitest` — `packages/aai/etc/testing-vitest.api.md`
 - `@alexkroman1/aai/tools` — `packages/aai/etc/tools.api.md`
 - `@alexkroman1/aai/tts` — `packages/aai/etc/tts.api.md`
 - `@alexkroman1/aai/utils` — `packages/aai/etc/utils.api.md`
@@ -702,6 +703,16 @@ export type ProviderField = "stt" | "llm" | "tts" | "s2s" | "text";
 export function pushCapped<T>(list: T[], item: T, max: number): T[];
 
 // @public
+export function resolveOne<T>(candidates: readonly T[], spoken: string, opts: ResolveOneOptions<T>): T | ToolFailure;
+
+// @public
+export interface ResolveOneOptions<T> {
+    describe: (candidate: T) => string;
+    label?: string;
+    score?: (candidate: T, text: string) => number;
+}
+
+// @public
 export type S2sAgentParams<S = DefaultSessionState> = SharedAgentParams<S> & {
     s2s: S2sProvider;
     stt?: "`stt` cannot be combined with `s2s` — S2S runs STT service-side";
@@ -764,6 +775,12 @@ export interface SlotToolDef<P extends ToolInputSchema, K extends string, T> {
     execute(args: InferSchemaOutput<P>, value: T, ctx: ToolContext<SlotState<K, T>>): Promise<unknown> | unknown;
     inputSchema?: P;
 }
+
+// @public
+export function spokenDigits(spoken: string): string;
+
+// @public
+export function spokenOrdinal(spoken: string): number | undefined;
 
 // @public
 interface StandardSchemaIssue {
@@ -4148,6 +4165,12 @@ type AnyWorkflowDef<R = unknown> = {
 };
 
 // @public
+export function createProgressStream(lines?: readonly unknown[]): ReadableStream<unknown>;
+
+// @public
+export function createRunSnapshot<R = unknown>(over?: RunSnapshotOverrides<R>): WorkflowRunSnapshot<R>;
+
+// @public
 export function createStubWorkflows(overrides?: Partial<WorkflowClient>): WorkflowClient;
 
 // @public
@@ -4220,6 +4243,22 @@ interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly options: Options;
 }
+
+// @public
+export type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> & ({
+    status?: "pending" | "running" | undefined;
+} | {
+    status: "completed";
+    output: R;
+} | {
+    status: "failed";
+    error: string;
+} | {
+    status: "cancelled";
+});
+
+// @public
+export function runTool<S>(agent: ToolBearingAgent<S>, name: string, args: InferSchemaOutput<ToolInputSchema>, ctx: ToolContext<S>): Promise<unknown>;
 
 // @public
 export interface SentEvent {
@@ -4297,6 +4336,31 @@ export interface StubGatewayOptions {
 }
 
 // @public
+export interface StubGenerate {
+    calls: StubGenerateCall[];
+    generate: GenerateFn;
+}
+
+// @public
+export function stubGenerate(script: Readonly<Record<string, StubGenerateRoute>> | StubGenerateRoute): StubGenerate;
+
+// @public
+export interface StubGenerateCall {
+    options: GenerateOptions;
+    prompt: string;
+    system: string | undefined;
+}
+
+// @public
+export type StubGenerateReply = string | {
+    text?: string;
+    object: unknown;
+};
+
+// @public
+export type StubGenerateRoute = StubGenerateReply | ((call: StubGenerateCall) => StubGenerateReply);
+
+// @public
 export type StubStepFetch = {
     calls: StubStepRequest[];
     restore: () => void;
@@ -4337,6 +4401,11 @@ export type TestToolContext<S = DefaultSessionState> = ToolContext<S> & {
 };
 
 // @public
+export type ToolBearingAgent<S = DefaultSessionState> = {
+    readonly tools: Readonly<Record<string, ToolDef<ToolInputSchema, S>>>;
+};
+
+// @public
 type ToolContext<S = DefaultSessionState> = {
     env: Readonly<Record<string, string>>;
     state: S;
@@ -4350,7 +4419,17 @@ type ToolContext<S = DefaultSessionState> = {
 };
 
 // @public
+type ToolDef<P extends ToolInputSchema = ToolInputSchema, S = DefaultSessionState> = {
+    description: string;
+    inputSchema?: P;
+    execute(args: InferSchemaOutput<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
+};
+
+// @public
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
+
+// @public
+export function toolOf<S>(agent: ToolBearingAgent<S>, name: string): ToolDef<ToolInputSchema, S>;
 
 // @public
 type WakeUpOptions = {
@@ -4423,6 +4502,28 @@ type WorkflowSummary = {
     inputSchema?: unknown;
     uploads?: readonly string[];
 };
+```
+
+## `@alexkroman1/aai/testing/vitest`
+
+```ts
+// @public
+export function installStubGateway(replies: string | readonly string[], opts?: StubGatewayOptions): StubGatewayCall[];
+
+// @public
+interface StubGatewayCall {
+    body: Record<string, unknown>;
+    headers: Record<string, string>;
+    prompt: string;
+    system: string | undefined;
+    url: string;
+}
+
+// @public
+interface StubGatewayOptions {
+    headers?: Record<string, string>;
+    status?: number;
+}
 ```
 
 ## `@alexkroman1/aai/tools`
@@ -5566,6 +5667,9 @@ export type ToolDisplayConfig = Record<string, {
     label?: string;
 }>;
 
+// @public
+export const TRANSCRIBING_PLACEHOLDER = "\u2026";
+
 // @internal
 export function UiUrlChip(input: {
     className?: string | undefined;
@@ -5600,6 +5704,16 @@ export function useToolResult<R = DefaultToolResult>(toolName: string, callback:
 
 // @public (undocumented)
 export function useToolResult<R = DefaultToolResult>(callback: (name: string, result: R, toolCall: ToolCallInfo) => void): void;
+
+// @public
+export function useUserTranscript(): UseUserTranscriptResult;
+
+// @public
+export interface UseUserTranscriptResult {
+    partial: string | null;
+    speaking: boolean;
+    text: string;
+}
 
 // @public
 export function useWorkflowProgress<T = string>(runId: string | undefined, opts?: {
@@ -5707,6 +5821,14 @@ export function WorkflowFields(input: {
 }): JSX.Element | null;
 
 export { WorkflowOutputOf }
+
+// @public
+export function WorkflowProgress(input: {
+    runId?: string | undefined;
+    api?: WorkflowApi | undefined;
+    className?: string | undefined;
+    placeholder?: ReactNode | undefined;
+}): ReactNode;
 
 // @public
 export type WorkflowRun<R = unknown> = WorkflowRunSnapshot<R>;

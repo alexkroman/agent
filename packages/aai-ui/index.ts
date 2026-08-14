@@ -50,6 +50,9 @@ export { ToolConfigContext } from "./components/tool-config-context.ts";
 export { ApiUrlChip, SessionUrlChips, UiUrlChip } from "./components/url-chips.tsx";
 // A form generated from a workflow's own declared input schema.
 export { WorkflowFields } from "./components/workflow-fields.tsx";
+// The rendered half of `useWorkflowProgress` — what a run has SAID, as against
+// where it has got to.
+export { WorkflowProgress } from "./components/workflow-progress.tsx";
 export type { Session } from "./context.ts";
 // Context & hooks
 export {
@@ -95,6 +98,13 @@ export type {
 // Capture constraints, exported so a custom client that opens its own
 // microphone gets the same signal the built-in paths do.
 export { VOICE_CAPTURE_CONSTRAINTS } from "./types.ts";
+// The caller's in-progress turn, with `null` (silent) and `""` (speech
+// detected, no words yet) kept apart — see the module doc.
+export {
+  TRANSCRIBING_PLACEHOLDER,
+  type UseUserTranscriptResult,
+  useUserTranscript,
+} from "./use-user-transcript.ts";
 export {
   type UseWorkflowSubmitOptions,
   type UseWorkflowsOptions,

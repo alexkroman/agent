@@ -1,5 +1,5 @@
-import type { GenerateFn, GenerateOptions, ToolContext, ToolDef } from "@alexkroman1/aai";
-import { createToolContext } from "@alexkroman1/aai/testing";
+import type { GenerateFn, ToolContext } from "@alexkroman1/aai";
+import { createToolContext, runTool, stubGenerate } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import agentDef from "./agent.ts";
 import { MAX_ATTEMPTS, runCorrectiveRag } from "./graph.ts";
@@ -35,46 +35,42 @@ interface Script {
 }
 
 function scriptedModel(script: Script = {}) {
+  // The NODE transcript, which is this template's own and is why the routes
+  // below are functions: `stubGenerate` records the calls, and what these
+  // assertions need is the graph's node names, labelled with their verdicts.
   const calls: string[] = [];
   let attempt = 1;
   const answers = [...(script.answers ?? [])];
   const grounded = [...(script.grounded ?? [])];
   const useful = [...(script.useful ?? [])];
 
-  // Every branch returns an `object`, including the two text-only nodes:
-  // `GenerateFn`'s schema overload declares `object` as required, so a branch
-  // returning `{ text }` alone makes the whole fake unassignable.
-  const generate: GenerateFn = async (options: GenerateOptions) => {
-    switch (options.system) {
-      case DOC_GRADER_SYSTEM: {
-        const id = /\[(D\d+)\]/.exec(options.prompt)?.[1] ?? "?";
-        calls.push(`grade_documents:${id}`);
-        const pass = script.relevant ? script.relevant(id, attempt) : true;
-        return { text: "", object: { score: pass ? "yes" : "no", reason: `graded ${id}` } };
-      }
-      case REWRITE_SYSTEM: {
-        calls.push("transform_query");
-        attempt++;
-        return { text: script.rewrite ?? "rewritten query", object: null };
-      }
-      case ANSWER_SYSTEM: {
-        calls.push("generate");
-        return { text: answers.shift() ?? "The documented answer.", object: null };
-      }
-      case GROUNDED_SYSTEM: {
-        const verdict = grounded.shift() ?? "yes";
-        calls.push(`grade_generation_v_documents:${verdict}`);
-        return { text: "", object: { score: verdict, reason: "grounded verdict" } };
-      }
-      case ANSWERS_SYSTEM: {
-        const verdict = useful.shift() ?? "yes";
-        calls.push(`grade_generation_v_question:${verdict}`);
-        return { text: "", object: { score: verdict, reason: "usefulness verdict" } };
-      }
-      default:
-        throw new Error(`unscripted generate call: ${String(options.system)}`);
-    }
-  };
+  const { generate } = stubGenerate({
+    [DOC_GRADER_SYSTEM]: (call) => {
+      const id = /\[(D\d+)\]/.exec(call.prompt)?.[1] ?? "?";
+      calls.push(`grade_documents:${id}`);
+      const pass = script.relevant ? script.relevant(id, attempt) : true;
+      return { object: { score: pass ? "yes" : "no", reason: `graded ${id}` } };
+    },
+    [REWRITE_SYSTEM]: () => {
+      calls.push("transform_query");
+      attempt++;
+      return script.rewrite ?? "rewritten query";
+    },
+    [ANSWER_SYSTEM]: () => {
+      calls.push("generate");
+      return answers.shift() ?? "The documented answer.";
+    },
+    [GROUNDED_SYSTEM]: () => {
+      const verdict = grounded.shift() ?? "yes";
+      calls.push(`grade_generation_v_documents:${verdict}`);
+      return { object: { score: verdict, reason: "grounded verdict" } };
+    },
+    [ANSWERS_SYSTEM]: () => {
+      const verdict = useful.shift() ?? "yes";
+      calls.push(`grade_generation_v_question:${verdict}`);
+      return { object: { score: verdict, reason: "usefulness verdict" } };
+    },
+  });
 
   return { generate, calls };
 }
@@ -83,15 +79,11 @@ function makeCtx(generate: GenerateFn, sessionId?: string) {
   return createToolContext<StateSlot>({ generate, ...(sessionId ? { sessionId } : {}) });
 }
 
-function getTool(name: string): ToolDef {
-  const def = agentDef.tools[name];
-  if (!def) throw new Error(`tool ${name} not defined on agent`);
-  return def;
-}
-
-async function run(name: string, args: Record<string, unknown>, ctx: ToolContext) {
-  return await getTool(name).execute(args, ctx);
-}
+/** A tool by the name the model calls it by, bound to this agent. The lookup
+ *  and its "no such tool" message are `runTool`'s (`@alexkroman1/aai/testing`);
+ *  what is local is only which agent they run against. */
+const run = (name: string, args: Record<string, unknown>, ctx: ToolContext<StateSlot>) =>
+  runTool(agentDef, name, args, ctx);
 
 /** Node names without the per-call suffix, for sequence assertions. */
 function nodes(calls: string[]): string[] {

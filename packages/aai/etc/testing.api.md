@@ -13,6 +13,12 @@ type AnyWorkflowDef<R = unknown> = {
 };
 
 // @public
+export function createProgressStream(lines?: readonly unknown[]): ReadableStream<unknown>;
+
+// @public
+export function createRunSnapshot<R = unknown>(over?: RunSnapshotOverrides<R>): WorkflowRunSnapshot<R>;
+
+// @public
 export function createStubWorkflows(overrides?: Partial<WorkflowClient>): WorkflowClient;
 
 // @public
@@ -85,6 +91,22 @@ interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly options: Options;
 }
+
+// @public
+export type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> & ({
+    status?: "pending" | "running" | undefined;
+} | {
+    status: "completed";
+    output: R;
+} | {
+    status: "failed";
+    error: string;
+} | {
+    status: "cancelled";
+});
+
+// @public
+export function runTool<S>(agent: ToolBearingAgent<S>, name: string, args: InferSchemaOutput<ToolInputSchema>, ctx: ToolContext<S>): Promise<unknown>;
 
 // @public
 export interface SentEvent {
@@ -162,6 +184,31 @@ export interface StubGatewayOptions {
 }
 
 // @public
+export interface StubGenerate {
+    calls: StubGenerateCall[];
+    generate: GenerateFn;
+}
+
+// @public
+export function stubGenerate(script: Readonly<Record<string, StubGenerateRoute>> | StubGenerateRoute): StubGenerate;
+
+// @public
+export interface StubGenerateCall {
+    options: GenerateOptions;
+    prompt: string;
+    system: string | undefined;
+}
+
+// @public
+export type StubGenerateReply = string | {
+    text?: string;
+    object: unknown;
+};
+
+// @public
+export type StubGenerateRoute = StubGenerateReply | ((call: StubGenerateCall) => StubGenerateReply);
+
+// @public
 export type StubStepFetch = {
     calls: StubStepRequest[];
     restore: () => void;
@@ -202,6 +249,11 @@ export type TestToolContext<S = DefaultSessionState> = ToolContext<S> & {
 };
 
 // @public
+export type ToolBearingAgent<S = DefaultSessionState> = {
+    readonly tools: Readonly<Record<string, ToolDef<ToolInputSchema, S>>>;
+};
+
+// @public
 type ToolContext<S = DefaultSessionState> = {
     env: Readonly<Record<string, string>>;
     state: S;
@@ -215,7 +267,17 @@ type ToolContext<S = DefaultSessionState> = {
 };
 
 // @public
+type ToolDef<P extends ToolInputSchema = ToolInputSchema, S = DefaultSessionState> = {
+    description: string;
+    inputSchema?: P;
+    execute(args: InferSchemaOutput<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
+};
+
+// @public
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
+
+// @public
+export function toolOf<S>(agent: ToolBearingAgent<S>, name: string): ToolDef<ToolInputSchema, S>;
 
 // @public
 type WakeUpOptions = {

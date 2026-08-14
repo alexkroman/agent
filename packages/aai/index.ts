@@ -82,6 +82,10 @@ export type { InferSchemaOutput, ToolInputSchema } from "./sdk/schema.ts";
 // `ctx.state`'s typed seam — next to `agent()`/`tool()` because it is how a
 // multi-file agent reads its own session state, not an optional utility.
 export * from "./sdk/session-slot.ts";
+// Resolving what a caller SAID to one of the things a tool holds — the
+// never-guess contract, on the root barrel because it is written in a tool body
+// beside `toolFailure`, which it returns.
+export * from "./sdk/spoken.ts";
 export * from "./sdk/types.ts";
 /**
  * The utilities written INSIDE a tool body.

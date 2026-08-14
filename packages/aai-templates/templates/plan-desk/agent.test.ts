@@ -1,5 +1,5 @@
-import type { GenerateFn, GenerateOptions, ToolContext, ToolDef } from "@alexkroman1/aai";
-import { createToolContext } from "@alexkroman1/aai/testing";
+import type { GenerateFn, ToolContext } from "@alexkroman1/aai";
+import { createToolContext, runTool, stubGenerate } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import agentDef from "./agent.ts";
 import { executeStep, MAX_STEP_SEARCHES, normalizeAct, planNode } from "./graph.ts";
@@ -9,10 +9,11 @@ import { planSlot, planView } from "./shared.ts";
 
 // ─── A scripted model ────────────────────────────────────────────────────────
 //
-// Each node is one `ctx.generate` call carrying its own system prompt, so a
-// fake that switches on `options.system` drives the whole loop with no model
-// and no network. `prompts` is every prompt the fake was sent, which is how the
-// "a failed search goes back to the model" assertion is made.
+// Each node is one `ctx.generate` call carrying its own system prompt, so
+// `stubGenerate` — whose script IS keyed by system prompt — drives the whole
+// loop with no model and no network. `calls` is every call the fake took, which
+// is how the "a failed search goes back to the model" assertion is made: it
+// asserts on the PROMPT the next turn carried.
 
 interface Script {
   steps?: string[];
@@ -23,32 +24,23 @@ interface Script {
 }
 
 function scriptedModel(script: Script = {}) {
-  const prompts: string[] = [];
   const turns = [...(script.turns ?? [{ answer: "Settled it." }])];
   const acts = [...(script.acts ?? [])];
+  // The replanner and the reviser are the same node with a different brief, so
+  // they share one queue — which is what the "revise then carry on" test rests on.
+  const act = () => ({ object: acts.shift() ?? { kind: "respond", response: "All done." } });
 
-  // `object` on every branch: `GenerateFn`'s schema overload declares it
-  // required, so a `{ text }`-only branch makes the whole fake unassignable.
-  const generate: GenerateFn = async (options: GenerateOptions) => {
-    prompts.push(options.prompt);
-    switch (options.system) {
-      case PLANNER_SYSTEM:
-        return { text: "", object: { steps: script.steps ?? ["Only step"] } };
-      case EXECUTOR_SYSTEM: {
-        const turn = turns.shift() ?? { answer: "Settled it." };
-        return "search" in turn
-          ? { text: "", object: { action: "search", query: turn.search } }
-          : { text: "", object: { action: "answer", answer: turn.answer } };
-      }
-      case REPLANNER_SYSTEM:
-      case REVISE_SYSTEM:
-        return { text: "", object: acts.shift() ?? { kind: "respond", response: "All done." } };
-      default:
-        throw new Error(`unscripted generate call: ${String(options.system)}`);
-    }
-  };
-
-  return { generate, prompts };
+  return stubGenerate({
+    [PLANNER_SYSTEM]: { object: { steps: script.steps ?? ["Only step"] } },
+    [EXECUTOR_SYSTEM]: () => {
+      const turn = turns.shift() ?? { answer: "Settled it." };
+      return "search" in turn
+        ? { object: { action: "search", query: turn.search } }
+        : { object: { action: "answer", answer: turn.answer } };
+    },
+    [REPLANNER_SYSTEM]: act,
+    [REVISE_SYSTEM]: act,
+  });
 }
 
 /** A searcher that never touches the network. The tools use `liveSearch`, so
@@ -71,15 +63,11 @@ function makeCtx(generate: GenerateFn, sessionId?: string) {
   return createToolContext<StateSlot>({ generate, ...(sessionId ? { sessionId } : {}) });
 }
 
-function getTool(name: string): ToolDef {
-  const def = agentDef.tools[name];
-  if (!def) throw new Error(`tool ${name} not defined on agent`);
-  return def;
-}
-
-async function run(name: string, args: Record<string, unknown>, ctx: ToolContext) {
-  return await getTool(name).execute(args, ctx);
-}
+/** A tool by the name the model calls it by, bound to this agent. The lookup
+ *  and its "no such tool" message are `runTool`'s (`@alexkroman1/aai/testing`);
+ *  what is local is only which agent they run against. */
+const run = (name: string, args: Record<string, unknown>, ctx: ToolContext<StateSlot>) =>
+  runTool(agentDef, name, args, ctx);
 
 function stateOf(ctx: ToolContext<StateSlot>) {
   return planSlot.read(ctx.state);
@@ -89,18 +77,18 @@ function stateOf(ctx: ToolContext<StateSlot>) {
 
 describe("planNode", () => {
   test("returns the steps the planner produced", async () => {
-    const { generate, prompts } = scriptedModel({ steps: ["Check prices", "Book it"] });
+    const { generate, calls } = scriptedModel({ steps: ["Check prices", "Book it"] });
     expect(await planNode(generate, "get me to Lisbon in May")).toEqual([
       "Check prices",
       "Book it",
     ]);
-    expect(prompts[0]).toContain("get me to Lisbon in May");
+    expect(calls[0]?.prompt).toContain("get me to Lisbon in May");
   });
 });
 
 describe("executeStep", () => {
   test("searches, reads the results, then answers — and reports what it searched", async () => {
-    const { generate, prompts } = scriptedModel({
+    const { generate, calls } = scriptedModel({
       turns: [{ search: "lisbon flights may" }, { answer: "Flights are around 180 return." }],
     });
     const { search, queries } = fakeSearch({
@@ -112,24 +100,24 @@ describe("executeStep", () => {
     expect(outcome.result).toContain("180");
     expect(outcome.searches).toEqual(["lisbon flights may"]);
     // The results are what the second turn reasons over, not a note in a log.
-    expect(prompts[1]).toContain("https://example.test/fares");
+    expect(calls[1]?.prompt).toContain("https://example.test/fares");
   });
 
   test("a failed search goes back to the model rather than only to a log", async () => {
     // Told nothing, the model reads silence as "no such pages exist" and burns
     // the rest of its budget re-asking the same question.
-    const { generate, prompts } = scriptedModel({
+    const { generate, calls } = scriptedModel({
       turns: [{ search: "unindexed thing" }, { answer: "Could not confirm that." }],
     });
     const { search } = fakeSearch({});
 
     const outcome = await executeStep(generate, search, "objective", "Check the thing", []);
-    expect(prompts[1]).toContain("search backend unavailable");
+    expect(calls[1]?.prompt).toContain("search backend unavailable");
     expect(outcome.result).toBe("Could not confirm that.");
   });
 
   test("the search budget is a bound, not a suggestion", async () => {
-    const { generate, prompts } = scriptedModel({
+    const { generate, calls } = scriptedModel({
       // Three searches asked for, two allowed.
       turns: [{ search: "a" }, { search: "b" }, { search: "c" }],
     });
@@ -143,7 +131,7 @@ describe("executeStep", () => {
     expect(queries).toHaveLength(MAX_STEP_SEARCHES);
     // The last turn is told the budget is gone, which is what turns a search
     // loop into an answer.
-    expect(prompts.at(-1)).toContain("search budget");
+    expect(calls.at(-1)?.prompt).toContain("search budget");
     expect(outcome.result).toBe("This step could not be settled within its budget.");
   });
 });
@@ -276,7 +264,7 @@ describe("work_next_step", () => {
 
 describe("revise_plan", () => {
   test("rewrites what is left, keeps what is done, and reopens a finished plan", async () => {
-    const { generate, prompts } = scriptedModel({
+    const { generate, calls } = scriptedModel({
       steps: ["Check Lisbon prices", "Book Lisbon"],
       turns: [{ answer: "Lisbon is about 180 return." }],
       acts: [
@@ -304,7 +292,7 @@ describe("revise_plan", () => {
     expect(state.pastSteps).toHaveLength(1);
     expect(state.revisions.at(-1)).toContain("make it Porto instead");
     // The caller's words reach the replanner, which is the whole node.
-    expect(prompts.at(-1)).toContain("make it Porto instead");
+    expect(calls.at(-1)?.prompt).toContain("make it Porto instead");
   });
 
   test("refuses before there is a plan", async () => {
