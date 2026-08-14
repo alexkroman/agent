@@ -2,7 +2,7 @@
 /**
  * Frozen authoring example: `aai:uploads` epoch 1.
  *
- * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
+ * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative.
  *
  * The shape a fan-out over an uploaded file is written in: one step reads the

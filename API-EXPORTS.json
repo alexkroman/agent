@@ -38,6 +38,8 @@
     "InferSchemaOutput",
     "InferToolInput",
     "InferToolOutput",
+    "InlineToolsField",
+    "InlineToolsMisuse",
     "KeyedLock",
     "KeyedLockOptions",
     "KeyedLockTimeoutError",

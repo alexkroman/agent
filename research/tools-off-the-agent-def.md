@@ -1,6 +1,6 @@
 ---
 issue: TODO
-status: proposed
+status: implemented
 last_updated: "2026-08-14"
 ---
 
@@ -13,10 +13,11 @@ wrong. This is the mechanism that works, and the reason it is a bigger change
 than a bundler tweak.
 
 It has **no numeric prefix on purpose**: it builds no mechanism another plan
-consumes and consumes none. One soft ordering is worth knowing —
-`2-durable-session-state.md` removes `ToolContext<S>`'s generic, and landing it
-first deletes this plan's entire "does `S` inference survive" question rather
-than answering it.
+consumes and consumes none. The soft ordering this note used to give —
+land `2-durable-session-state.md` first and the "does `S` inference survive"
+question disappears — turned out to be unnecessary rather than merely optional:
+the question had no content, because `AgentDef.tools` was already `NoInfer<S>`.
+See "Status" below.
 
 ## Why the obvious seam fails
 
@@ -70,6 +71,64 @@ devDependency (the scaffold already declares one) and a build in front of the
 server. The alternative was an entrypoint that boots an agent with **no tools and
 no error anywhere**, which is the same silent absence discovery was introduced to
 kill, one level worse.
+
+## Status: the param is GONE, and `tools` did NOT have to leave `AgentDef`
+
+**The remaining scope landed, and the one row that did not is the row that was
+wrong.** What shipped:
+
+- **`agent()` takes no `tools`.** The field is `InlineToolsMisuse` on the
+  parameter shape — a compile error naming the file to create, the same idiom as
+  `PipelineOnlyMisuse` — and `agent()` also THROWS on a `tools` key. The second
+  half is not belt-and-braces: neither bundler type-checks user code, so the type
+  alone would make "a tool is only ever a file" true of this repo and of nobody's
+  project. It is also exactly the shape an options bag arrives in, where the
+  excess-property check does not fire.
+- **The six templates this document's predecessor missed are converted** —
+  `health-assistant`, `embedded-assets`, `infocom-adventure`, `night-owl`,
+  `recap-desk`, `research-desk`. Thirteen templates, no `tools` map anywhere.
+- **The studio's own text agent goes on with `withTools`**, which is the honest
+  answer rather than an exception: its four tool families close over ONE session's
+  workspace directory and are rebuilt per turn, so they cannot be files. A
+  registry resolved from a session, attached the same way a registry resolved from
+  a directory is.
+- `aai:agent` epoch 8 is **dropped** (`--drop`), with epochs 1–2 and 4–7 dropped
+  beside it and their frozen examples deleted; epoch 3 survives because a workflow
+  app never declared a tool. `aai:state` epochs 1–2 are dropped too, by hand,
+  because its own report did not move — the slot API is untouched and those two
+  examples merely attached their tools through the dropped param.
+
+### "`tools` off `AgentDef`" was the wrong row, and the resolve step is unbuilt
+
+The scope table asked for a `resolveAgentTools(def, source)` step and for `tools`
+to stop being a field. Neither is needed, and building them would have been
+strictly worse:
+
+- **`withTools` already IS the resolve step.** It returns a new def with the
+  registry merged, so `tools` stays a synchronous field and every reader —
+  `createRuntime`, `createAgentServer`, `toAgentConfig`, `agentToolsToSchemas`,
+  `trial.ts` — is untouched. The blocker this document opens with ("`tools` is a
+  synchronous field and a directory scan is asynchronous") dissolved when disk
+  mode did: both surviving sources hand over ALREADY-LOADED modules, so the
+  resolution is synchronous and the field is fine.
+- **"Registry-aware `toolOf` / `runTool` / harness" is therefore a no-op**, and
+  the row is deleted rather than done. They read `agentDef.tools`, and
+  `withDiscoveredTools` fills it; four templates' specs already worked this way
+  before this stage, and five more joined with no change to the helpers.
+- **`S` inference was never at risk**, which retires this document's last open
+  question rather than answering it. `AgentDef.tools` is `NoInfer<S>` and always
+  was, so a `tools` map never contributed to inference; `state` is the only
+  source. What the map DID check is a tool's assignability against `S`, and that
+  is the guarantee `sessionSlot()` now carries alone — which is most of why slots
+  exist, and the reason `infocom-adventure`'s eight tools got SHORTER by moving
+  into files (`slot.tool()` needs neither the annotation nor the opening
+  `slot.get`).
+
+One thing the type test found that review did not: **`withTools`'s registry
+parameter had to become `NoInfer` too.** Without it a tool written without the
+state type — the common case — competes with the def for the inference and
+collapses `S` to `never`, so `withTools(agent({ state }), { ping })` silently lost
+the state shape. Same fix, same reason, one layer down from `AgentDef.tools`.
 
 ## Design: eve's two modes over one generator
 
@@ -150,6 +209,24 @@ total there is no registration step to forget, which is the whole point. What
 replaces it is the diagnostics above — a file that exports no tool, or nests, or
 collides with an inline name, must fail the build naming the file.
 
+**One consumer of `def.tools` lives outside the packages listed above, and it
+should be deleted rather than ported.** `aai-server/smoke.test.ts` (193 lines)
+calls `agentToolsToSchemas(agent.tools)` at three sites, so this plan breaks it
+and porting it would preserve a test whose premise is already dead. Its header
+claims it verifies that "tool schemas survive the SDK → deploy body → server
+round trip"; that stopped being true when the stored config column was dropped.
+`DeployBodySchema` has no `agentConfig` field (its own comment says so), zod
+strips the key the test builds, and the assertion is `expect(res.status).toBe(200)`
+— green while checking nothing, which is the shape this repo's gates exist to
+catch. Four of its six tests never touch the server at all (`toAgentConfig`,
+`resolveAllBuiltins`, `agentToolsToSchemas`) and belong in `packages/aai`; the
+one that does — deploy, then `GET /:slug/health` and `GET /:slug/`— is covered by
+`deploy.test.ts` and the transport suite.
+
+While there: `aai-server/platform-events.test.ts:17` still carries a
+`config: { name, systemPrompt, greeting, toolSchemas: [] }` fixture for that same
+dropped column, cast `as never` so nothing reports it.
+
 ## Scope
 
 | Change | Where |
@@ -162,6 +239,7 @@ collides with an inline name, must fail the build naming the file.
 | Registry-aware `toolOf` / `runTool` / harness | `aai/sdk/testing.ts` |
 | Delete the `tools:` maps and their imports | 6 templates, 62 entries |
 | Delete the registration test | `aai-templates` |
+| Delete `smoke.test.ts` (dead premise, reads `agent.tools`); move its four SDK-only tests to `packages/aai` | `aai-server` |
 | Epoch bump as `--drop` | `contracts/` — `aai:agent`, `aai:tool`, `aai:testing` |
 
 ## Open questions

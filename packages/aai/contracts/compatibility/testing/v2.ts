@@ -12,7 +12,7 @@
  * so this example is also the thing that would break if `createStubWorkflows`
  * stopped covering the whole client.
  *
- * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
+ * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative.
  */
 

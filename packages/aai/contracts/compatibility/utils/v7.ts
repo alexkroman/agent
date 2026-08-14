@@ -2,7 +2,7 @@
 /**
  * Frozen authoring example: `utils` epoch 7.
  *
- * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
+ * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative. Epoch 7 adds how a step MAKES its request — `stepFetch`,
  * `multipartBody`, `StepTransportError` — to epoch 6's and takes nothing away,
  * so this file only demonstrates what is new.

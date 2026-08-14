@@ -2,7 +2,7 @@
 /**
  * Frozen authoring example: `tool` epoch 2.
  *
- * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
+ * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative.
  *
  * Epoch 1 is DROPPED and its example is gone. What changed for a tool author is

@@ -148,15 +148,28 @@ export function toolRegistry<S = DefaultSessionState>(modules: ToolModules): Too
  * shared (a spec imports the same one the entry does), and a loader quietly
  * rewriting it makes the order of two imports decide what an agent can do.
  *
- * A name the def ALREADY declares is an error rather than a shadow. Precedence
- * exists so new code can override old code, and there is no old code here — so
- * two spellings of one tool name are a mistake and only the author knows which
- * was meant. (`builtinTools` keeps its own precedence rule, where the shadowed
- * thing is framework-supplied and overriding it is the intended act.)
+ * **It is also the seam a NON-file registry goes on through**, which is the one
+ * legitimate case left: the studio's own coding agent builds four tool families
+ * per turn, every one of them closed over a single session's workspace directory
+ * (`aai-guest/studio-agent.ts`). Those cannot be files, and this is what makes
+ * that honest rather than an exception — a registry resolved from a session
+ * instead of from a directory, attached the same way.
+ *
+ * A name the def ALREADY holds is an error. Through `agent()` that is now
+ * unreachable — it returns an empty table and refuses a `tools` argument — so
+ * what this catches is a hand-written `export default { … tools: {…} }` that
+ * skipped `agent()`, and a second `withTools` over a def that already has one.
+ *
+ * `NoInfer` on the registry for the reason {@link AgentDef.tools} carries it:
+ * `S` belongs to the DEF. Without it a tool written without the state type —
+ * the common case, since `tool()` only learns `S` from an annotated context —
+ * competes with the def for the inference and collapses `S` to `never`, so
+ * `withTools(agent({ state }), { ping })` silently loses the state shape. The
+ * registry is still CHECKED against `S`.
  *
  * @public
  */
-export function withTools<S>(def: AgentDef<S>, registry: ToolRegistry<S>): AgentDef<S> {
+export function withTools<S>(def: AgentDef<S>, registry: ToolRegistry<NoInfer<S>>): AgentDef<S> {
   for (const name of Object.keys(registry)) {
     if (def.tools[name] !== undefined) {
       throw new Error(

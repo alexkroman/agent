@@ -1,4 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
+/// <reference types="vite/client" />
+
 /**
  * Specs for the recap desk — the template that ports the Temporal workflow
  * patterns onto a voice call.
@@ -25,17 +27,20 @@
  *   runs a real one.
  */
 
-import type { WorkflowClient, WorkflowRunSnapshot } from "@alexkroman1/aai";
+import type { ToolContext, WorkflowClient, WorkflowRunSnapshot } from "@alexkroman1/aai";
 import {
   createProgressStream,
   createRunSnapshot,
   createStubWorkflows,
   createToolContext,
+  runTool,
+  withDiscoveredTools,
 } from "@alexkroman1/aai/testing";
 import { installStubGateway as stubGateway } from "@alexkroman1/aai/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { createHook, type Hook, sleep } from "workflow";
-import agentDef, { recap } from "./agent.ts";
+import authoredAgent from "./agent.ts";
+import { recap } from "./shared.ts";
 import {
   askWhetherToKeep,
   awaitTranscript,
@@ -61,6 +66,23 @@ vi.mock("workflow", async (importActual) => ({
   sleep: vi.fn(async () => undefined),
   createHook: vi.fn(),
 }));
+
+/**
+ * The def a DEPLOYED agent runs: authored, plus what `tools/` declares.
+ *
+ * The glob is written HERE rather than reached for from a shared helper because
+ * this file SHIPS: it is what a scaffolded project runs, so it may not import
+ * anything outside its own template, and `import.meta.glob` is expanded against
+ * the file containing it either way. This is the pattern a user writes.
+ */
+const agentDef = withDiscoveredTools(
+  authoredAgent,
+  import.meta.glob("./tools/*.ts", { eager: true }),
+);
+
+/** Every tool here is driven through the agent's own table, by the name the model calls. */
+const run = (name: string, args: Record<string, unknown>, ctx: ToolContext): Promise<unknown> =>
+  runTool(agentDef, name, args, ctx);
 
 /** A `ctx.workflows` that records `start` and answers `find` from a fixture. */
 function stubWorkflows(runs: WorkflowRunSnapshot[] = []): WorkflowClient {
@@ -119,7 +141,14 @@ describe("the agent declares its workflow", () => {
     // The distinction this template exists on: a caller is on the line, so the
     // run is a handoff. `link-digest` is the other shape.
     expect(agentDef.page).toBeUndefined();
-    expect(Object.keys(agentDef.tools ?? {}).length).toBeGreaterThan(0);
+    // Discovered, not declared: every name here is a file in `tools/`.
+    expect(Object.keys(agentDef.tools).sort()).toEqual([
+      "cancel_recap",
+      "keep_transcript",
+      "recap_progress",
+      "recap_status",
+      "request_recap",
+    ]);
   });
 });
 
@@ -127,7 +156,7 @@ describe("request_recap", () => {
   test("starts a run keyed by the session, so a later turn can find it", async () => {
     const workflows = stubWorkflows();
     const ctx = createToolContext({ workflows });
-    const result = await agentDef.tools.request_recap?.execute({}, ctx);
+    const result = await run("request_recap", {}, ctx);
 
     expect(workflows.start).toHaveBeenCalledWith(
       recap,
@@ -141,7 +170,7 @@ describe("request_recap", () => {
 
   test("passes the definition rather than its name", async () => {
     const workflows = stubWorkflows();
-    await agentDef.tools.request_recap?.execute({}, createToolContext({ workflows }));
+    await run("request_recap", {}, createToolContext({ workflows }));
     // The def overload is what types the input and turns a rename into a compile
     // error; a string would still work at runtime and lose both.
     expect(vi.mocked(workflows.start).mock.calls[0]?.[0]).toBe(recap);
@@ -149,7 +178,8 @@ describe("request_recap", () => {
 
   test("uses the caller's recording when they named one", async () => {
     const workflows = stubWorkflows();
-    await agentDef.tools.request_recap?.execute(
+    await run(
+      "request_recap",
       { url: "https://example.com/board.mp3" },
       createToolContext({ workflows }),
     );
@@ -163,10 +193,7 @@ describe("request_recap", () => {
     // failure it prevents is not tidiness: a caller who asks twice would
     // otherwise pay for the same recording being transcribed twice.
     const workflows = stubWorkflows([createRunSnapshot({ workflow: "recap", status: "running" })]);
-    const result = await agentDef.tools.request_recap?.execute(
-      {},
-      createToolContext({ workflows }),
-    );
+    const result = await run("request_recap", {}, createToolContext({ workflows }));
     expect(result).toMatchObject({ started: false, runId: "wrun_1" });
     expect(workflows.start).not.toHaveBeenCalled();
   });
@@ -175,10 +202,7 @@ describe("request_recap", () => {
     const workflows = stubWorkflows([
       createRunSnapshot({ workflow: "recap", status: "completed", output: finishedOutput() }),
     ]);
-    const result = await agentDef.tools.request_recap?.execute(
-      {},
-      createToolContext({ workflows }),
-    );
+    const result = await run("request_recap", {}, createToolContext({ workflows }));
     expect(result).toMatchObject({ started: true });
     expect(workflows.start).toHaveBeenCalledTimes(1);
   });
@@ -187,7 +211,7 @@ describe("request_recap", () => {
 describe("recap_status", () => {
   test("says nothing was started when the key has no runs", async () => {
     const ctx = createToolContext({ workflows: stubWorkflows([]) });
-    const result = await agentDef.tools.recap_status?.execute({}, ctx);
+    const result = await run("recap_status", {}, ctx);
     expect(result).toMatchObject({ runs: [], note: "Nothing started yet." });
   });
 
@@ -197,10 +221,9 @@ describe("recap_status", () => {
     const workflows = stubWorkflows([
       createRunSnapshot({ workflow: "recap", status: "completed", output: finishedOutput() }),
     ]);
-    const result = (await agentDef.tools.recap_status?.execute(
-      {},
-      createToolContext({ workflows }),
-    )) as { runs: string[] };
+    const result = (await run("recap_status", {}, createToolContext({ workflows }))) as {
+      runs: string[];
+    };
     expect(result.runs[0]).toContain("air quality");
   });
 
@@ -214,7 +237,8 @@ describe("recap_status", () => {
         output: finishedOutput({ kept: false, answered: false }),
       }),
     ];
-    const result = (await agentDef.tools.recap_status?.execute(
+    const result = (await run(
+      "recap_status",
       {},
       createToolContext({ workflows: stubWorkflows(runs) }),
     )) as { runs: string[] };
@@ -225,7 +249,7 @@ describe("recap_status", () => {
     const ctx = createToolContext({
       workflows: stubWorkflows([createRunSnapshot({ workflow: "recap", status: "running" })]),
     });
-    const result = (await agentDef.tools.recap_status?.execute({}, ctx)) as { runs: string[] };
+    const result = (await run("recap_status", {}, ctx)) as { runs: string[] };
     expect(result.runs[0]).toContain("Still working");
   });
 
@@ -236,7 +260,8 @@ describe("recap_status", () => {
     const runs = [
       createRunSnapshot({ workflow: "recap", status: "failed", error: "provider unavailable" }),
     ];
-    const result = (await agentDef.tools.recap_status?.execute(
+    const result = (await run(
+      "recap_status",
       {},
       createToolContext({ workflows: stubWorkflows(runs) }),
     )) as { runs: string[] };
@@ -247,7 +272,7 @@ describe("recap_status", () => {
   test("bounds how many past runs it reads aloud", async () => {
     const workflows = stubWorkflows([]);
     const ctx = createToolContext({ workflows });
-    await agentDef.tools.recap_status?.execute({}, ctx);
+    await run("recap_status", {}, ctx);
     // A voice reply cannot be a list of twenty runs.
     expect(workflows.find).toHaveBeenCalledWith(recap, ctx.sessionId, { limit: 3 });
   });
@@ -257,10 +282,7 @@ describe("recap_progress", () => {
   test("reads the run's own progress line rather than its status", async () => {
     const workflows = stubWorkflows([createRunSnapshot({ workflow: "recap", status: "running" })]);
     vi.mocked(workflows.stream).mockResolvedValue(createProgressStream(["Transcript processing."]));
-    const result = await agentDef.tools.recap_progress?.execute(
-      {},
-      createToolContext({ workflows }),
-    );
+    const result = await run("recap_progress", {}, createToolContext({ workflows }));
     expect(result).toMatchObject({ progress: "Transcript processing." });
   });
 
@@ -268,7 +290,7 @@ describe("recap_progress", () => {
     // Every poll narrates, so a twenty-minute run's whole log is eighty lines.
     const workflows = stubWorkflows([createRunSnapshot({ workflow: "recap", status: "running" })]);
     vi.mocked(workflows.stream).mockResolvedValue(createProgressStream(["a"]));
-    await agentDef.tools.recap_progress?.execute({}, createToolContext({ workflows }));
+    await run("recap_progress", {}, createToolContext({ workflows }));
     expect(workflows.stream).toHaveBeenCalledWith("wrun_1", { startIndex: -1 });
   });
 
@@ -278,10 +300,7 @@ describe("recap_progress", () => {
     // tool hangs instead of answering.
     const workflows = stubWorkflows([createRunSnapshot({ workflow: "recap", status: "running" })]);
     vi.mocked(workflows.streamTail).mockResolvedValue(-1);
-    const result = await agentDef.tools.recap_progress?.execute(
-      {},
-      createToolContext({ workflows }),
-    );
+    const result = await run("recap_progress", {}, createToolContext({ workflows }));
     expect(result).toMatchObject({ note: expect.stringContaining("nothing to report") });
     expect(workflows.stream).not.toHaveBeenCalled();
   });
@@ -295,7 +314,7 @@ describe("keep_transcript — the signal", () => {
     const workflows = stubWorkflows();
     const signal = vi.fn(async () => true);
     const ctx = createToolContext({ workflows: { ...workflows, signal } });
-    const result = await agentDef.tools.keep_transcript?.execute({ keep: true }, ctx);
+    const result = await run("keep_transcript", { keep: true }, ctx);
 
     expect(signal).toHaveBeenCalledWith(retentionToken(ctx.sessionId), { keep: true });
     expect(result).toMatchObject({ answered: true, keep: true });
@@ -307,7 +326,7 @@ describe("keep_transcript — the signal", () => {
     // closes, or the caller waits two minutes for something they already said.
     const signal = vi.fn(async () => true);
     const ctx = createToolContext({ workflows: { ...stubWorkflows(), signal } });
-    await agentDef.tools.keep_transcript?.execute({ keep: false }, ctx);
+    await run("keep_transcript", { keep: false }, ctx);
     expect(signal).toHaveBeenCalledWith(expect.any(String), { keep: false });
   });
 
@@ -316,7 +335,7 @@ describe("keep_transcript — the signal", () => {
     // nobody asked.
     const signal = vi.fn(async () => false);
     const ctx = createToolContext({ workflows: { ...stubWorkflows(), signal } });
-    const result = await agentDef.tools.keep_transcript?.execute({ keep: true }, ctx);
+    const result = await run("keep_transcript", { keep: true }, ctx);
     expect(result).toMatchObject({ answered: false, note: expect.stringContaining("settled") });
   });
 });
@@ -324,7 +343,7 @@ describe("keep_transcript — the signal", () => {
 describe("cancel_recap", () => {
   test("cancels the live run", async () => {
     const workflows = stubWorkflows([createRunSnapshot({ workflow: "recap", status: "running" })]);
-    const result = await agentDef.tools.cancel_recap?.execute({}, createToolContext({ workflows }));
+    const result = await run("cancel_recap", {}, createToolContext({ workflows }));
     expect(workflows.cancel).toHaveBeenCalledWith("wrun_1");
     expect(result).toMatchObject({ cancelled: true });
   });
@@ -335,10 +354,9 @@ describe("cancel_recap", () => {
     // stops replaying the run, so the compensations never fire. A template that
     // implied otherwise would be teaching the wrong thing.
     const workflows = stubWorkflows([createRunSnapshot({ workflow: "recap", status: "running" })]);
-    const result = (await agentDef.tools.cancel_recap?.execute(
-      {},
-      createToolContext({ workflows }),
-    )) as { note: string };
+    const result = (await run("cancel_recap", {}, createToolContext({ workflows }))) as {
+      note: string;
+    };
     expect(result.note).toContain("left behind");
   });
 
@@ -347,13 +365,13 @@ describe("cancel_recap", () => {
       createRunSnapshot({ workflow: "recap", status: "completed", output: finishedOutput() }),
     ]);
     vi.mocked(workflows.cancel).mockResolvedValue(false);
-    const result = await agentDef.tools.cancel_recap?.execute({}, createToolContext({ workflows }));
+    const result = await run("cancel_recap", {}, createToolContext({ workflows }));
     expect(result).toMatchObject({ cancelled: false, note: "That one had already finished." });
   });
 
   test("says nothing was started when the key has no runs", async () => {
     const workflows = stubWorkflows([]);
-    const result = await agentDef.tools.cancel_recap?.execute({}, createToolContext({ workflows }));
+    const result = await run("cancel_recap", {}, createToolContext({ workflows }));
     expect(result).toMatchObject({ cancelled: false, note: "Nothing started yet." });
     expect(workflows.cancel).not.toHaveBeenCalled();
   });

@@ -2,7 +2,7 @@
 /**
  * Frozen authoring example: `state` epoch 3.
  *
- * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
+ * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative.
  *
  * **Nothing was added to this capability's own exports.** The epoch moved

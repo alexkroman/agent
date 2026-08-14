@@ -362,7 +362,7 @@ type WakeUpOptions = {
 };
 
 // @public
-export function withTools<S>(def: AgentDef<S>, registry: ToolRegistry<S>): AgentDef<S>;
+export function withTools<S>(def: AgentDef<S>, registry: ToolRegistry<NoInfer<S>>): AgentDef<S>;
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {

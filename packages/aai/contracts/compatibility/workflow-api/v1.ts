@@ -8,7 +8,7 @@
  * a cron job asking an agent to do durable work and reporting the answer — which
  * is exactly the audience the capability exists to promise something to.
  *
- * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
+ * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative. Editing this file to silence a compile error defeats the mechanism:
  * the error IS the finding.
  */

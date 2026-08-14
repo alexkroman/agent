@@ -701,14 +701,44 @@ server declines. `agent-default-export` used to require an `agent` import for
 that reason and no longer can, the workflow-app templates calling `workflowApp`
 instead.
 
-**A `tools/` file IS the tool: it default-exports it, nothing imports it, and no
-template's `agent.ts` carries a `tools:` map any more.** Discovery happens where
+**A `tools/` file IS the tool: it default-exports it, nothing imports it, and
+`agent()` takes no `tools` field at all.** Discovery happens where
 the bundle is assembled (`aai-cli/worker-bundler.ts` enumerates `tools/*.ts` and
 emits static imports), because the guest sandbox is handed one ESM string and has
 no directory to scan — the same lowering eve does. `toolRegistry` /`withTools`
 (`@alexkroman1/aai/manifest`) own the rules, so the name grammar, the
 default-export requirement, the flat-only rule and a duplicate name are one
 implementation and each is a build error naming the file.
+
+**All thirteen tool-declaring templates are files now, and the param is GONE.**
+For a while six were not — `health-assistant`, `embedded-assets`,
+`infocom-adventure`, `night-owl`, `recap-desk`, `research-desk` declared theirs
+inline, and this guide's own measurement missed them because it counted only the
+templates that already had a `tools/` directory. That is what made the rule
+conventional: `agent({ tools })` still worked, so "a tool is a file" was true of
+seven templates and of nothing enforcing it. `tools` is now the
+`InlineToolsMisuse` message on the parameter shape (a compile error naming the
+file to create) AND a throw inside `agent()` — the second half is not belt-and-braces,
+it is the only half a user's project ever runs, since neither bundler
+type-checks user code.
+
+Three things the conversion taught, each worth copying into the next one:
+
+- **A slot-backed tool gets SHORTER in its own file.** `slot.get(ctx)` needs
+  `ctx: ToolContext<SlotState<K, T>>`, which a standalone tool file cannot supply
+  — so `infocom-adventure`'s eight tools became `gameSlot.tool()` calls with no
+  annotation and no opening `slot.get`. That is the case `slot.tool` was built
+  for, and moving a tool out of `agent.ts` is what makes it visible.
+- **Module state shared by two tools needs a module.** `health-assistant`'s two
+  tools share one memoizing FDA-label cache; a cache per tool file would halve
+  the memoization silently, so it moved to `fda.ts` and says so there. Same shape
+  as `embedded-assets`'s search index and `infocom-adventure`'s
+  `REPORTED_HISTORY` — a `-5` that two files answered with.
+- **A workflow DECLARATION needs a home that is neither half.** `research-desk`
+  and `recap-desk` reach a run by passing the definition rather than its name
+  (which is what types the input), and four or five tool files each name it, so
+  `workflow({ … })` moved from `agent.ts` into `shared.ts`. The `"use workflow"`
+  BODY stays in `workflows/` — the WDK builder scans that directory.
 
 It replaced 62 map entries whose whole content was
 `snake_case_name: camelCaseImport`, and the reason was the silent failure rather

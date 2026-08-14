@@ -13,6 +13,13 @@
  * the line. So `request_research` starts a run and returns in the same turn, the
  * run outlives the call, and a LATER call reads the result back.
  *
+ * ## The four tools are four files
+ *
+ * `tools/` is the tool list — a file there IS a tool, named by its own filename —
+ * so this module declares the agent and the workflow it hands off to, and nothing
+ * about tools. The declaration they all share lives in `shared.ts`, because a
+ * tool starts a run by passing the DEFINITION rather than its name.
+ *
  * ## And it SAYS SO when the work lands
  *
  * `start(…, { notify })` is what closes the loop that used to be open: the agent
@@ -66,58 +73,8 @@
  * runs and the key index both live there.
  */
 
-import {
-  agent,
-  isTerminal,
-  tool,
-  type WorkflowOutputOf,
-  type WorkflowRunSnapshot,
-  workflow,
-} from "@alexkroman1/aai";
-import { z } from "zod";
-import { researchFlow } from "./workflows/research.ts";
-
-/**
- * The declaration: schema, description, and the directive body.
- *
- * Exported so a client page could derive its output type with `WorkflowOutputOf`
- * — and because `ctx.workflows.start(research, …)` below takes the definition
- * itself rather than its name, which is what types the input and makes a typo a
- * compile error instead of a rejected promise the model reads as a tool failure.
- */
-export const research = workflow({
-  description:
-    "Research a topic properly — brief, angles, web search per angle, a gap pass, then a written report",
-  input: z.object({
-    topic: z.string().min(3).describe("What to research"),
-    requestedBy: z.string().describe("Who asked — used when filing the result"),
-  }),
-  run: researchFlow,
-});
-
-/** How many past runs the status tool will look at. Newest first. */
-const RECENT_RUNS = 3;
-
-/**
- * One line a voice agent can read aloud about a run.
- *
- * `WorkflowOutputOf` is what names the output type — the same helper a page uses
- * to type `run.output`, and the reason this signature does not have to reach
- * past the declaration into the body's own return type.
- */
-function describeRun(run: WorkflowRunSnapshot<WorkflowOutputOf<typeof research>>): string {
-  // `isTerminal` narrows to the three finished statuses, which is what makes
-  // `run.output` and `run.error` reachable without a cast.
-  if (!isTerminal(run)) return "Still working on it.";
-  switch (run.status) {
-    case "completed":
-      return `Done: ${run.output.summary} (${run.output.sources} sources)`;
-    case "failed":
-      return `That one failed: ${run.error}`;
-    default:
-      return "That one was cancelled.";
-  }
-}
+import { agent } from "@alexkroman1/aai";
+import { research } from "./shared.ts";
 
 export default agent({
   name: "Research Desk",
@@ -134,90 +91,4 @@ export default agent({
   ].join(" "),
 
   workflows: { research },
-
-  tools: {
-    request_research: tool({
-      description:
-        "Start researching a topic. Returns immediately; the work continues after the call.",
-      inputSchema: z.object({ topic: z.string().min(3) }),
-      execute: async ({ topic }, ctx) => {
-        // The definition, not the string "research": that types `topic` against
-        // the workflow's own schema. `key` is what `research_status` searches on.
-        const runId = await ctx.workflows.start(
-          research,
-          { topic, requestedBy: ctx.sessionId },
-          {
-            key: ctx.sessionId,
-            // What makes "I'll let you know" true. The run finishes minutes
-            // later, with no turn to land in — so the SDK gives the agent one:
-            // when it settles, this session takes an unprompted turn built from
-            // the run's own output, and the caller hears the answer without
-            // having to think to ask again.
-            //
-            // The instruction is a sentence for the MODEL, not a line to read:
-            // it is the only thing that knows what this caller has already been
-            // told. Omit it (`notify: true`) for the SDK's default.
-            //
-            // `key` is still the durable handle: an announcement only reaches
-            // THIS call, and a run outlives it.
-            notify: "Tell them the research came back, then read the summary in one sentence.",
-          },
-        );
-        return { started: true, runId, topic };
-      },
-    }),
-
-    research_status: tool({
-      description: "Report on research started earlier in this call.",
-      execute: async (_args, ctx) => {
-        const runs = await ctx.workflows.find(research, ctx.sessionId, { limit: RECENT_RUNS });
-        if (runs.length === 0) return { runs: [] as string[], note: "Nothing started yet." };
-        return { runs: runs.map((run) => `${run.workflow}: ${describeRun(run)}`) };
-      },
-    }),
-
-    research_progress: tool({
-      description: "Say what the research is doing right now, for a run that has not finished yet.",
-      execute: async (_args, ctx) => {
-        const [latest] = await ctx.workflows.find(research, ctx.sessionId, { limit: 1 });
-        if (!latest) return { note: "Nothing started yet." };
-        // `research_status` reports the run's STATUS; this reports what the run
-        // has WRITTEN (`getWritable()` in `workflows/research.ts`). Between "still
-        // working on it" and a finished summary there is otherwise nothing to say.
-        //
-        // `streamTail` FIRST, and not as an optimization: a progress channel is
-        // never closed — no step knows it is the last one — so reading a stream
-        // with nothing in it waits forever rather than ending. `-1` is "nothing
-        // written yet", and it is the only safe way to learn that.
-        if ((await ctx.workflows.streamTail(latest.runId)) < 0) {
-          return { note: "Started, nothing to report yet." };
-        }
-        // A negative `startIndex` reads from the END, which is what a voice reply
-        // wants — the last line, not a recital of the whole log.
-        const stream = await ctx.workflows.stream(latest.runId, { startIndex: -1 });
-        for await (const line of stream) return { progress: String(line) };
-        return { note: "Started, nothing to report yet." };
-      },
-    }),
-
-    file_it_now: tool({
-      description:
-        "Skip the review wait on the research and file it immediately. Use when the caller says they need it now.",
-      execute: async (_args, ctx) => {
-        const [latest] = await ctx.workflows.find(research, ctx.sessionId, { limit: 1 });
-        if (!latest) return { note: "Nothing started yet." };
-        // The counterpart of the `sleep` in `workflows/research.ts`. Without it
-        // the only handle on a sleeping run is `cancel`, so "send it now" and
-        // "throw it away" would be the same button — and the wait a real desk
-        // uses is hours, not the thirty seconds this template ships.
-        //
-        // `0` is an honest answer, not a failure: the run had already moved past
-        // its wait, or finished.
-        const woken = await ctx.workflows.wakeUp(latest.runId);
-        return woken > 0
-          ? { filed: true, note: "Filing it now." }
-          : { filed: false, note: "That one was not waiting — it has already moved on." };
-      },
-    }),
-  },
 });

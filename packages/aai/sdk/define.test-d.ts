@@ -1,8 +1,16 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expectTypeOf, test } from "vitest";
 import { z } from "zod";
-import { type AgentParams, agent, tool, type workflowApp } from "./define.ts";
+import {
+  type AgentParams,
+  agent,
+  type InlineToolsMisuse,
+  type SharedAgentParams,
+  tool,
+  type workflowApp,
+} from "./define.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
+import { withTools } from "./tool-registry.ts";
 import type { AgentDef, DefaultSessionState, ToolContext, ToolDef } from "./types.ts";
 
 /**
@@ -13,6 +21,11 @@ import type { AgentDef, DefaultSessionState, ToolContext, ToolDef } from "./type
  * anyone reintroducing an inline re-declaration, which is how `state` once
  * shipped as a runtime-working but excess-property-error field (the CLI and
  * studio bundlers don't typecheck user code, so nothing caught it).
+ *
+ * `tools` is the one deliberate exception and still satisfies this, because it
+ * is present as a KEY typed as a message rather than absent — which is what makes
+ * `agent({ tools })` fail with the file to create instead of with a bare excess
+ * property. The test below pins that it really is the message.
  */
 test("agent() accepts every AgentDef field", () => {
   type MissingFromParam = Exclude<keyof AgentDef, keyof Parameters<typeof agent>[0]>;
@@ -80,14 +93,21 @@ test("an unannotated tool still composes into a stateful agent", () => {
   // `execute` is declared method-style (bivariant), so a tool written without
   // the state type is not a hard error inside a typed agent — it just sees
   // untyped state. Locking this keeps the generic from becoming viral.
+  //
+  // It goes on with `withTools` because a tool is a FILE now: `agent()` takes no
+  // `tools`, and this is the shape the build produces.
   type Cart = { items: string[] };
   const ping = tool({ description: "p", execute: () => "pong" });
-  const def = agent({
-    name: "t",
-    state: (): Cart => ({ items: [] }),
-    tools: { ping },
-  });
+  const def = withTools(agent({ name: "t", state: (): Cart => ({ items: [] }) }), { ping });
   expectTypeOf(def.state).toEqualTypeOf<(() => Cart) | undefined>();
+});
+
+test("`tools` on the authoring params is the message, not a map", () => {
+  // The compile half of "a tool is declared by its file". Pinned as a TYPE
+  // because that is what an author meets first, and because widening it back to
+  // a `ToolDef` record is precisely the regression that would make the rule
+  // conventional again — `define.test.ts` pins the runtime throw underneath it.
+  expectTypeOf<NonNullable<SharedAgentParams["tools"]>>().toEqualTypeOf<InlineToolsMisuse>();
 });
 
 test("agent() accepts stt/llm/tts optional fields", () => {

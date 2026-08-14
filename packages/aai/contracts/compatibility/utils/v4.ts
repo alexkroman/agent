@@ -2,7 +2,7 @@
 /**
  * Frozen authoring example: `utils` epoch 4.
  *
- * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
+ * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative. Epoch 4 adds the surface a `"use step"` body reaches for —
  * `stepEnv`/`requireStepEnv` and `stepGenerate` — to epoch 3's and takes nothing
  * away, which is why `../utils/v3.ts` (and the epochs beneath it) are retained

@@ -1,4 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
+/// <reference types="vite/client" />
+
 /**
  * Specs for the research desk's four tools.
  *
@@ -18,19 +20,22 @@
  * builds a project and runs one.
  */
 
-import type { WorkflowClient, WorkflowRunSnapshot } from "@alexkroman1/aai";
+import type { ToolContext, WorkflowClient, WorkflowRunSnapshot } from "@alexkroman1/aai";
 import {
   createProgressStream,
   createRunSnapshot,
   createStubWorkflows,
   createToolContext,
+  runTool,
   type StubGatewayCall,
+  withDiscoveredTools,
 } from "@alexkroman1/aai/testing";
 import { installStubGateway as stubGateway } from "@alexkroman1/aai/testing/vitest";
 import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { FatalError, RetryableError } from "workflow";
-import agentDef, { research } from "./agent.ts";
+import authoredAgent from "./agent.ts";
+import { research } from "./shared.ts";
 import {
   countSources,
   dedupe,
@@ -56,6 +61,23 @@ vi.mock("@alexkroman1/aai/tools", () => ({
   })),
   visitWebpage: vi.fn(async () => ({ content: "The page body." })),
 }));
+
+/**
+ * The def a DEPLOYED agent runs: authored, plus what `tools/` declares.
+ *
+ * The glob is written HERE rather than reached for from a shared helper because
+ * this file SHIPS: it is what a scaffolded project runs, so it may not import
+ * anything outside its own template, and `import.meta.glob` is expanded against
+ * the file containing it either way. This is the pattern a user writes.
+ */
+const agentDef = withDiscoveredTools(
+  authoredAgent,
+  import.meta.glob("./tools/*.ts", { eager: true }),
+);
+
+/** Every tool here is driven through the agent's own table, by the name the model calls. */
+const run = (name: string, args: Record<string, unknown>, ctx: ToolContext): Promise<unknown> =>
+  runTool(agentDef, name, args, ctx);
 
 /**
  * A `ctx.workflows` that records `start` and answers `find` from a fixture.
@@ -107,7 +129,7 @@ describe("the agent declares its workflow", () => {
 function workflowsStartOptions(): unknown {
   const workflows = stubWorkflows();
   const ctx = createToolContext({ workflows });
-  void agentDef.tools.request_research?.execute({ topic: "otters" }, ctx);
+  void run("request_research", { topic: "otters" }, ctx);
   return vi.mocked(workflows.start).mock.calls[0]?.[2];
 }
 
@@ -115,7 +137,7 @@ describe("request_research", () => {
   test("starts a run keyed by the session, so a later turn can find it", async () => {
     const workflows = stubWorkflows();
     const ctx = createToolContext({ workflows });
-    const result = await agentDef.tools.request_research?.execute({ topic: "otters" }, ctx);
+    const result = await run("request_research", { topic: "otters" }, ctx);
 
     expect(workflows.start).toHaveBeenCalledWith(
       research,
@@ -139,10 +161,7 @@ describe("request_research", () => {
 
   test("passes the definition rather than its name", async () => {
     const workflows = stubWorkflows();
-    await agentDef.tools.request_research?.execute(
-      { topic: "otters" },
-      createToolContext({ workflows }),
-    );
+    await run("request_research", { topic: "otters" }, createToolContext({ workflows }));
     // The def overload is what types the input and turns a rename into a compile
     // error; a string would still work at runtime and lose both.
     expect(vi.mocked(workflows.start).mock.calls[0]?.[0]).toBe(research);
@@ -152,7 +171,7 @@ describe("request_research", () => {
 describe("research_status", () => {
   test("says nothing was started when the key has no runs", async () => {
     const ctx = createToolContext({ workflows: stubWorkflows([]) });
-    const result = await agentDef.tools.research_status?.execute({}, ctx);
+    const result = await run("research_status", {}, ctx);
     expect(result).toMatchObject({ runs: [], note: "Nothing started yet." });
   });
 
@@ -165,7 +184,7 @@ describe("research_status", () => {
       }),
     ];
     const ctx = createToolContext({ workflows: stubWorkflows(runs) });
-    const result = (await agentDef.tools.research_status?.execute({}, ctx)) as { runs: string[] };
+    const result = (await run("research_status", {}, ctx)) as { runs: string[] };
     expect(result.runs[0]).toContain("Otters use tools.");
     expect(result.runs[0]).toContain("3 sources");
   });
@@ -174,7 +193,7 @@ describe("research_status", () => {
     const ctx = createToolContext({
       workflows: stubWorkflows([createRunSnapshot({ workflow: "research", status: "running" })]),
     });
-    const result = (await agentDef.tools.research_status?.execute({}, ctx)) as { runs: string[] };
+    const result = (await run("research_status", {}, ctx)) as { runs: string[] };
     expect(result.runs[0]).toContain("Still working on it.");
   });
 
@@ -183,14 +202,14 @@ describe("research_status", () => {
       createRunSnapshot({ workflow: "research", status: "failed", error: "model unavailable" }),
     ];
     const ctx = createToolContext({ workflows: stubWorkflows(runs) });
-    const result = (await agentDef.tools.research_status?.execute({}, ctx)) as { runs: string[] };
+    const result = (await run("research_status", {}, ctx)) as { runs: string[] };
     expect(result.runs[0]).toContain("model unavailable");
   });
 
   test("bounds how many past runs it reads aloud", async () => {
     const workflows = stubWorkflows([]);
     const ctx = createToolContext({ workflows });
-    await agentDef.tools.research_status?.execute({}, ctx);
+    await run("research_status", {}, ctx);
     // A voice reply cannot be a list of twenty runs.
     expect(workflows.find).toHaveBeenCalledWith(research, ctx.sessionId, { limit: 3 });
   });
@@ -203,7 +222,7 @@ describe("research_progress", () => {
     ]);
     vi.mocked(workflows.stream).mockResolvedValue(createProgressStream(["Found 3 sources."]));
     const ctx = createToolContext({ workflows });
-    const result = await agentDef.tools.research_progress?.execute({}, ctx);
+    const result = await run("research_progress", {}, ctx);
     expect(result).toMatchObject({ progress: "Found 3 sources." });
   });
 
@@ -213,7 +232,7 @@ describe("research_progress", () => {
       createRunSnapshot({ workflow: "research", status: "running" }),
     ]);
     vi.mocked(workflows.stream).mockResolvedValue(createProgressStream(["a"]));
-    await agentDef.tools.research_progress?.execute({}, createToolContext({ workflows }));
+    await run("research_progress", {}, createToolContext({ workflows }));
     expect(workflows.stream).toHaveBeenCalledWith("wrun_1", { startIndex: -1 });
   });
 
@@ -225,20 +244,14 @@ describe("research_progress", () => {
       createRunSnapshot({ workflow: "research", status: "running" }),
     ]);
     vi.mocked(workflows.streamTail).mockResolvedValue(-1);
-    const result = await agentDef.tools.research_progress?.execute(
-      {},
-      createToolContext({ workflows }),
-    );
+    const result = await run("research_progress", {}, createToolContext({ workflows }));
     expect(result).toMatchObject({ note: "Started, nothing to report yet." });
     expect(workflows.stream).not.toHaveBeenCalled();
   });
 
   test("says nothing was started when the key has no runs", async () => {
     const workflows = stubWorkflows([]);
-    const result = await agentDef.tools.research_progress?.execute(
-      {},
-      createToolContext({ workflows }),
-    );
+    const result = await run("research_progress", {}, createToolContext({ workflows }));
     expect(result).toMatchObject({ note: "Nothing started yet." });
     expect(workflows.stream).not.toHaveBeenCalled();
   });
@@ -250,7 +263,7 @@ describe("file_it_now", () => {
       createRunSnapshot({ workflow: "research", status: "running" }),
     ]);
     vi.mocked(workflows.wakeUp).mockResolvedValue(1);
-    const result = await agentDef.tools.file_it_now?.execute({}, createToolContext({ workflows }));
+    const result = await run("file_it_now", {}, createToolContext({ workflows }));
     expect(workflows.wakeUp).toHaveBeenCalledWith("wrun_1");
     expect(result).toMatchObject({ filed: true });
   });
@@ -262,13 +275,13 @@ describe("file_it_now", () => {
       createRunSnapshot({ workflow: "research", status: "running" }),
     ]);
     vi.mocked(workflows.wakeUp).mockResolvedValue(0);
-    const result = await agentDef.tools.file_it_now?.execute({}, createToolContext({ workflows }));
+    const result = await run("file_it_now", {}, createToolContext({ workflows }));
     expect(result).toMatchObject({ filed: false });
   });
 
   test("says nothing was started when the key has no runs", async () => {
     const workflows = stubWorkflows([]);
-    const result = await agentDef.tools.file_it_now?.execute({}, createToolContext({ workflows }));
+    const result = await run("file_it_now", {}, createToolContext({ workflows }));
     expect(result).toMatchObject({ note: "Nothing started yet." });
     expect(workflows.wakeUp).not.toHaveBeenCalled();
   });

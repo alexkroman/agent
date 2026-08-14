@@ -45,24 +45,24 @@ Replace `agent.ts` with any of the
 (`pipeline-simple` uses Anthropic for the LLM) need that provider's key added
 to the `env` you pass `createRuntime`.
 
-Adding a tool is a few lines on the agent, and it runs **in this process**, on
-your credentials:
+Adding a tool is adding a FILE — `tools/roll_die.ts` is the tool `roll_die`,
+registered by existing — and it runs **in this process**, on your credentials:
 
 ```ts
-import { agent, tool } from "@alexkroman1/aai";
+// tools/roll_die.ts
+import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
-export default agent({
-  name: "Simple Assistant",
-  tools: {
-    roll_die: tool({
-      description: "Roll a single die with the given number of sides.",
-      inputSchema: z.object({ sides: z.number().int().min(2).max(1000) }),
-      execute: ({ sides }) => ({ rolled: 1 + Math.floor(Math.random() * sides) }),
-    }),
-  },
+export default tool({
+  description: "Roll a single die with the given number of sides.",
+  inputSchema: z.object({ sides: z.number().int().min(2).max(1000) }),
+  execute: ({ sides }) => ({ rolled: 1 + Math.floor(Math.random() * sides) }),
 });
 ```
+
+`agent.ts` is untouched: it takes no `tools` field. The enumeration happens
+where the bundle is assembled, which is why this example's `server.mjs` boots
+a built worker rather than importing `agent.ts`.
 
 That is the sharpest contrast with [`host-server`](../host-server), where
 callers bring their own agent and execute their own tools out over the socket.

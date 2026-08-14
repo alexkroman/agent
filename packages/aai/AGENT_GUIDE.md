@@ -113,7 +113,7 @@ my-agent/
   client.tsx          # Custom UI (optional, React)
   shared.ts           # Types shared between agent.ts and client.tsx
   system-prompt.md    # Long system prompts (optional, imported)
-  tools/              # Tool files when too large for inline (optional)
+  tools/              # One file per tool — this is how a tool is declared
   workflows/          # Durable workflow bodies (optional — see "Workflow apps")
   package.json
   tsconfig.json
@@ -139,7 +139,8 @@ export default agent({
   s2s?: S2sProvider;                         // explicit opt-in to speech-to-speech mode
   sttPrompt?: string;                        // STT guidance for jargon/acronyms
   builtinTools?: BuiltinTool[];              // see built-in tools table
-  tools?: Record<string, ToolDef>;
+                                             // (there is no `tools` field — a tool is a FILE;
+                                             //  see "A file in tools/ IS a tool")
   maxSteps?: number;                         // default: 10 — max tool calls per turn
   toolChoice?: ToolChoice;                   // "auto" (default) | "required" | "none"
                                              // | { type: "tool", toolName }
@@ -834,31 +835,42 @@ Declaring a state type is still worth it once the shape is settled, because
 it turns a misspelled field into a compile error instead of `undefined` at
 runtime:
 
-```ts
-import { agent, tool } from "@alexkroman1/aai";
-import type { ToolContext } from "@alexkroman1/aai"; // types need `import type`
-import { z } from "zod";
+```ts no-check
+// shared.ts — the slot is the one place the shape is written down.
+import { sessionSlot } from "@alexkroman1/aai";
 
-type Incident = { id: string; status: "open" | "closed" };
-type State = { incidents: Incident[] };
+export type Incident = { id: string; status: "open" | "closed" };
 
-const listOpen = tool({
+export const incidentSlot = sessionSlot("incidents", () => ({ items: [] as Incident[] }));
+```
+
+```ts no-check
+// tools/list_open.ts — `slot.tool` hands the body the live value, typed.
+import { incidentSlot } from "../shared.ts";
+
+export default incidentSlot.tool({
   description: "List open incidents",
-  execute: (_args, ctx: ToolContext<State>) => {
-    // `i` infers as Incident, and `i.staus` would now be an error.
-    return ctx.state.incidents.filter((i) => i.status === "open");
-  },
-});
-
-export default agent({
-  name: "Dispatch",
-  state: (): State => ({ incidents: [] }),
-  tools: { listOpen },
+  // `i` infers as Incident, and `i.staus` would now be an error.
+  execute: (_args, incidents) => incidents.items.filter((i) => i.status === "open"),
 });
 ```
 
-A tool annotated with a state shape the agent's factory doesn't produce is a
-compile error, which is the point.
+```ts no-check
+// agent.ts — `slot.state` is what makes the state exist before the first call.
+import { agent } from "@alexkroman1/aai";
+import { incidentSlot } from "./shared.ts";
+
+export default agent({ name: "Dispatch", state: incidentSlot.state });
+```
+
+**Reach for a slot whenever your tools live in more than one file, which is
+always** — a tool is its own file, and `tool()` learns the state shape only from
+an annotated context, so without a slot every module either restates
+`ctx: ToolContext<State>` or casts. `slot.tool()` removes both: it is typed
+against the slot, so a tool reading a field the factory does not produce is a
+compile error, which is the point. Use `slot.updateTool()` instead whenever the
+body `await`s — it serializes the mutation, and the LLM runs a step's tool calls
+concurrently.
 
 **`verbatimModuleSyntax` applies to every type you import** — `ToolContext`,
 `ToolDef`, `Message`, provider types. A plain
@@ -873,30 +885,29 @@ that's also how S2S agents use it. Pass a Zod schema as `schema` for typed
 structured output (`generateObject`-style): the result's `object` carries
 the parsed, typed value. A plain JSON Schema object also works.
 
-### Inline tool example
+### A tool that calls an API
 
 ```ts
-import { agent, tool } from "@alexkroman1/aai";
+// tools/get_weather.ts  →  the model calls this "get_weather"
+import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
-export default agent({
-  name: "Weather Agent",
-  tools: {
-    get_weather: tool({
-      description: "Get current weather for a city",
-      inputSchema: z.object({
-        city: z.string().describe("City name"),
-      }),
-      async execute({ city }, ctx) {
-        const resp = await fetch(
-          `https://api.example.com/weather?q=${city}&key=${ctx.env.WEATHER_KEY}`,
-        );
-        return resp.json();
-      },
-    }),
+export default tool({
+  description: "Get current weather for a city",
+  inputSchema: z.object({
+    city: z.string().describe("City name"),
+  }),
+  async execute({ city }, ctx) {
+    const resp = await fetch(
+      `https://api.example.com/weather?q=${city}&key=${ctx.env.WEATHER_KEY}`,
+    );
+    return resp.json();
   },
 });
 ```
+
+Nothing else. `agent.ts` does not import it, does not list it, and takes no
+`tools` field at all — see "A file in `tools/` IS a tool" below.
 
 **Calling the network builtins from your own tool code.** `web_search`,
 `visit_webpage` and `fetch_json` are declared to the MODEL — the LLM calls
@@ -1240,7 +1251,6 @@ also what you want for anything that can be a string, an array, or null.
 export default agent({
   state: () => ({ cart: [] as Item[], staffPin: "" }),
   syncState: (s) => ({ cart: s.cart }),   // staffPin never leaves the server
-  tools: { ... },
 });
 
 // client.tsx

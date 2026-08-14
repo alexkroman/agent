@@ -2,7 +2,7 @@
 /**
  * Frozen authoring example: `aai:builtins` epoch 2.
  *
- * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
+ * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative. Epoch 1 was DROPPED, and this is the shape that replaced it: the
  * three network builtins answer `T | ToolFailure`, so a caller that names a
  * shape narrows with {@link isToolFailure}.

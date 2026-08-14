@@ -2,7 +2,7 @@
 /**
  * Frozen authoring example: `spoken` epoch 1.
  *
- * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
+ * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative. What this pins beyond the signatures is the RETURN UNION: every one
  * of these functions is written at a call site that has to handle the failure
  * arm, so narrowing it away is a break this file reports.

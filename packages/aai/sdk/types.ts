@@ -288,14 +288,27 @@ export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
    */
   builtinTools?: readonly BuiltinTool[];
   /**
-   * Custom tools the agent may invoke, keyed by tool name.
+   * The tools the agent may invoke, keyed by the name the model calls.
+   *
+   * **Not authored — RESOLVED.** `agent()` returns this empty and rejects a
+   * `tools` argument outright (`InlineToolsMisuse`); the table is filled by
+   * `withTools`, over a registry built from a `tools/` directory. The build is
+   * what enumerates that directory — a deployed agent is handed one ESM string
+   * and has no filesystem to scan — and a spec does the same lowering with
+   * `withDiscoveredTools(def, import.meta.glob("./tools/*.ts", { eager: true }))`.
+   * So a tool's name is its FILE name and nothing else records it.
    *
    * @remarks
-   * `NoInfer` so `state` is the ONLY thing `S` is inferred from. Without it a
-   * single tool written without the state type (the common case — `tool()`
-   * only learns `S` from an annotated context) drags `S` back to
-   * `Record<string, unknown>` for the whole agent, and `ctx.state.x` silently
-   * becomes `unknown` again. Tools are still *checked* against `S`.
+   * `NoInfer` so `state` is the ONLY thing `S` is inferred from. That was already
+   * true when a map was authored here, which is why moving tools out of the
+   * parameter shape cost no inference: a single tool written without the state
+   * type would otherwise drag `S` back to `Record<string, unknown>` for the whole
+   * agent, and `ctx.state.x` would silently become `unknown` again.
+   *
+   * What a MAP did check and a registry cannot is a tool's assignability against
+   * this `S`. {@link sessionSlot} is what carries that guarantee now — a
+   * `slot.tool()` in its own module is typed against the slot's shape — which is
+   * most of why slots exist.
    */
   tools: Readonly<Record<string, ToolDef<ToolInputSchema, NoInfer<S>>>>;
   /**
@@ -440,22 +453,16 @@ export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
    * symptom there would be a deployed voice agent that answers nothing.
    *
    * ```ts
-   * import { agent, tool } from "@alexkroman1/aai";
-   * import { z } from "zod";
+   * import { agent } from "@alexkroman1/aai";
    *
    * export default agent({
    *   name: "Docs Assistant",
    *   text: true,
    *   system: "Answer questions about the docs.",
-   *   tools: {
-   *     lookup: tool({
-   *       description: "Look up a doc page",
-   *       inputSchema: z.object({ slug: z.string() }),
-   *       execute: ({ slug }) => `contents of ${slug}`,
-   *     }),
-   *   },
    * });
    * ```
+   *
+   * Its tools are files under `tools/`, exactly as a voice agent's are.
    */
   text?: true;
   /**

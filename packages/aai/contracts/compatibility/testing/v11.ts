@@ -13,7 +13,7 @@
  * Everything epoch 10 could express still compiles (see `./v10.ts`, retained for
  * that reason); this file covers only what is new.
  *
- * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
+ * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative. **`import.meta.glob` is deliberately not called here** — it is a
  * Vite transform, and a compatibility fixture is compiled by `tsc`, not bundled,
  * so the glob's own shape is pinned as the `ToolModules` argument type instead

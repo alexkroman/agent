@@ -6,7 +6,7 @@
  * a break here breaks their test suite rather than their agent — which is the
  * kind of break that is easiest to ship unnoticed.
  *
- * See `../agent/v1.ts` for what "frozen" obliges and why the imports are
+ * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative.
  */
 

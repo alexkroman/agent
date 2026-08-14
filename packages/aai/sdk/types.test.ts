@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { AgentDef, Db, ToolDef } from "../index.ts";
 import { agent, tool } from "../index.ts";
 import { DEFAULT_BUILTIN_TOOLS } from "./constants.ts";
+import { withTools } from "./tool-registry.ts";
 import { DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
 
 describe("constants", () => {
@@ -56,14 +57,17 @@ describe("type contracts", () => {
     expectTypeOf(t).toMatchTypeOf<ToolDef>();
   });
 
-  test("agent() accepts tools record", () => {
+  test("withTools puts a tool on the def agent() returns", () => {
     const t = tool({
       description: "echo",
       inputSchema: z.object({ msg: z.string() }),
       execute: ({ msg }) => msg,
     });
-    const def = agent({ name: "with-tools", tools: { echo: t } });
+    // `agent()` takes no tools — a tool is its file. This is the shape the build
+    // produces, and it is still an ordinary `AgentDef` on the other side.
+    const def = withTools(agent({ name: "with-tools" }), { echo: t });
     expectTypeOf(def).toEqualTypeOf<AgentDef>();
+    expect(def.tools.echo).toBe(t);
   });
 
   test("Db.query returns Promise<Record<string, unknown>[]> by default", () => {
