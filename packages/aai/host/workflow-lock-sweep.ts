@@ -6,10 +6,22 @@
  *
  * `@workflow/world-postgres` runs graphile-worker with `concurrency: 10`, so the
  * pool holds ten workers each with its own `worker-<id>`. A job claimed when the
- * process dies keeps `locked_by` that worker — and `get_job` selects on
- * `is_available = true`, which a locked row is not — so the replacement pool
- * polls straight past it. Recovery waits on graphile-worker's own reclaim window,
- * `interval '4 hours'`; nothing sets `jobExpiry`.
+ * process dies keeps `locked_by` that worker — and the runner's `get_job` query
+ * selects on `is_available = true`, which a locked row is not — so the
+ * replacement pool polls straight past it.
+ *
+ * **Nothing reclaims it, ever.** `is_available` is a STORED GENERATED column,
+ * `(locked_at is null) and (attempts < max_attempts)` (migration 000011), with no
+ * time term at all — so a lock held by a worker that never returns keeps the job
+ * invisible for the life of the database. graphile-worker 0.16.6 has no
+ * `jobExpiry` option to lower, and the one `interval '4 hours'` left in the live
+ * schema belongs to `remove_job(job_key)`, which DELETES a staled-out job rather
+ * than making it runnable. (An earlier version of this doc, and the commit that
+ * introduced it, said recovery waited four hours. It does not; the empirical side
+ * agrees — a job wedged by a single kill was still held by the same dead worker an
+ * hour later.)
+ *
+ * That makes this sweep the ONLY recovery, not an accelerator of one.
  *
  * Measured: ONE hard kill (of the process, or of its Postgres) strands every
  * in-flight step of a `transcription-desk` run, with the run sitting `running`

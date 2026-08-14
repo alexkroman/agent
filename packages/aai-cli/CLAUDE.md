@@ -289,8 +289,8 @@ graphile-worker's runner release the queue locks it holds — which is precisely
 the difference that decides whether an in-flight step is ever redelivered. So a
 fault mode built on SIGTERM would exercise the recovery path that already works
 and never the one that does not. (Measured: one hard kill of the process, or of
-its Postgres, strands every locked step until graphile-worker's own
-`interval '4 hours'` reclaim, with the run sitting `running` forever.)
+its Postgres, strands every locked step permanently — nothing reclaims a lock by
+age — with the run sitting `running` forever.)
 
 **There is no seed and no PRNG, deliberately.** "Consistent" is the requirement,
 and the cheapest way to be consistent is to have nothing to reproduce: a profile
@@ -336,8 +336,9 @@ It is **not wired into CI** yet, and the reason is a real finding rather than
 caution. An in-flight step is never redelivered after its process (or its
 Postgres) is hard-killed: the queue job keeps `locked_by` a worker that is gone,
 graphile-worker's `get_job` selects on `is_available = true`, and the run sits
-`running` until the `interval '4 hours'` reclaim. So a profile that kills DURING
-a run is red today for a reason this mode surfaced rather than caused, and a
+`running` for good: `is_available` is a generated column over `locked_at` with no
+time term, so nothing reclaims it. So a profile that kills DURING a run is red
+today for a reason this mode surfaced rather than caused, and a
 required check would be red with it. `restart-on-boot` is the one that is green,
 because it kills between runs.
 
