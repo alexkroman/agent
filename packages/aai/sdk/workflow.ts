@@ -356,6 +356,46 @@ export type WorkflowClient = {
    */
   wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
   /**
+   * Deliver a payload to a run parked on `createHook({ token })`, resuming it.
+   * Resolves true when a hook was listening on `token`, false when none was.
+   *
+   * **This is the half of the mechanism a voice agent needs and could not
+   * reach.** A run that has to WAIT for a person — an approval, a choice, a
+   * "yes, go ahead" — parks on a hook, and until now the only way to feed one
+   * was the public webhook URL `createWebhook()` mints, which is for a third
+   * party with a callback to make. The caller on the phone is neither: they are
+   * right here, mid-turn, and the thing that should resume the run is a tool.
+   *
+   * {@link wakeUp} is not this. It ends a pending `sleep()`, which is a run
+   * waiting for TIME; a hook is a run waiting for an ANSWER, and the answer is
+   * the payload. A body that raced a hook against a `sleep` — the shape a
+   * decision-with-a-deadline takes — needs both, and they mean different things.
+   *
+   * ## The token is the contract, and it has to be derivable on both sides
+   *
+   * A hook's token is chosen by the BODY and typed in by the tool, so it must be
+   * something each can compute from what it already has:
+   * `` `retention:${input.requestedBy}` `` in the body against
+   * `` `retention:${ctx.sessionId}` `` in the tool. Put that expression in one
+   * exported helper both import, rather than writing the template literal twice.
+   *
+   * Two properties come with it. A token is claimed by ONE live hook, so two
+   * runs that would derive the same token collide — the body detects that with
+   * `hook.getConflict()`, and the ordinary fix is the one a voice agent wants
+   * anyway: at most one live run per caller. And a token is a capability: it
+   * addresses a run, so derive it from something session-scoped rather than from
+   * anything a caller could name.
+   *
+   * ## `false` is an answer
+   *
+   * Nobody is listening is the normal case, not a failure — the run has moved
+   * past its hook, or finished, or was never started. Same shape as
+   * {@link cancel} resolving false and {@link wakeUp} resolving `0`, and a voice
+   * tool should say so out loud ("that one had already gone ahead") rather than
+   * treat it as an error.
+   */
+  signal(token: string, payload?: unknown): Promise<boolean>;
+  /**
    * Read what a run has WRITTEN while running, as a stream.
    *
    * The gap this fills: a snapshot carries a status and, once terminal, an

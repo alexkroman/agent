@@ -31,19 +31,29 @@
  * Cancellation. The Temporal samples model an operator with a CLI. This models
  * the same operator with a phone, and the mechanism underneath is identical.
  *
- * ## One thing that did NOT port, and it matters
+ * ## The gate is why the SDK grew `ctx.workflows.signal()`
  *
- * **Cancellation here is not cooperative.** Temporal delivers cancellation INTO
- * the workflow, so the saga's `catch` runs and the compensations unwind.
+ * `expense` is the most voice-native sample Temporal ships — a run that waits
+ * for a person to say yes — and it was unportable here until this template
+ * asked for it. The DevKit's only reachable waitpoint was `createWebhook()`,
+ * whose URL is minted for a THIRD PARTY with a callback to make; the caller is
+ * not that, they are on the line right now, and the thing that should resume
+ * the run is a tool. `signal(token, payload)` is that, and `keep_transcript`
+ * below is four lines because of it.
+ *
+ * ## One thing still does NOT port, and it matters
+ *
+ * **Cancellation is not cooperative.** Temporal delivers cancellation INTO the
+ * workflow, so the saga's `catch` runs and the compensations unwind.
  * `ctx.workflows.cancel` marks the run cancelled and stops replaying it — the
  * body's `catch` never runs, so a cancelled recap leaves its transcript on the
  * account. `cancel_recap` says so rather than pretending otherwise, and the
  * compensation stack covers the case it really does cover: FAILURE.
  *
- * Closing that gap needs a waitpoint the agent side can signal — the DevKit has
- * one (`createHook()` with a deterministic token, resumed server-side), and
- * `ctx.workflows` does not expose a resume today. That is a real SDK gap, not a
- * shortcoming of the pattern.
+ * The gate is what a cooperative stop would be built from — a hook the body
+ * races alongside its work, signalled instead of cancelling — and this template
+ * deliberately stops at one hook. Racing a stop into every wait is a second
+ * lesson, and it would cost this one its shape.
  *
  * ## What it needs
  *
@@ -66,6 +76,7 @@ import {
 } from "@alexkroman1/aai";
 import { z } from "zod";
 import { recapFlow } from "./workflows/recap.ts";
+import { retentionToken } from "./workflows/tokens.ts";
 
 /**
  * What the desk works on when the caller does not name something else.
@@ -111,8 +122,12 @@ export const recap = workflow({
 function describeRun(run: WorkflowRunSnapshot<WorkflowOutputOf<typeof recap>>): string {
   if (!isTerminal(run)) return "Still working on that one.";
   switch (run.status) {
-    case "completed":
-      return `Done: ${run.output.spoken}`;
+    case "completed": {
+      // The gate's outcome is part of the answer: a caller who never got round
+      // to answering should hear that the transcript is gone, not just the recap.
+      const fate = run.output.kept ? "transcript kept" : "transcript deleted";
+      return `Done: ${run.output.spoken} (${fate})`;
+    }
     case "failed":
       // The run compensated before it failed — see `workflows/recap.ts` — so
       // there is nothing left to clean up and nothing for the caller to do
@@ -131,6 +146,8 @@ export default agent({
     "When someone asks you to write up a recording, call request_recap and tell them you have",
     "started it — do NOT wait for it or promise a time. You WILL be told when it lands, so it is",
     "safe to say you will let them know.",
+    "When the run asks whether to keep the transcript, relay the question and call",
+    "keep_transcript with their answer.",
     "If they ask how it is going, call recap_progress. If they ask about earlier work, call",
     "recap_status. If they say to stop or forget it, call cancel_recap.",
     "Keep replies to one or two sentences; this is a voice call.",
@@ -174,7 +191,9 @@ export default agent({
             // session takes an unprompted, interruptible turn built from the
             // run's own output. The instruction is a sentence for the MODEL —
             // it is the only thing that knows what this caller has been told.
-            notify: "Tell them the recap is ready, then read the one-sentence version.",
+            notify:
+              "Tell them the recap is ready, read the one-sentence version, then ask whether " +
+              "to keep the transcript on file or delete it.",
           },
         );
         return { started: true, runId };
@@ -212,6 +231,34 @@ export default agent({
         const stream = await ctx.workflows.stream(latest.runId, { startIndex: -1 });
         for await (const line of stream) return { progress: String(line) };
         return { note: "Submitted, nothing to report yet." };
+      },
+    }),
+
+    keep_transcript: tool({
+      description:
+        "Answer the desk's question about the transcript. Use when the caller says to keep it, save it, or delete it.",
+      inputSchema: z.object({
+        keep: z.boolean().describe("True to keep the transcript on file, false to delete it"),
+      }),
+      execute: async ({ keep }, ctx) => {
+        // The SIGNAL, and the whole reason this template exists in the shape it
+        // does. The run is parked on a hook whose token both sides derive from
+        // the session — see `workflows/tokens.ts` — so the tool needs no runId
+        // and no bookkeeping of its own.
+        const delivered = await ctx.workflows.signal(retentionToken(ctx.sessionId), { keep });
+        // `false` is the ORDINARY answer, not a failure: the window closed, or
+        // the caller answered a question nobody asked. Say which.
+        if (!delivered) {
+          return {
+            answered: false,
+            note: "Nothing is waiting on that — it has already been settled.",
+          };
+        }
+        return {
+          answered: true,
+          keep,
+          note: keep ? "Keeping the transcript on file." : "Deleting the transcript.",
+        };
       },
     }),
 

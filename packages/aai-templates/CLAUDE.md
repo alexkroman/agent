@@ -88,9 +88,9 @@ once, and the templates are now their reference use:
 | `page()` + `createWorkflowApi` + `useWorkflowRun` | `link-digest` — the WORKFLOW APP with the primitives raw: a hand-written `<form>`, its own `useState`, one `createWorkflowApi()` |
 | `Form` + `WorkflowFields` + `useWorkflowSubmit` | `transcription-desk` — the same front door with the form layer, plus `WorkflowOutputOf`. Its form is ALL declared, so `FileField` is exercised by no template and sits in the allowlist |
 | `TextAreaField` beside `<WorkflowFields>` | `redline` — the MIXED form: three scalars declared by the schema, one array field written by hand in the same `<Form>` and mapped on submit. The case "Forms" in `packages/aai-ui/CLAUDE.md` describes, which no template used to exercise |
-| `toStepError` / `throwStepError` / `throwFatalStepError` (`@alexkroman1/aai/step-errors`) | all four workflow templates — `transcription-desk` and `link-digest` for the HTTP classification each had hand-written identically, `research-desk`/`link-digest`/`redline` for the `.catch(throwStepError)` on a model call, `transcription-desk` for the two `catch`-block fatals |
-| `stepGenerateJson` + `stripJsonFence` | `research-desk` (five stages, each with its own zod shape — including the LENIENT ones that replace its hand-rolled `strings()`/`isSource()` coercion), `link-digest` (one) and `redline` (the critic's findings). `stripJsonFence` is exercised only through `stepGenerateJson`, which is the intended path |
-| `stubGateway` (`@alexkroman1/aai/testing`) | the `research-desk`, `link-digest` and `redline` specs — the QUEUE form in the first and last, because their model calls sit in a loop or a chain, and the single-reply form in `link-digest` |
+| `toStepError` / `throwStepError` / `throwFatalStepError` (`@alexkroman1/aai/step-errors`) | every workflow template — `transcription-desk` and `link-digest` for the HTTP classification each had hand-written identically, `research-desk`/`link-digest`/`redline` for the `.catch(throwStepError)` on a model call, `transcription-desk` for the two `catch`-block fatals, `recap-desk` for both halves of a provider call it also polls |
+| `stepGenerateJson` + `stripJsonFence` | `research-desk` (five stages, each with its own zod shape — including the LENIENT ones that replace its hand-rolled `strings()`/`isSource()` coercion), `link-digest` (one), `redline` (the critic's findings) and `recap-desk` (the recap, whose `spoken` field is required rather than defaulted because the announced turn has nothing to read without it). `stripJsonFence` is exercised only through `stepGenerateJson`, which is the intended path |
+| `stubGateway` (`@alexkroman1/aai/testing`) | the `research-desk`, `link-digest`, `redline` and `recap-desk` specs — the QUEUE form in the first and last, because their model calls sit in a loop or a chain, and the single-reply form in `link-digest` |
 | `mapInBatches`, `stepEnv` / `requireStepEnv`, `stepGenerate` | the STEP surface, and every workflow template uses it: `transcription-desk` fans its segments out and reads `ASSEMBLYAI_API_KEY` for the sync STT endpoint; `research-desk`, `link-digest`, `redline` and `recap-desk` call the model with `stepGenerate` (or `stepGenerateJson`, for a reply that has to be a shape), and `recap-desk` reads the same key for the batch transcription endpoint it polls. Imported from `@alexkroman1/aai/utils`, NOT the root: a `workflows/*.ts` module is bundled separately by the WDK builder, so the root barrel's graph would ride into the step bundle. That import path is also why the coverage gate cannot see them — it scans the root specifier — hence their allowlist entries |
 | `webSearch` / `visitWebpage` (`@alexkroman1/aai/tools`) | `research-desk`, from inside a `"use step"` function — the demonstration that a step is not a lesser environment than a tool body; `plan-desk`, from an ordinary tool body, which is the case the module was published for |
 
@@ -406,6 +406,8 @@ the rationale for the two judgement calls in it.
 | `saga` (`openAccount`) | `recapFlow`'s compensation stack, unwound by `compensate` |
 | `polling` (infrequent) | `awaitTranscript` — one step plus one durable `sleep`, bounded by attempts |
 | `timer-examples` (`processOrderWorkflow`) | the `Promise.race` against `PATIENCE`, then the "still going" note |
+| `expense` (`timeoutOrUserAction`) | the RETENTION GATE: a hook raced against a `sleep`, three outcomes, safe default |
+| `signals-queries` (Signal) | `keep_transcript`, answering that gate over `ctx.workflows.signal` |
 | `signals-queries` (Query + Cancellation) | `recap_status` and `cancel_recap` |
 | workflow-id reuse / `mutex` | the live-run check in `request_recap` |
 
@@ -427,30 +429,48 @@ the template transcribes something on the first call instead of asking for input
 the medium cannot carry. A real desk swaps it for a lookup against its own
 recording store; the tool still accepts a URL when one is somehow available.
 
-**Two things did NOT port, and saying so is the point of having ported the rest.**
+**This template is why the SDK grew `ctx.workflows.signal()`**, and that is the
+argument for porting from another engine at all: `expense` is the most
+voice-native sample Temporal ships — a run that waits for a person to say yes —
+and writing it here found a hole rather than a workaround. The DevKit's only
+reachable waitpoint was `createWebhook()`, whose URL is minted for a THIRD PARTY
+with a callback to make; the caller is not that. `wakeUp` is not it either — it
+ends a `sleep`, where a signal carries a payload, and a body that races a hook
+against a `sleep` needs both and means different things by them. The method's
+own doc carries the token rules; `workflows/tokens.ts` is this template's one
+derivation of one, and the reason it is a shared function rather than a template
+literal typed twice.
 
-- **Cancellation is not cooperative.** Temporal delivers cancellation INTO the
-  workflow, so the saga's `catch` runs and the compensations fire.
-  `ctx.workflows.cancel` marks the run cancelled and stops replaying it, so a
-  cancelled recap leaves its transcript behind. `cancel_recap` says that in its
-  own tool result rather than implying a rollback that does not happen, and its
-  spec pins the sentence.
-- **A voice turn cannot SIGNAL a run.** Temporal's `expense` sample — the
-  human-in-the-loop approval — is the natural voice port (the caller IS the
-  approver, and the phone IS the signal channel), and it is missing because
-  `ctx.workflows` exposes no hook resume. The DevKit has the mechanism
-  (`createHook()` with a deterministic token, plus a server-side `resumeHook`),
-  and `wakeUp` is not it — that ends a `sleep`, where a signal carries a
-  payload. That is an SDK gap with a known shape, not a limit of the pattern.
+**One thing still does NOT port, and saying so is the point of having ported the
+rest.** Cancellation is not cooperative: Temporal delivers cancellation INTO the
+workflow, so the saga's `catch` runs and the compensations fire, while
+`ctx.workflows.cancel` marks the run cancelled and stops replaying it — a
+cancelled recap leaves its transcript behind. `cancel_recap` says that in its own
+tool result rather than implying a rollback that does not happen, and its spec
+pins the sentence. The gate is what a cooperative stop would be built from (a
+hook the body races alongside its work, signalled instead of cancelled); the
+template deliberately stops at ONE hook, because racing a stop into every wait is
+a second lesson and would cost this one its shape.
 
 Its spec runs three tiers and is explicit about which one proves what: the tools
 against a stubbed `ctx.workflows`, the steps directly, and — new here — the
-body's two HELPERS (`awaitTranscript`, `compensate`) with `sleep` stubbed via
-`importActual` plus one override. That third tier asserts ORDERING and
-BRANCHING, which is ordinary logic worth pinning (the poll's exit conditions,
-the unwind's direction, that a failing undo does not strand the ones behind it),
-and asserts nothing about durability. `recapFlow` itself is still not driven,
-for the reason every other workflow template gives.
+body's HELPERS (`awaitTranscript`, `compensate`, `askWhetherToKeep`) with `sleep`
+and `createHook` stubbed via `importActual` plus two overrides. That third tier
+asserts ORDERING and BRANCHING, which is ordinary logic worth pinning (the poll's
+exit conditions, the unwind's direction, that a failing undo does not strand the
+ones behind it, and the gate's three outcomes with its safe default), and asserts
+nothing about durability. `recapFlow` itself is still not driven, for the reason
+every other workflow template gives.
+
+Two mechanical notes on stubbing a hook, both learned by getting them wrong. The
+fake is built by hanging the hook's members on a REAL promise
+(`Object.assign(settled, { token, getConflict, … })`) rather than by writing a
+`then` property — a `Hook` IS a thenable, and a hand-written `then` is both a
+biome finding (`noThenProperty`) and a worse model of the thing. And the
+window's `sleep` must NOT resolve in the tests that exercise an answer: with both
+settled, which one `Promise.race` picks comes down to microtask order rather than
+to the branch under test, so the mocked `sleep` returns a never-resolving promise
+except in the timeout case.
 
 ## A step can authenticate now, so no template's I/O is a fixture
 

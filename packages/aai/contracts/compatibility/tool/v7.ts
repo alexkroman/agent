@@ -1,0 +1,56 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * Frozen authoring example: `aai:tool` epoch 7.
+ *
+ * **Epoch 7 is a RIPPLE, not a change to this capability.** `WorkflowClient`
+ * gained `signal` — answer a run parked on a hook — and this capability's report
+ * mentions that type through `ToolContext`, so its hash moved while nothing an
+ * author writes here did. `aai:workflow` epoch 7 is where the addition is
+ * demonstrated.
+ *
+ * So this file is epoch 6's example, re-frozen: what it proves is exactly what a
+ * re-frozen epoch should prove — that the authoring shape still compiles against
+ * current source. See `../agent/v1.ts` for what "frozen" obliges and why the
+ * imports are relative.
+ */
+
+import { z } from "zod";
+
+import { isToolFailure, type ToolContext, tool, toolFailure } from "../../../index.ts";
+
+/**
+ * A bounded read of the run's progress channel, which is the only kind there
+ * is: the channel is never closed, so "no chunk available" is indistinguishable
+ * from "the next step has not written yet" from the stream alone.
+ */
+async function latestProgress(ctx: ToolContext, runId: string): Promise<string> {
+  if ((await ctx.workflows.streamTail(runId)) < 0) return "nothing yet";
+  const stream = await ctx.workflows.stream(runId, { startIndex: -1 });
+  for await (const chunk of stream) return String(chunk);
+  return "nothing yet";
+}
+
+export const chaseRun = tool({
+  description: "Report on a durable run, and stop waiting if asked to.",
+  inputSchema: z.object({ runId: z.string(), hurry: z.boolean().optional() }),
+  async execute(args, ctx) {
+    const run = await ctx.workflows.get(args.runId);
+    if (!run) return toolFailure(`No run ${args.runId}`);
+    if (args.hurry === true) {
+      const woken: number = await ctx.workflows.wakeUp(args.runId);
+      if (woken === 0) return { note: "That one was not waiting." };
+    }
+    return { status: run.status, progress: await latestProgress(ctx, args.runId) };
+  },
+});
+
+/** A failure the MODEL should see and recover from, and the guard that narrows one. */
+export const readResult = tool({
+  description: "Read a finished run's result.",
+  inputSchema: z.object({ runId: z.string() }),
+  async execute(args, ctx) {
+    const run = await ctx.workflows.get(args.runId);
+    const result = run === undefined ? toolFailure(`No run ${args.runId}`) : { status: run.status };
+    return isToolFailure(result) ? result : { ok: true, ...result };
+  },
+});

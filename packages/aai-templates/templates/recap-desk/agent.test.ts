@@ -26,20 +26,25 @@
  */
 
 import type { WorkflowClient, WorkflowRunSnapshot } from "@alexkroman1/aai";
-import { createStubWorkflows, createToolContext } from "@alexkroman1/aai/testing";
+import {
+  stubGateway as createStubGateway,
+  createStubWorkflows,
+  createToolContext,
+} from "@alexkroman1/aai/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { createHook, type Hook, sleep } from "workflow";
 import agentDef, { recap } from "./agent.ts";
 import {
+  askWhetherToKeep,
   awaitTranscript,
   checkTranscript,
   compensate,
   discardTranscript,
-  isRecapShape,
-  stripFence,
   submitRecording,
   summarize,
   type TranscriptState,
 } from "./workflows/recap.ts";
+import { retentionToken } from "./workflows/tokens.ts";
 
 /**
  * The DevKit, with only its timer replaced.
@@ -52,6 +57,7 @@ import {
 vi.mock("workflow", async (importActual) => ({
   ...(await importActual<typeof import("workflow")>()),
   sleep: vi.fn(async () => undefined),
+  createHook: vi.fn(),
 }));
 
 /** A `ctx.workflows` that records `start` and answers `find` from a fixture. */
@@ -91,14 +97,17 @@ function snapshot(over: Partial<WorkflowRunSnapshot> = {}): WorkflowRunSnapshot 
 }
 
 /** A finished recap, as the workflow's output reaches the tools. */
-function finishedOutput() {
+function finishedOutput(over: { kept?: boolean; answered?: boolean } = {}) {
   return {
     url: "https://assembly.ai/wildfires.mp3",
     headline: "Smoke reaches the east coast",
     points: ["a", "b", "c"],
     spoken: "Wildfire smoke drifted east and pushed air quality into the unhealthy range.",
     minutes: 4,
+    kept: true,
+    answered: true,
     requestedBy: "s_1",
+    ...over,
   };
 }
 
@@ -209,6 +218,19 @@ describe("recap_status", () => {
     expect(result.runs[0]).toContain("air quality");
   });
 
+  test("names the transcript's fate, so an unanswered gate is not silent", async () => {
+    // The caller who never got round to answering should hear that the
+    // transcript is gone, not just the recap.
+    const runs = [
+      snapshot({ status: "completed", output: finishedOutput({ kept: false, answered: false }) }),
+    ];
+    const result = (await agentDef.tools.recap_status?.execute(
+      {},
+      createToolContext({ workflows: stubWorkflows(runs) }),
+    )) as { runs: string[] };
+    expect(result.runs[0]).toContain("transcript deleted");
+  });
+
   test("reports a live run as still working rather than as empty", async () => {
     const ctx = createToolContext({ workflows: stubWorkflows([snapshot({ status: "running" })]) });
     const result = (await agentDef.tools.recap_status?.execute({}, ctx)) as { runs: string[] };
@@ -268,6 +290,40 @@ describe("recap_progress", () => {
     );
     expect(result).toMatchObject({ note: expect.stringContaining("nothing to report") });
     expect(workflows.stream).not.toHaveBeenCalled();
+  });
+});
+
+describe("keep_transcript — the signal", () => {
+  test("signals the run's retention hook on the token BOTH sides derive", async () => {
+    // The token is the contract. `workflows/tokens.ts` is the one place it is
+    // spelled, which is what stops the body waiting on a string the tool never
+    // sends — a drift whose only symptom is `signal` answering false.
+    const workflows = stubWorkflows();
+    const signal = vi.fn(async () => true);
+    const ctx = createToolContext({ workflows: { ...workflows, signal } });
+    const result = await agentDef.tools.keep_transcript?.execute({ keep: true }, ctx);
+
+    expect(signal).toHaveBeenCalledWith(retentionToken(ctx.sessionId), { keep: true });
+    expect(result).toMatchObject({ answered: true, keep: true });
+  });
+
+  test("carries a DECLINE, not just an approval", async () => {
+    // Three outcomes, and this is the one a boolean gate loses if the tool only
+    // ever signals on yes: "delete it" has to reach the run before the window
+    // closes, or the caller waits two minutes for something they already said.
+    const signal = vi.fn(async () => true);
+    const ctx = createToolContext({ workflows: { ...stubWorkflows(), signal } });
+    await agentDef.tools.keep_transcript?.execute({ keep: false }, ctx);
+    expect(signal).toHaveBeenCalledWith(expect.any(String), { keep: false });
+  });
+
+  test("a token nobody holds is reported as SETTLED, not as a failure", async () => {
+    // The ordinary case: the window closed, or the caller answered a question
+    // nobody asked.
+    const signal = vi.fn(async () => false);
+    const ctx = createToolContext({ workflows: { ...stubWorkflows(), signal } });
+    const result = await agentDef.tools.keep_transcript?.execute({ keep: true }, ctx);
+    expect(result).toMatchObject({ answered: false, note: expect.stringContaining("settled") });
   });
 });
 
@@ -438,9 +494,17 @@ describe("summarize", () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
   });
 
-  /** A gateway answering with `content`. */
+  /**
+   * A gateway answering with `content`.
+   *
+   * The SDK's, not a fourth hand-rolled one: every workflow template had written
+   * the same OpenAI-shaped envelope, and this one records the prompt, the system
+   * instruction and the headers besides.
+   */
   function stubGateway(content: string) {
-    return stubProvider({ choices: [{ message: { content } }] });
+    const gateway = createStubGateway(content);
+    vi.stubGlobal("fetch", gateway.fetch);
+    return gateway.calls;
   }
 
   test("returns the recap the model produced, with the recording's length in minutes", async () => {
@@ -465,14 +529,17 @@ describe("summarize", () => {
     // The distinction that is the whole retry policy: a model that ignored the
     // format may well obey on the next attempt, where a 401 will not.
     stubGateway("Here is a recap of the recording.");
-    await expect(summarize("https://x/a.mp3", transcript())).rejects.toThrow(/JSON shape/);
+    // The SDK's message, not this template's: `stepGenerateJson` owns the
+    // unwrap/parse/validate chain now, and a plain throw is what the DevKit
+    // retries.
+    await expect(summarize("https://x/a.mp3", transcript())).rejects.toThrow(/Expected JSON/);
   });
 
   test("rejects a reply missing the spoken sentence as firmly as no JSON at all", async () => {
     // Without it the announced turn has nothing to read, which is the one field
     // this template's output exists for.
     stubGateway('{"headline":"H","points":["a"]}');
-    await expect(summarize("https://x/a.mp3", transcript())).rejects.toThrow(/JSON shape/);
+    await expect(summarize("https://x/a.mp3", transcript())).rejects.toThrow(/did not match/);
   });
 
   test("fails FATALLY on a transcript with no speech in it", async () => {
@@ -544,6 +611,110 @@ describe("awaitTranscript — the polling port", () => {
   });
 });
 
+describe("askWhetherToKeep — the expense port", () => {
+  beforeEach(() => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
+    // The window has NOT elapsed unless a test says so. A `sleep` that resolves
+    // would race the hook's own answer, and which one won would come down to
+    // microtask order rather than to the branch under test.
+    vi.mocked(sleep).mockReturnValue(new Promise<void>(() => undefined));
+    vi.mocked(createHook).mockReturnValue(hookAnswering(undefined));
+  });
+
+  /**
+   * A hook that resolves with `payload`, or never — which is what the timeout
+   * branch has to see.
+   *
+   * Built by hanging the hook's own members on a REAL promise rather than by
+   * writing a `then` property: a `Hook` is a thenable, and a hand-written one
+   * is both a lint finding and a worse model of the thing.
+   *
+   * `createHook()` throws outside a run, so this is the only way to reach the
+   * gate's branching at all. What it pins is the three OUTCOMES and the safe
+   * default; suspension, token registration and replay are not testable here
+   * and are not claimed to be.
+   */
+  function hookAnswering(
+    payload: { keep: boolean } | undefined,
+    onClaim: () => void = () => undefined,
+  ): Hook<{ keep: boolean }> {
+    const settled: Promise<{ keep: boolean }> =
+      payload === undefined ? new Promise(() => undefined) : Promise.resolve(payload);
+    return Object.assign(settled, {
+      token: "retention:stub",
+      getConflict: async () => {
+        onClaim();
+        return null;
+      },
+      dispose: () => undefined,
+      [Symbol.dispose]: () => undefined,
+      [Symbol.asyncIterator]: async function* () {
+        yield await settled;
+      },
+    });
+  }
+
+  test("keeps the transcript when the caller says to, and deletes nothing", async () => {
+    vi.mocked(createHook).mockReturnValue(hookAnswering({ keep: true }));
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const compensations = [{ label: "transcript t_1", undo: async () => undefined }];
+    expect(await askWhetherToKeep("s_1", "t_1", compensations)).toEqual({
+      kept: true,
+      answered: true,
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    // The undo stays on the stack: a later failure still has something to reverse.
+    expect(compensations).toHaveLength(1);
+  });
+
+  test("deletes on a DECLINE, and drops the undo it just performed", async () => {
+    vi.mocked(createHook).mockReturnValue(hookAnswering({ keep: false }));
+    const calls = stubProvider({ id: "t_1" });
+
+    const compensations = [{ label: "transcript t_1", undo: async () => undefined }];
+    expect(await askWhetherToKeep("s_1", "t_1", compensations)).toEqual({
+      kept: false,
+      answered: true,
+    });
+    expect(calls[0]?.init.method).toBe("DELETE");
+    // Leaving it would be harmless — the undo tolerates a 404 — and would still
+    // narrate an unwind that reverses something already gone.
+    expect(compensations).toHaveLength(0);
+  });
+
+  test("DELETES when nobody answers, which is what makes the window mean anything", async () => {
+    // The safe default, and the whole reason the gate is a gate: a no-answer
+    // branch that kept the data would be a prompt with a grace period.
+    vi.mocked(sleep).mockResolvedValue(undefined);
+    const calls = stubProvider({ id: "t_1" });
+
+    expect(await askWhetherToKeep("s_1", "t_1", [])).toEqual({ kept: false, answered: false });
+    expect(calls[0]?.init.method).toBe("DELETE");
+  });
+
+  test("claims the token BEFORE the caller is asked to answer it", async () => {
+    // `createHook()` registers nothing until the workflow suspends, so an answer
+    // sent before the claim lands is answered "nobody is listening" — which is
+    // indistinguishable from being late.
+    const order: string[] = [];
+    vi.mocked(createHook).mockReturnValue(
+      hookAnswering({ keep: true }, () => order.push("claimed")),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        order.push("asked");
+        return new Response("{}", { status: 200 });
+      }),
+    );
+
+    await askWhetherToKeep("s_1", "t_1", []);
+    expect(order[0]).toBe("claimed");
+  });
+});
+
 describe("compensate — the saga port", () => {
   test("unwinds newest-first, which is the order acquisitions were stacked in", async () => {
     // `recapFlow` pushes with `unshift`, so the list is already newest-first and
@@ -586,37 +757,5 @@ describe("compensate — the saga port", () => {
     // run that narrated an unwind it did not perform would be lying to the
     // caller reading its progress.
     await expect(compensate([], "nothing was acquired")).resolves.toBeUndefined();
-  });
-});
-
-// ---- Pure helpers -----------------------------------------------------------
-
-describe("stripFence", () => {
-  test("unwraps a ```json fence", () => {
-    expect(stripFence('```json\n{"a":1}\n```')).toBe('{"a":1}');
-  });
-
-  test("leaves unfenced JSON alone", () => {
-    expect(stripFence('{"a":1}')).toBe('{"a":1}');
-  });
-});
-
-describe("isRecapShape", () => {
-  test("accepts the shape summarize promised", () => {
-    expect(isRecapShape({ headline: "H", points: ["a"], spoken: "S." })).toBe(true);
-  });
-
-  test("rejects an empty headline as firmly as a missing one", () => {
-    expect(isRecapShape({ headline: "  ", points: ["a"], spoken: "S." })).toBe(false);
-    expect(isRecapShape({ points: ["a"], spoken: "S." })).toBe(false);
-  });
-
-  test("rejects points that are not all strings", () => {
-    expect(isRecapShape({ headline: "H", points: ["a", 2], spoken: "S." })).toBe(false);
-  });
-
-  test("rejects a non-object", () => {
-    expect(isRecapShape(null)).toBe(false);
-    expect(isRecapShape("{}")).toBe(false);
   });
 });

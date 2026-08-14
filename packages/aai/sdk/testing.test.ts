@@ -146,6 +146,7 @@ describe("createStubWorkflows", () => {
       "get",
       "listing",
       "recent",
+      "signal",
       "start",
       "stream",
       "streamTail",

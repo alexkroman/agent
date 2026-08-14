@@ -1,7 +1,7 @@
 {
   "agent": {
-    "current": 7,
-    "supported": [1, 2, 3, 4, 5, 6, 7],
+    "current": 8,
+    "supported": [1, 2, 3, 4, 5, 6, 7, 8],
     "dropped": {}
   },
   "builtins": {
@@ -27,8 +27,8 @@
     "dropped": {}
   },
   "state": {
-    "current": 6,
-    "supported": [1, 2, 3, 4, 5, 6],
+    "current": 7,
+    "supported": [1, 2, 3, 4, 5, 6, 7],
     "dropped": {}
   },
   "step-errors": {
@@ -42,13 +42,13 @@
     "dropped": {}
   },
   "testing": {
-    "current": 7,
-    "supported": [1, 2, 3, 4, 5, 6, 7],
+    "current": 8,
+    "supported": [1, 2, 3, 4, 5, 6, 7, 8],
     "dropped": {}
   },
   "tool": {
-    "current": 6,
-    "supported": [2, 3, 4, 5, 6],
+    "current": 7,
+    "supported": [2, 3, 4, 5, 6, 7],
     "dropped": {
       "1": "The root barrel exported the Standard Schema spec types (StandardSchemaV1 and its result/issue types) and toolError. The spec types are what tool() ACCEPTS rather than anything an agent declares, and stay reachable in sdk/schema.ts for the signatures that reference them. toolError returned the pre-serialized wire string, so isToolFailure(toolError(m)) was false — a trap under a name that read as the constructor for the shape the guard tests, and used by none of the fourteen templates; it is serializeToolFailure on a private module now, and toolFailure() is the constructor that pairs with the guard."
     }
@@ -69,8 +69,8 @@
     "dropped": {}
   },
   "workflow": {
-    "current": 6,
-    "supported": [1, 2, 3, 4, 5, 6],
+    "current": 7,
+    "supported": [1, 2, 3, 4, 5, 6, 7],
     "dropped": {}
   },
   "workflow-api": {

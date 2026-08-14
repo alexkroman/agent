@@ -15,8 +15,21 @@
  * | `saga` — `openAccount`'s compensation stack | {@link recapFlow}'s `compensations`, unwound by {@link compensate} |
  * | `polling` — infrequent polling | {@link awaitTranscript}: a bounded loop of one step plus one durable `sleep` |
  * | `timer-examples` — `processOrderWorkflow` | the `Promise.race` against {@link PATIENCE}, then the "still going" note |
+ * | `expense` — `timeoutOrUserAction` | the RETENTION GATE: a hook raced against {@link RETENTION_WINDOW}, three outcomes and a safe default |
  *
- * The voice half — start, query, cancel — is ported in `agent.ts`.
+ * The voice half — start, query, cancel, and the answer to the gate — is ported
+ * in `agent.ts`.
+ *
+ * ## The gate is the one that needed a new SDK primitive
+ *
+ * Temporal's `expense` sample parks a workflow on a signal until a human
+ * approves it, and it is the most voice-native pattern in the whole catalog: the
+ * caller IS the approver, and the phone IS the signal channel. It could not be
+ * written here at all until `ctx.workflows.signal()` existed — the DevKit's only
+ * reachable waitpoint was `createWebhook()`, whose URL is minted for a third
+ * party with a callback to make, not for the person already on the line. See
+ * that method's doc for the token rules; `workflows/tokens.ts` is this template's
+ * one derivation of one.
  *
  * ## Why these are worth porting rather than restating
  *
@@ -54,18 +67,17 @@
  * just your shell.
  */
 
+import { throwStepError, toStepError } from "@alexkroman1/aai/step-errors";
 import {
   errorMessage,
-  isTransientStatus,
   omitUndefined,
   report,
   requireStepEnv,
-  retryAfter,
-  StepGenerateError,
-  safeJsonParse,
-  stepGenerate,
+  stepGenerateJson,
 } from "@alexkroman1/aai/utils";
-import { FatalError, RetryableError, sleep } from "workflow";
+import { createHook, FatalError, sleep } from "workflow";
+import { z } from "zod";
+import { retentionToken } from "./tokens.ts";
 
 /** AssemblyAI's pre-recorded (batch) transcription collection. */
 const TRANSCRIPT_ENDPOINT = "https://api.assemblyai.com/v2/transcript";
@@ -105,6 +117,19 @@ const MAX_POLLS = 80;
  */
 const PATIENCE = "2 minutes";
 
+/**
+ * How long the desk holds the transcript waiting for an answer.
+ *
+ * The port of `timeoutOrUserAction`: Temporal races a `condition()` against a
+ * timeout, this races a hook against a `sleep`, and both have THREE outcomes —
+ * approved, declined, nobody answered. The window is a `sleep`, so a caller who
+ * hangs up costs nothing while it runs.
+ *
+ * Two minutes because a caller is on the line; a desk whose approver is on email
+ * would write `"2 days"` and nothing else in this file would change.
+ */
+const RETENTION_WINDOW = "2 minutes";
+
 /** Every HTTP call's deadline. `fetch` has none of its own, and a hung step never ends. */
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -120,6 +145,21 @@ const MAX_TRANSCRIPT_CHARS = 24_000;
 /** Points a recap is reduced to. */
 const POINTS = 3;
 
+/**
+ * The shape the model must answer in.
+ *
+ * `stepGenerateJson` validates against this and throws PLAINLY when the reply
+ * misses, which is the retry policy in one distinction: a model that answered in
+ * prose may answer correctly next time, where a 401 will not. `spoken` is the
+ * field this template exists for — without it the announced turn has nothing to
+ * read down the phone — so it is required rather than defaulted.
+ */
+const RecapReply = z.object({
+  headline: z.string().min(1),
+  points: z.array(z.string()).min(1),
+  spoken: z.string().min(1),
+});
+
 /** What one finished recap is. Small and JSON-shaped, like every step result. */
 export type Recap = {
   url: string;
@@ -129,6 +169,14 @@ export type Recap = {
   spoken: string;
   /** The recording's length, as the provider measured it. */
   minutes: number;
+};
+
+/** How the retention gate ended — the three outcomes, named. */
+export type Retention = {
+  /** Whether the transcript is still on the account. */
+  kept: boolean;
+  /** False when the window elapsed with nobody answering. */
+  answered: boolean;
 };
 
 /** A transcript job, as the provider's own status endpoint reports it. */
@@ -187,7 +235,8 @@ export async function recapFlow(input: { url: string; requestedBy: string }) {
     const transcript = await work;
 
     const recap = await summarize(input.url, transcript);
-    return { ...recap, requestedBy: input.requestedBy };
+    const retention = await askWhetherToKeep(input.requestedBy, job.id, compensations);
+    return { ...recap, ...retention, requestedBy: input.requestedBy };
   } catch (err) {
     // The saga's whole point. Everything acquired above is released, in reverse,
     // before the failure is re-thrown — and because each undo is a STEP, a crash
@@ -227,6 +276,49 @@ export async function awaitTranscript(id: string): Promise<TranscriptState> {
     await sleep(POLL_INTERVAL);
   }
   throw new Error(`Gave up on that recording after ${MAX_POLLS} checks.`);
+}
+
+/**
+ * Ask the caller whether the transcript stays on file, and act on the answer.
+ *
+ * The port of Temporal's `timeoutOrUserAction`, and a body-side helper for the
+ * same reason {@link awaitTranscript} is: it opens a hook and `sleep`s, neither
+ * of which a step can do.
+ *
+ * The default is DELETE, which is what makes the timeout meaningful. A gate
+ * whose no-answer branch keeps the data is not a gate — it is a prompt with a
+ * grace period — and for a desk holding transcripts of other people's meetings
+ * the safe default is the one that leaves nothing behind.
+ */
+export async function askWhetherToKeep(
+  requestedBy: string,
+  transcriptId: string,
+  compensations: Compensation[],
+): Promise<Retention> {
+  // `using`, so the token is released when this scope exits — including the
+  // timeout branch, where nothing ever arrives. A hook left registered holds
+  // its token against the caller's NEXT run, which `getConflict()` below would
+  // then report as a conflict.
+  using decision = createHook<{ keep: boolean }>({ token: retentionToken(requestedBy) });
+  // Claim the token BEFORE anyone is told to signal it. `createHook()` registers
+  // nothing on its own — registration is committed when the workflow suspends —
+  // so without this the caller's answer races a token no hook owns yet and is
+  // answered "nobody is listening", which is indistinguishable from being late.
+  await decision.getConflict();
+
+  await note(
+    `Recap ready. Keep the transcript on file, or delete it? Deleting in ${RETENTION_WINDOW} otherwise.`,
+  );
+  const answer = await Promise.race([decision, sleep(RETENTION_WINDOW).then(() => undefined)]);
+
+  if (answer?.keep === true) return { kept: true, answered: true };
+  await discardTranscript(transcriptId);
+  // Drop the undo now that the run has DONE what it undoes. Leaving it would be
+  // harmless (`discardTranscript` treats a 404 as success, as every compensation
+  // must) and would still be wrong to read: an unwind that reverses something
+  // already gone tells whoever is watching the log a story that did not happen.
+  compensations.shift();
+  return { kept: false, answered: answer !== undefined };
 }
 
 /**
@@ -332,7 +424,12 @@ export async function discardTranscript(id: string): Promise<void> {
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (response.status === 404) return;
-  if (!response.ok) throw requestFailure(response, `DELETE ${TRANSCRIPT_ENDPOINT}/${id}`);
+  if (!response.ok) {
+    throw toStepError(
+      response,
+      `DELETE ${TRANSCRIPT_ENDPOINT}/${id} failed: HTTP ${response.status}`,
+    );
+  }
 }
 
 /**
@@ -355,20 +452,20 @@ export async function summarize(url: string, transcript: TranscriptState): Promi
     throw new FatalError("That recording came back with no speech in it.");
   }
 
-  const reply = await stepGenerate(text, {
+  // `stepGenerateJson` unwraps the fence a model puts around JSON however firmly
+  // it is told not to, parses it, and validates it — all four things this step
+  // used to re-derive. `throwStepError` is what makes a terminal gateway failure
+  // (a bad key, a rejected request) stop rather than burn the remaining
+  // attempts, where a reply that missed the SHAPE throws plainly and retries.
+  const parsed = await stepGenerateJson(text, {
+    schema: RecapReply,
     system:
       "You write up recordings for someone who will hear the result on a phone call. " +
       `Reply with JSON only: {"headline": string, "points": string[], "spoken": string}. ` +
       `Give exactly ${POINTS} points. "spoken" is ONE sentence, under 30 words, ` +
       "written to be read aloud. No markdown fence, no preamble.",
-  }).catch(stopOrRetry);
+  }).catch(throwStepError);
 
-  const parsed = safeJsonParse(stripFence(reply));
-  if (!isRecapShape(parsed)) {
-    // A PLAIN throw, unlike the fatal one above: a model that answered in prose
-    // may well answer in JSON on the next attempt.
-    throw new Error("The model did not return the JSON shape this step asked for.");
-  }
   return {
     url,
     headline: parsed.headline,
@@ -409,60 +506,15 @@ async function request(url: string, init: RequestInit = {}): Promise<Response> {
     headers: { authorization: requireStepEnv(API_KEY_ENV), "content-type": "application/json" },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
-  if (!response.ok) throw requestFailure(response, `${init.method ?? "GET"} ${url}`);
+  // The three-way retry decision, made by the SDK: a 401 or a 400 answers the
+  // same way on the fourth attempt and burns the step, a 429 or a 5xx is what
+  // retries are for, and a `Retry-After` the provider named is waited out rather
+  // than replaced by the DevKit's one-second default — which matters here more
+  // than usual, because a fan-out of segments hits a rate limit together.
+  if (!response.ok) {
+    throw toStepError(response, `${init.method ?? "GET"} ${url} failed: HTTP ${response.status}`);
+  }
   return response;
-}
-
-/**
- * The retryable/terminal split for a provider call.
- *
- * A 401 or a 400 answers the same way on the fourth attempt, so it burns the
- * step rather than the account's rate limit; a 429 or a 5xx is exactly what
- * retries are for, and `RetryableError` is what carries the provider's own
- * `Retry-After` into the DevKit's schedule instead of leaving it on the default
- * backoff.
- */
-function requestFailure(response: Response, label: string): Error {
-  const message = `${label} failed: HTTP ${response.status}`;
-  if (!isTransientStatus(response.status)) return new FatalError(message);
-  const at = retryAfter(response);
-  return at ? new RetryableError(message, { retryAfter: at }) : new RetryableError(message);
-}
-
-/**
- * Turn a terminal gateway failure into one the DevKit will not retry.
- *
- * A plain function rather than a `throw` inside a `catch`: `FatalError` takes
- * only a message — no `cause` — so constructing one in a catch block loses the
- * original where the linter (rightly) expects it preserved. `link-digest` and
- * `research-desk` carry the same three lines for the same reason.
- */
-function stopOrRetry(err: unknown): never {
-  if (err instanceof StepGenerateError && !err.retryable) throw new FatalError(err.message);
-  throw err;
-}
-
-/** Unwrap a ```json fence, which models add however firmly they are told not to. */
-export function stripFence(reply: string): string {
-  const fenced = /^\s*```(?:json)?\s*\n([\s\S]*?)\n?\s*```\s*$/.exec(reply);
-  return (fenced?.[1] ?? reply).trim();
-}
-
-/** Is this the shape `summarize` promised its caller? */
-export function isRecapShape(
-  value: unknown,
-): value is { headline: string; points: string[]; spoken: string } {
-  if (value === null || typeof value !== "object") return false;
-  const shape = value as { headline?: unknown; points?: unknown; spoken?: unknown };
-  return (
-    typeof shape.headline === "string" &&
-    shape.headline.trim() !== "" &&
-    typeof shape.spoken === "string" &&
-    shape.spoken.trim() !== "" &&
-    Array.isArray(shape.points) &&
-    shape.points.length > 0 &&
-    shape.points.every((point) => typeof point === "string")
-  );
 }
 
 /** A string field of a JSON body, when it really is one. */

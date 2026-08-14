@@ -905,6 +905,7 @@ export type WorkflowClient = {
     recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
     cancel(runId: string): Promise<boolean>;
     wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
+    signal(token: string, payload?: unknown): Promise<boolean>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
     streamTail(runId: string, options?: StreamOptions): Promise<number>;
     listing(): WorkflowSummary[];
