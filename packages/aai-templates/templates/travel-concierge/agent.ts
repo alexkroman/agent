@@ -1,6 +1,5 @@
 import { agent } from "@alexkroman1/aai";
 import { tripSlot, tripView } from "./shared.ts";
-import systemPrompt from "./system-prompt.md?raw";
 
 /**
  * A phone travel concierge, adapted from LangGraph's customer-support tutorial.
@@ -26,7 +25,6 @@ export default agent({
   // One projection replaces a `ctx.send` in each of eleven tools — and is the
   // single place that decides the caller's record leaves the server trimmed.
   syncState: tripSlot.projection(tripView),
-  systemPrompt,
   greeting:
     "Swiss Air Travel, this is the concierge desk. I can see your booking — what can I do for you today?",
 });

@@ -368,7 +368,8 @@ run's pending sleeps and reports how many (`api.wake()`, `ctx.workflows.wakeUp()
 the same shape as `cancelled: false`. Without it the only handle on a sleeping run
 was `cancel`, so "send it now" and "throw it away" were one button. Both routes
 ride the platform's already-declared GET and POST on the `/workflows` prefix, so
-neither needed a deployment change; `research-workflow` is the worked example for each.
+neither needed a deployment change; `research-workflow` is the worked example
+for each.
 
 ### Rendering progress (`useWorkflowProgress`)
 
@@ -613,7 +614,8 @@ the keyless read (`GET /workflows/runs` with no `key`, i.e. `ctx.workflows
 .recent`) filtered by the DECLARED name, which matches no stored run, so it
 answered `[]` for every workflow and `aai workflow runs <name>` printed "No runs
 of X yet" for every agent — while every snapshot reported the machine id as its
-`workflow`, which `research-workflow`'s status tool reads down the phone. `find` was
+`workflow`, which `research-workflow`'s status tool reads down the phone. `find`
+was
 unaffected: it goes through our own key index, which is keyed by declared name.
 
 Neither could be caught by a stub, which is the reusable part: a fake adapter

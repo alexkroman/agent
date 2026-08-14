@@ -27,6 +27,9 @@ export {
   type PipelineTuning,
   type SessionMode,
 } from "./config-rules.ts";
+// The same seam for the other thing a file beside `agent.ts` can BE: its
+// `system-prompt.md`.
+export { withSystemPrompt } from "./system-prompt-file.ts";
 // The generated worker entry resolves the agent's `tools/` directory through
 // these, so they sit beside `toAgentConfig` for the same reason it does: this
 // subpath is what a generated entry may import (dependency-free, bundled in).

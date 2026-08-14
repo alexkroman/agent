@@ -35,12 +35,14 @@ const toolSource = (description: string) =>
   `export default tool({ description: ${JSON.stringify(description)}, execute: () => 1 });\n`;
 
 /** Build `dir` and evaluate the worker, returning its default export. */
-async function loadWorker(dir: string): Promise<{ tools: Record<string, unknown> }> {
+async function loadWorker(
+  dir: string,
+): Promise<{ tools: Record<string, unknown>; systemPrompt: string }> {
   const code = await buildWorker(dir, { runtime: false });
   const out = path.join(dir, "worker.mjs");
   await fs.writeFile(out, code, "utf-8");
   const mod = (await import(pathToFileURL(out).href)) as {
-    default: { tools: Record<string, unknown> };
+    default: { tools: Record<string, unknown>; systemPrompt: string };
   };
   return mod.default;
 }
@@ -104,6 +106,79 @@ describe("tool discovery", () => {
       // The whole point of discovery: this class of mistake is named at build
       // time instead of becoming a tool that fails on every turn.
       await expect(loadWorker(dir)).rejects.toThrow(/broken\.ts/);
+    });
+  });
+});
+
+describe("system-prompt.md discovery", () => {
+  const PROMPT = "You are a terse assistant.\n\n- One sentence.\n";
+
+  test("the file becomes the agent's systemPrompt, with nothing in agent.ts", async () => {
+    await withTempDir(async (dir) => {
+      await linkNodeModules(dir);
+      await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
+      await fs.writeFile(path.join(dir, "system-prompt.md"), PROMPT, "utf-8");
+
+      const agentDef = await loadWorker(dir);
+      expect(agentDef.systemPrompt).toBe(PROMPT);
+    });
+  });
+
+  test("no file leaves the framework default in place", async () => {
+    await withTempDir(async (dir) => {
+      await linkNodeModules(dir);
+      await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
+
+      // Five templates deliberately run on DEFAULT_SYSTEM_PROMPT, so an absent
+      // file is a normal shape rather than a build failure.
+      const agentDef = await loadWorker(dir);
+      expect(agentDef.systemPrompt).toContain("voice agent");
+    });
+  });
+
+  test("a COMPOSED prompt keeps what the author built", async () => {
+    await withTempDir(async (dir) => {
+      await linkNodeModules(dir);
+      await fs.writeFile(
+        path.join(dir, "agent.ts"),
+        `import { agent } from "@alexkroman1/aai";\n` +
+          `import prompt from "./system-prompt.md?raw";\n` +
+          `export default agent({ name: "T", systemPrompt: \`\${prompt}\\nTODAY: fish\` });\n`,
+        "utf-8",
+      );
+      await fs.writeFile(path.join(dir, "system-prompt.md"), PROMPT, "utf-8");
+
+      // `pizza-ordering`'s shape — the file plus a computed suffix. Discovery
+      // must not apply the file a second time, and must not call this a mistake.
+      const agentDef = await loadWorker(dir);
+      expect(agentDef.systemPrompt).toBe(`${PROMPT}\nTODAY: fish`);
+    });
+  });
+
+  test("a file nothing reads fails the build, rather than being ignored", async () => {
+    await withTempDir(async (dir) => {
+      await linkNodeModules(dir);
+      await fs.writeFile(
+        path.join(dir, "agent.ts"),
+        `import { agent } from "@alexkroman1/aai";\n` +
+          `export default agent({ name: "T", systemPrompt: "Inline, and not the file." });\n`,
+        "utf-8",
+      );
+      await fs.writeFile(path.join(dir, "system-prompt.md"), PROMPT, "utf-8");
+
+      // "I edited system-prompt.md and nothing changed" is the silent-absence
+      // failure discovery exists to kill, pointing the other way.
+      await expect(loadWorker(dir)).rejects.toThrow(/nothing reads it/);
+    });
+  });
+
+  test("an empty file is an error, not a silent fall-through to the default", async () => {
+    await withTempDir(async (dir) => {
+      await linkNodeModules(dir);
+      await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
+      await fs.writeFile(path.join(dir, "system-prompt.md"), "   \n\n", "utf-8");
+
+      await expect(loadWorker(dir)).rejects.toThrow(/is empty/);
     });
   });
 });

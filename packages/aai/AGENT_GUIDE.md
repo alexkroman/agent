@@ -112,7 +112,7 @@ my-agent/
   agent.test.ts       # Unit tests (optional)
   client.tsx          # Custom UI (optional, React)
   shared.ts           # Types shared between agent.ts and client.tsx
-  system-prompt.md    # Long system prompts (optional, imported)
+  system-prompt.md    # The system prompt — discovered, not imported
   tools/              # One file per tool — this is how a tool is declared
   workflows/          # Durable workflow bodies (optional — see "Workflow apps")
   package.json
@@ -127,8 +127,9 @@ import { agent } from "@alexkroman1/aai";
 
 export default agent({
   name: string;                              // required — display name
-  systemPrompt?: string;                     // default: general voice assistant
-                                             // (`system` is an accepted alias)
+  systemPrompt?: string;                     // usually ABSENT — write system-prompt.md
+                                             // instead; declare it only to COMPOSE
+                                             // one (`system` is an accepted alias)
   greeting?: string;                         // default: "Hey there..."
   voice?: string;                            // TTS voice for the default pipeline, e.g. "michael"
                                              // (shorthand for tts: assemblyAITts({ voice });
@@ -209,14 +210,65 @@ you want the three stages visible in the config or EU data residency across
 STT and the LLM gateway. Speech-to-speech (S2S) mode is an explicit opt-in
 via the `s2s` field — see below.
 
-System prompt from file:
+### `system-prompt.md` IS the system prompt
+
+**Write the prompt in `system-prompt.md` beside `agent.ts`, and declare
+nothing.** The build discovers the file, so there is no import line and no
+field — the same rule `tools/` follows, applied to the one part of an agent
+that is a DOCUMENT rather than a value:
 
 ```ts
+// agent.ts — nothing about the prompt appears here
+import { agent } from "@alexkroman1/aai";
+
+export default agent({ name: "My Agent" });
+```
+
+```markdown
+<!-- system-prompt.md -->
+You are a concise, friendly assistant.
+
+- Keep replies to one or two sentences.
+- Never read a URL aloud.
+```
+
+Why the file rather than a string: a prompt is markdown — paragraphs, headings,
+bulleted lists — and inline it becomes that document spelled as `\n\n` and `\n-`
+escapes inside one string literal, with no wrapping, no preview, and a diff that
+is one line no matter which bullet changed. Editing the prompt is the main loop
+of building an agent, so it should land in the most reviewable place available,
+not the least.
+
+Three rules, each a build error naming the file:
+
+- **A file nothing reads is an error.** If `system-prompt.md` exists and
+  `agent.ts` declares a DIFFERENT `systemPrompt`, the build fails rather than
+  ignoring the file — "I edited the prompt and nothing changed" is the failure
+  this mechanism exists to prevent.
+- **An empty file is an error**, not a silent fall-through to the framework
+  default. Delete the file if that is what you want.
+- **A `system-prompt/` directory is rejected.** One file, no concatenation
+  order to guess.
+
+**Composing a prompt is still legal, and it is the one case you write the import
+for.** When part of the prompt is computed — a menu, a catalogue, today's date —
+import the file and build the field; the build sees its own text inside your
+prompt and leaves what you built alone:
+
+```ts no-check
+// `no-check`: the prompt file and the menu module are the project's, not this
+// guide's — which is the point of the example.
 /// <reference types="vite/client" />
 import { agent } from "@alexkroman1/aai";
 import systemPrompt from "./system-prompt.md?raw";
-export default agent({ name: "My Agent", systemPrompt });
+import { menuText } from "./menu.ts";
+
+export default agent({ name: "Pizza", systemPrompt: `${systemPrompt}\n${menuText()}` });
 ```
+
+`greeting` stays a field, deliberately: it is one sentence with no structure to
+lose, and it crosses the wire to the browser beside `name` and `page`. **A
+document goes in a file, a value stays in the call.**
 
 **JSON imports need no attribute.** `resolveJsonModule` is on, so
 `import data from "./knowledge.json"` is all it takes. Do NOT write

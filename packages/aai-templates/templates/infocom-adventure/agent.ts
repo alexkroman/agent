@@ -1,6 +1,5 @@
 import { agent } from "@alexkroman1/aai";
 import { gameSlot } from "./shared.ts";
-import systemPrompt from "./system-prompt.md?raw";
 
 export default agent({
   name: "Cavern Adventure",
@@ -10,7 +9,6 @@ export default agent({
   // A narrator wants a narrative voice; everything else stays on the
   // default all-AssemblyAI pipeline.
   voice: "paul",
-  systemPrompt,
   // The opening scene here must agree with DEFAULT_GAME_STATE.currentRoom
   // (shared.ts) and the world map in system-prompt.md.
   greeting:

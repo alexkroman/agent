@@ -18,12 +18,18 @@
  * own agent.test.ts.
  */
 
+import { existsSync } from "node:fs";
+import path from "node:path";
 import type { AgentDef } from "@alexkroman1/aai";
-import { DEFAULT_MAX_STEPS, TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai";
+import {
+  DEFAULT_MAX_STEPS,
+  DEFAULT_SYSTEM_PROMPT,
+  TOOL_EXECUTION_TIMEOUT_MS,
+} from "@alexkroman1/aai";
 import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
 import { ASSEMBLYAI_TTS_DEPRECATED_VOICES, ASSEMBLYAI_TTS_VOICES } from "@alexkroman1/aai/tts";
 import { describe, expect, test } from "vitest";
-import { withTemplateTools } from "./_tool-discovery.ts";
+import { templatePromptFiles, withTemplatePrompt, withTemplateTools } from "./_discovery.ts";
 // `?raw` rather than node:fs — this package's tsconfig has no node types, and
 // the raw-import shape is the one the CLI bundler supports anyway.
 import scaffoldGuide from "./scaffold/CLAUDE.md?raw";
@@ -53,6 +59,26 @@ describe("template build smoke", () => {
     expect(templates.length).toBeGreaterThan(0);
   });
 
+  /**
+   * The prompt glob is checked against the FILESYSTEM, not against itself.
+   *
+   * `withTemplatePrompt` no-ops for a template with no `system-prompt.md`, so a
+   * glob that stopped resolving would make every template look like that case
+   * and the per-template assertion below would skip silently. A first attempt at
+   * this guard derived the expected set from the same glob and was verified
+   * NOT to bite: breaking the pattern changed nothing. Two independent sources
+   * is the only shape that can catch it.
+   */
+  test("every system-prompt.md on disk is discovered", () => {
+    const onDisk = templates
+      .filter(({ name }) =>
+        existsSync(path.join(import.meta.dirname, "templates", name, "system-prompt.md")),
+      )
+      .map(({ name }) => name);
+    expect(onDisk.length).toBeGreaterThan(0);
+    expect([...templatePromptFiles].toSorted()).toEqual(onDisk.toSorted());
+  });
+
   test.each(templates)(
     "$name: agent.ts loads and yields a valid config",
     async ({ name, modulePath }) => {
@@ -75,6 +101,17 @@ describe("template build smoke", () => {
       // throws naming the file, so a template's tools are validated here.
       const resolved = withTemplateTools(name, agentDef as AgentDef);
       expect(() => agentToolsToSchemas(resolved.tools)).not.toThrow();
+      // And the prose half, for the same reason: `system-prompt.md` BECOMES the
+      // prompt, so this is where an empty one — or one the agent ignores while
+      // declaring its own — fails, for every template at once.
+      const withPrompt = withTemplatePrompt(name, resolved);
+      // A template WITH a file must actually be carrying its text. Asserting only
+      // that the call does not throw would pass vacuously if the `?raw` glob ever
+      // stopped resolving — the shape of failure this repo keeps paying for, a
+      // gate reporting success while checking nothing.
+      if (templatePromptFiles.has(name)) {
+        expect(withPrompt.systemPrompt).not.toBe(DEFAULT_SYSTEM_PROMPT);
+      }
     },
   );
 });

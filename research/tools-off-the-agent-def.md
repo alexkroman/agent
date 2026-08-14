@@ -48,7 +48,7 @@ step can populate it at definition time.
 proposes two — bundled, and a `readdir` + dynamic `import()` scan for the two
 loaders with no bundler — and neither of those loaders took the second:
 
-- **vitest** uses `import.meta.glob` (`aai-templates/_tool-discovery.ts`), which
+- **vitest** uses `import.meta.glob` (`aai-templates/_discovery.ts`), which
   keeps the tool modules inside VITEST's graph. Through Node's resolver they
   would get a second copy of the SDK, so a slot's module state would differ
   between the tool under test and the agent holding it.
@@ -197,7 +197,7 @@ schemas must come from the resolved registry), and the `/testing` helpers.
 
 `runTool(agentDef, name, args, ctx)` and `toolOf(agentDef, name)` read
 `agentDef.tools` synchronously, and four template specs use them
-(`pizza-ordering`, `plan-and-execute`, `support-line`, `travel-concierge`); three more
+(`pizza-ordering`, `plan-and-execute`, `support-line`, `travel-concierge`); three
 import tool modules directly (`retail`, `solo-rpg`, `dispatch-center`). Either
 those helpers take a resolved registry, or they become async. eve's answer is a
 harness that installs a registry, and it is probably ours too — but this is the
@@ -244,12 +244,24 @@ dropped column, cast `as never` so nothing reports it.
 
 ## Open questions
 
-- **Does the watcher rebuild on a NEW file?** Adding a tool has to trigger a
-  rebuild, not a reload of changed modules, or discovery makes the authoring loop
-  worse than the map it replaces. Bundled mode changes the generated entry, so
-  the watcher must treat a new `tools/` file as a rebuild trigger. **This is the
-  one still open, and it is now the ONLY answer** — the "disk mode gets it free
-  from a fresh scan per boot" escape is gone with disk mode.
+- ~~**Does the watcher rebuild on a NEW file?**~~ **Answered: yes, by
+  construction.** `aai dev` has exactly ONE restart granularity — `watchDirectory`
+  subscribes to chokidar's `all` event and hands every one of them to
+  `RestartSupervisor.request`, which rebuilds the bundle and swaps the server
+  (`_dev-server.ts:218`, `_dev-restart.ts`). There is no incremental module
+  reload to fall through, so an `add` event is a rebuild like any other, and
+  `isIgnoredPath` filters by path SEGMENT (dotfiles, `node_modules`) rather than
+  by extension, so no file type is excluded.
+
+  Two consequences worth keeping. The property this relies on is the ABSENCE of
+  incremental reload, so anything that later adds one has to reintroduce this
+  question — `~/Code/eve`'s dev watcher is the shape to copy there: it classifies
+  each change as `structural` / `runtime` / `unchanged` by FINGERPRINTING the
+  recompiled wiring, and only a structural change rebuilds and reloads
+  (`internal/nitro/host/dev-authored-rebuild-coordinator.ts`). And a new tool file
+  costs a full rebuild plus a server swap, which is correct but not free; if that
+  becomes the authoring complaint, the fingerprint split is the fix rather than
+  a narrower watch glob.
 - **Does the studio's workspace build see a `tools/` directory?** It materializes
   a workspace to disk and builds through `buildWorker`, so it should — confirm
   before committing, since it is the same class of assumption that sank the last

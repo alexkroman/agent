@@ -1,6 +1,5 @@
 import { agent } from "@alexkroman1/aai";
 import { dashboardView, dispatchSlot } from "./shared.ts";
-import systemPrompt from "./system-prompt.md?raw";
 
 export default agent({
   name: "Dispatch Command Center",
@@ -14,7 +13,6 @@ export default agent({
   // one message ("unit twelve … respond to"). The default pipeline's
   // `max_turn_silence` already tolerates that; reach for
   // `assemblyAIStt({ maxTurnSilenceMs })` only if your callers pause longer.
-  systemPrompt,
   greeting:
     "Dispatch Command Center online. Restoring operational state. I'm ready to take incoming calls, manage active incidents, or run dispatch operations. Say 'dashboard' for a full status report. What do we have.",
 

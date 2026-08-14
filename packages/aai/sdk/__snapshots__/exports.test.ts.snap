@@ -130,6 +130,7 @@ exports[`export surface stability > @alexkroman1/aai/manifest export 1`] = `
   "assertSilencePolicy",
   "toAgentConfig",
   "toolRegistry",
+  "withSystemPrompt",
   "withTools",
 ]
 `;

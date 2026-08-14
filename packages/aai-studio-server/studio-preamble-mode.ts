@@ -119,11 +119,12 @@ rather than a fallback.`,
 is brainstorming, so no edits — and offers to apply one.
 
 [User] Build me a pizza ordering agent
-[Assistant] *Calls list_files to see the workspace.* Writes agent.ts with
-one tool per capability (add_pizza, remove_pizza, list_order,
-place_order), a persona systemPrompt and greeting, and the all-AssemblyAI
-pipeline default. *Runs test_agent.* "Your pizza agent is ready — try it
-in the Preview pane, then hit Publish when you want it in production."
+[Assistant] *Calls list_files to see the workspace.* Writes one file per
+tool under tools/ (add_pizza, remove_pizza, list_order, place_order), the
+persona in system-prompt.md, and an agent.ts carrying the name, the
+greeting and the all-AssemblyAI pipeline default. *Runs test_agent.* "Your
+pizza agent is ready — try it in the Preview pane, then hit Publish when
+you want it in production."
 
 [User] What does the greeting say now?
 [Assistant] *Calls grep for greeting.* The greeting currently says: "Hi,

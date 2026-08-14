@@ -130,10 +130,33 @@ async function discoverToolFiles(cwd: string): Promise<string[]> {
     .sort();
 }
 
+/** The prose slot: one file, beside `agent.ts`, named by convention. */
+const SYSTEM_PROMPT_FILE = "system-prompt.md";
+
+/**
+ * Whether the project keeps its system prompt in a file.
+ *
+ * The other half of "a file beside `agent.ts` can BE the thing", and it happens
+ * here for the same reason `discoverToolFiles` does — the guest has no
+ * filesystem, so the read belongs where the bundle is assembled. What the file
+ * MEANS is `withSystemPrompt`'s to decide (the author may have imported and
+ * composed it, in which case discovery must not apply it twice); this only
+ * answers whether there is one.
+ */
+async function hasSystemPromptFile(cwd: string): Promise<boolean> {
+  try {
+    return (await fs.stat(path.join(cwd, SYSTEM_PROMPT_FILE))).isFile();
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw err;
+  }
+}
+
 function wrapperEntrySource(
   runtime: boolean,
   workflows: WorkflowBundleOutput | undefined,
   toolFiles: readonly string[],
+  systemPromptFile: boolean,
 ): string {
   // `import * as` rather than a default import per file: the namespace is what
   // `toolRegistry` validates, so a file exporting the wrong thing (or nothing)
@@ -146,18 +169,24 @@ function wrapperEntrySource(
     .join("\n");
 
   return `import def from "../agent.ts";
-import { agentToolsToSchemas, toAgentConfig, toolRegistry, withTools } from "@alexkroman1/aai/manifest";
+import { agentToolsToSchemas, toAgentConfig, toolRegistry, withSystemPrompt, withTools } from "@alexkroman1/aai/manifest";
 ${runtime ? `import { createRuntime } from "@alexkroman1/aai/runtime";` : ""}
+${systemPromptFile ? `import __aaiSystemPrompt from "../${SYSTEM_PROMPT_FILE}?raw";` : ""}
 ${toolImports}
 // A tool's name is its file name. The map is built here rather than written in
 // agent.ts, so a file that exists is a tool the model can call — there is no
 // registration step to forget.
-const __aaiAgent = withTools(
+//
+// \`system-prompt.md\` arrives the same way, and the \`?raw\` lives HERE rather
+// than in the author's own \`agent.ts\`: it is a Vite convention, and the whole
+// point of generating this entry is that a bundler feature never has to appear
+// in user-authored space.
+const __aaiAgent = ${systemPromptFile ? "withSystemPrompt(" : ""}withTools(
   def,
   toolRegistry({
 ${toolEntries}
   }),
-);
+)${systemPromptFile ? ", __aaiSystemPrompt)" : ""};
 export default __aaiAgent;
 export const __aaiConfig = {
   ...toAgentConfig(__aaiAgent),
@@ -197,7 +226,12 @@ export async function buildWorker(cwd: string, opts: BuildWorkerOptions = {}): P
   await fs.mkdir(path.dirname(wrapperPath), { recursive: true });
   await fs.writeFile(
     wrapperPath,
-    wrapperEntrySource(opts.runtime !== false, opts.workflows, await discoverToolFiles(cwd)),
+    wrapperEntrySource(
+      opts.runtime !== false,
+      opts.workflows,
+      await discoverToolFiles(cwd),
+      await hasSystemPromptFile(cwd),
+    ),
     "utf-8",
   );
 

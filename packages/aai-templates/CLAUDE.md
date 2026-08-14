@@ -201,7 +201,8 @@ concurrency curve that came out of it is in `SEGMENT_CONCURRENCY`'s own doc;
 (`@alexkroman1/aai/testing`) rather than stubbing the global — the global stub
 passes while testing a path production does not take.
 
-**`transcription-workflow` is the second workflow template. It is a WORKFLOW APP —
+**`transcription-workflow` is the second workflow template. It is a WORKFLOW
+APP —
 `workflowApp()`, no `stt`/`llm`/`tts`, no tools — and it is the one that really
 calls a provider.** Its three steps are a straight line: `splitRecording` reads
 the recording's WAV header and decides where to cut, `transcribeSegment` runs
@@ -364,7 +365,8 @@ inside a turn?** A caller will hold the line for a tool call and a sentence
 back; they
 will not hold it for seven long-form model calls in sequence, and what a
 reflection loop produces is a piece of prose to READ rather than two sentences
-to hear. So `redline` is a workflow app, exactly like `transcription-workflow`, and
+to hear. So `redline` is a workflow app, exactly like
+`transcription-workflow`, and
 the three above it are voice agents. Getting that wrong in either direction is
 the expensive mistake: a voice agent that goes silent for ninety seconds, or a
 page for work that a caller could simply have been told.
@@ -712,7 +714,8 @@ implementation and each is a build error naming the file.
 
 **All thirteen tool-declaring templates are files now, and the param is GONE.**
 For a while six were not — `health-assistant`, `embedded-assets`,
-`infocom-adventure`, `night-owl`, `recap-workflow`, `research-workflow` declared theirs
+`infocom-adventure`, `night-owl`, `recap-workflow` and `research-workflow`
+declared theirs
 inline, and this guide's own measurement missed them because it counted only the
 templates that already had a `tools/` directory. That is what made the rule
 conventional: `agent({ tools })` still worked, so "a tool is a file" was true of
@@ -757,7 +760,7 @@ const agentDef = withDiscoveredTools(authored, import.meta.glob("./tools/*.ts", 
 
 **The glob is written in the template and not reached for from a shared helper,
 and that is the whole lesson of the bug it replaced.** Five specs imported
-`../../_tool-discovery.ts` — this package's own helper — which resolves in-tree
+`../../_discovery.ts` — this package's own helper — which resolves in-tree
 and **does not exist in a scaffolded project**, so `aai test`, `aai build` (it
 type-checks) and `npm start` were all broken for anyone who scaffolded
 `pizza-ordering`, `plan-and-execute`, `retail`, `support-line` or `travel-concierge`,
@@ -769,7 +772,7 @@ template directory, resolved rather than pattern-matched (`../shared.ts` from
 the same number of dots as a legal import one level up). Anything shared has to
 be IN the template or on a published subpath.
 
-`_tool-discovery.ts` survives for `templates.test.ts` alone, which needs every
+`_discovery.ts` survives for `templates.test.ts` alone, which needs every
 template at once and so needs a repo-wide literal pattern — `import.meta.glob`
 is expanded at transform time and cannot take a variable. That file never ships,
 so it is the one place the helper shape is still right.
@@ -796,6 +799,47 @@ cost the browser bundle**: `retail`'s client builds its empty view from a
 seedless `emptyRetailState()` instead of `retailSlot.projection(storeView)
 (undefined)`, because the slot's factory pulls a 107 KB `seed.json` and
 importing it would ship the whole catalog to the browser. It says so in place.
+
+## `system-prompt.md` IS the system prompt
+
+The same rule as `tools/`, applied to the one part of an agent that is a
+DOCUMENT rather than a value. Fourteen templates keep a `system-prompt.md`; not
+one imports it, and only `pizza-ordering` declares a `systemPrompt` at all —
+because it composes (the file plus `menuText()`). `night-owl/agent.ts` is three
+fields.
+
+`withSystemPrompt` (`@alexkroman1/aai/manifest`) owns the rules, and the reason
+it is worth a function rather than an assignment is the third one:
+
+- The def carries the framework default → the file becomes the prompt.
+- The def's prompt CONTAINS the file's text → the author imported and composed
+  it; left exactly as built.
+- Neither → a `system-prompt.md` exists and nothing reads it. **Build error.**
+
+**That error exists because "I edited the prompt and nothing changed" is the
+silent-absence failure tool discovery was built to kill, pointing the other
+way** — and it is worse here: a prompt is edited far more often than a tool is
+added, and a prompt that is quietly ignored produces an agent that behaves
+plausibly and wrongly rather than one that visibly cannot do something. An empty
+file is an error too, for the same reason.
+
+**The check compares VALUES, and that is what makes it possible at all.**
+`research/1.5-prose-off-the-agent-def.md` expected to ask rollup's AST whether
+`agent.ts` imports the file — the entry is generated BEFORE the build, so there
+is no module graph to ask, and a source scrape is fragile. The resolved prompt
+answers it directly and answers a better question: an AST can only see that a
+file was IMPORTED, while an import whose value never reaches `systemPrompt` is
+exactly the bug. Composition then needs no special case.
+
+`greeting` stays a field, and `sttPrompt` too: one sentence with no structure to
+lose, crossing the wire in `/client-config` beside `name` and `page`. The line is
+**a document goes in a file, a value stays in the call**.
+
+`_discovery.ts` resolves the prompt for `templates.test.ts` the way it resolves
+tools, so an empty or orphaned prompt file fails for every template at once. Its
+non-vacuity guard is worth copying: the first version derived "which templates
+have a file" from the SAME glob it was checking, so breaking the pattern changed
+nothing — verified by A/B. It reads the filesystem instead.
 
 **There is deliberately no TEXT-mode template, and the allowlist records
 it.** A template is a starter the platform DEPLOYS — `templates.test.ts` loads
@@ -850,7 +894,7 @@ Four things follow, and they are what to preserve:
 - **There is no runtime `tools/` scan anywhere, and that is a decision.** The
   plan offered a `readdir` + dynamic `import()` mode for the two loaders with no
   bundler; neither took it. A spec uses `import.meta.glob` (see
-  `_tool-discovery.ts` above — Node's resolver would hand the tools a second copy
+  `_discovery.ts` above — Node's resolver would hand the tools a second copy
   of the SDK), and self-hosting now has the bundler in its path after all. The
   SDK's lazy `loadToolModules` existed for that mode and is deleted: a second way
   to build a registry is how the rules come to have two behaviours.
@@ -858,12 +902,16 @@ Four things follow, and they are what to preserve:
   teaching.** It taught Node `?raw` (a Vite convention — Node looks for a file
   literally named `system-prompt.md?raw`) and attribute-less `.json`
   (TypeScript's `resolveJsonModule` allows it, Node wants
-  `with { type: "json" }`). Nine templates import `./system-prompt.md?raw` and
-  `retail/store.ts` imports `./seed.json` bare, so before the shim `npm start`
-  worked for four templates out of fourteen — and Vite inlines both, so there is
-  nothing left to teach. The DYNAMIC import survives it: the path is computed at
-  run time, and it is a `pathToFileURL` rather than a relative specifier so the
-  entrypoint is correct on Windows.
+  `with { type: "json" }`). Nine templates imported `./system-prompt.md?raw` at
+  the time and `retail/store.ts` imports `./seed.json` bare, so before the shim
+  `npm start` worked for four templates out of fourteen — and Vite inlines both,
+  so there is nothing left to teach. The `?raw` count is now ONE
+  (`pizza-ordering`, which composes): the generated entry writes that import
+  itself, so the convention no longer costs an author a bundler feature. The
+  argument is unchanged either way — Vite inlines it wherever it is written.
+  The DYNAMIC import survives it: the path is computed at run time, and it is a
+  `pathToFileURL` rather than a relative specifier so the entrypoint is correct
+  on Windows.
 - **A missing artifact exits with the command that fixes it**, rather than
   booting an agent with no tools or failing on a bare `ERR_MODULE_NOT_FOUND`.
   That is the path `node server.mjs` takes when run directly, i.e. bypassing
@@ -886,8 +934,9 @@ belongs, and a failing test must not be what stops a container from starting.
 
 `packages/aai-cli/e2e.test.ts` boots `npm start` against a real installed
 project — **`pizza-ordering`, chosen for its `tools/` directory**, which is what
-this leg is now about (it keeps the old `math-buddy` coverage anyway, importing
-`./system-prompt.md?raw`). It probes `/health`, `/client-config` and `/`, and then
+this leg is now about (it keeps the old `math-buddy` coverage anyway, whose
+prompt is a discovered `system-prompt.md`). It probes `/health`,
+`/client-config` and `/`, and then
 reads the six tool names out of the artifact the server booted, because nothing
 over HTTP exposes a tool list. That tier is the only one that can prove any of
 it: the project's own `aai build` runs from a real INSTALL, and
