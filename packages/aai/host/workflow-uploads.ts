@@ -98,8 +98,16 @@ export type UploadStore = UploadReader & {
  *
  * @internal
  */
-export function createUploadStore(opts: { db?: Db | undefined; dir: string }): UploadStore {
-  return opts.db ? createPostgresUploadStore(opts.db) : createFileUploadStore(opts.dir);
+export function createUploadStore(opts: {
+  db?: Db | undefined;
+  dir: string;
+  /** Cap for a body that names none. Defaults to `MAX_WORKFLOW_UPLOAD_BYTES`. */
+  maxBytes?: number | undefined;
+}): UploadStore {
+  const maxBytes = opts.maxBytes ?? MAX_WORKFLOW_UPLOAD_BYTES;
+  return opts.db
+    ? createPostgresUploadStore(opts.db, maxBytes)
+    : createFileUploadStore(opts.dir, maxBytes);
 }
 
 /** A fresh upload id. Prefixed so a stray value in a log reads as what it is. */
@@ -155,7 +163,7 @@ function concat(parts: readonly Uint8Array[], size: number): Uint8Array {
  * The Postgres backend: one metadata row, N chunk rows, and a range read that
  * slices inside the database.
  */
-function createPostgresUploadStore(db: Db): UploadStore {
+function createPostgresUploadStore(db: Db, maxBytes: number): UploadStore {
   // Created lazily and idempotently rather than by a migration step, for the
   // reason `workflow-keys.ts` gives: an agent's first workflow may be its first
   // ever deploy, and there is no provisioning pass to hang a DDL step off.
@@ -183,7 +191,7 @@ function createPostgresUploadStore(db: Db): UploadStore {
       let size = 0;
       let seq = 0;
       try {
-        for await (const chunk of chunked(body, options?.limit ?? MAX_WORKFLOW_UPLOAD_BYTES)) {
+        for await (const chunk of chunked(body, options?.limit ?? maxBytes)) {
           await db.query(
             `insert into ${UPLOAD_CHUNKS_TABLE} (upload_id, seq, byte_offset, bytes)
              values ($1, $2, $3, $4)`,
@@ -256,7 +264,7 @@ function createPostgresUploadStore(db: Db): UploadStore {
  * The file backend: one file of bytes, one of metadata, beside the Local
  * World's own state.
  */
-function createFileUploadStore(dir: string): UploadStore {
+function createFileUploadStore(dir: string, maxBytes: number): UploadStore {
   const ensureDir = ensureOnce(async () => {
     await mkdir(dir, { recursive: true, mode: 0o700 });
   });
@@ -270,7 +278,7 @@ function createFileUploadStore(dir: string): UploadStore {
       const file = await open(bytesPath(id), "w");
       let size = 0;
       try {
-        for await (const chunk of chunked(body, options?.limit ?? MAX_WORKFLOW_UPLOAD_BYTES)) {
+        for await (const chunk of chunked(body, options?.limit ?? maxBytes)) {
           await file.write(chunk);
           size += chunk.length;
         }

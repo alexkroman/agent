@@ -21,8 +21,10 @@
 
 import { join } from "node:path";
 import type { Db } from "../sdk/db.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { publishStepReporter } from "../sdk/step-report.ts";
 import { publishUploadReader } from "../sdk/step-uploads.ts";
+import { MAX_UPLOAD_BYTES_ENV } from "../sdk/upload-constants.ts";
 import { createPostgresDb } from "./postgres-db.ts";
 import type { Logger } from "./runtime-config.ts";
 import { createStepReporter } from "./workflow-report.ts";
@@ -42,16 +44,22 @@ const UPLOAD_DB_POOL = 2;
 /**
  * Build the upload store for one server and publish both step slots.
  *
- * @param opts.databaseUrl - The app's database, when it has one. Present picks
- *   the Postgres backend, which is the only durable one — an upload in a
- *   container's filesystem is gone by the time a resumed run reads it.
+ * `DATABASE_URL` in the env picks the Postgres backend, which is the only
+ * durable one — an upload in a container's filesystem is gone by the time a
+ * resumed run reads it.
  * @param opts.dataDir - Project directory the file backend's folder hangs off.
  *   Defaults to `process.cwd()`, matching what the Local World does with its
  *   own state.
  * @internal
  */
 export function installWorkflowSupport(opts: {
-  databaseUrl?: string | undefined;
+  /**
+   * The agent's env, read for three keys and nothing else: `DATABASE_URL`
+   * (which storage backend), and the upload cap. Taking the RECORD rather than
+   * the three values keeps the key names in one module — the caller would
+   * otherwise spell them at the call site, which is where they drift.
+   */
+  env?: Record<string, string> | undefined;
   dataDir?: string | undefined;
   logger: Logger;
 }): UploadStore {
@@ -59,14 +67,27 @@ export function installWorkflowSupport(opts: {
   // lazily and may not exist yet (see the module doc), and `createPostgresDb`
   // connects on first query, so an agent that never uploads anything pays
   // nothing for holding this handle.
-  const db: Db | undefined = opts.databaseUrl
-    ? createPostgresDb({ url: opts.databaseUrl, max: UPLOAD_DB_POOL })
+  const databaseUrl = opts.env?.DATABASE_URL;
+  const db: Db | undefined = databaseUrl
+    ? createPostgresDb({ url: databaseUrl, max: UPLOAD_DB_POOL })
     : undefined;
   const store = createUploadStore({
     db,
     dir: join(opts.dataDir ?? process.cwd(), UPLOAD_DIR_NAME),
+    // A value that is not a positive number is IGNORED rather than treated as
+    // zero: a typo'd env var must not make every upload fail as "too large".
+    // An operator knob rather than a tuning one: what it bounds is how much of
+    // their storage one upload may take, and only they know that.
+    ...omitUndefined({ maxBytes: positiveBytes(opts.env?.[MAX_UPLOAD_BYTES_ENV]) }),
   });
   publishUploadReader(store);
   publishStepReporter(createStepReporter(opts.logger));
   return store;
+}
+
+/** A byte count out of an env value, or `undefined` for anything unusable. */
+function positiveBytes(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : undefined;
 }

@@ -106,6 +106,28 @@ export interface Transport {
    */
   reset?(): void;
   /**
+   * Take a turn NOBODY asked for: the agent speaks without a user utterance.
+   *
+   * The instruction becomes a synthetic user message — in the LLM's history,
+   * never emitted as a user transcript — exactly as the silence nudge's prompt
+   * does, so the reply that follows is an ordinary turn and is interruptible
+   * like one.
+   *
+   * **The only caller so far is a durable run finishing** (`workflow-notify.ts`):
+   * research takes minutes, the caller is on the line, and without this the
+   * agent knows the answer and has no way to say so — the user has to think to
+   * ask again. Anything else that learns something a caller is waiting for
+   * belongs here too.
+   *
+   * OPTIONAL, and a transport that omits it is not a bug: S2S has no equivalent
+   * verb. AssemblyAI's service dispatches replies from its own session config
+   * with nothing to inject, and OpenAI Realtime's `response.create` would speak
+   * without the service's conversation ever holding the instruction. A caller
+   * therefore has to treat "not supported" as an answer — see
+   * `SessionCore.announce`, which reports it rather than pretending.
+   */
+  injectTurn?(instruction: string): void;
+  /**
    * The client's unplayed agent-audio backlog, in ms — the closed-loop
    * counterpart of the pipeline's open-loop playback estimate. Pipeline mode
    * feeds it to the heard cursor's clock; S2S omits it, because the service

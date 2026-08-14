@@ -116,6 +116,13 @@ export {
   type UseWorkflowRunResult,
   useWorkflowRun,
 } from "./use-workflow-run.ts";
+// The list beside the one — history a page can render instead of asking for a
+// run id, which is what a workflow app without it has to do.
+export {
+  type UseWorkflowRunsOptions,
+  type UseWorkflowRunsResult,
+  useWorkflowRuns,
+} from "./use-workflow-runs.ts";
 export {
   createWorkflowApi,
   isTerminal,

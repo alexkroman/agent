@@ -25,6 +25,7 @@ function makeStubCore(overrides: Partial<SessionCore> = {}): SessionCore {
     id: "stub",
     start: vi.fn(() => Promise.resolve()),
     stop: vi.fn(() => Promise.resolve()),
+    announce: vi.fn(() => true),
     onAudio: vi.fn(),
     onAudioReady: vi.fn(),
     onCancel: vi.fn(),

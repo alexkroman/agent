@@ -398,6 +398,15 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       // onCancelled directly in onSttPartial where the cancel originates here.
     },
 
+    injectTurn(instruction: string): void {
+      if (terminated) return;
+      // The same path the silence nudge takes — queued on the turn chain, so it
+      // waits its turn behind a reply in flight rather than talking over one,
+      // and `synthetic` keeps the instruction out of the user transcript while
+      // leaving it in the LLM's history where the reply is built from it.
+      runChainedTurn(instruction, "Pipeline injected turn crashed", { synthetic: true });
+    },
+
     seedHistory(messages: readonly Message[]): void {
       // Client-resent history on reconnect; restore both views so the resumed
       // agent keeps memory of the prior conversation.

@@ -178,6 +178,31 @@ port over. A string key prefix-matches, so the one entry covers `/runs`,
 are dialled by the guest's own worker on loopback, never by a browser, which
 is the same `guest-internal` distinction `aai-server/guest-routes.ts` draws.
 
+**A step bundle carries a `createRequire` shim, and without it a CJS dependency
+kills the process at load.** `workflow-bundler.ts` prepends two lines to
+`stepCode`. esbuild cannot statically rewrite `require("node:assert")` inside a
+bundled CommonJS module, so it emits a `__require` whose fallback THROWS
+`Dynamic require of "node:assert" is not supported` — and a step bundles
+everything it imports, so any step reaching a package with CJS anywhere in its
+graph died before its first line ran. The shim's own mechanism is that esbuild
+writes `typeof require !== "undefined" ? require : <thrower>`, so a real
+`require` in scope is used; it is PREPENDED because it must precede the
+`var __require = …` initializer that reads it. The flow bundle deliberately
+gets none — it is compiled in a `node:vm` Script, where `import.meta` does not
+exist.
+
+Two things about how it presented are the reusable part. `research-desk`
+imports `webSearch` from `@alexkroman1/aai/tools`, which reaches `host/ssrf.ts`
+→ **undici** (118 dynamic requires, all `node:` builtins) — so the message named
+a Node builtin the author never mentions, nothing named the package or the
+import that pulled it in, and because the step bundle loads before the server
+binds there was no server to ask. And it does NOT reproduce in-tree, where
+`@dev/source` resolves the SDK to TypeScript and esbuild initializes a different
+set of CJS modules eagerly: the same bundle imports cleanly with no shim.
+Every gate short of `check:e2e` was green. `workflow-bundler.test.ts` therefore
+asserts the ORDERING rather than the throw, which is the half that is checkable
+here.
+
 **Both Vite entry points dedupe React** (`DEDUPED_PEERS`, `_vite-env.ts`) and
 the two symptoms look nothing alike, which is why the dev half was missing for
 so long. `buildClient`'s is a publish that dies with *"Rolldown failed to

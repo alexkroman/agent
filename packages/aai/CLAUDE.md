@@ -635,6 +635,14 @@ this guide is at its cap and the author-facing half lives there.
 `AgentParams`. Same `AgentDef`, refusing the fields a workflow app cannot use;
 that guide's `workflowApp()` section owns the argument.
 
+## A run can tell the caller it finished
+
+`start(def, input, { key, notify })` makes the session that started a run take an
+UNPROMPTED, interruptible turn when it lands — the promise `research-desk` used
+to make ("I'll let you know") and had no way to keep. `Transport.injectTurn` is
+the primitive (pipeline only; S2S has no such verb, so there it is a logged
+no-op). **See `host/workflow-notify.ts`'s module doc** for the rest.
+
 ## Voices
 
 **`ASSEMBLYAI_TTS_VOICES` in `sdk/providers/tts/assemblyai.ts` is the list.**
@@ -682,8 +690,6 @@ also works. `GenerateFn` is generic, so a Standard Schema call returns a
 typed `object`. Note zod 4.4 stamps `~standard` onto its plain
 `toJSONSchema()` OUTPUT too — schema detection keys off the `_zod` instance
 marker, never the `~standard` interface (`isConvertibleSchema`).
-(The pattern-combinator layer that once wrapped this was removed unused;
-multi-step orchestration is composed directly over `ctx.generate`.)
 
 ## `ctx.state` is ONE object per session — with or without a `state` factory
 

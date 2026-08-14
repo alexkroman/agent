@@ -14,6 +14,7 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, test } from "vitest";
 import { withTempDir } from "./_test-utils.ts";
 import { buildWorker } from "./worker-bundler.ts";
@@ -87,6 +88,59 @@ describe("buildWorkflows", () => {
       await fs.mkdir(path.join(dir, "workflows"), { recursive: true });
       await fs.writeFile(path.join(dir, "workflows", "notes.md"), "not code", "utf-8");
       expect(await buildWorkflows(dir)).toBeUndefined();
+    });
+  });
+
+  // A real 7 MB bundle: undici and the builtin registry ride in behind the
+  // one import, which is slow to build and is the point of the test.
+  test("a step's CJS dependency still loads, rather than throwing on a dynamic require", {
+    timeout: 60_000,
+  }, async () => {
+    await withTempDir(async (dir) => {
+      await linkNodeModules(dir);
+      await fs.mkdir(path.join(dir, "workflows"), { recursive: true });
+      // The real case rather than a stand-in: `@alexkroman1/aai/tools` reaches
+      // `host/ssrf.ts`, which imports **undici** — CJS, requiring `node:assert`
+      // at module scope, which is the shape esbuild cannot statically rewrite.
+      await fs.writeFile(
+        path.join(dir, "workflows", "net.ts"),
+        `import { webSearch } from "@alexkroman1/aai/tools";
+
+export async function netFlow() {
+  "use workflow";
+  return await probe();
+}
+
+async function probe() {
+  "use step";
+  return typeof webSearch;
+}
+`,
+        "utf-8",
+      );
+      const built = await buildWorkflows(dir);
+      const code = built?.stepCode ?? "";
+
+      // esbuild's shim reads `typeof require !== "undefined" ? require : …`,
+      // so what has to be true is that a real `require` is DEFINED AHEAD of the
+      // `var __require = …` initializer that reads it. Ordering is the whole
+      // contract, and it is the half a load cannot check: which CJS modules
+      // esbuild initializes eagerly depends on the graph, so in-tree — where
+      // `@dev/source` resolves the SDK to TypeScript — this same bundle
+      // imports cleanly with no shim at all, and only the published `dist`
+      // reaches the throw. That asymmetry is why the e2e suite was the one
+      // gate that caught it, and why this asserts the mechanism rather than a
+      // symptom that does not reproduce here.
+      const shim = code.indexOf("createRequire");
+      const thrower = code.indexOf("var __require =");
+      expect(shim).toBeGreaterThanOrEqual(0);
+      expect(thrower).toBeGreaterThan(shim);
+      expect(code).toContain("Dynamic require of");
+
+      // And it still loads, which is the claim the ordering exists to support.
+      const bundle = path.join(dir, "step-under-test.mjs");
+      await fs.writeFile(bundle, code, "utf-8");
+      await expect(import(pathToFileURL(bundle).href)).resolves.toBeDefined();
     });
   });
 

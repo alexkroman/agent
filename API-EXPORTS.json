@@ -616,6 +616,8 @@
     "UiUrlChip",
     "UseWorkflowProgressResult",
     "UseWorkflowRunResult",
+    "UseWorkflowRunsOptions",
+    "UseWorkflowRunsResult",
     "UseWorkflowSubmitOptions",
     "UseWorkflowsOptions",
     "UseWorkflowsResult",
@@ -646,6 +648,7 @@
     "useToolResult",
     "useWorkflowProgress",
     "useWorkflowRun",
+    "useWorkflowRuns",
     "useWorkflowSubmit",
     "useWorkflows"
   ]

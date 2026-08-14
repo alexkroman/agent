@@ -85,6 +85,7 @@ once, and the templates are now their reference use:
 | `page()` + `createWorkflowApi` + `useWorkflowRun` | `link-digest` — the WORKFLOW APP with the primitives raw: a hand-written `<form>`, its own `useState`, one `createWorkflowApi()` |
 | `Form` + `WorkflowFields` + `useWorkflowSubmit` | `transcription-desk` — the same front door with the form layer, plus `WorkflowOutputOf`. Its form is ALL declared, so `FileField` is exercised by no template and sits in the allowlist; the mixed case (declared scalars beside a hand-written control) is documented under "Forms" in `packages/aai-ui/CLAUDE.md` |
 | `mapInBatches`, `stepEnv` / `requireStepEnv`, `stepGenerate` | the STEP surface, and all three workflow templates use it: `transcription-desk` fans its segments out and reads `ASSEMBLYAI_API_KEY` for the sync STT endpoint; `research-desk` and `link-digest` call the model with `stepGenerate`. Imported from `@alexkroman1/aai/utils`, NOT the root: a `workflows/*.ts` module is bundled separately by the WDK builder, so the root barrel's graph would ride into the step bundle. That import path is also why the coverage gate cannot see them — it scans the root specifier — hence their allowlist entries |
+| `webSearch` / `visitWebpage` (`@alexkroman1/aai/tools`) | `research-desk`, from inside a `"use step"` function — the demonstration that a step is not a lesser environment than a tool body |
 
 **`research-desk` is the workflow template, and its shape is dictated by the
 Workflow DevKit rather than chosen.** The `"use workflow"` / `"use step"` bodies
@@ -94,13 +95,50 @@ transformed, so it runs inline once with no durability and nothing saying so.
 `agent.ts` holds only the declaration (`workflow({ description, input, run })`)
 and the two tools that start and read runs.
 
-**Its research is real**: `planAngles` asks the model for the angles worth
-pursuing, `investigate` runs one step per angle through `mapInBatches`, and
-`synthesize` reduces the notes to something a voice agent can read aloud — three
-model calls deep, which is what makes it too slow to answer on the line and
-therefore worth a durable run at all. The fan-out's WIDTH comes from a step's
-journaled result rather than from anything the body computes, which is the
-ordinary determinism rule.
+**Its research is real, and it really searches the web.** Five stages, adapted
+from LangChain's `open_deep_research` (MIT — `workflows/prompts.ts` carries the
+attribution and a table mapping their stages onto ours): `writeBrief` settles
+what the phone request was actually asking, `planAngles` decides the fan-out's
+width, `investigate` gives each angle its own researcher step, `findGaps` is the
+supervisor's second look, and `writeReport` writes the report and then the two
+sentences a phone can carry. That is five to twelve model calls and as many
+searches, which is what makes it too slow to answer on the line and therefore
+worth a durable run at all. The fan-out's WIDTH comes from a step's journaled
+result rather than from anything the body computes, which is the ordinary
+determinism rule.
+
+**A step can do what a TOOL can do, and this is the template that shows it.**
+`investigate` imports `webSearch` and `visitWebpage` from
+`@alexkroman1/aai/tools` — the same implementations behind the model-facing
+builtins, with the same URL screening, redirect re-validation and size caps —
+and runs a bounded search/read/stop loop on them. A step artifact bundles
+everything it imports, so anything a tool body can reach a step can reach; what
+it does NOT get is the `ToolContext`, which is why the model call is
+`stepGenerate` and the key comes from `requireStepEnv`. Before this the
+template's "research" was three model calls asking a model what it already
+believed, which is the thing deep research exists not to be.
+
+Three things in the loop are decisions rather than defaults, and each is the
+kind a prompt alone does not hold:
+
+- **The budget is the mechanism, not the prompt.** `RESEARCH_BUDGET` bounds the
+  actions one researcher may take, because a model told to stop when it has
+  enough will sometimes not — and a run whose cost is decided by a model is a
+  run nobody can price. The prompt's numbered stop rules (theirs, kept close to
+  verbatim) are what makes it stop EARLIER than the budget.
+- **The loop is journaled as ONE step result**, not one per iteration. The loop
+  is a negotiation with a model and a search engine, and replaying it turn by
+  turn would pin a run to decisions that were only ever provisional; what has to
+  survive a resume is what the researcher CONCLUDED.
+- **A failed search goes back to the researcher, not only to the log.** The next
+  turn is chosen from what it has been shown, so a search that quietly returned
+  nothing reads as "no such pages exist" and gets run again, differently worded,
+  until the budget is gone. Its own spec pins that.
+
+Note the compression stage's prompt is the counter-intuitive one worth keeping:
+it says to REPEAT the relevant text rather than summarize it, because a summary
+of a summary is how a long research pass ends in a confident, sourceless
+paragraph.
 
 Its spec stubs `ctx.workflows` for the TOOLS rather than driving a real client,
 which is the only honest option there: the real client needs a WDK world, and the

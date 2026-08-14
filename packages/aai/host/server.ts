@@ -254,7 +254,7 @@ export function createServer(options: ServerOptions): AgentServer {
     // function reads — see `installWorkflowSupport` for why this is the server's
     // job and not the runtime's.
     uploads: installWorkflowSupport({
-      ...omitUndefined({ databaseUrl: env?.DATABASE_URL, dataDir: options.workflowDataDir }),
+      ...omitUndefined({ env, dataDir: options.workflowDataDir }),
       logger,
     }),
     ...omitUndefined({ token: env?.[WORKFLOW_API_TOKEN_ENV] }),

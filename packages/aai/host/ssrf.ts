@@ -127,13 +127,29 @@ export async function resolveAndAssertPublic(
 const MAX_REDIRECTS = 5;
 
 /**
- * The dispatcher type `fetch` accepts. `@types/node` declares
- * `RequestInit.dispatcher` via its own bundled copy of `undici-types`, which is
- * a different copy of the declarations from the `undici` package the Agent is
- * constructed with — structurally the same object, nominally incompatible. The
- * cast in `pinnedDispatcher` bridges exactly that mismatch.
+ * The dispatcher type `fetch` accepts — INFERRED, so that a `RequestInit`
+ * without the property is not an error.
+ *
+ * It used to be `NonNullable<RequestInit["dispatcher"]>`, an indexed access,
+ * which resolves only when `@types/node` is the copy of `RequestInit` that
+ * wins. A program that also has `lib.dom` gets the DOM's, which has no such
+ * property, and this module then failed to compile in EVERY such consumer —
+ * not hypothetically: `@alexkroman1/aai/tools` re-exports the builtins for an
+ * author's own tool and step code, so the consumer is an ordinary agent
+ * project, whose `client.tsx` needs the DOM lib. It surfaced the moment a
+ * template imported that subpath from a step.
+ *
+ * A conditional with `infer` reads the property where it exists and degrades to
+ * `unknown` where it does not, which is the honest answer in a program that has
+ * no undici types to name. The intersection form (`RequestInit & { dispatcher?:
+ * unknown }`) does NOT work: where the ambient property exists the intersection
+ * is with `Dispatcher`, and under `exactOptionalPropertyTypes` the two halves
+ * are then incompatible rather than redundant.
  */
-type FetchDispatcher = NonNullable<RequestInit["dispatcher"]>;
+type FetchDispatcher = RequestInit extends { dispatcher?: infer D } ? NonNullable<D> : never;
+
+/** `RequestInit` with that property present whether or not the ambient one has it. */
+type PinnedRequestInit = RequestInit & { dispatcher?: FetchDispatcher };
 
 /**
  * Pin the connection to an already-validated IP without rewriting the URL.
@@ -190,6 +206,10 @@ function pinnedDispatcher(resolvedIp: string): FetchDispatcher {
     keepAliveTimeout: 1000,
     keepAliveMaxTimeout: 1000,
   });
+  // `@types/node` declares the property through its own bundled `undici-types`
+  // — a different copy of the declarations from the `undici` package this Agent
+  // comes from, structurally identical and nominally incompatible — so the
+  // assignment needs a bridge whichever way `FetchDispatcher` resolved.
   return agent as unknown as FetchDispatcher;
 }
 
@@ -219,7 +239,7 @@ export async function ssrfSafeFetch(
     if (new URL(currentUrl).origin !== originalOrigin) {
       for (const h of CREDENTIAL_HEADERS) headers.delete(h);
     }
-    const reqInit: RequestInit = { ...init, headers, redirect: "manual" };
+    const reqInit: PinnedRequestInit = { ...init, headers, redirect: "manual" };
     // resolvedIp is null when the URL already names a literal IP — it was
     // validated directly, so there is no DNS step to pin.
     if (resolvedIp !== null) reqInit.dispatcher = pinnedDispatcher(resolvedIp);

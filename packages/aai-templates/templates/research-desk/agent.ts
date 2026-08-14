@@ -13,6 +13,19 @@
  * the line. So `request_research` starts a run and returns in the same turn, the
  * run outlives the call, and a LATER call reads the result back.
  *
+ * ## And it SAYS SO when the work lands
+ *
+ * `start(…, { notify })` is what closes the loop that used to be open: the agent
+ * promised an update, the run finished, and nothing made it speak — the caller
+ * had to think to ask again. With it, a finished run takes an unprompted,
+ * interruptible turn on this session, built from the run's own output.
+ *
+ * Two limits worth knowing, both by construction. It reaches the session that
+ * STARTED the run, only while that session is alive — an announcement into a
+ * call that has ended is nobody's — and it needs a transport that can take an
+ * unprompted turn, which pipeline mode can and S2S cannot. That is why `key`
+ * stays: the next call still finds the run.
+ *
  * ## The correlation key is what makes the second call possible
  *
  * `start()` hands back a `runId`, and the obvious place for a tool to keep it is
@@ -33,14 +46,21 @@
  * `defineHook()`. The SDK's job is declaring the workflow and starting runs; the
  * durable execution belongs to `workflow`.
  *
- * ## The research is real
+ * ## The research is real, and it really searches the web
  *
- * `workflows/research.ts` breaks the topic into angles, investigates each one in
- * its own step, and reduces the notes — three model calls deep, through the same
- * `ASSEMBLYAI_API_KEY` this agent's voice pipeline uses. A step is handed no
- * `ToolContext`, so it reads that key with `requireStepEnv` rather than
- * `ctx.env`; see that file's module doc for the one thing that changes under
- * `aai dev` (the key has to be in `.env`, not just your shell).
+ * `workflows/research.ts` is a deep-research pass, not three model calls in a
+ * row: it writes a brief, plans the angles worth pursuing, gives each angle its
+ * own researcher step that SEARCHES and READS until its budget runs out, asks
+ * what is still unanswered, and only then writes the report. The search and the
+ * page reads go through `webSearch`/`visitWebpage` from `@alexkroman1/aai/tools`
+ * — the same implementations behind the model-facing builtins, which is the
+ * point: a step is not a lesser environment than a tool body.
+ *
+ * The model calls go through the same `ASSEMBLYAI_API_KEY` this agent's voice
+ * pipeline uses. A step is handed no `ToolContext`, so it reads that key with
+ * `requireStepEnv` rather than `ctx.env`; see that file's module doc for the one
+ * thing that changes under `aai dev` (the key has to be in `.env`, not just your
+ * shell).
  *
  * Requires storage (`aai storage enable`, or `DATABASE_URL` under `aai dev`) —
  * runs and the key index both live there.
@@ -66,7 +86,8 @@ import { researchFlow } from "./workflows/research.ts";
  * compile error instead of a rejected promise the model reads as a tool failure.
  */
 export const research = workflow({
-  description: "Research a topic across several angles, sit on it briefly, then file the findings",
+  description:
+    "Research a topic properly — brief, angles, web search per angle, a gap pass, then a written report",
   input: z.object({
     topic: z.string().min(3).describe("What to research"),
     requestedBy: z.string().describe("Who asked — used when filing the result"),
@@ -104,7 +125,8 @@ export default agent({
   systemPrompt: [
     "You take research requests over the phone and read back results.",
     "When someone asks you to research something, call request_research and tell them",
-    "you have started it — do NOT wait for it or promise a time.",
+    "you have started it — do NOT wait for it or promise a time. You WILL be told",
+    "when it lands, so it is safe to say you will let them know.",
     "When someone asks about earlier work, call research_status.",
     "If they ask what is happening right now, call research_progress.",
     "If they say they need it immediately, call file_it_now.",
@@ -124,7 +146,22 @@ export default agent({
         const runId = await ctx.workflows.start(
           research,
           { topic, requestedBy: ctx.sessionId },
-          { key: ctx.sessionId },
+          {
+            key: ctx.sessionId,
+            // What makes "I'll let you know" true. The run finishes minutes
+            // later, with no turn to land in — so the SDK gives the agent one:
+            // when it settles, this session takes an unprompted turn built from
+            // the run's own output, and the caller hears the answer without
+            // having to think to ask again.
+            //
+            // The instruction is a sentence for the MODEL, not a line to read:
+            // it is the only thing that knows what this caller has already been
+            // told. Omit it (`notify: true`) for the SDK's default.
+            //
+            // `key` is still the durable handle: an announcement only reaches
+            // THIS call, and a run outlives it.
+            notify: "Tell them the research came back, then read the summary in one sentence.",
+          },
         );
         return { started: true, runId, topic };
       },

@@ -35,7 +35,7 @@ import { createSessionCore, type SessionCore } from "./session-core.ts";
 import { createStateSweeps } from "./session-state-sweeps.ts";
 import { textAgentHasNoSession } from "./text-agent.ts";
 import type { TransportCallbacks } from "./transports/types.ts";
-import { buildWorkflowClient } from "./workflow-runtime.ts";
+import { buildRunNotifier, buildWorkflowClient } from "./workflow-runtime.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
 export type {
@@ -210,9 +210,19 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // makes the executor's rejecting stub name the right reason.
   const workflows = buildWorkflowClient(agent, resolvedDb, logger);
 
+  // Watches runs a tool asked to be told about (`start(…, { notify })`) and
+  // makes the agent say so — see `workflow-notify.ts`. The session map is the
+  // half only this scope has.
+  const notifier = buildRunNotifier(
+    workflows,
+    (sid, text) => sessions.get(sid)?.announce(text) ?? false,
+    logger,
+  );
+
   const { executeTool, toolSchemas, toolGuidance, pushStateSnapshot } = setupTools({
     agent,
     opts,
+    ...(notifier ? { notifier } : {}),
     llm: effectiveProviders.llm,
     env,
     providerEnv,
@@ -422,6 +432,9 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   function releaseResources(): void {
     sessions.clear();
     sinkMap.clear();
+    // Watches outlive nothing: every session they could announce to is gone,
+    // and a poll loop left running would hold the process past shutdown.
+    notifier?.stop();
     // Force-close on timeout skips the per-session stop wrapper's stateMap
     // cleanup (its sink-identity check fails against the cleared map), so clear
     // it here too or timed-out sessions leak their tool state permanently.

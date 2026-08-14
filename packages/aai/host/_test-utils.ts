@@ -100,6 +100,7 @@ export function makeMockCore(overrides?: Partial<SessionCore>): SessionCore {
     id: "test",
     start: vi.fn(() => Promise.resolve()),
     stop: vi.fn(() => Promise.resolve()),
+    announce: vi.fn(() => true),
     onAudio: vi.fn(),
     onAudioReady: vi.fn(),
     onCancel: vi.fn(),

@@ -455,6 +455,25 @@ export type UseWorkflowRunResult<R = unknown> = {
 };
 
 // @public
+export function useWorkflowRuns<R = unknown>(workflow: string | undefined, opts?: UseWorkflowRunsOptions): UseWorkflowRunsResult<R>;
+
+// @public
+export type UseWorkflowRunsOptions = {
+    api?: WorkflowApi;
+    limit?: number;
+    key?: string;
+    skip?: boolean;
+};
+
+// @public
+export type UseWorkflowRunsResult<R = unknown> = {
+    runs: WorkflowRun<R>[];
+    loading: boolean;
+    error: string | undefined;
+    refresh: () => void;
+};
+
+// @public
 export function useWorkflows(opts?: UseWorkflowsOptions): UseWorkflowsResult;
 
 // @public

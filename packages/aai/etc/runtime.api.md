@@ -377,6 +377,7 @@ export function createToolCallRepair(model: LanguageModel, log: Logger, getAbort
 export function createUploadStore(opts: {
     db?: Db | undefined;
     dir: string;
+    maxBytes?: number | undefined;
 }): UploadStore;
 
 // @internal
@@ -558,7 +559,7 @@ type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : n
 
 // @internal
 export function installWorkflowSupport(opts: {
-    databaseUrl?: string | undefined;
+    env?: Record<string, string> | undefined;
     dataDir?: string | undefined;
     logger: Logger;
 }): UploadStore;
@@ -900,6 +901,7 @@ export type SessionCore = {
     onReset(): void;
     onPlaybackProgress(bufferedMs: number): void;
     onHistory(messages: readonly Message[]): void;
+    announce(instruction: string): boolean;
     onToolResult(toolCallId: string, result: string, error?: string): void;
     onReplyStarted(replyId: string): void;
     onReplyDone(): void;
@@ -1036,6 +1038,7 @@ export type StartHostSessionOptions = {
 // @public
 type StartOptions = {
     key?: string;
+    notify?: boolean | string;
 };
 
 // @public
@@ -1211,6 +1214,7 @@ type ToolSchema = {
 // @internal
 export interface Transport {
     cancelReply(): void;
+    injectTurn?(instruction: string): void;
     onPlaybackProgress?(bufferedMs: number): void;
     reset?(): void;
     seedHistory?(messages: readonly Message[]): void;
