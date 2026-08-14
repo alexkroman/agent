@@ -16,6 +16,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { errorDetail } from "@alexkroman1/aai/utils";
 import { ofetch } from "ofetch";
 import type { Browser } from "playwright";
@@ -137,30 +138,32 @@ describe("pack + build: template workflows", () => {
 
 describe("self-hosted server: npm start", () => {
   /**
-   * The scaffold ships `server.mjs` and a `start` script, so every project can
-   * be run on its own without the CLI, the platform, or a bundler. This is the
-   * only tier that can prove it: the entrypoint resolves `@alexkroman1/aai-ui`'s
-   * prebuilt client through a real INSTALL, imports `agent.ts` through Node's
-   * own type stripping, and boots a real HTTP + WebSocket server.
+   * The scaffold ships `server.mjs` and the `prestart`/`start` pair, so every
+   * project runs on its own with `npm start`. Only this tier can prove it: the
+   * project's own `aai build` runs from a real INSTALL, `server.mjs` imports the
+   * worker that build left on disk, and `defaultClientDir()` resolves out of the
+   * installed `@alexkroman1/aai-ui`.
    *
-   * `math-buddy` rather than `simple`, because its `agent.ts` imports
-   * `./system-prompt.md?raw` — a Vite convention Node cannot resolve on its
-   * own, and the reason `server.mjs` registers module hooks before importing
-   * the agent. On `simple` that whole mechanism would go unexercised, and it
-   * covers 9 of the shipped templates.
+   * **`pizza-ordering`, because it has a `tools/` directory — which is what this
+   * leg is really about.** A tool is registered by EXISTING, enumerated into the
+   * bundler's generated entry, so an entrypoint loading `agent.ts` directly boots
+   * an agent with none of its six tools and no error anywhere. It also keeps what
+   * `math-buddy` was picked for: a `./system-prompt.md?raw` import.
    */
-  test.for(["math-buddy"])("boots a scaffolded %s project and serves it", async (template, ctx) => {
+  test("boots a scaffolded pizza-ordering project and serves it", async ({ skip }) => {
     const projectDir = path.join(tmpDir, "_self-hosted");
-    aai(aaiBin, ["init", projectDir, "-t", template, "--skip-deploy"], tmpDir);
+    aai(aaiBin, ["init", projectDir, "-t", "pizza-ordering", "--skip-deploy"], tmpDir);
     try {
       installDeps(registry, projectDir);
     } catch (err) {
       if (!isRegistryProxyFailure(err)) throw err;
-      ctx.skip(`pnpm install failed (registry proxy issue): ${String(err).slice(0, 200)}`);
+      skip(`pnpm install failed (registry proxy issue): ${String(err).slice(0, 200)}`);
     }
 
     // PORT=0 lets the OS assign one — the suite runs concurrently with other
     // servers, and a fixed port is an EADDRINUSE flake waiting to happen.
+    // No --skip-* anything: `npm start` runs the project's own `prestart`,
+    // which is the half of self-hosting under test.
     const child = spawn("npm", ["start"], {
       cwd: projectDir,
       env: { ...aaiEnv(), PORT: "0" },
@@ -169,6 +172,13 @@ describe("self-hosted server: npm start", () => {
     try {
       const port = await new Promise<number>((resolve, reject) => {
         let buf = "";
+        // stderr too, and it goes IN the failure: every way this can fail — a
+        // build error, a missing artifact, a throwing agent — reports there,
+        // and discarding it leaves a bare "exited with code 1" naming none of
+        // them. That cost a full diagnosis cycle once already.
+        child.stderr?.on("data", (chunk: Buffer) => {
+          buf += chunk.toString();
+        });
         child.stdout?.on("data", (chunk: Buffer) => {
           buf += chunk.toString();
           // The line server.mjs prints on listen: "<name> listening on <url>".
@@ -177,7 +187,9 @@ describe("self-hosted server: npm start", () => {
         });
         child.on("error", reject);
         child.on("exit", (code) =>
-          reject(new Error(`npm start exited with code ${code} before listening`)),
+          reject(
+            new Error(`npm start exited with code ${code} before listening:\n${buf.slice(-4000)}`),
+          ),
         );
       });
 
@@ -185,7 +197,7 @@ describe("self-hosted server: npm start", () => {
       const health = await ofetch<{ status: string; name: string }>(
         `http://127.0.0.1:${port}/health`,
       );
-      expect(health).toMatchObject({ status: "ok", name: "Math Buddy" });
+      expect(health).toMatchObject({ status: "ok", name: "Pizza Palace" });
 
       // The greeting proves createAgentServer read it off the agent rather
       // than the caller restating it — the silent-drop bug that command exists
@@ -198,6 +210,25 @@ describe("self-hosted server: npm start", () => {
       expect(await ofetch(`http://127.0.0.1:${port}/`, { responseType: "text" })).toContain(
         "<!DOCTYPE html>",
       );
+
+      // The tools, read out of the artifact the server booted — nothing over
+      // HTTP exposes a tool list, and this is the assertion that matters: these
+      // six names exist ONLY because the build enumerated `tools/`, and the
+      // failure is otherwise silent (every probe above still passes).
+      const worker = path.join(projectDir, ".aai", "worker.mjs");
+      const { __aaiConfig } = (await import(pathToFileURL(worker).href)) as {
+        __aaiConfig: { toolSchemas: { name: string }[] };
+      };
+      const names = __aaiConfig.toolSchemas.map((t) => t.name);
+      // Code-unit sort, never localeCompare — the standing rule here.
+      expect(names.sort((a, b) => Number(a > b) - Number(a < b))).toEqual([
+        "add_pizza",
+        "place_order",
+        "remove_pizza",
+        "set_customer_name",
+        "update_pizza",
+        "view_order",
+      ]);
     } finally {
       child.kill();
       await waitForExit(child);

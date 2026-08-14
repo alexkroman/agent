@@ -41,6 +41,36 @@ The blocker is not the seam. It is that **`tools` is a synchronous field on
 `AgentDef` and a directory scan is asynchronous**, so no loader without a build
 step can populate it at definition time.
 
+## Status: the two-mode design collapsed to ONE, and self-hosting landed
+
+**There is no disk mode, and there is not going to be one.** The design below
+proposes two — bundled, and a `readdir` + dynamic `import()` scan for the two
+loaders with no bundler — and neither of those loaders took the second:
+
+- **vitest** uses `import.meta.glob` (`aai-templates/_tool-discovery.ts`), which
+  keeps the tool modules inside VITEST's graph. Through Node's resolver they
+  would get a second copy of the SDK, so a slot's module state would differ
+  between the tool under test and the agent holding it.
+- **`scaffold/server.mjs`** now boots the BUILT worker (`.aai/worker.mjs`,
+  written by `aai build`, run by a `prestart`), so the bundler is in its path
+  after all. That is this document's stage D, and it took the `registerHooks`
+  shim with it — Vite inlines the `?raw` and bare-`.json` imports the shim
+  existed to teach Node.
+
+So the "one shared builder in the SDK, two specifier styles" idea is unneeded:
+`toolRegistry(modules)` over already-loaded modules is the whole surface. The
+lazy `loadToolModules(loaders)` was built for disk mode, shipped on
+`@alexkroman1/aai/manifest`, called by nothing, and is **deleted** — a second way
+to build a registry is how the rules below (name grammar, default export,
+flat-only, collisions) come to have two behaviours.
+
+What this cost, and it is worth stating rather than burying: self-hosting is no
+longer "no CLI at run time, no bundler". It needs `@alexkroman1/aai-cli` as a
+devDependency (the scaffold already declares one) and a build in front of the
+server. The alternative was an entrypoint that boots an agent with **no tools and
+no error anywhere**, which is the same silent absence discovery was introduced to
+kill, one level worse.
+
 ## Design: eve's two modes over one generator
 
 `~/Code/eve` solves exactly this and is worth copying closely
@@ -124,9 +154,10 @@ collides with an inline name, must fail the build naming the file.
 
 | Change | Where |
 | --- | --- |
-| Shared registry builder (static-import source + disk scan) | `aai` SDK |
-| Emit the map in the generated entry | `aai-cli/worker-bundler.ts` |
-| Scan on boot | `aai-templates/scaffold/server.mjs` |
+| ~~Shared registry builder (static-import source + disk scan)~~ — **one source shape; `loadToolModules` deleted** | `aai` SDK ✅ |
+| Emit the map in the generated entry | `aai-cli/worker-bundler.ts` ✅ |
+| ~~Scan on boot~~ — **load the built worker; `prestart: aai build`; shim dropped** | `aai-templates/scaffold/server.mjs` ✅ |
+| Write the worker to `.aai/worker.mjs`; `prestart` in eject too | `aai-cli/build.ts`, `aai-cli/eject.ts` ✅ |
 | Resolve step; `tools` off `AgentDef` | `sdk/define.ts`, `host/runtime.ts`, `sdk/manifest.ts` |
 | Registry-aware `toolOf` / `runTool` / harness | `aai/sdk/testing.ts` |
 | Delete the `tools:` maps and their imports | 6 templates, 62 entries |
@@ -138,8 +169,9 @@ collides with an inline name, must fail the build naming the file.
 - **Does the watcher rebuild on a NEW file?** Adding a tool has to trigger a
   rebuild, not a reload of changed modules, or discovery makes the authoring loop
   worse than the map it replaces. Bundled mode changes the generated entry, so
-  the watcher must treat a new `tools/` file as a rebuild trigger; disk mode gets
-  it free from a fresh scan per boot.
+  the watcher must treat a new `tools/` file as a rebuild trigger. **This is the
+  one still open, and it is now the ONLY answer** — the "disk mode gets it free
+  from a fresh scan per boot" escape is gone with disk mode.
 - **Does the studio's workspace build see a `tools/` directory?** It materializes
   a workspace to disk and builds through `buildWorker`, so it should — confirm
   before committing, since it is the same class of assumption that sank the last

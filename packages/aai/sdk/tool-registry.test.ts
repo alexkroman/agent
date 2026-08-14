@@ -12,7 +12,7 @@
 
 import { describe, expect, test } from "vitest";
 import { agent, tool } from "./define.ts";
-import { loadToolModules, toolRegistry, withTools } from "./tool-registry.ts";
+import { toolRegistry, withTools } from "./tool-registry.ts";
 
 const echo = tool({ description: "Echo the input.", execute: (args) => args });
 const other = tool({ description: "Something else.", execute: () => null });
@@ -86,22 +86,6 @@ describe("toolRegistry", () => {
   test("an empty set of modules is an empty registry, not an error", () => {
     // A project with no tools/ directory is legal — a workflow app has none.
     expect(toolRegistry({})).toEqual({});
-  });
-});
-
-describe("loadToolModules", () => {
-  test("awaits each loader and applies the same rules", async () => {
-    const registry = await loadToolModules({
-      "./tools/echo.ts": () => Promise.resolve(mod(echo)),
-      "./tools/other.ts": () => Promise.resolve(mod(other)),
-    });
-    expect(registry).toEqual({ echo, other: other });
-  });
-
-  test("propagates a diagnostic from a loaded module", async () => {
-    await expect(
-      loadToolModules({ "./tools/echo.ts": () => Promise.resolve(mod("nope")) }),
-    ).rejects.toThrow(/does not default-export a tool/);
   });
 });
 

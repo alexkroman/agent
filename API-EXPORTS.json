@@ -202,7 +202,6 @@
     "PipelineTuning",
     "ProviderDescriptorSchema",
     "SessionMode",
-    "ToolModuleLoaders",
     "ToolModules",
     "ToolRegistry",
     "ToolSchema",
@@ -211,7 +210,6 @@
     "assertPipelineTuning",
     "assertProviderTriple",
     "assertSilencePolicy",
-    "loadToolModules",
     "toAgentConfig",
     "toolRegistry",
     "withTools"
@@ -469,7 +467,8 @@
     "stubGenerate",
     "stubStepFetch",
     "stubUploads",
-    "toolOf"
+    "toolOf",
+    "withDiscoveredTools"
   ],
   "@alexkroman1/aai/testing/vitest": [
     "installStubGateway"

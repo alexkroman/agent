@@ -101,6 +101,7 @@ import { LINE_RULES } from "./guard-invariants-rules.mjs";
 import {
   scanResearchFrontmatter,
   scanSymlinks,
+  scanTemplateEscapingImports,
   scanUndeclaredGuestRoutes,
   scanUnpinnedActions,
 } from "./guard-invariants-scanners.mjs";
@@ -241,6 +242,23 @@ const ABSOLUTE_RULES = [
       "  ---\n" +
       "A plan with no issue is an unowned parallel backlog; a plan with no date\n" +
       "cannot be told from a stale one.",
+  },
+  {
+    id: 13,
+    label: "template import escaping its template",
+    scan: scanTemplateEscapingImports,
+    remedy:
+      "A template SHIPS. `aai init` copies `templates/<name>/` into a user's\n" +
+      "project and nothing above it comes along, so this import resolves here\n" +
+      "and in nothing a user runs.\n\n" +
+      "Move what you need INTO the template, or publish it on the SDK and import\n" +
+      "it by package name. A shared spec helper belongs on\n" +
+      "`@alexkroman1/aai/testing` — that is where `withDiscoveredTools` went\n" +
+      "when five templates were reaching up to `../../_tool-discovery.ts`.\n\n" +
+      "This rule exists because every other gate runs IN THIS REPO, where the\n" +
+      "relative path resolves: those five broke `aai test`, `aai build` and\n" +
+      "`npm start` for their own users while `check:template-types`,\n" +
+      "`templates.test.ts` and each template's own spec stayed green.",
   },
 ];
 

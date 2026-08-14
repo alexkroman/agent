@@ -3,17 +3,39 @@
  * `aai build` — bundle the agent without deploying, behind the same gates
  * deploy runs (tests, then typecheck), so the command previews the deploy
  * artifact and its failures alike.
+ *
+ * It also LEAVES that artifact on disk, at {@link WORKER_ARTIFACT_REL}, which is
+ * what makes self-hosting work: `server.mjs` loads the built worker rather than
+ * `agent.ts`, because a tool is discovered by the bundler enumerating `tools/`
+ * and no un-bundled loader can see that directory. See the scaffold's own
+ * `server.mjs` and "Self-hosting runs the built worker" in
+ * `packages/aai-templates/CLAUDE.md`.
  */
 
+import fs from "node:fs/promises";
+import path from "node:path";
 import { buildAgentBundle, evalWorkerBundle } from "./_bundler.ts";
 import { CliError, type CommandResult, ok } from "./_output.ts";
 import { assertTypechecks } from "./_typecheck-gate.ts";
 import { log } from "./_ui.ts";
 import { classifyVitestError, runVitest } from "./test.ts";
 
+/**
+ * Where the built worker lands, relative to the project root — under `.aai/`,
+ * beside the built client, so one gitignore rule covers every build output.
+ *
+ * `server.mjs` hardcodes this path: it is a plain `.mjs` file in a user's
+ * project and may not import from the CLI (which a deployed project does not
+ * install at all). The pair is covered end-to-end by the `npm start` leg of
+ * `e2e.test.ts` — the only tier that runs both halves as a user does.
+ */
+export const WORKER_ARTIFACT_REL = path.join(".aai", "worker.mjs");
+
 type BuildData = {
   name: string;
   workerBytes: number;
+  /** Absolute path of the worker written — what `npm start` boots. */
+  worker: string;
 };
 
 /**
@@ -50,10 +72,19 @@ export async function executeBuild(opts: {
   // both commands run the developer's own project code — see the note in
   // packages/aai-cli/CLAUDE.md.
   const agentDef = await evalWorkerBundle(bundle.worker);
+
+  // Written AFTER the evaluation, which is the bundle's smoke test: a worker
+  // whose top level throws must not be left on disk as the thing `npm start`
+  // boots. The command fails either way, so nothing reads a stale artifact.
+  const worker = path.join(cwd, WORKER_ARTIFACT_REL);
+  await fs.mkdir(path.dirname(worker), { recursive: true });
+  await fs.writeFile(worker, bundle.worker, "utf-8");
+
   log.success("Build complete");
 
   return ok({
     name: agentDef.name,
     workerBytes: bundle.worker.length,
+    worker,
   });
 }

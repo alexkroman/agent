@@ -18,6 +18,18 @@
  * result here, so the RULES (what a name may be, what a file must export, what
  * a collision means) have one implementation no matter who did the scanning.
  *
+ * **There is exactly ONE source shape — already-loaded modules — and no
+ * runtime scan anywhere.** A `readdir` + dynamic `import()` mode was designed
+ * for the two loaders that have no bundler, and neither took it: a spec uses
+ * `import.meta.glob` so its tools stay inside VITEST's module graph (through
+ * Node's resolver they would get a second copy of the SDK, and a slot's module
+ * state would differ between the tool under test and the agent holding it), and
+ * self-hosting loads the BUILT worker (`scaffold/server.mjs`), so the bundler is
+ * in its path after all. A lazy `loadToolModules(loaders)` existed for that
+ * mode, published and called by nothing; it is deleted rather than kept as an
+ * affordance, because a second way to build a registry is how the rules below
+ * come to have two behaviours.
+ *
  * Every diagnostic names the file, because the failure this replaces was
  * silent: a tool that was never registered simply never reached the model, and
  * the agent could not do the thing with no error anywhere.
@@ -45,9 +57,6 @@ const SPEC_RE = /\.(?:test|spec)$/;
  * `import.meta.glob` (eager) and the static import list the CLI generates.
  */
 export type ToolModules = Readonly<Record<string, unknown>>;
-
-/** `path → () => import(path)`, the lazy form of {@link ToolModules}. */
-export type ToolModuleLoaders = Readonly<Record<string, () => Promise<unknown>>>;
 
 /** A checked set of tools, keyed by the name the model calls. */
 export type ToolRegistry<S = DefaultSessionState> = Readonly<
@@ -130,22 +139,6 @@ export function toolRegistry<S = DefaultSessionState>(modules: ToolModules): Too
   }
 
   return registry;
-}
-
-/**
- * {@link toolRegistry} over lazy loaders — the shape `import.meta.glob` returns
- * without `eager`, which is what a spec and a directory scan both produce.
- *
- * @public
- */
-export async function loadToolModules<S = DefaultSessionState>(
-  loaders: ToolModuleLoaders,
-): Promise<ToolRegistry<S>> {
-  const entries = Object.entries(loaders);
-  const loaded = await Promise.all(
-    entries.map(async ([path, load]) => [path, await load()] as const),
-  );
-  return toolRegistry<S>(Object.fromEntries(loaded));
 }
 
 /**

@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { describe, expect, test } from "vitest";
 import { buildAgentBundle, evalWorkerBundle } from "./_bundler.ts";
 import { silenced, withTempDir } from "./_test-utils.ts";
-import { executeBuild } from "./build.ts";
+import { executeBuild, WORKER_ARTIFACT_REL } from "./build.ts";
 
 /**
  * Symlink this package's node_modules into the fixture project so the
@@ -190,6 +190,35 @@ describe("executeBuild", () => {
           expect(result.data.name).toBe("exec-build");
           expect(result.data.workerBytes).toBeGreaterThan(20);
         }
+      }),
+    );
+  });
+
+  test("leaves the built worker on disk, importable, where server.mjs looks for it", {
+    timeout: 120_000,
+  }, async () => {
+    // The self-hosting contract: `npm start` runs `aai build` and then
+    // imports this exact path. The scaffold's `server.mjs` hardcodes it (it
+    // cannot import from the CLI), so nothing but a test holds the two ends
+    // together in-tree — the `npm start` leg of e2e.test.ts is the only tier
+    // that runs both as a user does.
+    await withTempDir(
+      silenced(async (dir) => {
+        await linkNodeModules(dir);
+        await writeFile(
+          path.join(dir, "agent.ts"),
+          `export default { name: "on-disk", systemPrompt: "Test", greeting: "Hi", tools: {} };`,
+        );
+
+        const result = await executeBuild({ cwd: dir, skipTests: true, skipTypecheck: true });
+
+        const written = path.join(dir, WORKER_ARTIFACT_REL);
+        expect(result.ok && result.data.worker).toBe(written);
+        // Importable, not merely present: this is the module `npm start`
+        // boots, and its default export is the agent with its tools already
+        // attached by the generated entry.
+        const mod = await import(pathToFileURL(written).href);
+        expect((mod.default as { name: string }).name).toBe("on-disk");
       }),
     );
   });

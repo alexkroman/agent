@@ -1893,9 +1893,6 @@ type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
-export function loadToolModules<S = DefaultSessionState>(loaders: ToolModuleLoaders): Promise<ToolRegistry<S>>;
-
-// @public
 type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
@@ -2032,9 +2029,6 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, S = DefaultSessionStat
 
 // @public
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
-
-// @public
-export type ToolModuleLoaders = Readonly<Record<string, () => Promise<unknown>>>;
 
 // @public
 export type ToolModules = Readonly<Record<string, unknown>>;
@@ -4235,12 +4229,40 @@ export type Unsubscribe = () => void;
 
 ```ts
 // @public
+interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
+    builtinTools?: readonly BuiltinTool[];
+    greeting: string;
+    idleTimeoutMs?: number;
+    llm?: LlmProvider;
+    maxSteps: number;
+    name: string;
+    page?: "voice" | "static";
+    requiredEnv?: readonly string[];
+    s2s?: S2sProvider;
+    silencePrompt?: string;
+    silenceTimeoutMs?: number;
+    state?: () => S;
+    stt?: SttProvider;
+    sttPrompt?: string;
+    syncState?: (state: S) => unknown;
+    systemPrompt: string;
+    text?: true;
+    toolChoice?: ToolChoice;
+    tools: Readonly<Record<string, ToolDef<ToolInputSchema, NoInfer<S>>>>;
+    tts?: TtsProvider;
+    workflows?: Readonly<Record<string, WorkflowDef>>;
+}
+
+// @public
 type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
     uploads?: readonly string[];
     run: WorkflowBody<never, R>;
 };
+
+// @public
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
 
 // @public
 export function createProgressStream(lines?: readonly unknown[]): ReadableStream<unknown>;
@@ -4315,6 +4337,17 @@ type Message = {
 };
 
 // @public
+interface PipelineVoiceTuning {
+    deadAirCoverMs?: number;
+    errorPhrase?: string;
+    interruptionMinDurationMs?: number;
+    minBargeInWords?: number;
+    preemptiveGeneration?: boolean;
+    resumeFalseInterruption?: boolean;
+    startFailurePhrase?: string;
+}
+
+// @public
 interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
@@ -4337,6 +4370,11 @@ export type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> & ({
 
 // @public
 export function runTool<S>(agent: ToolBearingAgent<S>, name: string, args: InferSchemaOutput<ToolInputSchema>, ctx: ToolContext<S>): Promise<unknown>;
+
+// @public
+type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "s2s";
+};
 
 // @public
 export interface SentEvent {
@@ -4387,6 +4425,11 @@ type StartOptions = {
 type StreamOptions = {
     namespace?: string;
     startIndex?: number;
+};
+
+// @public
+type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "stt";
 };
 
 // @public
@@ -4484,6 +4527,12 @@ export type ToolBearingAgent<S = DefaultSessionState> = {
 };
 
 // @public
+type ToolChoice = "auto" | "required" | "none" | {
+    type: "tool";
+    toolName: string;
+};
+
+// @public
 type ToolContext<S = DefaultSessionState> = {
     env: Readonly<Record<string, string>>;
     state: S;
@@ -4507,12 +4556,23 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, S = DefaultSessionStat
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 
 // @public
+type ToolModules = Readonly<Record<string, unknown>>;
+
+// @public
 export function toolOf<S>(agent: ToolBearingAgent<S>, name: string): ToolDef<ToolInputSchema, S>;
+
+// @public
+type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "tts";
+};
 
 // @public
 type WakeUpOptions = {
     correlationIds?: string[];
 };
+
+// @public
+export function withDiscoveredTools<S>(def: AgentDef<S>, modules: ToolModules): AgentDef<S>;
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {

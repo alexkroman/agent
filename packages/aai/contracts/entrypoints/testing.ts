@@ -4,9 +4,10 @@
  *
  * Testing a tool's `execute` in a user's own project: a `ToolContext` with
  * inert defaults and a recording `send`, the fakes its collaborators are driven
- * by (a model, a workflow client, a gateway), and the two slots a `"use step"`
- * body reaches through — the upload store, and the HTTP `stepFetch` makes its
- * request with.
+ * by (a model, a workflow client, a gateway), the two slots a `"use step"` body
+ * reaches through — the upload store, and the HTTP `stepFetch` makes its request
+ * with — and `withDiscoveredTools`, which is how a spec gets the def a DEPLOYED
+ * agent runs when the project's tools are files rather than inline.
  *
  * Re-exported from `@alexkroman1/aai/testing` and its `/vitest` half — one
  * capability across two subpaths, because they are one promise to an author:
@@ -44,5 +45,6 @@ export {
   type TestToolContext,
   type ToolBearingAgent,
   toolOf,
+  withDiscoveredTools,
 } from "../../sdk/testing.ts";
 export { installStubGateway } from "../../sdk/testing-vitest.ts";

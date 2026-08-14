@@ -385,7 +385,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
 
 - **`pnpm check:invariants`** (`scripts/guard-invariants.mjs`, rules in
   `scripts/guard-invariants-rules.mjs`) — **the mechanical half of this file.**
-  Twelve numbered rules, each printing WHY the invariant exists and what to use
+  Thirteen numbered rules, each printing WHY the invariant exists and what to use
   instead, so a violation is self-correcting and a reviewer never re-explains
   it. Every one used to live only as prose here, and prose is enforcement
   exactly as long as somebody remembers it at review time.
@@ -404,10 +404,11 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 10 | `research/**.md` needs `issue`/`status`/`last_updated` | see `research/README.md` |
   | 11 | no hardcoded `/tmp` in shipped source | `join(tmpdir(), …)` |
   | 12 | every guest route literal is in `GUEST_ROUTES` | declare it + its exposure |
+  | 13 | no template import escaping its template dir | move it in, or publish it |
 
   Rule IDs are **stable**: a deleted rule leaves its number retired rather than
   letting a later rule inherit it, because the numbers appear in commit messages
-  and in the baseline. Rules 1, 7, 10 and 12 are at zero and enforced absolutely;
+  and in the baseline. Rules 1, 7, 10, 12 and 13 are at zero and enforced absolutely;
   the rest carry per-file baselines with the same `--update`-only-lowers
   contract as `check:hatches`. Every baselined occurrence is
   legitimate and says so in the JSON — three spread-ternaries where **the guard

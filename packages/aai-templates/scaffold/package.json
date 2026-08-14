@@ -6,6 +6,7 @@
   },
   "scripts": {
     "dev": "aai dev",
+    "prestart": "aai build --skip-tests",
     "start": "node server.mjs",
     "build": "aai build",
     "test": "aai test",

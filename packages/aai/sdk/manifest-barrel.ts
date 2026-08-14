@@ -31,8 +31,6 @@ export {
 // these, so they sit beside `toAgentConfig` for the same reason it does: this
 // subpath is what a generated entry may import (dependency-free, bundled in).
 export {
-  loadToolModules,
-  type ToolModuleLoaders,
   type ToolModules,
   type ToolRegistry,
   toolRegistry,

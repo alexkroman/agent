@@ -356,6 +356,11 @@ describe("API-EXPORTS.json", () => {
       expect(surface["@alexkroman1/aai"]).toContain(forgotten);
       expect(surface["@alexkroman1/aai/testing"]).not.toContain(forgotten);
     }
+    // `ToolModules` is `withDiscoveredTools`'s parameter and lives on
+    // `/manifest`, which is not an authoring subpath at all — so it is forgotten
+    // HERE and absent from the root too, which is the intended shape: the value a
+    // caller passes is an `import.meta.glob` result, not something to name.
+    expect(surface["@alexkroman1/aai/testing"]).not.toContain("ToolModules");
     expect(surface["@alexkroman1/aai/testing"]).toEqual([
       "RunSnapshotOverrides",
       "SentEvent",
@@ -382,6 +387,7 @@ describe("API-EXPORTS.json", () => {
       "stubStepFetch",
       "stubUploads",
       "toolOf",
+      "withDiscoveredTools",
     ]);
     // The vitest half is one name: the installation of the fake above it. That
     // is the whole reason it is a subpath rather than part of `/testing` — see

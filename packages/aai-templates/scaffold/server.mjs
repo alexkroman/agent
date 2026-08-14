@@ -1,22 +1,21 @@
 // Self-hosted entrypoint — this is what `npm start` runs.
 //
 // It serves the agent over HTTP + WebSocket from your own Node process: no
-// platform account, no CLI at run time, no bundler. `aai dev` is the
-// development counterpart (file watching, Vite, a browser that opens itself);
-// this file is the deployment.
+// platform account, no managed anything. `aai dev` is the development
+// counterpart (file watching, Vite, a browser that opens itself); this file is
+// the deployment.
 //
 //   npm start                          # http://127.0.0.1:3000
 //   PORT=8080 HOST=0.0.0.0 npm start   # bind every interface, e.g. in a container
 //
 // Anything that can run Node can host it: copy the project, install
-// dependencies, provide the secrets, run this file. Deleting it costs nothing
-// — `aai dev`, `aai publish` and the managed platform never read it.
+// dependencies, provide the secrets, run `npm start`. Deleting this file costs
+// nothing — `aai dev`, `aai publish` and the managed platform never read it.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { registerHooks } from "node:module";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseEnv } from "node:util";
 import { createAgentServer, withHostCredentialFallback } from "@alexkroman1/aai/runtime";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
@@ -24,56 +23,38 @@ import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 const root = path.dirname(fileURLToPath(import.meta.url));
 
 /**
- * Teach Node the two non-JavaScript import shapes the `aai` bundler supports,
- * so one `agent.ts` runs unchanged under `aai dev`, `aai publish`, and here.
+ * The built agent — `.aai/worker.mjs`, produced by `aai build`, which the
+ * `prestart` script runs for you. It is the SAME artifact `aai publish` uploads
+ * and the managed platform runs, so a self-hosted agent and a deployed one
+ * cannot behave differently.
  *
- * - `import prompt from "./system-prompt.md?raw"` — a Vite convention; Node
- *   would look for a file literally named `system-prompt.md?raw`.
- * - `import data from "./data.json"` with no import attribute — TypeScript's
- *   `resolveJsonModule` allows it; Node requires `with { type: "json" }` and
- *   otherwise fails with ERR_IMPORT_ATTRIBUTE_MISSING. An import that DOES
- *   carry the attribute is left to Node, whose own handling is correct.
+ * Loading the build rather than `agent.ts` directly is what makes `tools/`
+ * work. A tool is registered by EXISTING — its file name is the name the model
+ * calls, and nothing anywhere lists them — and the only place a directory can
+ * be turned into modules is where the bundle is assembled: a deployed agent is
+ * handed one ESM string and has no filesystem to scan. So the bundler
+ * enumerates `tools/` and emits the imports, and every loader that skips it
+ * would serve an agent with no tools at all.
  *
- * Nothing is transformed beyond that: `.ts` itself needs no help, because Node
- * strips the types natively (this project needs Node 24+). That is why there
- * is no build step here, and no second copy of the agent in JavaScript that
- * could drift from the one you deploy.
+ * It also settles two things the bundler already resolves, and this file used
+ * to re-implement with `node:module` hooks: `import prompt from
+ * "./system-prompt.md?raw"` (a Vite convention — Node looks for a file
+ * literally named `system-prompt.md?raw`) and `import data from "./data.json"`
+ * with no import attribute (TypeScript's `resolveJsonModule` allows it, Node
+ * requires `with { type: "json" }`). Both are inlined into the bundle, so
+ * there is nothing left to teach Node.
  */
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    if (specifier.startsWith(".") && specifier.endsWith("?raw")) {
-      // Resolved by hand rather than through nextResolve: the default
-      // resolver has no format for `.md` and the query would be lost anyway.
-      return {
-        url: new URL(specifier, context.parentURL).href,
-        format: "module",
-        shortCircuit: true,
-      };
-    }
-    return nextResolve(specifier, context);
-  },
-  load(url, context, nextLoad) {
-    const asRaw = url.endsWith("?raw");
-    const asBareJson = url.endsWith(".json") && context.importAttributes?.type !== "json";
-    if (!(asRaw || asBareJson)) return nextLoad(url, context);
-    const text = readFileSync(fileURLToPath(asRaw ? url.slice(0, -"?raw".length) : url), "utf-8");
-    return {
-      format: "module",
-      // `export default <literal>` for both: a JSON document is already a
-      // valid JS expression, and JSON.stringify makes any file safe to embed
-      // as a string. Emitting `format: "json"` instead would put the import
-      // back under the attribute check this exists to satisfy.
-      source: `export default ${asRaw ? JSON.stringify(text) : text};`,
-      shortCircuit: true,
-    };
-  },
-});
-
-// Imported dynamically, and this is load-bearing: static `import` statements
-// are hoisted and evaluated BEFORE any statement in this file, so an
-// `import agent from "./agent.ts"` at the top would load the agent — and every
-// `?raw` import inside it — before the hooks above were ever registered.
-const { default: agent } = await import("./agent.ts");
+const workerPath = path.join(root, ".aai", "worker.mjs");
+if (!existsSync(workerPath)) {
+  console.error(
+    `No built agent at ${path.relative(root, workerPath)}.\n` +
+      "Run `npm run build` (or `aai build`) first — `npm start` normally does it for you.",
+  );
+  process.exit(1);
+}
+// A file: URL rather than a relative specifier, so the path is correct on
+// Windows, where a bare POSIX-looking path is not a valid module specifier.
+const { default: agent } = await import(pathToFileURL(workerPath).href);
 
 /** Parse a dotenv-syntax file into a record; `{}` when it does not exist. */
 async function readEnvFile(file) {
@@ -116,8 +97,8 @@ async function resolveAgentEnv() {
 
 /**
  * Static assets served at `/`: this project's own UI once `client.tsx` has been
- * built (`npm run build` leaves it in `.aai/client`), otherwise the prebuilt
- * default client that ships inside @alexkroman1/aai-ui.
+ * built (the same `aai build` leaves it in `.aai/client`), otherwise the
+ * prebuilt default client that ships inside @alexkroman1/aai-ui.
  */
 function resolveClientDir() {
   const built = path.join(root, ".aai", "client");

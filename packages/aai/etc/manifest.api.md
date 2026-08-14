@@ -189,9 +189,6 @@ type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
-export function loadToolModules<S = DefaultSessionState>(loaders: ToolModuleLoaders): Promise<ToolRegistry<S>>;
-
-// @public
 type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
@@ -328,9 +325,6 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, S = DefaultSessionStat
 
 // @public
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
-
-// @public
-export type ToolModuleLoaders = Readonly<Record<string, () => Promise<unknown>>>;
 
 // @public
 export type ToolModules = Readonly<Record<string, unknown>>;

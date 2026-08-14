@@ -128,7 +128,6 @@ exports[`export surface stability > @alexkroman1/aai/manifest export 1`] = `
   "assertPipelineTuning",
   "assertProviderTriple",
   "assertSilencePolicy",
-  "loadToolModules",
   "toAgentConfig",
   "toolRegistry",
   "withTools",
@@ -294,6 +293,7 @@ exports[`export surface stability > @alexkroman1/aai/testing export 1`] = `
   "stubStepFetch",
   "stubUploads",
   "toolOf",
+  "withDiscoveredTools",
 ]
 `;
 

@@ -76,22 +76,29 @@ are CLI-only.
 
 ## Running it yourself (`npm start`)
 
-`server.mjs` serves this agent from a plain Node process — no CLI, no
-bundler, no platform account. It is the deployment counterpart of `aai dev`:
+`server.mjs` serves this agent from a plain Node process — no platform
+account, nothing managed. It is the deployment counterpart of `aai dev`:
 
 ```sh
 npm start                          # http://127.0.0.1:3000
 PORT=8080 HOST=0.0.0.0 npm start   # bind every interface, e.g. in a container
 ```
 
+`npm start` **builds first** (that is the `prestart` script) and then serves
+the result: `server.mjs` boots `.aai/worker.mjs`, the same artifact
+`aai publish` uploads. The build is what makes `tools/` work — a tool is
+registered by existing, and the enumeration happens where the bundle is
+assembled, so a server that loaded `agent.ts` directly would run an agent with
+none of its tools. The same build produces your `client.tsx`, so a custom UI is
+served with no extra step.
+
 Secrets work the same as everywhere else: `ctx.env` holds the keys declared
 in `.env` (or `.env.example`), and a real environment variable of that name
 wins — so `docker run -e MY_API_KEY=…` needs no `.env` in the image.
 
-Two things to know. It binds **loopback by default**, because this server has
+One thing to know: it binds **loopback by default**, because this server has
 no request authentication of its own; set `HOST=0.0.0.0` only behind your own
-proxy or auth. And with a custom `client.tsx`, run `npm run build` first —
-otherwise it serves the default UI and says so at startup.
+proxy or auth.
 
 Deleting `server.mjs` costs nothing: `aai dev`, `aai publish` and the managed
 platform never read it. `run_code` is the one feature that does not follow —
