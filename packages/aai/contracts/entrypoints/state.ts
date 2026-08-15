@@ -2,8 +2,9 @@
 /**
  * Capability contract: `state`.
  *
- * Session state: the typed named slot inside `ctx.state` that lets an agent's
- * tools live in more than one file without restating the state annotation.
+ * Session state: the typed named slot that owns an agent's per-session value —
+ * its default, its reads, its writes, its storage, and its projection to the
+ * client. There is no `ctx.state` bag for it to live inside any more.
  *
  * Re-exported from `@alexkroman1/aai`. This file is not shipped and nothing
  * imports it — it exists so `pnpm check:api-contracts` can extract a report
@@ -14,8 +15,8 @@
 export {
   type SessionSlot,
   type SessionSlotOptions,
-  type SlotState,
-  type SlotStateOf,
+  type SlotStore,
   type SlotToolDef,
+  type StateProjection,
   sessionSlot,
 } from "../../index.ts";

@@ -1,11 +1,5 @@
 import type { ToolContext, ToolFailure } from "@alexkroman1/aai";
-import {
-  isToolFailure,
-  pushCapped,
-  type SlotStateOf,
-  sessionSlot,
-  toolFailure,
-} from "@alexkroman1/aai";
+import { isToolFailure, pushCapped, sessionSlot, toolFailure } from "@alexkroman1/aai";
 import type { z } from "zod";
 import seedJson from "./seed.json";
 import type {
@@ -48,20 +42,21 @@ export function createDefaultState(): RetailState {
 }
 
 /**
- * The session's store, as one typed slot inside `ctx.state`.
+ * The session's store, as one typed slot.
  *
- * Every mutating tool goes through `retailSlot.updateTool` (via `retailTool`),
- * which serializes per session: the LLM loop can run a step's tool calls
- * concurrently, and two interleaving async mutators would each observe the
- * other's half-applied changes.
+ * Every tool goes through `retailSlot.updateTool` (via `retailTool`), so every
+ * tool body is handed a mutable draft of the whole store and mutates it in
+ * place: the ~106 KB of catalogue here is exactly the state a functional replace
+ * would make unwritable without hand-built spread chains three levels deep.
+ * What makes that safe is that the window is SYNCHRONOUS — the LLM loop runs a
+ * step's tool calls concurrently, and a draft that cannot span an await cannot
+ * interleave with another one.
  *
  * No `after` hook — unlike dispatch-center, this store has no derived field to
  * recalculate, and its one growth cap (`activity`) is held on append by
  * `record` below.
  */
 export const retailSlot = sessionSlot("retail", createDefaultState);
-
-export type StateSlot = SlotStateOf<typeof retailSlot>;
 
 export function setFocus(
   state: RetailState,
@@ -163,7 +158,22 @@ interface RetailToolSpec<S extends z.ZodType<Record<string, unknown>>, R> {
    *  out; everything else touches customer data. */
   requiresAuth?: boolean;
   summary: (args: z.output<S>, result: R) => string;
-  execute: (args: z.output<S>, ctx: ToolContext) => R | Promise<R>;
+  /**
+   * Handed the store as its second argument, and SYNCHRONOUS.
+   *
+   * **The draft is passed in rather than re-read**, which is the one change the
+   * durable store forced on this template. The body used to open with
+   * `retailSlot.get(ctx)`; under the draft write model that returns the value as
+   * it was BEFORE this call, frozen, so a body that mutated it would be writing
+   * to something nothing was going to store. Passing it removes the possibility
+   * rather than documenting it.
+   *
+   * Synchronous for the same reason: the window cannot span an await — see
+   * {@link SessionSlot.update}. Every tool here is a pure function of the store,
+   * so none of them wants to; a tool that DID would await outside the wrapper and
+   * call `retailSlot.update` itself, the way `plan-and-execute`'s do.
+   */
+  execute: (args: z.output<S>, state: RetailState, ctx: ToolContext) => R;
 }
 
 function record(state: RetailState, name: string, summary: string): void {
@@ -191,22 +201,19 @@ export function retailTool<S extends z.ZodType<Record<string, unknown>>, R>(
   spec: RetailToolSpec<S, R>,
 ) {
   const requiresAuth = spec.requiresAuth ?? true;
-  // `updateTool` rather than `tool` + a hand-written `retailSlot.update`: it
-  // runs the body inside the slot's per-session lock and hands it the state, so
-  // this wrapper is left with only what is specific to THIS agent. Its
-  // non-reentrancy stays unreachable here for the same reason it always did —
-  // a tool body cannot nest another mutation of this slot, because tool bodies
-  // are `spec.execute` and always run INSIDE this one.
+  // `updateTool` rather than `tool` + a hand-written `retailSlot.update`: it runs
+  // the body inside the slot's mutation window and hands it the draft, so this
+  // wrapper is left with only what is specific to THIS agent.
   return retailSlot.updateTool({
     description: spec.description,
     inputSchema: spec.inputSchema,
-    execute: async (args, state, ctx) => {
+    execute: (args, state, ctx) => {
       const typedArgs = args as z.output<S>;
       if (requiresAuth && !state.authenticatedUserId) {
         record(state, spec.name, "blocked: not authenticated");
         return toolFailure(NOT_AUTHENTICATED);
       }
-      const result = await spec.execute(typedArgs, ctx);
+      const result = spec.execute(typedArgs, state, ctx);
       record(
         state,
         spec.name,

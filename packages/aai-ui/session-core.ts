@@ -130,9 +130,9 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
    * The session ID to resume: seeded from `options.resumeSessionId`, then
    * kept current from every `config` frame. Reconnect URLs carry it as
    * `?sessionId=<id>` so the server re-registers the SAME session id —
-   * that key is what per-session tool state (`ctx.state`) lives under, so
-   * a reconnect that omits it gets a fresh session with none of the
-   * agent's context, greeting suppression aside.
+   * that key is what the session's slot state lives under, so a reconnect
+   * that omits it gets a fresh session with none of the agent's context,
+   * greeting suppression aside.
    */
   let sessionId: string | undefined = options.resumeSessionId;
 

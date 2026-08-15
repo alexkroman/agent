@@ -1,6 +1,6 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { authenticatedUser, retailSlot, retailTool } from "../store.ts";
+import { authenticatedUser, retailTool } from "../store.ts";
 
 export default retailTool({
   name: "get_user_details",
@@ -12,8 +12,7 @@ export default retailTool({
   }),
   // `execute` before `summary`: see find_user_id_by_email.ts for why the order
   // is load-bearing for the generic `result` type in `summary`.
-  execute: (args, ctx) => {
-    const state = retailSlot.get(ctx);
+  execute: (args, state) => {
     const user = authenticatedUser(state);
     if (isToolFailure(user)) return user;
     if (user.user_id !== args.user_id) {

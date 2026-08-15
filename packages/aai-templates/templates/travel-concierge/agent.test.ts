@@ -18,7 +18,6 @@ const agentDef = withDiscoveredTools(
   import.meta.glob("./tools/*.ts", { eager: true }),
 );
 
-import type { StateSlot } from "./shared.ts";
 import { activeAssistant, FLIGHTS, tripSlot, tripView } from "./shared.ts";
 
 // ─── Harness ─────────────────────────────────────────────────────────────────
@@ -26,18 +25,18 @@ import { activeAssistant, FLIGHTS, tripSlot, tripView } from "./shared.ts";
 /** Each context is one call. `createToolContext` mints a distinct session id
  *  per call, which is what the isolation test below rests on. */
 function makeCtx(sessionId?: string) {
-  return createToolContext<StateSlot>(sessionId ? { sessionId } : {});
+  return createToolContext(sessionId ? { sessionId } : {});
 }
 
 /** A tool by the name the model calls it by, bound to this agent. The lookup
  *  and its "no such tool" message are `runTool`'s (`@alexkroman1/aai/testing`);
  *  what is local is only which agent they run against. */
-const run = (name: string, args: Record<string, unknown>, ctx: ToolContext<StateSlot>) =>
+const run = (name: string, args: Record<string, unknown>, ctx: ToolContext) =>
   runTool(agentDef, name, args, ctx);
 
 /** The state a tool just mutated, read back the way `syncState` reads it. */
-function stateOf(ctx: ToolContext<StateSlot>) {
-  return tripSlot.read(ctx.state);
+function stateOf(ctx: ToolContext) {
+  return tripSlot.get(ctx);
 }
 
 // ─── 1. The dialog stack ─────────────────────────────────────────────────────

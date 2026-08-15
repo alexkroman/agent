@@ -1,5 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { sessionSlot } from "./session-slot.ts";
 import { createToolContext } from "./testing.ts";
@@ -9,26 +9,35 @@ type Cart = { items: string[]; nextId: number };
 const emptyCart = (): Cart => ({ items: [], nextId: 1 });
 const cartSlot = sessionSlot("cart", emptyCart);
 
+/**
+ * Values that do not survive being stored, and the fragment each error must name.
+ *
+ * Hoisted out of the `test.each` call site rather than written inline: the arrow
+ * in the function row reads to `check-test-assertions.mjs` as an untitled test
+ * body with no `expect` in it, which fails that gate on a table.
+ */
+const UNSTORABLE: readonly [string, unknown, RegExp][] = [
+  ["a Map", new Map([["a", 1]]), /a Map/],
+  ["a Set", new Set([1]), /a Set/],
+  ["a Date", new Date(0), /a Date/],
+  ["NaN", Number.NaN, /NaN/],
+  ["Infinity", Number.POSITIVE_INFINITY, /Infinity/],
+  ["a function", () => 1, /a function/],
+  ["a bigint", 1n, /a bigint/],
+  ["a class instance", new (class Point {})(), /Point instance/],
+];
+
 describe("sessionSlot", () => {
-  test("exposes the key it occupies", () => {
+  test("exposes the key it occupies and its durability", () => {
     expect(cartSlot.key).toBe("cart");
+    expect(cartSlot.durable).toBe(true);
   });
 
-  test("get installs the default on first access and stores it under the key", () => {
-    const ctx = createToolContext<{ cart?: Cart }>();
-    expect(ctx.state.cart).toBeUndefined();
+  test("get installs the default on first access", () => {
+    const ctx = createToolContext();
+    expect(ctx.slots.read("cart")).toBeUndefined();
     expect(cartSlot.get(ctx)).toEqual({ items: [], nextId: 1 });
-    expect(ctx.state.cart).toEqual({ items: [], nextId: 1 });
-  });
-
-  test("mutations to the returned value stick — it IS the stored object", () => {
-    const ctx = createToolContext<{ cart?: Cart }>();
-    cartSlot.get(ctx).items.push("apple");
-    // The whole contract: a tool mutates what `get` returned and the next
-    // tool call sees it. A `get` that returned a copy would pass every other
-    // test in this file and lose every write.
-    expect(cartSlot.get(ctx).items).toEqual(["apple"]);
-    expect(ctx.state.cart?.items).toEqual(["apple"]);
+    expect(ctx.slots.read("cart")).toEqual({ items: [], nextId: 1 });
   });
 
   test("get returns the same object across calls — the factory runs once", () => {
@@ -37,122 +46,76 @@ describe("sessionSlot", () => {
       calls += 1;
       return { n: calls };
     });
-    const ctx = createToolContext<{ counted?: { n: number } }>();
+    const ctx = createToolContext();
     expect(slot.get(ctx)).toBe(slot.get(ctx));
     expect(calls).toBe(1);
   });
 
+  test("what get returns is FROZEN, so a lost write is a throw", () => {
+    // The whole read contract. A mutation applied here is applied to a value
+    // nothing is going to store, and the shallow `Readonly<T>` type cannot see
+    // a write that happens inside a domain helper — every template has those.
+    const ctx = createToolContext();
+    const cart = cartSlot.get(ctx);
+    expect(Object.isFrozen(cart)).toBe(true);
+    expect(Object.isFrozen(cart.items)).toBe(true);
+    expect(() => {
+      (cart as Cart).items.push("apple");
+    }).toThrow(TypeError);
+  });
+
   test("two contexts are two sessions — neither sees the other's value", () => {
-    const a = createToolContext<{ cart?: Cart }>();
-    const b = createToolContext<{ cart?: Cart }>();
-    cartSlot.get(a).items.push("apple");
+    const a = createToolContext();
+    const b = createToolContext();
+    cartSlot.update(a, (cart) => cart.items.push("apple"));
     expect(cartSlot.get(b).items).toEqual([]);
   });
 
   test("a shared module-level default is not aliased when the factory clones", () => {
     const DEFAULT: Cart = { items: [], nextId: 1 };
     const slot = sessionSlot("cloned", () => structuredClone(DEFAULT));
-    const a = createToolContext<{ cloned?: Cart }>();
-    const b = createToolContext<{ cloned?: Cart }>();
-    slot.get(a).items.push("apple");
+    const a = createToolContext();
+    const b = createToolContext();
+    slot.update(a, (cart) => cart.items.push("apple"));
     expect(slot.get(b).items).toEqual([]);
     expect(DEFAULT.items).toEqual([]);
   });
 
   test("set replaces the value wholesale and returns it", () => {
-    const ctx = createToolContext<{ cart?: Cart }>();
-    cartSlot.get(ctx).items.push("apple");
+    const ctx = createToolContext();
+    cartSlot.update(ctx, (cart) => cart.items.push("apple"));
     const loaded: Cart = { items: ["pear"], nextId: 9 };
     expect(cartSlot.set(ctx, loaded)).toBe(loaded);
     expect(cartSlot.get(ctx)).toBe(loaded);
   });
 
   test("reset discards the value and installs a fresh default", () => {
-    const ctx = createToolContext<{ cart?: Cart }>();
-    cartSlot.get(ctx).items.push("apple");
+    const ctx = createToolContext();
+    cartSlot.update(ctx, (cart) => cart.items.push("apple"));
     const fresh = cartSlot.reset(ctx);
     expect(fresh.items).toEqual([]);
     expect(cartSlot.get(ctx)).toBe(fresh);
   });
 
-  test("reset returns a NEW object, not the mutated one cleared in place", () => {
-    const ctx = createToolContext<{ cart?: Cart }>();
-    const before = cartSlot.get(ctx);
-    expect(cartSlot.reset(ctx)).not.toBe(before);
-  });
-
-  test("a slot holding undefined counts as absent", () => {
-    // Reachable at runtime however the type is spelled — a JSON round-trip
-    // through a save file, or a `state` factory that names the key without a
-    // value. Installed with `Object.assign` (which copies an own property
-    // holding `undefined`) because `exactOptionalPropertyTypes` will not let
-    // `SlotState` say it.
-    const ctx = createToolContext<{ cart?: Cart }>();
-    Object.assign(ctx.state, { cart: undefined });
-    expect("cart" in ctx.state).toBe(true);
-    expect(cartSlot.get(ctx)).toEqual({ items: [], nextId: 1 });
-  });
-
-  describe("read", () => {
-    test("returns the stored value when present", () => {
-      const cart: Cart = { items: ["apple"], nextId: 2 };
-      expect(cartSlot.read({ cart })).toBe(cart);
-    });
-
-    test("defaults for an empty state object", () => {
-      expect(cartSlot.read({})).toEqual({ items: [], nextId: 1 });
-    });
-
-    test("defaults for undefined state", () => {
-      expect(cartSlot.read(undefined)).toEqual({ items: [], nextId: 1 });
-    });
-
-    test("a slot holding a falsy value is not defaulted away", () => {
-      // `read` and `get` must agree on what "absent" means, or a projection and
-      // a tool see different state for the same session. Only `undefined`
-      // counts — a `??` here would swallow `null` and `0`.
-      const nullable = sessionSlot<"maybe", Cart | null>("maybe", () => emptyCart());
-      expect(nullable.read({ maybe: null })).toBeNull();
-      const zero = sessionSlot("count", () => 7);
-      expect(zero.read({ count: 0 })).toBe(0);
-    });
-
-    test("does not install the default into the state it was handed", () => {
-      // `read` is the `syncState` path — a projection must not mutate the
-      // session it is projecting.
-      const state: { cart?: Cart } = {};
-      cartSlot.read(state);
-      expect(state.cart).toBeUndefined();
-    });
-  });
-
-  describe("projection", () => {
-    const view = (cart: Cart) => ({ count: cart.items.length });
-
-    test("projects the stored value", () => {
-      const project = cartSlot.projection(view);
-      expect(project({ cart: { items: ["a", "b"], nextId: 3 } })).toEqual({ count: 2 });
-    });
-
-    test("projects the default before anything is stored", () => {
-      // This is what makes a client's empty-state fallback derivable from the
-      // projection itself rather than hand-written.
-      expect(cartSlot.projection(view)({})).toEqual({ count: 0 });
-      expect(cartSlot.projection(view)(undefined)).toEqual({ count: 0 });
-    });
-
-    test("the projection sees a non-optional value", () => {
-      // The point of `projection` over `read`: the callback's parameter is
-      // `Cart`, so a projection needs no optional chaining. A type-level
-      // claim, asserted at runtime by dereferencing without a guard.
-      expect(cartSlot.projection((cart) => cart.items.length)(undefined)).toBe(0);
-    });
+  test("only an ABSENT value defaults — null and 0 are values", () => {
+    // `=== undefined` rather than `??`. A `??` would swallow a slot legitimately
+    // holding `null`, and would put `get` and the projection on different rules
+    // about the same slot, which surfaces as a tool and a projection seeing
+    // different state for one session.
+    const nullable = sessionSlot<"maybe", Cart | null>("maybe", () => emptyCart());
+    const zero = sessionSlot("count", () => 7);
+    const ctx = createToolContext();
+    expect(nullable.set(ctx, null)).toBeNull();
+    expect(nullable.get(ctx)).toBeNull();
+    expect(zero.set(ctx, 0)).toBe(0);
+    expect(zero.get(ctx)).toBe(0);
+    expect(nullable.projection((v) => v)(null)).toBeNull();
   });
 
   describe("update", () => {
-    test("mutates the live value and resolves with the mutator's return", async () => {
-      const ctx = createToolContext<{ cart?: Cart }>();
-      const result = await cartSlot.update(ctx, (cart) => {
+    test("hands the body a mutable draft and returns what it returned", () => {
+      const ctx = createToolContext();
+      const result = cartSlot.update(ctx, (cart) => {
         cart.items.push("apple");
         return cart.items.length;
       });
@@ -160,54 +123,102 @@ describe("sessionSlot", () => {
       expect(cartSlot.get(ctx).items).toEqual(["apple"]);
     });
 
-    test("installs the default on first use, like get", async () => {
-      const ctx = createToolContext<{ cart?: Cart }>();
-      await cartSlot.update(ctx, () => undefined);
-      expect(ctx.state.cart).toEqual({ items: [], nextId: 1 });
+    test("is SYNCHRONOUS — the value is stored by the time it returns", () => {
+      // Not a stylistic claim: it is what makes a read-modify-write atomic with
+      // no lock, because the window cannot span another JS turn. A promise here
+      // would mean callers had to await, and two that did not would interleave.
+      const ctx = createToolContext();
+      const returned: unknown = cartSlot.update(ctx, (cart) => cart.items.push("a"));
+      expect(returned).toBe(1);
+      expect(cartSlot.get(ctx).items).toEqual(["a"]);
     });
 
-    test("serializes concurrent async mutators of one session", async () => {
-      // THE reason this method exists: the LLM loop runs a step's tool calls
-      // concurrently, so two async mutators interleave at every await. Without
-      // the lock both read `items.length === 0` and the second write wins,
-      // leaving one item instead of two.
-      const ctx = createToolContext<{ cart?: Cart }>();
-      const appendSlowly = (sku: string) =>
-        cartSlot.update(ctx, async (cart) => {
-          const seen = cart.items.length;
-          await Promise.resolve();
-          await Promise.resolve();
-          cart.items = [...cart.items.slice(0, seen), sku];
+    test("installs the default on first use, like get", () => {
+      const ctx = createToolContext();
+      cartSlot.update(ctx, () => undefined);
+      expect(ctx.slots.read("cart")).toEqual({ items: [], nextId: 1 });
+    });
+
+    test("the draft is a COPY — a mutation is invisible until the body returns", () => {
+      const ctx = createToolContext();
+      const before = cartSlot.get(ctx);
+      cartSlot.update(ctx, (cart) => {
+        cart.items.push("apple");
+        // The stored value is still the pre-mutation one, which is what makes a
+        // throwing mutator leave nothing half-applied.
+        expect(before.items).toEqual([]);
+      });
+      expect(cartSlot.get(ctx).items).toEqual(["apple"]);
+      expect(cartSlot.get(ctx)).not.toBe(before);
+    });
+
+    test("a throwing mutator stores NOTHING", () => {
+      const ctx = createToolContext();
+      cartSlot.update(ctx, (cart) => cart.items.push("first"));
+      expect(() =>
+        cartSlot.update(ctx, (cart) => {
+          cart.items.push("second");
+          throw new Error("boom");
+        }),
+      ).toThrow("boom");
+      expect(cartSlot.get(ctx).items).toEqual(["first"]);
+    });
+
+    test("a throwing mutator does not wedge the slot", () => {
+      const ctx = createToolContext();
+      expect(() =>
+        cartSlot.update(ctx, () => {
+          throw new Error("boom");
+        }),
+      ).toThrow("boom");
+      expect(cartSlot.update(ctx, (cart) => cart.items.length)).toBe(0);
+    });
+
+    test("refuses a nested update of the same slot", () => {
+      // The nested write would be overwritten by the outer draft the moment the
+      // outer mutator returned — a write that succeeds and then vanishes.
+      const ctx = createToolContext();
+      expect(() =>
+        cartSlot.update(ctx, () => {
+          cartSlot.update(ctx, (cart) => cart.items.push("x"));
+        }),
+      ).toThrow(/already open/);
+    });
+
+    test("refuses set and reset from inside the window", () => {
+      const ctx = createToolContext();
+      expect(() =>
+        cartSlot.update(ctx, () => {
+          cartSlot.set(ctx, emptyCart());
+        }),
+      ).toThrow(/cannot run inside/);
+      expect(() =>
+        cartSlot.update(ctx, () => {
+          cartSlot.reset(ctx);
+        }),
+      ).toThrow(/cannot run inside/);
+    });
+
+    test("a DIFFERENT slot's update nests safely", () => {
+      const flags = sessionSlot("flags", () => ({ seen: false }));
+      const ctx = createToolContext();
+      cartSlot.update(ctx, (cart) => {
+        cart.items.push("apple");
+        flags.update(ctx, (f) => {
+          f.seen = true;
         });
-      await Promise.all([appendSlowly("a"), appendSlowly("b")]);
-      expect(cartSlot.get(ctx).items).toEqual(["a", "b"]);
+      });
+      expect(cartSlot.get(ctx).items).toEqual(["apple"]);
+      expect(flags.get(ctx).seen).toBe(true);
     });
 
-    test("does not serialize across sessions", async () => {
-      // Two callers must not queue behind each other — the lock is keyed by
-      // session id, and blocking on a stranger's tool call would be a latency
-      // bug that only shows up under concurrency.
-      const a = createToolContext<{ cart?: Cart }>();
-      const b = createToolContext<{ cart?: Cart }>();
-      const started = new Set<string>();
-      const bothInFlight = Promise.withResolvers<void>();
-      const enter = (ctx: typeof a, name: string) =>
-        cartSlot.update(ctx, async () => {
-          started.add(name);
-          if (started.size === 2) bothInFlight.resolve();
-          await bothInFlight.promise;
-        });
-      // Resolves only if the two ran at the same time; a shared lock hangs.
-      await Promise.all([enter(a, "a"), enter(b, "b")]);
-      expect([...started].sort()).toEqual(["a", "b"]);
-    });
-
-    test("a rejecting mutator does not wedge the lock", async () => {
-      const ctx = createToolContext<{ cart?: Cart }>();
-      await expect(cartSlot.update(ctx, () => Promise.reject(new Error("boom")))).rejects.toThrow(
-        "boom",
-      );
-      await expect(cartSlot.update(ctx, (cart) => cart.items.length)).resolves.toBe(0);
+    test("one session's open window does not block another's", () => {
+      const a = createToolContext();
+      const b = createToolContext();
+      cartSlot.update(a, () => {
+        expect(cartSlot.update(b, (cart) => cart.items.push("b"))).toBe(1);
+      });
+      expect(cartSlot.get(b).items).toEqual(["b"]);
     });
 
     describe("the after hook", () => {
@@ -217,96 +228,182 @@ describe("sessionSlot", () => {
         },
       });
 
-      test("runs inside the lock after a successful mutation", async () => {
-        const ctx = createToolContext<{ log?: { entries: string[] } }>();
-        await capped.update(ctx, (log) => log.entries.push("a", "b", "c", "d"));
+      test("runs on the draft after a successful mutation", () => {
+        const ctx = createToolContext();
+        capped.update(ctx, (log) => log.entries.push("a", "b", "c", "d"));
         expect(capped.get(ctx).entries).toEqual(["c", "d"]);
       });
 
-      test("runs on every update, not only the first", async () => {
-        const ctx = createToolContext<{ log?: { entries: string[] } }>();
-        await capped.update(ctx, (log) => log.entries.push("a", "b", "c"));
-        await capped.update(ctx, (log) => log.entries.push("d", "e", "f"));
+      test("runs on every update, not only the first", () => {
+        const ctx = createToolContext();
+        capped.update(ctx, (log) => log.entries.push("a", "b", "c"));
+        capped.update(ctx, (log) => log.entries.push("d", "e", "f"));
         expect(capped.get(ctx).entries).toEqual(["e", "f"]);
       });
 
-      test("does NOT run when the mutator throws, and the mutator's error wins", async () => {
-        const ctx = createToolContext<{ log?: { entries: string[] } }>();
-        await expect(
-          capped.update(ctx, (log) => {
-            log.entries.push("a", "b", "c");
+      test("does NOT run when the mutator throws, and nothing is stored", () => {
+        const ctx = createToolContext();
+        const after = vi.fn();
+        const slot = sessionSlot("hooked", (): { entries: string[] } => ({ entries: [] }), {
+          after,
+        });
+        expect(() =>
+          slot.update(ctx, (log) => {
+            log.entries.push("a");
             throw new Error("mid-mutation");
           }),
-        ).rejects.toThrow("mid-mutation");
-        // Untrimmed: the half-applied value is left exactly as the mutator left
-        // it rather than being normalized by a hook that never saw a complete
-        // mutation.
-        expect(capped.get(ctx).entries).toEqual(["a", "b", "c"]);
+        ).toThrow("mid-mutation");
+        expect(after).not.toHaveBeenCalled();
+        expect(slot.get(ctx).entries).toEqual([]);
       });
 
-      test("normalizes the value the slot NOW holds, after a mutator's set", async () => {
-        // A mutator that loads or restores calls `set`, replacing the object it
-        // was handed. The hook has to see the replacement — running it on the
-        // stale reference would leave the loaded value untrimmed.
-        const ctx = createToolContext<{ log?: { entries: string[] } }>();
-        await capped.update(ctx, () => {
-          capped.set(ctx, { entries: ["w", "x", "y", "z"] });
-        });
-        expect(capped.get(ctx).entries).toEqual(["y", "z"]);
-      });
-
-      test("a slot with no hook is unaffected", async () => {
-        const ctx = createToolContext<{ cart?: Cart }>();
-        await expect(cartSlot.update(ctx, (cart) => cart.items.length)).resolves.toBe(0);
+      test("a slot with no hook is unaffected", () => {
+        const ctx = createToolContext();
+        expect(cartSlot.update(ctx, (cart) => cart.items.length)).toBe(0);
       });
     });
   });
 
-  describe("state", () => {
-    test("is the AgentDef.state factory for this slot", () => {
-      expect(cartSlot.state()).toEqual({ cart: { items: [], nextId: 1 } });
+  describe("what a durable slot may hold", () => {
+    // The check runs HERE, in the memory-backed store a spec uses, which is the
+    // whole reason the memory backend is a valid double for the Postgres one: a
+    // template holding a `Map` fails in its own spec rather than on the first
+    // deployment that has a database.
+    const holder = sessionSlot("held", (): { value: unknown } => ({ value: null }));
+
+    test.each(UNSTORABLE)("refuses %s, naming the path", (_label, value, message) => {
+      const ctx = createToolContext();
+      expect(() =>
+        holder.update(ctx, (held) => {
+          held.value = value;
+        }),
+      ).toThrow(message);
+      // And the path, so a failure says which field.
+      expect(() =>
+        holder.update(ctx, (held) => {
+          held.value = value;
+        }),
+      ).toThrow(/held\.value/);
     });
 
-    test("mints a fresh value per call — it runs once per SESSION", () => {
-      // Returning one shared object would give every concurrent caller the same
-      // cart, which is the bug `create` being a factory exists to prevent.
-      const first = cartSlot.state();
-      const second = cartSlot.state();
-      expect(first.cart).not.toBe(second.cart);
+    test("refuses a cycle", () => {
+      const ctx = createToolContext();
+      expect(() =>
+        holder.update(ctx, (held) => {
+          const cyclic: Record<string, unknown> = {};
+          cyclic.self = cyclic;
+          held.value = cyclic;
+        }),
+      ).toThrow(/circular reference/);
     });
 
-    test("the state it builds is the one `get` then finds", () => {
-      // The property that makes it a drop-in for the hand-written
-      // `() => ({ [slot.key]: slot.create() })`: a session started from it is
-      // already installed, so `get` returns what is there rather than
-      // installing a second value over it.
-      const ctx = createToolContext<{ cart?: Cart }>({ state: cartSlot.state() });
-      const installed = ctx.state.cart;
-      cartSlot.get(ctx).items.push("apple");
-      expect(cartSlot.get(ctx)).toBe(installed);
-      expect(ctx.state.cart?.items).toEqual(["apple"]);
+    test("refuses undefined inside an array, which JSON turns into null", () => {
+      const ctx = createToolContext();
+      expect(() =>
+        holder.update(ctx, (held) => {
+          held.value = ["a", undefined];
+        }),
+      ).toThrow(/\[1\] is undefined/);
+    });
+
+    test("allows a present-but-undefined PROPERTY, which JSON drops", () => {
+      const ctx = createToolContext();
+      expect(() =>
+        holder.update(ctx, (held) => {
+          held.value = { a: 1, b: undefined };
+        }),
+      ).not.toThrow();
+    });
+
+    test("allows a shared subtree — a DAG is not a cycle", () => {
+      // Regression: a single visited-set reported retail's seed catalogue as
+      // circular, because two items share one `options` object.
+      const ctx = createToolContext();
+      const shared = { size: "M" };
+      expect(() =>
+        holder.update(ctx, (held) => {
+          held.value = [{ options: shared }, { options: shared }];
+        }),
+      ).not.toThrow();
+    });
+
+    test("a VIRTUAL slot is neither checked nor frozen", () => {
+      // What the escape hatch is for: a value whose lifetime is one call and
+      // which could not be stored anyway — a handle, an open socket.
+      const virtual = sessionSlot("scratch", () => ({ handle: new Map<string, number>() }), {
+        durable: false,
+      });
+      expect(virtual.durable).toBe(false);
+      const ctx = createToolContext();
+      expect(() =>
+        virtual.update(ctx, (scratch) => {
+          scratch.handle.set("a", 1);
+        }),
+      ).not.toThrow();
+      expect(Object.isFrozen(virtual.get(ctx))).toBe(false);
+      expect(virtual.get(ctx).handle.get("a")).toBe(1);
+    });
+  });
+
+  describe("projection", () => {
+    const view = (cart: Readonly<Cart>) => ({ count: cart.items.length });
+
+    test("projects the stored value", () => {
+      expect(cartSlot.projection(view)({ items: ["a", "b"], nextId: 3 })).toEqual({ count: 2 });
+    });
+
+    test("projects the default before anything is stored", () => {
+      // What makes a client's empty-state fallback derivable from the projection
+      // itself rather than hand-written — five templates hoist exactly this.
+      expect(cartSlot.projection(view)()).toEqual({ count: 0 });
+      expect(cartSlot.projection(view)(undefined)).toEqual({ count: 0 });
+    });
+
+    test("the projection sees a non-optional value", () => {
+      // The callback's parameter is a real `Cart`, so a projection needs no
+      // optional chaining. A type-level claim, asserted by dereferencing.
+      expect(cartSlot.projection((cart) => cart.items.length)(undefined)).toBe(0);
+    });
+
+    test("carries the slot's key and default, which is what the runtime reads", () => {
+      const projection = cartSlot.projection(view);
+      expect(projection.key).toBe("cart");
+      expect(projection.create()).toEqual({ items: [], nextId: 1 });
+    });
+
+    test("its default is minted per call, never a shared object", () => {
+      const projection = cartSlot.projection(view);
+      expect(projection.create()).not.toBe(projection.create());
     });
   });
 
   describe("tool", () => {
-    const addItem = cartSlot.tool({
-      description: "Add an item",
-      inputSchema: z.object({ item: z.string() }),
-      execute: ({ item }, cart) => {
-        cart.items.push(item);
-        return { count: cart.items.length };
-      },
+    const count = cartSlot.tool({
+      description: "Count the items",
+      inputSchema: z.object({}),
+      execute: (_args, cart) => ({ count: cart.items.length }),
     });
 
-    test("hands the body the live value, and the write sticks", async () => {
-      const ctx = createToolContext<{ cart?: Cart }>();
-      expect(await addItem.execute({ item: "apple" }, ctx)).toEqual({ count: 1 });
-      expect(ctx.state.cart?.items).toEqual(["apple"]);
+    test("hands the body the stored value", async () => {
+      const ctx = createToolContext();
+      cartSlot.update(ctx, (cart) => cart.items.push("apple"));
+      expect(await count.execute({}, ctx)).toEqual({ count: 1 });
+    });
+
+    test("what the body is handed is frozen, so a mutating READ tool throws", () => {
+      const mutating = cartSlot.tool({
+        description: "Wrongly mutates",
+        execute: (_args, cart) => (cart as Cart).items.push("x"),
+      });
+      const ctx = createToolContext();
+      // Thrown SYNCHRONOUSLY: a slot-backed tool body is not async, and neither
+      // is the frozen write it attempts.
+      expect(() => mutating.execute({}, ctx)).toThrow(TypeError);
     });
 
     test("carries description and inputSchema through unchanged", () => {
-      expect(addItem.description).toBe("Add an item");
-      expect(addItem.inputSchema).toBeDefined();
+      expect(count.description).toBe("Count the items");
+      expect(count.inputSchema).toBeDefined();
     });
 
     test("a schemaless tool has no inputSchema key at all", () => {
@@ -325,40 +422,43 @@ describe("sessionSlot", () => {
           return "sent";
         },
       });
-      const ctx = createToolContext<{ cart?: Cart }>();
+      const ctx = createToolContext();
       expect(await ping.execute({}, ctx)).toBe("sent");
       expect(ctx.sent).toEqual([{ event: "ping", data: { ok: true } }]);
     });
   });
 
   describe("updateTool", () => {
-    test("serializes concurrent bodies that await", async () => {
-      // The invariant the whole method exists for. Each body reads the length,
-      // awaits, then writes back length + 1 — the classic lost update. Under
-      // `tool` (i.e. `get`) both read 0 and the cart ends with one entry; under
-      // `updateTool` the second body cannot start until the first released.
-      const slot = sessionSlot("cart", emptyCart);
-      const append = slot.updateTool({
-        description: "Append",
-        inputSchema: z.object({ item: z.string() }),
-        execute: async ({ item }, cart) => {
-          const seen = cart.items.length;
-          await Promise.resolve();
-          cart.items[seen] = item;
-          return cart.items.length;
-        },
-      });
-      const ctx = createToolContext<{ cart?: Cart }>();
+    const append = cartSlot.updateTool({
+      description: "Append",
+      inputSchema: z.object({ item: z.string() }),
+      execute: ({ item }, cart) => {
+        cart.items.push(item);
+        return cart.items.length;
+      },
+    });
+
+    test("hands the body a draft and stores what it leaves behind", async () => {
+      const ctx = createToolContext();
+      expect(await append.execute({ item: "a" }, ctx)).toBe(1);
+      expect(cartSlot.get(ctx).items).toEqual(["a"]);
+    });
+
+    test("two concurrent calls cannot lose an append", async () => {
+      // Under a read-then-mutate both bodies would read length 0 and the second
+      // write would win. The window is synchronous, so the second body's draft
+      // is cloned from the first body's committed value.
+      const ctx = createToolContext();
       const results = await Promise.all([
         append.execute({ item: "a" }, ctx),
         append.execute({ item: "b" }, ctx),
       ]);
       expect(results).toEqual([1, 2]);
-      expect(slot.get(ctx).items).toEqual(["a", "b"]);
+      expect(cartSlot.get(ctx).items).toEqual(["a", "b"]);
     });
 
     test("runs the slot's after hook", async () => {
-      const capped = sessionSlot("cart", emptyCart, {
+      const capped = sessionSlot("capped", emptyCart, {
         after: (cart) => {
           cart.items.splice(0, Math.max(cart.items.length - 2, 0));
         },
@@ -369,36 +469,49 @@ describe("sessionSlot", () => {
           cart.items.push("x", "y", "z");
         },
       });
-      const ctx = createToolContext<{ cart?: Cart }>();
+      const ctx = createToolContext();
       await add.execute({}, ctx);
       expect(capped.get(ctx).items).toEqual(["y", "z"]);
     });
 
-    test("propagates a throwing body, and the lock still releases", async () => {
-      const slot = sessionSlot("cart", emptyCart);
-      const boom = slot.updateTool({
+    test("refuses an ASYNC body, naming the rule", () => {
+      // Its mutations would be committed at the end of the synchronous part and
+      // the continuation would then write to a frozen draft — a `TypeError` from
+      // somewhere unrelated. Enforced at run time because a conditional return
+      // type cannot be satisfied by a generic wrapper (retail's `retailTool`).
+      const bad = cartSlot.updateTool({
+        description: "Awaits",
+        execute: async (_args, cart) => {
+          await Promise.resolve();
+          cart.items.push("x");
+        },
+      });
+      const ctx = createToolContext();
+      expect(() => bad.execute({}, ctx)).toThrow(/must be synchronous/);
+    });
+
+    test("propagates a throwing body without storing anything", () => {
+      const boom = cartSlot.updateTool({
         description: "Boom",
-        execute: () => {
+        execute: (_args, cart) => {
+          cart.items.push("x");
           throw new Error("nope");
         },
       });
-      const ok = slot.updateTool({
-        description: "Ok",
-        execute: (_args, cart) => cart.items.length,
-      });
-      const ctx = createToolContext<{ cart?: Cart }>();
-      await expect(boom.execute({}, ctx)).rejects.toThrow("nope");
-      // A release that only ran on the happy path would wedge every later
-      // mutation of this slot for the life of the session.
-      await expect(ok.execute({}, ctx)).resolves.toBe(0);
+      const ctx = createToolContext();
+      expect(() => boom.execute({}, ctx)).toThrow("nope");
+      expect(cartSlot.get(ctx).items).toEqual([]);
     });
   });
 
-  test("two slots on one state object stay independent", () => {
+  test("two slots in one session stay independent", () => {
     const other = sessionSlot("flags", () => ({ seen: false }));
-    const ctx = createToolContext<{ cart?: Cart; flags?: { seen: boolean } }>();
-    cartSlot.get(ctx).items.push("apple");
-    other.get(ctx).seen = true;
-    expect(ctx.state).toEqual({ cart: { items: ["apple"], nextId: 1 }, flags: { seen: true } });
+    const ctx = createToolContext();
+    cartSlot.update(ctx, (cart) => cart.items.push("apple"));
+    other.update(ctx, (flags) => {
+      flags.seen = true;
+    });
+    expect(cartSlot.get(ctx)).toEqual({ items: ["apple"], nextId: 1 });
+    expect(other.get(ctx)).toEqual({ seen: true });
   });
 });

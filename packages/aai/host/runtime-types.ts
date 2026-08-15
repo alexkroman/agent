@@ -72,8 +72,7 @@ export type AgentRuntime = {
  * @public
  */
 export type RuntimeOptions = {
-  // biome-ignore lint/suspicious/noExplicitAny: accepts any state type
-  agent: AgentDef<any>;
+  agent: AgentDef;
   /**
    * The agent's own env — what tool code sees as `ctx.env`. Typed
    * `AgentEnv`: a `withHostCredentialFallback` result (which may carry

@@ -16,11 +16,10 @@ import {
   requireOwnOrder,
   retailSlot,
   retailTool,
-  type StateSlot,
 } from "./store.ts";
 
-function makeCtx(): ToolContext<StateSlot> {
-  return createToolContext<StateSlot>();
+function makeCtx(): ToolContext {
+  return createToolContext();
 }
 
 describe("session state", () => {
@@ -35,12 +34,13 @@ describe("session state", () => {
   });
 
   test("each session gets its own deep copy — a mutation cannot leak across sessions", () => {
-    const first = retailSlot.get(makeCtx());
-    const order = first.store.orders["#W9300146"];
-    if (!order) throw new Error("fixture missing");
-    order.status = "cancelled";
-    const giftCard = first.store.users.aarav_anderson_8794?.payment_methods.gift_card_7245904;
-    if (giftCard?.source === "gift_card") giftCard.balance = 0;
+    retailSlot.update(makeCtx(), (first) => {
+      const order = first.store.orders["#W9300146"];
+      if (!order) throw new Error("fixture missing");
+      order.status = "cancelled";
+      const giftCard = first.store.users.aarav_anderson_8794?.payment_methods.gift_card_7245904;
+      if (giftCard?.source === "gift_card") giftCard.balance = 0;
+    });
 
     const second = retailSlot.get(makeCtx());
     expect(second.store.orders["#W9300146"]?.status).toBe("pending");
@@ -219,7 +219,9 @@ describe("retailTool", () => {
 
   test("runs once authenticated", async () => {
     const ctx = makeCtx();
-    retailSlot.get(ctx).authenticatedUserId = "olivia_ito_3591";
+    retailSlot.update(ctx, (state) => {
+      state.authenticatedUserId = "olivia_ito_3591";
+    });
     const result = await gated.execute({}, ctx);
     expect(result).toEqual({ ok: true });
   });

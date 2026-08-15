@@ -693,57 +693,71 @@ typed `object`. Note zod 4.4 stamps `~standard` onto its plain
 `toJSONSchema()` OUTPUT too — schema detection keys off the `_zod` instance
 marker, never the `~standard` interface (`isConvertibleSchema`).
 
-## `ctx.state` is ONE object per session — with or without a `state` factory
+## A slot OWNS its session state — and stores it
 
-`getState` in `host/runtime-tools.ts` memoizes the session's state object
-whichever way the agent declared it. Its `?? {}` predecessor only looked like a
-default: with no `AgentDef.state` factory nothing was ever stored, so every read
-minted a **fresh** `{}`. A tool's `ctx.state.cart = []` succeeded and the next
-call saw an empty object — as did the `syncStateToClient` in the *same* call's
-`finally`, which projected a different object from the one just mutated. And
-because `_state-sync.ts` keys `lastSent` by the state OBJECT in a `WeakMap`, the
-unchanged-check never matched either: every tool call pushed an `agent_state`
-frame carrying the empty projection onto a socket already carrying 384 kbps of
-PCM.
+There is no `ctx.state`. A session's state lives in `sessionSlot()`s
+(`sdk/session-slot.ts`, root export), each of which owns its own key, its own
+default, its reads, its writes, its projection to the client, and its STORAGE.
+`AgentDef.state`, the state type parameter on `ToolContext`/`ToolDef`/`AgentDef`,
+`InferAgentState`, `SlotState`/`SlotStateOf` and `getState` all went with the bag.
 
-Silent in the way that costs most — no throw, no log — and **four of the five
-shipped templates were on that path**, declaring no factory, so the adventure
-game reset its room, inventory and score on every tool call while its
-`syncState` showed the client nothing.
+**The reason to remove it was that it could not be stored.** A slot's value used
+to be a property of one mutable object in a `Map` in the runtime's heap, so it
+died with the process: a crash, a redeploy, `handoverSlot`'s blue-green swap, or
+the fleet-wide peer route a cold broker takes all handed a reconnecting caller an
+agent that remembered the whole conversation (the client replays history) and had
+forgotten its cart. Nothing on the client can replay state back.
 
-`stateMap.has(sid)` still means "this session has run a tool call" — what
-`pushStateSnapshot` reads it for — and the entry is reclaimed by the same
-grace-window sweep (`session-state-sweeps.ts`) either way. `runtime.test.ts`
-pins both halves as one `test.each`, because the bug was invisible to the
-factory case and a template's own tests fake `ctx` with a persistent object,
-so nothing below the runtime can see it.
+Four rules follow, and each is enforced rather than documented:
 
-**Reach for `sessionSlot()` rather than writing `ctx.state as StateSlot`**
-(`sdk/session-slot.ts`, root export) — the `slot.x ??= …` helper named above is
-the shape every stateful template converged on, and its cast is not avoidable
-per-module, since `tool()` learns the state type only from an annotated context.
-A slot is the one typed seam, and `state`/`tool`/`updateTool` mean an agent
-never spells the state shape twice. **See the root guide's
-concurrency-primitives entry** for the whole API and its load-bearing
-properties.
+- **`update` is SYNCHRONOUS and hands the body a mutable DRAFT.** Whatever the
+  mutator leaves behind is stored when it returns, so a read-modify-write is
+  atomic with no lock — which matters because the LLM loop runs a step's tool
+  calls CONCURRENTLY. An await goes in FRONT of the mutation; `slot.updateTool`
+  refuses a thenable body naming the rule, and a nested `update`/`set`/`reset` on
+  the same slot throws rather than being overwritten by the outer draft (which is
+  a write that succeeds and then vanishes — `pizza-ordering` had one).
+- **`get` returns a frozen `Readonly<T>`.** The type catches `state.field = x`;
+  the FREEZE is the real guarantee, because a shallow type cannot see a write
+  inside a domain helper and every template has those. `freezeStorable`'s doc
+  says why the type is deliberately not deep.
+- **A durable value is checked STRUCTURALLY, in both backends.** `Map` → `{}`,
+  `Date` → string, `NaN` → null: the values that corrupt do not throw, so
+  `JSON.stringify` is not the check. Running it in the memory backend too is the
+  whole reason that backend is a valid test double for the Postgres one — and why
+  `createToolContext` carries a real slot store rather than a stub.
+- **`syncState` takes `slot.projection(view)`**, which is CALLABLE and carries the
+  slot's key and default. That is what lets the runtime render a session that has
+  run no tool, and so what let `AgentDef.state` be deleted rather than remembered
+  — four of five slot-backed templates used to forget to declare it.
 
-**A slot is now the ONLY thing carrying `S` into a tool, because a tool is a
-FILE.** `agent()` takes no `tools` argument at all — `tools/incident_create.ts`
-that default-exports `tool({ … })` IS the tool `incident_create`, and the table
-is filled by `withTools` over a registry the build enumerates. What that removed
-along with the map is the map's one type-level service: it checked each tool's
-assignability against the agent's `S`, and a registry checks shape at build time
-and not `S`. So `slot.tool()` / `slot.updateTool()` is what a stateful tool
-module should reach for, and `AgentDef.tools`'s remark carries the rest.
+**Which backend an agent gets is a property of the DEPLOYMENT**, never of a slot:
+Postgres when `DATABASE_URL` is present, memory otherwise, reported in the
+"Session mode resolved" line so the tier is answerable from outside. A per-slot
+`persist` flag is refused for the reason above. A value that genuinely cannot be
+stored declares `{ durable: false }` — a VIRTUAL slot, neither checked, frozen nor
+committed.
 
-Two properties worth knowing before touching this. `S` inference is unaffected
-and always was — `AgentDef.tools` is `NoInfer<S>`, so a map never drove it;
-`state` is still the only source. And **`agent()` THROWS on a `tools` key**
-rather than only rejecting it in the type: neither bundler type-checks user code,
-so the type alone would make "a tool is only ever a file" true of this repo and
-of no user's project (`assertNoInlineTools` in `sdk/define.ts`). `withTools` stays
-the seam a non-file registry attaches through, which the studio's own coding
-agent needs — its tools close over one session's workspace directory.
+**Read `host/session-state-store.ts`** for the commit point (the end of the tool
+call, awaited, once per changed slot), the fail-open rule for shape drift on
+redeploy, and the size cap; `host/runtime-session-state.ts` for where a session
+hydrates and where it is reclaimed; `host/session-state-postgres.ts` for the table
+and what the app schema guarantees. **Persistence is reliable across crashes and
+best-effort across redeploys.**
+
+**A slot is also the only thing carrying a state TYPE into a tool, because a tool
+is a FILE.** `agent()` takes no `tools` argument — `tools/incident_create.ts` that
+default-exports `tool({ … })` IS the tool `incident_create`, and the table is
+filled by `withTools` over a registry the build enumerates. What that removed
+along with the map is the map's one type-level service, checking each tool's
+assignability against the agent's state shape; `slot.tool()` (reads) and
+`slot.updateTool()` (writes) are what a stateful tool module reaches for instead.
+And **`agent()` THROWS on a `tools` key** rather than only rejecting it in the
+type: neither bundler type-checks user code, so the type alone would make "a tool
+is only ever a file" true of this repo and of no user's project
+(`assertNoInlineTools` in `sdk/define.ts`). `withTools` stays the seam a non-file
+registry attaches through, which the studio's own coding agent needs — its tools
+close over one session's workspace directory.
 
 ## Resolving what a caller SAID (`sdk/spoken.ts`)
 
@@ -793,8 +807,10 @@ the platform's Supabase Postgres. Accessing `ctx.db` without storage
 enabled throws with that enablement guidance. On the platform each app
 gets its own schema + login role (search_path pinned, 10s
 statement_timeout); credentials live in Supabase Vault. Session-scoped
-scratch belongs in `ctx.state` (or the `remember`/`recall` builtins, now
-in-memory per-session).
+scratch belongs in a `sessionSlot` (or the `remember`/`recall` builtins, now
+in-memory per-session) — which is durable through the same app database when one
+exists, so the two differ in SHAPE (a typed value per session vs. SQL an author
+writes) rather than in whether they survive.
 
 There is no Vector store anymore — `ctx.vector`, the `vector:` agent field,
 the `@alexkroman1/aai/vector` subpath and the platform-owned `PINECONE_API_KEY`
@@ -1079,7 +1095,7 @@ defaults that affect agent behavior:
 | `preemptiveGeneration` | `false` | `pipeline-speculation.ts` | Pipeline only, **OFF by default because it was finally measured.** Starts the reply from a high-confidence STT INTERIM (`SttTurnMeta.endOfTurnConfidence` >= `PREEMPTIVE_CONFIDENCE_THRESHOLD`, 0.9) and ADOPTS that running stream when the committed final says the same thing. It shipped ON and unmeasured, and this row used to name the two measurements owed. The first — the `headStartMs`/adoption-rate log (`Pipeline speculation adopted` at info, discards at debug) — was collected over a tau2-bench retail run and settles it: **16 speculations started, 14 adopted at a p50 0.44s head start, and 5 of those 14 (36%) POISONED AFTER ADOPTION** by a tool call, which is unusable whole, so `consumeLlmStream` discards the generation and reissues the request — each having burned p50 0.69s (p90 1.34s) first. Netted out that is 9 turns at +0.44s against 5 at -0.69s: **+0.51s across 68 caller turns, +8ms each**, beside a p50 first word of ~1.0s and a p90 of 6.6s. For that it issued 16 requests and threw away 7 (**44%**), and it widens the turn-serialization bound since a speculation runs outside the turn chain. The 36% that lose are the TOOL-CALLING turns, already the slow ones. **A `hasText()` adoption gate was tried and reverted the same day**, and the reason generalises: the head start (0.44s) is SHORTER than LLM time-to-first-token (p50 1.10s), so at `take()` the speculation has generated *nothing* and such a gate rejects essentially every adoption — the wasted request with none of the benefit, strictly worse than off. Whether the first part is text or a tool call is not knowable at adoption time; that is the shape of the feature. The two structural guardrails are unchanged and are what made ON survivable: no speculative speech (`createStreamPartHandler` is the only path to `sendTtsText` and is built only inside `consumeLlmStream`) and no speculative tool execution (`toDeclaredTools` omits `execute`, so a speculation reaching a tool call is discarded WHOLE, preamble included). Match rule `normalizeUtterance(final) === normalizeUtterance(partial)`; an extension, truncation or revision all discard. Sawtooth rules: a differing partial aborts at once, identical text at rising confidence never re-fires, at most `MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE` (2) per utterance. Inert unless `toolChoice` is `"auto"`/`"none"`. **Turning it back on wants a case where the arithmetic differs** — a text-heavy agent (36% poison is a tool-calling agent's number) or a longer head start from later endpointing — plus the second measurement still owed: a tau2-bench run at the same tasks and seed showing no reward regression. The default is pinned twice (`pipeline-transport-options.test.ts` at the resolver, `pipeline-preemption.test.ts` end-to-end) so a flip either way is a deliberate edit. A speculation must never call `emitError` — it has no reply the client knows about. |
 | `HEARD_AUDIO_LAG_MS` | 750 ms | `pipeline-heard.ts` | Pipeline only, internal (no agent field; the transport takes a `heardLagMs` for tests). How far behind the "audio forwarded" bookkeeping the caller's ear is — subtracted from the estimated playback position to get the cursor that decides what an interrupted reply records and where the resume anchor sits. **DERIVED, not measured**: `PLAYBACK_JITTER_MS` (400) plus an assumed sub-second network hop, the same decomposition `PIPELINE_PLAYBACK_GRACE_MS` states for the same delay with the opposite sign. It is a second constant precisely so tuning the grace for barge-in robustness (where erring late is harmless) cannot silently drop more words from the record (where erring either way costs). See "History records what was HEARD". |
 | `maxHistory` | 200 | `constants.ts:52` | Sliding window of conversation messages retained. **The LLM view is trimmed by `capLlm`, not `cap`** (`pipeline-history.ts`): that view holds tool-call/result PAIRS, and an index trim can land between an assistant `tool-call` message and the `tool` message answering it. Both providers reject an unmatched tool result outright (OpenAI: "messages with role 'tool' must be a response to a preceding message with 'tool_calls'"), so every remaining turn of the call failed at the provider and the caller heard `errorPhrase` instead of a reply. Turn sizes vary — 2 messages for a text-only turn, 4 for one tool call, more for a chain — so the window drifts out of alignment with turn boundaries on its own; nothing about the conversation has to be unusual. Only the FRONT is trimmed, so dropping leading `tool` messages is sufficient. A uniform turn size hides the whole class: 4 divides 200, so every trim lands on a turn boundary. |
-| resume grace | 120,000 (`SESSION_RESUME_GRACE_MS`) | `constants.ts` | How long a disconnected session's per-session tool state (`ctx.state`) survives awaiting a `?sessionId=<id>` resume — the runtime's stateMap sweep (in-guest on the platform, in-process under `aai dev`) waits it out, cancelled when the session resumes. Sized above the browser client's worst-case automatic-reconnect span (~105s); the client reconnects with the sessionId from the `config` frame, so the resumed session finds its state under the same key. |
+| resume grace | 120,000 (`SESSION_RESUME_GRACE_MS`) | `constants.ts` | How long a disconnected session's slot state survives awaiting a `?sessionId=<id>` resume — the session-state store's sweep (in-guest on the platform, in-process under `aai dev`) waits it out, cancelled when the session resumes. Sized above the browser client's worst-case automatic-reconnect span (~105s); the client reconnects with the sessionId from the `config` frame, so the resumed session finds its state under the same key. It bounds the IN-PROCESS half only: a durable value outlives it and is reclaimed by the platform's TTL sweep (`aai-server/_session-state-sweep.ts`), because an agent guest that self-exits on idle can reclaim nothing. |
 | `builtinTools` | `DEFAULT_BUILTIN_TOOLS` (empty) | `constants.ts` | NO built-ins are enabled by default — omitting the field and passing `[]` mean the same thing, and every built-in (`think`/`remember`/`recall`/`calculate` as much as `web_search`/`visit_webpage`/`get_page_design`/`fetch_json`/`run_code`) is opt-in by name. A custom or relayed tool with the same name wins — the built-in is dropped. This row read "`think`, `remember`, `recall`, `calculate` … on by default" long after the constant went empty; the constant is `as const satisfies` now so the emptiness is a type-level fact. |
 
 ## Provider sockets disable permessage-deflate

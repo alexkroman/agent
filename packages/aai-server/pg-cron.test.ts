@@ -1,5 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
+import { SESSION_STATE_TABLE } from "@alexkroman1/aai/runtime";
 import { describe, expect, test } from "vitest";
 import { platformCronJobs, schedulePlatformSweeps } from "./pg-cron.ts";
 import type { SqlExec } from "./secret-store.ts";
@@ -201,5 +202,45 @@ describe("blob GC", () => {
     ]) {
       expect.soft(command(), `${guard} is unguarded`).toContain(guard);
     }
+  });
+});
+
+describe("the session-state sweep", () => {
+  const command = (): string =>
+    platformCronJobs().find((j) => j.name === "aai-sweep-session-state")?.command ?? "";
+
+  test("is declared", () => {
+    expect(command()).not.toBe("");
+  });
+
+  test("only touches provisioned app schemas, and never interpolates one raw", () => {
+    // The identifier rule this file states for every other statement: the cursor
+    // filters to the provisioned shape, and `format(%I)` is what quotes it. A
+    // schema name reaching a statement unquoted is the failure worth preventing.
+    expect(command()).toContain("'^app_[a-f0-9]{16}$'");
+    expect(command()).toContain("format(");
+    expect(command()).toContain("%I.%I");
+  });
+
+  test("reads the table name from the SDK, so a rename cannot be two edits", () => {
+    // The guest writes this table and the sweep reads it; one spelling is what
+    // keeps them from disagreeing.
+    expect(command()).toContain(SESSION_STATE_TABLE);
+  });
+
+  test("keeps a row far longer than the in-process grace window", () => {
+    // A backstop for a guest that is GONE, not a second opinion about a live one:
+    // deleting a row while a caller is still reconnecting is indistinguishable,
+    // to them, from the loss durable state exists to remove.
+    // Doubled quotes: the delete is a `format()` argument, so its own literals
+    // are escaped inside the outer plpgsql string.
+    expect(command()).toContain("interval ''2 days''");
+  });
+
+  test("isolates each tenant, so one broken schema costs only itself", () => {
+    // The plpgsql equivalent of the wake read's SAVEPOINT — the table is
+    // tenant-owned, so a reshaped or locked copy must not end the sweep.
+    expect(command()).toContain("exception when others then");
+    expect(command()).toContain("raise warning");
   });
 });

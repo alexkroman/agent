@@ -76,15 +76,17 @@ export const DEFAULT_IDLE_TIMEOUT_MS = 300_000;
  */
 export const SESSION_KEEPALIVE_INTERVAL_MS = 15_000;
 /**
- * How long a disconnected session's per-session tool state (`ctx.state`)
- * survives awaiting a resume (`?sessionId=<id>` reconnect) before it is
- * reclaimed. Sized above the client's worst-case automatic-reconnect span
- * (partysocket: exponential from 1s capped at 15s, 10 retries ≈ 105s), so a
- * reconnect that exhausts its backoff still finds the state it left behind.
+ * How long a disconnected session's slot state survives awaiting a resume
+ * (`?sessionId=<id>` reconnect) before it is reclaimed. Sized above the client's
+ * worst-case automatic-reconnect span (partysocket: exponential from 1s capped
+ * at 15s, 10 retries ≈ 105s), so a reconnect that exhausts its backoff still
+ * finds the state it left behind.
  *
  * @internal
  */
 export const SESSION_RESUME_GRACE_MS = 120_000;
+/** Cap on one slot's stored value; `host/session-state-store.ts` says why 1 MiB. @internal */
+export const MAX_SESSION_STATE_BYTES = 1_048_576;
 /** @internal */
 export const FETCH_TIMEOUT_MS = 15_000;
 

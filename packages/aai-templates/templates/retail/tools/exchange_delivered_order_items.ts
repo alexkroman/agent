@@ -1,7 +1,7 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { resolveOrder } from "../resolve.ts";
-import { authenticatedUser, retailSlot, retailTool, setFocus } from "../store.ts";
+import { authenticatedUser, retailTool, setFocus } from "../store.ts";
 import { assertCanCoverDiff, planItemSwap } from "../swap.ts";
 
 export default retailTool({
@@ -34,8 +34,7 @@ export default retailTool({
   // `execute`'s return type, and processes object literal properties in
   // source order — with `summary` first, `result` in its signature can't be
   // inferred and silently falls back to `unknown`.
-  execute: (args, ctx) => {
-    const state = retailSlot.get(ctx);
+  execute: (args, state) => {
     const user = authenticatedUser(state);
     if (isToolFailure(user)) return user;
 

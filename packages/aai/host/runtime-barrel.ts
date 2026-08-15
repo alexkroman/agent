@@ -38,6 +38,10 @@ export {
   UPLOADS_UNAVAILABLE_MESSAGE,
   type UploadReader,
 } from "../sdk/step-uploads.ts";
+// `SessionStateStore.syncSession` mentions this type, and a type a public
+// signature MENTIONS but does not export is a docs-build warning here — and
+// warnings are errors (see the `WdkStreamOptions` note below, same rule).
+export type { StateSyncSession } from "./_state-sync.ts";
 export {
   type AgentServerOptions,
   createAgentServer,
@@ -118,6 +122,18 @@ export {
 // encodes is worth one definition, not one per caller.
 export { isPathInside, serveStatic } from "./server-static.ts";
 export { createSessionCore, type SessionCore, type SessionCoreOptions } from "./session-core.ts";
+// Session state's two backends and the cache in front of them. `createRuntime`
+// wires them itself, so what a consumer needs is the TABLE NAME: the platform's
+// TTL sweep reads it out of every app schema, and spelling it here rather than in
+// that sweep is what keeps a rename from being two edits that can disagree —
+// exactly the rule `WORKFLOW_WAKE_TABLE` below states for its own table.
+export { createPostgresStateBackend, SESSION_STATE_TABLE } from "./session-state-postgres.ts";
+export {
+  createMemoryStateBackend,
+  createSessionStateStore,
+  type SessionStateBackend,
+  type SessionStateStore,
+} from "./session-state-store.ts";
 export {
   builtinFetch,
   CONTAINED_ENV,

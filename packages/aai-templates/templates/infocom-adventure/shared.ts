@@ -1,4 +1,4 @@
-import { pushCapped, type SlotStateOf, sessionSlot } from "@alexkroman1/aai";
+import { pushCapped, sessionSlot } from "@alexkroman1/aai";
 
 export type GameState = {
   inventory: string[];
@@ -41,8 +41,6 @@ export const REPORTED_HISTORY = 5;
 // load-bearing: `DEFAULT_GAME_STATE` is one module-level object shared by
 // every session in the process.
 export const gameSlot = sessionSlot("game", () => structuredClone(DEFAULT_GAME_STATE));
-
-export type StateSlot = SlotStateOf<typeof gameSlot>;
 
 /** Log a player command, holding {@link MAX_HISTORY}. */
 export function recordCommand(game: GameState, command: string): void {

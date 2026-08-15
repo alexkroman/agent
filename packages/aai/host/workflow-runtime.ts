@@ -44,11 +44,7 @@ import { wdkAdapter } from "./workflow-wdk.ts";
  * @internal
  */
 export function buildWorkflowClient(
-  // The state type is irrelevant here — only `agent.workflows` is read — and
-  // `AgentDef<never>` would reject the runtime's `AgentDef<any>` on `state()`'s
-  // return. `unknown` is the parameter that accepts any agent while still
-  // requiring one.
-  agent: Pick<AgentDef<unknown>, "workflows">,
+  agent: Pick<AgentDef, "workflows">,
   db: Db | undefined,
   logger: Logger,
 ): WorkflowClient | undefined {

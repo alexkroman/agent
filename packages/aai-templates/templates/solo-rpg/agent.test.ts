@@ -10,7 +10,6 @@ import {
   MIN_MOMENTUM,
   makeNpc,
   rollAction,
-  type StateSlot,
 } from "./shared.ts";
 import actionRoll from "./tools/action_roll.ts";
 import burnMomentum from "./tools/burn_momentum.ts";
@@ -49,8 +48,8 @@ function makeDb(): { db: Db; rows: Map<string, unknown> } {
 
 /** `send` is a spy rather than the recorder `createToolContext` installs,
  *  because this suite asserts call counts on it. */
-function makeCtx(sessionId = "session-a", db: Db = makeDb().db): ToolContext<StateSlot> {
-  return createToolContext<StateSlot>({ sessionId, db, send: vi.fn() });
+function makeCtx(sessionId = "session-a", db: Db = makeDb().db): ToolContext {
+  return createToolContext({ sessionId, db, send: vi.fn() });
 }
 
 const SETUP_ARGS = {
@@ -98,12 +97,12 @@ describe("setup_character", () => {
     await setupCharacter.execute(SETUP_ARGS, ctx);
 
     // Simulate a played, damaged game between setups.
-    const played = gameSlot.get(ctx);
-    played.health = 1;
-    played.momentum = -4;
-    played.chaosFactor = 8;
-    played.sceneCount = 42;
-    gameSlot.set(ctx, played);
+    gameSlot.update(ctx, (played) => {
+      played.health = 1;
+      played.momentum = -4;
+      played.chaosFactor = 8;
+      played.sceneCount = 42;
+    });
 
     const result = (await setupCharacter.execute(
       { ...SETUP_ARGS, playerName: "Luna" },
@@ -298,9 +297,9 @@ describe("burn_momentum", () => {
 
     // Strong hits cannot be upgraded
     seedRolledState(8, ctx);
-    const state = gameSlot.get(ctx);
-    state.lastRoll!.result = "STRONG_HIT";
-    gameSlot.set(ctx, state);
+    gameSlot.update(ctx, (state) => {
+      state.lastRoll!.result = "STRONG_HIT";
+    });
     result = (await burnMomentum.execute({} as never, ctx)) as Record<string, unknown>;
     expect(result.error).toMatch(/already a Strong Hit/);
   });
@@ -466,7 +465,9 @@ describe("save_game / load_game", () => {
     const ctx = makeCtx("session-a", db);
     gameSlot.set(ctx, playingState());
     await saveGame.execute({}, ctx); // autosave
-    gameSlot.get(ctx).sceneCount = 9;
+    gameSlot.update(ctx, (game) => {
+      game.sceneCount = 9;
+    });
     await saveGame.execute({}, ctx);
     expect(rows.size).toBe(1);
     expect(rows.get("save:autosave")).toMatchObject({ sceneCount: 9 });

@@ -73,11 +73,11 @@ once, and the templates are now their reference use:
 
 | Primitive | Demonstrated by |
 | --- | --- |
-| `sessionSlot()` + `SlotStateOf` | every stateful template — `pizza-ordering` (smallest), `retail` (slot in `store.ts`, view in `shared.ts`, so the seed stays out of the browser bundle) |
-| `slot.projection(view)` as `syncState` | `pizza-ordering`, `dispatch-center`, `retail`; `solo-rpg` uses bare `slot.read` (its projection is the identity) |
-| `slot.update` (serialized mutation) | `dispatch-center` (every mutating tool, plus an `after` hook that prunes and recalculates the alert level), `retail` (inside `retailTool`, the one caller — which is what keeps `update`'s non-reentrancy unreachable) |
-| `slot.updateTool` | `plan-and-execute` — every mutating tool, and the one place the serialization is load-bearing rather than prudent: a body that awaits a model call and then shifts the plan's head step would, run twice concurrently, do step one twice |
-| `slot.tool` (the synchronous half) | `pizza-ordering` (all six), `travel-concierge` (the whole dialog stack and every staged action) |
+| `sessionSlot()` | every stateful template — `pizza-ordering` (smallest), `retail` (slot in `store.ts`, view in `shared.ts`, so the seed stays out of the browser bundle) |
+| `slot.projection(view)` as `syncState` | `pizza-ordering`, `dispatch-center`, `retail`; `solo-rpg` projects the identity (`(game) => game`), and five clients call the same projection with nothing to derive their pre-first-tool-call frame |
+| `slot.update` (the synchronous draft) | `dispatch-center` (every mutating tool, plus an `after` hook that prunes and recalculates the alert level), `plan-and-execute` (`work_next_step` CLAIMS its step inside one window, then awaits outside it — the shape to copy when a body needs a model call) |
+| `slot.updateTool` (the mutating half) | `retail` — every one of its fifteen tools, through `retailTool`, which is what a per-agent wrapper on top of it looks like: the wrapper owns the auth gate and the activity log, and passes the DRAFT to the tool body rather than letting it re-read the slot |
+| `slot.tool` (the reading half) | `pizza-ordering` (`view_order`), `travel-concierge` (`lookup_booking`), `infocom-adventure` — and choosing wrong is loud, since what a read is handed is frozen |
 | `ctx.generate` with a `schema` | `support-line` (five graders and a rewriter over one binary-score schema), `plan-and-execute` (planner, executor and replanner). `travel-concierge` deliberately uses none — its specialists are prompts, not models |
 | `ToolFailure` / `isToolFailure` | `retail` (~40 sites, failures propagating through `store.ts` helpers), `dispatch-center` (six) |
 | `pushCapped` | `dispatch-center` (incident timeline), `retail` (activity feed), `solo-rpg` (session log), `infocom-adventure` (command history) |
@@ -727,11 +727,12 @@ type-checks user code.
 
 Three things the conversion taught, each worth copying into the next one:
 
-- **A slot-backed tool gets SHORTER in its own file.** `slot.get(ctx)` needs
-  `ctx: ToolContext<SlotState<K, T>>`, which a standalone tool file cannot supply
-  — so `infocom-adventure`'s eight tools became `gameSlot.tool()` calls with no
-  annotation and no opening `slot.get`. That is the case `slot.tool` was built
-  for, and moving a tool out of `agent.ts` is what makes it visible.
+- **A slot-backed tool gets SHORTER in its own file.** A standalone tool file
+  cannot annotate its context with a state shape, which is why session state
+  belongs to the SLOT — so `infocom-adventure`'s eight tools are
+  `gameSlot.tool()`/`gameSlot.updateTool()` calls with no annotation and no
+  opening `slot.get`. That is the case those two were built for, and moving a
+  tool out of `agent.ts` is what makes it visible.
 - **Module state shared by two tools needs a module.** `health-assistant`'s two
   tools share one memoizing FDA-label cache; a cache per tool file would halve
   the memoization silently, so it moved to `fda.ts` and says so there. Same shape
@@ -788,11 +789,11 @@ every path to a tool goes through a bundler or through a glob, and there is no
 runtime directory scan in the repo (see "Self-hosting is the scaffold's default"
 below).
 
-Note what this DROPS: a `tools:` map checked each tool's assignability into
-`Record<string, ToolDef<ToolInputSchema, S>>`, so a tool whose state type
-disagreed with the agent's was a compile error at the map. `toolRegistry` checks
-shape at build time and not `S` — the slot is what carries that guarantee now,
-which is most of why `sessionSlot()` exists.
+Note what this DROPS: a `tools:` map checked each tool's assignability against
+the agent's state type, so a tool whose state shape disagreed was a compile error
+at the map. `toolRegistry` checks shape at build time and no state type at all —
+the slot is what carries that guarantee now, which is most of why `sessionSlot()`
+exists, and there is no per-agent state type left for a map to have checked.
 
 The one thing a template may still hand-roll here is a **fallback that would
 cost the browser bundle**: `retail`'s client builds its empty view from a

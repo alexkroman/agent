@@ -6,7 +6,7 @@ import { stageAction, tripSlot } from "../shared.ts";
  * gate. It changes nothing: it stages the move and hands back the sentence to
  * read aloud. `confirm_action` is what applies it.
  */
-export default tripSlot.tool({
+export default tripSlot.updateTool({
   description:
     "Move the caller's ticket to a different flight. This does NOT change the " +
     "ticket — it stages the change so you can read it back and hear a yes.",

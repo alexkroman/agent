@@ -19,12 +19,14 @@ import type { AgentEnv, ProviderEnv } from "../sdk/env-types.ts";
 import type { OwnedMap } from "../sdk/owned-map.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import type { LlmProvider } from "../sdk/providers.ts";
+import type { StateProjection } from "../sdk/session-state.ts";
 import type { AgentDef, ToolDef } from "../sdk/types.ts";
 import type { StartOptions, WorkflowClient } from "../sdk/workflow.ts";
 import { createStateSync } from "./_state-sync.ts";
 import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "./builtin-tools.ts";
 import { createGenerateFn, type HostGenerateFn } from "./generate.ts";
 import type { RuntimeOptions } from "./runtime-types.ts";
+import type { SessionStateStore } from "./session-state-store.ts";
 import { type ExecuteTool, executeToolCall } from "./tool-executor.ts";
 import type { RunNotifier } from "./workflow-notify.ts";
 
@@ -55,6 +57,22 @@ export function mergeBuiltinSurface(
     schemas: [...provided.schemas, ...builtins.schemas],
     guidance: [...(provided.guidance ?? []), ...builtins.guidance],
   };
+}
+
+/**
+ * `agent.syncState` as a list, since it takes one projection or several.
+ *
+ * One is overwhelmingly the common case — every stateful template projects a
+ * single slot — so the singular form is what an author writes and the array is
+ * what an agent with two slots reaches for.
+ */
+function toProjectionList(syncState: AgentDef["syncState"]): readonly StateProjection[] {
+  if (!syncState) return [];
+  // `Array.isArray` narrows the ARRAY arm and leaves the other one as the whole
+  // union (a `StateProjection` is callable, not an array, but the check's
+  // type predicate is `unknown[]` and says nothing about the negative case), so
+  // the singular arm is read off a flattened copy rather than asserted.
+  return [syncState].flat();
 }
 
 /** The runtime's resolved tool surface: dispatcher, schemas, and LLM guidance. */
@@ -107,8 +125,12 @@ type ToolSetupDeps = {
   notifier?: RunNotifier | undefined;
   logger: NonNullable<RuntimeOptions["logger"]>;
   sinkMap: OwnedMap<string, ClientSink>;
-  /** Per-session tool state (self-hosted mode only); cleaned up on session end. */
-  stateMap: Map<string, Record<string, unknown>>;
+  /**
+   * Per-session slot state (self-hosted mode only), over the memory or Postgres
+   * backend — see `host/session-state-store.ts`. Reclaimed after the resume
+   * grace window by `session-state-sweeps.ts`.
+   */
+  stateStore: SessionStateStore;
 };
 
 /**
@@ -206,7 +228,7 @@ function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): To
  * and schemas rather than emitting a duplicate schema name to the LLM.
  */
 function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
-  const { agent, opts, env, resolvedDb, workflows, notifier, logger, sinkMap, stateMap } = deps;
+  const { agent, opts, env, resolvedDb, workflows, notifier, logger, sinkMap, stateStore } = deps;
   const builtinOpts = {
     ...(opts.fetch ? { fetch: opts.fetch } : {}),
     // The guest harness runs this path INSIDE the sandbox and provides the
@@ -221,42 +243,6 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
   };
   const toolSchemas = builtins.schemas;
 
-  // Deliberately NOT `stateMap.getOrInsertComputed(sid, ...)`, which is the
-  // obvious fit. `Map.prototype.getOrInsert{,Computed}` is V8 14.6 — Node 26 —
-  // while this package publishes `engines.node: ">=24"` so SDK consumers on
-  // the previous LTS keep working. `lib: ["ESNext"]` types it either way, so
-  // tsc is no guard at all here: it type-checks, ships, and throws
-  // `not a function` on the consumer's Node 24. The V8 14.6 additions are
-  // usable in the platform packages (aai-server, aai-guest, aai-studio-*,
-  // all `>=26`) and not in this one.
-  /**
-   * The session's ONE state object — memoized whether or not the agent
-   * declared a `state` factory.
-   *
-   * The `?? {}` this replaces only looked like a default. With no factory
-   * nothing was ever stored, so every read minted a FRESH `{}`: a tool wrote
-   * `ctx.state.cart = []`, the write succeeded, and the next call — or the
-   * `syncStateToClient` in the same call's `finally`, which calls this a
-   * second time — saw an empty object again. Silent in exactly the way that
-   * costs the most: no throw, no log, and `AgentDef.state`'s own doc promises
-   * the opposite ("unset leaves `ctx.state` an empty object", one of them).
-   * Four of the five shipped templates hit it — `infocom-adventure`,
-   * `solo-rpg`, `dispatch-center` and `pizza-ordering` all mutate `ctx.state`
-   * through a `slot.x ??= …` helper and declare no factory, so the adventure
-   * game reset its room and inventory on every tool call and `syncState`
-   * projected an empty object to the client.
-   *
-   * `stateMap.has(sid)` keeps meaning "this session has run a tool call",
-   * which is what `pushStateSnapshot` reads it for, and the entry is reclaimed
-   * by the same grace-window sweep (`session-state-sweeps.ts`) either way.
-   */
-  const getState = (sid: string): Record<string, unknown> => {
-    const existing = stateMap.get(sid);
-    if (existing !== undefined) return existing;
-    const created = agent.state ? agent.state() : {};
-    stateMap.set(sid, created);
-    return created;
-  };
   const frozenEnv = Object.freeze({ ...env });
 
   const generate = setupGenerate(deps);
@@ -280,14 +266,15 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
    * decision (project, compare, cap) lives in `_state-sync.ts`; this is the
    * wiring and the logging.
    */
-  const stateSync = agent.syncState ? createStateSync(agent.syncState) : undefined;
+  const projections = toProjectionList(agent.syncState);
+  const stateSync = projections.length > 0 ? createStateSync(projections) : undefined;
   const syncStateToClient = (
     sink: ClientSink | undefined,
-    state: object,
+    sessionId: string,
     options?: { force?: boolean },
   ): void => {
     if (!(sink && stateSync)) return;
-    const result = stateSync(state, options);
+    const result = stateSync(stateStore.syncSession(sessionId), options);
     if (result.push) {
       sink.event({ type: "agent_state", state: result.state });
       return;
@@ -320,7 +307,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
       executeToolCall(name, args, {
         tool,
         env: frozenEnv,
-        state: getState(sid),
+        slots: stateStore.viewFor(sid),
         sessionId: sid,
         // db traffic is a TCP socket, not fetch, so the egress guard never
         // sees it — no exemption wrapper needed.
@@ -342,21 +329,28 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
     try {
       return await run();
     } finally {
-      // In `finally` so a throwing tool still publishes what it changed
-      // before it failed — a half-applied mutation the UI is not showing is
-      // worse than one it is.
-      syncStateToClient(liveSink(), getState(sid));
+      // Both in `finally` so a throwing tool still publishes and stores what it
+      // changed before it failed — a half-applied mutation the UI is not showing
+      // is worse than one it is, and the same goes for one nothing stored.
+      syncStateToClient(liveSink(), sid);
+      // THE COMMIT POINT, and it is awaited. `slot.update` is synchronous by
+      // contract, so it cannot await a write of its own; this is where a tool
+      // call's mutations reach the backend, once per changed slot rather than
+      // once per mutation. Fire-and-forget here would drop exactly the writes a
+      // crash is supposed to preserve. It never rejects — see `flush`.
+      await stateStore.flush(sid);
     }
   };
   /**
-   * Forced, and only for a session that ALREADY has state — i.e. a resume.
-   * A brand-new session has nothing to show, and calling `getState` here
-   * would run the agent's `state()` factory at connect time rather than at
-   * the first tool call, which is a semantic change nobody asked for.
+   * Forced, and only for a session that ALREADY has state — i.e. a resume, or a
+   * reconnect onto hydrated values. A brand-new session has nothing to show.
+   *
+   * `store.has` is what says which: it is true once a slot has been written or
+   * hydrated, which is the same question `stateMap.has(sid)` used to answer.
    */
   const pushStateSnapshot = (sessionId: string, sink: ClientSink): void => {
-    if (!(stateSync && stateMap.has(sessionId))) return;
-    syncStateToClient(sink, getState(sessionId), { force: true });
+    if (!(stateSync && stateStore.has(sessionId))) return;
+    syncStateToClient(sink, sessionId, { force: true });
   };
 
   return { executeTool, toolSchemas, toolGuidance: builtins.guidance, pushStateSnapshot };

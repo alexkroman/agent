@@ -10,8 +10,10 @@ import {
   type workflowApp,
 } from "./define.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
+import { sessionSlot } from "./session-slot.ts";
+import type { StateProjection } from "./session-state.ts";
 import { withTools } from "./tool-registry.ts";
-import type { AgentDef, DefaultSessionState, ToolContext, ToolDef } from "./types.ts";
+import type { AgentDef, ToolContext, ToolDef } from "./types.ts";
 
 /**
  * Every `AgentDef` field must be declarable through `agent()`.
@@ -32,74 +34,90 @@ test("agent() accepts every AgentDef field", () => {
   expectTypeOf<MissingFromParam>().toEqualTypeOf<never>();
 });
 
-test("agent() infers the state shape from the state factory", () => {
-  const def = agent({
-    name: "t",
-    state: () => ({ count: 0 }),
-  });
-  // Inferred, not widened to Record<string, unknown> — this is what makes
-  // `ctx.state.count` a number in tools rather than `unknown`.
-  expectTypeOf(def.state).toEqualTypeOf<(() => { count: number }) | undefined>();
+test("agent() takes no state factory, and AgentDef holds none", () => {
+  // Both halves of the removal. `state` was the ONLY thing the agent's `S` was
+  // inferred from, and `S` existed only so `ctx.state` could be typed — a slot
+  // types its own value in the module that declares it, so the factory, the
+  // generic and the bag all went together.
+  expectTypeOf<"state" extends keyof AgentDef ? true : false>().toEqualTypeOf<false>();
+  expectTypeOf<
+    "state" extends keyof Parameters<typeof agent>[0] ? true : false
+  >().toEqualTypeOf<false>();
 });
 
-test("agent() without a state factory falls back to the permissive default", () => {
-  // `any`, so the ordinary unannotated `ctx.state.foo` compiles rather than
-  // failing the build gate on correct code. See DefaultSessionState.
-  const def = agent({ name: "t" });
-  expectTypeOf(def.state).toEqualTypeOf<(() => DefaultSessionState) | undefined>();
+test("a tool context carries a slot store, not a state bag", () => {
+  // Asserted because re-adding the bag is the shape a regression here would
+  // take: every module in a multi-file agent would have to restate the state
+  // annotation again, which is what a slot exists to stop. Written as pure type
+  // assertions rather than over a fabricated context value: laundering `null`
+  // into a `ToolContext` would spend an escape hatch on the ratchet for a value
+  // nothing reads.
+  expectTypeOf<ToolContext["slots"]["read"]>().toBeFunction();
+  expectTypeOf<"state" extends keyof ToolContext ? true : false>().toEqualTypeOf<false>();
 });
 
-test("an unannotated tool can read state without a type error", () => {
-  // The regression this whole change exists for: `ctx.state.cart` used to be
-  // `unknown`, which failed `aai build`'s typecheck on a working agent.
+test("a tool reaches session state through a slot, with no annotation", () => {
+  // The line this replaces was `execute: ({ item }, ctx: ToolContext<Cart>)`,
+  // and the annotation is what a tool in its own FILE could not supply.
+  const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
   const add = tool({
     description: "add",
     inputSchema: z.object({ item: z.string() }),
     execute: ({ item }, ctx) => {
-      expectTypeOf(ctx.state).toEqualTypeOf<DefaultSessionState>();
-      ctx.state.cart.push(item); // the exact line that used to be TS18046
-      return ctx.state.cart.length;
-    },
-  });
-  expectTypeOf(add.description).toEqualTypeOf<string>();
-});
-
-test("tool() types ctx.state from an annotated context", () => {
-  type Cart = { items: string[] };
-  const add = tool({
-    description: "add",
-    inputSchema: z.object({ item: z.string() }),
-    execute: ({ item }, ctx: ToolContext<Cart>) => {
-      expectTypeOf(ctx.state).toEqualTypeOf<Cart>();
       expectTypeOf(item).toEqualTypeOf<string>();
-      return ctx.state.items.length;
+      expectTypeOf(cartSlot.get(ctx)).toEqualTypeOf<Readonly<{ items: string[] }>>();
+      return cartSlot.update(ctx, (cart) => {
+        cart.items.push(item);
+        return cart.items.length;
+      });
     },
   });
-  expectTypeOf(add).toMatchObjectType<ToolDef<z.ZodObject<{ item: z.ZodString }>, Cart>>();
+  expectTypeOf(add).toMatchObjectType<ToolDef<z.ZodObject<{ item: z.ZodString }>>>();
 });
 
-test("a tool expecting a different state shape is not an accepted tool", () => {
-  // Asserted as non-assignability rather than as a suppressed type error, so
-  // the escape-hatch ratchet stays at its baseline.
-  type Cart = { items: string[] };
-  type Slot = ToolDef<z.ZodObject<z.ZodRawShape>, Cart>;
-  type Mismatched = ToolDef<z.ZodObject<z.ZodRawShape>, { totallyDifferent: number }>;
-  expectTypeOf<Mismatched>().not.toExtend<Slot>();
-  // ...while a tool that ignores state entirely still fits.
-  expectTypeOf<ToolDef<z.ZodObject<z.ZodRawShape>>>().toExtend<Slot>();
+test("what a slot READ returns is readonly, so a lost write is a compile error", () => {
+  const cartSlot = sessionSlot("cart", () => ({ items: [] as string[], total: 0 }));
+  type Read = ReturnType<typeof cartSlot.get>;
+  expectTypeOf<Read>().toEqualTypeOf<Readonly<{ items: string[]; total: number }>>();
+  // Shallow rather than deep, deliberately: readonly modifiers are not checked
+  // in assignability, so a read value still passes to a domain helper declared
+  // over the mutable shape. See `freezeStorable`'s doc for why the deep
+  // guarantee is the runtime freeze instead.
+  expectTypeOf<Read>().toExtend<{ items: string[]; total: number }>();
 });
 
-test("an unannotated tool still composes into a stateful agent", () => {
-  // `execute` is declared method-style (bivariant), so a tool written without
-  // the state type is not a hard error inside a typed agent — it just sees
-  // untyped state. Locking this keeps the generic from becoming viral.
-  //
-  // It goes on with `withTools` because a tool is a FILE now: `agent()` takes no
-  // `tools`, and this is the shape the build produces.
-  type Cart = { items: string[] };
-  const ping = tool({ description: "p", execute: () => "pong" });
-  const def = withTools(agent({ name: "t", state: (): Cart => ({ items: [] }) }), { ping });
-  expectTypeOf(def.state).toEqualTypeOf<(() => Cart) | undefined>();
+test("a discovered registry composes onto a slot-backed agent", () => {
+  // A tool is a FILE, so this is the shape the build produces: an authored def
+  // plus a resolved registry. It used to be where the state generic could go
+  // wrong — a tool written without the state type competed with the def for the
+  // inference and collapsed `S` to `never` — and there is no generic left to
+  // collapse. What still has to hold is that the composition type-checks.
+  const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
+  const ping = cartSlot.tool({ description: "p", execute: (_args, cart) => cart.items.length });
+  const def = withTools(agent({ name: "t" }), { ping });
+  expectTypeOf(def.tools.ping).toExtend<ToolDef | undefined>();
+});
+
+test("a slot's projection is what syncState takes", () => {
+  const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
+  const def = agent({
+    name: "t",
+    syncState: cartSlot.projection((cart) => ({ count: cart.items.length })),
+  });
+  expectTypeOf(def.syncState).toExtend<StateProjection | readonly StateProjection[] | undefined>();
+  // And it is callable with nothing, which is how a client derives its
+  // pre-first-tool-call frame from the same function the server pushes.
+  expectTypeOf(cartSlot.projection((cart) => cart.items.length)()).toEqualTypeOf<number>();
+});
+
+test("an agent may project more than one slot", () => {
+  const a = sessionSlot("a", () => ({ x: 1 }));
+  const b = sessionSlot("b", () => ({ y: 2 }));
+  const def = agent({
+    name: "t",
+    syncState: [a.projection((v) => ({ x: v.x })), b.projection((v) => ({ y: v.y }))],
+  });
+  expectTypeOf(def.syncState).toExtend<StateProjection | readonly StateProjection[] | undefined>();
 });
 
 test("`tools` on the authoring params is the message, not a map", () => {
@@ -309,18 +327,12 @@ test("a workflow app accepts only the fields a workflow app has", () => {
     maxSteps: number;
   }>().not.toExtend<AgentParams>();
 
-  // Nothing opens a session, so per-session state and its projection are out.
+  // Nothing opens a session, so the state projection is out.
   expectTypeOf<{
     name: string;
     page: "static";
     workflows: Workflows;
-    state: () => { n: number };
-  }>().not.toExtend<AgentParams>();
-  expectTypeOf<{
-    name: string;
-    page: "static";
-    workflows: Workflows;
-    syncState: (s: unknown) => unknown;
+    syncState: StateProjection;
   }>().not.toExtend<AgentParams>();
 
   // Derived from the two existing lists, so a new provider stage or voice knob

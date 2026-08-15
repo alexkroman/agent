@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expectTypeOf, test } from "vitest";
 import { z } from "zod";
+import { sessionSlot } from "./session-slot.ts";
 import type { AgentDef, Message, ToolContext, ToolDef } from "./types.ts";
 
 const baseAgent = {
@@ -57,22 +58,27 @@ describe("AgentDef type inference", () => {
     expectTypeOf(agent).toMatchTypeOf<AgentDef>();
   });
 
-  test("typed state flows through to tools", () => {
+  test("a slot types the state a tool reads, with no annotation anywhere", () => {
     type MyState = { counter: number; name: string };
+    const slot = sessionSlot("typed", (): MyState => ({ counter: 0, name: "test" }));
 
-    const _agent: AgentDef<MyState> = {
+    const _agent: AgentDef = {
       ...baseAgent,
       name: "typed-state",
-      state: () => ({ counter: 0, name: "test" }),
       tools: {
         inc: {
           description: "Increment",
           execute: (_args, ctx) => {
-            expectTypeOf(ctx.state).toEqualTypeOf<MyState>();
+            expectTypeOf(slot.get(ctx)).toEqualTypeOf<Readonly<MyState>>();
+            slot.update(ctx, (state) => {
+              expectTypeOf(state).toEqualTypeOf<MyState>();
+              state.counter += 1;
+            });
           },
         },
       },
     };
+    expectTypeOf(_agent).toMatchTypeOf<AgentDef>();
   });
 
   test("tools field accepts ToolDef objects", () => {

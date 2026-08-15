@@ -21,7 +21,7 @@
 import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
 import type { AssemblyAITtsVoice } from "./providers/tts/assemblyai.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
-import type { AgentDef, DefaultSessionState } from "./types.ts";
+import type { AgentDef } from "./types.ts";
 
 /** The {@link AgentDef} fields `agent()` fills with defaults when omitted. */
 export type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "tools";
@@ -66,10 +66,10 @@ export type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "to
  *
  * @public
  */
-export type AgentParams<S = DefaultSessionState> =
-  | PipelineAgentParams<S>
-  | S2sAgentParams<S>
-  | TextAgentParams<S>
+export type AgentParams =
+  | PipelineAgentParams
+  | S2sAgentParams
+  | TextAgentParams
   | StaticAgentParams;
 
 /**
@@ -77,11 +77,11 @@ export type AgentParams<S = DefaultSessionState> =
  * the providers and the pipeline-only tuning knobs, plus the authoring
  * conveniences.
  */
-export type SharedAgentParams<S = DefaultSessionState> = Omit<
-  AgentDef<S>,
+export type SharedAgentParams = Omit<
+  AgentDef,
   DefaultedAgentField | PipelineOnlyField | ProviderField | FrontDoorField
 > &
-  Partial<Pick<AgentDef<S>, Exclude<DefaultedAgentField, InlineToolsField>>> & {
+  Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
     /** Alias of `systemPrompt` (the Vercel AI SDK's field name). */
     system?: string;
     /**
@@ -181,8 +181,8 @@ export type PipelineOnlyMisuse<
  * descriptor owns its voice, so combining the two is a compile error naming
  * the rule.
  */
-export type PipelineAgentParams<S = DefaultSessionState> = SharedAgentParams<S> &
-  Partial<Pick<AgentDef<S>, PipelineOnlyField>> & {
+export type PipelineAgentParams = SharedAgentParams &
+  Partial<Pick<AgentDef, PipelineOnlyField>> & {
     /** See {@link AgentDef.stt}. Unset → the default AssemblyAI STT. */
     stt?: SttProvider;
     /**
@@ -217,7 +217,7 @@ export type PipelineAgentParams<S = DefaultSessionState> = SharedAgentParams<S> 
  * pipeline-only tuning knobs typed as {@link PipelineOnlyMisuse} so setting
  * one fails with a message instead of silently doing nothing.
  */
-export type S2sAgentParams<S = DefaultSessionState> = SharedAgentParams<S> & {
+export type S2sAgentParams = SharedAgentParams & {
   /** See {@link AgentDef.s2s} — the explicit opt-in to speech-to-speech mode. */
   s2s: S2sProvider;
   stt?: "`stt` cannot be combined with `s2s` — S2S runs STT service-side";
@@ -245,7 +245,7 @@ export type S2sAgentParams<S = DefaultSessionState> = SharedAgentParams<S> & {
  * The pipeline-only voice knobs are derived from {@link PipelineOnlyField},
  * so a knob added to {@link PipelineVoiceTuning} is rejected here for free.
  */
-export type TextAgentParams<S = DefaultSessionState> = Omit<SharedAgentParams<S>, "sttPrompt"> & {
+export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt"> & {
   /** See {@link AgentDef.text} — the explicit opt-in to text mode. */
   text: true;
   /**
@@ -302,7 +302,6 @@ export type WorkflowAppOnlyField =
   | "toolChoice"
   | "tools"
   | "builtinTools"
-  | "state"
   | "syncState"
   | "idleTimeoutMs"
   | "voice";
@@ -316,8 +315,7 @@ export type WorkflowAppMisuse<K extends string> =
  * and nothing from the session half of the agent shape.
  *
  * Not a session mode like the other three arms — a front door. What it drops is
- * everything downstream of having a session at all, which is why it takes no
- * `S`: `state` is per-session state and there are no sessions.
+ * everything downstream of having a session at all.
  *
  * What it keeps is the surface a page and a deploy actually read: `name` and
  * `greeting` (both served by `GET /client-config`, so a page can render its

@@ -12,10 +12,15 @@
 import { describe, expect, test } from "vitest";
 import { createOwnedMap } from "../sdk/owned-map.ts";
 import type { ClientEvent, ClientSink } from "../sdk/protocol.ts";
+import { sessionSlot } from "../sdk/session-slot.ts";
 import type { AgentDef } from "../sdk/types.ts";
 import { makeAgent } from "./_test-utils.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import { setupTools } from "./runtime-tools.ts";
+import { createMemoryStateBackend, createSessionStateStore } from "./session-state-store.ts";
+
+/** The counter these cases bump — declared once, so both sinks project the same slot. */
+const countSlot = sessionSlot("count", () => ({ count: 0 }));
 
 const SID = "session-1";
 
@@ -35,10 +40,7 @@ function recordingSink(events: ClientEvent[]): ClientSink {
 function parkedToolRuntime(agentOverrides: Partial<AgentDef>) {
   const { promise: parked, resolve: release } = Promise.withResolvers<void>();
   const sinkMap = createOwnedMap<string, ClientSink>();
-  const agent = makeAgent({
-    state: () => ({ count: 0 }),
-    ...agentOverrides,
-  } as Partial<AgentDef>);
+  const agent = makeAgent({ ...agentOverrides } as Partial<AgentDef>);
   const { executeTool } = setupTools({
     agent,
     opts: { agent, env: {} },
@@ -47,7 +49,7 @@ function parkedToolRuntime(agentOverrides: Partial<AgentDef>) {
     resolvedDb: undefined,
     logger: consoleLogger,
     sinkMap,
-    stateMap: new Map<string, Record<string, unknown>>(),
+    stateStore: createSessionStateStore({ backend: createMemoryStateBackend() }),
   } as never);
   return { executeTool, sinkMap, release, parked };
 }
@@ -60,13 +62,13 @@ describe("self-hosted tool surface: sends follow the live sink", () => {
     const supersededEvents: ClientEvent[] = [];
     const resumedEvents: ClientEvent[] = [];
     const { executeTool, sinkMap, release, parked } = parkedToolRuntime({
-      syncState: (s: { count: number }) => ({ count: s.count }),
+      syncState: countSlot.projection((s) => ({ count: s.count })),
       tools: {
         bump: {
           description: "bump the counter",
-          execute: async (_args: unknown, ctx: { state: { count: number } }) => {
+          execute: async (_args: unknown, ctx: never) => {
             await parked;
-            ctx.state.count += 1;
+            countSlot.update(ctx, (state) => ++state.count);
             return "ok";
           },
         },
@@ -121,13 +123,13 @@ describe("self-hosted tool surface: sends follow the live sink", () => {
   test("without a reconnect the session's own sink still receives both", async () => {
     const events: ClientEvent[] = [];
     const { executeTool, sinkMap, release } = parkedToolRuntime({
-      syncState: (s: { count: number }) => ({ count: s.count }),
+      syncState: countSlot.projection((s) => ({ count: s.count })),
       tools: {
         bump: {
           description: "bump the counter",
-          execute: (_args: unknown, ctx: { state: { count: number }; send: unknown }) => {
-            ctx.state.count += 1;
-            (ctx.send as (e: string, d: unknown) => void)("progress", 1);
+          execute: (_args: unknown, ctx: never) => {
+            countSlot.update(ctx, (state) => ++state.count);
+            (ctx as { send: (e: string, d: unknown) => void }).send("progress", 1);
             return "ok";
           },
         },

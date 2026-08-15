@@ -9,7 +9,6 @@ import {
   type AgentDef,
   DEFAULT_GREETING,
   DEFAULT_SYSTEM_PROMPT,
-  type DefaultSessionState,
   type ToolContext,
   type ToolDef,
 } from "./types.ts";
@@ -34,37 +33,37 @@ import {
  * });
  * ```
  *
- * @typeParam S - The agent's per-session state, so `ctx.state` is typed
- *   rather than `Record<string, unknown>`. Inferred when the handler
- *   annotates its context; otherwise pass it explicitly. A tool defined
- *   without it still composes into a stateful agent — `execute` is declared
- *   method-style, so it stays assignable — it just sees untyped state.
- *
- * @example Typed session state
+ * @example Reading and writing session state
  * ```ts
- * import { tool, type ToolContext } from "@alexkroman1/aai";
+ * import { sessionSlot, tool } from "@alexkroman1/aai";
  * import { z } from "zod";
  *
- * type Cart = { items: string[] };
+ * const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
  *
  * const add = tool({
  *   description: "Add an item to the cart",
  *   inputSchema: z.object({ item: z.string() }),
- *   // The annotation is what infers S; `ctx.state.items` is string[] here.
- *   execute: ({ item }, ctx: ToolContext<Cart>) => {
- *     ctx.state.items.push(item);
- *     return ctx.state.items.length;
- *   },
+ *   execute: ({ item }, ctx) =>
+ *     cartSlot.update(ctx, (cart) => {
+ *       cart.items.push(item);
+ *       return cart.items.length;
+ *     }),
  * });
  * ```
  *
+ * @remarks
+ * It takes no state type parameter, and neither does {@link ToolContext}. A
+ * tool reaches session state through a {@link sessionSlot}, which types the
+ * value in the module that declares it — so a tool in its own file needs
+ * neither an annotated context nor a cast.
+ *
  * @public
  */
-export function tool<P extends ToolInputSchema = ToolInputSchema, S = DefaultSessionState>(def: {
+export function tool<P extends ToolInputSchema = ToolInputSchema>(def: {
   description: string;
   inputSchema?: P;
-  execute(args: InferSchemaOutput<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
-}): ToolDef<P, S> {
+  execute(args: InferSchemaOutput<P>, ctx: ToolContext): Promise<unknown> | unknown;
+}): ToolDef<P> {
   return def;
 }
 
@@ -89,10 +88,9 @@ export function tool<P extends ToolInputSchema = ToolInputSchema, S = DefaultSes
  * });
  * ```
  *
- * @typeParam S - Per-session state, inferred from the `state` factory. A
- *   {@link sessionSlot} is what carries that shape into a tool's own module —
- *   `slot.tool()` hands the body the live value, so a tool in another file needs
- *   neither an annotated `ctx` nor a cast.
+ * **Session state is not declared here either** — a {@link sessionSlot} owns its
+ * own default and its own storage, so there is no `state` factory to remember.
+ * `syncState` takes that slot's projection.
  *
  * @remarks
  * Session mode: with no provider fields the agent runs the default
@@ -115,7 +113,7 @@ export function tool<P extends ToolInputSchema = ToolInputSchema, S = DefaultSes
  *
  * @public
  */
-export function agent<S = DefaultSessionState>(def: AgentParams<S>): AgentDef<S> {
+export function agent(def: AgentParams): AgentDef {
   assertNoInlineTools(def);
   /**
    * `omitUndefined` because a spread lets an own key whose value is
@@ -135,8 +133,8 @@ export function agent<S = DefaultSessionState>(def: AgentParams<S>): AgentDef<S>
    * optional, and `name` is not.
    */
   const params = omitUndefined(
-    normalizeAgentConveniences(def) as AgentParamsCore<S>,
-  ) as AgentParamsCore<S>;
+    normalizeAgentConveniences(def) as AgentParamsCore,
+  ) as AgentParamsCore;
   return {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     greeting: DEFAULT_GREETING,
@@ -214,8 +212,8 @@ export function workflowApp(def: Omit<StaticAgentParams, "page">): AgentDef {
  * {@link normalizeAgentConveniences} returns and `agent()` spreads over the
  * defaults.
  */
-type AgentParamsCore<S> = Omit<AgentDef<S>, DefaultedAgentField> &
-  Partial<Pick<AgentDef<S>, DefaultedAgentField>>;
+type AgentParamsCore = Omit<AgentDef, DefaultedAgentField> &
+  Partial<Pick<AgentDef, DefaultedAgentField>>;
 
 // The parameter shape lives in its own module (see its header); re-exported here
 // so `agent()` and its params stay one import for an author, and so the root

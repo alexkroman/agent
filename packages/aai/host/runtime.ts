@@ -24,6 +24,7 @@ import { createPostgresDb } from "./postgres-db.ts";
 import { describeResolvedProviders } from "./providers/_provider-settings.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "./runtime-config.ts";
 import { createPipelineProviderResolver } from "./runtime-pipeline-providers.ts";
+import { attachSessionState, createRuntimeSessionState } from "./runtime-session-state.ts";
 import { setupTools } from "./runtime-tools.ts";
 import {
   createTransportFactory,
@@ -32,7 +33,6 @@ import {
 } from "./runtime-transport.ts";
 import type { Runtime, RuntimeOptions, SessionStartOptions } from "./runtime-types.ts";
 import { createSessionCore, type SessionCore } from "./session-core.ts";
-import { createStateSweeps } from "./session-state-sweeps.ts";
 import { textAgentHasNoSession } from "./text-agent.ts";
 import type { TransportCallbacks } from "./transports/types.ts";
 import { buildRunNotifier, buildWorkflowClient } from "./workflow-runtime.ts";
@@ -176,10 +176,16 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // one of them is a default nobody wrote down (endpointing window, Voice
   // Focus threshold, gateway model id, TTS voice), and those are the values a
   // misbehaving session gets blamed on. See _provider-settings.ts.
+  // Per-session slot state, over Postgres when the app has a database and memory
+  // otherwise, plus its grace-window sweeps — see `runtime-session-state.ts`.
+  // It REPLACES the `Map` this used to be.
+  const sessionState = createRuntimeSessionState({ db: resolvedDb, logger });
+
   logger.info("Session mode resolved", {
     slug,
     mode: effectiveProviders.mode,
     ...describeResolvedProviders(effectiveProviders),
+    sessionState: sessionState.describe,
   });
   // Owned maps because teardown is async on both: a reconnect resuming the
   // same session id re-claims the key while the old session's stop() drains,
@@ -198,11 +204,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     ? pinAssemblyS2sRates(requestedS2sConfig, logger)
     : requestedS2sConfig;
   const readyConfig: ReadyConfig = buildReadyConfig(s2sConfig);
-
-  // Per-session tool state (self-hosted mode only); cleaned up on session
-  // end, but only after the resume grace window — see session-state-sweeps.ts.
-  const stateMap = new Map<string, Record<string, unknown>>();
-  const stateSweeps = createStateSweeps(stateMap);
 
   // `ctx.workflows`, built once per runtime rather than per session: a run
   // outlives the session that started it, so nothing about the client is
@@ -230,7 +231,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     workflows,
     logger,
     sinkMap,
-    stateMap,
+    stateStore: sessionState.store,
   });
 
   // Resolved once per runtime, and resolved EAGERLY only for a voice agent —
@@ -286,12 +287,8 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   function createSession(sessionOpts: TransportSessionOpts): SessionCore {
     // A resume under this id (same key, new socket) reclaims its tool state —
     // cancel the sweep the previous session's stop() scheduled.
-    stateSweeps.cancel(sessionOpts.id);
+    sessionState.sweeps.cancel(sessionOpts.id);
     const releaseSink = sinkMap.claim(sessionOpts.id, sessionOpts.client);
-    // A resumed session still holds its state, and the new socket has never
-    // seen it — without this the client renders empty until some later tool
-    // call happens to change something, which it may never do.
-    pushStateSnapshot?.(sessionOpts.id, sessionOpts.client);
 
     // Call it — `pipelineProviders` is a thunk (see above), so `Boolean(...)` on
     // the function itself is always true and would route every S2S session down
@@ -373,26 +370,16 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       ...(opts.onToolResult ? { onToolResult: opts.onToolResult } : {}),
     });
 
-    // Tie map cleanup to the session's own stop() so it happens on every
-    // teardown path — including a direct `runtime.createSession()` caller that
-    // never goes through startSession's onSessionEnd hook (which would
-    // otherwise leak the sinkMap/stateMap entry). Releasing the sink claim
-    // guards the reconnect-resume race: an old session's async stop() can
-    // settle after a resumed session re-claimed the same id, and a bare key
-    // delete would then wipe the NEW session's sink (ctx.send no-ops) and
-    // tool state — releaseSink no-ops (returns false) once that happens.
-    const stopCore = core.stop.bind(core);
-    core.stop = async () => {
-      try {
-        await stopCore();
-      } finally {
-        if (releaseSink()) {
-          // Tool state outlives the socket: keep it for the resume grace
-          // window so a `?sessionId=<id>` reconnect finds its ctx.state.
-          stateSweeps.schedule(sessionOpts.id);
-        }
-      }
-    };
+    // Hydration on the way in, reclamation on the way out — see
+    // `attachSessionState`, which owns both orderings and why they are here
+    // rather than in `ws-handler`.
+    attachSessionState(core, {
+      state: sessionState,
+      sessionId: sessionOpts.id,
+      client: sessionOpts.client,
+      releaseSink,
+      pushStateSnapshot,
+    });
 
     return core;
   }
@@ -435,12 +422,14 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     // Watches outlive nothing: every session they could announce to is gone,
     // and a poll loop left running would hold the process past shutdown.
     notifier?.stop();
-    // Force-close on timeout skips the per-session stop wrapper's stateMap
-    // cleanup (its sink-identity check fails against the cleared map), so clear
-    // it here too or timed-out sessions leak their tool state permanently.
-    stateMap.clear();
+    // Force-close on timeout skips the per-session stop wrapper's state cleanup
+    // (its sink-identity check fails against the cleared map), so clear the cache
+    // here too or timed-out sessions leak their slot values permanently. Only the
+    // CACHE: a stored row still belongs to a session that may yet resume onto a
+    // replacement process, which is the whole point of storing it.
+    sessionState.store.clear();
     // Pending grace-window sweeps have nothing left to reclaim.
-    stateSweeps.clear();
+    sessionState.sweeps.clear();
     // Release a runtime-owned DB pool (see the resolution comment above).
     // Fire-and-forget: releaseResources is sync and a drain failure on a
     // dying pool is not actionable.

@@ -1,11 +1,9 @@
 import { agent } from "@alexkroman1/aai";
-import { gameSlot } from "./shared.ts";
 
 export default agent({
   name: "Cavern Adventure",
   // The world exists before the first command, so a resumed connection has
   // something to project rather than an empty state object.
-  state: gameSlot.state,
   // A narrator wants a narrative voice; everything else stays on the
   // default all-AssemblyAI pipeline.
   voice: "paul",

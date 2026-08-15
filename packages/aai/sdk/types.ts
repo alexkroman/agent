@@ -6,6 +6,7 @@
 import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
+import type { StateProjection } from "./session-state.ts";
 // Imported as well as re-exported below: a re-export does not bring the name into
 // this module's scope, and `ToolDef.execute` needs it.
 import type { ToolContext } from "./tool-context.ts";
@@ -75,26 +76,6 @@ export type Message = {
 };
 
 /**
- * Default type of `ctx.state` when an agent does not declare one — `any`, so
- * untyped state access compiles. Opt into real checking by annotating the
- * context (`ctx: ToolContext<Cart>`), which also makes the agent verify the
- * tool against its own state shape.
- *
- * @remarks
- * `any` deliberately, not `Record<string, unknown>`: session state is a
- * genuinely dynamic bag created by the agent's `state` factory, and `tool()`
- * can only learn its real shape from an annotated context. The stricter
- * default made the ordinary spelling
- * (`execute: (a, ctx) => ctx.state.cart.push(a)`) a compile error even
- * though it runs correctly — and once `aai build`/`aai deploy` started
- * running the project's own `tsc`, that refused to publish working agents
- * without catching bugs.
- *
- * @public
- */
-export type DefaultSessionState = any;
-
-/**
  * What a tool's `execute` is handed — see `tool-context.ts`, which owns it. Kept
  * as a re-export because `types.ts` is the import path everything already uses,
  * and because a tool author reads `ToolContext` and `ToolDef` together.
@@ -107,8 +88,7 @@ export type { ToolContext } from "./tool-context.ts";
  * `useToolResult<Quote>("get_quote", …)` — for real checking.
  *
  * @remarks
- * The client half of {@link DefaultSessionState}'s problem, and `any` for
- * the same reason: a tool result is the author's own return value
+ * `any` because a tool result is the author's own return value
  * round-tripped through JSON — the client already knows its shape, and the
  * framework cannot. The strict default (`unknown`) made reading one field a
  * compile error in a client that runs correctly, which blocked publishing
@@ -150,7 +130,7 @@ export type DefaultToolResult = any;
  *
  * @public
  */
-export type ToolDef<P extends ToolInputSchema = ToolInputSchema, S = DefaultSessionState> = {
+export type ToolDef<P extends ToolInputSchema = ToolInputSchema> = {
   /** Human-readable description shown to the LLM. */
   description: string;
   /**
@@ -165,7 +145,7 @@ export type ToolDef<P extends ToolInputSchema = ToolInputSchema, S = DefaultSess
    * {@link MAX_TOOL_RESULT_CHARS} (4000) characters — longer results are
    * trimmed and end with a `[truncated]` marker.
    */
-  execute(args: InferSchemaOutput<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
+  execute(args: InferSchemaOutput<P>, ctx: ToolContext): Promise<unknown> | unknown;
 };
 
 /**
@@ -188,9 +168,7 @@ export type ToolDef<P extends ToolInputSchema = ToolInputSchema, S = DefaultSess
  *
  * @public
  */
-export type InferToolInput<T extends ToolDef<ToolInputSchema, DefaultSessionState>> = Parameters<
-  T["execute"]
->[0];
+export type InferToolInput<T extends ToolDef<ToolInputSchema>> = Parameters<T["execute"]>[0];
 
 /**
  * The result type a tool's `execute` returns (awaited). Pair with
@@ -199,18 +177,7 @@ export type InferToolInput<T extends ToolDef<ToolInputSchema, DefaultSessionStat
  *
  * @public
  */
-export type InferToolOutput<T extends ToolDef<ToolInputSchema, DefaultSessionState>> = Awaited<
-  ReturnType<T["execute"]>
->;
-
-/**
- * The per-session state shape of an agent — inferred from the definition
- * `agent()` returned, so client code can type a `syncState` projection or a
- * shared module can type `ToolContext<InferAgentState<typeof agentDef>>`.
- *
- * @public
- */
-export type InferAgentState<A> = A extends AgentDef<infer S> ? S : never;
+export type InferToolOutput<T extends ToolDef<ToolInputSchema>> = Awaited<ReturnType<T["execute"]>>;
 
 export { DEFAULT_GREETING } from "./agent-defaults.ts";
 export type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
@@ -231,7 +198,7 @@ export { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
  *
  * @public
  */
-export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
+export interface AgentDef extends PipelineVoiceTuning {
   /** Display name shown by the default client UI. */
   name: string;
   /**
@@ -299,18 +266,13 @@ export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
    * So a tool's name is its FILE name and nothing else records it.
    *
    * @remarks
-   * `NoInfer` so `state` is the ONLY thing `S` is inferred from. That was already
-   * true when a map was authored here, which is why moving tools out of the
-   * parameter shape cost no inference: a single tool written without the state
-   * type would otherwise drag `S` back to `Record<string, unknown>` for the whole
-   * agent, and `ctx.state.x` would silently become `unknown` again.
-   *
-   * What a MAP did check and a registry cannot is a tool's assignability against
-   * this `S`. {@link sessionSlot} is what carries that guarantee now — a
-   * `slot.tool()` in its own module is typed against the slot's shape — which is
-   * most of why slots exist.
+   * This record carries no state type, and there is none to carry: a tool reads
+   * and writes session state through {@link sessionSlot}, which types the value
+   * in the module that declares the slot. The `NoInfer<S>` this used to hold
+   * existed to keep a single un-annotated tool from dragging the agent's whole
+   * state shape back to `unknown`, which is a problem a slot does not have.
    */
-  tools: Readonly<Record<string, ToolDef<ToolInputSchema, NoInfer<S>>>>;
+  tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
   /**
    * Durable workflows this agent may start, keyed by workflow name.
    *
@@ -346,43 +308,46 @@ export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
    */
   page?: "voice" | "static";
   /**
-   * Factory creating this session's mutable state — the value tools read and
-   * write as `ctx.state`. Called once per session; unset leaves `ctx.state`
-   * an empty object.
-   */
-  state?: () => S;
-  /**
    * Project per-session state to the browser client, so a custom UI can
    * render it without the agent hand-rolling a sync channel.
    *
-   * A PROJECTION rather than a flag, for three reasons. `ctx.state` routinely
-   * holds things that should not reach a browser or cannot be serialized, so
-   * the author decides what leaves. Returning plain data makes serializability
-   * the author's call rather than a runtime surprise. And it doubles as the
-   * client's contract: whatever this returns is exactly what `useAgentState`
+   * One {@link SessionSlot.projection} per slot the client should see, or an
+   * array of them — the `agent_state` frame carries the merge. A slot the agent
+   * does not project never leaves the server, which is the point: session state
+   * routinely holds things a browser should not have, so the author decides what
+   * leaves, and whatever a projection returns is exactly what `useAgentState`
    * receives.
    *
-   * Called after every tool call, and pushed only when the projection
-   * actually changed — most turns do not touch state, and this shares a
-   * socket with 384 kbps of PCM.
+   * Pushed after every tool call, and only when a projection actually changed —
+   * most turns do not touch state, and this shares a socket with 384 kbps of
+   * PCM.
    *
    * ```ts
-   * import { agent } from "@alexkroman1/aai";
+   * import { agent, sessionSlot } from "@alexkroman1/aai";
    * type Item = { sku: string; qty: number };
+   *
+   * const cartSlot = sessionSlot("cart", () => ({ items: [] as Item[], staffPin: "" }));
    *
    * agent({
    *   name: "Cart",
-   *   state: () => ({ cart: [] as Item[], staffPin: "" }),
-   *   syncState: (s) => ({ cart: s.cart }),   // staffPin stays server-side
+   *   // staffPin stays server-side
+   *   syncState: cartSlot.projection((s) => ({ items: s.items })),
    * });
    * ```
    *
-   * Without it, the pattern agents reach for is: return a state snapshot from
-   * every tool, declare a result type describing it, and mirror it into
-   * `useState` via `useToolResult`. Measured across generated agents, 58%
+   * @remarks
+   * It took a `(state: S) => unknown` over the whole state bag until the bag was
+   * removed. A projection now names its own slot, which is what lets the runtime
+   * render a session that has run no tool yet — the projection carries the
+   * slot's default — and so what let `AgentDef.state` be deleted rather than
+   * remembered.
+   *
+   * Without any of this, the pattern agents reach for is: return a state
+   * snapshot from every tool, declare a result type describing it, and mirror it
+   * into `useState` via `useToolResult`. Measured across generated agents, 58%
    * built some version of that by hand.
    */
-  syncState?: (state: S) => unknown;
+  syncState?: StateProjection | readonly StateProjection[];
   /**
    * How long the session may go with no inbound audio before it is closed
    * (ms). Measures silence, not call length — re-armed on every audio frame.

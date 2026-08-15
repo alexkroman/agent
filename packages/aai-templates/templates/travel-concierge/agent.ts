@@ -21,7 +21,6 @@ export default agent({
   name: "Swiss Air Concierge",
   // The stack, the ticket and the itinerary exist before the first tool call,
   // so a resumed connection has something to project.
-  state: tripSlot.state,
   // One projection replaces a `ctx.send` in each of eleven tools — and is the
   // single place that decides the caller's record leaves the server trimmed.
   syncState: tripSlot.projection(tripView),

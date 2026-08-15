@@ -5,10 +5,10 @@
 ```ts
 
 // @public
-export function agent<S = DefaultSessionState>(def: AgentParams<S>): AgentDef<S>;
+export function agent(def: AgentParams): AgentDef;
 
 // @public
-export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
+export interface AgentDef extends PipelineVoiceTuning {
     builtinTools?: readonly BuiltinTool[];
     greeting: string;
     idleTimeoutMs?: number;
@@ -20,20 +20,19 @@ export interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
     s2s?: S2sProvider;
     silencePrompt?: string;
     silenceTimeoutMs?: number;
-    state?: () => S;
     stt?: SttProvider;
     sttPrompt?: string;
-    syncState?: (state: S) => unknown;
+    syncState?: StateProjection | readonly StateProjection[];
     systemPrompt: string;
     text?: true;
     toolChoice?: ToolChoice;
-    tools: Readonly<Record<string, ToolDef<ToolInputSchema, NoInfer<S>>>>;
+    tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
     tts?: TtsProvider;
     workflows?: Readonly<Record<string, WorkflowDef>>;
 }
 
 // @public
-export type AgentParams<S = DefaultSessionState> = PipelineAgentParams<S> | S2sAgentParams<S> | TextAgentParams<S> | StaticAgentParams;
+export type AgentParams = PipelineAgentParams | S2sAgentParams | TextAgentParams | StaticAgentParams;
 
 // @public
 export type AnyWorkflowDef<R = unknown> = {
@@ -508,9 +507,6 @@ export const DEFAULT_TOOL_CHOICE: "auto";
 export type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "tools";
 
 // @public
-export type DefaultSessionState = any;
-
-// @public
 export type DefaultToolResult = any;
 
 // @public
@@ -558,16 +554,13 @@ export type GenerateResult = {
 };
 
 // @public
-export type InferAgentState<A> = A extends AgentDef<infer S> ? S : never;
-
-// @public
 export type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
 // @public
-export type InferToolInput<T extends ToolDef<ToolInputSchema, DefaultSessionState>> = Parameters<T["execute"]>[0];
+export type InferToolInput<T extends ToolDef<ToolInputSchema>> = Parameters<T["execute"]>[0];
 
 // @public
-export type InferToolOutput<T extends ToolDef<ToolInputSchema, DefaultSessionState>> = Awaited<ReturnType<T["execute"]>>;
+export type InferToolOutput<T extends ToolDef<ToolInputSchema>> = Awaited<ReturnType<T["execute"]>>;
 
 // @public
 export type InlineToolsField = "tools";
@@ -625,7 +618,7 @@ export type Message = {
 };
 
 // @public
-export type PipelineAgentParams<S = DefaultSessionState> = SharedAgentParams<S> & Partial<Pick<AgentDef<S>, PipelineOnlyField>> & {
+export type PipelineAgentParams = SharedAgentParams & Partial<Pick<AgentDef, PipelineOnlyField>> & {
     stt?: SttProvider;
     llm?: LlmProvider | string;
     s2s?: undefined;
@@ -681,7 +674,7 @@ export interface ResolveOneOptions<T> {
 }
 
 // @public
-export type S2sAgentParams<S = DefaultSessionState> = SharedAgentParams<S> & {
+export type S2sAgentParams = SharedAgentParams & {
     s2s: S2sProvider;
     stt?: "`stt` cannot be combined with `s2s` — S2S runs STT service-side";
     llm?: "`llm` cannot be combined with `s2s` — S2S runs the LLM loop service-side";
@@ -704,16 +697,15 @@ export function safeJsonParse(text: string): unknown;
 // @public
 export interface SessionSlot<K extends string, T> {
     create(): T;
-    get(ctx: ToolContext<SlotState<K, T>>): T;
+    readonly durable: boolean;
+    get(ctx: ToolContext): Readonly<T>;
     readonly key: K;
-    projection<V>(project: (value: T) => V): (state: SlotState<K, T> | undefined) => V;
-    read(state: SlotState<K, T> | undefined): T;
-    reset(ctx: ToolContext<SlotState<K, T>>): T;
-    set(ctx: ToolContext<SlotState<K, T>>, value: T): T;
-    readonly state: () => SlotState<K, T>;
-    tool<P extends ToolInputSchema = ToolInputSchema>(def: SlotToolDef<P, K, T>): ToolDef<P, SlotState<K, T>>;
-    update<R>(ctx: ToolContext<SlotState<K, T>>, mutate: (value: T) => R | Promise<R>): Promise<R>;
-    updateTool<P extends ToolInputSchema = ToolInputSchema>(def: SlotToolDef<P, K, T>): ToolDef<P, SlotState<K, T>>;
+    projection<V>(project: (value: Readonly<T>) => V): StateProjection<V>;
+    reset(ctx: ToolContext): Readonly<T>;
+    set(ctx: ToolContext, value: T): Readonly<T>;
+    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, Readonly<T>, R>): ToolDef<P>;
+    update<R>(ctx: ToolContext, mutate: (draft: T) => R): R;
+    updateTool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, T, R>): ToolDef<P>;
 }
 
 // @public
@@ -721,27 +713,26 @@ export function sessionSlot<const K extends string, T>(key: K, create: () => T, 
 
 // @public
 export interface SessionSlotOptions<T> {
-    after?: (value: T) => void;
+    after?: (draft: T) => void;
+    durable?: boolean;
 }
 
 // @public
-export type SharedAgentParams<S = DefaultSessionState> = Omit<AgentDef<S>, DefaultedAgentField | PipelineOnlyField | ProviderField | FrontDoorField> & Partial<Pick<AgentDef<S>, Exclude<DefaultedAgentField, InlineToolsField>>> & {
+export type SharedAgentParams = Omit<AgentDef, DefaultedAgentField | PipelineOnlyField | ProviderField | FrontDoorField> & Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
     system?: string;
     tools?: InlineToolsMisuse;
 };
 
 // @public
-export type SlotState<K extends string, T> = {
-    [P in K]?: T;
+export type SlotStore = {
+    read(key: string): unknown;
+    write(key: string, value: unknown, durable: boolean): void;
 };
 
 // @public
-export type SlotStateOf<S> = S extends SessionSlot<infer K, infer T> ? SlotState<K, T> : never;
-
-// @public
-export interface SlotToolDef<P extends ToolInputSchema, K extends string, T> {
+export interface SlotToolDef<P extends ToolInputSchema, V, R> {
     description: string;
-    execute(args: InferSchemaOutput<P>, value: T, ctx: ToolContext<SlotState<K, T>>): Promise<unknown> | unknown;
+    execute(args: InferSchemaOutput<P>, value: V, ctx: ToolContext): R;
     inputSchema?: P;
 }
 
@@ -789,6 +780,13 @@ export type StartOptions = {
 };
 
 // @public
+export interface StateProjection<V = unknown> {
+    (value?: unknown): V;
+    readonly create: () => unknown;
+    readonly key: string;
+}
+
+// @public
 export type StaticAgentParams = Omit<SharedAgentParams, WorkflowAppOnlyField | FrontDoorField | "workflows"> & {
     page: "static";
     workflows: NonNullable<AgentDef["workflows"]>;
@@ -822,7 +820,7 @@ export type TerminalWorkflowRun<R = unknown> = Extract<WorkflowRunSnapshot<R>, {
 }>;
 
 // @public
-export type TextAgentParams<S = DefaultSessionState> = Omit<SharedAgentParams<S>, "sttPrompt"> & {
+export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt"> & {
     text: true;
     llm?: LlmProvider | string;
     stt?: "`stt` cannot be combined with `text` — a text agent has no audio to transcribe";
@@ -836,11 +834,11 @@ export type TextAgentParams<S = DefaultSessionState> = Omit<SharedAgentParams<S>
 };
 
 // @public
-export function tool<P extends ToolInputSchema = ToolInputSchema, S = DefaultSessionState>(def: {
+export function tool<P extends ToolInputSchema = ToolInputSchema>(def: {
     description: string;
     inputSchema?: P;
-    execute(args: InferSchemaOutput<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
-}): ToolDef<P, S>;
+    execute(args: InferSchemaOutput<P>, ctx: ToolContext): Promise<unknown> | unknown;
+}): ToolDef<P>;
 
 // @public
 export const TOOL_EXECUTION_TIMEOUT_MS = 30000;
@@ -855,9 +853,9 @@ export type ToolChoice = "auto" | "required" | "none" | {
 };
 
 // @public
-export type ToolContext<S = DefaultSessionState> = {
+export type ToolContext = {
     env: Readonly<Record<string, string>>;
-    state: S;
+    slots: SlotStore;
     db: Db;
     generate: GenerateFn;
     messages: readonly Message[];
@@ -868,10 +866,10 @@ export type ToolContext<S = DefaultSessionState> = {
 };
 
 // @public
-export type ToolDef<P extends ToolInputSchema = ToolInputSchema, S = DefaultSessionState> = {
+export type ToolDef<P extends ToolInputSchema = ToolInputSchema> = {
     description: string;
     inputSchema?: P;
-    execute(args: InferSchemaOutput<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
+    execute(args: InferSchemaOutput<P>, ctx: ToolContext): Promise<unknown> | unknown;
 };
 
 // @public
@@ -908,7 +906,7 @@ export function workflowApp(def: Omit<StaticAgentParams, "page">): AgentDef;
 export type WorkflowAppMisuse<K extends string> = `\`${K}\` has no effect on a workflow app — \`page: "static"\` runs no model and opens no session; remove it, or remove \`page: "static"\` to make this a voice agent`;
 
 // @public
-export type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | "system" | "systemPrompt" | "sttPrompt" | "maxSteps" | "toolChoice" | "tools" | "builtinTools" | "state" | "syncState" | "idleTimeoutMs" | "voice";
+export type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | "system" | "systemPrompt" | "sttPrompt" | "maxSteps" | "toolChoice" | "tools" | "builtinTools" | "syncState" | "idleTimeoutMs" | "voice";
 
 // @public
 export type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {

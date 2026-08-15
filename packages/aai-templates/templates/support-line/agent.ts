@@ -20,7 +20,6 @@ export default agent({
   name: `${PRODUCT} Support`,
   // The trace exists before the first tool call, so a resumed connection has
   // something to project.
-  state: supportSlot.state,
   // The projection is also the privacy boundary: a logged ticket carries the
   // caller's callback number, and only its reference crosses to the browser.
   syncState: supportSlot.projection(supportView),

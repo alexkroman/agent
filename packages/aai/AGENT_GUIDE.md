@@ -153,9 +153,7 @@ export default agent({
   deadAirCoverMs?: number;                   // pipeline only — speak a short filler after this much silence in a turn (default 5000; 0 disables)
   resumeFalseInterruption?: boolean;         // pipeline only — resume an interrupted reply if no user turn commits (default true)
   preemptiveGeneration?: boolean;            // pipeline only — start the reply from a high-confidence interim (default true; false opts out)
-  state?: () => S;                           // per-session mutable state, exposed as ctx.state
-                                             // (S is inferred; see "Typing ctx.state")
-  syncState?: (state: S) => unknown;         // push a projection of state to the client
+  syncState?: StateProjection;               // show a slot to the client: slot.projection(view)
                                              // (read it with useAgentState; see UI hooks)
 });
 ```
@@ -301,7 +299,7 @@ export default workflowApp({
 
 That is the whole declaration, and the fields it does NOT take are the point:
 a workflow app has no session and no LLM loop, so `systemPrompt`, `tools`,
-`maxSteps`, `state`, `syncState`, `stt`/`llm`/`tts`/`s2s` and every voice knob
+`maxSteps`, `syncState`, `stt`/`llm`/`tts`/`s2s` and every voice knob
 are **compile errors** here, not fields that quietly do nothing. `greeting` and
 `requiredEnv` stay. `workflowApp()` is `agent({ …, page: "static" })` with the
 discriminant already set — same definition object out, so `aai build`,
@@ -821,7 +819,8 @@ same way in `aai dev` and deployed.
 
 ```ts no-check
 ctx.env: Readonly<Record<string, string>>     // secrets from .env / aai secret put
-ctx.state: S                                   // per-session mutable state (agent's `state` factory)
+ctx.slots: SlotStore                           // where sessionSlot() keeps this session's state —
+                                               // reach for the slot, never this (see "Session state")
 ctx.db: Db                                     // SQL database, needs storage enabled (see Database section)
 ctx.messages: readonly Message[]               // conversation history [{role, content}]
 ctx.sessionId: string                          // unique session ID
@@ -851,17 +850,9 @@ export const lookup = tool({
 });
 ```
 
-**Typing `ctx.state` is optional.** `ctx.state` is untyped by default, and
-the project's tsconfig turns off `noImplicitAny`, so both of these compile
-with no annotations and no errors:
-
-```ts no-check
-ctx.state.count++;
-ctx.state.incidents.filter((i) => i.status === "open");
-```
-
-Write the code first. Do NOT add type annotations defensively — almost
-nothing requires them, and time spent on them is time not spent on the agent.
+**The project's tsconfig turns off `noImplicitAny`, so write the code first.**
+Do NOT add type annotations defensively — almost nothing requires them, and time
+spent on them is time not spent on the agent.
 
 **The one exception, and it is not optional: annotate any variable you
 declare empty.** With `noImplicitAny` off, TypeScript does not widen an empty
@@ -883,12 +874,13 @@ so the next push reports the next line, and you can burn a whole session
 fixing one call site at a time. This is the single most common way a
 generated agent fails to build.
 
-Declaring a state type is still worth it once the shape is settled, because
-it turns a misspelled field into a compile error instead of `undefined` at
-runtime:
+### Session state
+
+**A `sessionSlot` is the only way to keep state across a session's tool calls**,
+and it is one declaration in a shared module:
 
 ```ts no-check
-// shared.ts — the slot is the one place the shape is written down.
+// shared.ts — the one place the shape is written down.
 import { sessionSlot } from "@alexkroman1/aai";
 
 export type Incident = { id: string; status: "open" | "closed" };
@@ -897,7 +889,7 @@ export const incidentSlot = sessionSlot("incidents", () => ({ items: [] as Incid
 ```
 
 ```ts no-check
-// tools/list_open.ts — `slot.tool` hands the body the live value, typed.
+// tools/list_open.ts — `slot.tool` READS: the body is handed the value, typed.
 import { incidentSlot } from "../shared.ts";
 
 export default incidentSlot.tool({
@@ -908,21 +900,48 @@ export default incidentSlot.tool({
 ```
 
 ```ts no-check
-// agent.ts — `slot.state` is what makes the state exist before the first call.
-import { agent } from "@alexkroman1/aai";
-import { incidentSlot } from "./shared.ts";
+// tools/open_incident.ts — `slot.updateTool` WRITES: mutate what you are handed.
+import { incidentSlot } from "../shared.ts";
+import { z } from "zod";
 
-export default agent({ name: "Dispatch", state: incidentSlot.state });
+export default incidentSlot.updateTool({
+  description: "Open an incident",
+  inputSchema: z.object({ id: z.string() }),
+  execute: ({ id }, incidents) => {
+    incidents.items.push({ id, status: "open" });
+    return { open: incidents.items.length };
+  },
+});
 ```
 
-**Reach for a slot whenever your tools live in more than one file, which is
-always** — a tool is its own file, and `tool()` learns the state shape only from
-an annotated context, so without a slot every module either restates
-`ctx: ToolContext<State>` or casts. `slot.tool()` removes both: it is typed
-against the slot, so a tool reading a field the factory does not produce is a
-compile error, which is the point. Use `slot.updateTool()` instead whenever the
-body `await`s — it serializes the mutation, and the LLM runs a step's tool calls
-concurrently.
+Four rules, and each is an error rather than advice if you get it wrong:
+
+- **`tool` reads, `updateTool` writes.** What a read is handed is FROZEN, so
+  mutating it throws instead of quietly going nowhere.
+- **A write is SYNCHRONOUS.** The value you mutate is stored the moment your body
+  returns, so an `updateTool` body may not `await`. When you need a model call or
+  a fetch first, do it in an ordinary `tool()` and then mutate:
+
+  ```ts no-check
+  execute: async (args, ctx) => {
+    const priced = await ctx.generate({ prompt: `price ${args.sku}` });
+    return cartSlot.update(ctx, (cart) => {
+      cart.total = Number(priced.text);
+      return { total: cart.total };
+    });
+  }
+  ```
+
+- **Hold plain data.** Objects, arrays, strings, numbers, booleans and null. A
+  `Map`, a `Set`, a `Date` or a class instance is refused with the field named,
+  because none of them survives being stored.
+- **State is STORED when your app has a database** (`aai storage enable`, or a
+  `DATABASE_URL` in `.env`), so a crash or a redeploy no longer loses it. Without
+  one it lives in memory for the life of the process. You write the same code
+  either way; that is the reason for the rules above.
+
+There is nothing to declare on `agent()` — the slot owns its own default. Use
+`syncState: slot.projection(view)` to show state to a custom client.
 
 **`verbatimModuleSyntax` applies to every type you import** — `ToolContext`,
 `ToolDef`, `Message`, provider types. A plain
@@ -1164,7 +1183,7 @@ const rows = await ctx.db.query<{ value: { name: string } }>(
 
 Use `ctx.db` for data that must outlive the session (saves, filed records,
 user profiles). For scratch that only the current session needs, prefer
-`ctx.state` (per-session mutable state — no storage required); the
+a `sessionSlot` (per-session state, stored when the app has a database); the
 `remember`/`recall` builtins likewise remain for session-scoped notes the
 LLM manages itself.
 
@@ -1304,7 +1323,7 @@ also what you want for anything that can be a string, an array, or null.
 // agent.ts
 export default agent({
   state: () => ({ cart: [] as Item[], staffPin: "" }),
-  syncState: (s) => ({ cart: s.cart }),   // staffPin never leaves the server
+  syncState: cartSlot.projection((s) => ({ cart: s.cart })),  // staffPin stays server-side
 });
 
 // client.tsx
@@ -1478,7 +1497,7 @@ Common mistakes when working in aai projects:
   preview redeploys itself, production on the next publish.
 - **The database is per-app.** Rows are shared by every session of one
   deployment — key them yourself if sessions must not see each other's data
-  (or keep session-scoped data in `ctx.state`).
+  (or keep session-scoped data in a `sessionSlot`).
 - **Rime language codes are ISO 639-3** (3-letter, e.g. `"eng"`), not
   ISO 639-1 (`"en"`).
 

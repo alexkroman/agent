@@ -5,7 +5,7 @@ import { stageAction, tripSlot } from "../shared.ts";
  * the clearest argument for the gate: staged, read back, and only applied by
  * `confirm_action`.
  */
-export default tripSlot.tool({
+export default tripSlot.updateTool({
   description:
     "Cancel the caller's ticket outright. This does NOT cancel anything yet — " +
     "it stages the cancellation so you can read it back and hear a yes.",

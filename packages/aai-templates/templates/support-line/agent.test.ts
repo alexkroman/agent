@@ -31,7 +31,6 @@ import {
   GROUNDED_SYSTEM,
   REWRITE_SYSTEM,
 } from "./prompts.ts";
-import type { StateSlot } from "./shared.ts";
 import { retrieve, supportSlot, supportView } from "./shared.ts";
 
 // ─── A scripted model ────────────────────────────────────────────────────────
@@ -97,13 +96,13 @@ function scriptedModel(script: Script = {}) {
 }
 
 function makeCtx(generate: GenerateFn, sessionId?: string) {
-  return createToolContext<StateSlot>({ generate, ...(sessionId ? { sessionId } : {}) });
+  return createToolContext({ generate, ...(sessionId ? { sessionId } : {}) });
 }
 
 /** A tool by the name the model calls it by, bound to this agent. The lookup
  *  and its "no such tool" message are `runTool`'s (`@alexkroman1/aai/testing`);
  *  what is local is only which agent they run against. */
-const run = (name: string, args: Record<string, unknown>, ctx: ToolContext<StateSlot>) =>
+const run = (name: string, args: Record<string, unknown>, ctx: ToolContext) =>
   runTool(agentDef, name, args, ctx);
 
 /** Node names without the per-call suffix, for sequence assertions. */
@@ -270,7 +269,7 @@ describe("answer_question", () => {
     expect(result.answersTheQuestion).toBe(true);
     expect(result.guidance).toBeUndefined();
 
-    const state = supportSlot.read(ctx.state);
+    const state = supportSlot.get(ctx);
     expect(state.asked).toEqual(["is there an outage"]);
     expect(state.trace?.answer).toBe(result.answer);
   });
@@ -289,7 +288,7 @@ describe("answer_question", () => {
   test("a broken model call is reported rather than thrown at the turn", async () => {
     // ctx.generate rejecting is the default `createToolContext` gives — a bad
     // key in production looks the same from here.
-    const ctx = createToolContext<StateSlot>({});
+    const ctx = createToolContext({});
     const result = (await run("answer_question", { question: "anything" }, ctx)) as {
       error: string;
     };
@@ -302,14 +301,14 @@ describe("answer_question", () => {
     const second = makeCtx(generate, "call-b");
 
     await run("answer_question", { question: "how do I reboot" }, first);
-    expect(supportSlot.read(second.state).trace).toBeNull();
-    expect(supportSlot.read(first.state).trace).not.toBeNull();
+    expect(supportSlot.get(second).trace).toBeNull();
+    expect(supportSlot.get(first).trace).not.toBeNull();
   });
 });
 
 describe("log_ticket", () => {
   test("logs a reference and keeps the callback number off the wire", async () => {
-    const ctx = createToolContext<StateSlot>({});
+    const ctx = createToolContext({});
     const logged = (await run(
       "log_ticket",
       { question: "landline install", callback: "07700 900123" },
@@ -317,7 +316,7 @@ describe("log_ticket", () => {
     )) as { reference: string };
     expect(logged.reference).toBe("TCK4001");
 
-    const state = supportSlot.read(ctx.state);
+    const state = supportSlot.get(ctx);
     expect(state.ticket?.callback).toBe("07700 900123");
     // The projection is the privacy boundary — only the reference crosses.
     const view = supportView(state);

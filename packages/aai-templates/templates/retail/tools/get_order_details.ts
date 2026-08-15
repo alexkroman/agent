@@ -1,7 +1,7 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { resolveOrder } from "../resolve.ts";
-import { retailSlot, retailTool, setFocus } from "../store.ts";
+import { retailTool, setFocus } from "../store.ts";
 
 export default retailTool({
   name: "get_order_details",
@@ -17,8 +17,7 @@ export default retailTool({
   }),
   // `execute` before `summary`: see find_user_id_by_email.ts for why the order
   // is load-bearing for the generic `result` type in `summary`.
-  execute: (args, ctx) => {
-    const state = retailSlot.get(ctx);
+  execute: (args, state) => {
     const order = resolveOrder(state, args.order_id);
     if (isToolFailure(order)) return order;
     setFocus(state, { orderId: order.order_id });

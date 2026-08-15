@@ -1,4 +1,4 @@
-import { type SlotStateOf, sessionSlot, type ToolContext } from "@alexkroman1/aai";
+import { sessionSlot, type ToolContext } from "@alexkroman1/aai";
 import { z } from "zod";
 
 // ── Tuning Constants ─────────────────────────────────────────────────────────
@@ -328,8 +328,6 @@ export const DEFAULT_STATE: GameState = {
 // by every session in the process, so a mutation without it would let one
 // player's game show up in another's.
 export const gameSlot = sessionSlot("game", () => structuredClone(DEFAULT_STATE));
-
-export type StateSlot = SlotStateOf<typeof gameSlot>;
 
 // ── Persistent save slots (ctx.db) ───────────────────────────────────────────
 // save_game / load_game are genuine cross-session persistence, so they use

@@ -6,6 +6,7 @@ import { vi } from "vitest";
 import type { AgentConfig } from "../sdk/_internal-types.ts";
 import type { ClientEvent, ClientSink } from "../sdk/protocol.ts";
 import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
+import { createDetachedSlotStore } from "../sdk/session-state.ts";
 import type { AgentDef, ToolContext, ToolDef } from "../sdk/types.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "../sdk/types.ts";
 import { rejectingWorkflows } from "../sdk/workflow-unavailable.ts";
@@ -41,7 +42,7 @@ export function sleep(ms: number): Promise<void> {
 export function createMockToolContext(overrides?: Partial<ToolContext>): ToolContext {
   return {
     env: {},
-    state: {},
+    slots: createDetachedSlotStore(),
     db: {} as never,
     generate: () => Promise.reject(new Error("generate not mocked")),
     messages: [],
@@ -344,11 +345,7 @@ export function fireFixtureMessage(callbacks: S2sCallbacks, msg: Record<string, 
  *
  * Call `cleanup()` in afterEach to restore the spy.
  */
-export function createFixtureSession(
-  // biome-ignore lint/suspicious/noExplicitAny: test helper accepts any agent state type
-  agent: AgentDef<any>,
-  opts?: { env?: Record<string, string> },
-) {
+export function createFixtureSession(agent: AgentDef, opts?: { env?: Record<string, string> }) {
   let capturedCallbacks: S2sCallbacks | null = null;
   const fakeHandle = makeMockHandle();
 

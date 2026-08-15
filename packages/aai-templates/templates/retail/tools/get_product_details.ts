@@ -1,6 +1,6 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { findProduct, retailSlot, retailTool, setFocus } from "../store.ts";
+import { findProduct, retailTool, setFocus } from "../store.ts";
 
 export default retailTool({
   name: "get_product_details",
@@ -13,8 +13,7 @@ export default retailTool({
   requiresAuth: false,
   // `execute` before `summary`: see find_user_id_by_email.ts for why the order
   // is load-bearing for the generic `result` type in `summary`.
-  execute: (args, ctx) => {
-    const state = retailSlot.get(ctx);
+  execute: (args, state) => {
     const product = findProduct(state, args.product_id);
     if (isToolFailure(product)) return product;
     setFocus(state, { productId: product.product_id });

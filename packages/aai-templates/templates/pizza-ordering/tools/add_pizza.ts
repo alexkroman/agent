@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { CRUSTS, calculateTotal, formatPrice, orderSlot, type Pizza, SIZES } from "../shared.ts";
 
-export default orderSlot.tool({
+export default orderSlot.updateTool({
   description: "Add a pizza to the order. Use when the customer has decided on a pizza.",
   inputSchema: z.object({
     size: z.enum(SIZES),

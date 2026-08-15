@@ -1,7 +1,7 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { AddressFields, formatAddress, toAddress } from "../address.ts";
-import { authenticatedUser, retailSlot, retailTool } from "../store.ts";
+import { authenticatedUser, retailTool } from "../store.ts";
 
 export default retailTool({
   name: "modify_user_address",
@@ -17,8 +17,7 @@ export default retailTool({
   // `execute`'s return type, and processes object literal properties in
   // source order — with `summary` first, `result` in its signature can't be
   // inferred and silently falls back to `unknown`.
-  execute: (args, ctx) => {
-    const state = retailSlot.get(ctx);
+  execute: (args, state) => {
     const user = authenticatedUser(state);
     if (isToolFailure(user)) return user;
     if (user.user_id !== args.user_id) {
