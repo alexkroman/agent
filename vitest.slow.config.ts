@@ -12,6 +12,10 @@ import { sharedConfig } from "./vitest.shared.ts";
  * - `scenario` — a real subprocess, a real HTTP/WebSocket port, a real bundler,
  *   or a real Postgres.
  * - `e2e` — full process spawn + Playwright.
+ * - `eval` — a live model, a live key, and real tokens. It is the one tier that
+ *   measures BEHAVIOUR rather than correctness, so it is also the one tier that
+ *   does not gate: see `packages/aai-evals/CLAUDE.md`. Its timeout is the
+ *   largest because one studio codegen turn can legitimately run for minutes.
  *
  * **No tier carries a `retry`.** The integration profile used to set `retry: 2`,
  * which classified its own failures as noise: it was a 3x multiplier on the cost
@@ -29,19 +33,20 @@ const profiles = {
   integration: { timeout: 30_000, hookTimeout: 30_000 },
   scenario: { timeout: 120_000, hookTimeout: 120_000 },
   e2e: { timeout: 300_000, hookTimeout: 300_000 },
+  eval: { timeout: 1_800_000, hookTimeout: 1_800_000 },
 } as const;
 
 const profileKey = (process.env.VITEST_PROFILE ?? "integration") as keyof typeof profiles;
 const profile = profiles[profileKey] ?? profiles.integration;
 
 /**
- * All three slow tiers, selected by `VITEST_PROFILE` with `VITEST_INCLUDE`
+ * All four slow tiers, selected by `VITEST_PROFILE` with `VITEST_INCLUDE`
  * choosing the files — from a package's `test:integration` / `test:scenario` /
- * `test:e2e` script.
+ * `test:e2e` / `test:eval` script.
  *
  * Membership is a NAMING CONVENTION, so a new test lands in the right tier with no
- * config edit: `*.integration.test.ts` and `*.scenario.test.ts` are excluded by
- * every unit config and selected by the matching script.
+ * config edit: `*.integration.test.ts`, `*.scenario.test.ts` and `*.eval.test.ts`
+ * are excluded by every unit config and selected by the matching script.
  *
  * This config spreads `sharedConfig.test`, so it picks up `restoreMocks` and
  * the CI reporters the same way the unit projects do, and layers only the

@@ -3510,6 +3510,14 @@ type Message = {
     content: string;
 };
 
+// @public
+export type OpenerRegistryEntry<Opener> = {
+    readonly envVar: string;
+    readonly open: (descriptor: {
+        options: Record<string, unknown>;
+    }) => Opener;
+};
+
 // @internal (undocumented)
 interface OwnedMap<K, V> {
     claim(key: K, value: V): () => boolean;
@@ -3625,6 +3633,12 @@ const ReadyConfigSchema: z.ZodObject<{
     sampleRate: z.ZodNumber;
     ttsSampleRate: z.ZodNumber;
 }, z.core.$strip>;
+
+// @public
+export function registerSttKind(kind: string, entry: OpenerRegistryEntry<SttOpener>): () => void;
+
+// @public
+export function registerTtsKind(kind: string, entry: OpenerRegistryEntry<TtsOpener>): () => void;
 
 // @internal
 export type RelayExecuteTool = {
@@ -4224,8 +4238,8 @@ type SttEvents = {
     error: (err: SttError) => void;
 };
 
-// @internal
-interface SttOpener {
+// @public
+export interface SttOpener {
     // (undocumented)
     readonly name: string;
     // (undocumented)
@@ -4411,8 +4425,8 @@ type TtsEvents = {
     error: (err: TtsError) => void;
 };
 
-// @internal
-interface TtsOpener {
+// @public
+export interface TtsOpener {
     // (undocumented)
     readonly name: string;
     // (undocumented)

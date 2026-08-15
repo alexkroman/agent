@@ -960,17 +960,26 @@ works.
   service ever ships, raise its function timeout rather than adding a cap under
   it.
 
-## Studio starter evals (scripts/starter-eval/)
+## Studio starter evals
 
 The LLM-judge codegen suite (`studio-eval.test.ts`, vitest-evals) was
 removed in favour of a harness that drives the studio's REAL surface —
 create project, broker a sandbox session, stream a chat turn to the guest —
-rather than calling the codegen path directly:
+rather than calling the codegen path directly. It is a case of the repo's
+**eval tier** now (`packages/aai-evals/starter.eval.test.ts`), which owns the
+runner, the repeats and the report:
 
 ```sh
-node scripts/starter-eval/run.mjs [--only <substring>] [--repeat N] [--out f.json]
-node scripts/starter-eval/report.mjs run.json [baseline.json]
+pnpm dev:aai-server                                 # in another shell
+pnpm test:eval                                      # every starter
+AAI_EVAL_ONLY=pizza AAI_EVAL_REPEAT=3 pnpm test:eval
 ```
+
+Its own second runner — `run.mjs`/`report.mjs`/`regrade.mjs`, 745 lines of case
+loop, verdict and reporter — is deleted; what stays in `scripts/starter-eval/` is
+the GRADING (`expectations.mjs`, plus `builtins.mjs` and `tsconfig-ab.mjs`, which
+read a run's JSON). See `packages/aai-evals/CLAUDE.md` for the runner and why the
+tier does not gate.
 
 It spends real tokens on the caller's own key, so it is not in CI. Three
 things it measures that the judge suite did not:
@@ -991,7 +1000,9 @@ things it measures that the judge suite did not:
 **Run-to-run variance is large, and single runs cannot adjudicate a prompt
 change.** Measured on one starter with an identical config: tool calls
 varied 9–14 and repairs 1–4, which is the size of the effect most prompt
-edits produce. Use `--repeat 3` and compare arms, and expect a plausible
+edits produce. Use `AAI_EVAL_REPEAT=3` and compare arms — the runner names the
+assertions that were not unanimous, and one in that list cannot adjudicate
+anything yet. Expect a plausible
 change to show no effect — one A/B of a TypeScript-idioms preamble block
 came back flat and the block was removed rather than kept on the strength
 of a single flattering run.

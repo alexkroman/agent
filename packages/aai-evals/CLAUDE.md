@@ -1,0 +1,272 @@
+# packages/aai-evals — the behaviour eval tier
+
+The repo's eval runner and its cases (private package). Repo-wide conventions,
+the test-tier table and the turbo rules live in the root `AGENTS.md`.
+
+## What this exists for
+
+There was no way, inside this repository, to assert that an agent called the
+right tool in the right order and said the right thing. Every such measurement
+in the guides was produced by a harness that lives somewhere else, and one of
+them no longer exists at all — `packages/aai/CLAUDE.md` cites "184
+`speech_started` against 87 `cancelled`" from `scripts/voice-replay/`, "since
+removed". A measurement that cannot be re-run is indistinguishable from an
+assertion, and these decide shipped constants: `DEFAULT_MAX_TURN_SILENCE_MS` has
+been changed and reverted twice on numbers like those.
+
+Three things looked like they covered this and none did. The fuzz harnesses
+assert INVARIANTS over generated orderings (nothing breaks — not that the right
+thing happened). Unit and integration tests exercise modules. And
+`scripts/starter-eval/` graded generated SOURCE, not behaviour. So the middle
+was missing: **given this input, did the agent do the right thing.**
+
+## Two levels, and only one of them is built
+
+The constraint eve's eval framework does not have, and the reason the harnesses
+ended up external: eve drives `t.send("What is the weather in Brooklyn?")`, and
+a voice agent's input is paced PCM.
+
+- **Level 1 — text-driven. BUILT.** `behaviour.eval.test.ts` +
+  `session-target.ts`. Everything above the audio boundary: tool choice, tool
+  arguments, tool ORDER, step count, what the agent said, history handling.
+- **Level 2 — paced audio replay. NOT BUILT.** The only level that can measure
+  endpointing, splits and merges, barge-in, and the `speech.started` /
+  `reply.cancelled` ratio.
+
+**Neither substitutes for the other**, and the SDK guide already says so: "a
+turn-taking-only replay harness CANNOT settle this knob (no tools, no database,
+so the truncated-auth regression is invisible to it)". Level 1 cannot see an
+endpointing bug; level 2 without tools cannot see the bug an endpointing change
+caused. **Nothing here may be named, documented or reported in a way that
+implies level 2 coverage** — building level 1 and claiming level 2's questions
+would be a worse outcome than having neither. `fake-speech.ts`'s module doc
+repeats the warning at the seam where it would be forgotten.
+
+**Level 2's corpus decision is deferred, not made.** The honest options were a
+small committed corpus of recorded caller audio or a fetch-on-demand cache, and
+committing bytes for a level nobody has written is the version of that choice
+that ages worst: the shape of the corpus follows from what the paced replay
+target needs (sample rate, per-utterance framing, whether a barge-in point is
+annotated), and none of that is known yet. So: **fetch-on-demand, keyed by
+content hash, when level 2 is built** — the same rule the platform's blob store
+uses, and it keeps a multi-megabyte corpus out of every `git clone` and out of
+the `aai-cli` tarball that ships `templates/`. Nothing is committed today and
+nothing here reads audio.
+
+## The runner: assertions RECORD, they do not throw
+
+`runner.ts`. A case body is handed an {@link EvalRecorder} and calls
+`check(ok, label, detail)`; `runEval` runs the body N times and reports. An
+`expect()` that throws turns a behaviour run into a bisect — the first failing
+turn ends the case and everything after it is unmeasured — where what a
+behaviour eval wants is a PROFILE: "it called the right tools in the wrong order
+and never said the confirmation", not "turn 3 failed".
+
+Two consequences worth knowing:
+
+- **`check` is the only primitive.** The event vocabulary (`assertions.ts`) and
+  the studio's source-grading expectations both go through it, which is what let
+  `scripts/starter-eval/`'s 745-line second runner be deleted rather than
+  reimplemented. One tier, one runner.
+- **A HARNESS failure is kept apart from a failed assertion.** A dead sandbox
+  and a wrong tool call want different fixes, and averaging them hides both. A
+  throw from the body is recorded as that pass's `error`; the other repeats still
+  run.
+
+## One number is not a result
+
+The instrument is noisy in a measured way: identical code has scored **0.56 and
+0.60** on the same tau2 tasks with **9 of 25 tasks flipping** outcome. So:
+
+- runs REPEAT (`AAI_EVAL_REPEAT`), and the report carries `min`/`max`/`mean`
+  plus the width — `75% (50%–100%, ±50%)`, never a bare mean;
+- `EvalReport.unstable` names the assertion labels that were **not unanimous
+  across repeats**. That list is the instrument measuring itself: an assertion in
+  it cannot adjudicate a change until it is out of it;
+- an assertion a pass never REACHED is missing data, not a flip — otherwise every
+  harness error would read as agent nondeterminism.
+
+**This tier is not a merge gate and must not become one.** It is absent from
+`pnpm check`, from `scripts/check.sh` and from CI. A flaky required check that
+blocks merges is worse than an unreliable number nobody is forced to believe.
+`AAI_EVAL_MIN_SCORE` makes it assert, and it asserts `score.min` — the spread's
+LOWER bound — because a mean over a flipping suite passes on a lucky repeat.
+
+**A model-graded judge is a separate surface and is not built.** "Did it say the
+right thing" needs one and it is also the noisiest possible assertion; the tau2
+numbers this repo quotes mix DB-state reward with NL assertions, and conflating
+them is what made "the agent talked better and acted worse" hard to see (DB
+reward 1.00 → 0.40 while NL assertions rose 0.60 → 0.80). Deterministic
+assertions first; a judge only once the variance work above exists to measure it
+with. `saidSomething(token)` is a substring/regexp check and is not a judge.
+
+## Measured, on the day it landed
+
+4 level-1 cases × 5 repeats × 3 runs = 60 passes, one small support agent on the
+default AssemblyAI pipeline LLM:
+
+| | |
+| --- | --- |
+| score | **100% in all 60 passes**, per-case spread **±0%**, `unstable` empty |
+| wall clock | **46s / 93s / 70s** per 20-pass run — 2.0x between the fastest and slowest |
+| one repeat of all four cases | ~6s |
+
+The finding is the asymmetry: at this scope the SCORE is not the noisy thing,
+LATENCY is. Read the 100% carefully — it says these four cases do not
+discriminate between a good agent and a slightly worse one; it does not say they
+check nothing. They failed loudly on two real harness bugs during development
+(see `fake-speech.ts` and `session-target.ts`'s `repliedTo`), which is the
+discrimination evidence there is. A case that flips is more informative than one
+that always passes, and the way to get there is a harder case, never a lower
+floor.
+
+## The tier's own wiring
+
+Membership is the `.eval.` infix — `*.eval.test.ts`, excluded by this package's
+`vitest.config.ts` and selected by `test:eval`, so a new eval needs no config
+edit. `VITEST_PROFILE=eval` in `vitest.slow.config.ts` sets the timeout (30 min:
+one studio codegen turn legitimately runs for minutes).
+
+```sh
+pnpm test:eval                                   # the whole tier
+AAI_EVAL_REPEAT=5 pnpm test:eval                 # a spread worth reading
+AAI_EVAL_ONLY="cancels only" pnpm test:eval      # one case
+AAI_EVAL_MIN_SCORE=0.8 pnpm test:eval            # opt in to gating
+```
+
+Every one of those variables is in `check:eval`'s **`env`** in `turbo.json`, not
+in `globalPassThroughEnv`: strict env mode strips an undeclared variable silently
+(the failure that made `AAI_TEST_PM=npm pnpm test:e2e` run pnpm).
+
+**`AAI_EVAL_ONLY` is one variable across the whole tier, and a file it selects
+nothing from WARNS rather than failing.** The first draft failed it, on the rule
+that a mistyped filter must not read as a passing tier — and that is wrong here,
+because each eval file sees only its OWN cases in its own vitest worker, so
+`AAI_EVAL_ONLY="math tutor"` correctly selected one starter and failed the
+level-1 file for not containing it. A typo now ends in a run with zero cases and
+one warning per file listing what it could have matched. The unmatched file still
+registers a passing test naming the situation: vitest fails a file whose suite
+holds no test at all.
+
+**`check:eval` sets `cache: false`, and it is the one task in the repo where the
+`inputs` rule does not apply.** Everywhere else a task is a pure function of its
+inputs and the fix for a replayed green run is to hash more; here two runs of the
+same tree legitimately differ, so a cache hit would REPLAY a measurement rather
+than take one — the second `pnpm test:eval` of a variance check would print FULL
+TURBO and the first run's number. No `inputs` are declared rather than declaring
+a set nothing reads; if this ever becomes cacheable, note the corpus lives
+OUTSIDE the package (`scripts/starter-eval/**`), where a package-relative
+`$TURBO_DEFAULT$` cannot see it.
+
+## The gate ANNOUNCES its skip
+
+`_gate.ts`. The tier needs a live key and spends real tokens, so it skips
+without one — and a silent skip is the worst outcome available to a tier nobody
+runs, because a green run of nothing is indistinguishable from a green run of
+something. Same shape as `aai-server/_pg-test-utils.ts`: the skip prints how to
+fix it, and `AAI_REQUIRE_EVAL` turns it into a hard failure. CI deliberately does
+NOT set `AAI_REQUIRE_EVAL` — unlike the Postgres tier there is no argument for
+gating merges on a live model's behaviour.
+
+The starter eval carries a SECOND gate, a `/health` probe of the studio origin:
+with a key but no studio every case would fail as a harness error, which reads
+like the codegen being broken.
+
+## Level 1 does NOT drive `?host=1`, and the plan expected it to
+
+`research/5-behaviour-eval-tier.md` left "does level 1 use host mode?" open, and
+the answer is that it CANNOT: **the client protocol has no text command.**
+`sdk/protocol-commands.ts` carries five commands (`audio_ready`, `cancel`,
+`reset`, `playback_progress`, `tool_result`) and a user turn reaches a session as
+PCM and nothing else — so a text-driven level 1 has no socket to speak down.
+Host mode is unaffected and unblocked (see `research/6-dynamic-agent-definition
+.md`, which concluded the per-session resolver cannot be built safely); it is
+simply the wrong seam for a text target, and the right seam is below the wire.
+
+So `session-target.ts` drives `runtime.createSession()` with a recording
+`ClientSink`, the agent's own `events` hooks feeding the assertions, and the two
+speech stages faked. What is REAL: `createRuntime`, the pipeline transport, the
+LLM on a live key, the tool executor, `ctx` and its slots, history trimming, the
+step budget, and the session event stream. What is not, stated rather than
+papered over: `ws-handler.ts`, the audio pacer, and frame ordering — all of which
+have unit and scenario coverage, where "given this utterance, did the agent do
+the right thing" had none.
+
+**The fakes go in through `registerSttKind`/`registerTtsKind` on
+`@alexkroman1/aai/runtime`.** That seam's own doc gives the reason: a fake
+resolving through the registry resolves exactly like a real provider, its env var
+included, and production code only ever sees descriptors. Exporting it widened
+`/runtime` — a NON-authoring subpath, so no capability contract moves — and
+`SttOpener`/`TtsOpener` lost their `@internal` tags with it, since they are now
+that seam's parameter type. They stay OFF `/stt` and `/tts`, where the rest of
+the opener-layer types live: an agent author picks a descriptor and never writes
+an opener.
+
+## Two harness bugs, and why they are documented in code
+
+Both were found by the tier failing on its first live run, and both are the class
+of bug that would have made a report LIE rather than error:
+
+- **The fake TTS must forward NO AUDIO.** A chunk of silence per flush looks
+  harmless; the pipeline estimates playback open-loop from forwarded audio plus
+  a grace, so for several hundred ms after a reply the agent is modelled as holding
+  the floor — and a harness that commits its next utterance in the same tick
+  commits it *during* speech, i.e. as a barge-in. Every case after the greeting
+  recorded a spurious `reply.cancelled`.
+- **`say()` waits for the reply to THIS utterance.** Waiting for "a reply
+  terminator" settled on the previous reply's cancel, so `say()` returned before
+  the model had run and the case recorded "called no tools" — a green harness
+  reporting a broken agent. The utterance's own `user-transcript.committed` is the
+  anchor; every event of its reply follows it.
+
+## The studio starter eval
+
+`starter.eval.test.ts` + `studio-target.ts` are `scripts/starter-eval/run.mjs`'s
+case loop, verdict and reporter (485 + 175 + 85 = 745 lines, deleted) on the
+shared runner. The GRADING did not move: those checks read generated source
+rather than behaviour, which is a different job, and they stay in
+`scripts/starter-eval/expectations.mjs` where `builtins.mjs` still imports them
+— which is also why this package's tsconfig sets `allowJs`. See "Studio starter
+evals" in `packages/aai-studio-server/CLAUDE.md` for what it measures and why
+single runs cannot adjudicate a prompt change.
+
+**`run.mjs` could not have run, and porting it is what found that out.** The
+chat request belongs to the GUEST and is authenticated by the per-sandbox token
+the session broker returns beside the URL; `run.mjs` sent the account's API key
+and gets `401 {"error":"Unauthorized"}`. So the harness the guides cite numbers
+from had rotted, in the way a second runner nobody exercises does. Verified
+against a live studio after the fix: one starter, **100%, 15s**, driving create
+project → broker a sandbox session → stream a chat turn → read the synced
+workspace.
+
+The port also **dropped one check `run.mjs` never made**: a bare "did it write a
+`client.tsx`". That file was recorded as INFORMATION there and kept out of the
+`shippable` verdict, because most starters never ask for a UI — asserting it
+failed the math-tutor template for shipping exactly what it should. `checkUi` is
+the whole UI claim.
+
+**`regrade.mjs`'s job is not reproduced, deliberately.** It re-graded a SAVED run
+with today's expectations, because the grader had been corrected four times after
+the runs it should have applied to. The cheap version of that is
+`starter-expectations.test.ts`, which was a fail-fast block at the top of
+`run.mjs` — so it ran only when somebody spent tokens — and is now a UNIT test:
+an expectation demanding a tool its prompt never asks for, and a
+`builtinDelegation` that passes on prose alone, both fail in the ordinary test
+run with no key, no studio and no model.
+
+## Adding a case
+
+1. Put it in an existing `*.eval.test.ts`, in the array `registerEvalCases`
+   takes. Registration lives in `_register.ts` for a mechanical reason: Biome's
+   `noMisplacedAssertion` accepts an `expect` only inside a literal `test(` call,
+   so an `expect` reached through a `const run = matches ? test : test.skip`
+   alias — or `test.skipIf(…)(…)` — is a lint error.
+2. Name it in a way that survives a rename: the name is the key `unstable`
+   reports and the thing `AAI_EVAL_ONLY` matches.
+3. Assert through the vocabulary in `assertions.ts`, and prefer a TURN scope
+   (`all.turn(1).calledTool(…)`) to a whole-run one — "on that turn" is most of
+   the meaning, and `turn(index)` out of range FAILS rather than silently
+   asserting nothing.
+4. Reach for `eventsSatisfy(label, predicate)` for a claim the vocabulary does
+   not carry — a ratio between two event types is the shape the guides' own
+   findings take.
