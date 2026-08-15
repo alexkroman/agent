@@ -229,6 +229,26 @@ const SAMPLES: Record<string, { matches: string[]; ignores: string[] }> = {
       "      opts.callbacks.onAudioChunk(bytes);",
     ],
   },
+  rule17_openCodedRecordGuard: {
+    matches: [
+      // Both operand orders, and a dotted operand — three of the twelve sites
+      // this replaced were the reversed form, so a one-way pattern would have
+      // left a quarter of them representable.
+      '  return typeof value === "object" && value !== null && !Array.isArray(value);',
+      '  if (body !== null && typeof body === "object") {',
+      '    const ok = typeof opts.input === "object" && opts.input !== null;',
+    ],
+    ignores: [
+      "  if (!isRecord(body)) return undefined;",
+      // Ordinary narrowing of a union the compiler ALREADY knows, which is why
+      // the `!== null` half is in the pattern. Both are real lines: the first is
+      // `server.address()`'s `AddressInfo | string | null`, the second a
+      // declared `exports` entry in `studio-build.ts`. Matching either would put
+      // permanent noise in the baseline for checks that are not duck-typing.
+      '        listenPort = typeof addr === "object" && addr ? addr.port : port;',
+      '  return typeof root === "object" ? root.types : undefined;',
+    ],
+  },
 };
 
 describe("guard-invariants gate", () => {

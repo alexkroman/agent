@@ -3,6 +3,7 @@
 import { type Dirent, existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { isRecord } from "@alexkroman1/aai/utils";
 import { getMonorepoRoot } from "./_agent.ts";
 import { errorMessage } from "./_utils.ts";
 
@@ -68,10 +69,6 @@ export async function listTemplates(root = resolveTemplatesDir()): Promise<strin
 const MERGED_MANIFEST_FIELDS = ["dependencies", "devDependencies", "scripts"] as const;
 
 type Manifest = Record<string, unknown>;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /**
  * Fill a manifest's gaps from the scaffold's, `existing` always winning.

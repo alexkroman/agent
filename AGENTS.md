@@ -436,6 +436,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 13 | no template import escaping its template dir | move it in, or publish it |
   | 14 | no fixture directory nothing reads | delete it, or add the reader |
   | 16 | no new `on*` on a SESSION callback surface | an event + `report(event)` |
+  | 17 | no `typeof x === "object" && x !== null` | `isRecord()` |
 
   Rule IDs are **stable** — the numbers appear in commit messages and in the
   baseline, so a deleted rule leaves its number retired rather than letting a
@@ -447,8 +448,9 @@ one commit of history. A file in the tree has no merge base and no such modes.
   is not the value** (`String(params.port)` would stringify `undefined` into
   `"undefined"`; `{ mode: 0o700 }` sets a different value from the one it
   tests), the CLI test setup's env scrub, one hand-rolled owned-map in
-  `studio-sse.ts`, and the two `/tmp` literals that name a path inside the Linux
-  sandbox rather than on this machine.
+  `studio-sse.ts`, the two `/tmp` literals that name a path inside the Linux
+  sandbox rather than on this machine, and one record guard over a declared
+  union.
 
   **Two of these rules found real bugs on the day they were written**, which is
   the argument for the whole gate. Rule 2 caught two `omitUndefined`
@@ -1841,51 +1843,13 @@ catches the most common issues that historically required follow-up commits:
 
 `aai dev` serves the guest's own routes directly, so a feature is developed
 against a server where the guest's dispatch table is the whole API. Deployed,
-almost nothing works that way: a browser voice socket and a carrier media
-stream are handed a sandbox URL, and every other caller has to be brokered,
-which means the orchestrator needs a `/:slug/…` route of its own. The gap is
-invisible in a diff and invisible to the feature's own tests, and it has landed
-twice — once as a whole guest surface nothing routed to (every request fell
-through to `app.notFound`), once as a platform route serving GET and POST for a
-guest that also answered DELETE, so a Stop button worked in dev and 404'd on
-every deployed agent.
-
-So `GUEST_ROUTE_EXPOSURE` (`packages/aai-server/guest-routes.ts`) declares each
-route as `proxied` (with the methods the GUEST answers, plus the `suffix` when
-the platform path ends in a parameter), `direct-dial`, `host-only`, or
-`guest-internal` — dialled only from inside the container on loopback, which is
-a different claim from `host-only` and worth keeping apart: `host-only` says the
-platform dials it holding a token, so writing it on a loopback-only route
-describes a gate that is not there. A missing entry is a compile error, and
-`guest-routes.test.ts` asserts every proxied method is really registered under
-`/:slug` — plus the reverse, so a stale `direct-dial` declaration cannot sit
-beside a platform route that does forward. Declare the methods from the guest's
-dispatch; making the platform match is then a failing test rather than a
-production 404.
-
-**Only the PLATFORM half of that is verified by a test; the upstream half is a
-guard.** `guest-routes.test.ts` introspects the real orchestrator app, so
-"declared `proxied` but not registered" and "registered but declared otherwise"
-both fail. What it cannot check is whether `GUEST_ROUTES` still describes the
-guest — that list is transcribed by hand, and it cannot be derived, because
-`aai-server` may not import guest source. It had already drifted:
-`GET /studio/tools` was a real guest route in neither table, and the `satisfies`
-could not catch it (that compile error fires for a KEY with no exposure entry,
-never for a route nobody wrote down), so the studio client reached it by
-rewriting another route's URL — the exact surgery `guest-routes.ts` says the
-table exists to end. `guard-invariants.mjs` rule 12 closes it by reading both
-trees as TEXT, which respects the boundary the same way `sync-agent-guide.mjs`
-does. Methods stay declarative: the guest dispatches with `if (url === X)`
-chains, so there is no table to derive verbs from, and a route can still be
-declared with the wrong ones — it can no longer be absent.
-
-**A route's exposure is decided by WHO CALLS IT, not by what it does.** The
-three workflow routes are the worked example, and they split: the DevKit's
-`flow` and `step` queue callbacks are `guest-internal` (the guest's own worker
-dials its own server, and they are unauthenticated *because* loopback is the
-whole gate — a platform route would hand anyone another tenant's run), while
-`webhook` is `proxied`, because its URL is handed to a third party and has to
-outlive the sandbox that minted it.
+almost nothing works that way, and the gap is invisible in a diff and to the
+feature's own tests — it has landed twice. `GUEST_ROUTE_EXPOSURE` and
+`GUEST_ROUTES` (`packages/aai-server/guest-routes.ts`) are what close it.
+**See "A new guest route must declare how the PLATFORM exposes it" in
+`packages/aai-server/CLAUDE.md`** for the four exposure kinds, which half is a
+test and which is `guard-invariants` rule 12, and why exposure is decided by
+who CALLS a route.
 
 ## Security architecture
 

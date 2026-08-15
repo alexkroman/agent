@@ -17,6 +17,7 @@ import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { normalizeLlm } from "../sdk/providers/llm/from-string.ts";
 import type { LlmProvider } from "../sdk/providers.ts";
 import { isConvertibleSchema, toToolJsonSchema } from "../sdk/schema.ts";
+import { isRecord } from "../sdk/utils.ts";
 import { resolveLlm } from "./providers/resolve.ts";
 
 /**
@@ -49,11 +50,7 @@ export type CreateGenerateFnOptions = {
 };
 
 function isDescriptor(value: unknown): value is LlmProvider {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as { kind?: unknown }).kind === "string"
-  );
+  return isRecord(value) && typeof value.kind === "string";
 }
 
 /**

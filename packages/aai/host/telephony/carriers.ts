@@ -23,6 +23,8 @@
  * reason to read.
  */
 
+import { isRecord } from "../../sdk/utils.ts";
+
 /** One inbound carrier frame, reduced to what a session needs. */
 export type CarrierInbound =
   /** The call's media stream has begun; `streamId` must be echoed on outbound frames. */
@@ -56,9 +58,7 @@ export type CarrierCodec = {
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+  return isRecord(value) ? value : null;
 }
 
 function stringAt(record: Record<string, unknown> | null, key: string): string | null {

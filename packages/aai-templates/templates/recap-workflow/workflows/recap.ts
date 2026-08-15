@@ -70,6 +70,7 @@
 import { throwStepError, toStepError } from "@alexkroman1/aai/step-errors";
 import {
   errorMessage,
+  isRecord,
   omitUndefined,
   report,
   requireStepEnv,
@@ -532,14 +533,12 @@ async function request(
 
 /** A string field of a JSON body, when it really is one. */
 function readString(body: unknown, key: string): string | undefined {
-  if (body === null || typeof body !== "object") return undefined;
-  const value = (body as Record<string, unknown>)[key];
+  const value = isRecord(body) ? body[key] : undefined;
   return typeof value === "string" ? value : undefined;
 }
 
 /** A number field of a JSON body, when it really is one. */
 function readNumber(body: unknown, key: string): number | undefined {
-  if (body === null || typeof body !== "object") return undefined;
-  const value = (body as Record<string, unknown>)[key];
+  const value = isRecord(body) ? body[key] : undefined;
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }

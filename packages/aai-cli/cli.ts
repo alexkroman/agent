@@ -3,6 +3,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isRecord } from "@alexkroman1/aai/utils";
 import { type ArgsDef, type CommandDef, defineCommand, runMain, showUsage } from "citty";
 import { runCommand, setup, sharedArgs, unknownFlagsForArgv } from "./_cli-common.ts";
 import { CliError, fail, getOutputMode, installStdoutGuard, writeLine } from "./_output.ts";
@@ -42,9 +43,7 @@ const VERSION: string = readCliVersion(cliDir);
 function commandPath<T extends ArgsDef>(cmd: CommandDef<T>, parent?: CommandDef<T>): string {
   const nameOf = (c: CommandDef<T> | undefined): string | undefined => {
     const meta = c?.meta;
-    return meta && typeof meta === "object" && "name" in meta && typeof meta.name === "string"
-      ? meta.name
-      : undefined;
+    return isRecord(meta) && typeof meta.name === "string" ? meta.name : undefined;
   };
   const parts = [nameOf(parent), nameOf(cmd)].filter((n): n is string => n !== undefined);
   const path = parts.join(" ");

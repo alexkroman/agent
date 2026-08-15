@@ -8,7 +8,7 @@
  * 5xx/429) are retried before surfacing an error.
  */
 
-import { omitUndefined } from "@alexkroman1/aai/utils";
+import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { FetchError, ofetch } from "ofetch";
 
 export const HINT_INVALID_API_KEY =
@@ -122,11 +122,11 @@ function zodIssueMessages(value: unknown): string[] {
  */
 export function describeErrorBody(data: unknown): string {
   if (typeof data === "string") return data;
-  if (data === null || typeof data !== "object") return JSON.stringify(data ?? "");
-  const error = (data as { error?: unknown }).error;
+  if (!isRecord(data)) return JSON.stringify(data ?? "");
+  const error = data.error;
   if (typeof error === "string") return unwrapEmbeddedErrors(error);
-  if (error !== null && typeof error === "object") {
-    const { message } = error as { message?: unknown };
+  if (isRecord(error)) {
+    const { message } = error;
     // zod serializes its issue array into `message` as a JSON string.
     if (typeof message === "string") {
       try {

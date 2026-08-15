@@ -16,6 +16,7 @@
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 import type { SlotStore, StateProjection } from "./session-state.ts";
 import type { ToolContext, ToolDef } from "./types.ts";
+import { isRecord } from "./utils.ts";
 
 /**
  * The authoring shape of a slot-backed tool: {@link ToolDef} with the slot's
@@ -253,11 +254,7 @@ export interface SessionSlotOptions<T> {
 
 /** Would `await` on this do anything? */
 function isThenable(value: unknown): value is PromiseLike<unknown> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as PromiseLike<unknown>).then === "function"
-  );
+  return isRecord(value) && typeof value.then === "function";
 }
 
 /**

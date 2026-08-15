@@ -51,6 +51,10 @@ const ARGS = "\\([^)]*\\)";
 const MAP_GET = `\\.get${ARGS}`;
 /** An `on*` handler name — the observer-callback naming convention. */
 const ON_NAME = "on[A-Z][A-Za-z0-9]*";
+/** `typeof X === "object"`, either operand order's half of rule 17. */
+const TYPEOF_OBJECT = `typeof ${MEMBER} === "object"`;
+/** `X !== null`, the other half. */
+const NOT_NULL = `${MEMBER} !== null`;
 /** Line start plus indentation: where a property or method is DECLARED. */
 const AT_LINE_START = "^ *";
 /**
@@ -267,5 +271,44 @@ export const LINE_RULES = [
       "    `SessionEventContext` draws by carrying no `send`.\n\n" +
       "Minting an event to dodge this rule is worse than the callback: an event is\n" +
       "AUTHOR-VISIBLE (`agent({ events })`) and retained, so it is a promise.",
+  },
+  {
+    id: 17,
+    key: "rule17_openCodedRecordGuard",
+    label: "open-coded record guard",
+    // BOTH operand orders. `value !== null && typeof value === "object"` is the
+    // same check and was the spelling at three of the twelve original sites, so
+    // a one-way pattern would have left a quarter of them representable.
+    //
+    // The `!== null` half is what makes this a duck-type rather than a narrow.
+    // `typeof addr === "object" && addr` (an `AddressInfo | string | null` from
+    // `server.address()`) and `typeof root === "object"` (a declared union in
+    // `studio-build.ts`) are ordinary union narrowing over a type the compiler
+    // already knows, and neither matches — which is the whole reason this rule
+    // can run without an allowlist of them.
+    re: `${TYPEOF_OBJECT} && ${NOT_NULL}|${NOT_NULL} && ${TYPEOF_OBJECT}`,
+    paths: SOURCE_PATHSPECS,
+    skipComments: true,
+    remedy:
+      // Not "Use `isRecord(value)` from …", which reads better and trips
+      // `noSecrets`: the heuristic scores the whole literal, and the call's
+      // parens and the scoped path together push it over. The module doc's
+      // point 2 is about the REGEXES; it applies to remedy prose too.
+      "Use the `isRecord` guard from @alexkroman1/aai/utils.\n" +
+      "\n" +
+      "The narrowing is the point, not the keystrokes. This spelling narrows to\n" +
+      "`object`, on which every field read is an error — so all twelve sites it\n" +
+      "replaced paid for the check a SECOND time with a cast\n" +
+      "(`(v as { kind?: unknown }).kind`, `(v as PromiseLike<unknown>).then`).\n" +
+      "A cast asserts what the check was supposed to establish and stops\n" +
+      "reporting the moment the shape moves. `isRecord` returns\n" +
+      "`value is Record<string, unknown>`, so the cast goes with it.\n" +
+      "\n" +
+      "Note it EXCLUDES arrays, because every caller here reads a named field.\n" +
+      'For "any non-null object, arrays included", write the two comparisons\n' +
+      "inline and baseline it — that case has one site in the repo\n" +
+      "(`sdk/standard-schema.ts`, narrowing a declared union, and it may not\n" +
+      "import `sdk/utils.ts` anyway: `/utils` re-exports `stepGenerateJson`,\n" +
+      "which imports standard-schema, so the edge would be a cycle).",
   },
 ];

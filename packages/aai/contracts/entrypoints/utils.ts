@@ -23,6 +23,7 @@ export {
   createKeyedLock,
   errorDetail,
   errorMessage,
+  isRecord,
   isTransientStatus,
   type KeyedLock,
   type KeyedLockOptions,

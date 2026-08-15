@@ -42,6 +42,7 @@ import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { build, type PluginOption, type Rollup } from "vite";
+import { errorCode } from "./_utils.ts";
 import { withPreservedNodeEnv } from "./_vite-env.ts";
 import { type WorkflowBundleOutput, workflowClientPlugin } from "./workflow-bundler.ts";
 
@@ -130,7 +131,7 @@ async function discoverToolFiles(cwd: string): Promise<string[]> {
   } catch (err) {
     // No tools/ directory is normal — a workflow app has none, and a voice
     // agent may declare everything inline. Anything else is worth surfacing.
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    if (errorCode(err) === "ENOENT") return [];
     throw err;
   }
   return (
@@ -174,7 +175,7 @@ async function hasSystemPromptFile(cwd: string): Promise<boolean> {
   try {
     return (await fs.stat(path.join(cwd, SYSTEM_PROMPT_FILE))).isFile();
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
+    if (errorCode(err) === "ENOENT") return false;
     throw err;
   }
 }
