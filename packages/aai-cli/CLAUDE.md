@@ -543,3 +543,37 @@ test. The same command already executed repo-controlled
 code regardless: `buildAgentBundle` does NOT pass `configFile: false` (only
 the guest's untrusted-workspace builds do), so the project's `vite.config.ts`
 runs at build time either way.
+
+## The e2e suite is pnpm-only in CI
+
+`aai init` scaffolds a project that `e2e.test.ts` then installs from a mock
+verdaccio registry, so the install step can in principle run under any package
+manager. CI used to fan that out (`pm: [pnpm, npm, yarn]` × 2 OSes = 6 jobs); it
+now runs pnpm alone.
+
+The npm/yarn legs were paying for themselves in flakes rather than bugs: each one
+is a full cold install of the published tarballs on a shared runner, they tripped
+over resolver-specific quirks unrelated to our code (hence `--no-lockfile`,
+`--no-strict-peer-dependencies`, `NPM_CONFIG_MINIMUM_RELEASE_AGE=0`), and the
+repo itself is pnpm-only — so the thing they guarded, "our published `exports`
+maps resolve under a non-pnpm resolver", is better served by `publint` + `attw`,
+which run on every build and read the package metadata directly.
+
+The `AAI_TEST_PM` switch in `_e2e-test-utils.ts` stays, so an npm or yarn install
+is one env var away when reproducing a user report:
+
+```sh
+AAI_TEST_PM=npm pnpm test:e2e
+```
+
+That line only works because `AAI_TEST_PM` is declared in the `check:e2e` task's
+`env` — under turbo's strict env mode it was stripped before the task started, so
+the documented command ran pnpm and said nothing. See "strict env mode" in
+`AGENTS.md`, which keeps that half of the rule because it is repo-wide.
+
+Treat those two branches as a debugging tool, not covered ground.
+
+**`AAI_REQUIRE_REGISTRY` is the related gate**, in `check:e2e`'s `env` for the
+same reason: it turns off this suite's "excuse a failed install as a
+registry-proxy flake" predicate (`isRegistryProxyFailure`), and CI sets it so the
+guess is not trusted where egress is real.
