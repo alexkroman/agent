@@ -1,5 +1,4 @@
 ---
-"aai-guest": patch
 "@alexkroman1/aai": patch
 ---
 
